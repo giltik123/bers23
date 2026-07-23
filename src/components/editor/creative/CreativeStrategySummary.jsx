@@ -1,0 +1,8 @@
+import React from 'react';
+import { Clock3, Coins, Heart, Play, Save } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+export default function CreativeStrategySummary({ strategy, saved, onApply, onSave, onFavorite, disabled }) {
+  const minutes = Math.ceil(strategy.estimatedTimeMs / 60000);
+  return <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 space-y-3"><div><p className="font-medium">Execution strategy</p><p className="text-xs text-muted-foreground">Recipe Engine → AI Planner → Job System → Editing Engine</p></div><div className="flex gap-3 text-xs"><span className="flex items-center gap-1"><Coins className="w-3.5 h-3.5" />{strategy.estimatedCredits} credits</span><span className="flex items-center gap-1"><Clock3 className="w-3.5 h-3.5" />~{minutes} min</span></div><ol className="space-y-1 text-xs">{strategy.executionOrder.map((step, index) => <li key={step.recipeId}>{step.order}. {step.label} <span className="text-muted-foreground">· {strategy.requiredOperations[index]}</span></li>)}</ol><div className="flex gap-2"><Button onClick={() => onApply(strategy)} disabled={disabled} className="flex-1 rounded-xl"><Play className="w-4 h-4" />Apply strategy</Button><Button variant="outline" size="icon" onClick={onSave} aria-label="Save strategy"><Save className="w-4 h-4" /></Button><Button variant="outline" size="icon" onClick={onFavorite} aria-label="Favorite strategy"><Heart className={saved?.favorite ? 'w-4 h-4 fill-current' : 'w-4 h-4'} /></Button></div></div>;
+}

@@ -1,0 +1,3 @@
+const KEY = 'asset_library_history_v1';
+const read = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } };
+export const assetHistory = { record(asset, action = 'viewed') { const next = [{ asset_key: asset.asset_key, name: asset.name, action, at: Date.now() }, ...read()].slice(0, 100); localStorage.setItem(KEY, JSON.stringify(next)); }, recent() { return read(); } };

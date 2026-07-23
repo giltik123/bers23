@@ -1,0 +1,3 @@
+export const CREATIVE_THEMES = {
+  social: ['Magazine cover', 'Golden hour', 'Travel postcard'], marketing: ['Luxury product photo', 'Minimal style', 'Studio lighting'], advertising: ['Cinematic', 'Luxury product photo', 'Cyberpunk'], ecommerce: ['Luxury product photo', 'Studio lighting', 'Minimal style'], portrait: ['Professional portrait', 'Studio lighting', 'Wedding photography'], real_estate: ['Real estate enhancement', 'Golden hour', 'Minimal style'], automotive: ['Cinematic', 'Luxury product photo', 'Golden hour'], food: ['Food photography', 'Golden hour', 'Magazine cover'], architecture: ['Cinematic', 'Minimal style', 'Real estate enhancement'], fashion: ['Fashion campaign', 'Magazine cover', 'Cinematic'], creative_art: ['Vintage', 'Cyberpunk', 'Cinematic'],
+};

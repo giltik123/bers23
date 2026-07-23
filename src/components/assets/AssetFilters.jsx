@@ -1,0 +1,7 @@
+import React from 'react';
+import { Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+
+export default function AssetFilters({ text, onText, type, onType, favorite, onFavorite }) {
+  return <div className="flex flex-wrap gap-2"><div className="relative min-w-[220px] flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={text} onChange={(event) => onText(event.target.value)} placeholder="Search assets, tags, objects, colors…" className="pl-9" /></div><select value={type} onChange={(event) => onType(event.target.value)} className="rounded-md border border-input bg-background px-3 text-sm"><option value="all">All types</option><option value="project">Projects</option><option value="image">Images</option><option value="garment">Garments</option><option value="outfit">Outfits</option><option value="recipe">Recipes</option><option value="creative_strategy">Creative strategies</option><option value="version">Versions</option></select><button onClick={() => onFavorite(!favorite)} className={`rounded-md border px-3 text-sm ${favorite ? 'border-primary bg-primary text-primary-foreground' : 'border-input'}`}>Favorites</button></div>;
+}

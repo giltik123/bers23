@@ -1,0 +1,55 @@
+{
+  "name": "UserSubscription",
+  "type": "object",
+  "properties": {
+    "plan_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "free",
+        "trialing",
+        "active",
+        "cancelled",
+        "expired"
+      ],
+      "default": "free"
+    },
+    "billing_interval": {
+      "type": "string",
+      "enum": [
+        "monthly",
+        "yearly",
+        "custom"
+      ]
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "renewal_date": {
+      "type": "string"
+    },
+    "trial_started_at": {
+      "type": "string"
+    },
+    "trial_ends_at": {
+      "type": "string"
+    },
+    "trial_used": {
+      "type": "boolean",
+      "default": false
+    },
+    "cancelled_at": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "plan_id",
+    "status"
+  ]
+}

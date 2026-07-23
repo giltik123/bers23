@@ -1,0 +1,4 @@
+import React from 'react';
+import { AUTOMATION_TEMPLATES } from '@/lib/automation/AutomationTemplates';
+import { useTranslation } from '@/lib/i18n/TranslationProvider';
+export default function AutomationTemplateGallery({ onChoose }) { const { t } = useTranslation(); return <section><p className="mb-2 text-sm font-medium">{t('automation.templateGallery')}</p><div className="grid grid-cols-2 gap-2 md:grid-cols-3">{AUTOMATION_TEMPLATES.map((template) => <button key={template.automation_id} onClick={() => onChoose(template.automation_id)} className="rounded-xl border border-border/60 p-3 text-left hover:border-primary/50"><p className="text-sm font-medium">{template.name}</p><p className="mt-1 text-xs text-muted-foreground">{t('automation.actionsCount', { count: template.actions.length })}</p></button>)}</div></section>; }

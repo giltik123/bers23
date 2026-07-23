@@ -1,0 +1,72 @@
+{
+  "name": "CreditsWallet",
+  "type": "object",
+  "properties": {
+    "balances": {
+      "type": "object",
+      "properties": {
+        "free": {
+          "type": "number",
+          "default": 0
+        },
+        "purchased": {
+          "type": "number",
+          "default": 0
+        },
+        "subscription": {
+          "type": "number",
+          "default": 0
+        },
+        "bonus": {
+          "type": "number",
+          "default": 0
+        },
+        "promotional": {
+          "type": "number",
+          "default": 0
+        },
+        "refund": {
+          "type": "number",
+          "default": 0
+        }
+      }
+    },
+    "reserved": {
+      "type": "number",
+      "default": 0
+    },
+    "lifetime_spent": {
+      "type": "number",
+      "default": 0
+    },
+    "lifetime_purchased": {
+      "type": "number",
+      "default": 0
+    },
+    "lifetime_earned": {
+      "type": "number",
+      "default": 0
+    },
+    "expirations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "credit_type": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "expires_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "welcome_granted": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

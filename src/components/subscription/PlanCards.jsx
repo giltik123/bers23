@@ -1,0 +1,8 @@
+import React from 'react';
+import { Check } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { DEFAULT_PLANS } from '@/lib/subscriptions/subscriptionPlans';
+
+export default function PlanCards({ currentPlanId, trialUsed, onChoose, onTrial, busy }) {
+  return <section className="space-y-3"><h2 className="font-semibold">Plans</h2><div className="grid md:grid-cols-2 gap-3">{DEFAULT_PLANS.map((plan) => <div key={plan.id} className={`rounded-2xl border p-4 space-y-3 ${plan.id === currentPlanId ? 'border-primary' : 'border-border/60'}`}><div className="flex justify-between gap-2"><div><h3 className="font-semibold">{plan.name}</h3><p className="text-xs text-muted-foreground mt-1">{plan.description}</p></div><span className="text-sm font-medium">{plan.monthlyPrice ? `$${plan.monthlyPrice}/mo` : plan.id === 'enterprise' ? 'Custom' : 'Free'}</span></div><div className="text-xs text-muted-foreground">{plan.includedCredits.toLocaleString()} credits · {plan.maxProjects.toLocaleString()} projects · {plan.maxStorage} GB</div><ul className="text-xs space-y-1">{plan.features.slice(0, 4).map((feature) => <li key={feature} className="flex gap-1.5 items-center"><Check className="w-3 h-3" />{feature.replaceAll('_', ' ')}</li>)}</ul>{plan.id === currentPlanId ? <Button disabled className="w-full rounded-xl">Current plan</Button> : plan.trialAvailable && !trialUsed ? <Button onClick={() => onTrial(plan.id)} disabled={busy} className="w-full rounded-xl">Start {plan.trialDays}-day trial</Button> : <Button onClick={() => onChoose(plan.id)} disabled={busy} variant="outline" className="w-full rounded-xl">Select plan</Button>}</div>)}</div></section>;
+}

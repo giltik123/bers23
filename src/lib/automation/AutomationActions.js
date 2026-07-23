@@ -1,0 +1,2 @@
+export const AUTOMATION_ACTIONS = ['run_recipe', 'run_ai_agent', 'run_creative_strategy', 'run_try_on', 'generate_variants', 'replace_background', 'enhance_quality', 'upscale', 'export', 'create_version', 'notify_user'];
+export const actionLabel = (action) => action.replaceAll('_', ' ');

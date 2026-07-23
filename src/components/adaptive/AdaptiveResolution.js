@@ -1,0 +1,1 @@
+export { adaptiveResolution as default, adaptiveResolution } from '@/lib/platform/AdaptiveResolution';

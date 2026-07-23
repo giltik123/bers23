@@ -1,0 +1,8 @@
+import React from 'react';
+import { Clock3, Link2, Tag } from 'lucide-react';
+
+export default function AssetDetails({ asset, history, onAddToCollection }) {
+  if (!asset) return <aside className="rounded-2xl border border-border/60 p-4 text-sm text-muted-foreground">Select an asset to view details.</aside>;
+  const usage = history.filter((item) => item.asset_key === asset.asset_key);
+  return <aside className="space-y-4 rounded-2xl border border-border/60 p-4"><div>{asset.preview && <img src={asset.preview} alt="" className="mb-3 aspect-video w-full rounded-xl object-cover" />}<p className="font-medium">{asset.name}</p><p className="text-xs capitalize text-muted-foreground">{asset.type.replaceAll('_', ' ')}</p></div><div><p className="mb-1 flex items-center gap-1 text-xs font-medium"><Tag className="h-3.5 w-3.5" />Tags</p><div className="flex flex-wrap gap-1">{(asset.tags || []).map((tag) => <span key={tag} className="rounded-full bg-secondary px-2 py-0.5 text-[10px]">{tag}</span>)}</div></div><div><p className="mb-1 flex items-center gap-1 text-xs font-medium"><Link2 className="h-3.5 w-3.5" />Related assets</p>{(asset.relations || []).map((relation) => <p key={relation.asset_key} className="text-xs text-muted-foreground">{relation.label}</p>)}</div>{onAddToCollection && <button onClick={() => onAddToCollection(asset)} className="w-full rounded-lg border border-input px-2 py-1.5 text-xs hover:bg-accent">Add to active collection</button>}<div><p className="mb-1 flex items-center gap-1 text-xs font-medium"><Clock3 className="h-3.5 w-3.5" />Usage history</p><p className="text-xs text-muted-foreground">{usage.length ? `${usage.length} recent interactions` : 'No recorded usage yet'}</p></div></aside>;
+}

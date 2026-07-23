@@ -1,0 +1,6 @@
+import React from 'react';
+import { Heart, Image as ImageIcon } from 'lucide-react';
+
+export default function AssetCard({ asset, selected, onSelect, onFavorite }) {
+  return <button onClick={() => onSelect(asset)} className={`relative overflow-hidden rounded-xl border text-left ${selected ? 'border-primary ring-1 ring-primary' : 'border-border/60 hover:border-primary/50'}`}><div className="aspect-[4/3] bg-secondary">{asset.thumbnail ? <img src={asset.thumbnail} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="m-auto h-full w-8 text-muted-foreground" />}</div><div className="p-2"><p className="truncate text-sm font-medium">{asset.name}</p><p className="text-[10px] capitalize text-muted-foreground">{asset.type.replaceAll('_', ' ')}</p></div><span role="button" onClick={(event) => { event.stopPropagation(); onFavorite(asset); }} className="absolute right-1 top-1 rounded-full bg-background/80 p-1.5"><Heart className={asset.favorite ? 'h-3.5 w-3.5 fill-current text-primary' : 'h-3.5 w-3.5'} /></span></button>;
+}

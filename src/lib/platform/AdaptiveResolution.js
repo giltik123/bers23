@@ -1,0 +1,1 @@
+export function adaptiveResolution(profile, quality = 'automatic') { if (quality === 'maximum') return 'high'; if (quality === 'battery-saver') return 'low'; return profile.compact ? 'medium' : profile.hybrid ? 'high' : 'original'; }

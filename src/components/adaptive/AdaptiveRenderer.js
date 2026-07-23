@@ -1,0 +1,1 @@
+export { adaptiveRenderer as default, adaptiveRenderer } from '@/lib/platform/AdaptiveRenderer';

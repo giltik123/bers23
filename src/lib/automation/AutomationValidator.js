@@ -1,0 +1,4 @@
+import { automationConditions } from '@/lib/automation/AutomationConditions';
+import { AUTOMATION_TRIGGERS } from '@/lib/automation/AutomationTriggers';
+import { AUTOMATION_ACTIONS } from '@/lib/automation/AutomationActions';
+export const automationValidator = { validate(automation, context) { const errors = []; if (!automation.name?.trim()) errors.push('Name is required.'); if (!AUTOMATION_TRIGGERS.includes(automation.trigger)) errors.push('Select a valid trigger.'); if (!(automation.actions || []).length) errors.push('Add at least one action.'); if ((automation.actions || []).some((item) => !AUTOMATION_ACTIONS.includes(item.type))) errors.push('One or more actions are unsupported.'); if (context && !automationConditions.all(automation.conditions, context)) errors.push('Workflow conditions are not met.'); return { valid: !errors.length, errors }; } };

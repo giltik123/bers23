@@ -1,0 +1,24 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { base44 } from '@/api/base44Client';
+import AssetCard from '@/components/assets/AssetCard';
+import AssetDetails from '@/components/assets/AssetDetails';
+import AssetFilters from '@/components/assets/AssetFilters';
+import AssetCollectionsPanel from '@/components/assets/AssetCollectionsPanel';
+import { assetLibrary } from '@/lib/assets/AssetLibrary';
+import { assetCollections } from '@/lib/assets/AssetCollections';
+import { assetFavorites } from '@/lib/assets/AssetFavorites';
+import { assetHistory } from '@/lib/assets/AssetHistory';
+import { assetAnalytics } from '@/lib/assets/AssetAnalytics';
+
+export default function AssetLibrary() {
+  const [assets, setAssets] = useState([]); const [collections, setCollections] = useState([]); const [selected, setSelected] = useState(null); const [filters, setFilters] = useState({ text: '', type: 'all', favorite: false, collectionId: '' }); const [loading, setLoading] = useState(true);
+  const load = async () => { setLoading(true); const [projects, garments, outfits, nextCollections] = await Promise.all([base44.entities.Project.list('-updated_date', 200), base44.entities.Garment.list('-updated_date', 200), base44.entities.Outfit.list('-updated_date', 200), assetCollections.list()]); setAssets(await assetLibrary.index({ projects, garments, outfits })); setCollections(nextCollections); setLoading(false); };
+  useEffect(() => { load(); }, []);
+  const activeCollection = collections.find((collection) => collection.id === filters.collectionId);
+  const visible = useMemo(() => assetLibrary.search(assets, { ...filters, collectionId: activeCollection?.kind === 'smart' ? '' : filters.collectionId, text: activeCollection?.kind === 'smart' ? `${filters.text} ${activeCollection.query || ''}` : filters.text }), [assets, filters, activeCollection]);
+  const choose = (asset) => { setSelected(asset); assetHistory.record(asset); assetAnalytics.track('asset_viewed', { type: asset.type }); };
+  const favorite = async (asset) => { const updated = await assetFavorites.toggle(asset); setAssets((items) => items.map((item) => item.id === updated.id ? updated : item)); if (selected?.id === updated.id) setSelected(updated); };
+  const createCollection = async () => { const name = window.prompt('Collection name'); if (!name) return; const kind = window.prompt('Collection type: folder, pinned, or smart', 'folder') || 'folder'; const query = kind === 'smart' ? window.prompt('Smart collection search query', '') : ''; const created = await assetCollections.create({ name, kind, pinned: kind === 'pinned', query }); setCollections((items) => [...items, created]); assetAnalytics.track('collection_created', { kind }); };
+  const addToCollection = async (asset) => { if (!activeCollection || activeCollection.kind === 'smart') return; const collection_ids = [...new Set([...(asset.collection_ids || []), activeCollection.id])]; const updated = await base44.entities.Asset.update(asset.id, { collection_ids }); setAssets((items) => items.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); assetAnalytics.track('asset_collected', { type: asset.type }); };
+  return <div className="mx-auto max-w-7xl space-y-5 px-4 py-6"><div><h1 className="text-2xl font-semibold">Asset Library</h1><p className="text-sm text-muted-foreground">Centralized search and reuse for your projects, resources, and creative plans.</p></div><AssetFilters text={filters.text} onText={(text) => setFilters((current) => ({ ...current, text }))} type={filters.type} onType={(type) => setFilters((current) => ({ ...current, type }))} favorite={filters.favorite} onFavorite={(favorite) => setFilters((current) => ({ ...current, favorite }))} /><div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)_280px]"><AssetCollectionsPanel collections={collections} activeId={filters.collectionId} onSelect={(collectionId) => setFilters((current) => ({ ...current, collectionId }))} onCreate={createCollection} /><main>{loading ? <p className="py-12 text-center text-sm text-muted-foreground">Indexing reusable assets…</p> : visible.length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">{visible.map((asset) => <AssetCard key={asset.id} asset={asset} selected={selected?.id === asset.id} onSelect={choose} onFavorite={favorite} />)}</div> : <p className="py-12 text-center text-sm text-muted-foreground">No assets match these filters.</p>}</main><AssetDetails asset={selected} history={assetHistory.recent()} onAddToCollection={activeCollection && activeCollection.kind !== 'smart' ? addToCollection : null} /></div></div>;
+}

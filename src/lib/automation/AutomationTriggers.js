@@ -1,0 +1,2 @@
+export const AUTOMATION_TRIGGERS = ['image_uploaded', 'project_created', 'manual_execution', 'batch_execution', 'outfit_selected', 'recipe_selected', 'creative_strategy_selected', 'export_finished', 'job_completed'];
+export const triggerLabel = (trigger) => trigger.replaceAll('_', ' ');

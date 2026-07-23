@@ -1,0 +1,9 @@
+import React from 'react';
+import { ArrowUp, Loader2, RotateCcw, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { priorityLabel } from '@/lib/jobs/jobModel';
+
+export default function JobRow({ job, onCancel, onRetry, onDuplicate, onMoveUp }) {
+  const active = ['preparing', 'running', 'retrying'].includes(job.status);
+  return <div className="rounded-xl border border-border/60 p-3 text-xs space-y-1"><div className="flex items-center gap-2">{active && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}<span className="font-medium truncate flex-1">{job.label}</span><span className="text-muted-foreground">{priorityLabel(job.priority)}</span></div><div className="flex items-center justify-between text-[11px] text-muted-foreground"><span className="capitalize">{job.status} · {job.metadata?.currentStage || `${job.progress || 0}%`}</span><div className="flex gap-1">{job.status === 'queued' && onMoveUp && <Button size="sm" variant="ghost" onClick={() => onMoveUp(job.id)}><ArrowUp className="w-3.5 h-3.5" /></Button>}{job.status === 'failed' && <Button size="sm" variant="ghost" onClick={() => onRetry(job.id).catch(() => {})}><RotateCcw className="w-3.5 h-3.5" /></Button>}{['queued', 'preparing', 'running', 'retrying'].includes(job.status) && <Button size="sm" variant="ghost" onClick={() => onCancel(job.id)}><X className="w-3.5 h-3.5" /></Button>}{['completed', 'failed', 'cancelled'].includes(job.status) && <Button size="sm" variant="ghost" onClick={() => onDuplicate(job.id).catch(() => {})}>Duplicate</Button>}</div></div>{job.estimatedTime && <p className="text-[10px] text-muted-foreground">Estimated {Math.ceil(job.estimatedTime / 1000)}s</p>}</div>;
+}

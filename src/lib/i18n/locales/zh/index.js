@@ -1,0 +1,18 @@
+export const modules = {
+  common: { appName: 'AI 图片编辑器', save: '保存', cancel: '取消', delete: '删除', edit: '编辑', close: '关闭', create: '创建', apply: '应用', retry: '重试', confirm: '确认', back: '返回', next: '下一步', done: '完成', loading: '加载中…', search: '搜索', add: '添加', remove: '移除', rename: '重命名', duplicate: '复制', download: '下载', favorite: '收藏', archive: '归档', restore: '恢复', signOut: '退出登录', empty: '这里还没有内容', minutes: '{count} 分钟', seconds: '{seconds} 秒' },
+  editor: { title: '编辑器', undo: '撤销', redo: '重做', restoreOriginal: '恢复原图', detectObjects: '检测对象', detecting: '正在检测对象…', prompt: '指令', creativeStudio: '创意工作室', recipes: '配方', aiAgent: 'AI 智能体', fashion: '时尚', outfits: '穿搭', before: '之前', after: '之后', accept: '接受', discard: '放弃', objects: '对象', versions: '版本', newVersion: '新版本', sceneMemory: '场景记忆', workspace: '工作区', jobCenter: '任务中心', instructionPlaceholder: '描述你的编辑…', projectNotFound: '未找到项目' },
+  projects: { title: '项目', newProject: '新建项目', upload: '上传图片', empty: '还没有项目——上传图片开始吧。', open: '打开', processing: '处理中', draft: '草稿', completed: '已完成' },
+  recipes: { title: '配方', favorite: '收藏', popular: '热门', recent: '最近', recommended: '推荐', run: '运行配方', use: '使用', searchPlaceholder: '搜索配方…' },
+  workspace: { title: '工作区', auto: '自动检测', manual: '手动', switch: '切换工作区', recommendations: '推荐', mostUsed: '最常用' },
+  automation: { title: '自动化工作室', subtitle: '无需编写代码即可构建可复用的编辑工作流。', library: '自动化库', templateGallery: '模板库', builder: '构建器', history: '执行历史', run: '运行', queuing: '排队中…', save: '保存', trigger: '触发器', conditions: '条件', condition: '条件', actions: '动作', action: '动作', schedule: '计划', variables: '变量', estimatedCredits: '预计积分', estimatedTime: '预计时间', emptyBuilder: '选择模板或创建自动化。', emptyLibrary: '保存模板以构建你的库。', noRuns: '暂无执行记录。', mostExecuted: '最常执行', successRate: '成功 {rate}%', failureRate: '失败 {rate}%', describePlaceholder: '描述此工作流', actionsCount: '{count} 个动作', untitled: '未命名自动化', scheduleImmediate: '立即', scheduleScheduled: '定时', scheduleDaily: '每天', scheduleWeekly: '每周', scheduleManual: '仅手动', containsPerson: '包含人物', containsVehicle: '包含车辆', containsProduct: '包含产品', containsAnimal: '包含动物', containsText: '包含文本' },
+  fashion: { title: '时尚', wardrobe: '衣橱', garments: '服装', outfits: '穿搭', addGarment: '添加服装', collections: '合集', tryOn: '虚拟试穿', searchPlaceholder: '搜索衣橱…', empty: '你的衣橱是空的。' },
+  billing: { title: '账单', subscription: '订阅', plan: '套餐', credits: '积分', upgrade: '升级', currentPlan: '当前套餐', usage: '用量', renew: '{date} 续费' },
+  settings: { title: '设置', account: '账户', appearance: '外观', appearanceHint: '在浅色和深色模式之间切换', language: '语言', languageHint: '选择界面语言', performance: '性能', loadingPerformance: '正在加载性能设置…' },
+  errors: { generic: '出了点问题。', network: '网络错误——请检查连接。', offline: '你已离线。重新连接后将同步更改。', timeout: '请求超时。请重试。', provider: 'AI 提供方无法完成此请求。', validation: '请修正高亮的字段。', credits: '你没有足够的积分执行此操作。', subscription: '你的套餐不允许此操作。' },
+  notifications: { title: '通知', markAllRead: '全部标为已读', empty: '暂无通知。', completed: '生成完成', failed: '生成失败', saved: '编辑已保存' },
+  jobs: { title: '任务中心', queued: '排队', running: '运行中', waiting: '等待', completed: '已完成', failed: '失败', cancelled: '已取消', retrying: '重试中', cancel: '取消', pause: '暂停', resume: '继续', empty: '没有进行中的任务。' },
+  creative: { title: '创意工作室', goal: '目标', ideas: '创意', moodBoards: '情绪板', strategy: '策略', generate: '生成创意', apply: '应用策略' },
+  brand: { title: '品牌工作室', profile: '品牌资料', colors: '颜色', fonts: '字体', voice: '语气', guidelines: '规范' },
+  assets: { title: '素材库', collections: '合集', pinned: '已置顶', smart: '智能', searchPlaceholder: '搜索素材…', empty: '暂无素材。', details: '详情' },
+};
+export default modules;

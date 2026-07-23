@@ -1,0 +1,4 @@
+import { assetPreviewGenerator } from '@/lib/assets/AssetPreviewGenerator';
+export const assetVersionLinker = {
+  fromProject(project) { return (project.versions || []).map((version) => ({ asset_key: `version:${project.id}:${version.id}`, type: 'version', name: version.name, source_project_id: project.id, ...assetPreviewGenerator.image(version.preview_url || project.current_image_url), created_at: version.created_at, updated_at: version.created_at, tags: ['version'], metadata: { operations: version.operations_included || [] }, relations: [{ type: 'project', asset_key: `project:${project.id}`, label: project.name }] })); },
+};

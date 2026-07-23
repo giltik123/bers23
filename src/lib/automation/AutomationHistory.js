@@ -1,0 +1,2 @@
+import { base44 } from '@/api/base44Client';
+export const automationHistory = { list() { return base44.entities.AutomationRun.list('-executed_at', 100); }, record(data) { return base44.entities.AutomationRun.create({ ...data, executed_at: new Date().toISOString() }); } };

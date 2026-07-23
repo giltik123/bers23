@@ -1,0 +1,2 @@
+export const PERFORMANCE_PROFILES = ['automatic', 'maximum', 'balanced', 'battery-saver'];
+export function adaptivePerformance(profile, mode = 'automatic') { const active = mode === 'automatic' ? (profile.compact ? 'battery-saver' : 'balanced') : mode; return { mode: active, animations: active !== 'battery-saver', parallelTasks: active === 'maximum' && !profile.compact ? 2 : 1 }; }

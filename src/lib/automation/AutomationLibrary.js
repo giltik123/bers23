@@ -1,0 +1,3 @@
+import { base44 } from '@/api/base44Client';
+import { AUTOMATION_TEMPLATES } from '@/lib/automation/AutomationTemplates';
+export const automationLibrary = { templates() { return AUTOMATION_TEMPLATES; }, list() { return base44.entities.Automation.list('-updated_date', 100); }, create(data) { return base44.entities.Automation.create(data); }, update(id, data) { return base44.entities.Automation.update(id, data); } };

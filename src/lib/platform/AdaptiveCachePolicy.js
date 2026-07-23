@@ -1,0 +1,1 @@
+export function adaptiveCachePolicy(profile) { return profile.compact ? { previews: 8, cacheMb: 64 } : profile.hybrid ? { previews: 16, cacheMb: 128 } : { previews: 24, cacheMb: 192 }; }

@@ -1,0 +1,2 @@
+import { base44 } from '@/api/base44Client';
+export const assetCollections = { list() { return base44.entities.AssetCollection.list('-updated_date', 100); }, create(data) { return base44.entities.AssetCollection.create(data); }, remove(id) { return base44.entities.AssetCollection.delete(id); } };

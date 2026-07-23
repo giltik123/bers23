@@ -1,0 +1,1 @@
+export { adaptivePerformance as default, adaptivePerformance } from '@/lib/platform/AdaptivePerformance';

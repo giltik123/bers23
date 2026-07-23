@@ -1,0 +1,2 @@
+export const AUTOMATION_VARIABLES = ['project', 'user', 'brand', 'scene', 'recipe'];
+export const automationVariables = { resolve(variables = [], context = {}) { return variables.reduce((values, variable) => { const source = context[variable.source] || {}; values[variable.name] = variable.path ? variable.path.split('.').reduce((current, key) => current?.[key], source) : (variable.value ?? source); return values; }, {}); } };

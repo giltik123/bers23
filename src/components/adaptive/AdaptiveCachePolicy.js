@@ -1,0 +1,1 @@
+export { adaptiveCachePolicy as default, adaptiveCachePolicy } from '@/lib/platform/AdaptiveCachePolicy';

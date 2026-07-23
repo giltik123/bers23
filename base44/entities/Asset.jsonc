@@ -1,0 +1,106 @@
+{
+  "name": "Asset",
+  "type": "object",
+  "properties": {
+    "asset_key": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "image",
+        "project",
+        "mask",
+        "detected_object",
+        "garment",
+        "outfit",
+        "recipe",
+        "creative_strategy",
+        "brand_profile",
+        "scene_memory",
+        "version",
+        "generated_result",
+        "background",
+        "export",
+        "template"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "thumbnail": {
+      "type": "string"
+    },
+    "preview": {
+      "type": "string"
+    },
+    "medium_preview": {
+      "type": "string"
+    },
+    "high_preview": {
+      "type": "string"
+    },
+    "comparison_preview": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "source_project_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "favorite": {
+      "type": "boolean",
+      "default": false
+    },
+    "archived": {
+      "type": "boolean",
+      "default": false
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "collection_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "asset_key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "search_index": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset_key",
+    "type",
+    "name"
+  ]
+}

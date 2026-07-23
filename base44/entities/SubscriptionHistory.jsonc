@@ -1,0 +1,38 @@
+{
+  "name": "SubscriptionHistory",
+  "type": "object",
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "created",
+        "trial_started",
+        "trial_expired",
+        "upgraded",
+        "downgraded",
+        "cancelled",
+        "renewed",
+        "plan_changed"
+      ]
+    },
+    "from_plan_id": {
+      "type": "string"
+    },
+    "to_plan_id": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "note": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "event_type"
+  ]
+}

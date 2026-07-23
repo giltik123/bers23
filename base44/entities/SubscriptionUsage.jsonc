@@ -1,0 +1,48 @@
+{
+  "name": "SubscriptionUsage",
+  "type": "object",
+  "properties": {
+    "period_key": {
+      "type": "string"
+    },
+    "projects_created": {
+      "type": "number",
+      "default": 0
+    },
+    "credits_used": {
+      "type": "number",
+      "default": 0
+    },
+    "storage_used": {
+      "type": "number",
+      "default": 0
+    },
+    "ai_generations": {
+      "type": "number",
+      "default": 0
+    },
+    "tryon_generations": {
+      "type": "number",
+      "default": 0
+    },
+    "recipe_usage": {
+      "type": "number",
+      "default": 0
+    },
+    "daily_usage": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "monthly_usage": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "feature_usage": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "period_key"
+  ]
+}

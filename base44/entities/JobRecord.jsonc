@@ -1,0 +1,94 @@
+{
+  "name": "JobRecord",
+  "type": "object",
+  "properties": {
+    "job_id": {
+      "type": "string"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "preparing",
+        "running",
+        "waiting",
+        "completed",
+        "cancelled",
+        "failed",
+        "retrying"
+      ]
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "high",
+        "normal",
+        "low"
+      ],
+      "default": "normal"
+    },
+    "progress": {
+      "type": "number",
+      "default": 0
+    },
+    "estimated_time": {
+      "type": "number"
+    },
+    "credits_reserved": {
+      "type": "number",
+      "default": 0
+    },
+    "credits_consumed": {
+      "type": "number",
+      "default": 0
+    },
+    "created_at": {
+      "type": "number"
+    },
+    "started_at": {
+      "type": "number"
+    },
+    "completed_at": {
+      "type": "number"
+    },
+    "failed_at": {
+      "type": "number"
+    },
+    "retry_count": {
+      "type": "number",
+      "default": 0
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "error": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "job_id",
+    "type",
+    "status"
+  ]
+}
