@@ -5,15 +5,23 @@ import { projectService, genId } from '@/lib/projectService';
 // Every mutation auto-saves the project entity.
 export default function useProject(projectId) {
   const [project, setProject] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(projectId));
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
+    if (!projectId) {
+      setProject(null);
+      setError('Project ID is required');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       setProject(await projectService.get(projectId));
     } catch (e) {
+      setProject(null);
       setError(e.message || 'Failed to load project');
     } finally {
       setLoading(false);

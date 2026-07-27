@@ -5,6 +5,7 @@ import { Plus, Loader2, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProjectCard from '@/components/projects/ProjectCard';
 import ProjectToolbar from '@/components/projects/ProjectToolbar';
+import ErrorBanner from '@/components/editor/ErrorBanner';
 import { projectService, searchProjects, sortProjects, getImageDimensions } from '@/lib/projectService';
 import { subscriptionValidator } from '@/lib/subscriptions/subscriptionValidator';
 import { imageMemoryCache } from '@/lib/performance/imageMemoryCache';
@@ -19,10 +20,19 @@ export default function Projects() {
   const [sortBy, setSortBy] = useState('recent');
   const [showArchived, setShowArchived] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const fileRef = useRef(null);
   const navigate = useNavigate();
 
-  const reload = () => projectService.list().then(setProjects);
+  const reload = async () => {
+    setProjects(null);
+    setLoadError('');
+    try {
+      setProjects(await projectService.list());
+    } catch (error) {
+      setLoadError(error.message || 'Unable to load projects.');
+    }
+  };
   const createProjectFromFile = async (file) => {
     const localUrl = URL.createObjectURL(file); const { width, height } = await getImageDimensions(localUrl); URL.revokeObjectURL(localUrl);
     await subscriptionValidator.validateProject({ width, height }); await subscriptionValidator.validateStorage(file.size);
@@ -105,15 +115,17 @@ export default function Projects() {
 
       {uploadError && <p className="mb-4 rounded-xl border border-destructive/30 px-3 py-2 text-sm text-destructive">{uploadError}</p>}
 
+      {loadError && <div className="mb-4"><ErrorBanner message={loadError} onRetry={reload} /></div>}
+
       <ProjectToolbar
         query={query} onQueryChange={setQuery}
         sortBy={sortBy} onSortChange={setSortBy}
         showArchived={showArchived} onToggleArchived={() => setShowArchived(!showArchived)}
       />
 
-      {!visible ? (
+      {!visible && !loadError ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-      ) : visible.length === 0 ? (
+      ) : loadError ? null : visible.length === 0 ? (
         query || showArchived ? (
           <p className="text-center text-sm text-muted-foreground py-20">
             {showArchived ? 'No archived projects.' : 'No projects match your search.'}

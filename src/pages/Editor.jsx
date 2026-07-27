@@ -259,7 +259,7 @@ export default function Editor() {
     return <div className="flex justify-center py-24"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
   }
   if (error || !project) {
-    return <div className="max-w-xl mx-auto px-4 py-16"><ErrorBanner message={error || 'Project not found'} onRetry={reload} /></div>;
+    return <div className="max-w-xl mx-auto px-4 py-16"><ErrorBanner message={error || 'Project not found'} onRetry={projectId ? reload : null} /></div>;
   }
 
   return (

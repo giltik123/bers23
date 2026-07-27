@@ -17,6 +17,12 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === 'mask_debug') {
+      if (user.role !== 'admin') {
+        return Response.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      if (!body.image_url || !body.prompt) {
+        return Response.json({ error: 'image_url and prompt are required' }, { status: 400 });
+      }
       const res = await fetch('https://fal.run/fal-ai/sam-3/image', {
         method: 'POST',
         headers: { 'Authorization': `Key ${Deno.env.get('FAL_KEY')}`, 'Content-Type': 'application/json' },
