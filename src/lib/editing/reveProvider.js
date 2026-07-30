@@ -29,8 +29,8 @@ class ReveProvider extends EditingProvider {
     return { valid: errors.length === 0, errors };
   }
 
-  preparePayload({ imageUrl, prompt }) {
-    return { image_url: imageUrl, prompt: prompt.slice(0, this.config.maxPromptLength) };
+  preparePayload({ projectId, imageUrl, prompt }) {
+    return { operation_id: 'reve.edit', project_id: projectId, image_url: imageUrl, prompt: prompt.slice(0, this.config.maxPromptLength) };
   }
 
   parseResponse(data) {

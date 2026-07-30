@@ -12,13 +12,15 @@ async function invoke(action, params) {
 
 export const aiService = {
   // Returns { objects: [{ id, label, box: {x,y,w,h} (normalized 0-1), mask_url }] }
-  detectObjects: (imageUrl) => invoke('segment', { image_url: imageUrl }),
+  detectObjects: (projectId, imageUrl) => invoke('segment', {
+    operation_id: 'sam3.segment', project_id: projectId, image_url: imageUrl,
+  }),
 
   // Edits ONLY the selected object. Returns { image_url }
-  editObject: ({ imageUrl, maskUrl, objectLabel, instruction }) =>
-    invoke('edit', { image_url: imageUrl, mask_url: maskUrl, object_label: objectLabel, instruction }),
+  editObject: ({ projectId, imageUrl, maskUrl, objectLabel, instruction }) =>
+    invoke('edit', { operation_id: 'reve.edit', project_id: projectId, image_url: imageUrl, mask_url: maskUrl, object_label: objectLabel, instruction }),
 
   // Virtual try-on. Returns { image_url }
-  tryOn: ({ personImageUrl, garmentImageUrl }) =>
-    invoke('tryon', { person_image_url: personImageUrl, garment_image_url: garmentImageUrl }),
+  tryOn: ({ projectId, personImageUrl, garmentImageUrl }) =>
+    invoke('tryon', { operation_id: 'fashn.tryon', project_id: projectId, person_image_url: personImageUrl, garment_image_url: garmentImageUrl }),
 };

@@ -13,9 +13,11 @@ class FashnProvider {
     return { valid: errors.length === 0, errors };
   }
 
-  async tryOn({ modelImageUrl, garmentImageUrl, category }) {
+  async tryOn({ projectId, modelImageUrl, garmentImageUrl, category }) {
     this.cancelled = false;
     const response = await base44.functions.invoke('fashnTryon', {
+      operation_id: 'fashn.tryon',
+      project_id: projectId,
       model_image: modelImageUrl,
       garment_image: garmentImageUrl,
       category,

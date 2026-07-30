@@ -26,7 +26,7 @@ export const segmentationService = {
     const provider = getActiveProvider();
     if (!provider) return { status: 'no_provider', objects: [], masks: [], fromCache: false };
 
-    const { objects, masks } = await provider.segmentImage(imageUrl);
+    const { objects, masks } = await provider.segmentImage(imageUrl, projectId);
     (masks || []).forEach(saveMask);
     this.save({ projectId, imageUrl, objects, masks: masks || [] });
     return { status: 'completed', objects, masks: masks || [], fromCache: false };

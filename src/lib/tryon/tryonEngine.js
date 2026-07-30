@@ -60,6 +60,7 @@ class TryOnEngine {
         const check = fashnProvider.validateRequest({ modelImageUrl: currentUrl, garmentImageUrl: garment.original_image_url });
         if (!check.valid) throw new Error(check.errors.join('. '));
         const generation = await fashnProvider.tryOn({
+          projectId: project.id,
           modelImageUrl: currentUrl,
           garmentImageUrl: garment.original_image_url,
           category: fashnCategory,

@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { encodeBase64, decodeBase64 } from 'jsr:@std/encoding@1/base64';
+import { authorizationService, AuthorizationError } from '../_shared/authorizationService.ts';
 
 // Central AI Service — the ONLY place AI providers are called.
 // Routes: segment (object detection), edit (Reve, object-scoped), tryon (fal.ai FASHN).
@@ -11,6 +12,15 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
+    const operationId = operationForAction(body.action);
+    const authorization = await authorizationService.authorizeOperation(
+      base44,
+      body.operation_id,
+      body.project_id,
+    );
+    if (!operationId || authorization.operation.operation_id !== operationId) {
+      return Response.json({ error: 'Unknown AI operation', code: 'unknown_operation' }, { status: 400 });
+    }
     switch (body.action) {
       case 'segment': return Response.json(await segment(base44, body));
       case 'edit': return Response.json(await edit(base44, body));
@@ -18,9 +28,19 @@ Deno.serve(async (req) => {
       default: return Response.json({ error: `Unknown action: ${body.action}` }, { status: 400 });
     }
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return Response.json({ error: error.message, code: error.code }, { status: error.status });
+    }
     return Response.json({ error: error.message }, { status: 500 });
   }
 });
+
+function operationForAction(action) {
+  if (action === 'segment') return 'sam3.segment';
+  if (action === 'edit') return 'reve.edit';
+  if (action === 'tryon') return 'fashn.tryon';
+  return null;
+}
 
 // --- Segmentation: enumerate editable objects with labels + normalized boxes ---
 async function segment(base44, { image_url }) {

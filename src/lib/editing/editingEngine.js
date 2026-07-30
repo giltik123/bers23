@@ -60,7 +60,7 @@ class EditingEngine {
       stage('generating', { etaMs: 25000 });
       const check = this.provider.validateRequest({ imageUrl: prepared.processingImageUrl, prompt, resolution: prepared.processingResolution });
       if (!check.valid) throw new Error(check.errors.join('. '));
-      const generation = await this.provider.editImage({ imageUrl: prepared.processingImageUrl, prompt });
+      const generation = await this.provider.editImage({ projectId: project.id, imageUrl: prepared.processingImageUrl, prompt });
 
       // 5. Quality validation — invalid generations are rejected.
       stage('validating');

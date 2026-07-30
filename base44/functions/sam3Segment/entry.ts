@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
+import { authorizationService, AuthorizationError } from '../_shared/authorizationService.ts';
 
 // SAM3 segmentation transport — the only place fal.ai SAM 3 is called.
 // Detects labeled objects (with boxes), then fetches a SAM 3 mask per object.
@@ -17,6 +18,12 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === 'mask_debug') {
+      if (user.role !== 'admin') {
+        return Response.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      if (!body.image_url || !body.prompt) {
+        return Response.json({ error: 'image_url and prompt are required' }, { status: 400 });
+      }
       const res = await fetch('https://fal.run/fal-ai/sam-3/image', {
         method: 'POST',
         headers: { 'Authorization': `Key ${Deno.env.get('FAL_KEY')}`, 'Content-Type': 'application/json' },
@@ -24,6 +31,15 @@ Deno.serve(async (req) => {
       });
       const text = await res.text();
       return Response.json({ status: res.status, body: text.slice(0, 1500) });
+    }
+
+    const authorization = await authorizationService.authorizeOperation(
+      base44,
+      body.operation_id,
+      body.project_id,
+    );
+    if (authorization.operation.operation_id !== 'sam3.segment') {
+      return Response.json({ error: 'Unknown AI operation', code: 'unknown_operation' }, { status: 400 });
     }
 
     const { image_url } = body;
@@ -73,6 +89,9 @@ Deno.serve(async (req) => {
 
     return Response.json({ objects, provider: 'fal-ai/sam-3', api_time_ms: Date.now() - t0 });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return Response.json({ error: error.message, code: error.code }, { status: error.status });
+    }
     return Response.json({ error: error.message }, { status: 500 });
   }
 });
