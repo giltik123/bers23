@@ -24,7 +24,7 @@ export default function useProject(projectId) {
     } catch (e) {
       console.error('[Editor] Failed to load project', e);
       setProject(null);
-      setError(e.message || 'Failed to load project');
+      setError(e?.message || 'Failed to load project');
     } finally {
       setLoading(false);
     }

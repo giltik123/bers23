@@ -21,11 +21,11 @@ export default function Subscription() {
       setData({ subscription, usage, credits: creditsWallet.available(wallet), recommendations });
     } catch (loadError) {
       console.error('[Subscription] Failed to load subscription data', loadError);
-      setData(null); setError(loadError.message || 'Unable to load subscription details.');
+      setData(null); setError(loadError?.message || 'Unable to load subscription details.');
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
-  const change = async (planId, trial = false) => { setBusy(true); setError(''); try { if (trial) await subscriptionManager.startTrial(planId); else await subscriptionManager.changePlan(planId); await load(); } catch (changeError) { console.error('[Subscription] Failed to change plan', changeError); setError(changeError.message || 'Unable to change subscription plan.'); } finally { setBusy(false); } };
+  const change = async (planId, trial = false) => { setBusy(true); setError(''); try { if (trial) await subscriptionManager.startTrial(planId); else await subscriptionManager.changePlan(planId); await load(); } catch (changeError) { console.error('[Subscription] Failed to change plan', changeError); setError(changeError?.message || 'Unable to change subscription plan.'); } finally { setBusy(false); } };
   if (loading) return <div className="flex justify-center py-24"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
   if (!data) return <div className="max-w-4xl mx-auto px-4 py-6"><ErrorBanner message={error} onRetry={load} /></div>;
   const plan = getPlan(data.subscription.plan_id);

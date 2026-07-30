@@ -21,6 +21,7 @@ export default function Projects() {
   const [showArchived, setShowArchived] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
   const fileRef = useRef(null);
   const navigate = useNavigate();
 
@@ -31,7 +32,7 @@ export default function Projects() {
       setProjects(await projectService.list());
     } catch (error) {
       console.error('[Projects] Failed to load projects', error);
-      setLoadError(error.message || 'Unable to load projects.');
+      setLoadError(error?.message || 'Unable to load projects.');
     }
   };
   const createProjectFromFile = async (file) => {
@@ -51,9 +52,9 @@ export default function Projects() {
       navigate(`/editor?id=${project.id}`);
     } catch (error) {
       console.error('[Projects] Failed to create project', error);
-      const retryable = !networkManager.snapshot().online || /network|fetch|timeout/i.test(error.message || '');
+      const retryable = !networkManager.snapshot().online || /network|fetch|timeout/i.test(error?.message || '');
       if (retryable) { offlineQueue.enqueue({ kind: 'project-upload', file }); setUploadError('This upload will retry when your connection returns.'); }
-      else setUploadError(error.message || 'Unable to create this project.');
+      else setUploadError(error?.message || 'Unable to create this project.');
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -63,28 +64,33 @@ export default function Projects() {
   const handleRename = async (project) => {
     const name = window.prompt('Rename project', project.name);
     if (!name || name === project.name) return;
+    setActionError('');
     try { await projectService.rename(project.id, name); await reload(); }
-    catch (error) { console.error('[Projects] Failed to rename project', error); setLoadError(error.message || 'Unable to rename project.'); }
+    catch (error) { console.error('[Projects] Failed to rename project', error); setActionError(error?.message || 'Unable to rename project.'); }
   };
 
   const handleDuplicate = async (project) => {
+    setActionError('');
     try { await projectService.duplicate(project); await reload(); }
-    catch (error) { console.error('[Projects] Failed to duplicate project', error); setLoadError(error.message || 'Unable to duplicate project.'); }
+    catch (error) { console.error('[Projects] Failed to duplicate project', error); setActionError(error?.message || 'Unable to duplicate project.'); }
   };
 
   const handleToggleFavorite = async (project) => {
+    setActionError('');
     try { await projectService.setFavorite(project.id, !project.favorite); await reload(); }
-    catch (error) { console.error('[Projects] Failed to update favorite', error); setLoadError(error.message || 'Unable to update project.'); }
+    catch (error) { console.error('[Projects] Failed to update favorite', error); setActionError(error?.message || 'Unable to update project.'); }
   };
 
   const handleToggleArchive = async (project) => {
+    setActionError('');
     try { await projectService.setArchived(project.id, !project.archived); await reload(); }
-    catch (error) { console.error('[Projects] Failed to update archive state', error); setLoadError(error.message || 'Unable to update project.'); }
+    catch (error) { console.error('[Projects] Failed to update archive state', error); setActionError(error?.message || 'Unable to update project.'); }
   };
 
   const handleDelete = async (project) => {
+    setActionError('');
     try { await projectService.remove(project.id); setProjects((current) => current.filter((p) => p.id !== project.id)); }
-    catch (error) { console.error('[Projects] Failed to delete project', error); setLoadError(error.message || 'Unable to delete project.'); }
+    catch (error) { console.error('[Projects] Failed to delete project', error); setActionError(error?.message || 'Unable to delete project.'); }
   };
 
   const visible = projects
@@ -118,6 +124,7 @@ export default function Projects() {
       {uploadError && <p className="mb-4 rounded-xl border border-destructive/30 px-3 py-2 text-sm text-destructive">{uploadError}</p>}
 
       {loadError && <div className="mb-4"><ErrorBanner message={loadError} onRetry={reload} /></div>}
+      {actionError && <div className="mb-4"><ErrorBanner message={actionError} /></div>}
 
       <ProjectToolbar
         query={query} onQueryChange={setQuery}
