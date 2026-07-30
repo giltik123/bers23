@@ -30,6 +30,7 @@ export default function Projects() {
     try {
       setProjects(await projectService.list());
     } catch (error) {
+      console.error('[Projects] Failed to load projects', error);
       setLoadError(error.message || 'Unable to load projects.');
     }
   };
@@ -39,7 +40,7 @@ export default function Projects() {
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
     return projectService.create({ name: file.name.replace(/\.[^.]+$/, ''), imageUrl: file_url, width, height, storageBytes: file.size });
   };
-  useEffect(() => { reload(); offlineQueue.register('project-upload', async ({ file }) => { await createProjectFromFile(file); reload(); }); }, []);
+  useEffect(() => { reload(); offlineQueue.register('project-upload', async ({ file }) => { await createProjectFromFile(file); await reload(); }); }, []);
 
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -49,6 +50,7 @@ export default function Projects() {
       const project = await createProjectFromFile(file);
       navigate(`/editor?id=${project.id}`);
     } catch (error) {
+      console.error('[Projects] Failed to create project', error);
       const retryable = !networkManager.snapshot().online || /network|fetch|timeout/i.test(error.message || '');
       if (retryable) { offlineQueue.enqueue({ kind: 'project-upload', file }); setUploadError('This upload will retry when your connection returns.'); }
       else setUploadError(error.message || 'Unable to create this project.');
@@ -61,28 +63,28 @@ export default function Projects() {
   const handleRename = async (project) => {
     const name = window.prompt('Rename project', project.name);
     if (!name || name === project.name) return;
-    await projectService.rename(project.id, name);
-    reload();
+    try { await projectService.rename(project.id, name); await reload(); }
+    catch (error) { console.error('[Projects] Failed to rename project', error); setLoadError(error.message || 'Unable to rename project.'); }
   };
 
   const handleDuplicate = async (project) => {
-    await projectService.duplicate(project);
-    reload();
+    try { await projectService.duplicate(project); await reload(); }
+    catch (error) { console.error('[Projects] Failed to duplicate project', error); setLoadError(error.message || 'Unable to duplicate project.'); }
   };
 
   const handleToggleFavorite = async (project) => {
-    await projectService.setFavorite(project.id, !project.favorite);
-    reload();
+    try { await projectService.setFavorite(project.id, !project.favorite); await reload(); }
+    catch (error) { console.error('[Projects] Failed to update favorite', error); setLoadError(error.message || 'Unable to update project.'); }
   };
 
   const handleToggleArchive = async (project) => {
-    await projectService.setArchived(project.id, !project.archived);
-    reload();
+    try { await projectService.setArchived(project.id, !project.archived); await reload(); }
+    catch (error) { console.error('[Projects] Failed to update archive state', error); setLoadError(error.message || 'Unable to update project.'); }
   };
 
   const handleDelete = async (project) => {
-    await projectService.remove(project.id);
-    setProjects(projects.filter((p) => p.id !== project.id));
+    try { await projectService.remove(project.id); setProjects((current) => current.filter((p) => p.id !== project.id)); }
+    catch (error) { console.error('[Projects] Failed to delete project', error); setLoadError(error.message || 'Unable to delete project.'); }
   };
 
   const visible = projects

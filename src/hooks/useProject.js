@@ -9,7 +9,8 @@ export default function useProject(projectId) {
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
-    if (!projectId) {
+    const validProjectId = typeof projectId === 'string' ? projectId.trim() : '';
+    if (!validProjectId) {
       setProject(null);
       setError('Project ID is required');
       setLoading(false);
@@ -19,8 +20,9 @@ export default function useProject(projectId) {
     setLoading(true);
     setError(null);
     try {
-      setProject(await projectService.get(projectId));
+      setProject(await projectService.get(validProjectId));
     } catch (e) {
+      console.error('[Editor] Failed to load project', e);
       setProject(null);
       setError(e.message || 'Failed to load project');
     } finally {
