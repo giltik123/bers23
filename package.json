@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:with-global": "NODE_PATH=/usr/local/share/nvm/versions/node/v24.14.0/lib/node_modules npm run dev",
     "build": "vite build",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
