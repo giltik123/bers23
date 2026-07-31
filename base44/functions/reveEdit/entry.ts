@@ -1,5 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
 import { encodeBase64, decodeBase64 } from 'jsr:@std/encoding@1/base64';
+import { loadTrustedImage, trustedAssetHosts } from './assetSecurity.ts';
+import { authorizationService, AuthorizationError } from '../_shared/authorizationService.ts';
 
 // Reve transport — the ONLY place the Reve API is called. API key never leaves the server;
 // raw provider responses are never exposed to the client.
@@ -18,13 +20,27 @@ Deno.serve(async (req) => {
       return Response.json({ ok: !!Deno.env.get('REVE_API_KEY'), provider: 'reve' });
     }
 
+    const authorization = await authorizationService.authorizeOperation(
+      base44,
+      body.operation_id,
+      body.project_id,
+    );
+    if (authorization.operation.operation_id !== 'reve.edit') {
+      return Response.json({ error: 'Unknown AI operation', code: 'unknown_operation' }, { status: 400 });
+    }
+
     const { image_url, prompt } = body;
     if (!image_url || !prompt) return Response.json({ error: 'image_url and prompt are required' }, { status: 400 });
 
     const started = Date.now();
-    const imageRes = await fetch(image_url);
-    if (!imageRes.ok) return Response.json({ error: 'Could not load prepared image' }, { status: 422 });
-    const imageB64 = encodeBase64(new Uint8Array(await imageRes.arrayBuffer()));
+    let sourceImage;
+    try {
+      sourceImage = await loadTrustedImage(image_url, trustedAssetHosts(Deno.env));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid prepared image';
+      return Response.json({ error: message, code: 'invalid_image' }, { status: 422 });
+    }
+    const imageB64 = encodeBase64(sourceImage.bytes);
 
     let reveRes;
     try {
@@ -64,6 +80,9 @@ Deno.serve(async (req) => {
       credits_used: reveData.credits_used ?? 1,
     });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return Response.json({ error: error.message, code: error.code }, { status: error.status });
+    }
     return Response.json({ error: error.message }, { status: 500 });
   }
 });

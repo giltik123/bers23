@@ -9,10 +9,10 @@ export class DetectionProvider extends SegmentationProvider {
     super('base44-detection');
   }
 
-  async segmentImage(imageUrl) {
+  async segmentImage(imageUrl, projectId) {
     this.status = 'running';
     try {
-      const { objects: found } = await aiService.detectObjects(imageUrl);
+      const { objects: found } = await aiService.detectObjects(projectId, imageUrl);
       const objects = (found || []).map((o) =>
         createObject({
           id: o.id,

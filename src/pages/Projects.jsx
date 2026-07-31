@@ -5,6 +5,7 @@ import { Plus, Loader2, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProjectCard from '@/components/projects/ProjectCard';
 import ProjectToolbar from '@/components/projects/ProjectToolbar';
+import ErrorBanner from '@/components/editor/ErrorBanner';
 import { projectService, searchProjects, sortProjects, getImageDimensions } from '@/lib/projectService';
 import { subscriptionValidator } from '@/lib/subscriptions/subscriptionValidator';
 import { imageMemoryCache } from '@/lib/performance/imageMemoryCache';
@@ -19,17 +20,28 @@ export default function Projects() {
   const [sortBy, setSortBy] = useState('recent');
   const [showArchived, setShowArchived] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
   const fileRef = useRef(null);
   const navigate = useNavigate();
 
-  const reload = () => projectService.list().then(setProjects);
+  const reload = async () => {
+    setProjects(null);
+    setLoadError('');
+    try {
+      setProjects(await projectService.list());
+    } catch (error) {
+      console.error('[Projects] Failed to load projects', error);
+      setLoadError(error?.message || 'Unable to load projects.');
+    }
+  };
   const createProjectFromFile = async (file) => {
     const localUrl = URL.createObjectURL(file); const { width, height } = await getImageDimensions(localUrl); URL.revokeObjectURL(localUrl);
     await subscriptionValidator.validateProject({ width, height }); await subscriptionValidator.validateStorage(file.size);
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
     return projectService.create({ name: file.name.replace(/\.[^.]+$/, ''), imageUrl: file_url, width, height, storageBytes: file.size });
   };
-  useEffect(() => { reload(); offlineQueue.register('project-upload', async ({ file }) => { await createProjectFromFile(file); reload(); }); }, []);
+  useEffect(() => { reload(); offlineQueue.register('project-upload', async ({ file }) => { await createProjectFromFile(file); await reload(); }); }, []);
 
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -39,9 +51,10 @@ export default function Projects() {
       const project = await createProjectFromFile(file);
       navigate(`/editor?id=${project.id}`);
     } catch (error) {
-      const retryable = !networkManager.snapshot().online || /network|fetch|timeout/i.test(error.message || '');
+      console.error('[Projects] Failed to create project', error);
+      const retryable = !networkManager.snapshot().online || /network|fetch|timeout/i.test(error?.message || '');
       if (retryable) { offlineQueue.enqueue({ kind: 'project-upload', file }); setUploadError('This upload will retry when your connection returns.'); }
-      else setUploadError(error.message || 'Unable to create this project.');
+      else setUploadError(error?.message || 'Unable to create this project.');
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -51,28 +64,33 @@ export default function Projects() {
   const handleRename = async (project) => {
     const name = window.prompt('Rename project', project.name);
     if (!name || name === project.name) return;
-    await projectService.rename(project.id, name);
-    reload();
+    setActionError('');
+    try { await projectService.rename(project.id, name); await reload(); }
+    catch (error) { console.error('[Projects] Failed to rename project', error); setActionError(error?.message || 'Unable to rename project.'); }
   };
 
   const handleDuplicate = async (project) => {
-    await projectService.duplicate(project);
-    reload();
+    setActionError('');
+    try { await projectService.duplicate(project); await reload(); }
+    catch (error) { console.error('[Projects] Failed to duplicate project', error); setActionError(error?.message || 'Unable to duplicate project.'); }
   };
 
   const handleToggleFavorite = async (project) => {
-    await projectService.setFavorite(project.id, !project.favorite);
-    reload();
+    setActionError('');
+    try { await projectService.setFavorite(project.id, !project.favorite); await reload(); }
+    catch (error) { console.error('[Projects] Failed to update favorite', error); setActionError(error?.message || 'Unable to update project.'); }
   };
 
   const handleToggleArchive = async (project) => {
-    await projectService.setArchived(project.id, !project.archived);
-    reload();
+    setActionError('');
+    try { await projectService.setArchived(project.id, !project.archived); await reload(); }
+    catch (error) { console.error('[Projects] Failed to update archive state', error); setActionError(error?.message || 'Unable to update project.'); }
   };
 
   const handleDelete = async (project) => {
-    await projectService.remove(project.id);
-    setProjects(projects.filter((p) => p.id !== project.id));
+    setActionError('');
+    try { await projectService.remove(project.id); setProjects((current) => current.filter((p) => p.id !== project.id)); }
+    catch (error) { console.error('[Projects] Failed to delete project', error); setActionError(error?.message || 'Unable to delete project.'); }
   };
 
   const visible = projects
@@ -105,15 +123,18 @@ export default function Projects() {
 
       {uploadError && <p className="mb-4 rounded-xl border border-destructive/30 px-3 py-2 text-sm text-destructive">{uploadError}</p>}
 
+      {loadError && <div className="mb-4"><ErrorBanner message={loadError} onRetry={reload} /></div>}
+      {actionError && <div className="mb-4"><ErrorBanner message={actionError} /></div>}
+
       <ProjectToolbar
         query={query} onQueryChange={setQuery}
         sortBy={sortBy} onSortChange={setSortBy}
         showArchived={showArchived} onToggleArchived={() => setShowArchived(!showArchived)}
       />
 
-      {!visible ? (
+      {!visible && !loadError ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-      ) : visible.length === 0 ? (
+      ) : loadError ? null : visible.length === 0 ? (
         query || showArchived ? (
           <p className="text-center text-sm text-muted-foreground py-20">
             {showArchived ? 'No archived projects.' : 'No projects match your search.'}

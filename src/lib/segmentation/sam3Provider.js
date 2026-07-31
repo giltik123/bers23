@@ -82,7 +82,7 @@ export class SAM3Provider extends SegmentationProvider {
   }
 
   // Up to retryCount attempts with exponential backoff; non-retryable errors abort immediately.
-  async invokeWithRetry(imageUrl) {
+  async invokeWithRetry(imageUrl, projectId) {
     let lastError;
     for (let attempt = 1; attempt <= SAM3_CONFIG.retryCount; attempt++) {
       this.throwIfCancelled();
@@ -92,7 +92,9 @@ export class SAM3Provider extends SegmentationProvider {
         this.throwIfCancelled();
       }
       try {
-        const res = await this.withTimeout(base44.functions.invoke('sam3Segment', { image_url: imageUrl }));
+        const res = await this.withTimeout(base44.functions.invoke('sam3Segment', {
+          operation_id: 'sam3.segment', project_id: projectId, image_url: imageUrl,
+        }));
         return res.data;
       } catch (e) {
         const message = e.response?.data?.error || e.message;
@@ -122,7 +124,7 @@ export class SAM3Provider extends SegmentationProvider {
     return { objects, masks };
   }
 
-  async segmentImage(imageUrl) {
+  async segmentImage(imageUrl, projectId) {
     this.cancelled = false;
     this.status = 'running';
     const started = Date.now();
@@ -137,7 +139,7 @@ export class SAM3Provider extends SegmentationProvider {
 
       this.emit({ phase: 'segmenting', message: 'Detecting objects & masks' });
       const apiStart = Date.now();
-      const data = await this.invokeWithRetry(preparedUrl);
+      const data = await this.invokeWithRetry(preparedUrl, projectId);
       const apiResponseMs = Date.now() - apiStart;
       this.throwIfCancelled();
 

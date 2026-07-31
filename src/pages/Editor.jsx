@@ -52,7 +52,7 @@ import { sessionRecovery } from '@/lib/performance/sessionRecovery';
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
 export default function Editor() {
-  const projectId = new URLSearchParams(window.location.search).get('id');
+  const projectId = new URLSearchParams(window.location.search).get('id')?.trim() || null;
   const {
     project, loading, error, reload,
     rename, saveObjects, selectObject,
@@ -84,7 +84,7 @@ export default function Editor() {
     if (!project) return;
     sceneMemory.ensure(project)
       .then((memory) => workspaceManager.autoDetect({ projectId: project.id, objects: project.objects || [], memory }))
-      .catch(() => {});
+      .catch((error) => console.error('[Editor] Scene analysis failed', error));
   }, [project?.id, project?.original_image_url]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Workspace re-detection when the detected object list changes.
@@ -189,7 +189,7 @@ export default function Editor() {
       const { result, instruction: used } = pendingResult;
       await pushEdit(result.image_url, used, result.historyEntry);
       await notificationCenter.push({ title: 'Edit saved', message: 'Your accepted result has been added to project history.', type: 'success', projectId: project.id });
-      sceneMemory.recordAcceptedEdit(project).catch(() => {}); // fingerprint bumps on accepted edits only
+      sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error)); // fingerprint bumps on accepted edits only
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: true, durationMs: result.generation_time_ms || 0 });
       setPendingResult(null);
       setInstruction('');
@@ -225,7 +225,7 @@ export default function Editor() {
             onProgress: (steps) => setChainState((cs) => ({ ...cs, steps })),
             onStepCommitted: async (result, step) => {
               await pushEdit(result.image_url, `${chain.name}: ${step.label}`, result.historyEntry);
-              sceneMemory.recordAcceptedEdit(project).catch(() => {});
+              sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
             },
           }),
         }),
@@ -259,7 +259,7 @@ export default function Editor() {
     return <div className="flex justify-center py-24"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
   }
   if (error || !project) {
-    return <div className="max-w-xl mx-auto px-4 py-16"><ErrorBanner message={error || 'Project not found'} onRetry={reload} /></div>;
+    return <div className="max-w-xl mx-auto px-4 py-16"><ErrorBanner message={error || 'Project not found'} onRetry={projectId ? reload : null} /></div>;
   }
 
   return (
@@ -384,7 +384,7 @@ export default function Editor() {
               objects={objects}
               onCommit={async (result, outfit) => {
                 await pushEditRef.current(result.image_url, `Try-On: ${outfit.name}`, result.historyEntry);
-                sceneMemory.recordAcceptedEdit(project).catch(() => {});
+                sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
                 workspaceHistory.recordEdit(workspaceManager.activeId(), { success: true, durationMs: result.generation_time_ms || 0 });
               }}
             />
@@ -397,7 +397,7 @@ export default function Editor() {
               disabled={applying}
               onCommit={async (result, task) => {
                 await pushEditRef.current(result.image_url, `Agent: ${task.label}`, result.historyEntry);
-                sceneMemory.recordAcceptedEdit(project).catch(() => {});
+                sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
               }}
               onRollback={(url, label) => url && pushEditRef.current(url, label, { type: 'rollback', creditsUsed: 0 })}
             />

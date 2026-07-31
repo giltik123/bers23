@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.38';
+import { authorizationService, AuthorizationError } from '../_shared/authorizationService.ts';
 
 // FASHN Virtual Try-On provider endpoint (via fal.ai). Takes a model (person)
 // image and a garment image, returns the re-dressed image URL.
@@ -8,7 +9,16 @@ Deno.serve(async (req) => {
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { model_image, garment_image, category } = await req.json();
+    const body = await req.json();
+    const authorization = await authorizationService.authorizeOperation(
+      base44,
+      body.operation_id,
+      body.project_id,
+    );
+    if (authorization.operation.operation_id !== 'fashn.tryon') {
+      return Response.json({ error: 'Unknown AI operation', code: 'unknown_operation' }, { status: 400 });
+    }
+    const { model_image, garment_image, category } = body;
     if (!model_image || !garment_image) {
       return Response.json({ error: 'model_image and garment_image are required' }, { status: 400 });
     }
@@ -49,6 +59,9 @@ Deno.serve(async (req) => {
       credits_used: 50,
     });
   } catch (error) {
+    if (error instanceof AuthorizationError) {
+      return Response.json({ error: error.message, code: error.code }, { status: error.status });
+    }
     return Response.json({ error: error.message }, { status: 500 });
   }
 });
