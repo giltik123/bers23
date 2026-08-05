@@ -1,0 +1,6 @@
+export type AgentEventName = 'agent.started' | 'agent.goal.resolved' | 'agent.tasks.planned' | 'agent.task.started' | 'agent.task.completed' | 'agent.completed' | 'agent.failed' | 'agent.cancelled' | 'agent.recovered';
+export interface AgentEvent { readonly name: AgentEventName; readonly sessionId: string; readonly timestamp: string; readonly metadata?: Readonly<Record<string, unknown>>; }
+export type AgentEventListener = (event: AgentEvent) => void | Promise<void>;
+
+/** Typed event stream for agent lifecycle monitoring. */
+export class AgentEvents { private readonly listeners = new Map<AgentEventName, Set<AgentEventListener>>(); on(name: AgentEventName, listener: AgentEventListener): () => void { const set = this.listeners.get(name) ?? new Set(); set.add(listener); this.listeners.set(name, set); return () => this.off(name, listener); } off(name: AgentEventName, listener: AgentEventListener): void { this.listeners.get(name)?.delete(listener); } async emit(name: AgentEventName, sessionId: string, metadata?: Readonly<Record<string, unknown>>): Promise<void> { const event = Object.freeze({ name, sessionId, timestamp: new Date().toISOString(), metadata: metadata ? Object.freeze({ ...metadata }) : undefined }); await Promise.all([...(this.listeners.get(name) ?? [])].map((listener) => listener(event))); } }
