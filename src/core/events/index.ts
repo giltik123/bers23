@@ -1,50 +1,104 @@
+/** Standard namespaces reserved for application event names. */
+export type CoreEventNamespace = 'editing' | 'planner' | 'scene' | 'recipe' | 'provider' | 'workspace' | 'fashion' | 'jobs' | 'automation';
+
+/** Namespaced event name, such as `editing.started`. */
+export type NamespacedEventName = `${CoreEventNamespace}.${string}`;
+
 /** Listener accepted by the framework-independent event bus. */
-export type EventListener<Payload> = (payload: Payload) => void;
+export type EventListener<Payload> = (payload: Payload, event: string) => void | Promise<void>;
 
-/** Synchronous, typed event bus with explicit subscription cleanup. */
-export class EventBus<Events extends object = Record<string, unknown>> {
-  private readonly listeners = new Map<keyof Events, Set<EventListener<Events[keyof Events]>>>();
+type EventKey<Events> = Extract<keyof Events, string>;
+type WildcardKey = `${string}.*` | '*';
 
-  /** Emits an event to a snapshot of its current listeners. */
-  emit<EventName extends keyof Events>(event: EventName, payload: Events[EventName]): void {
-    const handlers = this.listeners.get(event);
-    if (!handlers) return;
-    for (const handler of [...handlers]) handler(payload);
+/** Synchronous and asynchronous typed event bus with namespace wildcards. */
+export class EventBus<Events extends object = Record<NamespacedEventName, unknown>> {
+  private readonly listeners = new Map<string, Set<EventListener<unknown>>>();
+
+  /** Emits an event synchronously; returned promises continue independently. */
+  emit<EventName extends EventKey<Events>>(event: EventName, payload: Events[EventName]): void {
+    for (const listener of this.matchingListeners(event)) void listener(payload, event);
   }
 
-  /** Subscribes to an event and returns an unsubscribe function. */
-  on<EventName extends keyof Events>(event: EventName, listener: EventListener<Events[EventName]>): () => void {
-    const handlers = this.listeners.get(event) ?? new Set<EventListener<Events[keyof Events]>>();
-    handlers.add(listener as EventListener<Events[keyof Events]>);
+  /** Emits an event and waits for all matching listeners to settle successfully. */
+  async emitAsync<EventName extends EventKey<Events>>(event: EventName, payload: Events[EventName]): Promise<void> {
+    await Promise.all(this.matchingListeners(event).map((listener) => listener(payload, event)));
+  }
+
+  /** Subscribes to an exact event and returns an unsubscribe function. */
+  on<EventName extends EventKey<Events>>(event: EventName, listener: EventListener<Events[EventName]>): () => void;
+  /** Subscribes to a namespace wildcard and returns an unsubscribe function. */
+  on(event: WildcardKey, listener: EventListener<unknown>): () => void;
+  on(event: string, listener: EventListener<unknown>): () => void {
+    const handlers = this.listeners.get(event) ?? new Set<EventListener<unknown>>();
+    handlers.add(listener);
     this.listeners.set(event, handlers);
-    return () => this.off(event, listener);
+    return () => this.offInternal(event, listener);
   }
 
-  /** Subscribes to the next occurrence of an event. */
-  once<EventName extends keyof Events>(event: EventName, listener: EventListener<Events[EventName]>): () => void {
-    const unsubscribe = this.on(event, (payload) => {
+  /** Subscribes to the next matching event. */
+  once<EventName extends EventKey<Events>>(event: EventName, listener: EventListener<Events[EventName]>): () => void;
+  /** Subscribes once to a namespace wildcard. */
+  once(event: WildcardKey, listener: EventListener<unknown>): () => void;
+  once(event: string, listener: EventListener<unknown>): () => void {
+    let unsubscribe = (): void => undefined;
+    unsubscribe = this.onInternal(event, async (payload, emittedEvent) => {
       unsubscribe();
-      listener(payload);
+      await listener(payload, emittedEvent);
     });
     return unsubscribe;
   }
 
-  /** Removes one listener from an event. */
-  off<EventName extends keyof Events>(event: EventName, listener: EventListener<Events[EventName]>): void {
+  /** Removes one exact-event listener. */
+  off<EventName extends EventKey<Events>>(event: EventName, listener: EventListener<Events[EventName]>): void;
+  /** Removes one wildcard listener. */
+  off(event: WildcardKey, listener: EventListener<unknown>): void;
+  off(event: string, listener: EventListener<unknown>): void { this.offInternal(event, listener); }
+
+  /** Removes listeners for one event pattern or for the entire bus. */
+  removeAll(event?: EventKey<Events> | WildcardKey): void {
+    if (event === undefined) this.listeners.clear(); else this.listeners.delete(event);
+  }
+
+  /** Returns the number of listeners registered for an exact name or wildcard. */
+  listenerCount(event: EventKey<Events> | WildcardKey): number { return this.listeners.get(event)?.size ?? 0; }
+
+  /** Resolves with the next payload for an event, with optional timeout and cancellation. */
+  waitFor<EventName extends EventKey<Events>>(
+    event: EventName,
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  ): Promise<Events[EventName]> {
+    return new Promise((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = this.on(event, (payload) => { finish(); resolve(payload); });
+      const abort = (): void => { finish(); reject(options.signal?.reason); };
+      const finish = (): void => {
+        cleanup();
+        if (timer) clearTimeout(timer);
+        options.signal?.removeEventListener('abort', abort);
+      };
+      if (options.signal?.aborted) return abort();
+      options.signal?.addEventListener('abort', abort, { once: true });
+      if (options.timeoutMs !== undefined) timer = setTimeout(() => {
+        finish();
+        reject(new Error(`Timed out waiting for event: ${event}`));
+      }, options.timeoutMs);
+    });
+  }
+
+  private onInternal(event: string, listener: EventListener<unknown>): () => void {
+    const handlers = this.listeners.get(event) ?? new Set<EventListener<unknown>>();
+    handlers.add(listener); this.listeners.set(event, handlers);
+    return () => this.offInternal(event, listener);
+  }
+
+  private offInternal(event: string, listener: EventListener<unknown>): void {
     const handlers = this.listeners.get(event);
-    handlers?.delete(listener as EventListener<Events[keyof Events]>);
+    handlers?.delete(listener);
     if (handlers?.size === 0) this.listeners.delete(event);
   }
 
-  /** Removes listeners for one event or for the entire bus. */
-  removeAll<EventName extends keyof Events>(event?: EventName): void {
-    if (event === undefined) this.listeners.clear();
-    else this.listeners.delete(event);
-  }
-
-  /** Returns the number of listeners registered for an event. */
-  listenerCount<EventName extends keyof Events>(event: EventName): number {
-    return this.listeners.get(event)?.size ?? 0;
+  private matchingListeners(event: string): EventListener<unknown>[] {
+    const namespace = `${event.split('.')[0]}.*`;
+    return [...(this.listeners.get(event) ?? []), ...(this.listeners.get(namespace) ?? []), ...(this.listeners.get('*') ?? [])];
   }
 }
-

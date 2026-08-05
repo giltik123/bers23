@@ -15,3 +15,7 @@ export const appConfig: AppConfig = Object.freeze({
   environment: environment.mode,
 });
 
+/** Produces application configuration with runtime overrides. */
+export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+  return Object.freeze({ ...appConfig, ...overrides });
+}

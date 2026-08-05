@@ -8,6 +8,8 @@ export interface HttpRequestOptions {
   retries?: number;
   retryDelayMs?: number;
   signal?: AbortSignal;
+  /** Receives coarse download completion progress. */
+  onProgress?: (loaded: number, total?: number) => void;
 }
 
 /** Complete request passed through request interceptors. */
@@ -31,6 +33,9 @@ export type RequestInterceptor = (request: HttpRequest) => HttpRequest | Promise
 /** Response interceptor contract. */
 export type ResponseInterceptor = <T>(response: HttpResponse<T>) => HttpResponse<T> | Promise<HttpResponse<T>>;
 
+/** Middleware wraps the complete request pipeline. */
+export type HttpMiddleware = <T>(request: HttpRequest, next: (request: HttpRequest) => Promise<HttpResponse<T>>) => Promise<HttpResponse<T>>;
+
 /** Error raised for non-successful HTTP responses. */
 export class HttpError extends Error {
   constructor(
@@ -47,6 +52,7 @@ export class HttpError extends Error {
 export class HttpClient {
   private readonly requestInterceptors = new Set<RequestInterceptor>();
   private readonly responseInterceptors = new Set<ResponseInterceptor>();
+  private readonly middleware = new Set<HttpMiddleware>();
 
   constructor(private readonly baseUrl = '', private readonly defaults: HttpRequestOptions = {}) {}
 
@@ -61,6 +67,9 @@ export class HttpClient {
     this.responseInterceptors.add(interceptor);
     return () => { this.responseInterceptors.delete(interceptor); };
   }
+
+  /** Registers request middleware and returns its disposer. */
+  use(middleware: HttpMiddleware): () => void { this.middleware.add(middleware); return () => { this.middleware.delete(middleware); }; }
 
   /** Performs a GET request. */
   get<T>(url: string, options?: HttpRequestOptions): Promise<HttpResponse<T>> {
@@ -92,6 +101,14 @@ export class HttpClient {
     let request = this.mergeDefaults(initialRequest);
     for (const interceptor of this.requestInterceptors) request = await interceptor(request);
 
+    const pipeline = [...this.middleware].reduceRight<(value: HttpRequest) => Promise<HttpResponse<T>>>(
+      (next, middleware) => (value) => middleware<T>(value, next),
+      (value) => this.requestWithRetry<T>(value),
+    );
+    return pipeline(request);
+  }
+
+  private async requestWithRetry<T>(request: HttpRequest): Promise<HttpResponse<T>> {
     const retries = Math.max(0, request.retries ?? 0);
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -124,6 +141,7 @@ export class HttpClient {
       const body = this.serializeBody(request.body, headers);
       const raw = await fetch(request.url, { method: request.method, headers, body, signal: controller.signal });
       const data = await this.parseBody(raw) as T;
+      request.onProgress?.(Number(raw.headers.get('Content-Length')) || 0, Number(raw.headers.get('Content-Length')) || undefined);
       const response: HttpResponse<T> = { data, status: raw.status, headers: raw.headers, request };
       if (!raw.ok) throw new HttpError(`HTTP request failed with status ${raw.status}`, raw.status, response as HttpResponse<unknown>);
       return response;
@@ -155,3 +173,6 @@ export class HttpClient {
     return record;
   }
 }
+
+export * from './OfflineQueue';
+export * from './RequestQueue';
