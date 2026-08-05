@@ -9,6 +9,10 @@
     "build": "vite build",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
+    "db:migrate:transactions": "node --experimental-strip-types server/transactions/infrastructure/postgres/transactionSchemaCli.ts migrate",
+    "db:check:transactions": "node --experimental-strip-types server/transactions/infrastructure/postgres/transactionSchemaCli.ts check",
+    "test:transactions": "node --experimental-strip-types --test server/transactions/**/*.test.mjs",
+    "test:postgres": "node --experimental-strip-types --test server/transactions/infrastructure/postgres/postgresTransactionStore.integration.test.mjs",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview"
   },
@@ -83,6 +87,7 @@
   "devDependencies": {
     "@eslint/js": "^9.19.0",
     "@types/node": "^22.13.5",
+    "@types/pg": "^8.20.3",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.3.4",

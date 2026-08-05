@@ -7,6 +7,49 @@ atomic reservation/commit/release commands. `RecoveryService` owns provider
 status orchestration. Persistence implements `TransactionStore`; vendor APIs may
 exist only in infrastructure adapters.
 
+`ReservationGateway` is the 4C.1 input boundary between an already authorized
+operation and `TransactionService`. It accepts no client amount, provider,
+operation version, owner, project owner, or fingerprint. Those fields come from
+the trusted authorization context, while the request payload is canonicalized
+and SHA-256 fingerprinted server-side. Client idempotency keys are restricted to
+16–128 safe characters before reaching persistence.
+
+`BillableOperationService` is the 4C.2 orchestration boundary. For a newly
+created reservation it records provider dispatch, executes the provider, and
+commits only after a recorded provider success. A provider-confirmed failure is
+recorded and released. An ambiguous transport failure remains reserved and is
+marked for Recovery instead of granting potentially completed work for free.
+An idempotent reservation replay never dispatches the provider a second time;
+the caller receives `provider_outcome_pending` while the existing reservation is
+non-terminal, or the existing terminal reservation after resolution.
+
+Financial and provider state transitions are monotonic. Once a reservation is
+committed or released, provider facts and recovery-deferred facts can no longer
+be appended. Concurrent commit/release commands serialize on the wallet and
+reservation locks; exactly one terminal direction can apply and the other must
+conflict. Public orchestration errors use stable codes such as
+`provider_failed` and `provider_outcome_pending` without provider or database
+error details.
+
+## Operational integration
+
+`createPostgresTransactionRuntime` is the production composition root for the
+`pg` pool, retrying runner, PostgreSQL store, transaction services, gateway and
+billable-operation orchestrator. Connection strings stay inside pool
+configuration and are never emitted to logs or API responses.
+
+`createBillableOperationHandler` exposes a framework-neutral POST boundary with
+injected request authentication/authorization and provider routing. It accepts
+the idempotency key from the `Idempotency-Key` header (with a body fallback),
+returns `202 provider_outcome_pending` for ambiguous or replayed in-flight work,
+and maps unexpected failures to `internal_error` without infrastructure detail.
+
+`RecoveryWorker` runs bounded non-overlapping batches. PostgreSQL recovery
+leases remain the cross-process concurrency authority, so multiple worker
+instances can run without claiming the same reservation. Structured telemetry
+contains operation, provider, reservation and `correlation_id`, but never
+request payloads, credentials, connection strings or raw provider errors.
+
 The included in-memory adapter is executable for verification and local tests.
 It is not a production durability substitute. The current Base44 SDK exposes no
 verified transaction or compare-and-set primitive, so no unsafe multi-write

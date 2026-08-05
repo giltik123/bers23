@@ -1,5 +1,5 @@
 import { RESERVATION_TTL_MS, type Reservation } from '../domain/model.ts';
-import type { ServerClock, TransactionStore } from './ports.ts';
+import type { ReserveResult, ServerClock, TransactionStore } from './ports.ts';
 
 export class TransactionError extends Error {
   readonly code: string; readonly status: number;
@@ -11,12 +11,12 @@ export class TransactionService {
   private readonly store: TransactionStore; private readonly clock: ServerClock;
   constructor(store: TransactionStore, clock: ServerClock) { this.store = store; this.clock = clock; }
 
-  async reserve(input: Omit<Reservation, 'id' | 'status' | 'created_at' | 'expires_at'>): Promise<Reservation> {
+  async reserve(input: Omit<Reservation, 'id' | 'status' | 'provider_state' | 'created_at' | 'expires_at'>): Promise<Extract<ReserveResult, { kind: 'created' | 'replayed' }>> {
     const now = this.clock.now();
     const result = await this.store.reserve({ ...input, expires_at: new Date(now.getTime() + RESERVATION_TTL_MS).toISOString() }, now.toISOString());
     if (result.kind === 'conflict') throw new TransactionError('idempotency_conflict', 'Idempotency key conflict', 409);
     if (result.kind === 'insufficient_credits') throw new TransactionError('insufficient_credits', 'Insufficient credits', 403);
-    return result.reservation;
+    return result;
   }
 
   async commit(id: string, ownerId: string, source: 'transaction_service' | 'recovery_service' | 'manual_resolution' = 'transaction_service'): Promise<Reservation> {

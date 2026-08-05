@@ -25,7 +25,8 @@ export class InMemoryTransactionStore implements TransactionStore {
     }
     const wallet = this.wallets.get(input.owner_id);
     if (!wallet || wallet.balance - wallet.reserved < input.amount) return { kind: 'insufficient_credits' };
-    const reservation = Object.freeze({ ...input, id: `reservation-${this.nextId++}`, status: 'reserved' as const, created_at: occurredAt });
+    const reservation = Object.freeze({ ...input, id: `reservation-${this.nextId++}`, status: 'reserved' as const,
+      provider_state: 'pending' as const, created_at: occurredAt });
     wallet.reserved += input.amount;
     this.reservations.set(reservation.id, reservation);
     this.idempotency.set(key, reservation.id);
@@ -45,15 +46,20 @@ export class InMemoryTransactionStore implements TransactionStore {
     const reservation = this.reservations.get(id); if (!reservation) throw new Error('reservation not found');
     const entries = this.entries.get(id) ?? [];
     const duplicate = entries.find((entry) => entry.event === event); if (duplicate) return duplicate;
+    if (reservation.status !== 'reserved') throw new Error('terminal reservation is immutable');
     const hasDispatch = entries.some((entry) => entry.event === 'provider_dispatched');
     const hasResult = entries.some((entry) => entry.event === 'provider_succeeded' || entry.event === 'provider_failed');
     if ((event === 'provider_dispatched' && entries.at(-1)?.event !== 'reservation_created') ||
       (event !== 'provider_dispatched' && (!hasDispatch || hasResult))) throw new Error('journal causality violation');
-    return this.append(reservation, event, 'transaction_service', at, {});
+    const provider_state = event === 'provider_dispatched' ? 'dispatched' : event === 'provider_succeeded' ? 'success' : 'failed';
+    const updated = Object.freeze({ ...reservation, provider_state } as Reservation);
+    this.reservations.set(id, updated);
+    return this.append(updated, event, 'transaction_service', at, {});
   }
 
   async appendRecoveryDeferred(id: string, at: string): Promise<JournalEntry> {
     const reservation = this.reservations.get(id); if (!reservation) throw new Error('reservation not found');
+    if (reservation.status !== 'reserved') throw new Error('terminal reservation is immutable');
     return this.append(reservation, 'recovery_deferred', 'recovery_service', at, {});
   }
 

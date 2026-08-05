@@ -7,6 +7,21 @@ Supabase may host PostgreSQL for Beta, but Supabase APIs are not application
 architecture. AI endpoints are not connected until migrations and concurrency
 tests pass against a real PostgreSQL instance.
 
+Run the real-database concurrency check with an isolated temporary schema:
+
+```bash
+TEST_DATABASE_URL=postgresql://user:password@host/database npm run test:postgres
+```
+
+The test skips when neither `TEST_DATABASE_URL` nor `DATABASE_URL` is set. It
+applies the production migration, races reservations against one wallet, checks
+concurrent commit/release idempotency, verifies rollback recovery, checks the
+resulting wallet and journal invariants, and exercises recovery of an ambiguous
+provider outcome before removing its schema.
+The `postgres-transactions` CI job supplies a PostgreSQL 16 service and always
+runs this command for pushes and pull requests targeting `main`; unlike a local
+run without a database URL, that required CI check cannot silently skip.
+
 ## Boundary
 
 Transaction Gateway executes `TransactionStore` inside one PostgreSQL
@@ -96,6 +111,19 @@ at statement end. Multi-statement temporary inconsistency is forbidden.
 is intentionally not silently re-runnable: the deployment migration table must
 record it exactly once. A partial or repeated application fails visibly rather
 than hiding schema drift behind `IF NOT EXISTS`.
+
+Deployment applies and verifies the forward migration with:
+
+```bash
+DATABASE_URL=postgresql://... npm run db:migrate:transactions
+DATABASE_URL=postgresql://... npm run db:check:transactions
+```
+
+The migrator holds a session advisory lock, records the source SHA-256 checksum
+in `transaction_schema_migrations`, and applies the schema plus migration record
+in one transaction. A repeated deployment succeeds only when the recorded
+checksum matches the repository source; drift fails closed. The readiness check
+requires all four financial tables and the recorded migration version.
 
 ## Retry policy
 

@@ -16,9 +16,21 @@ export class RecoveryService {
     let resolved = 0; let deferred = 0;
     for (const reservation of items) {
       const outcome = await this.provider.resolve(reservation);
-      if (outcome === 'succeeded') { await this.transactions.commit(reservation.id, reservation.owner_id, 'recovery_service'); resolved += 1; }
-      else if (outcome === 'failed' || outcome === 'not_dispatched') { await this.transactions.release(reservation.id, reservation.owner_id, outcome, 'recovery_service'); resolved += 1; }
-      else { await this.store.appendRecoveryDeferred(reservation.id, this.clock.now().toISOString()); deferred += 1; }
+      if (outcome === 'succeeded') {
+        await this.store.appendProviderFact(reservation.id, 'provider_succeeded', this.clock.now().toISOString());
+        await this.transactions.commit(reservation.id, reservation.owner_id, 'recovery_service');
+        resolved += 1;
+      } else if (outcome === 'failed') {
+        await this.store.appendProviderFact(reservation.id, 'provider_failed', this.clock.now().toISOString());
+        await this.transactions.release(reservation.id, reservation.owner_id, outcome, 'recovery_service');
+        resolved += 1;
+      } else if (outcome === 'not_dispatched') {
+        await this.transactions.release(reservation.id, reservation.owner_id, outcome, 'recovery_service');
+        resolved += 1;
+      } else {
+        await this.store.appendRecoveryDeferred(reservation.id, this.clock.now().toISOString());
+        deferred += 1;
+      }
     }
     return { resolved, deferred };
   }
