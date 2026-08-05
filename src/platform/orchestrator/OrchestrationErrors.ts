@@ -1,0 +1,3 @@
+export class OrchestrationError extends Error { constructor(message: string, readonly code = 'ORCHESTRATION_ERROR') { super(message); this.name = 'OrchestrationError'; } }
+export class OrchestrationPolicyError extends OrchestrationError { constructor(readonly violations: readonly string[]) { super(`Orchestration policy rejected execution: ${violations.join('; ')}`, 'ORCHESTRATION_POLICY_REJECTED'); this.name = 'OrchestrationPolicyError'; } }
+export class OrchestrationSessionNotFoundError extends OrchestrationError { constructor(sessionId: string) { super(`Orchestration session "${sessionId}" was not found.`, 'ORCHESTRATION_SESSION_NOT_FOUND'); this.name = 'OrchestrationSessionNotFoundError'; } }
