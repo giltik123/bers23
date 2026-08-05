@@ -2,7 +2,7 @@ import type { JournalEntry, Reservation } from '../domain/model.ts';
 
 export interface ServerClock { now(): Date }
 
-export type ReserveInput = Omit<Reservation, 'id' | 'status' | 'created_at'>;
+export type ReserveInput = Omit<Reservation, 'id' | 'status' | 'provider_state' | 'created_at'>;
 export type ReserveResult =
   | { kind: 'created' | 'replayed'; reservation: Reservation }
   | { kind: 'conflict' }

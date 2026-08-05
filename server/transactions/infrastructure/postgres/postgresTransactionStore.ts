@@ -2,7 +2,7 @@ import type { JournalEntry, JournalEvent, JournalSource, Reservation } from '../
 import type { ReserveInput, ReserveResult, TransactionStore, TransitionResult } from '../../application/ports.ts';
 import type { IdGenerator, SqlTransaction, SqlTransactionRunner } from './sql.ts';
 
-type ReservationRow = ReserveInput & { id: string; status: Reservation['status']; created_at: string | Date };
+type ReservationRow = ReserveInput & Pick<Reservation, 'id' | 'status' | 'provider_state'> & { created_at: string | Date };
 type JournalRow = Omit<JournalEntry, 'metadata'> & { metadata: Record<string, unknown> };
 type WalletRow = { balance: string | number; reserved: string | number; lifetime_spent: string | number; total_credited: string | number };
 
@@ -47,7 +47,8 @@ export class PostgresTransactionStore implements TransactionStore {
       await tx.query('INSERT INTO reservation_journal_sequences (reservation_id, next_sequence) VALUES ($1, 2)', [id]);
       await this.insertJournal(tx, { reservation_id: id, correlation_id: input.correlation_id,
         sequence: 1, event: 'reservation_created', source: 'reservation_service', occurred_at: databaseNow, metadata: {} });
-      return { kind: 'created', reservation: Object.freeze({ ...input, id, status: 'reserved', created_at: databaseNow, expires_at: new Date(Date.parse(databaseNow) + ttlMilliseconds).toISOString() }) };
+      return { kind: 'created', reservation: Object.freeze({ ...input, id, status: 'reserved', provider_state: 'pending',
+        created_at: databaseNow, expires_at: new Date(Date.parse(databaseNow) + ttlMilliseconds).toISOString() }) };
     });
   }
 
@@ -62,11 +63,12 @@ export class PostgresTransactionStore implements TransactionStore {
   appendProviderFact(id: string, event: 'provider_dispatched' | 'provider_succeeded' | 'provider_failed', at: string): Promise<JournalEntry> {
     return this.runner.transaction('read committed', async (tx) => {
       at = await this.databaseNow(tx);
-      const result = await tx.query<ReservationRow & { provider_state: string }>('SELECT * FROM credit_reservations WHERE id = $1 FOR UPDATE', [id]);
+      const result = await tx.query<ReservationRow>('SELECT * FROM credit_reservations WHERE id = $1 FOR UPDATE', [id]);
       if (!result.rowCount) throw new Error('reservation not found');
       const row = result.rows[0];
       const target = event === 'provider_dispatched' ? 'dispatched' : event === 'provider_succeeded' ? 'success' : 'failed';
       if (row.provider_state === target) return this.findJournal(tx, id, event);
+      if (row.status !== 'reserved') throw new Error('terminal reservation is immutable');
       if ((target === 'dispatched' && row.provider_state !== 'pending') ||
         (target !== 'dispatched' && row.provider_state !== 'dispatched')) throw new Error('journal causality violation');
       await tx.query('UPDATE credit_reservations SET provider_state = $1 WHERE id = $2', [target, id]);
@@ -79,6 +81,7 @@ export class PostgresTransactionStore implements TransactionStore {
       at = await this.databaseNow(tx);
       const result = await tx.query<ReservationRow>('SELECT * FROM credit_reservations WHERE id = $1 FOR UPDATE', [id]);
       if (!result.rowCount) throw new Error('reservation not found');
+      if (result.rows[0].status !== 'reserved') throw new Error('terminal reservation is immutable');
       return this.appendJournal(tx, result.rows[0], 'recovery_deferred', 'recovery_service', at, {});
     });
   }
