@@ -14,3 +14,4 @@ export * from './RecipeRegistry';
 export * from './registerPlatformServices';
 export * from './types';
 export * from './WorkspaceRegistry';
+export * from './creative';
