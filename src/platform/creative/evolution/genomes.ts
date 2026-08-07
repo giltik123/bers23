@@ -1,0 +1,19 @@
+import { clamp, immutable, rounded } from './immutable';
+import type { DecisionGenome, EvolutionDependencies, GenomeWeight, HeuristicGenes, HeuristicGenome, SimilarGenome } from './types';
+
+const genes: readonly GenomeWeight[] = ['LIGHTING', 'COMPOSITION', 'CREATIVITY', 'RISK', 'BRAND', 'COST', 'EMOTION'];
+export class HeuristicEvolution {
+  constructor(private readonly dependencies: EvolutionDependencies) {}
+  seed(values: HeuristicGenes): HeuristicGenome { return immutable({ id: this.dependencies.nextId(), generation: 1, parentIds: [], genes: structuredClone(values), fitness: 0, createdAt: this.dependencies.now() }); }
+  mutate(parent: HeuristicGenome, rate = .05): HeuristicGenome { const mutated = Object.fromEntries(genes.map((gene) => { const direction = this.dependencies.random() >= .5 ? 1 : -1; return [gene, rounded(clamp(parent.genes[gene] + direction * rate))]; })) as unknown as HeuristicGenes; return immutable({ id: this.dependencies.nextId(), generation: parent.generation + 1, parentIds: [parent.id], genes: mutated, fitness: 0, createdAt: this.dependencies.now() }); }
+  crossover(left: HeuristicGenome, right: HeuristicGenome): HeuristicGenome { const values = Object.fromEntries(genes.map((gene, index) => [gene, index % 2 ? right.genes[gene] : left.genes[gene]])) as unknown as HeuristicGenes; return immutable({ id: this.dependencies.nextId(), generation: Math.max(left.generation, right.generation) + 1, parentIds: [left.id, right.id], genes: values, fitness: 0, createdAt: this.dependencies.now() }); }
+  score(genome: HeuristicGenome, outcomes: readonly number[]): HeuristicGenome { const fitness = rounded(outcomes.reduce((sum, value) => sum + clamp(value), 0) / Math.max(1, outcomes.length)); return immutable({ ...genome, fitness }); }
+  best(generation: readonly HeuristicGenome[]): HeuristicGenome { if (!generation.length) throw new Error('Generation cannot be empty'); return immutable([...generation].sort((a, b) => b.fitness - a.fitness || a.id.localeCompare(b.id))[0]); }
+}
+export class DecisionGenomeEngine {
+  constructor(private readonly dependencies: EvolutionDependencies) {}
+  similarity(left: DecisionGenome, right: DecisionGenome): number { const sets = (values: readonly string[]) => new Set(values.map((item) => item.toLowerCase())); const a = sets([left.goal, left.intent, ...left.reasoning, ...left.operations]); const b = sets([right.goal, right.intent, ...right.reasoning, ...right.operations]); const intersection = [...a].filter((item) => b.has(item)).length; return rounded(intersection / Math.max(1, new Set([...a, ...b]).size)); }
+  findSimilar(target: DecisionGenome, candidates: readonly DecisionGenome[]): readonly SimilarGenome[] { return immutable(candidates.filter((item) => item.id !== target.id).map((item) => ({ genomeId: item.id, similarity: this.similarity(target, item) })).sort((a, b) => b.similarity - a.similarity || a.genomeId.localeCompare(b.genomeId))); }
+  crossover(left: DecisionGenome, right: DecisionGenome): DecisionGenome { return immutable({ id: this.dependencies.nextId(), goal: left.outcome >= right.outcome ? left.goal : right.goal, intent: right.intent, reasoning: [...new Set([...left.reasoning, ...right.reasoning])], operations: [...new Set([...left.operations, ...right.operations])], evaluation: left.outcome >= right.outcome ? left.evaluation : right.evaluation, reflection: [...left.reflection, ...right.reflection], outcome: rounded((left.outcome + right.outcome) / 2), parentIds: [left.id, right.id], generation: Math.max(left.generation, right.generation) + 1 }); }
+  mutate(genome: DecisionGenome, operation: string): DecisionGenome { return immutable({ ...genome, id: this.dependencies.nextId(), operations: [...new Set([...genome.operations, operation])], parentIds: [genome.id], generation: genome.generation + 1 }); }
+}
