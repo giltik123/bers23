@@ -1,0 +1,35 @@
+import { immutable, rounded, stableHash } from './immutable';
+import type { IntelligencePlugin, KernelScope, PluginContext } from '../kernel';
+import type { CacheEntry, ExecutionNode, PluginProfile, RuntimeDependencies, RuntimeEvent, RuntimeMetrics, RuntimePluginRegistration, RuntimeSession, RuntimeTraceEntry, SandboxResult } from './types';
+const sameScope = (a: KernelScope, b: KernelScope) => a.tenantId === b.tenantId && a.projectId === b.projectId && a.userId === b.userId;
+
+export class DependencyCache {
+  private readonly entries = new Map<string, CacheEntry>();
+  get(pluginId: string, input: unknown, scope: KernelScope): CacheEntry | undefined { const key = `${scope.tenantId}:${scope.projectId}:${scope.userId}:${pluginId}:${stableHash(input)}`; const entry = this.entries.get(key); if (!entry || !sameScope(entry, scope)) return undefined; const updated = immutable({ ...entry, hits: entry.hits + 1 }); this.entries.set(key, updated); return updated; }
+  put(pluginId: string, input: unknown, output: CacheEntry['output'], scope: KernelScope, at: number): CacheEntry { const inputHash = stableHash(input); const key = `${scope.tenantId}:${scope.projectId}:${scope.userId}:${pluginId}:${inputHash}`; const entry = immutable({ ...scope, key, pluginId, inputHash, output: structuredClone(output), createdAt: at, hits: 0 }); this.entries.set(key, entry); return entry; }
+  invalidate(pluginId: string, scope: KernelScope): number { let removed = 0; for (const [key, value] of this.entries) if (value.pluginId === pluginId && sameScope(value, scope)) { this.entries.delete(key); removed++; } return removed; }
+}
+export class RuntimeEventRecorder {
+  private readonly events: RuntimeEvent[] = [];
+  constructor(private readonly dependencies: RuntimeDependencies) {}
+  record(session: RuntimeSession, type: RuntimeEvent['type'], data: RuntimeEvent['data'] = {}, details: { pluginId?: string; nodeId?: string } = {}): RuntimeEvent { const sequence = this.history(session.id, session).length; const event = immutable({ tenantId: session.tenantId, projectId: session.projectId, userId: session.userId, id: this.dependencies.nextId(), sessionId: session.id, sequence, type, at: this.dependencies.now(), ...details, data: structuredClone(data) }); this.events.push(event); return event; }
+  history(sessionId: string, scope: KernelScope): readonly RuntimeEvent[] { return immutable(this.events.filter((event) => event.sessionId === sessionId && sameScope(event, scope)).map((event) => structuredClone(event))); }
+  replace(sessionId: string, scope: KernelScope, events: readonly RuntimeEvent[]): void { if (events.some((event) => event.sessionId !== sessionId || !sameScope(event, scope))) throw new Error('Runtime event restore scope violation'); const other = this.events.filter((event) => event.sessionId !== sessionId || !sameScope(event, scope)); this.events.length = 0; this.events.push(...other, ...structuredClone(events)); }
+}
+export class RuntimeSandbox {
+  constructor(private readonly dependencies: RuntimeDependencies) {}
+  execute(plugin: IntelligencePlugin, context: PluginContext, messages: Parameters<IntelligencePlugin['observe']>[1], budget: number): SandboxResult { const start = this.dependencies.now(); const safeContext = immutable(structuredClone(context)); const safeMessages = immutable(structuredClone(messages)); plugin.initialize(safeContext); plugin.observe(safeContext, safeMessages); plugin.reason(safeContext, budget); const publications = immutable(structuredClone(plugin.publish(safeContext))); plugin.sleep(safeContext); const elapsed = Math.max(0, this.dependencies.now() - start); return immutable({ publications, elapsed }); }
+}
+export class RuntimeOptimizer {
+  shouldRun(node: ExecutionNode, input: { requestedCapabilities: readonly string[]; changedKeys: readonly string[]; hasCache: boolean; plugin?: RuntimePluginRegistration }): { run: boolean; reason: string } { if (node.kind !== 'PLUGIN') return { run: true, reason: 'Core cognitive node' }; if (!input.plugin?.enabled) return { run: false, reason: 'Plugin disabled' }; if (input.requestedCapabilities.length && !node.requiredCapabilities.some((capability) => input.requestedCapabilities.includes(capability))) return { run: false, reason: 'Capability not requested' }; if (input.changedKeys.length && !node.inputKeys.some((key) => input.changedKeys.includes(key))) return { run: false, reason: 'Dependencies unchanged' }; return { run: true, reason: input.hasCache ? 'Cached dependencies changed' : 'Required by current inputs' }; }
+}
+export class RuntimeMetricsCollector {
+  calculate(events: readonly RuntimeEvent[], profiles: readonly PluginProfile[]): RuntimeMetrics { const count = (type: RuntimeEvent['type']) => events.filter((event) => event.type === type).length; const pluginExecutionTime = Object.fromEntries(profiles.map((profile) => [profile.pluginId, profile.totalTime])); return immutable({ reasoningTime: profiles.reduce((sum, item) => sum + item.totalTime, 0), simulationTime: events.filter((item) => item.data.kind === 'SIMULATION').length, debateTime: events.filter((item) => item.data.kind === 'DEBATE').length, reflectionTime: events.filter((item) => item.data.kind === 'REFLECTION').length, pluginExecutionTime, blackboardWrites: count('BLACKBOARD_COMMITTED'), messages: count('MESSAGE'), cacheHits: count('CACHE_HIT'), skippedNodes: count('NODE_SKIPPED') }); }
+}
+export class RuntimeProfiler {
+  profile(executions: readonly { pluginId: string; elapsed: number; outputCount: number; valueScore: number }[]): readonly PluginProfile[] { const ids = [...new Set(executions.map((item) => item.pluginId))].sort(); return immutable(ids.map((pluginId) => { const values = executions.filter((item) => item.pluginId === pluginId); const totalTime = values.reduce((sum, item) => sum + item.elapsed, 0); const outputCount = values.reduce((sum, item) => sum + item.outputCount, 0); const valueScore = rounded(values.reduce((sum, item) => sum + item.valueScore, 0) / values.length); const averageTime = rounded(totalTime / values.length); return { pluginId, executions: values.length, totalTime, averageTime, outputCount, valueScore, classification: valueScore < .25 ? 'LOW_VALUE' : averageTime > 100 ? 'BOTTLENECK' : 'EFFICIENT' }; })); }
+}
+export class RuntimeTrace {
+  build(session: RuntimeSession, events: readonly RuntimeEvent[], revision: number): readonly RuntimeTraceEntry[] { let messages = 0; return immutable(events.map((event, sequence) => { if (event.type === 'MESSAGE') messages++; return { sequence, plugin: event.pluginId, state: session.status, blackboardRevision: revision, messageCount: messages, reasoning: event.type, outputKey: typeof event.data.outputKey === 'string' ? event.data.outputKey : undefined, at: event.at }; })); }
+}
+export class RuntimeDeterminismValidator { compare(left: unknown, right: unknown) { const leftHash = stableHash(left); const rightHash = stableHash(right); return immutable({ deterministic: leftHash === rightHash, leftHash, rightHash }); } }
