@@ -398,7 +398,7 @@ export interface DecisionReward { calculate(predicted: Metrics, actual: Metrics,
 export interface DecisionLoss { calculate(predicted: Metrics, actual: Metrics): number }
 export interface DecisionReplayEntry { readonly id: string; readonly scope: Scope; readonly representation: DecisionRepresentation; readonly reward: number; readonly timestamp: number }
 export interface DecisionReplayBuffer { add(entry: DecisionReplayEntry): DecisionReplayBuffer; sample(scope: Scope, count: number): readonly DecisionReplayEntry[] }
-export interface DecisionEvaluator { evaluate(model: DecisionModel, cases: readonly DecisionBenchmarkCase[]): Readonly<Record<string, unknown>> }
+export interface DecisionModelEvaluator { evaluate(model: DecisionModel, cases: readonly DecisionBenchmarkCase[]): Readonly<Record<string, unknown>> }
 export interface DecisionInferenceSession { readonly id: string; readonly modelVersion: string; infer(representation: DecisionRepresentation): Metrics }
 
 export class HeuristicDecisionEncoder implements DecisionEncoder {
@@ -421,7 +421,7 @@ export class ImmutableDecisionReplayBuffer implements DecisionReplayBuffer {
   add(entry: DecisionReplayEntry) { return new ImmutableDecisionReplayBuffer(immutable([...this.entries.filter(item => item.id !== entry.id), { ...entry, scope: { ...entry.scope }, representation: { ...entry.representation, vector: [...entry.representation.vector], labels: [...entry.representation.labels] } }])); }
   sample(scope: Scope, count: number) { return immutable(this.entries.filter(entry => scopeKey(entry.scope) === scopeKey(scope)).sort((a, b) => b.reward - a.reward || a.timestamp - b.timestamp || a.id.localeCompare(b.id)).slice(0, Math.max(0, count))); }
 }
-export class HeuristicDecisionEvaluator implements DecisionEvaluator {
+export class HeuristicDecisionEvaluator implements DecisionModelEvaluator {
   evaluate(_model: DecisionModel, cases: readonly DecisionBenchmarkCase[]) { return new DecisionBenchmarkSuite().evaluate(cases); }
 }
 export class HeuristicDecisionInferenceSession implements DecisionInferenceSession {

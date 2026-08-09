@@ -332,9 +332,9 @@ export class DecisionDriftDetector {
   }
 }
 
-export interface DecisionConstraint { readonly id: string; readonly kind: 'MINIMIZE' | 'MAXIMIZE' | 'REQUIRE'; readonly target: string; readonly value: number | boolean }
+export interface CognitiveDecisionConstraint { readonly id: string; readonly kind: 'MINIMIZE' | 'MAXIMIZE' | 'REQUIRE'; readonly target: string; readonly value: number | boolean }
 export class DecisionConsistencyAnalyzer {
-  analyze(constraints: readonly DecisionConstraint[]) {
+  analyze(constraints: readonly CognitiveDecisionConstraint[]) {
     const conflicts: { left: string; right: string; explanation: string }[] = [];
     for (let left = 0; left < constraints.length; left += 1) for (let right = left + 1; right < constraints.length; right += 1) {
       const a = constraints[left], b = constraints[right];

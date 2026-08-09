@@ -195,3 +195,19 @@ export class CreativeDecisionIntelligenceCore {
 
 export * from './cognitive';
 export * from './learning';
+export * from "./types";
+export * from "./GoalEngine";
+export * from "./ConstraintSolver";
+export * from "./UtilityOptimizer";
+export * from "./DecisionMemory";
+export * from "./DecisionReplay";
+export * from "./ConfidenceEstimator";
+export * from "./DecisionUncertainty";
+export * from "./RiskAnalyzer";
+export * from "./AdaptivePersonas";
+export * from "./MetaDecisionEngine";
+export * from "./DecisionEvaluator";
+export * from "./DecisionTournament";
+export * from "./ExplainabilityTree";
+export * from "./DecisionEvolution";
+export * from "./CreativeDecisionCore";
