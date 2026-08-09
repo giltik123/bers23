@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import test from 'node:test';
+import { preProcessFile } from 'typescript';
 import { createWorkflowEngine } from '../src/platform/workflow/createWorkflowEngine.ts';
 import { workflowTemplates } from '../src/platform/workflow/WorkflowTemplates.ts';
 import { WorkflowGraphBuilder } from '../src/platform/workflow/WorkflowGraph.ts';
@@ -111,11 +112,18 @@ test('debug snapshot содержит события исполнения', asyn
 
 test('отсутствие запрещённых импортов в workflow layer', async () => {
   const forbidden = ['/src/lib/', '@/lib/', '/components/', '@/components/', '/pages/', '@/pages/', 'Router', 'Runtime', 'Workers', 'Providers', 'Memory', 'Intelligence'];
-  const files = await collectWorkflowFiles('src/platform/workflow');
+  const workflowRoot = resolve('src/platform/workflow');
+  const files = await collectWorkflowFiles(workflowRoot);
   for (const file of files) {
     const source = await readFile(file, 'utf8');
-    const imports = source.match(/^import\s[\s\S]*?;$/gm) ?? [];
-    for (const marker of forbidden) assert.equal(imports.some((statement) => statement.includes(marker)), false, `${file} imports forbidden marker ${marker}`);
+    const imports = preProcessFile(source, true, true).importedFiles
+      .map(({ fileName }) => fileName)
+      .filter((specifier) => {
+        if (!specifier.startsWith('.')) return true;
+        const importedPath = relative(workflowRoot, resolve(dirname(file), specifier));
+        return importedPath === '..' || importedPath.startsWith(`..${sep}`);
+      });
+    for (const marker of forbidden) assert.equal(imports.some((specifier) => specifier.includes(marker)), false, `${file} imports forbidden marker ${marker}`);
   }
 });
 
