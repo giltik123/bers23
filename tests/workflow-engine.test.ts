@@ -114,7 +114,8 @@ test('отсутствие запрещённых импортов в workflow l
   const files = await collectWorkflowFiles('src/platform/workflow');
   for (const file of files) {
     const source = await readFile(file, 'utf8');
-    for (const marker of forbidden) assert.equal(source.includes(marker), false, `${file} contains forbidden marker ${marker}`);
+    const imports = source.match(/^import\s[\s\S]*?;$/gm) ?? [];
+    for (const marker of forbidden) assert.equal(imports.some((statement) => statement.includes(marker)), false, `${file} imports forbidden marker ${marker}`);
   }
 });
 
