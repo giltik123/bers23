@@ -1,0 +1,25 @@
+import { immutable } from "./immutable";
+
+export type DecisionGraphNodeKind = "DECISION" | "INTENT" | "GOAL" | "OPERATION" | "STRATEGY" | "OUTCOME" | "FEEDBACK";
+export interface DecisionGraphScope { readonly tenantId: string; readonly projectId: string; readonly userId: string }
+export interface DecisionGraphNode extends DecisionGraphScope { readonly id: string; readonly kind: DecisionGraphNodeKind; readonly label: string; readonly attributes?: Readonly<Record<string, string | number | boolean>> }
+export interface DecisionGraphEdge { readonly from: string; readonly to: string; readonly weight: number; readonly frequency: number; readonly success: number; readonly cost: number; readonly satisfaction: number; readonly confidence: number; readonly quality: number }
+export interface DecisionSubgraph { readonly nodes: readonly DecisionGraphNode[]; readonly edges: readonly DecisionGraphEdge[] }
+
+const sameScope = (a: DecisionGraphScope, b: DecisionGraphScope) => a.tenantId === b.tenantId && a.projectId === b.projectId && a.userId === b.userId;
+export class DecisionGraphMemory {
+  private nodes: readonly DecisionGraphNode[] = immutable([]); private edges: readonly DecisionGraphEdge[] = immutable([]);
+  add(node: DecisionGraphNode): DecisionGraphNode { const copy = immutable(structuredClone(node)); if (!this.nodes.some(({ id }) => id === node.id)) this.nodes = immutable([...this.nodes, copy]); return copy; }
+  connect(edge: DecisionGraphEdge): DecisionGraphEdge {
+    const from = this.nodes.find(({ id }) => id === edge.from), to = this.nodes.find(({ id }) => id === edge.to);
+    if (!from || !to || !sameScope(from, to)) throw new Error("Graph endpoints must exist in the same scope");
+    const copy = immutable(structuredClone(edge)); this.edges = immutable([...this.edges.filter((item) => item.from !== edge.from || item.to !== edge.to), copy]); return copy;
+  }
+  private scoped(scope: DecisionGraphScope): DecisionSubgraph { const nodes = this.nodes.filter((node) => sameScope(node, scope)); const ids = new Set(nodes.map(({ id }) => id)); return immutable({ nodes: structuredClone(nodes), edges: structuredClone(this.edges.filter(({ from, to }) => ids.has(from) && ids.has(to))) }); }
+  findRelated(id: string, scope: DecisionGraphScope, depth = 1): readonly DecisionGraphNode[] { const graph = this.scoped(scope), found = new Set([id]), frontier = [id]; for (let level = 0; level < depth; level++) { const next: string[] = []; for (const current of frontier) graph.edges.forEach(({ from, to }) => { if (from === current && !found.has(to)) { found.add(to); next.push(to); } if (to === current && !found.has(from)) { found.add(from); next.push(from); } }); frontier.splice(0, frontier.length, ...next); } return immutable(graph.nodes.filter(({ id: nodeId }) => nodeId !== id && found.has(nodeId))); }
+  shortestPath(from: string, to: string, scope: DecisionGraphScope): readonly DecisionGraphNode[] { const graph = this.scoped(scope), queue: string[][] = [[from]], seen = new Set([from]); while (queue.length) { const path = queue.shift()!; const last = path.at(-1)!; if (last === to) return immutable(path.map((id) => graph.nodes.find((node) => node.id === id)!).filter(Boolean)); const adjacent = graph.edges.filter((edge) => edge.from === last || edge.to === last).map((edge) => edge.from === last ? edge.to : edge.from).sort(); adjacent.forEach((id) => { if (!seen.has(id)) { seen.add(id); queue.push([...path, id]); } }); } return immutable([]); }
+  importance(id: string, scope: DecisionGraphScope): number { const graph = this.scoped(scope); if (!graph.nodes.length) return 0; return graph.edges.filter((edge) => edge.from === id || edge.to === id).reduce((sum, edge) => sum + edge.weight * edge.frequency * (.5 + edge.success / 2), 0) / graph.nodes.length; }
+  centralNodes(scope: DecisionGraphScope, limit = 10): readonly DecisionGraphNode[] { return immutable([...this.scoped(scope).nodes].sort((a, b) => this.importance(b.id, scope) - this.importance(a.id, scope) || a.id.localeCompare(b.id)).slice(0, limit)); }
+  communityDetection(scope: DecisionGraphScope): readonly (readonly DecisionGraphNode[])[] { const graph = this.scoped(scope), unseen = new Set(graph.nodes.map(({ id }) => id)), result: DecisionGraphNode[][] = []; while (unseen.size) { const first = [...unseen].sort()[0], ids = [first]; unseen.delete(first); for (let i = 0; i < ids.length; i++) graph.edges.filter((edge) => edge.from === ids[i] || edge.to === ids[i]).forEach((edge) => { const id = edge.from === ids[i] ? edge.to : edge.from; if (unseen.delete(id)) ids.push(id); }); result.push(ids.map((id) => graph.nodes.find((node) => node.id === id)!)); } return immutable(result); }
+  exportSubgraph(ids: readonly string[], scope: DecisionGraphScope): DecisionSubgraph { const graph = this.scoped(scope), allowed = new Set(ids); return immutable({ nodes: graph.nodes.filter(({ id }) => allowed.has(id)), edges: graph.edges.filter(({ from, to }) => allowed.has(from) && allowed.has(to)) }); }
+}
