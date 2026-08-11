@@ -23,3 +23,5 @@ export * from "./CreativeCognitionV4";
 export * from "./CreativeDeliberationV4";
 export * from "./CreativeLearningV4";
 export * from "./DecisionModelFoundation";
+export * from "./CreativeCognitiveV5";
+export * from "./DecisionModelFoundationV2";
