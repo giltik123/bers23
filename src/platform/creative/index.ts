@@ -7,3 +7,4 @@ export * from './AdjustmentManager';
 export * from './CreativeDebugger';
 export * from './CreativeCanvasManager';
 export * from './local-engine';
+export * from './studio-brain';
