@@ -6,12 +6,17 @@ import { LocalRuntimeDetector } from './device/LocalRuntimeDetector';
 import { immutableClone } from './immutable';
 import { LocalModelDownloader } from './models/LocalModelDownloader';
 import { LocalModelRegistry } from './models/LocalModelRegistry';
+import { ModelBundleBuilder } from './models/ModelBundles';
+import { LocalModelBenchmarker } from './benchmark/LocalModelBenchmark';
+import { OnnxLocalRuntime } from './runtimes/OnnxLocalRuntime';
+import { DesktopLocalRuntime, MobileLocalRuntime, WebLocalRuntime } from './runtimes/PlatformRuntimes';
+import { LocalResultVerifier, compareLocalCloud as compare } from './verification/LocalResultVerifier';
 import { ExecutionTargetSelector } from './selection/ExecutionTargetSelector';
 import { ModelSuitabilityScorer } from './selection/ModelSuitabilityScorer';
 import { ResourceGovernor } from './selection/ResourceGovernor';
 import { LocalAISandbox } from './security/LocalAISandbox';
 import { ModelManifestVerifier, ModelSignatureVerifier, ModelTrustRegistry, type TrustPolicy } from './trust/ModelTrust';
-import type { LocalAIDependencies, LocalAISnapshot, ModelManifest, PrivacyMode, TargetDecision, TargetRequest, TrustResult } from './types';
+import type { InferenceRequest, InferenceResult, LocalAIDependencies, LocalAISnapshot, LocalModelBenchmark, LocalModelRuntime, ModelBundle, ModelManifest, ResultVerification, TargetDecision, TargetRequest, TrustResult } from './types';
 
 const DEFAULT_TRUST_POLICY: TrustPolicy = {
   publishers: [], formats: ['ONNX', 'TFLITE', 'SAFETENSORS', 'GGUF'],
@@ -26,6 +31,8 @@ export class LocalAIPlatform {
   readonly #failures = new Map<string, number>();
   readonly cache: LocalInferenceCache;
   readonly sandbox = new LocalAISandbox();
+  readonly #runtimes = new Map<string, LocalModelRuntime>();
+  readonly #benchmarks = new Map<string, LocalModelBenchmark>();
   #lastSnapshot?: LocalAISnapshot;
 
   constructor(private readonly dependencies: LocalAIDependencies, policy: TrustPolicy = DEFAULT_TRUST_POLICY) {
@@ -48,6 +55,31 @@ export class LocalAIPlatform {
     return this.#downloader.download(manifest);
   }
   async removeModel(modelId: string): Promise<void> { await this.#downloader.remove(modelId); }
+  async recommendedBundle(): Promise<ModelBundle> { return new ModelBundleBuilder().recommend(await this.analyzeDevice(), await new LocalRuntimeDetector(this.dependencies.runtimeProbe).detect(), this.dependencies.modelCatalog ?? []); }
+  async installRecommendedBundle(): Promise<readonly ModelManifest[]> {
+    const bundle = await this.recommendedBundle(); const catalog = this.dependencies.modelCatalog ?? []; const installed: ModelManifest[] = [];
+    for (const modelId of bundle.modelIds) { const manifest = catalog.find((item) => item.modelId === modelId); if (manifest) installed.push(await this.installModel(manifest)); }
+    return immutableClone(installed);
+  }
+  async loadModel(modelId: string): Promise<void> {
+    const model = this.#registry.get(modelId); if (!model || model.status !== 'READY') throw new Error('Only trusted READY models can be loaded');
+    const bytes = await this.dependencies.storage.read(modelId); if (!bytes) throw new Error('Installed model artifact is missing'); const trust = await this.verifyModel(model, bytes); if (!trust.trusted) { this.#registry.updateStatus(modelId, 'QUARANTINED'); throw new Error(trust.errors.join('; ')); }
+    if (!this.dependencies.onnxSessionFactory || model.modelFormat !== 'ONNX') throw new Error('No secure runtime adapter is available');
+    const device = await this.analyzeDevice(); const capabilities = await new LocalRuntimeDetector(this.dependencies.runtimeProbe).detect();
+    const provider = device.deviceClass === 'BROWSER' ? new WebLocalRuntime().selectProvider(capabilities) : device.deviceClass === 'MOBILE' ? new MobileLocalRuntime().selectProvider(device, capabilities) : new DesktopLocalRuntime().selectProvider(device, capabilities);
+    if (provider === 'BLOCKED') throw new Error('No allowed execution provider'); const runtime = new OnnxLocalRuntime(this.dependencies.onnxSessionFactory, [provider], this.dependencies.clock); await runtime.load(model, bytes); this.#runtimes.set(modelId, runtime);
+  }
+  async unloadModel(modelId: string): Promise<void> { const runtime = this.#runtimes.get(modelId); await runtime?.unload(); this.#runtimes.delete(modelId); }
+  async infer(modelId: string, request: InferenceRequest): Promise<InferenceResult> {
+    const model = this.#registry.get(modelId); if (!model || model.status !== 'READY') throw new Error('Quarantined or untrusted model inference is blocked'); const runtime = this.#runtimes.get(modelId); if (!runtime) throw new Error('Model is not loaded'); return runtime.infer(request);
+  }
+  async benchmarkModel(modelId: string, request: InferenceRequest): Promise<LocalModelBenchmark> {
+    const model = this.#registry.get(modelId); const bytes = await this.dependencies.storage.read(modelId); if (!model || model.status !== 'READY' || !bytes) throw new Error('A trusted installed model is required');
+    let runtime = this.#runtimes.get(modelId); if (!runtime) { await this.loadModel(modelId); runtime = this.#runtimes.get(modelId); } const result = await new LocalModelBenchmarker(this.dependencies.clock).run(runtime!, model, bytes, request); this.#benchmarks.set(modelId, result); return result;
+  }
+  benchmark(modelId: string): LocalModelBenchmark | undefined { return this.#benchmarks.get(modelId); }
+  verifyResult(result: InferenceResult, requirements?: Parameters<LocalResultVerifier['verify']>[1]): ResultVerification { return new LocalResultVerifier().verify(result, requirements); }
+  compareLocalCloud(local: Readonly<{ latencyMs: number; quality: number; cost: number }>, cloud: Readonly<{ latencyMs: number; quality: number; cost: number }>, qualityRequirement = 0) { return compare(local, cloud, qualityRequirement); }
   verifyModel(manifest: ModelManifest, bytes?: Uint8Array): Promise<TrustResult> { return this.#verifier.verify(manifest, bytes); }
   async selectExecutionTarget(request: Omit<TargetRequest, 'device' | 'models'>): Promise<TargetDecision> {
     const device = await this.analyzeDevice(); const runtimeCapabilities = await new LocalRuntimeDetector(this.dependencies.runtimeProbe).detect();

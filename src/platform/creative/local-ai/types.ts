@@ -12,6 +12,7 @@ export type ExecutionTarget = 'LOCAL' | 'CLOUD' | 'HYBRID' | 'BLOCKED';
 export type ModelStatus = 'AVAILABLE' | 'DOWNLOADING' | 'VERIFYING' | 'INSTALLED' | 'READY' | 'OUTDATED' | 'DISABLED' | 'QUARANTINED' | 'FAILED' | 'REMOVING';
 export type ModelFormat = 'ONNX' | 'TFLITE' | 'SAFETENSORS' | 'GGUF';
 export type RuntimeKind = 'ONNX_RUNTIME' | 'WEBGPU' | 'WASM' | 'NNAPI' | 'DIRECTML' | 'CUDA' | 'METAL' | 'VULKAN';
+export type ExecutionProvider = 'webgpu' | 'wasm' | 'cuda' | 'dml' | 'coreml' | 'cpu' | 'nnapi';
 export type Scope = Readonly<{ tenantId: string; projectId: string; userId: string }>;
 
 export type DeviceSignals = Readonly<{
@@ -49,6 +50,24 @@ export type TargetRequest = Readonly<{
 export type TargetDecision = Readonly<{ target: ExecutionTarget; model?: ModelManifest; reason: string; fallback: ExecutionTarget | null; resource: ResourceDecision; candidates: readonly SuitabilityScore[] }>;
 export type InferenceContext = Readonly<{ prompt: string; operation: string; allowedArtifacts: readonly Readonly<{ id: string; value: unknown }>[]; sanitizedConstraints: Readonly<Record<string, unknown>>; allowedCapabilities: readonly string[]; modelParameters: Readonly<Record<string, unknown>>; scope: Scope }>;
 export type LocalAISnapshot = Readonly<{ deviceProfile: DeviceCapabilityProfile; runtimeCapabilities: RuntimeCapabilities; installedModels: readonly ModelManifest[]; selectedModel?: ModelManifest; executionTarget: ExecutionTarget; resourceDecision: ResourceDecision; privacyPolicy: PrivacyMode; trustStatus: TrustResult | null; fallback: ExecutionTarget | null; timeline: readonly Readonly<{ sequence: number; event: string }>[] }>;
+export type TensorValue = Readonly<{ data: ArrayLike<number>; dims: readonly number[]; type?: string }>;
+export type InferenceRequest = Readonly<{ requestId: string; inputs: Readonly<Record<string, TensorValue>>; outputNames?: readonly string[] }>;
+export type InferenceResult = Readonly<{ requestId: string; modelId: string; outputs: Readonly<Record<string, TensorValue>>; provider: ExecutionProvider; latencyMs: number; memoryBytes: number; artifact: LocalArtifact }>;
+export type LocalArtifact = Readonly<{ id: string; kind: 'IMAGE' | 'MASK' | 'TEXT' | 'ANALYSIS' | 'TENSOR'; mimeType: string; width?: number; height?: number; data: unknown; metadata: Readonly<Record<string, unknown>> }>;
+export type RuntimeHealth = Readonly<{ status: 'READY' | 'UNLOADED' | 'DEGRADED' | 'BLOCKED'; provider?: ExecutionProvider; message?: string }>;
+export type RuntimeEstimate = Readonly<{ latencyMs: number; memoryBytes: number; energy: number }>;
+export type RuntimeSnapshot = Readonly<{ loaded: boolean; modelId?: string; provider?: ExecutionProvider; activeRequests: number; lastLatencyMs?: number }>;
+export interface LocalModelRuntime {
+  load(model: ModelManifest, bytes: Uint8Array): Promise<void>; unload(): Promise<void>; infer(request: InferenceRequest): Promise<InferenceResult>;
+  cancel(requestId: string): void; health(): RuntimeHealth; estimate(request?: InferenceRequest): RuntimeEstimate; snapshot(): RuntimeSnapshot; debug(): Readonly<Record<string, unknown>>;
+}
+export interface OnnxSession { run(inputs: Readonly<Record<string, TensorValue>>, outputNames?: readonly string[]): Promise<Readonly<Record<string, TensorValue>>>; release?(): Promise<void> | void }
+export interface OnnxSessionFactory { create(bytes: Uint8Array, options: Readonly<{ executionProviders: readonly ExecutionProvider[] }>): Promise<OnnxSession> }
+export type LocalModelBenchmark = Readonly<{ modelId: string; coldStartMs: number; warmStartMs: number; latencyMs: number; ramBytes: number; vramBytes: number; energyEstimate: number; successRate: number; outputDimensions: readonly number[]; provider: ExecutionProvider }>;
+export type ModelBundle = Readonly<{ id: 'MOBILE_LOW' | 'MOBILE_HIGH' | 'DESKTOP_STANDARD' | 'DESKTOP_GPU' | 'BROWSER'; modelIds: readonly string[]; estimatedBytes: number; reasoning: 'YES' | 'LIMITED' | 'NO'; generation: 'NO' }>;
+export type ModelPackDefinition = Readonly<{ id: 'IMAGE_ANALYSIS' | 'SEGMENTATION' | 'UPSCALE' | 'OCR' | 'LOCAL_REASONING'; family: string; capabilities: readonly string[]; optional: boolean; artifactKinds: readonly LocalArtifact['kind'][] }>;
+export type ResultVerification = Readonly<{ valid: boolean; checks: Readonly<Record<string, boolean>>; errors: readonly string[] }>;
+export type LocalCloudComparison = Readonly<{ target: 'LOCAL' | 'CLOUD'; localScore: number; cloudScore: number; reason: string }>;
 
 export interface DeviceProvider { signals(): Promise<DeviceSignals> }
 export interface RuntimeProbe { detect(capability: RuntimeKind): Promise<Availability> }
@@ -56,4 +75,4 @@ export interface HashPort { sha256(bytes: Uint8Array): Promise<string> }
 export interface SignaturePort { verify(publisher: string, signature: string, digest: string): Promise<boolean> }
 export interface FetchPort { fetch(uri: string, offset: number, signal: AbortSignal): Promise<Uint8Array> }
 export interface ModelStoragePort { freeBytes(): Promise<number>; read(modelId: string): Promise<Uint8Array | undefined>; write(modelId: string, bytes: Uint8Array): Promise<void>; remove(modelId: string): Promise<void> }
-export interface LocalAIDependencies { id(): string; clock(): number; random(): number; deviceProvider: DeviceProvider; runtimeProbe: RuntimeProbe; fetch: FetchPort; storage: ModelStoragePort; hash: HashPort; signatureVerifier: SignaturePort }
+export interface LocalAIDependencies { id(): string; clock(): number; random(): number; deviceProvider: DeviceProvider; runtimeProbe: RuntimeProbe; fetch: FetchPort; storage: ModelStoragePort; hash: HashPort; signatureVerifier: SignaturePort; onnxSessionFactory?: OnnxSessionFactory; modelCatalog?: readonly ModelManifest[] }
