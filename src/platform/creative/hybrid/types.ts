@@ -1,0 +1,25 @@
+export type HybridTarget = 'LOCAL' | 'CLOUD' | 'HYBRID' | 'BLOCKED';
+export type HybridMode = 'AUTO' | 'LOCAL_ONLY' | 'CLOUD_ONLY';
+export type Scope = Readonly<{ tenantId: string; projectId: string; userId: string }>;
+export type PayloadKind = 'FULL_IMAGE' | 'CROPPED_IMAGE' | 'MASK_ONLY' | 'METADATA_ONLY' | 'LOW_RES_PREVIEW' | 'NONE';
+export type LearningSignal = 'LOCAL_SUCCESS' | 'LOCAL_FAILED' | 'CLOUD_ESCALATED' | 'CLOUD_AVOIDED' | 'LOCAL_CHEAPER' | 'LOCAL_FASTER' | 'CLOUD_HIGHER_QUALITY' | 'PRIVACY_BLOCKED';
+export type HybridArtifact = Readonly<{ id: string; kind: string; value: unknown; hash: string; mimeType: string; width?: number; height?: number; alpha?: boolean; metadata: Readonly<Record<string, unknown>>; scope: Scope }>;
+export type CandidateMetrics = Readonly<{ quality: number; monetaryCost: number; deviceCost: number; energyCost: number; latencyMs: number; privacyExposure: number; reliability: number; deviceLoad: number; providerHealth: number }>;
+export type ExecutionCandidate = Readonly<{ target: Exclude<HybridTarget, 'BLOCKED'>; localModel?: string; trustedModel?: boolean; cloudProvider?: string; providerAvailable?: boolean; metrics: CandidateMetrics }>;
+export type HybridPolicy = Readonly<{ mode: HybridMode; cloudAllowed: boolean; outboundImageAllowed: boolean; cloudDownloadAllowed: boolean; qualityRequirement: number; creditBudget: number; privacyWeight: number; latencyWeight: number; energyWeight: number; reliabilityWeight: number; speculativeLocal: boolean }>;
+export type InputNode = Readonly<{ id: string; operation: string; dependencies?: readonly string[]; candidates: readonly ExecutionCandidate[]; requiredPayload?: PayloadKind; reversible?: boolean }>;
+export type InputWorkflow = Readonly<{ id: string; scope: Scope; nodes: readonly InputNode[]; policy: HybridPolicy }>;
+export type VerificationRule = Readonly<{ minQuality: number; requireHash: boolean; allowedMimeTypes: readonly string[] }>;
+export type HybridExecutionNode = Readonly<{ id: string; operation: string; executionTarget: HybridTarget; localModel?: string; cloudProvider?: string; dependencies: readonly string[]; fallback: readonly ExecutionCandidate[]; verification: VerificationRule; cost: number; latency: number; privacy: number; candidate: ExecutionCandidate | null; speculative: boolean; status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'BLOCKED' }>;
+export type HybridExecutionEdge = Readonly<{ from: string; to: string; imageLeavesDevice: boolean; cloudDownload: boolean; payload: PayloadKind; permitted: boolean }>;
+export type HybridExecutionStage = Readonly<{ id: string; nodeIds: readonly string[]; strategy: 'PARALLEL' | 'LOCAL_FIRST' | 'CLOUD_FIRST' }>;
+export type HybridExecutionBarrier = Readonly<{ id: string; afterStage: string; requiredNodeIds: readonly string[] }>;
+export type HybridExecutionGraphData = Readonly<{ id: string; scope: Scope; nodes: readonly HybridExecutionNode[]; edges: readonly HybridExecutionEdge[]; stages: readonly HybridExecutionStage[]; barriers: readonly HybridExecutionBarrier[] }>;
+export type RuntimeResources = Readonly<{ cpuLoad: number; gpuLoad: number; ramAvailableMb: number; vramAvailableMb: number; batteryPercent: number; thermal: 'NORMAL' | 'ELEVATED' | 'HIGH' | 'CRITICAL'; networkLatencyMs: number }>;
+export type ExecutionResult = Readonly<{ artifact: HybridArtifact; quality: number; latencyMs: number; energy: number; cost: number }>;
+export type NodeResult = Readonly<{ nodeId: string; target: HybridTarget; result?: ExecutionResult; error?: string; fallbackUsed?: string }>;
+export type HybridCheckpoint = Readonly<{ nodeId: string; target: HybridTarget; localModel?: string; cloudProvider?: string; artifacts: readonly HybridArtifact[]; resources: RuntimeResources; remainingBudget: number; verified: boolean; imageLeavesDevice: boolean }>;
+export type HybridMetrics = Readonly<{ monetaryCost: number; energy: number; latencyMs: number; privacyExposure: number; fallbackCount: number }>;
+export type HybridExecutionSnapshot = Readonly<{ workflow: InputWorkflow; graph: HybridExecutionGraphData; results: readonly NodeResult[]; artifacts: readonly HybridArtifact[]; checkpoints: readonly HybridCheckpoint[]; privacyDecisions: readonly HybridExecutionEdge[]; metrics: HybridMetrics; signals: readonly LearningSignal[]; timeline: readonly Readonly<{ sequence: number; event: string }>[] }>;
+export type HybridSimulation = Readonly<{ name: 'LOCAL_ONLY' | 'CLOUD_ONLY' | 'HYBRID_A' | 'HYBRID_B'; expectedQuality: number; expectedCost: number; expectedLatency: number; energy: number; privacyExposure: number; failureProbability: number }>;
+export interface HybridPorts { now(): number; resources(): Promise<RuntimeResources>; local: Readonly<{ execute(node: HybridExecutionNode, artifacts: readonly HybridArtifact[]): Promise<ExecutionResult> }>; cloud: Readonly<{ execute(node: HybridExecutionNode, artifacts: readonly HybridArtifact[], payload: PayloadKind): Promise<ExecutionResult> }>; hash(value: unknown): Promise<string> }
