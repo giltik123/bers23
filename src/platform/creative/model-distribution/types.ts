@@ -1,0 +1,22 @@
+import type { DeviceCapabilityProfile, LocalAIDependencies, LocalModelBenchmark, ModelManifest, PrivacyMode, Scope } from '../local-ai/types';
+
+export type BundleProfile = 'MINIMAL' | 'BALANCED' | 'CREATOR' | 'PRIVACY_FIRST' | 'OFFLINE';
+export type DistributionModelStatus = 'QUEUED' | 'DOWNLOADING' | 'PAUSED' | 'CANCELLED' | 'INSTALLED' | 'CANARY' | 'PRIMARY' | 'DEPRECATED' | 'FAILED';
+export type ModelTelemetry = Readonly<{ modelId: string; quality: number; latencyMs: number; successRate: number; cloudAvoidance: number; cloudSavings: number; energy: number; thermalImpact: number; samples: number }>;
+export type DistributionModel = Readonly<{ manifest: ModelManifest; priority: number; score: number; reasons: readonly string[]; status: DistributionModelStatus; canaryPercent?: number }>;
+export type ModelBundle = Readonly<{ bundleId: string; version: string; profile: BundleProfile; models: readonly DistributionModel[]; capabilities: readonly string[]; sizeBytes: number; requiredStorage: number; requiredRam: number; requiredVram: number; estimatedPerformance: number; estimatedEnergy: number; expectedCloudSavings: number; compatibility: number; priority: number }>;
+export type StorageBudget = 500_000_000 | 1_000_000_000 | 2_000_000_000 | 5_000_000_000 | 10_000_000_000 | 'UNLIMITED';
+export type RecommendationWeights = Readonly<{ quality: number; compatibility: number; cloudSavings: number; speed: number; privacy: number; memoryPressure: number; energyCost: number; thermalRisk: number; storageCost: number }>;
+export type DistributionPolicy = Readonly<{ weights: RecommendationWeights; storageBudget: StorageBudget; wifiOnly: boolean; minimumBattery: number; maximumAutomaticBytes: number; privacyMode: PrivacyMode; allowMandatorySmallModels: boolean; regressionThreshold: number }>;
+export type UsagePattern = Readonly<{ capability: string; frequency: number; finalShare: number }>;
+export type RecommendationContext = Readonly<{ device: DeviceCapabilityProfile; telemetry: readonly ModelTelemetry[]; usage: readonly UsagePattern[]; policy: DistributionPolicy; offline?: boolean }>;
+export type DownloadEstimate = Readonly<{ bytes: number; seconds: number | 'UNKNOWN'; requiredStorage: number; requiresConsent: boolean }>;
+export type DownloadItem = Readonly<{ modelId: string; priority: number; bytes: number; downloadedBytes: number; status: DistributionModelStatus }>;
+export type InstallProposal = Readonly<{ proposalId: string; bundle: ModelBundle; estimate: DownloadEstimate; summary: string; reasons: readonly string[] }>;
+export type Consent = Readonly<{ proposalId: string; approved: boolean; scope: Scope }>;
+export type RejectedModel = Readonly<{ modelId: string; reasons: readonly string[] }>;
+export type CachedModel = Readonly<{ modelId: string; version: string; lastUsed: number; performance: number; health: number; cloudSavings: number; status: DistributionModelStatus }>;
+export type AdaptiveRoute = Readonly<{ capability: string; preview: 'LOCAL' | 'CLOUD'; final: 'LOCAL' | 'CLOUD'; reason: string }>;
+export type ModelDistributionSnapshot = Readonly<{ deviceProfile: DeviceCapabilityProfile; installedModels: readonly CachedModel[]; recommendedBundle?: ModelBundle; rejectedModels: readonly RejectedModel[]; storageBudget: StorageBudget; downloadQueue: readonly DownloadItem[]; performanceBenchmarks: readonly LocalModelBenchmark[]; cloudSavingsEstimate: number; trustStatus: Readonly<Record<string, boolean>>; policy: DistributionPolicy; adaptiveRoutes: readonly AdaptiveRoute[]; timeline: readonly Readonly<{ sequence: number; at: number; event: string }>[] }>;
+export type DeviceClassLabel = 'ANDROID_LOW' | 'ANDROID_MID' | 'ANDROID_HIGH' | 'ANDROID_FLAGSHIP' | 'DESKTOP_CPU' | 'DESKTOP_INTEGRATED_GPU' | 'DESKTOP_MID_GPU' | 'DESKTOP_HIGH_GPU' | 'BROWSER_WASM_ONLY' | 'BROWSER_WEBGPU_LOW' | 'BROWSER_WEBGPU_MID' | 'BROWSER_WEBGPU_HIGH';
+export type DistributionDependencies = Readonly<{ localAI: LocalAIDependencies; bandwidthBytesPerSecond?: () => number | undefined; criticalExecution?: () => boolean; benchmarkRequest?: (model: ModelManifest) => Parameters<import('../local-ai/LocalAIPlatform').LocalAIPlatform['benchmarkModel']>[1] }>;
