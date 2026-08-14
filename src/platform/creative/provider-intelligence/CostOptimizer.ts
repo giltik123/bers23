@@ -1,0 +1,2 @@
+import type { BudgetMode, ProviderScore } from './types';
+export class CostOptimizer { apply(candidates: readonly ProviderScore[], budget: number | undefined, mode: BudgetMode = 'unlimited'): readonly ProviderScore[] { if (mode === 'unlimited' || budget === undefined) return candidates; const within = candidates.filter((x) => x.price <= budget); if (mode === 'hard') return within; return within.length ? [...within, ...candidates.filter((x) => x.price > budget)] : candidates; } }
