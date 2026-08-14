@@ -1,0 +1,18 @@
+export const WORKFLOW_STATES = ['WAITING', 'READY', 'RUNNING', 'VERIFYING', 'SUCCESS', 'FAILED', 'RECOVERING', 'SKIPPED', 'FINISHED'] as const;
+export type WorkflowStepState = typeof WORKFLOW_STATES[number];
+export type Scope = Readonly<{ tenantId: string; projectId: string; userId: string }>;
+export type ResourceBudget = Readonly<{ credits: number; latencyMs: number; ramMb: number; gpuMs: number; aiCalls: number; retries: number }>;
+export type Artifact = Readonly<{ id: string; kind: string; value: unknown; producerStepId: string; scope: Scope; metadata?: Readonly<Record<string, unknown>> }>;
+export type WorkflowOperation = Readonly<{ id: string; type: string; dependencies?: readonly string[]; requiredArtifacts?: readonly string[]; produces?: readonly string[]; providerId?: string; alternativeType?: string; reusableArtifactId?: string; cost?: Partial<ResourceBudget>; permissions?: readonly string[]; policyTags?: readonly string[]; input?: Readonly<Record<string, unknown>> }>;
+export type WorkflowSources = Readonly<{ creativePlan?: Readonly<{ operations?: readonly WorkflowOperation[] }>; executionGraph?: Readonly<{ operations?: readonly WorkflowOperation[] }>; pipelineGraph?: Readonly<{ operations?: readonly WorkflowOperation[] }>; providerSelection?: Readonly<Record<string, string>> }>;
+export type CompiledWorkflow = Readonly<{ id: string; version: 1; scope: Scope; prompt: string; operations: readonly WorkflowOperation[]; parallelGroups: readonly (readonly string[])[]; budget: ResourceBudget; compiledAt: number }>;
+export type StepResult = Readonly<{ stepId: string; state: WorkflowStepState; attempts: number; providerId?: string; artifacts: readonly Artifact[]; error?: string; startedAt?: number; finishedAt?: number }>;
+export type TimelineEvent = Readonly<{ sequence: number; at: number; type: string; stepId?: string; details?: Readonly<Record<string, unknown>> }>;
+export type WorkflowMetrics = Readonly<{ executionTimeMs: number; latencyMs: number; credits: number; peakMemoryMb: number; gpuMs: number; aiCalls: number; failures: number; retries: number; maxParallelism: number; providerUsage: Readonly<Record<string, number>> }>;
+export type VerificationResult = Readonly<{ stepId: string; valid: boolean; checks: readonly string[]; errors: readonly string[] }>;
+export type WorkflowSnapshot = Readonly<{ workflow: CompiledWorkflow; status: 'SUCCESS' | 'FAILED'; steps: readonly StepResult[]; artifacts: readonly Artifact[]; verification: readonly VerificationResult[]; metrics: WorkflowMetrics; timeline: readonly TimelineEvent[]; budget: ResourceBudget; health: 'healthy' | 'degraded' | 'failed'; replay: Readonly<{ snapshotVersion: 1; executableWithoutProviders: true }> }>;
+export interface ProviderRuntimePort { execute(request: Readonly<{ workflowId: string; operation: WorkflowOperation; artifacts: readonly Artifact[]; scope: Scope }>): Promise<Readonly<{ artifacts?: readonly Omit<Artifact, 'scope' | 'producerStepId'>[]; latencyMs?: number; memoryMb?: number; gpuMs?: number }>> }
+export interface ProviderIntelligencePort { isAvailable(providerId: string, scope: Scope): boolean; fallback(providerId: string, operation: WorkflowOperation, scope: Scope): string | undefined }
+export interface WorkflowPolicyPort { allows(operation: WorkflowOperation, scope: Scope): boolean }
+export interface WorkflowVerifierPort { verify(operation: WorkflowOperation, artifacts: readonly Artifact[]): Promise<VerificationResult> }
+export interface WorkflowEngineDependencies { runtime: ProviderRuntimePort; providers: ProviderIntelligencePort; policy?: WorkflowPolicyPort; verifier?: WorkflowVerifierPort; now?: () => number; id?: () => string }
