@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { creditsPolicy, WELCOME_GRANT, CREDIT_TYPES } from '@/lib/credits/creditsPolicy';
 
 const zeroBalances = () => Object.fromEntries(CREDIT_TYPES.map((t) => [t, 0]));
@@ -32,17 +32,17 @@ class CreditsWalletService {
   }
 
   async _load() {
-    const user = await base44.auth.me();
-    let [wallet] = await base44.entities.CreditsWallet.filter({ created_by_id: user.id });
+    const user = await coreClient.auth.me();
+    let [wallet] = await coreClient.entities.CreditsWallet.filter({ created_by_id: user.id });
     if (!wallet) {
       const balances = zeroBalances();
       balances[WELCOME_GRANT.credit_type] = WELCOME_GRANT.amount;
-      wallet = await base44.entities.CreditsWallet.create({
+      wallet = await coreClient.entities.CreditsWallet.create({
         balances, reserved: 0,
         lifetime_spent: 0, lifetime_purchased: 0, lifetime_earned: WELCOME_GRANT.amount,
         expirations: [], welcome_granted: true,
       });
-      await base44.entities.CreditTransaction.create({
+      await coreClient.entities.CreditTransaction.create({
         type: 'grant', credit_type: WELCOME_GRANT.credit_type, amount: WELCOME_GRANT.amount,
         status: 'completed', note: 'Welcome credits',
       });
@@ -64,18 +64,18 @@ class CreditsWalletService {
       const removable = Math.min(balances[lot.credit_type] || 0, lot.amount);
       balances[lot.credit_type] -= removable;
       if (removable > 0) {
-        await base44.entities.CreditTransaction.create({
+        await coreClient.entities.CreditTransaction.create({
           type: 'release', credit_type: lot.credit_type, amount: removable,
           status: 'completed', reason: 'expired', note: 'Credits expired',
         });
       }
     }
     const remaining = (wallet.expirations || []).filter((e) => !expired.includes(e));
-    return base44.entities.CreditsWallet.update(wallet.id, { balances, expirations: remaining });
+    return coreClient.entities.CreditsWallet.update(wallet.id, { balances, expirations: remaining });
   }
 
   async update(patch) {
-    const updated = await base44.entities.CreditsWallet.update(this.state.wallet.id, patch);
+    const updated = await coreClient.entities.CreditsWallet.update(this.state.wallet.id, patch);
     this._set({ wallet: updated });
     return updated;
   }

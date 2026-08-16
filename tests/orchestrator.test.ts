@@ -107,7 +107,7 @@ test('debug inspection exposes sessions, runtime, graph, workers, providers, rou
 
 test('orchestrator layer has no forbidden business or UI imports', async () => {
   const { spawnSync } = await import('node:child_process');
-  const result = spawnSync('rg', ['-n', "from ['\"](react|@base44|vite|.*src/lib|.*lib/|.*providers|.*Planner|.*Pipeline|.*Agent|.*UI)", 'src/platform/orchestrator'], { encoding: 'utf8' });
+  const result = spawnSync('rg', ['-n', "from ['\"](react|@retired-runtime|vite|.*src/lib|.*lib/|.*providers|.*Planner|.*Pipeline|.*Agent|.*UI)", 'src/platform/orchestrator'], { encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.equal(result.stdout, '');
 });

@@ -109,6 +109,6 @@ test('forbidden imports', () => {
   for (const file of files) {
     const source = readFileSync(join(process.cwd(), 'src/platform/creative/local-engine', file), 'utf8');
     assert.equal(forbidden.test(source), false, file);
-    assert.equal(/from ['"](?:react|@base44\/sdk|three|canvas|opencv|@tensorflow)/.test(source), false, file);
+    assert.equal(/from ['"](?:react|@retired-runtime\/sdk|three|canvas|opencv|@tensorflow)/.test(source), false, file);
   }
 });

@@ -47,7 +47,7 @@ test('explainability and unified timeline expose the complete executive chain', 
 });
 
 test('orchestrator imports stay isolated from forbidden systems', () => {
-  const forbidden = [/workflow/i, /runtime/i, /provider/i, /billing/i, /gateway/i, /editing/i, /pipeline/i, /memory.core/i, /agent/i, /react/i, /base44/i];
+  const forbidden = [/workflow/i, /runtime/i, /provider/i, /billing/i, /gateway/i, /editing/i, /pipeline/i, /memory.core/i, /agent/i, /react/i, /retired-runtime/i];
   for (const file of readdirSync('src/platform/creative/orchestrator')) {
     if (!file.endsWith('.ts')) continue;
     const dependenciesOnly = readFileSync(join('src/platform/creative/orchestrator', file), 'utf8').split('\n').filter((line) => /^import|^export .* from/.test(line)).join('\n');

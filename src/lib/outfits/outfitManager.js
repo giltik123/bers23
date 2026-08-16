@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { normalizeOutfit } from '@/lib/outfits/outfitModel';
 import { outfitHistory } from '@/lib/outfits/outfitHistory';
 import { outfitAnalytics } from '@/lib/outfits/outfitAnalytics';
@@ -7,18 +7,18 @@ import { outfitAnalytics } from '@/lib/outfits/outfitAnalytics';
 // Virtual Try-On will consume outfits directly from here. No AI editing.
 class OutfitManager {
   async list() {
-    return base44.entities.Outfit.list('-updated_date', 200);
+    return coreClient.entities.Outfit.list('-updated_date', 200);
   }
 
   async create(data) {
-    const outfit = await base44.entities.Outfit.create(normalizeOutfit(data));
+    const outfit = await coreClient.entities.Outfit.create(normalizeOutfit(data));
     outfitHistory.record({ type: 'created', outfitId: outfit.id, name: outfit.name });
     outfitAnalytics.track('outfit_created', { style: outfit.style, occasion: outfit.occasion });
     return outfit;
   }
 
   async update(id, data) {
-    return base44.entities.Outfit.update(id, data);
+    return coreClient.entities.Outfit.update(id, data);
   }
 
   async rename(outfit, name) {
@@ -28,7 +28,7 @@ class OutfitManager {
 
   async duplicate(outfit, suffix = '(copy)') {
     const { id, created_date, updated_date, created_by_id, ...rest } = outfit;
-    const copy = await base44.entities.Outfit.create(normalizeOutfit({ ...rest, name: `${outfit.name} ${suffix}`, favorite: false }));
+    const copy = await coreClient.entities.Outfit.create(normalizeOutfit({ ...rest, name: `${outfit.name} ${suffix}`, favorite: false }));
     outfitHistory.record({ type: 'duplicated', outfitId: copy.id, name: copy.name });
     return copy;
   }
@@ -40,7 +40,7 @@ class OutfitManager {
 
   async remove(outfit) {
     outfitHistory.record({ type: 'deleted', outfitId: outfit.id, name: outfit.name });
-    return base44.entities.Outfit.delete(outfit.id);
+    return coreClient.entities.Outfit.delete(outfit.id);
   }
 
   async archive(outfit) {

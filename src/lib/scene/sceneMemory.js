@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { projectService } from '@/lib/projectService';
 import { styleAnalyzer } from '@/lib/scene/styleAnalyzer';
 import { identityAnalyzer } from '@/lib/scene/identityAnalyzer';
@@ -48,7 +48,7 @@ class SceneMemory {
     this.setState({ status: 'analyzing', projectId: project.id, error: null });
     sceneLogger.log('analysis_started', { projectId: project.id });
     try {
-      const raw = await base44.integrations.Core.InvokeLLM({
+      const raw = await coreClient.integrations.Core.InvokeLLM({
         prompt: `Analyze this photograph's visual identity for editing consistency. Describe: lighting (type, direction, quality, time of day, contrast, brightness), color (dominant palette as color names, white balance, saturation, grading style), camera (angle, lens look, depth of field, focal impression), perspective (horizon, vanishing, distortion), overall style (photograph/render/etc, realism, noise level, sharpness, dynamic range, mood), and — if a human is present — visual appearance descriptors ONLY (hair color, hair length, skin tone, general face proportions, eye color, rough age range, facial hair, accessories). Never output anything that could identify the person biometrically.`,
         file_urls: [project.original_image_url],
         response_json_schema: {

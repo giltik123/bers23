@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, LogOut } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { Button } from '@/components/ui/button';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageSwitcher from '@/components/i18n/LanguageSwitcher';
@@ -14,7 +14,7 @@ export default function Settings() {
   const { t } = useTranslation();
 
   useEffect(() => {
-    base44.auth.me().then(setUser).catch(() => {});
+    coreClient.auth.me().then(setUser).catch(() => {});
   }, []);
 
   return (
@@ -49,7 +49,7 @@ export default function Settings() {
         <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">{t('settings.loadingPerformance')}</div>}><PerformanceSettings /></Suspense>
       </div>
 
-      <Button variant="outline" className="w-full rounded-xl h-11" onClick={() => base44.auth.logout()}>
+      <Button variant="outline" className="w-full rounded-xl h-11" onClick={() => coreClient.auth.logout()}>
         <LogOut className="w-4 h-4 mr-2" /> {t('common.signOut')}
       </Button>
     </div>

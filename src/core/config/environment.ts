@@ -12,7 +12,7 @@ const nodeEnvironment = (globalThis as typeof globalThis & {
 const runtimeMode = globalThis.__APP_ENV__ ?? nodeEnvironment;
 const mode: EnvironmentMode = runtimeMode === 'production' || runtimeMode === 'test' ? runtimeMode : 'development';
 
-/** Environment information derived without relying on Base44. */
+/** Environment information derived without relying on legacy platform. */
 export const environment = Object.freeze({
   mode,
   isDevelopment: mode === 'development',

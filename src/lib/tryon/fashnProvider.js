@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 
 // FashnProvider — the ONLY module that talks to the FASHN try-on backend.
 class FashnProvider {
@@ -15,7 +15,7 @@ class FashnProvider {
 
   async tryOn({ projectId, modelImageUrl, garmentImageUrl, category }) {
     this.cancelled = false;
-    const response = await base44.functions.invoke('fashnTryon', {
+    const response = await coreClient.functions.invoke('fashnTryon', {
       operation_id: 'fashn.tryon',
       project_id: projectId,
       model_image: modelImageUrl,

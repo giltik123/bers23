@@ -10,7 +10,7 @@ import { previewGenerator } from '@/lib/pipeline/previewGenerator';
 import { exportManager } from '@/lib/pipeline/exportManager';
 import { pipelineLogger } from '@/lib/pipeline/pipelineLogger';
 import { pipelineEvents } from '@/lib/pipeline/pipelineEvents';
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 
 // ImagePipeline — the mandatory processing layer between Segmentation and every AI editing provider.
 // Providers must ONLY receive the payload produced by prepare(), and results must go through restore().
@@ -63,7 +63,7 @@ class ImagePipeline {
       // Upload the processing-resolution image once so providers get a stable URL.
       const procCanvas = imageLoader.toCanvas(optimized.bitmap, procDims.width, procDims.height);
       const procBlob = await imageLoader.canvasToBlob(procCanvas, 'image/jpeg', 0.92);
-      const { file_url: processingImageUrl } = await base44.integrations.Core.UploadFile({
+      const { file_url: processingImageUrl } = await coreClient.integrations.Core.UploadFile({
         file: new File([procBlob], 'processing.jpg', { type: 'image/jpeg' }),
       });
 

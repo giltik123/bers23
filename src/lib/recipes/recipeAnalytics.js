@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 
 // RecipeAnalytics — usage, success/failure, duration and credits per recipe.
 const KEY = 'recipe_analytics';
@@ -16,7 +16,7 @@ class RecipeAnalytics {
     e.creditsSpent += credits;
     data[recipeId] = e;
     this._save(data);
-    base44.analytics.track({
+    coreClient.analytics.track({
       eventName: 'recipe_executed',
       properties: { recipe_id: recipeId, success, duration_ms: Math.round(durationMs), credits },
     });

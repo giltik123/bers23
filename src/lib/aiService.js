@@ -1,11 +1,11 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 
 // Single AI gateway — every AI request in the app goes through here.
 // The backend 'aiService' function routes to the right provider
 // (fal.ai SAM for segmentation, Reve for editing, FASHN for try-on),
 // decides parameters and credit cost, and normalizes results.
 async function invoke(action, params) {
-  const response = await base44.functions.invoke('aiService', { action, ...params });
+  const response = await coreClient.functions.invoke('aiService', { action, ...params });
   if (response.data?.error) throw new Error(response.data.error);
   return response.data;
 }

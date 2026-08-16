@@ -5,7 +5,7 @@ export interface ProviderConfig {
   readonly retryCount: number;
 }
 
-/** Safe provider defaults. Secrets and Base44 configuration do not belong here. */
+/** Safe provider defaults. Secrets and legacy platform configuration do not belong here. */
 export const providerConfig: Readonly<Record<string, ProviderConfig>> = Object.freeze({
   default: Object.freeze({ enabled: true, timeoutMs: 30_000, retryCount: 2 }),
 });
