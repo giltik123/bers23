@@ -29,3 +29,16 @@ export interface MultiHeadPredictionV2 extends MultiHeadPrediction { satisfactio
 export interface PairwisePreference { preferred: DecisionFeaturesV2; rejected: DecisionFeaturesV2; source: 'OUTCOME' | 'HUMAN_PREFERENCE'; weight?: number }
 export interface ListwiseExample { candidates: readonly DecisionFeaturesV2[]; relevance: readonly number[] }
 export interface VersionLineageV2 { datasetVersion: string; featureSchemaVersion: string; encoderVersion: string; trainingConfigVersion: string; modelVersion: string; calibrationVersion: string; benchmarkVersion: string }
+
+export type VisualEncoderTarget = 'LOCAL' | 'CLOUD';
+export type VisualOperation = 'NONE' | 'SEGMENTATION' | 'RELIGHTING' | 'UPSCALE' | 'BACKGROUND_REPLACEMENT' | 'GENERATION';
+export interface VisualAnalysisInput { width: number; height: number; composition?: Readonly<Record<string, number>>; subjectCount?: number; facePresence?: number; objectClasses?: readonly string[]; lighting?: Readonly<Record<string, number>>; colorDistribution?: readonly number[]; backgroundComplexity?: number; estimatedQuality?: number; depthCues?: number; segmentationComplexity?: number; visualStyle?: readonly string[]; sourceAssetId?: string }
+export interface VisualGoal { direction: string; styles?: readonly string[]; referenceFeatures?: Partial<VisualFeatures> }
+export interface VisualFeatures { schemaVersion: 'visual-features-v1'; encoderTarget: VisualEncoderTarget; composition: Readonly<Record<string, number>>; subjectCount: number; facePresence: number; objectClasses: readonly string[]; lighting: Readonly<Record<string, number>>; colorDistribution: readonly number[]; backgroundComplexity: number; estimatedQuality: number; resolution: Readonly<{ width: number; height: number; megapixels: number }>; depthCues: number; segmentationComplexity: number; visualStyle: readonly string[]; requestedStyleSimilarity: number }
+export interface VisualEncodingPolicy { privacyMode: PrivacyMode; cloudAnalysisAllowed: boolean; outboundImageAllowed: boolean }
+export interface VisualQualityPrediction { technicalQuality: number; visualCoherence: number; identityPreservation: number; compositionQuality: number }
+export interface VisualGoalAlignmentResult { similarity: number; gap: number; matchedStyles: readonly string[]; missingStyles: readonly string[] }
+export interface OperationNeed { operation: VisualOperation; probability: number; needed: boolean; reason: string }
+export interface VisualCounterfactualResult { baselineOperation: VisualOperation; alternativeOperation: VisualOperation; qualityDelta: number; costDelta: number; latencyDelta: number; privacyDelta: number; preferred: VisualOperation }
+export interface DecisionFeaturesV3 extends DecisionFeaturesV2 { visual: VisualFeatures; visualGoal?: VisualGoal }
+export interface DecisionRepresentationV3 extends DecisionRepresentationV2 { schemaVersion: 'decision-representation-v3'; blocks: DecisionRepresentationV2['blocks'] & Readonly<{ visual: readonly number[]; visualGoal: readonly number[] }>; visualQuality: VisualQualityPrediction; goalAlignment: VisualGoalAlignmentResult; operationNeeds: readonly OperationNeed[] }

@@ -13,3 +13,6 @@ export * from './benchmark';
 export * from './DecisionRepresentationEncoderV2';
 export * from './NeuralDecisionRanker';
 export * from './DecisionCalibrationV2';
+export * from './VisualFeatureEncoder';
+export * from './DecisionRepresentationEncoderV3';
+export * from './VisualDecisionHeads';
