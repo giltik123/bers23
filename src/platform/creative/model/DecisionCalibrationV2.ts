@@ -1,0 +1,8 @@
+import { immutable } from './immutable';
+import type { MultiHeadPredictionV2 } from './types';
+type Head = 'quality' | 'acceptance' | 'cost' | 'latency' | 'utility';
+export class DecisionCalibrationV2 {
+  readonly version = 'decision-calibration-v2'; private offsets: Record<Head, number> = { quality: 0, acceptance: 0, cost: 0, latency: 0, utility: 0 };
+  calibrate(predictions: readonly MultiHeadPredictionV2[], actual: readonly Partial<Record<Head, number>>[]) { if (predictions.length !== actual.length) throw new Error('Calibration inputs must have equal length'); const value = (p: MultiHeadPredictionV2, head: Head) => head === 'acceptance' ? p.acceptanceProbability : head === 'utility' ? p.expectedUtility : p[head]; for (const head of Object.keys(this.offsets) as Head[]) { const errors = predictions.flatMap((p, i) => actual[i]?.[head] == null ? [] : [(actual[i][head] as number) - value(p, head)]); this.offsets[head] = errors.length ? errors.reduce((a, b) => a + b, 0) / errors.length : 0; } return immutable({ version: this.version, offsets: this.offsets, sampleCount: predictions.length }); }
+  reliability(predictions: readonly number[], outcomes: readonly number[], bins = 10) { return immutable(Array.from({ length: bins }, (_, index) => { const samples = predictions.map((prediction, i) => ({ prediction, outcome: outcomes[i] })).filter(x => x.prediction >= index / bins && x.prediction <= (index + 1) / bins); return { bin: index, count: samples.length, predicted: samples.length ? samples.reduce((s, x) => s + x.prediction, 0) / samples.length : 0, observed: samples.length ? samples.reduce((s, x) => s + x.outcome, 0) / samples.length : 0 }; })); }
+}

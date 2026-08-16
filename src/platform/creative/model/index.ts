@@ -10,3 +10,6 @@ export * from './DecisionModelRegistry';
 export * from './DecisionTrainerV1';
 export * from './CreativeDecisionModel';
 export * from './benchmark';
+export * from './DecisionRepresentationEncoderV2';
+export * from './NeuralDecisionRanker';
+export * from './DecisionCalibrationV2';

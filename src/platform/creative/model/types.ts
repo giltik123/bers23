@@ -1,6 +1,6 @@
 export type ExecutionTarget = 'LOCAL' | 'CLOUD' | 'HYBRID';
 export type PrivacyMode = 'NORMAL' | 'PRIVACY_FIRST' | 'LOCAL_ONLY' | 'OFFLINE_ONLY';
-export type ModelStatus = 'CANDIDATE' | 'CANARY' | 'ACTIVE' | 'DEPRECATED' | 'REJECTED' | 'ROLLED_BACK';
+export type ModelStatus = 'TRAINING' | 'VALIDATING' | 'SHADOW' | 'CANDIDATE' | 'CANARY' | 'ACTIVE' | 'DEGRADED' | 'ROLLBACK' | 'RETIRED' | 'DEPRECATED' | 'REJECTED' | 'ROLLED_BACK';
 export type UncertaintyAction = 'ASK_USER' | 'LOCAL_FIRST' | 'SHOW_PREVIEW' | 'FALLBACK_TO_HEURISTIC';
 
 export interface DecisionContextV1 { operation: string; intent: string; goal: string; deviceClass: string; platform: string; projectType: string; privacyMode: PrivacyMode; budget: number; latencyTarget: number; qualityTarget: number; projectId?: string; deviceId?: string; timestamp?: number }
@@ -20,3 +20,12 @@ export interface ModelMetrics { rankingQuality: number; predictionError: number;
 export interface ModelManifest { featureSchemaVersion: string; datasetVersion: string; trainingConfigVersion: string; modelVersion: string; metrics: ModelMetrics; parentModel: string | null; createdAt: number; status: ModelStatus }
 export interface ConstraintPolicy { budget: number; privacyMode: PrivacyMode; cloudAllowed: boolean; allowedRuntimes?: readonly string[]; allowedProviders?: readonly string[] }
 export interface DatasetSplit { train: readonly DecisionDatasetRecord[]; validation: readonly DecisionDatasetRecord[]; test: readonly DecisionDatasetRecord[] }
+
+export interface HistoricalOutcomeV2 { operation: string; deviceClass: string; model: string; provider: string; quality: number; accepted: boolean; latency: number; cost: number; timestamp: number }
+export interface DecisionFeaturesV2 extends DecisionFeaturesV1 { goals?: readonly string[]; constraints?: readonly string[]; preferences?: Readonly<Record<string, number>>; qualityRequirements?: Readonly<Record<string, number>>; recentOutcomes?: readonly HistoricalOutcomeV2[] }
+export interface DecisionRepresentationV2 { schemaVersion: string; encoderVersion: string; vector: readonly number[]; blocks: Readonly<Record<string, readonly number[]>>; coverage: number; coldStart: readonly ('NEW_DEVICE' | 'NEW_OPERATION' | 'NEW_MODEL' | 'NEW_PROVIDER')[] }
+export interface UncertaintyV2 { aleatoric: number; epistemic: number; dataCoverage: number; oodScore: number; confidence: number; critical: boolean; recommendedAction?: UncertaintyAction }
+export interface MultiHeadPredictionV2 extends MultiHeadPrediction { satisfaction: number; regret: number; uncertaintyV2: UncertaintyV2 }
+export interface PairwisePreference { preferred: DecisionFeaturesV2; rejected: DecisionFeaturesV2; source: 'OUTCOME' | 'HUMAN_PREFERENCE'; weight?: number }
+export interface ListwiseExample { candidates: readonly DecisionFeaturesV2[]; relevance: readonly number[] }
+export interface VersionLineageV2 { datasetVersion: string; featureSchemaVersion: string; encoderVersion: string; trainingConfigVersion: string; modelVersion: string; calibrationVersion: string; benchmarkVersion: string }
