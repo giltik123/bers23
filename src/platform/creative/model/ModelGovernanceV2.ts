@@ -1,0 +1,14 @@
+import { immutable } from './immutable';
+import type { DatasetLineageV2, ModelLifecycleV2, PromotionEvidenceV2 } from './v2-types';
+const transitions: Record<ModelLifecycleV2, readonly ModelLifecycleV2[]> = { TRAINING: ['VALIDATING', 'RETIRED'], VALIDATING: ['SHADOW', 'RETIRED'], SHADOW: ['CANARY', 'DEGRADED', 'RETIRED'], CANARY: ['ACTIVE', 'DEGRADED', 'ROLLBACK'], ACTIVE: ['DEGRADED', 'ROLLBACK', 'RETIRED'], DEGRADED: ['ROLLBACK', 'RETIRED'], ROLLBACK: ['RETIRED'], RETIRED: [] };
+export class ModelGovernanceV2 {
+  private versions = new Map<string, Readonly<{ status: ModelLifecycleV2; lineage: DatasetLineageV2; timeline: readonly { status: ModelLifecycleV2; at: number; reason: string }[] }>>();
+  constructor(private readonly now: () => number = Date.now) {}
+  register(lineage: DatasetLineageV2) { if (this.versions.has(lineage.modelVersion)) throw new Error(`Duplicate model ${lineage.modelVersion}`); const entry = immutable({ status: 'TRAINING' as const, lineage, timeline: [{ status: 'TRAINING' as const, at: this.now(), reason: 'Registered for training' }] }); this.versions.set(lineage.modelVersion, entry); return entry; }
+  transition(version: string, status: ModelLifecycleV2, reason: string) { const entry = this.required(version); if (!transitions[entry.status].includes(status)) throw new Error(`Invalid governance transition ${entry.status} -> ${status}`); const changed = immutable({ ...entry, status, timeline: [...entry.timeline, { status, at: this.now(), reason }] }); this.versions.set(version, changed); return changed; }
+  promotionRule(evidence: PromotionEvidenceV2) { const { candidate, baseline } = evidence; const reasons = [!evidence.securityInvariant && 'SECURITY_INVARIANT', !evidence.privacyInvariant && 'PRIVACY_INVARIANT', candidate.securityViolations > 0 && 'SECURITY_VIOLATIONS', candidate.oodSafety < baseline.oodSafety && 'OOD_SAFETY', candidate.rankingQuality <= baseline.rankingQuality && 'RANKING', candidate.acceptance < baseline.acceptance && 'ACCEPTANCE', candidate.unnecessaryAI > baseline.unnecessaryAI && 'UNNECESSARY_AI', candidate.calibration < baseline.calibration && 'CALIBRATION'].filter(Boolean) as string[]; return immutable({ allowed: reasons.length === 0, reasons }); }
+  promote(version: string, evidence: PromotionEvidenceV2) { const result = this.promotionRule(evidence); return result.allowed ? this.transition(version, 'ACTIVE', 'Passed multi-metric production promotion rule') : this.transition(version, 'DEGRADED', `Promotion rejected: ${result.reasons.join(', ')}`); }
+  rollback(version: string, reason = 'Automatic metric regression') { return this.transition(version, 'ROLLBACK', reason); }
+  snapshot() { return immutable([...this.versions.values()]); }
+  private required(version: string) { const entry = this.versions.get(version); if (!entry) throw new Error(`Unknown model ${version}`); return entry; }
+}

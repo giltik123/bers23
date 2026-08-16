@@ -1,0 +1,2 @@
+import { immutable } from './immutable';
+export const DECISION_BENCHMARK_V1 = immutable(['Luxury', 'Portrait', 'Catalog', 'Fashion', 'Upscale', 'Background', 'Generative Edit', 'Try-On', 'Repair', 'Minimal Edit'].flatMap((category, index) => [1, 2, 3].map(variant => ({ id: `benchmark-${index + 1}-${variant}`, category, variant, operation: category.toLowerCase().replaceAll(' ', '-'), goal: variant === 1 ? 'quality' : variant === 2 ? 'balanced' : 'economy', fixed: true as const }))));
