@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { imageLoader } from '@/lib/pipeline/imageLoader';
 import { previewGenerator } from '@/lib/pipeline/previewGenerator';
 
@@ -19,7 +19,7 @@ class ExportManager {
     const canvas = imageLoader.toCanvas(bitmap);
     const blob = await imageLoader.canvasToBlob(canvas, MIME[format] || MIME.png, quality);
     const file = new File([blob], `${filename}.${format}`, { type: blob.type });
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await coreClient.integrations.Core.UploadFile({ file });
     return { file_url, width: canvas.width, height: canvas.height, format, size: blob.size };
   }
 }

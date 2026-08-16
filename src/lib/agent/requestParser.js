@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { RECIPE_LIBRARY } from '@/lib/recipes/recipeLibrary';
 
 // RequestParser — converts one natural-language request into raw structured task specs
@@ -8,7 +8,7 @@ class RequestParser {
     const catalog = RECIPE_LIBRARY.map((r) => `${r.id}: ${r.name} — ${r.description}`).join('\n');
     const labels = objects.map((o) => o.label).filter(Boolean).join(', ') || 'none detected';
 
-    const result = await base44.integrations.Core.InvokeLLM({
+    const result = await coreClient.integrations.Core.InvokeLLM({
       prompt: `You are an AI photo-editing planner. Split the user's request into individual editing tasks.
 
 User request: "${request}"

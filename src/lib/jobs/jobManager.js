@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { createJob, setJobStatus, updateJobProgress } from '@/lib/jobs/jobModel';
 import { jobQueue } from '@/lib/jobs/jobQueue';
 import { jobWorkerPool } from '@/lib/jobs/jobWorker';
@@ -26,7 +26,7 @@ class JobManager {
   async submit({ type, label, priority, projectId, run, onCancel, notifyOnComplete = false, provider = 'unknown', estimatedTime = 30000, creditsReserved = 0, payload = {}, metadata = {} }) {
     const feature = this._feature(type); await subscriptionValidator.validateOperation({ feature });
     await subscriptionValidator.validateQueue(jobQueue.size + jobWorkerPool.active.length);
-    const user = await base44.auth.me();
+    const user = await coreClient.auth.me();
     const job = createJob({ type, label, priority, projectId, userId: user.id, provider, estimatedTime, creditsReserved, payload, metadata: { ...metadata, feature }, run, onCancel });
     job.notifyOnComplete = notifyOnComplete;
     const promise = new Promise((resolve, reject) => { job._resolve = resolve; job._reject = reject; });

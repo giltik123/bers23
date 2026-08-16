@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { garmentMetadata } from '@/lib/fashion/garmentMetadata';
 import { wardrobeHistory } from '@/lib/fashion/wardrobeHistory';
 import { wardrobeAnalytics } from '@/lib/fashion/wardrobeAnalytics';
@@ -7,18 +7,18 @@ import { wardrobeAnalytics } from '@/lib/fashion/wardrobeAnalytics';
 // no providers. Everything persists on the Garment entity.
 class GarmentManager {
   async list() {
-    return base44.entities.Garment.list('-updated_date', 500);
+    return coreClient.entities.Garment.list('-updated_date', 500);
   }
 
   async create(data) {
-    const garment = await base44.entities.Garment.create(garmentMetadata.normalize(data));
+    const garment = await coreClient.entities.Garment.create(garmentMetadata.normalize(data));
     wardrobeHistory.record({ type: 'created', garmentId: garment.id, name: garment.name });
     if (garment.source === 'imported') wardrobeAnalytics.track('import', { garmentId: garment.id });
     return garment;
   }
 
   async update(id, data) {
-    return base44.entities.Garment.update(id, data);
+    return coreClient.entities.Garment.update(id, data);
   }
 
   async rename(garment, name) {
@@ -28,14 +28,14 @@ class GarmentManager {
 
   async duplicate(garment) {
     const { id, created_date, updated_date, created_by_id, ...rest } = garment;
-    const copy = await base44.entities.Garment.create(garmentMetadata.normalize({ ...rest, name: `${garment.name} (copy)`, favorite: false }));
+    const copy = await coreClient.entities.Garment.create(garmentMetadata.normalize({ ...rest, name: `${garment.name} (copy)`, favorite: false }));
     wardrobeHistory.record({ type: 'duplicated', garmentId: copy.id, name: copy.name });
     return copy;
   }
 
   async remove(garment) {
     wardrobeHistory.record({ type: 'deleted', garmentId: garment.id, name: garment.name });
-    return base44.entities.Garment.delete(garment.id);
+    return coreClient.entities.Garment.delete(garment.id);
   }
 
   async archive(garment) {

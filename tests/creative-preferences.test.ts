@@ -75,7 +75,7 @@ test('PreferenceDebugger показывает User, Categories, Confidence и Ev
 });
 
 test('Forbidden imports: preferences не зависят от Memory, Agent, Workflow, Runtime, Provider, UI', () => {
-  const forbidden = [/src\/lib\//, /src\/application\//, /agent/i, /workflow/i, /runtime/i, /provider/i, /memory/i, /react/i, /base44/i];
+  const forbidden = [/src\/lib\//, /src\/application\//, /agent/i, /workflow/i, /runtime/i, /provider/i, /memory/i, /react/i, /retired-runtime/i];
   const directory = 'src/platform/creative/experience/preferences';
   for (const file of readdirSync(directory)) {
     if (!file.endsWith('.ts')) continue;

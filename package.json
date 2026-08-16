@@ -1,5 +1,5 @@
 {
-  "name": "base44-app",
+  "name": "bers-core-app",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,6 +12,7 @@
     "db:migrate:transactions": "node --experimental-strip-types server/transactions/infrastructure/postgres/transactionSchemaCli.ts migrate",
     "db:check:transactions": "node --experimental-strip-types server/transactions/infrastructure/postgres/transactionSchemaCli.ts check",
     "test:transactions": "node --experimental-strip-types --test server/transactions/**/*.test.mjs",
+    "test:core-cutover": "node --test tests/core-cutover-architecture.test.mjs",
     "test:postgres": "node --experimental-strip-types --test server/transactions/infrastructure/postgres/postgresTransactionStore.integration.test.mjs",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
@@ -24,8 +25,6 @@
     "test:decision-model": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-decision-model.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-decision-model.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-decision-model.test.mjs"
   },
   "dependencies": {
-    "@base44/sdk": "^0.8.39",
-    "@base44/vite-plugin": "^1.0.30",
     "@hello-pangea/dnd": "^17.0.0",
     "@hookform/resolvers": "^4.1.2",
     "@radix-ui/react-accordion": "^1.2.3",

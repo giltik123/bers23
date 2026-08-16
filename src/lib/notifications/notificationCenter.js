@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 
 // NotificationCenter — persistent, user-scoped notifications for completed
 // history commits and job failures. It remains independent of AI providers.
@@ -9,21 +9,21 @@ class NotificationCenter {
   _notify() { const state = this.snapshot(); this.listeners.forEach((fn) => fn(state)); }
   async ensure() {
     if (this.loaded) return this.items;
-    const user = await base44.auth.me();
-    this.items = await base44.entities.Notification.filter({ created_by_id: user.id }, '-created_date', 25);
+    const user = await coreClient.auth.me();
+    this.items = await coreClient.entities.Notification.filter({ created_by_id: user.id }, '-created_date', 25);
     this.loaded = true; this._notify(); return this.items;
   }
   async push({ title, message, type = 'info', jobId = null, projectId = null }) {
-    const item = await base44.entities.Notification.create({ title, message, type, read: false, job_id: jobId, project_id: projectId, metadata: {} });
+    const item = await coreClient.entities.Notification.create({ title, message, type, read: false, job_id: jobId, project_id: projectId, metadata: {} });
     this.items = [item, ...this.items].slice(0, 25); this._notify(); return item;
   }
   async markRead(id) {
     const item = this.items.find((entry) => entry.id === id); if (!item || item.read) return;
-    await base44.entities.Notification.update(id, { read: true });
+    await coreClient.entities.Notification.update(id, { read: true });
     this.items = this.items.map((entry) => entry.id === id ? { ...entry, read: true } : entry); this._notify();
   }
   async markAllRead() {
-    await Promise.all(this.items.filter((item) => !item.read).map((item) => base44.entities.Notification.update(item.id, { read: true })));
+    await Promise.all(this.items.filter((item) => !item.read).map((item) => coreClient.entities.Notification.update(item.id, { read: true })));
     this.items = this.items.map((item) => ({ ...item, read: true })); this._notify();
   }
 }

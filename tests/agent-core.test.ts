@@ -108,7 +108,7 @@ test('agent event ordering is observable', async () => {
 
 test('agent layer has no forbidden business or UI imports', async () => {
   const { spawnSync } = await import('node:child_process');
-  const result = spawnSync('rg', ['-n', "from ['\"](react|@base44|vite|.*src/lib|.*lib/|.*providers/|.*adapters/ai|.*UI)", 'src/platform/agent'], { encoding: 'utf8' });
+  const result = spawnSync('rg', ['-n', "from ['\"](react|@retired-runtime|vite|.*src/lib|.*lib/|.*providers/|.*adapters/ai|.*UI)", 'src/platform/agent'], { encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.equal(result.stdout, '');
 });

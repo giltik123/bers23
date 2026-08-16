@@ -3,7 +3,7 @@ import { Loader2, Upload } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { GARMENT_CATEGORIES } from '@/lib/fashion/garmentCategories';
 import { SEASONS, MATERIALS } from '@/lib/fashion/garmentMetadata';
 import { garmentManager } from '@/lib/fashion/garmentManager';
@@ -23,7 +23,7 @@ export default function AddGarmentDialog({ open, onClose }) {
     if (!file) return;
     setUploading(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await coreClient.integrations.Core.UploadFile({ file });
       setImageUrl(file_url);
     } finally {
       setUploading(false);

@@ -1,6 +1,6 @@
 # Core Platform
 
-`src/core` is the framework-independent infrastructure boundary of the AI Photo Editor. It has no React, Base44, or Vite runtime dependency. Application bootstrap code should compose services through the dependency-injection container rather than constructing dependencies inside services.
+`src/core` is the framework-independent infrastructure boundary of the AI Photo Editor. It has no React, legacy platform, or Vite runtime dependency. Application bootstrap code should compose services through the dependency-injection container rather than constructing dependencies inside services.
 
 ## Modules
 
@@ -46,4 +46,4 @@ Event maps define payloads at compile time. Names should use the reserved subsys
 
 ## Compatibility
 
-The root `src/core/index.ts` is the only required public import surface. Foundation v1 names such as `TelemetryService`, `TelemetryAdapter`, `NoopTelemetryAdapter`, `ConsoleLogSink`, and `LogSink` remain exported as aliases. No existing editor, planner, pipeline, provider, recipe, segmentation, job, or Base44 module is modified by this layer.
+The root `src/core/index.ts` is the only required public import surface. Foundation v1 names such as `TelemetryService`, `TelemetryAdapter`, `NoopTelemetryAdapter`, `ConsoleLogSink`, and `LogSink` remain exported as aliases. No existing editor, planner, pipeline, provider, recipe, segmentation, job, or legacy platform module is modified by this layer.

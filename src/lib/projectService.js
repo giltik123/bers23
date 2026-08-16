@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { subscriptionValidator } from '@/lib/subscriptions/subscriptionValidator';
 import { subscriptionUsage } from '@/lib/subscriptions/subscriptionUsage';
 
@@ -19,16 +19,16 @@ export function getImageDimensions(url) {
 }
 
 export const projectService = {
-  list: () => base44.entities.Project.list('-updated_date'),
+  list: () => coreClient.entities.Project.list('-updated_date'),
 
-  get: (id) => base44.entities.Project.get(id),
+  get: (id) => coreClient.entities.Project.get(id),
 
-  update: (id, data) => base44.entities.Project.update(id, data),
+  update: (id, data) => coreClient.entities.Project.update(id, data),
 
   create: async ({ name, imageUrl, width = null, height = null, storageBytes = 0 }) => {
     await subscriptionValidator.validateProject({ width, height });
     await subscriptionValidator.validateStorage(storageBytes);
-    const project = await base44.entities.Project.create({
+    const project = await coreClient.entities.Project.create({
       name,
       original_image_url: imageUrl,
       current_image_url: imageUrl,
@@ -49,7 +49,7 @@ export const projectService = {
     return project;
   },
 
-  rename: (id, name) => base44.entities.Project.update(id, { name }),
+  rename: (id, name) => coreClient.entities.Project.update(id, { name }),
 
   duplicate: async (project) => {
     await subscriptionValidator.validateProject({ width: project.width, height: project.height });
@@ -57,7 +57,7 @@ export const projectService = {
       id, created_date, updated_date, created_by_id, // strip built-ins
       ...data
     } = project;
-    const copy = await base44.entities.Project.create({
+    const copy = await coreClient.entities.Project.create({
       ...data,
       name: `${project.name} (copy)`,
       favorite: false,
@@ -66,11 +66,11 @@ export const projectService = {
     return copy;
   },
 
-  remove: (id) => base44.entities.Project.delete(id),
+  remove: (id) => coreClient.entities.Project.delete(id),
 
-  setFavorite: (id, favorite) => base44.entities.Project.update(id, { favorite }),
+  setFavorite: (id, favorite) => coreClient.entities.Project.update(id, { favorite }),
 
-  setArchived: (id, archived) => base44.entities.Project.update(id, { archived }),
+  setArchived: (id, archived) => coreClient.entities.Project.update(id, { archived }),
 };
 
 // --- Pure helpers for listing UI ---

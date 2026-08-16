@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { EditingProvider } from '@/lib/editing/editingProvider';
 
 // ReveProvider — first EditingProvider implementation. All Reve calls go through the
@@ -45,7 +45,7 @@ class ReveProvider extends EditingProvider {
     for (let attempt = 0; attempt <= this.config.retries; attempt++) {
       if (this.cancelled) throw Object.assign(new Error('Generation cancelled'), { code: 'cancelled' });
       try {
-        const response = await base44.functions.invoke(this.config.backendFunction, payload);
+        const response = await coreClient.functions.invoke(this.config.backendFunction, payload);
         if (response.data?.error) throw Object.assign(new Error(response.data.error), { code: response.data.code });
         if (this.cancelled) throw Object.assign(new Error('Generation cancelled'), { code: 'cancelled' });
         return this.parseResponse(response.data);
@@ -60,7 +60,7 @@ class ReveProvider extends EditingProvider {
   }
 
   async healthCheck() {
-    const response = await base44.functions.invoke(this.config.backendFunction, { action: 'health' });
+    const response = await coreClient.functions.invoke(this.config.backendFunction, { action: 'health' });
     return { ok: !!response.data?.ok, provider: this.name };
   }
 }

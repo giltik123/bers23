@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { imageLoader } from '@/lib/pipeline/imageLoader';
 
 // Composer — merges generated content back into the original image.
@@ -31,7 +31,7 @@ class Composer {
 
     const blob = await imageLoader.canvasToBlob(out, 'image/png');
     const file = new File([blob], 'composed.png', { type: 'image/png' });
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await coreClient.integrations.Core.UploadFile({ file });
     return { image_url: file_url, width: w, height: h, mode: masks.length > 1 ? 'multi_object' : 'single_object' };
   }
 

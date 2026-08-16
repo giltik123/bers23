@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { SegmentationProvider } from '@/lib/segmentation/segmentationProvider';
 import { SAM3_CONFIG } from '@/lib/segmentation/sam3Config';
 import { createObject } from '@/lib/segmentation/objectManager';
@@ -33,7 +33,7 @@ export class SAM3Provider extends SegmentationProvider {
 
   async healthCheck() {
     try {
-      const res = await base44.functions.invoke('sam3Segment', { action: 'health' });
+      const res = await coreClient.functions.invoke('sam3Segment', { action: 'health' });
       SAM3_CONFIG.healthStatus = res.data?.healthy ? 'healthy' : 'unavailable';
       return { healthy: !!res.data?.healthy, provider: this.name };
     } catch {
@@ -68,7 +68,7 @@ export class SAM3Provider extends SegmentationProvider {
     canvas.height = Math.round(bitmap.height * scale);
     canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const resized = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.85));
-    const { file_url } = await base44.integrations.Core.UploadFile({
+    const { file_url } = await coreClient.integrations.Core.UploadFile({
       file: new File([resized], 'segment-input.jpg', { type: 'image/jpeg' }),
     });
     return file_url;
@@ -92,7 +92,7 @@ export class SAM3Provider extends SegmentationProvider {
         this.throwIfCancelled();
       }
       try {
-        const res = await this.withTimeout(base44.functions.invoke('sam3Segment', {
+        const res = await this.withTimeout(coreClient.functions.invoke('sam3Segment', {
           operation_id: 'sam3.segment', project_id: projectId, image_url: imageUrl,
         }));
         return res.data;

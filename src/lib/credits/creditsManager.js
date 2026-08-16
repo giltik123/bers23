@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { creditsWallet } from '@/lib/credits/creditsWallet';
 import { creditsPolicy } from '@/lib/credits/creditsPolicy';
 import { creditsAnalytics } from '@/lib/credits/creditsAnalytics';
@@ -17,7 +17,7 @@ class CreditsManager {
     if (expiresAt) patch.expirations = [...(wallet.expirations || []), { credit_type: creditType, amount, expires_at: expiresAt }];
 
     await creditsWallet.update(patch);
-    return base44.entities.CreditTransaction.create({ type: 'grant', credit_type: creditType, amount, status: 'completed', note });
+    return coreClient.entities.CreditTransaction.create({ type: 'grant', credit_type: creditType, amount, status: 'completed', note });
   }
 
   // Manual admin refund of a past spend — credits go into the refund bucket.
@@ -26,8 +26,8 @@ class CreditsManager {
     await creditsWallet.update({
       balances: { ...wallet.balances, refund: (wallet.balances?.refund || 0) + transaction.amount },
     });
-    await base44.entities.CreditTransaction.update(transaction.id, { status: 'refunded' });
-    return base44.entities.CreditTransaction.create({
+    await coreClient.entities.CreditTransaction.update(transaction.id, { status: 'refunded' });
+    return coreClient.entities.CreditTransaction.create({
       type: 'refund', credit_type: 'refund', amount: transaction.amount,
       operation: transaction.operation, provider: transaction.provider,
       project_id: transaction.project_id, reservation_id: transaction.reservation_id,

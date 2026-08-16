@@ -6,7 +6,7 @@ import { createObject } from '@/lib/segmentation/objectManager';
 // provider interface. Interchangeable with a future SAM3 provider.
 export class DetectionProvider extends SegmentationProvider {
   constructor() {
-    super('base44-detection');
+    super('legacy_platform-detection');
   }
 
   async segmentImage(imageUrl, projectId) {

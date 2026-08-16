@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { wardrobeAnalytics } from '@/lib/fashion/wardrobeAnalytics';
 import { wardrobeHistory } from '@/lib/fashion/wardrobeHistory';
 
@@ -8,31 +8,31 @@ export const SUGGESTED_COLLECTIONS = ['Summer', 'Winter', 'Business', 'Travel', 
 
 class GarmentCollections {
   async list() {
-    return base44.entities.GarmentCollection.list('-updated_date', 100);
+    return coreClient.entities.GarmentCollection.list('-updated_date', 100);
   }
 
   async create(name, description = '') {
-    const collection = await base44.entities.GarmentCollection.create({ name, description, garment_ids: [] });
+    const collection = await coreClient.entities.GarmentCollection.create({ name, description, garment_ids: [] });
     wardrobeHistory.record({ type: 'collection_created', name });
     return collection;
   }
 
   async rename(collection, name) {
-    return base44.entities.GarmentCollection.update(collection.id, { name });
+    return coreClient.entities.GarmentCollection.update(collection.id, { name });
   }
 
   async remove(collection) {
-    return base44.entities.GarmentCollection.delete(collection.id);
+    return coreClient.entities.GarmentCollection.delete(collection.id);
   }
 
   async addGarment(collection, garmentId) {
     if ((collection.garment_ids || []).includes(garmentId)) return collection;
     wardrobeAnalytics.track('collection_used', { collectionId: collection.id, name: collection.name });
-    return base44.entities.GarmentCollection.update(collection.id, { garment_ids: [...(collection.garment_ids || []), garmentId] });
+    return coreClient.entities.GarmentCollection.update(collection.id, { garment_ids: [...(collection.garment_ids || []), garmentId] });
   }
 
   async removeGarment(collection, garmentId) {
-    return base44.entities.GarmentCollection.update(collection.id, { garment_ids: (collection.garment_ids || []).filter((id) => id !== garmentId) });
+    return coreClient.entities.GarmentCollection.update(collection.id, { garment_ids: (collection.garment_ids || []).filter((id) => id !== garmentId) });
   }
 
   // Copy keeps the garment in the source collection; move removes it.

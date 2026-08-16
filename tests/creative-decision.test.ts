@@ -89,7 +89,7 @@ test('Security: DecisionContext immutable и проверяет tenant/project i
 });
 
 test('Forbidden imports: decision layer не зависит от UI/Agent/Workflow/Provider/Runtime/Memory/Billing', () => {
-  const forbidden = [/src\/lib\//, /src\/application\//, /agent/i, /workflow/i, /runtime/i, /provider/i, /memory/i, /react/i, /base44/i, /billing/i, /gateway/i];
+  const forbidden = [/src\/lib\//, /src\/application\//, /agent/i, /workflow/i, /runtime/i, /provider/i, /memory/i, /react/i, /retired-runtime/i, /billing/i, /gateway/i];
   const directory = 'src/platform/creative/decision';
   for (const file of readdirSync(directory)) {
     if (!file.endsWith('.ts')) continue;

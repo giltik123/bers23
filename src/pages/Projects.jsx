@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
+import { coreClient } from '@/api/coreClient';
 import { Plus, Loader2, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProjectCard from '@/components/projects/ProjectCard';
@@ -38,7 +38,7 @@ export default function Projects() {
   const createProjectFromFile = async (file) => {
     const localUrl = URL.createObjectURL(file); const { width, height } = await getImageDimensions(localUrl); URL.revokeObjectURL(localUrl);
     await subscriptionValidator.validateProject({ width, height }); await subscriptionValidator.validateStorage(file.size);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await coreClient.integrations.Core.UploadFile({ file });
     return projectService.create({ name: file.name.replace(/\.[^.]+$/, ''), imageUrl: file_url, width, height, storageBytes: file.size });
   };
   useEffect(() => { reload(); offlineQueue.register('project-upload', async ({ file }) => { await createProjectFromFile(file); await reload(); }); }, []);
