@@ -1,11 +1,12 @@
-import type { Artifact, ProviderRequest, ProviderResult, RetryPolicy, Scope } from '../providers/index.ts';
+import type { ProviderArtifact as Artifact, ProviderArtifactLoader, ProviderRequest, ProviderResult, ProviderRetryPolicy as RetryPolicy, ProviderScope as Scope, ProviderTransport, ProviderTransportRequest, ProviderTransportResponse } from '../provider-platform/index.ts';
+
+export type { ProviderArtifactLoader, ProviderTransport } from '../provider-platform/index.ts';
 
 export type ProviderExecutionState = 'CREATED'|'QUEUED'|'STARTING'|'RUNNING'|'WAITING'|'COMPLETED'|'FAILED'|'CANCELLED'|'TIMEOUT';
 export type StreamEvent = Readonly<{ state:'PENDING'|'PROGRESS'|'COMPLETED'; progress:number; timestamp:number; data?:unknown }>;
 export interface ProviderRuntimeDependencies { readonly id:()=>string; readonly now:()=>number; readonly random:()=>number; readonly sleep?:(milliseconds:number)=>Promise<void> }
-export interface RuntimeHttpRequest { readonly url:string; readonly method:'GET'|'POST'; readonly headers:Readonly<Record<string,string>>; readonly body?:string|Uint8Array; readonly timeoutMs:number }
-export interface RuntimeHttpResponse { readonly status:number; readonly headers:Readonly<Record<string,string>>; readonly body:unknown; readonly bytes?:Uint8Array }
-export interface ProviderTransport { send(request:RuntimeHttpRequest, signal:AbortSignal):Promise<RuntimeHttpResponse>; cancel(requestId:string):Promise<boolean>|boolean; health():Promise<'ONLINE'|'OFFLINE'|'DEGRADED'>|'ONLINE'|'OFFLINE'|'DEGRADED' }
+export type RuntimeHttpRequest = ProviderTransportRequest;
+export type RuntimeHttpResponse = ProviderTransportResponse;
 
 export function deepFreeze<T>(value:T):Readonly<T>{ if(value&&typeof value==='object'&&!Object.isFrozen(value)){ if(ArrayBuffer.isView(value))return value; Object.freeze(value); for(const child of Object.values(value as object)) deepFreeze(child); } return value; }
 const clone=<T>(value:T):T=>structuredClone(value);
@@ -70,8 +71,22 @@ export class RetryRuntime {
 export interface LoadedArtifact { readonly artifact:Artifact; readonly bytes:readonly number[]; readonly hash:string; readonly size:number; readonly mime:string }
 type Download=(uri:string,signal?:AbortSignal)=>Promise<{bytes:Uint8Array;mime:string}>;
 export class ArtifactLoader {
-  constructor(private readonly downloadFn:Download=async(uri,signal)=>{const response=await fetch(uri,{signal});return{bytes:new Uint8Array(await response.arrayBuffer()),mime:response.headers.get('content-type')??'application/octet-stream'};}){}
-  async load(artifact:Artifact,signal?:AbortSignal):Promise<Readonly<LoadedArtifact>>{ if(!artifact.uri)throw new Error('Artifact URI is required');const downloaded=await this.downloadFn(artifact.uri,signal);const raw=new Uint8Array(downloaded.bytes);const digest=await crypto.subtle.digest('SHA-256',raw);const hash=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');return immutable({artifact,bytes:[...raw],hash,size:raw.byteLength,mime:downloaded.mime}); }
+  constructor(private readonly downloadFn?:Download){}
+  async load(artifact:Artifact,signal?:AbortSignal):Promise<Readonly<LoadedArtifact>>{ if(!artifact.uri)throw new Error('Artifact URI is required');if(!this.downloadFn)throw new Error('ProviderTransport download boundary is required');const downloaded=await this.downloadFn(artifact.uri,signal);const raw=new Uint8Array(downloaded.bytes);const digest=await crypto.subtle.digest('SHA-256',raw);const hash=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');return immutable({artifact,bytes:[...raw],hash,size:raw.byteLength,mime:downloaded.mime}); }
+}
+
+/** The sole provider artifact download boundary; concrete providers receive this through DI. */
+export class RuntimeProviderArtifactLoader implements ProviderArtifactLoader {
+  constructor(private readonly transport: ProviderTransport) {}
+  async load(url: string, options: Readonly<{ maxBytes: number; allowedMimeTypes: readonly string[] }>) {
+    const response = await this.transport.send({ url, method: 'GET', headers: {}, timeoutMs: 30_000 }, new AbortController().signal);
+    if (response.status < 200 || response.status >= 300) throw new Error(`Artifact download failed: ${response.status}`);
+    const mimeType = (response.headers['content-type'] ?? '').split(';')[0].toLowerCase();
+    if (!options.allowedMimeTypes.includes(mimeType)) throw new Error(`Unsupported artifact MIME: ${mimeType || 'missing'}`);
+    const bytes = response.bytes ?? new Uint8Array(); if (bytes.byteLength > options.maxBytes) throw new Error('Artifact exceeds size limit');
+    const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)); const hash = [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
+    return immutable({ url, mimeType, size: bytes.byteLength, hash, bytes });
+  }
 }
 
 export class IntegrityValidator {
@@ -89,7 +104,7 @@ export class CreativeProviderRuntime {
     try{const runtime=new RetryRuntime(this.retryPolicy,this.deps);const execution=await runtime.run(async()=>this.transport.send(http,session.controller.signal));response=execution.value;retries=execution.retries;session.transition('WAITING');this.emit(session.id,'PROGRESS',.75);const result=this.parser.parse(response);session.transition('COMPLETED');this.emit(session.id,'COMPLETED',1,result);const metrics=immutable({networkTime:this.deps.now()-networkAt,serialization,upload:typeof http.body==='string'?new TextEncoder().encode(http.body).byteLength:0,download:response.bytes?.byteLength??0,queue:Math.max(0,serializationAt-queuedAt),providerTime:result.latency,retryCount:retries});const snap=immutable({session:session.snapshot(),request:http,response,metrics,retries,transport:this.transport.constructor.name,artifacts:result.artifacts,timeline:session.snapshot().timeline,result}) as ProviderRuntimeSnapshot;this.#snapshots.set(session.id,snap);return result;
     }catch(error){const timeout=(error as Error).name==='TimeoutError';if(session.state!=='CANCELLED'){if(session.controller.signal.aborted)session.transition('CANCELLED');else session.transition(timeout?'TIMEOUT':'FAILED',(error as Error).message);}const metrics=immutable({networkTime:this.deps.now()-networkAt,serialization,upload:0,download:0,queue:Math.max(0,serializationAt-queuedAt),providerTime:0,retryCount:retries});this.#snapshots.set(session.id,immutable({session:session.snapshot(),request:http,response,metrics,retries,transport:this.transport.constructor.name,artifacts:[],timeline:session.snapshot().timeline}));throw error;}
   }
-  cancel(scope:Scope,id:string){this.assertScope(scope,id);return this.#sessions.get(id)!.cancel();}status(scope:Scope,id:string){this.assertScope(scope,id);return this.#sessions.get(id)!.state;}health(){return this.transport.health();}
+  cancel(scope:Scope,id:string){this.assertScope(scope,id);return this.#sessions.get(id)!.cancel();}status(scope:Scope,id:string){this.assertScope(scope,id);return this.#sessions.get(id)!.state;}health(){return this.transport.health?.() ?? 'ONLINE';}
   async replay(scope:Scope,id:string){this.assertScope(scope,id);const snapshot=this.#snapshots.get(id);if(!snapshot)throw new Error('Execution has no snapshot');const response=await this.transport.send(snapshot.request,new AbortController().signal);return this.parser.parse(response);}
   snapshot(scope:Scope,id:string){this.assertScope(scope,id);const value=this.#snapshots.get(id);if(!value)throw new Error('Execution has no snapshot');return immutable(value);}
   debug(scope:Scope,id:string){return new ProviderRuntimeDebugger().trace(this.snapshot(scope,id));}stream(scope:Scope,id:string){this.assertScope(scope,id);return immutable(this.#streams.get(id)??[]);}

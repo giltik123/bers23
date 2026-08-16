@@ -1,5 +1,9 @@
-import type { CreativeProvider, ProviderScope } from '../providers/fal';
 import type { PrivacyMode } from '../local-ai';
+
+export interface ProviderScope { readonly tenantId: string; readonly projectId: string; readonly userId: string }
+export interface CloudProviderArtifactView { readonly url: string; readonly mimeType: string; readonly size: number; readonly hash: string; readonly bytes?: Uint8Array }
+export interface CloudProviderResultView { readonly id: string; readonly artifacts: readonly CloudProviderArtifactView[]; readonly data: Readonly<Record<string, unknown>>; readonly metrics: Readonly<{ latencyMs: number; cost: number }>; readonly createdAt: number }
+export interface CloudProviderPort { readonly name: string; supports(capability: string): boolean; execute(request: Readonly<{ scope: ProviderScope; capability: string; prompt?: string; inputs?: Readonly<Record<string, unknown>>; timeoutMs?: number; metadata?: Readonly<Record<string, unknown>> }>): Promise<CloudProviderResultView> }
 
 export type VerticalSliceScenario = 'SMART_BACKGROUND_EDIT' | 'SMART_UPSCALE' | 'SMART_CREATIVE_ENHANCEMENT' | 'GENERATIVE_EDIT';
 export type OperationName = 'analysis' | 'segmentation' | 'mask-cleanup' | 'background-edit' | 'upscale' | 'enhancement' | 'generative-edit' | 'verification';
@@ -52,7 +56,7 @@ export interface ReveProviderPort {
 export interface VerticalSliceProviders {
   readonly local: LocalInferencePort;
   /** The existing public FalProvider contract; credentials stay inside the provider. */
-  readonly fal?: CreativeProvider;
+  readonly fal?: CloudProviderPort;
   readonly reve?: ReveProviderPort;
 }
 

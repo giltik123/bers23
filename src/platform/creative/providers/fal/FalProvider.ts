@@ -1,4 +1,3 @@
-import { DefaultArtifactLoader } from './DefaultArtifactLoader';
 import { FalErrorMapper, FalProviderError } from './FalErrorMapper';
 import { FalJobTracker } from './FalJobTracker';
 import { FalRequestMapper } from './FalRequestMapper';
@@ -11,7 +10,7 @@ export class FalProvider implements CreativeProvider {
   private readonly requests = new FalRequestMapper(); private readonly responses = new FalResponseMapper(); private readonly errors = new FalErrorMapper();
   private snapshots: readonly FalSnapshot[] = []; private successes = 0; private failures = 0; private lastFailure?: number;
   constructor(private readonly dependencies: ProviderRuntimeDependencies) {
-    if (!dependencies?.fetch || !dependencies.clock || !dependencies.random || !dependencies.id || !dependencies.sleep || !dependencies.api?.apiKey) throw new Error('FalProvider requires fetch, clock, random, id, sleep and API configuration');
+    if (!dependencies?.transport || !dependencies.artifactLoader || !dependencies.clock || !dependencies.random || !dependencies.id || !dependencies.sleep || !dependencies.api?.apiKey || !dependencies.api.baseUrl) throw new Error('FalProvider requires transport, artifactLoader, clock, random, id, sleep and API configuration');
   }
   supports(capability: string): boolean { return this.requests.capability(capability) !== undefined; }
   async execute(request: ProviderRequest): Promise<ProviderResult> {
@@ -19,12 +18,12 @@ export class FalProvider implements CreativeProvider {
     const event = (stage: FalTimelineEvent['stage'], detail: Record<string, unknown>): void => { timeline.push(falDeepFreeze({ at: this.dependencies.clock(), stage, detail: sanitized(detail) })); };
     const safeRequest = falDeepFreeze(sanitized({ ...request, id: requestId, scope: { ...request.scope }, inputs: { ...(request.inputs ?? {}) }, metadata: { ...(request.metadata ?? {}) } }));
     event('Request', safeRequest as unknown as Record<string, unknown>); const falRequest = this.requests.map(request); event('Fal Request', falRequest as Record<string, unknown>);
-    const model = this.requests.model(request.capability, this.dependencies.api); const base = (this.dependencies.api.baseUrl ?? 'https://queue.fal.run').replace(/\/$/, ''); const url = `${base}/${model}`;
+    const model = this.requests.model(request.capability, this.dependencies.api); const base = this.dependencies.api.baseUrl.replace(/\/$/, ''); const url = `${base}/${model}`;
     const deadline = started + (request.timeoutMs ?? this.dependencies.api.timeoutMs ?? 60_000); let retries = 0; let polls = 0;
     try {
       event('HTTP', { method: 'POST', url }); let raw = await this.post(url, falRequest, deadline, () => { retries += 1; }); event('Fal Response', { response: raw });
       const job = this.responses.job(raw); if (job) { const tracked = await new FalJobTracker(this.dependencies, this.errors).wait(job, deadline, (response) => event('HTTP', { method: 'GET', response })); raw = tracked.response; polls = tracked.polls; retries += tracked.retries; event('Fal Response', { response: raw }); }
-      const loader = this.dependencies.artifactLoader ?? new DefaultArtifactLoader(); const artifacts = await Promise.all(this.responses.urls(raw).map((artifactUrl) => loader.load(artifactUrl, { fetch: this.dependencies.fetch, maxBytes: this.dependencies.api.maxArtifactBytes ?? 25_000_000, allowedMimeTypes: this.dependencies.api.allowedMimeTypes ?? ['image/png', 'image/jpeg', 'image/webp'] })));
+      const artifacts = await Promise.all(this.responses.urls(raw).map((artifactUrl) => this.dependencies.artifactLoader.load(artifactUrl, { maxBytes: this.dependencies.api.maxArtifactBytes ?? 25_000_000, allowedMimeTypes: this.dependencies.api.allowedMimeTypes ?? ['image/png', 'image/jpeg', 'image/webp'] })));
       event('Artifacts', { count: artifacts.length, artifacts: artifacts.map(({ url: artifactUrl, mimeType, size, hash }) => ({ url: artifactUrl, mimeType, size, hash })) });
       const actualCost = this.responses.cost(raw); const result = falDeepFreeze({ id: this.dependencies.id(), provider: 'fal', requestId, scope: { ...request.scope }, status: 'succeeded', artifacts, data: this.responses.data(raw), metrics: { latencyMs: Math.max(0, this.dependencies.clock() - started), cost: actualCost ?? this.estimate(request.capability), costSource: actualCost === undefined ? 'estimate' : 'provider', retries, pollCount: polls }, createdAt: this.dependencies.clock() }) as ProviderResult;
       event('Provider Result', { result }); this.successes += 1; this.store(safeRequest, falRequest, raw, result, timeline); return result;
@@ -41,7 +40,7 @@ export class FalProvider implements CreativeProvider {
   private async post(url: string, body: Readonly<Record<string, unknown>>, deadline: number, retried: () => void): Promise<unknown> {
     const max = this.dependencies.api.maxRetries ?? 2;
     for (let attempt = 0; ; attempt += 1) try {
-      if (this.dependencies.clock() >= deadline) throw this.errors.map(408); const response = await this.dependencies.fetch(url, { method: 'POST', headers: { Authorization: `Key ${this.dependencies.api.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const payload = await response.json().catch(() => ({})); if (response.ok) return payload;
+      if (this.dependencies.clock() >= deadline) throw this.errors.map(408); const response = await this.dependencies.transport.send({ url, method: 'POST', headers: { Authorization: `Key ${this.dependencies.api.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), timeoutMs: Math.max(1, deadline - this.dependencies.clock()) }, new AbortController().signal); const payload = response.body; if (response.status >= 200 && response.status < 300) return payload;
       const error = this.errors.map(response.status, payload); if (!error.retryable || attempt >= max) throw error; retried(); await this.dependencies.sleep(Math.min(1000, 100 * 2 ** attempt) + Math.floor(this.dependencies.random() * 10));
     } catch (cause) { const error = cause instanceof FalProviderError ? cause : this.errors.map(undefined, undefined, cause); if (!error.retryable || attempt >= max) throw error; retried(); await this.dependencies.sleep(Math.min(1000, 100 * 2 ** attempt)); }
   }

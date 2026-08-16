@@ -1,10 +1,14 @@
 /** Autonomous, transport-free provider platform. */
+import type { ProviderArtifact, ProviderRequest, ProviderResult, ProviderRetryPolicy, ProviderScope } from '../provider-platform';
+export type { ProviderRequest, ProviderResult } from '../provider-platform';
+export type Artifact = ProviderArtifact;
+export type Scope = ProviderScope;
+export type RetryPolicy = ProviderRetryPolicy;
 export type ProviderHealthStatus = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'LIMITED';
 export type ProviderStatus = 'ACTIVE' | 'DEPRECATED' | 'DISABLED';
 export type ArtifactKind = 'image' | 'mask' | 'segmentation' | 'metadata' | 'preview';
 export type OptimizationStrategy = 'CHEAPEST' | 'FASTEST' | 'HIGHEST_QUALITY' | 'BALANCED';
 
-export interface Scope { readonly tenantId: string; readonly projectId: string; readonly userId: string }
 export interface ProviderDependencies { readonly now: () => number; readonly id: () => string; readonly random: () => number }
 export const defaultProviderDependencies = (): ProviderDependencies => Object.freeze({
   now: () => Date.now(), id: () => crypto.randomUUID(), random: () => Math.random(),
@@ -30,13 +34,6 @@ export interface ProviderDescriptor {
   readonly limits: Readonly<Record<string, number>>; readonly maxResolution: Readonly<{ width: number; height: number }>;
   readonly formats: readonly string[];
 }
-export interface Artifact { readonly id: string; readonly kind: ArtifactKind; readonly format: string; readonly uri?: string; readonly data?: unknown; readonly metadata: Readonly<Record<string, unknown>> }
-export interface ProviderResult {
-  readonly status: 'SUCCESS' | 'FAILED' | 'CANCELLED'; readonly artifacts: readonly Artifact[];
-  readonly metrics: Readonly<Record<string, number>>; readonly credits: number; readonly latency: number;
-  readonly quality: number; readonly warnings: readonly string[];
-}
-export interface ProviderRequest { readonly operation: string; readonly scope: Scope; readonly input?: unknown; readonly options?: Readonly<Record<string, unknown>> }
 export interface CreativeProvider {
   readonly descriptor: ProviderDescriptor;
   initialize(): Promise<void> | void; capabilities(): readonly string[];
@@ -96,7 +93,6 @@ export class ProviderOptimizer {
   }
 }
 
-export interface RetryPolicy { readonly retries: number; readonly backoffMs: number; readonly timeoutMs: number; readonly circuitBreaker: Readonly<{ failureThreshold: number; resetAfterMs: number }> }
 export const createRetryPolicy = (policy: Partial<RetryPolicy> = {}): Readonly<RetryPolicy> => immutable({ retries: policy.retries ?? 2, backoffMs: policy.backoffMs ?? 100, timeoutMs: policy.timeoutMs ?? 30_000, circuitBreaker: policy.circuitBreaker ?? { failureThreshold: 5, resetAfterMs: 60_000 } });
 
 export interface FallbackPlan { readonly capability: string; readonly providers: readonly string[]; readonly terminal: 'ABORT' }

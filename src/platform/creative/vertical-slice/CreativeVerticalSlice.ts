@@ -1,6 +1,5 @@
 import { PipelineQualityGate } from '../pipeline';
-import type { ProviderArtifact, ProviderResult } from '../providers/fal';
-import type { ExecutionAccounting, ExecutionTarget, ImageArtifact, InferenceResult, OperationName, QualityMeasurement, TelemetryEvent, TelemetryEventName, VerificationResult, VerticalSliceDependencies, VerticalSliceRequest, VerticalSliceResult } from './types';
+import type { CloudProviderArtifactView, CloudProviderResultView, ExecutionAccounting, ExecutionTarget, ImageArtifact, InferenceResult, OperationName, QualityMeasurement, TelemetryEvent, TelemetryEventName, VerificationResult, VerticalSliceDependencies, VerticalSliceRequest, VerticalSliceResult } from './types';
 
 const freeze = <T>(value: T): Readonly<T> => {
   if (value && typeof value === 'object' && !Object.isFrozen(value) && !(value instanceof Uint8Array)) {
@@ -117,7 +116,7 @@ export class CreativeVerticalSlice {
     telemetry.emit('CloudInferenceCompleted', { operation, target, data: { model: result.model, latencyMs: latency, cost: actual, artifactId: result.artifact.id } }); return { target, result };
   }
 
-  private async fromFal(result: ProviderResult, previous: ImageArtifact): Promise<InferenceResult> {
+  private async fromFal(result: CloudProviderResultView, previous: ImageArtifact): Promise<InferenceResult> {
     const source = result.artifacts[0]; if (!source) throw new Error('Fal returned no artifact'); const bytes = artifactBytes(source); if (!bytes.byteLength) throw new Error('Fal artifact has no loaded bytes');
     return { artifact: freeze({ id: result.id, mimeType: source.mimeType as ImageArtifact['mimeType'], bytes, width: numberMeta(result.data.width, previous.width), height: numberMeta(result.data.height, previous.height), hash: source.hash || await this.#hash(bytes), createdAt: result.createdAt, metadata: { provider: 'fal', sourceUrl: source.url } }), quality: qualityFrom(result.data), model: String(result.data.model ?? 'fal'), latencyMs: result.metrics.latencyMs, actualCost: result.metrics.cost };
   }
@@ -139,7 +138,7 @@ export class CreativeVerticalSliceDebugger {
 
 function validateRequest(request: VerticalSliceRequest) { if (!request?.scope?.tenantId || !request.scope.projectId || !request.scope.userId) throw new Error('Complete scope is required'); if (!request.prompt?.trim()) throw new Error('Prompt is required'); }
 function falCapability(operation: OperationName) { return ({ segmentation: 'segmentation', 'background-edit': 'background-remove', upscale: 'upscale', enhancement: 'image-edit', analysis: 'image-edit', 'mask-cleanup': 'inpaint', 'generative-edit': 'image-edit', verification: 'image-edit' } as const)[operation]; }
-function artifactBytes(artifact: ProviderArtifact) { return artifact.bytes ? new Uint8Array(artifact.bytes) : new Uint8Array(); }
+function artifactBytes(artifact: CloudProviderArtifactView) { return artifact.bytes ? new Uint8Array(artifact.bytes) : new Uint8Array(); }
 function numberMeta(value: unknown, fallback: number) { return typeof value === 'number' && value > 0 ? value : fallback; }
 function qualityFrom(data: Readonly<Record<string, unknown>>): QualityMeasurement { const q = typeof data.quality === 'number' ? data.quality : .9; return { quality: q, goalCompletion: typeof data.goalCompletion === 'number' ? data.goalCompletion : q, artifactIntegrity: 1, identityPreservation: typeof data.identityPreservation === 'number' ? data.identityPreservation : .9, operationSuccess: 1 }; }
 function explain(path: readonly ExecutionTarget[], accounting: readonly ExecutionAccounting[], reason?: string) { const local = accounting.filter(x => x.provider === 'local').length; const cloud = accounting.filter(x => x.provider !== 'local'); if (reason) return `${reason}. Processing path: ${path.join(' → ') || 'none'}.`; if (!cloud.length) return `The image was processed entirely on device in ${local} local operations, using 0 cloud credits.`; return `The system first used ${local} on-device operations. Cloud AI (${[...new Set(cloud.map(x => x.provider))].join(', ')}) was used only where local capability or verified quality was insufficient, costing ${cloud.reduce((sum, x) => sum + x.credits, 0)} credits.`; }
