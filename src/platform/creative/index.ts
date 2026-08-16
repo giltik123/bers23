@@ -9,3 +9,4 @@ export * from './CreativeCanvasManager';
 export * from './local-engine';
 export * from './studio-brain';
 export * from './model-distribution';
+export * from './model';
