@@ -18,7 +18,9 @@
     "test:workflow": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/workflow-engine.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/workflow-engine.test.mjs',external:['node:*']});\" && node node_modules/.cache/workflow-engine.test.mjs",
     "test:creative-workflow": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-workflow-engine.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-workflow-engine.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-workflow-engine.test.mjs",
     "test:creative-operations": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-operation-library.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-operation-library.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-operation-library.test.mjs",
-    "test:providers": "node tests/application-gateway.test"
+    "test:providers": "node tests/application-gateway.test",
+    "test:decision-model": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-decision-model.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-decision-model.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-decision-model.test.mjs",
+    "test:decision-model-v2": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-decision-model-v2.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-decision-model-v2.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-decision-model-v2.test.mjs"
   },
   "dependencies": {
     "@base44/sdk": "^0.8.39",
