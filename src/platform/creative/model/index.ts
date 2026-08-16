@@ -3,6 +3,8 @@ export * from './immutable';
 export * from './reward';
 export * from './DecisionDatasetBuilder';
 export * from './DecisionFeatureEncoderV1';
+export * from './DecisionRepresentationEncoderV2';
+export * from './NeuralDecisionRanker';
 export * from './DecisionConstraintLayer';
 export * from './TabularDecisionModelV1';
 export * from './DecisionModelEvaluator';

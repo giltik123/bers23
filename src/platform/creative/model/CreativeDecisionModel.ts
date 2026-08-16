@@ -3,6 +3,8 @@ import { DecisionModelRegistry } from './DecisionModelRegistry';
 import { DecisionTrainerV1 } from './DecisionTrainerV1';
 import { DecisionConstraintLayer } from './DecisionConstraintLayer';
 import { DECISION_BENCHMARK_V1 } from './benchmark';
+import { DecisionRepresentationEncoderV2 } from './DecisionRepresentationEncoderV2';
+import { NeuralDecisionRanker } from './NeuralDecisionRanker';
 import { immutable, mean } from './immutable';
 import type { DecisionCandidateV1, DecisionContextV1, DecisionDatasetRecord, DecisionFeaturesV1, DecisionHistoryV1, DecisionModelV1, ModelManifest, UtilityPolicy } from './types';
 
@@ -19,8 +21,15 @@ export class CreativeDecisionModel {
   private readonly shadows: Array<Readonly<{ at: number; model: string; baseline: string; modelUtility: number; baselineUtility: number }>> = [];
   private readonly trainer: DecisionTrainerV1; private readonly evaluator: DecisionModelEvaluator;
   constructor(private model: DecisionModelV1 = new HeuristicBaselineModel(), private readonly baseline: DecisionModelV1 = new HeuristicBaselineModel(), private readonly registry = new DecisionModelRegistry(), evaluator = new DecisionModelEvaluator(), trainer?: DecisionTrainerV1, private readonly now: () => number = Date.now) { this.evaluator = evaluator; this.trainer = trainer ?? new DecisionTrainerV1(evaluator); }
+  encode(features: DecisionFeaturesV1) { return new DecisionRepresentationEncoderV2().encode(features); }
   predict(features: DecisionFeaturesV1) { const prediction = this.model.predict(features); return prediction.ood ? this.baseline.predict(features) : prediction; }
   rank(context: DecisionContextV1, candidates: readonly DecisionCandidateV1[], history?: Partial<DecisionHistoryV1>) { const ranking = this.model.rank(context, candidates, history); return ranking.every(item => item.excluded || item.prediction.ood) ? this.baseline.rank(context, candidates, history) : ranking; }
+  rankPairwise(a: DecisionFeaturesV1, b: DecisionFeaturesV1) { const ranker = this.model instanceof NeuralDecisionRanker ? this.model : new NeuralDecisionRanker(); return ranker.rankPairwise(a, b); }
+  predictList(items: readonly DecisionFeaturesV1[]) { const ranker = this.model instanceof NeuralDecisionRanker ? this.model : new NeuralDecisionRanker(); return ranker.predictList(items); }
+  counterfactual(selected: DecisionFeaturesV1, alternative: DecisionFeaturesV1) { const ranker = this.model instanceof NeuralDecisionRanker ? this.model : new NeuralDecisionRanker(); return ranker.counterfactual(selected, alternative); }
+  calibrate(records: readonly DecisionDatasetRecord[]) { const ranker = this.model instanceof NeuralDecisionRanker ? this.model : NeuralDecisionRanker.train(records); return ranker.calibrate(records); }
+  distill(records: readonly DecisionDatasetRecord[]) { const ranker = this.model instanceof NeuralDecisionRanker ? this.model : NeuralDecisionRanker.train(records); return ranker.distill(records); }
+  compareVersions(candidate: DecisionModelV1, baseline: DecisionModelV1, records: readonly DecisionDatasetRecord[]) { const candidateMetrics = this.evaluator.evaluate(candidate, records), baselineMetrics = this.evaluator.evaluate(baseline, records); return immutable({ candidate: candidate.version(), baseline: baseline.version(), candidateMetrics, baselineMetrics, ...this.evaluator.compare(candidateMetrics, baselineMetrics) }); }
   evaluate(records: readonly DecisionDatasetRecord[]) { return this.evaluator.evaluate(this.model, records); }
   explain(features: DecisionFeaturesV1) { return this.model.explain(features); }
   benchmark() { return DECISION_BENCHMARK_V1; }
