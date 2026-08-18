@@ -13,6 +13,7 @@
     "db:check:transactions": "node --experimental-strip-types server/transactions/infrastructure/postgres/transactionSchemaCli.ts check",
     "test:transactions": "node --experimental-strip-types --test server/transactions/**/*.test.mjs",
     "test:core-cutover": "node --test tests/core-cutover-architecture.test.mjs",
+    "test:canonical-product": "mkdir -p node_modules/.cache/canonical-product && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/canonical-product-vertical-slice.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/canonical-product/vertical.test.mjs',external:['node:*']});\" && node node_modules/.cache/canonical-product/vertical.test.mjs && node --test tests/editor-canonical-boundary.test.mjs tests/auth-client-contract.test.mjs",
     "test:postgres": "node --experimental-strip-types --test server/transactions/infrastructure/postgres/postgresTransactionStore.integration.test.mjs",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
