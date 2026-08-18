@@ -4,13 +4,17 @@ const API_ROOT = import.meta.env.VITE_CORE_API_URL || '/api/core';
 
 async function request(path, options = {}) {
   const headers = new Headers(options.headers);
-  if (appParams.token) headers.set('Authorization', `Bearer ${appParams.token}`);
+  const token = appParams.token || localStorage.getItem('core_access_token');
+  if (token) headers.set('Authorization', `Bearer ${token}`);
   if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
   const response = await fetch(`${API_ROOT}${path}`, { ...options, headers });
   const data = response.status === 204 ? undefined : await response.json().catch(() => undefined);
   if (!response.ok) {
     const error = new Error(data?.message || `Core API request failed (${response.status})`);
     error.status = response.status;
+    error.code = data?.code;
+    error.correlationId = data?.correlationId;
+    error.retryable = data?.retryable ?? false;
     error.data = data;
     throw error;
   }
@@ -38,10 +42,21 @@ export const coreClient = Object.freeze({
     resendOtp: (email) => request('/auth/resend-otp', json('POST', { email })),
     resetPasswordRequest: (email) => request('/auth/password/reset-request', json('POST', { email })),
     resetPassword: (payload) => request('/auth/password/reset', json('POST', payload)),
+    loginViaEmailPassword: async (email, password) => {
+      const result = await request('/auth/password/login', json('POST', { email, password }));
+      if (result?.access_token) localStorage.setItem('core_access_token', result.access_token);
+      return result;
+    },
     setToken: (token) => localStorage.setItem('core_access_token', token),
     logout: (returnTo) => { localStorage.removeItem('core_access_token'); if (returnTo) window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`); },
     redirectToLogin: (returnTo) => window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`),
     loginWithProvider: (provider, returnTo = '/') => window.location.assign(`${API_ROOT}/auth/login/${encodeURIComponent(provider)}?return_to=${encodeURIComponent(returnTo)}`),
+  },
+  creative: {
+    execute: (payload) => request('/creative/execute', json('POST', payload)),
+    status: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/status`),
+    result: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/result`),
+    cancel: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
   },
   entities,
   functions: { invoke: (command, payload) => request(`/commands/${encodeURIComponent(command)}`, json('POST', payload)) },
