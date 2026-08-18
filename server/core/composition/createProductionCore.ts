@@ -5,7 +5,7 @@ import { SignedArtifactAuthority } from '../artifacts/signedArtifactAuthority.ts
 import { HmacJwtVerifier } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
-import { createCreativeCore } from './createCreativeCore.ts';
+import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
 
 export async function createProductionCore(config: CoreServerConfig, options: Readonly<{ fetcher?: typeof fetch }> = {}) {
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
@@ -25,7 +25,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         recovery: { decide: () => 'MARK_UNKNOWN' }, verifier: { verify: async (_operation, output) => ({ stepId: operation.id, valid: output.length > 0, checks: output.length ? ['provider-artifact-present'] : [], errors: output.length ? [] : ['Provider returned no artifact'] }) },
         now: Date.now, id: randomUUID,
       },
-    });
+    } satisfies CreativeCoreCompositionInput);
     return Object.freeze({ core, auth: new HmacJwtVerifier({ secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }
