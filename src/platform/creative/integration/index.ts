@@ -11,3 +11,4 @@ export { StatusSynchronizer } from './StatusSynchronizer';
 export { UnifiedTimeline } from './UnifiedTimeline';
 export { VerificationBridge } from './VerificationBridge';
 export type * from './types';
+export * from './authorityAdapters';
