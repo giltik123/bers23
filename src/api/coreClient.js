@@ -45,6 +45,12 @@ export const coreClient = Object.freeze({
   },
   entities,
   functions: { invoke: (command, payload) => request(`/commands/${encodeURIComponent(command)}`, json('POST', payload)) },
+  creative: {
+    execute: (payload) => request('/creative/execute', json('POST', payload)),
+    status: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/status`),
+    result: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/result`),
+    cancel: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
+  },
   integrations: { Core: {
     UploadFile: async ({ file }) => { const body = new FormData(); body.append('file', file); return request('/assets', { method: 'POST', body }); },
     InvokeLLM: (payload) => request('/creative/execute', json('POST', payload)),

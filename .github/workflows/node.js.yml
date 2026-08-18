@@ -64,3 +64,7 @@ jobs:
         run: npm run db:check:transactions
       - name: Run PostgreSQL transaction integration tests
         run: npm run test:postgres
+      - name: Run canonical product and real HTTP boundary
+        run: npm run test:canonical-product
+      - name: Enforce PostgreSQL production authority gate
+        run: npm run test:creative-production-authority-postgres

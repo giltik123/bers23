@@ -13,6 +13,8 @@
     "db:check:transactions": "node --experimental-strip-types server/transactions/infrastructure/postgres/transactionSchemaCli.ts check",
     "test:transactions": "node --experimental-strip-types --test server/transactions/**/*.test.mjs",
     "test:core-cutover": "node --test tests/core-cutover-architecture.test.mjs",
+    "test:core-http": "mkdir -p node_modules/.cache && esbuild tests/core-http.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=node_modules/.cache/core-http.test.mjs --external:node:* && node node_modules/.cache/core-http.test.mjs",
+    "test:canonical-product": "npm run test:creative-canonical && npm run test:creative-production-authority && npm run test:core-http",
     "test:postgres": "node --experimental-strip-types --test server/transactions/infrastructure/postgres/postgresTransactionStore.integration.test.mjs",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
