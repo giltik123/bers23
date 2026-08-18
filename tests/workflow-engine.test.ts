@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createWorkflowEngine } from '../src/platform/workflow/createWorkflowEngine.ts';
@@ -116,6 +116,20 @@ test('отсутствие запрещённых импортов в workflow l
     const source = await readFile(file, 'utf8');
     for (const marker of forbidden) assert.equal(source.includes(marker), false, `${file} contains forbidden marker ${marker}`);
   }
+});
+
+test('legacy workflow остаётся adapter boundary, а не creative execution authority', async () => {
+  const legacyRoot = 'src/platform/workflow';
+  const files = await collectWorkflowFiles(legacyRoot);
+  const sources = await Promise.all(files.map((file) => readFile(file, 'utf8')));
+  const aggregateFacade = `${legacyRoot}/intelligence/WorkflowIntelligence.ts`;
+
+  await assert.rejects(access(aggregateFacade), { code: 'ENOENT' });
+  assert.equal(sources.some((source) => source.includes('CreativeWorkflowEngine')), false);
+  assert.equal(sources.some((source) => source.includes('CreativeExecutionPlatform')), false);
+
+  const canonicalFacade = await readFile('src/platform/creative/canonical/CreativeExecutionPlatform.ts', 'utf8');
+  assert.equal((canonicalFacade.match(/new CreativeWorkflowEngine/g) ?? []).length, 1);
 });
 
 async function collectWorkflowFiles(dir) {
