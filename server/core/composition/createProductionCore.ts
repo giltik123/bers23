@@ -21,7 +21,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         runtime, providers: { isAvailable: providerId => providerId === 'fal', fallback: () => undefined },
         decision: { decide: async request => ({ requestId: request.id, goal: request.intent, constraints: [] }) },
         planning: { plan: async request => ({ requestId: request.id, operations: [{ ...operation, requiredArtifacts: (request.inputArtifacts ?? []).map(artifact => artifact.id), produces: ['image'], input: { prompt: request.intent, correlationId: request.metadata?.correlationId } }] }) },
-        targetSelector: { select: () => 'CLOUD' }, securityGate: { authorize: request => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
+        targetSelector: { select: () => 'CLOUD' as const }, securityGate: { authorize: request => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
         recovery: { decide: () => 'MARK_UNKNOWN' }, verifier: { verify: async (_operation, output) => ({ stepId: operation.id, valid: output.length > 0, checks: output.length ? ['provider-artifact-present'] : [], errors: output.length ? [] : ['Provider returned no artifact'] }) },
         now: Date.now, id: randomUUID,
       },
