@@ -36,6 +36,11 @@ export interface BillingTransactionAuthority {
   unknown?(reservationId: string, reason: string): Promise<BillingReservation>;
 }
 
+/** Billing events are facts. Only the transaction authority may persist them or mutate money. */
+export interface BillingEventAuthority extends BillingTransactionAuthority {
+  record?(event: BillingEvent): Promise<void>;
+}
+
 export function buildBillingEvent(input: Readonly<{ billingEventId: string; identity: CreativeOperationIdentity; authorization: ExecutionAuthorization; reservation: BillingReservation; billableAmount: number; creditUnit?: string; occurredAt: string }>): BillingEvent {
   if (!input.authorization.allowed) throw new Error('Billing event requires an allowed authorization');
   if (new Date(input.authorization.expiresAt).getTime() <= new Date(input.occurredAt).getTime()) throw new Error('Billing event authorization has expired');

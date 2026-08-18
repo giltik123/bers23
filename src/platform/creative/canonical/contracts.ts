@@ -1,4 +1,6 @@
 import type { CompiledWorkflow, ResourceBudget, Scope, WorkflowEngineDependencies, WorkflowOperation, WorkflowSnapshot } from '../workflow-engine';
+import type { BillingTransactionAuthority } from '../authority';
+import type { ProductionOperationAuthority } from '../authority';
 
 /** The one public operation state model. Other status values are adapter concerns. */
 export const CREATIVE_OPERATION_STATES = ['WAITING', 'READY', 'RUNNING', 'VERIFYING', 'SUCCESS', 'FAILED', 'RECOVERING', 'SKIPPED', 'UNKNOWN'] as const;
@@ -31,4 +33,4 @@ export interface TargetSelectorPort { select(operation: CreativeOperation, reque
 export interface SecurityGatePort { authorize(request: CreativeRequest, operation: CreativeOperation, target: ExecutionTarget): boolean }
 export interface ProductionRecoveryPort { decide(failure: Readonly<{ executionId: string; error: string }>): RecoveryDecision }
 export interface TelemetryBillingBridgePort { record(outcome: ProductionOutcome): void | Promise<void> }
-export interface CreativeExecutionPlatformDependencies extends WorkflowEngineDependencies { readonly decision: CanonicalDecisionPort; readonly planning: CanonicalPlanningPort; readonly targetSelector: TargetSelectorPort; readonly securityGate: SecurityGatePort; readonly recovery: ProductionRecoveryPort; readonly telemetry?: TelemetryBillingBridgePort; readonly now?: () => number; readonly id?: () => string }
+export interface CreativeExecutionPlatformDependencies extends WorkflowEngineDependencies { readonly decision: CanonicalDecisionPort; readonly planning: CanonicalPlanningPort; readonly targetSelector: TargetSelectorPort; readonly securityGate: SecurityGatePort; readonly recovery: ProductionRecoveryPort; readonly authority?: ProductionOperationAuthority; readonly billing?: BillingTransactionAuthority; readonly telemetry?: TelemetryBillingBridgePort; readonly now?: () => number; readonly id?: () => string }
