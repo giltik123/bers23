@@ -1,5 +1,11 @@
 import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformDependencies, type CreativeRequest } from '../../../src/platform/creative/canonical/index.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/index.ts';
+import type { TransactionStore } from '../../transactions/application/ports.ts';
+import { TransactionService } from '../../transactions/application/transactionService.ts';
+import { CreativeExecutionService, type CreativeExecutionServiceDependencies } from '../application/creativeExecutionService.ts';
+import { TransactionBillingAuthorityAdapter } from '../billing/TransactionBillingAuthorityAdapter.ts';
+import { createCreativeExecuteHandler } from '../http/creativeExecuteHandler.ts';
+import { createCreativeLifecycleHandlers } from '../http/creativeLifecycleHandlers.ts';
 
 export type AuthContext = Readonly<{ userId: string; tenantId: string }>;
 export type InputSource = 'CANONICAL_ARTIFACT' | 'LEGACY_URL';
@@ -21,11 +27,32 @@ export type CreativeCoreDependencies = Readonly<{
   maxCredits: number;
 }>;
 
+export type CreativeCoreCompositionInput = Readonly<{
+  canonical: Omit<CreativeExecutionPlatformDependencies, 'billing'>;
+  transactions: TransactionService;
+  transactionStore: TransactionStore;
+  ownsArtifacts: CreativeExecutionServiceDependencies['ownsArtifacts'];
+  creditsPerEdit?: number;
+  hardBudgetCredits?: number;
+}>;
+
 export type ExecuteInput = Readonly<{ clientRequestId: string; projectId: string; intent: string; artifactId?: string; inputArtifact?: string; budget?: Readonly<{ credits?: number }> }>;
 type ExecutionRecord = Readonly<{ scope: Scope; promise: Promise<void> }>;
 
-/** The canonical server composition root. Deployment adapters only translate transport. */
-export function createCreativeCore(dependencies: CreativeCoreDependencies) {
+/** Existing application composition retained for callers that supply transaction services directly. */
+function createCreativeApplicationCore(input: CreativeCoreCompositionInput) {
+  const billing = new TransactionBillingAuthorityAdapter(input.transactions, input.transactionStore, 'fal');
+  const service = new CreativeExecutionService({
+    platform: { ...input.canonical, billing },
+    ownsArtifacts: input.ownsArtifacts,
+    creditsPerEdit: input.creditsPerEdit,
+    hardBudgetCredits: input.hardBudgetCredits,
+  });
+  return Object.freeze({ service, execute: createCreativeExecuteHandler(service), lifecycle: createCreativeLifecycleHandlers(service) });
+}
+
+/** HTTP/runtime composition used by deployment adapters. */
+function createCreativeHttpCore(dependencies: CreativeCoreDependencies) {
   validateDependencies(dependencies);
   const platform = new CreativeExecutionPlatform(dependencies.platform);
   const executions = new Map<string, ExecutionRecord>();
@@ -65,6 +92,15 @@ export function createCreativeCore(dependencies: CreativeCoreDependencies) {
     cancel(identity: AuthContext, id: string) { assertOwnership(id, identity); platform.cancel(id); return { executionId: id, status: platform.status(id) }; },
     wait(identity: AuthContext, id: string) { return assertOwnership(id, identity).promise; },
   });
+}
+
+export type CreativeApplicationCore = ReturnType<typeof createCreativeApplicationCore>;
+export type CreativeHttpCore = ReturnType<typeof createCreativeHttpCore>;
+
+export function createCreativeCore(input: CreativeCoreDependencies): CreativeHttpCore;
+export function createCreativeCore(input: CreativeCoreCompositionInput): CreativeApplicationCore;
+export function createCreativeCore(input: CreativeCoreDependencies | CreativeCoreCompositionInput): CreativeHttpCore | CreativeApplicationCore {
+  return 'auth' in input ? createCreativeHttpCore(input) : createCreativeApplicationCore(input);
 }
 
 async function resolveInputArtifact(input: ExecuteInput, scope: Scope, dependencies: CreativeCoreDependencies): Promise<ResolvedInput> {

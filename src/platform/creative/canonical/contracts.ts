@@ -19,7 +19,7 @@ export interface CreativePipeline { readonly operationIds: readonly string[] }
 export interface CreativeArtifact { readonly id: string; readonly kind: string; readonly value: unknown; readonly producerOperationId: string; readonly scope: Scope; readonly state: CreativeArtifactState; readonly metadata?: Readonly<Record<string, unknown>> }
 export interface VerificationResult { readonly valid: boolean; readonly checks: readonly string[]; readonly errors: readonly string[] }
 export type RecoveryDecision = 'RETRY' | 'FALLBACK' | 'PARTIAL_REPLAN' | 'RESUME' | 'ABORT' | 'MARK_UNKNOWN';
-export interface ProductionOutcome { readonly executionId: string; readonly status: 'SUCCESS' | 'FAILED' | 'UNKNOWN'; readonly workflow: WorkflowSnapshot; readonly verification: VerificationResult; readonly artifacts: readonly CreativeArtifact[] }
+export interface ProductionOutcome { readonly executionId: string; readonly status: 'SUCCESS' | 'FAILED' | 'UNKNOWN'; readonly workflow?: WorkflowSnapshot; readonly verification: VerificationResult; readonly artifacts: readonly CreativeArtifact[] }
 
 export const CREATIVE_AUTHORITY = Object.freeze({
   facade: 'CANONICAL', workflowEngine: 'CANONICAL', productionRuntime: 'CANONICAL',

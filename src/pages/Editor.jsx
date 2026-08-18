@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, ScanSearch, Loader2, Download, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
-import { editingEngine } from '@/lib/editing/editingEngine';
+import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
 const AgentPanel = lazy(() => import('@/components/editor/agent/AgentPanel'));
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
-import { chainRunner } from '@/lib/recipes/chainRunner';
+import { legacyRecipeExecutionAdapter } from '@/application/creative/LegacyRecipeExecutionAdapter';
 import ChainProgress from '@/components/editor/recipes/ChainProgress';
 import ImageCanvas from '@/components/editor/ImageCanvas';
 import InstructionBar from '@/components/editor/InstructionBar';
@@ -41,8 +41,6 @@ import AdaptiveToolbar from '@/components/adaptive/AdaptiveToolbar';
 import AdaptivePanel from '@/components/adaptive/AdaptivePanels';
 import AdaptiveNavigation from '@/components/adaptive/AdaptiveNavigation';
 import { usePlatformProfile } from '@/lib/platform/PlatformManager';
-import { creditsEngine } from '@/lib/credits/creditsEngine';
-import { creditsCalculator } from '@/lib/credits/creditsCalculator';
 import CreditsBar from '@/components/editor/credits/CreditsBar';
 import { jobManager } from '@/lib/jobs/jobManager';
 import JobQueuePanel from '@/components/editor/jobs/JobQueuePanel';
@@ -125,7 +123,7 @@ export default function Editor() {
     }
   };
 
-  // All AI edits go through the Editing Engine — never a provider directly.
+  // Single AI edits cross the application boundary; the Core canonical platform is execution authority.
   const applyEdit = async (bypassCache = false, { skipDriftCheck = false, instructionOverride = null } = {}) => {
     const usedInstruction = instructionOverride || instruction;
     const usedPlan = instructionOverride
@@ -147,31 +145,20 @@ export default function Editor() {
     setAiError(null);
     setLastAction(() => applyEdit);
     try {
-      // Editor → Job Manager → Priority Queue → Worker → (Credits → Provider) → History.
-      const cost = creditsCalculator.estimateEdit({ plan: usedPlan, recipe: activeRecipe });
-      const result = await jobManager.submit({
-        type: 'edit',
-        label: usedInstruction.slice(0, 60) || 'AI edit',
-        priority: 'high',
+      const result = await creativeEditApplicationService.execute({
         projectId: project.id,
-        provider: 'reve',
-        estimatedTime: 30000,
-        creditsReserved: cost.credits,
-        onCancel: () => editingEngine.cancel(),
-        run: () => creditsEngine.run({
-          operation: usedPlan.intent?.action || 'edit',
-          provider: 'reve',
-          credits: cost.credits,
-          projectId: project.id,
-          execute: () => editingEngine.execute({
-            project, plan: usedPlan, instruction: usedInstruction,
-            objects: objects.filter((o) => o.selected),
-            bypassCache,
-          }),
-        }),
+        instruction: usedInstruction,
+        selectedObjectIds: objects.filter((object) => object.selected).map((object) => object.id),
+        inputArtifactId: project.current_image_artifact_id || project.current_image_url,
+        maskArtifactIds: objects.filter((object) => object.selected && object.mask_artifact_id).map((object) => object.mask_artifact_id),
+        preserveMode: styleLock.isEnabled(project.id) ? 'locked' : 'standard',
+        clientRequestId: globalThis.crypto.randomUUID(),
       });
-      setPendingResult({ result, instruction: usedInstruction, beforeUrl: project.current_image_url });
-      recipeEngine.recordOutcome(activeRecipe?.id, { success: true, durationMs: result.generation_time_ms, credits: result.credits_used });
+      if (result.status === 'pending') throw Object.assign(new Error('Provider result is pending reconciliation'), { code: 'PROVIDER_OUTCOME_PENDING', retryable: false });
+      if (result.status !== 'completed' || !result.imageUrl) throw Object.assign(new Error('Edit failed'), { code: 'provider_failure' });
+      const editorResult = { ...result, image_url: result.imageUrl, generation_time_ms: result.timing?.durationMs, credits_used: result.creditsUsed };
+      setPendingResult({ result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url });
+      recipeEngine.recordOutcome(activeRecipe?.id, { success: true, durationMs: editorResult.generation_time_ms, credits: editorResult.credits_used });
     } catch (e) {
       if (e.code !== 'cancelled') {
         setAiError(e.message || 'Edit failed');
@@ -212,22 +199,16 @@ export default function Editor() {
         projectId: project.id,
         provider: 'reve',
         estimatedTime: 60000,
-        creditsReserved: creditsCalculator.estimateChain(chain).credits,
-        onCancel: () => chainRunner.cancel(),
+        creditsReserved: legacyRecipeExecutionAdapter.estimate(chain),
+        onCancel: () => legacyRecipeExecutionAdapter.cancel(),
         notifyOnComplete: true,
-        run: () => creditsEngine.run({
-          operation: `chain:${chain.name}`,
-          provider: 'reve',
-          credits: creditsCalculator.estimateChain(chain).credits,
-          projectId: project.id,
-          execute: () => chainRunner.run({
+        run: () => legacyRecipeExecutionAdapter.execute({
             chain, project, objects,
             onProgress: (steps) => setChainState((cs) => ({ ...cs, steps })),
             onStepCommitted: async (result, step) => {
               await pushEdit(result.image_url, `${chain.name}: ${step.label}`, result.historyEntry);
               sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
             },
-          }),
         }),
       });
       setChainState((cs) => ({ ...cs, running: false }));

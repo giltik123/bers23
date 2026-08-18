@@ -1,9 +1,7 @@
-import { publicError } from '../composition/createCreativeCore.ts';
-
-type Core = ReturnType<typeof import('../composition/createCreativeCore.ts')['createCreativeCore']>;
+import { publicError, type CreativeHttpCore } from '../composition/createCreativeCore.ts';
 
 /** Framework-neutral Fetch handler used unchanged by every deployment adapter. */
-export function createCreativeHttpHandler(core: Core) {
+export function createCreativeHttpHandler(core: CreativeHttpCore) {
   return async (request: Request): Promise<Response> => {
     try {
       const url = new URL(request.url);
