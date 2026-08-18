@@ -1,11 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { CoreServerConfig } from '../config.ts';
 import type { HmacJwtVerifier } from '../auth/hmacJwtVerifier.ts';
-import type { createCreativeCore } from '../composition/createCreativeCore.ts';
+import type { CreativeApplicationCore } from '../composition/createCreativeCore.ts';
+import type { CoreServerConfig } from '../config.ts';
 
-type Core = ReturnType<typeof createCreativeCore>;
-export function createNodeHttpAdapter(input: Readonly<{ core: Core; auth: HmacJwtVerifier; config: CoreServerConfig; ready: () => Promise<boolean>; accepting: () => boolean }>) {
+/** Minimal Node transport for a framework-neutral Fetch handler. */
+export function nodeHttpAdapter(handler: (request: Request) => Promise<Response>) {
+  return async (request: IncomingMessage, response: ServerResponse) => {
+    const origin = `http://${request.headers.host ?? 'localhost'}`;
+    const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await readBody(request);
+    const result = await handler(new Request(new URL(request.url ?? '/', origin), { method: request.method, headers: request.headers as HeadersInit, body }));
+    response.statusCode = result.status;
+    result.headers.forEach((value, key) => response.setHeader(key, value));
+    response.end(Buffer.from(await result.arrayBuffer()));
+  };
+}
+
+/** Production Node transport with health, CORS, authentication and request limits. */
+export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicationCore; auth: HmacJwtVerifier; config: CoreServerConfig; ready: () => Promise<boolean>; accepting: () => boolean }>) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || randomUUID(); response.setHeader('X-Correlation-Id', correlationId);
     try {
@@ -30,8 +42,10 @@ export function createNodeHttpAdapter(input: Readonly<{ core: Core; auth: HmacJw
     }
   };
 }
+
 function header(request: IncomingMessage, name: string): string | undefined { const value = request.headers[name]; return Array.isArray(value) ? value[0] : value; }
 function mediaType(request: IncomingMessage): string { return (header(request, 'content-type') ?? '').split(';')[0].trim().toLowerCase(); }
+async function readBody(request: IncomingMessage): Promise<Uint8Array> { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk)); return Buffer.concat(chunks); }
 async function readJson(request: IncomingMessage, limit: number): Promise<unknown> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of request) { const buffer = Buffer.from(chunk); size += buffer.length; if (size > limit) throw Object.assign(new Error('Request body is too large'), { code: 'body_too_large', status: 413 }); chunks.push(buffer); } try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw Object.assign(new Error('Request body must contain valid JSON'), { code: 'invalid_json', status: 400 }); } }
 function sendError(response: ServerResponse, status: number, code: string, message: string, correlationId: string, retryable: boolean) { return send(response, status, { code, message, correlationId, retryable }); }
 function send(response: ServerResponse, status: number, body: unknown): void { if (response.headersSent) return; response.statusCode = status; if (body === undefined) { response.end(); return; } response.setHeader('Content-Type', 'application/json; charset=utf-8'); response.setHeader('Cache-Control', 'no-store'); response.end(JSON.stringify(body)); }

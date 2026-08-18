@@ -14,21 +14,23 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x, 24.x]
+        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+
     steps:
     - uses: actions/checkout@v4
-    - name: Use Node.js 24
+    - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
-        node-version: 24.x
+        node-version: ${{ matrix.node-version }}
         cache: 'npm'
     - run: npm ci
     - run: npm run build --if-present
     - run: npm run typecheck
     - run: npm run lint
-    - run: npm run test:canonical-product
-    - run: npm run test:core-http
-    - run: npm run server:typecheck
-    - run: npm run server:build
+    - run: npm run test:canonical-product-vertical
 
   postgres-transactions:
     runs-on: ubuntu-latest
@@ -57,13 +59,17 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
+      - name: Typecheck Core server
+        run: npm run server:typecheck
+      - name: Build Core server
+        run: npm run server:build
       - name: Apply transaction schema migration
         run: npm run db:migrate:transactions
       - name: Verify transaction schema readiness
         run: npm run db:check:transactions
       - name: Run PostgreSQL transaction integration tests
         run: npm run test:postgres
-      - name: Run production authority PostgreSQL gate
+      - name: Run canonical product and Core server contracts
+        run: npm run test:canonical-product
+      - name: Enforce PostgreSQL production authority gate
         run: npm run test:creative-production-authority-postgres
-      - name: Run Core server contract integration tests
-        run: npm run server:test
