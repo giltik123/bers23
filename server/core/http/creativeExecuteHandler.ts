@@ -1,17 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { CreativeExecutionService, publicError, type AuthenticatedScope, type CreativeEditCommand } from '../application/creativeExecutionService.ts';
 
-export type CoreRequest = Readonly<{ body?: unknown; auth?: AuthenticatedScope }>;
+export type CoreRequest = Readonly<{ body?: unknown; auth?: AuthenticatedScope; correlationId?: string }>;
 export type CoreResponse = Readonly<{ status: number; body: unknown }>;
 
 /** Framework-neutral POST /api/core/creative/execute transport adapter. */
 export function createCreativeExecuteHandler(service: CreativeExecutionService) {
   return async (request: CoreRequest): Promise<CoreResponse> => {
-    const correlationId = randomUUID();
+    const correlationId = request.correlationId ?? randomUUID();
     try {
       if (!request.auth) throw publicError('unauthenticated', 'Authentication is required', 401, false);
       const command = validate(request.body);
-      const outcome = await service.execute(command, request.auth);
+      const outcome = await service.execute(command, request.auth, correlationId);
       const image = outcome.artifacts.find((artifact) => artifact.kind === 'image');
       return { status: outcome.status === 'UNKNOWN' ? 202 : 200, body: { executionId: outcome.executionId, correlationId, status: outcome.status, imageUrl: typeof image?.value === 'object' && image?.value ? (image.value as { url?: string }).url : undefined, artifacts: outcome.artifacts.map((artifact) => ({ id: artifact.id, kind: artifact.kind, url: typeof artifact.value === 'object' && artifact.value ? (artifact.value as { url?: string }).url : undefined, state: artifact.state })), verification: outcome.verification } };
     } catch (cause) {

@@ -29,7 +29,13 @@
     "test:creative-learning-postgres": "node -e \"if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required: real PostgreSQL creative-learning tests cannot be skipped or mocked'); process.exit(1) }\" && mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-learning-postgres.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-learning-postgres.test.mjs',external:['pg','node:*']});\" && node --test node_modules/.cache/creative-learning-postgres.test.mjs",
     "test:creative-learning": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-learning.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-learning.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-learning.test.mjs",
     "test:canonical-product-vertical": "mkdir -p node_modules/.cache/canonical-product && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/canonical-product-vertical-slice.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/canonical-product/vertical.test.mjs',external:['node:*']});\" && node node_modules/.cache/canonical-product/vertical.test.mjs && node --test tests/editor-canonical-boundary.test.mjs tests/auth-client-contract.test.mjs",
-    "test:core-http": "mkdir -p node_modules/.cache && esbuild tests/core-http.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=node_modules/.cache/core-http.test.mjs --external:node:* && node node_modules/.cache/core-http.test.mjs"
+    "test:core-http": "npm run test:core-http-boundary && npm run server:test && npm run test:core-cutover",
+    "server:dev": "npm run server:build && npm run server:start",
+    "server:build": "node scripts/build-core-server.mjs",
+    "server:start": "node dist-server/server.mjs",
+    "server:typecheck": "tsc -p server/tsconfig.json",
+    "server:test": "node --experimental-strip-types --test $(find server/core -name '*.test.mjs' -print)",
+    "test:core-http-boundary": "mkdir -p node_modules/.cache && esbuild tests/core-http.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=node_modules/.cache/core-http.test.mjs --external:node:* && node node_modules/.cache/core-http.test.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",
