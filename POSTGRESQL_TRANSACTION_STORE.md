@@ -13,11 +13,29 @@ Run the real-database concurrency check with an isolated temporary schema:
 TEST_DATABASE_URL=postgresql://user:password@host/database npm run test:postgres
 ```
 
+Sprint 6.32.1 has a fail-closed entry point (it exits before testing when
+`DATABASE_URL` is absent):
+
+```bash
+DATABASE_URL=postgresql://user:password@host/database npm run test:creative-production-authority-postgres
+```
+
+The PostgreSQL verification matrix covers success/commit, definitive
+failure/release, ambiguous provider outcome, duplicate replay, competing
+reservations, expiry, hard budget rejection, incremental partial-replan cost,
+interrupted-work recovery, and reconciliation of matched, missing,
+inconsistent, and unknown facts. The ambiguous-outcome case simulates a
+provider completing after dispatch while its response is lost; replay retains
+the reservation for reconciliation and proves that the provider is called only
+once. The competing-reservation case starts with 100 credits and races two
+80-credit requests, then verifies directly in PostgreSQL that exactly one is
+reserved and no overspend occurred.
+
 The test skips when neither `TEST_DATABASE_URL` nor `DATABASE_URL` is set. It
-applies the production migration, races reservations against one wallet, checks
-concurrent commit/release idempotency, verifies rollback recovery, checks the
-resulting wallet and journal invariants, and exercises recovery of an ambiguous
-provider outcome before removing its schema.
+applies the production migration in an isolated schema, exercises the complete
+matrix, checks wallet/reservation/journal facts directly, and removes the schema.
+Use the fail-closed entry point above for acceptance; the direct command's skip
+behavior is retained only for ordinary local suites without PostgreSQL.
 The `postgres-transactions` CI job supplies a PostgreSQL 16 service and always
 runs this command for pushes and pull requests targeting `main`; unlike a local
 run without a database URL, that required CI check cannot silently skip.

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { Pool } from 'pg';
@@ -6,10 +7,59 @@ import { Pool } from 'pg';
 import { PostgresTransactionStore } from './postgresTransactionStore.ts';
 import { RetryingPostgresTransactionRunner } from './retryingTransactionRunner.ts';
 import { RecoveryService } from '../../application/recoveryService.ts';
+import {
+  BillableOperationService,
+  DefinitiveProviderFailure,
+  ProviderOutcomePendingError,
+} from '../../application/billableOperationService.ts';
+import { ReservationGateway } from '../../application/reservationGateway.ts';
 import { TransactionService } from '../../application/transactionService.ts';
 
 const databaseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 const integrationTest = databaseUrl ? test : test.skip;
+
+integrationTest('matrix 1: reserve -> provider success -> commit', async (context) => {
+  const { admin, schema, store } = await createFixture(context, 100);
+  const now = new Date();
+  const reserved = await store.reserve(reservationInput('success', 35, now), now.toISOString());
+  assert.equal(reserved.kind, 'created');
+  await store.appendProviderFact(reserved.reservation.id, 'provider_dispatched', now.toISOString());
+  await store.appendProviderFact(reserved.reservation.id, 'provider_succeeded', now.toISOString());
+  assert.equal((await store.commit(reserved.reservation.id, 'owner-1', now.toISOString(), 'transaction_service')).kind, 'applied');
+  assert.deepEqual(await walletState(admin, schema), { balance: 65, reserved: 0, lifetime_spent: 35, version: 2 });
+});
+
+integrationTest('matrix 2: definitive provider failure releases the reservation', async (context) => {
+  const { admin, schema, store } = await createFixture(context, 100);
+  const { operations } = operationFixture(store, 25);
+  await assert.rejects(
+    operations.execute(trustedContext(25), operationCommand('failure'), {
+      execute: async () => { throw new DefinitiveProviderFailure('provider_rejected'); },
+    }),
+    DefinitiveProviderFailure,
+  );
+  assert.deepEqual(await walletState(admin, schema), { balance: 100, reserved: 0, lifetime_spent: 0, version: 2 });
+  assert.deepEqual(await reservationStates(admin, schema), [{ status: 'released', provider_state: 'failed', amount: 25 }]);
+});
+
+integrationTest('matrix 3/4: lost response remains UNKNOWN and duplicate request never charges twice', async (context) => {
+  const { admin, schema, store } = await createFixture(context, 100);
+  const { operations } = operationFixture(store, 30);
+  const contextValue = trustedContext(30);
+  const command = operationCommand('lost-response');
+  let providerCalls = 0;
+  const provider = { execute: async () => { providerCalls += 1; throw new Error('response lost'); } };
+
+  await assert.rejects(operations.execute(contextValue, command, provider), ProviderOutcomePendingError);
+  const replay = await operations.execute(contextValue, command, provider);
+
+  assert.equal(replay.kind, 'provider_outcome_pending');
+  assert.equal(providerCalls, 1);
+  assert.deepEqual(await walletState(admin, schema), { balance: 100, reserved: 30, lifetime_spent: 0, version: 1 });
+  assert.deepEqual(await reservationStates(admin, schema), [{ status: 'reserved', provider_state: 'dispatched', amount: 30 }]);
+  const rows = await admin.query(`SELECT event FROM ${quoteIdentifier(schema)}.transaction_journal ORDER BY sequence`);
+  assert.deepEqual(rows.rows.map(({ event }) => event), ['reservation_created', 'provider_dispatched', 'recovery_deferred']);
+});
 
 integrationTest('serializes concurrent reservations without overspending', async (context) => {
   const { admin, schema, store } = await createFixture(context, 100);
@@ -148,6 +198,91 @@ integrationTest('recovers a pending provider success and commits the reservation
   ]);
 });
 
+integrationTest('matrix 6: expired authorization is recovered without a charge when never dispatched', async (context) => {
+  const { admin, schema, store } = await createFixture(context, 100);
+  const now = new Date();
+  const reserved = await store.reserve(reservationInput('expired', 20, now), now.toISOString());
+  assert.equal(reserved.kind, 'created');
+  await expireReservation(admin, schema, reserved.reservation.id);
+
+  const recovery = new RecoveryService(
+    store,
+    { resolve: async () => 'not_dispatched' },
+    new TransactionService(store, { now: () => new Date() }),
+    { now: () => new Date() },
+    'expiry-worker',
+  );
+  assert.deepEqual(await recovery.runBatch(10), { resolved: 1, deferred: 0 });
+  assert.deepEqual(await walletState(admin, schema), { balance: 100, reserved: 0, lifetime_spent: 0, version: 2 });
+  assert.deepEqual(await reservationStates(admin, schema), [{ status: 'released', provider_state: 'pending', amount: 20 }]);
+});
+
+integrationTest('matrix 7: hard budget rejection creates no financial facts', async (context) => {
+  const { admin, schema, store } = await createFixture(context, 40);
+  const result = await store.reserve(reservationInput('over-budget', 41, new Date()), new Date().toISOString());
+  assert.equal(result.kind, 'insufficient_credits');
+  assert.deepEqual(await walletState(admin, schema), { balance: 40, reserved: 0, lifetime_spent: 0, version: 0 });
+  assert.deepEqual(await reservationStates(admin, schema), []);
+});
+
+integrationTest('matrix 8: partial replan reserves and commits only incremental cost', async (context) => {
+  const { admin, schema, store } = await createFixture(context, 100);
+  const now = new Date();
+  // 60 credits are preserved work; only the changed 20-credit node is new authority.
+  const incremental = await store.reserve(reservationInput('incremental', 20, now), now.toISOString());
+  assert.equal(incremental.kind, 'created');
+  await store.appendProviderFact(incremental.reservation.id, 'provider_dispatched', now.toISOString());
+  await store.appendProviderFact(incremental.reservation.id, 'provider_succeeded', now.toISOString());
+  await store.commit(incremental.reservation.id, 'owner-1', now.toISOString(), 'transaction_service');
+  assert.deepEqual(await walletState(admin, schema), { balance: 80, reserved: 0, lifetime_spent: 20, version: 2 });
+  assert.deepEqual(await reservationStates(admin, schema), [{ status: 'committed', provider_state: 'success', amount: 20 }]);
+});
+
+integrationTest('matrix 9: interrupted reservation recovery is idempotent across competing workers', async (context) => {
+  const { admin, schema, store } = await createFixture(context, 100);
+  const now = new Date();
+  const reserved = await store.reserve(reservationInput('interrupted', 45, now), now.toISOString());
+  assert.equal(reserved.kind, 'created');
+  await store.appendProviderFact(reserved.reservation.id, 'provider_dispatched', now.toISOString());
+  await expireReservation(admin, schema, reserved.reservation.id);
+  let resolutions = 0;
+  const createRecovery = (worker) => new RecoveryService(
+    store,
+    { resolve: async () => { resolutions += 1; return 'succeeded'; } },
+    new TransactionService(store, { now: () => new Date() }),
+    { now: () => new Date() },
+    worker,
+  );
+
+  const results = await Promise.all([createRecovery('worker-a').runBatch(10), createRecovery('worker-b').runBatch(10)]);
+  assert.equal(results.reduce((sum, result) => sum + result.resolved, 0), 1);
+  assert.equal(resolutions, 1);
+  assert.deepEqual(await walletState(admin, schema), { balance: 55, reserved: 0, lifetime_spent: 45, version: 2 });
+});
+
+integrationTest('matrix 10: reconciliation classifies matched, missing, inconsistent and unknown PostgreSQL facts', async (context) => {
+  const { admin, schema, store } = await createFixture(context, 100);
+  const now = new Date();
+  const matched = await store.reserve(reservationInput('matched', 10, now), now.toISOString());
+  assert.equal(matched.kind, 'created');
+  await store.appendProviderFact(matched.reservation.id, 'provider_dispatched', now.toISOString());
+  await store.appendProviderFact(matched.reservation.id, 'provider_succeeded', now.toISOString());
+  await store.commit(matched.reservation.id, 'owner-1', now.toISOString(), 'transaction_service');
+
+  const unknown = await store.reserve(reservationInput('unknown', 5, now), now.toISOString());
+  assert.equal(unknown.kind, 'created');
+  await store.appendProviderFact(unknown.reservation.id, 'provider_dispatched', now.toISOString());
+  await store.appendRecoveryDeferred(unknown.reservation.id, now.toISOString());
+
+  assert.equal(await reconcileReservation(admin, schema, matched.reservation.id), 'matched');
+  assert.equal(await reconcileReservation(admin, schema, 'absent-reservation'), 'missing');
+  assert.equal(await reconcileReservation(admin, schema, unknown.reservation.id), 'unknown');
+
+  // Simulate externally detected ledger drift in an isolated verification schema.
+  await admin.query(`DELETE FROM ${quoteIdentifier(schema)}.transaction_journal WHERE reservation_id = $1 AND event = 'reservation_committed'`, [matched.reservation.id]);
+  assert.equal(await reconcileReservation(admin, schema, matched.reservation.id), 'inconsistent');
+});
+
 let fixtureNumber = 0;
 
 async function createFixture(context, balance) {
@@ -182,7 +317,7 @@ function reservationInput(suffix, amount, now) {
   return {
     correlation_id: `correlation-${suffix}`,
     idempotency_key: `key-${suffix}`,
-    request_fingerprint: suffix.repeat(64),
+    request_fingerprint: createHash('sha256').update(suffix).digest('hex'),
     owner_id: 'owner-1',
     project_id: 'project-1',
     operation_id: 'image-edit',
@@ -191,6 +326,59 @@ function reservationInput(suffix, amount, now) {
     amount,
     expires_at: new Date(now.getTime() + 60_000).toISOString(),
   };
+}
+
+function operationFixture(store, amount) {
+  const clock = { now: () => new Date() };
+  const transactions = new TransactionService(store, clock);
+  const reservations = new ReservationGateway(transactions, { next: () => `correlation-operation-${amount}` });
+  return { operations: new BillableOperationService(reservations, store, transactions, clock) };
+}
+
+function trustedContext(amount) {
+  return {
+    user: { id: 'owner-1' },
+    project: { id: 'project-1', created_by_id: 'owner-1' },
+    operation: { operation_id: 'image-edit', version: 1, provider: 'test-provider', credit_cost: amount },
+  };
+}
+
+function operationCommand(suffix) {
+  return { idempotency_key: `operation-${suffix}-request`, payload: { prompt: suffix } };
+}
+
+async function expireReservation(admin, schema, id) {
+  await admin.query(
+    `UPDATE ${quoteIdentifier(schema)}.credit_reservations
+     SET created_at = CURRENT_TIMESTAMP - interval '2 seconds', expires_at = CURRENT_TIMESTAMP - interval '1 second'
+     WHERE id = $1`,
+    [id],
+  );
+}
+
+async function reservationStates(admin, schema) {
+  const result = await admin.query(
+    `SELECT status, provider_state, amount FROM ${quoteIdentifier(schema)}.credit_reservations ORDER BY id`,
+  );
+  return result.rows.map((row) => ({ ...row, amount: Number(row.amount) }));
+}
+
+async function reconcileReservation(admin, schema, id) {
+  const result = await admin.query(
+    `SELECT reservation.status, reservation.provider_state,
+            count(journal.id)::integer AS journal_count,
+            count(journal.id) FILTER (WHERE journal.event = 'reservation_committed')::integer AS commit_count
+     FROM ${quoteIdentifier(schema)}.credit_reservations AS reservation
+     LEFT JOIN ${quoteIdentifier(schema)}.transaction_journal AS journal ON journal.reservation_id = reservation.id
+     WHERE reservation.id = $1
+     GROUP BY reservation.id`,
+    [id],
+  );
+  if (!result.rowCount) return 'missing';
+  const row = result.rows[0];
+  if (row.status === 'reserved' && row.provider_state === 'dispatched') return 'unknown';
+  if (row.status === 'committed' && row.provider_state === 'success' && row.commit_count === 1 && row.journal_count >= 4) return 'matched';
+  return 'inconsistent';
 }
 
 async function walletState(admin, schema) {
