@@ -44,4 +44,15 @@ test('architecture fitness: canonical layers have no forbidden reverse or transp
   assert.deepEqual(concreteImports, ['src/platform/creative/composition/CreativeProviderComposition.ts']);
 });
 
+test('architecture fitness: legacy workflow analysis is advisory and cannot become an execution authority', async () => {
+  const legacyIndex = await readFile('src/platform/workflow/intelligence/index.ts', 'utf8');
+  assert.equal(legacyIndex.includes('./WorkflowIntelligence'), false);
+  for (const file of await collect('src/platform/workflow/intelligence')) {
+    const source = await readFile(file, 'utf8');
+    assert.equal(/\bexecute\s*\(/.test(source), false, `${file} exposes execution authority`);
+  }
+  const canonicalFacade = await readFile('src/platform/creative/canonical/CreativeExecutionPlatform.ts', 'utf8');
+  assert.equal((canonicalFacade.match(/new CreativeWorkflowEngine/g) ?? []).length, 1);
+});
+
 async function collect(directory: string): Promise<string[]> { const entries = await readdir(directory, { withFileTypes: true }); return (await Promise.all(entries.map(entry => entry.isDirectory() ? collect(join(directory, entry.name)) : Promise.resolve(entry.name.endsWith('.ts') ? [join(directory, entry.name)] : [])))).flat(); }
