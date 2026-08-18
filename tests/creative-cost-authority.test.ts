@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { CreativeCostAuthority } from '../src/platform/creative/cost';
+const cost = new CreativeCostAuthority();
+const local = cost.estimate({ target: 'LOCAL', billable: true, credits: 50, providerCost: { amount: 4, currency: 'USD' }, deviceCost: .1 });
+assert.equal(local.estimatedCredits, 0); assert.equal(local.estimatedProviderCost.amount, 0);
+const cloud = cost.estimate({ target: 'CLOUD', billable: true, credits: 5, providerCost: { amount: .04, currency: 'USD' }, fallbackCost: { amount: .02, currency: 'USD' }, worstCaseCredits: 8 });
+assert.notEqual(cloud.estimatedProviderCost.amount, cloud.estimatedCredits, 'provider money and user credits are distinct');
+assert.equal(cost.preflight(cloud, { maxCredits: 7, maxProviderCost: 1, allowFallback: true, allowRetry: true, allowEscalation: false, budgetMode: 'HARD' }).allowed, false);
+const actual = cost.fromProvider({ provider: 'fal', model: 'm', actualProviderCost: .03, providerCurrency: 'USD', providerExecutionId: 'provider-1', usage: { images: 1 } }, { creditsBasis: 4, latency: 30 });
+assert.notDeepEqual(cloud, actual, 'estimate and actual are separate sources of truth');
+const total = cost.aggregate([{ nodeId: 'local', target: 'LOCAL', providerCost: { amount: 0, currency: 'USD' }, deviceCost: .1, billableCredits: 0, preserved: true }, { nodeId: 'cloud', target: 'CLOUD', providerCost: { amount: .03, currency: 'USD' }, deviceCost: 0, billableCredits: 5 }]);
+assert.equal(total.totalBillableCredits, 5); assert.equal(cost.incremental(total.nodes).totalBillableCredits, 5); assert.equal(cost.incremental(total.nodes).nodes.length, 1);
+console.log('creative cost authority tests passed');
