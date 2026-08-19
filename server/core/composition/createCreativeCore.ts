@@ -36,7 +36,7 @@ export type CreativeCoreCompositionInput = Readonly<{
   hardBudgetCredits?: number;
 }>;
 
-export type ExecuteInput = Readonly<{ clientRequestId: string; projectId: string; intent: string; artifactId?: string; inputArtifact?: string; budget?: Readonly<{ credits?: number }> }>;
+export type ExecuteInput = Readonly<{ clientRequestId: string; projectId: string; intent: string; artifactId?: string; inputArtifact?: string; maskArtifactIds?: readonly string[]; selectedObjectIds?: readonly string[]; preserveMode?: 'STRICT' | 'BALANCED' | 'CREATIVE'; budget?: Readonly<{ credits?: number }> }>;
 type ExecutionRecord = Readonly<{ scope: Scope; promise: Promise<void> }>;
 
 /** Existing application composition retained for callers that supply transaction services directly. */
@@ -75,10 +75,10 @@ function createCreativeHttpCore(dependencies: CreativeCoreDependencies) {
       if (!input.clientRequestId || !input.projectId || !input.intent) throw publicError(400, 'clientRequestId, projectId and intent are required');
       if (!await dependencies.artifacts.projectBelongsTo(input.projectId, identity)) throw publicError(403, 'Project scope denied');
       const scope = { tenantId: identity.tenantId, userId: identity.userId, projectId: input.projectId };
-      const resolved = await resolveInputArtifact(input, scope, dependencies);
+      const resolved = await resolveInputArtifact(input, scope, dependencies); const masks = await Promise.all((input.maskArtifactIds ?? []).map(async artifactId => { const artifact = await dependencies.artifacts.resolveArtifact(artifactId, scope); if (!artifact) throw publicError(403, 'Mask artifact scope denied'); return artifact; }));
       const id = `${identity.tenantId}:${identity.userId}:${input.projectId}:${input.clientRequestId}`;
       if (!executions.has(id)) {
-        const request: CreativeRequest = { id, intent: input.intent, scope, inputArtifacts: [resolved.artifact], budget: { credits: Math.min(input.budget?.credits ?? 0, dependencies.maxCredits) }, metadata: { idempotencyKey: input.clientRequestId, inputSource: resolved.inputSource } };
+        const request: CreativeRequest = { id, intent: input.intent, scope, inputArtifacts: [resolved.artifact, ...masks], budget: { credits: Math.min(input.budget?.credits ?? 0, dependencies.maxCredits), aiCalls: 1, retries: 0 }, metadata: { idempotencyKey: input.clientRequestId, inputSource: resolved.inputSource, editCapability: masks.length && (input.selectedObjectIds?.length ?? 0) ? 'CONTROLLED_LOCAL_EDIT' : 'GLOBAL_EDIT', preserveMode: input.preserveMode ?? 'STRICT', selectedObjectIds: input.selectedObjectIds ?? [], maskArtifactIds: input.maskArtifactIds ?? [] } };
         platform.createExecution(request);
         const promise = platform.execute(id).then(() => undefined);
         // Install the ownership record before yielding so concurrent duplicates share it.
