@@ -1,5 +1,7 @@
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const packDir = process.env.SELECTION_MODEL_PACK_DIR;
@@ -14,7 +16,8 @@ const key = createPublicKey(await readFile(new URL('interactive-segmentation.pub
 const manifestSig = Buffer.from((await readFile(new URL('interactive-segmentation.manifest.sig', modelRoot), 'utf8')).trim(), 'base64');
 if (!verify(null, manifestBytes, key, manifestSig)) throw new Error('MODEL_SIGNATURE_INVALID: manifest');
 for (const name of ['encoder', 'decoder']) {
-  const file = join(packDir, `${name}.onnx`), signatureFile = `${file}.sig`, metadata = manifest.artifacts[name];
+  const candidates = [join(packDir, `${name}.onnx`), join(packDir, `mobilesam-${name}.onnx`)];
+  const file = candidates.find(existsSync) ?? candidates[0], signatureFile = `${file}.sig`, metadata = manifest.artifacts[name];
   const size = (await stat(file)).size;
   if (size !== metadata.size) throw new Error(`MODEL_DIGEST_MISMATCH: ${name} size ${size} != ${metadata.size}`);
   const bytes = await readFile(file), digest = createHash('sha256').update(bytes).digest('hex');
@@ -22,4 +25,8 @@ for (const name of ['encoder', 'decoder']) {
   const signature = Buffer.from((await readFile(signatureFile, 'utf8')).trim(), 'base64');
   if (!verify(null, bytes, key, signature)) throw new Error(`MODEL_SIGNATURE_INVALID: ${name}`);
 }
-console.log(`Verified external MobileSAM pack ${manifest.modelId}@${manifest.version}. Runtime benchmark adapter may now load it through OnnxLocalRuntime.`);
+const inference = spawnSync(process.env.PYTHON ?? 'python3', [new URL('./run-mobilesam-inference.py', import.meta.url).pathname, packDir], { encoding: 'utf8' });
+if (inference.status !== 0) throw new Error(`REAL_MOBILESAM_INFERENCE_FAILED: ${inference.stderr || inference.stdout || `exit ${inference.status}`}`);
+const evidence = JSON.parse(inference.stdout.trim());
+if (evidence.provider !== 'CPUExecutionProvider' || !(evidence.coverage > 0 && evidence.coverage < 1)) throw new Error('REAL_MOBILESAM_INFERENCE_INVALID');
+console.log(`Verified external MobileSAM pack ${manifest.modelId}@${manifest.version}; real ${evidence.provider} segmentation coverage=${evidence.coverage.toFixed(4)}, latencyMs=${evidence.latencyMs}.`);
