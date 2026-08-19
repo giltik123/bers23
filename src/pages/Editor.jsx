@@ -46,6 +46,8 @@ import { jobManager } from '@/lib/jobs/jobManager';
 import JobQueuePanel from '@/components/editor/jobs/JobQueuePanel';
 import { notificationCenter } from '@/lib/notifications/notificationCenter';
 import { sessionRecovery } from '@/lib/performance/sessionRecovery';
+import SelectionToolbar from '@/components/editor/SelectionToolbar';
+import { SelectionApplicationService } from '@/application/selection';
 
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
@@ -74,7 +76,52 @@ export default function Editor() {
   pushEditRef.current = pushEdit;
   const [segMeta, setSegMeta] = useState(null);
   const [driftWarning, setDriftWarning] = useState(null);
+  const [selection, setSelection] = useState(null);
+  const [brushSize, setBrushSize] = useState(24);
+  const selectionServiceRef = useRef(null);
+  const strokeRef = useRef([]);
   const platform = usePlatformProfile();
+
+  const startSelection = () => {
+    const segmentation = globalThis.__BERS_INTERACTIVE_SEGMENTATION__ || {
+      segment: async () => { throw Object.assign(new Error('Local model is not available'), { code: 'MODEL_RUNTIME_UNSUPPORTED' }); },
+      cancel: () => {},
+    };
+    const artifacts = {
+      persist: async (mask, metadata) => ({
+        id: globalThis.crypto.randomUUID(), kind: 'mask', role: 'MASK', state: 'AVAILABLE',
+        producerOperationId: 'selection-confirm', value: mask, metadata,
+        scope: { tenantId: project.tenant_id || 'current', projectId: project.id, userId: project.user_id || 'current' },
+      }),
+    };
+    const service = new SelectionApplicationService(segmentation, artifacts);
+    selectionServiceRef.current = service;
+    setSelection(service.start({ imageArtifactId: project.current_image_artifact_id || project.current_image_url, width: project.width, height: project.height }));
+  };
+  const updateSelection = (action) => { const value = action(selectionServiceRef.current); if (value) setSelection(value); };
+  const selectionPointer = async (phase, point, view) => {
+    const service = selectionServiceRef.current;
+    if (!service) return;
+    if (selection.mode === 'SMART_SELECT' && phase === 'down') {
+      setSelection({ ...service.snapshot(), state: 'SELECTING' });
+      setSelection(await service.smartPoint({ displayPoint: point, view, privacyMode: 'LOCAL_ONLY' }));
+      return;
+    }
+    if (selection.mode === 'SMART_SELECT') return;
+    if (phase === 'down') strokeRef.current = [point];
+    else if (phase === 'move') strokeRef.current.push(point);
+    else if (phase === 'up' && strokeRef.current.length) {
+      strokeRef.current.push(point);
+      setSelection(service.brush({ points: strokeRef.current, radius: brushSize, hardness: .75, view }));
+      strokeRef.current = [];
+    } else if (phase === 'cancel') strokeRef.current = [];
+  };
+  const finishSelection = async () => {
+    const artifact = await selectionServiceRef.current.done();
+    const object = { id: `selection-${artifact.id}`, label: 'Smart selection', selected: true, mask_artifact_id: artifact.id, box: { x: 0, y: 0, w: 1, h: 1 } };
+    await saveObjects([...(objects || []).map((item) => ({ ...item, selected: false })), object]);
+    selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null);
+  };
 
   // Scene Memory: auto-analyze when the project loads or the original image changes.
   // Once memory is ready, workspace auto-detection re-evaluates with full context.
@@ -312,6 +359,18 @@ export default function Editor() {
         busy={applying}
         onUndo={undo}
         onRedo={redo}
+        selection={selection}
+        onSelectionPointer={selectionPointer}
+      />
+
+      <SelectionToolbar
+        selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} onStart={startSelection}
+        onMode={(mode) => updateSelection((service) => service.setMode(mode))}
+        onUndo={() => updateSelection((service) => service.undo())}
+        onRedo={() => updateSelection((service) => service.redo())}
+        onClear={() => updateSelection((service) => service.clear())}
+        onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
+        onDone={finishSelection}
       />
 
       <PipelineStatusBar width={project.width} height={project.height} />
