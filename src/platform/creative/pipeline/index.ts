@@ -29,3 +29,4 @@ export { PipelineSimulation } from './PipelineSimulation';
 export { PipelineVerification } from './PipelineVerification';
 export { WorkflowPipelineTranslator } from './WorkflowPipelineTranslator';
 export type * from './ImagePipelineTypes';
+export * from './ControlledLocalEdit';
