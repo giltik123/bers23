@@ -1,8 +1,8 @@
-"""Run one real promptable MobileSAM encoder/decoder inference for acceptance.
+"""Run the MobileSAM encoder/decoder ONNX graph sanity test.
 
 The model pack is supplied outside Git.  This deliberately uses ONNX Runtime's
-CPU provider so a successful result cannot be produced by the deterministic
-test doubles used by the editing-provider tests.
+CPU provider.  It validates that the exported graphs can be loaded and joined,
+but it is not production local-runtime or browser-WASM acceptance evidence.
 """
 
 import json
