@@ -1,0 +1,18 @@
+{
+  "modelId": "mobile-sam-vit-t-interactive",
+  "version": "1.0.0",
+  "family": "MobileSAM ViT-T",
+  "capabilities": ["INTERACTIVE_SEGMENTATION", "positive-points", "negative-points", "soft-mask"],
+  "modelFormat": "ONNX",
+  "runtime": "ONNX_RUNTIME",
+  "sizeBytes": 40700000,
+  "requiredRam": 268435456,
+  "requiredVram": 0,
+  "supportedPlatforms": ["BROWSER", "WINDOWS", "MACOS", "LINUX"],
+  "supportedAccelerators": ["WEBGPU", "WASM"],
+  "license": "Apache-2.0",
+  "publisher": "product-model-authority",
+  "downloadUri": "model-pack://interactive-segmentation/mobile-sam-vit-t-1.0.0.onnx",
+  "sha256": "REPLACE_BY_RELEASE_PIPELINE_WITH_SIGNED_ARTIFACT_DIGEST",
+  "signature": "REPLACE_BY_RELEASE_PIPELINE_WITH_DETACHED_SIGNATURE"
+}
