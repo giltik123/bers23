@@ -29,4 +29,4 @@ const inference = spawnSync(process.env.PYTHON ?? 'python3', [new URL('./run-mob
 if (inference.status !== 0) throw new Error(`REAL_MOBILESAM_INFERENCE_FAILED: ${inference.stderr || inference.stdout || `exit ${inference.status}`}`);
 const evidence = JSON.parse(inference.stdout.trim());
 if (evidence.provider !== 'CPUExecutionProvider' || !(evidence.coverage > 0 && evidence.coverage < 1)) throw new Error('REAL_MOBILESAM_INFERENCE_INVALID');
-console.log(`Verified external MobileSAM pack ${manifest.modelId}@${manifest.version}; real ${evidence.provider} segmentation coverage=${evidence.coverage.toFixed(4)}, latencyMs=${evidence.latencyMs}.`);
+console.log(`ONNX GRAPH SANITY TEST: verified external MobileSAM pack ${manifest.modelId}@${manifest.version}; ${evidence.provider} coverage=${evidence.coverage.toFixed(4)}, latencyMs=${evidence.latencyMs}. This is not production local-runtime or browser-WASM proof.`);
