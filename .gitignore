@@ -30,3 +30,13 @@ dist-ssr
 .env
 .vite
 base44/.app.jsonc
+
+# Production AI model weights are external runtime artifacts. Small source/test
+# fixtures must use an explicit non-production format rather than bypassing this.
+*.onnx
+*.ort
+models/releases/
+models/cache/
+models/downloads/
+.local-models/
+.test-cache/

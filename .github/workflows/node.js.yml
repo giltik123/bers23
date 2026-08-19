@@ -30,6 +30,11 @@ jobs:
     - run: npm run build --if-present
     - run: npm run typecheck
     - run: npm run lint
+    - run: npm run verify:selection-model
+    - run: npm run check:model-weight-tracking
+    - run: npm run check:browser-bundle
+    - run: npm run test:intelligent-selection
+    - run: npm run test:controlled-local-edit
     - run: npm run test:canonical-product-vertical
 
   postgres-transactions:

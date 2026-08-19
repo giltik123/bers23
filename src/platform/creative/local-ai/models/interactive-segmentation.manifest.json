@@ -1,18 +1,33 @@
 {
-  "modelId": "mobile-sam-vit-t-interactive",
+  "schemaVersion": 1,
+  "modelId": "mobilesam-vit-t",
   "version": "1.0.0",
-  "family": "MobileSAM ViT-T",
-  "capabilities": ["INTERACTIVE_SEGMENTATION", "positive-points", "negative-points", "soft-mask"],
-  "modelFormat": "ONNX",
-  "runtime": "ONNX_RUNTIME",
-  "sizeBytes": 40700000,
-  "requiredRam": 268435456,
-  "requiredVram": 0,
-  "supportedPlatforms": ["BROWSER", "WINDOWS", "MACOS", "LINUX"],
-  "supportedAccelerators": ["WEBGPU", "WASM"],
+  "status": "CANDIDATE",
+  "upstream": {
+    "repository": "https://github.com/ChaoningZhang/MobileSAM",
+    "revision": "f706ad9c4eb7f219c00d9050e46328518ffb65d2",
+    "checkpointSource": "https://github.com/ChaoningZhang/MobileSAM/blob/master/weights/mobile_sam.pt",
+    "checkpointSha256": "6dbb90523a35330fedd7f1d3dfc66f995213d81b29a5ca8108dbcdd4e37d6c2f"
+  },
+  "export": {
+    "implementation": "MobileSAM ONNX split export",
+    "revision": "f706ad9c4eb7f219c00d9050e46328518ffb65d2",
+    "opset": 17
+  },
   "license": "Apache-2.0",
-  "publisher": "product-model-authority",
-  "downloadUri": "model-pack://interactive-segmentation/mobile-sam-vit-t-1.0.0.onnx",
-  "sha256": "REPLACE_BY_RELEASE_PIPELINE_WITH_SIGNED_ARTIFACT_DIGEST",
-  "signature": "REPLACE_BY_RELEASE_PIPELINE_WITH_DETACHED_SIGNATURE"
+  "artifacts": {
+    "encoder": {
+      "url": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.0/mobilesam-encoder.onnx",
+      "size": 27969743,
+      "sha256": "912a98c153ec0be92cc16a029c70ce9a1767c6dd1d8bcf21154ff6d70160b1fe",
+      "signatureUrl": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.0/mobilesam-encoder.onnx.sig"
+    },
+    "decoder": {
+      "url": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.0/mobilesam-decoder.onnx",
+      "size": 16496934,
+      "sha256": "06dc1565598a05e6f8a5f7fc0cd3b217abeaa9110daff3795e65b70d14597794",
+      "signatureUrl": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.0/mobilesam-decoder.onnx.sig"
+    }
+  },
+  "verificationKeyId": "bers-selection-release-2026-01"
 }
