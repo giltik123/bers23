@@ -68,8 +68,71 @@ jobs:
       - name: Verify transaction schema readiness
         run: npm run db:check:transactions
       - name: Run PostgreSQL transaction integration tests
-        run: npm run test:postgres
+        run: npm run test:transactions-postgres
       - name: Run canonical product and Core server contracts
         run: npm run test:canonical-product
       - name: Enforce PostgreSQL production authority gate
         run: npm run test:creative-production-authority-postgres
+      - name: Run real HTTP to PostgreSQL Core vertical
+        run: npm run test:core-server-postgres-vertical
+
+  production-image:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: core_image_test
+          POSTGRES_USER: core_image_test
+          POSTGRES_PASSWORD: core_image_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U core_image_test -d core_image_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://core_image_test:core_image_test@host.docker.internal:5432/core_image_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - name: Migrate container smoke database
+        env:
+          DATABASE_URL: postgresql://core_image_test:core_image_test@127.0.0.1:5432/core_image_test
+        run: npm run db:migrate:transactions
+      - name: Build production image
+        run: docker build --tag bers-core:${{ github.sha }} .
+      - name: Assert production image contents
+        run: |
+          docker run --rm --entrypoint sh bers-core:${{ github.sha }} -c '
+            test ! -e /app/.git &&
+            test ! -e /app/tests &&
+            test ! -e /app/.env &&
+            test ! -e /app/.env.local &&
+            ! find /app -type f \( -name "*.dump" -o -name "*.sql" \) ! -path "/app/dist-server/migrations/*" -print -quit | grep -q .
+          '
+      - name: Smoke production health endpoints
+        env:
+          IMAGE: bers-core:${{ github.sha }}
+        run: |
+          docker run --detach --rm --name bers-core-smoke \
+            --add-host=host.docker.internal:host-gateway -p 18080:8080 \
+            -e DATABASE_URL -e FAL_KEY=test-only -e JWT_SECRET=test-jwt-secret \
+            -e JWT_ISSUER=bers-ci -e JWT_AUDIENCE=bers-ci \
+            -e ARTIFACT_SIGNING_SECRET=test-artifact-secret \
+            -e TRUSTED_ASSET_HOSTS=assets.example.test \
+            -e ALLOWED_WEB_ORIGINS=http://localhost "$IMAGE"
+          trap 'docker rm -f bers-core-smoke >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/health/live >/dev/null; then break; fi
+            if [ "$attempt" = 30 ]; then docker logs bers-core-smoke; exit 1; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:18080/health/live | grep -q '"status":"live"'
+          curl --fail --silent http://127.0.0.1:18080/health/ready | grep -q '"status":"ready"'
