@@ -40,3 +40,5 @@ test('controlled capability keeps full resolution, treats output as patch and em
   const original = image(6000, 4000), editMask = mask(6000, 4000, [[3000, 2000, 255]]); const result = await executeControlledLocalEdit({ executionId: 'exec', original, mask: editMask, maskArtifactId: 'mask', instruction: 'red pixel', policy: { preserveMode: 'STRICT', haloPixels: 1, minimumProviderSize: 8 }, provider: async request => image(request.roi.width, request.roi.height, [255, 0, 0, 255]) });
   assert.equal(result.candidatePatch.role, 'PATCH'); assert.equal(result.candidatePatch.sourceExecutionId, 'exec'); assert.equal(result.candidatePatch.maskArtifactId, 'mask'); assert.equal(result.composite.role, 'COMPOSITE'); assert.deepEqual([result.composite.image.width, result.composite.image.height], [6000, 4000]); assert.equal(result.verification.valid, true); assert.equal(result.metrics.verificationOutcome, 'PASS'); assert.ok(result.metrics.pixelReductionRatio > .99); assert.equal('data' in result.metrics, false);
 });
+
+await import('./canonical-controlled-edit.integration.test.ts');
