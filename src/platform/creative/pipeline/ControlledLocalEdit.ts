@@ -1,6 +1,6 @@
 /** Provider-independent, lossless local-image transformation capability. */
 export type PreserveMode = 'STRICT' | 'BALANCED' | 'CREATIVE';
-export type MaskSource = 'USER' | 'SEGMENTATION' | 'AUTO_REFINED' | 'OPERATION_EXPANDED';
+export type MaskSource = 'USER' | 'SEGMENTATION' | 'AUTO_REFINED' | 'MANUAL_ADD' | 'MANUAL_SUBTRACT' | 'OPERATION_EXPANDED';
 export type Bounds = Readonly<{ x: number; y: number; width: number; height: number }>;
 export type PixelImage = Readonly<{ width: number; height: number; data: Uint8ClampedArray; format?: string; orientation?: 1 | 3 | 6 | 8; colorSpace?: string }>;
 export type OriginalMask = Readonly<{ artifactId: string; width: number; height: number; coordinateSpace: 'ORIGINAL'; source: MaskSource; bounds: Bounds; alpha: Uint8Array; userMaskArtifactId?: string }>;
