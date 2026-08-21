@@ -1,6 +1,6 @@
 import { appParams } from '@/lib/app-params';
 
-const API_ROOT = import.meta.env.VITE_CORE_API_URL || '/api/core';
+const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
 
 async function request(path, options = {}) {
   const headers = new Headers(options.headers);
