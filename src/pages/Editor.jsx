@@ -195,8 +195,8 @@ export default function Editor() {
         preserveMode: styleLock.isEnabled(project.id) ? 'locked' : 'standard',
         clientRequestId: globalThis.crypto.randomUUID(),
       });
-      if (result.status === 'pending') throw Object.assign(new Error('Provider result is pending reconciliation'), { code: 'PROVIDER_OUTCOME_PENDING', retryable: false });
-      if (result.status !== 'completed' || !result.imageUrl) throw Object.assign(new Error('Edit failed'), { code: 'provider_failure' });
+      if (result.status === 'UNKNOWN') throw Object.assign(new Error('Provider result is pending reconciliation'), { code: 'PROVIDER_OUTCOME_PENDING', retryable: false });
+      if (result.status !== 'SUCCESS' || !result.imageUrl) throw Object.assign(new Error('Edit failed'), { code: 'provider_failure' });
       const editorResult = { ...result, image_url: result.imageUrl, generation_time_ms: result.timing?.durationMs, credits_used: result.creditsUsed };
       setPendingResult({ result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url });
       recipeEngine.recordOutcome(activeRecipe?.id, { success: true, durationMs: editorResult.generation_time_ms, credits: editorResult.credits_used });
