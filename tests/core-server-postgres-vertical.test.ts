@@ -159,9 +159,9 @@ test('real Core HTTP server proves PostgreSQL financial lifecycle and safety inv
   assert.equal(successState.journal.every(row => row.correlation_id === success.body.executionId), true);
   assert.equal(provider.prompts().at(-1), 'success-1');
 
-  provider.setMode('failure'); const failedUser = 'vertical-failed'; await wallet(pool, failedUser, 10);
-  const failed = await execute(runtime.url, failedUser, 'failure-1'); assert.equal(failed.response.status, 422);
-  const failedState = await state(pool, failedUser); assert.equal(failedState.reservations[0].status, 'released'); assert.equal(failedState.wallet.balance, '10'); assert.equal(failedState.wallet.reserved, '0');
+  provider.setMode('failure'); const failedUser = 'vertical-failed'; await wallet(pool, failedUser, 10); const beforeFailedCalls = provider.count();
+  const failed = await execute(runtime.url, failedUser, 'failure-1'); assert.equal(failed.response.status, 200); assert.equal(failed.body.status, 'FAILED'); assert.equal(provider.count() - beforeFailedCalls, 1);
+  const failedState = await state(pool, failedUser); assert.equal(failedState.reservations.length, 1); assert.equal(failedState.reservations[0].status, 'released'); assert.equal(failedState.wallet.balance, '10'); assert.equal(failedState.wallet.reserved, '0');
   assert.deepEqual(events(failedState), ['reservation_created', 'provider_dispatched', 'provider_failed', 'reservation_released']);
 
   provider.setMode('unknown'); const unknownUser = 'vertical-unknown'; await wallet(pool, unknownUser, 10); const beforeUnknownCalls = provider.count();
