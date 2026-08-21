@@ -3,6 +3,9 @@ import { checkTransactionSchema } from '../../transactions/infrastructure/postgr
 import { createPostgresTransactionRuntime } from '../../transactions/infrastructure/postgres/postgresTransactionRuntime.ts';
 import { SignedArtifactAuthority } from '../artifacts/signedArtifactAuthority.ts';
 import { CanonicalArtifactHydrator } from '../artifacts/canonicalArtifactHydrator.ts';
+import { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
+import { PostgresMaskArtifactStore } from '../artifacts/postgresMaskArtifactStore.ts';
+import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { HmacJwtVerifier } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
@@ -11,10 +14,11 @@ import { createCreativeCore, type CreativeCoreCompositionInput } from './createC
 export async function createProductionCore(config: CoreServerConfig, options: Readonly<{ fetcher?: typeof fetch }> = {}) {
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
   try {
-    await transactions.pool.query('SELECT 1'); await checkTransactionSchema(transactions.pool);
-    const artifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts);
+    await transactions.pool.query('SELECT 1'); await checkTransactionSchema(transactions.pool); await checkMaskArtifactSchema(transactions.pool);
+    const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts);
+    const artifacts = new ArtifactAuthority(externalArtifacts, new PostgresMaskArtifactStore(transactions.pool));
     const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
-    const runtime = createFalWorkflowRuntime({ apiKey: config.falKey, baseUrl: config.falBaseUrl, timeoutMs: config.providerTimeoutMs, artifacts, fetcher });
+    const runtime = createFalWorkflowRuntime({ apiKey: config.falKey, baseUrl: config.falBaseUrl, timeoutMs: config.providerTimeoutMs, artifacts: externalArtifacts, fetcher });
     const hydrator = new CanonicalArtifactHydrator(artifacts, fetcher);
     const core = createCreativeCore({
       transactions: transactions.transactions, transactionStore: transactions.store, ownsArtifacts: (scope, ids) => artifacts.owns(scope, ids), hydrateArtifacts: (scope, original, masks) => hydrator.hydrate(scope, original, masks),
@@ -28,6 +32,6 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         now: Date.now, id: randomUUID,
       },
     } satisfies CreativeCoreCompositionInput);
-    return Object.freeze({ core, auth: new HmacJwtVerifier({ secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience }), transactions, close: () => transactions.close() });
+    return Object.freeze({ core, artifacts, auth: new HmacJwtVerifier({ secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }
