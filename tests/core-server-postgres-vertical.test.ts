@@ -29,20 +29,22 @@ type DatabaseState = { reservations: Array<Record<string, unknown>>; journal: Ar
 
 function deterministicProvider() {
   let mode: ProviderMode = 'success';
-  const calls: Array<{ prompt: string; metadata?: Record<string, unknown> }> = [];
+  const calls: Array<{ prompt: string; imageUrl: string }> = [];
+  let originalAssetFetches = 0;
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
     if (url.startsWith('https://assets.vertical.test/output/')) {
       return new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } });
     }
+    if (url === 'https://assets.vertical.test/input.png') originalAssetFetches++;
     assert.equal(init?.method, 'POST');
-    const body = JSON.parse(String(init?.body)) as { prompt: string };
-    calls.push({ prompt: body.prompt });
+    const body = JSON.parse(String(init?.body)) as { prompt: string; image_url: string };
+    calls.push({ prompt: body.prompt, imageUrl: body.image_url });
     if (mode === 'unknown') throw new DOMException('Accepted request timed out', 'AbortError');
     if (mode === 'failure') return new Response(JSON.stringify({ message: 'deterministic rejection' }), { status: 422, headers: { 'content-type': 'application/json' } });
     return new Response(JSON.stringify({ image: { url: `https://assets.vertical.test/output/${calls.length}.png` } }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
-  return { fetcher, setMode(value: ProviderMode) { mode = value; }, count: () => calls.length, prompts: () => calls.map(call => call.prompt) };
+  return { fetcher, setMode(value: ProviderMode) { mode = value; }, count: () => calls.length, originalAssetFetches: () => originalAssetFetches, prompts: () => calls.map(call => call.prompt), imageUrls: () => calls.map(call => call.imageUrl) };
 }
 
 function token(userId: string, valid = true): string {
@@ -158,6 +160,8 @@ test('real Core HTTP server proves PostgreSQL financial lifecycle and safety inv
   assert.equal(successState.reservations[0].operation_id, `creative.execution.${success.body.executionId}`);
   assert.equal(successState.journal.every(row => row.correlation_id === success.body.executionId), true);
   assert.equal(provider.prompts().at(-1), 'success-1');
+  assert.equal(provider.imageUrls().at(-1), 'https://assets.vertical.test/input.png');
+  assert.equal(provider.originalAssetFetches(), 0);
 
   provider.setMode('failure'); const failedUser = 'vertical-failed'; await wallet(pool, failedUser, 10); const beforeFailedCalls = provider.count();
   const failed = await execute(runtime.url, failedUser, 'failure-1'); assert.equal(failed.response.status, 200); assert.equal(failed.body.status, 'FAILED'); assert.equal(provider.count() - beforeFailedCalls, 1);
