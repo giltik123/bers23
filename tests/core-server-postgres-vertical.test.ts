@@ -81,6 +81,62 @@ async function execute(url: string, userId: string, clientRequestId: string, opt
 }
 function events(value: DatabaseState) { return value.journal.map(row => row.event); }
 
+function stackLocation(error: Error): string | undefined {
+  return error.stack?.split('\n').slice(1).map(line => line.trim()).find(Boolean);
+}
+
+function failureStage(value: DatabaseState, providerCalls: number): string {
+  if (value.reservations.length === 0) return 'before or inside reservation';
+  if (providerCalls === 0) return 'after reservation and before provider dispatch';
+  if (events(value).includes('provider_succeeded') && !value.reservations.some(row => row.status === 'committed')) return 'transaction journal or commit';
+  if (value.reservations.some(row => row.status === 'reserved')) return 'provider, verification, or commit path';
+  if (value.reservations.some(row => row.status === 'committed')) return 'after commit';
+  return 'undetermined; inspect reservation statuses and journal events';
+}
+
+async function throwUnexpectedSuccessDiagnostic(
+  runtime: Awaited<ReturnType<typeof start>>,
+  provider: ReturnType<typeof deterministicProvider>,
+  pool: Pool,
+  successUser: string,
+  successArtifact: string,
+  success: Awaited<ReturnType<typeof execute>>,
+): Promise<void> {
+  const providerCalls = provider.count();
+  try {
+    await runtime.production.core.service.execute(
+      { projectId, instruction: 'success-1', inputArtifactId: successArtifact, clientRequestId: 'success-1' },
+      { tenantId, userId: successUser },
+      success.correlationId,
+    );
+  } catch (caught) {
+    const error = caught instanceof Error ? caught : new Error(String(caught));
+    const technical = caught && typeof caught === 'object' ? caught as { code?: unknown; status?: unknown } : {};
+    const successState = await state(pool, successUser);
+    const providerCallsAfterDiagnostic = provider.count();
+    const diagnostic = {
+      originalError: {
+        name: error.name,
+        message: error.message,
+        code: technical.code,
+        status: technical.status,
+        stackLocation: stackLocation(error),
+      },
+      http: { status: success.response.status, publicBody: success.body },
+      providerCallCount: providerCallsAfterDiagnostic,
+      providerCallCountBeforeDiagnostic: providerCalls,
+      reservationCount: successState.reservations.length,
+      reservationStatuses: successState.reservations.map(row => row.status),
+      journalEvents: events(successState),
+      wallet: { balance: successState.wallet.balance, reserved: successState.wallet.reserved },
+      failureStage: failureStage(successState, providerCallsAfterDiagnostic),
+    };
+    assert.equal(providerCallsAfterDiagnostic, providerCalls, `diagnostic replay must reuse the inflight execution:\n${JSON.stringify(diagnostic, null, 2)}`);
+    throw new Error(`Unexpected first-success HTTP response; original service failure:\n${JSON.stringify(diagnostic, null, 2)}`, { cause: error });
+  }
+  assert.fail(`Unexpected first-success HTTP ${success.response.status}; inflight service execution resolved instead of reproducing the failure`);
+}
+
 test('real Core HTTP server proves PostgreSQL financial lifecycle and safety invariants', async t => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'core-vertical-fixture' });
   await migrateTransactionSchema(pool);
@@ -91,7 +147,9 @@ test('real Core HTTP server proves PostgreSQL financial lifecycle and safety inv
   t.after(async () => { if (runtime) await runtime.stop(); });
 
   const successUser = 'vertical-success'; await wallet(pool, successUser);
-  const success = await execute(runtime.url, successUser, 'success-1', { correlationId: 'http-success-correlation' });
+  const successArtifact = artifact(successUser);
+  const success = await execute(runtime.url, successUser, 'success-1', { correlationId: 'http-success-correlation', artifactId: successArtifact });
+  if (success.response.status !== 200) await throwUnexpectedSuccessDiagnostic(runtime, provider, pool, successUser, successArtifact, success);
   assert.equal(success.response.status, 200); assert.equal(success.body.status, 'SUCCESS'); assert.equal(success.body.correlationId, success.correlationId);
   const successState = await state(pool, successUser);
   assert.equal(successState.reservations.length, 1); assert.equal(successState.reservations[0].status, 'committed');
