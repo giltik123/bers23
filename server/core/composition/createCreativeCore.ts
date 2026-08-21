@@ -33,6 +33,7 @@ export type CreativeCoreCompositionInput = Readonly<{
   transactionStore: TransactionStore;
   ownsArtifacts: CreativeExecutionServiceDependencies['ownsArtifacts'];
   hydrateArtifacts?: CreativeExecutionServiceDependencies['hydrateArtifacts'];
+  persistFinal?: CreativeExecutionServiceDependencies['persistFinal'];
   creditsPerEdit?: number;
   hardBudgetCredits?: number;
 }>;
@@ -47,6 +48,7 @@ function createCreativeApplicationCore(input: CreativeCoreCompositionInput) {
     platform: { ...input.canonical, billing },
     ownsArtifacts: input.ownsArtifacts,
     hydrateArtifacts: input.hydrateArtifacts,
+    persistFinal: input.persistFinal,
     creditsPerEdit: input.creditsPerEdit,
     hardBudgetCredits: input.hardBudgetCredits,
   });
