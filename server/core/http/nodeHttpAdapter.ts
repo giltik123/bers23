@@ -34,7 +34,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (relay) return sendFetchResponse(response, relay);
       const resultMatch = path.match(/^\/api\/core\/artifacts\/results\/([^/]+)$/);
       if (resultMatch && request.method === 'GET') {
-        const claim = input.artifacts.external.resolveStoredFinal(decodeURIComponent(resultMatch[1]));
+        const claim = input.artifacts.external.resolveStoredFinalDelivery(decodeURIComponent(resultMatch[1]));
         const stored = await input.artifacts.images.load(claim.storageId, claim);
         if (!stored) return sendError(response, 404, 'result_not_found', 'Final image artifact is unavailable', correlationId, false);
         response.statusCode = 200; response.setHeader('Content-Type', stored.contentType); response.setHeader('Content-Length', stored.bytes.byteLength); response.setHeader('Cache-Control', 'private, max-age=300'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(stored.bytes); return;

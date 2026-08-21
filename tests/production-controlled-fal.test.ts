@@ -28,3 +28,30 @@ test('FAL mask conversion is lossless grayscale PNG with white edit and black pr
   const png = await encodeFalMask(new Uint8Array([0, 255]), 2, 1); const metadata = await sharp(png).metadata(); const decoded = await sharp(png).greyscale().raw().toBuffer({ resolveWithObject: true });
   assert.deepEqual([metadata.width, metadata.height], [2, 1]); assert.ok(metadata.channels === 1 || metadata.channels === 3); assert.deepEqual([...decoded.data].filter((_value, index) => index % decoded.info.channels === 0), [0, 255]);
 });
+
+test('production materializer uses FAL storage initiate/PUT for ROI and mask only', async () => {
+  const uploads: Array<{ url: string; bytes: Uint8Array }> = []; let initiates = 0; let providerCalls = 0;
+  const patch = await sharp({ create: { width: 2, height: 2, channels: 4, background: '#778899' } }).png().toBuffer();
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes('/storage/upload/initiate')) { initiates++; assert.equal(init?.headers && new Headers(init.headers).get('authorization'), 'Key server-secret'); return Response.json({ upload_url: `https://upload.fal.test/${initiates}`, file_url: `https://cdn.fal.test/${initiates}.png` }); }
+    if (url.startsWith('https://upload.fal.test/')) { uploads.push({ url, bytes: new Uint8Array(await new Response(init?.body).arrayBuffer()) }); return new Response(null, { status: 200 }); }
+    if (url === 'https://output.example/patch.png') return new Response(patch, { headers: { 'content-type': 'image/png' } });
+    providerCalls++; assert.deepEqual(JSON.parse(String(init?.body)), { prompt: 'change', image_url: 'https://cdn.fal.test/1.png', mask_url: 'https://cdn.fal.test/2.png' }); return Response.json({ images: [{ url: 'https://output.example/patch.png' }] });
+  };
+  const runtime = createFalWorkflowRuntime({ apiKey: 'server-secret', baseUrl: 'https://queue.fal.test', timeoutMs: 1000, artifacts: {} as never, fetcher });
+  const roi = { width: 2, height: 2, data: new Uint8ClampedArray(16).fill(44), format: 'RGBA8', orientation: 1 as const };
+  await runtime.execute({ workflowId: 'actual-materializer', scope, operation: { id: 'edit', type: 'CONTROLLED_LOCAL_EDIT', providerId: 'fal', input: { instruction: 'change' } }, artifacts: [{ id: 'roi-not-original', kind: 'image', value: roi, scope, producerStepId: 'edit', metadata: { artifactRole: 'ROI_INPUT', mask: new Uint8Array([255, 0, 0, 0]) } }] });
+  assert.equal(initiates, 2); assert.equal(uploads.length, 2); assert.equal(providerCalls, 1);
+  for (const upload of uploads) { const metadata = await sharp(upload.bytes).metadata(); assert.deepEqual([metadata.width, metadata.height], [2, 2]); }
+  assert.equal(JSON.stringify(uploads).includes('server-secret'), false);
+});
+
+test('production materializer upload failure fails before FAL inference', async () => {
+  let providerCalls = 0;
+  const fetcher: typeof fetch = async (input) => { const url = String(input); if (url.includes('/storage/upload/initiate')) return Response.json({ upload_url: 'https://upload.fal.test/fail', file_url: 'https://cdn.fal.test/fail.png' }); if (url.startsWith('https://upload.fal.test/')) return new Response(null, { status: 503 }); providerCalls++; return Response.json({}); };
+  const runtime = createFalWorkflowRuntime({ apiKey: 'server-secret', baseUrl: 'https://queue.fal.test', timeoutMs: 1000, artifacts: {} as never, fetcher });
+  const roi = { width: 1, height: 1, data: new Uint8ClampedArray(4), format: 'RGBA8', orientation: 1 as const };
+  await assert.rejects(runtime.execute({ workflowId: 'failed-upload', scope, operation: { id: 'edit', type: 'CONTROLLED_LOCAL_EDIT', providerId: 'fal', input: { instruction: 'change' } }, artifacts: [{ id: 'roi', kind: 'image', value: roi, scope, producerStepId: 'edit', metadata: { artifactRole: 'ROI_INPUT', mask: new Uint8Array([255]) } }] }), /upload failed/);
+  assert.equal(providerCalls, 0);
+});

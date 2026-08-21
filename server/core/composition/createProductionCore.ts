@@ -31,9 +31,9 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         if (artifact.role !== 'COMPOSITE' || artifact.state !== 'FINAL' || metrics?.verificationOutcome !== 'PASS' || !(image?.data instanceof Uint8ClampedArray)) throw new Error('Only a verified FINAL COMPOSITE may be persisted');
         const stored = await artifacts.images.persistFinal(scope, executionId, artifact.producerOperationId, image);
         const artifactId = externalArtifacts.issueStoredFinal(stored.storageId, scope);
-        const delivery = externalArtifacts.issueStoredFinal(stored.storageId, scope, Date.now() + 5 * 60_000);
-        return Object.freeze({ ...artifact, id: artifactId, value: Object.freeze({ artifactId, url: `/api/core/artifacts/results/${encodeURIComponent(delivery)}` }), image: { width: stored.width, height: stored.height, format: stored.encoding, orientation: 1 as const, colorSpace: 'srgb', alpha: true }, metadata: Object.freeze({ ...artifact.metadata, storageId: stored.storageId, executionId, operationId: stored.operationId, contentType: stored.contentType, encoding: stored.encoding, parentArtifactIds: artifact.metadata?.parentArtifactIds }) });
+        return Object.freeze({ ...artifact, id: artifactId, value: Object.freeze({ artifactId }), image: { width: stored.width, height: stored.height, format: stored.encoding, orientation: 1 as const, colorSpace: 'srgb', alpha: true }, metadata: Object.freeze({ ...artifact.metadata, storageId: stored.storageId, executionId, operationId: stored.operationId, contentType: stored.contentType, encoding: stored.encoding, parentArtifactIds: artifact.metadata?.parentArtifactIds }) });
       },
+      mintFinalDelivery: (scope, storageId) => `/api/core/artifacts/results/${encodeURIComponent(externalArtifacts.issueStoredFinalDelivery(storageId, scope, Date.now() + 5 * 60_000))}`,
       creditsPerEdit: config.creditsPerEdit, hardBudgetCredits: config.hardBudgetCredits,
       canonical: {
         runtime, providers: { isAvailable: providerId => providerId === 'fal', fallback: () => undefined },

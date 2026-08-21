@@ -34,6 +34,7 @@ export type CreativeCoreCompositionInput = Readonly<{
   ownsArtifacts: CreativeExecutionServiceDependencies['ownsArtifacts'];
   hydrateArtifacts?: CreativeExecutionServiceDependencies['hydrateArtifacts'];
   persistFinal?: CreativeExecutionServiceDependencies['persistFinal'];
+  mintFinalDelivery?: CreativeExecutionServiceDependencies['mintFinalDelivery'];
   creditsPerEdit?: number;
   hardBudgetCredits?: number;
 }>;
@@ -49,6 +50,7 @@ function createCreativeApplicationCore(input: CreativeCoreCompositionInput) {
     ownsArtifacts: input.ownsArtifacts,
     hydrateArtifacts: input.hydrateArtifacts,
     persistFinal: input.persistFinal,
+    mintFinalDelivery: input.mintFinalDelivery,
     creditsPerEdit: input.creditsPerEdit,
     hardBudgetCredits: input.hardBudgetCredits,
   });

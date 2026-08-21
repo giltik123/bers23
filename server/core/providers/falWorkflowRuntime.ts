@@ -59,14 +59,15 @@ function isPixelImage(value: unknown): value is PixelImage { return Boolean(valu
 function providerMetadata(request: Readonly<{ workflowId: string; operation: WorkflowOperation }>) { return { executionId: request.workflowId, operationId: request.operation.id, attemptId: `${request.workflowId}:${request.operation.id}:1`, correlationId: request.operation.input?.correlationId }; }
 
 /** Uploads ephemeral, unguessably named provider inputs to FAL's HTTPS media boundary. */
-class FalTemporaryInputMaterializer implements ProviderInputMaterializer {
+export class FalTemporaryInputMaterializer implements ProviderInputMaterializer {
   constructor(private readonly apiKey: string, private readonly fetcher: typeof fetch) {}
   async materialize(input: Readonly<{ bytes: Uint8Array; mimeType: 'image/png'; purpose: 'roi' | 'mask'; scope: Scope }>): Promise<MaterializedProviderInput> {
-    const body = new FormData(); body.append('file', new Blob([Uint8Array.from(input.bytes)], { type: input.mimeType }), `${randomUUID()}.png`);
-    const response = await this.fetcher('https://v3.fal.media/files/upload', { method: 'POST', headers: { authorization: `Key ${this.apiKey}` }, body });
+    const response = await this.fetcher('https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3', { method: 'POST', headers: { authorization: `Key ${this.apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ content_type: input.mimeType, file_name: `${randomUUID()}.png` }) });
     if (!response.ok) throw new Error(`Provider input materialization failed (${response.status})`);
-    const data = await response.json() as Record<string, unknown>; const url = String(data.access_url ?? data.file_url ?? data.url ?? '');
-    if (!url.startsWith('https://')) throw new Error('Provider input materializer returned an unsafe URL');
+    const data = await response.json() as Record<string, unknown>; const uploadUrl = String(data.upload_url ?? ''); const url = String(data.file_url ?? '');
+    if (!uploadUrl.startsWith('https://') || !url.startsWith('https://')) throw new Error('Provider input materializer returned an unsafe URL');
+    const uploaded = await this.fetcher(uploadUrl, { method: 'PUT', headers: { 'content-type': input.mimeType }, body: Uint8Array.from(input.bytes) });
+    if (!uploaded.ok) throw new Error(`Provider input upload failed (${uploaded.status})`);
     const metadata = await sharp(input.bytes).metadata(); return { url, byteSize: input.bytes.byteLength, width: metadata.width ?? 0, height: metadata.height ?? 0 };
   }
 }
