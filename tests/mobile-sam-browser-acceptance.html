@@ -13,7 +13,10 @@ async function select(port, fixture, index, artifactId, transform) { return port
 globalThis.runMobileSamAcceptance = async fixtures => {
   await new Promise((resolve, reject) => { const request = indexedDB.deleteDatabase('bers-verified-models'); request.onsuccess = resolve; request.onerror = () => reject(request.error); });
   const rgba = new Uint8ClampedArray([255, 128, 0, 255, 0, 0, 0, 255]); const normalized = normalizedSamTensor(rgba, 2, 1), plane = 1024 * 1024;
-  check(normalized.data[0] === (255 - 123.675) / 58.395 && normalized.data[plane] === (128 - 116.28) / 57.12 && normalized.data[plane * 2] === (0 - 103.53) / 57.375, 'known RGB normalization failed');
+  const actualRgb = [normalized.data[0], normalized.data[plane], normalized.data[plane * 2]];
+  const expectedRgb = [Math.fround((255 - 123.675) / 58.395), Math.fround((128 - 116.28) / 57.12), Math.fround((0 - 103.53) / 57.375)];
+  const rgbDeltas = actualRgb.map((value, index) => Math.abs(value - expectedRgb[index]));
+  check(actualRgb.every((value, index) => value === expectedRgb[index]), `known RGB normalization failed: actual R/G/B=${actualRgb.join(', ')}, expected float32 R/G/B=${expectedRgb.join(', ')}, absolute deltas=${rgbDeltas.join(', ')}`);
   check(normalized.data[2] === 0 && normalized.data[1024] === 0 && normalized.data[plane + 1024] === 0, 'right/bottom padding must be exact zero');
   const horizontal = samResizedDimensions(400, 200), vertical = samResizedDimensions(200, 400); check(horizontal.width / horizontal.height === 2 && vertical.height / vertical.width === 2, 'aspect ratio was not preserved'); check(horizontal.width / 400 === horizontal.height / 200, 'prompt coordinate scale must match resized dimensions');
 
