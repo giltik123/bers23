@@ -21,9 +21,13 @@ export class CreativeExecutionService {
   result(executionId: string) { return this.#results.get(executionId); }
   async #execute(command: CreativeEditCommand, auth: AuthenticatedScope, key: string, correlationId?: string): Promise<ProductionOutcome> {
     const artifacts = [command.inputArtifactId, ...(command.maskArtifactIds ?? [])];
-    if (!await this.dependencies.ownsArtifacts({ ...auth, projectId: command.projectId }, artifacts)) throw publicError('scope_denied', 'Artifact scope is not authorized', 403, false);
+    const scope = Object.freeze({
+      tenantId: auth.tenantId,
+      userId: auth.userId,
+      projectId: command.projectId,
+    });
+    if (!await this.dependencies.ownsArtifacts(scope, artifacts)) throw publicError('scope_denied', 'Artifact scope is not authorized', 403, false);
     const executionId = `creative-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
-    const scope = { ...auth, projectId: command.projectId };
     const requestCorrelationId = correlationId ?? randomUUID();
     const estimatedCredits = this.dependencies.creditsPerEdit ?? 1; const hardBudgetCredits = this.dependencies.hardBudgetCredits ?? estimatedCredits;
     const request: CreativeRequest = { id: executionId, intent: command.instruction, scope, inputArtifacts: artifacts.map((id) => ({ id, kind: 'image', value: { artifactId: id }, producerOperationId: 'user-input', scope, state: 'AVAILABLE' })), budget: { credits: hardBudgetCredits, aiCalls: 1, latencyMs: 120_000, ramMb: 2048, gpuMs: 120_000, retries: 0 }, metadata: { idempotencyKey: command.clientRequestId, estimatedCredits, requestId: requestCorrelationId, correlationId: requestCorrelationId, preserveMode: command.preserveMode, selectedObjectIds: command.selectedObjectIds ?? [] } };
