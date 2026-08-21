@@ -26,6 +26,7 @@
     "test:intelligent-selection": "mkdir -p .test-cache && esbuild tests/intelligent-selection.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/intelligent-selection.test.mjs --external:node:* && node --test .test-cache/intelligent-selection.test.mjs",
     "test:selection-model-real": "node scripts/test-selection-model-real.mjs",
     "test:mobilesam-browser-acceptance": "node scripts/test-mobilesam-browser-acceptance.mjs",
+    "test:model-artifact-transport": "node --experimental-strip-types --test server/core/http/modelArtifactRelay.test.mjs tests/model-artifact-transport.test.ts",
     "verify:selection-model": "node scripts/verify-selection-model.mjs",
     "check:model-weight-tracking": "node scripts/check-model-weight-tracking.mjs",
     "check:browser-bundle": "npm run build && node scripts/check-browser-bundle.mjs",

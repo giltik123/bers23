@@ -5,6 +5,7 @@ import publicKeyPem from '../models/interactive-segmentation.public-key.pem?raw'
 import type { AnalysisTransform, InteractiveSegmentationPort, SelectionCandidate } from '../../../../application/selection';
 import { OnnxLocalRuntime } from '../runtimes/OnnxLocalRuntime';
 import type { InferenceResult, ModelManifest, OnnxSessionFactory, TensorValue } from '../types';
+import { ModelArtifactTransport } from './ModelArtifactTransport';
 
 const MODEL_ID = 'mobilesam-vit-t', MODEL_VERSION = '1.0.2', CANVAS = 1024;
 const PIXEL_MEAN = [123.675, 116.28, 103.53], PIXEL_STD = [58.395, 57.12, 57.375];
@@ -32,7 +33,8 @@ function request<T>(value: IDBRequest<T>): Promise<T> { return new Promise((reso
 export class MobileSamBrowserSegmentation implements InteractiveSegmentationPort {
   readonly evidence: MobileSamEvidence = { provider: 'wasm', cache: { encoder: 'miss', decoder: 'miss' }, encoderInvocations: 0, decoderInvocations: 0, encoderLatencyMs: 0, decoderLatencyMs: 0 };
   #encoder?: OnnxLocalRuntime; #decoder?: OnnxLocalRuntime; #loading?: Promise<void>; #embedding?: { key: string; value: TensorValue }; #cancelled = new Set<string>();
-  constructor(private readonly sessions: OnnxSessionFactory, private readonly cache: VerifiedModelCache = new IndexedDbVerifiedModelCache(), private readonly fetcher: typeof fetch = fetch, private readonly images: ImageArtifactResolver = new BrowserImageArtifactResolver()) {}
+  private readonly artifacts: ModelArtifactTransport;
+  constructor(private readonly sessions: OnnxSessionFactory, private readonly cache: VerifiedModelCache = new IndexedDbVerifiedModelCache(), private readonly fetcher: typeof fetch = fetch, private readonly images: ImageArtifactResolver = new BrowserImageArtifactResolver(), artifactTransport?: ModelArtifactTransport) { this.artifacts = artifactTransport ?? new ModelArtifactTransport(fetcher); }
   cancel(requestId: string) { if (!requestId) return; this.#cancelled.add(requestId); this.#encoder?.cancel(`${requestId}:encoder`); this.#decoder?.cancel(`${requestId}:decoder`); }
   async segment(input: Parameters<InteractiveSegmentationPort['segment']>[0]) {
     if (input.privacyMode === 'OFFLINE_ONLY') throw new Error('Offline cached execution is not supported');
@@ -63,8 +65,10 @@ export class MobileSamBrowserSegmentation implements InteractiveSegmentationPort
   private async loadArtifact(name: 'encoder' | 'decoder', artifact: PackArtifact) {
     const key = `${MODEL_ID}@${MODEL_VERSION}:${name}`; let stored = await this.cache.read(key);
     if (stored) { try { await verifyArtifact(stored.bytes, stored.signature, artifact, publicKeyPem); this.evidence.cache[name] = 'hit'; return stored.bytes; } catch { stored = undefined; } }
-    this.evidence.cache[name] = 'miss'; const [body, signatureResponse] = await Promise.all([this.fetcher(artifact.url), this.fetcher(artifact.signatureUrl)]);
-    if (!body.ok || !signatureResponse.ok) throw new Error(`Model download failed: ${name}`); const bytes = new Uint8Array(await body.arrayBuffer()), signature = new Uint8Array(await signatureResponse.arrayBuffer());
+    this.evidence.cache[name] = 'miss';
+    const get = async (kind: 'ONNX' | 'signature', url: string) => { try { const response = await this.artifacts.fetch(url); if (!response.ok) throw new Error(`HTTP ${response.status}`); return response; } catch (cause) { throw new Error(`${name} ${kind} download failed (${url}): ${cause instanceof Error ? cause.message : cause}`); } };
+    const [body, signatureResponse] = await Promise.all([get('ONNX', artifact.url), get('signature', artifact.signatureUrl)]);
+    const bytes = new Uint8Array(await body.arrayBuffer()), signature = new Uint8Array(await signatureResponse.arrayBuffer());
     await verifyArtifact(bytes, signature, artifact, publicKeyPem); await this.cache.write(key, { bytes, signature }); return bytes;
   }
 }

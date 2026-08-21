@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { HmacJwtVerifier } from '../auth/hmacJwtVerifier.ts';
 import type { CreativeApplicationCore } from '../composition/createCreativeCore.ts';
 import type { CoreServerConfig } from '../config.ts';
+import { modelArtifactRelay } from './modelArtifactRelay.ts';
 
 /** Minimal Node transport for a framework-neutral Fetch handler. */
 export function nodeHttpAdapter(handler: (request: Request) => Promise<Response>) {
@@ -28,6 +29,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (path === '/health/live' && request.method === 'GET') return send(response, 200, { status: 'live' });
       if (path === '/health/ready' && request.method === 'GET') { const ready = input.accepting() && await input.ready(); return send(response, ready ? 200 : 503, { status: ready ? 'ready' : 'not_ready' }); }
       if (!input.accepting()) return sendError(response, 503, 'shutting_down', 'Server is shutting down', correlationId, true);
+      const relay = await modelArtifactRelay(new Request(new URL(request.url ?? '/', 'http://core.invalid'), { method: request.method }));
+      if (relay) return sendFetchResponse(response, relay);
       const principal = input.auth.verify(header(request, 'authorization'));
       if (path === '/api/core/creative/execute' && request.method === 'POST') {
         if (!mediaType(request).startsWith('application/json')) return sendError(response, 415, 'unsupported_media_type', 'Content-Type must be application/json', correlationId, false);
@@ -49,3 +52,4 @@ async function readBody(request: IncomingMessage): Promise<ArrayBuffer> { const 
 async function readJson(request: IncomingMessage, limit: number): Promise<unknown> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of request) { const buffer = Buffer.from(chunk); size += buffer.length; if (size > limit) throw Object.assign(new Error('Request body is too large'), { code: 'body_too_large', status: 413 }); chunks.push(buffer); } try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw Object.assign(new Error('Request body must contain valid JSON'), { code: 'invalid_json', status: 400 }); } }
 function sendError(response: ServerResponse, status: number, code: string, message: string, correlationId: string, retryable: boolean) { return send(response, status, { code, message, correlationId, retryable }); }
 function send(response: ServerResponse, status: number, body: unknown): void { if (response.headersSent) return; response.statusCode = status; if (body === undefined) { response.end(); return; } response.setHeader('Content-Type', 'application/json; charset=utf-8'); response.setHeader('Cache-Control', 'no-store'); response.end(JSON.stringify(body)); }
+async function sendFetchResponse(response: ServerResponse, result: Response): Promise<void> { response.statusCode = result.status; result.headers.forEach((value, key) => response.setHeader(key, value)); response.end(Buffer.from(await result.arrayBuffer())); }
