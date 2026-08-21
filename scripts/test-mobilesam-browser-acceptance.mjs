@@ -6,6 +6,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import sharp from 'sharp';
 import { build } from 'vite';
+import { modelArtifactRelay, MODEL_RELAY_PREFIX } from '../server/core/http/modelArtifactRelay.ts';
 
 const revision = 'd6e401e212561c00f478ef4ee2758b46a2e23564';
 const sources = [
@@ -45,6 +46,10 @@ const contentTypes = new Map([['.html', 'text/html; charset=utf-8'], ['.js', 'te
 const server = http.createServer(async (request, response) => {
   try {
     const requestPath = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
+    if (requestPath.startsWith(MODEL_RELAY_PREFIX)) {
+      const result = await modelArtifactRelay(new Request(`http://127.0.0.1:4174${request.url}`, { method: request.method }));
+      response.statusCode = result.status; result.headers.forEach((value, key) => response.setHeader(key, value)); response.end(Buffer.from(await result.arrayBuffer())); return;
+    }
     const file = path.resolve(outputDir, `.${requestPath}`);
     if (file !== outputDir && !file.startsWith(`${outputDir}${path.sep}`)) throw new Error('path traversal');
     const body = await fs.readFile(file);
@@ -63,13 +68,16 @@ try {
   const version = browser.version();
   assert.match(version, /Chrome|Chromium|\d+\./);
   const page = await browser.newPage();
-  const diagnostics = { pageErrors: [], consoleErrors: [], failedRequests: [], failedResponses: [] };
+  const diagnostics = { pageErrors: [], consoleErrors: [], artifactRequests: [], artifactResponses: [], failedRequests: [], failedResponses: [] };
   const localAssetResponses = [];
   page.on('pageerror', error => diagnostics.pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') diagnostics.consoleErrors.push(message.text()); });
-  page.on('requestfailed', request => diagnostics.failedRequests.push({ url: request.url(), error: request.failure()?.errorText ?? 'unknown' }));
+  const chain = request => { const urls = []; for (let item = request; item; item = item.redirectedFrom()) urls.unshift(item.url()); return urls; };
+  page.on('request', request => { if (request.url().includes('mobilesam-')) diagnostics.artifactRequests.push({ url: request.url(), resourceType: request.resourceType(), redirectChain: chain(request) }); });
+  page.on('requestfailed', request => diagnostics.failedRequests.push({ url: request.url(), failureText: request.failure()?.errorText ?? 'unknown', resourceType: request.resourceType(), redirectChain: chain(request) }));
   page.on('response', response => {
-    if (response.status() >= 400) diagnostics.failedResponses.push({ url: response.url(), status: response.status() });
+    if (response.url().includes('mobilesam-')) diagnostics.artifactResponses.push({ url: response.url(), status: response.status(), resourceType: response.request().resourceType(), redirectChain: chain(response.request()) });
+    if (response.status() >= 400) diagnostics.failedResponses.push({ url: response.url(), status: response.status(), resourceType: response.request().resourceType(), redirectChain: chain(response.request()) });
     if (new URL(response.url()).origin === 'http://127.0.0.1:4174' && /ort-wasm.*\.(?:wasm|mjs)(?:$|\?)/.test(response.url())) localAssetResponses.push({ url: response.url(), status: response.status() });
   });
   await page.goto('http://127.0.0.1:4174/tests/mobile-sam-browser-acceptance.html');
@@ -78,11 +86,14 @@ try {
   } catch (error) {
     throw new Error(`MOBILESAM_ACCEPTANCE_BOOTSTRAP_FAILED\n${JSON.stringify(diagnostics, null, 2)}\n${error instanceof Error ? error.message : error}`);
   }
-  const report = await page.evaluate(async input => globalThis.runMobileSamAcceptance(input), fixtures);
+  let report;
+  try { report = await page.evaluate(async input => globalThis.runMobileSamAcceptance(input), fixtures); }
+  catch (error) { throw new Error(`MOBILESAM_ACCEPTANCE_FAILED\n${JSON.stringify(diagnostics, null, 2)}\n${error instanceof Error ? error.message : error}`); }
   assert.ok(localAssetResponses.some(item => item.url.includes('.wasm') && item.status === 200), `local ORT WASM asset did not load successfully: ${JSON.stringify({ localAssetResponses, diagnostics })}`);
   assert.ok(localAssetResponses.some(item => item.url.includes('.mjs') && item.status === 200), `local ORT module asset did not load successfully: ${JSON.stringify({ localAssetResponses, diagnostics })}`);
   report.browserProductVersion = version;
   report.ortLocalAssets = localAssetResponses;
+  report.networkDiagnostics = diagnostics;
   console.log(JSON.stringify(report, null, 2));
 } finally {
   await browser?.close();
