@@ -1,5 +1,7 @@
 export function deepFreeze<T>(value: T, seen = new WeakSet<object>()): Readonly<T> {
   if (value === null || typeof value !== 'object' || seen.has(value as object)) return value as Readonly<T>;
+  // Cloned binary/tensor views are opaque leaves: non-empty TypedArrays cannot be frozen.
+  if (ArrayBuffer.isView(value)) return value as Readonly<T>;
   seen.add(value as object);
   for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child, seen);
   return Object.freeze(value) as Readonly<T>;

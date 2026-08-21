@@ -35,6 +35,7 @@ jobs:
     - run: npm run check:browser-bundle
     - run: npm run test:intelligent-selection
     - run: npm run test:controlled-local-edit
+    - run: npm run test:local-ai-typedarray
     - run: npm run test:canonical-product-vertical
 
   postgres-transactions:
