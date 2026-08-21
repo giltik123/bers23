@@ -4,12 +4,16 @@ import { once } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import test from 'node:test';
 import { Pool } from 'pg';
+import sharp from 'sharp';
 import { createProductionCore } from '../server/core/composition/createProductionCore.ts';
 import type { CoreServerConfig } from '../server/core/config.ts';
 import { createNodeHttpAdapter } from '../server/core/http/nodeHttpAdapter.ts';
 import { migrateTransactionSchema } from '../server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts';
 import { migrateMaskArtifactSchema } from '../server/core/artifacts/maskArtifactSchema.ts';
 import { migrateImageArtifactSchema } from '../server/core/artifacts/imageArtifactSchema.ts';
+import { SelectionApplicationService } from '../src/application/selection/SelectionApplicationService.ts';
+import { CoreMaskArtifactPort } from '../src/application/selection/CoreMaskArtifactPort.js';
+import { createCreativeEditApplicationService } from '../src/application/creative/CreativeEditApplicationService.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required: this suite must use real PostgreSQL');
@@ -23,6 +27,7 @@ const config: CoreServerConfig = Object.freeze({
   falBaseUrl: 'https://provider.vertical.test', jwtSecret, jwtIssuer: 'vertical-test', jwtAudience: 'vertical-core',
   artifactSigningSecret: artifactSecret, trustedAssetHosts: Object.freeze(['assets.vertical.test']), allowLegacyAssetUrls: false,
   allowedWebOrigins: Object.freeze([]), hardBudgetCredits: 1, creditsPerEdit: 1, bodyLimitBytes: 64_000,
+  maskUploadLimitBytes: 64_000, maskMaxDimension: 256,
   requestTimeoutMs: 5_000, providerTimeoutMs: 2_000, shutdownTimeoutMs: 2_000,
 });
 
@@ -49,10 +54,10 @@ function deterministicProvider() {
   return { fetcher, setMode(value: ProviderMode) { mode = value; }, count: () => calls.length, originalAssetFetches: () => originalAssetFetches, prompts: () => calls.map(call => call.prompt), imageUrls: () => calls.map(call => call.imageUrl) };
 }
 
-function token(userId: string, valid = true): string {
+function token(userId: string, valid = true, ownerTenant = tenantId): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const header = encode({ alg: 'HS256', typ: 'JWT' });
-  const payload = encode({ sub: userId, tenantId, iss: config.jwtIssuer, aud: config.jwtAudience, exp: Math.floor(Date.now() / 1000) + 600 });
+  const payload = encode({ sub: userId, tenantId: ownerTenant, iss: config.jwtIssuer, aud: config.jwtAudience, exp: Math.floor(Date.now() / 1000) + 600 });
   const signature = createHmac('sha256', valid ? jwtSecret : 'wrong-secret').update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${signature}`;
 }
@@ -204,4 +209,111 @@ test('real Core HTTP server proves PostgreSQL financial lifecycle and safety inv
   try { const rolledBack = await execute(runtime.url, rollbackUser, 'rollback-1'); assert.equal(rolledBack.response.status, 500); }
   finally { await pool.query('DROP TRIGGER vertical_force_journal_failure ON transaction_journal'); await pool.query('DROP FUNCTION vertical_force_journal_failure()'); }
   const rollbackState = await state(pool, rollbackUser); assert.equal(provider.count(), beforeRollbackCalls); assert.equal(rollbackState.reservations.length, 0); assert.equal(rollbackState.wallet.reserved, '0'); assert.equal(rollbackState.wallet.balance, '20');
+});
+
+test('real Editor to Core controlled edit persists and securely delivers a verified PostgreSQL COMPOSITE', async t => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'controlled-core-vertical' });
+  await migrateTransactionSchema(pool); await migrateMaskArtifactSchema(pool); await migrateImageArtifactSchema(pool);
+  await pool.query('TRUNCATE canonical_image_artifacts,canonical_mask_artifacts,transaction_journal,reservation_journal_sequences,credit_reservations,credit_wallets RESTART IDENTITY CASCADE');
+  t.after(async () => { await pool.query('TRUNCATE canonical_image_artifacts,canonical_mask_artifacts,transaction_journal,reservation_journal_sequences,credit_reservations,credit_wallets RESTART IDENTITY CASCADE'); await pool.end(); });
+
+  const width = 16, height = 12;
+  const originalPixels = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < width * height; i++) originalPixels.set([(i * 7) % 251, (i * 11) % 253, (i * 13) % 255, 255], i * 4);
+  const originalPng = new Uint8Array(await sharp(originalPixels, { raw: { width, height, channels: 4 } }).png().toBuffer());
+  const alpha = new Uint8Array(width * height); for (const [x, y] of [[7, 5], [8, 5], [7, 6], [8, 6]]) alpha[y * width + x] = 255;
+  const uploads: Array<{ url: string; headers: Headers; bytes: Uint8Array }> = [];
+  const initiations: Array<{ headers: Headers; fileUrl: string }> = [];
+  const inferences: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
+  let uploadFailure = false;
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = String(input), headers = new Headers(init?.headers);
+    if (url === 'https://assets.vertical.test/input.png') {
+      assert.equal(headers.has('authorization'), false, 'provider secret must not be sent while hydrating ORIGINAL');
+      return new Response(originalPng, { status: 200, headers: { 'content-type': 'image/png' } });
+    }
+    if (url === 'https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3') {
+      assert.equal(init?.method, 'POST'); assert.equal(headers.get('authorization'), `Key ${config.falKey}`);
+      const index = initiations.length; const fileUrl = `https://fal-cdn.vertical.test/input-${index}.png`;
+      initiations.push({ headers, fileUrl });
+      return new Response(JSON.stringify({ upload_url: `https://upload.vertical.test/${index}`, file_url: fileUrl }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.startsWith('https://upload.vertical.test/')) {
+      assert.equal(init?.method, 'PUT'); assert.equal(headers.has('authorization'), false, 'FAL_KEY must not be sent to signed binary upload URLs');
+      const bytes = new Uint8Array(await new Response(init?.body).arrayBuffer()); uploads.push({ url, headers, bytes });
+      return new Response('', { status: uploadFailure ? 503 : 200 });
+    }
+    if (url === `${config.falBaseUrl}/fal-ai/flux-pro/v1/fill`) {
+      assert.equal(init?.method, 'POST'); assert.equal(headers.get('authorization'), `Key ${config.falKey}`);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>; inferences.push({ headers, body });
+      const roiMeta = await sharp(uploads.at(-2)!.bytes).metadata();
+      const patch = await sharp({ create: { width: roiMeta.width!, height: roiMeta.height!, channels: 4, background: { r: 255, g: 1, b: 2, alpha: 1 } } }).png().toBuffer();
+      uploads.push({ url: 'https://provider-output.vertical.test/patch.png', headers: new Headers(), bytes: new Uint8Array(patch) });
+      return new Response(JSON.stringify({ images: [{ url: 'https://provider-output.vertical.test/patch.png' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url === 'https://provider-output.vertical.test/patch.png') return new Response(uploads.at(-1)!.bytes, { status: 200, headers: { 'content-type': 'image/png' } });
+    throw new Error(`Unexpected external HTTP boundary: ${url}`);
+  };
+
+  let now = Date.now();
+  const production = await createProductionCore(config, { fetcher, now: () => now });
+  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, auth: production.auth, config, ready: async () => true, accepting: () => true }));
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); const address = server.address(); assert(address && typeof address === 'object');
+  const url = `http://127.0.0.1:${address.port}`; t.after(async () => { await closeServer(server); await production.close(); });
+  const userId = 'controlled-user'; await wallet(pool, userId, 20);
+  const authHeaders = { authorization: `Bearer ${token(userId)}` };
+  const persistMask = async (value = alpha, ownerProject = projectId) => {
+    const response = await fetch(`${url}/api/core/artifacts/masks?projectId=${encodeURIComponent(ownerProject)}&width=${width}&height=${height}`, { method: 'POST', headers: { ...authHeaders, 'content-type': 'application/octet-stream' }, body: value });
+    return { response, body: await response.json() as Record<string, unknown> };
+  };
+  const persistedMask = await persistMask(); assert.equal(persistedMask.response.status, 201);
+  const maskId = String(persistedMask.body.artifactId); assert.equal(JSON.parse(Buffer.from(maskId.split('.')[0], 'base64url').toString()).location, 'STORED_MASK');
+
+  const beforeInference = inferences.length, beforeInitiations = initiations.length, beforeUploads = uploads.length;
+  const controlled = await fetch(`${url}/api/core/creative/execute`, { method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ projectId, instruction: 'replace only the selected pixels', inputArtifactId: artifact(userId), maskArtifactIds: [maskId], selectedObjectIds: ['selected-object'], preserveMode: 'STRICT', clientRequestId: 'controlled-http-1' }) });
+  const result = await controlled.json() as Record<string, any>; assert.equal(controlled.status, 200); assert.equal(result.status, 'SUCCESS'); assert.equal(result.verification.valid, true);
+  assert.equal(inferences.length - beforeInference, 1, 'controlled execution must dispatch exactly one inference');
+  assert.equal(initiations.length - beforeInitiations, 2, 'actual materializer must initiate exactly ROI and MASK uploads');
+  const binaryUploads = uploads.slice(beforeUploads).filter(item => item.url.startsWith('https://upload.vertical.test/')); assert.equal(binaryUploads.length, 2);
+  const uploadMetadata = await Promise.all(binaryUploads.map(item => sharp(item.bytes).metadata()));
+  assert.deepEqual(uploadMetadata.map(item => [item.width, item.height]), [[2, 2], [2, 2]]); assert.ok(uploadMetadata.every(item => item.width !== width && item.height !== height));
+  assert.equal(inferences[0].body.image_url, initiations[0].fileUrl); assert.equal(inferences[0].body.mask_url, initiations[1].fileUrl);
+  assert.equal(JSON.stringify(result).includes(config.falKey), false, 'FAL_KEY must never enter browser JSON');
+
+  const finalClaim = JSON.parse(Buffer.from(String(result.finalArtifactId).split('.')[0], 'base64url').toString());
+  assert.equal(finalClaim.location, 'STORED_FINAL_ID'); assert.equal(finalClaim.role, 'COMPOSITE'); assert.equal(finalClaim.lifecycle, 'FINAL');
+  const deliveryClaim = JSON.parse(Buffer.from(String(result.imageUrl).split('/').at(-1).split('.')[0], 'base64url').toString()); assert.equal(deliveryClaim.location, 'STORED_FINAL_DELIVERY');
+  const stableIdDelivery = await fetch(`${url}/api/core/artifacts/results/${encodeURIComponent(result.finalArtifactId)}`); assert.notEqual(stableIdDelivery.status, 200);
+  const delivered = await fetch(`${url}${result.imageUrl}`); assert.equal(delivered.status, 200); assert.equal(delivered.headers.get('content-type'), 'image/png');
+  const deliveredBytes = new Uint8Array(await delivered.arrayBuffer()); const decoded = await sharp(deliveredBytes).raw().toBuffer({ resolveWithObject: true }); assert.deepEqual([decoded.info.width, decoded.info.height], [width, height]);
+  let selectedChanged = 0; for (let i = 0; i < alpha.length; i++) { const pixel = decoded.data.subarray(i * 4, i * 4 + 4); if (!alpha[i]) assert.deepEqual([...pixel], [...originalPixels.subarray(i * 4, i * 4 + 4)], `protected pixel ${i}`); else if (!Buffer.from(pixel).equals(Buffer.from(originalPixels.subarray(i * 4, i * 4 + 4)))) selectedChanged++; }
+  assert.ok(selectedChanged > 0);
+  const finalRow = (await pool.query('SELECT * FROM canonical_image_artifacts WHERE storage_id=$1', [finalClaim.storageId])).rows[0];
+  assert.equal(finalRow.role, 'COMPOSITE'); assert.equal(finalRow.lifecycle, 'FINAL'); assert.equal(finalRow.tenant_id, tenantId); assert.equal(finalRow.user_id, userId); assert.equal(finalRow.project_id, projectId); assert.equal(finalRow.execution_id, result.executionId);
+  assert.deepEqual(new Uint8Array(finalRow.image_bytes), deliveredBytes, 'persisted and delivered canonical PNG bytes must be exact');
+  const persistedDecoded = await sharp(finalRow.image_bytes).raw().toBuffer(); assert.deepEqual(persistedDecoded, decoded.data);
+  const canonicalOutcome = production.core.service.result(result.executionId, { tenantId, userId }); const canonicalComposite = canonicalOutcome?.artifacts.find(item => item.role === 'COMPOSITE');
+  assert.equal((canonicalComposite?.metadata?.integrityMetrics as { outsideChangedPixelRatio?: number })?.outsideChangedPixelRatio, 0);
+  const roles = result.artifacts.map((item: Record<string, unknown>) => item.role); for (const role of ['ORIGINAL', 'MASK', 'ROI_INPUT', 'PATCH', 'COMPOSITE']) assert.ok(roles.includes(role), `missing canonical lineage role ${role}`);
+  const controlledState = await state(pool, userId); assert.deepEqual(events(controlledState), ['reservation_created', 'provider_dispatched', 'provider_succeeded', 'reservation_committed']);
+
+  const wrongUserCalls = inferences.length; const wrongUser = await fetch(`${url}/api/core/creative/${result.executionId}/result`, { headers: { authorization: `Bearer ${token('wrong-user')}` } }); assert.equal(wrongUser.status, 403);
+  const wrongTenant = await fetch(`${url}/api/core/creative/${result.executionId}/result`, { headers: { authorization: `Bearer ${token(userId, true, 'wrong-tenant')}` } }); assert.equal(wrongTenant.status, 403); assert.equal(inferences.length, wrongUserCalls);
+  const badMask = `${maskId.slice(0, -1)}${maskId.endsWith('a') ? 'b' : 'a'}`;
+  const callsBeforeBadMask = inferences.length, reservationsBeforeBadMask = (await state(pool, userId)).reservations.length; const rejectedMask = await fetch(`${url}/api/core/creative/execute`, { method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ projectId, instruction: 'denied', inputArtifactId: artifact(userId), maskArtifactIds: [badMask], selectedObjectIds: ['x'], preserveMode: 'STRICT', clientRequestId: 'bad-mask' }) }); assert.equal(rejectedMask.status, 403); assert.equal(inferences.length, callsBeforeBadMask); assert.equal((await state(pool, userId)).reservations.length, reservationsBeforeBadMask);
+  const otherProjectMask = await persistMask(alpha, 'wrong-project'); const callsBeforeProject = inferences.length; const rejectedProject = await fetch(`${url}/api/core/creative/execute`, { method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify({ projectId, instruction: 'denied', inputArtifactId: artifact(userId), maskArtifactIds: [otherProjectMask.body.artifactId], selectedObjectIds: ['x'], clientRequestId: 'wrong-project-mask' }) }); assert.equal(rejectedProject.status, 403); assert.equal(inferences.length, callsBeforeProject);
+  assert.throws(() => production.artifacts.external.resolveStoredFinalId(result.finalArtifactId, { tenantId, userId, projectId: 'wrong-project' }));
+
+  const oldUrl = result.imageUrl; now += 300_001; assert.notEqual((await fetch(`${url}${oldUrl}`)).status, 200); const tamperedUrl = `${oldUrl.slice(0, -1)}x`; assert.notEqual((await fetch(`${url}${tamperedUrl}`)).status, 200);
+  const refreshed = await fetch(`${url}/api/core/creative/${result.executionId}/result`, { headers: authHeaders }); const freshResult = await refreshed.json() as Record<string, any>; assert.equal(refreshed.status, 200); assert.equal(freshResult.finalArtifactId, result.finalArtifactId); assert.notEqual(freshResult.imageUrl, oldUrl); const freshDelivery = await fetch(`${url}${freshResult.imageUrl}`); assert.equal(freshDelivery.status, 200); assert.deepEqual(new Uint8Array(await freshDelivery.arrayBuffer()), deliveredBytes);
+
+  const browserClient = { artifacts: { persistMask: async ({ projectId: requestedProject, width: w, height: h, alpha: bytes }: any) => { const response = await fetch(`${url}/api/core/artifacts/masks?projectId=${requestedProject}&width=${w}&height=${h}`, { method: 'POST', headers: { ...authHeaders, 'content-type': 'application/octet-stream' }, body: bytes }); return response.json(); } }, creative: { execute: async (body: unknown) => { const response = await fetch(`${url}/api/core/creative/execute`, { method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' }, body: JSON.stringify(body) }); return response.json(); }, cancel() {}, status() {} } };
+  const selection = new SelectionApplicationService({ async segment() { throw new Error('not used'); }, cancel() {} }, new CoreMaskArtifactPort(projectId, browserClient)); selection.start({ imageArtifactId: artifact(userId), width, height }); selection.setMode('BRUSH_ADD'); selection.brush({ points: [{ x: 7.5, y: 5.5 }], radius: 1, hardness: 1, view: { originalWidth: width, originalHeight: height, displayWidth: width, displayHeight: height } }); const editorMask = await selection.done();
+  assert.equal(JSON.parse(Buffer.from(editorMask.id.split('.')[0], 'base64url').toString()).location, 'STORED_MASK', 'Editor must use the server-issued MASK identity');
+  const appCalls = inferences.length; const appResult = await createCreativeEditApplicationService(browserClient).execute({ projectId, instruction: 'application adapter edit', inputArtifactId: artifact(userId), maskArtifactIds: [editorMask.id], selectedObjectIds: ['editor-object'], preserveMode: 'STRICT', clientRequestId: 'editor-controlled' });
+  assert.equal(appResult.status, 'SUCCESS'); assert.ok(appResult.executionId); assert.ok(appResult.imageUrl); assert.ok(appResult.finalArtifactId); assert.equal(appResult.verification.valid, true); assert.equal(inferences.length - appCalls, 1); assert.equal(JSON.stringify(appResult).includes('Uint8ClampedArray'), false); assert.equal('data' in appResult, false); assert.equal((await fetch(`${url}${appResult.imageUrl}`)).status, 200);
+
+  uploadFailure = true; const uploadUser = 'controlled-upload-failure'; await wallet(pool, uploadUser); const uploadMaskResponse = await fetch(`${url}/api/core/artifacts/masks?projectId=${projectId}&width=${width}&height=${height}`, { method: 'POST', headers: { authorization: `Bearer ${token(uploadUser)}`, 'content-type': 'application/octet-stream' }, body: alpha }); const uploadMask = await uploadMaskResponse.json() as Record<string, unknown>; const callsBeforeUploadFailure = inferences.length; const failedUpload = await fetch(`${url}/api/core/creative/execute`, { method: 'POST', headers: { authorization: `Bearer ${token(uploadUser)}`, 'content-type': 'application/json' }, body: JSON.stringify({ projectId, instruction: 'fail upload', inputArtifactId: artifact(uploadUser), maskArtifactIds: [uploadMask.artifactId], selectedObjectIds: ['x'], preserveMode: 'STRICT', clientRequestId: 'upload-failure' }) }); const failedUploadBody = await failedUpload.json() as Record<string, unknown>; assert.equal(failedUploadBody.status, 'FAILED'); assert.equal(inferences.length, callsBeforeUploadFailure); const failedUploadState = await state(pool, uploadUser); assert.equal(failedUploadState.reservations.length, 1); assert.equal(failedUploadState.reservations[0].status, 'released'); assert.deepEqual(events(failedUploadState), ['reservation_created', 'provider_dispatched', 'provider_failed', 'reservation_released']);
+
+  await pool.query('UPDATE canonical_image_artifacts SET revoked_at=NOW() WHERE storage_id=$1', [finalClaim.storageId]); assert.notEqual((await fetch(`${url}${freshResult.imageUrl}`)).status, 200, 'revoked FINAL delivery must fail closed');
 });

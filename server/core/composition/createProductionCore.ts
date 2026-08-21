@@ -14,11 +14,12 @@ import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
 
-export async function createProductionCore(config: CoreServerConfig, options: Readonly<{ fetcher?: typeof fetch }> = {}) {
+export async function createProductionCore(config: CoreServerConfig, options: Readonly<{ fetcher?: typeof fetch; now?: () => number }> = {}) {
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
   try {
     await transactions.pool.query('SELECT 1'); await checkTransactionSchema(transactions.pool); await checkMaskArtifactSchema(transactions.pool); await checkImageArtifactSchema(transactions.pool);
-    const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts);
+    const now = options.now ?? Date.now;
+    const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
     const artifacts = new ArtifactAuthority(externalArtifacts, new PostgresMaskArtifactStore(transactions.pool), new PostgresImageArtifactStore(transactions.pool));
     const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
     const runtime = createFalWorkflowRuntime({ apiKey: config.falKey, baseUrl: config.falBaseUrl, timeoutMs: config.providerTimeoutMs, artifacts: externalArtifacts, fetcher });
@@ -33,7 +34,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         const artifactId = externalArtifacts.issueStoredFinal(stored.storageId, scope);
         return Object.freeze({ ...artifact, id: artifactId, value: Object.freeze({ artifactId }), image: { width: stored.width, height: stored.height, format: stored.encoding, orientation: 1 as const, colorSpace: 'srgb', alpha: true }, metadata: Object.freeze({ ...artifact.metadata, storageId: stored.storageId, executionId, operationId: stored.operationId, contentType: stored.contentType, encoding: stored.encoding, parentArtifactIds: artifact.metadata?.parentArtifactIds }) });
       },
-      mintFinalDelivery: (scope, storageId) => `/api/core/artifacts/results/${encodeURIComponent(externalArtifacts.issueStoredFinalDelivery(storageId, scope, Date.now() + 5 * 60_000))}`,
+      mintFinalDelivery: (scope, storageId) => `/api/core/artifacts/results/${encodeURIComponent(externalArtifacts.issueStoredFinalDelivery(storageId, scope, now() + 5 * 60_000))}`,
       creditsPerEdit: config.creditsPerEdit, hardBudgetCredits: config.hardBudgetCredits,
       canonical: {
         runtime, providers: { isAvailable: providerId => providerId === 'fal', fallback: () => undefined },
