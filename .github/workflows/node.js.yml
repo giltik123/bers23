@@ -114,6 +114,8 @@ jobs:
         run: npm run db:migrate:transactions
       - name: Build production image
         run: docker build --tag bers-core:${{ github.sha }} .
+      - name: Prove sharp loads in the production image
+        run: docker run --rm --entrypoint node bers-core:${{ github.sha }} -e "import('sharp').then(() => console.log('sharp production runtime PASS'))"
       - name: Assert production image contents
         run: |
           docker run --rm --entrypoint sh bers-core:${{ github.sha }} -c '
@@ -127,17 +129,29 @@ jobs:
         env:
           IMAGE: bers-core:${{ github.sha }}
         run: |
-          docker run --detach --rm --name bers-core-smoke \
+          cleanup() {
+            docker rm -f bers-core-smoke >/dev/null 2>&1 || true
+          }
+          diagnose() {
+            echo 'Production container exited before health readiness' >&2
+            docker logs bers-core-smoke >&2 || true
+            docker inspect bers-core-smoke >&2 || true
+          }
+          trap cleanup EXIT
+          docker run --detach --name bers-core-smoke \
             --add-host=host.docker.internal:host-gateway -p 18080:8080 \
             -e DATABASE_URL -e FAL_KEY=test-only -e JWT_SECRET=test-jwt-secret \
             -e JWT_ISSUER=bers-ci -e JWT_AUDIENCE=bers-ci \
             -e ARTIFACT_SIGNING_SECRET=test-artifact-secret \
             -e TRUSTED_ASSET_HOSTS=assets.example.test \
             -e ALLOWED_WEB_ORIGINS=http://localhost "$IMAGE"
-          trap 'docker rm -f bers-core-smoke >/dev/null 2>&1 || true' EXIT
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:18080/health/live >/dev/null; then break; fi
-            if [ "$attempt" = 30 ]; then docker logs bers-core-smoke; exit 1; fi
+            if [ "$(docker inspect --format '{{.State.Running}}' bers-core-smoke)" != true ]; then
+              diagnose
+              exit 1
+            fi
+            if [ "$attempt" = 30 ]; then diagnose; exit 1; fi
             sleep 1
           done
           curl --fail --silent http://127.0.0.1:18080/health/live | grep -q '"status":"live"'
