@@ -141,3 +141,18 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:18080/health/live | grep -q '"status":"live"'
           curl --fail --silent http://127.0.0.1:18080/health/ready | grep -q '"status":"ready"'
+
+  mobilesam-browser-wasm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove system Google Chrome is installed
+        run: google-chrome --version
+      - name: Run mandatory MobileSAM browser WASM acceptance
+        run: npm run test:mobilesam-browser-acceptance

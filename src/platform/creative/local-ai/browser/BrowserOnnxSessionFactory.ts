@@ -12,6 +12,7 @@ export class BrowserOnnxSessionFactory implements OnnxSessionFactory {
   async create(bytes: Uint8Array, options: Readonly<{ executionProviders: readonly ('wasm' | 'webgpu' | 'cuda' | 'dml' | 'coreml' | 'cpu' | 'nnapi')[] }>): Promise<OnnxSession> {
     if (options.executionProviders.some(provider => provider !== 'wasm')) throw new Error('Browser acceptance runtime only permits the WASM execution provider');
     const session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
+    const disposeOnnxSession = session.release.bind(session);
     return {
       async run(inputs: Readonly<Record<string, TensorValue>>, outputNames?: readonly string[]) {
         const feeds: Record<string, ort.Tensor> = {};
@@ -19,7 +20,7 @@ export class BrowserOnnxSessionFactory implements OnnxSessionFactory {
         const results = await session.run(feeds, outputNames ? [...outputNames] : undefined);
         return Object.fromEntries(Object.entries(results).map(([name, value]) => { if (value.type === 'string') throw new Error('String tensors are not supported by the local inference contract'); return [name, { data: value.data as ArrayLike<number>, dims: value.dims, type: value.type }]; }));
       },
-      release: () => session.release(),
+      release: disposeOnnxSession,
     };
   }
 }
