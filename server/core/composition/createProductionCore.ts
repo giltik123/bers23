@@ -6,6 +6,9 @@ import { CanonicalArtifactHydrator } from '../artifacts/canonicalArtifactHydrato
 import { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import { PostgresMaskArtifactStore } from '../artifacts/postgresMaskArtifactStore.ts';
 import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
+import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
+import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
+import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import { HmacJwtVerifier } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
@@ -14,14 +17,23 @@ import { createCreativeCore, type CreativeCoreCompositionInput } from './createC
 export async function createProductionCore(config: CoreServerConfig, options: Readonly<{ fetcher?: typeof fetch }> = {}) {
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
   try {
-    await transactions.pool.query('SELECT 1'); await checkTransactionSchema(transactions.pool); await checkMaskArtifactSchema(transactions.pool);
+    await transactions.pool.query('SELECT 1'); await checkTransactionSchema(transactions.pool); await checkMaskArtifactSchema(transactions.pool); await checkImageArtifactSchema(transactions.pool);
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts);
-    const artifacts = new ArtifactAuthority(externalArtifacts, new PostgresMaskArtifactStore(transactions.pool));
+    const artifacts = new ArtifactAuthority(externalArtifacts, new PostgresMaskArtifactStore(transactions.pool), new PostgresImageArtifactStore(transactions.pool));
     const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
     const runtime = createFalWorkflowRuntime({ apiKey: config.falKey, baseUrl: config.falBaseUrl, timeoutMs: config.providerTimeoutMs, artifacts: externalArtifacts, fetcher });
     const hydrator = new CanonicalArtifactHydrator(artifacts, fetcher);
     const core = createCreativeCore({
       transactions: transactions.transactions, transactionStore: transactions.store, ownsArtifacts: (scope, ids) => artifacts.owns(scope, ids), hydrateArtifacts: (scope, original, masks) => hydrator.hydrate(scope, original, masks),
+      persistFinal: async (scope, executionId, artifact) => {
+        const metrics = artifact.metadata?.integrityMetrics as { verificationOutcome?: string } | undefined;
+        const image = artifact.value as PixelImage;
+        if (artifact.role !== 'COMPOSITE' || artifact.state !== 'FINAL' || metrics?.verificationOutcome !== 'PASS' || !(image?.data instanceof Uint8ClampedArray)) throw new Error('Only a verified FINAL COMPOSITE may be persisted');
+        const stored = await artifacts.images.persistFinal(scope, executionId, artifact.producerOperationId, image);
+        const artifactId = externalArtifacts.issueStoredFinal(stored.storageId, scope);
+        const delivery = externalArtifacts.issueStoredFinal(stored.storageId, scope, Date.now() + 5 * 60_000);
+        return Object.freeze({ ...artifact, id: artifactId, value: Object.freeze({ artifactId, url: `/api/core/artifacts/results/${encodeURIComponent(delivery)}` }), image: { width: stored.width, height: stored.height, format: stored.encoding, orientation: 1 as const, colorSpace: 'srgb', alpha: true }, metadata: Object.freeze({ ...artifact.metadata, storageId: stored.storageId, executionId, operationId: stored.operationId, contentType: stored.contentType, encoding: stored.encoding, parentArtifactIds: artifact.metadata?.parentArtifactIds }) });
+      },
       creditsPerEdit: config.creditsPerEdit, hardBudgetCredits: config.hardBudgetCredits,
       canonical: {
         runtime, providers: { isAvailable: providerId => providerId === 'fal', fallback: () => undefined },

@@ -8,6 +8,8 @@ import { createProductionCore } from '../server/core/composition/createProductio
 import type { CoreServerConfig } from '../server/core/config.ts';
 import { createNodeHttpAdapter } from '../server/core/http/nodeHttpAdapter.ts';
 import { migrateTransactionSchema } from '../server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts';
+import { migrateMaskArtifactSchema } from '../server/core/artifacts/maskArtifactSchema.ts';
+import { migrateImageArtifactSchema } from '../server/core/artifacts/imageArtifactSchema.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required: this suite must use real PostgreSQL');
@@ -142,6 +144,7 @@ async function throwUnexpectedSuccessDiagnostic(
 test('real Core HTTP server proves PostgreSQL financial lifecycle and safety invariants', async t => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'core-vertical-fixture' });
   await migrateTransactionSchema(pool);
+  await migrateMaskArtifactSchema(pool); await migrateImageArtifactSchema(pool);
   await pool.query('TRUNCATE transaction_journal,reservation_journal_sequences,credit_reservations,credit_wallets RESTART IDENTITY CASCADE');
   t.after(async () => { await pool.query('TRUNCATE transaction_journal,reservation_journal_sequences,credit_reservations,credit_wallets RESTART IDENTITY CASCADE'); await pool.end(); });
   const provider = deterministicProvider();

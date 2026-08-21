@@ -6,3 +6,4 @@ await mkdir('dist-server/migrations', { recursive: true });
 await build({ entryPoints: ['server/index.ts'], outfile: 'dist-server/server.mjs', bundle: true, platform: 'node', format: 'esm', target: 'node22', packages: 'external', sourcemap: false });
 await cp('server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql', 'dist-server/migrations/001_transaction_store.sql');
 await cp('server/core/artifacts/migrations/002_canonical_mask_artifacts.sql', 'dist-server/migrations/002_canonical_mask_artifacts.sql');
+await cp('server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql', 'dist-server/migrations/003_canonical_final_image_artifacts.sql');

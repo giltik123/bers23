@@ -32,6 +32,13 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (!input.accepting()) return sendError(response, 503, 'shutting_down', 'Server is shutting down', correlationId, true);
       const relay = await modelArtifactRelay(new Request(new URL(request.url ?? '/', 'http://core.invalid'), { method: request.method }));
       if (relay) return sendFetchResponse(response, relay);
+      const resultMatch = path.match(/^\/api\/core\/artifacts\/results\/([^/]+)$/);
+      if (resultMatch && request.method === 'GET') {
+        const claim = input.artifacts.external.resolveStoredFinal(decodeURIComponent(resultMatch[1]));
+        const stored = await input.artifacts.images.load(claim.storageId, claim);
+        if (!stored) return sendError(response, 404, 'result_not_found', 'Final image artifact is unavailable', correlationId, false);
+        response.statusCode = 200; response.setHeader('Content-Type', stored.contentType); response.setHeader('Content-Length', stored.bytes.byteLength); response.setHeader('Cache-Control', 'private, max-age=300'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(stored.bytes); return;
+      }
       const principal = input.auth.verify(header(request, 'authorization'));
       if (path === '/api/core/artifacts/masks' && request.method === 'POST') {
         if (mediaType(request) !== 'application/octet-stream') return sendError(response, 415, 'unsupported_media_type', 'Content-Type must be application/octet-stream', correlationId, false);
