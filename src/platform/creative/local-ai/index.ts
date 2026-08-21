@@ -14,6 +14,8 @@ export * from './selection/ModelSuitabilityScorer';
 export * from './selection/ExecutionTargetSelector';
 export * from './runtimes/PlatformRuntimes';
 export * from './runtimes/OnnxLocalRuntime';
+export * from './browser/BrowserOnnxSessionFactory';
+export * from './browser/MobileSamBrowserSegmentation';
 export * from './benchmark/LocalModelBenchmark';
 export * from './verification/LocalResultVerifier';
 export * from './cache/LocalInferenceCache';

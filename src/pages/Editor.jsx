@@ -48,6 +48,7 @@ import { notificationCenter } from '@/lib/notifications/notificationCenter';
 import { sessionRecovery } from '@/lib/performance/sessionRecovery';
 import SelectionToolbar from '@/components/editor/SelectionToolbar';
 import { SelectionApplicationService } from '@/application/selection';
+import { createSelectionSegmentation } from '@/application/createSelectionSegmentation';
 
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
@@ -83,10 +84,7 @@ export default function Editor() {
   const platform = usePlatformProfile();
 
   const startSelection = () => {
-    const segmentation = globalThis.__BERS_INTERACTIVE_SEGMENTATION__ || {
-      segment: async () => { throw Object.assign(new Error('Local model is not available'), { code: 'MODEL_RUNTIME_UNSUPPORTED' }); },
-      cancel: () => {},
-    };
+    const segmentation = createSelectionSegmentation();
     const artifacts = {
       persist: async (mask, metadata) => ({
         id: globalThis.crypto.randomUUID(), kind: 'mask', role: 'MASK', state: 'AVAILABLE',

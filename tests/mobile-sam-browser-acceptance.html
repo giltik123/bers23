@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><title>MobileSAM browser acceptance</title>
+<script type="module">
+import { BrowserOnnxSessionFactory, ONNX_RUNTIME_WEB_VERSION } from '/src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts';
+import { MobileSamBrowserSegmentation } from '/src/platform/creative/local-ai/browser/MobileSamBrowserSegmentation.ts';
+import { SelectionApplicationService } from '/src/application/selection/SelectionApplicationService.ts';
+
+const coverage = alpha => [...alpha].filter(Boolean).length / alpha.length;
+globalThis.runMobileSamAcceptance = async fixtures => {
+  const port = new MobileSamBrowserSegmentation(new BrowserOnnxSessionFactory()), realImages = [];
+  for (const fixture of fixtures) {
+    const analysis = { originalWidth: fixture.width, originalHeight: fixture.height, analysisWidth: fixture.width, analysisHeight: fixture.height, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
+    let result;
+    for (let index = 0; index < fixture.points.length; index++) result = await port.segment({ requestId: `${fixture.category}-${index}`, imageArtifactId: fixture.url, analysis, points: fixture.points.slice(0, index + 1).map(point => ({ ...point, coordinateSpace: 'ORIGINAL' })), privacyMode: 'LOCAL_ONLY' });
+    const best = [...result.candidates].sort((a, b) => b.score - a.score)[0], value = coverage(best.alpha);
+    if (!(value > 0 && value < 1) || best.width !== fixture.width || best.height !== fixture.height) throw new Error(`${fixture.category}: invalid real mask coverage ${value}`);
+    realImages.push({ category: fixture.category, coverage: value, confidence: best.score, width: best.width, height: best.height });
+  }
+  const fixture = fixtures[0], persisted = []; const service = new SelectionApplicationService(port, { persist: async (value, metadata) => (persisted.push({ value, metadata }), { id: 'acceptance-mask', kind: 'mask', role: 'MASK', state: 'AVAILABLE', producerOperationId: 'selection-confirm', value, metadata, scope: { tenantId: 'acceptance', projectId: 'acceptance', userId: 'acceptance' } }) });
+  service.start({ imageArtifactId: fixture.url, width: fixture.width, height: fixture.height }); const view = { originalWidth: fixture.width, originalHeight: fixture.height, displayWidth: fixture.width, displayHeight: fixture.height, devicePixelRatio: 1, zoom: 1, panX: 0, panY: 0, offsetX: 0, offsetY: 0 };
+  const selected = await service.smartPoint({ displayPoint: fixture.points[0], view, privacyMode: 'LOCAL_ONLY' }); service.setMode('BRUSH_ADD'); service.brush({ points: [fixture.points[0]], radius: 2, hardness: 1, view }); service.setMode('BRUSH_SUBTRACT'); service.brush({ points: [{ x: 0, y: 0 }], radius: 1, hardness: 1, view }); service.undo(); service.redo(); const artifact = await service.done();
+  if (selected.state !== 'SELECTED' || artifact.value.coordinateSpace !== 'ORIGINAL' || artifact.value.encoding !== 'ALPHA_8_LOSSLESS') throw new Error('SelectionApplicationService acceptance failed');
+  return { userAgent: navigator.userAgent, onnxruntimeWebVersion: ONNX_RUNTIME_WEB_VERSION, provider: 'wasm', realImages, evidence: port.evidence, selection: { smartSelect: selected.state, brushAdd: true, brushSubtract: true, undo: true, redo: true, done: artifact.value.encoding } };
+};
+</script>
