@@ -1,6 +1,6 @@
 const isNode = typeof window === 'undefined';
-const windowObj = isNode ? { localStorage: new Map() } : window;
-const storage = windowObj.localStorage;
+const storage = isNode ? undefined : window.localStorage;
+const viteEnv = import.meta.env ?? {};
 
 const toSnakeCase = (str) => {
 	return str.replace(/([A-Z])/g, '_$1').toLowerCase();
@@ -40,11 +40,11 @@ const getAppParams = () => {
 		storage.removeItem('token');
 	}
 	return {
-		appId: getAppParamValue("app_id", { defaultValue: import.meta.env.VITE_CORE_APP_ID }),
+		appId: getAppParamValue("app_id", { defaultValue: viteEnv.VITE_CORE_APP_ID }),
 		token: getAppParamValue("access_token", { removeFromUrl: true }),
-		fromUrl: getAppParamValue("from_url", { defaultValue: window.location.href }),
-		functionsVersion: getAppParamValue("functions_version", { defaultValue: import.meta.env.VITE_CORE_API_VERSION }),
-		appBaseUrl: getAppParamValue("app_base_url", { defaultValue: import.meta.env.VITE_CORE_API_URL }),
+		fromUrl: getAppParamValue("from_url", { defaultValue: isNode ? undefined : window.location.href }),
+		functionsVersion: getAppParamValue("functions_version", { defaultValue: viteEnv.VITE_CORE_API_VERSION }),
+		appBaseUrl: getAppParamValue("app_base_url", { defaultValue: viteEnv.VITE_CORE_API_URL }),
 	}
 }
 
