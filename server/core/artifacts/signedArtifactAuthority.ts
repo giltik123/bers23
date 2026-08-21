@@ -3,15 +3,18 @@ import type { AuthenticatedScope } from '../application/creativeExecutionService
 
 type ArtifactClaim = Readonly<{ id: string; url: string; tenantId: string; userId: string; projectId: string; exp: number; location?: 'EXTERNAL' }>;
 export type StoredMaskClaim = Readonly<{ v: 1; location: 'STORED_MASK'; storageId: string; tenantId: string; userId: string; projectId: string; role: 'MASK' }>;
-export type StoredFinalClaim = Readonly<{ v: 1; location: 'STORED_FINAL'; storageId: string; tenantId: string; userId: string; projectId: string; role: 'COMPOSITE'; lifecycle: 'FINAL'; exp?: number }>;
+export type StoredFinalIdClaim = Readonly<{ v: 1; location: 'STORED_FINAL_ID'; storageId: string; tenantId: string; userId: string; projectId: string; role: 'COMPOSITE'; lifecycle: 'FINAL' }>;
+export type StoredFinalDeliveryClaim = Readonly<{ v: 1; location: 'STORED_FINAL_DELIVERY'; storageId: string; tenantId: string; userId: string; projectId: string; role: 'COMPOSITE'; lifecycle: 'FINAL'; exp: number }>;
 
 /** Verifies opaque, server-signed artifact references before exposing a storage URL to a provider. */
 export class SignedArtifactAuthority {
   readonly #secret: string; readonly #trustedHosts: readonly string[]; readonly #now: () => number;
   constructor(secret: string, trustedHosts: readonly string[], now = () => Date.now()) { this.#secret = secret; this.#trustedHosts = trustedHosts; this.#now = now; }
   issueStoredMask(storageId: string, scope: AuthenticatedScope & { projectId: string }): string { const payload = Buffer.from(JSON.stringify({ v: 1, location: 'STORED_MASK', storageId, ...scope, role: 'MASK' })).toString('base64url'); return `${payload}.${createHmac('sha256', this.#secret).update(payload).digest('base64url')}`; }
-  issueStoredFinal(storageId: string, scope: AuthenticatedScope & { projectId: string }, expiresAt?: number): string { const payload = Buffer.from(JSON.stringify({ v: 1, location: 'STORED_FINAL', storageId, ...scope, role: 'COMPOSITE', lifecycle: 'FINAL', ...(expiresAt ? { exp: expiresAt } : {}) })).toString('base64url'); return `${payload}.${createHmac('sha256', this.#secret).update(payload).digest('base64url')}`; }
-  resolveStoredFinal(reference: string, scope?: AuthenticatedScope & { projectId: string }): StoredFinalClaim { const claim = this.verifiedPayload(reference) as StoredFinalClaim; if (claim.v !== 1 || claim.location !== 'STORED_FINAL' || claim.role !== 'COMPOSITE' || claim.lifecycle !== 'FINAL' || !claim.storageId || (claim.exp !== undefined && claim.exp <= this.#now()) || (scope && (claim.tenantId !== scope.tenantId || claim.userId !== scope.userId || claim.projectId !== scope.projectId))) throw denied(); return Object.freeze(claim); }
+  issueStoredFinal(storageId: string, scope: AuthenticatedScope & { projectId: string }): string { return this.sign({ v: 1, location: 'STORED_FINAL_ID', storageId, ...scope, role: 'COMPOSITE', lifecycle: 'FINAL' }); }
+  issueStoredFinalDelivery(storageId: string, scope: AuthenticatedScope & { projectId: string }, expiresAt: number): string { if (!Number.isFinite(expiresAt) || expiresAt <= this.#now()) throw denied(); return this.sign({ v: 1, location: 'STORED_FINAL_DELIVERY', storageId, ...scope, role: 'COMPOSITE', lifecycle: 'FINAL', exp: expiresAt }); }
+  resolveStoredFinalId(reference: string, scope: AuthenticatedScope & { projectId: string }): StoredFinalIdClaim { const claim = this.verifiedPayload(reference) as StoredFinalIdClaim; if (claim.v !== 1 || claim.location !== 'STORED_FINAL_ID' || claim.role !== 'COMPOSITE' || claim.lifecycle !== 'FINAL' || !claim.storageId || claim.tenantId !== scope.tenantId || claim.userId !== scope.userId || claim.projectId !== scope.projectId) throw denied(); return Object.freeze(claim); }
+  resolveStoredFinalDelivery(reference: string): StoredFinalDeliveryClaim { const claim = this.verifiedPayload(reference) as StoredFinalDeliveryClaim; if (claim.v !== 1 || claim.location !== 'STORED_FINAL_DELIVERY' || claim.role !== 'COMPOSITE' || claim.lifecycle !== 'FINAL' || !claim.storageId || !Number.isFinite(claim.exp) || claim.exp <= this.#now()) throw denied(); return Object.freeze(claim); }
   resolveStoredMask(artifactId: string, scope: AuthenticatedScope & { projectId: string }): StoredMaskClaim {
     const claim = this.verifiedPayload(artifactId) as StoredMaskClaim;
     if (claim.v !== 1 || claim.location !== 'STORED_MASK' || claim.role !== 'MASK' || !claim.storageId || claim.tenantId !== scope.tenantId || claim.userId !== scope.userId || claim.projectId !== scope.projectId) throw denied();
@@ -28,5 +31,6 @@ export class SignedArtifactAuthority {
   }
   owns(scope: AuthenticatedScope & { projectId: string }, ids: readonly string[]): Promise<boolean> { try { ids.forEach(id => this.resolve(id, scope)); return Promise.resolve(true); } catch { return Promise.resolve(false); } }
   private verifiedPayload(artifactId: string): unknown { const [payload, signature, extra] = artifactId.split('.'); if (!payload || !signature || extra) throw denied(); const actual = Buffer.from(signature, 'base64url'); const expected = createHmac('sha256', this.#secret).update(payload).digest(); if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw denied(); try { return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { throw denied(); } }
+  private sign(claim: object): string { const payload = Buffer.from(JSON.stringify(claim)).toString('base64url'); return `${payload}.${createHmac('sha256', this.#secret).update(payload).digest('base64url')}`; }
 }
 function denied() { return new Error('Artifact reference is not trusted for this scope'); }

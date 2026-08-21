@@ -3,7 +3,7 @@ import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutio
 
 export type CreativeEditCommand = Readonly<{ projectId: string; instruction: string; selectedObjectIds?: readonly string[]; inputArtifactId: string; maskArtifactIds?: readonly string[]; preserveMode?: string; clientRequestId: string }>;
 export type AuthenticatedScope = Readonly<{ tenantId: string; userId: string }>;
-export type CreativeExecutionServiceDependencies = Readonly<{ platform: CreativeExecutionPlatformDependencies; ownsArtifacts(scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]): Promise<boolean>; hydrateArtifacts?(scope: AuthenticatedScope & { projectId: string }, originalId: string, maskIds: readonly string[]): Promise<readonly CreativeArtifact[]>; persistFinal?(scope: AuthenticatedScope & { projectId: string }, executionId: string, artifact: CreativeArtifact): Promise<CreativeArtifact>; creditsPerEdit?: number; hardBudgetCredits?: number; now?: () => number; id?: () => string }>;
+export type CreativeExecutionServiceDependencies = Readonly<{ platform: CreativeExecutionPlatformDependencies; ownsArtifacts(scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]): Promise<boolean>; hydrateArtifacts?(scope: AuthenticatedScope & { projectId: string }, originalId: string, maskIds: readonly string[]): Promise<readonly CreativeArtifact[]>; persistFinal?(scope: AuthenticatedScope & { projectId: string }, executionId: string, artifact: CreativeArtifact): Promise<CreativeArtifact>; mintFinalDelivery?(scope: AuthenticatedScope & { projectId: string }, storageId: string): string; creditsPerEdit?: number; hardBudgetCredits?: number; now?: () => number; id?: () => string }>;
 
 /** Server application boundary: identity, scope and idempotency are authoritative here. */
 export class CreativeExecutionService {
@@ -20,6 +20,7 @@ export class CreativeExecutionService {
   cancel(executionId: string, auth?: AuthenticatedScope): void { this.assertScope(executionId, auth); this.#platform.cancel(executionId); }
   status(executionId: string, auth?: AuthenticatedScope) { this.assertScope(executionId, auth); return this.#platform.status(executionId); }
   result(executionId: string, auth?: AuthenticatedScope) { this.assertScope(executionId, auth); return this.#results.get(executionId); }
+  deliveryUrl(artifact: CreativeArtifact): string | undefined { const storageId = artifact.metadata?.storageId; return artifact.role === 'COMPOSITE' && artifact.state === 'FINAL' && typeof storageId === 'string' && this.dependencies.mintFinalDelivery ? this.dependencies.mintFinalDelivery(artifact.scope, storageId) : undefined; }
   async #execute(command: CreativeEditCommand, auth: AuthenticatedScope, key: string, correlationId?: string): Promise<ProductionOutcome> {
     const artifacts = [command.inputArtifactId, ...(command.maskArtifactIds ?? [])];
     const scope = Object.freeze({
