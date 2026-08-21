@@ -49,6 +49,7 @@ import { sessionRecovery } from '@/lib/performance/sessionRecovery';
 import SelectionToolbar from '@/components/editor/SelectionToolbar';
 import { SelectionApplicationService } from '@/application/selection';
 import { createSelectionSegmentation } from '@/application/createSelectionSegmentation';
+import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPort';
 
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
@@ -86,13 +87,7 @@ export default function Editor() {
   const startSelection = () => {
     const imageArtifactId = project.current_image_artifact_id || project.current_image_url;
     const segmentation = createSelectionSegmentation({ imageArtifactId, source: project.current_image_url });
-    const artifacts = {
-      persist: async (mask, metadata) => ({
-        id: globalThis.crypto.randomUUID(), kind: 'mask', role: 'MASK', state: 'AVAILABLE',
-        producerOperationId: 'selection-confirm', value: mask, metadata,
-        scope: { tenantId: project.tenant_id || 'current', projectId: project.id, userId: project.user_id || 'current' },
-      }),
-    };
+    const artifacts = new CoreMaskArtifactPort(project.id);
     const service = new SelectionApplicationService(segmentation, artifacts);
     selectionServiceRef.current = service;
     setSelection(service.start({ imageArtifactId, width: project.width, height: project.height }));

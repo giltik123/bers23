@@ -6,7 +6,7 @@ async function request(path, options = {}) {
   const headers = new Headers(options.headers);
   const token = appParams.token || localStorage.getItem('core_access_token');
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
   const response = await fetch(`${API_ROOT}${path}`, { ...options, headers });
   const data = response.status === 204 ? undefined : await response.json().catch(() => undefined);
   if (!response.ok) {
@@ -57,6 +57,9 @@ export const coreClient = Object.freeze({
     status: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/status`),
     result: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/result`),
     cancel: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
+  },
+  artifacts: {
+    persistMask: ({ projectId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
   },
   entities,
   functions: { invoke: (command, payload) => request(`/commands/${encodeURIComponent(command)}`, json('POST', payload)) },

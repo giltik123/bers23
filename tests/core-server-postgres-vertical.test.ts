@@ -62,7 +62,7 @@ function artifact(userId: string, ownerProject = projectId): string {
 
 async function start(pool: Pool, provider: ReturnType<typeof deterministicProvider>) {
   const production = await createProductionCore(config, { fetcher: provider.fetcher });
-  const server = createServer(createNodeHttpAdapter({ core: production.core, auth: production.auth, config, ready: async () => true, accepting: () => true }));
+  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, auth: production.auth, config, ready: async () => true, accepting: () => true }));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert(address && typeof address === 'object');
   return { production, server, url: `http://127.0.0.1:${address.port}`, stop: async () => { await closeServer(server); await production.close(); } };
