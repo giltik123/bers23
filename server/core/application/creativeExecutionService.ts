@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { CreativeExecutionPlatform, type CreativeExecutionPlatformDependencies, type CreativeRequest, type ProductionOutcome } from '../../../src/platform/creative/canonical/index.ts';
+import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformDependencies, type CreativeRequest, type ProductionOutcome } from '../../../src/platform/creative/canonical/index.ts';
 
 export type CreativeEditCommand = Readonly<{ projectId: string; instruction: string; selectedObjectIds?: readonly string[]; inputArtifactId: string; maskArtifactIds?: readonly string[]; preserveMode?: string; clientRequestId: string }>;
 export type AuthenticatedScope = Readonly<{ tenantId: string; userId: string }>;
-export type CreativeExecutionServiceDependencies = Readonly<{ platform: CreativeExecutionPlatformDependencies; ownsArtifacts(scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]): Promise<boolean>; creditsPerEdit?: number; hardBudgetCredits?: number; now?: () => number; id?: () => string }>;
+export type CreativeExecutionServiceDependencies = Readonly<{ platform: CreativeExecutionPlatformDependencies; ownsArtifacts(scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]): Promise<boolean>; hydrateArtifacts?(scope: AuthenticatedScope & { projectId: string }, originalId: string, maskIds: readonly string[]): Promise<readonly CreativeArtifact[]>; creditsPerEdit?: number; hardBudgetCredits?: number; now?: () => number; id?: () => string }>;
 
 /** Server application boundary: identity, scope and idempotency are authoritative here. */
 export class CreativeExecutionService {
@@ -30,7 +30,11 @@ export class CreativeExecutionService {
     const executionId = `creative-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
     const requestCorrelationId = correlationId ?? randomUUID();
     const estimatedCredits = this.dependencies.creditsPerEdit ?? 1; const hardBudgetCredits = this.dependencies.hardBudgetCredits ?? estimatedCredits;
-    const request: CreativeRequest = { id: executionId, intent: command.instruction, scope, inputArtifacts: artifacts.map((id) => ({ id, kind: 'image', value: { artifactId: id }, producerOperationId: 'user-input', scope, state: 'AVAILABLE' })), budget: { credits: hardBudgetCredits, aiCalls: 1, latencyMs: 120_000, ramMb: 2048, gpuMs: 120_000, retries: 0 }, metadata: { idempotencyKey: command.clientRequestId, estimatedCredits, requestId: requestCorrelationId, correlationId: requestCorrelationId, preserveMode: command.preserveMode, selectedObjectIds: command.selectedObjectIds ?? [] } };
+    const controlled = Boolean(command.maskArtifactIds?.length && command.selectedObjectIds?.length);
+    const hydrated = this.dependencies.hydrateArtifacts
+      ? await this.dependencies.hydrateArtifacts(scope, command.inputArtifactId, command.maskArtifactIds ?? [])
+      : artifacts.map((id, index) => ({ id, kind: 'image', value: { artifactId: id }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: index ? 'MASK' : 'ORIGINAL' } as CreativeArtifact));
+    const request: CreativeRequest = { id: executionId, intent: command.instruction, scope, inputArtifacts: hydrated, budget: { credits: hardBudgetCredits, aiCalls: 1, latencyMs: 120_000, ramMb: 2048, gpuMs: 120_000, retries: 0 }, metadata: { idempotencyKey: command.clientRequestId, estimatedCredits, requestId: requestCorrelationId, correlationId: requestCorrelationId, editCapability: controlled ? 'CONTROLLED_LOCAL_EDIT' : 'GLOBAL_EDIT', preserveMode: command.preserveMode ?? 'STRICT', selectedObjectIds: command.selectedObjectIds ?? [], maskArtifactIds: command.maskArtifactIds ?? [] } };
     this.#platform.createExecution(request); await this.#platform.plan(executionId); await this.#platform.compile(executionId); const outcome = await this.#platform.execute(executionId); this.#results.set(executionId, outcome); return outcome;
   }
 }
