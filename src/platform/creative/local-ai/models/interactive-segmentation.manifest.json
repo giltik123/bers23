@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "modelId": "mobilesam-vit-t",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "status": "CANDIDATE",
   "upstream": {
     "repository": "https://github.com/ChaoningZhang/MobileSAM",
     "revision": "f706ad9c4eb7f219c00d9050e46328518ffb65d2",
-    "checkpointSource": "https://github.com/ChaoningZhang/MobileSAM/blob/master/weights/mobile_sam.pt",
+    "checkpointSource": "https://github.com/ChaoningZhang/MobileSAM/blob/f706ad9c4eb7f219c00d9050e46328518ffb65d2/weights/mobile_sam.pt",
     "checkpointSha256": "6dbb90523a35330fedd7f1d3dfc66f995213d81b29a5ca8108dbcdd4e37d6c2f"
   },
   "export": {
@@ -15,28 +15,33 @@
     "modelType": "vit_t",
     "opset": 17,
     "environment": {
-      "os": "Ubuntu 24.04.4",
-      "python": "3.11.15",
-      "pytorch": "2.1.2+cu121",
+      "os": "Ubuntu 24.04",
+      "python": "3.11",
+      "pytorch": "2.1.2",
+      "torchvision": "0.16.2",
+      "timm": "0.4.12",
       "onnx": "1.15.0",
       "onnxRuntime": "1.16.3",
       "numpy": "1.26.4"
-    }
+    },
+    "quantized": false,
+    "graphSimplified": false,
+    "postExportOptimized": false
   },
   "license": "Apache-2.0",
   "artifacts": {
     "encoder": {
-      "url": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.1/mobilesam-encoder.onnx",
+      "url": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.2/mobilesam-encoder.onnx",
       "size": 27969740,
-      "sha256": "ab3e4d77af34ef6bacbd58c721556f1530e81b96063847ce08152c1a594a5f26",
-      "signatureUrl": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.1/mobilesam-encoder.onnx.sig"
+      "sha256": "e40e35bb6c9f854c2d0af748f9dc5ebcdfbe50f3c97eb2e982bd0dfdfbcbba58",
+      "signatureUrl": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.2/mobilesam-encoder.onnx.sig"
     },
     "decoder": {
-      "url": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.1/mobilesam-decoder.onnx",
+      "url": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.2/mobilesam-decoder.onnx",
       "size": 16496892,
       "sha256": "24d5d20f6b214bc125523b324e65d021794659ed236e86f03a40746f54044fc6",
-      "signatureUrl": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.1/mobilesam-decoder.onnx.sig"
+      "signatureUrl": "https://github.com/giltik123/bers23/releases/download/mobilesam-vit-t-v1.0.2/mobilesam-decoder.onnx.sig"
     }
   },
-  "verificationKeyId": "bers-selection-release-2026-02"
+  "verificationKeyId": "bers-selection-release-2026-03"
 }
