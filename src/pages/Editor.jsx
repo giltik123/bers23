@@ -84,7 +84,8 @@ export default function Editor() {
   const platform = usePlatformProfile();
 
   const startSelection = () => {
-    const segmentation = createSelectionSegmentation();
+    const imageArtifactId = project.current_image_artifact_id || project.current_image_url;
+    const segmentation = createSelectionSegmentation({ imageArtifactId, source: project.current_image_url });
     const artifacts = {
       persist: async (mask, metadata) => ({
         id: globalThis.crypto.randomUUID(), kind: 'mask', role: 'MASK', state: 'AVAILABLE',
@@ -94,7 +95,7 @@ export default function Editor() {
     };
     const service = new SelectionApplicationService(segmentation, artifacts);
     selectionServiceRef.current = service;
-    setSelection(service.start({ imageArtifactId: project.current_image_artifact_id || project.current_image_url, width: project.width, height: project.height }));
+    setSelection(service.start({ imageArtifactId, width: project.width, height: project.height }));
   };
   const updateSelection = (action) => { const value = action(selectionServiceRef.current); if (value) setSelection(value); };
   const selectionPointer = async (phase, point, view) => {

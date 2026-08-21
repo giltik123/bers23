@@ -1,5 +1,9 @@
 import { BrowserOnnxSessionFactory } from '../platform/creative/local-ai/browser/BrowserOnnxSessionFactory';
-import { MobileSamBrowserSegmentation } from '../platform/creative/local-ai/browser/MobileSamBrowserSegmentation';
+import { BrowserImageArtifactResolver, MobileSamBrowserSegmentation } from '../platform/creative/local-ai/browser/MobileSamBrowserSegmentation';
 
 let productionSegmentation: MobileSamBrowserSegmentation | undefined;
-export function createSelectionSegmentation() { return productionSegmentation ??= new MobileSamBrowserSegmentation(new BrowserOnnxSessionFactory()); }
+const imageArtifacts = new BrowserImageArtifactResolver();
+export function createSelectionSegmentation(source?: Readonly<{ imageArtifactId: string; source: string | Blob }>) {
+  if (source) imageArtifacts.register(source.imageArtifactId, source.source);
+  return productionSegmentation ??= new MobileSamBrowserSegmentation(new BrowserOnnxSessionFactory(), undefined, undefined, imageArtifacts);
+}
