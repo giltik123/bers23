@@ -53,14 +53,20 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check \
             --index-url https://download.pytorch.org/whl/cpu \
-            torch==2.1.2
+            torch==2.1.2 torchvision==0.16.2
           python -m pip install --disable-pip-version-check \
-            --extra-index-url https://download.pytorch.org/whl/cpu \
+            timm==0.4.12
+          python -m pip install --disable-pip-version-check \
             onnx==1.15.0 onnxruntime==1.16.3 numpy==1.26.4
           python - <<'PY'
-          import numpy, onnx, onnxruntime, platform, torch
+          import numpy, onnx, onnxruntime, platform, timm, torch, torchvision
+          from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+          from timm.models.registry import register_model
+
           assert platform.python_version().startswith("3.11.")
           assert torch.__version__.split("+")[0] == "2.1.2"
+          assert torchvision.__version__.split("+")[0] == "0.16.2"
+          assert timm.__version__ == "0.4.12"
           assert onnx.__version__ == "1.15.0"
           assert onnxruntime.__version__ == "1.16.3"
           assert numpy.__version__ == "1.26.4"
@@ -142,6 +148,8 @@ jobs:
                 "os": "Ubuntu 24.04",
                 "python": "3.11",
                 "pytorch": "2.1.2",
+                "torchvision": "0.16.2",
+                "timm": "0.4.12",
                 "onnx": "1.15.0",
                 "onnxRuntime": "1.16.3",
                 "numpy": "1.26.4"
