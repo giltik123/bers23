@@ -11,11 +11,62 @@ export const CREATIVE_ARTIFACT_ROLES = ['ORIGINAL', 'WORKING', 'MASK', 'ROI_INPU
 export type CreativeArtifactRole = typeof CREATIVE_ARTIFACT_ROLES[number];
 export interface CanonicalImageMetadata { readonly width: number; readonly height: number; readonly format: string; readonly orientation: 1 | 3 | 6 | 8; readonly colorSpace?: string; readonly alpha?: boolean }
 export type ExecutionTarget = 'LOCAL' | 'CLOUD' | 'HYBRID' | 'BLOCKED';
+export type CreativePlanStatus = 'READY' | 'NEEDS_CONFIRMATION' | 'BLOCKED';
+export type PlanningExecutionPolicy = 'LOCAL_ONLY' | 'CLOUD_ALLOWED' | 'CLOUD_PREFERRED' | 'AUTO';
+export type PlanningTargetPreference = 'LOCAL' | 'CLOUD' | 'HYBRID';
+export type PlanningConfirmationPolicy = 'AUTO' | 'REQUIRE_ON_UNCERTAINTY' | 'ALWAYS';
 
 export interface CreativeRequest { readonly id: string; readonly intent: string; readonly scope: Scope; readonly inputArtifacts?: readonly CreativeArtifact[]; readonly budget?: Partial<ResourceBudget>; readonly metadata?: Readonly<Record<string, unknown>> }
 export interface CreativeDecision { readonly requestId: string; readonly goal: string; readonly constraints: readonly string[] }
 export interface CreativePlanArtifactSnapshot { readonly id: string; readonly kind: string; readonly role?: CreativeArtifactRole }
-export interface CreativePlanProvenance { readonly plannerVersion: string; readonly decisionGoal: string; readonly inputArtifacts: readonly CreativePlanArtifactSnapshot[]; readonly reasons: readonly string[] }
+export interface CreativePlanningConstraints {
+  readonly executionPolicy: PlanningExecutionPolicy;
+  readonly preserveMode?: string;
+  readonly mustPreserve: readonly string[];
+  readonly mustChange: readonly string[];
+  readonly forbiddenTargets: readonly PlanningTargetPreference[];
+  readonly forbiddenRegions: readonly string[];
+  readonly maxCredits?: number;
+  readonly maxLatencyMs?: number;
+  readonly minimumQuality?: number;
+  readonly confirmationPolicy: PlanningConfirmationPolicy;
+}
+export interface CreativeCandidateScore {
+  readonly quality: number;
+  readonly costEfficiency: number;
+  readonly latency: number;
+  readonly reliability: number;
+  readonly confidence: number;
+  readonly total: number;
+}
+export interface CreativePlanCandidate {
+  readonly id: string;
+  readonly operations: readonly CreativeOperation[];
+  readonly targetPreference: PlanningTargetPreference;
+  readonly estimatedCredits: number;
+  readonly estimatedLatencyMs: number;
+  readonly expectedQuality: number;
+  readonly score: CreativeCandidateScore;
+  readonly reasons: readonly string[];
+  readonly rejected: boolean;
+  readonly rejectionReasons: readonly string[];
+}
+export interface CreativePlanUncertainty {
+  readonly intent: number;
+  readonly targetResolution: number;
+  readonly feasibility: number;
+  readonly preservationRisk: number;
+  readonly aggregateConfidence: number;
+}
+export interface CreativeRejectedCandidateProvenance { readonly candidateId: string; readonly reasons: readonly string[] }
+export interface CreativePlanProvenance {
+  readonly plannerVersion: string;
+  readonly decisionGoal: string;
+  readonly inputArtifacts: readonly CreativePlanArtifactSnapshot[];
+  readonly reasons: readonly string[];
+  readonly selectedCandidateId?: string;
+  readonly rejectedCandidates?: readonly CreativeRejectedCandidateProvenance[];
+}
 export interface CreativePlan {
   readonly requestId: string;
   readonly operations: readonly CreativeOperation[];
@@ -25,6 +76,12 @@ export interface CreativePlan {
   readonly assumptions?: readonly string[];
   readonly constraints?: readonly string[];
   readonly provenance?: CreativePlanProvenance;
+  readonly status?: CreativePlanStatus;
+  readonly planningConstraints?: CreativePlanningConstraints;
+  readonly candidates?: readonly CreativePlanCandidate[];
+  readonly selectedCandidateId?: string;
+  readonly uncertainty?: CreativePlanUncertainty;
+  readonly confirmationReasons?: readonly string[];
 }
 export interface CreativeExecutionPlan { readonly requestId: string; readonly operations: readonly CreativeOperation[]; readonly targets: Readonly<Record<string, ExecutionTarget>> }
 export type CreativeOperation = WorkflowOperation;

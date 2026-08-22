@@ -1,3 +1,4 @@
+import './creative-planning-v2.test.ts';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';

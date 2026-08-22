@@ -1,75 +1,77 @@
 import type {
   CanonicalPlanningPort,
   CreativeDecision,
-  CreativeOperation,
   CreativePlan,
   CreativePlanArtifactSnapshot,
   CreativePlanProvenance,
   CreativeRequest,
 } from '../contracts';
+import { generateCandidates } from './candidates';
+import { compilePlanningConstraints } from './constraints';
+import { deepFreeze } from './immutable';
+import { assertPlanIntegrity } from './validator';
+import { confirmationReasons, DEFAULT_UNCERTAINTY_THRESHOLDS, evaluateUncertainty, type PlanningUncertaintyThresholds } from './uncertainty';
 
-export const CANONICAL_PLANNER_VERSION = '6.40A.1';
+export const CANONICAL_PLANNER_VERSION = '6.40B.1';
 
-/**
- * Pure advisory production planner. It proposes operations but has no provider,
- * execution, persistence, authentication, ownership or financial authority.
- */
+/** Pure deterministic advisory planner. Canonical Core remains the side-effect authority. */
 export class CanonicalPlanningService implements CanonicalPlanningPort {
   readonly #plannerVersion: string;
+  readonly #thresholds: PlanningUncertaintyThresholds;
 
-  constructor(options: Readonly<{ plannerVersion?: string }> = {}) {
+  constructor(options: Readonly<{ plannerVersion?: string; uncertaintyThresholds?: Partial<PlanningUncertaintyThresholds> }> = {}) {
     this.#plannerVersion = options.plannerVersion ?? CANONICAL_PLANNER_VERSION;
+    this.#thresholds = deepFreeze({ ...DEFAULT_UNCERTAINTY_THRESHOLDS, ...options.uncertaintyThresholds });
   }
 
   async plan(request: CreativeRequest, decision: CreativeDecision): Promise<CreativePlan> {
-    const artifacts = Object.freeze((request.inputArtifacts ?? []).map(artifact => Object.freeze({
+    const artifacts = deepFreeze((request.inputArtifacts ?? []).map(artifact => ({
       id: artifact.id,
       kind: artifact.kind,
       role: artifact.role,
     } satisfies CreativePlanArtifactSnapshot)));
-    const selectedObjectIds = request.metadata?.selectedObjectIds as readonly unknown[] | undefined;
-    const controlled = request.metadata?.editCapability === 'CONTROLLED_LOCAL_EDIT'
-      && artifacts.some(artifact => artifact.role === 'ORIGINAL')
-      && artifacts.some(artifact => artifact.role === 'MASK')
-      && Boolean(selectedObjectIds?.length);
-    const input = controlled
-      ? Object.freeze({
-          instruction: request.intent,
-          preserveMode: request.metadata?.preserveMode ?? 'STRICT',
-          correlationId: request.metadata?.correlationId,
-        })
-      : Object.freeze({
-          prompt: request.intent,
-          correlationId: request.metadata?.correlationId,
-        });
-    const operation = Object.freeze({
-      id: 'creative-image-edit',
-      type: controlled ? 'CONTROLLED_LOCAL_EDIT' : 'image-edit',
-      providerId: 'fal',
-      requiredArtifacts: Object.freeze(artifacts.map(artifact => artifact.id)),
-      produces: Object.freeze(['image']),
-      input,
-    } satisfies CreativeOperation);
+    const planningConstraints = compilePlanningConstraints(request, decision);
+    const uncertainty = evaluateUncertainty(request);
+    const candidates = generateCandidates(request, planningConstraints, uncertainty);
+    const selected = candidates.find(candidate => !candidate.rejected);
+    const uncertaintyReasons = [...confirmationReasons(uncertainty, this.#thresholds)];
+    if (request.metadata?.allowHighPreservationRisk === true) {
+      const index = uncertaintyReasons.indexOf('uncertainty:preservation-risk');
+      if (index >= 0) uncertaintyReasons.splice(index, 1);
+    }
+    if (planningConstraints.confirmationPolicy === 'ALWAYS') uncertaintyReasons.push('policy:confirmation-always');
+    const status = !selected ? 'BLOCKED' as const : uncertaintyReasons.length ? 'NEEDS_CONFIRMATION' as const : 'READY' as const;
+    const confirmation = !selected ? Object.freeze(['constraints:no-feasible-candidate']) : Object.freeze(uncertaintyReasons);
     const reasons = Object.freeze([
-      controlled ? 'controlled-edit-prerequisites-satisfied' : 'global-edit-compatible-fallback',
+      selected ? `candidate:selected:${selected.id}` : 'candidate:none-feasible',
+      'ranking:deterministic-v1',
       'canonical-artifact-identities-carried-forward',
     ]);
-    const provenance = Object.freeze({
+    const provenance = deepFreeze({
       plannerVersion: this.#plannerVersion,
       decisionGoal: decision.goal,
       inputArtifacts: artifacts,
       reasons,
+      selectedCandidateId: selected?.id,
+      rejectedCandidates: candidates.filter(candidate => candidate.rejected).map(candidate => ({ candidateId: candidate.id, reasons: candidate.rejectionReasons })),
     } satisfies CreativePlanProvenance);
-
-    return Object.freeze({
+    const plan = deepFreeze({
       requestId: request.id,
-      operations: Object.freeze([operation]),
+      operations: selected?.operations ?? [],
       proposalId: `${this.#plannerVersion}:${request.id}`,
       plannerVersion: this.#plannerVersion,
       goal: decision.goal,
-      assumptions: Object.freeze([] as string[]),
-      constraints: Object.freeze([...decision.constraints]),
+      assumptions: [],
+      constraints: [...decision.constraints],
       provenance,
-    });
+      status,
+      planningConstraints,
+      candidates,
+      selectedCandidateId: selected?.id,
+      uncertainty,
+      confirmationReasons: confirmation,
+    } satisfies CreativePlan);
+    assertPlanIntegrity(plan, request);
+    return plan;
   }
 }
