@@ -14,21 +14,55 @@ test('Login stores only the canonical access token and logout crosses the server
   assert.equal(/console\..*access_token/.test(client), false);
 });
 
-test('AuthContext bootstraps from canonical persisted token without legacy public settings', async () => {
-  const context = await readFile('src/lib/AuthContext.jsx', 'utf8');
+test('AuthContext consumes OAuth grant from fragment and scrubs it before context bootstrap', async () => {
+  const [client, context] = await Promise.all([readFile('src/api/coreClient.js','utf8'),readFile('src/lib/AuthContext.jsx','utf8')]);
+  assert.match(context, /exchangePendingBrowserGrant\(\)/);
   assert.match(context, /coreClient\.auth\.hasToken\(\)/);
   assert.match(context, /coreClient\.auth\.me\(\)/);
   assert.match(context, /coreClient\.auth\.clearToken\(\)/);
   assert.doesNotMatch(context, /appParams|publicSettings|\/config\/public/);
+  assert.match(client, /current\.hash/);
+  assert.match(client, /fragment\.get\('auth_code'\)/);
+  assert.match(client, /fragment\.delete\('auth_code'\)/);
+  assert.match(client, /history\.replaceState/);
+  assert.match(client, /request\('\/auth\/exchange'/);
+  assert.doesNotMatch(client, /searchParams\.get\('auth_code'\)|searchParams\.get\('access_token'\)/);
+});
+
+test('registration OTP is bound to a browser-held verification handle', async () => {
+  const [client, register] = await Promise.all([readFile('src/api/coreClient.js','utf8'), readFile('src/pages/Register.jsx','utf8')]);
+  assert.match(register,/verificationHandle/);
+  assert.match(register,/result\?\.verification_handle/);
+  assert.match(register,/verifyOtp\(\{\s*email,\s*otpCode,\s*verificationHandle\s*\}\)/);
+  assert.match(register,/resendOtp\(email,\s*verificationHandle\)/);
+  assert.match(client,/resendOtp:\s*\(email,\s*verificationHandle\)/);
+  assert.match(client,/verificationHandle/);
+  assert.doesNotMatch(register,/localStorage|sessionStorage/,'registration handle should remain only in component memory');
+});
+
+test('password reset secret is fragment-only and scrubbed from the address bar', async () => {
+  const reset = await readFile('src/pages/ResetPassword.jsx','utf8');
+  assert.match(reset,/window\.location\.hash/);
+  assert.match(reset,/URLSearchParams/);
+  assert.match(reset,/history\.replaceState/);
+  assert.doesNotMatch(reset,/useSearchParams|searchParams\.get\("token"\)/);
+});
+
+test('registration verification recovery and Google sign-in use explicit canonical auth endpoints', async () => {
+  const [client, register, forgot, reset, login] = await Promise.all([
+    readFile('src/api/coreClient.js','utf8'), readFile('src/pages/Register.jsx','utf8'), readFile('src/pages/ForgotPassword.jsx','utf8'), readFile('src/pages/ResetPassword.jsx','utf8'), readFile('src/pages/Login.jsx','utf8')
+  ]);
+  for (const path of ['/auth/register','/auth/verify-otp','/auth/resend-otp','/auth/password/reset-request','/auth/password/reset']) assert.match(client,new RegExp(path.replaceAll('/','\\/')));
+  assert.match(client,/\/auth\/login\/\$\{encodeURIComponent\(provider\)\}/);
+  assert.match(register,/coreClient\.auth\.register/); assert.match(register,/coreClient\.auth\.verifyOtp/); assert.match(register,/coreClient\.auth\.resendOtp/); assert.match(register,/loginWithProvider\("google"/);
+  assert.match(forgot,/coreClient\.auth\.resetPasswordRequest/); assert.match(reset,/coreClient\.auth\.resetPassword/); assert.match(login,/loginWithProvider\("google"/);
+  const authCritical=`${register}\n${forgot}\n${reset}\n${login}`;
+  assert.doesNotMatch(authCritical,/coreClient\.entities|coreClient\.functions\.invoke|UploadFile|\/data\/|\/assets|\/commands\//);
 });
 
 test('login to Projects to Editor critical path has no generic legacy API dependency', async () => {
   const [login, context, projects, projectService, editor] = await Promise.all([
-    readFile('src/pages/Login.jsx', 'utf8'),
-    readFile('src/lib/AuthContext.jsx', 'utf8'),
-    readFile('src/pages/Projects.jsx', 'utf8'),
-    readFile('src/lib/projectService.js', 'utf8'),
-    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/pages/Login.jsx', 'utf8'), readFile('src/lib/AuthContext.jsx', 'utf8'), readFile('src/pages/Projects.jsx', 'utf8'), readFile('src/lib/projectService.js', 'utf8'), readFile('src/pages/Editor.jsx', 'utf8'),
   ]);
   const critical = `${login}\n${context}\n${projects}\n${projectService}\n${editor}`;
   assert.doesNotMatch(critical, /\/config\/public|\/data\/|\/assets|\/commands\//);

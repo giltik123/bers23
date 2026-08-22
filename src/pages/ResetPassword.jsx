@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { coreClient } from "@/api/coreClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,10 +7,20 @@ import { Label } from "@/components/ui/label";
 import { Lock, Loader2, AlertTriangle } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 
-export default function ResetPassword() {
-  const [searchParams] = useSearchParams();
-  const resetToken = searchParams.get("token");
+function takeResetToken() {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash);
+  const token = params.get("token");
+  if (token) {
+    params.delete("token");
+    const cleanHash = params.toString() ? `#${params.toString()}` : "";
+    window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}${cleanHash}`);
+  }
+  return token;
+}
 
+export default function ResetPassword() {
+  const [resetToken] = useState(takeResetToken);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");

@@ -10,18 +10,20 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
 
-  useEffect(() => {
-    void checkAppState();
-  }, []);
+  useEffect(() => { void checkAppState(); }, []);
 
   const checkAppState = async () => {
     setAuthError(null);
-    if (!coreClient.auth.hasToken()) {
-      setUser(null);
-      setIsAuthenticated(false);
-      setIsLoadingAuth(false);
-      setAuthChecked(true);
+    try {
+      await coreClient.auth.exchangePendingBrowserGrant();
+    } catch (error) {
+      coreClient.auth.clearToken();
+      setUser(null); setIsAuthenticated(false); setIsLoadingAuth(false); setAuthChecked(true);
+      setAuthError({ type: 'auth_required', message: error.message || 'Authentication required' });
       return;
+    }
+    if (!coreClient.auth.hasToken()) {
+      setUser(null); setIsAuthenticated(false); setIsLoadingAuth(false); setAuthChecked(true); return;
     }
     await checkUserAuth();
   };
@@ -30,48 +32,24 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoadingAuth(true);
       const currentUser = await coreClient.auth.me();
-      setUser(currentUser);
-      setIsAuthenticated(true);
-      setAuthError(null);
+      setUser(currentUser); setIsAuthenticated(true); setAuthError(null);
     } catch (error) {
-      setUser(null);
-      setIsAuthenticated(false);
+      setUser(null); setIsAuthenticated(false);
       if (error.status === 401 || error.status === 403) {
         coreClient.auth.clearToken();
         setAuthError({ type: 'auth_required', message: 'Authentication required' });
-      } else {
-        setAuthError({ type: 'unknown', message: error.message || 'Failed to verify session' });
-      }
-    } finally {
-      setIsLoadingAuth(false);
-      setAuthChecked(true);
-    }
+      } else setAuthError({ type: 'unknown', message: error.message || 'Failed to verify session' });
+    } finally { setIsLoadingAuth(false); setAuthChecked(true); }
   };
 
   const logout = async (shouldRedirect = true) => {
-    setUser(null);
-    setIsAuthenticated(false);
+    setUser(null); setIsAuthenticated(false);
     await coreClient.auth.logout(shouldRedirect ? window.location.href : undefined);
   };
-
-  const navigateToLogin = () => {
-    coreClient.auth.redirectToLogin(window.location.href);
-  };
+  const navigateToLogin = () => { coreClient.auth.redirectToLogin(window.location.href); };
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      isAuthenticated,
-      isLoadingAuth,
-      isLoadingPublicSettings: false,
-      authError,
-      appPublicSettings: null,
-      authChecked,
-      logout,
-      navigateToLogin,
-      checkUserAuth,
-      checkAppState
-    }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoadingAuth, isLoadingPublicSettings: false, authError, appPublicSettings: null, authChecked, logout, navigateToLogin, checkUserAuth, checkAppState }}>
       {children}
     </AuthContext.Provider>
   );

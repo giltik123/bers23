@@ -12,6 +12,8 @@ import type { PixelImage } from '../../../src/platform/creative/pipeline/Control
 import { checkAuthSchema, migrateAuthSchema } from '../auth/authSchema.ts';
 import { CanonicalAuthService } from '../auth/canonicalAuthService.ts';
 import { PostgresAuthStore } from '../auth/postgresAuthStore.ts';
+import { ResendEmailSender } from '../auth/resendEmailSender.ts';
+import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
@@ -56,12 +58,49 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       },
     } satisfies CreativeCoreCompositionInput);
     const authStore = new PostgresAuthStore(transactions.pool);
+    const authRuntime = resolveAuthRuntime(config);
+    const email = new ResendEmailSender({ apiKey: authRuntime.resendApiKey, from: authRuntime.emailFrom, fetcher });
+    const google = new GoogleOidcClient({
+      clientId: authRuntime.googleClientId,
+      clientSecret: authRuntime.googleClientSecret,
+      redirectUri: new URL('/api/core/auth/callback/google', authRuntime.publicOrigin).toString(),
+      fetcher,
+      now,
+    });
     const auth = new CanonicalAuthService({
       store: authStore,
       jwt: { secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience },
+      challengeSecret: authRuntime.challengeSecret,
+      defaultTenantId: authRuntime.defaultTenantId,
+      publicOrigin: authRuntime.publicOrigin,
+      email,
+      google,
       now,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
     return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
+}
+
+function resolveAuthRuntime(config: CoreServerConfig) {
+  if (config.nodeEnv !== 'test') {
+    return {
+      challengeSecret: config.authChallengeSecret,
+      defaultTenantId: config.authDefaultTenantId,
+      publicOrigin: config.authPublicOrigin,
+      resendApiKey: config.resendApiKey,
+      emailFrom: config.authEmailFrom,
+      googleClientId: config.googleOauthClientId,
+      googleClientSecret: config.googleOauthClientSecret,
+    };
+  }
+  return {
+    challengeSecret: config.authChallengeSecret || 'test-only-auth-challenge',
+    defaultTenantId: config.authDefaultTenantId || 'test-tenant',
+    publicOrigin: config.authPublicOrigin || 'http://localhost',
+    resendApiKey: config.resendApiKey || 'test-only-resend-key',
+    emailFrom: config.authEmailFrom || 'Bers Test <auth@example.test>',
+    googleClientId: config.googleOauthClientId || 'test-google-client',
+    googleClientSecret: config.googleOauthClientSecret || 'test-google-secret',
+  };
 }
