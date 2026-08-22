@@ -14,6 +14,7 @@ import { migrateImageArtifactSchema } from '../server/core/artifacts/imageArtifa
 import { SelectionApplicationService } from '../src/application/selection/SelectionApplicationService.ts';
 import { CoreMaskArtifactPort } from '../src/application/selection/CoreMaskArtifactPort.js';
 import { createCreativeEditApplicationService } from '../src/application/creative/CreativeEditApplicationService.js';
+import { buildRoi, createOriginalMask } from '../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required: this suite must use real PostgreSQL');
@@ -222,6 +223,13 @@ test('real Editor to Core controlled edit persists and securely delivers a verif
   for (let i = 0; i < width * height; i++) originalPixels.set([(i * 7) % 251, (i * 11) % 253, (i * 13) % 255, 255], i * 4);
   const originalPng = new Uint8Array(await sharp(originalPixels, { raw: { width, height, channels: 4 } }).png().toBuffer());
   const alpha = new Uint8Array(width * height); for (const [x, y] of [[7, 5], [8, 5], [7, 6], [8, 6]]) alpha[y * width + x] = 255;
+  assert.deepEqual([width, height], [16, 12], 'ORIGINAL fixture geometry must remain deterministic');
+  const selectedXs: number[] = [], selectedYs: number[] = [];
+  for (let index = 0; index < alpha.length; index++) if (alpha[index]) { selectedXs.push(index % width); selectedYs.push(Math.floor(index / width)); }
+  const selectedBounds = { x: Math.min(...selectedXs), y: Math.min(...selectedYs), width: Math.max(...selectedXs) - Math.min(...selectedXs) + 1, height: Math.max(...selectedYs) - Math.min(...selectedYs) + 1 };
+  assert.deepEqual(selectedBounds, { x: 7, y: 5, width: 2, height: 2 }, 'canonical MASK selection must cover exactly the intended 2x2 pixels');
+  const computedRoi = buildRoi(createOriginalMask({ artifactId: 'fixture-mask', width, height, source: 'USER', alpha }), { width, height }, { preserveMode: 'STRICT', haloPixels: 0, haloRatio: .1, minimumProviderSize: 1 });
+  assert.deepEqual(computedRoi.bounds, { x: 6, y: 4, width: 4, height: 4 }, 'the default 10% policy must add a canonical 1px context halo on every side');
   const uploads: Array<{ url: string; headers: Headers; bytes: Uint8Array }> = [];
   const initiations: Array<{ headers: Headers; fileUrl: string }> = [];
   const inferences: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
@@ -276,7 +284,17 @@ test('real Editor to Core controlled edit persists and securely delivers a verif
   assert.equal(initiations.length - beforeInitiations, 2, 'actual materializer must initiate exactly ROI and MASK uploads');
   const binaryUploads = uploads.slice(beforeUploads).filter(item => item.url.startsWith('https://upload.vertical.test/')); assert.equal(binaryUploads.length, 2);
   const uploadMetadata = await Promise.all(binaryUploads.map(item => sharp(item.bytes).metadata()));
-  assert.deepEqual(uploadMetadata.map(item => [item.width, item.height]), [[2, 2], [2, 2]]); assert.ok(uploadMetadata.every(item => item.width !== width && item.height !== height));
+  assert.deepEqual(uploadMetadata.map(item => [item.width, item.height]), [[4, 4], [4, 4]], 'provider ROI and MASK must both include the exact canonical context halo');
+  const providerMask = await sharp(binaryUploads[1].bytes).greyscale().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([providerMask.info.width, providerMask.info.height], [4, 4]);
+  const providerMaskPixels = [...providerMask.data];
+  assert.equal(providerMaskPixels.filter(value => value !== 0).length, 4, 'only four provider-mask pixels may be editable');
+  assert.deepEqual(providerMaskPixels, [
+    0, 0, 0, 0,
+    0, 255, 255, 0,
+    0, 255, 255, 0,
+    0, 0, 0, 0,
+  ], 'the selected 2x2 must remain centered and the 1px context halo must remain preserve/black');
   assert.equal(inferences[0].body.image_url, initiations[0].fileUrl); assert.equal(inferences[0].body.mask_url, initiations[1].fileUrl);
   assert.equal(JSON.stringify(result).includes(config.falKey), false, 'FAL_KEY must never enter browser JSON');
 
