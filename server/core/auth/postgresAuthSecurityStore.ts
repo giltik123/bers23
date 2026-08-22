@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { AuthUserRow } from './postgresAuthStore.ts';
 
 export type RateLimitPolicy = Readonly<{
@@ -21,16 +21,28 @@ export type SessionSecurityRow = Readonly<{
   revoked_at: Date | null;
 }>;
 
+export const AUTH_RATE_LIMIT_RETENTION_MS = 7 * 24 * 60 * 60_000;
+const RATE_LIMIT_PRUNE_INTERVAL_MS = 5 * 60_000;
+const RATE_LIMIT_PRUNE_RETRY_MS = 60_000;
+const RATE_LIMIT_PRUNE_BATCH_SIZE = 250;
+
 /**
  * PostgreSQL-backed security state shared by every Core instance.
  * No process-local cache is authoritative for rate limits or session validity.
  */
 export class PostgresAuthSecurityStore {
+  #nextRateLimitPruneAt = 0;
+
   constructor(private readonly pool: Pool) {}
 
   async consumeRateLimit(scope: string, subjectDigest: Buffer, nowMs: number, policy: RateLimitPolicy): Promise<RateLimitDecision> {
     if (!scope || scope.length > 80 || subjectDigest.length !== 32) throw new Error('Invalid auth rate-limit subject');
-    if (!Number.isFinite(nowMs) || policy.windowMs < 1 || policy.maxAttempts < 1 || policy.blockMs < 1) throw new Error('Invalid auth rate-limit policy');
+    if (!Number.isFinite(nowMs)
+      || !Number.isFinite(policy.windowMs) || !Number.isInteger(policy.maxAttempts) || !Number.isFinite(policy.blockMs)
+      || policy.windowMs < 1 || policy.maxAttempts < 1 || policy.blockMs < 1
+      || policy.windowMs > AUTH_RATE_LIMIT_RETENTION_MS || policy.blockMs > AUTH_RATE_LIMIT_RETENTION_MS) {
+      throw new Error('Invalid auth rate-limit policy');
+    }
     const now = new Date(nowMs);
     const client = await this.pool.connect();
     try {
@@ -46,7 +58,7 @@ export class PostgresAuthSecurityStore {
       const blockedUntilMs = row.blocked_until?.getTime() ?? 0;
       if (blockedUntilMs > nowMs) {
         await client.query('COMMIT');
-        return Object.freeze({ allowed: false, retryAfterMs: blockedUntilMs - nowMs });
+        return await this.#completeRateLimitDecision({ allowed: false, retryAfterMs: blockedUntilMs - nowMs }, nowMs, client);
       }
 
       if (nowMs - row.window_started_at.getTime() >= policy.windowMs) {
@@ -54,7 +66,7 @@ export class PostgresAuthSecurityStore {
           SET window_started_at=$3,attempt_count=1,blocked_until=NULL,updated_at=$3
           WHERE scope=$1 AND subject_digest=$2`, [scope, subjectDigest, now]);
         await client.query('COMMIT');
-        return Object.freeze({ allowed: true, retryAfterMs: 0 });
+        return await this.#completeRateLimitDecision({ allowed: true, retryAfterMs: 0 }, nowMs, client);
       }
 
       const nextCount = row.attempt_count + 1;
@@ -64,19 +76,36 @@ export class PostgresAuthSecurityStore {
           SET attempt_count=$3,blocked_until=$4,updated_at=$5
           WHERE scope=$1 AND subject_digest=$2`, [scope, subjectDigest, nextCount, blockedUntil, now]);
         await client.query('COMMIT');
-        return Object.freeze({ allowed: false, retryAfterMs: policy.blockMs });
+        return await this.#completeRateLimitDecision({ allowed: false, retryAfterMs: policy.blockMs }, nowMs, client);
       }
 
       await client.query(`UPDATE canonical_auth_rate_limits SET attempt_count=$3,blocked_until=NULL,updated_at=$4
         WHERE scope=$1 AND subject_digest=$2`, [scope, subjectDigest, nextCount, now]);
       await client.query('COMMIT');
-      return Object.freeze({ allowed: true, retryAfterMs: 0 });
+      return await this.#completeRateLimitDecision({ allowed: true, retryAfterMs: 0 }, nowMs, client);
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw error;
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Delete only state older than the maximum policy horizon. `consumeRateLimit`
+   * rejects window/block policies longer than this retention interval, so an
+   * `updated_at` older than the cutoff cannot still represent a live window.
+   * A future `blocked_until` is additionally protected defensively.
+   *
+   * The bounded SKIP LOCKED batch makes concurrent maintenance by multiple Core
+   * instances safe; the process-local cadence below is only a load-throttling
+   * optimization and is never rate-limit authority.
+   */
+  async pruneRateLimits(nowMs: number, batchSize = RATE_LIMIT_PRUNE_BATCH_SIZE): Promise<number> {
+    if (!Number.isFinite(nowMs) || !Number.isInteger(batchSize) || batchSize < 1 || batchSize > 1000) {
+      throw new Error('Invalid auth rate-limit prune request');
+    }
+    return this.#pruneRateLimitsWith(this.pool, nowMs, batchSize);
   }
 
   async bindOAuthStateSession(stateDigest: Buffer, sessionId: string): Promise<boolean> {
@@ -155,5 +184,44 @@ export class PostgresAuthSecurityStore {
     const result = await this.pool.query<SessionSecurityRow>(`SELECT session_id,created_at,last_seen_at,expires_at,revoked_at
       FROM canonical_auth_sessions WHERE user_id=$1 AND tenant_id=$2 ORDER BY created_at DESC LIMIT 100`, [userId, tenantId]);
     return Object.freeze(result.rows.map(row => Object.freeze({ ...row })));
+  }
+
+  async #completeRateLimitDecision(decision: RateLimitDecision, nowMs: number, client: PoolClient): Promise<RateLimitDecision> {
+    await this.#maybePruneRateLimits(nowMs, client);
+    return Object.freeze(decision);
+  }
+
+  async #maybePruneRateLimits(nowMs: number, client: PoolClient) {
+    if (nowMs < this.#nextRateLimitPruneAt) return;
+    this.#nextRateLimitPruneAt = nowMs + RATE_LIMIT_PRUNE_INTERVAL_MS;
+    try {
+      // Reuse the already-COMMITTED limiter client. Checking out a second pool
+      // connection here could self-deadlock when the production pool has max=1.
+      await this.#pruneRateLimitsWith(client, nowMs, RATE_LIMIT_PRUNE_BATCH_SIZE);
+    } catch {
+      // Retention is maintenance, not authentication authority. A cleanup failure
+      // must not turn a valid/invalid auth decision into an availability failure.
+      this.#nextRateLimitPruneAt = nowMs + RATE_LIMIT_PRUNE_RETRY_MS;
+    }
+  }
+
+  async #pruneRateLimitsWith(queryable: Pool | PoolClient, nowMs: number, batchSize: number): Promise<number> {
+    const now = new Date(nowMs);
+    const cutoff = new Date(nowMs - AUTH_RATE_LIMIT_RETENTION_MS);
+    const result = await queryable.query(`WITH stale AS (
+      SELECT scope,subject_digest
+      FROM canonical_auth_rate_limits
+      WHERE updated_at <= $1
+        AND window_started_at <= $1
+        AND (blocked_until IS NULL OR blocked_until <= $2)
+      ORDER BY updated_at
+      LIMIT $3
+      FOR UPDATE SKIP LOCKED
+    )
+    DELETE FROM canonical_auth_rate_limits target
+    USING stale
+    WHERE target.scope=stale.scope AND target.subject_digest=stale.subject_digest
+    RETURNING target.scope`, [cutoff, now, batchSize]);
+    return result.rowCount ?? 0;
   }
 }
