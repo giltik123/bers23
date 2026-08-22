@@ -1,3 +1,7 @@
+> **HISTORICAL — RETIRED BASE44 MIGRATION PLAN.**
+>
+> This file preserves the old PR 4B.5 threat analysis and migration sequencing. Its Base44 ACL/entity instructions are no longer an implementation plan for current `main`. The current financial authority is the PostgreSQL transaction runtime, and future Subscription/Billing/Usage work must use explicit server authorities described in `PROJECT_SOURCE_OF_TRUTH.md`. Do **not** restore Base44 entities, service-role writers, browser SDK mutation permissions, or a generic entity proxy from this document.
+
 # PR 4B.5 — Privileged Mutation Lockdown Plan
 
 ## Status
