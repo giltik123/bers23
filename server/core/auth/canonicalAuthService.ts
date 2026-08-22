@@ -31,7 +31,10 @@ export class CanonicalAuthService {
   async login(email: string, password: string) {
     let row;
     try { row = await this.#store.findCredentialByEmail(email); }
-    catch { row = undefined; }
+    catch (error) {
+      if ((error as { code?: string }).code === 'invalid_email') row = undefined;
+      else throw error;
+    }
     const valid = await verifyPassword(password, row ? credentialFromRow(row) : undefined);
     if (!row || !valid) throw invalidCredentials();
     const now = this.#now();
