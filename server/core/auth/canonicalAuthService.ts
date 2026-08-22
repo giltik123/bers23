@@ -52,15 +52,22 @@ export class CanonicalAuthService {
 
   async register(email: string, password: string, displayName?: string) {
     const code = sixDigitCode(), now = this.#now();
-    const result = await this.#store.beginRegistration({
-      tenantId: this.#defaultTenantId,
-      email,
-      password,
-      displayName,
-      challengeDigest: keyedDigest(this.#challengeSecret, 'email-verification', code),
-      nowMs: now,
-      expiresAtMs: now + VERIFICATION_TTL_MS,
-    });
+    let result;
+    try {
+      result = await this.#store.beginRegistration({
+        tenantId: this.#defaultTenantId,
+        email,
+        password,
+        displayName,
+        challengeDigest: keyedDigest(this.#challengeSecret, 'email-verification', code),
+        nowMs: now,
+        expiresAtMs: now + VERIFICATION_TTL_MS,
+      });
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'registration_unavailable' || code === 'verification_rate_limited') return Object.freeze({ status: 'verification_required' });
+      throw error;
+    }
     const recipient = email.trim();
     const recipientKey = keyedDigest(this.#challengeSecret, 'email-recipient', recipient.toLowerCase()).toString('hex').slice(0, 32);
     await this.#email.sendVerification({ to: recipient, code, idempotencyKey: `verify/${recipientKey}/${result.sendCount}` });
@@ -93,7 +100,7 @@ export class CanonicalAuthService {
     catch (error) { if ((error as { code?: string }).code !== 'invalid_email') throw error; }
     if (reset) {
       const url = new URL('/reset-password', this.#publicOrigin);
-      url.searchParams.set('token', token);
+      url.hash = new URLSearchParams({ token }).toString();
       try { await this.#email.sendPasswordReset({ to: reset.user.email, resetUrl: url.toString(), idempotencyKey: `reset/${reset.resetId}` }); }
       catch { /* Public reset-request remains enumeration-resistant even during delivery failure. */ }
     }
@@ -109,7 +116,7 @@ export class CanonicalAuthService {
 
   async googleStart(returnTo?: string) {
     const state = opaqueToken(32), nonce = opaqueToken(32), now = this.#now();
-    const safeReturnTo = sanitizeReturnTo(returnTo);
+    const safeReturnTo = sanitizeReturnTo(returnTo, this.#publicOrigin);
     await this.#store.createOAuthState(
       keyedDigest(this.#challengeSecret, 'google-state', state),
       keyedDigest(this.#challengeSecret, 'google-nonce', nonce),
@@ -126,14 +133,14 @@ export class CanonicalAuthService {
     if (!oauthState) throw oauthDenied();
     const claims = await this.#google.exchangeAndVerify(code);
     const nonceDigest = keyedDigest(this.#challengeSecret, 'google-nonce', claims.nonce);
-    if (!digestMatches(nonceDigest, oauthState.nonceDigest)) throw oauthDenied();
+    if (!digestMatches(nonceDigest, oauthState.nonceDigest) || claims.email_verified !== true) throw oauthDenied();
     const domain = claims.email.split('@').pop()?.toLowerCase();
-    const authoritativeEmail = claims.email_verified && (domain === 'gmail.com' || Boolean(claims.hd));
+    const authoritativeEmail = domain === 'gmail.com' || Boolean(claims.hd);
     const user = await this.#store.resolveGoogleIdentity({ subject: claims.sub, email: claims.email, displayName: claims.name, authoritativeEmail, defaultTenantId: this.#defaultTenantId, nowMs: this.#now() });
     const grant = opaqueToken(32), now = this.#now();
     await this.#store.createBrowserGrant(keyedDigest(this.#challengeSecret, 'browser-grant', grant), user, now, now + BROWSER_GRANT_TTL_MS);
     const redirect = new URL(oauthState.returnTo, this.#publicOrigin);
-    redirect.searchParams.set('auth_code', grant);
+    redirect.hash = new URLSearchParams({ auth_code: grant }).toString();
     return redirect.toString();
   }
 
@@ -188,7 +195,12 @@ export class CanonicalAuthService {
 function publicUser(row: AuthUserRow) { return Object.freeze({ id: row.user_id, user_id: row.user_id, tenant_id: row.tenant_id, email: row.email, full_name: row.display_name, status: row.status, email_verified: Boolean(row.email_verified_at) }); }
 function signJwt(claims: Record<string, unknown>, secret: string) { const encode=(value:unknown)=>Buffer.from(JSON.stringify(value)).toString('base64url'); const header=encode({alg:'HS256',typ:'JWT'}),payload=encode(claims); const signature=createHmac('sha256',secret).update(`${header}.${payload}`).digest('base64url'); return `${header}.${payload}.${signature}`; }
 function normalizeOrigin(value: string) { const url = new URL(value); if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') throw new Error('AUTH_PUBLIC_ORIGIN must use HTTPS outside localhost'); url.pathname='/'; url.search=''; url.hash=''; return url.toString(); }
-function sanitizeReturnTo(value?: string) { const target=value?.trim()||'/'; if(!target.startsWith('/')||target.startsWith('//')||target.length>2048)return '/'; return target; }
+function sanitizeReturnTo(value: string | undefined, publicOrigin: string) {
+  const target=value?.trim()||'/';
+  if(!target.startsWith('/')||target.length>2048||/[\\\u0000-\u001f\u007f]/.test(target)) return '/';
+  try { const base=new URL(publicOrigin),resolved=new URL(target,base); if(resolved.origin!==base.origin) return '/'; return `${resolved.pathname}${resolved.search}`; }
+  catch { return '/'; }
+}
 function invalidCredentials() { return Object.assign(new Error('Invalid email or password'), { status: 401, code: 'invalid_credentials', retryable: false }); }
 function invalidVerification() { return Object.assign(new Error('Verification code is invalid or expired'), { status: 400, code: 'invalid_verification', retryable: false }); }
 function invalidReset() { return Object.assign(new Error('Password reset token is invalid or expired'), { status: 400, code: 'invalid_reset_token', retryable: false }); }
