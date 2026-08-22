@@ -14,7 +14,18 @@ export type ExecutionTarget = 'LOCAL' | 'CLOUD' | 'HYBRID' | 'BLOCKED';
 
 export interface CreativeRequest { readonly id: string; readonly intent: string; readonly scope: Scope; readonly inputArtifacts?: readonly CreativeArtifact[]; readonly budget?: Partial<ResourceBudget>; readonly metadata?: Readonly<Record<string, unknown>> }
 export interface CreativeDecision { readonly requestId: string; readonly goal: string; readonly constraints: readonly string[] }
-export interface CreativePlan { readonly requestId: string; readonly operations: readonly CreativeOperation[] }
+export interface CreativePlanArtifactSnapshot { readonly id: string; readonly kind: string; readonly role?: CreativeArtifactRole }
+export interface CreativePlanProvenance { readonly plannerVersion: string; readonly decisionGoal: string; readonly inputArtifacts: readonly CreativePlanArtifactSnapshot[]; readonly reasons: readonly string[] }
+export interface CreativePlan {
+  readonly requestId: string;
+  readonly operations: readonly CreativeOperation[];
+  readonly proposalId?: string;
+  readonly plannerVersion?: string;
+  readonly goal?: string;
+  readonly assumptions?: readonly string[];
+  readonly constraints?: readonly string[];
+  readonly provenance?: CreativePlanProvenance;
+}
 export interface CreativeExecutionPlan { readonly requestId: string; readonly operations: readonly CreativeOperation[]; readonly targets: Readonly<Record<string, ExecutionTarget>> }
 export type CreativeOperation = WorkflowOperation;
 export type CreativeWorkflow = CompiledWorkflow;
