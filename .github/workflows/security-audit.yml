@@ -16,5 +16,5 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Fail on high or critical production dependency advisories
-        run: npm audit --omit=dev --audit-level=high
+      - name: Fail on moderate or higher production dependency advisories
+        run: npm audit --omit=dev --audit-level=moderate
