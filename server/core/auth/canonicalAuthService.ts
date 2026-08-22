@@ -51,7 +51,7 @@ export class CanonicalAuthService {
   }
 
   async register(email: string, password: string, displayName?: string) {
-    const code = sixDigitCode(), now = this.#now();
+    const code = sixDigitCode(), verificationHandle = opaqueToken(32), now = this.#now();
     let result;
     try {
       result = await this.#store.beginRegistration({
@@ -60,25 +60,37 @@ export class CanonicalAuthService {
         password,
         displayName,
         challengeDigest: keyedDigest(this.#challengeSecret, 'email-verification', code),
+        verificationHandleDigest: keyedDigest(this.#challengeSecret, 'registration-handle', verificationHandle),
         nowMs: now,
         expiresAtMs: now + VERIFICATION_TTL_MS,
       });
     } catch (error) {
       const errorCode = (error as { code?: string }).code;
-      if (errorCode === 'registration_unavailable' || errorCode === 'verification_rate_limited') return Object.freeze({ status: 'verification_required' });
+      if (errorCode === 'registration_unavailable' || errorCode === 'verification_rate_limited') {
+        // Same shape as a real registration: do not reveal whether this address already exists.
+        // This fake handle is deliberately not stored and therefore cannot authorize anything.
+        return Object.freeze({ status: 'verification_required', verification_handle: verificationHandle });
+      }
       throw error;
     }
     const recipient = email.trim();
     const recipientKey = keyedDigest(this.#challengeSecret, 'email-recipient', recipient.toLowerCase()).toString('hex').slice(0, 32);
     await this.#email.sendVerification({ to: recipient, code, idempotencyKey: `verify/${recipientKey}/${result.sendCount}` });
-    return Object.freeze({ status: 'verification_required' });
+    return Object.freeze({ status: 'verification_required', verification_handle: verificationHandle });
   }
 
-  async resendOtp(email: string) {
+  async resendOtp(email: string, verificationHandle: string) {
     const code = sixDigitCode(), now = this.#now();
+    if (!validOpaqueHandle(verificationHandle)) return Object.freeze({ status: 'accepted' });
     let result;
     try {
-      result = await this.#store.resendVerification(email, keyedDigest(this.#challengeSecret, 'email-verification', code), now, now + VERIFICATION_TTL_MS);
+      result = await this.#store.resendVerification(
+        email,
+        keyedDigest(this.#challengeSecret, 'registration-handle', verificationHandle),
+        keyedDigest(this.#challengeSecret, 'email-verification', code),
+        now,
+        now + VERIFICATION_TTL_MS,
+      );
     } catch (error) {
       if ((error as { code?: string }).code === 'invalid_email' || (error as { code?: string }).code === 'verification_rate_limited') return Object.freeze({ status: 'accepted' });
       throw error;
@@ -87,9 +99,14 @@ export class CanonicalAuthService {
     return Object.freeze({ status: 'accepted' });
   }
 
-  async verifyOtp(email: string, otpCode: string) {
-    if (!/^\d{6}$/.test(otpCode ?? '')) throw invalidVerification();
-    const user = await this.#store.verifyEmail(email, keyedDigest(this.#challengeSecret, 'email-verification', otpCode), this.#now());
+  async verifyOtp(email: string, otpCode: string, verificationHandle: string) {
+    if (!/^\d{6}$/.test(otpCode ?? '') || !validOpaqueHandle(verificationHandle)) throw invalidVerification();
+    const user = await this.#store.verifyEmail(
+      email,
+      keyedDigest(this.#challengeSecret, 'email-verification', otpCode),
+      keyedDigest(this.#challengeSecret, 'registration-handle', verificationHandle),
+      this.#now(),
+    );
     return this.issueSession(user);
   }
 
@@ -149,7 +166,7 @@ export class CanonicalAuthService {
   }
 
   async exchangeBrowserGrant(code: string) {
-    if (typeof code !== 'string' || code.length < 20 || code.length > 256) throw oauthDenied();
+    if (!validOpaqueHandle(code)) throw oauthDenied();
     const user = await this.#store.consumeBrowserGrant(keyedDigest(this.#challengeSecret, 'browser-grant', code), this.#now());
     if (!user) throw oauthDenied();
     return this.issueSession(user);
@@ -205,6 +222,7 @@ function sanitizeReturnTo(value: string | undefined, publicOrigin: string) {
   try { const base=new URL(publicOrigin),resolved=new URL(target,base); if(resolved.origin!==base.origin) return '/'; return `${resolved.pathname}${resolved.search}`; }
   catch { return '/'; }
 }
+function validOpaqueHandle(value: string) { return typeof value === 'string' && /^[A-Za-z0-9_-]{40,128}$/.test(value); }
 function invalidCredentials() { return Object.assign(new Error('Invalid email or password'), { status: 401, code: 'invalid_credentials', retryable: false }); }
 function invalidVerification() { return Object.assign(new Error('Verification code is invalid or expired'), { status: 400, code: 'invalid_verification', retryable: false }); }
 function invalidReset() { return Object.assign(new Error('Password reset token is invalid or expired'), { status: 400, code: 'invalid_reset_token', retryable: false }); }
