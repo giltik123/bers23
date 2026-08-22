@@ -61,17 +61,21 @@ export class CanonicalAuthService {
       nowMs: now,
       expiresAtMs: now + VERIFICATION_TTL_MS,
     });
-    if (!result.user) throw Object.assign(new Error('Registration could not be completed'), { status: 500, code: 'registration_failed' });
-    await this.#email.sendVerification({ to: result.user.email, code, idempotencyKey: `verify/${result.user.user_id}/${result.sendCount}` });
+    const recipient = email.trim();
+    const recipientKey = keyedDigest(this.#challengeSecret, 'email-recipient', recipient.toLowerCase()).toString('hex').slice(0, 32);
+    await this.#email.sendVerification({ to: recipient, code, idempotencyKey: `verify/${recipientKey}/${result.sendCount}` });
     return Object.freeze({ status: 'verification_required' });
   }
 
   async resendOtp(email: string) {
     const code = sixDigitCode(), now = this.#now();
-    const result = await this.#store.resendVerification(email, keyedDigest(this.#challengeSecret, 'email-verification', code), now, now + VERIFICATION_TTL_MS).catch(error => {
-      if ((error as { code?: string }).code === 'invalid_email') return undefined;
+    let result;
+    try {
+      result = await this.#store.resendVerification(email, keyedDigest(this.#challengeSecret, 'email-verification', code), now, now + VERIFICATION_TTL_MS);
+    } catch (error) {
+      if ((error as { code?: string }).code === 'invalid_email' || (error as { code?: string }).code === 'verification_rate_limited') return Object.freeze({ status: 'accepted' });
       throw error;
-    });
+    }
     if (result) await this.#email.sendVerification({ to: result.user.email, code, idempotencyKey: `verify/${result.user.user_id}/${result.sendCount}` });
     return Object.freeze({ status: 'accepted' });
   }
@@ -125,14 +129,7 @@ export class CanonicalAuthService {
     if (!digestMatches(nonceDigest, oauthState.nonceDigest)) throw oauthDenied();
     const domain = claims.email.split('@').pop()?.toLowerCase();
     const authoritativeEmail = claims.email_verified && (domain === 'gmail.com' || Boolean(claims.hd));
-    const user = await this.#store.resolveGoogleIdentity({
-      subject: claims.sub,
-      email: claims.email,
-      displayName: claims.name,
-      authoritativeEmail,
-      defaultTenantId: this.#defaultTenantId,
-      nowMs: this.#now(),
-    });
+    const user = await this.#store.resolveGoogleIdentity({ subject: claims.sub, email: claims.email, displayName: claims.name, authoritativeEmail, defaultTenantId: this.#defaultTenantId, nowMs: this.#now() });
     const grant = opaqueToken(32), now = this.#now();
     await this.#store.createBrowserGrant(keyedDigest(this.#challengeSecret, 'browser-grant', grant), user, now, now + BROWSER_GRANT_TTL_MS);
     const redirect = new URL(oauthState.returnTo, this.#publicOrigin);
@@ -150,10 +147,7 @@ export class CanonicalAuthService {
   async login(email: string, password: string) {
     let row: AuthCredentialRow | undefined;
     try { row = await this.#store.findCredentialByEmail(email); }
-    catch (error) {
-      if ((error as { code?: string }).code === 'invalid_email') row = undefined;
-      else throw error;
-    }
+    catch (error) { if ((error as { code?: string }).code === 'invalid_email') row = undefined; else throw error; }
     const valid = await verifyPassword(password, row ? credentialFromRow(row) : undefined);
     if (!row || !valid) throw invalidCredentials();
     return this.issueSession(row);
@@ -161,10 +155,7 @@ export class CanonicalAuthService {
 
   async verify(authorization: string | undefined): Promise<AuthenticatedPrincipal> {
     const principal = this.#jwt.verify(authorization);
-    if (!principal.sessionId) {
-      if (this.#allowStatelessTestTokens) return principal;
-      throw unauthenticated();
-    }
+    if (!principal.sessionId) { if (this.#allowStatelessTestTokens) return principal; throw unauthenticated(); }
     const user = await this.#store.activeSession(principal.sessionId, principal.userId, principal.tenantId, this.#now());
     if (!user) throw unauthenticated();
     return principal;
@@ -179,10 +170,7 @@ export class CanonicalAuthService {
 
   async logout(authorization: string | undefined) {
     const principal = this.#jwt.verify(authorization);
-    if (!principal.sessionId) {
-      if (this.#allowStatelessTestTokens) return;
-      throw unauthenticated();
-    }
+    if (!principal.sessionId) { if (this.#allowStatelessTestTokens) return; throw unauthenticated(); }
     await this.#store.revokeSession(principal.sessionId, principal.userId, principal.tenantId, this.#now());
   }
 
@@ -192,35 +180,15 @@ export class CanonicalAuthService {
     if (user.status !== 'active') throw unauthenticated();
     const now = this.#now(), expiresAt = now + this.#sessionTtlMs;
     const session = await this.#store.createSession(user, now, expiresAt);
-    const accessToken = signJwt({
-      sub: user.user_id, tenantId: user.tenant_id, sid: session.sessionId,
-      iss: this.#jwtConfig.issuer, aud: this.#jwtConfig.audience,
-      iat: Math.floor(now / 1000), exp: Math.floor(expiresAt / 1000),
-    }, this.#jwtConfig.secret);
+    const accessToken = signJwt({ sub: user.user_id, tenantId: user.tenant_id, sid: session.sessionId, iss: this.#jwtConfig.issuer, aud: this.#jwtConfig.audience, iat: Math.floor(now / 1000), exp: Math.floor(expiresAt / 1000) }, this.#jwtConfig.secret);
     return Object.freeze({ access_token: accessToken, token_type: 'Bearer', expires_at: session.expiresAt.toISOString(), user: publicUser(user) });
   }
 }
 
-function publicUser(row: AuthUserRow) {
-  return Object.freeze({
-    id: row.user_id,
-    user_id: row.user_id,
-    tenant_id: row.tenant_id,
-    email: row.email,
-    full_name: row.display_name,
-    status: row.status,
-    email_verified: Boolean(row.email_verified_at),
-  });
-}
-
-function signJwt(claims: Record<string, unknown>, secret: string) {
-  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
-  const header = encode({ alg: 'HS256', typ: 'JWT' }), payload = encode(claims);
-  const signature = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
-  return `${header}.${payload}.${signature}`;
-}
+function publicUser(row: AuthUserRow) { return Object.freeze({ id: row.user_id, user_id: row.user_id, tenant_id: row.tenant_id, email: row.email, full_name: row.display_name, status: row.status, email_verified: Boolean(row.email_verified_at) }); }
+function signJwt(claims: Record<string, unknown>, secret: string) { const encode=(value:unknown)=>Buffer.from(JSON.stringify(value)).toString('base64url'); const header=encode({alg:'HS256',typ:'JWT'}),payload=encode(claims); const signature=createHmac('sha256',secret).update(`${header}.${payload}`).digest('base64url'); return `${header}.${payload}.${signature}`; }
 function normalizeOrigin(value: string) { const url = new URL(value); if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') throw new Error('AUTH_PUBLIC_ORIGIN must use HTTPS outside localhost'); url.pathname='/'; url.search=''; url.hash=''; return url.toString(); }
-function sanitizeReturnTo(value?: string) { const target = value?.trim() || '/'; if (!target.startsWith('/') || target.startsWith('//') || target.length > 2048) return '/'; return target; }
+function sanitizeReturnTo(value?: string) { const target=value?.trim()||'/'; if(!target.startsWith('/')||target.startsWith('//')||target.length>2048)return '/'; return target; }
 function invalidCredentials() { return Object.assign(new Error('Invalid email or password'), { status: 401, code: 'invalid_credentials', retryable: false }); }
 function invalidVerification() { return Object.assign(new Error('Verification code is invalid or expired'), { status: 400, code: 'invalid_verification', retryable: false }); }
 function invalidReset() { return Object.assign(new Error('Password reset token is invalid or expired'), { status: 400, code: 'invalid_reset_token', retryable: false }); }
