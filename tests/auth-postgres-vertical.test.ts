@@ -21,6 +21,9 @@ const jwtSecret = 'auth-vertical-jwt-secret';
 const config: CoreServerConfig = Object.freeze({
   nodeEnv: 'production', port: 8080, databaseUrl, provider: 'FAL', falKey: 'auth-provider-must-not-run',
   falBaseUrl: 'https://provider.auth.test', jwtSecret, jwtIssuer: 'auth-test', jwtAudience: 'auth-core',
+  authChallengeSecret: 'auth-vertical-challenge-secret', authDefaultTenantId: 'auth-default-tenant', authPublicOrigin: 'http://localhost',
+  resendApiKey: 'auth-resend-must-not-run', authEmailFrom: 'Bers Test <auth@example.test>',
+  googleOauthClientId: 'auth-google-client', googleOauthClientSecret: 'auth-google-secret',
   artifactSigningSecret: 'auth-artifact-secret', trustedAssetHosts: Object.freeze([]), allowLegacyAssetUrls: false,
   allowedWebOrigins: Object.freeze(['http://localhost']), hardBudgetCredits: 1, creditsPerEdit: 1,
   bodyLimitBytes: 64_000, maskUploadLimitBytes: 64_000, maskMaxDimension: 256,
