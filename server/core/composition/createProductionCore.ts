@@ -9,7 +9,9 @@ import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
-import { HmacJwtVerifier } from '../auth/hmacJwtVerifier.ts';
+import { checkAuthSchema } from '../auth/authSchema.ts';
+import { CanonicalAuthService } from '../auth/canonicalAuthService.ts';
+import { PostgresAuthStore } from '../auth/postgresAuthStore.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
@@ -19,7 +21,12 @@ import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 export async function createProductionCore(config: CoreServerConfig, options: Readonly<{ fetcher?: typeof fetch; now?: () => number }> = {}) {
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
   try {
-    await transactions.pool.query('SELECT 1'); await checkTransactionSchema(transactions.pool); await checkMaskArtifactSchema(transactions.pool); await checkImageArtifactSchema(transactions.pool); await checkProjectSchema(transactions.pool);
+    await transactions.pool.query('SELECT 1');
+    await checkTransactionSchema(transactions.pool);
+    await checkMaskArtifactSchema(transactions.pool);
+    await checkImageArtifactSchema(transactions.pool);
+    await checkProjectSchema(transactions.pool);
+    await checkAuthSchema(transactions.pool);
     const now = options.now ?? Date.now;
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
     const artifacts = new ArtifactAuthority(externalArtifacts, new PostgresMaskArtifactStore(transactions.pool), new PostgresImageArtifactStore(transactions.pool));
@@ -47,6 +54,13 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         now: Date.now, id: randomUUID,
       },
     } satisfies CreativeCoreCompositionInput);
-    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth: new HmacJwtVerifier({ secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience }), transactions, close: () => transactions.close() });
+    const authStore = new PostgresAuthStore(transactions.pool);
+    const auth = new CanonicalAuthService({
+      store: authStore,
+      jwt: { secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience },
+      now,
+      allowStatelessTestTokens: config.nodeEnv === 'test',
+    });
+    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }
