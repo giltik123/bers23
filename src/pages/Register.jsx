@@ -43,8 +43,7 @@ export default function Register() {
     setError("");
     setLoading(true);
     try {
-      const result = await coreClient.auth.verifyOtp({ email, otpCode, verificationHandle });
-      if (result?.access_token) coreClient.auth.setToken(result.access_token);
+      await coreClient.auth.verifyOtp({ email, otpCode, verificationHandle });
       window.location.href = "/";
     } catch (err) {
       setError(err.message || "Invalid verification code");
