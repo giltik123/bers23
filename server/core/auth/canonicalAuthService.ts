@@ -10,7 +10,6 @@ const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const VERIFICATION_TTL_MS = 10 * 60 * 1000;
 const RESET_TTL_MS = 30 * 60 * 1000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
-const BROWSER_GRANT_TTL_MS = 2 * 60 * 1000;
 
 export class CanonicalAuthService {
   readonly #store: PostgresAuthStore;
