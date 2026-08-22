@@ -5,7 +5,7 @@ const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const JWKS_ENDPOINT = 'https://www.googleapis.com/oauth2/v3/certs';
 const ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
 
-type GoogleJwk = JsonWebKey & { kid?: string; alg?: string; use?: string };
+type GoogleJwk = Record<string, unknown> & { kty?: string; kid?: string; alg?: string; use?: string };
 export type GoogleClaims = Readonly<{
   iss: string; aud: string; sub: string; exp: number; nonce: string;
   email: string; email_verified: boolean; hd?: string; name?: string;
@@ -24,30 +24,15 @@ export class GoogleOidcClient {
 
   authorizationUrl(input: Readonly<{ state: string; nonce: string }>) {
     const url = new URL(AUTHORIZATION_ENDPOINT);
-    url.search = new URLSearchParams({
-      client_id: this.input.clientId,
-      redirect_uri: this.input.redirectUri,
-      response_type: 'code',
-      scope: 'openid email profile',
-      state: input.state,
-      nonce: input.nonce,
-      prompt: 'select_account',
-    }).toString();
+    url.search = new URLSearchParams({ client_id: this.input.clientId, redirect_uri: this.input.redirectUri, response_type: 'code', scope: 'openid email profile', state: input.state, nonce: input.nonce, prompt: 'select_account' }).toString();
     return url.toString();
   }
 
   async exchangeAndVerify(code: string): Promise<GoogleClaims> {
     if (typeof code !== 'string' || code.length < 1 || code.length > 4096) throw oauthDenied();
     const response = await this.input.fetcher(TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: this.input.clientId,
-        client_secret: this.input.clientSecret,
-        code,
-        grant_type: 'authorization_code',
-        redirect_uri: this.input.redirectUri,
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: this.input.clientId, client_secret: this.input.clientSecret, code, grant_type: 'authorization_code', redirect_uri: this.input.redirectUri }),
     });
     if (!response.ok) throw oauthDenied();
     const tokenBody = await response.json().catch(() => undefined) as { id_token?: unknown } | undefined;
@@ -75,19 +60,12 @@ export class GoogleOidcClient {
     const signed = Buffer.from(`${parts[0]}.${parts[1]}`);
     const signature = Buffer.from(parts[2], 'base64url');
     let valid = false;
-    try { valid = verifySignature('RSA-SHA256', signed, createPublicKey({ key: jwk, format: 'jwk' }), signature); }
+    try { valid = verifySignature('RSA-SHA256', signed, createPublicKey({ key: jwk as any, format: 'jwk' }), signature); }
     catch { valid = false; }
     const nowSeconds = Math.floor((this.input.now ?? Date.now)() / 1000);
-    if (!valid || typeof claims.iss !== 'string' || !ISSUERS.has(claims.iss) || claims.aud !== this.input.clientId ||
-        typeof claims.exp !== 'number' || claims.exp <= nowSeconds || typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 255 ||
-        typeof claims.email !== 'string' || typeof claims.nonce !== 'string' || !claims.nonce) throw oauthDenied();
+    if (!valid || typeof claims.iss !== 'string' || !ISSUERS.has(claims.iss) || claims.aud !== this.input.clientId || typeof claims.exp !== 'number' || claims.exp <= nowSeconds || typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 255 || typeof claims.email !== 'string' || typeof claims.nonce !== 'string' || !claims.nonce) throw oauthDenied();
     return Object.freeze({
-      iss: claims.iss,
-      aud: claims.aud,
-      sub: claims.sub,
-      exp: claims.exp,
-      nonce: claims.nonce,
-      email: claims.email,
+      iss: claims.iss, aud: claims.aud, sub: claims.sub, exp: claims.exp, nonce: claims.nonce, email: claims.email,
       email_verified: claims.email_verified === true,
       ...(typeof claims.hd === 'string' && claims.hd ? { hd: claims.hd } : {}),
       ...(typeof claims.name === 'string' && claims.name ? { name: claims.name } : {}),
@@ -113,7 +91,4 @@ function parseJson(encoded: string): unknown {
   try { return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')); }
   catch { throw oauthDenied(); }
 }
-
-function oauthDenied() {
-  return Object.assign(new Error('Google authentication failed'), { status: 401, code: 'oauth_failed', retryable: false });
-}
+function oauthDenied() { return Object.assign(new Error('Google authentication failed'), { status: 401, code: 'oauth_failed', retryable: false }); }
