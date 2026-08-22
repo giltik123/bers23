@@ -12,6 +12,7 @@ import type { PixelImage } from '../../../src/platform/creative/pipeline/Control
 import { checkAuthSchema, migrateAuthSchema } from '../auth/authSchema.ts';
 import { CanonicalAuthService } from '../auth/canonicalAuthService.ts';
 import { PostgresAuthStore } from '../auth/postgresAuthStore.ts';
+import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts';
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
@@ -58,6 +59,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       },
     } satisfies CreativeCoreCompositionInput);
     const authStore = new PostgresAuthStore(transactions.pool);
+    const authSecurityStore = new PostgresAuthSecurityStore(transactions.pool);
     const authRuntime = resolveAuthRuntime(config);
     const email = new ResendEmailSender({ apiKey: authRuntime.resendApiKey, from: authRuntime.emailFrom, fetcher });
     const google = new GoogleOidcClient({
@@ -69,6 +71,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
     });
     const auth = new CanonicalAuthService({
       store: authStore,
+      securityStore: authSecurityStore,
       jwt: { secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience },
       challengeSecret: authRuntime.challengeSecret,
       defaultTenantId: authRuntime.defaultTenantId,
@@ -76,6 +79,8 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       email,
       google,
       now,
+      sessionTtlMs: config.authSessionAbsoluteTtlMs,
+      sessionIdleTtlMs: config.authSessionIdleTtlMs,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
     return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, transactions, close: () => transactions.close() });
