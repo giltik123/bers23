@@ -18,9 +18,16 @@ export function validateCreativePlan(plan: CreativePlan, canonicalInputArtifactI
     const selected = plan.candidates.find(candidate => candidate.id === plan.selectedCandidateId);
     if (!selected) throw new InvalidCreativePlanError('selected candidate does not exist');
     if (selected.status !== 'ACCEPTED') throw new InvalidCreativePlanError('selected candidate is rejected');
+    const rejectedCandidates = plan.candidates.filter(candidate => candidate.status === 'REJECTED').map(({ id, reasonCodes }) => ({ id, reasonCodes }));
+    if (plan.provenance?.rejectedCandidates && !sameJson(rejectedCandidates, plan.provenance.rejectedCandidates)) throw new InvalidCreativePlanError('provenance rejected candidates differ from candidate facts');
     if (plan.planningConstraints) validateCandidateConstraints(selected, plan.planningConstraints);
     if (!sameOperations(plan.operations, selected.operations)) throw new InvalidCreativePlanError('projected operations differ from selected candidate');
     for (const candidate of plan.candidates) validateFallbacks(plan, candidate);
+  }
+  if (canonicalInputArtifactIds.length && plan.provenance?.replay) {
+    const expected = [...canonicalInputArtifactIds].sort();
+    const replayed = plan.provenance.replay.inputArtifacts.map(item => item.id).sort();
+    if (!sameJson(expected, replayed)) throw new InvalidCreativePlanError('replay input artifacts differ from canonical request inputs; explicit replan required');
   }
   validateDag(plan.operations, new Set([...(plan.provenance?.inputArtifacts.map(item => item.id) ?? []), ...canonicalInputArtifactIds]));
 }
