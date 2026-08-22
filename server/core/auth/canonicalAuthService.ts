@@ -169,11 +169,11 @@ export class CanonicalAuthService {
   }
 
   async resetPassword(resetToken: string, newPassword: string, risk?: AuthRiskContext) {
+    const peerBudget = await this.#peerBudget('password-reset-consume:peer', risk, LIMIT.resetPeer);
+    if (!peerBudget.allowed) throw rateLimited(peerBudget.retryAfterMs);
     const tokenSubject = normalizeOpaqueSubject(resetToken);
     const tokenBudget = await this.#subjectBudget('password-reset-consume:token', tokenSubject, LIMIT.resetToken);
-    const peerBudget = await this.#peerBudget('password-reset-consume:peer', risk, LIMIT.resetPeer);
-    const retryAfterMs = Math.max(tokenBudget.retryAfterMs, peerBudget.retryAfterMs);
-    if (!tokenBudget.allowed || !peerBudget.allowed) throw rateLimited(retryAfterMs);
+    if (!tokenBudget.allowed) throw rateLimited(tokenBudget.retryAfterMs);
     if (typeof resetToken !== 'string' || resetToken.length < 20 || resetToken.length > 256) throw invalidReset();
     const user = await this.#store.consumePasswordReset(keyedDigest(this.#challengeSecret, 'password-reset', resetToken), newPassword, this.#now());
     if (!user) throw invalidReset();
@@ -201,10 +201,10 @@ export class CanonicalAuthService {
   }
 
   async googleCallback(state: string, code: string, risk?: AuthRiskContext, previousAuthorization?: string) {
-    const stateBudget = await this.#subjectBudget('oauth-callback:state', normalizeOpaqueSubject(state), LIMIT.oauthState);
     const peerBudget = await this.#peerBudget('oauth-callback:peer', risk, LIMIT.oauthCallbackPeer);
-    const retryAfterMs = Math.max(stateBudget.retryAfterMs, peerBudget.retryAfterMs);
-    if (!stateBudget.allowed || !peerBudget.allowed) throw rateLimited(retryAfterMs);
+    if (!peerBudget.allowed) throw rateLimited(peerBudget.retryAfterMs);
+    const stateBudget = await this.#subjectBudget('oauth-callback:state', normalizeOpaqueSubject(state), LIMIT.oauthState);
+    if (!stateBudget.allowed) throw rateLimited(stateBudget.retryAfterMs);
     if (typeof state !== 'string' || state.length < 20 || state.length > 256) throw oauthDenied();
     const stateDigest = keyedDigest(this.#challengeSecret, 'google-state', state);
     const oauthState = await this.#store.consumeOAuthState(stateDigest, this.#now());
@@ -312,9 +312,10 @@ export class CanonicalAuthService {
   }
 
   async #accountAndPeerBudget(scope: string, account: string, risk: AuthRiskContext | undefined, accountPolicy: RateLimitPolicy, peerPolicy: RateLimitPolicy) {
-    const accountDecision = await this.#subjectBudget(`${scope}:account`, normalizeAccountSubject(account), accountPolicy);
     const peerDecision = await this.#peerBudget(`${scope}:peer`, risk, peerPolicy);
-    return Object.freeze({ allowed: accountDecision.allowed && peerDecision.allowed, retryAfterMs: Math.max(accountDecision.retryAfterMs, peerDecision.retryAfterMs) });
+    if (!peerDecision.allowed) return peerDecision;
+    const accountDecision = await this.#subjectBudget(`${scope}:account`, normalizeAccountSubject(account), accountPolicy);
+    return Object.freeze({ allowed: accountDecision.allowed, retryAfterMs: accountDecision.retryAfterMs });
   }
 
   async #subjectBudget(scope: string, subject: string, limit: RateLimitPolicy) {
