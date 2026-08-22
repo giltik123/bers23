@@ -39,15 +39,17 @@ export function establishBrowserSession(
 }
 
 /**
- * Browser requests authenticate only with the HttpOnly cookie. A browser cannot
- * silently fall back to a stale/localStorage Authorization bearer. Non-browser
- * API clients retain the existing explicit Authorization compatibility path.
+ * Cookie authority wins whenever present. In production, Authorization bearer
+ * is disabled unless the operator explicitly opts in for a separate API-client
+ * compatibility deployment. Requests carrying Sec-Fetch-Site are always treated
+ * as browser traffic and can never use bearer fallback.
  */
 export function requestAuthorization(request: IncomingMessage, config: CoreServerConfig): string | undefined {
   const cookieToken = readSessionCookie(request, config);
-  if (isBrowserRequest(request)) return cookieToken ? `Bearer ${cookieToken}` : undefined;
-  const authorization = header(request, 'authorization');
-  return authorization || (cookieToken ? `Bearer ${cookieToken}` : undefined);
+  if (cookieToken) return `Bearer ${cookieToken}`;
+  if (header(request, 'sec-fetch-site')) return undefined;
+  const bearerEnabled = config.nodeEnv !== 'production' || config.allowApiBearerAuth === true;
+  return bearerEnabled ? header(request, 'authorization') : undefined;
 }
 
 export function clearBrowserSession(response: ServerResponse, config: CoreServerConfig): void {
@@ -85,15 +87,6 @@ function readSessionCookie(request: IncomingMessage, config: CoreServerConfig): 
   if (matches.length !== 1) return undefined;
   const token = matches[0];
   return token.length <= 4096 && JWT_PATTERN.test(token) ? token : undefined;
-}
-
-function isBrowserRequest(request: IncomingMessage): boolean {
-  return Boolean(
-    header(request, 'origin')
-    || header(request, 'sec-fetch-site')
-    || header(request, 'sec-fetch-mode')
-    || header(request, 'sec-fetch-dest'),
-  );
 }
 
 function secureCookies(config: CoreServerConfig): boolean {
