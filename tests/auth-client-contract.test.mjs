@@ -12,8 +12,21 @@ test('browser auth is HttpOnly-cookie based and exposes no JS-readable bearer au
   assert.match(client, /request\('\/auth\/password\/login'/);
   assert.match(client, /credentials:\s*'include'/);
   assert.match(client, /request\('\/auth\/logout'/);
-  assert.doesNotMatch(client, /core_access_token|localStorage|sessionStorage|access_token|Authorization|Bearer\s*\$\{/);
+
+  // Sensitive names may appear only in deny/scrub logic. Browser code must not
+  // read, persist, or synthesize an Authorization bearer from them.
+  assert.doesNotMatch(client, /localStorage|sessionStorage|core_access_token/);
+  assert.doesNotMatch(client, /headers\.set\(\s*['"]Authorization['"]/);
+  assert.doesNotMatch(client, /Bearer\s*\$\{/);
+  assert.doesNotMatch(client, /result\?\.access_token|result\.access_token/);
+  assert.doesNotMatch(client, /(?:searchParams|fragment)\.get\(\s*['"]access_token['"]\s*\)/);
   assert.doesNotMatch(client, /hasToken|getToken|setToken|clearToken|storeAccessToken|persistedToken/);
+
+  assert.match(client, /function safeReturnTo/);
+  assert.match(client, /target\.hash\s*=\s*['"]{2}/);
+  assert.match(client, /['"]access_token['"]/);
+  assert.match(client, /target\.searchParams\.delete\(key\)/);
+
   assert.match(appParams, /core_access_token/);
   assert.match(appParams, /removeItem\(key\)/);
   assert.match(appParams, /searchParams\.delete\(name\)/);
