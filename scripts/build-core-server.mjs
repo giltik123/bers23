@@ -9,6 +9,7 @@ const migrationDirectories = Object.freeze([
   'server/core/auth/migrations',
 ]);
 const migrationNamePattern = /^(\d{3})_[a-z0-9_]+\.sql$/;
+const rollbackNamePattern = /^\d{3}_[a-z0-9_]+\.down\.sql$/;
 
 await rm('dist-server', { recursive: true, force: true });
 await mkdir('dist-server/migrations', { recursive: true });
@@ -18,6 +19,10 @@ const migrations = [];
 for (const directory of migrationDirectories) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.sql')) continue;
+    if (entry.name.endsWith('.down.sql')) {
+      if (!rollbackNamePattern.test(entry.name)) throw new Error(`Invalid rollback migration filename: ${join(directory, entry.name)}`);
+      continue;
+    }
     const match = migrationNamePattern.exec(entry.name);
     if (!match) throw new Error(`Invalid production migration filename: ${join(directory, entry.name)}`);
     migrations.push(Object.freeze({ number: Number(match[1]), name: entry.name, source: join(directory, entry.name) }));
