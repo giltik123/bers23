@@ -19,58 +19,26 @@ export function getImageDimensions(url) {
 }
 
 export const projectService = {
-  list: () => coreClient.entities.Project.list('-updated_date'),
+  list: () => coreClient.projects.list(),
 
-  get: (id) => coreClient.entities.Project.get(id),
+  get: (id) => coreClient.projects.get(id),
 
-  update: (id, data) => coreClient.entities.Project.update(id, data),
+  update: (id, data) => coreClient.projects.update(id, data),
 
-  create: async ({ name, imageUrl, width = null, height = null, storageBytes = 0 }) => {
-    await subscriptionValidator.validateProject({ width, height });
-    await subscriptionValidator.validateStorage(storageBytes);
-    const project = await coreClient.entities.Project.create({
-      name,
-      original_image_url: imageUrl,
-      current_image_url: imageUrl,
-      thumbnail_url: imageUrl,
-      width,
-      height,
-      status: 'draft',
-      favorite: false,
-      archived: false,
-      history: [],
-      history_index: -1,
-      objects: [],
-      operations: [],
-      versions: [],
-      metadata: {},
-    });
-    await subscriptionUsage.track({ projects: 1, storage: storageBytes, feature: 'projects' });
+  createFromFile: async (file) => {
+    await subscriptionValidator.validateStorage(file.size);
+    const project = await coreClient.projects.createFromFile({ file, name: file.name.replace(/\.[^.]+$/, '') });
+    await subscriptionUsage.track({ projects: 1, storage: file.size, feature: 'projects' });
     return project;
   },
 
-  rename: (id, name) => coreClient.entities.Project.update(id, { name }),
+  rename: (id, name) => coreClient.projects.update(id, { name }),
 
-  duplicate: async (project) => {
-    await subscriptionValidator.validateProject({ width: project.width, height: project.height });
-    const {
-      id, created_date, updated_date, created_by_id, // strip built-ins
-      ...data
-    } = project;
-    const copy = await coreClient.entities.Project.create({
-      ...data,
-      name: `${project.name} (copy)`,
-      favorite: false,
-    });
-    await subscriptionUsage.track({ projects: 1, feature: 'projects' });
-    return copy;
-  },
+  remove: (id) => coreClient.projects.delete(id),
 
-  remove: (id) => coreClient.entities.Project.delete(id),
+  setFavorite: (id, favorite) => coreClient.projects.update(id, { favorite }),
 
-  setFavorite: (id, favorite) => coreClient.entities.Project.update(id, { favorite }),
-
-  setArchived: (id, archived) => coreClient.entities.Project.update(id, { archived }),
+  setArchived: (id, archived) => coreClient.projects.update(id, { archived }),
 };
 
 // --- Pure helpers for listing UI ---

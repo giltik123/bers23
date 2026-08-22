@@ -10,6 +10,8 @@ export class ArtifactAuthority {
   async owns(scope: AuthenticatedScope & { projectId: string }, ids: readonly string[]): Promise<boolean> {
     try {
       for (const id of ids) {
+        try { const claim = this.external.resolveStoredOriginalId(id, scope); if (!await this.images.loadSource(claim.storageId, scope)) return false; continue; } catch { /* other reference types below */ }
+        try { const claim = this.external.resolveStoredFinalId(id, scope); if (!await this.images.loadSource(claim.storageId, scope)) return false; continue; } catch { /* other reference types below */ }
         try { this.external.resolve(id, scope); continue; } catch { /* stored-mask references are checked below */ }
         const claim = this.external.resolveStoredMask(id, scope);
         if (!await this.masks.load(claim.storageId, scope)) return false;

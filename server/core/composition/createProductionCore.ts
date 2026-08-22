@@ -13,11 +13,13 @@ import { HmacJwtVerifier } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
+import { checkProjectSchema } from '../projects/projectSchema.ts';
+import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 
 export async function createProductionCore(config: CoreServerConfig, options: Readonly<{ fetcher?: typeof fetch; now?: () => number }> = {}) {
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
   try {
-    await transactions.pool.query('SELECT 1'); await checkTransactionSchema(transactions.pool); await checkMaskArtifactSchema(transactions.pool); await checkImageArtifactSchema(transactions.pool);
+    await transactions.pool.query('SELECT 1'); await checkTransactionSchema(transactions.pool); await checkMaskArtifactSchema(transactions.pool); await checkImageArtifactSchema(transactions.pool); await checkProjectSchema(transactions.pool);
     const now = options.now ?? Date.now;
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
     const artifacts = new ArtifactAuthority(externalArtifacts, new PostgresMaskArtifactStore(transactions.pool), new PostgresImageArtifactStore(transactions.pool));
@@ -45,6 +47,6 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         now: Date.now, id: randomUUID,
       },
     } satisfies CreativeCoreCompositionInput);
-    return Object.freeze({ core, artifacts, auth: new HmacJwtVerifier({ secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience }), transactions, close: () => transactions.close() });
+    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth: new HmacJwtVerifier({ secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }

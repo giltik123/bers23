@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { coreClient } from '@/api/coreClient';
 import { Plus, Loader2, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProjectCard from '@/components/projects/ProjectCard';
 import ProjectToolbar from '@/components/projects/ProjectToolbar';
 import ErrorBanner from '@/components/editor/ErrorBanner';
-import { projectService, searchProjects, sortProjects, getImageDimensions } from '@/lib/projectService';
-import { subscriptionValidator } from '@/lib/subscriptions/subscriptionValidator';
+import { projectService, searchProjects, sortProjects } from '@/lib/projectService';
 import { imageMemoryCache } from '@/lib/performance/imageMemoryCache';
 import { previewCache } from '@/lib/performance/previewCache';
 import { networkManager } from '@/lib/performance/networkManager';
@@ -35,12 +33,7 @@ export default function Projects() {
       setLoadError(error?.message || 'Unable to load projects.');
     }
   };
-  const createProjectFromFile = async (file) => {
-    const localUrl = URL.createObjectURL(file); const { width, height } = await getImageDimensions(localUrl); URL.revokeObjectURL(localUrl);
-    await subscriptionValidator.validateProject({ width, height }); await subscriptionValidator.validateStorage(file.size);
-    const { file_url } = await coreClient.integrations.Core.UploadFile({ file });
-    return projectService.create({ name: file.name.replace(/\.[^.]+$/, ''), imageUrl: file_url, width, height, storageBytes: file.size });
-  };
+  const createProjectFromFile = (file) => projectService.createFromFile(file);
   useEffect(() => { reload(); offlineQueue.register('project-upload', async ({ file }) => { await createProjectFromFile(file); await reload(); }); }, []);
 
   const handleUpload = async (e) => {
@@ -69,10 +62,9 @@ export default function Projects() {
     catch (error) { console.error('[Projects] Failed to rename project', error); setActionError(error?.message || 'Unable to rename project.'); }
   };
 
-  const handleDuplicate = async (project) => {
+  const handleDuplicate = async () => {
     setActionError('');
-    try { await projectService.duplicate(project); await reload(); }
-    catch (error) { console.error('[Projects] Failed to duplicate project', error); setActionError(error?.message || 'Unable to duplicate project.'); }
+    setActionError('Duplicate will be available with server-authoritative project history.');
   };
 
   const handleToggleFavorite = async (project) => {

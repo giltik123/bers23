@@ -5,6 +5,7 @@ import type { CreativeApplicationCore } from '../composition/createCreativeCore.
 import type { CoreServerConfig } from '../config.ts';
 import { modelArtifactRelay } from './modelArtifactRelay.ts';
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
+import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 
 /** Minimal Node transport for a framework-neutral Fetch handler. */
 export function nodeHttpAdapter(handler: (request: Request) => Promise<Response>) {
@@ -19,12 +20,12 @@ export function nodeHttpAdapter(handler: (request: Request) => Promise<Response>
 }
 
 /** Production Node transport with health, CORS, authentication and request limits. */
-export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicationCore; artifacts: ArtifactAuthority; auth: HmacJwtVerifier; config: CoreServerConfig; ready: () => Promise<boolean>; accepting: () => boolean }>) {
+export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicationCore; artifacts: ArtifactAuthority; projects: PostgresProjectStore; auth: HmacJwtVerifier; config: CoreServerConfig; ready: () => Promise<boolean>; accepting: () => boolean }>) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || randomUUID(); response.setHeader('X-Correlation-Id', correlationId);
     try {
       const origin = header(request, 'origin');
-      if (origin) { if (!input.config.allowedWebOrigins.includes(origin)) return sendError(response, 403, 'origin_denied', 'Origin is not allowed', correlationId, false); response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Vary', 'Origin'); response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Correlation-Id'); response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); }
+      if (origin) { if (!input.config.allowedWebOrigins.includes(origin)) return sendError(response, 403, 'origin_denied', 'Origin is not allowed', correlationId, false); response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Vary', 'Origin'); response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Correlation-Id'); response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS'); }
       if (request.method === 'OPTIONS') return send(response, 204, undefined);
       const path = new URL(request.url ?? '/', 'http://core.invalid').pathname;
       if (path === '/health/live' && request.method === 'GET') return send(response, 200, { status: 'live' });
@@ -34,12 +35,19 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (relay) return sendFetchResponse(response, relay);
       const resultMatch = path.match(/^\/api\/core\/artifacts\/results\/([^/]+)$/);
       if (resultMatch && request.method === 'GET') {
-        const claim = input.artifacts.external.resolveStoredFinalDelivery(decodeURIComponent(resultMatch[1]));
-        const stored = await input.artifacts.images.load(claim.storageId, claim);
+        const token=decodeURIComponent(resultMatch[1]); let claim; try { claim=input.artifacts.external.resolveStoredOriginalDelivery(token); } catch { claim=input.artifacts.external.resolveStoredFinalDelivery(token); }
+        const stored = await input.artifacts.images.loadSource(claim.storageId, claim);
         if (!stored) return sendError(response, 404, 'result_not_found', 'Final image artifact is unavailable', correlationId, false);
         response.statusCode = 200; response.setHeader('Content-Type', stored.contentType); response.setHeader('Content-Length', stored.bytes.byteLength); response.setHeader('Cache-Control', 'private, max-age=300'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(stored.bytes); return;
       }
       const principal = input.auth.verify(header(request, 'authorization'));
+      const projectMatch=path.match(/^\/api\/core\/projects\/([^/]+)$/);
+      const dto=(row: any) => { const scope={...principal,projectId:row.project_id}; const originalId=input.artifacts.external.issueStoredOriginal(row.original_image_storage_id,scope); const currentId=row.current_image_storage_id===row.original_image_storage_id?originalId:input.artifacts.external.issueStoredFinal(row.current_image_storage_id,scope); const delivery=row.current_image_storage_id===row.original_image_storage_id?input.artifacts.external.issueStoredOriginalDelivery(row.current_image_storage_id,scope,Date.now()+300_000):input.artifacts.external.issueStoredFinalDelivery(row.current_image_storage_id,scope,Date.now()+300_000); const originalDelivery=input.artifacts.external.issueStoredOriginalDelivery(row.original_image_storage_id,scope,Date.now()+300_000); return {id:row.project_id,name:row.name,original_image_artifact_id:originalId,current_image_artifact_id:currentId,original_image_url:`/api/core/artifacts/results/${encodeURIComponent(originalDelivery)}`,current_image_url:`/api/core/artifacts/results/${encodeURIComponent(delivery)}`,thumbnail_url:`/api/core/artifacts/results/${encodeURIComponent(delivery)}`,width:row.width,height:row.height,status:row.status,favorite:row.favorite,archived:row.archived,objects:row.objects,created_date:row.created_at,updated_date:row.updated_at}; };
+      if(path==='/api/core/projects'&&request.method==='POST'){ const type=mediaType(request); if(!['image/png','image/jpeg','image/webp'].includes(type))return sendError(response,415,'unsupported_media_type','Supported images are PNG, JPEG and WebP',correlationId,false); const bytes=await readBytes(request,input.config.imageUploadLimitBytes); if(!bytes.byteLength)return sendError(response,400,'empty_image','Image body is required',correlationId,false); const name=(new URL(request.url??'/','http://core.invalid').searchParams.get('name')??'Untitled').trim(); if(!name||name.length>200)return sendError(response,400,'invalid_project_name','Project name is invalid',correlationId,false); return send(response,201,dto(await input.projects.create(principal,name,bytes,{maxDimension:input.config.imageMaxDimension,maxPixels:input.config.imageMaxPixels}))); }
+      if(path==='/api/core/projects'&&request.method==='GET') return send(response,200,await Promise.all((await input.projects.list(principal)).map(dto)));
+      if(projectMatch&&request.method==='GET'){const row=await input.projects.get(principal,decodeURIComponent(projectMatch[1]));return row?send(response,200,dto(row)):sendError(response,404,'project_not_found','Project not found',correlationId,false);}
+      if(projectMatch&&request.method==='PATCH'){const patch=await readJson(request,input.config.bodyLimitBytes); if(!patch||typeof patch!=='object'||Array.isArray(patch))return sendError(response,400,'invalid_project_patch','Project patch must be an object',correlationId,false); const row=await input.projects.update(principal,decodeURIComponent(projectMatch[1]),patch as Record<string,unknown>);return row?send(response,200,dto(row)):sendError(response,404,'project_not_found','Project not found',correlationId,false);}
+      if(projectMatch&&request.method==='DELETE')return await input.projects.delete(principal,decodeURIComponent(projectMatch[1]))?send(response,204,undefined):sendError(response,404,'project_not_found','Project not found',correlationId,false);
       if (path === '/api/core/artifacts/masks' && request.method === 'POST') {
         if (mediaType(request) !== 'application/octet-stream') return sendError(response, 415, 'unsupported_media_type', 'Content-Type must be application/octet-stream', correlationId, false);
         const url = new URL(request.url ?? '/', 'http://core.invalid'); const projectId = url.searchParams.get('projectId')?.trim();
@@ -68,7 +76,7 @@ function header(request: IncomingMessage, name: string): string | undefined { co
 function mediaType(request: IncomingMessage): string { return (header(request, 'content-type') ?? '').split(';')[0].trim().toLowerCase(); }
 async function readBody(request: IncomingMessage): Promise<ArrayBuffer> { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk)); const body = Buffer.concat(chunks); return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer; }
 async function readJson(request: IncomingMessage, limit: number): Promise<unknown> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of request) { const buffer = Buffer.from(chunk); size += buffer.length; if (size > limit) throw Object.assign(new Error('Request body is too large'), { code: 'body_too_large', status: 413 }); chunks.push(buffer); } try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw Object.assign(new Error('Request body must contain valid JSON'), { code: 'invalid_json', status: 400 }); } }
-async function readBytes(request: IncomingMessage, limit: number): Promise<Uint8Array> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of request) { const buffer = Buffer.from(chunk); size += buffer.length; if (size > limit) throw Object.assign(new Error('Canonical MASK is too large'), { code: 'body_too_large', status: 413 }); chunks.push(buffer); } return new Uint8Array(Buffer.concat(chunks)); }
+async function readBytes(request: IncomingMessage, limit: number): Promise<Uint8Array> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of request) { const buffer = Buffer.from(chunk); size += buffer.length; if (size > limit) throw Object.assign(new Error('Upload is too large'), { code: 'body_too_large', status: 413 }); chunks.push(buffer); } return new Uint8Array(Buffer.concat(chunks)); }
 function sendError(response: ServerResponse, status: number, code: string, message: string, correlationId: string, retryable: boolean) { return send(response, status, { code, message, correlationId, retryable }); }
 function send(response: ServerResponse, status: number, body: unknown): void { if (response.headersSent) return; response.statusCode = status; if (body === undefined) { response.end(); return; } response.setHeader('Content-Type', 'application/json; charset=utf-8'); response.setHeader('Cache-Control', 'no-store'); response.end(JSON.stringify(body)); }
 async function sendFetchResponse(response: ServerResponse, result: Response): Promise<void> { response.statusCode = result.status; result.headers.forEach((value, key) => response.setHeader(key, value)); response.end(Buffer.from(await result.arrayBuffer())); }

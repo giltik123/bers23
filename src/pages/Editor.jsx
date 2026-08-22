@@ -85,7 +85,8 @@ export default function Editor() {
   const platform = usePlatformProfile();
 
   const startSelection = () => {
-    const imageArtifactId = project.current_image_artifact_id || project.current_image_url;
+    const imageArtifactId = project.current_image_artifact_id;
+    if (!imageArtifactId) throw new Error('Canonical project image identity is unavailable');
     const segmentation = createSelectionSegmentation({ imageArtifactId, source: project.current_image_url });
     const artifacts = new CoreMaskArtifactPort(project.id);
     const service = new SelectionApplicationService(segmentation, artifacts);
@@ -190,7 +191,7 @@ export default function Editor() {
         projectId: project.id,
         instruction: usedInstruction,
         selectedObjectIds: objects.filter((object) => object.selected).map((object) => object.id),
-        inputArtifactId: project.current_image_artifact_id || project.current_image_url,
+        inputArtifactId: project.current_image_artifact_id,
         maskArtifactIds: objects.filter((object) => object.selected && object.mask_artifact_id).map((object) => object.mask_artifact_id),
         preserveMode: styleLock.isEnabled(project.id) ? 'locked' : 'standard',
         clientRequestId: globalThis.crypto.randomUUID(),

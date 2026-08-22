@@ -6,7 +6,7 @@ import { createNodeHttpAdapter } from './core/http/nodeHttpAdapter.ts';
 export async function startCoreServer() {
   const config = loadCoreServerConfig(); const production = await createProductionCore(config); let accepting = true;
   const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); return true; } catch { return false; } };
-  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, auth: production.auth, config, ready, accepting: () => accepting }));
+  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting }));
   server.requestTimeout = config.requestTimeoutMs; server.headersTimeout = Math.min(config.requestTimeoutMs, 60_000); server.keepAliveTimeout = 5_000;
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(config.port, resolve); });
   let stopping: Promise<void> | undefined;
