@@ -13,7 +13,9 @@ export class HmacJwtVerifier {
     try {
       const header = json(parts[0]) as Record<string, unknown>; const claims = json(parts[1]) as Record<string, unknown>;
       if (header.alg !== 'HS256' || header.typ !== 'JWT') throw unauthorized();
-      const actual = Buffer.from(parts[2], 'base64url'); const expected = createHmac('sha256', this.#config.secret).update(`${parts[0]}.${parts[1]}`).digest();
+      const actual = Buffer.from(parts[2], 'base64url');
+      if (actual.toString('base64url') !== parts[2]) throw unauthorized();
+      const expected = createHmac('sha256', this.#config.secret).update(`${parts[0]}.${parts[1]}`).digest();
       if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw unauthorized();
       const audience = claims.aud; const validAudience = audience === this.#config.audience || (Array.isArray(audience) && audience.includes(this.#config.audience));
       if (claims.iss !== this.#config.issuer || !validAudience || typeof claims.exp !== 'number' || claims.exp * 1000 <= this.#now()) throw unauthorized();
