@@ -3,6 +3,15 @@ import { appParams } from '@/lib/app-params';
 const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
 const storage = () => typeof localStorage === 'undefined' ? undefined : localStorage;
 let transientToken = appParams.token || undefined;
+let pendingBrowserGrant;
+if (typeof window !== 'undefined') {
+  const current = new URL(window.location.href);
+  pendingBrowserGrant = current.searchParams.get('auth_code') || undefined;
+  if (pendingBrowserGrant) {
+    current.searchParams.delete('auth_code');
+    window.history.replaceState({}, document.title, `${current.pathname}${current.search}${current.hash}`);
+  }
+}
 const persistedToken = () => transientToken || storage()?.getItem('core_access_token') || undefined;
 
 async function request(path, options = {}) {
@@ -25,6 +34,13 @@ async function request(path, options = {}) {
 }
 
 const json = (method, body) => ({ method, body: JSON.stringify(body) });
+const storeAccessToken = (result) => {
+  if (result?.access_token) {
+    transientToken = undefined;
+    storage()?.setItem('core_access_token', result.access_token);
+  }
+  return result;
+};
 const entity = (name) => ({
   list: (sort, limit) => request(`/data/${name}?${new URLSearchParams({ ...(sort && { sort }), ...(limit && { limit }) })}`),
   get: (id) => request(`/data/${name}/${encodeURIComponent(id)}`),
@@ -34,24 +50,22 @@ const entity = (name) => ({
   delete: (id) => request(`/data/${name}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   bulkCreate: (values) => request(`/data/${name}/bulk`, json('POST', { values })),
 });
-
 const entities = new Proxy({}, { get: (_target, name) => entity(String(name)) });
 
 export const coreClient = Object.freeze({
   auth: {
     me: () => request('/auth/context'),
     register: (payload) => request('/auth/register', json('POST', payload)),
-    verifyOtp: (payload) => request('/auth/verify-otp', json('POST', payload)),
+    verifyOtp: async (payload) => storeAccessToken(await request('/auth/verify-otp', json('POST', payload))),
     resendOtp: (email) => request('/auth/resend-otp', json('POST', { email })),
     resetPasswordRequest: (email) => request('/auth/password/reset-request', json('POST', { email })),
     resetPassword: (payload) => request('/auth/password/reset', json('POST', payload)),
-    loginViaEmailPassword: async (email, password) => {
-      const result = await request('/auth/password/login', json('POST', { email, password }));
-      if (result?.access_token) {
-        transientToken = undefined;
-        storage()?.setItem('core_access_token', result.access_token);
-      }
-      return result;
+    loginViaEmailPassword: async (email, password) => storeAccessToken(await request('/auth/password/login', json('POST', { email, password }))),
+    exchangePendingBrowserGrant: async () => {
+      if (!pendingBrowserGrant) return false;
+      const code = pendingBrowserGrant; pendingBrowserGrant = undefined;
+      storeAccessToken(await request('/auth/exchange', json('POST', { code })));
+      return true;
     },
     hasToken: () => Boolean(persistedToken()),
     getToken: () => persistedToken(),
@@ -61,8 +75,7 @@ export const coreClient = Object.freeze({
       try { if (persistedToken()) await request('/auth/logout', { method: 'POST' }); }
       catch { /* logout is revocation best-effort; local credential removal is mandatory */ }
       finally {
-        transientToken = undefined;
-        storage()?.removeItem('core_access_token');
+        transientToken = undefined; storage()?.removeItem('core_access_token');
         if (returnTo && typeof window !== 'undefined') window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`);
       }
     },
@@ -75,31 +88,19 @@ export const coreClient = Object.freeze({
     result: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/result`),
     cancel: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
   },
-  artifacts: {
-    persistMask: ({ projectId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
-  },
+  artifacts: { persistMask: ({ projectId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }) },
   projects: {
-    list: () => request('/projects'),
-    get: (id) => request(`/projects/${encodeURIComponent(id)}`),
+    list: () => request('/projects'), get: (id) => request(`/projects/${encodeURIComponent(id)}`),
     createFromFile: ({ file, name }) => request(`/projects?${new URLSearchParams({ name: name || file.name.replace(/\.[^.]+$/, '') })}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file }),
-    update: (id, patch) => request(`/projects/${encodeURIComponent(id)}`, json('PATCH', patch)),
-    delete: (id) => request(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    update: (id, patch) => request(`/projects/${encodeURIComponent(id)}`, json('PATCH', patch)), delete: (id) => request(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     acceptFinal: (id, finalArtifactId, instruction) => request(`/projects/${encodeURIComponent(id)}/accept-final`, json('POST', { finalArtifactId, instruction })),
-    undo: (id) => request(`/projects/${encodeURIComponent(id)}/undo`, { method: 'POST' }),
-    redo: (id) => request(`/projects/${encodeURIComponent(id)}/redo`, { method: 'POST' }),
-    restoreOriginal: (id) => request(`/projects/${encodeURIComponent(id)}/restore-original`, { method: 'POST' }),
-    createVersion: (id, name) => request(`/projects/${encodeURIComponent(id)}/versions`, json('POST', { name })),
+    undo: (id) => request(`/projects/${encodeURIComponent(id)}/undo`, { method: 'POST' }), redo: (id) => request(`/projects/${encodeURIComponent(id)}/redo`, { method: 'POST' }),
+    restoreOriginal: (id) => request(`/projects/${encodeURIComponent(id)}/restore-original`, { method: 'POST' }), createVersion: (id, name) => request(`/projects/${encodeURIComponent(id)}/versions`, json('POST', { name })),
     restoreVersion: (id, versionId) => request(`/projects/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' }),
   },
   entities,
   functions: { invoke: (command, payload) => request(`/commands/${encodeURIComponent(command)}`, json('POST', payload)) },
-  integrations: { Core: {
-    UploadFile: async ({ file }) => { const body = new FormData(); body.append('file', file); return request('/assets', { method: 'POST', body }); },
-    InvokeLLM: (payload) => request('/creative/execute', json('POST', payload)),
-  } },
+  integrations: { Core: { UploadFile: async ({ file }) => { const body = new FormData(); body.append('file', file); return request('/assets', { method: 'POST', body }); }, InvokeLLM: (payload) => request('/creative/execute', json('POST', payload)) } },
   analytics: { track: (event) => request('/observability/events', json('POST', event)).catch(() => undefined) },
-  system: {
-    publicSettings: () => request('/config/public'),
-    health: () => request('/health'),
-  },
+  system: { publicSettings: () => request('/config/public'), health: () => request('/health') },
 });
