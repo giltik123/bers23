@@ -6,9 +6,11 @@ let transientToken = appParams.token || undefined;
 let pendingBrowserGrant;
 if (typeof window !== 'undefined') {
   const current = new URL(window.location.href);
-  pendingBrowserGrant = current.searchParams.get('auth_code') || undefined;
+  const fragment = new URLSearchParams(current.hash.startsWith('#') ? current.hash.slice(1) : current.hash);
+  pendingBrowserGrant = fragment.get('auth_code') || undefined;
   if (pendingBrowserGrant) {
-    current.searchParams.delete('auth_code');
+    fragment.delete('auth_code');
+    current.hash = fragment.toString() ? `#${fragment.toString()}` : '';
     window.history.replaceState({}, document.title, `${current.pathname}${current.search}${current.hash}`);
   }
 }
