@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { HmacJwtVerifier, type AuthenticatedPrincipal } from './hmacJwtVerifier.ts';
-import { credentialFromRow, PostgresAuthStore, type AuthUserRow } from './postgresAuthStore.ts';
+import { credentialFromRow, PostgresAuthStore, type AuthCredentialRow, type AuthUserRow } from './postgresAuthStore.ts';
 import { verifyPassword } from './passwordCredential.ts';
 
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -29,7 +29,7 @@ export class CanonicalAuthService {
   }
 
   async login(email: string, password: string) {
-    let row;
+    let row: AuthCredentialRow | undefined;
     try { row = await this.#store.findCredentialByEmail(email); }
     catch (error) {
       if ((error as { code?: string }).code === 'invalid_email') row = undefined;
