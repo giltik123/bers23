@@ -58,20 +58,21 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       },
     } satisfies CreativeCoreCompositionInput);
     const authStore = new PostgresAuthStore(transactions.pool);
-    const email = new ResendEmailSender({ apiKey: config.resendApiKey, from: config.authEmailFrom, fetcher });
+    const authRuntime = resolveAuthRuntime(config);
+    const email = new ResendEmailSender({ apiKey: authRuntime.resendApiKey, from: authRuntime.emailFrom, fetcher });
     const google = new GoogleOidcClient({
-      clientId: config.googleOauthClientId,
-      clientSecret: config.googleOauthClientSecret,
-      redirectUri: new URL('/api/core/auth/callback/google', config.authPublicOrigin).toString(),
+      clientId: authRuntime.googleClientId,
+      clientSecret: authRuntime.googleClientSecret,
+      redirectUri: new URL('/api/core/auth/callback/google', authRuntime.publicOrigin).toString(),
       fetcher,
       now,
     });
     const auth = new CanonicalAuthService({
       store: authStore,
       jwt: { secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience },
-      challengeSecret: config.authChallengeSecret,
-      defaultTenantId: config.authDefaultTenantId,
-      publicOrigin: config.authPublicOrigin,
+      challengeSecret: authRuntime.challengeSecret,
+      defaultTenantId: authRuntime.defaultTenantId,
+      publicOrigin: authRuntime.publicOrigin,
       email,
       google,
       now,
@@ -79,4 +80,27 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
     });
     return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
+}
+
+function resolveAuthRuntime(config: CoreServerConfig) {
+  if (config.nodeEnv !== 'test') {
+    return {
+      challengeSecret: config.authChallengeSecret,
+      defaultTenantId: config.authDefaultTenantId,
+      publicOrigin: config.authPublicOrigin,
+      resendApiKey: config.resendApiKey,
+      emailFrom: config.authEmailFrom,
+      googleClientId: config.googleOauthClientId,
+      googleClientSecret: config.googleOauthClientSecret,
+    };
+  }
+  return {
+    challengeSecret: config.authChallengeSecret || 'test-only-auth-challenge',
+    defaultTenantId: config.authDefaultTenantId || 'test-tenant',
+    publicOrigin: config.authPublicOrigin || 'http://localhost',
+    resendApiKey: config.resendApiKey || 'test-only-resend-key',
+    emailFrom: config.authEmailFrom || 'Bers Test <auth@example.test>',
+    googleClientId: config.googleOauthClientId || 'test-google-client',
+    googleClientSecret: config.googleOauthClientSecret || 'test-google-secret',
+  };
 }
