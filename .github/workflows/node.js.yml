@@ -83,7 +83,11 @@ jobs:
         run: npm run test:core-server-postgres-vertical
       - name: Run canonical Project to stored ORIGINAL PostgreSQL vertical
         run: |
-          mkdir -p .test-cache/project-postgres
+          mkdir -p .test-cache/project-postgres/migrations
+          cp server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql .test-cache/project-postgres/migrations/001_transaction_store.sql
+          cp server/core/artifacts/migrations/002_canonical_mask_artifacts.sql .test-cache/project-postgres/migrations/002_canonical_mask_artifacts.sql
+          cp server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql .test-cache/project-postgres/migrations/003_canonical_final_image_artifacts.sql
+          cp server/core/projects/migrations/004_canonical_projects_and_originals.sql .test-cache/project-postgres/migrations/004_canonical_projects_and_originals.sql
           npx esbuild tests/project-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/project-postgres/project-postgres-vertical.test.mjs --external:pg --external:sharp --external:node:*
           node --test .test-cache/project-postgres/project-postgres-vertical.test.mjs
 
