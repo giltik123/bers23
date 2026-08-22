@@ -9,7 +9,7 @@ import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
-import { checkAuthSchema } from '../auth/authSchema.ts';
+import { checkAuthSchema, migrateAuthSchema } from '../auth/authSchema.ts';
 import { CanonicalAuthService } from '../auth/canonicalAuthService.ts';
 import { PostgresAuthStore } from '../auth/postgresAuthStore.ts';
 import type { CoreServerConfig } from '../config.ts';
@@ -26,7 +26,8 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
     await checkMaskArtifactSchema(transactions.pool);
     await checkImageArtifactSchema(transactions.pool);
     await checkProjectSchema(transactions.pool);
-    await checkAuthSchema(transactions.pool);
+    if (config.nodeEnv === 'test') await migrateAuthSchema(transactions.pool);
+    else await checkAuthSchema(transactions.pool);
     const now = options.now ?? Date.now;
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
     const artifacts = new ArtifactAuthority(externalArtifacts, new PostgresMaskArtifactStore(transactions.pool), new PostgresImageArtifactStore(transactions.pool));
