@@ -13,8 +13,8 @@ type HttpAuthAuthority = Readonly<{
   context?: (authorization: string | undefined) => Promise<unknown>;
   logout?: (authorization: string | undefined) => Promise<void>;
   register?: (email: string, password: string, displayName?: string) => Promise<unknown>;
-  verifyOtp?: (email: string, otpCode: string) => Promise<unknown>;
-  resendOtp?: (email: string) => Promise<unknown>;
+  verifyOtp?: (email: string, otpCode: string, verificationHandle: string) => Promise<unknown>;
+  resendOtp?: (email: string, verificationHandle: string) => Promise<unknown>;
   resetPasswordRequest?: (email: string) => Promise<unknown>;
   resetPassword?: (resetToken: string, newPassword: string) => Promise<unknown>;
   googleStart?: (returnTo?: string) => Promise<string>;
@@ -63,11 +63,13 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       }
       if (path === '/api/core/auth/verify-otp' && request.method === 'POST') {
         if (!input.auth.verifyOtp) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        const body=await authJson(request,input.config.bodyLimitBytes) as any; return send(response,200,await input.auth.verifyOtp(string(body?.email),string(body?.otpCode)));
+        const body=await authJson(request,input.config.bodyLimitBytes) as any;
+        return send(response,200,await input.auth.verifyOtp(string(body?.email),string(body?.otpCode),string(body?.verificationHandle)));
       }
       if (path === '/api/core/auth/resend-otp' && request.method === 'POST') {
         if (!input.auth.resendOtp) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        const body=await authJson(request,input.config.bodyLimitBytes) as any; return send(response,202,await input.auth.resendOtp(string(body?.email)));
+        const body=await authJson(request,input.config.bodyLimitBytes) as any;
+        return send(response,202,await input.auth.resendOtp(string(body?.email),string(body?.verificationHandle)));
       }
       if (path === '/api/core/auth/password/reset-request' && request.method === 'POST') {
         if (!input.auth.resetPasswordRequest) return sendError(response,404,'not_found','Route not found',correlationId,false);
@@ -116,7 +118,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         if (mediaType(request) !== 'application/octet-stream') return sendError(response, 415, 'unsupported_media_type', 'Content-Type must be application/octet-stream', correlationId, false);
         const projectId = url.searchParams.get('projectId')?.trim(); const width = Number(url.searchParams.get('width')); const height = Number(url.searchParams.get('height'));
         if (!projectId || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > input.config.maskMaxDimension || height > input.config.maskMaxDimension || width * height > input.config.maskUploadLimitBytes) return sendError(response, 400, 'invalid_mask_dimensions', 'Canonical MASK dimensions are invalid or unsafe', correlationId, false);
-        const alpha = await readBytes(request, input.config.maskUploadLimitBytes); if (alpha.byteLength !== width * height) return sendError(response, 400, 'invalid_mask_size', 'Canonical MASK byte length must equal width * height', correlationId, false);
+        const alpha = await readBytes(request,input.config.maskUploadLimitBytes); if (alpha.byteLength !== width * height) return sendError(response, 400, 'invalid_mask_size', 'Canonical MASK byte length must equal width * height', correlationId, false);
         const scope = { ...principal, projectId }; const stored = await input.artifacts.masks.persist(scope, width, height, alpha); const artifactId = input.artifacts.external.issueStoredMask(stored.storageId, scope);
         return send(response, 201, { artifactId, role: 'MASK', state: 'AVAILABLE', width, height, coordinateSpace: 'ORIGINAL', encoding: 'ALPHA_8_LOSSLESS' });
       }
