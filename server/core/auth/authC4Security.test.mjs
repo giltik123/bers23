@@ -7,7 +7,7 @@ const cacheDir = resolve('.test-cache/c4-auth-security');
 const outfile = resolve(cacheDir, `authC4Security-${process.pid}.mjs`);
 await mkdir(cacheDir, { recursive: true });
 await build({
-  entryPoints: [fileURLToPath(new URL('./authC4Security.test.ts', import.meta.url))],
+  entryPoints: [fileURLToPath(new URL('../../../tests/auth-c4-security-postgres.test.ts', import.meta.url))],
   bundle: true,
   platform: 'node',
   format: 'esm',
