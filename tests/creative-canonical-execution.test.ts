@@ -31,6 +31,7 @@ const dependencies = (): CreativeExecutionPlatformDependencies => ({
 });
 
 test('full vertical contract uses the canonical execution path', async () => { events.length = 0; const platform = new CreativeExecutionPlatform(dependencies()); platform.createExecution(request); await platform.plan(request.id); await platform.compile(request.id); const outcome = await platform.execute(request.id); assert.equal(outcome.status, 'SUCCESS'); assert.equal(outcome.artifacts[0].state, 'FINAL'); assert.deepEqual(events, ['decision', 'planning', 'target', 'security', 'runtime', 'verification', 'telemetry']); assert.equal(platform.verify(request.id).valid, true); assert.deepEqual(platform.replay(request.id), platform.snapshot(request.id)); });
+test('planner verification claims cannot override authoritative runtime verification failure', async () => { const deps = dependencies(); deps.planning.plan = async value => ({ requestId: value.id, operations: [{ id: 'normalize', type: 'edit', produces: ['image'], verificationPassed: true } as never] }); deps.verifier = { verify: async operation => ({ stepId: operation.id, valid: false, checks: [], errors: ['canonical verifier rejected output'] }) }; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); const outcome = await platform.execute(request.id); assert.equal(outcome.status, 'FAILED'); assert.equal(outcome.verification.valid, false); });
 test('target selection and security gate cannot be bypassed', async () => { let runtimeCalls = 0; const deps = dependencies(); deps.targetSelector.select = () => 'CLOUD'; deps.securityGate.authorize = () => false; deps.runtime.execute = async () => { runtimeCalls++; return {}; }; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); await assert.rejects(platform.compile(request.id), /blocked/); assert.equal(runtimeCalls, 0); });
 test('blocked targets fail closed before runtime execution', async () => { const deps = dependencies(); deps.targetSelector.select = () => 'BLOCKED'; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); await assert.rejects(platform.execute(request.id), /blocked/); });
 test('pause, resume and cancel are controlled by the facade', async () => { const platform = new CreativeExecutionPlatform(dependencies()); platform.createExecution(request); platform.pause(request.id); assert.equal(platform.status(request.id), 'WAITING'); await assert.rejects(platform.execute(request.id), /paused/); platform.resume(request.id); assert.equal((await platform.execute(request.id)).status, 'SUCCESS'); });
@@ -42,10 +43,12 @@ test('6.40A canonical planning preserves global-edit production behavior', async
   assert.equal(plan.requestId, request.id);
   assert.equal(plan.plannerVersion, CANONICAL_PLANNER_VERSION);
   assert.equal(plan.goal, request.intent);
-  assert.deepEqual(plan.operations, [{
+  const [{ verification, ...operation }] = plan.operations;
+  assert.deepEqual([operation], [{
     id: 'creative-image-edit', type: 'image-edit', providerId: 'fal', requiredArtifacts: [], produces: ['image'],
     input: { prompt: request.intent, correlationId: undefined },
   }]);
+  assert.equal(verification?.[0].required, true);
   assert.equal(plan.provenance?.plannerVersion, CANONICAL_PLANNER_VERSION);
 });
 
@@ -59,10 +62,12 @@ test('6.40A controlled edit requires canonical ORIGINAL, MASK and selected objec
   const decision = await new CanonicalDecisionService().decide(controlledRequest);
   const planner = new CanonicalPlanningService();
   const plan = await planner.plan(controlledRequest, decision);
-  assert.deepEqual(plan.operations[0], {
+  const { verification, ...operation } = plan.operations[0];
+  assert.deepEqual(operation, {
     id: 'creative-image-edit', type: 'CONTROLLED_LOCAL_EDIT', providerId: 'fal', requiredArtifacts: ['original', 'mask'], produces: ['image'],
     input: { instruction: controlledRequest.intent, preserveMode: 'BALANCED', correlationId: 'corr-1' },
   });
+  assert.equal(verification?.[0].required, true);
   assert.deepEqual(plan.provenance?.inputArtifacts, [
     { id: 'original', kind: 'image', role: 'ORIGINAL' },
     { id: 'mask', kind: 'image', role: 'MASK' },
