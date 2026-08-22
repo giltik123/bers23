@@ -10,7 +10,6 @@ const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const VERIFICATION_TTL_MS = 10 * 60 * 1000;
 const RESET_TTL_MS = 30 * 60 * 1000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
-const BROWSER_GRANT_TTL_MS = 2 * 60 * 1000;
 
 export class CanonicalAuthService {
   readonly #store: PostgresAuthStore;
@@ -158,13 +157,16 @@ export class CanonicalAuthService {
     const domain = claims.email.split('@').pop()?.toLowerCase();
     const authoritativeEmail = domain === 'gmail.com' || Boolean(claims.hd);
     const user = await this.#store.resolveGoogleIdentity({ subject: claims.sub, email: claims.email, displayName: claims.name, authoritativeEmail, defaultTenantId: this.#defaultTenantId, nowMs: this.#now() });
-    const grant = opaqueToken(32), now = this.#now();
-    await this.#store.createBrowserGrant(keyedDigest(this.#challengeSecret, 'browser-grant', grant), user, now, now + BROWSER_GRANT_TTL_MS);
     const redirect = new URL(oauthState.returnTo, this.#publicOrigin);
-    redirect.hash = new URLSearchParams({ auth_code: grant }).toString();
-    return redirect.toString();
+    const session = await this.issueSession(user);
+    return Object.freeze({ redirectTo: redirect.toString(), session });
   }
 
+  /**
+   * Legacy browser grants remain readable only for a short compatibility window
+   * in the storage layer. The production HTTP adapter no longer exposes an
+   * exchange endpoint and new OAuth callbacks never create grants.
+   */
   async exchangeBrowserGrant(code: string) {
     if (!validOpaqueHandle(code)) throw oauthDenied();
     const user = await this.#store.consumeBrowserGrant(keyedDigest(this.#challengeSecret, 'browser-grant', code), this.#now());

@@ -1,17 +1,8 @@
 import '@/lib/app-params';
 
 const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
-let pendingBrowserGrant;
-if (typeof window !== 'undefined') {
-  const current = new URL(window.location.href);
-  const fragment = new URLSearchParams(current.hash.startsWith('#') ? current.hash.slice(1) : current.hash);
-  pendingBrowserGrant = fragment.get('auth_code') || undefined;
-  if (pendingBrowserGrant) {
-    fragment.delete('auth_code');
-    current.hash = fragment.toString() ? `#${fragment.toString()}` : '';
-    window.history.replaceState({}, document.title, `${current.pathname}${current.search}${current.hash}`);
-  }
-}
+const CSRF_HEADER = 'X-Bers-CSRF-Token';
+let browserCsrfToken;
 
 function safeReturnTo(value = '/') {
   if (typeof window === 'undefined') return '/';
@@ -24,12 +15,20 @@ function safeReturnTo(value = '/') {
   } catch { return '/'; }
 }
 
+function unsafeMethod(method) {
+  const normalized = String(method || 'GET').toUpperCase();
+  return normalized !== 'GET' && normalized !== 'HEAD' && normalized !== 'OPTIONS';
+}
+
 async function request(path, options = {}) {
   const headers = new Headers(options.headers);
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+  if (unsafeMethod(options.method) && browserCsrfToken) headers.set(CSRF_HEADER, browserCsrfToken);
   const response = await fetch(`${API_ROOT}${path}`, { ...options, headers, credentials: 'include' });
+  if (response.headers.has(CSRF_HEADER)) browserCsrfToken = response.headers.get(CSRF_HEADER) || undefined;
   const data = response.status === 204 ? undefined : await response.json().catch(() => undefined);
   if (!response.ok) {
+    if (response.status === 401 && path === '/auth/context') browserCsrfToken = undefined;
     const error = new Error(data?.message || `Core API request failed (${response.status})`);
     error.status = response.status;
     error.code = data?.code;
@@ -62,12 +61,6 @@ export const coreClient = Object.freeze({
     resetPasswordRequest: (email) => request('/auth/password/reset-request', json('POST', { email })),
     resetPassword: (payload) => request('/auth/password/reset', json('POST', payload)),
     loginViaEmailPassword: (email, password) => request('/auth/password/login', json('POST', { email, password })),
-    exchangePendingBrowserGrant: async () => {
-      if (!pendingBrowserGrant) return false;
-      const code = pendingBrowserGrant; pendingBrowserGrant = undefined;
-      await request('/auth/exchange', json('POST', { code }));
-      return true;
-    },
     logout: async (returnTo) => {
       await request('/auth/logout', { method: 'POST' });
       if (returnTo && typeof window !== 'undefined') window.location.assign(`/login?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`);

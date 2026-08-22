@@ -37,19 +37,26 @@ test('browser auth is HttpOnly-cookie based and exposes no JS-readable bearer au
   assert.equal(/setItem\([^,]+,\s*password/.test(client), false);
 });
 
-test('AuthContext consumes OAuth grant from fragment then trusts only canonical server context', async () => {
+test('browser anti-forgery proof is session-bound server output and remains memory-only', async () => {
+  const client = await readFile('src/api/coreClient.js','utf8');
+  assert.match(client, /const CSRF_HEADER\s*=\s*['"]X-Bers-CSRF-Token['"]/);
+  assert.match(client, /let browserCsrfToken/);
+  assert.match(client, /response\.headers\.has\(CSRF_HEADER\)/);
+  assert.match(client, /headers\.set\(CSRF_HEADER,\s*browserCsrfToken\)/);
+  assert.match(client, /unsafeMethod\(options\.method\)/);
+  assert.doesNotMatch(client, /localStorage[^\n]*csrf|sessionStorage[^\n]*csrf|document\.cookie[^\n]*csrf/i);
+});
+
+test('OAuth callback establishes HttpOnly session server-side and AuthContext trusts only canonical context', async () => {
   const [client, context] = await Promise.all([readFile('src/api/coreClient.js','utf8'),readFile('src/lib/AuthContext.jsx','utf8')]);
-  assert.match(context, /exchangePendingBrowserGrant\(\)/);
   assert.match(context, /coreClient\.auth\.me\(\)/);
+  assert.doesNotMatch(context, /exchangePendingBrowserGrant|auth_code|window\.location\.hash/);
   assert.doesNotMatch(context, retiredTokenApi);
   assert.doesNotMatch(context, /localStorage|sessionStorage/);
   assert.doesNotMatch(context, /appParams|publicSettings|\/config\/public/);
-  assert.match(client, /current\.hash/);
-  assert.match(client, /fragment\.get\('auth_code'\)/);
-  assert.match(client, /fragment\.delete\('auth_code'\)/);
-  assert.match(client, /history\.replaceState/);
-  assert.match(client, /request\('\/auth\/exchange'/);
-  assert.doesNotMatch(client, /searchParams\.get\('auth_code'\)|searchParams\.get\('access_token'\)/);
+  assert.doesNotMatch(client, /pendingBrowserGrant|fragment\.get\(['"]auth_code['"]\)|request\(['"]\/auth\/exchange['"]/);
+  assert.doesNotMatch(client, /searchParams\.get\(['"]auth_code['"]\)|searchParams\.get\(['"]access_token['"]\)/);
+  assert.match(client, /['"]auth_code['"]/,'auth_code remains only in the return_to denylist');
 });
 
 test('registration OTP is bound to a browser-held verification handle but never receives a bearer', async () => {
