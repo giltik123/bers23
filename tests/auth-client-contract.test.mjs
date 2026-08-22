@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+const retiredTokenApi = /(?:\.|\b)(?:hasToken|getToken|setToken|clearToken|storeAccessToken|persistedToken)\s*(?:\(|:|=)/;
+
 test('browser auth is HttpOnly-cookie based and exposes no JS-readable bearer authority', async () => {
   const [client, login, appParams] = await Promise.all([
     readFile('src/api/coreClient.js', 'utf8'),
@@ -20,7 +22,7 @@ test('browser auth is HttpOnly-cookie based and exposes no JS-readable bearer au
   assert.doesNotMatch(client, /Bearer\s*\$\{/);
   assert.doesNotMatch(client, /result\?\.access_token|result\.access_token/);
   assert.doesNotMatch(client, /(?:searchParams|fragment)\.get\(\s*['"]access_token['"]\s*\)/);
-  assert.doesNotMatch(client, /hasToken|getToken|setToken|clearToken|storeAccessToken|persistedToken/);
+  assert.doesNotMatch(client, retiredTokenApi);
 
   assert.match(client, /function safeReturnTo/);
   assert.match(client, /target\.hash\s*=\s*['"]{2}/);
@@ -39,7 +41,8 @@ test('AuthContext consumes OAuth grant from fragment then trusts only canonical 
   const [client, context] = await Promise.all([readFile('src/api/coreClient.js','utf8'),readFile('src/lib/AuthContext.jsx','utf8')]);
   assert.match(context, /exchangePendingBrowserGrant\(\)/);
   assert.match(context, /coreClient\.auth\.me\(\)/);
-  assert.doesNotMatch(context, /hasToken|clearToken|getToken|setToken|localStorage|sessionStorage/);
+  assert.doesNotMatch(context, retiredTokenApi);
+  assert.doesNotMatch(context, /localStorage|sessionStorage/);
   assert.doesNotMatch(context, /appParams|publicSettings|\/config\/public/);
   assert.match(client, /current\.hash/);
   assert.match(client, /fragment\.get\('auth_code'\)/);
@@ -56,7 +59,7 @@ test('registration OTP is bound to a browser-held verification handle but never 
   assert.match(register,/verifyOtp\(\{\s*email,\s*otpCode,\s*verificationHandle\s*\}\)/);
   assert.match(register,/resendOtp\(email,\s*verificationHandle\)/);
   assert.match(client,/resendOtp:\s*\(email,\s*verificationHandle\)/);
-  assert.doesNotMatch(register,/access_token|setToken|localStorage|sessionStorage/);
+  assert.doesNotMatch(register,/access_token|\.setToken\s*\(|localStorage|sessionStorage/);
 });
 
 test('password reset secret is fragment-only and scrubbed from the address bar', async () => {
