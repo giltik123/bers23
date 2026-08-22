@@ -15,7 +15,6 @@ export const AuthProvider = ({ children }) => {
   const checkAppState = async () => {
     setAuthError(null);
     try {
-      await coreClient.auth.exchangePendingBrowserGrant();
       await checkUserAuth();
     } catch (error) {
       setUser(null); setIsAuthenticated(false); setIsLoadingAuth(false); setAuthChecked(true);
