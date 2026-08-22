@@ -20,6 +20,13 @@ CREATE INDEX canonical_auth_rate_limits_blocked_idx
 CREATE INDEX canonical_auth_rate_limits_updated_idx
   ON canonical_auth_rate_limits (updated_at);
 
+ALTER TABLE canonical_auth_oauth_states
+  ADD COLUMN previous_session_id text REFERENCES canonical_auth_sessions(session_id) ON DELETE SET NULL;
+
+CREATE INDEX canonical_auth_oauth_states_previous_session_idx
+  ON canonical_auth_oauth_states(previous_session_id)
+  WHERE previous_session_id IS NOT NULL;
+
 REVOKE ALL ON canonical_auth_rate_limits FROM PUBLIC;
 
 COMMIT;
