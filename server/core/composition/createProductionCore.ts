@@ -12,6 +12,8 @@ import type { PixelImage } from '../../../src/platform/creative/pipeline/Control
 import { checkAuthSchema, migrateAuthSchema } from '../auth/authSchema.ts';
 import { CanonicalAuthService } from '../auth/canonicalAuthService.ts';
 import { PostgresAuthStore } from '../auth/postgresAuthStore.ts';
+import { ResendEmailSender } from '../auth/resendEmailSender.ts';
+import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
@@ -56,9 +58,22 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       },
     } satisfies CreativeCoreCompositionInput);
     const authStore = new PostgresAuthStore(transactions.pool);
+    const email = new ResendEmailSender({ apiKey: config.resendApiKey, from: config.authEmailFrom, fetcher });
+    const google = new GoogleOidcClient({
+      clientId: config.googleOauthClientId,
+      clientSecret: config.googleOauthClientSecret,
+      redirectUri: new URL('/api/core/auth/callback/google', config.authPublicOrigin).toString(),
+      fetcher,
+      now,
+    });
     const auth = new CanonicalAuthService({
       store: authStore,
       jwt: { secret: config.jwtSecret, issuer: config.jwtIssuer, audience: config.jwtAudience },
+      challengeSecret: config.authChallengeSecret,
+      defaultTenantId: config.authDefaultTenantId,
+      publicOrigin: config.authPublicOrigin,
+      email,
+      google,
       now,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
