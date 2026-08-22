@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 
 const baseMigration = '008_canonical_auth_identity_sessions.sql';
 const lifecycleMigration = '009_auth_lifecycle_oauth.sql';
+const registrationBindingMigration = '010_registration_attempt_binding.sql';
 
 async function migration(name: string) {
   try { return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8'); }
@@ -31,12 +32,22 @@ async function lifecycleComplete(pool: Pool) {
   return Boolean(row?.verifications && row?.resets && row?.identities && row?.oauth_states && row?.grants && row?.verified_column);
 }
 
+async function registrationBindingComplete(pool: Pool) {
+  const result = await pool.query(`SELECT EXISTS(
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='canonical_auth_email_verifications' AND column_name='verification_handle_digest'
+  ) AS bound`);
+  return Boolean(result.rows[0]?.bound);
+}
+
 export async function checkAuthSchema(pool: Pool) {
   if (!await baseComplete(pool)) throw new Error('canonical auth schema is incomplete; apply migration 008');
   if (!await lifecycleComplete(pool)) throw new Error('canonical auth lifecycle schema is incomplete; apply migration 009');
+  if (!await registrationBindingComplete(pool)) throw new Error('canonical registration binding schema is incomplete; apply migration 010');
 }
 
 export async function migrateAuthSchema(pool: Pool) {
   if (!await baseComplete(pool)) await pool.query(await migration(baseMigration));
   if (!await lifecycleComplete(pool)) await pool.query(await migration(lifecycleMigration));
+  if (!await registrationBindingComplete(pool)) await pool.query(await migration(registrationBindingMigration));
 }
