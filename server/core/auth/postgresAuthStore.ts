@@ -39,7 +39,7 @@ export class PostgresAuthStore {
     finally { client.release(); }
   }
 
-  async beginRegistration(input: Readonly<{ tenantId: string; email: string; password: string; displayName?: string; challengeDigest: Buffer; nowMs: number; expiresAtMs: number }>) {
+  async beginRegistration(input: Readonly<{ tenantId: string; email: string; password: string; displayName?: string; challengeDigest: Buffer; verificationHandleDigest: Buffer; nowMs: number; expiresAtMs: number }>) {
     const email = normalizeEmail(input.email);
     const tenantId = validateTenant(input.tenantId);
     const displayName = validateDisplayName(input.displayName);
@@ -56,6 +56,9 @@ export class PostgresAuthStore {
         const challenge = await client.query<{ last_sent_at: Date; send_count: number }>('SELECT last_sent_at,send_count FROM canonical_auth_email_verifications WHERE user_id=$1 FOR UPDATE', [userId]);
         if (challenge.rows[0] && input.nowMs - challenge.rows[0].last_sent_at.getTime() < VERIFICATION_COOLDOWN_MS) throw verificationRateLimited();
         if ((challenge.rows[0]?.send_count ?? 0) >= MAX_VERIFICATION_SENDS) throw verificationRateLimited();
+        // A replacement pending credential is safe only because the OTP is bound to this
+        // exact browser-held verification handle below. An older handle/code pair cannot
+        // activate this replacement credential.
         await client.query(`UPDATE canonical_auth_users SET email=$2,display_name=$3,updated_at=$4 WHERE user_id=$1`, [userId, email.display, displayName, now]);
         await writeCredential(client, userId, credential);
       } else {
@@ -65,19 +68,20 @@ export class PostgresAuthStore {
         await writeCredential(client, userId, credential);
       }
       const challenge = await client.query<{ send_count: number }>(`INSERT INTO canonical_auth_email_verifications
-        (user_id,challenge_digest,created_at,expires_at,last_sent_at,send_count,failed_attempts,consumed_at)
-        VALUES($1,$2,$3,$4,$3,1,0,NULL)
-        ON CONFLICT(user_id) DO UPDATE SET challenge_digest=EXCLUDED.challenge_digest,created_at=EXCLUDED.created_at,
+        (user_id,challenge_digest,verification_handle_digest,created_at,expires_at,last_sent_at,send_count,failed_attempts,consumed_at)
+        VALUES($1,$2,$3,$4,$5,$4,1,0,NULL)
+        ON CONFLICT(user_id) DO UPDATE SET challenge_digest=EXCLUDED.challenge_digest,
+          verification_handle_digest=EXCLUDED.verification_handle_digest,created_at=EXCLUDED.created_at,
           expires_at=EXCLUDED.expires_at,last_sent_at=EXCLUDED.last_sent_at,
           send_count=canonical_auth_email_verifications.send_count+1,failed_attempts=0,consumed_at=NULL
-        RETURNING send_count`, [userId, input.challengeDigest, now, expiresAt]);
+        RETURNING send_count`, [userId, input.challengeDigest, input.verificationHandleDigest, now, expiresAt]);
       await client.query('COMMIT');
       return Object.freeze({ user: await this.findUserByEmail(email.display), sendCount: challenge.rows[0].send_count });
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
     finally { client.release(); }
   }
 
-  async resendVerification(emailValue: string, challengeDigest: Buffer, nowMs: number, expiresAtMs: number) {
+  async resendVerification(emailValue: string, verificationHandleDigest: Buffer, challengeDigest: Buffer, nowMs: number, expiresAtMs: number) {
     const email = normalizeEmail(emailValue);
     const now = new Date(nowMs), expiresAt = new Date(expiresAtMs);
     const client = await this.pool.connect();
@@ -86,33 +90,34 @@ export class PostgresAuthStore {
       const userResult = await client.query<AuthUserRow>(`SELECT * FROM canonical_auth_users WHERE email_normalized=$1 AND status='pending_verification' FOR UPDATE`, [email.normalized]);
       const user = userResult.rows[0];
       if (!user) { await client.query('COMMIT'); return undefined; }
-      const challenge = await client.query<{ last_sent_at: Date; send_count: number }>('SELECT last_sent_at,send_count FROM canonical_auth_email_verifications WHERE user_id=$1 FOR UPDATE', [user.user_id]);
-      if (challenge.rows[0] && nowMs - challenge.rows[0].last_sent_at.getTime() < VERIFICATION_COOLDOWN_MS) throw verificationRateLimited();
-      if ((challenge.rows[0]?.send_count ?? 0) >= MAX_VERIFICATION_SENDS) throw verificationRateLimited();
-      const result = await client.query<{ send_count: number }>(`INSERT INTO canonical_auth_email_verifications
-        (user_id,challenge_digest,created_at,expires_at,last_sent_at,send_count,failed_attempts,consumed_at)
-        VALUES($1,$2,$3,$4,$3,1,0,NULL)
-        ON CONFLICT(user_id) DO UPDATE SET challenge_digest=EXCLUDED.challenge_digest,created_at=EXCLUDED.created_at,
-          expires_at=EXCLUDED.expires_at,last_sent_at=EXCLUDED.last_sent_at,send_count=canonical_auth_email_verifications.send_count+1,
-          failed_attempts=0,consumed_at=NULL RETURNING send_count`, [user.user_id, challengeDigest, now, expiresAt]);
+      const challenge = await client.query<{ last_sent_at: Date; send_count: number; verification_handle_digest: Buffer }>('SELECT last_sent_at,send_count,verification_handle_digest FROM canonical_auth_email_verifications WHERE user_id=$1 FOR UPDATE', [user.user_id]);
+      const storedHandle = challenge.rows[0]?.verification_handle_digest && Buffer.from(challenge.rows[0].verification_handle_digest);
+      if (!storedHandle || !safeDigestEqual(storedHandle, verificationHandleDigest)) { await client.query('COMMIT'); return undefined; }
+      if (nowMs - challenge.rows[0].last_sent_at.getTime() < VERIFICATION_COOLDOWN_MS) throw verificationRateLimited();
+      if (challenge.rows[0].send_count >= MAX_VERIFICATION_SENDS) throw verificationRateLimited();
+      const result = await client.query<{ send_count: number }>(`UPDATE canonical_auth_email_verifications
+        SET challenge_digest=$2,created_at=$3,expires_at=$4,last_sent_at=$3,send_count=send_count+1,failed_attempts=0,consumed_at=NULL
+        WHERE user_id=$1 AND verification_handle_digest=$5 RETURNING send_count`, [user.user_id, challengeDigest, now, expiresAt, verificationHandleDigest]);
       await client.query('COMMIT');
-      return Object.freeze({ user, sendCount: result.rows[0].send_count });
+      return result.rows[0] ? Object.freeze({ user, sendCount: result.rows[0].send_count }) : undefined;
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
     finally { client.release(); }
   }
 
-  async verifyEmail(emailValue: string, challengeDigest: Buffer, nowMs: number): Promise<AuthUserRow> {
+  async verifyEmail(emailValue: string, challengeDigest: Buffer, verificationHandleDigest: Buffer, nowMs: number): Promise<AuthUserRow> {
     const email = normalizeEmail(emailValue), now = new Date(nowMs);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const result = await client.query<AuthUserRow & { challenge_digest: Buffer; expires_at: Date; consumed_at: Date | null; failed_attempts: number }>(`SELECT u.*,v.challenge_digest,v.expires_at,v.consumed_at,v.failed_attempts
+      const result = await client.query<AuthUserRow & { challenge_digest: Buffer; verification_handle_digest: Buffer; expires_at: Date; consumed_at: Date | null; failed_attempts: number }>(`SELECT u.*,v.challenge_digest,v.verification_handle_digest,v.expires_at,v.consumed_at,v.failed_attempts
         FROM canonical_auth_users u JOIN canonical_auth_email_verifications v USING(user_id)
         WHERE u.email_normalized=$1 AND u.status='pending_verification' FOR UPDATE OF u,v`, [email.normalized]);
       const row = result.rows[0];
       if (!row || row.consumed_at || row.expires_at.getTime() <= nowMs || row.failed_attempts >= MAX_VERIFICATION_ATTEMPTS) throw invalidVerification();
+      const storedHandle = Buffer.from(row.verification_handle_digest);
+      if (!safeDigestEqual(storedHandle, verificationHandleDigest)) throw invalidVerification();
       const actual = Buffer.from(row.challenge_digest);
-      if (actual.length !== challengeDigest.length || !timingSafeEqual(actual, challengeDigest)) {
+      if (!safeDigestEqual(actual, challengeDigest)) {
         await client.query(`UPDATE canonical_auth_email_verifications SET failed_attempts=failed_attempts+1 WHERE user_id=$1`, [row.user_id]);
         await client.query('COMMIT');
         throw invalidVerification();
@@ -145,7 +150,7 @@ export class PostgresAuthStore {
 
   async createPasswordReset(emailValue: string, tokenDigest: Buffer, nowMs: number, expiresAtMs: number) {
     const user = await this.findUserByEmail(emailValue).catch(() => undefined);
-    if (!user || user.status !== 'active') return undefined;
+    if (!user || user.status !== 'active' || !user.email_verified_at) return undefined;
     const resetId = randomUUID(), now = new Date(nowMs), expiresAt = new Date(expiresAtMs);
     const client = await this.pool.connect();
     try {
@@ -166,7 +171,7 @@ export class PostgresAuthStore {
       const result = await client.query<AuthUserRow & { reset_id: string; expires_at: Date; consumed_at: Date | null }>(`SELECT u.*,r.reset_id,r.expires_at,r.consumed_at FROM canonical_auth_password_resets r
         JOIN canonical_auth_users u USING(user_id) WHERE r.token_digest=$1 FOR UPDATE OF r,u`, [tokenDigest]);
       const row = result.rows[0];
-      if (!row || row.status !== 'active' || row.consumed_at || row.expires_at.getTime() <= nowMs) throw invalidReset();
+      if (!row || row.status !== 'active' || !row.email_verified_at || row.consumed_at || row.expires_at.getTime() <= nowMs) throw invalidReset();
       await writeCredential(client, row.user_id, credential);
       await client.query(`UPDATE canonical_auth_password_resets SET consumed_at=COALESCE(consumed_at,$2) WHERE user_id=$1 AND consumed_at IS NULL`, [row.user_id, now]);
       await client.query(`UPDATE canonical_auth_sessions SET revoked_at=COALESCE(revoked_at,$2) WHERE user_id=$1 AND revoked_at IS NULL`, [row.user_id, now]);
@@ -207,6 +212,9 @@ export class PostgresAuthStore {
         const alreadyLinked = await client.query<{ provider_subject: string }>(`SELECT provider_subject FROM canonical_auth_oauth_identities WHERE provider='google' AND user_id=$1 FOR UPDATE`, [existing.rows[0].user_id]);
         if (alreadyLinked.rows[0] && alreadyLinked.rows[0].provider_subject !== input.subject) throw accountLinkRequired();
         if (existing.rows[0].status === 'pending_verification' || !existing.rows[0].email_verified_at) {
+          // A pending password was never proven to belong to the email owner. Google now
+          // proves email ownership, so discard that untrusted password before activation.
+          await client.query(`DELETE FROM canonical_auth_password_credentials WHERE user_id=$1`, [existing.rows[0].user_id]);
           await client.query(`UPDATE canonical_auth_users SET status='active',email_verified_at=COALESCE(email_verified_at,$2),updated_at=$2 WHERE user_id=$1`, [existing.rows[0].user_id, now]);
           await client.query(`UPDATE canonical_auth_email_verifications SET consumed_at=COALESCE(consumed_at,$2) WHERE user_id=$1`, [existing.rows[0].user_id, now]);
         }
@@ -282,6 +290,9 @@ export function credentialFromRow(row: AuthCredentialRow): PasswordCredential {
   return Object.freeze({ algorithm: row.algorithm, salt: Buffer.from(row.salt), hash: Buffer.from(row.password_hash) });
 }
 
+function safeDigestEqual(left: Buffer, right: Buffer) {
+  return left.length === right.length && timingSafeEqual(left, right);
+}
 function normalizeEmail(value: string) {
   if (typeof value !== 'string') throw Object.assign(new Error('Email is invalid'), { status: 400, code: 'invalid_email' });
   const display = value.trim(), normalized = display.toLowerCase();
