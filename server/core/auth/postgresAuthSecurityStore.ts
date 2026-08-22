@@ -79,6 +79,23 @@ export class PostgresAuthSecurityStore {
     }
   }
 
+  async bindOAuthStateSession(stateDigest: Buffer, sessionId: string): Promise<boolean> {
+    if (stateDigest.length !== 32 || !sessionId) throw new Error('Invalid OAuth session binding');
+    const result = await this.pool.query(`UPDATE canonical_auth_oauth_states s
+      SET previous_session_id=$2
+      FROM canonical_auth_sessions cs
+      WHERE s.state_digest=$1 AND s.consumed_at IS NULL AND cs.session_id=$2
+      RETURNING s.state_digest`, [stateDigest, sessionId]);
+    return Boolean(result.rowCount);
+  }
+
+  async oauthStateSession(stateDigest: Buffer): Promise<string | undefined> {
+    if (stateDigest.length !== 32) throw new Error('Invalid OAuth state digest');
+    const result = await this.pool.query<{ previous_session_id: string | null }>(
+      `SELECT previous_session_id FROM canonical_auth_oauth_states WHERE state_digest=$1`, [stateDigest]);
+    return result.rows[0]?.previous_session_id ?? undefined;
+  }
+
   async createSession(user: AuthUserRow, nowMs: number, expiresAtMs: number) {
     const sessionId = randomUUID();
     const createdAt = new Date(nowMs), expiresAt = new Date(expiresAtMs);
