@@ -19,11 +19,10 @@ jobs:
         with:
           node-version: 24.x
           cache: npm
-      - run: npm ci
-      - name: Remove unused vulnerable Quill chain and apply compatible advisory fixes
+      - name: Remove vulnerable dead code, upgrade patched router and refresh compatible fixes
         run: |
           npm pkg delete dependencies.react-quill
-          npm install --package-lock-only --ignore-scripts
+          npm install react-router-dom@7.18.2 --package-lock-only --ignore-scripts
           npm audit fix --package-lock-only --ignore-scripts || true
           npm audit --omit=dev --audit-level=moderate || true
       - name: Commit reviewed-input dependency graph update
@@ -35,5 +34,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
-          git commit -m "Harden production dependency graph [skip ci]"
+          git commit -m "Upgrade patched production dependencies [skip ci]"
           git push origin HEAD:sprint-6.39b-auth-lifecycle-oauth
