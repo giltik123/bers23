@@ -51,12 +51,12 @@ export class PostgresAuthStore {
       const existing = await client.query<AuthUserRow>('SELECT * FROM canonical_auth_users WHERE email_normalized=$1 FOR UPDATE', [email.normalized]);
       let userId: string;
       if (existing.rows[0]) {
-        if (existing.rows[0].status !== 'pending_verification') throw registrationUnavailable();
+        if (existing.rows[0].status !== 'pending_verification' || existing.rows[0].tenant_id !== tenantId) throw registrationUnavailable();
         userId = existing.rows[0].user_id;
         const challenge = await client.query<{ last_sent_at: Date; send_count: number }>('SELECT last_sent_at,send_count FROM canonical_auth_email_verifications WHERE user_id=$1 FOR UPDATE', [userId]);
         if (challenge.rows[0] && input.nowMs - challenge.rows[0].last_sent_at.getTime() < VERIFICATION_COOLDOWN_MS) throw verificationRateLimited();
         if ((challenge.rows[0]?.send_count ?? 0) >= MAX_VERIFICATION_SENDS) throw verificationRateLimited();
-        await client.query(`UPDATE canonical_auth_users SET tenant_id=$2,email=$3,display_name=$4,updated_at=$5 WHERE user_id=$1`, [userId, tenantId, email.display, displayName, now]);
+        await client.query(`UPDATE canonical_auth_users SET email=$2,display_name=$3,updated_at=$4 WHERE user_id=$1`, [userId, email.display, displayName, now]);
         await writeCredential(client, userId, credential);
       } else {
         userId = randomUUID();
@@ -72,8 +72,8 @@ export class PostgresAuthStore {
           send_count=canonical_auth_email_verifications.send_count+1,failed_attempts=0,consumed_at=NULL
         RETURNING send_count`, [userId, input.challengeDigest, now, expiresAt]);
       await client.query('COMMIT');
-      return Object.freeze({ user: await this.getUser(userId, tenantId), sendCount: challenge.rows[0].send_count });
-    } catch (error) { await client.query('ROLLBACK'); throw error; }
+      return Object.freeze({ user: await this.findUserByEmail(email.display), sendCount: challenge.rows[0].send_count });
+    } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
     finally { client.release(); }
   }
 
@@ -97,7 +97,7 @@ export class PostgresAuthStore {
           failed_attempts=0,consumed_at=NULL RETURNING send_count`, [user.user_id, challengeDigest, now, expiresAt]);
       await client.query('COMMIT');
       return Object.freeze({ user, sendCount: result.rows[0].send_count });
-    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
     finally { client.release(); }
   }
 
@@ -124,7 +124,7 @@ export class PostgresAuthStore {
       if (!user) throw invalidVerification();
       return user;
     } catch (error) {
-      if ((error as { code?: string }).code !== 'invalid_verification') await client.query('ROLLBACK').catch(() => undefined);
+      await client.query('ROLLBACK').catch(() => undefined);
       throw error;
     } finally { client.release(); }
   }
@@ -154,7 +154,7 @@ export class PostgresAuthStore {
       await client.query(`INSERT INTO canonical_auth_password_resets(reset_id,user_id,token_digest,created_at,expires_at) VALUES($1,$2,$3,$4,$5)`, [resetId, user.user_id, tokenDigest, now, expiresAt]);
       await client.query('COMMIT');
       return Object.freeze({ user, resetId });
-    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
     finally { client.release(); }
   }
 
@@ -204,8 +204,11 @@ export class PostgresAuthStore {
       let user: AuthUserRow;
       if (existing.rows[0]) {
         if (existing.rows[0].status === 'disabled' || !input.authoritativeEmail) throw accountLinkRequired();
-        if (existing.rows[0].status === 'pending_verification') {
-          await client.query(`UPDATE canonical_auth_users SET status='active',email_verified_at=$2,updated_at=$2 WHERE user_id=$1`, [existing.rows[0].user_id, now]);
+        const alreadyLinked = await client.query<{ provider_subject: string }>(`SELECT provider_subject FROM canonical_auth_oauth_identities WHERE provider='google' AND user_id=$1 FOR UPDATE`, [existing.rows[0].user_id]);
+        if (alreadyLinked.rows[0] && alreadyLinked.rows[0].provider_subject !== input.subject) throw accountLinkRequired();
+        if (existing.rows[0].status === 'pending_verification' || !existing.rows[0].email_verified_at) {
+          await client.query(`UPDATE canonical_auth_users SET status='active',email_verified_at=COALESCE(email_verified_at,$2),updated_at=$2 WHERE user_id=$1`, [existing.rows[0].user_id, now]);
+          await client.query(`UPDATE canonical_auth_email_verifications SET consumed_at=COALESCE(consumed_at,$2) WHERE user_id=$1`, [existing.rows[0].user_id, now]);
         }
         user = { ...existing.rows[0], status: 'active', email_verified_at: existing.rows[0].email_verified_at ?? now };
       } else {
