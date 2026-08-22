@@ -1,54 +1,27 @@
 const isNode = typeof window === 'undefined';
-const storage = isNode ? undefined : window.localStorage;
-const viteEnv = import.meta.env ?? {};
 
-const toSnakeCase = (str) => {
-	return str.replace(/([A-Z])/g, '_$1').toLowerCase();
+/**
+ * One-way cleanup for the retired browser bearer bootstrap.
+ *
+ * Deliberately does not persist URL/app parameters. In particular, storing the
+ * current href before OAuth/reset fragments are scrubbed would recreate a
+ * JS-readable secret in localStorage.
+ */
+function scrubLegacyBrowserAuth() {
+  if (isNode) return;
+  const storage = window.localStorage;
+  for (const key of ['core_access_token', 'core_token', 'token', 'core_from_url']) storage?.removeItem(key);
+
+  const url = new URL(window.location.href);
+  let changed = false;
+  for (const name of ['access_token', 'clear_access_token']) {
+    if (url.searchParams.has(name)) { url.searchParams.delete(name); changed = true; }
+  }
+  if (changed) window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
 }
 
-const getAppParamValue = (paramName, { defaultValue = undefined, removeFromUrl = false } = {}) => {
-	if (isNode) {
-		return defaultValue;
-	}
-	const storageKey = `core_${toSnakeCase(paramName)}`;
-	const urlParams = new URLSearchParams(window.location.search);
-	const searchParam = urlParams.get(paramName);
-	if (removeFromUrl) {
-		urlParams.delete(paramName);
-		const newUrl = `${window.location.pathname}${urlParams.toString() ? `?${urlParams.toString()}` : ""
-			}${window.location.hash}`;
-		window.history.replaceState({}, document.title, newUrl);
-	}
-	if (searchParam) {
-		storage.setItem(storageKey, searchParam);
-		return searchParam;
-	}
-	if (defaultValue) {
-		storage.setItem(storageKey, defaultValue);
-		return defaultValue;
-	}
-	const storedValue = storage.getItem(storageKey);
-	if (storedValue) {
-		return storedValue;
-	}
-	return null;
-}
+scrubLegacyBrowserAuth();
 
-const getAppParams = () => {
-	if (getAppParamValue("clear_access_token") === 'true') {
-		storage.removeItem('core_access_token');
-		storage.removeItem('token');
-	}
-	return {
-		appId: getAppParamValue("app_id", { defaultValue: viteEnv.VITE_CORE_APP_ID }),
-		token: getAppParamValue("access_token", { removeFromUrl: true }),
-		fromUrl: getAppParamValue("from_url", { defaultValue: isNode ? undefined : window.location.href }),
-		functionsVersion: getAppParamValue("functions_version", { defaultValue: viteEnv.VITE_CORE_API_VERSION }),
-		appBaseUrl: getAppParamValue("app_base_url", { defaultValue: viteEnv.VITE_CORE_API_URL }),
-	}
-}
-
-
-export const appParams = {
-	...getAppParams()
-}
+// Kept as an inert compatibility export until remaining legacy imports, if any,
+// are conclusively removed. It contains no credentials, URL values or storage.
+export const appParams = Object.freeze({});

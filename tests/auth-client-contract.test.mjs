@@ -2,24 +2,47 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-test('Login stores only the canonical access token and logout crosses the server boundary', async () => {
-  const client = await readFile('src/api/coreClient.js', 'utf8');
-  const login = await readFile('src/pages/Login.jsx', 'utf8');
+const retiredTokenApi = /(?:\.|\b)(?:hasToken|getToken|setToken|clearToken|storeAccessToken|persistedToken)\s*(?:\(|:|=)/;
+
+test('browser auth is HttpOnly-cookie based and exposes no JS-readable bearer authority', async () => {
+  const [client, login, appParams] = await Promise.all([
+    readFile('src/api/coreClient.js', 'utf8'),
+    readFile('src/pages/Login.jsx', 'utf8'),
+    readFile('src/lib/app-params.js', 'utf8'),
+  ]);
   assert.match(login, /coreClient\.auth\.loginViaEmailPassword/);
   assert.match(client, /request\('\/auth\/password\/login'/);
-  assert.match(client, /result\?\.access_token/);
-  assert.match(client, /setItem\('core_access_token', result\.access_token\)/);
+  assert.match(client, /credentials:\s*'include'/);
   assert.match(client, /request\('\/auth\/logout'/);
+
+  // Sensitive names may appear only in deny/scrub logic. Browser code must not
+  // read, persist, or synthesize an Authorization bearer from them.
+  assert.doesNotMatch(client, /localStorage|sessionStorage|core_access_token/);
+  assert.doesNotMatch(client, /headers\.set\(\s*['"]Authorization['"]/);
+  assert.doesNotMatch(client, /Bearer\s*\$\{/);
+  assert.doesNotMatch(client, /result\?\.access_token|result\.access_token/);
+  assert.doesNotMatch(client, /(?:searchParams|fragment)\.get\(\s*['"]access_token['"]\s*\)/);
+  assert.doesNotMatch(client, retiredTokenApi);
+
+  assert.match(client, /function safeReturnTo/);
+  assert.match(client, /target\.hash\s*=\s*['"]{2}/);
+  assert.match(client, /['"]access_token['"]/);
+  assert.match(client, /target\.searchParams\.delete\(key\)/);
+
+  assert.match(appParams, /core_access_token/);
+  assert.match(appParams, /removeItem\(key\)/);
+  assert.match(appParams, /searchParams\.delete\(name\)/);
+  assert.doesNotMatch(appParams, /setItem|getAppParamValue|core_from_url\s*=|window\.location\.href[^;]*localStorage/);
+  assert.match(appParams, /core_from_url/,'retired URL cache is explicitly removed');
   assert.equal(/setItem\([^,]+,\s*password/.test(client), false);
-  assert.equal(/console\..*access_token/.test(client), false);
 });
 
-test('AuthContext consumes OAuth grant from fragment and scrubs it before context bootstrap', async () => {
+test('AuthContext consumes OAuth grant from fragment then trusts only canonical server context', async () => {
   const [client, context] = await Promise.all([readFile('src/api/coreClient.js','utf8'),readFile('src/lib/AuthContext.jsx','utf8')]);
   assert.match(context, /exchangePendingBrowserGrant\(\)/);
-  assert.match(context, /coreClient\.auth\.hasToken\(\)/);
   assert.match(context, /coreClient\.auth\.me\(\)/);
-  assert.match(context, /coreClient\.auth\.clearToken\(\)/);
+  assert.doesNotMatch(context, retiredTokenApi);
+  assert.doesNotMatch(context, /localStorage|sessionStorage/);
   assert.doesNotMatch(context, /appParams|publicSettings|\/config\/public/);
   assert.match(client, /current\.hash/);
   assert.match(client, /fragment\.get\('auth_code'\)/);
@@ -29,15 +52,14 @@ test('AuthContext consumes OAuth grant from fragment and scrubs it before contex
   assert.doesNotMatch(client, /searchParams\.get\('auth_code'\)|searchParams\.get\('access_token'\)/);
 });
 
-test('registration OTP is bound to a browser-held verification handle', async () => {
+test('registration OTP is bound to a browser-held verification handle but never receives a bearer', async () => {
   const [client, register] = await Promise.all([readFile('src/api/coreClient.js','utf8'), readFile('src/pages/Register.jsx','utf8')]);
   assert.match(register,/verificationHandle/);
   assert.match(register,/result\?\.verification_handle/);
   assert.match(register,/verifyOtp\(\{\s*email,\s*otpCode,\s*verificationHandle\s*\}\)/);
   assert.match(register,/resendOtp\(email,\s*verificationHandle\)/);
   assert.match(client,/resendOtp:\s*\(email,\s*verificationHandle\)/);
-  assert.match(client,/verificationHandle/);
-  assert.doesNotMatch(register,/localStorage|sessionStorage/,'registration handle should remain only in component memory');
+  assert.doesNotMatch(register,/access_token|\.setToken\s*\(|localStorage|sessionStorage/);
 });
 
 test('password reset secret is fragment-only and scrubbed from the address bar', async () => {
@@ -71,7 +93,7 @@ test('login to Projects to Editor critical path has no generic legacy API depend
   assert.match(editor, /inputArtifactId:\s*project\.current_image_artifact_id/);
 });
 
-test('creative client uses the explicit Core endpoint and preserves public error fields', async () => {
+test('creative client uses explicit Core endpoint and preserves public error fields', async () => {
   const client = await readFile('src/api/coreClient.js', 'utf8');
   assert.match(client, /creative:\s*{/);
   assert.match(client, /request\('\/creative\/execute'/);

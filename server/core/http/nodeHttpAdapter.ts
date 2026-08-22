@@ -4,6 +4,7 @@ import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CreativeApplicationCore } from '../composition/createCreativeCore.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { modelArtifactRelay } from './modelArtifactRelay.ts';
+import { clearBrowserSession, establishBrowserSession, requestAuthorization } from './browserSessionCookie.ts';
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 
@@ -41,7 +42,14 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || randomUUID(); response.setHeader('X-Correlation-Id', correlationId);
     try {
       const origin = header(request, 'origin');
-      if (origin) { if (!input.config.allowedWebOrigins.includes(origin)) return sendError(response, 403, 'origin_denied', 'Origin is not allowed', correlationId, false); response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Vary', 'Origin'); response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Correlation-Id'); response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS'); }
+      if (origin) {
+        if (!input.config.allowedWebOrigins.includes(origin)) return sendError(response, 403, 'origin_denied', 'Origin is not allowed', correlationId, false);
+        response.setHeader('Access-Control-Allow-Origin', origin);
+        response.setHeader('Access-Control-Allow-Credentials', 'true');
+        response.setHeader('Vary', 'Origin');
+        response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Correlation-Id');
+        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      }
       if (request.method === 'OPTIONS') return send(response, 204, undefined);
       const url = new URL(request.url ?? '/', 'http://core.invalid'); const path = url.pathname;
       if (path === '/health/live' && request.method === 'GET') return send(response, 200, { status: 'live' });
@@ -64,7 +72,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (path === '/api/core/auth/verify-otp' && request.method === 'POST') {
         if (!input.auth.verifyOtp) return sendError(response,404,'not_found','Route not found',correlationId,false);
         const body=await authJson(request,input.config.bodyLimitBytes) as any;
-        return send(response,200,await input.auth.verifyOtp(string(body?.email),string(body?.otpCode),string(body?.verificationHandle)));
+        const session = await input.auth.verifyOtp(string(body?.email),string(body?.otpCode),string(body?.verificationHandle));
+        return send(response,200,establishBrowserSession(response,session,input.config,now()));
       }
       if (path === '/api/core/auth/resend-otp' && request.method === 'POST') {
         if (!input.auth.resendOtp) return sendError(response,404,'not_found','Route not found',correlationId,false);
@@ -77,7 +86,10 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       }
       if (path === '/api/core/auth/password/reset' && request.method === 'POST') {
         if (!input.auth.resetPassword) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        const body=await authJson(request,input.config.bodyLimitBytes) as any; return send(response,200,await input.auth.resetPassword(string(body?.resetToken),string(body?.newPassword)));
+        const body=await authJson(request,input.config.bodyLimitBytes) as any;
+        const result=await input.auth.resetPassword(string(body?.resetToken),string(body?.newPassword));
+        clearBrowserSession(response,input.config);
+        return send(response,200,result);
       }
       if (path === '/api/core/auth/login/google' && request.method === 'GET') {
         if (!input.auth.googleStart) return sendError(response,404,'not_found','Route not found',correlationId,false);
@@ -89,22 +101,31 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       }
       if (path === '/api/core/auth/exchange' && request.method === 'POST') {
         if (!input.auth.exchangeBrowserGrant) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        const body=await authJson(request,input.config.bodyLimitBytes) as any; return send(response,200,await input.auth.exchangeBrowserGrant(string(body?.code)));
+        const body=await authJson(request,input.config.bodyLimitBytes) as any;
+        const session=await input.auth.exchangeBrowserGrant(string(body?.code));
+        return send(response,200,establishBrowserSession(response,session,input.config,now()));
       }
       if (path === '/api/core/auth/password/login' && request.method === 'POST') {
         if (!input.auth.login) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
         const body = await authJson(request,input.config.bodyLimitBytes) as { email?: unknown; password?: unknown };
-        return send(response, 200, await input.auth.login(string(body?.email), string(body?.password)));
+        const session=await input.auth.login(string(body?.email), string(body?.password));
+        return send(response, 200, establishBrowserSession(response,session,input.config,now()));
       }
       if (path === '/api/core/auth/context' && request.method === 'GET') {
         if (!input.auth.context) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
-        return send(response, 200, await input.auth.context(header(request, 'authorization')));
+        return send(response, 200, await input.auth.context(requestAuthorization(request,input.config)));
       }
       if (path === '/api/core/auth/logout' && request.method === 'POST') {
         if (!input.auth.logout) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
-        await input.auth.logout(header(request, 'authorization')); return send(response, 204, undefined);
+        try { await input.auth.logout(requestAuthorization(request,input.config)); }
+        catch (cause) {
+          const error=cause as Error & { status?: number };
+          if (error.status !== 401) throw cause;
+        }
+        clearBrowserSession(response,input.config);
+        return send(response, 204, undefined);
       }
-      const principal = await input.auth.verify(header(request, 'authorization'));
+      const principal = await input.auth.verify(requestAuthorization(request,input.config));
       const projectMatch=path.match(/^\/api\/core\/projects\/([^/]+)$/); const actionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/(accept-final|undo|redo|restore-original|versions)$/); const versionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
       const dto=(row: any) => { const scope={...principal,projectId:row.project_id}; const artifactId=(storageId:string)=>storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginal(storageId,scope):input.artifacts.external.issueStoredFinal(storageId,scope); const imageUrl=(storageId:string)=>{const expiresAt=now()+300_000; const token=storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginalDelivery(storageId,scope,expiresAt):input.artifacts.external.issueStoredFinalDelivery(storageId,scope,expiresAt);return `/api/core/artifacts/results/${encodeURIComponent(token)}`}; const originalId=artifactId(row.original_image_storage_id),currentId=artifactId(row.current_image_storage_id),delivery=imageUrl(row.current_image_storage_id),history=(row.history??[]).map((h:any)=>({id:h.history_id,artifact_id:artifactId(h.image_storage_id),image_url:imageUrl(h.image_storage_id),instruction:h.instruction,operation:h.kind,created_at:h.created_at})); const cursor=history.findIndex((h:any)=>h.id===row.history_cursor_id); const versions=(row.versions??[]).map((v:any)=>({id:v.version_id,name:v.name,artifact_id:artifactId(v.image_storage_id),preview_url:imageUrl(v.image_storage_id),created_at:v.created_at})); return {id:row.project_id,name:row.name,original_image_artifact_id:originalId,current_image_artifact_id:currentId,original_image_url:imageUrl(row.original_image_storage_id),current_image_url:delivery,thumbnail_url:delivery,width:row.width,height:row.height,status:row.status,favorite:row.favorite,archived:row.archived,objects:row.objects,history,history_index:cursor,versions,created_date:row.created_at,updated_date:row.updated_at}; };
       if(path==='/api/core/projects'&&request.method==='POST'){ const type=mediaType(request); if(!['image/png','image/jpeg','image/webp'].includes(type))return sendError(response,415,'unsupported_media_type','Supported images are PNG, JPEG and WebP',correlationId,false); const bytes=await readBytes(request,input.config.imageUploadLimitBytes); if(!bytes.byteLength)return sendError(response,400,'empty_image','Image body is required',correlationId,false); const name=(url.searchParams.get('name')??'Untitled').trim(); if(!name||name.length>200)return sendError(response,400,'invalid_project_name','Project name is invalid',correlationId,false); const created=await input.projects.create(principal,name,bytes,{maxDimension:input.config.imageMaxDimension,maxPixels:input.config.imageMaxPixels}); return send(response,201,dto(await input.projects.state(principal,created.project_id))); }

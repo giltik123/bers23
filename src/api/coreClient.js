@@ -1,8 +1,6 @@
-import { appParams } from '@/lib/app-params';
+import '@/lib/app-params';
 
 const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
-const storage = () => typeof localStorage === 'undefined' ? undefined : localStorage;
-let transientToken = appParams.token || undefined;
 let pendingBrowserGrant;
 if (typeof window !== 'undefined') {
   const current = new URL(window.location.href);
@@ -14,14 +12,22 @@ if (typeof window !== 'undefined') {
     window.history.replaceState({}, document.title, `${current.pathname}${current.search}${current.hash}`);
   }
 }
-const persistedToken = () => transientToken || storage()?.getItem('core_access_token') || undefined;
+
+function safeReturnTo(value = '/') {
+  if (typeof window === 'undefined') return '/';
+  try {
+    const target = new URL(value || '/', window.location.origin);
+    if (target.origin !== window.location.origin) return '/';
+    target.hash = '';
+    for (const key of ['access_token','auth_code','token','reset_token','resetToken','verification_handle','verificationHandle']) target.searchParams.delete(key);
+    return `${target.pathname}${target.search}` || '/';
+  } catch { return '/'; }
+}
 
 async function request(path, options = {}) {
   const headers = new Headers(options.headers);
-  const token = persistedToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
-  const response = await fetch(`${API_ROOT}${path}`, { ...options, headers });
+  const response = await fetch(`${API_ROOT}${path}`, { ...options, headers, credentials: 'include' });
   const data = response.status === 204 ? undefined : await response.json().catch(() => undefined);
   if (!response.ok) {
     const error = new Error(data?.message || `Core API request failed (${response.status})`);
@@ -36,13 +42,6 @@ async function request(path, options = {}) {
 }
 
 const json = (method, body) => ({ method, body: JSON.stringify(body) });
-const storeAccessToken = (result) => {
-  if (result?.access_token) {
-    transientToken = undefined;
-    storage()?.setItem('core_access_token', result.access_token);
-  }
-  return result;
-};
 const entity = (name) => ({
   list: (sort, limit) => request(`/data/${name}?${new URLSearchParams({ ...(sort && { sort }), ...(limit && { limit }) })}`),
   get: (id) => request(`/data/${name}/${encodeURIComponent(id)}`),
@@ -58,31 +57,23 @@ export const coreClient = Object.freeze({
   auth: {
     me: () => request('/auth/context'),
     register: (payload) => request('/auth/register', json('POST', payload)),
-    verifyOtp: async (payload) => storeAccessToken(await request('/auth/verify-otp', json('POST', payload))),
+    verifyOtp: (payload) => request('/auth/verify-otp', json('POST', payload)),
     resendOtp: (email, verificationHandle) => request('/auth/resend-otp', json('POST', { email, verificationHandle })),
     resetPasswordRequest: (email) => request('/auth/password/reset-request', json('POST', { email })),
     resetPassword: (payload) => request('/auth/password/reset', json('POST', payload)),
-    loginViaEmailPassword: async (email, password) => storeAccessToken(await request('/auth/password/login', json('POST', { email, password }))),
+    loginViaEmailPassword: (email, password) => request('/auth/password/login', json('POST', { email, password })),
     exchangePendingBrowserGrant: async () => {
       if (!pendingBrowserGrant) return false;
       const code = pendingBrowserGrant; pendingBrowserGrant = undefined;
-      storeAccessToken(await request('/auth/exchange', json('POST', { code })));
+      await request('/auth/exchange', json('POST', { code }));
       return true;
     },
-    hasToken: () => Boolean(persistedToken()),
-    getToken: () => persistedToken(),
-    setToken: (token) => { transientToken = undefined; storage()?.setItem('core_access_token', token); },
-    clearToken: () => { transientToken = undefined; storage()?.removeItem('core_access_token'); },
     logout: async (returnTo) => {
-      try { if (persistedToken()) await request('/auth/logout', { method: 'POST' }); }
-      catch { /* logout is revocation best-effort; local credential removal is mandatory */ }
-      finally {
-        transientToken = undefined; storage()?.removeItem('core_access_token');
-        if (returnTo && typeof window !== 'undefined') window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`);
-      }
+      await request('/auth/logout', { method: 'POST' });
+      if (returnTo && typeof window !== 'undefined') window.location.assign(`/login?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`);
     },
-    redirectToLogin: (returnTo) => window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`),
-    loginWithProvider: (provider, returnTo = '/') => window.location.assign(`${API_ROOT}/auth/login/${encodeURIComponent(provider)}?return_to=${encodeURIComponent(returnTo)}`),
+    redirectToLogin: (returnTo) => window.location.assign(`/login?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`),
+    loginWithProvider: (provider, returnTo = '/') => window.location.assign(`${API_ROOT}/auth/login/${encodeURIComponent(provider)}?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`),
   },
   creative: {
     execute: (payload) => request('/creative/execute', json('POST', payload)),
