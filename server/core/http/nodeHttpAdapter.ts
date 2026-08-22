@@ -4,7 +4,15 @@ import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CreativeApplicationCore } from '../composition/createCreativeCore.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { modelArtifactRelay } from './modelArtifactRelay.ts';
-import { clearBrowserSession, establishBrowserSession, requestAuthorization } from './browserSessionCookie.ts';
+import {
+  BROWSER_CSRF_HEADER,
+  assertBrowserAuthMutationOrigin,
+  assertBrowserMutationAllowed,
+  clearBrowserSession,
+  establishBrowserSession,
+  exposeBrowserCsrfToken,
+  requestAuthorization,
+} from './browserSessionCookie.ts';
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 
@@ -19,8 +27,7 @@ type HttpAuthAuthority = Readonly<{
   resetPasswordRequest?: (email: string) => Promise<unknown>;
   resetPassword?: (resetToken: string, newPassword: string) => Promise<unknown>;
   googleStart?: (returnTo?: string) => Promise<string>;
-  googleCallback?: (state: string, code: string) => Promise<string>;
-  exchangeBrowserGrant?: (code: string) => Promise<unknown>;
+  googleCallback?: (state: string, code: string) => Promise<Readonly<{ redirectTo: string; session: unknown }>>;
 }>;
 
 /** Minimal Node transport for a framework-neutral Fetch handler. */
@@ -47,7 +54,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         response.setHeader('Access-Control-Allow-Origin', origin);
         response.setHeader('Access-Control-Allow-Credentials', 'true');
         response.setHeader('Vary', 'Origin');
-        response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Correlation-Id');
+        response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}`);
+        response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}`);
         response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
       }
       if (request.method === 'OPTIONS') return send(response, 204, undefined);
@@ -57,6 +65,10 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (!input.accepting()) return sendError(response, 503, 'shutting_down', 'Server is shutting down', correlationId, true);
       const relay = await modelArtifactRelay(new Request(new URL(request.url ?? '/', 'http://core.invalid'), { method: request.method }));
       if (relay) return sendFetchResponse(response, relay);
+
+      if (browserAuthMutationPath(path, request.method)) assertBrowserAuthMutationOrigin(request, input.config);
+      else assertBrowserMutationAllowed(request, input.config);
+
       const resultMatch = path.match(/^\/api\/core\/artifacts\/results\/([^/]+)$/);
       if (resultMatch && request.method === 'GET') {
         const token=decodeURIComponent(resultMatch[1]); let claim; try { claim=input.artifacts.external.resolveStoredOriginalDelivery(token); } catch { claim=input.artifacts.external.resolveStoredFinalDelivery(token); }
@@ -97,13 +109,9 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       }
       if (path === '/api/core/auth/callback/google' && request.method === 'GET') {
         if (!input.auth.googleCallback) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        return redirect(response, await input.auth.googleCallback(url.searchParams.get('state') ?? '', url.searchParams.get('code') ?? ''));
-      }
-      if (path === '/api/core/auth/exchange' && request.method === 'POST') {
-        if (!input.auth.exchangeBrowserGrant) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        const body=await authJson(request,input.config.bodyLimitBytes) as any;
-        const session=await input.auth.exchangeBrowserGrant(string(body?.code));
-        return send(response,200,establishBrowserSession(response,session,input.config,now()));
+        const completed = await input.auth.googleCallback(url.searchParams.get('state') ?? '', url.searchParams.get('code') ?? '');
+        establishBrowserSession(response, completed.session, input.config, now());
+        return redirect(response, completed.redirectTo);
       }
       if (path === '/api/core/auth/password/login' && request.method === 'POST') {
         if (!input.auth.login) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
@@ -113,10 +121,13 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       }
       if (path === '/api/core/auth/context' && request.method === 'GET') {
         if (!input.auth.context) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
-        return send(response, 200, await input.auth.context(requestAuthorization(request,input.config)));
+        const context = await input.auth.context(requestAuthorization(request,input.config));
+        exposeBrowserCsrfToken(response, request, input.config);
+        return send(response, 200, context);
       }
       if (path === '/api/core/auth/logout' && request.method === 'POST') {
         if (!input.auth.logout) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
+        assertBrowserMutationAllowed(request, input.config);
         try { await input.auth.logout(requestAuthorization(request,input.config)); }
         catch (cause) {
           const error=cause as Error & { status?: number };
@@ -157,7 +168,17 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
   };
 }
 
-function header(request: IncomingMessage, name: string): string | undefined { const value = request.headers[name]; return Array.isArray(value) ? value[0] : value; }
+function browserAuthMutationPath(path: string, method: string | undefined): boolean {
+  if ((method ?? '').toUpperCase() !== 'POST') return false;
+  return path === '/api/core/auth/register'
+    || path === '/api/core/auth/verify-otp'
+    || path === '/api/core/auth/resend-otp'
+    || path === '/api/core/auth/password/reset-request'
+    || path === '/api/core/auth/password/reset'
+    || path === '/api/core/auth/password/login'
+    || path === '/api/core/auth/logout';
+}
+function header(request: IncomingMessage, name: string): string | undefined { const value = request.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value; }
 function mediaType(request: IncomingMessage): string { return (header(request, 'content-type') ?? '').split(';')[0].trim().toLowerCase(); }
 function string(value: unknown): string { return typeof value === 'string' ? value : ''; }
 async function authJson(request: IncomingMessage, limit: number) { if (!mediaType(request).startsWith('application/json')) throw Object.assign(new Error('Content-Type must be application/json'),{status:415,code:'unsupported_media_type'}); return readJson(request,limit); }
