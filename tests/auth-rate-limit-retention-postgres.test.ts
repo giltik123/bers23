@@ -72,6 +72,8 @@ export async function proveAuthRateLimitRetention() {
     );
     assert.deepEqual(await scopes(pool), ['retention-current']);
 
+    await proveClientHeldThroughPrune(nowMs, ordinaryPolicy);
+
     await pool.query('TRUNCATE canonical_auth_rate_limits');
     await insertRateLimit(pool, 'retention-single-connection-stale', digest(70), staleAt, staleAt, null);
     const singlePool = new Pool({ connectionString: databaseUrl, max: 1, application_name: 'bers-rate-limit-retention-single-connection' });
@@ -108,6 +110,47 @@ export async function proveAuthRateLimitRetention() {
     await pool.query('TRUNCATE canonical_auth_rate_limits').catch(() => undefined);
     await pool.end();
   }
+}
+
+async function proveClientHeldThroughPrune(nowMs: number, policy: { windowMs: number; maxAttempts: number; blockMs: number }) {
+  let released = false;
+  let pruneStarted = false;
+  let pruneFinished = false;
+  const fakeClient = {
+    async query(sql: string) {
+      if (sql.startsWith('SELECT window_started_at')) {
+        return { rows: [{ window_started_at: new Date(nowMs), attempt_count: 0, blocked_until: null }], rowCount: 1 };
+      }
+      if (sql.startsWith('WITH stale AS')) {
+        pruneStarted = true;
+        return await new Promise<{ rows: readonly unknown[]; rowCount: number }>((resolve, reject) => {
+          setImmediate(() => {
+            try {
+              assert.equal(released, false, 'PoolClient must remain checked out until opportunistic prune finishes');
+              pruneFinished = true;
+              resolve({ rows: [], rowCount: 0 });
+            } catch (error) {
+              reject(error);
+            }
+          });
+        });
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release() { released = true; },
+  };
+  const fakePool = {
+    async connect() { return fakeClient; },
+    async query() { throw new Error('opportunistic cleanup must not query through the pool'); },
+  } as unknown as Pool;
+  const store = new PostgresAuthSecurityStore(fakePool);
+  assert.deepEqual(
+    await store.consumeRateLimit('retention-client-lifetime', digest(90), nowMs, policy),
+    { allowed: true, retryAfterMs: 0 },
+  );
+  assert.equal(pruneStarted, true);
+  assert.equal(pruneFinished, true);
+  assert.equal(released, true);
 }
 
 async function insertRateLimit(
