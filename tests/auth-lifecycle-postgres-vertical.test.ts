@@ -18,7 +18,7 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required: auth lifecycle acceptance must use real PostgreSQL');
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-const googleJwk = { ...(publicKey.export({ format: 'jwk' }) as JsonWebKey), kid: 'auth-lifecycle-key', alg: 'RS256', use: 'sig' };
+const googleJwk = { ...(publicKey.export({ format: 'jwk' }) as any), kid: 'auth-lifecycle-key', alg: 'RS256', use: 'sig' };
 const config: CoreServerConfig = Object.freeze({
   nodeEnv: 'production', port: 8080, databaseUrl, provider: 'FAL', falKey: 'auth-lifecycle-fal-must-not-run',
   falBaseUrl: 'https://provider.auth-lifecycle.test', jwtSecret: 'auth-lifecycle-jwt-secret', jwtIssuer: 'auth-lifecycle', jwtAudience: 'auth-lifecycle-core',
@@ -43,7 +43,8 @@ function signGoogle(claims: Record<string, unknown>, key = privateKey, kid = 'au
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const header = encode({ alg: 'RS256', typ: 'JWT', kid });
   const payload = encode(claims);
-  const signature = createSign('RSA-SHA256').update(`${header}.${payload}`).end().sign(key).toString('base64url');
+  const signer = createSign('RSA-SHA256'); signer.update(`${header}.${payload}`); signer.end();
+  const signature = signer.sign(key).toString('base64url');
   return `${header}.${payload}.${signature}`;
 }
 
@@ -125,11 +126,9 @@ test('registration, verification, recovery and Google OAuth are canonical Postgr
   assert.equal((await post(running.baseUrl,'/api/core/auth/verify-otp',{email,otpCode:secondCode})).status,400,'verification is single-use');
   assert.equal((await createProject(running,localToken,'Local Auth Project')).status,201);
 
-  // Expired verification challenges stay unusable and cannot create sessions.
   const expEmail='expired@example.test'; const expRegister=await post(running.baseUrl,'/api/core/auth/register',{email:expEmail,password}); assert.equal(expRegister.status,202); const expCode=verificationCode(mails[mails.length-1]); const expUser=(await pool.query('SELECT user_id FROM canonical_auth_users WHERE email_normalized=$1',[expEmail])).rows[0];
   nowMs += 10*60_000+1; assert.equal((await post(running.baseUrl,'/api/core/auth/verify-otp',{email:expEmail,otpCode:expCode})).status,400); assert.equal(await running.production.auth.store.activeSessionCount(expUser.user_id),0);
 
-  // Password-reset request is enumeration resistant; token is delivered only through the server-side mail port.
   const existingReset=await post(running.baseUrl,'/api/core/auth/password/reset-request',{email}); const existingResetBody=await existingReset.json(); const mailCountAfterExisting=mails.length;
   const unknownReset=await post(running.baseUrl,'/api/core/auth/password/reset-request',{email:'missing@example.test'}); assert.equal(unknownReset.status,202); assert.deepEqual(await unknownReset.json(),existingResetBody); assert.equal(mails.length,mailCountAfterExisting);
   const resetMail=mails[mailCountAfterExisting-1]; const reset=resetToken(resetMail); assert.equal(JSON.stringify(existingResetBody).includes(reset),false);
@@ -141,9 +140,7 @@ test('registration, verification, recovery and Google OAuth are canonical Postgr
   assert.equal((await post(running.baseUrl,'/api/core/auth/password/reset',{resetToken:reset,newPassword:'another secure password'})).status,400,'reset token is single-use');
   assert.equal((await fetch(`${running.baseUrl}/api/core/projects`,{headers:{authorization:`Bearer ${newLocalToken}`}})).status,200);
 
-  // OAuth state itself is mandatory and single-use.
   const noStateTokenCalls=tokenExchanges; const badState=await fetch(`${running.baseUrl}/api/core/auth/callback/google?state=invalid-state&code=never`,{redirect:'manual'}); assert.equal(badState.status,401); assert.equal(tokenExchanges,noStateTokenCalls);
-
   async function rejectedGoogle(code:string,tokenFactory:(nonce:string)=>string){ const flow=await startGoogle(running); oauthTokens.set(code,tokenFactory(flow.nonce)); const response=await fetch(`${running.baseUrl}/api/core/auth/callback/google?state=${encodeURIComponent(flow.state)}&code=${encodeURIComponent(code)}`,{redirect:'manual'}); assert.equal(response.status,401); }
   await rejectedGoogle('bad-nonce',nonce=>signGoogle(claims('different-nonce')));
   await rejectedGoogle('bad-audience',nonce=>signGoogle(claims(nonce,{aud:'wrong-audience'})));
@@ -152,34 +149,27 @@ test('registration, verification, recovery and Google OAuth are canonical Postgr
   const badKey=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey;
   await rejectedGoogle('bad-signature',nonce=>signGoogle(claims(nonce),badKey));
 
-  // Existing Gmail identity links to the already verified canonical local user.
   const linkFlow=await startGoogle(running,'/projects'); oauthTokens.set('link-local',signGoogle(claims(linkFlow.nonce,{sub:'linked-google-sub',email})));
   const linkCallback=await fetch(`${running.baseUrl}/api/core/auth/callback/google?state=${encodeURIComponent(linkFlow.state)}&code=link-local`,{redirect:'manual'}); assert.equal(linkCallback.status,302); const linkLocation=new URL(String(linkCallback.headers.get('location'))); assert.equal(linkLocation.origin,config.authPublicOrigin); assert.equal(linkLocation.pathname,'/projects'); assert.equal(linkLocation.searchParams.has('access_token'),false); const linkGrant=linkLocation.searchParams.get('auth_code'); assert(linkGrant);
   const linkExchange=await post(running.baseUrl,'/api/core/auth/exchange',{code:linkGrant}); assert.equal(linkExchange.status,200); const linkBody=await linkExchange.json() as any; assert.equal(linkBody.user.id,pending.user_id,'authoritative Gmail must link to existing verified local account');
   assert.equal((await post(running.baseUrl,'/api/core/auth/exchange',{code:linkGrant})).status,401,'browser grant is single-use');
 
-  // A custom-domain email without Workspace hd is never silently linked to an existing account.
   await running.production.auth.store.provisionLocalUser({tenantId:config.authDefaultTenantId,userId:'custom-local',email:'person@corp.example',password:'custom local secure password'});
   const unsafeFlow=await startGoogle(running); oauthTokens.set('unsafe-link',signGoogle(claims(unsafeFlow.nonce,{sub:'unsafe-google-sub',email:'person@corp.example',email_verified:true,hd:undefined})));
   const unsafe=await fetch(`${running.baseUrl}/api/core/auth/callback/google?state=${encodeURIComponent(unsafeFlow.state)}&code=unsafe-link`,{redirect:'manual'}); assert.equal(unsafe.status,409); assert.equal((await unsafe.json() as any).code,'oauth_account_link_required');
 
-  // New Google user receives the same canonical session authority and can use Projects.
   const googleFlow=await startGoogle(running,'/projects'); oauthTokens.set('good-google',signGoogle(claims(googleFlow.nonce,{sub:'new-google-sub',email:'newoauth@gmail.com'})));
-  const googleCallback=await fetch(`${running.baseUrl}/api/core/auth/callback/google?state=${encodeURIComponent(googleFlow.state)}&code=good-google`,{redirect:'manual'}); assert.equal(googleCallback.status,302); const googleLocation=new URL(String(googleCallback.headers.get('location'))); const googleGrant=googleLocation.searchParams.get('auth_code'); assert(googleGrant); assert.equal(googleLocation.searchParams.has('access_token'),false); assert.equal(JSON.stringify([...googleLocation.searchParams.keys()]).includes(config.googleOauthClientSecret),false);
+  const googleCallback=await fetch(`${running.baseUrl}/api/core/auth/callback/google?state=${encodeURIComponent(googleFlow.state)}&code=good-google`,{redirect:'manual'}); assert.equal(googleCallback.status,302); const googleLocation=new URL(String(googleCallback.headers.get('location'))); const googleGrant=googleLocation.searchParams.get('auth_code'); assert(googleGrant); assert.equal(googleLocation.searchParams.has('access_token'),false);
   const googleExchange=await post(running.baseUrl,'/api/core/auth/exchange',{code:googleGrant}); assert.equal(googleExchange.status,200); const googleBody=await googleExchange.json() as any; const googleToken=String(googleBody.access_token); assert.equal(googleBody.user.email,'newoauth@gmail.com');
   assert.equal((await createProject(running,googleToken,'Google Auth Project')).status,201); assert.equal((await fetch(`${running.baseUrl}/api/core/projects`,{headers:{authorization:`Bearer ${googleToken}`}})).status,200);
   assert.equal((await pool.query("SELECT count(*)::int AS count FROM canonical_auth_oauth_identities WHERE provider='google' AND provider_subject='new-google-sub'")).rows[0].count,1);
 
-  // Restart preserves canonical identity/session; consumed challenges and grants remain consumed.
   await stop(running); running=await start();
   assert.equal((await fetch(`${running.baseUrl}/api/core/auth/context`,{headers:{authorization:`Bearer ${googleToken}`}})).status,200);
   assert.equal((await post(running.baseUrl,'/api/core/auth/exchange',{code:googleGrant})).status,401);
   assert.equal((await post(running.baseUrl,'/api/core/auth/password/reset',{resetToken:reset,newPassword:'yet another secure password'})).status,400);
   assert.equal((await pool.query("SELECT count(*)::int AS count FROM canonical_auth_oauth_identities WHERE provider='google' AND provider_subject='new-google-sub'")).rows[0].count,1);
 
-  // Public responses must not contain provider or challenge secrets; auth lifecycle never reserves credits or calls FAL.
-  for(const secret of [config.resendApiKey,config.googleOauthClientSecret,config.authChallengeSecret,firstCode,reset]) {
-    assert.equal(JSON.stringify([existingResetBody,verifiedBody,googleBody]).includes(secret),false);
-  }
+  for(const secret of [config.resendApiKey,config.googleOauthClientSecret,config.authChallengeSecret,firstCode,reset]) assert.equal(JSON.stringify([existingResetBody,verifiedBody,googleBody]).includes(secret),false);
   assert.equal(providerCalls,0); assert.equal(Number((await pool.query('SELECT count(*)::int AS count FROM credit_reservations')).rows[0].count),0);
 });
