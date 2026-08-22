@@ -16,16 +16,11 @@ export const AuthProvider = ({ children }) => {
     setAuthError(null);
     try {
       await coreClient.auth.exchangePendingBrowserGrant();
+      await checkUserAuth();
     } catch (error) {
-      coreClient.auth.clearToken();
       setUser(null); setIsAuthenticated(false); setIsLoadingAuth(false); setAuthChecked(true);
       setAuthError({ type: 'auth_required', message: error.message || 'Authentication required' });
-      return;
     }
-    if (!coreClient.auth.hasToken()) {
-      setUser(null); setIsAuthenticated(false); setIsLoadingAuth(false); setAuthChecked(true); return;
-    }
-    await checkUserAuth();
   };
 
   const checkUserAuth = async () => {
@@ -35,16 +30,21 @@ export const AuthProvider = ({ children }) => {
       setUser(currentUser); setIsAuthenticated(true); setAuthError(null);
     } catch (error) {
       setUser(null); setIsAuthenticated(false);
-      if (error.status === 401 || error.status === 403) {
-        coreClient.auth.clearToken();
-        setAuthError({ type: 'auth_required', message: 'Authentication required' });
-      } else setAuthError({ type: 'unknown', message: error.message || 'Failed to verify session' });
+      if (error.status === 401 || error.status === 403) setAuthError({ type: 'auth_required', message: 'Authentication required' });
+      else setAuthError({ type: 'unknown', message: error.message || 'Failed to verify session' });
+      throw error;
     } finally { setIsLoadingAuth(false); setAuthChecked(true); }
   };
 
   const logout = async (shouldRedirect = true) => {
-    setUser(null); setIsAuthenticated(false);
-    await coreClient.auth.logout(shouldRedirect ? window.location.href : undefined);
+    setAuthError(null);
+    try {
+      await coreClient.auth.logout(shouldRedirect ? window.location.href : undefined);
+      setUser(null); setIsAuthenticated(false);
+    } catch (error) {
+      setAuthError({ type: 'unknown', message: error.message || 'Failed to revoke session' });
+      throw error;
+    }
   };
   const navigateToLogin = () => { coreClient.auth.redirectToLogin(window.location.href); };
 
