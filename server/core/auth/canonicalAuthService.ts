@@ -64,8 +64,8 @@ export class CanonicalAuthService {
         expiresAtMs: now + VERIFICATION_TTL_MS,
       });
     } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (code === 'registration_unavailable' || code === 'verification_rate_limited') return Object.freeze({ status: 'verification_required' });
+      const errorCode = (error as { code?: string }).code;
+      if (errorCode === 'registration_unavailable' || errorCode === 'verification_rate_limited') return Object.freeze({ status: 'verification_required' });
       throw error;
     }
     const recipient = email.trim();
@@ -96,8 +96,12 @@ export class CanonicalAuthService {
   async resetPasswordRequest(email: string) {
     const token = opaqueToken(32), now = this.#now();
     let reset;
-    try { reset = await this.#store.createPasswordReset(email, keyedDigest(this.#challengeSecret, 'password-reset', token), now, now + RESET_TTL_MS); }
-    catch (error) { if ((error as { code?: string }).code !== 'invalid_email') throw error; }
+    try {
+      const user = await this.#store.findUserByEmail(email);
+      if (user?.status === 'active' && user.email_verified_at) {
+        reset = await this.#store.createPasswordReset(email, keyedDigest(this.#challengeSecret, 'password-reset', token), now, now + RESET_TTL_MS);
+      }
+    } catch (error) { if ((error as { code?: string }).code !== 'invalid_email') throw error; }
     if (reset) {
       const url = new URL('/reset-password', this.#publicOrigin);
       url.hash = new URLSearchParams({ token }).toString();
