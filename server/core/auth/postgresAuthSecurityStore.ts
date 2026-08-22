@@ -58,7 +58,7 @@ export class PostgresAuthSecurityStore {
       const blockedUntilMs = row.blocked_until?.getTime() ?? 0;
       if (blockedUntilMs > nowMs) {
         await client.query('COMMIT');
-        return this.#completeRateLimitDecision({ allowed: false, retryAfterMs: blockedUntilMs - nowMs }, nowMs, client);
+        return await this.#completeRateLimitDecision({ allowed: false, retryAfterMs: blockedUntilMs - nowMs }, nowMs, client);
       }
 
       if (nowMs - row.window_started_at.getTime() >= policy.windowMs) {
@@ -66,7 +66,7 @@ export class PostgresAuthSecurityStore {
           SET window_started_at=$3,attempt_count=1,blocked_until=NULL,updated_at=$3
           WHERE scope=$1 AND subject_digest=$2`, [scope, subjectDigest, now]);
         await client.query('COMMIT');
-        return this.#completeRateLimitDecision({ allowed: true, retryAfterMs: 0 }, nowMs, client);
+        return await this.#completeRateLimitDecision({ allowed: true, retryAfterMs: 0 }, nowMs, client);
       }
 
       const nextCount = row.attempt_count + 1;
@@ -76,13 +76,13 @@ export class PostgresAuthSecurityStore {
           SET attempt_count=$3,blocked_until=$4,updated_at=$5
           WHERE scope=$1 AND subject_digest=$2`, [scope, subjectDigest, nextCount, blockedUntil, now]);
         await client.query('COMMIT');
-        return this.#completeRateLimitDecision({ allowed: false, retryAfterMs: policy.blockMs }, nowMs, client);
+        return await this.#completeRateLimitDecision({ allowed: false, retryAfterMs: policy.blockMs }, nowMs, client);
       }
 
       await client.query(`UPDATE canonical_auth_rate_limits SET attempt_count=$3,blocked_until=NULL,updated_at=$4
         WHERE scope=$1 AND subject_digest=$2`, [scope, subjectDigest, nextCount, now]);
       await client.query('COMMIT');
-      return this.#completeRateLimitDecision({ allowed: true, retryAfterMs: 0 }, nowMs, client);
+      return await this.#completeRateLimitDecision({ allowed: true, retryAfterMs: 0 }, nowMs, client);
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw error;
