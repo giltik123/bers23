@@ -2,7 +2,8 @@ import { appParams } from '@/lib/app-params';
 
 const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
 const storage = () => typeof localStorage === 'undefined' ? undefined : localStorage;
-const persistedToken = () => appParams.token || storage()?.getItem('core_access_token') || undefined;
+let transientToken = appParams.token || undefined;
+const persistedToken = () => transientToken || storage()?.getItem('core_access_token') || undefined;
 
 async function request(path, options = {}) {
   const headers = new Headers(options.headers);
@@ -46,16 +47,21 @@ export const coreClient = Object.freeze({
     resetPassword: (payload) => request('/auth/password/reset', json('POST', payload)),
     loginViaEmailPassword: async (email, password) => {
       const result = await request('/auth/password/login', json('POST', { email, password }));
-      if (result?.access_token) storage()?.setItem('core_access_token', result.access_token);
+      if (result?.access_token) {
+        transientToken = undefined;
+        storage()?.setItem('core_access_token', result.access_token);
+      }
       return result;
     },
     hasToken: () => Boolean(persistedToken()),
     getToken: () => persistedToken(),
-    setToken: (token) => storage()?.setItem('core_access_token', token),
-    clearToken: () => storage()?.removeItem('core_access_token'),
+    setToken: (token) => { transientToken = undefined; storage()?.setItem('core_access_token', token); },
+    clearToken: () => { transientToken = undefined; storage()?.removeItem('core_access_token'); },
     logout: async (returnTo) => {
       try { if (persistedToken()) await request('/auth/logout', { method: 'POST' }); }
+      catch { /* logout is revocation best-effort; local credential removal is mandatory */ }
       finally {
+        transientToken = undefined;
         storage()?.removeItem('core_access_token');
         if (returnTo && typeof window !== 'undefined') window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`);
       }
