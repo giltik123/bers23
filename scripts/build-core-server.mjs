@@ -11,3 +11,4 @@ await cp('server/core/projects/migrations/004_canonical_projects_and_originals.s
 await cp('server/core/projects/migrations/005_canonical_project_history_versions.sql', 'dist-server/migrations/005_canonical_project_history_versions.sql');
 await cp('server/core/projects/migrations/006_project_history_acceptance_hardening.sql', 'dist-server/migrations/006_project_history_acceptance_hardening.sql');
 await cp('server/core/projects/migrations/007_project_history_source_lineage.sql', 'dist-server/migrations/007_project_history_source_lineage.sql');
+await cp('server/core/auth/migrations/008_canonical_auth_identity_sessions.sql', 'dist-server/migrations/008_canonical_auth_identity_sessions.sql');
