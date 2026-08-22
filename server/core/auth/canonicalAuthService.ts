@@ -180,18 +180,23 @@ export class CanonicalAuthService {
     return Object.freeze({ status: 'password_reset' });
   }
 
-  async googleStart(returnTo?: string, risk?: AuthRiskContext) {
+  async googleStart(returnTo?: string, risk?: AuthRiskContext, previousAuthorization?: string) {
     const peerBudget = await this.#peerBudget('oauth-start:peer', risk, LIMIT.oauthStartPeer);
     if (!peerBudget.allowed) throw rateLimited(peerBudget.retryAfterMs);
     const state = opaqueToken(32), nonce = opaqueToken(32), now = this.#now();
+    const stateDigest = keyedDigest(this.#challengeSecret, 'google-state', state);
+    const previousSessionId = await this.#activeSessionId(previousAuthorization);
     const safeReturnTo = sanitizeReturnTo(returnTo, this.#publicOrigin);
     await this.#store.createOAuthState(
-      keyedDigest(this.#challengeSecret, 'google-state', state),
+      stateDigest,
       keyedDigest(this.#challengeSecret, 'google-nonce', nonce),
       safeReturnTo,
       now,
       now + OAUTH_STATE_TTL_MS,
     );
+    if (previousSessionId && !await this.#security.bindOAuthStateSession(stateDigest, previousSessionId)) {
+      throw new Error('Failed to bind OAuth state to originating session');
+    }
     return this.#google.authorizationUrl({ state, nonce });
   }
 
@@ -201,8 +206,10 @@ export class CanonicalAuthService {
     const retryAfterMs = Math.max(stateBudget.retryAfterMs, peerBudget.retryAfterMs);
     if (!stateBudget.allowed || !peerBudget.allowed) throw rateLimited(retryAfterMs);
     if (typeof state !== 'string' || state.length < 20 || state.length > 256) throw oauthDenied();
-    const oauthState = await this.#store.consumeOAuthState(keyedDigest(this.#challengeSecret, 'google-state', state), this.#now());
+    const stateDigest = keyedDigest(this.#challengeSecret, 'google-state', state);
+    const oauthState = await this.#store.consumeOAuthState(stateDigest, this.#now());
     if (!oauthState) throw oauthDenied();
+    const oauthPreviousSessionId = await this.#security.oauthStateSession(stateDigest);
     const claims = await this.#google.exchangeAndVerify(code);
     const nonceDigest = keyedDigest(this.#challengeSecret, 'google-nonce', claims.nonce);
     if (!digestMatches(nonceDigest, oauthState.nonceDigest) || claims.email_verified !== true) throw oauthDenied();
@@ -210,7 +217,7 @@ export class CanonicalAuthService {
     const authoritativeEmail = domain === 'gmail.com' || Boolean(claims.hd);
     const user = await this.#store.resolveGoogleIdentity({ subject: claims.sub, email: claims.email, displayName: claims.name, authoritativeEmail, defaultTenantId: this.#defaultTenantId, nowMs: this.#now() });
     const redirect = new URL(oauthState.returnTo, this.#publicOrigin);
-    const session = await this.issueSession(user, previousAuthorization);
+    const session = await this.issueSession(user, previousAuthorization, oauthPreviousSessionId);
     return Object.freeze({ redirectTo: redirect.toString(), session });
   }
 
@@ -278,15 +285,21 @@ export class CanonicalAuthService {
   get store() { return this.#store; }
   get securityStore() { return this.#security; }
 
-  private async issueSession(user: AuthUserRow, previousAuthorization?: string) {
+  private async issueSession(user: AuthUserRow, previousAuthorization?: string, boundPreviousSessionId?: string) {
     if (user.status !== 'active') throw unauthenticated();
     const now = this.#now(), expiresAt = now + this.#sessionAbsoluteTtlMs;
-    const previousSessionId = this.#sameUserSessionId(previousAuthorization, user);
+    const previousSessionId = boundPreviousSessionId ?? this.#sameUserSessionId(previousAuthorization, user);
     const session = previousSessionId
       ? await this.#security.rotateSession(previousSessionId, user, now, expiresAt)
       : await this.#security.createSession(user, now, expiresAt);
     const accessToken = signJwt({ sub: user.user_id, tenantId: user.tenant_id, sid: session.sessionId, iss: this.#jwtConfig.issuer, aud: this.#jwtConfig.audience, iat: Math.floor(now / 1000), exp: Math.floor(expiresAt / 1000) }, this.#jwtConfig.secret);
     return Object.freeze({ access_token: accessToken, token_type: 'Bearer', expires_at: session.expiresAt.toISOString(), user: publicUser(user) });
+  }
+
+  async #activeSessionId(authorization: string | undefined): Promise<string | undefined> {
+    if (!authorization) return undefined;
+    try { return (await this.verify(authorization)).sessionId; }
+    catch { return undefined; }
   }
 
   #sameUserSessionId(authorization: string | undefined, user: AuthUserRow): string | undefined {
