@@ -38,6 +38,19 @@ test('FINAL identity is not a delivery capability and delivery expires and fails
   assert.equal(await store.load('missing', scope), undefined, 'missing/revoked/deleted/non-FINAL rows are unavailable');
 });
 
+test('immutable ORIGINAL identity is scope-bound, is not delivery authority, and delivery expires', () => {
+  let now = 1_000; const authority = new SignedArtifactAuthority('original-secret', [], () => now);
+  const identity = authority.issueStoredOriginal('00000000-0000-4000-8000-000000000002', scope);
+  assert.equal(authority.resolveStoredOriginalId(identity, scope).lifecycle, 'IMMUTABLE');
+  assert.throws(() => authority.resolveStoredOriginalDelivery(identity), /not trusted/);
+  assert.throws(() => authority.resolveStoredOriginalId(identity, { ...scope, userId: 'other-user' }), /not trusted/);
+  assert.throws(() => authority.resolveStoredOriginalId(identity, { ...scope, tenantId: 'other-tenant' }), /not trusted/);
+  assert.throws(() => authority.resolveStoredOriginalId(identity, { ...scope, projectId: 'other-project' }), /not trusted/);
+  const delivery = authority.issueStoredOriginalDelivery('00000000-0000-4000-8000-000000000002', scope, 2_000);
+  assert.equal(authority.resolveStoredOriginalDelivery(delivery).role, 'ORIGINAL');
+  now = 2_000; assert.throws(() => authority.resolveStoredOriginalDelivery(delivery), /not trusted/);
+});
+
 test('idempotent FINAL replay returns complete canonical row metadata with its bytes', async () => {
   const canonicalBytes = await sharp({ create: { width: 1, height: 1, channels: 4, background: '#010203' } }).png().toBuffer();
   const pool = { async query() { return { rows: [{ storage_id: 'existing', ...scope, tenant_id: scope.tenantId, user_id: scope.userId, project_id: scope.projectId, execution_id: 'execution-1', operation_id: 'original-operation', role: 'COMPOSITE', lifecycle: 'FINAL', width: 1, height: 1, encoding: 'PNG_RGBA8_LOSSLESS', content_type: 'image/png', image_bytes: canonicalBytes }] }; } };

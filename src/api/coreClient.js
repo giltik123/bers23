@@ -61,6 +61,13 @@ export const coreClient = Object.freeze({
   artifacts: {
     persistMask: ({ projectId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
   },
+  projects: {
+    list: () => request('/projects'),
+    get: (id) => request(`/projects/${encodeURIComponent(id)}`),
+    createFromFile: ({ file, name }) => request(`/projects?${new URLSearchParams({ name: name || file.name.replace(/\.[^.]+$/, '') })}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file }),
+    update: (id, patch) => request(`/projects/${encodeURIComponent(id)}`, json('PATCH', patch)),
+    delete: (id) => request(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
   entities,
   functions: { invoke: (command, payload) => request(`/commands/${encodeURIComponent(command)}`, json('POST', payload)) },
   integrations: { Core: {

@@ -3,7 +3,7 @@ export type CoreServerConfig = Readonly<{
   falBaseUrl: string; jwtSecret: string; jwtIssuer: string; jwtAudience: string;
   artifactSigningSecret: string; trustedAssetHosts: readonly string[]; allowLegacyAssetUrls: boolean;
   allowedWebOrigins: readonly string[]; hardBudgetCredits: number; creditsPerEdit: number;
-  bodyLimitBytes: number; maskUploadLimitBytes: number; maskMaxDimension: number; requestTimeoutMs: number; providerTimeoutMs: number; shutdownTimeoutMs: number;
+  bodyLimitBytes: number; maskUploadLimitBytes: number; maskMaxDimension: number; imageUploadLimitBytes: number; imageMaxDimension: number; imageMaxPixels: number; requestTimeoutMs: number; providerTimeoutMs: number; shutdownTimeoutMs: number;
 }>;
 
 /** Reads server-only configuration and reports names, never secret values. */
@@ -25,7 +25,7 @@ export function loadCoreServerConfig(env: NodeJS.ProcessEnv = process.env): Core
     jwtIssuer: required('JWT_ISSUER'), jwtAudience: required('JWT_AUDIENCE'), artifactSigningSecret: required('ARTIFACT_SIGNING_SECRET'),
     trustedAssetHosts: Object.freeze(trustedAssetHosts), allowLegacyAssetUrls, allowedWebOrigins: Object.freeze(allowedWebOrigins),
     hardBudgetCredits: integer('HARD_BUDGET_CREDITS', 1, 1, 1000), creditsPerEdit: integer('CREDITS_PER_EDIT', 1, 1, 1000),
-    bodyLimitBytes: integer('REQUEST_BODY_LIMIT_BYTES', 262_144, 1024, 2_097_152), maskUploadLimitBytes: integer('MASK_UPLOAD_LIMIT_BYTES', 67_108_864, 1024, 268_435_456), maskMaxDimension: integer('MASK_MAX_DIMENSION', 8192, 1, 16384), requestTimeoutMs: integer('REQUEST_TIMEOUT_MS', 130_000, 1000, 600_000),
+    bodyLimitBytes: integer('REQUEST_BODY_LIMIT_BYTES', 262_144, 1024, 2_097_152), maskUploadLimitBytes: integer('MASK_UPLOAD_LIMIT_BYTES', 67_108_864, 1024, 268_435_456), maskMaxDimension: integer('MASK_MAX_DIMENSION', 8192, 1, 16384), imageUploadLimitBytes: integer('IMAGE_UPLOAD_LIMIT_BYTES', 25_165_824, 1024, 104_857_600), imageMaxDimension: integer('IMAGE_MAX_DIMENSION', 8192, 1, 16384), imageMaxPixels: integer('IMAGE_MAX_PIXELS', 67_108_864, 1, 268_435_456), requestTimeoutMs: integer('REQUEST_TIMEOUT_MS', 130_000, 1000, 600_000),
     providerTimeoutMs: integer('PROVIDER_TIMEOUT_MS', 120_000, 1000, 600_000), shutdownTimeoutMs: integer('SHUTDOWN_TIMEOUT_MS', 30_000, 1000, 120_000),
   });
 }

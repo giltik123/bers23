@@ -11,6 +11,7 @@ import { createNodeHttpAdapter } from '../server/core/http/nodeHttpAdapter.ts';
 import { migrateTransactionSchema } from '../server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts';
 import { migrateMaskArtifactSchema } from '../server/core/artifacts/maskArtifactSchema.ts';
 import { migrateImageArtifactSchema } from '../server/core/artifacts/imageArtifactSchema.ts';
+import { migrateProjectSchema } from '../server/core/projects/projectSchema.ts';
 import { SelectionApplicationService } from '../src/application/selection/SelectionApplicationService.ts';
 import { CoreMaskArtifactPort } from '../src/application/selection/CoreMaskArtifactPort.js';
 import { createCreativeEditApplicationService } from '../src/application/creative/CreativeEditApplicationService.js';
@@ -70,7 +71,7 @@ function artifact(userId: string, ownerProject = projectId): string {
 
 async function start(pool: Pool, provider: ReturnType<typeof deterministicProvider>) {
   const production = await createProductionCore(config, { fetcher: provider.fetcher });
-  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, auth: production.auth, config, ready: async () => true, accepting: () => true }));
+  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready: async () => true, accepting: () => true }));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert(address && typeof address === 'object');
   return { production, server, url: `http://127.0.0.1:${address.port}`, stop: async () => { await closeServer(server); await production.close(); } };
@@ -150,7 +151,7 @@ async function throwUnexpectedSuccessDiagnostic(
 test('real Core HTTP server proves PostgreSQL financial lifecycle and safety invariants', async t => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'core-vertical-fixture' });
   await migrateTransactionSchema(pool);
-  await migrateMaskArtifactSchema(pool); await migrateImageArtifactSchema(pool);
+  await migrateMaskArtifactSchema(pool); await migrateImageArtifactSchema(pool); await migrateProjectSchema(pool);
   await pool.query('TRUNCATE transaction_journal,reservation_journal_sequences,credit_reservations,credit_wallets RESTART IDENTITY CASCADE');
   t.after(async () => { await pool.query('TRUNCATE transaction_journal,reservation_journal_sequences,credit_reservations,credit_wallets RESTART IDENTITY CASCADE'); await pool.end(); });
   const provider = deterministicProvider();
@@ -214,7 +215,7 @@ test('real Core HTTP server proves PostgreSQL financial lifecycle and safety inv
 
 test('real Editor to Core controlled edit persists and securely delivers a verified PostgreSQL COMPOSITE', async t => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'controlled-core-vertical' });
-  await migrateTransactionSchema(pool); await migrateMaskArtifactSchema(pool); await migrateImageArtifactSchema(pool);
+  await migrateTransactionSchema(pool); await migrateMaskArtifactSchema(pool); await migrateImageArtifactSchema(pool); await migrateProjectSchema(pool);
   await pool.query('TRUNCATE canonical_image_artifacts,canonical_mask_artifacts,transaction_journal,reservation_journal_sequences,credit_reservations,credit_wallets RESTART IDENTITY CASCADE');
   t.after(async () => { await pool.query('TRUNCATE canonical_image_artifacts,canonical_mask_artifacts,transaction_journal,reservation_journal_sequences,credit_reservations,credit_wallets RESTART IDENTITY CASCADE'); await pool.end(); });
 
@@ -265,7 +266,7 @@ test('real Editor to Core controlled edit persists and securely delivers a verif
 
   let now = Date.now();
   const production = await createProductionCore(config, { fetcher, now: () => now });
-  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, auth: production.auth, config, ready: async () => true, accepting: () => true }));
+  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready: async () => true, accepting: () => true }));
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); const address = server.address(); assert(address && typeof address === 'object');
   const url = `http://127.0.0.1:${address.port}`; t.after(async () => { await closeServer(server); await production.close(); });
   const userId = 'controlled-user'; await wallet(pool, userId, 20);

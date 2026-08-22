@@ -5,6 +5,7 @@ import type { PixelImage } from '../../../src/platform/creative/pipeline/Control
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 
 export type StoredFinalImage = Readonly<{ storageId: string; tenantId: string; userId: string; projectId: string; executionId: string; operationId: string; role: 'COMPOSITE'; lifecycle: 'FINAL'; width: number; height: number; encoding: 'PNG_RGBA8_LOSSLESS'; contentType: 'image/png'; bytes: Uint8Array }>;
+export type StoredImage = Omit<StoredFinalImage, 'executionId'|'operationId'|'role'|'lifecycle'> & { executionId?: string; operationId?: string; role: 'ORIGINAL'|'COMPOSITE'; lifecycle: 'IMMUTABLE'|'FINAL' };
 
 /** Durable blob implementation behind the canonical artifact authority. */
 export class PostgresImageArtifactStore {
@@ -28,4 +29,5 @@ export class PostgresImageArtifactStore {
     const row = result.rows[0]; if (!row) return undefined;
     return Object.freeze({ storageId: row.storage_id, tenantId: row.tenant_id, userId: row.user_id, projectId: row.project_id, executionId: row.execution_id, operationId: row.operation_id, role: row.role, lifecycle: row.lifecycle, width: row.width, height: row.height, encoding: row.encoding, contentType: row.content_type, bytes: new Uint8Array(row.image_bytes) });
   }
+  async loadSource(storageId: string, scope: AuthenticatedScope & { projectId: string }): Promise<StoredImage | undefined> { const result=await this.pool.query(`SELECT * FROM canonical_image_artifacts WHERE storage_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4 AND ((role='ORIGINAL' AND lifecycle='IMMUTABLE') OR (role='COMPOSITE' AND lifecycle='FINAL')) AND revoked_at IS NULL AND deleted_at IS NULL`,[storageId,scope.tenantId,scope.userId,scope.projectId]); const row=result.rows[0]; if(!row)return undefined; return Object.freeze({storageId:row.storage_id,tenantId:row.tenant_id,userId:row.user_id,projectId:row.project_id,executionId:row.execution_id,operationId:row.operation_id,role:row.role,lifecycle:row.lifecycle,width:row.width,height:row.height,encoding:row.encoding,contentType:row.content_type,bytes:new Uint8Array(row.image_bytes)}); }
 }

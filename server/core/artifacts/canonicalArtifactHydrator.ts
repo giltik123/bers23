@@ -8,8 +8,10 @@ export class CanonicalArtifactHydrator {
   private readonly authority: ArtifactAuthority; private readonly fetcher: typeof fetch;
   constructor(authority: ArtifactAuthority, fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) { this.authority = authority; this.fetcher = fetcher; }
   async hydrate(scope: Scope, originalId: string, maskIds: readonly string[]): Promise<readonly CreativeArtifact[]> {
-    const originalClaim = this.authority.external.resolve(originalId, scope);
-    const original = await decodeImage(await this.load(originalClaim.url));
+    let bytes: Uint8Array;
+    try { const claim=this.authority.external.resolveStoredOriginalId(originalId,scope); const stored=await this.authority.images.loadSource(claim.storageId,scope); if(!stored) throw new Error('Canonical ORIGINAL is unavailable'); bytes=stored.bytes; }
+    catch (originalError) { try { const claim=this.authority.external.resolveStoredFinalId(originalId,scope); const stored=await this.authority.images.loadSource(claim.storageId,scope); if(!stored) throw new Error('Canonical FINAL source is unavailable'); bytes=stored.bytes; } catch { try { const claim=this.authority.external.resolve(originalId,scope); bytes=await this.load(claim.url); } catch { throw originalError; } } }
+    const original = await decodeImage(bytes);
     const artifacts: CreativeArtifact[] = [{ id: originalId, kind: 'image', value: original, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'ORIGINAL', image: imageMetadata(original) }];
     for (const id of maskIds) {
       const claim = this.authority.external.resolveStoredMask(id, scope); const stored = await this.authority.masks.load(claim.storageId, scope);
