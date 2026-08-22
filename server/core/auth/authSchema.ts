@@ -45,9 +45,10 @@ async function abuseSessionComplete(pool: Pool) {
   const result = await pool.query(`SELECT
     to_regclass('canonical_auth_rate_limits')::text AS rate_limits,
     EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='canonical_auth_sessions' AND column_name='last_seen_at') AS last_seen_column,
-    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='canonical_auth_sessions' AND column_name='revoked_at') AS revoked_column`);
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='canonical_auth_sessions' AND column_name='revoked_at') AS revoked_column,
+    EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='canonical_auth_oauth_states' AND column_name='previous_session_id') AS oauth_session_binding_column`);
   const row = result.rows[0];
-  return Boolean(row?.rate_limits && row?.last_seen_column && row?.revoked_column);
+  return Boolean(row?.rate_limits && row?.last_seen_column && row?.revoked_column && row?.oauth_session_binding_column);
 }
 
 export async function checkAuthSchema(pool: Pool) {
