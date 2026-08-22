@@ -81,6 +81,11 @@ jobs:
         run: npm run test:creative-production-authority-postgres
       - name: Run real HTTP to PostgreSQL Core vertical
         run: npm run test:core-server-postgres-vertical
+      - name: Run canonical Project to stored ORIGINAL PostgreSQL vertical
+        run: |
+          mkdir -p .test-cache/project-postgres
+          npx esbuild tests/project-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/project-postgres/project-postgres-vertical.test.mjs --external:pg --external:sharp --external:node:*
+          node --test .test-cache/project-postgres/project-postgres-vertical.test.mjs
 
   production-image:
     runs-on: ubuntu-latest
