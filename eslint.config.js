@@ -37,6 +37,28 @@ export default [
     },
   },
   {
+    // `src/components/ui` is intentionally excluded from the broad legacy
+    // recommended-rule migration below, but undefined identifiers must still be
+    // a hard error. This closes the gap that could hide mechanical collateral
+    // regressions such as a removed destructured prop that remains referenced.
+    files: ["src/components/ui/**/*.{js,mjs,cjs,jsx}"],
+    languageOptions: {
+      globals: globals.browser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: "module",
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    plugins: {
+      react: pluginReact,
+    },
+    rules: {
+      "no-undef": "error",
+      "react/jsx-no-undef": "error",
+    },
+  },
+  {
     files: [
       "src/**/*.{js,mjs,cjs,jsx}",
     ],
