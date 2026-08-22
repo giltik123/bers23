@@ -1,34 +1,50 @@
 # AGENTS.md
 
-## Project Context
+## Read this first
 
-This is a Base44 app repository. Treat it as user-owned application code, keep changes focused on the user's request, and preserve existing project conventions.
+BERS is **not a Base44 application anymore**. Base44 was retired during the Core cutover and must not be reintroduced as a runtime, SDK, entity authority, deployment plugin, or compatibility backend.
 
-Start with `README.md` for local setup, environment variables, and publish workflow.
+Before changing architecture, read:
 
-## Base44 References
+1. `PROJECT_SOURCE_OF_TRUTH.md` — canonical current architecture and authority map.
+2. `README.md` — repository navigation.
+3. Domain references such as `POSTGRESQL_TRANSACTION_STORE.md`, `CREATIVE_EXECUTION_ARCHITECTURE.md`, `CORE_RUNTIME.md`, and `SECURITY_CONFIGURATION.md` when relevant.
 
-- CLI overview: https://docs.base44.com/developers/references/cli/get-started/overview.md
-- Agent skills: https://docs.base44.com/developers/backend/overview/skills.md
+If an old sprint/migration document conflicts with current production composition and accepted tests, current production code/tests and `PROJECT_SOURCE_OF_TRUTH.md` take precedence.
 
-If your agent supports Agent Skills, install or update Base44 skills before Base44-specific work:
+## Architecture rules
 
-```bash
-npx skills add base44/skills
-```
+- Preserve **one canonical authority per domain**.
+- Browser state is never authoritative for sessions, ownership, artifacts, balances, paid entitlements or provider credentials.
+- Do not add localStorage/sessionStorage/query bearer fallbacks to browser auth.
+- Do not create a generic `/data/:Entity` or command proxy to make legacy client wrappers work.
+- Do not bypass canonical Auth/Session, Project, Artifact, Creative or Transaction authorities.
+- PostgreSQL concurrency/authority claims require real PostgreSQL proof.
+- AI/cognitive/agent modules may advise through canonical ports; they do not gain direct side-effect authority.
+- Security/production acceptance is attached to the exact tested commit SHA.
 
-## Key Files
+## Current repository boundaries
 
-- `src/`: frontend application source.
-- `src/api/base44Client.js`: frontend Base44 SDK client.
-- `vite.config.js`: Vite config and Base44 Vite plugin setup.
-- `.env.local`: local-only environment values; never commit secrets.
+- `src/` — browser/UI and application adapters.
+- `src/api/coreClient.js` — browser Core client. Some generic compatibility helpers remain but are not proof of a canonical server route.
+- `server/index.ts` — checked-in Node Core server entrypoint.
+- `server/core/composition/createProductionCore.ts` — production Core composition root.
+- `server/core/http/nodeHttpAdapter.ts` — explicit HTTP transport/routes.
+- `server/transactions/` — canonical PostgreSQL financial transaction runtime.
+- `server/core/auth/`, `projects/`, `artifacts/` — current server authorities for those domains.
+- `.github/workflows/` — hosted acceptance gates.
 
-## Working Notes
+## Legacy material
 
-- Use `base44 dev` as the default local development command when you need the local Base44 backend. It can run the backend and frontend together.
-- When docs or code mention the frontend being started automatically, that usually means the Base44 project config includes `site.serveCommand`, for example `"serveCommand": "npm run dev"` in `base44/config.jsonc`.
-- Use `npm run dev` only for frontend-only work against the hosted Base44 backend.
-- Prefer the existing Base44 CLI workflow over adding new npm scripts for Base44-specific tasks.
-- Reuse the existing SDK client and Vite plugin patterns before adding new Base44 integration paths.
-- Run the relevant checks from `package.json` before finishing code changes.
+Files whose headers classify them as **HISTORICAL** are migration/design records, not instructions for new production work. In particular, do not restore Base44 SDK/functions/entities or the old browser-owned privileged mutation model.
+
+Historical PRs #13, #28, #33, #35 and #38 are not merge candidates by default. Reuse ideas only after comparing them with current `main` and authority contracts.
+
+## Working discipline
+
+Keep changes scoped and evidence-based. Before finishing:
+
+- inspect the exact diff for collateral changes;
+- run the relevant local checks when available;
+- require hosted CI on the exact final head for production/security acceptance;
+- never claim WebGPU/device/model acceptance from a weaker browser/WASM or capability-only check.
