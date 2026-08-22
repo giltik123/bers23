@@ -245,29 +245,6 @@ export class PostgresAuthStore {
     return this.getUser(result.rows[0].user_id, result.rows[0].tenant_id);
   }
 
-  async createSession(user: AuthUserRow, nowMs: number, expiresAtMs: number) {
-    const sessionId = randomUUID();
-    const createdAt = new Date(nowMs), expiresAt = new Date(expiresAtMs);
-    await this.pool.query(`INSERT INTO canonical_auth_sessions(session_id,user_id,tenant_id,created_at,expires_at,last_seen_at)
-      VALUES($1,$2,$3,$4,$5,$4)`, [sessionId, user.user_id, user.tenant_id, createdAt, expiresAt]);
-    return Object.freeze({ sessionId, createdAt, expiresAt });
-  }
-
-  async activeSession(sessionId: string, userId: string, tenantId: string, nowMs: number): Promise<AuthUserRow | undefined> {
-    const result = await this.pool.query(`SELECT u.user_id,u.tenant_id,u.email_normalized,u.email,u.display_name,u.status,u.email_verified_at
-      FROM canonical_auth_sessions s JOIN canonical_auth_users u ON u.user_id=s.user_id AND u.tenant_id=s.tenant_id
-      WHERE s.session_id=$1 AND s.user_id=$2 AND s.tenant_id=$3 AND s.revoked_at IS NULL AND s.expires_at>$4 AND u.status='active'`,
-      [sessionId, userId, tenantId, new Date(nowMs)]);
-    if (result.rows[0]) await this.pool.query(`UPDATE canonical_auth_sessions SET last_seen_at=$2 WHERE session_id=$1`, [sessionId, new Date(nowMs)]);
-    return result.rows[0];
-  }
-
-  async revokeSession(sessionId: string, userId: string, tenantId: string, nowMs: number) {
-    const result = await this.pool.query(`UPDATE canonical_auth_sessions SET revoked_at=COALESCE(revoked_at,$4)
-      WHERE session_id=$1 AND user_id=$2 AND tenant_id=$3 RETURNING session_id`, [sessionId, userId, tenantId, new Date(nowMs)]);
-    return Boolean(result.rowCount);
-  }
-
   async getUser(userId: string, tenantId: string): Promise<AuthUserRow | undefined> {
     const result = await this.pool.query(`SELECT user_id,tenant_id,email_normalized,email,display_name,status,email_verified_at
       FROM canonical_auth_users WHERE user_id=$1 AND tenant_id=$2 AND status='active'`, [userId, tenantId]);
