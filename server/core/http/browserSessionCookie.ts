@@ -7,7 +7,8 @@ const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 /**
  * Converts the canonical server-issued session envelope into an HttpOnly browser
- * cookie and deliberately removes bearer material from the public JSON body.
+ * cookie. The public body is an allowlist so future token-like fields cannot
+ * accidentally become browser-visible through object spreading.
  */
 export function establishBrowserSession(
   response: ServerResponse,
@@ -19,15 +20,22 @@ export function establishBrowserSession(
   const envelope = result as Record<string, unknown>;
   const token = envelope.access_token;
   const expiresAtValue = envelope.expires_at;
-  if (typeof token !== 'string' || token.length > 4096 || !JWT_PATTERN.test(token) || typeof expiresAtValue !== 'string') {
-    throw sessionEnvelopeError();
-  }
+  const user = envelope.user;
+  if (
+    typeof token !== 'string'
+    || token.length > 4096
+    || !JWT_PATTERN.test(token)
+    || typeof expiresAtValue !== 'string'
+    || !user
+    || typeof user !== 'object'
+    || Array.isArray(user)
+  ) throw sessionEnvelopeError();
+
   const expiresAtMs = Date.parse(expiresAtValue);
   if (!Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs) throw sessionEnvelopeError();
 
   response.setHeader('Set-Cookie', serializeSessionCookie(token, expiresAtMs, config, nowMs));
-  const { access_token: _accessToken, token_type: _tokenType, ...publicBody } = envelope;
-  return Object.freeze(publicBody);
+  return Object.freeze({ expires_at: expiresAtValue, user });
 }
 
 /**
