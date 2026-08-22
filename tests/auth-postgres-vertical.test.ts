@@ -32,6 +32,13 @@ const config: CoreServerConfig = Object.freeze({
 });
 
 function bearer(token: string) { return { authorization: `Bearer ${token}` }; }
+function browser(cookie: string, extra: Record<string,string> = {}) { return { cookie, 'sec-fetch-site': 'same-origin', ...extra }; }
+function sessionCookie(response: Response) {
+  const raw=response.headers.get('set-cookie'); assert(raw,'auth response must set session cookie');
+  assert.match(raw,/^bers_session_dev=/); assert.match(raw,/HttpOnly/); assert.match(raw,/SameSite=Strict/); assert.match(raw,/Path=\//); assert.doesNotMatch(raw,/; Secure(?:;|$)/);
+  return raw.split(';',1)[0];
+}
+function tokenFromCookie(cookie: string) { const separator=cookie.indexOf('='); assert(separator>0); return cookie.slice(separator+1); }
 function decodePayload(token: string) { return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')) as Record<string, unknown>; }
 function sign(claims: Record<string, unknown>) {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -52,11 +59,11 @@ async function start(providerCalls: { count: number }) {
 
 async function login(baseUrl: string, email: string, password: string) {
   return fetch(`${baseUrl}/api/core/auth/password/login`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost', 'sec-fetch-site': 'same-origin' }, body: JSON.stringify({ email, password }),
   });
 }
 
-test('canonical login session survives reload/restart and authorizes Project to Editor identity', async t => {
+test('canonical cookie session survives reload/restart and authorizes Project to Editor identity', async t => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'auth-postgres-acceptance' });
   await migrateTransactionSchema(pool);
   await migrateMaskArtifactSchema(pool);
@@ -82,23 +89,26 @@ test('canonical login session survives reload/restart and authorizes Project to 
   const wrong = await login(running.baseUrl, email, 'not-the-right-password');
   assert.equal(wrong.status, 401);
   assert.equal((await wrong.json() as any).code, 'invalid_credentials');
+  assert.equal(wrong.headers.get('set-cookie'), null);
   assert.equal(await running.production.auth.store.activeSessionCount(userId), 0);
 
   const unknown = await login(running.baseUrl, 'missing@example.test', 'not-the-right-password');
   assert.equal(unknown.status, 401);
   assert.equal((await unknown.json() as any).code, 'invalid_credentials');
+  assert.equal(unknown.headers.get('set-cookie'), null);
   assert.equal(await running.production.auth.store.activeSessionCount(userId), 0);
 
   const successful = await login(running.baseUrl, 'user@example.test', password);
   assert.equal(successful.status, 200);
+  const firstCookie=sessionCookie(successful);
   const loginBody = await successful.json() as any;
-  assert.equal(loginBody.token_type, 'Bearer');
+  assert.equal('access_token' in loginBody,false); assert.equal('token_type' in loginBody,false);
   assert.equal(loginBody.user.id, userId);
   assert.equal(loginBody.user.tenant_id, tenantId);
   assert.equal(loginBody.user.email, email);
   assert.equal('password' in loginBody.user, false);
   assert.equal('password_hash' in loginBody.user, false);
-  const firstToken = String(loginBody.access_token);
+  const firstToken = tokenFromCookie(firstCookie);
   const firstClaims = decodePayload(firstToken);
   assert.equal(firstClaims.sub, userId);
   assert.equal(firstClaims.tenantId, tenantId);
@@ -107,53 +117,56 @@ test('canonical login session survives reload/restart and authorizes Project to 
   assert.equal(firstClaims.aud, config.jwtAudience);
   assert.equal(await running.production.auth.store.activeSessionCount(userId), 1);
 
-  const context = await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: bearer(firstToken) });
+  const context = await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: browser(firstCookie) });
   assert.equal(context.status, 200);
   assert.equal((await context.json() as any).id, userId);
+  assert.equal((await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: { ...bearer(firstToken), 'sec-fetch-site':'same-origin' } })).status,401,'browser Authorization fallback must be rejected without cookie');
 
   const pixels = await sharp({ create: { width: 6, height: 5, channels: 4, background: { r: 30, g: 40, b: 50, alpha: 1 } } }).png().toBuffer();
-  const createProject = await fetch(`${running.baseUrl}/api/core/projects?name=Authenticated%20Project`, { method: 'POST', headers: { ...bearer(firstToken), 'content-type': 'image/png' }, body: pixels });
+  const createProject = await fetch(`${running.baseUrl}/api/core/projects?name=Authenticated%20Project`, { method: 'POST', headers: browser(firstCookie,{ 'content-type': 'image/png' }), body: pixels });
   assert.equal(createProject.status, 201);
   const project = await createProject.json() as any;
   assert.equal(project.name, 'Authenticated Project');
   assert.equal(project.current_image_artifact_id, project.original_image_artifact_id, 'Editor input must begin from stable ORIGINAL identity');
   assert.match(project.current_image_url, /^\/api\/core\/artifacts\/results\//);
 
-  const list = await fetch(`${running.baseUrl}/api/core/projects`, { headers: bearer(firstToken) });
+  const list = await fetch(`${running.baseUrl}/api/core/projects`, { headers: browser(firstCookie) });
   assert.equal(list.status, 200);
   assert.equal((await list.json() as any[]).length, 1);
-  const get = await fetch(`${running.baseUrl}/api/core/projects/${project.id}`, { headers: bearer(firstToken) });
+  const get = await fetch(`${running.baseUrl}/api/core/projects/${project.id}`, { headers: browser(firstCookie) });
   assert.equal(get.status, 200);
   assert.equal((await get.json() as any).current_image_artifact_id, project.original_image_artifact_id);
 
   await running.production.auth.store.provisionLocalUser({ userId: 'other-auth-user', tenantId, email: 'other@example.test', password: 'another correct battery staple' });
   const otherLogin = await login(running.baseUrl, 'other@example.test', 'another correct battery staple');
-  const otherToken = String((await otherLogin.json() as any).access_token);
-  const otherGet = await fetch(`${running.baseUrl}/api/core/projects/${project.id}`, { headers: bearer(otherToken) });
+  const otherCookie=sessionCookie(otherLogin);
+  const otherGet = await fetch(`${running.baseUrl}/api/core/projects/${project.id}`, { headers: browser(otherCookie) });
   assert.equal(otherGet.status, 404);
 
   const tampered = `${firstToken.slice(0, -1)}${firstToken.endsWith('a') ? 'b' : 'a'}`;
-  assert.equal((await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: bearer(tampered) })).status, 401);
+  assert.equal((await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: browser(`bers_session_dev=${tampered}`) })).status, 401);
   const expired = sign({ sub: userId, tenantId, sid: firstClaims.sid, iss: config.jwtIssuer, aud: config.jwtAudience, iat: 1, exp: 2 });
-  assert.equal((await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: bearer(expired) })).status, 401);
+  assert.equal((await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: bearer(expired) })).status, 401,'explicit non-browser bearer compatibility still validates expiry');
 
-  const logout = await fetch(`${running.baseUrl}/api/core/auth/logout`, { method: 'POST', headers: bearer(firstToken) });
+  const logout = await fetch(`${running.baseUrl}/api/core/auth/logout`, { method: 'POST', headers: browser(firstCookie) });
   assert.equal(logout.status, 204);
-  assert.equal((await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: bearer(firstToken) })).status, 401);
-  assert.equal((await fetch(`${running.baseUrl}/api/core/projects`, { headers: bearer(firstToken) })).status, 401);
+  assert.match(String(logout.headers.get('set-cookie')),/^bers_session_dev=;/);
+  assert.equal((await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: browser(firstCookie) })).status, 401);
+  assert.equal((await fetch(`${running.baseUrl}/api/core/projects`, { headers: browser(firstCookie) })).status, 401);
 
   const secondLogin = await login(running.baseUrl, 'USER@example.test', password);
   assert.equal(secondLogin.status, 200);
-  const secondToken = String((await secondLogin.json() as any).access_token);
+  const secondCookie=sessionCookie(secondLogin);
+  const secondToken=tokenFromCookie(secondCookie);
   const secondClaims = decodePayload(secondToken);
   assert.notEqual(secondClaims.sid, firstClaims.sid);
-  assert.equal((await fetch(`${running.baseUrl}/api/core/projects/${project.id}`, { headers: bearer(secondToken) })).status, 200);
+  assert.equal((await fetch(`${running.baseUrl}/api/core/projects/${project.id}`, { headers: browser(secondCookie) })).status, 200);
 
   await closeServer(running.server); await running.production.close();
   running = await start(providerCalls);
-  const afterRestart = await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: bearer(secondToken) });
-  assert.equal(afterRestart.status, 200, 'active PostgreSQL session must survive Core restart');
-  const projectAfterRestart = await fetch(`${running.baseUrl}/api/core/projects/${project.id}`, { headers: bearer(secondToken) });
+  const afterRestart = await fetch(`${running.baseUrl}/api/core/auth/context`, { headers: browser(secondCookie) });
+  assert.equal(afterRestart.status, 200, 'active PostgreSQL session cookie must survive Core restart');
+  const projectAfterRestart = await fetch(`${running.baseUrl}/api/core/projects/${project.id}`, { headers: browser(secondCookie) });
   assert.equal(projectAfterRestart.status, 200);
   assert.equal((await projectAfterRestart.json() as any).current_image_artifact_id, project.original_image_artifact_id);
 
