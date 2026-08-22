@@ -18,7 +18,9 @@ export class PostgresImageArtifactStore {
     const result = await this.pool.query(`INSERT INTO canonical_image_artifacts
       (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes)
       VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9)
-      ON CONFLICT (tenant_id,user_id,project_id,execution_id) WHERE revoked_at IS NULL AND deleted_at IS NULL DO UPDATE SET execution_id=EXCLUDED.execution_id
+      ON CONFLICT (tenant_id,user_id,project_id,execution_id)
+      WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
+      DO UPDATE SET execution_id=EXCLUDED.execution_id
       RETURNING *`, [storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId, image.width, image.height, bytes]);
     const row = result.rows[0];
     return Object.freeze({ storageId: row.storage_id, tenantId: row.tenant_id, userId: row.user_id, projectId: row.project_id, executionId: row.execution_id, operationId: row.operation_id, role: row.role, lifecycle: row.lifecycle, width: row.width, height: row.height, encoding: row.encoding, contentType: row.content_type, bytes: new Uint8Array(row.image_bytes) });
