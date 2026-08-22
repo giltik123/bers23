@@ -35,6 +35,12 @@ export const projectService = {
   rename: (id, name) => coreClient.projects.update(id, { name }),
 
   remove: (id) => coreClient.projects.delete(id),
+  acceptFinal: (id, finalArtifactId, instruction) => coreClient.projects.acceptFinal(id, finalArtifactId, instruction),
+  undo: (id) => coreClient.projects.undo(id),
+  redo: (id) => coreClient.projects.redo(id),
+  restoreOriginal: (id) => coreClient.projects.restoreOriginal(id),
+  createVersion: (id, name) => coreClient.projects.createVersion(id, name),
+  restoreVersion: (id, versionId) => coreClient.projects.restoreVersion(id, versionId),
 
   setFavorite: (id, favorite) => coreClient.projects.update(id, { favorite }),
 
