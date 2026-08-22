@@ -13,6 +13,17 @@ if (typeof window !== 'undefined') {
   }
 }
 
+function safeReturnTo(value = '/') {
+  if (typeof window === 'undefined') return '/';
+  try {
+    const target = new URL(value || '/', window.location.origin);
+    if (target.origin !== window.location.origin) return '/';
+    target.hash = '';
+    for (const key of ['access_token','auth_code','token','reset_token','resetToken','verification_handle','verificationHandle']) target.searchParams.delete(key);
+    return `${target.pathname}${target.search}` || '/';
+  } catch { return '/'; }
+}
+
 async function request(path, options = {}) {
   const headers = new Headers(options.headers);
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
@@ -59,10 +70,10 @@ export const coreClient = Object.freeze({
     },
     logout: async (returnTo) => {
       await request('/auth/logout', { method: 'POST' });
-      if (returnTo && typeof window !== 'undefined') window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`);
+      if (returnTo && typeof window !== 'undefined') window.location.assign(`/login?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`);
     },
-    redirectToLogin: (returnTo) => window.location.assign(`/login?return_to=${encodeURIComponent(returnTo)}`),
-    loginWithProvider: (provider, returnTo = '/') => window.location.assign(`${API_ROOT}/auth/login/${encodeURIComponent(provider)}?return_to=${encodeURIComponent(returnTo)}`),
+    redirectToLogin: (returnTo) => window.location.assign(`/login?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`),
+    loginWithProvider: (provider, returnTo = '/') => window.location.assign(`${API_ROOT}/auth/login/${encodeURIComponent(provider)}?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`),
   },
   creative: {
     execute: (payload) => request('/creative/execute', json('POST', payload)),
