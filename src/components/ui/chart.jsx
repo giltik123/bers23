@@ -56,11 +56,8 @@ const ChartStyle = ({
     return null
   }
 
-  return (
-    (<style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(([theme, prefix]) => `
+  const css = Object.entries(THEMES)
+    .map(([theme, prefix]) => `
 ${prefix} [data-chart=${id}] {
 ${colorConfig
 .map(([key, itemConfig]) => {
@@ -72,9 +69,10 @@ return color ? `  --color-${key}: ${color};` : null
 .join("\n")}
 }
 `)
-          .join("\n"),
-      }} />)
-  );
+    .join("\n")
+
+  // React writes a text child here rather than assigning HTML to a DOM sink.
+  return <style>{css}</style>
 }
 
 const ChartTooltip = RechartsPrimitive.Tooltip
