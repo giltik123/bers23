@@ -158,13 +158,16 @@ export class CanonicalAuthService {
     const domain = claims.email.split('@').pop()?.toLowerCase();
     const authoritativeEmail = domain === 'gmail.com' || Boolean(claims.hd);
     const user = await this.#store.resolveGoogleIdentity({ subject: claims.sub, email: claims.email, displayName: claims.name, authoritativeEmail, defaultTenantId: this.#defaultTenantId, nowMs: this.#now() });
-    const grant = opaqueToken(32), now = this.#now();
-    await this.#store.createBrowserGrant(keyedDigest(this.#challengeSecret, 'browser-grant', grant), user, now, now + BROWSER_GRANT_TTL_MS);
     const redirect = new URL(oauthState.returnTo, this.#publicOrigin);
-    redirect.hash = new URLSearchParams({ auth_code: grant }).toString();
-    return redirect.toString();
+    const session = await this.issueSession(user);
+    return Object.freeze({ redirectTo: redirect.toString(), session });
   }
 
+  /**
+   * Legacy browser grants remain readable only for a short compatibility window
+   * in the storage layer. The production HTTP adapter no longer exposes an
+   * exchange endpoint and new OAuth callbacks never create grants.
+   */
   async exchangeBrowserGrant(code: string) {
     if (!validOpaqueHandle(code)) throw oauthDenied();
     const user = await this.#store.consumeBrowserGrant(keyedDigest(this.#challengeSecret, 'browser-grant', code), this.#now());
