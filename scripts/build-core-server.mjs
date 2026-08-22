@@ -8,3 +8,4 @@ await cp('server/transactions/infrastructure/postgres/migrations/001_transaction
 await cp('server/core/artifacts/migrations/002_canonical_mask_artifacts.sql', 'dist-server/migrations/002_canonical_mask_artifacts.sql');
 await cp('server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql', 'dist-server/migrations/003_canonical_final_image_artifacts.sql');
 await cp('server/core/projects/migrations/004_canonical_projects_and_originals.sql', 'dist-server/migrations/004_canonical_projects_and_originals.sql');
+await cp('server/core/projects/migrations/005_canonical_project_history_and_versions.sql', 'dist-server/migrations/005_canonical_project_history_and_versions.sql');
