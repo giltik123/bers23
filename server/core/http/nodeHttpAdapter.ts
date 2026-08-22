@@ -37,17 +37,63 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (resultMatch && request.method === 'GET') {
         const token=decodeURIComponent(resultMatch[1]); let claim; try { claim=input.artifacts.external.resolveStoredOriginalDelivery(token); } catch { claim=input.artifacts.external.resolveStoredFinalDelivery(token); }
         const stored = await input.artifacts.images.loadSource(claim.storageId, claim);
-        if (!stored) return sendError(response, 404, 'result_not_found', 'Final image artifact is unavailable', correlationId, false);
+        if (!stored) return sendError(response, 404, 'result_not_found', 'Image artifact is unavailable', correlationId, false);
         response.statusCode = 200; response.setHeader('Content-Type', stored.contentType); response.setHeader('Content-Length', stored.bytes.byteLength); response.setHeader('Cache-Control', 'private, max-age=300'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(stored.bytes); return;
       }
       const principal = input.auth.verify(header(request, 'authorization'));
+
+      const artifactRefs = (row: any, storageId: string) => {
+        const scope={...principal,projectId:row.project_id}; const original=storageId===row.original_image_storage_id;
+        const artifactId=original?input.artifacts.external.issueStoredOriginal(storageId,scope):input.artifacts.external.issueStoredFinal(storageId,scope);
+        const delivery=original?input.artifacts.external.issueStoredOriginalDelivery(storageId,scope,Date.now()+300_000):input.artifacts.external.issueStoredFinalDelivery(storageId,scope,Date.now()+300_000);
+        return { artifactId, url:`/api/core/artifacts/results/${encodeURIComponent(delivery)}` };
+      };
+      const dto=async(row:any) => {
+        const [historyRows,versionRows]=await Promise.all([input.projects.history(principal,row.project_id),input.projects.versions(principal,row.project_id)]);
+        const original=artifactRefs(row,row.original_image_storage_id), current=artifactRefs(row,row.current_image_storage_id);
+        const activeHistory=historyRows.filter((entry:any)=>Number(entry.sequence)>=0);
+        const history=activeHistory.map((entry:any)=>{const image=artifactRefs(row,entry.result_image_storage_id);return {id:entry.entry_id,sequence:Number(entry.sequence),image_artifact_id:image.artifactId,image_url:image.url,instruction:entry.instruction,operation:entry.operation,execution_id:entry.execution_id,credits_used:Number(entry.credits_used||0),created_at:entry.created_at};});
+        const versions=versionRows.map((version:any)=>{const image=artifactRefs(row,version.image_storage_id);return {id:version.version_id,name:version.name,image_artifact_id:image.artifactId,preview_url:image.url,history_sequence:Number(version.history_sequence),created_at:version.created_at};});
+        const cursor=Number(row.history_cursor ?? -1);
+        return {id:row.project_id,name:row.name,original_image_artifact_id:original.artifactId,current_image_artifact_id:current.artifactId,original_image_url:original.url,current_image_url:current.url,thumbnail_url:current.url,width:row.width,height:row.height,status:row.status,favorite:row.favorite,archived:row.archived,objects:row.objects,history,history_index:cursor,versions,operations:history.map((entry:any)=>({id:entry.id,prompt:entry.instruction,type:entry.operation,created_at:entry.created_at,result_image_url:entry.image_url,credits_used:entry.credits_used,status:'completed'})),can_undo:cursor>-1,can_redo:activeHistory.some((entry:any)=>Number(entry.sequence)>cursor),created_date:row.created_at,updated_date:row.updated_at};
+      };
+
       const projectMatch=path.match(/^\/api\/core\/projects\/([^/]+)$/);
-      const dto=(row: any) => { const scope={...principal,projectId:row.project_id}; const originalId=input.artifacts.external.issueStoredOriginal(row.original_image_storage_id,scope); const currentId=row.current_image_storage_id===row.original_image_storage_id?originalId:input.artifacts.external.issueStoredFinal(row.current_image_storage_id,scope); const delivery=row.current_image_storage_id===row.original_image_storage_id?input.artifacts.external.issueStoredOriginalDelivery(row.current_image_storage_id,scope,Date.now()+300_000):input.artifacts.external.issueStoredFinalDelivery(row.current_image_storage_id,scope,Date.now()+300_000); const originalDelivery=input.artifacts.external.issueStoredOriginalDelivery(row.original_image_storage_id,scope,Date.now()+300_000); return {id:row.project_id,name:row.name,original_image_artifact_id:originalId,current_image_artifact_id:currentId,original_image_url:`/api/core/artifacts/results/${encodeURIComponent(originalDelivery)}`,current_image_url:`/api/core/artifacts/results/${encodeURIComponent(delivery)}`,thumbnail_url:`/api/core/artifacts/results/${encodeURIComponent(delivery)}`,width:row.width,height:row.height,status:row.status,favorite:row.favorite,archived:row.archived,objects:row.objects,created_date:row.created_at,updated_date:row.updated_at}; };
-      if(path==='/api/core/projects'&&request.method==='POST'){ const type=mediaType(request); if(!['image/png','image/jpeg','image/webp'].includes(type))return sendError(response,415,'unsupported_media_type','Supported images are PNG, JPEG and WebP',correlationId,false); const bytes=await readBytes(request,input.config.imageUploadLimitBytes); if(!bytes.byteLength)return sendError(response,400,'empty_image','Image body is required',correlationId,false); const name=(new URL(request.url??'/','http://core.invalid').searchParams.get('name')??'Untitled').trim(); if(!name||name.length>200)return sendError(response,400,'invalid_project_name','Project name is invalid',correlationId,false); return send(response,201,dto(await input.projects.create(principal,name,bytes,{maxDimension:input.config.imageMaxDimension,maxPixels:input.config.imageMaxPixels}))); }
+      const acceptMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/accept$/);
+      const navigationMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/(undo|redo|restore-original)$/);
+      const versionsMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/versions$/);
+      const versionRestoreMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
+
+      if(path==='/api/core/projects'&&request.method==='POST'){ const type=mediaType(request); if(!['image/png','image/jpeg','image/webp'].includes(type))return sendError(response,415,'unsupported_media_type','Supported images are PNG, JPEG and WebP',correlationId,false); const bytes=await readBytes(request,input.config.imageUploadLimitBytes); if(!bytes.byteLength)return sendError(response,400,'empty_image','Image body is required',correlationId,false); const name=(new URL(request.url??'/','http://core.invalid').searchParams.get('name')??'Untitled').trim(); if(!name||name.length>200)return sendError(response,400,'invalid_project_name','Project name is invalid',correlationId,false); return send(response,201,await dto(await input.projects.create(principal,name,bytes,{maxDimension:input.config.imageMaxDimension,maxPixels:input.config.imageMaxPixels}))); }
       if(path==='/api/core/projects'&&request.method==='GET') return send(response,200,await Promise.all((await input.projects.list(principal)).map(dto)));
-      if(projectMatch&&request.method==='GET'){const row=await input.projects.get(principal,decodeURIComponent(projectMatch[1]));return row?send(response,200,dto(row)):sendError(response,404,'project_not_found','Project not found',correlationId,false);}
-      if(projectMatch&&request.method==='PATCH'){const patch=await readJson(request,input.config.bodyLimitBytes); if(!patch||typeof patch!=='object'||Array.isArray(patch))return sendError(response,400,'invalid_project_patch','Project patch must be an object',correlationId,false); const row=await input.projects.update(principal,decodeURIComponent(projectMatch[1]),patch as Record<string,unknown>);return row?send(response,200,dto(row)):sendError(response,404,'project_not_found','Project not found',correlationId,false);}
+
+      if(acceptMatch&&request.method==='POST'){
+        const projectId=decodeURIComponent(acceptMatch[1]); const body=await readJson(request,input.config.bodyLimitBytes) as Record<string,unknown>;
+        if(!body||typeof body!=='object'||Array.isArray(body)||typeof body.finalArtifactId!=='string') return sendError(response,400,'invalid_accept_request','A stable finalArtifactId is required',correlationId,false);
+        const scope={...principal,projectId}; let claim; try{claim=input.artifacts.external.resolveStoredFinalId(body.finalArtifactId,scope);}catch{return sendError(response,403,'artifact_scope_denied','FINAL artifact is not trusted for this Project',correlationId,false);}
+        const row=await input.projects.acceptFinal(principal,projectId,{storageId:claim.storageId,executionId:typeof body.executionId==='string'?body.executionId:undefined,instruction:typeof body.instruction==='string'?body.instruction.trim():'',operation:typeof body.operation==='string'?body.operation:'edit',creditsUsed:Number.isFinite(body.creditsUsed)?Number(body.creditsUsed):0});
+        return send(response,200,await dto(row));
+      }
+      if(navigationMatch&&request.method==='POST'){
+        const projectId=decodeURIComponent(navigationMatch[1]), action=navigationMatch[2];
+        const row=action==='undo'?await input.projects.undo(principal,projectId):action==='redo'?await input.projects.redo(principal,projectId):await input.projects.restoreOriginal(principal,projectId);
+        return send(response,200,await dto(row));
+      }
+      if(versionsMatch&&request.method==='GET'){
+        const projectId=decodeURIComponent(versionsMatch[1]); const row=await input.projects.get(principal,projectId); if(!row)return sendError(response,404,'project_not_found','Project not found',correlationId,false); return send(response,200,(await dto(row)).versions);
+      }
+      if(versionsMatch&&request.method==='POST'){
+        const projectId=decodeURIComponent(versionsMatch[1]); const body=await readJson(request,input.config.bodyLimitBytes) as Record<string,unknown>; if(!body||typeof body.name!=='string')return sendError(response,400,'invalid_version_name','Version name is required',correlationId,false);
+        await input.projects.createVersion(principal,projectId,body.name); const row=await input.projects.get(principal,projectId); return row?send(response,201,await dto(row)):sendError(response,404,'project_not_found','Project not found',correlationId,false);
+      }
+      if(versionRestoreMatch&&request.method==='POST'){
+        const row=await input.projects.restoreVersion(principal,decodeURIComponent(versionRestoreMatch[1]),decodeURIComponent(versionRestoreMatch[2])); return send(response,200,await dto(row));
+      }
+
+      if(projectMatch&&request.method==='GET'){const row=await input.projects.get(principal,decodeURIComponent(projectMatch[1]));return row?send(response,200,await dto(row)):sendError(response,404,'project_not_found','Project not found',correlationId,false);}
+      if(projectMatch&&request.method==='PATCH'){const patch=await readJson(request,input.config.bodyLimitBytes); if(!patch||typeof patch!=='object'||Array.isArray(patch))return sendError(response,400,'invalid_project_patch','Project patch must be an object',correlationId,false); const row=await input.projects.update(principal,decodeURIComponent(projectMatch[1]),patch as Record<string,unknown>);return row?send(response,200,await dto(row)):sendError(response,404,'project_not_found','Project not found',correlationId,false);}
       if(projectMatch&&request.method==='DELETE')return await input.projects.delete(principal,decodeURIComponent(projectMatch[1]))?send(response,204,undefined):sendError(response,404,'project_not_found','Project not found',correlationId,false);
+
       if (path === '/api/core/artifacts/masks' && request.method === 'POST') {
         if (mediaType(request) !== 'application/octet-stream') return sendError(response, 415, 'unsupported_media_type', 'Content-Type must be application/octet-stream', correlationId, false);
         const url = new URL(request.url ?? '/', 'http://core.invalid'); const projectId = url.searchParams.get('projectId')?.trim();
