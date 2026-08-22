@@ -216,7 +216,8 @@ export default function Editor() {
     setCommitting(true);
     try {
       const { result, instruction: used } = pendingResult;
-      await pushEdit(result.image_url, used, result.historyEntry);
+      if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
+      await pushEdit(result.finalArtifactId, used);
       await notificationCenter.push({ title: 'Edit saved', message: 'Your accepted result has been added to project history.', type: 'success', projectId: project.id });
       sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error)); // fingerprint bumps on accepted edits only
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: true, durationMs: result.generation_time_ms || 0 });
@@ -248,7 +249,8 @@ export default function Editor() {
             chain, project, objects,
             onProgress: (steps) => setChainState((cs) => ({ ...cs, steps })),
             onStepCommitted: async (result, step) => {
-              await pushEdit(result.image_url, `${chain.name}: ${step.label}`, result.historyEntry);
+              if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
+              await pushEdit(result.finalArtifactId, `${chain.name}: ${step.label}`);
               sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
             },
         }),
