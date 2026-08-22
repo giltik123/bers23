@@ -1,3 +1,7 @@
+> **HISTORICAL MIGRATION SNAPSHOT.**
+>
+> This table records what the Sprint 6.30 cutover intended/declared at that time; it is not a current endpoint or feature-readiness inventory. In particular, entries naming generic `/api/core/data/*`, `/api/core/commands/*`, `/api/core/assets` or observability replacements do **not** establish those generic surfaces as canonical production authorities. Current server routes/composition and `PROJECT_SOURCE_OF_TRUTH.md` take precedence. “DONE” below means the Base44 dependency was retired for that inventory item, not that every replacement product vertical is now production-complete.
+
 # Sprint 6.30 cutover inventory
 
 This is the immutable migration record for the retired Base44 boundary. It is

@@ -1,3 +1,7 @@
+> **HISTORICAL — NON-AUTHORITATIVE FOR CURRENT PRODUCTION.**
+>
+> This document records the retired Base44-era operation-policy design and its old PR sequence. The referenced `base44/functions/**` authority no longer exists in the canonical production architecture, and the operation/provider/cost table below must not be treated as the current billing or execution registry. Read `PROJECT_SOURCE_OF_TRUTH.md` and inspect the current Core composition/tests before changing production behavior. Do **not** restore Base44 or create a generic compatibility authority to make this document true.
+
 # AI Operation Registry
 
 The server-side AI Operation Registry is the source of truth for authorization
