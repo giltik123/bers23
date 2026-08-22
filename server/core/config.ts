@@ -2,6 +2,7 @@ export type CoreServerConfig = Readonly<{
   nodeEnv: string; port: number; databaseUrl: string; provider: 'FAL'; falKey: string;
   falBaseUrl: string; jwtSecret: string; jwtIssuer: string; jwtAudience: string;
   authChallengeSecret: string; authDefaultTenantId: string; authPublicOrigin: string;
+  authSessionAbsoluteTtlMs: number; authSessionIdleTtlMs: number;
   resendApiKey: string; authEmailFrom: string; googleOauthClientId: string; googleOauthClientSecret: string;
   artifactSigningSecret: string; trustedAssetHosts: readonly string[]; allowLegacyAssetUrls: boolean;
   allowedWebOrigins: readonly string[]; allowApiBearerAuth?: boolean; hardBudgetCredits: number; creditsPerEdit: number;
@@ -28,12 +29,16 @@ export function loadCoreServerConfig(env: NodeJS.ProcessEnv = process.env): Core
   if (parsedOrigin.username || parsedOrigin.password || parsedOrigin.search || parsedOrigin.hash || (parsedOrigin.pathname && parsedOrigin.pathname !== '/')) throw new Error('Invalid server environment: AUTH_PUBLIC_ORIGIN');
   const authDefaultTenantId = required('AUTH_DEFAULT_TENANT_ID');
   if (authDefaultTenantId.length > 200) throw new Error('Invalid server environment: AUTH_DEFAULT_TENANT_ID');
+  const authSessionAbsoluteTtlMs = integer('AUTH_SESSION_ABSOLUTE_TTL_MS', 8 * 60 * 60 * 1000, 60_000, 30 * 24 * 60 * 60 * 1000);
+  const authSessionIdleTtlMs = integer('AUTH_SESSION_IDLE_TTL_MS', 30 * 60 * 1000, 60_000, 30 * 24 * 60 * 60 * 1000);
+  if (authSessionIdleTtlMs > authSessionAbsoluteTtlMs) throw new Error('Invalid server environment: AUTH_SESSION_IDLE_TTL_MS');
   const nodeEnv = env.NODE_ENV ?? 'production';
   return Object.freeze({
     nodeEnv, port: integer('PORT', 8080, 1, 65535), databaseUrl: required('DATABASE_URL'), provider,
     falKey: required('FAL_KEY'), falBaseUrl: env.FAL_BASE_URL?.trim() || 'https://queue.fal.run', jwtSecret: required('JWT_SECRET'),
     jwtIssuer: required('JWT_ISSUER'), jwtAudience: required('JWT_AUDIENCE'),
     authChallengeSecret: required('AUTH_CHALLENGE_SECRET'), authDefaultTenantId, authPublicOrigin: parsedOrigin.origin,
+    authSessionAbsoluteTtlMs, authSessionIdleTtlMs,
     resendApiKey: required('RESEND_API_KEY'), authEmailFrom: required('AUTH_EMAIL_FROM'),
     googleOauthClientId: required('GOOGLE_OAUTH_CLIENT_ID'), googleOauthClientSecret: required('GOOGLE_OAUTH_CLIENT_SECRET'),
     artifactSigningSecret: required('ARTIFACT_SIGNING_SECRET'), trustedAssetHosts: Object.freeze(trustedAssetHosts), allowLegacyAssetUrls,

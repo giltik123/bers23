@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
+import type { AuthRiskContext } from '../auth/canonicalAuthService.ts';
 import type { CreativeApplicationCore } from '../composition/createCreativeCore.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { modelArtifactRelay } from './modelArtifactRelay.ts';
@@ -18,16 +19,18 @@ import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 
 type HttpAuthAuthority = Readonly<{
   verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
-  login?: (email: string, password: string) => Promise<unknown>;
+  login?: (email: string, password: string, risk?: AuthRiskContext, previousAuthorization?: string) => Promise<unknown>;
   context?: (authorization: string | undefined) => Promise<unknown>;
   logout?: (authorization: string | undefined) => Promise<void>;
-  register?: (email: string, password: string, displayName?: string) => Promise<unknown>;
-  verifyOtp?: (email: string, otpCode: string, verificationHandle: string) => Promise<unknown>;
-  resendOtp?: (email: string, verificationHandle: string) => Promise<unknown>;
-  resetPasswordRequest?: (email: string) => Promise<unknown>;
-  resetPassword?: (resetToken: string, newPassword: string) => Promise<unknown>;
-  googleStart?: (returnTo?: string) => Promise<string>;
-  googleCallback?: (state: string, code: string) => Promise<Readonly<{ redirectTo: string; session: unknown }>>;
+  sessions?: (authorization: string | undefined) => Promise<unknown>;
+  revokeAllSessions?: (authorization: string | undefined) => Promise<unknown>;
+  register?: (email: string, password: string, displayName?: string, risk?: AuthRiskContext) => Promise<unknown>;
+  verifyOtp?: (email: string, otpCode: string, verificationHandle: string, risk?: AuthRiskContext, previousAuthorization?: string) => Promise<unknown>;
+  resendOtp?: (email: string, verificationHandle: string, risk?: AuthRiskContext) => Promise<unknown>;
+  resetPasswordRequest?: (email: string, risk?: AuthRiskContext) => Promise<unknown>;
+  resetPassword?: (resetToken: string, newPassword: string, risk?: AuthRiskContext) => Promise<unknown>;
+  googleStart?: (returnTo?: string, risk?: AuthRiskContext, previousAuthorization?: string) => Promise<string>;
+  googleCallback?: (state: string, code: string, risk?: AuthRiskContext, previousAuthorization?: string) => Promise<Readonly<{ redirectTo: string; session: unknown }>>;
 }>;
 
 /** Minimal Node transport for a framework-neutral Fetch handler. */
@@ -69,6 +72,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (browserAuthMutationPath(path, request.method)) assertBrowserAuthMutationOrigin(request, input.config);
       else assertBrowserMutationAllowed(request, input.config);
 
+      const risk = transportRiskContext(request);
+      const currentAuthorization = () => requestAuthorization(request, input.config);
       const resultMatch = path.match(/^\/api\/core\/artifacts\/results\/([^/]+)$/);
       if (resultMatch && request.method === 'GET') {
         const token=decodeURIComponent(resultMatch[1]); let claim; try { claim=input.artifacts.external.resolveStoredOriginalDelivery(token); } catch { claim=input.artifacts.external.resolveStoredFinalDelivery(token); }
@@ -79,56 +84,66 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (path === '/api/core/auth/register' && request.method === 'POST') {
         if (!input.auth.register) return sendError(response,404,'not_found','Route not found',correlationId,false);
         const body = await authJson(request,input.config.bodyLimitBytes) as any;
-        return send(response,202,await input.auth.register(string(body?.email),string(body?.password),typeof body?.displayName==='string'?body.displayName:undefined));
+        return send(response,202,await input.auth.register(string(body?.email),string(body?.password),typeof body?.displayName==='string'?body.displayName:undefined,risk));
       }
       if (path === '/api/core/auth/verify-otp' && request.method === 'POST') {
         if (!input.auth.verifyOtp) return sendError(response,404,'not_found','Route not found',correlationId,false);
         const body=await authJson(request,input.config.bodyLimitBytes) as any;
-        const session = await input.auth.verifyOtp(string(body?.email),string(body?.otpCode),string(body?.verificationHandle));
+        const session = await input.auth.verifyOtp(string(body?.email),string(body?.otpCode),string(body?.verificationHandle),risk,currentAuthorization());
         return send(response,200,establishBrowserSession(response,session,input.config,now()));
       }
       if (path === '/api/core/auth/resend-otp' && request.method === 'POST') {
         if (!input.auth.resendOtp) return sendError(response,404,'not_found','Route not found',correlationId,false);
         const body=await authJson(request,input.config.bodyLimitBytes) as any;
-        return send(response,202,await input.auth.resendOtp(string(body?.email),string(body?.verificationHandle)));
+        return send(response,202,await input.auth.resendOtp(string(body?.email),string(body?.verificationHandle),risk));
       }
       if (path === '/api/core/auth/password/reset-request' && request.method === 'POST') {
         if (!input.auth.resetPasswordRequest) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        const body=await authJson(request,input.config.bodyLimitBytes) as any; return send(response,202,await input.auth.resetPasswordRequest(string(body?.email)));
+        const body=await authJson(request,input.config.bodyLimitBytes) as any; return send(response,202,await input.auth.resetPasswordRequest(string(body?.email),risk));
       }
       if (path === '/api/core/auth/password/reset' && request.method === 'POST') {
         if (!input.auth.resetPassword) return sendError(response,404,'not_found','Route not found',correlationId,false);
         const body=await authJson(request,input.config.bodyLimitBytes) as any;
-        const result=await input.auth.resetPassword(string(body?.resetToken),string(body?.newPassword));
+        const result=await input.auth.resetPassword(string(body?.resetToken),string(body?.newPassword),risk);
         clearBrowserSession(response,input.config);
         return send(response,200,result);
       }
       if (path === '/api/core/auth/login/google' && request.method === 'GET') {
         if (!input.auth.googleStart) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        return redirect(response, await input.auth.googleStart(url.searchParams.get('return_to') ?? undefined));
+        return redirect(response, await input.auth.googleStart(url.searchParams.get('return_to') ?? undefined,risk,currentAuthorization()));
       }
       if (path === '/api/core/auth/callback/google' && request.method === 'GET') {
         if (!input.auth.googleCallback) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        const completed = await input.auth.googleCallback(url.searchParams.get('state') ?? '', url.searchParams.get('code') ?? '');
+        const completed = await input.auth.googleCallback(url.searchParams.get('state') ?? '', url.searchParams.get('code') ?? '',risk,currentAuthorization());
         establishBrowserSession(response, completed.session, input.config, now());
         return redirect(response, completed.redirectTo);
       }
       if (path === '/api/core/auth/password/login' && request.method === 'POST') {
         if (!input.auth.login) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
         const body = await authJson(request,input.config.bodyLimitBytes) as { email?: unknown; password?: unknown };
-        const session=await input.auth.login(string(body?.email), string(body?.password));
+        const session=await input.auth.login(string(body?.email), string(body?.password),risk,currentAuthorization());
         return send(response, 200, establishBrowserSession(response,session,input.config,now()));
       }
       if (path === '/api/core/auth/context' && request.method === 'GET') {
         if (!input.auth.context) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
-        const context = await input.auth.context(requestAuthorization(request,input.config));
+        const context = await input.auth.context(currentAuthorization());
         exposeBrowserCsrfToken(response, request, input.config);
         return send(response, 200, context);
+      }
+      if (path === '/api/core/auth/sessions' && request.method === 'GET') {
+        if (!input.auth.sessions) return sendError(response,404,'not_found','Route not found',correlationId,false);
+        return send(response,200,await input.auth.sessions(currentAuthorization()));
+      }
+      if (path === '/api/core/auth/sessions/revoke-all' && request.method === 'POST') {
+        if (!input.auth.revokeAllSessions) return sendError(response,404,'not_found','Route not found',correlationId,false);
+        const result = await input.auth.revokeAllSessions(currentAuthorization());
+        clearBrowserSession(response,input.config);
+        return send(response,200,result);
       }
       if (path === '/api/core/auth/logout' && request.method === 'POST') {
         if (!input.auth.logout) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
         assertBrowserMutationAllowed(request, input.config);
-        try { await input.auth.logout(requestAuthorization(request,input.config)); }
+        try { await input.auth.logout(currentAuthorization()); }
         catch (cause) {
           const error=cause as Error & { status?: number };
           if (error.status !== 401) throw cause;
@@ -136,7 +151,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         clearBrowserSession(response,input.config);
         return send(response, 204, undefined);
       }
-      const principal = await input.auth.verify(requestAuthorization(request,input.config));
+      const principal = await input.auth.verify(currentAuthorization());
       const projectMatch=path.match(/^\/api\/core\/projects\/([^/]+)$/); const actionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/(accept-final|undo|redo|restore-original|versions)$/); const versionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
       const dto=(row: any) => { const scope={...principal,projectId:row.project_id}; const artifactId=(storageId:string)=>storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginal(storageId,scope):input.artifacts.external.issueStoredFinal(storageId,scope); const imageUrl=(storageId:string)=>{const expiresAt=now()+300_000; const token=storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginalDelivery(storageId,scope,expiresAt):input.artifacts.external.issueStoredFinalDelivery(storageId,scope,expiresAt);return `/api/core/artifacts/results/${encodeURIComponent(token)}`}; const originalId=artifactId(row.original_image_storage_id),currentId=artifactId(row.current_image_storage_id),delivery=imageUrl(row.current_image_storage_id),history=(row.history??[]).map((h:any)=>({id:h.history_id,artifact_id:artifactId(h.image_storage_id),image_url:imageUrl(h.image_storage_id),instruction:h.instruction,operation:h.kind,created_at:h.created_at})); const cursor=history.findIndex((h:any)=>h.id===row.history_cursor_id); const versions=(row.versions??[]).map((v:any)=>({id:v.version_id,name:v.name,artifact_id:artifactId(v.image_storage_id),preview_url:imageUrl(v.image_storage_id),created_at:v.created_at})); return {id:row.project_id,name:row.name,original_image_artifact_id:originalId,current_image_artifact_id:currentId,original_image_url:imageUrl(row.original_image_storage_id),current_image_url:delivery,thumbnail_url:delivery,width:row.width,height:row.height,status:row.status,favorite:row.favorite,archived:row.archived,objects:row.objects,history,history_index:cursor,versions,created_date:row.created_at,updated_date:row.updated_at}; };
       if(path==='/api/core/projects'&&request.method==='POST'){ const type=mediaType(request); if(!['image/png','image/jpeg','image/webp'].includes(type))return sendError(response,415,'unsupported_media_type','Supported images are PNG, JPEG and WebP',correlationId,false); const bytes=await readBytes(request,input.config.imageUploadLimitBytes); if(!bytes.byteLength)return sendError(response,400,'empty_image','Image body is required',correlationId,false); const name=(url.searchParams.get('name')??'Untitled').trim(); if(!name||name.length>200)return sendError(response,400,'invalid_project_name','Project name is invalid',correlationId,false); const created=await input.projects.create(principal,name,bytes,{maxDimension:input.config.imageMaxDimension,maxPixels:input.config.imageMaxPixels}); return send(response,201,dto(await input.projects.state(principal,created.project_id))); }
@@ -162,7 +177,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (match) { const [, executionId, action] = match; const coreRequest = { auth: principal, correlationId }; const result = action === 'status' && request.method === 'GET' ? input.core.lifecycle.status(coreRequest, executionId) : action === 'result' && request.method === 'GET' ? input.core.lifecycle.result(coreRequest, executionId) : action === 'cancel' && request.method === 'POST' ? input.core.lifecycle.cancel(coreRequest, executionId) : undefined; if (result) return send(response, result.status, result.body); }
       return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
     } catch (cause) {
-      const error = cause as Error & { code?: string; status?: number; retryable?: boolean };
+      const error = cause as Error & { code?: string; status?: number; retryable?: boolean; retryAfterSeconds?: number };
+      if (error.status === 429 && Number.isFinite(error.retryAfterSeconds)) response.setHeader('Retry-After', String(Math.max(1, Math.ceil(error.retryAfterSeconds!))));
       return sendError(response, error.status ?? 500, error.code ?? 'internal_error', error.status ? error.message : 'Internal server error', correlationId, error.retryable ?? false);
     }
   };
@@ -178,6 +194,7 @@ function browserAuthMutationPath(path: string, method: string | undefined): bool
     || path === '/api/core/auth/password/login'
     || path === '/api/core/auth/logout';
 }
+function transportRiskContext(request: IncomingMessage): AuthRiskContext { return Object.freeze({ peerAddress: request.socket.remoteAddress }); }
 function header(request: IncomingMessage, name: string): string | undefined { const value = request.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value; }
 function mediaType(request: IncomingMessage): string { return (header(request, 'content-type') ?? '').split(';')[0].trim().toLowerCase(); }
 function string(value: unknown): string { return typeof value === 'string' ? value : ''; }
