@@ -29,7 +29,7 @@ type HttpAuthAuthority = Readonly<{
   resendOtp?: (email: string, verificationHandle: string, risk?: AuthRiskContext) => Promise<unknown>;
   resetPasswordRequest?: (email: string, risk?: AuthRiskContext) => Promise<unknown>;
   resetPassword?: (resetToken: string, newPassword: string, risk?: AuthRiskContext) => Promise<unknown>;
-  googleStart?: (returnTo?: string, risk?: AuthRiskContext) => Promise<string>;
+  googleStart?: (returnTo?: string, risk?: AuthRiskContext, previousAuthorization?: string) => Promise<string>;
   googleCallback?: (state: string, code: string, risk?: AuthRiskContext, previousAuthorization?: string) => Promise<Readonly<{ redirectTo: string; session: unknown }>>;
 }>;
 
@@ -110,7 +110,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       }
       if (path === '/api/core/auth/login/google' && request.method === 'GET') {
         if (!input.auth.googleStart) return sendError(response,404,'not_found','Route not found',correlationId,false);
-        return redirect(response, await input.auth.googleStart(url.searchParams.get('return_to') ?? undefined,risk));
+        return redirect(response, await input.auth.googleStart(url.searchParams.get('return_to') ?? undefined,risk,currentAuthorization()));
       }
       if (path === '/api/core/auth/callback/google' && request.method === 'GET') {
         if (!input.auth.googleCallback) return sendError(response,404,'not_found','Route not found',correlationId,false);
