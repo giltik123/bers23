@@ -36,7 +36,16 @@ export class SignedArtifactAuthority {
     } catch { throw denied(); }
   }
   owns(scope: AuthenticatedScope & { projectId: string }, ids: readonly string[]): Promise<boolean> { try { ids.forEach(id => this.resolve(id, scope)); return Promise.resolve(true); } catch { return Promise.resolve(false); } }
-  private verifiedPayload(artifactId: string): unknown { const [payload, signature, extra] = artifactId.split('.'); if (!payload || !signature || extra) throw denied(); const actual = Buffer.from(signature, 'base64url'); const expected = createHmac('sha256', this.#secret).update(payload).digest(); if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw denied(); try { return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { throw denied(); } }
+  private verifiedPayload(artifactId: string): unknown {
+    const [payload, signature, extra] = artifactId.split('.');
+    if (!payload || !signature || extra) throw denied();
+    let actual: Buffer;
+    try { actual = Buffer.from(signature, 'base64url'); } catch { throw denied(); }
+    if (actual.toString('base64url') !== signature) throw denied();
+    const expected = createHmac('sha256', this.#secret).update(payload).digest();
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw denied();
+    try { return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { throw denied(); }
+  }
   private sign(claim: object): string { const payload = Buffer.from(JSON.stringify(claim)).toString('base64url'); return `${payload}.${createHmac('sha256', this.#secret).update(payload).digest('base64url')}`; }
 }
 
