@@ -1,11 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { HmacJwtVerifier } from '../auth/hmacJwtVerifier.ts';
+import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CreativeApplicationCore } from '../composition/createCreativeCore.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { modelArtifactRelay } from './modelArtifactRelay.ts';
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
+
+type HttpAuthAuthority = Readonly<{
+  verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
+  login?: (email: string, password: string) => Promise<unknown>;
+  context?: (authorization: string | undefined) => Promise<unknown>;
+  logout?: (authorization: string | undefined) => Promise<void>;
+}>;
 
 /** Minimal Node transport for a framework-neutral Fetch handler. */
 export function nodeHttpAdapter(handler: (request: Request) => Promise<Response>) {
@@ -20,7 +27,7 @@ export function nodeHttpAdapter(handler: (request: Request) => Promise<Response>
 }
 
 /** Production Node transport with health, CORS, authentication and request limits. */
-export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicationCore; artifacts: ArtifactAuthority; projects: PostgresProjectStore; auth: HmacJwtVerifier; config: CoreServerConfig; ready: () => Promise<boolean>; accepting: () => boolean }>) {
+export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicationCore; artifacts: ArtifactAuthority; projects: PostgresProjectStore; auth: HttpAuthAuthority; config: CoreServerConfig; ready: () => Promise<boolean>; accepting: () => boolean }>) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || randomUUID(); response.setHeader('X-Correlation-Id', correlationId);
     try {
@@ -40,7 +47,23 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         if (!stored) return sendError(response, 404, 'result_not_found', 'Final image artifact is unavailable', correlationId, false);
         response.statusCode = 200; response.setHeader('Content-Type', stored.contentType); response.setHeader('Content-Length', stored.bytes.byteLength); response.setHeader('Cache-Control', 'private, max-age=300'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(stored.bytes); return;
       }
-      const principal = input.auth.verify(header(request, 'authorization'));
+      if (path === '/api/core/auth/password/login' && request.method === 'POST') {
+        if (!input.auth.login) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
+        if (!mediaType(request).startsWith('application/json')) return sendError(response, 415, 'unsupported_media_type', 'Content-Type must be application/json', correlationId, false);
+        const body = await readJson(request, input.config.bodyLimitBytes) as { email?: unknown; password?: unknown };
+        const email = typeof body?.email === 'string' ? body.email : '';
+        const password = typeof body?.password === 'string' ? body.password : '';
+        return send(response, 200, await input.auth.login(email, password));
+      }
+      if (path === '/api/core/auth/context' && request.method === 'GET') {
+        if (!input.auth.context) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
+        return send(response, 200, await input.auth.context(header(request, 'authorization')));
+      }
+      if (path === '/api/core/auth/logout' && request.method === 'POST') {
+        if (!input.auth.logout) return sendError(response, 404, 'not_found', 'Route not found', correlationId, false);
+        await input.auth.logout(header(request, 'authorization')); return send(response, 204, undefined);
+      }
+      const principal = await input.auth.verify(header(request, 'authorization'));
       const projectMatch=path.match(/^\/api\/core\/projects\/([^/]+)$/); const actionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/(accept-final|undo|redo|restore-original|versions)$/); const versionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
       const dto=(row: any) => { const scope={...principal,projectId:row.project_id}; const artifactId=(storageId:string)=>storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginal(storageId,scope):input.artifacts.external.issueStoredFinal(storageId,scope); const url=(storageId:string)=>{const token=storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginalDelivery(storageId,scope,Date.now()+300_000):input.artifacts.external.issueStoredFinalDelivery(storageId,scope,Date.now()+300_000);return `/api/core/artifacts/results/${encodeURIComponent(token)}`}; const originalId=artifactId(row.original_image_storage_id),currentId=artifactId(row.current_image_storage_id),delivery=url(row.current_image_storage_id),history=(row.history??[]).map((h:any)=>({id:h.history_id,artifact_id:artifactId(h.image_storage_id),image_url:url(h.image_storage_id),instruction:h.instruction,operation:h.kind,created_at:h.created_at})); const cursor=history.findIndex((h:any)=>h.id===row.history_cursor_id); const versions=(row.versions??[]).map((v:any)=>({id:v.version_id,name:v.name,artifact_id:artifactId(v.image_storage_id),preview_url:url(v.image_storage_id),created_at:v.created_at})); return {id:row.project_id,name:row.name,original_image_artifact_id:originalId,current_image_artifact_id:currentId,original_image_url:url(row.original_image_storage_id),current_image_url:delivery,thumbnail_url:delivery,width:row.width,height:row.height,status:row.status,favorite:row.favorite,archived:row.archived,objects:row.objects,history,history_index:cursor,versions,created_date:row.created_at,updated_date:row.updated_at}; };
       if(path==='/api/core/projects'&&request.method==='POST'){ const type=mediaType(request); if(!['image/png','image/jpeg','image/webp'].includes(type))return sendError(response,415,'unsupported_media_type','Supported images are PNG, JPEG and WebP',correlationId,false); const bytes=await readBytes(request,input.config.imageUploadLimitBytes); if(!bytes.byteLength)return sendError(response,400,'empty_image','Image body is required',correlationId,false); const name=(new URL(request.url??'/','http://core.invalid').searchParams.get('name')??'Untitled').trim(); if(!name||name.length>200)return sendError(response,400,'invalid_project_name','Project name is invalid',correlationId,false); const created=await input.projects.create(principal,name,bytes,{maxDimension:input.config.imageMaxDimension,maxPixels:input.config.imageMaxPixels}); return send(response,201,dto(await input.projects.state(principal,created.project_id))); }
