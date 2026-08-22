@@ -38,6 +38,8 @@ jobs:
     - run: npm run test:canonical-product-vertical
     - name: Run canonical planning v2 acceptance
       run: npm run test:creative-planning-v2
+    - name: Sprint 6.40C verification fallback explainability and telemetry
+      run: npm run test:creative-planning-6.40c
 
   postgres-transactions:
     runs-on: ubuntu-latest

@@ -1,9 +1,11 @@
 import type { CreativeOperation, CreativePlan, CreativePlanCandidate, CreativePlanConstraints, ExecutionTarget } from '../contracts';
+import { FALLBACK_POLICY_VERSION, OPERATION_RULES_VERSION, PLAN_SCHEMA_VERSION, SCORING_POLICY_VERSION, VERIFICATION_POLICY_VERSION } from './advisoryPolicies';
 
 export class InvalidCreativePlanError extends Error { constructor(message: string) { super(`Invalid creative plan: ${message}`); this.name = 'InvalidCreativePlanError'; } }
 
 /** Pure fail-closed validation. This validates advice; it grants no execution authority. */
 export function validateCreativePlan(plan: CreativePlan, canonicalInputArtifactIds: readonly string[] = []): void {
+  validateReplayMetadata(plan);
   if ((plan.status ?? 'READY') !== 'READY') throw new InvalidCreativePlanError(`${plan.status} plans are not executable`);
   if (!plan.operations.length) throw new InvalidCreativePlanError('READY plan requires an executable operation');
   if (plan.candidates) {
@@ -17,8 +19,22 @@ export function validateCreativePlan(plan: CreativePlan, canonicalInputArtifactI
     if (selected.status !== 'ACCEPTED') throw new InvalidCreativePlanError('selected candidate is rejected');
     if (plan.planningConstraints) validateCandidateConstraints(selected, plan.planningConstraints);
     if (!sameOperations(plan.operations, selected.operations)) throw new InvalidCreativePlanError('projected operations differ from selected candidate');
+    for (const candidate of plan.candidates) for (const fallback of candidate.fallbackAdvice ?? []) {
+      if (fallback.candidateId !== candidate.id) throw new InvalidCreativePlanError(`fallback references missing candidate ${fallback.candidateId}`);
+      if (!candidate.operations.some(operation => operation.id === fallback.stepId)) throw new InvalidCreativePlanError(`fallback references missing step ${fallback.stepId}`);
+      if (fallback.alternateCandidateId && !plan.candidates.some(value => value.id === fallback.alternateCandidateId)) throw new InvalidCreativePlanError(`fallback references missing alternate candidate ${fallback.alternateCandidateId}`);
+      if (fallback.maxAttempts < 0 || fallback.maxGenerationDepth < 0) throw new InvalidCreativePlanError('fallback bounds must be non-negative');
+    }
   }
   validateDag(plan.operations, new Set([...(plan.provenance?.inputArtifacts.map(item => item.id) ?? []), ...canonicalInputArtifactIds]));
+}
+
+export function validateReplayMetadata(plan: CreativePlan): void {
+  const replay = plan.provenance?.replay;
+  if (!replay) return; // 6.40A/B compatibility plans remain valid.
+  const expected = [PLAN_SCHEMA_VERSION, plan.plannerVersion ?? plan.provenance?.plannerVersion, OPERATION_RULES_VERSION, SCORING_POLICY_VERSION, VERIFICATION_POLICY_VERSION, FALLBACK_POLICY_VERSION];
+  const actual = [replay.schemaVersion, replay.plannerVersion, replay.operationRulesVersion, replay.scoringPolicyVersion, replay.verificationPolicyVersion, replay.fallbackPolicyVersion];
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new InvalidCreativePlanError('stale or incompatible replay metadata; explicit replan required');
 }
 
 /** Revalidate hard planning constraints against the actual downstream target choice. */
