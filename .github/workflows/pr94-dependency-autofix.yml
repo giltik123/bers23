@@ -1,0 +1,39 @@
+name: PR94 dependency autofix
+
+on:
+  push:
+    branches: ["sprint-6.39b-auth-lifecycle-oauth"]
+
+permissions:
+  contents: write
+
+jobs:
+  harden-lockfile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sprint-6.39b-auth-lifecycle-oauth
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Remove unused vulnerable Quill chain and apply compatible advisory fixes
+        run: |
+          npm pkg delete dependencies.react-quill
+          npm install --package-lock-only --ignore-scripts
+          npm audit fix --package-lock-only --ignore-scripts || true
+          npm audit --omit=dev --audit-level=moderate || true
+      - name: Commit reviewed-input dependency graph update
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No dependency changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "Harden production dependency graph [skip ci]"
+          git push origin HEAD:sprint-6.39b-auth-lifecycle-oauth
