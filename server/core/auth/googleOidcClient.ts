@@ -45,11 +45,12 @@ export class GoogleOidcClient {
     if (parts.length !== 3 || parts.some(part => !part)) throw oauthDenied();
     const header = parseJson(parts[0]) as { alg?: unknown; kid?: unknown };
     const claims = parseJson(parts[1]) as Partial<GoogleClaims>;
-    if (header.alg !== 'RS256' || typeof header.kid !== 'string') throw oauthDenied();
-    const key = (await this.jwks()).find(item => item.kid === header.kid && item.kty === 'RSA');
+    if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) throw oauthDenied();
+    const signingKey = (item: GoogleJwk) => item.kid === header.kid && item.kty === 'RSA' && item.alg === 'RS256' && item.use === 'sig';
+    const key = (await this.jwks()).find(signingKey);
     if (!key) {
       this.keys = undefined;
-      const refreshed = (await this.jwks()).find(item => item.kid === header.kid && item.kty === 'RSA');
+      const refreshed = (await this.jwks()).find(signingKey);
       if (!refreshed) throw oauthDenied();
       return this.verifyWithKey(parts, refreshed, claims);
     }
@@ -59,14 +60,19 @@ export class GoogleOidcClient {
   private verifyWithKey(parts: string[], jwk: GoogleJwk, claims: Partial<GoogleClaims>): GoogleClaims {
     const signed = Buffer.from(`${parts[0]}.${parts[1]}`);
     const signature = Buffer.from(parts[2], 'base64url');
+    if (signature.toString('base64url') !== parts[2]) throw oauthDenied();
     let valid = false;
-    try { valid = verifySignature('RSA-SHA256', signed, createPublicKey({ key: jwk as any, format: 'jwk' }), signature); }
-    catch { valid = false; }
+    try {
+      const key = createPublicKey({ key: jwk as any, format: 'jwk' });
+      const modulusLength = key.asymmetricKeyDetails?.modulusLength ?? 0;
+      if (key.asymmetricKeyType !== 'rsa' || modulusLength < 2048) throw oauthDenied();
+      valid = verifySignature('RSA-SHA256', signed, key, signature);
+    } catch { valid = false; }
     const nowSeconds = Math.floor((this.input.now ?? Date.now)() / 1000);
-    if (!valid || typeof claims.iss !== 'string' || !ISSUERS.has(claims.iss) || claims.aud !== this.input.clientId || typeof claims.exp !== 'number' || claims.exp <= nowSeconds || typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 255 || typeof claims.email !== 'string' || typeof claims.nonce !== 'string' || !claims.nonce) throw oauthDenied();
+    if (!valid || typeof claims.iss !== 'string' || !ISSUERS.has(claims.iss) || claims.aud !== this.input.clientId || typeof claims.exp !== 'number' || claims.exp <= nowSeconds || typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 255 || typeof claims.email !== 'string' || claims.email_verified !== true || typeof claims.nonce !== 'string' || !claims.nonce) throw oauthDenied();
     return Object.freeze({
       iss: claims.iss, aud: claims.aud, sub: claims.sub, exp: claims.exp, nonce: claims.nonce, email: claims.email,
-      email_verified: claims.email_verified === true,
+      email_verified: true,
       ...(typeof claims.hd === 'string' && claims.hd ? { hd: claims.hd } : {}),
       ...(typeof claims.name === 'string' && claims.name ? { name: claims.name } : {}),
     });
