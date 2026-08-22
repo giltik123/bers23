@@ -162,15 +162,7 @@ jobs:
       - name: Migrate container smoke database
         env:
           DATABASE_URL: postgresql://core_image_test:core_image_test@127.0.0.1:5432/core_image_test
-        run: |
-          npm run db:migrate:transactions
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/core/artifacts/migrations/002_canonical_mask_artifacts.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/core/projects/migrations/004_canonical_projects_and_originals.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/core/projects/migrations/005_canonical_project_history_versions.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/core/projects/migrations/006_project_history_acceptance_hardening.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/core/projects/migrations/007_project_history_source_lineage.sql
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/core/auth/migrations/008_canonical_auth_identity_sessions.sql
+        run: npm run db:migrate:transactions
       - name: Build production image
         run: docker build --tag bers-core:${{ github.sha }} .
       - name: Prove sharp loads in the production image
