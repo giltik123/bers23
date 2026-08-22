@@ -11,6 +11,7 @@ export function productionBrowserCsp(coreApiUrl) {
     "frame-src 'none'",
     "form-action 'self'",
     "script-src 'self' 'wasm-unsafe-eval'",
+    "script-src-attr 'none'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' blob: data: https:",
     "font-src 'self' data:",
