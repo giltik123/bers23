@@ -6,9 +6,9 @@ const JWKS_ENDPOINT = 'https://www.googleapis.com/oauth2/v3/certs';
 const ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
 
 type GoogleJwk = JsonWebKey & { kid?: string; alg?: string; use?: string };
-type GoogleClaims = Readonly<{
-  iss: string; aud: string; sub: string; exp: number; nonce?: string;
-  email: string; email_verified?: boolean; hd?: string; name?: string;
+export type GoogleClaims = Readonly<{
+  iss: string; aud: string; sub: string; exp: number; nonce: string;
+  email: string; email_verified: boolean; hd?: string; name?: string;
 }>;
 
 export class GoogleOidcClient {
@@ -36,7 +36,7 @@ export class GoogleOidcClient {
     return url.toString();
   }
 
-  async exchangeAndVerify(code: string, expectedNonce: string): Promise<GoogleClaims> {
+  async exchangeAndVerify(code: string): Promise<GoogleClaims> {
     if (typeof code !== 'string' || code.length < 1 || code.length > 4096) throw oauthDenied();
     const response = await this.input.fetcher(TOKEN_ENDPOINT, {
       method: 'POST',
@@ -52,21 +52,26 @@ export class GoogleOidcClient {
     if (!response.ok) throw oauthDenied();
     const tokenBody = await response.json().catch(() => undefined) as { id_token?: unknown } | undefined;
     if (typeof tokenBody?.id_token !== 'string') throw oauthDenied();
-    return this.verifyIdToken(tokenBody.id_token, expectedNonce);
+    return this.verifyIdToken(tokenBody.id_token);
   }
 
-  async verifyIdToken(idToken: string, expectedNonce: string): Promise<GoogleClaims> {
+  async verifyIdToken(idToken: string): Promise<GoogleClaims> {
     const parts = idToken.split('.');
     if (parts.length !== 3 || parts.some(part => !part)) throw oauthDenied();
     const header = parseJson(parts[0]) as { alg?: unknown; kid?: unknown };
     const claims = parseJson(parts[1]) as Partial<GoogleClaims>;
     if (header.alg !== 'RS256' || typeof header.kid !== 'string') throw oauthDenied();
     const key = (await this.jwks()).find(item => item.kid === header.kid && item.kty === 'RSA');
-    if (!key) { this.keys = undefined; const refreshed = (await this.jwks()).find(item => item.kid === header.kid && item.kty === 'RSA'); if (!refreshed) throw oauthDenied(); return this.verifyWithKey(parts, refreshed, claims, expectedNonce); }
-    return this.verifyWithKey(parts, key, claims, expectedNonce);
+    if (!key) {
+      this.keys = undefined;
+      const refreshed = (await this.jwks()).find(item => item.kid === header.kid && item.kty === 'RSA');
+      if (!refreshed) throw oauthDenied();
+      return this.verifyWithKey(parts, refreshed, claims);
+    }
+    return this.verifyWithKey(parts, key, claims);
   }
 
-  private verifyWithKey(parts: string[], jwk: GoogleJwk, claims: Partial<GoogleClaims>, expectedNonce: string): GoogleClaims {
+  private verifyWithKey(parts: string[], jwk: GoogleJwk, claims: Partial<GoogleClaims>): GoogleClaims {
     const signed = Buffer.from(`${parts[0]}.${parts[1]}`);
     const signature = Buffer.from(parts[2], 'base64url');
     let valid = false;
@@ -75,7 +80,7 @@ export class GoogleOidcClient {
     const nowSeconds = Math.floor((this.input.now ?? Date.now)() / 1000);
     if (!valid || typeof claims.iss !== 'string' || !ISSUERS.has(claims.iss) || claims.aud !== this.input.clientId ||
         typeof claims.exp !== 'number' || claims.exp <= nowSeconds || typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 255 ||
-        typeof claims.email !== 'string' || typeof claims.nonce !== 'string' || claims.nonce !== expectedNonce) throw oauthDenied();
+        typeof claims.email !== 'string' || typeof claims.nonce !== 'string' || !claims.nonce) throw oauthDenied();
     return Object.freeze({
       iss: claims.iss,
       aud: claims.aud,
