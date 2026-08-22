@@ -1,4 +1,4 @@
-import type { CreativeOperation, CreativePlan, CreativePlanCandidate, CreativePlanConstraints } from '../contracts';
+import type { CreativeOperation, CreativePlan, CreativePlanCandidate, CreativePlanConstraints, ExecutionTarget } from '../contracts';
 
 export class InvalidCreativePlanError extends Error { constructor(message: string) { super(`Invalid creative plan: ${message}`); this.name = 'InvalidCreativePlanError'; } }
 
@@ -7,6 +7,11 @@ export function validateCreativePlan(plan: CreativePlan, canonicalInputArtifactI
   if ((plan.status ?? 'READY') !== 'READY') throw new InvalidCreativePlanError(`${plan.status} plans are not executable`);
   if (!plan.operations.length) throw new InvalidCreativePlanError('READY plan requires an executable operation');
   if (plan.candidates) {
+    const candidateIds = new Set<string>();
+    for (const candidate of plan.candidates) {
+      if (candidateIds.has(candidate.id)) throw new InvalidCreativePlanError(`duplicate candidate ID ${candidate.id}`);
+      candidateIds.add(candidate.id);
+    }
     const selected = plan.candidates.find(candidate => candidate.id === plan.selectedCandidateId);
     if (!selected) throw new InvalidCreativePlanError('selected candidate does not exist');
     if (selected.status !== 'ACCEPTED') throw new InvalidCreativePlanError('selected candidate is rejected');
@@ -14,6 +19,16 @@ export function validateCreativePlan(plan: CreativePlan, canonicalInputArtifactI
     if (!sameOperations(plan.operations, selected.operations)) throw new InvalidCreativePlanError('projected operations differ from selected candidate');
   }
   validateDag(plan.operations, new Set([...(plan.provenance?.inputArtifacts.map(item => item.id) ?? []), ...canonicalInputArtifactIds]));
+}
+
+/** Revalidate hard planning constraints against the actual downstream target choice. */
+export function validateExecutionTargets(plan: CreativePlan, targets: Readonly<Record<string, ExecutionTarget>>): void {
+  const constraints = plan.planningConstraints;
+  if (!constraints) return;
+  for (const [operationId, target] of Object.entries(targets)) {
+    if (constraints.executionPolicy === 'LOCAL_ONLY' && target !== 'LOCAL') throw new InvalidCreativePlanError(`LOCAL_ONLY plan cannot execute ${operationId} on ${target}`);
+    if (target !== 'BLOCKED' && constraints.forbiddenTargets.includes(target)) throw new InvalidCreativePlanError(`operation ${operationId} uses forbidden target ${target}`);
+  }
 }
 
 export function validateDag(operations: readonly CreativeOperation[], canonicalInputs: ReadonlySet<string>): void {
