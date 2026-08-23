@@ -7,6 +7,7 @@ import { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import { PostgresMaskArtifactStore } from '../artifacts/postgresMaskArtifactStore.ts';
 import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
+import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../artifacts/localExecutionUploadSchema.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import { CanonicalDecisionService, CanonicalPlanningService } from '../../../src/platform/creative/canonical/index.ts';
@@ -17,7 +18,7 @@ import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts'
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
-import { checkLocalExecutionUploadSchema, LocalExecutionAdmissionRegistry, LocalExecutionTicketAuthority, LocalSegmentationExecutionService, migrateLocalExecutionUploadSchema, PostgresLocalExecutionUploadStore } from '../localExecution/index.ts';
+import { LocalExecutionAdmissionRegistry, LocalExecutionTicketAuthority, LocalSegmentationExecutionService, PostgresLocalExecutionUploadStore } from '../localExecution/index.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
 import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
