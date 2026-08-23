@@ -21,6 +21,22 @@ export type LocalExecutionExpectedOutput = Readonly<{
   mimeTypes?: readonly string[];
 }>;
 
+export type LocalExecutionTicketIssueRequest = Readonly<{
+  requestId: string;
+  workflowId: string;
+  stepId: string;
+  operation: Readonly<{ id: string; version: string; type: string; capability: string }>;
+  scope: Scope;
+  inputs: readonly LocalExecutionInputBinding[];
+  expectedOutputs: readonly LocalExecutionExpectedOutput[];
+  policy: LocalExecutionPolicy;
+  idempotencyKey: string;
+}>;
+
+export interface LocalExecutionTicketIssuerPort {
+  issue(input: LocalExecutionTicketIssueRequest): LocalExecutionTicket;
+}
+
 /**
  * Server-owned authorization envelope for one narrow on-device operation.
  * The device may execute the computation, but it receives no Project, Artifact,
