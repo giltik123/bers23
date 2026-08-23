@@ -57,7 +57,7 @@ test('canonical provider binding overrides forged planner provider before capabi
   assert.equal(outcome.status, 'SUCCESS');
   assert.deepEqual(seen, { capability: 'fal', security: 'fal', runtime: 'fal' });
   assert.deepEqual(events, ['provider', 'capability', 'security', 'reserve', 'runtime', 'commit']);
-  assert.equal(outcome.workflow?.operations[0].providerId, 'fal');
+  assert.equal(outcome.workflow?.workflow.operations[0].providerId, 'fal');
 });
 
 test('unsupported semantic operation fails at provider selection before downstream authorities', async () => {
