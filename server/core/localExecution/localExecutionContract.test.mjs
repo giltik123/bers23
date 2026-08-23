@@ -3,23 +3,23 @@ import test from 'node:test';
 import { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
 
 const scope = Object.freeze({ tenantId: 'tenant-a', projectId: 'project-a', userId: 'user-a' });
-const ticket = (overrides = {}) => Object.freeze({
+const ticket = (overrides = {}) => ({
   ticketId: 'ticket-1',
   version: '1',
   issuer: 'CORE',
   requestId: 'request-1',
   workflowId: 'workflow-1',
   stepId: 'segment-step',
-  operation: Object.freeze({ id: 'segment', version: '1', type: 'segment', capability: 'interactive-segmentation' }),
-  scope,
-  inputs: Object.freeze([{ artifactId: 'input-1', kind: 'image', role: 'WORKING', sha256: 'a'.repeat(64) }]),
-  expectedOutputs: Object.freeze([{ kind: 'mask', role: 'MASK', count: 1, mimeTypes: Object.freeze(['image/png']) }]),
+  operation: { id: 'segment', version: '1', type: 'segment', capability: 'interactive-segmentation' },
+  scope: { ...scope },
+  inputs: [{ artifactId: 'input-1', kind: 'image', role: 'WORKING', sha256: 'a'.repeat(64) }],
+  expectedOutputs: [{ kind: 'mask', role: 'MASK', count: 1, mimeTypes: ['image/png'] }],
   policy: 'LOCAL_SELECTED',
   idempotencyKey: 'idem-1',
   nonce: 'nonce-1',
   issuedAt: 1_000,
   expiresAt: 61_000,
-  cost: Object.freeze({ paidCloudCredits: 0, providerCalls: 0 }),
+  cost: { paidCloudCredits: 0, providerCalls: 0 },
   ...overrides,
 });
 const result = (overrides = {}) => ({
@@ -51,7 +51,7 @@ test('fails closed for cross-scope, expiry and forged identity', () => {
   const crossScope = new LocalExecutionAdmissionRegistry(); crossScope.issue(ticket());
   assert.equal(crossScope.admit({ ticketId: 'ticket-1', result: result(), callerScope: { ...scope, projectId: 'other' }, now: 2_000 }).reasonCode, 'SCOPE_MISMATCH');
   const expired = new LocalExecutionAdmissionRegistry(); expired.issue(ticket());
-  assert.equal(expired.admit({ ticketId: 'ticket-1', result: result(), callerScope: scope, now: 61_001 }).reasonCode, 'EXPIRED_TICKET');
+  assert.equal(expired.admit({ ticketId: 'ticket-1', result: result(), callerScope: scope, now: 61_000 }).reasonCode, 'EXPIRED_TICKET');
   const forged = new LocalExecutionAdmissionRegistry(); forged.issue(ticket());
   assert.equal(forged.admit({ ticketId: 'ticket-1', result: result({ workflowId: 'other-workflow' }), callerScope: scope, now: 2_000 }).reasonCode, 'IDENTITY_MISMATCH');
 });
@@ -69,11 +69,26 @@ test('rejects client attempts to claim canonical, billing, provider or verificat
   }
 });
 
-test('rejects malformed integrity evidence and output contract mismatch', () => {
+test('rejects malformed integrity evidence, runtime and output contract mismatch', () => {
   const badHash = new LocalExecutionAdmissionRegistry(); badHash.issue(ticket());
   assert.equal(badHash.admit({ ticketId: 'ticket-1', result: result({ outputs: [{ ...result().outputs[0], sha256: 'bad' }] }), callerScope: scope, now: 2_000 }).reasonCode, 'MALFORMED_RESULT');
+  const badRuntime = new LocalExecutionAdmissionRegistry(); badRuntime.issue(ticket());
+  assert.equal(badRuntime.admit({ ticketId: 'ticket-1', result: result({ runtime: 'REMOTE_MAGIC' }), callerScope: scope, now: 2_000 }).reasonCode, 'MALFORMED_RESULT');
   const wrongKind = new LocalExecutionAdmissionRegistry(); wrongKind.issue(ticket());
   assert.equal(wrongKind.admit({ ticketId: 'ticket-1', result: result({ outputs: [{ ...result().outputs[0], kind: 'image' }] }), callerScope: scope, now: 2_000 }).reasonCode, 'OUTPUT_CONTRACT_MISMATCH');
+});
+
+test('ticket issuance stores an immutable server-owned copy', () => {
+  const registry = new LocalExecutionAdmissionRegistry();
+  const mutable = ticket();
+  const stored = registry.issue(mutable);
+  mutable.scope.projectId = 'attacker-project';
+  mutable.operation.capability = 'forged-capability';
+  mutable.cost.paidCloudCredits = 99;
+  assert.equal(stored.scope.projectId, 'project-a');
+  assert.equal(stored.operation.capability, 'interactive-segmentation');
+  assert.equal(stored.cost.paidCloudCredits, 0);
+  assert.equal(registry.get('ticket-1').scope.projectId, 'project-a');
 });
 
 test('ticket issuance itself cannot authorize paid cloud cost', () => {
