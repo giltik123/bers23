@@ -17,7 +17,7 @@ import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts'
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
-import { LocalExecutionAdmissionRegistry, LocalExecutionTicketAuthority } from '../localExecution/index.ts';
+import { checkLocalExecutionUploadSchema, LocalExecutionAdmissionRegistry, LocalExecutionTicketAuthority, LocalSegmentationExecutionService, migrateLocalExecutionUploadSchema, PostgresLocalExecutionUploadStore } from '../localExecution/index.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
 import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
@@ -38,8 +38,13 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
     await checkMaskArtifactSchema(transactions.pool);
     await checkImageArtifactSchema(transactions.pool);
     await checkProjectSchema(transactions.pool);
-    if (config.nodeEnv === 'test') await migrateAuthSchema(transactions.pool);
-    else await checkAuthSchema(transactions.pool);
+    if (config.nodeEnv === 'test') {
+      await migrateAuthSchema(transactions.pool);
+      await migrateLocalExecutionUploadSchema(transactions.pool);
+    } else {
+      await checkAuthSchema(transactions.pool);
+      await checkLocalExecutionUploadSchema(transactions.pool);
+    }
     const now = options.now ?? Date.now;
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
     const artifacts = new ArtifactAuthority(externalArtifacts, new PostgresMaskArtifactStore(transactions.pool), new PostgresImageArtifactStore(transactions.pool));
@@ -54,12 +59,32 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       id: randomUUID,
       nonce: randomUUID,
       ttlMs: LOCAL_EXECUTION_TICKET_TTL_MS,
-      modelsByCapability: {
-        'local:mobilesam:segment:v1': [{ modelId: 'mobilesam-vit-t', version: '1.0.2' }],
-      },
+      modelsByCapability: { 'local:mobilesam:segment:v1': [{ modelId: 'mobilesam-vit-t', version: '1.0.2' }] },
     });
+    const localUploads = new PostgresLocalExecutionUploadStore(transactions.pool);
+    const canonical = {
+      runtime,
+      providers: { isAvailable: (providerId: string) => providerId === 'fal', fallback: () => undefined },
+      decision,
+      planning,
+      routeSelector: productionExecutionRoute,
+      targetSelector: productionTargetSelection,
+      providerSelector: productionProviderSelection,
+      capabilityAdmission: productionExecutionCapabilities,
+      securityGate: { authorize: (request: { budget?: { credits?: number } }) => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
+      recovery: { decide: () => 'MARK_UNKNOWN' as const },
+      verifier: productionWorkflowVerifier,
+      localExecution,
+      now,
+      id: randomUUID,
+    };
+    const ownsArtifacts = (scope: Parameters<ArtifactAuthority['owns']>[0], ids: readonly string[]) => artifacts.owns(scope, ids);
+    const hydrateArtifacts = (scope: Parameters<CanonicalArtifactHydrator['hydrate']>[0], original: string, masks: readonly string[]) => hydrator.hydrate(scope, original, masks);
     const core = createCreativeCore({
-      transactions: transactions.transactions, transactionStore: transactions.store, ownsArtifacts: (scope, ids) => artifacts.owns(scope, ids), hydrateArtifacts: (scope, original, masks) => hydrator.hydrate(scope, original, masks),
+      transactions: transactions.transactions,
+      transactionStore: transactions.store,
+      ownsArtifacts,
+      hydrateArtifacts,
       persistFinal: async (scope, executionId, artifact) => {
         const metrics = artifact.metadata?.integrityMetrics as { verificationOutcome?: string } | undefined;
         const image = artifact.value as PixelImage;
@@ -69,28 +94,25 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         return Object.freeze({ ...artifact, id: artifactId, value: Object.freeze({ artifactId }), image: { width: stored.width, height: stored.height, format: stored.encoding, orientation: 1 as const, colorSpace: 'srgb', alpha: true }, metadata: Object.freeze({ ...artifact.metadata, storageId: stored.storageId, executionId, operationId: stored.operationId, contentType: stored.contentType, encoding: stored.encoding, parentArtifactIds: artifact.metadata?.parentArtifactIds }) });
       },
       mintFinalDelivery: (scope, storageId) => `/api/core/artifacts/results/${encodeURIComponent(externalArtifacts.issueStoredFinalDelivery(storageId, scope, now() + 5 * 60_000))}`,
-      creditsPerEdit: config.creditsPerEdit, hardBudgetCredits: config.hardBudgetCredits,
-      canonical: {
-        runtime, providers: { isAvailable: providerId => providerId === 'fal', fallback: () => undefined },
-        decision,
-        planning,
-        routeSelector: productionExecutionRoute, targetSelector: productionTargetSelection, providerSelector: productionProviderSelection, capabilityAdmission: productionExecutionCapabilities, securityGate: { authorize: request => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
-        recovery: { decide: () => 'MARK_UNKNOWN' }, verifier: productionWorkflowVerifier,
-        localExecution,
-        now, id: randomUUID,
-      },
+      creditsPerEdit: config.creditsPerEdit,
+      hardBudgetCredits: config.hardBudgetCredits,
+      canonical,
     } satisfies CreativeCoreCompositionInput);
+    const localSegmentation = new LocalSegmentationExecutionService({
+      platform: canonical,
+      ownsArtifacts,
+      hydrateArtifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      persistMask: (scope, width, height, alpha) => artifacts.masks.persist(scope, width, height, alpha),
+      issueMaskId: (storageId, scope) => externalArtifacts.issueStoredMask(storageId, scope),
+      now,
+    });
     const authStore = new PostgresAuthStore(transactions.pool);
     const authSecurityStore = new PostgresAuthSecurityStore(transactions.pool);
     const authRuntime = resolveAuthRuntime(config);
     const email = new ResendEmailSender({ apiKey: authRuntime.resendApiKey, from: authRuntime.emailFrom, fetcher });
-    const google = new GoogleOidcClient({
-      clientId: authRuntime.googleClientId,
-      clientSecret: authRuntime.googleClientSecret,
-      redirectUri: new URL('/api/core/auth/callback/google', authRuntime.publicOrigin).toString(),
-      fetcher,
-      now,
-    });
+    const google = new GoogleOidcClient({ clientId: authRuntime.googleClientId, clientSecret: authRuntime.googleClientSecret, redirectUri: new URL('/api/core/auth/callback/google', authRuntime.publicOrigin).toString(), fetcher, now });
     const auth = new CanonicalAuthService({
       store: authStore,
       securityStore: authSecurityStore,
@@ -105,7 +127,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       sessionIdleTtlMs: config.authSessionIdleTtlMs,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
-    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission }), transactions, close: () => transactions.close() });
+    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }
 
