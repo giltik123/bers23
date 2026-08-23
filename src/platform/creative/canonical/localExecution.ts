@@ -6,6 +6,7 @@ export const LOCAL_EXECUTION_TICKET_VERSION = '1' as const;
 export const LOCAL_EXECUTION_TICKET_ISSUER = 'CORE' as const;
 export const LOCAL_EXECUTION_POLICIES = ['LOCAL_SELECTED', 'LOCAL_ONLY'] as const;
 export type LocalExecutionPolicy = typeof LOCAL_EXECUTION_POLICIES[number];
+export type LocalExecutionModelBinding = Readonly<{ modelId: string; version: string }>;
 
 export type LocalExecutionInputBinding = Readonly<{
   artifactId: string;
@@ -58,6 +59,7 @@ export type LocalExecutionTicket = Readonly<{
   scope: Scope;
   inputs: readonly LocalExecutionInputBinding[];
   expectedOutputs: readonly LocalExecutionExpectedOutput[];
+  allowedModels: readonly LocalExecutionModelBinding[];
   policy: LocalExecutionPolicy;
   idempotencyKey: string;
   nonce: string;
@@ -88,7 +90,7 @@ export type LocalExecutionResult = Readonly<{
   workflowId: string;
   stepId: string;
   nonce: string;
-  model: Readonly<{ modelId: string; version: string }>;
+  model: LocalExecutionModelBinding;
   runtime: RuntimeKind;
   accelerator: ExecutionProvider | 'UNKNOWN';
   outputs: readonly LocalExecutionOutputEvidence[];
@@ -108,6 +110,7 @@ export type LocalExecutionAdmissionReason =
   | 'REPLAYED_TICKET'
   | 'SCOPE_MISMATCH'
   | 'IDENTITY_MISMATCH'
+  | 'MODEL_MISMATCH'
   | 'FORBIDDEN_CLIENT_AUTHORITY'
   | 'MALFORMED_RESULT'
   | 'OUTPUT_CONTRACT_MISMATCH';
