@@ -46,7 +46,11 @@ test('canonical provider binding overrides forged planner provider before capabi
     runtime: { execute: async ({ operation }) => { events.push('runtime'); seen.runtime = operation.providerId ?? ''; return { artifacts: [{ id: 'provider-output', kind: 'image', value: { safe: true } }] }; } },
     verifier: { verify: async operation => ({ stepId: operation.id, valid: true, checks: ['provider-bound'], errors: [] }) },
     recovery: { decide: () => 'ABORT' },
-    billing: { reserve: async () => { events.push('reserve'); }, commit: async () => { events.push('commit'); }, release: async () => { events.push('release'); } },
+    billing: {
+      reserve: async () => { events.push('reserve'); return { reservationId: 'reservation-1', status: 'RESERVED' as const }; },
+      commit: async reservationId => { events.push('commit'); return { reservationId, status: 'COMMITTED' as const }; },
+      release: async reservationId => { events.push('release'); return { reservationId, status: 'RELEASED' as const }; },
+    },
     now: () => 1,
   });
   platform.createExecution(request);
@@ -111,7 +115,7 @@ test('provider selection is a narrow pure policy and production wires one named 
   assert.equal(production.includes('compositeExecutionEnabled: true'), false);
   const platform = await readFile('src/platform/creative/canonical/CreativeExecutionPlatform.ts', 'utf8');
   const targetIndex = platform.indexOf('targetSelector.select');
-  const hardConstraintIndex = platform.indexOf('validateExecutionTargets');
+  const hardConstraintIndex = platform.indexOf('validateExecutionTargets(plan, targets)');
   const providerIndex = platform.indexOf('providerSelector.select');
   const capabilityIndex = platform.indexOf('capabilityAdmission.admit');
   const securityIndex = platform.indexOf('securityGate.authorize');
