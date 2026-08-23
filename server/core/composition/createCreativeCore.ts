@@ -87,7 +87,6 @@ function createCreativeHttpCore(dependencies: CreativeCoreDependencies) {
         const request: CreativeRequest = { id, intent: input.intent, scope, inputArtifacts: [resolved.artifact, ...masks], budget: { credits: Math.min(input.budget?.credits ?? 0, dependencies.maxCredits), aiCalls: 1, retries: 0 }, metadata: { idempotencyKey: input.clientRequestId, inputSource: resolved.inputSource, editCapability: masks.length && (input.selectedObjectIds?.length ?? 0) ? 'CONTROLLED_LOCAL_EDIT' : 'GLOBAL_EDIT', preserveMode: input.preserveMode ?? 'STRICT', selectedObjectIds: input.selectedObjectIds ?? [], maskArtifactIds: input.maskArtifactIds ?? [] } };
         platform.createExecution(request);
         const promise = platform.execute(id).then(() => undefined);
-        // Install the ownership record before yielding so concurrent duplicates share it.
         executions.set(id, { scope, promise });
         await dependencies.telemetry.record({ name: 'creative_input_resolved', inputSource: resolved.inputSource, tenantId: scope.tenantId, projectId: scope.projectId });
       }
@@ -125,7 +124,7 @@ async function resolveInputArtifact(input: ExecuteInput, scope: Scope, dependenc
 }
 
 function validateDependencies(value: CreativeCoreDependencies): void {
-  const required = [['transaction store', value.platform.billing], ['provider runtime', value.platform.runtime], ['authentication verifier', value.auth], ['artifact authority/store', value.artifacts], ['security policy', value.platform.securityGate], ['cost/budget configuration', Number.isFinite(value.maxCredits) && value.maxCredits >= 0 ? value.maxCredits + 1 : undefined]] as const;
+  const required = [['transaction store', value.platform.billing], ['provider runtime', value.platform.runtime], ['execution capability admission', value.platform.capabilityAdmission], ['authentication verifier', value.auth], ['artifact authority/store', value.artifacts], ['security policy', value.platform.securityGate], ['cost/budget configuration', Number.isFinite(value.maxCredits) && value.maxCredits >= 0 ? value.maxCredits + 1 : undefined]] as const;
   for (const [name, dependency] of required) if (!dependency) throw new Error(`Creative Core startup dependency missing: ${name}`);
   if (!Array.isArray(value.trustedAssetHosts) || value.trustedAssetHosts.length === 0) throw new Error('Creative Core startup dependency missing: trusted asset hosts');
 }
