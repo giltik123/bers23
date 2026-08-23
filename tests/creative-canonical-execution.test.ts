@@ -13,6 +13,7 @@ import {
   type CreativeExecutionPlatformDependencies,
   type CreativeRequest,
 } from '../src/platform/creative/canonical/index.ts';
+import { ProductionExecutionCapabilityRegistry } from '../server/core/providers/productionExecutionCapabilities.ts';
 
 const scope = { tenantId: 'tenant', projectId: 'project', userId: 'user' };
 const request: CreativeRequest = { id: 'execution-1', intent: 'prepare image', scope, budget: { credits: 10, aiCalls: 3, latencyMs: 100, ramMb: 100, gpuMs: 100, retries: 0 } };
@@ -21,6 +22,7 @@ const dependencies = (): CreativeExecutionPlatformDependencies => ({
   decision: { decide: async value => { events.push('decision'); return { requestId: value.id, goal: value.intent, constraints: [] }; } },
   planning: { plan: async (value, decision) => { events.push('planning'); return { requestId: value.id, operations: [{ id: 'normalize', type: decision.goal, produces: ['image'] }] }; } },
   targetSelector: { select: () => { events.push('target'); return 'LOCAL'; } },
+  capabilityAdmission: { admit: () => ({ allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'synthetic-canonical-test-runtime' }) },
   securityGate: { authorize: () => { events.push('security'); return true; } },
   runtime: { execute: async ({ operation }) => { events.push('runtime'); return { artifacts: [{ id: 'image-1', kind: 'image', value: { pixels: true } }], latencyMs: 1, memoryMb: 1, gpuMs: 0 }; } },
   providers: { isAvailable: () => true, fallback: () => undefined },
@@ -34,6 +36,24 @@ test('full vertical contract uses the canonical execution path', async () => { e
 test('planner verification claims cannot override authoritative runtime verification failure', async () => { const deps = dependencies(); deps.planning.plan = async value => ({ requestId: value.id, operations: [{ id: 'normalize', type: 'edit', produces: ['image'], verificationPassed: true } as never] }); deps.verifier = { verify: async operation => ({ stepId: operation.id, valid: false, checks: [], errors: ['canonical verifier rejected output'] }) }; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); const outcome = await platform.execute(request.id); assert.equal(outcome.status, 'FAILED'); assert.equal(outcome.verification.valid, false); });
 test('target selection and security gate cannot be bypassed', async () => { let runtimeCalls = 0; const deps = dependencies(); deps.targetSelector.select = () => 'CLOUD'; deps.securityGate.authorize = () => false; deps.runtime.execute = async () => { runtimeCalls++; return {}; }; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); await assert.rejects(platform.compile(request.id), /blocked/); assert.equal(runtimeCalls, 0); });
 test('blocked targets fail closed before runtime execution', async () => { const deps = dependencies(); deps.targetSelector.select = () => 'BLOCKED'; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); await assert.rejects(platform.execute(request.id), /blocked/); });
+test('production capability admission blocks unsupported operations before security, billing and runtime', async () => {
+  const calls = { security: 0, reserve: 0, runtime: 0 };
+  const platform = new CreativeExecutionPlatform({
+    decision: { decide: async value => ({ requestId: value.id, goal: value.intent, constraints: [] }) },
+    planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'segment-1', type: 'segment', providerId: 'fal' }] }) },
+    targetSelector: { select: () => 'CLOUD' },
+    capabilityAdmission: new ProductionExecutionCapabilityRegistry(),
+    securityGate: { authorize: () => { calls.security++; return true; } },
+    runtime: { execute: async () => { calls.runtime++; return {}; } },
+    providers: { isAvailable: () => true, fallback: () => undefined },
+    recovery: { decide: () => 'ABORT' },
+    billing: { reserve: async () => { calls.reserve++; }, commit: async () => {}, release: async () => {} },
+  });
+  const unsupported = { ...request, id: 'unsupported-capability' };
+  platform.createExecution(unsupported);
+  await assert.rejects(platform.compile(unsupported.id), /Execution capability blocked operation segment-1: UNSUPPORTED_OPERATION/);
+  assert.deepEqual(calls, { security: 0, reserve: 0, runtime: 0 });
+});
 test('pause, resume and cancel are controlled by the facade', async () => { const platform = new CreativeExecutionPlatform(dependencies()); platform.createExecution(request); platform.pause(request.id); assert.equal(platform.status(request.id), 'WAITING'); await assert.rejects(platform.execute(request.id), /paused/); platform.resume(request.id); assert.equal((await platform.execute(request.id)).status, 'SUCCESS'); });
 test('canonical authorities expose one state and artifact lifecycle', () => { assert.deepEqual(CREATIVE_OPERATION_STATES, ['WAITING', 'READY', 'RUNNING', 'VERIFYING', 'SUCCESS', 'FAILED', 'RECOVERING', 'SKIPPED', 'UNKNOWN']); assert.deepEqual(ARTIFACT_LIFECYCLE, ['CREATED', 'VALIDATED', 'AVAILABLE', 'CONSUMED', 'SUPERSEDED', 'FINAL', 'FAILED', 'QUARANTINED']); });
 

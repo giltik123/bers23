@@ -18,6 +18,7 @@ export function createFalWorkflowRuntime(input: Readonly<{ apiKey: string; baseU
   return Object.freeze({
     async execute(request: Readonly<{ workflowId: string; operation: WorkflowOperation; artifacts: readonly Artifact[]; scope: Scope }>) {
       try {
+        if (request.operation.type !== 'image-edit' && request.operation.type !== 'CONTROLLED_LOCAL_EDIT') throw new Error(`Unsupported FAL workflow operation type: ${request.operation.type}`);
         if (request.operation.type === 'CONTROLLED_LOCAL_EDIT') return await controlled(request, provider, materializer, input.timeoutMs);
         const source = request.artifacts[0]; if (!source) throw new Error('A canonical input artifact is required');
         const trusted = input.artifacts.resolve(source.id, request.scope);
