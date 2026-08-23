@@ -2,12 +2,16 @@ import type { Artifact, CompiledWorkflow, Scope, WorkflowOperation, WorkflowOutp
 
 const RESERVED_LINEAGE_KEYS = new Set([
   'artifactRole',
+  'canonicalArtifactId',
+  'consumerOperationIds',
   'lifecycle',
   'logicalOutputId',
   'outputSlot',
   'parentArtifactIds',
+  'producerOperationId',
   'producerStepId',
   'scope',
+  'workflowId',
 ]);
 
 /**
@@ -84,6 +88,7 @@ export function bindIntermediateRuntimeOutputs(
   return Object.freeze(bindings.map((binding, index) => {
     const output = outputs[index];
     if (output.kind !== binding.kind) throw new Error(`Runtime output kind does not satisfy declared output ${binding.logicalId}`);
+    const consumerOperationIds = Object.freeze(workflow.operations.filter(candidate => (candidate.requiredArtifacts ?? []).includes(binding.artifactId)).map(candidate => candidate.id));
     return Object.freeze({
       id: binding.artifactId,
       kind: binding.kind,
@@ -92,11 +97,15 @@ export function bindIntermediateRuntimeOutputs(
       scope: workflow.scope,
       metadata: Object.freeze({
         ...sanitizeProviderMetadata(output.metadata),
+        workflowId: workflow.id,
+        canonicalArtifactId: binding.artifactId,
+        producerOperationId: operation.id,
         lifecycle: 'AVAILABLE',
         artifactRole: 'WORKING',
         logicalOutputId: binding.logicalId,
         outputSlot: binding.slot,
         parentArtifactIds,
+        consumerOperationIds,
       }),
     });
   }));
