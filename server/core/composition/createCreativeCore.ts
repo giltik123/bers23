@@ -1,4 +1,4 @@
-import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformDependencies, type CreativeRequest } from '../../../src/platform/creative/canonical/index.ts';
+import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformRuntimeDependencies, type CreativeRequest } from '../../../src/platform/creative/canonical/index.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/index.ts';
 import type { TransactionStore } from '../../transactions/application/ports.ts';
 import { TransactionService } from '../../transactions/application/transactionService.ts';
@@ -19,7 +19,7 @@ export interface ArtifactAuthority {
 export interface CoreTelemetry { record(event: Readonly<{ name: string; inputSource: InputSource; tenantId: string; projectId: string }>): void | Promise<void> }
 
 export type CreativeCoreDependencies = Readonly<{
-  platform: CreativeExecutionPlatformDependencies;
+  platform: CreativeExecutionPlatformRuntimeDependencies;
   auth: AuthenticationVerifier;
   artifacts: ArtifactAuthority;
   telemetry: CoreTelemetry;
@@ -28,7 +28,7 @@ export type CreativeCoreDependencies = Readonly<{
 }>;
 
 export type CreativeCoreCompositionInput = Readonly<{
-  canonical: Omit<CreativeExecutionPlatformDependencies, 'billing'>;
+  canonical: Omit<CreativeExecutionPlatformRuntimeDependencies, 'billing'>;
   transactions: TransactionService;
   transactionStore: TransactionStore;
   ownsArtifacts: CreativeExecutionServiceDependencies['ownsArtifacts'];
@@ -125,7 +125,7 @@ async function resolveInputArtifact(input: ExecuteInput, scope: Scope, dependenc
 }
 
 function validateDependencies(value: CreativeCoreDependencies): void {
-  const required = [['transaction store', value.platform.billing], ['provider runtime', value.platform.runtime], ['execution capability admission', value.platform.capabilityAdmission], ['authentication verifier', value.auth], ['artifact authority/store', value.artifacts], ['security policy', value.platform.securityGate], ['cost/budget configuration', Number.isFinite(value.maxCredits) && value.maxCredits >= 0 ? value.maxCredits + 1 : undefined]] as const;
+  const required = [['transaction store', value.platform.billing], ['provider runtime', value.platform.runtime], ['provider selection', value.platform.providerSelector], ['execution capability admission', value.platform.capabilityAdmission], ['authentication verifier', value.auth], ['artifact authority/store', value.artifacts], ['security policy', value.platform.securityGate], ['cost/budget configuration', Number.isFinite(value.maxCredits) && value.maxCredits >= 0 ? value.maxCredits + 1 : undefined]] as const;
   for (const [name, dependency] of required) if (!dependency) throw new Error(`Creative Core startup dependency missing: ${name}`);
   if (!Array.isArray(value.trustedAssetHosts) || value.trustedAssetHosts.length === 0) throw new Error('Creative Core startup dependency missing: trusted asset hosts');
 }
