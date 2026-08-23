@@ -146,7 +146,7 @@ export class CreativeExecutionPlatform {
         requestId: record.request.id,
         workflowId: record.workflow!.id,
         stepId: operation.id,
-        operation: { id: operation.id, version: '1', type: operation.type, capability },
+        operation: { id: operation.id, version: '1', type: operation.type, capability, parameters: operation.input },
         scope: record.request.scope,
         inputs,
         expectedOutputs: expectedLocalOutputs(record.request, operation),
