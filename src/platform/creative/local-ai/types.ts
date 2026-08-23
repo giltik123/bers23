@@ -1,7 +1,7 @@
 export type UnknownValue = 'UNKNOWN';
 export type Platform = 'ANDROID' | 'IOS' | 'WINDOWS' | 'MACOS' | 'LINUX' | 'BROWSER' | UnknownValue;
 export type DeviceClass = 'MOBILE' | 'DESKTOP' | 'BROWSER' | UnknownValue;
-export type DeviceTier = 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+export type DeviceTier = 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME' | UnknownValue;
 export type Availability = boolean | UnknownValue;
 export type ThermalState = 'NORMAL' | 'ELEVATED' | 'HIGH' | 'CRITICAL' | UnknownValue;
 export type PowerState = 'CHARGING' | 'BATTERY' | 'FULL' | UnknownValue;
@@ -22,6 +22,7 @@ export type DeviceSignals = Readonly<{
   batteryPercent?: number; powerState?: PowerState; thermalState?: ThermalState; network?: NetworkState;
   ramPressure?: RamPressure; backgroundRestricted?: Availability;
 }>;
+export type RuntimeCapabilities = Readonly<Record<RuntimeKind, Availability>>;
 export type DeviceCapabilityProfile = Readonly<{
   platform: Platform; deviceClass: DeviceClass; cpuCores: number | UnknownValue; ramMb: number | UnknownValue;
   gpu: string | UnknownValue; vramMb: number | UnknownValue; npu: string | UnknownValue; architecture: string | UnknownValue;
@@ -29,8 +30,9 @@ export type DeviceCapabilityProfile = Readonly<{
   directml: Availability; metal: Availability; vulkan: Availability; storageFreeBytes: number | UnknownValue;
   batteryPercent: number | UnknownValue; powerState: PowerState; thermalState: ThermalState; network: NetworkState; tier: DeviceTier;
   ramPressure: RamPressure; backgroundRestricted: Availability;
+  runtimeCapabilities?: RuntimeCapabilities;
+  benchmarkEvidence?: Readonly<Record<string, number | string | boolean>>;
 }>;
-export type RuntimeCapabilities = Readonly<Record<RuntimeKind, Availability>>;
 
 export type ModelManifest = Readonly<{
   modelId: string; version: string; family: string; capabilities: readonly string[]; modelFormat: ModelFormat; runtime: RuntimeKind;
