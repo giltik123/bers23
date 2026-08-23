@@ -61,6 +61,11 @@ export function validateDag(operations: readonly CreativeOperation[], canonicalI
   for (const operation of operations) {
     if (!operation.id || ids.has(operation.id)) throw new InvalidCreativePlanError(`duplicate operation ID ${operation.id}`);
     ids.add(operation.id);
+    if (operation.outputArtifacts !== undefined) {
+      const outputs = operation.outputArtifacts;
+      const produces = operation.produces ?? [];
+      if (!outputs.length || outputs.length !== produces.length || outputs.some(output => !output)) throw new InvalidCreativePlanError(`output artifact contract mismatch for ${operation.id}`);
+    }
   }
   const outputOwner = new Map<string, string>();
   for (const operation of operations) for (const output of operation.outputArtifacts ?? []) {
