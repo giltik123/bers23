@@ -19,7 +19,7 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const compositeOriginalUnavailable = composite && !artifacts.some(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
     const segmentationInputUnavailable = interactiveSegmentation && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'WORKING'));
     const strategies = interactiveSegmentation ? [interactiveSegmentationOperations(artifacts, constraints, request)] : composite ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)] : [simpleOperations(request, artifacts, constraints)];
-    const rawCandidates = strategies.map((operations, index) => candidate(index === 0 ? 'local-efficient' : 'cloud-quality', operations, index === 0 ? 'LOCAL' : 'CLOUD', composite ? (index === 0 ? 1 : 5) : 0, composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : 0, composite ? (index === 0 ? .76 : .94) : interactiveSegmentation ? .9 : .9, uncertainty.aggregateConfidence));
+    const rawCandidates = strategies.map((operations, index) => candidate(index === 0 ? 'local-efficient' : 'cloud-quality', operations, index === 0 ? 'LOCAL' : 'CLOUD', composite ? (index === 0 ? 1 : 5) : 0, composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : 0, composite ? (index === 0 ? .76 : .94) : .9, uncertainty.aggregateConfidence));
     const ranked = rankAndFilter(rawCandidates, constraints);
     const candidates = immutable(ranked.map(value => ({ ...value, fallbackAdvice: fallbackFor(value, constraints, ranked.find(other => other.id !== value.id && other.status === 'ACCEPTED')) })));
     const selected = candidates.find(item => item.status === 'ACCEPTED');
@@ -49,7 +49,7 @@ function interactiveSegmentationOperations(artifacts: readonly CreativePlanArtif
   const source = artifacts.find(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'WORKING'));
   if (!source) return immutable([]);
   const id = 'interactive-segmentation';
-  return immutable([{ id, type: 'segment', requiredArtifacts: [source.id], produces: ['mask'], outputArtifacts: [`${id}:mask`], verification: verificationFor(id, 'segment', constraints, 'mask'), input: { selectionRequestId: request.metadata?.selectionRequestId, analysis: request.metadata?.analysis } }]);
+  return immutable([{ id, type: 'segment', requiredArtifacts: [source.id], produces: ['mask'], verification: verificationFor(id, 'segment', constraints, 'mask'), input: { selectionRequestId: request.metadata?.selectionRequestId, analysis: request.metadata?.analysis } }]);
 }
 
 function simpleOperations(request: CreativeRequest, artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints): readonly CreativeOperation[] {
