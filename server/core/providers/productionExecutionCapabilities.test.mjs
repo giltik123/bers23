@@ -31,14 +31,16 @@ test('production capability admission has no security, persistence or financial 
     assert.equal(source.includes(marker), false, `capability registry imports/owns forbidden authority surface ${marker}`);
   }
   const production = await readFile('server/core/composition/createProductionCore.ts', 'utf8');
+  assert.equal(production.includes('providerSelector: productionProviderSelection'), true);
   assert.equal(production.includes('capabilityAdmission: productionExecutionCapabilities'), true);
   assert.equal(production.includes('new CanonicalPlanningService()'), true);
-  assert.equal(production.includes('compositeExecutionEnabled: true'), false, '6.41A must not enable composite execution');
+  assert.equal(production.includes('compositeExecutionEnabled: true'), false, '6.41C1 must not enable composite execution');
   const platform = await readFile('src/platform/creative/canonical/CreativeExecutionPlatform.ts', 'utf8');
+  const providerIndex = platform.indexOf('providerSelector.select');
   const capabilityIndex = platform.indexOf('capabilityAdmission.admit');
   const securityIndex = platform.indexOf('securityGate.authorize');
   const reserveIndex = platform.indexOf('#authority.reserve');
-  assert.ok(capabilityIndex >= 0 && securityIndex > capabilityIndex && reserveIndex > securityIndex, 'capability admission must precede security and reservation');
+  assert.ok(providerIndex >= 0 && capabilityIndex > providerIndex && securityIndex > capabilityIndex && reserveIndex > securityIndex, 'provider selection and capability admission must precede security and reservation');
   const runtime = await readFile('server/core/providers/falWorkflowRuntime.ts', 'utf8');
   assert.equal(runtime.includes("request.operation.type !== 'image-edit' && request.operation.type !== 'CONTROLLED_LOCAL_EDIT'"), true);
 });
