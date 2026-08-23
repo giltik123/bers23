@@ -20,6 +20,8 @@ export type LocalExecutionExpectedOutput = Readonly<{
   role?: CreativeArtifactRole;
   count: number;
   mimeTypes?: readonly string[];
+  width?: number;
+  height?: number;
 }>;
 
 export type LocalExecutionTicketIssueRequest = Readonly<{
@@ -108,6 +110,7 @@ export type LocalExecutionAdmissionReason =
   | 'UNKNOWN_TICKET'
   | 'EXPIRED_TICKET'
   | 'REPLAYED_TICKET'
+  | 'IN_PROGRESS'
   | 'SCOPE_MISMATCH'
   | 'IDENTITY_MISMATCH'
   | 'MODEL_MISMATCH'
