@@ -30,7 +30,8 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
           projectId: string(body.projectId),
           inputArtifactId: string(body.inputArtifactId),
           clientRequestId: string(body.clientRequestId),
-          analysis: record(body.analysis),
+          analysis: record(body.analysis) as never,
+          points: (Array.isArray(body.points) ? body.points : []) as never,
         }, principal);
         send(response, 202, prepared); return true;
       }
@@ -52,7 +53,8 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
         const projectId = string(body.projectId);
         const finalized = await input.service.submit({ ticketId: decodeURIComponent(resultMatch[1]), projectId, result: body.result }, principal);
-        send(response, finalized.status === 'SUCCESS' ? 200 : 422, finalized); return true;
+        const publicResult = Object.freeze({ executionId: finalized.executionId, status: finalized.status, artifactId: finalized.artifactId, verification: Object.freeze({ valid: finalized.outcome.verification.valid }) });
+        send(response, finalized.status === 'SUCCESS' ? 200 : 422, publicResult); return true;
       }
 
       const statusMatch = url.pathname.match(/^\/api\/core\/local-execution\/executions\/([^/]+)\/status$/);
