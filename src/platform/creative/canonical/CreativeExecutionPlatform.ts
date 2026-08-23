@@ -1,4 +1,4 @@
-import { CreativeWorkflowEngine, WorkflowCompiler, type Artifact, type WorkflowSnapshot } from '../workflow-engine';
+import { CreativeWorkflowEngine, WorkflowCompiler, type AdmittedOnDeviceStepResult, type Artifact, type WorkflowSnapshot } from '../workflow-engine';
 import { ProductionOperationAuthority } from '../authority';
 import { CreativeCostAuthority } from '../cost/contracts';
 import type { CreativeOperationInstance } from '../operations/contracts';
@@ -17,6 +17,7 @@ type RecordState = {
   operation?: CreativeOperationInstance;
   capabilityIds?: Readonly<Record<string, string>>;
   localTickets?: readonly LocalExecutionTicket[];
+  admittedOnDevice?: Readonly<Record<string, AdmittedOnDeviceStepResult>>;
   snapshot?: WorkflowSnapshot;
   outcome?: ProductionOutcome;
   paused: boolean;
@@ -27,7 +28,7 @@ type RecordState = {
  * The sole recommended production entry point for Creative execution.
  * Planning and compilation are pure boundaries; CreativeWorkflowEngine is the
  * only graph execution authority for server-executable routes. ON_DEVICE work
- * is suspended behind a Core-issued ticket and may never fall into server runtime.
+ * is suspended behind a Core-issued ticket and may resume only from a server-admitted result.
  */
 export class CreativeExecutionPlatform {
   readonly #records = new Map<string, RecordState>();
@@ -42,9 +43,10 @@ export class CreativeExecutionPlatform {
       billing: dependencies.billing ?? rejectingBilling,
       execute: async instance => {
         const record = this.require(instance.identity.requestId);
-        if (record.workflow?.operations.some(operation => operation.executionRoute === 'ON_DEVICE')) throw new Error('ON_DEVICE execution cannot enter the server workflow runtime');
+        const onDevice = record.workflow?.operations.filter(operation => operation.executionRoute === 'ON_DEVICE') ?? [];
+        if (onDevice.some(operation => !record.admittedOnDevice?.[operation.id])) throw new Error('ON_DEVICE execution cannot enter the workflow runtime without server-admitted results');
         const seed = (record.request.inputArtifacts ?? []).map(toWorkflowArtifact);
-        record.snapshot = await this.#workflow.execute(record.workflow!, seed);
+        record.snapshot = await this.#workflow.execute(record.workflow!, seed, record.admittedOnDevice ?? {});
         return { workflowStatus: record.snapshot.status };
       },
       now: () => new Date((dependencies.now ?? Date.now)()).toISOString(),
@@ -125,10 +127,6 @@ export class CreativeExecutionPlatform {
     return record.execution;
   }
 
-  /**
-   * Compile and suspend ON_DEVICE steps behind Core-issued tickets.
-   * No device inference and no server/provider runtime invocation occurs here.
-   */
   async prepareLocalExecution(id: string): Promise<readonly LocalExecutionTicket[]> {
     const record = this.require(id);
     if (record.cancelled) throw new Error('Execution is cancelled');
@@ -163,12 +161,39 @@ export class CreativeExecutionPlatform {
 
   pendingLocalExecution(id: string): readonly LocalExecutionTicket[] { return this.require(id).localTickets ?? Object.freeze([]); }
 
+  async completeLocalExecution(id: string, input: Readonly<{ ticketId: string; stepId: string; artifact: CreativeArtifact; latencyMs: number; memoryMb?: number; gpuMs?: number }>): Promise<ProductionOutcome> {
+    const record = this.require(id);
+    if (record.cancelled) throw new Error('Execution is cancelled');
+    if (!record.paused) throw new Error('Execution is not awaiting a local result');
+    const ticket = record.localTickets?.find(candidate => candidate.ticketId === input.ticketId && candidate.stepId === input.stepId);
+    if (!ticket) throw new Error('Local execution ticket is not bound to this execution');
+    const operation = record.workflow?.operations.find(candidate => candidate.id === input.stepId);
+    if (!operation || operation.executionRoute !== 'ON_DEVICE' || record.execution?.targets[operation.id] !== 'LOCAL') throw new Error('Local execution step binding is invalid');
+    if (!sameScope(input.artifact.scope, record.request.scope)) throw new Error('Local result artifact scope mismatch');
+    const expected = ticket.expectedOutputs;
+    if (expected.length !== 1 || input.artifact.kind !== expected[0].kind || input.artifact.role !== expected[0].role) throw new Error('Local result artifact contract mismatch');
+    const parents = input.artifact.metadata?.parentArtifactIds;
+    if (!Array.isArray(parents) || !ticket.inputs.every(binding => parents.includes(binding.artifactId))) throw new Error('Local result artifact lineage mismatch');
+    record.admittedOnDevice = Object.freeze({
+      ...(record.admittedOnDevice ?? {}),
+      [operation.id]: Object.freeze({
+        artifacts: Object.freeze([{ id: input.artifact.id, kind: input.artifact.kind, value: input.artifact.value, metadata: input.artifact.metadata }]),
+        latencyMs: input.latencyMs,
+        memoryMb: input.memoryMb,
+        gpuMs: input.gpuMs,
+      }),
+    });
+    record.paused = false;
+    return this.execute(id);
+  }
+
   async execute(id: string): Promise<ProductionOutcome> {
     const record = this.require(id);
     if (record.cancelled) throw new Error('Execution is cancelled');
     if (record.paused) throw new Error('Execution is paused');
     if (!record.workflow || !record.operation) await this.compile(id);
-    if (record.execution?.operations.some(operation => operation.executionRoute === 'ON_DEVICE')) throw new Error('ON_DEVICE execution requires device ticket/result admission; server runtime execution is forbidden');
+    const missingLocal = record.execution?.operations.find(operation => operation.executionRoute === 'ON_DEVICE' && !record.admittedOnDevice?.[operation.id]);
+    if (missingLocal) throw new Error(`ON_DEVICE step ${missingLocal.id} has no server-admitted result`);
     try {
       await this.#authority.execute(record.operation!);
       const verification = this.verification(record.snapshot!);
@@ -237,6 +262,7 @@ function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOpera
   return Object.freeze([{ kind: 'mask', role: 'MASK' as const, count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: Number(width), height: Number(height) }]);
 }
 
+function sameScope(a: CreativeArtifact['scope'], b: CreativeRequest['scope']): boolean { return a.tenantId === b.tenantId && a.projectId === b.projectId && a.userId === b.userId; }
 function toWorkflowArtifact(value: CreativeArtifact): Artifact { return { id: value.id, kind: value.kind, value: value.value, producerStepId: value.producerOperationId, scope: value.scope, metadata: { ...value.metadata, lifecycle: value.state, artifactRole: value.role, image: value.image } }; }
 function fromWorkflowArtifact(value: Artifact): CreativeArtifact { const metadata = value.metadata as Readonly<Record<string, unknown>> | undefined; return { id: value.id, kind: value.kind, value: value.value, producerOperationId: value.producerStepId, scope: value.scope, state: (metadata?.lifecycle as CreativeArtifact['state']) ?? 'FINAL', role: metadata?.artifactRole as CreativeArtifact['role'], image: metadata?.image as CreativeArtifact['image'], metadata: value.metadata }; }
 const rejectingBilling = Object.freeze({ reserve: async () => { throw new Error('Billable production execution requires BillingTransactionAuthority'); }, commit: async () => { throw new Error('Billing authority is unavailable'); }, release: async () => { throw new Error('Billing authority is unavailable'); } });
