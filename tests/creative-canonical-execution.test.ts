@@ -41,7 +41,7 @@ test('production capability admission blocks unsupported operations before secur
   const calls = { security: 0, reserve: 0, runtime: 0 };
   const platform = new CreativeExecutionPlatform({
     decision: { decide: async value => ({ requestId: value.id, goal: value.intent, constraints: [] }) },
-    planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'segment-1', type: 'segment', providerId: 'planner-evil' }] }) },
+    planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'unsupported-step', type: 'unknown-operation', providerId: 'planner-evil' }] }) },
     routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => 'CLOUD' },
     providerSelector: { select: () => ({ allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'fal', selectionId: 'synthetic-capability:fal' }) },
     capabilityAdmission: new ProductionExecutionCapabilityRegistry(),
@@ -53,7 +53,7 @@ test('production capability admission blocks unsupported operations before secur
   });
   const unsupported = { ...request, id: 'unsupported-capability' };
   platform.createExecution(unsupported);
-  await assert.rejects(platform.compile(unsupported.id), /Execution capability blocked operation segment-1: UNSUPPORTED_OPERATION/);
+  await assert.rejects(platform.compile(unsupported.id), /Execution capability blocked operation unsupported-step: UNSUPPORTED_OPERATION/);
   assert.deepEqual(calls, { security: 0, reserve: 0, runtime: 0 });
 });
 test('pause, resume and cancel are controlled by the facade', async () => { const platform = new CreativeExecutionPlatform(dependencies()); platform.createExecution(request); platform.pause(request.id); assert.equal(platform.status(request.id), 'WAITING'); await assert.rejects(platform.execute(request.id), /paused/); platform.resume(request.id); assert.equal((await platform.execute(request.id)).status, 'SUCCESS'); });
