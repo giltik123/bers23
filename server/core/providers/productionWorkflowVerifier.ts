@@ -1,6 +1,6 @@
 import type { Artifact, WorkflowOperation, WorkflowVerifierPort, VerificationResult } from '../../../src/platform/creative/workflow-engine/types.ts';
 
-export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.41C2.1';
+export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.41C4.1';
 
 const CHECKS = Object.freeze({
   supported: 'PRODUCTION_OPERATION_SUPPORTED',
@@ -23,6 +23,13 @@ const ERRORS = Object.freeze({
  */
 export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
   async verify(operation: WorkflowOperation, artifacts: readonly Artifact[]): Promise<VerificationResult> {
+    if (operation.type === 'verify') {
+      if (operation.executionRoute !== 'INTERNAL' || operation.providerId || operation.requiredArtifacts?.length !== 1 || operation.outputBindings?.length !== 1 || operation.outputBindings[0].kind !== 'image') return invalid(operation.id, 'INTERNAL_VERIFY_CONTRACT_INVALID');
+      if (artifacts.length !== 1) return invalid(operation.id, 'VERIFY_INPUT_REQUIRED');
+      if (artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind);
+      if (!isImageReference(artifacts[0].value)) return invalid(operation.id, ERRORS.malformedReference);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.providerReference], errors: [] });
+    }
     if (operation.type === 'CONTROLLED_LOCAL_EDIT') {
       return invalid(operation.id, ERRORS.controlledOwned);
     }
@@ -48,6 +55,11 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
 }
 
 export const productionWorkflowVerifier: WorkflowVerifierPort = Object.freeze(new ProductionWorkflowVerifier());
+
+function isImageReference(value: unknown): boolean {
+  if (value && typeof value === 'object' && Number.isInteger((value as { width?: unknown }).width) && Number.isInteger((value as { height?: unknown }).height) && (value as { data?: unknown }).data instanceof Uint8ClampedArray) return true;
+  return isProviderImageReference(value);
+}
 
 function isProviderImageReference(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;

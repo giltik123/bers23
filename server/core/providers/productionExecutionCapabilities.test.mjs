@@ -6,9 +6,9 @@ import { ProductionExecutionCapabilityRegistry } from './productionExecutionCapa
 
 const scope = Object.freeze({ tenantId: 'tenant', projectId: 'project', userId: 'user' });
 const request = Object.freeze({ id: 'capability-proof', intent: 'edit', scope, budget: { credits: 2, latencyMs: 1000, ramMb: 128, gpuMs: 0, aiCalls: 1, retries: 0 } });
-const input = (operation, target = 'CLOUD') => ({ request, operation, target });
+const input = (operation, target = 'CLOUD', route = 'PROVIDER') => ({ request, operation, target, route });
 
-test('production capability registry admits only the two currently real FAL contracts', () => {
+test('production capability registry admits exactly the accepted provider and internal tuples', () => {
   const registry = new ProductionExecutionCapabilityRegistry();
   assert.deepEqual(registry.admit(input({ id: 'global', type: 'image-edit', providerId: 'fal' })), {
     allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'fal:image-edit:v1',
@@ -16,7 +16,10 @@ test('production capability registry admits only the two currently real FAL cont
   assert.deepEqual(registry.admit(input({ id: 'controlled', type: 'CONTROLLED_LOCAL_EDIT', providerId: 'fal' })), {
     allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'fal:controlled-local-edit:v1',
   });
-  for (const type of ['segment', 'remove', 'background_replace', 'relight', 'verify']) {
+  assert.deepEqual(registry.admit(input({ id: 'verify', type: 'verify' }, 'LOCAL', 'INTERNAL')), { allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'internal:verify:image:v1' });
+  assert.deepEqual(registry.admit(input({ id: 'evil', type: 'verify', providerId: 'evil' }, 'LOCAL', 'INTERNAL')), { allowed: false, reasonCode: 'PROVIDER_FORBIDDEN' });
+  assert.deepEqual(registry.admit(input({ id: 'cloud-verify', type: 'verify' }, 'CLOUD', 'INTERNAL')), { allowed: false, reasonCode: 'UNSUPPORTED_TARGET' });
+  for (const type of ['segment', 'remove', 'background_replace', 'relight']) {
     assert.deepEqual(registry.admit(input({ id: type, type, providerId: 'fal' })), { allowed: false, reasonCode: 'UNSUPPORTED_OPERATION' });
   }
   assert.deepEqual(registry.admit(input({ id: 'wrong-target', type: 'image-edit', providerId: 'fal' }, 'LOCAL')), { allowed: false, reasonCode: 'UNSUPPORTED_TARGET' });

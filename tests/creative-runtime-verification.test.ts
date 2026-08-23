@@ -68,7 +68,7 @@ test('runtime verification failure produces FAILED and release while valid outpu
     const platform = new CreativeExecutionPlatform({
       decision: { decide: async value => ({ requestId: value.id, goal: value.intent, constraints: [] }) },
       planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'edit', type: 'image-edit', providerId: 'forged', produces: ['image'], verificationPassed: true } as never] }) },
-      targetSelector: { select: () => 'CLOUD' },
+      routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => 'CLOUD' },
       providerSelector: { select: () => ({ allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'fal', selectionId: 'test:fal:image-edit' }) },
       capabilityAdmission: { admit: () => ({ allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'fal:image-edit:v1' }) },
       securityGate: { authorize: () => true },
@@ -98,7 +98,7 @@ test('unknown provider outcome remains UNKNOWN and never becomes verification fa
   const platform = new CreativeExecutionPlatform({
     decision: { decide: async value => ({ requestId: value.id, goal: value.intent, constraints: [] }) },
     planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'edit', type: 'image-edit', produces: ['image'] }] }) },
-    targetSelector: { select: () => 'CLOUD' },
+    routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => 'CLOUD' },
     providerSelector: { select: () => ({ allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'fal', selectionId: 'test:fal:image-edit' }) },
     capabilityAdmission: { admit: () => ({ allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'fal:image-edit:v1' }) },
     securityGate: { authorize: () => true },

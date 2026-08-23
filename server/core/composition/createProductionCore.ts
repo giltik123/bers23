@@ -19,6 +19,8 @@ import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
+import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
+import { productionTargetSelection } from '../providers/productionTargetSelection.ts';
 import { productionExecutionCapabilities } from '../providers/productionExecutionCapabilities.ts';
 import { productionWorkflowVerifier } from '../providers/productionWorkflowVerifier.ts';
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
@@ -59,7 +61,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         runtime, providers: { isAvailable: providerId => providerId === 'fal', fallback: () => undefined },
         decision,
         planning,
-        targetSelector: { select: () => 'CLOUD' as const }, providerSelector: productionProviderSelection, capabilityAdmission: productionExecutionCapabilities, securityGate: { authorize: request => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
+        routeSelector: productionExecutionRoute, targetSelector: productionTargetSelection, providerSelector: productionProviderSelection, capabilityAdmission: productionExecutionCapabilities, securityGate: { authorize: request => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
         recovery: { decide: () => 'MARK_UNKNOWN' }, verifier: productionWorkflowVerifier,
         now: Date.now, id: randomUUID,
       },

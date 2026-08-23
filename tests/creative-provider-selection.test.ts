@@ -38,7 +38,7 @@ test('canonical provider binding overrides forged planner provider before capabi
   const platform = new CreativeExecutionPlatform({
     decision: { decide: async value => ({ requestId: value.id, goal: value.intent, constraints: [] }) },
     planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'edit', type: 'image-edit', providerId: 'evil', produces: ['image'] }] }) },
-    targetSelector: { select: () => 'CLOUD' },
+    routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => 'CLOUD' },
     providerSelector: { select: value => { events.push('provider'); return productionProviderSelection.select(value); } },
     capabilityAdmission: { admit: ({ operation }) => { events.push('capability'); seen.capability = operation.providerId ?? ''; return { allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'proof:fal' }; } },
     securityGate: { authorize: (_request, operation) => { events.push('security'); seen.security = operation.providerId ?? ''; return true; } },
@@ -70,7 +70,7 @@ test('unsupported semantic operation fails at provider selection before downstre
   const platform = new CreativeExecutionPlatform({
     decision: { decide: async value => ({ requestId: value.id, goal: value.intent, constraints: [] }) },
     planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'segment', type: 'segment', providerId: 'fal', produces: ['mask'] }] }) },
-    targetSelector: { select: () => 'CLOUD' },
+    routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => 'CLOUD' },
     providerSelector: productionProviderSelection,
     capabilityAdmission: { admit: () => { calls.capability++; return { allowed: true, reasonCode: 'CAPABILITY_SUPPORTED' }; } },
     securityGate: { authorize: () => { calls.security++; return true; } },
@@ -90,7 +90,7 @@ test('BLOCKED target stops before provider selection and every downstream side e
   const platform = new CreativeExecutionPlatform({
     decision: { decide: async value => ({ requestId: value.id, goal: value.intent, constraints: [] }) },
     planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'edit', type: 'image-edit', providerId: 'evil', produces: ['image'] }] }) },
-    targetSelector: { select: () => 'BLOCKED' },
+    routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => 'BLOCKED' },
     providerSelector: { select: value => { calls.provider++; return productionProviderSelection.select(value); } },
     capabilityAdmission: { admit: () => { calls.capability++; return { allowed: true, reasonCode: 'CAPABILITY_SUPPORTED' }; } },
     securityGate: { authorize: () => { calls.security++; return true; } },

@@ -21,7 +21,7 @@ const events: string[] = [];
 const dependencies = (): CreativeExecutionPlatformRuntimeDependencies => ({
   decision: { decide: async value => { events.push('decision'); return { requestId: value.id, goal: value.intent, constraints: [] }; } },
   planning: { plan: async (value, decision) => { events.push('planning'); return { requestId: value.id, operations: [{ id: 'normalize', type: decision.goal, produces: ['image'], providerId: 'forged-planner-provider' }] }; } },
-  targetSelector: { select: () => { events.push('target'); return 'LOCAL'; } },
+  routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => { events.push('target'); return 'LOCAL'; } },
   providerSelector: { select: () => { events.push('provider'); return { allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'synthetic-local', selectionId: 'synthetic-local:normalize' }; } },
   capabilityAdmission: { admit: () => ({ allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'synthetic-canonical-test-runtime' }) },
   securityGate: { authorize: (_request, operation) => { events.push('security'); assert.equal(operation.providerId, 'synthetic-local'); return true; } },
@@ -42,7 +42,7 @@ test('production capability admission blocks unsupported operations before secur
   const platform = new CreativeExecutionPlatform({
     decision: { decide: async value => ({ requestId: value.id, goal: value.intent, constraints: [] }) },
     planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'segment-1', type: 'segment', providerId: 'planner-evil' }] }) },
-    targetSelector: { select: () => 'CLOUD' },
+    routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => 'CLOUD' },
     providerSelector: { select: () => ({ allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'fal', selectionId: 'synthetic-capability:fal' }) },
     capabilityAdmission: new ProductionExecutionCapabilityRegistry(),
     securityGate: { authorize: () => { calls.security++; return true; } },
