@@ -38,12 +38,12 @@ export class MobileSamBrowserSegmentation implements InteractiveSegmentationPort
   cancel(requestId: string) { if (!requestId) return; this.#cancelled.add(requestId); this.#encoder?.cancel(`${requestId}:encoder`); this.#decoder?.cancel(`${requestId}:decoder`); }
   async segment(input: Parameters<InteractiveSegmentationPort['segment']>[0]) {
     if (input.privacyMode === 'OFFLINE_ONLY') throw new Error('Offline cached execution is not supported');
-    const started = performance.now(); await (this.#loading ??= this.loadPack()); this.assertCurrent(input.requestId);
+    const started = performance.now(); let memoryBytes = 0; await (this.#loading ??= this.loadPack()); this.assertCurrent(input.requestId);
     const image = await decodeImage(await this.images.resolve(input.imageArtifactId), this.fetcher); this.assertCurrent(input.requestId);
     const prep = preprocess(image, input.analysis); const key = `${input.imageArtifactId}|${JSON.stringify(input.analysis)}|${MODEL_VERSION}`;
     if (this.#embedding?.key !== key) {
       const result = await this.#encoder!.infer({ requestId: `${input.requestId}:encoder`, inputs: { input_image: prep.tensor }, outputNames: ['image_embeddings'] });
-      this.evidence.encoderInvocations++; this.evidence.encoderLatencyMs = result.latencyMs; this.#embedding = { key, value: required(result, 'image_embeddings') };
+      memoryBytes += result.memoryBytes; this.evidence.encoderInvocations++; this.evidence.encoderLatencyMs = result.latencyMs; this.#embedding = { key, value: required(result, 'image_embeddings') };
     }
     const coords = new Float32Array(input.points.length * 2), labels = new Float32Array(input.points.length);
     input.points.forEach((point, index) => { coords[index * 2] = (point.x * input.analysis.scaleX + input.analysis.offsetX) * prep.promptScaleX; coords[index * 2 + 1] = (point.y * input.analysis.scaleY + input.analysis.offsetY) * prep.promptScaleY; labels[index] = point.label === 'POSITIVE' ? 1 : 0; });
@@ -51,8 +51,8 @@ export class MobileSamBrowserSegmentation implements InteractiveSegmentationPort
       image_embeddings: this.#embedding.value, point_coords: tensor(coords, [1, input.points.length, 2]), point_labels: tensor(labels, [1, input.points.length]),
       mask_input: tensor(new Float32Array(256 * 256), [1, 1, 256, 256]), has_mask_input: tensor(new Float32Array([0]), [1]), orig_im_size: tensor(new Float32Array([input.analysis.analysisHeight, input.analysis.analysisWidth]), [2]),
     }, outputNames: ['masks', 'iou_predictions', 'low_res_masks'] });
-    this.evidence.decoderInvocations++; this.evidence.decoderLatencyMs = decoded.latencyMs; this.assertCurrent(input.requestId);
-    return { target: 'LOCAL' as const, modelId: MODEL_ID, modelVersion: MODEL_VERSION, latencyMs: performance.now() - started, candidates: candidates(decoded, input.analysis) };
+    memoryBytes += decoded.memoryBytes; this.evidence.decoderInvocations++; this.evidence.decoderLatencyMs = decoded.latencyMs; this.assertCurrent(input.requestId);
+    return { target: 'LOCAL' as const, modelId: MODEL_ID, modelVersion: MODEL_VERSION, runtime: 'WASM' as const, accelerator: decoded.provider, memoryBytes, latencyMs: performance.now() - started, candidates: candidates(decoded, input.analysis) };
   }
   private assertCurrent(id: string) { if (this.#cancelled.delete(id)) throw new Error('Inference cancelled'); }
   private async loadPack() {
