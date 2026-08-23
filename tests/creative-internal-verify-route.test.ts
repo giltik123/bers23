@@ -38,7 +38,9 @@ function fixture(valid = true, security = true) {
 }
 {
   assert.equal(productionExecutionRoute.select({ id: 'provider', type: 'image-edit', executionRoute: 'INTERNAL' } as never, {} as never), 'PROVIDER');
-  assert.throws(() => productionExecutionRoute.select({ id: 'unsupported', type: 'segment' } as never, {} as never), /Unsupported/);
+  assert.equal(productionExecutionRoute.select({ id: 'segment', type: 'segment' } as never, {} as never), 'ON_DEVICE');
+  assert.equal(productionTargetSelection.select({ id: 'segment', type: 'segment' } as never, {} as never), 'LOCAL');
+  assert.throws(() => productionExecutionRoute.select({ id: 'unsupported', type: 'unknown-operation' } as never, {} as never), /Unsupported/);
   const verifier = new ProductionWorkflowVerifier();
   const operation = { id: 'verify', type: 'verify', executionRoute: 'INTERNAL', requiredArtifacts: ['input'], outputBindings: [{ logicalId: 'out', artifactId: 'canonical', kind: 'image', slot: 0 }] } as const;
   assert.equal((await verifier.verify(operation, [])).valid, false);
