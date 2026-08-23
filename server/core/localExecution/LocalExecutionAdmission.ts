@@ -69,6 +69,7 @@ export class LocalExecutionAdmissionRegistry {
       result.stepId !== ticket.stepId ||
       result.nonce !== ticket.nonce
     ) return denied('IDENTITY_MISMATCH');
+    if (!ticket.allowedModels.some(model => model.modelId === result.model.modelId && model.version === result.model.version)) return denied('MODEL_MISMATCH');
     if (!outputsMatch(ticket.expectedOutputs, result.outputs)) return denied('OUTPUT_CONTRACT_MISMATCH');
     this.#consumed.add(ticket.ticketId);
     return Object.freeze({ allowed: true, reasonCode: 'ADMITTED', ticket, result: immutableResult(result) });
@@ -83,6 +84,7 @@ function assertTicket(ticket: LocalExecutionTicket): void {
   if (!ticket.idempotencyKey || !ticket.nonce) throw new Error('Local execution ticket requires idempotency and nonce');
   if (!Number.isFinite(ticket.issuedAt) || !Number.isFinite(ticket.expiresAt) || ticket.expiresAt <= ticket.issuedAt) throw new Error('Invalid local execution ticket lifetime');
   if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw new Error('Local execution ticket cannot authorize cloud cost');
+  if (!Array.isArray(ticket.allowedModels) || ticket.allowedModels.length === 0 || ticket.allowedModels.some(model => !model.modelId || !model.version)) throw new Error('Local execution ticket requires approved model bindings');
   for (const input of ticket.inputs) if (input.sha256 !== undefined && !SHA256.test(input.sha256)) throw new Error('Invalid input artifact SHA-256');
   for (const expected of ticket.expectedOutputs) if (!Number.isInteger(expected.count) || expected.count < 1) throw new Error('Invalid expected local output count');
 }
@@ -94,6 +96,7 @@ function immutableTicket(ticket: LocalExecutionTicket): LocalExecutionTicket {
     scope: Object.freeze({ ...ticket.scope }),
     inputs: Object.freeze(ticket.inputs.map(input => Object.freeze({ ...input }))),
     expectedOutputs: Object.freeze(ticket.expectedOutputs.map(output => Object.freeze({ ...output, mimeTypes: output.mimeTypes ? Object.freeze([...output.mimeTypes]) : undefined }))),
+    allowedModels: Object.freeze(ticket.allowedModels.map(model => Object.freeze({ ...model }))),
     cost: Object.freeze({ paidCloudCredits: 0 as const, providerCalls: 0 as const }),
   });
 }
