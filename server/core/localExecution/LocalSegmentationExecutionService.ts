@@ -4,11 +4,23 @@ import type { AuthenticatedScope } from '../application/creativeExecutionService
 import type { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
 import type { PostgresLocalExecutionUploadStore } from './PostgresLocalExecutionUploadStore.ts';
 
+export type LocalSegmentationPoint = Readonly<{ x: number; y: number; label: 'POSITIVE' | 'NEGATIVE'; coordinateSpace: 'ORIGINAL' }>;
+export type LocalSegmentationAnalysis = Readonly<{
+  originalWidth: number;
+  originalHeight: number;
+  analysisWidth: number;
+  analysisHeight: number;
+  scaleX: number;
+  scaleY: number;
+  offsetX: number;
+  offsetY: number;
+}>;
 export type LocalSegmentationPrepareCommand = Readonly<{
   projectId: string;
   inputArtifactId: string;
   clientRequestId: string;
-  analysis?: Readonly<Record<string, unknown>>;
+  analysis: LocalSegmentationAnalysis;
+  points: readonly LocalSegmentationPoint[];
 }>;
 
 export type LocalSegmentationServiceDependencies = Readonly<{
@@ -22,7 +34,7 @@ export type LocalSegmentationServiceDependencies = Readonly<{
   now?: () => number;
 }>;
 
-type Prepared = Readonly<{ executionId: string; ticketId: string; scope: AuthenticatedScope & { projectId: string } }>;
+type Prepared = Readonly<{ executionId: string; ticketId: string; scope: AuthenticatedScope & { projectId: string }; bindingHash: string }>;
 
 /**
  * Application boundary for the first 6.42A end-to-end capability.
@@ -39,20 +51,23 @@ export class LocalSegmentationExecutionService {
   }
 
   async prepare(command: LocalSegmentationPrepareCommand, auth: AuthenticatedScope): Promise<Readonly<{ executionId: string; ticket: LocalExecutionTicket }>> {
-    if (!command.projectId || !command.inputArtifactId || !command.clientRequestId) throw serviceError(400, 'invalid_local_segmentation_request', 'projectId, inputArtifactId and clientRequestId are required');
-    const scope = Object.freeze({ ...auth, projectId: command.projectId });
-    const executionId = deterministicExecutionId(scope, command.clientRequestId);
+    const normalized = normalizePrepareCommand(command);
+    const scope = Object.freeze({ ...auth, projectId: normalized.projectId });
+    const executionId = deterministicExecutionId(scope, normalized.clientRequestId);
+    const bindingHash = prepareBindingHash(normalized);
     const existing = this.#prepared.get(executionId);
     if (existing) {
       assertSameScope(existing.scope, scope);
+      if (existing.bindingHash !== bindingHash) throw serviceError(409, 'local_execution_idempotency_mismatch', 'clientRequestId is already bound to different segmentation parameters');
       const ticket = this.dependencies.admission.get(existing.ticketId);
       if (!ticket) throw serviceError(409, 'local_execution_state_lost', 'Local execution ticket is no longer available');
       return Object.freeze({ executionId, ticket });
     }
-    if (!await this.dependencies.ownsArtifacts(scope, [command.inputArtifactId])) throw serviceError(403, 'artifact_scope_denied', 'Input artifact is outside the authenticated project scope');
-    const artifacts = await this.dependencies.hydrateArtifacts(scope, command.inputArtifactId, []);
-    const source = artifacts.find(artifact => artifact.id === command.inputArtifactId && artifact.kind === 'image');
+    if (!await this.dependencies.ownsArtifacts(scope, [normalized.inputArtifactId])) throw serviceError(403, 'artifact_scope_denied', 'Input artifact is outside the authenticated project scope');
+    const artifacts = await this.dependencies.hydrateArtifacts(scope, normalized.inputArtifactId, []);
+    const source = artifacts.find(artifact => artifact.id === normalized.inputArtifactId && artifact.kind === 'image');
     if (!source?.image?.width || !source.image.height) throw serviceError(422, 'canonical_image_unavailable', 'Canonical source image metadata is unavailable');
+    validateSegmentationGeometry(normalized.analysis, normalized.points, source.image.width, source.image.height);
     this.#platform.createExecution({
       id: executionId,
       intent: 'interactive segmentation',
@@ -61,9 +76,10 @@ export class LocalSegmentationExecutionService {
       budget: { credits: 0, aiCalls: 0, retries: 0 },
       metadata: {
         operationIntent: 'INTERACTIVE_SEGMENTATION',
-        selectionRequestId: command.clientRequestId,
-        analysis: command.analysis,
-        idempotencyKey: command.clientRequestId,
+        selectionRequestId: normalized.clientRequestId,
+        analysis: normalized.analysis,
+        points: normalized.points,
+        idempotencyKey: normalized.clientRequestId,
         planningConstraints: { executionPolicy: 'LOCAL_ONLY', confirmationPolicy: 'BLOCK', maxCredits: 0 },
       },
     });
@@ -72,7 +88,7 @@ export class LocalSegmentationExecutionService {
     const tickets = await this.#platform.prepareLocalExecution(executionId);
     if (tickets.length !== 1) throw serviceError(500, 'local_ticket_contract_error', 'Expected exactly one local segmentation ticket');
     const ticket = tickets[0];
-    this.#prepared.set(executionId, Object.freeze({ executionId, ticketId: ticket.ticketId, scope }));
+    this.#prepared.set(executionId, Object.freeze({ executionId, ticketId: ticket.ticketId, scope, bindingHash }));
     return Object.freeze({ executionId, ticket });
   }
 
@@ -153,6 +169,31 @@ export class LocalSegmentationExecutionService {
   }
 }
 
+function normalizePrepareCommand(command: LocalSegmentationPrepareCommand): LocalSegmentationPrepareCommand {
+  if (!command?.projectId || !command.inputArtifactId || !command.clientRequestId) throw serviceError(400, 'invalid_local_segmentation_request', 'projectId, inputArtifactId and clientRequestId are required');
+  if (!command.analysis || typeof command.analysis !== 'object' || Array.isArray(command.analysis)) throw serviceError(400, 'invalid_local_segmentation_analysis', 'Segmentation analysis transform is required');
+  if (!Array.isArray(command.points) || command.points.length < 1 || command.points.length > 64) throw serviceError(400, 'invalid_local_segmentation_points', 'Segmentation requires between 1 and 64 prompt points');
+  const analysis = Object.freeze({
+    originalWidth: finite(command.analysis.originalWidth, 'originalWidth'), originalHeight: finite(command.analysis.originalHeight, 'originalHeight'),
+    analysisWidth: finite(command.analysis.analysisWidth, 'analysisWidth'), analysisHeight: finite(command.analysis.analysisHeight, 'analysisHeight'),
+    scaleX: finite(command.analysis.scaleX, 'scaleX'), scaleY: finite(command.analysis.scaleY, 'scaleY'), offsetX: finite(command.analysis.offsetX, 'offsetX'), offsetY: finite(command.analysis.offsetY, 'offsetY'),
+  });
+  const points = Object.freeze(command.points.map(point => {
+    if (!point || typeof point !== 'object' || !Number.isFinite(point.x) || !Number.isFinite(point.y) || (point.label !== 'POSITIVE' && point.label !== 'NEGATIVE') || point.coordinateSpace !== 'ORIGINAL') throw serviceError(400, 'invalid_local_segmentation_points', 'Segmentation prompt point is invalid');
+    return Object.freeze({ x: Number(point.x), y: Number(point.y), label: point.label, coordinateSpace: 'ORIGINAL' as const });
+  }));
+  return Object.freeze({ projectId: command.projectId.trim(), inputArtifactId: command.inputArtifactId.trim(), clientRequestId: command.clientRequestId.trim(), analysis, points });
+}
+function validateSegmentationGeometry(analysis: LocalSegmentationAnalysis, points: readonly LocalSegmentationPoint[], width: number, height: number): void {
+  if (!Number.isInteger(analysis.originalWidth) || !Number.isInteger(analysis.originalHeight) || analysis.originalWidth !== width || analysis.originalHeight !== height) throw serviceError(400, 'local_segmentation_source_mismatch', 'Analysis transform does not match the canonical source dimensions');
+  if (!Number.isInteger(analysis.analysisWidth) || !Number.isInteger(analysis.analysisHeight) || analysis.analysisWidth < 1 || analysis.analysisHeight < 1 || analysis.analysisWidth > width || analysis.analysisHeight > height) throw serviceError(400, 'invalid_local_segmentation_analysis', 'Analysis resolution is invalid');
+  if (!(analysis.scaleX > 0) || !(analysis.scaleY > 0) || analysis.offsetX !== 0 || analysis.offsetY !== 0) throw serviceError(400, 'invalid_local_segmentation_analysis', 'Analysis transform must be a positive zero-offset source transform');
+  for (const point of points) if (point.x < 0 || point.y < 0 || point.x >= width || point.y >= height) throw serviceError(400, 'local_segmentation_point_out_of_bounds', 'Segmentation prompt point is outside the canonical source');
+}
+function prepareBindingHash(command: LocalSegmentationPrepareCommand): string {
+  return createHash('sha256').update(JSON.stringify({ projectId: command.projectId, inputArtifactId: command.inputArtifactId, analysis: command.analysis, points: command.points })).digest('hex');
+}
+function finite(value: unknown, field: string): number { if (typeof value !== 'number' || !Number.isFinite(value)) throw serviceError(400, 'invalid_local_segmentation_analysis', `Segmentation analysis ${field} is invalid`); return value; }
 function deterministicExecutionId(scope: AuthenticatedScope & { projectId: string }, clientRequestId: string): string {
   return `local-segment-${createHash('sha256').update(`${scope.tenantId}\0${scope.userId}\0${scope.projectId}\0${clientRequestId}`).digest('hex').slice(0, 32)}`;
 }
