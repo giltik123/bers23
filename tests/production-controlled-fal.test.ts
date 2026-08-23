@@ -4,15 +4,16 @@ import sharp from 'sharp';
 import { createFalWorkflowRuntime, encodeFalMask, type ProviderInputMaterializer } from '../server/core/providers/falWorkflowRuntime.ts';
 
 const scope = { tenantId: 'tenant', userId: 'user', projectId: 'project' };
+const outputPatchUrl = 'https://fal.media/files/test/patch.png';
 
 test('production FAL controlled contract sends only ROI/mask and returns a decoded pixel patch', async () => {
   const outgoing: Array<{ url: string; body?: Record<string, unknown> }> = [];
   const patchBytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 220, g: 30, b: 40, alpha: 1 } } }).png().toBuffer();
   const fetcher: typeof fetch = async (url, init) => {
     const href = String(url);
-    if (href === 'https://output.example/patch.png') return new Response(patchBytes, { headers: { 'content-type': 'image/png' } });
+    if (href === outputPatchUrl) return new Response(patchBytes, { headers: { 'content-type': 'image/png' } });
     const body = JSON.parse(String(init?.body)); outgoing.push({ url: href, body });
-    return new Response(JSON.stringify({ images: [{ url: 'https://output.example/patch.png' }] }), { headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ images: [{ url: outputPatchUrl }] }), { headers: { 'content-type': 'application/json' } });
   };
   const materialized: string[] = [];
   const materializer: ProviderInputMaterializer = { materialize: async input => { const url = `https://temporary.example/${input.purpose}-${materialized.length}.png`; materialized.push(url); return { url, byteSize: input.bytes.byteLength, width: 2, height: 2 }; } };
@@ -36,8 +37,8 @@ test('production materializer uses FAL storage initiate/PUT for ROI and mask onl
     const url = String(input);
     if (url.includes('/storage/upload/initiate')) { initiates++; assert.equal(init?.headers && new Headers(init.headers).get('authorization'), 'Key server-secret'); return Response.json({ upload_url: `https://upload.fal.test/${initiates}`, file_url: `https://cdn.fal.test/${initiates}.png` }); }
     if (url.startsWith('https://upload.fal.test/')) { uploads.push({ url, bytes: new Uint8Array(await new Response(init?.body).arrayBuffer()) }); return new Response(null, { status: 200 }); }
-    if (url === 'https://output.example/patch.png') return new Response(patch, { headers: { 'content-type': 'image/png' } });
-    providerCalls++; assert.deepEqual(JSON.parse(String(init?.body)), { prompt: 'change', image_url: 'https://cdn.fal.test/1.png', mask_url: 'https://cdn.fal.test/2.png' }); return Response.json({ images: [{ url: 'https://output.example/patch.png' }] });
+    if (url === outputPatchUrl) return new Response(patch, { headers: { 'content-type': 'image/png' } });
+    providerCalls++; assert.deepEqual(JSON.parse(String(init?.body)), { prompt: 'change', image_url: 'https://cdn.fal.test/1.png', mask_url: 'https://cdn.fal.test/2.png' }); return Response.json({ images: [{ url: outputPatchUrl }] });
   };
   const runtime = createFalWorkflowRuntime({ apiKey: 'server-secret', baseUrl: 'https://queue.fal.test', timeoutMs: 1000, artifacts: {} as never, fetcher });
   const roi = { width: 2, height: 2, data: new Uint8ClampedArray(16).fill(44), format: 'RGBA8', orientation: 1 as const };

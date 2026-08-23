@@ -42,7 +42,7 @@ function deterministicProvider() {
   let originalAssetFetches = 0;
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
-    if (url.startsWith('https://assets.vertical.test/output/')) {
+    if (url.startsWith('https://fal.media/output/')) {
       return new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } });
     }
     if (url === 'https://assets.vertical.test/input.png') originalAssetFetches++;
@@ -51,7 +51,7 @@ function deterministicProvider() {
     calls.push({ prompt: body.prompt, imageUrl: body.image_url });
     if (mode === 'unknown') throw new DOMException('Accepted request timed out', 'AbortError');
     if (mode === 'failure') return new Response(JSON.stringify({ message: 'deterministic rejection' }), { status: 422, headers: { 'content-type': 'application/json' } });
-    return new Response(JSON.stringify({ image: { url: `https://assets.vertical.test/output/${calls.length}.png` } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ image: { url: `https://fal.media/output/${calls.length}.png` } }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   return { fetcher, setMode(value: ProviderMode) { mode = value; }, count: () => calls.length, originalAssetFetches: () => originalAssetFetches, prompts: () => calls.map(call => call.prompt), imageUrls: () => calls.map(call => call.imageUrl) };
 }
@@ -257,10 +257,10 @@ test('real Editor to Core controlled edit persists and securely delivers a verif
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>; inferences.push({ headers, body });
       const roiMeta = await sharp(uploads.at(-2)!.bytes).metadata();
       const patch = await sharp({ create: { width: roiMeta.width!, height: roiMeta.height!, channels: 4, background: { r: 255, g: 1, b: 2, alpha: 1 } } }).png().toBuffer();
-      uploads.push({ url: 'https://provider-output.vertical.test/patch.png', headers: new Headers(), bytes: new Uint8Array(patch) });
-      return new Response(JSON.stringify({ images: [{ url: 'https://provider-output.vertical.test/patch.png' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      uploads.push({ url: 'https://fal.media/patch.png', headers: new Headers(), bytes: new Uint8Array(patch) });
+      return new Response(JSON.stringify({ images: [{ url: 'https://fal.media/patch.png' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
-    if (url === 'https://provider-output.vertical.test/patch.png') return new Response(uploads.at(-1)!.bytes, { status: 200, headers: { 'content-type': 'image/png' } });
+    if (url === 'https://fal.media/patch.png') return new Response(uploads.at(-1)!.bytes, { status: 200, headers: { 'content-type': 'image/png' } });
     throw new Error(`Unexpected external HTTP boundary: ${url}`);
   };
 
