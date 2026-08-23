@@ -1,7 +1,7 @@
 import type { CanonicalPlanningPort, CreativeDecision, CreativeOperation, CreativePlan, CreativePlanArtifactSnapshot, CreativePlanCandidate, CreativePlanConstraints, CreativePlannerConfigSnapshot, CreativePlanProvenance, CreativePlanScore, CreativePlanStatus, CreativePlanUncertainty, CreativeRequest, ExecutionTarget, PlanningConfirmationPolicy, PlanningExecutionPolicy, PlanningTelemetryPort } from '../contracts';
 import { buildExplanation, buildReplay, emitPlanTelemetry, fallbackFor, immutable, verificationFor } from './advisoryPolicies';
 
-export const CANONICAL_PLANNER_VERSION = '6.40C.2';
+export const CANONICAL_PLANNER_VERSION = '6.41C0.1';
 type Options = Readonly<{ plannerVersion?: string; minimumIntentConfidence?: number; minimumTargetConfidence?: number; maximumPreservationRisk?: number; compositeExecutionEnabled?: boolean; telemetry?: PlanningTelemetryPort }>;
 
 /** Deterministic advisory planner. Canonical Core revalidates every proposal. */
@@ -15,7 +15,8 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const uncertainty = immutable(readUncertainty(request));
     const plannerConfig = immutable({ minimumIntentConfidence: this.#options.minimumIntentConfidence, minimumTargetConfidence: this.#options.minimumTargetConfidence, maximumPreservationRisk: this.#options.maximumPreservationRisk, compositeExecutionEnabled: this.#options.compositeExecutionEnabled } satisfies CreativePlannerConfigSnapshot);
     const composite = request.metadata?.operationIntent === 'COMPOSITE_REPLACE_RELIGHT';
-    const strategies = composite ? [compositeOperations('local-efficient', artifacts, constraints), compositeOperations('cloud-quality', artifacts, constraints)] : [simpleOperations(request, artifacts, constraints)];
+    const compositeOriginalUnavailable = composite && !artifacts.some(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
+    const strategies = composite ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)] : [simpleOperations(request, artifacts, constraints)];
     const rawCandidates = strategies.map((operations, index) => candidate(index === 0 ? 'local-efficient' : 'cloud-quality', operations, index === 0 ? 'LOCAL' : 'CLOUD', composite ? (index === 0 ? 1 : 5) : 0, composite ? (index === 0 ? 1200 : 2800) : 0, composite ? (index === 0 ? .76 : .94) : .9, uncertainty.aggregateConfidence));
     const ranked = rankAndFilter(rawCandidates, constraints);
     const candidates = immutable(ranked.map(value => ({ ...value, fallbackAdvice: fallbackFor(value, constraints, ranked.find(other => other.id !== value.id && other.status === 'ACCEPTED')) })));
@@ -27,11 +28,12 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     if (uncertainty.targetResolution < this.#options.minimumTargetConfidence) confirmationReasons.push('AMBIGUOUS_TARGET');
     if (uncertainty.preservationRisk > this.#options.maximumPreservationRisk && constraints.confirmationPolicy !== 'ALLOW_PRESERVATION_RISK') confirmationReasons.push('HIGH_PRESERVATION_RISK');
     if (localUnavailable) confirmationReasons.push('NO_FEASIBLE_LOCAL_STRATEGY');
+    if (compositeOriginalUnavailable) confirmationReasons.push('CANONICAL_ORIGINAL_REQUIRED');
     if (compositeExecutionUnavailable) confirmationReasons.push('COMPOSITE_EXECUTION_NOT_WIRED');
-    const status: CreativePlanStatus = compositeExecutionUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK') ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
+    const status: CreativePlanStatus = compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK') ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
     const operations = immutable(status === 'BLOCKED' ? [] : selected?.operations ?? []);
     const rejected = immutable(candidates.filter(item => item.status === 'REJECTED').map(({ id, reasonCodes }) => ({ id, reasonCodes })));
-    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [composite ? 'COMPOSITE_INTENT_REGISTRY_V1' : 'SIMPLE_EDIT_COMPATIBILITY', ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
+    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY', ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
     provenance = immutable({ ...provenance, replay: buildReplay(this.#options.plannerVersion, plannerConfig, { provenance, selectedCandidateId: selected?.id }) });
     const result = immutable({ requestId: request.id, operations, status, planningConstraints: constraints, candidates, selectedCandidateId: selected?.id, uncertainty, confirmationReasons: immutable(confirmationReasons), proposalId: `${this.#options.plannerVersion}:${request.id}`, plannerVersion: this.#options.plannerVersion, goal: decision.goal, assumptions: [], constraints: [...decision.constraints], provenance, explanation: buildExplanation(this.#options.plannerVersion, plannerConfig, selected, candidates, constraints, uncertainty, confirmationReasons) });
     void emitPlanTelemetry(this.#options.telemetry, result);
@@ -42,15 +44,27 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
 function simpleOperations(request: CreativeRequest, artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints): readonly CreativeOperation[] {
   const selected = request.metadata?.selectedObjectIds as readonly unknown[] | undefined;
   const controlled = request.metadata?.editCapability === 'CONTROLLED_LOCAL_EDIT' && artifacts.some(a => a.role === 'ORIGINAL') && artifacts.some(a => a.role === 'MASK') && Boolean(selected?.length);
-  const id = 'creative-image-edit'; return immutable([{ id, type: controlled ? 'CONTROLLED_LOCAL_EDIT' : 'image-edit', providerId: 'fal', requiredArtifacts: artifacts.map(a => a.id), produces: ['image'], verification: verificationFor(id, 'image-edit', constraints), input: controlled ? { instruction: request.intent, preserveMode: request.metadata?.preserveMode ?? 'STRICT', correlationId: request.metadata?.correlationId } : { prompt: request.intent, correlationId: request.metadata?.correlationId } }]);
+  const id = 'creative-image-edit'; return immutable([{ id, type: controlled ? 'CONTROLLED_LOCAL_EDIT' : 'image-edit', providerId: 'fal', requiredArtifacts: artifacts.map(a => a.id), produces: ['image'], verification: verificationFor(id, 'image-edit', constraints, 'image'), input: controlled ? { instruction: request.intent, preserveMode: request.metadata?.preserveMode ?? 'STRICT', correlationId: request.metadata?.correlationId } : { prompt: request.intent, correlationId: request.metadata?.correlationId } }]);
 }
-function compositeOperations(prefix: string, artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints): readonly CreativeOperation[] {
-  const seed = artifacts.map(a => a.id); const operation = (id: string, type: string, dependencies: readonly string[], requiredArtifacts: readonly string[], output: string): CreativeOperation => { const stepId = `${prefix}-${id}`; return { id: stepId, type, dependencies, requiredArtifacts, produces: ['image'], outputArtifacts: [output], verification: verificationFor(stepId, type, constraints) }; };
-  const segment = operation('01-segment', 'segment', [], seed, `${prefix}:segmentation`);
-  const remove = operation('02-remove', 'remove', [segment.id], [`${prefix}:segmentation`], `${prefix}:removed`);
-  const background = operation('03-background-replace', 'background_replace', [remove.id], [`${prefix}:removed`], `${prefix}:background`);
-  const relight = operation('04-relight', 'relight', [background.id], [`${prefix}:background`], `${prefix}:relit`);
-  const verify = operation('05-verify', 'verify', [relight.id], [`${prefix}:relit`], `${prefix}:verified`);
+
+function compositeOperations(prefix: string, artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints, intent: string): readonly CreativeOperation[] {
+  const original = artifacts.find(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
+  if (!original) return immutable([]);
+  const originalInputs = [original.id];
+  const semantic = (semanticOperation: string) => immutable({ intent, semanticOperation });
+  const step = (id: string, type: string, dependencies: readonly string[], requiredArtifacts: readonly string[], output: string, outputKind: string): CreativeOperation => {
+    const stepId = `${prefix}-${id}`;
+    return { id: stepId, type, dependencies, requiredArtifacts, produces: [outputKind], outputArtifacts: [output], verification: verificationFor(stepId, type, constraints, outputKind), input: semantic(type) };
+  };
+  const segmentation = `${prefix}:segmentation`;
+  const removed = `${prefix}:removed`;
+  const backgroundOutput = `${prefix}:background`;
+  const relit = `${prefix}:relit`;
+  const segment = step('01-segment', 'segment', [], originalInputs, segmentation, 'mask');
+  const remove = step('02-remove', 'remove', [segment.id], [...originalInputs, segmentation], removed, 'image');
+  const background = step('03-background-replace', 'background_replace', [remove.id], [removed], backgroundOutput, 'image');
+  const relight = step('04-relight', 'relight', [background.id], [backgroundOutput], relit, 'image');
+  const verify = step('05-verify', 'verify', [relight.id], [relit], `${prefix}:verified`, 'image');
   return immutable([segment, remove, background, relight, verify]);
 }
 function candidate(id: string, operations: readonly CreativeOperation[], targetPreference: Exclude<ExecutionTarget, 'BLOCKED' | 'HYBRID'>, estimatedCredits: number, estimatedLatencyMs: number, quality: number, confidence: number): CreativePlanCandidate {
