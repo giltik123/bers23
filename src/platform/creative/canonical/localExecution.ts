@@ -7,6 +7,7 @@ export const LOCAL_EXECUTION_TICKET_ISSUER = 'CORE' as const;
 export const LOCAL_EXECUTION_POLICIES = ['LOCAL_SELECTED', 'LOCAL_ONLY'] as const;
 export type LocalExecutionPolicy = typeof LOCAL_EXECUTION_POLICIES[number];
 export type LocalExecutionModelBinding = Readonly<{ modelId: string; version: string }>;
+export type LocalExecutionParameters = Readonly<Record<string, unknown>>;
 
 export type LocalExecutionInputBinding = Readonly<{
   artifactId: string;
@@ -28,7 +29,7 @@ export type LocalExecutionTicketIssueRequest = Readonly<{
   requestId: string;
   workflowId: string;
   stepId: string;
-  operation: Readonly<{ id: string; version: string; type: string; capability: string }>;
+  operation: Readonly<{ id: string; version: string; type: string; capability: string; parameters?: LocalExecutionParameters }>;
   scope: Scope;
   inputs: readonly LocalExecutionInputBinding[];
   expectedOutputs: readonly LocalExecutionExpectedOutput[];
@@ -57,6 +58,7 @@ export type LocalExecutionTicket = Readonly<{
     version: string;
     type: string;
     capability: string;
+    parameters?: LocalExecutionParameters;
   }>;
   scope: Scope;
   inputs: readonly LocalExecutionInputBinding[];
