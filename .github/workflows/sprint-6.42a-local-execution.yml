@@ -1,0 +1,34 @@
+name: Sprint 6.42A local execution acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  local-execution-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Core local ticket and admission contracts
+        run: >-
+          node --experimental-strip-types --test
+          server/core/localExecution/localExecutionContract.test.mjs
+          server/core/localExecution/localExecutionIdempotency.test.mjs
+          server/core/providers/productionOnDeviceRoute.test.mjs
+      - name: Canonical ON_DEVICE route and zero-cloud proof
+        run: npm run test:creative-route-6.41c4
+      - name: Browser ticket to admitted MASK boundary
+        run: npm run test:intelligent-selection
+      - name: Device capability, model trust and resource policy
+        run: |
+          mkdir -p .test-cache
+          npx esbuild tests/creative-local-ai.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/creative-local-ai.test.mjs --external:node:*
+          node --test .test-cache/creative-local-ai.test.mjs
