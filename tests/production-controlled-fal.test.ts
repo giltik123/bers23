@@ -55,3 +55,18 @@ test('production materializer upload failure fails before FAL inference', async 
   await assert.rejects(runtime.execute({ workflowId: 'failed-upload', scope, operation: { id: 'edit', type: 'CONTROLLED_LOCAL_EDIT', providerId: 'fal', input: { instruction: 'change' } }, artifacts: [{ id: 'roi', kind: 'image', value: roi, scope, producerStepId: 'edit', metadata: { artifactRole: 'ROI_INPUT', mask: new Uint8Array([255]) } }] }), /upload failed/);
   assert.equal(providerCalls, 0);
 });
+
+test('FAL runtime rejects unsupported operation types before artifact resolution or provider transport', async () => {
+  let fetchCalls = 0;
+  let resolveCalls = 0;
+  const runtime = createFalWorkflowRuntime({
+    apiKey: 'server-secret',
+    baseUrl: 'https://queue.fal.test',
+    timeoutMs: 1000,
+    artifacts: { resolve: () => { resolveCalls++; throw new Error('must not resolve'); } } as never,
+    fetcher: async () => { fetchCalls++; throw new Error('must not call provider transport'); },
+  });
+  await assert.rejects(runtime.execute({ workflowId: 'unsupported', scope, operation: { id: 'segment', type: 'segment', providerId: 'fal' }, artifacts: [] }), /Unsupported FAL workflow operation type: segment/);
+  assert.equal(resolveCalls, 0);
+  assert.equal(fetchCalls, 0);
+});
