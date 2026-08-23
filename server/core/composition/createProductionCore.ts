@@ -17,6 +17,7 @@ import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts'
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
+import { LocalExecutionAdmissionRegistry, LocalExecutionTicketAuthority } from '../localExecution/index.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
 import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
@@ -26,6 +27,8 @@ import { productionWorkflowVerifier } from '../providers/productionWorkflowVerif
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
 import { checkProjectSchema } from '../projects/projectSchema.ts';
 import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
+
+const LOCAL_EXECUTION_TICKET_TTL_MS = 5 * 60_000;
 
 export async function createProductionCore(config: CoreServerConfig, options: Readonly<{ fetcher?: typeof fetch; now?: () => number }> = {}) {
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
@@ -45,6 +48,16 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
     const hydrator = new CanonicalArtifactHydrator(artifacts, fetcher);
     const decision = new CanonicalDecisionService();
     const planning = new CanonicalPlanningService();
+    const localExecutionAdmission = new LocalExecutionAdmissionRegistry();
+    const localExecution = new LocalExecutionTicketAuthority(localExecutionAdmission, {
+      now,
+      id: randomUUID,
+      nonce: randomUUID,
+      ttlMs: LOCAL_EXECUTION_TICKET_TTL_MS,
+      modelsByCapability: {
+        'local:mobilesam:segment:v1': [{ modelId: 'mobilesam-vit-t', version: '1.0.2' }],
+      },
+    });
     const core = createCreativeCore({
       transactions: transactions.transactions, transactionStore: transactions.store, ownsArtifacts: (scope, ids) => artifacts.owns(scope, ids), hydrateArtifacts: (scope, original, masks) => hydrator.hydrate(scope, original, masks),
       persistFinal: async (scope, executionId, artifact) => {
@@ -63,7 +76,8 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         planning,
         routeSelector: productionExecutionRoute, targetSelector: productionTargetSelection, providerSelector: productionProviderSelection, capabilityAdmission: productionExecutionCapabilities, securityGate: { authorize: request => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
         recovery: { decide: () => 'MARK_UNKNOWN' }, verifier: productionWorkflowVerifier,
-        now: Date.now, id: randomUUID,
+        localExecution,
+        now, id: randomUUID,
       },
     } satisfies CreativeCoreCompositionInput);
     const authStore = new PostgresAuthStore(transactions.pool);
@@ -91,7 +105,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       sessionIdleTtlMs: config.authSessionIdleTtlMs,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
-    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, transactions, close: () => transactions.close() });
+    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }
 
