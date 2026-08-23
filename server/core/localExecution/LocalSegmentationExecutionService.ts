@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformRuntimeDependencies, type LocalExecutionResult, type LocalExecutionTicket, type ProductionOutcome } from '../../../src/platform/creative/canonical/index.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import type { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
+import { admitLocalExecutionInputs } from './LocalExecutionInputAdmission.ts';
 import type { PostgresLocalExecutionUploadStore } from './PostgresLocalExecutionUploadStore.ts';
 
 export type LocalSegmentationPoint = Readonly<{ x: number; y: number; label: 'POSITIVE' | 'NEGATIVE'; coordinateSpace: 'ORIGINAL' }>;
@@ -88,6 +89,7 @@ export class LocalSegmentationExecutionService {
     const tickets = await this.#platform.prepareLocalExecution(executionId);
     if (tickets.length !== 1) throw serviceError(500, 'local_ticket_contract_error', 'Expected exactly one local segmentation ticket');
     const ticket = tickets[0];
+    if (ticket.inputs.length !== 1 || ticket.inputs[0].kind !== 'image' || !ticket.inputs[0].sha256) throw serviceError(500, 'local_ticket_input_integrity_missing', 'Local segmentation ticket requires one canonical image with SHA-256');
     this.#prepared.set(executionId, Object.freeze({ executionId, ticketId: ticket.ticketId, scope, bindingHash }));
     return Object.freeze({ executionId, ticket });
   }
@@ -118,6 +120,7 @@ export class LocalSegmentationExecutionService {
     if (!claim.allowed) throw serviceError(claim.reasonCode === 'REPLAYED_TICKET' || claim.reasonCode === 'IN_PROGRESS' ? 409 : 400, `local_result_${claim.reasonCode.toLowerCase()}`, `Local result admission denied: ${claim.reasonCode}`);
     let canonicalPersisted = false;
     try {
+      await this.revalidateCanonicalInputs(ticket);
       const result = claim.result as LocalExecutionResult;
       if (result.outputs.length !== 1) throw serviceError(400, 'local_result_output_count', 'Local segmentation requires exactly one output');
       const evidence = result.outputs[0];
@@ -166,6 +169,15 @@ export class LocalSegmentationExecutionService {
     if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local execution ticket has expired');
     if (ticket.operation.capability !== 'local:mobilesam:segment:v1' || ticket.operation.type !== 'segment' || ticket.policy !== 'LOCAL_ONLY') throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not an accepted local segmentation contract');
     return ticket;
+  }
+
+  private async revalidateCanonicalInputs(ticket: LocalExecutionTicket): Promise<void> {
+    const ids = ticket.inputs.map(binding => binding.artifactId);
+    if (!await this.dependencies.ownsArtifacts(ticket.scope, ids)) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical local execution input is no longer authorized or available');
+    if (ticket.inputs.length !== 1 || ticket.inputs[0].kind !== 'image') throw serviceError(409, 'local_input_contract_mismatch', 'Local segmentation ticket input contract changed');
+    const artifacts = await this.dependencies.hydrateArtifacts(ticket.scope, ticket.inputs[0].artifactId, []);
+    const decision = admitLocalExecutionInputs(ticket, artifacts);
+    if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical local execution input revalidation failed: ${decision.reasonCode}`);
   }
 }
 
