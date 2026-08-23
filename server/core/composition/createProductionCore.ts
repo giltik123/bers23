@@ -18,6 +18,7 @@ import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
+import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
 import { productionExecutionCapabilities } from '../providers/productionExecutionCapabilities.ts';
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
 import { checkProjectSchema } from '../projects/projectSchema.ts';
@@ -57,7 +58,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
         runtime, providers: { isAvailable: providerId => providerId === 'fal', fallback: () => undefined },
         decision,
         planning,
-        targetSelector: { select: () => 'CLOUD' as const }, capabilityAdmission: productionExecutionCapabilities, securityGate: { authorize: request => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
+        targetSelector: { select: () => 'CLOUD' as const }, providerSelector: productionProviderSelection, capabilityAdmission: productionExecutionCapabilities, securityGate: { authorize: request => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
         recovery: { decide: () => 'MARK_UNKNOWN' }, verifier: { verify: async (operation, output) => ({ stepId: operation.id, valid: output.length > 0, checks: output.length ? ['provider-artifact-present'] : [], errors: output.length ? [] : ['Provider returned no artifact'] }) },
         now: Date.now, id: randomUUID,
       },

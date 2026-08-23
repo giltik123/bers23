@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformDependencies, type CreativeRequest, type ProductionOutcome } from '../../../src/platform/creative/canonical/index.ts';
+import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformRuntimeDependencies, type CreativeRequest, type ProductionOutcome } from '../../../src/platform/creative/canonical/index.ts';
 
 export type CreativeEditCommand = Readonly<{ projectId: string; instruction: string; selectedObjectIds?: readonly string[]; inputArtifactId: string; maskArtifactIds?: readonly string[]; preserveMode?: string; clientRequestId: string }>;
 export type AuthenticatedScope = Readonly<{ tenantId: string; userId: string }>;
-export type CreativeExecutionServiceDependencies = Readonly<{ platform: CreativeExecutionPlatformDependencies; ownsArtifacts(scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]): Promise<boolean>; hydrateArtifacts?(scope: AuthenticatedScope & { projectId: string }, originalId: string, maskIds: readonly string[]): Promise<readonly CreativeArtifact[]>; persistFinal?(scope: AuthenticatedScope & { projectId: string }, executionId: string, artifact: CreativeArtifact): Promise<CreativeArtifact>; mintFinalDelivery?(scope: AuthenticatedScope & { projectId: string }, storageId: string): string; creditsPerEdit?: number; hardBudgetCredits?: number; now?: () => number; id?: () => string }>;
+export type CreativeExecutionServiceDependencies = Readonly<{ platform: CreativeExecutionPlatformRuntimeDependencies; ownsArtifacts(scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]): Promise<boolean>; hydrateArtifacts?(scope: AuthenticatedScope & { projectId: string }, originalId: string, maskIds: readonly string[]): Promise<readonly CreativeArtifact[]>; persistFinal?(scope: AuthenticatedScope & { projectId: string }, executionId: string, artifact: CreativeArtifact): Promise<CreativeArtifact>; mintFinalDelivery?(scope: AuthenticatedScope & { projectId: string }, storageId: string): string; creditsPerEdit?: number; hardBudgetCredits?: number; now?: () => number; id?: () => string }>;
 
 /** Server application boundary: identity, scope and idempotency are authoritative here. */
 export class CreativeExecutionService {
