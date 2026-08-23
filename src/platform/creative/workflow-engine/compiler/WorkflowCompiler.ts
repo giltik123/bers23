@@ -1,4 +1,5 @@
 import { immutableClone } from '../immutable';
+import { compileIntermediateArtifactBindings } from '../IntermediateArtifactBinding';
 import type { CompiledWorkflow, ResourceBudget, Scope, WorkflowOperation, WorkflowSources } from '../types';
 export const UNLIMITED_BUDGET: ResourceBudget = Object.freeze({ credits: Number.MAX_SAFE_INTEGER, latencyMs: Number.MAX_SAFE_INTEGER, ramMb: Number.MAX_SAFE_INTEGER, gpuMs: Number.MAX_SAFE_INTEGER, aiCalls: Number.MAX_SAFE_INTEGER, retries: 0 });
 export class WorkflowCompiler {
@@ -10,7 +11,9 @@ export class WorkflowCompiler {
       const current = byId.get(operation.id); byId.set(operation.id, { ...current, ...operation, providerId: selected[operation.id] ?? operation.providerId ?? current?.providerId });
     }
     for (const operation of byId.values()) for (const dependency of operation.dependencies ?? []) if (!byId.has(dependency)) throw new Error(`Unknown dependency ${dependency} for ${operation.id}`);
-    const operations = topological([...byId.values()]); const depth = new Map<string, number>();
+    const topologicalOperations = topological([...byId.values()]);
+    const operations = compileIntermediateArtifactBindings(input.id, topologicalOperations);
+    const depth = new Map<string, number>();
     for (const operation of operations) depth.set(operation.id, Math.max(0, ...(operation.dependencies ?? []).map((id) => (depth.get(id) ?? 0) + 1)));
     const parallelGroups = [...new Set(depth.values())].map((level) => operations.filter((item) => depth.get(item.id) === level).map((item) => item.id));
     return immutableClone({ id: input.id, version: 1 as const, prompt: input.prompt, scope: input.scope, operations, parallelGroups, budget: { ...UNLIMITED_BUDGET, ...input.budget }, compiledAt: input.compiledAt ?? 0 });

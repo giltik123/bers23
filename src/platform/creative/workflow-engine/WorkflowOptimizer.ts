@@ -4,6 +4,7 @@ export class WorkflowOptimizer {
   optimize(workflow: CompiledWorkflow, availableArtifacts: readonly string[] = []): CompiledWorkflow {
     const aliases = new Map<string, string>(); const signatures = new Map<string, string>(); const kept: WorkflowOperation[] = [];
     for (const operation of workflow.operations) { if (operation.reusableArtifactId && availableArtifacts.includes(operation.reusableArtifactId)) continue;
+      if ((operation.outputBindings?.length ?? 0) > 0) { kept.push(operation); continue; }
       const signature = JSON.stringify([operation.type, operation.input ?? {}, operation.providerId ?? '']); const duplicate = signatures.get(signature);
       if (duplicate) aliases.set(operation.id, duplicate); else { signatures.set(signature, operation.id); kept.push(operation); } }
     const operations = kept.map((operation) => ({ ...operation, dependencies: [...new Set((operation.dependencies ?? []).map((id) => aliases.get(id) ?? id).filter((id) => kept.some((candidate) => candidate.id === id)))] }));
