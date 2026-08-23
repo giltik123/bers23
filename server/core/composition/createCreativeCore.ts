@@ -87,6 +87,7 @@ function createCreativeHttpCore(dependencies: CreativeCoreDependencies) {
         const request: CreativeRequest = { id, intent: input.intent, scope, inputArtifacts: [resolved.artifact, ...masks], budget: { credits: Math.min(input.budget?.credits ?? 0, dependencies.maxCredits), aiCalls: 1, retries: 0 }, metadata: { idempotencyKey: input.clientRequestId, inputSource: resolved.inputSource, editCapability: masks.length && (input.selectedObjectIds?.length ?? 0) ? 'CONTROLLED_LOCAL_EDIT' : 'GLOBAL_EDIT', preserveMode: input.preserveMode ?? 'STRICT', selectedObjectIds: input.selectedObjectIds ?? [], maskArtifactIds: input.maskArtifactIds ?? [] } };
         platform.createExecution(request);
         const promise = platform.execute(id).then(() => undefined);
+        // Install the ownership record before yielding so concurrent duplicates share it.
         executions.set(id, { scope, promise });
         await dependencies.telemetry.record({ name: 'creative_input_resolved', inputSource: resolved.inputSource, tenantId: scope.tenantId, projectId: scope.projectId });
       }
