@@ -36,6 +36,7 @@ const FORBIDDEN_RESULT_KEYS = new Set([
 export class LocalExecutionAdmissionRegistry {
   readonly #tickets = new Map<string, LocalExecutionTicket>();
   readonly #consumed = new Set<string>();
+  readonly #claimed = new Set<string>();
   readonly #idempotency = new Map<string, string>();
 
   issue(ticket: LocalExecutionTicket): LocalExecutionTicket {
@@ -60,10 +61,34 @@ export class LocalExecutionAdmissionRegistry {
 
   get(ticketId: string): LocalExecutionTicket | undefined { return this.#tickets.get(ticketId); }
 
+  /** Claim prevents concurrent duplicate finalization while canonical persistence is in progress. */
+  claim(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
+    const decision = this.#validate(input);
+    if (!decision.allowed) return decision;
+    if (this.#claimed.has(decision.ticket.ticketId)) return denied('IN_PROGRESS');
+    this.#claimed.add(decision.ticket.ticketId);
+    return decision;
+  }
+
+  commit(ticketId: string): void {
+    if (!this.#claimed.delete(ticketId)) throw new Error('Local execution ticket has no active admission claim');
+    if (this.#consumed.has(ticketId)) throw new Error('Local execution ticket is already consumed');
+    this.#consumed.add(ticketId);
+  }
+
+  release(ticketId: string): void { this.#claimed.delete(ticketId); }
+
   admit(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
+    const decision = this.claim(input);
+    if (decision.allowed) this.commit(decision.ticket.ticketId);
+    return decision;
+  }
+
+  #validate(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
     const ticket = this.#tickets.get(input.ticketId);
     if (!ticket) return denied('UNKNOWN_TICKET');
     if (this.#consumed.has(ticket.ticketId)) return denied('REPLAYED_TICKET');
+    if (this.#claimed.has(ticket.ticketId)) return denied('IN_PROGRESS');
     if (!sameScope(ticket.scope, input.callerScope)) return denied('SCOPE_MISMATCH');
     if (input.now >= ticket.expiresAt) return denied('EXPIRED_TICKET');
     if (containsForbiddenAuthority(input.result)) return denied('FORBIDDEN_CLIENT_AUTHORITY');
@@ -79,7 +104,6 @@ export class LocalExecutionAdmissionRegistry {
     ) return denied('IDENTITY_MISMATCH');
     if (!ticket.allowedModels.some(model => model.modelId === result.model.modelId && model.version === result.model.version)) return denied('MODEL_MISMATCH');
     if (!outputsMatch(ticket.expectedOutputs, result.outputs)) return denied('OUTPUT_CONTRACT_MISMATCH');
-    this.#consumed.add(ticket.ticketId);
     return Object.freeze({ allowed: true, reasonCode: 'ADMITTED', ticket, result: immutableResult(result) });
   }
 }
@@ -94,7 +118,11 @@ function assertTicket(ticket: LocalExecutionTicket): void {
   if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw new Error('Local execution ticket cannot authorize cloud cost');
   if (!Array.isArray(ticket.allowedModels) || ticket.allowedModels.length === 0 || ticket.allowedModels.some(model => !model.modelId || !model.version)) throw new Error('Local execution ticket requires approved model bindings');
   for (const input of ticket.inputs) if (input.sha256 !== undefined && !SHA256.test(input.sha256)) throw new Error('Invalid input artifact SHA-256');
-  for (const expected of ticket.expectedOutputs) if (!Number.isInteger(expected.count) || expected.count < 1) throw new Error('Invalid expected local output count');
+  for (const expected of ticket.expectedOutputs) {
+    if (!Number.isInteger(expected.count) || expected.count < 1) throw new Error('Invalid expected local output count');
+    if (expected.width !== undefined && (!Number.isInteger(expected.width) || expected.width < 1)) throw new Error('Invalid expected local output width');
+    if (expected.height !== undefined && (!Number.isInteger(expected.height) || expected.height < 1)) throw new Error('Invalid expected local output height');
+  }
 }
 
 function immutableTicket(ticket: LocalExecutionTicket): LocalExecutionTicket {
@@ -176,7 +204,10 @@ function outputsMatch(expected: readonly LocalExecutionExpectedOutput[], actual:
   const remaining = actual.slice();
   for (const contract of expected) {
     for (let i = 0; i < contract.count; i += 1) {
-      const index = remaining.findIndex(output => output.kind === contract.kind && output.role === contract.role && (!contract.mimeTypes?.length || contract.mimeTypes.includes(output.mimeType)));
+      const index = remaining.findIndex(output => output.kind === contract.kind && output.role === contract.role &&
+        (!contract.mimeTypes?.length || contract.mimeTypes.includes(output.mimeType)) &&
+        (contract.width === undefined || contract.width === output.width) &&
+        (contract.height === undefined || contract.height === output.height));
       if (index < 0) return false;
       remaining.splice(index, 1);
     }
