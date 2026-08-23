@@ -49,7 +49,7 @@ function interactiveSegmentationOperations(artifacts: readonly CreativePlanArtif
   const source = artifacts.find(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'WORKING'));
   if (!source) return immutable([]);
   const id = 'interactive-segmentation';
-  return immutable([{ id, type: 'segment', requiredArtifacts: [source.id], produces: ['mask'], verification: verificationFor(id, 'segment', constraints, 'mask'), input: { selectionRequestId: request.metadata?.selectionRequestId, analysis: request.metadata?.analysis } }]);
+  return immutable([{ id, type: 'segment', requiredArtifacts: [source.id], produces: ['mask'], verification: verificationFor(id, 'segment', constraints, 'mask'), input: { selectionRequestId: request.metadata?.selectionRequestId, analysis: request.metadata?.analysis, points: request.metadata?.points } }]);
 }
 
 function simpleOperations(request: CreativeRequest, artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints): readonly CreativeOperation[] {
@@ -75,7 +75,7 @@ function compositeOperations(prefix: string, artifacts: readonly CreativePlanArt
   const remove = step('02-remove', 'remove', [segment.id], [...originalInputs, segmentation], removed, 'image');
   const background = step('03-background-replace', 'background_replace', [remove.id], [removed], backgroundOutput, 'image');
   const relight = step('04-relight', 'relight', [background.id], [backgroundOutput], relit, 'image');
-  const verify = step('05-verify', 'verify', [relight.id], [relit], `${prefix}:verified`, 'image');
+  const verify = step('05-verify', 'verify', [relit.id], [relit], `${prefix}:verified`, 'image');
   return immutable([segment, remove, background, relight, verify]);
 }
 function candidate(id: string, operations: readonly CreativeOperation[], targetPreference: Exclude<ExecutionTarget, 'BLOCKED' | 'HYBRID'>, estimatedCredits: number, estimatedLatencyMs: number, quality: number, confidence: number): CreativePlanCandidate {
