@@ -29,13 +29,17 @@ export class ProviderArtifactEgressTransport implements ProviderTransport {
 
   async send(request: ProviderTransportRequest, signal: AbortSignal): Promise<ProviderTransportResponse> {
     if (request.method !== 'GET') throw new Error('Provider artifact egress transport is GET-only');
+    if (!Number.isFinite(request.timeoutMs) || request.timeoutMs <= 0) throw new Error('Provider artifact timeout is invalid');
     let current = this.#admit(request.url);
     const visited = new Set<string>();
+    const deadline = Date.now() + request.timeoutMs;
 
     for (let redirects = 0; ; redirects += 1) {
       if (visited.has(current.href)) throw new Error('Provider artifact redirect loop blocked');
       visited.add(current.href);
-      const response = await this.#request(current, request, signal);
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) throw new DOMException('Provider artifact download timed out', 'TimeoutError');
+      const response = await this.#request(current, request.headers, remainingMs, signal);
       if (!REDIRECT_STATUSES.has(response.status)) return response;
       if (redirects >= this.#maxRedirects) throw new Error('Provider artifact redirect limit exceeded');
       const location = response.headers.location;
@@ -54,16 +58,17 @@ export class ProviderArtifactEgressTransport implements ProviderTransport {
     return url;
   }
 
-  async #request(url: URL, request: ProviderTransportRequest, parentSignal: AbortSignal): Promise<ProviderTransportResponse> {
+  async #request(url: URL, headersInput: Readonly<Record<string, string>>, timeoutMs: number, parentSignal: AbortSignal): Promise<ProviderTransportResponse> {
     const controller = new AbortController();
     const relay = () => controller.abort(parentSignal.reason);
     parentSignal.addEventListener('abort', relay, { once: true });
-    const timer = setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), request.timeoutMs);
+    const timer = setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), timeoutMs);
     try {
-      const response = await this.fetcher(url.href, { method: 'GET', headers: { ...request.headers }, signal: controller.signal, redirect: 'manual' });
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      const response = await this.fetcher(url.href, { method: 'GET', headers: { ...headersInput }, signal: controller.signal, redirect: 'manual' });
       const headers: Record<string, string> = {};
       response.headers.forEach((headerValue, key) => { headers[key] = headerValue; });
+      if (REDIRECT_STATUSES.has(response.status)) return Object.freeze({ status: response.status, headers: Object.freeze(headers), body: Object.freeze({}) });
+      const bytes = new Uint8Array(await response.arrayBuffer());
       return Object.freeze({ status: response.status, headers: Object.freeze(headers), body: Object.freeze({}), bytes });
     } finally {
       clearTimeout(timer);
