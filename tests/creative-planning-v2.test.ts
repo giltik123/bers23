@@ -23,7 +23,7 @@ test('DAG validation rejects cycles, missing/self/duplicate dependencies, illega
   assert.throws(() => validateCreativePlan(make([{ id: 'a', type: 'x' }, { id: 'a', type: 'x' }])), /duplicate/);
   assert.throws(() => validateCreativePlan(make([{ id: 'a', type: 'x', dependencies: ['a'] }])), /self dependency/);
   assert.throws(() => validateCreativePlan(make([{ id: 'a', type: 'x', requiredArtifacts: ['forged'] }])), /illegal artifact/);
-  assert.throws(() => validateCreativePlan(make([{ id: 'a', type: 'x', outputArtifacts: ['same'] }, { id: 'b', type: 'x', outputArtifacts: ['same'] }])), /conflicting terminal writer/);
+  assert.throws(() => validateCreativePlan(make([{ id: 'a', type: 'x', produces: ['image'], outputArtifacts: ['same'] }, { id: 'b', type: 'x', produces: ['image'], outputArtifacts: ['same'] }])), /conflicting terminal writer/);
 });
 
 test('constraints are immutable and filter explicit planning cost, latency, quality, target, and LOCAL_ONLY cloud advice', async () => {
