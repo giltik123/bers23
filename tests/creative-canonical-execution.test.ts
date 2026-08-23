@@ -22,6 +22,7 @@ const dependencies = (): CreativeExecutionPlatformDependencies => ({
   decision: { decide: async value => { events.push('decision'); return { requestId: value.id, goal: value.intent, constraints: [] }; } },
   planning: { plan: async (value, decision) => { events.push('planning'); return { requestId: value.id, operations: [{ id: 'normalize', type: decision.goal, produces: ['image'] }] }; } },
   targetSelector: { select: () => { events.push('target'); return 'LOCAL'; } },
+  capabilityAdmission: { admit: () => ({ allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'synthetic-canonical-test-runtime' }) },
   securityGate: { authorize: () => { events.push('security'); return true; } },
   runtime: { execute: async ({ operation }) => { events.push('runtime'); return { artifacts: [{ id: 'image-1', kind: 'image', value: { pixels: true } }], latencyMs: 1, memoryMb: 1, gpuMs: 0 }; } },
   providers: { isAvailable: () => true, fallback: () => undefined },
