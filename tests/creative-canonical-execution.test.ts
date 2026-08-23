@@ -10,7 +10,7 @@ import {
   CanonicalPlanningService,
   CreativeExecutionPlatform,
   type CreativeArtifact,
-  type CreativeExecutionPlatformDependencies,
+  type CreativeExecutionPlatformRuntimeDependencies,
   type CreativeRequest,
 } from '../src/platform/creative/canonical/index.ts';
 import { ProductionExecutionCapabilityRegistry } from '../server/core/providers/productionExecutionCapabilities.ts';
@@ -18,13 +18,14 @@ import { ProductionExecutionCapabilityRegistry } from '../server/core/providers/
 const scope = { tenantId: 'tenant', projectId: 'project', userId: 'user' };
 const request: CreativeRequest = { id: 'execution-1', intent: 'prepare image', scope, budget: { credits: 10, aiCalls: 3, latencyMs: 100, ramMb: 100, gpuMs: 100, retries: 0 } };
 const events: string[] = [];
-const dependencies = (): CreativeExecutionPlatformDependencies => ({
+const dependencies = (): CreativeExecutionPlatformRuntimeDependencies => ({
   decision: { decide: async value => { events.push('decision'); return { requestId: value.id, goal: value.intent, constraints: [] }; } },
-  planning: { plan: async (value, decision) => { events.push('planning'); return { requestId: value.id, operations: [{ id: 'normalize', type: decision.goal, produces: ['image'] }] }; } },
+  planning: { plan: async (value, decision) => { events.push('planning'); return { requestId: value.id, operations: [{ id: 'normalize', type: decision.goal, produces: ['image'], providerId: 'forged-planner-provider' }] }; } },
   targetSelector: { select: () => { events.push('target'); return 'LOCAL'; } },
+  providerSelector: { select: () => { events.push('provider'); return { allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'synthetic-local', selectionId: 'synthetic-local:normalize' }; } },
   capabilityAdmission: { admit: () => ({ allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'synthetic-canonical-test-runtime' }) },
-  securityGate: { authorize: () => { events.push('security'); return true; } },
-  runtime: { execute: async ({ operation }) => { events.push('runtime'); return { artifacts: [{ id: 'image-1', kind: 'image', value: { pixels: true } }], latencyMs: 1, memoryMb: 1, gpuMs: 0 }; } },
+  securityGate: { authorize: (_request, operation) => { events.push('security'); assert.equal(operation.providerId, 'synthetic-local'); return true; } },
+  runtime: { execute: async ({ operation }) => { events.push('runtime'); assert.equal(operation.providerId, 'synthetic-local'); return { artifacts: [{ id: 'image-1', kind: 'image', value: { pixels: true } }], latencyMs: 1, memoryMb: 1, gpuMs: 0 }; } },
   providers: { isAvailable: () => true, fallback: () => undefined },
   verifier: { verify: async operation => { events.push('verification'); return { stepId: operation.id, valid: true, checks: ['expected-vs-actual'], errors: [] }; } },
   recovery: { decide: () => 'ABORT' },
@@ -32,16 +33,17 @@ const dependencies = (): CreativeExecutionPlatformDependencies => ({
   now: () => 1,
 });
 
-test('full vertical contract uses the canonical execution path', async () => { events.length = 0; const platform = new CreativeExecutionPlatform(dependencies()); platform.createExecution(request); await platform.plan(request.id); await platform.compile(request.id); const outcome = await platform.execute(request.id); assert.equal(outcome.status, 'SUCCESS'); assert.equal(outcome.artifacts[0].state, 'FINAL'); assert.deepEqual(events, ['decision', 'planning', 'target', 'security', 'runtime', 'verification', 'telemetry']); assert.equal(platform.verify(request.id).valid, true); assert.deepEqual(platform.replay(request.id), platform.snapshot(request.id)); });
+test('full vertical contract uses the canonical execution path', async () => { events.length = 0; const platform = new CreativeExecutionPlatform(dependencies()); platform.createExecution(request); await platform.plan(request.id); const compiled = await platform.compile(request.id); assert.equal(compiled.operations[0].providerId, 'synthetic-local'); const outcome = await platform.execute(request.id); assert.equal(outcome.status, 'SUCCESS'); assert.equal(outcome.artifacts[0].state, 'FINAL'); assert.deepEqual(events, ['decision', 'planning', 'target', 'provider', 'security', 'runtime', 'verification', 'telemetry']); assert.equal(platform.verify(request.id).valid, true); assert.deepEqual(platform.replay(request.id), platform.snapshot(request.id)); });
 test('planner verification claims cannot override authoritative runtime verification failure', async () => { const deps = dependencies(); deps.planning.plan = async value => ({ requestId: value.id, operations: [{ id: 'normalize', type: 'edit', produces: ['image'], verificationPassed: true } as never] }); deps.verifier = { verify: async operation => ({ stepId: operation.id, valid: false, checks: [], errors: ['canonical verifier rejected output'] }) }; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); const outcome = await platform.execute(request.id); assert.equal(outcome.status, 'FAILED'); assert.equal(outcome.verification.valid, false); });
 test('target selection and security gate cannot be bypassed', async () => { let runtimeCalls = 0; const deps = dependencies(); deps.targetSelector.select = () => 'CLOUD'; deps.securityGate.authorize = () => false; deps.runtime.execute = async () => { runtimeCalls++; return {}; }; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); await assert.rejects(platform.compile(request.id), /blocked/); assert.equal(runtimeCalls, 0); });
-test('blocked targets fail closed before runtime execution', async () => { const deps = dependencies(); deps.targetSelector.select = () => 'BLOCKED'; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); await assert.rejects(platform.execute(request.id), /blocked/); });
+test('blocked targets fail closed before provider selection or runtime execution', async () => { let providerSelections = 0; const deps = dependencies(); deps.targetSelector.select = () => 'BLOCKED'; deps.providerSelector.select = () => { providerSelections++; return { allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'should-not-run', selectionId: 'should-not-run' }; }; const platform = new CreativeExecutionPlatform(deps); platform.createExecution(request); await assert.rejects(platform.execute(request.id), /blocked/); assert.equal(providerSelections, 0); });
 test('production capability admission blocks unsupported operations before security, billing and runtime', async () => {
   const calls = { security: 0, reserve: 0, runtime: 0 };
   const platform = new CreativeExecutionPlatform({
     decision: { decide: async value => ({ requestId: value.id, goal: value.intent, constraints: [] }) },
-    planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'segment-1', type: 'segment', providerId: 'fal' }] }) },
+    planning: { plan: async value => ({ requestId: value.id, status: 'READY', operations: [{ id: 'segment-1', type: 'segment', providerId: 'planner-evil' }] }) },
     targetSelector: { select: () => 'CLOUD' },
+    providerSelector: { select: () => ({ allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'fal', selectionId: 'synthetic-capability:fal' }) },
     capabilityAdmission: new ProductionExecutionCapabilityRegistry(),
     securityGate: { authorize: () => { calls.security++; return true; } },
     runtime: { execute: async () => { calls.runtime++; return {}; } },
