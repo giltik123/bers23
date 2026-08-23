@@ -3,32 +3,203 @@ import { ProductionOperationAuthority } from '../authority';
 import { CreativeCostAuthority } from '../cost/contracts';
 import type { CreativeOperationInstance } from '../operations/contracts';
 import type { CreativeArtifact, CreativeDecision, CreativeExecutionPlan, CreativeOperation, CreativePipeline, CreativePlan, CreativeRequest, ProductionOutcome, VerificationResult } from './contracts';
+import type { LocalExecutionInputBinding, LocalExecutionTicket } from './localExecution';
 import type { CreativeExecutionPlatformRuntimeDependencies } from './providerSelection';
 import { validateCreativePlan, validateExecutionTargets } from './planning/planValidation';
 
-type RecordState = { request: CreativeRequest; decision?: CreativeDecision; plan?: CreativePlan; execution?: CreativeExecutionPlan; pipeline?: CreativePipeline; workflow?: ReturnType<WorkflowCompiler['compile']>; operation?: CreativeOperationInstance; snapshot?: WorkflowSnapshot; outcome?: ProductionOutcome; paused: boolean; cancelled: boolean };
+type RecordState = {
+  request: CreativeRequest;
+  decision?: CreativeDecision;
+  plan?: CreativePlan;
+  execution?: CreativeExecutionPlan;
+  pipeline?: CreativePipeline;
+  workflow?: ReturnType<WorkflowCompiler['compile']>;
+  operation?: CreativeOperationInstance;
+  capabilityIds?: Readonly<Record<string, string>>;
+  localTickets?: readonly LocalExecutionTicket[];
+  snapshot?: WorkflowSnapshot;
+  outcome?: ProductionOutcome;
+  paused: boolean;
+  cancelled: boolean;
+};
 
 /**
  * The sole recommended production entry point for Creative execution.
  * Planning and compilation are pure boundaries; CreativeWorkflowEngine is the
- * only graph execution authority. Runtimes remain operation adapters.
+ * only graph execution authority for server-executable routes. ON_DEVICE work
+ * is suspended behind a Core-issued ticket and may never fall into server runtime.
  */
 export class CreativeExecutionPlatform {
   readonly #records = new Map<string, RecordState>();
   readonly #workflow: CreativeWorkflowEngine;
   readonly #authority: ProductionOperationAuthority;
-  constructor(private readonly dependencies: CreativeExecutionPlatformRuntimeDependencies) { if (!dependencies.routeSelector) throw new Error('Creative execution route selection is required'); if (!dependencies.providerSelector) throw new Error('Creative execution provider selection is required'); if (!dependencies.capabilityAdmission) throw new Error('Creative execution capability admission is required'); this.#workflow = new CreativeWorkflowEngine(dependencies); this.#authority = dependencies.authority ?? new ProductionOperationAuthority({ billing: dependencies.billing ?? rejectingBilling, execute: async instance => { const record = this.require(instance.identity.requestId); const seed = (record.request.inputArtifacts ?? []).map(toWorkflowArtifact); record.snapshot = await this.#workflow.execute(record.workflow!, seed); return { workflowStatus: record.snapshot.status }; }, now: () => new Date((dependencies.now ?? Date.now)()).toISOString(), id: dependencies.id }); }
+  constructor(private readonly dependencies: CreativeExecutionPlatformRuntimeDependencies) {
+    if (!dependencies.routeSelector) throw new Error('Creative execution route selection is required');
+    if (!dependencies.providerSelector) throw new Error('Creative execution provider selection is required');
+    if (!dependencies.capabilityAdmission) throw new Error('Creative execution capability admission is required');
+    this.#workflow = new CreativeWorkflowEngine(dependencies);
+    this.#authority = dependencies.authority ?? new ProductionOperationAuthority({
+      billing: dependencies.billing ?? rejectingBilling,
+      execute: async instance => {
+        const record = this.require(instance.identity.requestId);
+        if (record.workflow?.operations.some(operation => operation.executionRoute === 'ON_DEVICE')) throw new Error('ON_DEVICE execution cannot enter the server workflow runtime');
+        const seed = (record.request.inputArtifacts ?? []).map(toWorkflowArtifact);
+        record.snapshot = await this.#workflow.execute(record.workflow!, seed);
+        return { workflowStatus: record.snapshot.status };
+      },
+      now: () => new Date((dependencies.now ?? Date.now)()).toISOString(),
+      id: dependencies.id,
+    });
+  }
 
-  createExecution(request: CreativeRequest): string { if (this.#records.has(request.id)) throw new Error(`Execution "${request.id}" already exists`); this.#records.set(request.id, { request, paused: false, cancelled: false }); return request.id; }
-  async plan(id: string): Promise<CreativePlan> { const record = this.require(id); record.decision ??= await this.dependencies.decision.decide(record.request); record.plan = await this.dependencies.planning.plan(record.request, record.decision); return record.plan; }
-  async compile(id: string): Promise<CreativeExecutionPlan> { const record = this.require(id); const plan = record.plan ?? await this.plan(id); validateCreativePlan(plan, (record.request.inputArtifacts ?? []).map(artifact => artifact.id)); const routes = Object.fromEntries(plan.operations.map(operation => [operation.id, this.dependencies.routeSelector.select(operation, record.request)])); const targets = Object.fromEntries(plan.operations.map(operation => [operation.id, this.dependencies.targetSelector.select(operation, record.request)])); validateExecutionTargets(plan, targets); const boundOperations: CreativeOperation[] = [];
-    for (const operation of plan.operations) { const route = routes[operation.id]; const target = targets[operation.id]; if (target === 'BLOCKED') throw new Error(`Execution capability blocked operation ${operation.id}: TARGET_BLOCKED`); let boundOperation: CreativeOperation; if (route === 'PROVIDER') { const selection = this.dependencies.providerSelector.select({ request: record.request, operation, target }); if (!selection.allowed) throw new Error(`Provider selection blocked operation ${operation.id}: ${selection.reasonCode}`); boundOperation = Object.freeze({ ...operation, executionRoute: route, providerId: selection.providerId }); } else { const { providerId: _untrustedProvider, ...providerFree } = operation; boundOperation = Object.freeze({ ...providerFree, executionRoute: route, cost: Object.freeze({ ...providerFree.cost, credits: 0, aiCalls: 0 }) }); } const capability = this.dependencies.capabilityAdmission.admit({ request: record.request, operation: boundOperation, route, target }); if (!capability.allowed) throw new Error(`Execution capability blocked operation ${operation.id}: ${capability.reasonCode}`); if (!this.dependencies.securityGate.authorize(record.request, boundOperation, target)) throw new Error(`Security or target policy blocked operation ${operation.id}`); boundOperations.push(boundOperation); }
-    const operations = Object.freeze(boundOperations); record.execution = { requestId: record.request.id, operations, targets }; record.pipeline = { operationIds: operations.map(operation => operation.id) }; record.workflow = new WorkflowCompiler().compile({ id, prompt: record.request.intent, scope: record.request.scope, sources: { executionGraph: { operations }, pipelineGraph: { operations } }, budget: record.request.budget, compiledAt: (this.dependencies.now ?? Date.now)() });
-    const selected = Object.values(targets); const target = selected.some(x => x === 'CLOUD') && selected.some(x => x === 'LOCAL') ? 'HYBRID' : selected.some(x => x === 'CLOUD' || x === 'HYBRID') ? selected.find(x => x === 'HYBRID') ?? 'CLOUD' : 'LOCAL'; const credits = target === 'LOCAL' ? 0 : Number(record.request.metadata?.estimatedCredits ?? record.request.budget?.credits ?? 0); const operationId = `creative.execution.${id}`;
-    record.operation = this.#authority.instantiateOperation({ identity: { operationId, operationVersion: '1', operationFamily: 'creative-workflow', ...record.request.scope, requestId: id }, definition: { operationId, version: '1', family: 'creative-workflow', capabilities: [], inputArtifacts: [], outputArtifacts: [], parametersSchema: {}, executionPolicy: {}, verificationPolicy: {}, resourceProfile: {}, costModel: {}, riskProfile: {}, billable: credits > 0 }, parameters: { intent: record.request.intent }, intent: { target, requiredCapabilities: [], executionMode: 'PRODUCTION', fallbackPolicy: {}, verificationPolicy: {} }, idempotencyKey: String(record.request.metadata?.idempotencyKey ?? id) });
-    this.#authority.preflight(record.operation, { target, billable: credits > 0, credits, retries: record.request.budget?.retries ?? 0, policy: { maxCredits: record.request.budget?.credits ?? 0, maxProviderCost: Number(record.request.metadata?.maxProviderCost ?? Number.MAX_SAFE_INTEGER), allowFallback: true, allowRetry: true, allowEscalation: false, budgetMode: 'HARD' } });
-    const authorization = this.#authority.authorize(record.operation, { checks: { operationValid: true, capabilityAvailable: true, runtimeAllowed: true, modelTrusted: true, privacyAllowed: true, budgetAllowed: true, scopeValid: true }, policyVersion: 'production-6.32', expiresAt: new Date((this.dependencies.now ?? Date.now)() + 300_000).toISOString(), costPolicy: { maxCredits: record.request.budget?.credits ?? 0, maxProviderCost: Number.MAX_SAFE_INTEGER, allowFallback: true, allowRetry: true, allowEscalation: false, budgetMode: 'HARD' } }); if (!authorization.allowed) throw new Error(authorization.reason); await this.#authority.reserve(record.operation); return record.execution; }
-  async execute(id: string): Promise<ProductionOutcome> { const record = this.require(id); if (record.cancelled) throw new Error('Execution is cancelled'); if (record.paused) throw new Error('Execution is paused'); if (!record.workflow || !record.operation) await this.compile(id); try { await this.#authority.execute(record.operation!); const verification = this.verification(record.snapshot!); const outcome: ProductionOutcome = { executionId: id, status: record.snapshot!.status === 'SUCCESS' && verification.valid ? 'SUCCESS' : 'FAILED', workflow: record.snapshot!, verification, artifacts: record.snapshot!.artifacts.map(fromWorkflowArtifact) }; record.outcome = outcome; this.#authority.recordOutcome(record.operation!, { status: outcome.status }); if (outcome.status === 'FAILED') { await this.#authority.release(record.operation!, 'workflow or verification failed'); await this.dependencies.telemetry?.record(outcome); return outcome; } const target = record.operation!.executionIntent.target; const actual = target === 'LOCAL' ? new CreativeCostAuthority().local({ latency: record.snapshot!.metrics.executionTimeMs }) : { actualProviderCost: { amount: Number(record.request.metadata?.actualProviderCost ?? 0), currency: 'USD' }, actualCreditsBasis: Number(record.request.metadata?.billableCredits ?? record.request.budget?.credits ?? 0), actualLatency: record.snapshot!.metrics.executionTimeMs, actualRetries: 0, actualFallbacks: 0, actualDeviceCost: 0, actualEnergyEstimate: 0 }; this.#authority.recordActualCost(record.operation!, actual); this.#authority.buildBillingEvent(record.operation!, actual.actualCreditsBasis); await this.#authority.commit(record.operation!); await this.dependencies.telemetry?.record(outcome); return outcome; } catch (error) { if (isUnknown(error)) { await this.#authority.markUnknown(record.operation!, 'provider result unknown'); const outcome: ProductionOutcome = { executionId: id, status: 'UNKNOWN', verification: { valid: false, checks: [], errors: ['Provider outcome pending reconciliation'] }, artifacts: [] }; record.outcome = outcome; await this.dependencies.telemetry?.record(outcome); return outcome; } await this.#authority.release(record.operation!, 'execution failed'); throw error; } }
+  createExecution(request: CreativeRequest): string {
+    if (this.#records.has(request.id)) throw new Error(`Execution "${request.id}" already exists`);
+    this.#records.set(request.id, { request, paused: false, cancelled: false });
+    return request.id;
+  }
+
+  async plan(id: string): Promise<CreativePlan> {
+    const record = this.require(id);
+    record.decision ??= await this.dependencies.decision.decide(record.request);
+    record.plan = await this.dependencies.planning.plan(record.request, record.decision);
+    return record.plan;
+  }
+
+  async compile(id: string): Promise<CreativeExecutionPlan> {
+    const record = this.require(id);
+    const plan = record.plan ?? await this.plan(id);
+    validateCreativePlan(plan, (record.request.inputArtifacts ?? []).map(artifact => artifact.id));
+    const routes = Object.fromEntries(plan.operations.map(operation => [operation.id, this.dependencies.routeSelector.select(operation, record.request)]));
+    const targets = Object.fromEntries(plan.operations.map(operation => [operation.id, this.dependencies.targetSelector.select(operation, record.request)]));
+    validateExecutionTargets(plan, targets);
+    const boundOperations: CreativeOperation[] = [];
+    const capabilityIds: Record<string, string> = {};
+
+    for (const operation of plan.operations) {
+      const route = routes[operation.id];
+      const target = targets[operation.id];
+      if (target === 'BLOCKED') throw new Error(`Execution capability blocked operation ${operation.id}: TARGET_BLOCKED`);
+      let boundOperation: CreativeOperation;
+      if (route === 'PROVIDER') {
+        const selection = this.dependencies.providerSelector.select({ request: record.request, operation, target });
+        if (!selection.allowed) throw new Error(`Provider selection blocked operation ${operation.id}: ${selection.reasonCode}`);
+        boundOperation = Object.freeze({ ...operation, executionRoute: route, providerId: selection.providerId });
+      } else {
+        const { providerId: _untrustedProvider, ...providerFree } = operation;
+        boundOperation = Object.freeze({ ...providerFree, executionRoute: route, cost: Object.freeze({ ...providerFree.cost, credits: 0, aiCalls: 0 }) });
+      }
+      const capability = this.dependencies.capabilityAdmission.admit({ request: record.request, operation: boundOperation, route, target });
+      if (!capability.allowed) throw new Error(`Execution capability blocked operation ${operation.id}: ${capability.reasonCode}`);
+      if (route === 'ON_DEVICE' && !capability.capabilityId) throw new Error(`ON_DEVICE operation ${operation.id} has no canonical capability binding`);
+      if (capability.capabilityId) capabilityIds[operation.id] = capability.capabilityId;
+      if (!this.dependencies.securityGate.authorize(record.request, boundOperation, target)) throw new Error(`Security or target policy blocked operation ${operation.id}`);
+      boundOperations.push(boundOperation);
+    }
+
+    const operations = Object.freeze(boundOperations);
+    record.capabilityIds = Object.freeze({ ...capabilityIds });
+    record.execution = { requestId: record.request.id, operations, targets };
+    record.pipeline = { operationIds: operations.map(operation => operation.id) };
+    record.workflow = new WorkflowCompiler().compile({ id, prompt: record.request.intent, scope: record.request.scope, sources: { executionGraph: { operations }, pipelineGraph: { operations } }, budget: record.request.budget, compiledAt: (this.dependencies.now ?? Date.now)() });
+    const selected = Object.values(targets);
+    const target = selected.some(x => x === 'CLOUD') && selected.some(x => x === 'LOCAL') ? 'HYBRID' : selected.some(x => x === 'CLOUD' || x === 'HYBRID') ? selected.find(x => x === 'HYBRID') ?? 'CLOUD' : 'LOCAL';
+    const credits = target === 'LOCAL' ? 0 : Number(record.request.metadata?.estimatedCredits ?? record.request.budget?.credits ?? 0);
+    const operationId = `creative.execution.${id}`;
+    const allowFallback = target !== 'LOCAL';
+    record.operation = this.#authority.instantiateOperation({
+      identity: { operationId, operationVersion: '1', operationFamily: 'creative-workflow', ...record.request.scope, requestId: id },
+      definition: { operationId, version: '1', family: 'creative-workflow', capabilities: [], inputArtifacts: [], outputArtifacts: [], parametersSchema: {}, executionPolicy: {}, verificationPolicy: {}, resourceProfile: {}, costModel: {}, riskProfile: {}, billable: credits > 0 },
+      parameters: { intent: record.request.intent },
+      intent: { target, requiredCapabilities: [], executionMode: 'PRODUCTION', fallbackPolicy: {}, verificationPolicy: {} },
+      idempotencyKey: String(record.request.metadata?.idempotencyKey ?? id),
+    });
+    this.#authority.preflight(record.operation, { target, billable: credits > 0, credits, retries: record.request.budget?.retries ?? 0, policy: { maxCredits: record.request.budget?.credits ?? 0, maxProviderCost: Number(record.request.metadata?.maxProviderCost ?? Number.MAX_SAFE_INTEGER), allowFallback, allowRetry: true, allowEscalation: false, budgetMode: 'HARD' } });
+    const authorization = this.#authority.authorize(record.operation, {
+      checks: { operationValid: true, capabilityAvailable: true, runtimeAllowed: true, modelTrusted: true, privacyAllowed: true, budgetAllowed: true, scopeValid: true },
+      policyVersion: 'production-6.42A',
+      expiresAt: new Date((this.dependencies.now ?? Date.now)() + 300_000).toISOString(),
+      costPolicy: { maxCredits: record.request.budget?.credits ?? 0, maxProviderCost: Number.MAX_SAFE_INTEGER, allowFallback, allowRetry: true, allowEscalation: false, budgetMode: 'HARD' },
+    });
+    if (!authorization.allowed) throw new Error(authorization.reason);
+    await this.#authority.reserve(record.operation);
+    return record.execution;
+  }
+
+  /**
+   * Compile and suspend ON_DEVICE steps behind Core-issued tickets.
+   * No device inference and no server/provider runtime invocation occurs here.
+   */
+  async prepareLocalExecution(id: string): Promise<readonly LocalExecutionTicket[]> {
+    const record = this.require(id);
+    if (record.cancelled) throw new Error('Execution is cancelled');
+    if (!record.execution || !record.workflow || !record.operation) await this.compile(id);
+    if (record.localTickets) return record.localTickets;
+    const onDevice = record.execution!.operations.filter(operation => operation.executionRoute === 'ON_DEVICE');
+    if (!onDevice.length) return Object.freeze([]);
+    const issuer = this.dependencies.localExecution;
+    if (!issuer) throw new Error('ON_DEVICE execution requires Core local ticket authority');
+    const tickets = onDevice.map(operation => {
+      if (record.execution!.targets[operation.id] !== 'LOCAL') throw new Error(`ON_DEVICE operation ${operation.id} must have LOCAL target`);
+      const capability = record.capabilityIds?.[operation.id];
+      if (!capability) throw new Error(`ON_DEVICE operation ${operation.id} has no capability binding`);
+      const inputs = localInputs(record.request, operation);
+      if (!inputs.length) throw new Error(`ON_DEVICE operation ${operation.id} has no canonical input artifact`);
+      return issuer.issue({
+        requestId: record.request.id,
+        workflowId: record.workflow!.id,
+        stepId: operation.id,
+        operation: { id: operation.id, version: '1', type: operation.type, capability },
+        scope: record.request.scope,
+        inputs,
+        expectedOutputs: expectedLocalOutputs(operation),
+        policy: record.plan?.planningConstraints?.executionPolicy === 'LOCAL_ONLY' ? 'LOCAL_ONLY' : 'LOCAL_SELECTED',
+        idempotencyKey: `${String(record.request.metadata?.idempotencyKey ?? id)}:${operation.id}:local-v1`,
+      });
+    });
+    record.localTickets = Object.freeze(tickets);
+    record.paused = true;
+    return record.localTickets;
+  }
+
+  pendingLocalExecution(id: string): readonly LocalExecutionTicket[] { return this.require(id).localTickets ?? Object.freeze([]); }
+
+  async execute(id: string): Promise<ProductionOutcome> {
+    const record = this.require(id);
+    if (record.cancelled) throw new Error('Execution is cancelled');
+    if (record.paused) throw new Error('Execution is paused');
+    if (!record.workflow || !record.operation) await this.compile(id);
+    if (record.execution?.operations.some(operation => operation.executionRoute === 'ON_DEVICE')) throw new Error('ON_DEVICE execution requires device ticket/result admission; server runtime execution is forbidden');
+    try {
+      await this.#authority.execute(record.operation!);
+      const verification = this.verification(record.snapshot!);
+      const outcome: ProductionOutcome = { executionId: id, status: record.snapshot!.status === 'SUCCESS' && verification.valid ? 'SUCCESS' : 'FAILED', workflow: record.snapshot!, verification, artifacts: record.snapshot!.artifacts.map(fromWorkflowArtifact) };
+      record.outcome = outcome;
+      this.#authority.recordOutcome(record.operation!, { status: outcome.status });
+      if (outcome.status === 'FAILED') {
+        await this.#authority.release(record.operation!, 'workflow or verification failed');
+        await this.dependencies.telemetry?.record(outcome);
+        return outcome;
+      }
+      const target = record.operation!.executionIntent.target;
+      const actual = target === 'LOCAL' ? new CreativeCostAuthority().local({ latency: record.snapshot!.metrics.executionTimeMs }) : { actualProviderCost: { amount: Number(record.request.metadata?.actualProviderCost ?? 0), currency: 'USD' }, actualCreditsBasis: Number(record.request.metadata?.billableCredits ?? record.request.budget?.credits ?? 0), actualLatency: record.snapshot!.metrics.executionTimeMs, actualRetries: 0, actualFallbacks: 0, actualDeviceCost: 0, actualEnergyEstimate: 0 };
+      this.#authority.recordActualCost(record.operation!, actual);
+      this.#authority.buildBillingEvent(record.operation!, actual.actualCreditsBasis);
+      await this.#authority.commit(record.operation!);
+      await this.dependencies.telemetry?.record(outcome);
+      return outcome;
+    } catch (error) {
+      if (isUnknown(error)) {
+        await this.#authority.markUnknown(record.operation!, 'provider result unknown');
+        const outcome: ProductionOutcome = { executionId: id, status: 'UNKNOWN', verification: { valid: false, checks: [], errors: ['Provider outcome pending reconciliation'] }, artifacts: [] };
+        record.outcome = outcome;
+        await this.dependencies.telemetry?.record(outcome);
+        return outcome;
+      }
+      await this.#authority.release(record.operation!, 'execution failed');
+      throw error;
+    }
+  }
+
   status(id: string) { const record = this.require(id); return record.cancelled ? 'SKIPPED' as const : record.paused ? 'WAITING' as const : record.outcome?.status ?? (record.snapshot ? 'RUNNING' as const : 'READY' as const); }
   pause(id: string): void { this.require(id).paused = true; }
   resume(id: string): void { const record = this.require(id); if (record.cancelled) throw new Error('Cancelled execution cannot resume'); record.paused = false; }
@@ -41,6 +212,25 @@ export class CreativeExecutionPlatform {
   private verification(snapshot: WorkflowSnapshot): VerificationResult { return { valid: snapshot.status === 'SUCCESS' && snapshot.verification.every(item => item.valid), checks: snapshot.verification.flatMap(item => item.checks), errors: snapshot.verification.flatMap(item => item.errors) }; }
   private require(id: string): RecordState { const record = this.#records.get(id); if (!record) throw new Error(`Execution "${id}" not found`); return record; }
 }
+
+function localInputs(request: CreativeRequest, operation: CreativeOperation): readonly LocalExecutionInputBinding[] {
+  const required = new Set(operation.requiredArtifacts ?? []);
+  const artifacts = (request.inputArtifacts ?? []).filter(artifact => required.size === 0 || required.has(artifact.id));
+  return Object.freeze(artifacts.map(artifact => Object.freeze({ artifactId: artifact.id, kind: artifact.kind, role: artifact.role, sha256: artifactSha256(artifact) })));
+}
+
+function artifactSha256(artifact: CreativeArtifact): string | undefined {
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  const value = artifact.value && typeof artifact.value === 'object' ? artifact.value as Readonly<Record<string, unknown>> : undefined;
+  const candidate = metadata?.sha256 ?? metadata?.hash ?? value?.sha256 ?? value?.hash;
+  return typeof candidate === 'string' && /^[a-f0-9]{64}$/i.test(candidate) ? candidate : undefined;
+}
+
+function expectedLocalOutputs(operation: CreativeOperation) {
+  if (operation.type === 'segment') return Object.freeze([{ kind: 'mask', role: 'MASK' as const, count: 1 }]);
+  throw new Error(`No ON_DEVICE output contract for ${operation.type}`);
+}
+
 function toWorkflowArtifact(value: CreativeArtifact): Artifact { return { id: value.id, kind: value.kind, value: value.value, producerStepId: value.producerOperationId, scope: value.scope, metadata: { ...value.metadata, lifecycle: value.state, artifactRole: value.role, image: value.image } }; }
 function fromWorkflowArtifact(value: Artifact): CreativeArtifact { const metadata = value.metadata as Readonly<Record<string, unknown>> | undefined; return { id: value.id, kind: value.kind, value: value.value, producerOperationId: value.producerStepId, scope: value.scope, state: (metadata?.lifecycle as CreativeArtifact['state']) ?? 'FINAL', role: metadata?.artifactRole as CreativeArtifact['role'], image: metadata?.image as CreativeArtifact['image'], metadata: value.metadata }; }
 const rejectingBilling = Object.freeze({ reserve: async () => { throw new Error('Billable production execution requires BillingTransactionAuthority'); }, commit: async () => { throw new Error('Billing authority is unavailable'); }, release: async () => { throw new Error('Billing authority is unavailable'); } });
