@@ -24,6 +24,27 @@ function fixture(valid = true, security = true) {
   return { platform, calls };
 }
 
+function onDeviceFixture() {
+  const calls = { provider: 0, runtime: 0, available: 0, fallback: 0, security: 0, reserve: 0, ticket: 0 };
+  const platform = new CreativeExecutionPlatform({
+    decision: { decide: async request => ({ requestId: request.id, goal: request.intent, constraints: [] }) },
+    planning: { plan: async request => ({ requestId: request.id, planningConstraints: { preserveMode: 'STRICT', mustPreserve: [], mustChange: [], forbiddenTargets: [], forbiddenRegions: [], executionPolicy: 'LOCAL_ONLY', confirmationPolicy: 'BLOCK' }, operations: [{ id: 'segment-step', type: 'segment', providerId: 'evil', requiredArtifacts: ['verified-input'], produces: ['mask'], cost: { credits: 99, aiCalls: 99 } }] }) },
+    routeSelector: productionExecutionRoute,
+    targetSelector: productionTargetSelection,
+    providerSelector: { select: () => { calls.provider++; return { allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'fal', selectionId: 'must-not-run' }; } },
+    capabilityAdmission: { admit: input => new ProductionExecutionCapabilityRegistry().admit(input) },
+    securityGate: { authorize: (_request, operation, target) => { calls.security++; assert.equal(operation.providerId, undefined); assert.equal(operation.executionRoute, 'ON_DEVICE'); assert.equal(target, 'LOCAL'); return true; } },
+    localExecution: { issue: input => { calls.ticket++; return Object.freeze({ ticketId: 'ticket-segment', version: '1' as const, issuer: 'CORE' as const, requestId: input.requestId, workflowId: input.workflowId, stepId: input.stepId, operation: input.operation, scope: input.scope, inputs: input.inputs, expectedOutputs: input.expectedOutputs, allowedModels: [{ modelId: 'mobilesam-vit-t', version: '1.0.2' }], policy: input.policy, idempotencyKey: input.idempotencyKey, nonce: 'nonce-segment', issuedAt: 1, expiresAt: 60_001, cost: { paidCloudCredits: 0 as const, providerCalls: 0 as const } }); } },
+    runtime: { execute: async () => { calls.runtime++; return {}; } },
+    providers: { isAvailable: () => { calls.available++; return true; }, fallback: () => { calls.fallback++; return 'fal'; } },
+    recovery: { decide: () => 'FALLBACK' },
+    billing: { reserve: async () => { calls.reserve++; }, commit: async () => {}, release: async () => {} },
+    now: (() => { let n = 100; return () => ++n; })(),
+  });
+  platform.createExecution({ id: 'segment-workflow', intent: 'select the subject', scope, inputArtifacts: [image], budget: { credits: 100, aiCalls: 100, retries: 3 }, metadata: { idempotencyKey: 'segment-idem' } });
+  return { platform, calls };
+}
+
 {
   const { platform, calls } = fixture(); const outcome = await platform.execute('verify-workflow');
   assert.equal(outcome.status, 'SUCCESS'); assert.deepEqual(calls, { provider: 0, runtime: 0, available: 0, fallback: 0, security: 1, reserve: 0 });
@@ -37,6 +58,18 @@ function fixture(valid = true, security = true) {
   const { platform, calls } = fixture(true, false); await assert.rejects(platform.compile('verify-workflow'), /blocked/); assert.deepEqual({ runtime: calls.runtime, provider: calls.provider, reserve: calls.reserve }, { runtime: 0, provider: 0, reserve: 0 });
 }
 {
+  const { platform, calls } = onDeviceFixture();
+  const tickets = await platform.prepareLocalExecution('segment-workflow');
+  assert.equal(platform.status('segment-workflow'), 'WAITING');
+  assert.equal(tickets.length, 1); assert.equal(tickets[0].operation.capability, 'local:mobilesam:segment:v1'); assert.deepEqual(tickets[0].cost, { paidCloudCredits: 0, providerCalls: 0 });
+  assert.equal(tickets[0].inputs[0].sha256, 'a'.repeat(64)); assert.deepEqual(tickets[0].expectedOutputs, [{ kind: 'mask', role: 'MASK', count: 1 }]);
+  assert.deepEqual({ provider: calls.provider, runtime: calls.runtime, available: calls.available, fallback: calls.fallback, reserve: calls.reserve, ticket: calls.ticket }, { provider: 0, runtime: 0, available: 0, fallback: 0, reserve: 0, ticket: 1 });
+  await assert.rejects(platform.execute('segment-workflow'), /paused/);
+  platform.resume('segment-workflow');
+  await assert.rejects(platform.execute('segment-workflow'), /server runtime execution is forbidden/);
+  assert.deepEqual({ provider: calls.provider, runtime: calls.runtime, available: calls.available, fallback: calls.fallback, reserve: calls.reserve }, { provider: 0, runtime: 0, available: 0, fallback: 0, reserve: 0 });
+}
+{
   assert.equal(productionExecutionRoute.select({ id: 'provider', type: 'image-edit', executionRoute: 'INTERNAL' } as never, {} as never), 'PROVIDER');
   assert.equal(productionExecutionRoute.select({ id: 'segment', type: 'segment' } as never, {} as never), 'ON_DEVICE');
   assert.equal(productionTargetSelection.select({ id: 'segment', type: 'segment' } as never, {} as never), 'LOCAL');
@@ -48,4 +81,4 @@ function fixture(valid = true, security = true) {
   assert.equal((await verifier.verify(operation, [{ id: 'bad', kind: 'image', value: { url: 'http://bad' }, producerStepId: 'seed', scope }])).valid, false);
   assert.equal((await verifier.verify({ ...operation, type: 'remove' }, [image as never])).valid, false);
 }
-console.log('creative internal verify route tests passed');
+console.log('creative internal/on-device route tests passed');
