@@ -7,6 +7,7 @@ const migrationDirectories = Object.freeze([
   'server/core/artifacts/migrations',
   'server/core/projects/migrations',
   'server/core/auth/migrations',
+  'server/core/localExecution/migrations',
 ]);
 const migrationNamePattern = /^(\d{3})_[a-z0-9_]+\.sql$/;
 const rollbackNamePattern = /^\d{3}_[a-z0-9_]+\.down\.sql$/;
