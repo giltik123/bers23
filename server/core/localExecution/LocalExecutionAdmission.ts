@@ -42,9 +42,17 @@ export class LocalExecutionAdmissionRegistry {
     assertTicket(ticket);
     const stored = immutableTicket(ticket);
     const existingByIdempotency = this.#idempotency.get(stored.idempotencyKey);
-    if (existingByIdempotency && existingByIdempotency !== stored.ticketId) throw new Error('Local execution idempotency key already bound');
+    if (existingByIdempotency) {
+      const existing = this.#tickets.get(existingByIdempotency);
+      if (!existing) throw new Error('Local execution idempotency registry is inconsistent');
+      if (!sameTicketBinding(existing, stored)) throw new Error('Local execution idempotency key already bound to another execution');
+      return existing;
+    }
     const existing = this.#tickets.get(stored.ticketId);
-    if (existing && existing.idempotencyKey !== stored.idempotencyKey) throw new Error('Local execution ticket ID already bound');
+    if (existing) {
+      if (!sameTicketBinding(existing, stored) || existing.idempotencyKey !== stored.idempotencyKey) throw new Error('Local execution ticket ID already bound');
+      return existing;
+    }
     this.#tickets.set(stored.ticketId, stored);
     this.#idempotency.set(stored.idempotencyKey, stored.ticketId);
     return stored;
@@ -99,6 +107,12 @@ function immutableTicket(ticket: LocalExecutionTicket): LocalExecutionTicket {
     allowedModels: Object.freeze(ticket.allowedModels.map(model => Object.freeze({ ...model }))),
     cost: Object.freeze({ paidCloudCredits: 0 as const, providerCalls: 0 as const }),
   });
+}
+
+function sameTicketBinding(a: LocalExecutionTicket, b: LocalExecutionTicket): boolean {
+  return a.requestId === b.requestId && a.workflowId === b.workflowId && a.stepId === b.stepId && sameScope(a.scope, b.scope) &&
+    a.operation.id === b.operation.id && a.operation.version === b.operation.version && a.operation.type === b.operation.type && a.operation.capability === b.operation.capability &&
+    a.policy === b.policy && JSON.stringify(a.inputs) === JSON.stringify(b.inputs) && JSON.stringify(a.expectedOutputs) === JSON.stringify(b.expectedOutputs) && JSON.stringify(a.allowedModels) === JSON.stringify(b.allowedModels);
 }
 
 function immutableResult(result: LocalExecutionResult): LocalExecutionResult {
