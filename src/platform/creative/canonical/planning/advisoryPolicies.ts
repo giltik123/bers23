@@ -1,14 +1,14 @@
 import type { CreativeFallbackAdvice, CreativeOperation, CreativePlan, CreativePlanCandidate, CreativePlanConstraints, CreativePlanExplanation, CreativePlannerConfigSnapshot, CreativePlanReplayMetadata, CreativePlanUncertainty, CreativeVerificationSpec, FallbackAction, PlanningTelemetryEvent, PlanningTelemetryPort } from '../contracts';
 
 export const PLAN_SCHEMA_VERSION = 'creative-plan/3';
-export const OPERATION_RULES_VERSION = 'decomposition/1';
+export const OPERATION_RULES_VERSION = 'decomposition/2';
 export const SCORING_POLICY_VERSION = 'weighted-score/1';
-export const VERIFICATION_POLICY_VERSION = 'verification/1';
+export const VERIFICATION_POLICY_VERSION = 'verification/2';
 export const FALLBACK_POLICY_VERSION = 'fallback/2';
 
-export function verificationFor(stepId: string, type: string, constraints: CreativePlanConstraints): readonly CreativeVerificationSpec[] {
+export function verificationFor(stepId: string, type: string, constraints: CreativePlanConstraints, expectedOutputKind = 'image'): readonly CreativeVerificationSpec[] {
   const preservation = constraints.mustPreserve.map(value => `preserve:${value}`);
-  return immutable([{ id: `${stepId}:output`, version: VERIFICATION_POLICY_VERSION, checkType: type === 'verify' ? 'INTEGRITY' : 'OUTPUT_KIND', criterion: type === 'verify' ? 'canonical-runtime-verifier-valid' : 'output-is-image', required: true, expectedOutputKind: 'image', expectedArtifactRole: type === 'verify' ? 'COMPOSITE' : 'WORKING', constraints: preservation, ...(constraints.minimumQuality === undefined ? {} : { predicate: { kind: 'MINIMUM' as const, threshold: constraints.minimumQuality } }), reasonCode: type === 'verify' ? 'FINAL_INTEGRITY_REQUIRED' : 'MEANINGFUL_STEP_OUTPUT_REQUIRED' }]);
+  return immutable([{ id: `${stepId}:output`, version: VERIFICATION_POLICY_VERSION, checkType: type === 'verify' ? 'INTEGRITY' : 'OUTPUT_KIND', criterion: type === 'verify' ? 'canonical-runtime-verifier-valid' : `output-is-${expectedOutputKind}`, required: true, expectedOutputKind, expectedArtifactRole: type === 'verify' ? 'COMPOSITE' : 'WORKING', constraints: preservation, ...(constraints.minimumQuality === undefined ? {} : { predicate: { kind: 'MINIMUM' as const, threshold: constraints.minimumQuality } }), reasonCode: type === 'verify' ? 'FINAL_INTEGRITY_REQUIRED' : 'MEANINGFUL_STEP_OUTPUT_REQUIRED' }]);
 }
 
 export function fallbackFor(candidate: CreativePlanCandidate, constraints: CreativePlanConstraints, alternate?: CreativePlanCandidate): readonly CreativeFallbackAdvice[] {
