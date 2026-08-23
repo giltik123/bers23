@@ -9,5 +9,5 @@ export async function checkLocalExecutionUploadSchema(pool: Pool): Promise<void>
 export async function migrateLocalExecutionUploadSchema(pool: Pool): Promise<void> {
   const exists = await pool.query("SELECT to_regclass('local_execution_uploads')::text AS table_name");
   if (exists.rows[0]?.table_name) return;
-  await pool.query(await readFile(new URL('./migrations/012_local_execution_uploads.sql', import.meta.url), 'utf8'));
+  await pool.query(await readFile(new URL('../artifacts/migrations/012_local_execution_uploads.sql', import.meta.url), 'utf8'));
 }
