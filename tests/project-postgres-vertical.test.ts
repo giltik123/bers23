@@ -99,9 +99,9 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
       inferences.push(body);
       const roi = await sharp(binaryUploads[0]).metadata();
       const patch = await sharp({ create: { width: roi.width!, height: roi.height!, channels: 4, background: { r: 250, g: 2, b: 3, alpha: 1 } } }).png().toBuffer();
-      return new Response(JSON.stringify({ images: [{ url: 'https://provider-output.project.test/patch.png' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify({ images: [{ url: 'https://fal.media/patch.png' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
-    if (url === 'https://provider-output.project.test/patch.png') {
+    if (url === 'https://fal.media/patch.png') {
       const roi = await sharp(binaryUploads[0]).metadata();
       const patch = await sharp({ create: { width: roi.width!, height: roi.height!, channels: 4, background: { r: 250, g: 2, b: 3, alpha: 1 } } }).png().toBuffer();
       return new Response(patch, { status: 200, headers: { 'content-type': 'image/png' } });
