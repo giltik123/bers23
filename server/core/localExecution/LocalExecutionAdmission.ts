@@ -8,6 +8,9 @@ import type {
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 
 const SHA256 = /^[a-f0-9]{64}$/i;
+const RUNTIMES = new Set(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']);
+const ACCELERATORS = new Set(['webgpu', 'wasm', 'cuda', 'dml', 'coreml', 'cpu', 'nnapi', 'UNKNOWN']);
+const POLICIES = new Set(['LOCAL_SELECTED', 'LOCAL_ONLY']);
 const FORBIDDEN_RESULT_KEYS = new Set([
   'artifactId',
   'canonicalArtifactId',
@@ -37,13 +40,14 @@ export class LocalExecutionAdmissionRegistry {
 
   issue(ticket: LocalExecutionTicket): LocalExecutionTicket {
     assertTicket(ticket);
-    const existingByIdempotency = this.#idempotency.get(ticket.idempotencyKey);
-    if (existingByIdempotency && existingByIdempotency !== ticket.ticketId) throw new Error('Local execution idempotency key already bound');
-    const existing = this.#tickets.get(ticket.ticketId);
-    if (existing && existing.idempotencyKey !== ticket.idempotencyKey) throw new Error('Local execution ticket ID already bound');
-    this.#tickets.set(ticket.ticketId, ticket);
-    this.#idempotency.set(ticket.idempotencyKey, ticket.ticketId);
-    return ticket;
+    const stored = immutableTicket(ticket);
+    const existingByIdempotency = this.#idempotency.get(stored.idempotencyKey);
+    if (existingByIdempotency && existingByIdempotency !== stored.ticketId) throw new Error('Local execution idempotency key already bound');
+    const existing = this.#tickets.get(stored.ticketId);
+    if (existing && existing.idempotencyKey !== stored.idempotencyKey) throw new Error('Local execution ticket ID already bound');
+    this.#tickets.set(stored.ticketId, stored);
+    this.#idempotency.set(stored.idempotencyKey, stored.ticketId);
+    return stored;
   }
 
   get(ticketId: string): LocalExecutionTicket | undefined { return this.#tickets.get(ticketId); }
@@ -53,7 +57,7 @@ export class LocalExecutionAdmissionRegistry {
     if (!ticket) return denied('UNKNOWN_TICKET');
     if (this.#consumed.has(ticket.ticketId)) return denied('REPLAYED_TICKET');
     if (!sameScope(ticket.scope, input.callerScope)) return denied('SCOPE_MISMATCH');
-    if (input.now > ticket.expiresAt) return denied('EXPIRED_TICKET');
+    if (input.now >= ticket.expiresAt) return denied('EXPIRED_TICKET');
     if (containsForbiddenAuthority(input.result)) return denied('FORBIDDEN_CLIENT_AUTHORITY');
     if (!isLocalExecutionResult(input.result)) return denied('MALFORMED_RESULT');
     const result = input.result;
@@ -67,18 +71,41 @@ export class LocalExecutionAdmissionRegistry {
     ) return denied('IDENTITY_MISMATCH');
     if (!outputsMatch(ticket.expectedOutputs, result.outputs)) return denied('OUTPUT_CONTRACT_MISMATCH');
     this.#consumed.add(ticket.ticketId);
-    return Object.freeze({ allowed: true, reasonCode: 'ADMITTED', ticket, result });
+    return Object.freeze({ allowed: true, reasonCode: 'ADMITTED', ticket, result: immutableResult(result) });
   }
 }
 
 function assertTicket(ticket: LocalExecutionTicket): void {
   if (ticket.issuer !== 'CORE' || ticket.version !== '1') throw new Error('Invalid local execution ticket authority');
   if (!ticket.ticketId || !ticket.requestId || !ticket.workflowId || !ticket.stepId || !ticket.operation.id || !ticket.operation.version || !ticket.operation.type || !ticket.operation.capability) throw new Error('Incomplete local execution ticket identity');
+  if (!ticket.scope.tenantId || !ticket.scope.projectId || !ticket.scope.userId) throw new Error('Incomplete local execution ticket scope');
+  if (!POLICIES.has(ticket.policy)) throw new Error('Invalid local execution policy');
   if (!ticket.idempotencyKey || !ticket.nonce) throw new Error('Local execution ticket requires idempotency and nonce');
   if (!Number.isFinite(ticket.issuedAt) || !Number.isFinite(ticket.expiresAt) || ticket.expiresAt <= ticket.issuedAt) throw new Error('Invalid local execution ticket lifetime');
   if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw new Error('Local execution ticket cannot authorize cloud cost');
   for (const input of ticket.inputs) if (input.sha256 !== undefined && !SHA256.test(input.sha256)) throw new Error('Invalid input artifact SHA-256');
   for (const expected of ticket.expectedOutputs) if (!Number.isInteger(expected.count) || expected.count < 1) throw new Error('Invalid expected local output count');
+}
+
+function immutableTicket(ticket: LocalExecutionTicket): LocalExecutionTicket {
+  return Object.freeze({
+    ...ticket,
+    operation: Object.freeze({ ...ticket.operation }),
+    scope: Object.freeze({ ...ticket.scope }),
+    inputs: Object.freeze(ticket.inputs.map(input => Object.freeze({ ...input }))),
+    expectedOutputs: Object.freeze(ticket.expectedOutputs.map(output => Object.freeze({ ...output, mimeTypes: output.mimeTypes ? Object.freeze([...output.mimeTypes]) : undefined }))),
+    cost: Object.freeze({ paidCloudCredits: 0 as const, providerCalls: 0 as const }),
+  });
+}
+
+function immutableResult(result: LocalExecutionResult): LocalExecutionResult {
+  return Object.freeze({
+    ...result,
+    model: Object.freeze({ ...result.model }),
+    outputs: Object.freeze(result.outputs.map(output => Object.freeze({ ...output }))),
+    metrics: Object.freeze({ ...result.metrics }),
+    benchmarkEvidence: result.benchmarkEvidence ? Object.freeze({ ...result.benchmarkEvidence }) : undefined,
+  });
 }
 
 function sameScope(a: Scope, b: Scope): boolean { return a.tenantId === b.tenantId && a.projectId === b.projectId && a.userId === b.userId; }
@@ -105,7 +132,8 @@ function isLocalExecutionResult(value: unknown): value is LocalExecutionResult {
   if (![result.ticketId, result.requestId, result.workflowId, result.stepId, result.nonce].every(nonEmptyString)) return false;
   if (result.ticketVersion !== '1') return false;
   if (!result.model || !nonEmptyString(result.model.modelId) || !nonEmptyString(result.model.version)) return false;
-  if (!nonEmptyString(result.runtime) || !nonEmptyString(result.accelerator)) return false;
+  if (!nonEmptyString(result.runtime) || !RUNTIMES.has(result.runtime)) return false;
+  if (!nonEmptyString(result.accelerator) || !ACCELERATORS.has(result.accelerator)) return false;
   if (!Array.isArray(result.outputs) || !result.outputs.every(isOutputEvidence)) return false;
   if (!result.metrics || !finiteNonNegative(result.metrics.latencyMs)) return false;
   if (result.metrics.memoryBytes !== undefined && !finiteNonNegative(result.metrics.memoryBytes)) return false;
