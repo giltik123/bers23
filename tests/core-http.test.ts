@@ -22,7 +22,7 @@ function fixture() {
     platform: {
       decision: { decide: async request => ({ requestId: request.id, goal: request.intent, constraints: [] }) },
       planning: { plan: async request => ({ requestId: request.id, operations: [{ id: 'edit', type: 'image-edit', requiredArtifacts: ['artifact-a'], produces: ['result'], providerId: 'fal', cost: { credits: 1 } }] }) },
-      targetSelector: { select: () => 'CLOUD' }, securityGate: { authorize: request => request.scope.userId === 'user-a' }, recovery: { decide: () => 'MARK_UNKNOWN' },
+      targetSelector: { select: () => 'CLOUD' }, capabilityAdmission: { admit: () => ({ allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'synthetic-http-test-runtime' }) }, securityGate: { authorize: request => request.scope.userId === 'user-a' }, recovery: { decide: () => 'MARK_UNKNOWN' },
       providers: { isAvailable: () => true, fallback: () => undefined },
       runtime: { execute: async request => { providerCalls++; return { artifacts: [{ id: 'result', kind: 'image', value: 'asset://result' }] }; } },
       verifier: { verify: async operation => ({ stepId: operation.id, valid: true, checks: ['artifact'], errors: [] }) },
