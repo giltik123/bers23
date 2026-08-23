@@ -11,7 +11,7 @@ export const CREATIVE_ARTIFACT_ROLES = ['ORIGINAL', 'WORKING', 'MASK', 'ROI_INPU
 export type CreativeArtifactRole = typeof CREATIVE_ARTIFACT_ROLES[number];
 export interface CanonicalImageMetadata { readonly width: number; readonly height: number; readonly format: string; readonly orientation: 1 | 3 | 6 | 8; readonly colorSpace?: string; readonly alpha?: boolean }
 export type ExecutionTarget = 'LOCAL' | 'CLOUD' | 'HYBRID' | 'BLOCKED';
-export type ExecutionRoute = 'PROVIDER' | 'INTERNAL';
+export type ExecutionRoute = 'PROVIDER' | 'INTERNAL' | 'ON_DEVICE';
 export const CREATIVE_PLAN_STATUSES = ['READY', 'NEEDS_CONFIRMATION', 'BLOCKED'] as const;
 export type CreativePlanStatus = typeof CREATIVE_PLAN_STATUSES[number];
 export const PLANNING_EXECUTION_POLICIES = ['LOCAL_ONLY', 'CLOUD_ALLOWED', 'CLOUD_PREFERRED', 'AUTO'] as const;
