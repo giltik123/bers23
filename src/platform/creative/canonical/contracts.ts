@@ -11,6 +11,7 @@ export const CREATIVE_ARTIFACT_ROLES = ['ORIGINAL', 'WORKING', 'MASK', 'ROI_INPU
 export type CreativeArtifactRole = typeof CREATIVE_ARTIFACT_ROLES[number];
 export interface CanonicalImageMetadata { readonly width: number; readonly height: number; readonly format: string; readonly orientation: 1 | 3 | 6 | 8; readonly colorSpace?: string; readonly alpha?: boolean }
 export type ExecutionTarget = 'LOCAL' | 'CLOUD' | 'HYBRID' | 'BLOCKED';
+export type ExecutionRoute = 'PROVIDER' | 'INTERNAL';
 export const CREATIVE_PLAN_STATUSES = ['READY', 'NEEDS_CONFIRMATION', 'BLOCKED'] as const;
 export type CreativePlanStatus = typeof CREATIVE_PLAN_STATUSES[number];
 export const PLANNING_EXECUTION_POLICIES = ['LOCAL_ONLY', 'CLOUD_ALLOWED', 'CLOUD_PREFERRED', 'AUTO'] as const;
@@ -67,13 +68,14 @@ export const CREATIVE_AUTHORITY = Object.freeze({
 
 export interface CanonicalDecisionPort { decide(request: CreativeRequest): Promise<CreativeDecision> }
 export interface CanonicalPlanningPort { plan(request: CreativeRequest, decision: CreativeDecision): Promise<CreativePlan> }
+export interface ExecutionRouteSelectorPort { select(operation: CreativeOperation, request: CreativeRequest): ExecutionRoute }
 export interface TargetSelectorPort { select(operation: CreativeOperation, request: CreativeRequest): ExecutionTarget }
 export interface SecurityGatePort { authorize(request: CreativeRequest, operation: CreativeOperation, target: ExecutionTarget): boolean }
-export type ExecutionCapabilityReasonCode = 'CAPABILITY_SUPPORTED' | 'TARGET_BLOCKED' | 'UNSUPPORTED_OPERATION' | 'UNSUPPORTED_TARGET' | 'PROVIDER_REQUIRED' | 'UNSUPPORTED_PROVIDER';
+export type ExecutionCapabilityReasonCode = 'CAPABILITY_SUPPORTED' | 'TARGET_BLOCKED' | 'UNSUPPORTED_OPERATION' | 'UNSUPPORTED_TARGET' | 'PROVIDER_REQUIRED' | 'PROVIDER_FORBIDDEN' | 'UNSUPPORTED_PROVIDER' | 'UNSUPPORTED_ROUTE';
 export interface ExecutionCapabilityDecision { readonly allowed: boolean; readonly reasonCode: ExecutionCapabilityReasonCode; readonly capabilityId?: string }
-export interface ExecutionCapabilityPort { admit(input: Readonly<{ request: CreativeRequest; operation: CreativeOperation; target: ExecutionTarget }>): ExecutionCapabilityDecision }
+export interface ExecutionCapabilityPort { admit(input: Readonly<{ request: CreativeRequest; operation: CreativeOperation; route: ExecutionRoute; target: ExecutionTarget }>): ExecutionCapabilityDecision }
 export interface ProductionRecoveryPort { decide(failure: Readonly<{ executionId: string; error: string }>): RecoveryDecision }
 export interface TelemetryBillingBridgePort { record(outcome: ProductionOutcome): void | Promise<void> }
 export interface PlanningTelemetryEvent { readonly version: '1'; readonly type: 'PLAN_PROPOSED'; readonly requestId: string; readonly proposalId: string; readonly status: CreativePlanStatus; readonly selectedCandidateId?: string; readonly candidateCount: number; readonly scoreSummary: readonly Readonly<{ candidateId: string; total: number }>[]; readonly uncertaintyBuckets: readonly string[]; readonly verificationPolicyIds: readonly string[]; readonly verificationCount: number; readonly fallbackPolicyIds: readonly string[]; readonly fallbackCount: number; readonly artifactRoles: readonly string[]; readonly artifactCount: number; readonly actual?: Readonly<{ latencyMs?: number; credits?: number; outcome?: ProductionOutcome['status'] }> }
 export interface PlanningTelemetryPort { record(event: PlanningTelemetryEvent): void | Promise<void> }
-export interface CreativeExecutionPlatformDependencies extends WorkflowEngineDependencies { readonly decision: CanonicalDecisionPort; readonly planning: CanonicalPlanningPort; readonly targetSelector: TargetSelectorPort; readonly capabilityAdmission: ExecutionCapabilityPort; readonly securityGate: SecurityGatePort; readonly recovery: ProductionRecoveryPort; readonly authority?: ProductionOperationAuthority; readonly billing?: BillingTransactionAuthority; readonly telemetry?: TelemetryBillingBridgePort; readonly now?: () => number; readonly id?: () => string }
+export interface CreativeExecutionPlatformDependencies extends WorkflowEngineDependencies { readonly decision: CanonicalDecisionPort; readonly planning: CanonicalPlanningPort; readonly routeSelector: ExecutionRouteSelectorPort; readonly targetSelector: TargetSelectorPort; readonly capabilityAdmission: ExecutionCapabilityPort; readonly securityGate: SecurityGatePort; readonly recovery: ProductionRecoveryPort; readonly authority?: ProductionOperationAuthority; readonly billing?: BillingTransactionAuthority; readonly telemetry?: TelemetryBillingBridgePort; readonly now?: () => number; readonly id?: () => string }

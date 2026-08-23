@@ -48,7 +48,8 @@
     "server:start": "node dist-server/server.mjs",
     "server:typecheck": "tsc -p server/tsconfig.json",
     "server:test": "node --experimental-strip-types --test $(find server/core -name '*.test.mjs' -print)",
-    "test:core-http-boundary": "mkdir -p node_modules/.cache && esbuild tests/core-http.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=node_modules/.cache/core-http.test.mjs --external:node:* && node node_modules/.cache/core-http.test.mjs"
+    "test:core-http-boundary": "mkdir -p node_modules/.cache && esbuild tests/core-http.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=node_modules/.cache/core-http.test.mjs --external:node:* && node node_modules/.cache/core-http.test.mjs",
+    "test:creative-route-6.41c4": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-internal-verify-route.test.ts'],bundle:true,platform:'node',format:'esm',target:'node20',outfile:'node_modules/.cache/creative-internal-verify-route.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-internal-verify-route.test.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",

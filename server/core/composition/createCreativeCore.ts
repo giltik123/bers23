@@ -125,7 +125,7 @@ async function resolveInputArtifact(input: ExecuteInput, scope: Scope, dependenc
 }
 
 function validateDependencies(value: CreativeCoreDependencies): void {
-  const required = [['transaction store', value.platform.billing], ['provider runtime', value.platform.runtime], ['provider selection', value.platform.providerSelector], ['execution capability admission', value.platform.capabilityAdmission], ['authentication verifier', value.auth], ['artifact authority/store', value.artifacts], ['security policy', value.platform.securityGate], ['cost/budget configuration', Number.isFinite(value.maxCredits) && value.maxCredits >= 0 ? value.maxCredits + 1 : undefined]] as const;
+  const required = [['transaction store', value.platform.billing], ['provider runtime', value.platform.runtime], ['execution route selection', value.platform.routeSelector], ['provider selection', value.platform.providerSelector], ['execution capability admission', value.platform.capabilityAdmission], ['authentication verifier', value.auth], ['artifact authority/store', value.artifacts], ['security policy', value.platform.securityGate], ['cost/budget configuration', Number.isFinite(value.maxCredits) && value.maxCredits >= 0 ? value.maxCredits + 1 : undefined]] as const;
   for (const [name, dependency] of required) if (!dependency) throw new Error(`Creative Core startup dependency missing: ${name}`);
   if (!Array.isArray(value.trustedAssetHosts) || value.trustedAssetHosts.length === 0) throw new Error('Creative Core startup dependency missing: trusted asset hosts');
 }
