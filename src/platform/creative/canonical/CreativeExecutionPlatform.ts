@@ -151,7 +151,7 @@ export class CreativeExecutionPlatform {
         operation: { id: operation.id, version: '1', type: operation.type, capability },
         scope: record.request.scope,
         inputs,
-        expectedOutputs: expectedLocalOutputs(operation),
+        expectedOutputs: expectedLocalOutputs(record.request, operation),
         policy: record.plan?.planningConstraints?.executionPolicy === 'LOCAL_ONLY' ? 'LOCAL_ONLY' : 'LOCAL_SELECTED',
         idempotencyKey: `${String(record.request.metadata?.idempotencyKey ?? id)}:${operation.id}:local-v1`,
       });
@@ -226,9 +226,15 @@ function artifactSha256(artifact: CreativeArtifact): string | undefined {
   return typeof candidate === 'string' && /^[a-f0-9]{64}$/i.test(candidate) ? candidate : undefined;
 }
 
-function expectedLocalOutputs(operation: CreativeOperation) {
-  if (operation.type === 'segment') return Object.freeze([{ kind: 'mask', role: 'MASK' as const, count: 1 }]);
-  throw new Error(`No ON_DEVICE output contract for ${operation.type}`);
+function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOperation) {
+  if (operation.type !== 'segment') throw new Error(`No ON_DEVICE output contract for ${operation.type}`);
+  const required = new Set(operation.requiredArtifacts ?? []);
+  const source = (request.inputArtifacts ?? []).find(artifact => artifact.kind === 'image' && (required.size === 0 || required.has(artifact.id)));
+  const value = source?.value && typeof source.value === 'object' ? source.value as Readonly<Record<string, unknown>> : undefined;
+  const width = source?.image?.width ?? (typeof value?.width === 'number' ? value.width : undefined);
+  const height = source?.image?.height ?? (typeof value?.height === 'number' ? value.height : undefined);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1) throw new Error('ON_DEVICE segmentation requires canonical source dimensions');
+  return Object.freeze([{ kind: 'mask', role: 'MASK' as const, count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: Number(width), height: Number(height) }]);
 }
 
 function toWorkflowArtifact(value: CreativeArtifact): Artifact { return { id: value.id, kind: value.kind, value: value.value, producerStepId: value.producerOperationId, scope: value.scope, metadata: { ...value.metadata, lifecycle: value.state, artifactRole: value.role, image: value.image } }; }
