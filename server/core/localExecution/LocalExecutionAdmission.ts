@@ -117,6 +117,7 @@ function assertTicket(ticket: LocalExecutionTicket): void {
   if (!Number.isFinite(ticket.issuedAt) || !Number.isFinite(ticket.expiresAt) || ticket.expiresAt <= ticket.issuedAt) throw new Error('Invalid local execution ticket lifetime');
   if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw new Error('Local execution ticket cannot authorize cloud cost');
   if (!Array.isArray(ticket.allowedModels) || ticket.allowedModels.length === 0 || ticket.allowedModels.some(model => !model.modelId || !model.version)) throw new Error('Local execution ticket requires approved model bindings');
+  if (ticket.operation.parameters !== undefined && (!ticket.operation.parameters || typeof ticket.operation.parameters !== 'object' || Array.isArray(ticket.operation.parameters))) throw new Error('Invalid local execution operation parameters');
   for (const input of ticket.inputs) if (input.sha256 !== undefined && !SHA256.test(input.sha256)) throw new Error('Invalid input artifact SHA-256');
   for (const expected of ticket.expectedOutputs) {
     if (!Number.isInteger(expected.count) || expected.count < 1) throw new Error('Invalid expected local output count');
@@ -126,9 +127,10 @@ function assertTicket(ticket: LocalExecutionTicket): void {
 }
 
 function immutableTicket(ticket: LocalExecutionTicket): LocalExecutionTicket {
+  const parameters = ticket.operation.parameters === undefined ? undefined : deepFreeze(structuredClone(ticket.operation.parameters));
   return Object.freeze({
     ...ticket,
-    operation: Object.freeze({ ...ticket.operation }),
+    operation: Object.freeze({ ...ticket.operation, parameters }),
     scope: Object.freeze({ ...ticket.scope }),
     inputs: Object.freeze(ticket.inputs.map(input => Object.freeze({ ...input }))),
     expectedOutputs: Object.freeze(ticket.expectedOutputs.map(output => Object.freeze({ ...output, mimeTypes: output.mimeTypes ? Object.freeze([...output.mimeTypes]) : undefined }))),
@@ -140,6 +142,7 @@ function immutableTicket(ticket: LocalExecutionTicket): LocalExecutionTicket {
 function sameTicketBinding(a: LocalExecutionTicket, b: LocalExecutionTicket): boolean {
   return a.requestId === b.requestId && a.workflowId === b.workflowId && a.stepId === b.stepId && sameScope(a.scope, b.scope) &&
     a.operation.id === b.operation.id && a.operation.version === b.operation.version && a.operation.type === b.operation.type && a.operation.capability === b.operation.capability &&
+    JSON.stringify(a.operation.parameters ?? {}) === JSON.stringify(b.operation.parameters ?? {}) &&
     a.policy === b.policy && JSON.stringify(a.inputs) === JSON.stringify(b.inputs) && JSON.stringify(a.expectedOutputs) === JSON.stringify(b.expectedOutputs) && JSON.stringify(a.allowedModels) === JSON.stringify(b.allowedModels);
 }
 
@@ -215,5 +218,11 @@ function outputsMatch(expected: readonly LocalExecutionExpectedOutput[], actual:
   return remaining.length === 0;
 }
 
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  return value;
+}
 function nonEmptyString(value: unknown): value is string { return typeof value === 'string' && value.length > 0; }
 function finiteNonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
