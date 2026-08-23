@@ -57,11 +57,11 @@ test('runtime identity and lineage claims are non-authoritative for declared out
     if (operation.id === 'segment') return { artifacts: [{
       id: 'provider-forged-mask-id', kind: 'mask', value: { mask: true },
       scope: { tenantId: 'evil', projectId: 'evil', userId: 'evil' }, producerStepId: 'evil-producer',
-      metadata: { parentArtifactIds: ['evil-parent'], lifecycle: 'FINAL', artifactRole: 'COMPOSITE', logicalOutputId: 'evil-logical', outputSlot: 99, providerSafe: 'kept' },
+      metadata: { parentArtifactIds: ['evil-parent'], consumerOperationIds: ['evil-consumer'], canonicalArtifactId: 'evil-canonical', workflowId: 'evil-workflow', producerOperationId: 'evil-producer', lifecycle: 'FINAL', artifactRole: 'COMPOSITE', logicalOutputId: 'evil-logical', outputSlot: 99, providerSafe: 'kept' },
     }] };
     return { artifacts: [{
       id: 'provider-forged-image-id', kind: 'image', value: { image: true },
-      metadata: { parentArtifactIds: ['evil-parent-2'], providerSafe: 'kept-2' },
+      metadata: { parentArtifactIds: ['evil-parent-2'], consumerOperationIds: ['evil'], providerSafe: 'kept-2' },
     }] };
   });
   const result = await engine.execute(workflow, [seed]);
@@ -73,6 +73,10 @@ test('runtime identity and lineage claims are non-authoritative for declared out
   assert.equal(mask.producerStepId, 'segment');
   assert.deepEqual(mask.scope, scope);
   assert.deepEqual(mask.metadata?.parentArtifactIds, ['seed-original']);
+  assert.deepEqual(mask.metadata?.consumerOperationIds, ['paint']);
+  assert.equal(mask.metadata?.workflowId, 'workflow-1');
+  assert.equal(mask.metadata?.canonicalArtifactId, maskId);
+  assert.equal(mask.metadata?.producerOperationId, 'segment');
   assert.equal(mask.metadata?.logicalOutputId, 'logical-mask');
   assert.equal(mask.metadata?.outputSlot, 0);
   assert.equal(mask.metadata?.lifecycle, 'AVAILABLE');
@@ -82,6 +86,7 @@ test('runtime identity and lineage claims are non-authoritative for declared out
   const image = result.artifacts.find(artifact => artifact.id === imageId)!;
   assert.equal(image.producerStepId, 'paint');
   assert.deepEqual(image.metadata?.parentArtifactIds, [maskId]);
+  assert.deepEqual(image.metadata?.consumerOperationIds, []);
   assert.equal(image.metadata?.logicalOutputId, 'logical-image');
   assert.equal(image.metadata?.providerSafe, 'kept-2');
 });
@@ -98,6 +103,27 @@ test('declared output contract fails closed on missing, wrong-kind and extra run
     assert.equal(result.status, 'FAILED');
     assert.match(result.steps[0].error ?? '', entry.error);
   });
+});
+
+test('failed verification does not publish bound identity into ArtifactRouter before retry', async () => {
+  let attempt = 0;
+  const workflow = new WorkflowCompiler().compile({
+    id: 'retry-workflow', prompt: 'retry', scope,
+    sources: { creativePlan: { operations: [{ id: 'bound', type: 'bound', produces: ['image'], outputArtifacts: ['logical-image'] }] } },
+    budget: { ...budget, retries: 1 }, compiledAt: 1,
+  });
+  const engine = new CreativeWorkflowEngine({
+    providers: { isAvailable: () => true, fallback: () => undefined },
+    runtime: { execute: async () => ({ artifacts: [{ id: `provider-${++attempt}`, kind: 'image', value: { attempt } }] }) },
+    verifier: { verify: async (operation) => ({ stepId: operation.id, valid: attempt === 2, checks: ['retry'], errors: attempt === 1 ? ['first rejected'] : [] }) },
+    now: (() => { let value = 1; return () => value++; })(),
+  });
+  const result = await engine.execute(workflow);
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(attempt, 2);
+  const canonicalId = workflow.operations[0].outputBindings![0].artifactId;
+  assert.equal(result.artifacts.filter(artifact => artifact.id === canonicalId).length, 1);
+  assert.deepEqual(result.artifacts.find(artifact => artifact.id === canonicalId)?.value, { attempt: 2 });
 });
 
 test('compiler rejects duplicate/mismatched output declarations and undeclared dependency edges', () => {
