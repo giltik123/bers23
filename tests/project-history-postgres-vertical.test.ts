@@ -122,9 +122,9 @@ test('accepted FINAL history, navigation, versions and restart remain server-aut
       assert.equal(body.image_url, initiations[(generation - 1) * 2].fileUrl);
       assert.equal(body.mask_url, initiations[(generation - 1) * 2 + 1].fileUrl);
       const patch = await sharp({ create: { width: roi.width!, height: roi.height!, channels: 4, background: color(generation) } }).png().toBuffer();
-      return new Response(JSON.stringify({ images: [{ url: `https://provider-output.history.test/patch-${generation}.png` }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify({ images: [{ url: `https://fal.media/patch-${generation}.png` }] }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
-    if (url.startsWith('https://provider-output.history.test/patch-')) {
+    if (url.startsWith('https://fal.media/patch-')) {
       const generation = Number(url.match(/patch-(\d+)\.png$/)?.[1]);
       assert.ok(generation >= 1 && generation <= 3);
       const roi = await sharp(binaryUploads[(generation - 1) * 2]).metadata();
