@@ -19,7 +19,7 @@ const ERRORS = Object.freeze({
 /**
  * Server-owned runtime verification policy for currently accepted production contracts.
  * Planner verification claims are intentionally ignored. This component performs no
- * provider call, network access, persistence, authorization or financial mutation.
+ * provider call, network access, persistence, access-control or financial mutation.
  */
 export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
   async verify(operation: WorkflowOperation, artifacts: readonly Artifact[]): Promise<VerificationResult> {
