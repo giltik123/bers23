@@ -7,6 +7,7 @@ import {
   productionLocalModelsByCapability,
   realEsrganProductionReleaseState,
 } from '../server/core/localExecution/productionLocalModelPolicy.ts';
+import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
 test('Real-ESRGAN candidate descriptor records pinned provenance but has no executable artifact', () => {
   assert.equal(manifest.modelId, 'realesr-general-x4v3');
@@ -23,13 +24,15 @@ test('Real-ESRGAN candidate descriptor records pinned provenance but has no exec
   assert.equal(manifest.artifacts.model.sha256, null);
   assert.equal(manifest.artifacts.model.signatureUrl, null);
   assert.equal(isExecutableRealEsrganRelease(manifest), false);
-  assert.deepEqual(productionLocalModelsByCapability[REAL_ESRGAN_LOCAL_CAPABILITY], []);
+  assert.equal(productionLocalModelsByCapability[REAL_ESRGAN_LOCAL_CAPABILITY], undefined, 'v2 image model must never enter the legacy v1 issuer catalog');
+  assert.deepEqual(productionLocalExecutorsByCapability[REAL_ESRGAN_LOCAL_CAPABILITY], []);
   assert.deepEqual(realEsrganProductionReleaseState, {
     modelId: 'realesr-general-x4v3',
     version: '1.0.0-candidate.1',
     releaseStatus: 'CANDIDATE',
     artifactState: 'EXPORT_REQUIRED',
-    executable: false,
+    executableV2: false,
+    executableV1: false,
   });
 });
 
