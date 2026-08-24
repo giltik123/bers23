@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { Pool } from 'pg';
+import { migrateImageArtifactSchema } from './imageArtifactSchema.ts';
 
 export async function checkMaskArtifactSchema(pool: Pool): Promise<void> {
   const result = await pool.query(`SELECT
@@ -19,7 +20,10 @@ export async function checkMaskArtifactSchema(pool: Pool): Promise<void> {
 export async function migrateMaskArtifactSchema(pool: Pool): Promise<void> {
   const exists = await pool.query("SELECT to_regclass('canonical_mask_artifacts')::text AS table_name");
   if (!exists.rows[0]?.table_name) await pool.query(await readFile(new URL('./migrations/002_canonical_mask_artifacts.sql', import.meta.url), 'utf8'));
-  try { await checkMaskArtifactSchema(pool); return; } catch { /* apply idempotent lineage migration */ }
+  try { await checkMaskArtifactSchema(pool); return; } catch { /* apply lineage upgrade below */ }
+  // 014 has a foreign key to canonical_image_artifacts. Keep this dependency inside
+  // the migrator so direct callers cannot accidentally make fresh installation order unsafe.
+  await migrateImageArtifactSchema(pool);
   await pool.query(await readFile(new URL('./migrations/014_canonical_mask_lineage.sql', import.meta.url), 'utf8'));
   await checkMaskArtifactSchema(pool);
 }
