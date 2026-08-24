@@ -28,6 +28,15 @@ jobs:
             --outfile=.test-cache/6.42-integration/device-capability-fleet-integration.test.mjs \
             --external:node:*
           node --test .test-cache/6.42-integration/device-capability-fleet-integration.test.mjs
+      - name: C0 lazy browser Local AI composition
+        run: |
+          npx esbuild tests/browser-local-ai-composition.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --loader:.pem=text --loader:.sig=text --loader:.wasm=file \
+            --outfile=.test-cache/6.42-integration/browser-local-ai-composition.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42-integration/browser-local-ai-composition.test.mjs
+          grep -F "createSelectionSegmentation({ projectId: project.id, imageArtifactId" src/pages/Editor.jsx
       - name: Canonical route and durable fleet regressions
         run: |
           npm run test:creative-route-6.41c4
