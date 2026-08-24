@@ -70,8 +70,6 @@ test('PostgreSQL v2 deterministic ticket survives Core restart and reconciles id
     await second.commit(stored.ticketId, 'SUCCESS');
     assert.equal((await second.getFinalization(stored.ticketId))?.status, 'SUCCESS');
   } finally {
-    await second.release(stored?.ticketId ?? '').catch(() => undefined);
-    await secondPool.query('DELETE FROM local_execution_tickets WHERE idempotency_key=$1', [`${token}-idem`]).catch(() => undefined);
     await secondPool.end();
   }
 
@@ -80,6 +78,7 @@ test('PostgreSQL v2 deterministic ticket survives Core restart and reconciles id
     const third = new PostgresLocalExecutionLedger(thirdPool);
     assert.equal((await third.getFinalization(stored.ticketId))?.status, 'SUCCESS', 'terminal v2 finalization must survive another Core restart');
     assert.equal((await third.claimV2({ ticketId: stored.ticketId, result: result(stored), callerScope: stored.scope, now: 2_600 })).reasonCode, 'REPLAYED_TICKET');
+    await thirdPool.query('DELETE FROM local_execution_tickets WHERE idempotency_key=$1', [`${token}-idem`]);
   } finally {
     await thirdPool.end();
   }
