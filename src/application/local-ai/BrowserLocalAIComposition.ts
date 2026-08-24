@@ -67,6 +67,16 @@ export function browserFleetReconciliationAuthorized(modelCount: number, publish
     && Number.isSafeInteger(publisherCount) && publisherCount > 0;
 }
 
+export async function initializeBrowserFleetIfAuthorized(
+  initialize: () => Promise<void>,
+  modelCount: number,
+  publisherCount: number,
+): Promise<boolean> {
+  if (!browserFleetReconciliationAuthorized(modelCount, publisherCount)) return false;
+  await initialize();
+  return true;
+}
+
 async function createProductionBrowserLocalAIComposition(): Promise<BrowserLocalAIComposition> {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') throw new Error('Browser Local AI composition requires a browser runtime');
   const [
@@ -110,17 +120,17 @@ async function createProductionBrowserLocalAIComposition(): Promise<BrowserLocal
     lifecycle,
     Object.freeze({ evidence: new IndexedDbBenchmarkEvidencePort(), criteria: Object.freeze([]) }),
   );
-  const reconciliationAuthorized = browserFleetReconciliationAuthorized(
+  const reconciled = await initializeBrowserFleetIfAuthorized(
+    () => platform.initializeModelFleet(),
     dependencies.modelCatalog.length,
     EMPTY_BROWSER_TRUST_POLICY.publishers.length,
   );
-  if (reconciliationAuthorized) await platform.initializeModelFleet();
 
   const fleetPreflight: BrowserFleetPreflight = Object.freeze({
     catalogModelCount: dependencies.modelCatalog.length,
     durableLifecycleConfigured: platform.durableLifecycleEnabled(),
     durableBenchmarkEvidenceConfigured: platform.durableBenchmarkEvidenceEnabled(),
-    reconciliation: reconciliationAuthorized ? 'AUTHORIZED' : FLEET_RECONCILIATION_DEFERRED,
+    reconciliation: reconciled ? 'AUTHORIZED' : FLEET_RECONCILIATION_DEFERRED,
   });
 
   return Object.freeze({
