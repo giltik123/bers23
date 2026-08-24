@@ -17,6 +17,7 @@ export type LocalExecutionClaimInput = Readonly<{
 export interface LocalExecutionLedger {
   issue(ticket: LocalExecutionTicket): MaybePromise<LocalExecutionTicket>;
   get(ticketId: string): MaybePromise<LocalExecutionTicket | undefined>;
+  getByIdempotencyKey(scope: Scope, idempotencyKey: string): MaybePromise<LocalExecutionTicket | undefined>;
   claim(input: LocalExecutionClaimInput): MaybePromise<LocalExecutionAdmissionDecision>;
   /** Terminal finalization owns a durable/leased resource and is therefore explicitly async. */
   commit(ticketId: string): Promise<void>;
