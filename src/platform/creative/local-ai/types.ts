@@ -1,3 +1,5 @@
+import type { PlanningExecutionPolicy } from '../canonical/contracts';
+
 export type UnknownValue = 'UNKNOWN';
 export type Platform = 'ANDROID' | 'IOS' | 'WINDOWS' | 'MACOS' | 'LINUX' | 'BROWSER' | UnknownValue;
 export type DeviceClass = 'MOBILE' | 'DESKTOP' | 'BROWSER' | UnknownValue;
@@ -45,7 +47,7 @@ export type TrustResult = Readonly<{ trusted: boolean; checks: Readonly<Record<s
 export type ResourceDecision = Readonly<{ allowed: boolean; reasons: readonly string[]; suggestedTarget: ExecutionTarget }>;
 export type SuitabilityScore = Readonly<{ modelId: string; eligible: boolean; score: number; factors: Readonly<Record<string, number>>; reasons: readonly string[] }>;
 export type TargetRequest = Readonly<{
-  operation: Readonly<{ operationId: string; requiredCapabilities: readonly string[]; executionPolicy?: string }>;
+  operation: Readonly<{ operationId: string; requiredCapabilities: readonly string[]; executionPolicy?: PlanningExecutionPolicy }>;
   device: DeviceCapabilityProfile; models: readonly ModelManifest[]; privacyMode: PrivacyMode; cloudAllowed: boolean;
   maxCloudCredits: number; cloudCredits: number; qualityRequirement: number; latencyRequirement: number; concurrentJobs?: number;
 }>;
