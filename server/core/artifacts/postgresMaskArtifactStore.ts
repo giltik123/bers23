@@ -37,7 +37,7 @@ export class PostgresMaskArtifactStore {
       JOIN canonical_image_artifacts i ON i.storage_id=p.current_image_storage_id
         AND i.tenant_id=p.tenant_id AND i.user_id=p.user_id AND i.project_id=p.project_id::text
         AND i.revoked_at IS NULL AND i.deleted_at IS NULL
-      WHERE p.tenant_id=$1 AND p.user_id=$2 AND p.project_id=$3 AND p.deleted_at IS NULL`,
+      WHERE p.tenant_id=$1 AND p.user_id=$2 AND p.project_id::text=$3 AND p.deleted_at IS NULL`,
     [scope.tenantId, scope.userId, scope.projectId]);
     const source = result.rows[0];
     if (!source) throw new Error('Canonical Project source image is unavailable for MASK persistence');
