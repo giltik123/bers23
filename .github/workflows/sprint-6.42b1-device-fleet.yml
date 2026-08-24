@@ -15,8 +15,10 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Typecheck application contracts
-        run: npm run typecheck
+      - name: Typecheck and lint application contracts
+        run: |
+          npm run typecheck
+          npm run lint
       - name: Device capability and budgeted fleet contract
         run: |
           mkdir -p .test-cache/6.42b1
@@ -33,3 +35,10 @@ jobs:
             --outfile=.test-cache/6.42b1/creative-local-ai.test.mjs \
             --external:node:*
           node --test .test-cache/6.42b1/creative-local-ai.test.mjs
+      - name: Existing model bundle and runtime regression suite
+        run: |
+          npx esbuild tests/creative-local-models.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42b1/creative-local-models.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42b1/creative-local-models.test.mjs
