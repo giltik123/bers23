@@ -111,7 +111,9 @@ export class ModelFleetPlanner {
     }
 
     const uncoveredCapabilities = requestedCapabilities.filter((capability) => !covered.has(capability));
-    const status = selected.length > 0 ? 'READY' : resourceStorageBlocked || selectionBudgetBlocked ? 'BLOCKED_STORAGE' : 'NO_COMPATIBLE_MODELS';
+    const status = selected.length > 0
+      ? uncoveredCapabilities.length === 0 ? 'READY' : 'PARTIAL'
+      : resourceStorageBlocked || selectionBudgetBlocked ? 'BLOCKED_STORAGE' : 'NO_COMPATIBLE_MODELS';
     return result(status, requestedCapabilities, selected, uncoveredCapabilities, exclusions, budgetBytes, freeBytes, reserveBytes, estimatedBytes);
   }
 }
