@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { loadCoreServerConfig } from './core/config.ts';
 import { createProductionCore } from './core/composition/createProductionCore.ts';
 import { createLocalExecutionHttpAdapter } from './core/http/localExecutionHttpAdapter.ts';
+import { createMaskArtifactHttpAdapter } from './core/http/maskArtifactHttpAdapter.ts';
 import { createNodeHttpAdapter } from './core/http/nodeHttpAdapter.ts';
 import { applyCoreSecurityHeaders } from './core/http/securityHeaders.ts';
 
@@ -10,9 +11,11 @@ export async function startCoreServer() {
   const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); return true; } catch { return false; } };
   const adapter = createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
   const localExecutionAdapter = createLocalExecutionHttpAdapter({ service: production.localExecution.segmentation, auth: production.auth, config });
+  const maskArtifactAdapter = createMaskArtifactHttpAdapter({ artifacts: production.artifacts, auth: production.auth, config });
   const server = createServer((request, response) => {
     applyCoreSecurityHeaders(response, config);
     if ((request.url ?? '').startsWith('/api/core/local-execution/')) return void localExecutionAdapter(request, response);
+    if ((request.url ?? '').startsWith('/api/core/artifacts/masks')) return void maskArtifactAdapter(request, response);
     return adapter(request, response);
   });
   server.requestTimeout = config.requestTimeoutMs; server.headersTimeout = Math.min(config.requestTimeoutMs, 60_000); server.keepAliveTimeout = 5_000;
