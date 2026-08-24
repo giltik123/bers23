@@ -57,11 +57,6 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         send(response, finalized.status === 'SUCCESS' ? 200 : 422, publicResult); return true;
       }
 
-      const statusMatch = url.pathname.match(/^\/api\/core\/local-execution\/executions\/([^/]+)\/status$/);
-      if (statusMatch && request.method === 'GET') {
-        send(response, 200, input.service.status(decodeURIComponent(statusMatch[1]), principal)); return true;
-      }
-
       throw httpError(404, 'not_found', 'Route not found');
     } catch (cause) {
       const error = cause as Error & { status?: number; code?: string };
@@ -81,7 +76,7 @@ function applyCors(request: IncomingMessage, response: ServerResponse, config: C
   response.setHeader('Vary', 'Origin');
   response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}`);
   response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}`);
-  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
 }
 function requireJson(request: IncomingMessage): void { if (!mediaType(request).startsWith('application/json')) throw httpError(415, 'unsupported_media_type', 'Content-Type must be application/json'); }
 function mediaType(request: IncomingMessage): string { return String(request.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase(); }
