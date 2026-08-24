@@ -29,6 +29,14 @@ jobs:
             --outfile=.test-cache/creative-durable-model-fleet-hardening.test.mjs \
             --external:node:*
           node --test .test-cache/creative-durable-model-fleet-hardening.test.mjs
+      - name: Durable immutable-version and quarantine authority
+        run: |
+          mkdir -p .test-cache
+          npx esbuild tests/creative-durable-model-fleet-authority.test.ts \
+            --bundle --platform=node --format=esm --target=node20 \
+            --outfile=.test-cache/creative-durable-model-fleet-authority.test.mjs \
+            --external:node:*
+          node --test .test-cache/creative-durable-model-fleet-authority.test.mjs
       - name: Durable LocalAIPlatform and distribution wiring
         run: |
           mkdir -p .test-cache
