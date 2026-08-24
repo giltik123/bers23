@@ -25,6 +25,7 @@ export type LocalSegmentationPrepareCommand = Readonly<{
   analysis: LocalSegmentationAnalysis;
   points: readonly LocalSegmentationPoint[];
 }>;
+export type LocalSegmentationSubmission = Readonly<{ executionId: string; status: ProductionOutcome['status']; artifactId?: string; outcome: ProductionOutcome }>;
 
 export type LocalSegmentationServiceDependencies = Readonly<{
   platform: CreativeExecutionPlatformRuntimeDependencies;
@@ -33,6 +34,7 @@ export type LocalSegmentationServiceDependencies = Readonly<{
   admission: LocalExecutionLedger;
   uploads: PostgresLocalExecutionUploadStore;
   persistMask: (ticketId: string, scope: AuthenticatedScope & { projectId: string }, width: number, height: number, alpha: Uint8Array) => Promise<Readonly<{ storageId: string }>>;
+  loadPersistedMask: (ticketId: string, scope: AuthenticatedScope & { projectId: string }) => Promise<Readonly<{ storageId: string }> | undefined>;
   issueMaskId: (storageId: string, scope: AuthenticatedScope & { projectId: string }) => string;
   now?: () => number;
 }>;
@@ -93,6 +95,7 @@ export class LocalSegmentationExecutionService {
 
   async uploadMask(input: Readonly<{ ticketId: string; projectId: string; width: number; height: number; bytes: Uint8Array }>, auth: AuthenticatedScope) {
     const ticket = await this.requireTicket(input.ticketId, auth, input.projectId);
+    if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local execution ticket has expired');
     const expected = ticket.expectedOutputs[0];
     if (ticket.expectedOutputs.length !== 1 || expected.kind !== 'mask' || expected.role !== 'MASK') throw serviceError(409, 'local_output_contract_error', 'Ticket is not a single MASK output contract');
     if (input.width !== expected.width || input.height !== expected.height) throw serviceError(400, 'local_mask_dimensions_mismatch', 'Uploaded MASK dimensions do not match the ticket');
@@ -111,10 +114,14 @@ export class LocalSegmentationExecutionService {
     return Object.freeze({ uploadId: upload.uploadId, kind: 'mask', role: 'MASK' as const, sha256: upload.sha256, sizeBytes: upload.sizeBytes, mimeType: upload.mimeType, width: upload.width, height: upload.height });
   }
 
-  async submit(input: Readonly<{ ticketId: string; projectId: string; result: unknown }>, auth: AuthenticatedScope): Promise<Readonly<{ executionId: string; status: ProductionOutcome['status']; artifactId?: string; outcome: ProductionOutcome }>> {
+  async submit(input: Readonly<{ ticketId: string; projectId: string; result: unknown }>, auth: AuthenticatedScope): Promise<LocalSegmentationSubmission> {
     const ticket = await this.requireTicket(input.ticketId, auth, input.projectId);
     const claim = await this.dependencies.admission.claim({ ticketId: ticket.ticketId, result: input.result, callerScope: ticket.scope, now: this.#now() });
-    if (!claim.allowed) throw serviceError(claim.reasonCode === 'REPLAYED_TICKET' || claim.reasonCode === 'IN_PROGRESS' ? 409 : 400, `local_result_${claim.reasonCode.toLowerCase()}`, `Local result admission denied: ${claim.reasonCode}`);
+    if (!claim.allowed) {
+      if (claim.reasonCode === 'REPLAYED_TICKET') return this.replayFinalized(ticket);
+      const status = claim.reasonCode === 'IN_PROGRESS' ? 409 : claim.reasonCode === 'EXPIRED_TICKET' ? 410 : 400;
+      throw serviceError(status, `local_result_${claim.reasonCode.toLowerCase()}`, `Local result admission denied: ${claim.reasonCode}`);
+    }
     try {
       await this.revalidateCanonicalInputs(ticket);
       await this.ensurePlatformExecution(ticket);
@@ -138,8 +145,11 @@ export class LocalSegmentationExecutionService {
         image: Object.freeze({ width: upload.width, height: upload.height, format: 'ALPHA8', orientation: 1, colorSpace: 'gray', alpha: true }),
         metadata: Object.freeze({ artifactRole: 'MASK', localExecutionAdmission: 'ADMITTED', ticketId: ticket.ticketId, modelId: result.model.modelId, modelVersion: result.model.version, runtime: result.runtime, accelerator: result.accelerator, sha256: upload.sha256, parentArtifactIds: Object.freeze(ticket.inputs.map(binding => binding.artifactId)) }),
       });
-      const outcome = await this.#platform.completeLocalExecution(ticket.requestId, { ticketId: ticket.ticketId, stepId: ticket.stepId, artifact, latencyMs: result.metrics.latencyMs, memoryMb: result.metrics.memoryBytes === undefined ? undefined : result.metrics.memoryBytes / (1024 * 1024) });
-      await this.dependencies.admission.commit(ticket.ticketId);
+      const existingOutcome = this.#platform.result(ticket.requestId);
+      const outcome = existingOutcome ?? await this.#platform.completeLocalExecution(ticket.requestId, { ticketId: ticket.ticketId, stepId: ticket.stepId, artifact, latencyMs: result.metrics.latencyMs, memoryMb: result.metrics.memoryBytes === undefined ? undefined : result.metrics.memoryBytes / (1024 * 1024) });
+      if (outcome.status === 'UNKNOWN') throw serviceError(409, 'local_execution_outcome_unknown', 'Local execution finalization outcome is unknown and cannot be consumed');
+      if (outcome.status === 'SUCCESS' && !outcome.artifacts.some(candidate => candidate.id === artifactId)) throw serviceError(409, 'local_execution_recovery_mismatch', 'Completed canonical local execution is bound to a different artifact');
+      await this.dependencies.admission.commit(ticket.ticketId, outcome.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED');
       await this.dependencies.uploads.consume(upload.uploadId, ticket.ticketId, ticket.scope, this.#now());
       return Object.freeze({ executionId: ticket.requestId, status: outcome.status, artifactId: outcome.status === 'SUCCESS' ? artifactId : undefined, outcome });
     } catch (error) {
@@ -148,12 +158,25 @@ export class LocalSegmentationExecutionService {
     }
   }
 
+  private async replayFinalized(ticket: LocalExecutionTicket): Promise<LocalSegmentationSubmission> {
+    const finalization = await this.dependencies.admission.getFinalization(ticket.ticketId);
+    if (!finalization || finalization.status === 'UNKNOWN') throw serviceError(409, 'local_finalization_unknown', 'Local execution was consumed without a recoverable terminal status');
+    if (finalization.status === 'FAILED') {
+      const outcome: ProductionOutcome = Object.freeze({ executionId: ticket.requestId, status: 'FAILED', verification: Object.freeze({ valid: false, checks: Object.freeze(['LOCAL_EXECUTION_TERMINAL_REPLAY']), errors: Object.freeze(['LOCAL_EXECUTION_PREVIOUSLY_FAILED']) }), artifacts: Object.freeze([]) });
+      return Object.freeze({ executionId: ticket.requestId, status: 'FAILED', outcome });
+    }
+    const stored = await this.dependencies.loadPersistedMask(ticket.ticketId, ticket.scope);
+    if (!stored) throw serviceError(409, 'local_finalization_artifact_unavailable', 'Committed local execution MASK is unavailable');
+    const artifactId = this.dependencies.issueMaskId(stored.storageId, ticket.scope);
+    const outcome: ProductionOutcome = Object.freeze({ executionId: ticket.requestId, status: 'SUCCESS', verification: Object.freeze({ valid: true, checks: Object.freeze(['LOCAL_EXECUTION_TERMINAL_REPLAY']), errors: Object.freeze([]) }), artifacts: Object.freeze([]) });
+    return Object.freeze({ executionId: ticket.requestId, status: 'SUCCESS', artifactId, outcome });
+  }
+
   private async requireTicket(ticketId: string, auth: AuthenticatedScope, projectId: string): Promise<LocalExecutionTicket> {
     const ticket = await this.dependencies.admission.get(ticketId);
     if (!ticket) throw serviceError(404, 'local_ticket_not_found', 'Local execution ticket not found');
     const scope = { ...auth, projectId };
     assertSameScope(ticket.scope, scope);
-    if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local execution ticket has expired');
     assertSegmentationTicket(ticket);
     return ticket;
   }
