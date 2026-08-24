@@ -11,7 +11,7 @@ export class DeviceAnalyzer {
     return immutableClone({
       platform: unknown(signal.platform), deviceClass: unknown(signal.deviceClass), cpuCores: unknown(signal.cpuCores), ramMb: unknown(signal.ramMb),
       gpu: unknown(signal.gpu), vramMb: unknown(signal.vramMb), npu: unknown(signal.npu), architecture: unknown(signal.architecture),
-      browser: unknown(signal.browser), webgpu: unknown(signal.webgpu), wasm: unknown(signal.wasm), webnn: unknown(signal.webnn),
+      browser: unknown(signal.browser), webgpu: unknown(signal.webgpu), wasm: unknown(signal.wasm), webnn: unknown(signal.webnn), nnapi: unknown(signal.nnapi),
       cuda: unknown(signal.cuda), directml: unknown(signal.directml), metal: unknown(signal.metal), vulkan: unknown(signal.vulkan),
       storageFreeBytes: unknown(signal.storageFreeBytes), batteryPercent: unknown(signal.batteryPercent), powerState: unknown(signal.powerState),
       thermalState: unknown(signal.thermalState), network: unknown(signal.network), tier: tier(signal),
@@ -25,7 +25,8 @@ function tier(signal: DeviceSignals): DeviceTier {
   // intentionally excluded: large storage does not imply compute capability.
   if (!finitePositive(signal.cpuCores) || !finitePositive(signal.ramMb)) return 'UNKNOWN';
 
-  const accelerated = [signal.webgpu, signal.webnn, signal.cuda, signal.directml, signal.metal, signal.vulkan].some((value) => value === true);
+  const accelerated = [signal.webgpu, signal.webnn, signal.nnapi, signal.cuda, signal.directml, signal.metal, signal.vulkan]
+    .some((value) => value === true);
   const knownVram = finiteNonNegative(signal.vramMb) ? signal.vramMb : undefined;
 
   if (signal.cpuCores >= 16 && signal.ramMb >= 32_768 && knownVram !== undefined && knownVram >= 16_384) return 'EXTREME';
