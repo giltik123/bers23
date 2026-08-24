@@ -42,7 +42,7 @@ function onDeviceFixture() {
     billing: { reserve: async () => { calls.reserve++; }, commit: async () => {}, release: async () => {} },
     now: (() => { let n = 100; return () => ++n; })(),
   });
-  platform.createExecution({ id: 'segment-workflow', intent: 'select the subject', scope, inputArtifacts: [image], budget: { credits: 100, aiCalls: 100, retries: 3 }, metadata: { idempotencyKey: 'segment-idem' } });
+  platform.createExecution({ id: 'segment-workflow', intent: 'select the subject', scope, inputArtifacts: [image], budget: { credits: 100, aiCalls: 100, retries: 3 }, metadata: { idempotencyKey: 'segment-idem', operationIntent: 'INTERACTIVE_SEGMENTATION' } });
   return { platform, calls };
 }
 
