@@ -15,12 +15,13 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Core local ticket, admission, lineage and model-release contracts
+      - name: Core local ticket, admission, lineage, scope and model-release contracts
         run: |
           mkdir -p .test-cache/6.42a-core
           npx esbuild \
             server/core/localExecution/localExecutionContract.test.mjs \
             server/core/localExecution/localExecutionIdempotency.test.mjs \
+            server/core/localExecution/localExecutionScopedIdempotency.test.mjs \
             server/core/localExecution/localExecutionInputAdmission.test.mjs \
             server/core/localExecution/productionLocalModelPolicy.test.mjs \
             server/core/providers/productionOnDeviceRoute.test.mjs \
