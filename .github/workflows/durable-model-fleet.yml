@@ -5,6 +5,7 @@ on:
       - 'src/platform/creative/local-ai/**'
       - 'src/platform/creative/model-distribution/**'
       - 'tests/creative-*model*.test.ts'
+      - 'tests/device-fleet-*.test.ts'
       - 'DURABLE_LOCAL_MODEL_FLEET.md'
       - '.github/workflows/durable-model-fleet.yml'
   workflow_dispatch:
@@ -36,6 +37,14 @@ jobs:
             --outfile=.test-cache/creative-durable-model-fleet-platform.test.mjs \
             --external:node:*
           node --test .test-cache/creative-durable-model-fleet-platform.test.mjs
+      - name: Combined B1 recommendation over durable B2 authority
+        run: |
+          mkdir -p .test-cache
+          npx esbuild tests/device-fleet-durable-integration.test.ts \
+            --bundle --platform=node --format=esm --target=node20 \
+            --outfile=.test-cache/device-fleet-durable-integration.test.mjs \
+            --external:node:*
+          node --test .test-cache/device-fleet-durable-integration.test.mjs
       - name: Model distribution facade regression
         run: npm run test:model-distribution
       - name: Existing local AI security and model regressions
