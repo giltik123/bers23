@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { DurableModelFleet, type FleetState } from '../src/platform/creative/local-ai/lifecycle/DurableModelFleet.ts';
-import { BrowserFleetMutationLocks } from '../src/platform/creative/local-ai/lifecycle/IndexedDbFleetStorage.ts';
+import { BrowserFleetMutationLocks, IndexedDbFleetBlobs } from '../src/platform/creative/local-ai/lifecycle/IndexedDbFleetStorage.ts';
 import { InMemoryFleetBacking, InMemoryFleetBlobs, InMemoryFleetMetadata, InMemoryFleetMutationLocks, InMemoryFleetReservations } from '../src/platform/creative/local-ai/lifecycle/InMemoryFleetStorage.ts';
 import { ModelManifestVerifier, ModelSignatureVerifier, ModelTrustRegistry } from '../src/platform/creative/local-ai/trust/ModelTrust.ts';
 import type { ModelManifest } from '../src/platform/creative/local-ai/types.ts';
@@ -95,4 +95,58 @@ test('browser durable mutation lock delegates exact model key to the supplied cr
   const value = await locks.runExclusive('model:alpha', async () => 42);
   assert.equal(value, 42);
   assert.deepEqual(names, ['bers:local-model-fleet:model:alpha:exclusive']);
+});
+
+test('IndexedDB fleet blob write resolves only after the transaction commits', async () => {
+  const originalIndexedDb = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
+  let openRequest: any;
+  let writeRequest: any;
+  let transaction: any;
+  const fakeDb = {
+    transaction: () => {
+      transaction = {
+        error: null,
+        oncomplete: null,
+        onabort: null,
+        onerror: null,
+        abort() { this.onabort?.(); },
+        objectStore: () => ({
+          put: () => {
+            writeRequest = { result: 'blob-key', error: null, onsuccess: null, onerror: null };
+            return writeRequest;
+          },
+        }),
+      };
+      return transaction;
+    },
+  };
+  const fakeIndexedDb = {
+    open: () => {
+      openRequest = { result: fakeDb, error: null, onsuccess: null, onerror: null, onupgradeneeded: null };
+      return openRequest;
+    },
+  };
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: fakeIndexedDb });
+
+  try {
+    const blobs = new IndexedDbFleetBlobs('commit-barrier-test', async () => ({ quota: 1_000, usage: 0 }));
+    let resolved = false;
+    const pending = blobs.put('hash', new Uint8Array([1])).then(() => { resolved = true; });
+
+    assert.ok(openRequest, 'IndexedDB open request must be created synchronously');
+    openRequest.onsuccess?.();
+    for (let index = 0; index < 4 && !writeRequest; index += 1) await Promise.resolve();
+    assert.ok(writeRequest, 'blob write request must start after the database opens');
+
+    writeRequest.onsuccess?.();
+    await Promise.resolve();
+    assert.equal(resolved, false, 'IDBRequest success is not a durable commit boundary');
+
+    transaction.oncomplete?.();
+    await pending;
+    assert.equal(resolved, true, 'blob write may resolve only after transaction.oncomplete');
+  } finally {
+    if (originalIndexedDb) Object.defineProperty(globalThis, 'indexedDB', originalIndexedDb);
+    else Reflect.deleteProperty(globalThis, 'indexedDB');
+  }
 });
