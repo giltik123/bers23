@@ -53,6 +53,7 @@ test('PostgreSQL local execution ledger is scope-isolated, durable, idempotent a
     assert.equal(replay.nonce, first.nonce, 'same scoped idempotency binding must preserve the original nonce');
     assert.deepEqual(await secondLedger.get(first.ticketId), first, 'another Core instance must read the same durable ticket');
     assert.equal((await secondLedger.getByIdempotencyKey(first.scope, first.idempotencyKey))?.ticketId, first.ticketId);
+    assert.equal(await firstLedger.getFinalization(first.ticketId), undefined);
 
     const otherScope = scope(`${token}-other`);
     const sameClientIdOtherScope = await secondLedger.issue(ticket(token, {
@@ -76,8 +77,10 @@ test('PostgreSQL local execution ledger is scope-isolated, durable, idempotent a
     await firstLedger.release(first.ticketId);
     const afterRelease = await secondLedger.claim({ ticketId: first.ticketId, result: result(first), callerScope: first.scope, now: 2_502 });
     assert.equal(afterRelease.allowed, true, 'released session advisory lock must make finalization retryable');
-    await secondLedger.commit(first.ticketId);
+    await secondLedger.commit(first.ticketId, 'SUCCESS');
 
+    assert.equal((await firstLedger.getFinalization(first.ticketId))?.status, 'SUCCESS');
+    assert.equal((await secondLedger.getFinalization(first.ticketId))?.status, 'SUCCESS');
     assert.equal((await firstLedger.claim({ ticketId: first.ticketId, result: result(first), callerScope: first.scope, now: 2_503 })).reasonCode, 'REPLAYED_TICKET');
     assert.equal((await secondLedger.claim({ ticketId: first.ticketId, result: result(first), callerScope: first.scope, now: 2_504 })).reasonCode, 'REPLAYED_TICKET');
   } finally {
