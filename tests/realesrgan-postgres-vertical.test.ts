@@ -92,6 +92,9 @@ test('C3 production PostgreSQL vertical admits exact MODEL contract, survives re
   const candidateWidth = sourceWidth * 4, candidateHeight = sourceHeight * 4;
   const candidatePixels = opaqueFixture(candidateWidth, candidateHeight, 77);
   const candidatePng = await rgbaPng(candidateWidth, candidateHeight, candidatePixels);
+  const wrongDimensionsPng = await rgbaPng(4, 4, opaqueFixture(4, 4, 3));
+  const transparentPixels = Uint8ClampedArray.from(candidatePixels); transparentPixels[3] = 254;
+  const transparentPng = await rgbaPng(candidateWidth, candidateHeight, transparentPixels);
 
   let production = await createProductionCore(config, { fetcher: forbiddenFetcher, now: () => 20_000, testLocalExecutorsByCapability: testExecutors });
   t.after(async () => { await production.close().catch(() => undefined); });
@@ -123,14 +126,13 @@ test('C3 production PostgreSQL vertical admits exact MODEL contract, survives re
 
   const wrongDimensionsTicket = await prepare('c3-wrong-dimensions');
   await assert.rejects(
-    () => production.localExecution.superResolution.uploadImage({ ticketId: wrongDimensionsTicket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(4, 4, opaqueFixture(4, 4, 3)) }, auth),
+    () => production.localExecution.superResolution.uploadImage({ ticketId: wrongDimensionsTicket.ticketId, projectId: scope.projectId, bytes: wrongDimensionsPng }, auth),
     (error: any) => error?.code === 'local_image_dimensions_mismatch',
   );
 
   const transparentTicket = await prepare('c3-transparent-output');
-  const transparent = Uint8ClampedArray.from(candidatePixels); transparent[3] = 254;
   await assert.rejects(
-    () => production.localExecution.superResolution.uploadImage({ ticketId: transparentTicket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(candidateWidth, candidateHeight, transparent) }, auth),
+    () => production.localExecution.superResolution.uploadImage({ ticketId: transparentTicket.ticketId, projectId: scope.projectId, bytes: transparentPng }, auth),
     (error: any) => error?.code === 'local_output_alpha_policy_mismatch',
   );
 
