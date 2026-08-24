@@ -1,7 +1,7 @@
-import type { LocalExecutionOutputEvidence, LocalExecutionResultV2, LocalExecutionTicketV2 } from '../../platform/creative/canonical/index.ts';
-import { BACKGROUND_ISOLATION_CAPABILITY, BACKGROUND_ISOLATION_TOOL_ID, BACKGROUND_ISOLATION_TOOL_VERSION, isolateBackgroundRgba } from '../../platform/creative/deterministic/BackgroundIsolation.ts';
-import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng.ts';
-import type { PixelImage } from '../../platform/creative/pipeline/ControlledLocalEdit.ts';
+import type { LocalExecutionOutputEvidence, LocalExecutionResultV2, LocalExecutionTicketV2 } from '../../platform/creative/canonical';
+import { BACKGROUND_ISOLATION_CAPABILITY, BACKGROUND_ISOLATION_TOOL_ID, BACKGROUND_ISOLATION_TOOL_VERSION, isolateBackgroundRgba } from '../../platform/creative/deterministic/BackgroundIsolation';
+import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng';
+import type { PixelImage } from '../../platform/creative/pipeline/ControlledLocalEdit';
 
 export type CoreDeterministicImageClient = Readonly<{
   prepareBackgroundIsolation(payload: Readonly<{ projectId: string; sourceArtifactId: string; maskArtifactId: string; clientRequestId: string }>): Promise<Readonly<{ executionId: string; ticket: LocalExecutionTicketV2 }>>;
