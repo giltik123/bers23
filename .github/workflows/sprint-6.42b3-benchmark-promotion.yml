@@ -1,0 +1,45 @@
+name: Sprint 6.42B3 benchmark promotion acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/**'
+      - 'tests/device-fleet-benchmark-promotion.test.ts'
+      - 'tests/device-fleet-recommendation.test.ts'
+      - 'tests/creative-durable-model-fleet*.test.ts'
+      - '.github/workflows/sprint-6.42b3-benchmark-promotion.yml'
+  workflow_dispatch:
+
+jobs:
+  benchmark-promotion-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and lint
+        run: |
+          npm run typecheck
+          npm run lint
+      - name: Durable benchmark evidence and promotion policy
+        run: |
+          mkdir -p .test-cache/6.42b3
+          npx esbuild tests/device-fleet-benchmark-promotion.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42b3/device-fleet-benchmark-promotion.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42b3/device-fleet-benchmark-promotion.test.mjs
+      - name: B1 recommendation regression
+        run: |
+          npx esbuild tests/device-fleet-recommendation.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --loader:.pem=text --loader:.sig=text --loader:.wasm=file \
+            --outfile=.test-cache/6.42b3/device-fleet-recommendation.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42b3/device-fleet-recommendation.test.mjs
+      - name: B2 durable lifecycle regression
+        run: npm run test:durable-model-fleet
