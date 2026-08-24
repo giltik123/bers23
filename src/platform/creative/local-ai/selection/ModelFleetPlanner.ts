@@ -53,7 +53,8 @@ export class ModelFleetPlanner {
     }
 
     const maxModelBytes = Math.min(policy.maxModelBytes ?? budgetBytes, budgetBytes);
-    const effectiveProfile = { ...profile, storageFreeBytes: freeBytes } as const;
+    const ramMb = profile.ramMb;
+    const vramMb = profile.vramMb;
     const candidates: Array<Readonly<{ model: ModelManifest; coverage: readonly string[] }>> = [];
     let resourceStorageBlocked = false;
 
@@ -68,10 +69,10 @@ export class ModelFleetPlanner {
       if (!SAFE_CATALOG_STATUSES.has(model.status)) reasons.push('UNSAFE_STATUS');
       if (coverage.length === 0) reasons.push('CAPABILITY_NOT_BOOTSTRAP');
       if (rawCapabilities.some((capability) => HEAVY_CAPABILITY_MARKERS.some((marker) => capability.includes(marker)))) reasons.push('HEAVY_CAPABILITY');
-      if (model.requiredRam > 0 && effectiveProfile.ramMb === 'UNKNOWN') reasons.push('UNKNOWN_RAM');
-      else if (model.requiredRam > 0 && effectiveProfile.ramMb < model.requiredRam) reasons.push('INSUFFICIENT_RAM');
-      if (model.requiredVram > 0 && effectiveProfile.vramMb === 'UNKNOWN') reasons.push('UNKNOWN_VRAM');
-      else if (model.requiredVram > 0 && effectiveProfile.vramMb < model.requiredVram) reasons.push('INSUFFICIENT_VRAM');
+      if (model.requiredRam > 0 && typeof ramMb !== 'number') reasons.push('UNKNOWN_RAM');
+      else if (model.requiredRam > 0 && typeof ramMb === 'number' && ramMb < model.requiredRam) reasons.push('INSUFFICIENT_RAM');
+      if (model.requiredVram > 0 && typeof vramMb !== 'number') reasons.push('UNKNOWN_VRAM');
+      else if (model.requiredVram > 0 && typeof vramMb === 'number' && vramMb < model.requiredVram) reasons.push('INSUFFICIENT_VRAM');
       if (model.sizeBytes > freeBytes - reserveBytes) reasons.push('INSUFFICIENT_STORAGE');
       if (model.qualityScore < policy.minQualityScore) reasons.push('QUALITY_BELOW_POLICY');
       if (model.stabilityScore < policy.minStabilityScore) reasons.push('STABILITY_BELOW_POLICY');
