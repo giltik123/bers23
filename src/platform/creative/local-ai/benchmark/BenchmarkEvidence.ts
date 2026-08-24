@@ -123,10 +123,19 @@ export class BenchmarkEvidenceStore {
     return evidence;
   }
 
-  async forBinding(snapshot: DeviceCapabilitySnapshot, manifest: ModelManifest): Promise<readonly BenchmarkEvidence[]> {
-    const binding = await this.binding(snapshot, manifest);
+  async all(): Promise<readonly BenchmarkEvidence[]> {
     const values = (await this.port.list())
       .filter((evidence) => evidence.schemaVersion === BENCHMARK_EVIDENCE_SCHEMA_VERSION)
+      .sort((a, b) => a.modelId.localeCompare(b.modelId)
+        || a.modelVersion.localeCompare(b.modelVersion)
+        || b.capturedAt - a.capturedAt
+        || a.provider.localeCompare(b.provider));
+    return immutableClone(values);
+  }
+
+  async forBinding(snapshot: DeviceCapabilitySnapshot, manifest: ModelManifest): Promise<readonly BenchmarkEvidence[]> {
+    const binding = await this.binding(snapshot, manifest);
+    const values = (await this.all())
       .filter((evidence) => exactBinding(evidence, binding))
       .sort((a, b) => b.capturedAt - a.capturedAt || a.provider.localeCompare(b.provider));
     return immutableClone(values);
