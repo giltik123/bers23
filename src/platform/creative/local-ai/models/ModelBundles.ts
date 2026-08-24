@@ -30,7 +30,9 @@ export class ModelBundleBuilder {
 
 function bundleId(device: DeviceCapabilityProfile, runtimes: RuntimeCapabilities): ModelBundle['id'] {
   if (device.deviceClass === 'BROWSER') return 'BROWSER';
-  if (device.deviceClass === 'MOBILE') return device.tier === 'LOW' ? 'MOBILE_LOW' : 'MOBILE_HIGH';
+  if (device.deviceClass === 'MOBILE') {
+    return device.tier === 'HIGH' || device.tier === 'EXTREME' ? 'MOBILE_HIGH' : 'MOBILE_LOW';
+  }
   const accelerated = runtimes.CUDA === true || runtimes.METAL === true || runtimes.DIRECTML === true;
   return accelerated && (device.tier === 'HIGH' || device.tier === 'EXTREME') ? 'DESKTOP_GPU' : 'DESKTOP_STANDARD';
 }
