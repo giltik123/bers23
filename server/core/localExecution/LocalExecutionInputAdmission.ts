@@ -1,12 +1,12 @@
-import type { CreativeArtifact, LocalExecutionTicket } from '../../../src/platform/creative/canonical/index.ts';
+import type { AnyLocalExecutionTicket, CreativeArtifact } from '../../../src/platform/creative/canonical/index.ts';
 
 export type LocalExecutionInputAdmissionReason = 'INPUTS_ADMITTED' | 'INPUT_MISSING' | 'INPUT_KIND_MISMATCH' | 'INPUT_ROLE_MISMATCH' | 'INPUT_HASH_MISSING' | 'INPUT_HASH_MISMATCH';
 export type LocalExecutionInputAdmissionDecision =
   | Readonly<{ allowed: true; reasonCode: 'INPUTS_ADMITTED' }>
   | Readonly<{ allowed: false; reasonCode: Exclude<LocalExecutionInputAdmissionReason, 'INPUTS_ADMITTED'>; artifactId: string }>;
 
-/** Re-check current canonical inputs against the immutable ticket immediately before result persistence. */
-export function admitLocalExecutionInputs(ticket: LocalExecutionTicket, artifacts: readonly CreativeArtifact[]): LocalExecutionInputAdmissionDecision {
+/** Re-check current canonical inputs against the immutable ticket immediately before result persistence. Executor identity is intentionally out of scope here. */
+export function admitLocalExecutionInputs(ticket: AnyLocalExecutionTicket, artifacts: readonly CreativeArtifact[]): LocalExecutionInputAdmissionDecision {
   const byId = new Map(artifacts.map(artifact => [artifact.id, artifact]));
   for (const binding of ticket.inputs) {
     const artifact = byId.get(binding.artifactId);
