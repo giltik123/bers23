@@ -20,14 +20,14 @@ const digest = 'a'.repeat(64);
 
 const signals = (overrides: Partial<DeviceSignals> = {}): DeviceSignals => ({
   platform: 'LINUX', deviceClass: 'DESKTOP', cpuCores: 12, ramMb: 16_384, gpu: 'test-gpu', vramMb: 8_192,
-  npu: 'UNKNOWN', architecture: 'x64', browser: 'UNKNOWN', webgpu: true, wasm: true, webnn: false, cuda: true,
+  npu: 'test-npu', architecture: 'x64', browser: 'test-browser', webgpu: true, wasm: true, webnn: false, cuda: true,
   directml: false, metal: false, vulkan: true, storageFreeBytes: 512 * MIB, batteryPercent: 80, powerState: 'CHARGING',
   thermalState: 'NORMAL', network: 'ONLINE', ramPressure: 'NORMAL', backgroundRestricted: false, ...overrides,
 });
 
 const profile = (overrides: Partial<DeviceCapabilityProfile> = {}): DeviceCapabilityProfile => ({
   platform: 'LINUX', deviceClass: 'DESKTOP', cpuCores: 12, ramMb: 16_384, gpu: 'test-gpu', vramMb: 8_192,
-  npu: 'UNKNOWN', architecture: 'x64', browser: 'UNKNOWN', webgpu: true, wasm: true, webnn: false, cuda: true,
+  npu: 'test-npu', architecture: 'x64', browser: 'test-browser', webgpu: true, wasm: true, webnn: false, cuda: true,
   directml: false, metal: false, vulkan: true, storageFreeBytes: 512 * MIB, batteryPercent: 80, powerState: 'CHARGING',
   thermalState: 'NORMAL', network: 'ONLINE', tier: 'HIGH', ramPressure: 'NORMAL', backgroundRestricted: false, ...overrides,
 });
@@ -80,13 +80,14 @@ test('device tier preserves UNKNOWN when evidence is absent or insufficient', as
   assert.ok(high.tier === 'HIGH' || high.tier === 'EXTREME');
 });
 
-test('capability snapshot is tri-state evidence without stable device identity', () => {
-  const value = new DeviceCapabilitySnapshotBuilder().build(profile({ webnn: 'UNKNOWN', npu: 'UNKNOWN' }), runtimes({ NNAPI: 'UNKNOWN', METAL: 'UNKNOWN' }), 42);
+test('capability snapshot is tri-state, resource-bucketed and excludes raw hardware fingerprint fields', () => {
+  const value = new DeviceCapabilitySnapshotBuilder().build(profile({ ramMb: 'UNKNOWN', vramMb: 3_000 }), runtimes({ NNAPI: 'UNKNOWN', METAL: 'UNKNOWN' }), 42);
   assert.equal(value.schemaVersion, 1); assert.equal(value.capturedAt, 42); assert.equal(Object.isFrozen(value), true);
-  assert.ok(value.evidence.unknownSignals.includes('webnn')); assert.ok(value.evidence.observedSignals.includes('cuda'));
+  assert.equal(value.profile.ramMb, 'UNKNOWN'); assert.equal(value.profile.vramMb, 2_048, 'VRAM must round down to a conservative bucket');
+  assert.ok(value.evidence.unknownSignals.includes('ramMb')); assert.ok(value.evidence.observedSignals.includes('storageFreeBytes'));
   assert.ok(value.evidence.unknownRuntimes.includes('NNAPI')); assert.ok(value.evidence.observedRuntimes.includes('CUDA'));
   const serialized = JSON.stringify(value);
-  for (const forbidden of ['deviceId', 'fingerprint', 'tenantId', 'projectId', 'userId', 'billing']) assert.equal(serialized.includes(forbidden), false);
+  for (const forbidden of ['deviceId', 'fingerprint', 'tenantId', 'projectId', 'userId', 'billing', 'test-gpu', 'test-browser', 'test-npu', 'x64', 'architecture', 'browser', 'gpu', 'npu']) assert.equal(serialized.includes(forbidden), false, `snapshot leaked ${forbidden}`);
 });
 
 test('fleet recommendation fails closed for unknown device, tier, runtime evidence or storage', () => {
@@ -113,6 +114,12 @@ test('planner chooses a deterministic compact bootstrap fleet and does not insta
   assert.deepEqual(first.modelIds, ['seg-a-small', 'upscale-small']); assert.deepEqual(first.modelBindings, [{ modelId: 'seg-a-small', version: '1.0.0' }, { modelId: 'upscale-small', version: '1.0.0' }]); assert.equal(first.estimatedBytes, 20 * MIB);
   assert.ok(first.exclusions.find((item) => item.modelId === 'seg-z-large')?.reasons.includes('CAPABILITY_ALREADY_COVERED'));
   assert.ok(first.exclusions.find((item) => item.modelId === 'tiny-generation')?.reasons.includes('CAPABILITY_NOT_BOOTSTRAP'));
+});
+
+test('partial bootstrap remains installable while uncovered capabilities stay explicit', () => {
+  const segment = manifest('segment-only', ['SEGMENTATION'], 8);
+  const recommendation = new ModelFleetPlanner().recommend({ snapshot: snapshot(), catalog: [segment], trustedModelKeys: [modelFleetKey(segment)], storageFreeBytes: 100 * MIB, policy: { bootstrapCapabilities: ['SEGMENTATION', 'UPSCALE'], maxAutoInstallBytes: 24 * MIB, minFreeBytesAfterInstall: 8 * MIB } });
+  assert.equal(recommendation.status, 'PARTIAL'); assert.deepEqual(recommendation.modelIds, ['segment-only']); assert.deepEqual(recommendation.uncoveredCapabilities, ['UPSCALE']);
 });
 
 test('recommendation and install are pinned to the selected exact semantic version', async () => {
@@ -162,7 +169,7 @@ test('LocalAIPlatform recommendation verifies trust and blocked recommendation n
   const ready = dependencies({ catalog: [trusted, untrusted] });
   const platform = new LocalAIPlatform(ready.deps, trustPolicy);
   const recommendation = await platform.recommendFleet({ bootstrapCapabilities: ['SEGMENTATION', 'UPSCALE'], maxAutoInstallBytes: 32 * MIB, minFreeBytesAfterInstall: 8 * MIB });
-  assert.deepEqual(recommendation.modelIds, ['trusted-segment']);
+  assert.equal(recommendation.status, 'PARTIAL'); assert.deepEqual(recommendation.modelIds, ['trusted-segment']); assert.deepEqual(recommendation.uncoveredCapabilities, ['UPSCALE']);
   assert.ok(recommendation.exclusions.find((item) => item.modelId === 'untrusted-upscale')?.reasons.includes('UNTRUSTED_MANIFEST'));
 
   const blocked = dependencies({ device: {}, catalog: [trusted] });
@@ -171,12 +178,14 @@ test('LocalAIPlatform recommendation verifies trust and blocked recommendation n
   assert.deepEqual(blocked.calls(), { fetchCalls: 0, writeCalls: 0 });
 });
 
-test('legacy ModelBundleBuilder shares UNKNOWN and budget semantics', () => {
-  const model = manifest('segment-small', ['SEGMENTATION'], 8);
+test('legacy ModelBundleBuilder shares UNKNOWN, alias and budget semantics', () => {
+  const model = manifest('analysis-small', ['image-analysis'], 8);
   const builder = new ModelBundleBuilder();
+  const compatible = builder.recommend(profile(), runtimes(), [model]);
+  assert.deepEqual(compatible.modelIds, ['analysis-small']);
   const unknown = builder.recommend(profile({ platform: 'UNKNOWN', deviceClass: 'UNKNOWN', tier: 'UNKNOWN', storageFreeBytes: 'UNKNOWN' }), runtimes(), [model]);
   assert.deepEqual(unknown.modelIds, []);
-  const constrained = builder.recommend(profile({ storageFreeBytes: 40 * MIB }), runtimes(), [model], { bootstrapCapabilities: ['SEGMENTATION'], maxAutoInstallBytes: 64 * MIB, minFreeBytesAfterInstall: 36 * MIB });
+  const constrained = builder.recommend(profile({ storageFreeBytes: 40 * MIB }), runtimes(), [model], { bootstrapCapabilities: ['ANALYSIS'], maxAutoInstallBytes: 64 * MIB, minFreeBytesAfterInstall: 36 * MIB });
   assert.deepEqual(constrained.modelIds, []);
 });
 
