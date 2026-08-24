@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS local_execution_tickets (
   ticket_id text PRIMARY KEY,
-  idempotency_key text NOT NULL UNIQUE,
+  idempotency_key text NOT NULL,
   tenant_id text NOT NULL,
   user_id text NOT NULL,
   project_id text NOT NULL,
@@ -14,11 +14,17 @@ CREATE TABLE IF NOT EXISTS local_execution_tickets (
   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS local_execution_tickets_scope_idempotency_unique
+  ON local_execution_tickets (tenant_id, user_id, project_id, idempotency_key);
+
 CREATE INDEX IF NOT EXISTS local_execution_tickets_scope_idx
   ON local_execution_tickets (tenant_id, user_id, project_id, ticket_id);
 
 CREATE INDEX IF NOT EXISTS local_execution_tickets_request_idx
   ON local_execution_tickets (request_id, tenant_id, user_id, project_id);
+
+ALTER TABLE local_execution_uploads
+  ALTER COLUMN artifact_role SET NOT NULL;
 
 ALTER TABLE canonical_mask_artifacts
   ADD COLUMN IF NOT EXISTS local_execution_ticket_id text;
