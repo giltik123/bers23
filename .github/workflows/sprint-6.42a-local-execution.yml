@@ -86,9 +86,10 @@ jobs:
         run: npm run db:migrate:transactions
       - name: Verify complete canonical schema
         run: npm run db:check:transactions
-      - name: Durable ticket, quarantine and canonical MASK contracts
+      - name: Durable schema repair, ticket, quarantine and canonical MASK contracts
         run: |
           node --experimental-strip-types --test \
+            server/core/localExecution/localExecutionLedgerSchema.integration.test.mjs \
             server/core/localExecution/PostgresLocalExecutionLedger.integration.test.mjs \
             server/core/localExecution/PostgresLocalExecutionUploadStore.integration.test.mjs \
             server/core/artifacts/postgresMaskArtifactStore.localExecution.integration.test.mjs
