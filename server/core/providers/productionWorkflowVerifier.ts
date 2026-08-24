@@ -1,6 +1,6 @@
 import type { Artifact, WorkflowOperation, WorkflowVerifierPort, VerificationResult } from '../../../src/platform/creative/workflow-engine/types.ts';
 
-export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42A.1';
+export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C2.1';
 
 const CHECKS = Object.freeze({
   supported: 'PRODUCTION_OPERATION_SUPPORTED',
@@ -9,6 +9,8 @@ const CHECKS = Object.freeze({
   maskKind: 'OUTPUT_KIND_MASK',
   maskPixels: 'MASK_PIXELS_VALID',
   maskLineage: 'MASK_LINEAGE_VALID',
+  deterministicPixels: 'DETERMINISTIC_PIXELS_VERIFIED',
+  localLineage: 'LOCAL_IMAGE_LINEAGE_VALID',
 } as const);
 
 const ERRORS = Object.freeze({
@@ -19,6 +21,8 @@ const ERRORS = Object.freeze({
   malformedReference: 'PROVIDER_IMAGE_REFERENCE_INVALID',
   invalidMask: 'LOCAL_MASK_INVALID',
   invalidMaskLineage: 'LOCAL_MASK_LINEAGE_INVALID',
+  invalidLocalImage: 'LOCAL_IMAGE_INVALID',
+  invalidLocalImageLineage: 'LOCAL_IMAGE_LINEAGE_INVALID',
 } as const);
 
 /**
@@ -43,6 +47,14 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
       if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidMaskLineage, [CHECKS.supported, CHECKS.maskKind, CHECKS.maskPixels]);
       return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.maskKind, CHECKS.maskPixels, CHECKS.maskLineage], errors: [] });
     }
+    if (operation.type === 'BACKGROUND_ISOLATION') {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidLocalImageLineage);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalDeterministicImage(artifacts[0])) return invalid(operation.id, ERRORS.invalidLocalImage, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels, CHECKS.localLineage], errors: [] });
+    }
     if (operation.type === 'CONTROLLED_LOCAL_EDIT') return invalid(operation.id, ERRORS.controlledOwned);
     if (operation.type !== 'image-edit') return invalid(operation.id, ERRORS.unsupported);
     if (artifacts.length === 0) return invalid(operation.id, ERRORS.outputRequired, [CHECKS.supported]);
@@ -61,6 +73,15 @@ function isCanonicalLocalMask(artifact: Artifact): boolean {
   if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1 || !(alpha instanceof Uint8Array) || alpha.length !== Number(width) * Number(height)) return false;
   if (value.coordinateSpace !== 'ORIGINAL') return false;
   return artifact.metadata?.artifactRole === 'MASK' && artifact.metadata?.localExecutionAdmission === 'ADMITTED';
+}
+
+function isCanonicalDeterministicImage(artifact: Artifact): boolean {
+  if (!artifact.value || typeof artifact.value !== 'object' || Array.isArray(artifact.value)) return false;
+  const value = artifact.value as Readonly<Record<string, unknown>>;
+  const width = value.width; const height = value.height; const data = value.data;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1 || !(data instanceof Uint8ClampedArray) || data.length !== Number(width) * Number(height) * 4) return false;
+  const integrity = artifact.metadata?.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  return artifact.metadata?.artifactRole === 'COMPOSITE' && artifact.metadata?.localExecutionAdmission === 'ADMITTED' && integrity?.verificationOutcome === 'PASS';
 }
 
 function isImageReference(value: unknown): boolean {
