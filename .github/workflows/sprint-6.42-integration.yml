@@ -136,6 +136,27 @@ jobs:
           node --test .test-cache/6.42-integration/realesrgan-service-contract.test.mjs
           python -m py_compile scripts/build-realesrgan-x4v3-release.py
           grep -F '"artifactState": "EXPORT_REQUIRED"' src/platform/creative/local-ai/models/super-resolution.manifest.json
+      - name: C3 real PostgreSQL model admission, replay and zero-cloud vertical
+        run: |
+          mkdir -p .test-cache/6.42-integration/migrations .test-cache/artifacts/migrations
+          npx esbuild tests/realesrgan-postgres-vertical.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/realesrgan-postgres-vertical.test.mjs \
+            --external:node:* --external:pg --external:sharp
+          cp server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/002_canonical_mask_artifacts.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql .test-cache/6.42-integration/migrations/
+          cp server/core/projects/migrations/004_canonical_projects_and_originals.sql .test-cache/6.42-integration/migrations/
+          cp server/core/projects/migrations/005_canonical_project_history_versions.sql .test-cache/6.42-integration/migrations/
+          cp server/core/projects/migrations/006_project_history_acceptance_hardening.sql .test-cache/6.42-integration/migrations/
+          cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/6.42-integration/migrations/
+          cp server/core/auth/migrations/008_canonical_auth_identity_sessions.sql .test-cache/6.42-integration/migrations/
+          cp server/core/auth/migrations/009_auth_lifecycle_oauth.sql .test-cache/6.42-integration/migrations/
+          cp server/core/auth/migrations/010_registration_attempt_binding.sql .test-cache/6.42-integration/migrations/
+          cp server/core/auth/migrations/011_auth_abuse_session_controls.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/012_local_execution_uploads.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
+          node --test .test-cache/6.42-integration/realesrgan-postgres-vertical.test.mjs
       - name: Canonical route and durable fleet regressions
         run: |
           npm run test:creative-route-6.41c4
