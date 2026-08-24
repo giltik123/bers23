@@ -130,48 +130,57 @@ export class DurableModelFleet {
     return clone(state);
   }
 
+  /**
+   * Reconcile one model at a time under the same lock used by install/update/remove. A second live
+   * browser context therefore waits for the real mutation to finish instead of misclassifying it as
+   * a crashed transient state.
+   */
   async reconcile(): Promise<FleetState> {
+    const snapshot = await this.state();
+    for (const modelId of Object.keys(snapshot.models).sort()) {
+      await this.mutationLocks.runExclusive(`model:${modelId}`, () => this.#reconcileModel(modelId));
+    }
+    return this.state();
+  }
+
+  async #reconcileModel(modelId: string): Promise<void> {
     const cleanupHashes: string[] = [];
     const recovered = await this.metadata.update((source) => {
       const state = clone(source);
+      const model = state.models[modelId];
+      if (!model) return state;
       const now = this.clock();
-      for (const model of Object.values(state.models)) {
-        for (const [version, record] of Object.entries(model.versions)) {
-          if (record.status === 'REMOVING') {
-            if (record.contentHash) cleanupHashes.push(record.contentHash);
-            delete (model.versions as Record<string, FleetVersion>)[version];
-            (model as { history: readonly string[] }).history = model.history.filter((item) => item !== version);
-            if (model.activeVersion === version) delete (model as { activeVersion?: string }).activeVersion;
-            continue;
-          }
-          if (['DOWNLOADING', 'UPDATING', 'VERIFYING', 'STAGED', 'ROLLING_BACK'].includes(record.status)) {
-            (model.versions as Record<string, FleetVersion>)[version] = {
-              ...record,
-              status: 'FAILED',
-              transactionId: undefined,
-              lastFailureReason: `interrupted ${record.status.toLowerCase()} before durable activation`,
-              updatedAt: now,
-            };
-            if (model.activeVersion === version) delete (model as { activeVersion?: string }).activeVersion;
-          }
+      for (const [version, record] of Object.entries(model.versions)) {
+        if (record.status === 'REMOVING') {
+          if (record.contentHash) cleanupHashes.push(record.contentHash);
+          delete (model.versions as Record<string, FleetVersion>)[version];
+          (model as { history: readonly string[] }).history = model.history.filter((item) => item !== version);
+          if (model.activeVersion === version) delete (model as { activeVersion?: string }).activeVersion;
+          continue;
+        }
+        if (['DOWNLOADING', 'UPDATING', 'VERIFYING', 'STAGED', 'ROLLING_BACK'].includes(record.status)) {
+          (model.versions as Record<string, FleetVersion>)[version] = {
+            ...record,
+            status: 'FAILED',
+            transactionId: undefined,
+            lastFailureReason: `interrupted ${record.status.toLowerCase()} before durable activation`,
+            updatedAt: now,
+          };
+          if (model.activeVersion === version) delete (model as { activeVersion?: string }).activeVersion;
         }
       }
-      for (const [modelId, model] of Object.entries(state.models)) {
-        if (!Object.keys(model.versions).length) delete (state.models as Record<string, FleetModel>)[modelId];
-      }
+      if (!Object.keys(model.versions).length) delete (state.models as Record<string, FleetModel>)[modelId];
       return { ...state, revision: state.revision + 1 };
     });
 
     for (const hash of cleanupHashes) {
       if (!referencesHash(recovered, hash)) await this.blobs.remove(hash);
     }
-    for (const model of Object.values(recovered.models)) {
-      const active = model.activeVersion && model.versions[model.activeVersion];
-      if (active?.status === 'READY' && !(await this.#valid(active))) {
-        await this.#quarantine(active.modelId, active.version, 'startup integrity revalidation failed');
-      }
+    const model = recovered.models[modelId];
+    const active = model?.activeVersion && model.versions[model.activeVersion];
+    if (active?.status === 'READY' && !(await this.#valid(active))) {
+      await this.#quarantine(active.modelId, active.version, 'startup integrity revalidation failed');
     }
-    return this.state();
   }
 
   install(manifest: ModelManifest): Promise<FleetVersion> {
@@ -272,8 +281,7 @@ export class DurableModelFleet {
         });
         await lease.assertActive();
         await this.blobs.removePartial(partialId);
-        const activated = await this.#activate(manifest, { ...staged, partial: undefined });
-        return activated;
+        return this.#activate(manifest, { ...staged, partial: undefined });
       },
     );
   }
