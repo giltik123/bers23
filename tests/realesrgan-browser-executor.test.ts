@@ -87,7 +87,8 @@ test('browser C3 executor uses exact Core MODEL binding and upstream-compatible 
   assert.equal(result.runtime, 'WASM'); assert.equal(result.accelerator, 'wasm');
   assert.deepEqual(result.model, { modelId: 'realesr-general-x4v3', version: '1.0.0-candidate.1' });
   assert.ok(modelInput); assert.equal(modelInput!.length, 12);
-  assert.deepEqual(Array.from(modelInput!), [0, 32/255, 128/255, 1, 64/255, 96/255, 160/255, 192/255, 1, 224/255, 192/255, 128/255]);
+  const expectedInput = new Float32Array([0, 32/255, 128/255, 1, 64/255, 96/255, 160/255, 192/255, 1, 224/255, 192/255, 128/255]);
+  assert.deepEqual(Array.from(modelInput!), Array.from(expectedInput));
   assert.equal(result.preview.width, 8); assert.equal(result.preview.height, 8);
   assert.deepEqual(Array.from(result.preview.data.slice(0, 4)), [0, 128, 255, 255], 'clamp and ties-to-even uint8 conversion must be deterministic');
   assert.ok(state.uploaded?.byteLength);
@@ -134,7 +135,7 @@ test('deterministic tool cannot satisfy a Core MODEL super-resolution ticket', a
 });
 
 test('MODEL executor cannot report BROWSER_JS and unsafe x4 allocation is denied before inference', async () => {
-  const browserJsModel = { infer: async () => ({ width: 8, height: 8, data: outputRgb(), runtime: 'BROWSER_JS' as any, accelerator: 'cpu' as const, latencyMs: 1 }) };
+  const browserJsModel: LocalSuperResolutionModelPort = { infer: async () => ({ width: 8, height: 8, data: outputRgb(), runtime: 'BROWSER_JS', accelerator: 'cpu', latencyMs: 1 }) };
   const executor = new CoreAuthorizedSuperResolution('project', coreFor(ticket(), {}), { loadImage: async () => source, sha256: async () => sourceHash }, browserJsModel);
   await assert.rejects(executor.run({ requestId: 'request-upscale', sourceArtifactId: 'source' }), /cannot claim deterministic browser runtime/);
 
