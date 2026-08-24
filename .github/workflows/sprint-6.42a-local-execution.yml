@@ -53,3 +53,40 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/device-capability-contract.test.mjs --external:node:*
           node --test .test-cache/creative-local-ai.test.mjs .test-cache/device-capability-contract.test.mjs
+
+  local-execution-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: local_execution_test
+          POSTGRES_USER: local_execution_test
+          POSTGRES_PASSWORD: local_execution_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U local_execution_test -d local_execution_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://local_execution_test:local_execution_test@127.0.0.1:5432/local_execution_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Apply complete canonical schema
+        run: npm run db:migrate:transactions
+      - name: Verify complete canonical schema
+        run: npm run db:check:transactions
+      - name: Durable ticket, quarantine and canonical MASK contracts
+        run: |
+          node --experimental-strip-types --test \
+            server/core/localExecution/PostgresLocalExecutionLedger.integration.test.mjs \
+            server/core/localExecution/PostgresLocalExecutionUploadStore.integration.test.mjs \
+            server/core/artifacts/postgresMaskArtifactStore.localExecution.integration.test.mjs
