@@ -18,7 +18,7 @@ import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts'
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
-import { LocalExecutionAdmissionRegistry, LocalExecutionTicketAuthority, LocalSegmentationExecutionService, PostgresLocalExecutionUploadStore } from '../localExecution/index.ts';
+import { LocalExecutionTicketAuthority, LocalSegmentationExecutionService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
@@ -43,19 +43,22 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
     if (config.nodeEnv === 'test') {
       await migrateAuthSchema(transactions.pool);
       await migrateLocalExecutionUploadSchema(transactions.pool);
+      await migrateLocalExecutionLedgerSchema(transactions.pool);
     } else {
       await checkAuthSchema(transactions.pool);
       await checkLocalExecutionUploadSchema(transactions.pool);
+      await checkLocalExecutionLedgerSchema(transactions.pool);
     }
     const now = options.now ?? Date.now;
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
-    const artifacts = new ArtifactAuthority(externalArtifacts, new PostgresMaskArtifactStore(transactions.pool), new PostgresImageArtifactStore(transactions.pool));
+    const maskArtifacts = new PostgresMaskArtifactStore(transactions.pool);
+    const artifacts = new ArtifactAuthority(externalArtifacts, maskArtifacts, new PostgresImageArtifactStore(transactions.pool));
     const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
     const runtime = createFalWorkflowRuntime({ apiKey: config.falKey, baseUrl: config.falBaseUrl, timeoutMs: config.providerTimeoutMs, artifacts: externalArtifacts, fetcher });
     const hydrator = new CanonicalArtifactHydrator(artifacts, fetcher);
     const decision = new CanonicalDecisionService();
     const planning = new CanonicalPlanningService();
-    const localExecutionAdmission = new LocalExecutionAdmissionRegistry();
+    const localExecutionAdmission = new PostgresLocalExecutionLedger(transactions.pool);
     const localExecution = new LocalExecutionTicketAuthority(localExecutionAdmission, {
       now,
       id: randomUUID,
@@ -106,7 +109,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       hydrateArtifacts,
       admission: localExecutionAdmission,
       uploads: localUploads,
-      persistMask: (scope, width, height, alpha) => artifacts.masks.persist(scope, width, height, alpha),
+      persistMask: (ticketId, scope, width, height, alpha) => maskArtifacts.persistLocalExecution(ticketId, scope, width, height, alpha),
       issueMaskId: (storageId, scope) => externalArtifacts.issueStoredMask(storageId, scope),
       now,
     });
