@@ -25,7 +25,7 @@ export class ModelFleetPlanner {
   }>): ModelFleetRecommendation {
     const { snapshot } = input;
     const policy = normalizePolicy(input.policy);
-    const requestedCapabilities = uniqueSorted(policy.bootstrapCapabilities.map(normalizeCapability));
+    const requestedCapabilities = uniqueSorted(policy.bootstrapCapabilities.map(canonicalCapability));
     const profile = snapshot.profile;
     const trusted = new Set(input.trustedModelKeys);
     const exclusions: ModelFleetExclusion[] = [];
@@ -58,14 +58,15 @@ export class ModelFleetPlanner {
 
     for (const model of [...input.catalog].sort(compareIdentity)) {
       const reasons: ModelFleetExclusionReason[] = [];
-      const capabilities = uniqueSorted(model.capabilities.map(normalizeCapability));
+      const rawCapabilities = uniqueSorted(model.capabilities.map(normalizeCapability));
+      const capabilities = uniqueSorted(model.capabilities.map(canonicalCapability));
       const coverage = capabilities.filter((capability) => requestedCapabilities.includes(capability));
       if (!trusted.has(modelFleetKey(model))) reasons.push('UNTRUSTED_MANIFEST');
       if (!model.supportedPlatforms.includes(profile.platform)) reasons.push('UNSUPPORTED_PLATFORM');
       if (snapshot.runtimeCapabilities[model.runtime] !== true || !model.supportedAccelerators.some((kind) => snapshot.runtimeCapabilities[kind] === true)) reasons.push('RUNTIME_UNAVAILABLE');
       if (!SAFE_CATALOG_STATUSES.has(model.status)) reasons.push('UNSAFE_STATUS');
       if (coverage.length === 0) reasons.push('CAPABILITY_NOT_BOOTSTRAP');
-      if (capabilities.some((capability) => HEAVY_CAPABILITY_MARKERS.some((marker) => capability.includes(marker)))) reasons.push('HEAVY_CAPABILITY');
+      if (rawCapabilities.some((capability) => HEAVY_CAPABILITY_MARKERS.some((marker) => capability.includes(marker)))) reasons.push('HEAVY_CAPABILITY');
       if (model.requiredRam > 0 && effectiveProfile.ramMb === 'UNKNOWN') reasons.push('UNKNOWN_RAM');
       else if (model.requiredRam > 0 && effectiveProfile.ramMb < model.requiredRam) reasons.push('INSUFFICIENT_RAM');
       if (model.requiredVram > 0 && effectiveProfile.vramMb === 'UNKNOWN') reasons.push('UNKNOWN_VRAM');
@@ -192,5 +193,13 @@ function normalizePolicy(policy: ModelFleetRecommendationPolicy | undefined): Re
   return normalized;
 }
 
+function canonicalCapability(value: string): string {
+  const normalized = normalizeCapability(value);
+  if (normalized === 'OCR' || normalized.includes('_OCR') || normalized.startsWith('OCR_')) return 'OCR';
+  if (normalized.includes('SEGMENT')) return 'SEGMENTATION';
+  if (normalized.includes('UPSCALE') || normalized.includes('SUPER_RESOLUTION')) return 'UPSCALE';
+  if (normalized.includes('ANALYSIS')) return 'ANALYSIS';
+  return normalized;
+}
 function normalizeCapability(value: string): string { return value.trim().replace(/[\s-]+/g, '_').toUpperCase(); }
 function uniqueSorted<T extends string>(values: readonly T[]): T[] { return [...new Set(values)].sort() as T[]; }
