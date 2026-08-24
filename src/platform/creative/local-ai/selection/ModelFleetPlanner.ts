@@ -13,6 +13,9 @@ const DEFAULT_BOOTSTRAP_CAPABILITIES = Object.freeze(['ANALYSIS', 'OCR', 'SEGMEN
 const SAFE_CATALOG_STATUSES = new Set(['AVAILABLE', 'INSTALLED', 'READY']);
 const HEAVY_CAPABILITY_MARKERS = Object.freeze(['GENERAT', 'INPAINT', 'OUTPAINT', 'DIFFUSION', 'TEXT_TO_IMAGE', 'IMAGE_TO_IMAGE', 'LOCAL_REASONING', 'VISION_LANGUAGE']);
 
+type Candidate = Readonly<{ model: ModelManifest; coverage: readonly string[] }>;
+type FleetPlan = Readonly<{ mask: bigint; selected: readonly Candidate[]; bytes: number; quality: number; stability: number; latency: number }>;
+
 export function modelFleetKey(model: Pick<ModelManifest, 'modelId' | 'version'>): string { return `${model.modelId}@${model.version}`; }
 
 export class ModelFleetPlanner {
@@ -55,7 +58,7 @@ export class ModelFleetPlanner {
     const maxModelBytes = Math.min(policy.maxModelBytes ?? budgetBytes, budgetBytes);
     const ramMb = profile.ramMb;
     const vramMb = profile.vramMb;
-    const candidates: Array<Readonly<{ model: ModelManifest; coverage: readonly string[] }>> = [];
+    const candidates: Candidate[] = [];
     let resourceStorageBlocked = false;
 
     for (const model of [...input.catalog].sort(compareIdentity)) {
@@ -82,41 +85,93 @@ export class ModelFleetPlanner {
       else candidates.push(Object.freeze({ model, coverage: Object.freeze(coverage) }));
     }
 
-    candidates.sort(compareCandidate);
-    const selected: ModelManifest[] = [];
-    const selectedModelIds = new Set<string>();
-    const covered = new Set<string>();
-    let estimatedBytes = 0;
-    let selectionBudgetBlocked = false;
+    const plan = optimizeFleet(candidates, requestedCapabilities, budgetBytes);
+    const selected = plan.selected.map((candidate) => candidate.model);
+    const selectedKeys = new Set(selected.map(modelFleetKey));
+    const selectedModelIds = new Set(selected.map((model) => model.modelId));
+    const covered = new Set(plan.selected.flatMap((candidate) => candidate.coverage));
+    const uncoveredCapabilities = requestedCapabilities.filter((capability) => !covered.has(capability));
 
     for (const candidate of candidates) {
-      if (selectedModelIds.has(candidate.model.modelId)) {
-        exclusions.push(exclusion(candidate.model, ['MODEL_VERSION_ALREADY_SELECTED']));
-        continue;
-      }
-      const uncovered = candidate.coverage.filter((capability) => !covered.has(capability));
-      if (uncovered.length === 0) {
-        exclusions.push(exclusion(candidate.model, ['CAPABILITY_ALREADY_COVERED']));
-        continue;
-      }
-      if (estimatedBytes + candidate.model.sizeBytes > budgetBytes) {
-        exclusions.push(exclusion(candidate.model, ['BUDGET_EXCEEDED']));
-        selectionBudgetBlocked = true;
-        continue;
-      }
-      selected.push(candidate.model);
-      selectedModelIds.add(candidate.model.modelId);
-      estimatedBytes += candidate.model.sizeBytes;
-      for (const capability of uncovered) covered.add(capability);
+      if (selectedKeys.has(modelFleetKey(candidate.model))) continue;
+      if (selectedModelIds.has(candidate.model.modelId)) exclusions.push(exclusion(candidate.model, ['MODEL_VERSION_ALREADY_SELECTED']));
+      else if (candidate.coverage.every((capability) => covered.has(capability))) exclusions.push(exclusion(candidate.model, ['CAPABILITY_ALREADY_COVERED']));
+      else exclusions.push(exclusion(candidate.model, ['BUDGET_EXCEEDED']));
     }
 
-    const uncoveredCapabilities = requestedCapabilities.filter((capability) => !covered.has(capability));
     const status = selected.length > 0
       ? uncoveredCapabilities.length === 0 ? 'READY' : 'PARTIAL'
-      : resourceStorageBlocked || selectionBudgetBlocked ? 'BLOCKED_STORAGE' : 'NO_COMPATIBLE_MODELS';
-    return result(status, requestedCapabilities, selected, uncoveredCapabilities, exclusions, budgetBytes, freeBytes, reserveBytes, estimatedBytes);
+      : resourceStorageBlocked ? 'BLOCKED_STORAGE' : 'NO_COMPATIBLE_MODELS';
+    return result(status, requestedCapabilities, selected, uncoveredCapabilities, exclusions, budgetBytes, freeBytes, reserveBytes, plan.bytes);
   }
 }
+
+/**
+ * Exact dynamic programming over the small requested-capability mask. Catalog size may grow,
+ * but state count is bounded by capability combinations rather than byte budget or model count.
+ * Versions of one modelId are processed as mutually-exclusive alternatives.
+ */
+function optimizeFleet(candidates: readonly Candidate[], requestedCapabilities: readonly string[], budgetBytes: number): FleetPlan {
+  const bitByCapability = new Map(requestedCapabilities.map((capability, index) => [capability, 1n << BigInt(index)]));
+  const groups = new Map<string, Candidate[]>();
+  for (const candidate of candidates) {
+    const group = groups.get(candidate.model.modelId) ?? [];
+    group.push(candidate);
+    groups.set(candidate.model.modelId, group);
+  }
+  for (const group of groups.values()) group.sort((a, b) => compareIdentity(a.model, b.model));
+
+  let states = new Map<string, FleetPlan>([['0', emptyPlan()]]);
+  for (const modelId of [...groups.keys()].sort()) {
+    const options = groups.get(modelId)!;
+    const next = new Map<string, FleetPlan>();
+    for (const state of states.values()) {
+      keepBestForMask(next, state);
+      for (const candidate of options) {
+        const bytes = state.bytes + candidate.model.sizeBytes;
+        if (bytes > budgetBytes) continue;
+        const candidateMask = coverageMask(candidate.coverage, bitByCapability);
+        const proposal: FleetPlan = Object.freeze({
+          mask: state.mask | candidateMask,
+          selected: Object.freeze([...state.selected, candidate]),
+          bytes,
+          quality: state.quality + candidate.model.qualityScore,
+          stability: state.stability + candidate.model.stabilityScore,
+          latency: state.latency + candidate.model.estimatedLatency,
+        });
+        keepBestForMask(next, proposal);
+      }
+    }
+    states = next;
+  }
+  return [...states.values()].sort(compareFinalPlans)[0] ?? emptyPlan();
+}
+
+function keepBestForMask(states: Map<string, FleetPlan>, proposal: FleetPlan): void {
+  const key = proposal.mask.toString();
+  const current = states.get(key);
+  if (!current || compareSameCoveragePlans(proposal, current) < 0) states.set(key, proposal);
+}
+
+function compareFinalPlans(a: FleetPlan, b: FleetPlan): number {
+  const coverageDifference = bitCount(b.mask) - bitCount(a.mask);
+  if (coverageDifference !== 0) return coverageDifference;
+  return compareSameCoveragePlans(a, b);
+}
+
+function compareSameCoveragePlans(a: FleetPlan, b: FleetPlan): number {
+  if (a.bytes !== b.bytes) return a.bytes - b.bytes;
+  if (a.selected.length !== b.selected.length) return a.selected.length - b.selected.length;
+  if (a.quality !== b.quality) return b.quality - a.quality;
+  if (a.stability !== b.stability) return b.stability - a.stability;
+  if (a.latency !== b.latency) return a.latency - b.latency;
+  return planIdentity(a).localeCompare(planIdentity(b));
+}
+
+function emptyPlan(): FleetPlan { return Object.freeze({ mask: 0n, selected: Object.freeze([]), bytes: 0, quality: 0, stability: 0, latency: 0 }); }
+function coverageMask(coverage: readonly string[], bitByCapability: ReadonlyMap<string, bigint>): bigint { return coverage.reduce((mask, capability) => mask | (bitByCapability.get(capability) ?? 0n), 0n); }
+function bitCount(value: bigint): number { let count = 0; for (let current = value; current > 0n; current >>= 1n) count += Number(current & 1n); return count; }
+function planIdentity(plan: FleetPlan): string { return plan.selected.map((candidate) => modelFleetKey(candidate.model)).sort().join('|'); }
 
 function result(
   status: ModelFleetRecommendation['status'],
@@ -148,22 +203,14 @@ function exclusion(model: ModelManifest, reasons: readonly ModelFleetExclusionRe
 }
 
 function compareIdentity(a: ModelManifest, b: ModelManifest): number { return a.modelId.localeCompare(b.modelId) || compareVersionDesc(a.version, b.version); }
-function compareCandidate(a: Readonly<{ model: ModelManifest; coverage: readonly string[] }>, b: Readonly<{ model: ModelManifest; coverage: readonly string[] }>): number {
-  const efficiency = b.coverage.length * a.model.sizeBytes - a.coverage.length * b.model.sizeBytes;
-  if (efficiency !== 0) return efficiency;
-  if (a.model.qualityScore !== b.model.qualityScore) return b.model.qualityScore - a.model.qualityScore;
-  if (a.model.stabilityScore !== b.model.stabilityScore) return b.model.stabilityScore - a.model.stabilityScore;
-  if (a.model.estimatedLatency !== b.model.estimatedLatency) return a.model.estimatedLatency - b.model.estimatedLatency;
-  if (a.model.sizeBytes !== b.model.sizeBytes) return a.model.sizeBytes - b.model.sizeBytes;
-  return compareIdentity(a.model, b.model);
-}
-
 function compareVersionDesc(a: string, b: string): number {
-  const av = a.split('.').map(Number); const bv = b.split('.').map(Number);
-  for (let index = 0; index < Math.max(av.length, bv.length); index += 1) {
-    const difference = (bv[index] ?? 0) - (av[index] ?? 0);
-    if (difference !== 0) return difference;
+  const matchA = /^(\d+)\.(\d+)\.(\d+)$/.exec(a); const matchB = /^(\d+)\.(\d+)\.(\d+)$/.exec(b);
+  if (matchA && matchB) {
+    for (let index = 1; index <= 3; index += 1) { const difference = Number(matchB[index]) - Number(matchA[index]); if (difference !== 0) return difference; }
+    return 0;
   }
+  if (matchA) return -1;
+  if (matchB) return 1;
   return b.localeCompare(a);
 }
 
