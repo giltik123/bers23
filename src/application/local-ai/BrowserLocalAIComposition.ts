@@ -51,10 +51,10 @@ export const browserLocalAIComposition = new LazyBrowserLocalAIComposition();
 export const PRODUCTION_BROWSER_FLEET_MODEL_COUNT = 0 as const;
 
 const EMPTY_BROWSER_TRUST_POLICY: TrustPolicy = Object.freeze({
-  publishers: Object.freeze([]),
-  formats: Object.freeze(['ONNX', 'TFLITE', 'SAFETENSORS', 'GGUF']),
-  runtimes: Object.freeze(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']),
-  licenses: Object.freeze(['Apache-2.0', 'MIT', 'BSD-3-Clause']),
+  publishers: Object.freeze([] as string[]),
+  formats: Object.freeze(['ONNX', 'TFLITE', 'SAFETENSORS', 'GGUF'] as const),
+  runtimes: Object.freeze(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN'] as const),
+  licenses: Object.freeze(['Apache-2.0', 'MIT', 'BSD-3-Clause'] as const),
 });
 
 /**
