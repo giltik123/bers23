@@ -164,7 +164,7 @@ async function createProductionBrowserLocalAIComposition(): Promise<BrowserLocal
         throw new Error(`Trusted browser model binding unavailable: ${modelId}@${version} (${capability})`);
       }
       const admission = await deviceAdmission.admit(manifest, [capability], 'LOCAL_ONLY');
-      if (!admission.allowed) throw new Error(`Trusted browser model is not admissible on this device: ${admission.reasons.join('; ') || 'device admission denied'}`);
+      if (admission.allowed === false) throw new Error(`Trusted browser model is not admissible on this device: ${admission.reasons.join('; ') || 'device admission denied'}`);
       const key = `${modelId}@${version}`;
       let pending = loading.get(key);
       if (!pending) {
