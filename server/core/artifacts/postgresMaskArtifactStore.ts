@@ -44,6 +44,18 @@ export class PostgresMaskArtifactStore {
     return freezeStoredMask({ storageId: row.storage_id, tenantId: row.tenant_id, userId: row.user_id, projectId: row.project_id, width: Number(row.width), height: Number(row.height), png: new Uint8Array(storedPng) });
   }
 
+  /** Durable recovery path for an already committed local execution replay. */
+  async loadLocalExecution(ticketId: string, scope: AuthenticatedScope & { projectId: string }): Promise<StoredMask | undefined> {
+    if (!ticketId) return undefined;
+    const result = await this.pool.query(`SELECT storage_id, tenant_id, user_id, project_id, width, height, png_bytes
+      FROM canonical_mask_artifacts
+      WHERE local_execution_ticket_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4
+        AND role='MASK' AND encoding='ALPHA_8_LOSSLESS' AND coordinate_space='ORIGINAL' AND revoked_at IS NULL`,
+    [ticketId, scope.tenantId, scope.userId, scope.projectId]);
+    const row = result.rows[0]; if (!row) return undefined;
+    return freezeStoredMask({ storageId: row.storage_id, tenantId: row.tenant_id, userId: row.user_id, projectId: row.project_id, width: Number(row.width), height: Number(row.height), png: new Uint8Array(row.png_bytes) });
+  }
+
   async load(storageId: string, scope: AuthenticatedScope & { projectId: string }): Promise<StoredMask | undefined> {
     const result = await this.pool.query(`SELECT storage_id, tenant_id, user_id, project_id, width, height, png_bytes
       FROM canonical_mask_artifacts WHERE storage_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4 AND role='MASK'
