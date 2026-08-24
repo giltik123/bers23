@@ -1,15 +1,22 @@
 import type {
-  LocalExecutionAdmissionDecision,
+  AnyLocalExecutionAdmissionDecision,
+  AnyLocalExecutionResult,
+  AnyLocalExecutionTicket,
+  LocalExecutionAdmissionReason,
+  LocalExecutionExecutorBinding,
   LocalExecutionExpectedOutput,
   LocalExecutionOutputEvidence,
   LocalExecutionResult,
+  LocalExecutionResultV2,
   LocalExecutionTicket,
+  LocalExecutionTicketV2,
 } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import type { LocalExecutionFinalization } from './LocalExecutionLedger.ts';
 
 const SHA256 = /^[a-f0-9]{64}$/i;
-const RUNTIMES = new Set(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']);
+const MODEL_RUNTIMES = new Set(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']);
+const V2_RUNTIMES = new Set([...MODEL_RUNTIMES, 'BROWSER_JS']);
 const ACCELERATORS = new Set(['webgpu', 'wasm', 'cuda', 'dml', 'coreml', 'cpu', 'nnapi', 'UNKNOWN']);
 const POLICIES = new Set(['LOCAL_SELECTED', 'LOCAL_ONLY']);
 const FORBIDDEN_RESULT_KEYS = new Set([
@@ -31,17 +38,17 @@ const FORBIDDEN_RESULT_KEYS = new Set([
 ]);
 
 /**
- * Server-side replay/scope/output admission boundary for on-device execution.
+ * Server-side replay/scope/output admission boundary for versioned on-device execution.
  * This class deliberately has no provider runtime or Billing dependency.
  */
 export class LocalExecutionAdmissionRegistry {
-  readonly #tickets = new Map<string, LocalExecutionTicket>();
+  readonly #tickets = new Map<string, AnyLocalExecutionTicket>();
   readonly #consumed = new Set<string>();
   readonly #claimed = new Set<string>();
   readonly #idempotency = new Map<string, string>();
   readonly #finalizations = new Map<string, LocalExecutionFinalization>();
 
-  issue(ticket: LocalExecutionTicket): LocalExecutionTicket {
+  issue(ticket: AnyLocalExecutionTicket): AnyLocalExecutionTicket {
     assertTicket(ticket);
     const stored = immutableTicket(ticket);
     const idempotencyLookup = scopedIdempotencyKey(stored.scope, stored.idempotencyKey);
@@ -62,15 +69,15 @@ export class LocalExecutionAdmissionRegistry {
     return stored;
   }
 
-  get(ticketId: string): LocalExecutionTicket | undefined { return this.#tickets.get(ticketId); }
-  getByIdempotencyKey(scope: Scope, idempotencyKey: string): LocalExecutionTicket | undefined {
+  get(ticketId: string): AnyLocalExecutionTicket | undefined { return this.#tickets.get(ticketId); }
+  getByIdempotencyKey(scope: Scope, idempotencyKey: string): AnyLocalExecutionTicket | undefined {
     const ticketId = this.#idempotency.get(scopedIdempotencyKey(scope, idempotencyKey));
     return ticketId ? this.#tickets.get(ticketId) : undefined;
   }
   getFinalization(ticketId: string): LocalExecutionFinalization | undefined { return this.#finalizations.get(ticketId); }
 
   /** Claim prevents concurrent duplicate finalization while canonical persistence is in progress. */
-  claim(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
+  claim(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): AnyLocalExecutionAdmissionDecision {
     const decision = this.#validate(input);
     if (!decision.allowed) return decision;
     if (this.#claimed.has(decision.ticket.ticketId)) return denied('IN_PROGRESS');
@@ -88,7 +95,7 @@ export class LocalExecutionAdmissionRegistry {
     return Promise.resolve();
   }
 
-  admit(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
+  admit(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): AnyLocalExecutionAdmissionDecision {
     const decision = this.claim(input);
     if (decision.allowed) this.#commit(decision.ticket.ticketId, 'SUCCESS');
     return decision;
@@ -101,7 +108,7 @@ export class LocalExecutionAdmissionRegistry {
     this.#finalizations.set(ticketId, Object.freeze({ status }));
   }
 
-  #validate(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
+  #validate(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): AnyLocalExecutionAdmissionDecision {
     const ticket = this.#tickets.get(input.ticketId);
     if (!ticket) return denied('UNKNOWN_TICKET');
     if (this.#consumed.has(ticket.ticketId)) return denied('REPLAYED_TICKET');
@@ -109,31 +116,44 @@ export class LocalExecutionAdmissionRegistry {
     if (!sameScope(ticket.scope, input.callerScope)) return denied('SCOPE_MISMATCH');
     if (input.now >= ticket.expiresAt) return denied('EXPIRED_TICKET');
     if (containsForbiddenAuthority(input.result)) return denied('FORBIDDEN_CLIENT_AUTHORITY');
-    if (!isLocalExecutionResult(input.result)) return denied('MALFORMED_RESULT');
-    const result = input.result;
-    if (
-      result.ticketId !== ticket.ticketId ||
-      result.ticketVersion !== ticket.version ||
-      result.requestId !== ticket.requestId ||
-      result.workflowId !== ticket.workflowId ||
-      result.stepId !== ticket.stepId ||
-      result.nonce !== ticket.nonce
-    ) return denied('IDENTITY_MISMATCH');
-    if (!ticket.allowedModels.some(model => model.modelId === result.model.modelId && model.version === result.model.version)) return denied('MODEL_MISMATCH');
-    if (!outputsMatch(ticket.expectedOutputs, result.outputs)) return denied('OUTPUT_CONTRACT_MISMATCH');
-    return Object.freeze({ allowed: true, reasonCode: 'ADMITTED', ticket, result: immutableResult(result) });
+
+    if (ticket.version === '1') return validateV1(ticket, input.result);
+    return validateV2(ticket, input.result);
   }
 }
 
-function assertTicket(ticket: LocalExecutionTicket): void {
-  if (ticket.issuer !== 'CORE' || ticket.version !== '1') throw new Error('Invalid local execution ticket authority');
+function validateV1(ticket: LocalExecutionTicket, raw: unknown): AnyLocalExecutionAdmissionDecision {
+  if (!isLocalExecutionResultV1(raw)) return denied('MALFORMED_RESULT');
+  const result = raw;
+  if (!sameResultIdentity(ticket, result)) return denied('IDENTITY_MISMATCH');
+  if (!ticket.allowedModels.some(model => model.modelId === result.model.modelId && model.version === result.model.version)) return denied('MODEL_MISMATCH');
+  if (!outputsMatch(ticket.expectedOutputs, result.outputs)) return denied('OUTPUT_CONTRACT_MISMATCH');
+  return Object.freeze({ allowed: true, reasonCode: 'ADMITTED', ticket, result: immutableResultV1(result) });
+}
+
+function validateV2(ticket: LocalExecutionTicketV2, raw: unknown): AnyLocalExecutionAdmissionDecision {
+  if (!isLocalExecutionResultV2(raw)) return denied('MALFORMED_RESULT');
+  const result = raw;
+  if (!sameResultIdentity(ticket, result)) return denied('IDENTITY_MISMATCH');
+  if (!ticket.allowedExecutors.some(executor => sameExecutor(executor, result.executor))) return denied('EXECUTOR_MISMATCH');
+  if (result.executor.kind === 'MODEL' && result.runtime === 'BROWSER_JS') return denied('MALFORMED_RESULT');
+  if (!outputsMatch(ticket.expectedOutputs, result.outputs)) return denied('OUTPUT_CONTRACT_MISMATCH');
+  return Object.freeze({ allowed: true, reasonCode: 'ADMITTED', ticket, result: immutableResultV2(result) });
+}
+
+function assertTicket(ticket: AnyLocalExecutionTicket): void {
+  if (ticket.issuer !== 'CORE' || (ticket.version !== '1' && ticket.version !== '2')) throw new Error('Invalid local execution ticket authority');
   if (!ticket.ticketId || !ticket.requestId || !ticket.workflowId || !ticket.stepId || !ticket.operation.id || !ticket.operation.version || !ticket.operation.type || !ticket.operation.capability) throw new Error('Incomplete local execution ticket identity');
   if (!ticket.scope.tenantId || !ticket.scope.projectId || !ticket.scope.userId) throw new Error('Incomplete local execution ticket scope');
   if (!POLICIES.has(ticket.policy)) throw new Error('Invalid local execution policy');
   if (!ticket.idempotencyKey || !ticket.nonce) throw new Error('Local execution ticket requires idempotency and nonce');
   if (!Number.isFinite(ticket.issuedAt) || !Number.isFinite(ticket.expiresAt) || ticket.expiresAt <= ticket.issuedAt) throw new Error('Invalid local execution ticket lifetime');
   if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw new Error('Local execution ticket cannot authorize cloud cost');
-  if (!Array.isArray(ticket.allowedModels) || ticket.allowedModels.length === 0 || ticket.allowedModels.some(model => !model.modelId || !model.version)) throw new Error('Local execution ticket requires approved model bindings');
+  if (ticket.version === '1') {
+    if (!Array.isArray(ticket.allowedModels) || ticket.allowedModels.length === 0 || ticket.allowedModels.some(model => !model.modelId || !model.version)) throw new Error('Local execution v1 ticket requires approved model bindings');
+  } else {
+    if (!Array.isArray(ticket.allowedExecutors) || ticket.allowedExecutors.length === 0 || ticket.allowedExecutors.some(executor => !validExecutor(executor))) throw new Error('Local execution v2 ticket requires approved executor bindings');
+  }
   if (ticket.operation.parameters !== undefined && (!ticket.operation.parameters || typeof ticket.operation.parameters !== 'object' || Array.isArray(ticket.operation.parameters))) throw new Error('Invalid local execution operation parameters');
   for (const input of ticket.inputs) if (input.sha256 !== undefined && !SHA256.test(input.sha256)) throw new Error('Invalid input artifact SHA-256');
   for (const expected of ticket.expectedOutputs) {
@@ -143,24 +163,30 @@ function assertTicket(ticket: LocalExecutionTicket): void {
   }
 }
 
-function immutableTicket(ticket: LocalExecutionTicket): LocalExecutionTicket {
+function immutableTicket(ticket: AnyLocalExecutionTicket): AnyLocalExecutionTicket {
   const parameters = ticket.operation.parameters === undefined ? undefined : deepFreeze(structuredClone(ticket.operation.parameters));
-  return Object.freeze({
+  const common = {
     ...ticket,
     operation: Object.freeze({ ...ticket.operation, parameters }),
     scope: Object.freeze({ ...ticket.scope }),
     inputs: Object.freeze(ticket.inputs.map(input => Object.freeze({ ...input }))),
     expectedOutputs: Object.freeze(ticket.expectedOutputs.map(output => Object.freeze({ ...output, mimeTypes: output.mimeTypes ? Object.freeze([...output.mimeTypes]) : undefined }))),
-    allowedModels: Object.freeze(ticket.allowedModels.map(model => Object.freeze({ ...model }))),
     cost: Object.freeze({ paidCloudCredits: 0 as const, providerCalls: 0 as const }),
-  });
+  };
+  if (ticket.version === '1') return Object.freeze({ ...common, version: '1' as const, allowedModels: Object.freeze(ticket.allowedModels.map(model => Object.freeze({ ...model }))) }) as LocalExecutionTicket;
+  return Object.freeze({ ...common, version: '2' as const, allowedExecutors: Object.freeze(ticket.allowedExecutors.map(executor => Object.freeze({ ...executor }))) }) as LocalExecutionTicketV2;
 }
 
-function sameTicketBinding(a: LocalExecutionTicket, b: LocalExecutionTicket): boolean {
-  return a.requestId === b.requestId && a.workflowId === b.workflowId && a.stepId === b.stepId && sameScope(a.scope, b.scope) &&
+function sameTicketBinding(a: AnyLocalExecutionTicket, b: AnyLocalExecutionTicket): boolean {
+  if (a.version !== b.version) return false;
+  const common = a.requestId === b.requestId && a.workflowId === b.workflowId && a.stepId === b.stepId && sameScope(a.scope, b.scope) &&
     a.operation.id === b.operation.id && a.operation.version === b.operation.version && a.operation.type === b.operation.type && a.operation.capability === b.operation.capability &&
     canonicalJson(a.operation.parameters ?? {}) === canonicalJson(b.operation.parameters ?? {}) &&
-    a.policy === b.policy && canonicalJson(a.inputs) === canonicalJson(b.inputs) && canonicalJson(a.expectedOutputs) === canonicalJson(b.expectedOutputs) && canonicalJson(a.allowedModels) === canonicalJson(b.allowedModels);
+    a.policy === b.policy && canonicalJson(a.inputs) === canonicalJson(b.inputs) && canonicalJson(a.expectedOutputs) === canonicalJson(b.expectedOutputs);
+  if (!common) return false;
+  if (a.version === '1' && b.version === '1') return canonicalJson(a.allowedModels) === canonicalJson(b.allowedModels);
+  if (a.version === '2' && b.version === '2') return canonicalJson(a.allowedExecutors) === canonicalJson(b.allowedExecutors);
+  return false;
 }
 
 function scopedIdempotencyKey(scope: Scope, idempotencyKey: string): string {
@@ -173,7 +199,7 @@ function canonicalValue(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)]));
 }
 
-function immutableResult(result: LocalExecutionResult): LocalExecutionResult {
+function immutableResultV1(result: LocalExecutionResult): LocalExecutionResult {
   return Object.freeze({
     ...result,
     model: Object.freeze({ ...result.model }),
@@ -183,9 +209,19 @@ function immutableResult(result: LocalExecutionResult): LocalExecutionResult {
   });
 }
 
+function immutableResultV2(result: LocalExecutionResultV2): LocalExecutionResultV2 {
+  return Object.freeze({
+    ...result,
+    executor: Object.freeze({ ...result.executor }),
+    outputs: Object.freeze(result.outputs.map(output => Object.freeze({ ...output }))),
+    metrics: Object.freeze({ ...result.metrics }),
+    benchmarkEvidence: result.benchmarkEvidence ? Object.freeze({ ...result.benchmarkEvidence }) : undefined,
+  });
+}
+
 function sameScope(a: Scope, b: Scope): boolean { return a.tenantId === b.tenantId && a.projectId === b.projectId && a.userId === b.userId; }
 
-function denied(reasonCode: Exclude<LocalExecutionAdmissionDecision['reasonCode'], 'ADMITTED'>): LocalExecutionAdmissionDecision {
+function denied(reasonCode: Exclude<LocalExecutionAdmissionReason, 'ADMITTED'>): AnyLocalExecutionAdmissionDecision {
   return Object.freeze({ allowed: false, reasonCode });
 }
 
@@ -201,20 +237,58 @@ function containsForbiddenAuthority(value: unknown, seen = new Set<object>()): b
   return false;
 }
 
-function isLocalExecutionResult(value: unknown): value is LocalExecutionResult {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+function isLocalExecutionResultV1(value: unknown): value is LocalExecutionResult {
+  if (!commonResultShape(value)) return false;
   const result = value as Partial<LocalExecutionResult>;
-  if (![result.ticketId, result.requestId, result.workflowId, result.stepId, result.nonce].every(nonEmptyString)) return false;
   if (result.ticketVersion !== '1') return false;
   if (!result.model || !nonEmptyString(result.model.modelId) || !nonEmptyString(result.model.version)) return false;
-  if (!nonEmptyString(result.runtime) || !RUNTIMES.has(result.runtime)) return false;
+  if (!nonEmptyString(result.runtime) || !MODEL_RUNTIMES.has(result.runtime)) return false;
+  return validMetricsAndOutputs(result);
+}
+
+function isLocalExecutionResultV2(value: unknown): value is LocalExecutionResultV2 {
+  if (!commonResultShape(value)) return false;
+  const result = value as Partial<LocalExecutionResultV2>;
+  if (result.ticketVersion !== '2') return false;
+  if (!result.executor || !validExecutor(result.executor)) return false;
+  if (!nonEmptyString(result.runtime) || !V2_RUNTIMES.has(result.runtime)) return false;
+  return validMetricsAndOutputs(result);
+}
+
+function commonResultShape(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const result = value as Record<string, unknown>;
+  if (![result.ticketId, result.requestId, result.workflowId, result.stepId, result.nonce].every(nonEmptyString)) return false;
   if (!nonEmptyString(result.accelerator) || !ACCELERATORS.has(result.accelerator)) return false;
+  return true;
+}
+
+function validMetricsAndOutputs(result: Partial<AnyLocalExecutionResult>): boolean {
   if (!Array.isArray(result.outputs) || !result.outputs.every(isOutputEvidence)) return false;
   if (!result.metrics || !finiteNonNegative(result.metrics.latencyMs)) return false;
   if (result.metrics.memoryBytes !== undefined && !finiteNonNegative(result.metrics.memoryBytes)) return false;
   if (result.metrics.vramBytes !== undefined && !finiteNonNegative(result.metrics.vramBytes)) return false;
   if (result.metrics.energyEstimate !== undefined && !finiteNonNegative(result.metrics.energyEstimate)) return false;
   return true;
+}
+
+function validExecutor(value: unknown): value is LocalExecutionExecutorBinding {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const executor = value as Record<string, unknown>;
+  if (executor.kind === 'MODEL') return nonEmptyString(executor.modelId) && nonEmptyString(executor.version) && !('toolId' in executor);
+  if (executor.kind === 'DETERMINISTIC_TOOL') return nonEmptyString(executor.toolId) && nonEmptyString(executor.version) && !('modelId' in executor);
+  return false;
+}
+
+function sameExecutor(a: LocalExecutionExecutorBinding, b: LocalExecutionExecutorBinding): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'MODEL' && b.kind === 'MODEL') return a.modelId === b.modelId && a.version === b.version;
+  if (a.kind === 'DETERMINISTIC_TOOL' && b.kind === 'DETERMINISTIC_TOOL') return a.toolId === b.toolId && a.version === b.version;
+  return false;
+}
+
+function sameResultIdentity(ticket: AnyLocalExecutionTicket, result: AnyLocalExecutionResult): boolean {
+  return result.ticketId === ticket.ticketId && result.ticketVersion === ticket.version && result.requestId === ticket.requestId && result.workflowId === ticket.workflowId && result.stepId === ticket.stepId && result.nonce === ticket.nonce;
 }
 
 function isOutputEvidence(value: unknown): value is LocalExecutionOutputEvidence {
