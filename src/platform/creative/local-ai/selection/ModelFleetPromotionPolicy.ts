@@ -97,7 +97,7 @@ export class ModelFleetPromotionPolicy {
 
     const staleReasons = new Set<ModelPromotionReason>();
     const rejectionReasons = new Set<ModelPromotionReason>();
-    for (const evidence of exact) {
+    for (const evidence of latestPerProvider(exact)) {
       const criteria = matchingCriteria.find((item) => item.provider === evidence.provider)!;
       if (evidence.capturedAt > input.now) {
         staleReasons.add('BENCHMARK_FROM_FUTURE');
@@ -116,6 +116,17 @@ export class ModelFleetPromotionPolicy {
     if (rejectionReasons.size) return decision(modelKey, 'REJECTED', [...rejectionReasons].sort());
     return decision(modelKey, 'STALE', [...staleReasons].sort());
   }
+}
+
+function latestPerProvider(evidence: readonly BenchmarkEvidence[]): readonly BenchmarkEvidence[] {
+  const latest = new Map<ExecutionProvider, BenchmarkEvidence>();
+  for (const item of evidence) {
+    const current = latest.get(item.provider);
+    if (!current || item.capturedAt > current.capturedAt || (item.capturedAt === current.capturedAt && item.evidenceKey.localeCompare(current.evidenceKey) < 0)) {
+      latest.set(item.provider, item);
+    }
+  }
+  return [...latest.values()].sort((a, b) => a.provider.localeCompare(b.provider));
 }
 
 function thresholdReasons(
