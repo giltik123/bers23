@@ -22,3 +22,6 @@ export * from './cache/LocalInferenceCache';
 export * from './cost/LocalAICostModel';
 export * from './debug/LocalAIDebugger';
 export * from './LocalAIPlatform';
+export * from './lifecycle/DurableModelFleet';
+export * from './lifecycle/InMemoryFleetStorage';
+export * from './lifecycle/IndexedDbFleetStorage';
