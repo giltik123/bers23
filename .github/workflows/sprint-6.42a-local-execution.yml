@@ -36,6 +36,7 @@ jobs:
           npx esbuild \
             tests/creative-on-device-security.test.ts \
             tests/creative-on-device-local-failure.test.ts \
+            tests/creative-on-device-success.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outdir=.test-cache/6.42a-security --external:node:*
           node --test .test-cache/6.42a-security/*.js
