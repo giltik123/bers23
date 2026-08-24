@@ -1,0 +1,22 @@
+name: Durable model fleet acceptance
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/**'
+      - 'tests/creative-*model*.test.ts'
+      - 'DURABLE_LOCAL_MODEL_FLEET.md'
+      - '.github/workflows/durable-model-fleet.yml'
+  workflow_dispatch:
+jobs:
+  exact-head:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:durable-model-fleet
+      - run: npm run test:model-distribution
+      - run: npx esbuild tests/creative-local-ai.test.ts tests/creative-local-models.test.ts --bundle --platform=node --format=esm --target=node20 --outdir=.test-cache/local-ai --external:node:* --loader:.sig=text --loader:.pem=text --loader:.wasm=file && node --test .test-cache/local-ai/*.js
