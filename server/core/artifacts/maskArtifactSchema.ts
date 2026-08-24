@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { Pool } from 'pg';
 import { migrateImageArtifactSchema } from './imageArtifactSchema.ts';
 
@@ -24,6 +25,18 @@ export async function migrateMaskArtifactSchema(pool: Pool): Promise<void> {
   // 014 has a foreign key to canonical_image_artifacts. Keep this dependency inside
   // the migrator so direct callers cannot accidentally make fresh installation order unsafe.
   await migrateImageArtifactSchema(pool);
-  await pool.query(await readFile(new URL('./migrations/014_canonical_mask_lineage.sql', import.meta.url), 'utf8'));
+  await pool.query(await readLineageMigration());
   await checkMaskArtifactSchema(pool);
+}
+
+async function readLineageMigration(): Promise<string> {
+  try {
+    return await readFile(new URL('./migrations/014_canonical_mask_lineage.sql', import.meta.url), 'utf8');
+  } catch (error) {
+    // Bundled PostgreSQL tests historically copy only the base artifact migrations into
+    // their output directory. During source-tree test execution use the canonical source
+    // migration rather than weakening schema readiness. Production bundles contain 014.
+    if (process.env.NODE_ENV === 'production') throw error;
+    return readFile(resolve(process.cwd(), 'server/core/artifacts/migrations/014_canonical_mask_lineage.sql'), 'utf8');
+  }
 }
