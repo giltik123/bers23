@@ -107,13 +107,18 @@ jobs:
           cp server/core/artifacts/migrations/012_local_execution_uploads.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           node --test .test-cache/6.42-integration/background-isolation-postgres-vertical.test.mjs
-      - name: C3 Real-ESRGAN candidate release gate
+      - name: C3 Real-ESRGAN candidate and browser model contracts
         run: |
           npx esbuild tests/realesrgan-release-policy.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/6.42-integration/realesrgan-release-policy.test.mjs \
             --external:node:*
           node --test .test-cache/6.42-integration/realesrgan-release-policy.test.mjs
+          npx esbuild tests/realesrgan-browser-executor.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/realesrgan-browser-executor.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42-integration/realesrgan-browser-executor.test.mjs
           python -m py_compile scripts/build-realesrgan-x4v3-release.py
           grep -F '"artifactState": "EXPORT_REQUIRED"' src/platform/creative/local-ai/models/super-resolution.manifest.json
       - name: Canonical route and durable fleet regressions
