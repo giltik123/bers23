@@ -52,8 +52,8 @@ test('planner verification claims cannot bless malformed output and unsupported 
   const malformed = await productionWorkflowVerifier.verify(forged, [artifact('image', { url: 'https://provider.example/result.png', hash: 'forged', mimeType: 'image/png' })]);
   assert.equal(malformed.valid, false);
   assert.deepEqual(malformed.errors, ['PROVIDER_IMAGE_REFERENCE_INVALID']);
-  const unsupported = await productionWorkflowVerifier.verify({ id: 'segment', type: 'segment', providerId: 'fal' }, [artifact('mask', validValue)]);
-  assert.deepEqual(unsupported, { stepId: 'segment', valid: false, checks: [], errors: ['UNSUPPORTED_OPERATION_VERIFICATION'] });
+  const unsupported = await productionWorkflowVerifier.verify({ id: 'unsupported', type: 'unsupported-op', providerId: 'fal' }, [artifact('mask', validValue)]);
+  assert.deepEqual(unsupported, { stepId: 'unsupported', valid: false, checks: [], errors: ['UNSUPPORTED_OPERATION_VERIFICATION'] });
 });
 
 test('generic verifier cannot replace canonical controlled-edit integrity verification', async () => {
