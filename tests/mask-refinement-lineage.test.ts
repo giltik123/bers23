@@ -13,6 +13,8 @@ function fixture() {
     cancel() {},
     async segment(input) {
       segmentationCalls++;
+      const size = input.analysis.analysisWidth * input.analysis.analysisHeight;
+      const alpha = Uint8Array.from({ length: size }, (_value, index) => index % 2 === 0 ? 255 : 0);
       return {
         target: 'LOCAL' as const,
         modelId: 'fixture-segmenter',
@@ -20,7 +22,7 @@ function fixture() {
         latencyMs: 1,
         canonicalArtifactId: 'core-admitted-mask',
         candidates: [{
-          alpha: new Uint8Array(input.analysis.analysisWidth * input.analysis.analysisHeight).fill(255),
+          alpha,
           width: input.analysis.analysisWidth,
           height: input.analysis.analysisHeight,
           coordinateSpace: 'ANALYSIS' as const,
