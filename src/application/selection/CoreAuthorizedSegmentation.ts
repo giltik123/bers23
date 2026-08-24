@@ -49,7 +49,7 @@ export class CoreAuthorizedSegmentation implements InteractiveSegmentationPort {
       if (actualInputHash.toLowerCase() !== binding.sha256!.toLowerCase()) throw new Error('Local execution input SHA-256 does not match the Core ticket');
       const admission = await this.deviceAdmission.admit(this.model, ['INTERACTIVE_SEGMENTATION'], 'LOCAL_ONLY');
       this.assertCurrent(input.requestId);
-      if (!admission.allowed) throw new Error(`Local device/model admission blocked: ${admission.reasons.join('; ') || 'unsuitable device or model'}`);
+      if (admission.allowed === false) throw new Error(`Local device/model admission blocked: ${admission.reasons.join('; ') || 'unsuitable device or model'}`);
       const local = await this.local.segment(input);
       this.assertCurrent(input.requestId);
       if (local.target !== 'LOCAL') throw new Error('Local segmentation runtime returned a non-local target');
