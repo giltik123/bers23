@@ -98,3 +98,18 @@ test('C2 planner fails closed when either exact source IMAGE or canonical MASK i
     assert.equal(result.operations.length, 0);
   }
 });
+
+test('C2 planner fails closed on stale explicit source or mask identity even when another valid IMAGE and MASK are present', async () => {
+  const planner = new CanonicalPlanningService();
+  for (const metadataPatch of [{ sourceArtifactId: 'stale-source' }, { maskArtifactId: 'stale-mask' }]) {
+    const base = request();
+    const input: CreativeRequest = Object.freeze({
+      ...base,
+      id: `stale-${Object.keys(metadataPatch)[0]}`,
+      metadata: Object.freeze({ ...base.metadata, ...metadataPatch }),
+    });
+    const result = await planner.plan(input, await new CanonicalDecisionService().decide(input));
+    assert.equal(result.status, 'BLOCKED');
+    assert.equal(result.operations.length, 0);
+  }
+});
