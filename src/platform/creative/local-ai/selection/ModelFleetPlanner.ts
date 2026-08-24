@@ -1,4 +1,5 @@
 import { immutableClone } from '../immutable';
+import type { ModelPromotionDecision } from './ModelFleetPromotionPolicy';
 import type {
   DeviceCapabilitySnapshot,
   ModelFleetExclusion,
@@ -25,6 +26,7 @@ export class ModelFleetPlanner {
     trustedModelKeys: readonly string[];
     storageFreeBytes?: number | 'UNKNOWN';
     policy?: ModelFleetRecommendationPolicy;
+    promotionDecisions?: Readonly<Record<string, ModelPromotionDecision>>;
   }>): ModelFleetRecommendation {
     const { snapshot } = input;
     const policy = normalizePolicy(input.policy);
@@ -66,7 +68,14 @@ export class ModelFleetPlanner {
       const rawCapabilities = uniqueSorted(model.capabilities.map(normalizeCapability));
       const capabilities = uniqueSorted(model.capabilities.map(canonicalCapability));
       const coverage = capabilities.filter((capability) => requestedCapabilities.includes(capability));
-      if (!trusted.has(modelFleetKey(model))) reasons.push('UNTRUSTED_MANIFEST');
+      const modelKey = modelFleetKey(model);
+      if (!trusted.has(modelKey)) reasons.push('UNTRUSTED_MANIFEST');
+      if (input.promotionDecisions) {
+        const promotion = input.promotionDecisions[modelKey];
+        if (!promotion || promotion.status === 'BENCHMARK_REQUIRED') reasons.push('BENCHMARK_REQUIRED');
+        else if (promotion.status === 'STALE') reasons.push('BENCHMARK_STALE');
+        else if (promotion.status === 'REJECTED') reasons.push('BENCHMARK_REJECTED');
+      }
       if (!model.supportedPlatforms.includes(profile.platform)) reasons.push('UNSUPPORTED_PLATFORM');
       if (snapshot.runtimeCapabilities[model.runtime] !== true || !model.supportedAccelerators.some((kind) => snapshot.runtimeCapabilities[kind] === true)) reasons.push('RUNTIME_UNAVAILABLE');
       if (!SAFE_CATALOG_STATUSES.has(model.status)) reasons.push('UNSAFE_STATUS');
