@@ -56,6 +56,9 @@ export type ModelPromotionDecision = Readonly<{
   reasons: readonly ModelPromotionReason[];
   evidenceKey?: string;
   provider?: ExecutionProvider;
+  measuredLatencyMs?: number;
+  measuredSuccessRate?: number;
+  capturedAt?: number;
 }>;
 
 export class ModelFleetPromotionPolicy {
@@ -106,9 +109,7 @@ export class ModelFleetPromotionPolicy {
         continue;
       }
       const reasons = thresholdReasons(snapshot, manifest, evidence, criteria);
-      if (!reasons.length) {
-        return decision(modelKey, 'PROMOTED', [], evidence.evidenceKey, evidence.provider);
-      }
+      if (!reasons.length) return decision(modelKey, 'PROMOTED', [], evidence);
       reasons.forEach((reason) => rejectionReasons.add(reason));
     }
 
@@ -178,8 +179,16 @@ function decision(
   modelKey: string,
   status: ModelPromotionStatus,
   reasons: readonly ModelPromotionReason[],
-  evidenceKey?: string,
-  provider?: ExecutionProvider,
+  evidence?: BenchmarkEvidence,
 ): ModelPromotionDecision {
-  return immutableClone({ modelKey, status, reasons: [...reasons].sort(), evidenceKey, provider });
+  return immutableClone({
+    modelKey,
+    status,
+    reasons: [...reasons].sort(),
+    evidenceKey: evidence?.evidenceKey,
+    provider: evidence?.provider,
+    measuredLatencyMs: evidence?.latencyMs,
+    measuredSuccessRate: evidence?.successRate,
+    capturedAt: evidence?.capturedAt,
+  });
 }
