@@ -1,4 +1,4 @@
-import type { PixelImage } from '../pipeline/ControlledLocalEdit.ts';
+import type { PixelImage } from '../pipeline/ControlledLocalEdit';
 
 const PNG_SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
 const IHDR = ascii('IHDR');
@@ -35,7 +35,11 @@ export async function encodeDeterministicRgbaPng(image: PixelImage): Promise<Uin
 async function deflate(bytes: Uint8Array): Promise<Uint8Array> {
   const stream = new CompressionStream('deflate');
   const writer = stream.writable.getWriter();
-  await writer.write(bytes);
+  // Copy into a fresh ArrayBuffer-backed view. DOM BufferSource types reject a
+  // generic Uint8Array<ArrayBufferLike> because it may reference SharedArrayBuffer.
+  const source = new Uint8Array(bytes.byteLength);
+  source.set(bytes);
+  await writer.write(source);
   await writer.close();
   return new Uint8Array(await new Response(stream.readable).arrayBuffer());
 }
