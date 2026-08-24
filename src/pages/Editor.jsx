@@ -250,7 +250,7 @@ export default function Editor() {
             onProgress: (steps) => setChainState((cs) => ({ ...cs, steps })),
             onStepCommitted: async (result, step) => {
               if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
-              await pushEditRef.current(result.finalArtifactId, `${chain.name}: ${step.label}`);
+              await pushEdit(result.finalArtifactId, `${chain.name}: ${step.label}`);
               sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
             },
         }),
