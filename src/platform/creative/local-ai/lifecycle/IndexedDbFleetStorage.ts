@@ -32,9 +32,23 @@ class IndexedDbConnection {
   async request<T>(storeName: string, mode: IDBTransactionMode, create: (store: IDBObjectStore) => IDBRequest): Promise<T> {
     const db = await this.open();
     return new Promise((resolve, reject) => {
-      const request = create(db.transaction(storeName, mode).objectStore(storeName));
-      request.onsuccess = () => resolve(request.result as T);
-      request.onerror = () => reject(request.error);
+      const transaction = db.transaction(storeName, mode);
+      const store = transaction.objectStore(storeName);
+      let result!: T;
+      let failure: unknown;
+      transaction.oncomplete = () => resolve(result);
+      transaction.onabort = () => reject(failure ?? transaction.error ?? new Error(`IndexedDB ${storeName} transaction aborted`));
+      transaction.onerror = () => { failure ??= transaction.error; };
+      let request: IDBRequest;
+      try {
+        request = create(store);
+      } catch (error) {
+        failure = error;
+        transaction.abort();
+        return;
+      }
+      request.onsuccess = () => { result = request.result as T; };
+      request.onerror = () => { failure = request.error; };
     });
   }
 }
