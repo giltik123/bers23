@@ -30,7 +30,7 @@ jobs:
           test_files="$(find .test-cache/6.42a-core -type f -name '*.js' -print)"
           test -n "$test_files"
           node --test $test_files
-      - name: Canonical ON_DEVICE route, restart and zero-cloud proof
+      - name: Canonical ON_DEVICE route, restart, retry and zero-cloud proof
         run: |
           npm run test:creative-route-6.41c4
           mkdir -p .test-cache/6.42a-security
@@ -39,6 +39,7 @@ jobs:
             tests/creative-on-device-local-failure.test.ts \
             tests/creative-on-device-success.test.ts \
             tests/local-segmentation-restart.test.ts \
+            tests/local-segmentation-finalization-retry.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outdir=.test-cache/6.42a-security --external:node:*
           node --test .test-cache/6.42a-security/*.js
@@ -90,7 +91,7 @@ jobs:
         env:
           LOCAL_EXECUTION_SCHEMA_TEST: '1'
         run: node --experimental-strip-types --test server/core/localExecution/localExecutionLedgerSchema.integration.test.mjs
-      - name: Durable ticket, quarantine and canonical MASK contracts
+      - name: Durable ticket, finalization, quarantine and canonical MASK contracts
         run: |
           node --experimental-strip-types --test \
             server/core/localExecution/PostgresLocalExecutionLedger.integration.test.mjs \
