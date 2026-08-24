@@ -7,10 +7,11 @@ import {
   InMemoryBenchmarkEvidencePort,
 } from '../src/platform/creative/local-ai/benchmark/BenchmarkEvidencePersistence.ts';
 import type { ModelPromotionCriteria } from '../src/platform/creative/local-ai/selection/ModelFleetPromotionPolicy.ts';
-import type { LocalAIDependencies, ModelManifest } from '../src/platform/creative/local-ai/types.ts';
+import type { LocalAIDependencies, ModelFleetRecommendationPolicy, ModelManifest } from '../src/platform/creative/local-ai/types.ts';
 
 const bytes = new Uint8Array([1, 2, 3, 4]);
 const sha256 = (value: Uint8Array) => createHash('sha256').update(value).digest('hex');
+const recommendationPolicy: ModelFleetRecommendationPolicy = { bootstrapCapabilities: ['SEGMENTATION'] };
 const model: ModelManifest = {
   modelId: 'benchmark-platform-model',
   version: '1.0.0',
@@ -138,11 +139,11 @@ test('LocalAIPlatform persists benchmark evidence across restart and gates promo
   const first = new LocalAIPlatform(env.dependencies(), trustPolicy, undefined, env.benchmarking());
   assert.equal(first.durableBenchmarkEvidenceEnabled(), true);
 
-  const beforeEvidence = await first.recommendFleet(undefined, { requirePromotion: true });
+  const beforeEvidence = await first.recommendFleet(recommendationPolicy, { requirePromotion: true });
   assert.equal(beforeEvidence.status, 'NO_COMPATIBLE_MODELS');
   assert.ok(beforeEvidence.exclusions[0]?.reasons.includes('BENCHMARK_REQUIRED'));
 
-  const bootstrap = await first.recommendFleet();
+  const bootstrap = await first.recommendFleet(recommendationPolicy);
   assert.equal(bootstrap.status, 'READY');
   assert.deepEqual(bootstrap.modelBindings, [{ modelId: model.modelId, version: model.version }]);
 
@@ -155,7 +156,7 @@ test('LocalAIPlatform persists benchmark evidence across restart and gates promo
   const restarted = new LocalAIPlatform(env.dependencies(), trustPolicy, undefined, env.benchmarking());
   const fetchesBeforeRecommendation = env.fetches();
   const writesBeforeRecommendation = env.writes();
-  const promoted = await restarted.recommendFleet(undefined, { requirePromotion: true });
+  const promoted = await restarted.recommendFleet(recommendationPolicy, { requirePromotion: true });
   assert.equal(promoted.status, 'READY');
   assert.deepEqual(promoted.modelBindings, [{ modelId: model.modelId, version: model.version }]);
   assert.equal(env.fetches(), fetchesBeforeRecommendation, 'recommendation must not download model bytes');
@@ -165,7 +166,7 @@ test('LocalAIPlatform persists benchmark evidence across restart and gates promo
   assert.equal((await env.evidencePort().list()).length, 0, 'full uninstall must clear benchmark evidence for the model');
 
   const afterRemoval = new LocalAIPlatform(env.dependencies(), trustPolicy, undefined, env.benchmarking());
-  const blockedAgain = await afterRemoval.recommendFleet(undefined, { requirePromotion: true });
+  const blockedAgain = await afterRemoval.recommendFleet(recommendationPolicy, { requirePromotion: true });
   assert.equal(blockedAgain.status, 'NO_COMPATIBLE_MODELS');
   assert.ok(blockedAgain.exclusions[0]?.reasons.includes('BENCHMARK_REQUIRED'));
 });
@@ -173,10 +174,10 @@ test('LocalAIPlatform persists benchmark evidence across restart and gates promo
 test('promotion-required recommendation fails closed when B3 evidence composition is absent', async () => {
   const env = harness();
   const platform = new LocalAIPlatform(env.dependencies(), trustPolicy);
-  const bootstrap = await platform.recommendFleet();
+  const bootstrap = await platform.recommendFleet(recommendationPolicy);
   assert.equal(bootstrap.status, 'READY');
 
-  const promoted = await platform.recommendFleet(undefined, { requirePromotion: true });
+  const promoted = await platform.recommendFleet(recommendationPolicy, { requirePromotion: true });
   assert.equal(promoted.status, 'NO_COMPATIBLE_MODELS');
   assert.ok(promoted.exclusions[0]?.reasons.includes('BENCHMARK_REQUIRED'));
 });
