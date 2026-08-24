@@ -130,7 +130,7 @@ export class LocalAIPlatform {
   explain(): string | undefined { return this.#lastSnapshot ? new LocalAIDebugger().explain(this.#lastSnapshot) : undefined; }
   replay(snapshot: LocalAISnapshot): LocalAISnapshot { return immutableClone(snapshot) as LocalAISnapshot; }
   pauseDownload(modelId: string): void { this.#downloader.pause(modelId); }
-  resumeDownload(manifest: ModelManifest): Promise<ModelManifest> { this.#downloader.resume(manifest); return this.#downloader.resume(manifest); }
+  resumeDownload(manifest: ModelManifest): Promise<ModelManifest> { return this.#downloader.resume(manifest); }
   cancelDownload(modelId: string): void { this.#downloader.cancel(modelId); }
   rollbackModel(modelId: string): ModelManifest { return this.#downloader.rollback(modelId); }
   reportRuntimeFailure(modelId: string): ModelManifest {
