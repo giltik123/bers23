@@ -1,0 +1,59 @@
+name: Sprint 6.42C1 mask lineage acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/artifacts/**'
+      - 'server/core/http/maskArtifactHttpAdapter.ts'
+      - 'server/index.ts'
+      - 'src/api/coreClient.js'
+      - 'src/application/selection/**'
+      - 'tests/mask-refinement-lineage.test.ts'
+      - '.github/workflows/sprint-6.42c1-mask-lineage.yml'
+  workflow_dispatch:
+
+jobs:
+  mask-lineage-contract:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: mask_lineage_test
+          POSTGRES_USER: mask_lineage_test
+          POSTGRES_PASSWORD: mask_lineage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mask_lineage_test -d mask_lineage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://mask_lineage_test:mask_lineage_test@127.0.0.1:5432/mask_lineage_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and lint
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run server:typecheck
+      - name: Deterministic selection lineage contract
+        run: |
+          mkdir -p .test-cache/6.42c1
+          npx esbuild tests/mask-refinement-lineage.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/6.42c1/mask-refinement-lineage.test.mjs --external:node:*
+          node --test .test-cache/6.42c1/mask-refinement-lineage.test.mjs
+      - name: Fresh PostgreSQL migration and HTTP lineage authority
+        run: node --experimental-strip-types --test server/core/artifacts/maskArtifactLineage.integration.test.mjs
+      - name: Existing selection regression
+        run: npm run test:intelligent-selection
+      - name: Production build and migration packaging
+        run: |
+          npm run server:build
+          npm run build --if-present
+          npm run check:browser-bundle
