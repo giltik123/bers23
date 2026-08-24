@@ -19,7 +19,7 @@ test('production capability registry admits exactly the accepted provider and in
   assert.deepEqual(registry.admit(input({ id: 'verify', type: 'verify' }, 'LOCAL', 'INTERNAL')), { allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'internal:verify:image:v1' });
   assert.deepEqual(registry.admit(input({ id: 'evil', type: 'verify', providerId: 'evil' }, 'LOCAL', 'INTERNAL')), { allowed: false, reasonCode: 'PROVIDER_FORBIDDEN' });
   assert.deepEqual(registry.admit(input({ id: 'cloud-verify', type: 'verify' }, 'CLOUD', 'INTERNAL')), { allowed: false, reasonCode: 'UNSUPPORTED_TARGET' });
-  for (const type of ['segment', 'remove', 'background_replace', 'relight']) {
+  for (const type of ['unsupported-op', 'remove', 'background_replace', 'relight']) {
     assert.deepEqual(registry.admit(input({ id: type, type, providerId: 'fal' })), { allowed: false, reasonCode: 'UNSUPPORTED_OPERATION' });
   }
   assert.deepEqual(registry.admit(input({ id: 'wrong-target', type: 'image-edit', providerId: 'fal' }, 'LOCAL')), { allowed: false, reasonCode: 'UNSUPPORTED_TARGET' });

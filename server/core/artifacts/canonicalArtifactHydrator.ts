@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import type { CreativeArtifact } from '../../../src/platform/creative/canonical/contracts.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
@@ -11,14 +12,14 @@ export class CanonicalArtifactHydrator {
     let bytes: Uint8Array;
     try { const claim=this.authority.external.resolveStoredOriginalId(originalId,scope); const stored=await this.authority.images.loadSource(claim.storageId,scope); if(!stored) throw new Error('Canonical ORIGINAL is unavailable'); bytes=stored.bytes; }
     catch (originalError) { try { const claim=this.authority.external.resolveStoredFinalId(originalId,scope); const stored=await this.authority.images.loadSource(claim.storageId,scope); if(!stored) throw new Error('Canonical FINAL source is unavailable'); bytes=stored.bytes; } catch { try { const claim=this.authority.external.resolve(originalId,scope); bytes=await this.load(claim.url); } catch { throw originalError; } } }
-    const original = await decodeImage(bytes);
-    const artifacts: CreativeArtifact[] = [{ id: originalId, kind: 'image', value: original, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'ORIGINAL', image: imageMetadata(original) }];
+    const original = await decodeImage(bytes); const sourceSha256 = createHash('sha256').update(bytes).digest('hex');
+    const artifacts: CreativeArtifact[] = [{ id: originalId, kind: 'image', value: original, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'ORIGINAL', image: imageMetadata(original), metadata: Object.freeze({ sha256: sourceSha256 }) }];
     for (const id of maskIds) {
       const claim = this.authority.external.resolveStoredMask(id, scope); const stored = await this.authority.masks.load(claim.storageId, scope);
       if (!stored) throw new Error('Canonical MASK is unavailable');
       const decoded = await decodeMask(stored.png);
       if (decoded.width !== stored.width || decoded.height !== stored.height || decoded.width !== original.width || decoded.height !== original.height) throw new Error('Canonical MASK dimensions must match ORIGINAL');
-      artifacts.push({ id, kind: 'mask', value: { width: decoded.width, height: decoded.height, alpha: decoded.alpha, source: 'USER', coordinateSpace: 'ORIGINAL' }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'MASK', image: { width: decoded.width, height: decoded.height, format: 'ALPHA8', orientation: 1, colorSpace: 'gray', alpha: true } });
+      artifacts.push({ id, kind: 'mask', value: { width: decoded.width, height: decoded.height, alpha: decoded.alpha, source: 'USER', coordinateSpace: 'ORIGINAL' }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'MASK', image: { width: decoded.width, height: decoded.height, format: 'ALPHA8', orientation: 1, colorSpace: 'gray', alpha: true }, metadata: Object.freeze({ sha256: createHash('sha256').update(decoded.alpha).digest('hex') }) });
     }
     return artifacts;
   }

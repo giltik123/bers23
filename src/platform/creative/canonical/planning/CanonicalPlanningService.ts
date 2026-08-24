@@ -1,7 +1,7 @@
 import type { CanonicalPlanningPort, CreativeDecision, CreativeOperation, CreativePlan, CreativePlanArtifactSnapshot, CreativePlanCandidate, CreativePlanConstraints, CreativePlannerConfigSnapshot, CreativePlanProvenance, CreativePlanScore, CreativePlanStatus, CreativePlanUncertainty, CreativeRequest, ExecutionTarget, PlanningConfirmationPolicy, PlanningExecutionPolicy, PlanningTelemetryPort } from '../contracts';
 import { buildExplanation, buildReplay, emitPlanTelemetry, fallbackFor, immutable, verificationFor } from './advisoryPolicies';
 
-export const CANONICAL_PLANNER_VERSION = '6.41C0.1';
+export const CANONICAL_PLANNER_VERSION = '6.42A.1';
 type Options = Readonly<{ plannerVersion?: string; minimumIntentConfidence?: number; minimumTargetConfidence?: number; maximumPreservationRisk?: number; compositeExecutionEnabled?: boolean; telemetry?: PlanningTelemetryPort }>;
 
 /** Deterministic advisory planner. Canonical Core revalidates every proposal. */
@@ -14,10 +14,12 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const constraints = immutable(readConstraints(request, decision));
     const uncertainty = immutable(readUncertainty(request));
     const plannerConfig = immutable({ minimumIntentConfidence: this.#options.minimumIntentConfidence, minimumTargetConfidence: this.#options.minimumTargetConfidence, maximumPreservationRisk: this.#options.maximumPreservationRisk, compositeExecutionEnabled: this.#options.compositeExecutionEnabled } satisfies CreativePlannerConfigSnapshot);
+    const interactiveSegmentation = request.metadata?.operationIntent === 'INTERACTIVE_SEGMENTATION';
     const composite = request.metadata?.operationIntent === 'COMPOSITE_REPLACE_RELIGHT';
     const compositeOriginalUnavailable = composite && !artifacts.some(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
-    const strategies = composite ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)] : [simpleOperations(request, artifacts, constraints)];
-    const rawCandidates = strategies.map((operations, index) => candidate(index === 0 ? 'local-efficient' : 'cloud-quality', operations, index === 0 ? 'LOCAL' : 'CLOUD', composite ? (index === 0 ? 1 : 5) : 0, composite ? (index === 0 ? 1200 : 2800) : 0, composite ? (index === 0 ? .76 : .94) : .9, uncertainty.aggregateConfidence));
+    const segmentationInputUnavailable = interactiveSegmentation && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'WORKING'));
+    const strategies = interactiveSegmentation ? [interactiveSegmentationOperations(artifacts, constraints, request)] : composite ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)] : [simpleOperations(request, artifacts, constraints)];
+    const rawCandidates = strategies.map((operations, index) => candidate(index === 0 ? 'local-efficient' : 'cloud-quality', operations, index === 0 ? 'LOCAL' : 'CLOUD', composite ? (index === 0 ? 1 : 5) : 0, composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : 0, composite ? (index === 0 ? .76 : .94) : .9, uncertainty.aggregateConfidence));
     const ranked = rankAndFilter(rawCandidates, constraints);
     const candidates = immutable(ranked.map(value => ({ ...value, fallbackAdvice: fallbackFor(value, constraints, ranked.find(other => other.id !== value.id && other.status === 'ACCEPTED')) })));
     const selected = candidates.find(item => item.status === 'ACCEPTED');
@@ -28,17 +30,26 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     if (uncertainty.targetResolution < this.#options.minimumTargetConfidence) confirmationReasons.push('AMBIGUOUS_TARGET');
     if (uncertainty.preservationRisk > this.#options.maximumPreservationRisk && constraints.confirmationPolicy !== 'ALLOW_PRESERVATION_RISK') confirmationReasons.push('HIGH_PRESERVATION_RISK');
     if (localUnavailable) confirmationReasons.push('NO_FEASIBLE_LOCAL_STRATEGY');
+    if (segmentationInputUnavailable) confirmationReasons.push('CANONICAL_IMAGE_REQUIRED');
     if (compositeOriginalUnavailable) confirmationReasons.push('CANONICAL_ORIGINAL_REQUIRED');
     if (compositeExecutionUnavailable) confirmationReasons.push('COMPOSITE_EXECUTION_NOT_WIRED');
-    const status: CreativePlanStatus = compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK') ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
+    const status: CreativePlanStatus = segmentationInputUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK') ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
     const operations = immutable(status === 'BLOCKED' ? [] : selected?.operations ?? []);
     const rejected = immutable(candidates.filter(item => item.status === 'REJECTED').map(({ id, reasonCodes }) => ({ id, reasonCodes })));
-    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY', ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
+    const planReason = interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
+    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
     provenance = immutable({ ...provenance, replay: buildReplay(this.#options.plannerVersion, plannerConfig, { provenance, selectedCandidateId: selected?.id }) });
     const result = immutable({ requestId: request.id, operations, status, planningConstraints: constraints, candidates, selectedCandidateId: selected?.id, uncertainty, confirmationReasons: immutable(confirmationReasons), proposalId: `${this.#options.plannerVersion}:${request.id}`, plannerVersion: this.#options.plannerVersion, goal: decision.goal, assumptions: [], constraints: [...decision.constraints], provenance, explanation: buildExplanation(this.#options.plannerVersion, plannerConfig, selected, candidates, constraints, uncertainty, confirmationReasons) });
     void emitPlanTelemetry(this.#options.telemetry, result);
     return result;
   }
+}
+
+function interactiveSegmentationOperations(artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints, request: CreativeRequest): readonly CreativeOperation[] {
+  const source = artifacts.find(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'WORKING'));
+  if (!source) return immutable([]);
+  const id = 'interactive-segmentation';
+  return immutable([{ id, type: 'segment', requiredArtifacts: [source.id], produces: ['mask'], verification: verificationFor(id, 'segment', constraints, 'mask'), input: { selectionRequestId: request.metadata?.selectionRequestId, analysis: request.metadata?.analysis, points: request.metadata?.points } }]);
 }
 
 function simpleOperations(request: CreativeRequest, artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints): readonly CreativeOperation[] {
@@ -78,8 +89,8 @@ function readUncertainty(request: CreativeRequest): CreativePlanUncertainty { co
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function strings(value: unknown): string[] { return Array.isArray(value) ? value.filter(item => typeof item === 'string') : []; }
 function numberValue(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined; }
-function stringValue(value: unknown, fallback: string): string { return typeof value === 'string' ? value : fallback; }
+function stringValue(value: unknown, fallback: string) { return typeof value === 'string' ? value : fallback; }
 function enumValue(value: unknown, allowed: readonly string[], fallback: string): string { return typeof value === 'string' && allowed.includes(value) ? value : fallback; }
 function confidence(value: unknown, fallback: number): number { return typeof value === 'number' ? clamp(value) : fallback; }
-function clamp(value: number): number { return Math.max(0, Math.min(1, value)); }
-function round(value: number): number { return Math.round(value * 1_000_000) / 1_000_000; }
+function clamp(value: number) { return Math.max(0, Math.min(1, value)); }
+function round(value: number) { return Math.round(value * 1_000_000) / 1_000_000; }

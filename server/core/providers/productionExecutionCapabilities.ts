@@ -1,19 +1,21 @@
 import type { ExecutionCapabilityDecision, ExecutionCapabilityPort, ExecutionRoute, ExecutionTarget } from '../../../src/platform/creative/canonical/contracts.ts';
 
-export const PRODUCTION_EXECUTION_CAPABILITY_VERSION = '6.41C4.1';
+export const PRODUCTION_EXECUTION_CAPABILITY_VERSION = '6.42A.1';
 type CapabilityRule = Readonly<{ capabilityId: string; route: ExecutionRoute; operationType: string; target: Exclude<ExecutionTarget, 'BLOCKED'>; providerId?: string }>;
 const RULES: readonly CapabilityRule[] = Object.freeze([
   Object.freeze({ capabilityId: 'fal:image-edit:v1', route: 'PROVIDER', operationType: 'image-edit', target: 'CLOUD', providerId: 'fal' }),
   Object.freeze({ capabilityId: 'fal:controlled-local-edit:v1', route: 'PROVIDER', operationType: 'CONTROLLED_LOCAL_EDIT', target: 'CLOUD', providerId: 'fal' }),
   Object.freeze({ capabilityId: 'internal:verify:image:v1', route: 'INTERNAL', operationType: 'verify', target: 'LOCAL' }),
+  Object.freeze({ capabilityId: 'local:mobilesam:segment:v1', route: 'ON_DEVICE', operationType: 'segment', target: 'LOCAL' }),
 ]);
-/** Pure tuple admission; grants no scope, budget, persistence, authentication, or runtime authority. */
+/** Pure tuple admission; grants no scope, budget, persistence, authentication, runtime, or model trust authority. */
 export class ProductionExecutionCapabilityRegistry implements ExecutionCapabilityPort {
-  admit({ operation, route, target }: Parameters<ExecutionCapabilityPort['admit']>[0]): ExecutionCapabilityDecision {
+  admit({ request, operation, route, target }: Parameters<ExecutionCapabilityPort['admit']>[0]): ExecutionCapabilityDecision {
     if (target === 'BLOCKED') return denied('TARGET_BLOCKED');
-    if (route !== 'PROVIDER' && route !== 'INTERNAL') return denied('UNSUPPORTED_ROUTE');
-    if (route === 'INTERNAL' && operation.providerId) return denied('PROVIDER_FORBIDDEN');
+    if (route !== 'PROVIDER' && route !== 'INTERNAL' && route !== 'ON_DEVICE') return denied('UNSUPPORTED_ROUTE');
+    if (route !== 'PROVIDER' && operation.providerId) return denied('PROVIDER_FORBIDDEN');
     if (route === 'PROVIDER' && !operation.providerId) return denied('PROVIDER_REQUIRED');
+    if (operation.type === 'segment' && request.metadata?.operationIntent !== 'INTERACTIVE_SEGMENTATION') return denied('UNSUPPORTED_OPERATION');
     const operationRules = RULES.filter(rule => rule.operationType === operation.type);
     if (!operationRules.length) return denied('UNSUPPORTED_OPERATION');
     const routeRules = operationRules.filter(rule => rule.route === route);
