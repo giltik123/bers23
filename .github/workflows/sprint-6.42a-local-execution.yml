@@ -49,4 +49,7 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --loader:.pem=text --loader:.sig=text --loader:.wasm=file \
             --outfile=.test-cache/creative-local-ai.test.mjs --external:node:*
-          node --test .test-cache/creative-local-ai.test.mjs
+          npx esbuild tests/device-capability-contract.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/device-capability-contract.test.mjs --external:node:*
+          node --test .test-cache/creative-local-ai.test.mjs .test-cache/device-capability-contract.test.mjs
