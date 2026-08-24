@@ -13,6 +13,7 @@ export const BENCHMARK_EVIDENCE_SCHEMA_VERSION = 1 as const;
 const RUNTIME_KEYS = [
   'ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN',
 ] as const satisfies readonly RuntimeKind[];
+const PROVIDER_KEYS = ['webgpu', 'wasm', 'cuda', 'dml', 'coreml', 'cpu', 'nnapi'] as const satisfies readonly ExecutionProvider[];
 
 export type BenchmarkEvidence = Readonly<{
   schemaVersion: 1;
@@ -100,6 +101,8 @@ export class BenchmarkEvidenceStore {
     validateBenchmark(benchmark);
     const capturedAt = this.clock();
     if (!Number.isFinite(capturedAt) || capturedAt < 0) throw new Error('Benchmark capture timestamp must be finite and non-negative');
+    const expiresAt = capturedAt + this.#ttlMs;
+    if (!Number.isFinite(expiresAt) || expiresAt < capturedAt) throw new Error('Benchmark evidence expiry must be finite and monotonic');
     const binding = await this.binding(snapshot, manifest);
     const evidenceKey = evidenceKeyFor(binding, benchmark.provider);
     const evidence: BenchmarkEvidence = immutableClone({
@@ -108,7 +111,7 @@ export class BenchmarkEvidenceStore {
       ...binding,
       provider: benchmark.provider,
       capturedAt,
-      expiresAt: capturedAt + this.#ttlMs,
+      expiresAt,
       sampleCount: benchmark.sampleCount ?? 0,
       coldStartMs: benchmark.coldStartMs,
       warmStartMs: benchmark.warmStartMs,
@@ -125,7 +128,7 @@ export class BenchmarkEvidenceStore {
 
   async all(): Promise<readonly BenchmarkEvidence[]> {
     const values = (await this.port.list())
-      .filter((evidence) => evidence.schemaVersion === BENCHMARK_EVIDENCE_SCHEMA_VERSION)
+      .filter(isValidPersistedEvidence)
       .sort((a, b) => a.modelId.localeCompare(b.modelId)
         || a.modelVersion.localeCompare(b.modelVersion)
         || b.capturedAt - a.capturedAt
@@ -163,6 +166,26 @@ export function exactBinding(evidence: BenchmarkEvidence, binding: BenchmarkEvid
     && evidence.modelVersion === binding.modelVersion
     && evidence.manifestSha256 === binding.manifestSha256
     && evidence.runtime === binding.runtime;
+}
+
+function isValidPersistedEvidence(evidence: BenchmarkEvidence): boolean {
+  if (evidence.schemaVersion !== BENCHMARK_EVIDENCE_SCHEMA_VERSION) return false;
+  if (![evidence.evidenceKey, evidence.deviceCapabilityKey, evidence.modelId, evidence.modelVersion, evidence.manifestSha256].every((value) => typeof value === 'string' && value.length > 0)) return false;
+  if (!RUNTIME_KEYS.includes(evidence.runtime) || !PROVIDER_KEYS.includes(evidence.provider)) return false;
+  if (!Number.isFinite(evidence.capturedAt) || evidence.capturedAt < 0) return false;
+  if (!Number.isFinite(evidence.expiresAt) || evidence.expiresAt < evidence.capturedAt) return false;
+  if (!Number.isInteger(evidence.sampleCount) || evidence.sampleCount < 0) return false;
+  const nonNegative = [evidence.coldStartMs, evidence.warmStartMs, evidence.latencyMs, evidence.ramBytes, evidence.vramBytes, evidence.energyEstimate];
+  if (nonNegative.some((value) => !Number.isFinite(value) || value < 0)) return false;
+  if (!Number.isFinite(evidence.successRate) || evidence.successRate < 0 || evidence.successRate > 1) return false;
+  if (!Array.isArray(evidence.outputDimensions) || evidence.outputDimensions.some((value) => !Number.isInteger(value) || value < 0)) return false;
+  return evidence.evidenceKey === evidenceKeyFor({
+    deviceCapabilityKey: evidence.deviceCapabilityKey,
+    modelId: evidence.modelId,
+    modelVersion: evidence.modelVersion,
+    manifestSha256: evidence.manifestSha256,
+    runtime: evidence.runtime,
+  }, evidence.provider);
 }
 
 function validateBenchmark(benchmark: LocalModelBenchmark): void {
