@@ -26,7 +26,7 @@ export type RuntimeCapabilities = Readonly<Record<RuntimeKind, Availability>>;
 export type DeviceCapabilityProfile = Readonly<{
   platform: Platform; deviceClass: DeviceClass; cpuCores: number | UnknownValue; ramMb: number | UnknownValue;
   gpu: string | UnknownValue; vramMb: number | UnknownValue; npu: string | UnknownValue; architecture: string | UnknownValue;
-  browser: string | UnknownValue; webgpu: Availability; wasm: Availability; webnn: Availability; nnapi: Availability; cuda: Availability;
+  browser: string | UnknownValue; webgpu: Availability; wasm: Availability; webnn: Availability; nnapi?: Availability; cuda: Availability;
   directml: Availability; metal: Availability; vulkan: Availability; storageFreeBytes: number | UnknownValue;
   batteryPercent: number | UnknownValue; powerState: PowerState; thermalState: ThermalState; network: NetworkState; tier: DeviceTier;
   ramPressure: RamPressure; backgroundRestricted: Availability;
