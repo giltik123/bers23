@@ -29,6 +29,10 @@ jobs:
         run: |
           npm run typecheck
           npm run lint
+      - name: Production browser build contract
+        run: |
+          npm run build --if-present
+          npm run check:browser-bundle
       - name: Durable benchmark evidence and promotion policy
         run: |
           mkdir -p .test-cache/6.42b3
