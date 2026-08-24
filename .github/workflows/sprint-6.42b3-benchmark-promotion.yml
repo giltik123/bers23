@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/platform/creative/local-ai/**'
       - 'tests/device-fleet-benchmark-promotion.test.ts'
+      - 'tests/benchmark-evidence-corruption.test.ts'
       - 'tests/local-ai-benchmark-promotion-platform.test.ts'
       - 'tests/device-fleet-recommendation.test.ts'
       - 'tests/creative-durable-model-fleet*.test.ts'
@@ -34,6 +35,13 @@ jobs:
             --outfile=.test-cache/6.42b3/device-fleet-benchmark-promotion.test.mjs \
             --external:node:*
           node --test .test-cache/6.42b3/device-fleet-benchmark-promotion.test.mjs
+      - name: Persisted benchmark corruption fails closed
+        run: |
+          npx esbuild tests/benchmark-evidence-corruption.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42b3/benchmark-evidence-corruption.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42b3/benchmark-evidence-corruption.test.mjs
       - name: LocalAIPlatform durable benchmark promotion wiring
         run: |
           npx esbuild tests/local-ai-benchmark-promotion-platform.test.ts \
