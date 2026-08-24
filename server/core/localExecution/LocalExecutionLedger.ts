@@ -2,6 +2,8 @@ import type { LocalExecutionAdmissionDecision, LocalExecutionTicket } from '../.
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 
 export type MaybePromise<T> = T | Promise<T>;
+export type LocalExecutionFinalizationStatus = 'SUCCESS' | 'FAILED' | 'UNKNOWN';
+export type LocalExecutionFinalization = Readonly<{ status: LocalExecutionFinalizationStatus; finalizedAt?: string }>;
 
 export type LocalExecutionClaimInput = Readonly<{
   ticketId: string;
@@ -18,8 +20,9 @@ export interface LocalExecutionLedger {
   issue(ticket: LocalExecutionTicket): MaybePromise<LocalExecutionTicket>;
   get(ticketId: string): MaybePromise<LocalExecutionTicket | undefined>;
   getByIdempotencyKey(scope: Scope, idempotencyKey: string): MaybePromise<LocalExecutionTicket | undefined>;
+  getFinalization(ticketId: string): MaybePromise<LocalExecutionFinalization | undefined>;
   claim(input: LocalExecutionClaimInput): MaybePromise<LocalExecutionAdmissionDecision>;
   /** Terminal finalization owns a durable/leased resource and is therefore explicitly async. */
-  commit(ticketId: string): Promise<void>;
+  commit(ticketId: string, status: Exclude<LocalExecutionFinalizationStatus, 'UNKNOWN'>): Promise<void>;
   release(ticketId: string): Promise<void>;
 }
