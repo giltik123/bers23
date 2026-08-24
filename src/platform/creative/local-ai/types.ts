@@ -125,7 +125,7 @@ export interface LocalModelRuntime {
 }
 export interface OnnxSession { run(inputs: Readonly<Record<string, TensorValue>>, outputNames?: readonly string[]): Promise<Readonly<Record<string, TensorValue>>>; release?(): Promise<void> | void }
 export interface OnnxSessionFactory { create(bytes: Uint8Array, options: Readonly<{ executionProviders: readonly ExecutionProvider[] }>): Promise<OnnxSession> }
-export type LocalModelBenchmark = Readonly<{ modelId: string; coldStartMs: number; warmStartMs: number; latencyMs: number; ramBytes: number; vramBytes: number; energyEstimate: number; successRate: number; outputDimensions: readonly number[]; provider: ExecutionProvider }>;
+export type LocalModelBenchmark = Readonly<{ modelId: string; sampleCount?: number; coldStartMs: number; warmStartMs: number; latencyMs: number; ramBytes: number; vramBytes: number; energyEstimate: number; successRate: number; outputDimensions: readonly number[]; provider: ExecutionProvider }>;
 export type ModelBundle = Readonly<{ id: 'MOBILE_LOW' | 'MOBILE_HIGH' | 'DESKTOP_STANDARD' | 'DESKTOP_GPU' | 'BROWSER'; modelIds: readonly string[]; estimatedBytes: number; reasoning: 'YES' | 'LIMITED' | 'NO'; generation: 'NO' }>;
 export type ModelPackDefinition = Readonly<{ id: 'IMAGE_ANALYSIS' | 'SEGMENTATION' | 'UPSCALE' | 'OCR' | 'LOCAL_REASONING'; family: string; capabilities: readonly string[]; optional: boolean; artifactKinds: readonly LocalArtifact['kind'][] }>;
 export type ResultVerification = Readonly<{ valid: boolean; checks: Readonly<Record<string, boolean>>; errors: readonly string[] }>;
