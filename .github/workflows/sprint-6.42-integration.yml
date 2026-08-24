@@ -79,6 +79,13 @@ jobs:
             --outfile=.test-cache/6.42-integration/background-isolation-browser-executor.test.mjs \
             --external:node:* --external:sharp
           node --test .test-cache/6.42-integration/background-isolation-browser-executor.test.mjs
+      - name: C2 real PostgreSQL pixel, lineage, replay and zero-cloud vertical
+        run: |
+          npx esbuild tests/background-isolation-postgres-vertical.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/background-isolation-postgres-vertical.test.mjs \
+            --external:node:* --external:pg --external:sharp
+          node --test .test-cache/6.42-integration/background-isolation-postgres-vertical.test.mjs
       - name: Canonical route and durable fleet regressions
         run: |
           npm run test:creative-route-6.41c4
