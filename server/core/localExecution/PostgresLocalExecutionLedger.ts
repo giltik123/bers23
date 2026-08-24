@@ -8,8 +8,9 @@ const TICKET_COLUMNS = 'ticket_id,idempotency_key,tenant_id,user_id,project_id,r
 /** PostgreSQL-backed ticket/replay authority for restart-safe, multi-instance local execution. */
 export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
   private readonly heldClaims = new Map<string, PoolClient>();
+  private readonly pool: Pool;
 
-  constructor(private readonly pool: Pool) {}
+  constructor(pool: Pool) { this.pool = pool; }
 
   async issue(ticket: LocalExecutionTicket): Promise<LocalExecutionTicket> {
     const candidate = validateStoredTicket(ticket);
