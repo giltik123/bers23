@@ -38,7 +38,7 @@ export type LocalExecutionTicketIssueRequest = Readonly<{
 }>;
 
 export interface LocalExecutionTicketIssuerPort {
-  issue(input: LocalExecutionTicketIssueRequest): LocalExecutionTicket;
+  issue(input: LocalExecutionTicketIssueRequest): LocalExecutionTicket | Promise<LocalExecutionTicket>;
 }
 
 /**
