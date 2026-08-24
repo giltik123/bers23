@@ -82,6 +82,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       recovery: { decide: () => 'MARK_UNKNOWN' as const },
       verifier: productionWorkflowVerifier,
       localExecution,
+      localExecutionV2: localExecution,
       now,
       id: randomUUID,
     };
