@@ -95,9 +95,14 @@ test('C2 production PostgreSQL vertical verifies exact pixels, lineage, replay a
 
   const storedMask = await production.artifacts.masks.persistManual(scope, width, height, maskAlpha, { sourceImageStorageId: String(projectRow.original_image_storage_id), producerOperation: 'MANUAL_SELECTION' });
   const maskId = production.artifacts.external.issueStoredMask(storedMask.storageId, scope);
+  const prepare = async (clientRequestId: string) => (await production.localExecution.deterministicImages.prepareBackgroundIsolation({
+    projectId: scope.projectId,
+    sourceArtifactId: originalId,
+    maskArtifactId: maskId,
+    clientRequestId,
+  }, auth)).ticket;
 
-  const prepared = await production.localExecution.deterministicImages.prepareBackgroundIsolation({ projectId: scope.projectId, sourceArtifactId: originalId, maskArtifactId: maskId, clientRequestId: 'c2-success-and-retry' }, auth);
-  const ticket = prepared.ticket;
+  const ticket = await prepare('c2-success-and-retry');
   assert.equal(ticket.version, '2');
   assert.equal(ticket.operation.capability, 'local:tool:background-isolation:v1');
   assert.deepEqual(ticket.cost, { paidCloudCredits: 0, providerCalls: 0 });
@@ -111,26 +116,29 @@ test('C2 production PostgreSQL vertical verifies exact pixels, lineage, replay a
   }
   assert.equal(expected[7], Math.floor((canonicalPixels.data[7] * maskAlpha[1] + 127) / 255), 'source alpha and mask alpha must use the exact integer law');
 
+  const wrongRgbTicket = await prepare('c2-wrong-rgb');
   const wrongRgb = Uint8ClampedArray.from(expected); wrongRgb[0] ^= 1;
-  const wrongRgbEvidence = await production.localExecution.deterministicImages.uploadImage({ ticketId: ticket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(width, height, wrongRgb) }, auth);
+  const wrongRgbEvidence = await production.localExecution.deterministicImages.uploadImage({ ticketId: wrongRgbTicket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(width, height, wrongRgb) }, auth);
   await assert.rejects(
-    () => production.localExecution.deterministicImages.submit({ ticketId: ticket.ticketId, projectId: scope.projectId, result: buildResult(ticket, wrongRgbEvidence) }, auth),
+    () => production.localExecution.deterministicImages.submit({ ticketId: wrongRgbTicket.ticketId, projectId: scope.projectId, result: buildResult(wrongRgbTicket, wrongRgbEvidence) }, auth),
     (error: any) => error?.code === 'local_pixel_verification_failed',
     'one RGB byte mismatch must prevent canonical publication',
   );
   assert.equal(Number((await pool.query("SELECT count(*)::int AS count FROM canonical_image_artifacts WHERE project_id=$1 AND role='COMPOSITE' AND lifecycle='FINAL'", [scope.projectId])).rows[0].count), 0);
 
+  const wrongAlphaTicket = await prepare('c2-wrong-alpha');
   const wrongAlpha = Uint8ClampedArray.from(expected); wrongAlpha[3] = (wrongAlpha[3] + 1) & 255;
-  const wrongAlphaEvidence = await production.localExecution.deterministicImages.uploadImage({ ticketId: ticket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(width, height, wrongAlpha) }, auth);
+  const wrongAlphaEvidence = await production.localExecution.deterministicImages.uploadImage({ ticketId: wrongAlphaTicket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(width, height, wrongAlpha) }, auth);
   await assert.rejects(
-    () => production.localExecution.deterministicImages.submit({ ticketId: ticket.ticketId, projectId: scope.projectId, result: buildResult(ticket, wrongAlphaEvidence) }, auth),
+    () => production.localExecution.deterministicImages.submit({ ticketId: wrongAlphaTicket.ticketId, projectId: scope.projectId, result: buildResult(wrongAlphaTicket, wrongAlphaEvidence) }, auth),
     (error: any) => error?.code === 'local_pixel_verification_failed',
     'one alpha byte mismatch must prevent canonical publication',
   );
 
+  const wrongDimensionsTicket = await prepare('c2-wrong-dimensions');
   const wrongDimensions = await rgbaPng(1, 1, new Uint8ClampedArray([1,2,3,4]));
   await assert.rejects(
-    () => production.localExecution.deterministicImages.uploadImage({ ticketId: ticket.ticketId, projectId: scope.projectId, bytes: wrongDimensions }, auth),
+    () => production.localExecution.deterministicImages.uploadImage({ ticketId: wrongDimensionsTicket.ticketId, projectId: scope.projectId, bytes: wrongDimensions }, auth),
     (error: any) => error?.code === 'local_image_dimensions_mismatch',
   );
 
