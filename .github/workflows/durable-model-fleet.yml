@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'src/platform/creative/local-ai/**'
+      - 'src/platform/creative/model-distribution/**'
       - 'tests/creative-*model*.test.ts'
       - 'DURABLE_LOCAL_MODEL_FLEET.md'
       - '.github/workflows/durable-model-fleet.yml'
@@ -17,6 +18,17 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm run test:durable-model-fleet
-      - run: npm run test:model-distribution
-      - run: npx esbuild tests/creative-local-ai.test.ts tests/creative-local-models.test.ts --bundle --platform=node --format=esm --target=node20 --outdir=.test-cache/local-ai --external:node:* --loader:.sig=text --loader:.pem=text --loader:.wasm=file && node --test .test-cache/local-ai/*.js
+      - name: Durable lifecycle domain contract
+        run: npm run test:durable-model-fleet
+      - name: Durable LocalAIPlatform and distribution wiring
+        run: |
+          mkdir -p .test-cache
+          npx esbuild tests/creative-durable-model-fleet-platform.test.ts \
+            --bundle --platform=node --format=esm --target=node20 \
+            --outfile=.test-cache/creative-durable-model-fleet-platform.test.mjs \
+            --external:node:*
+          node --test .test-cache/creative-durable-model-fleet-platform.test.mjs
+      - name: Model distribution facade regression
+        run: npm run test:model-distribution
+      - name: Existing local AI security and model regressions
+        run: npx esbuild tests/creative-local-ai.test.ts tests/creative-local-models.test.ts --bundle --platform=node --format=esm --target=node20 --outdir=.test-cache/local-ai --external:node:* --loader:.sig=text --loader:.pem=text --loader:.wasm=file && node --test .test-cache/local-ai/*.js
