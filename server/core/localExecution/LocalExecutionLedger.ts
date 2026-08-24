@@ -18,6 +18,7 @@ export interface LocalExecutionLedger {
   issue(ticket: LocalExecutionTicket): MaybePromise<LocalExecutionTicket>;
   get(ticketId: string): MaybePromise<LocalExecutionTicket | undefined>;
   claim(input: LocalExecutionClaimInput): MaybePromise<LocalExecutionAdmissionDecision>;
-  commit(ticketId: string): MaybePromise<void>;
-  release(ticketId: string): MaybePromise<void>;
+  /** Terminal finalization owns a durable/leased resource and is therefore explicitly async. */
+  commit(ticketId: string): Promise<void>;
+  release(ticketId: string): Promise<void>;
 }
