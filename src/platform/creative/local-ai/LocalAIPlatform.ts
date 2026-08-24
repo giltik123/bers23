@@ -157,10 +157,14 @@ export class LocalAIPlatform {
     if (!this.#fleet) { await this.#downloader.remove(modelId); return; }
     await this.#ensureFleetInitialized();
     await this.unloadModel(modelId);
-    const state = await this.#fleet.state();
-    const model = state.models[modelId];
-    const selected = model?.activeVersion ?? newestVersion(model);
-    if (selected) await this.#fleet.remove(modelId, selected);
+    for (;;) {
+      const state = await this.#fleet.state();
+      const model = state.models[modelId];
+      if (!model) break;
+      const selected = model.activeVersion ?? Object.keys(model.versions).sort()[0];
+      if (!selected) break;
+      await this.#fleet.remove(modelId, selected);
+    }
     await this.#syncFleetModel(modelId);
   }
 
@@ -449,10 +453,6 @@ function legacyBundleId(snapshot: DeviceCapabilitySnapshot): ModelBundle['id'] {
     || snapshot.runtimeCapabilities.METAL === true
     || snapshot.runtimeCapabilities.DIRECTML === true;
   return accelerated && (device.tier === 'HIGH' || device.tier === 'EXTREME') ? 'DESKTOP_GPU' : 'DESKTOP_STANDARD';
-}
-
-function newestVersion(model: FleetState['models'][string] | undefined): string | undefined {
-  return newestRecord(model?.versions ?? {})?.version;
 }
 
 function newestRecord(versions: Readonly<Record<string, FleetVersion>>): FleetVersion | undefined {
