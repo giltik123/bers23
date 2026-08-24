@@ -14,13 +14,16 @@ const signExternal = (url) => { const payload = Buffer.from(JSON.stringify({ id:
 test('canonical grayscale PNG persistence hydrates soft alpha byte-exactly and fails closed', async () => {
   let row;
   const pool = { query: async (sql, values) => {
-    if (sql.startsWith('INSERT')) { row = { storage_id: values[0], tenant_id: values[1], user_id: values[2], project_id: values[3], width: values[4], height: values[5], png_bytes: values[6] }; return { rows: [], rowCount: 1 }; }
+    if (sql.startsWith('INSERT')) { row = { storage_id: values[0], tenant_id: values[1], user_id: values[2], project_id: values[3], width: values[4], height: values[5], png_bytes: values[6], source_image_storage_id: values[7], parent_mask_storage_id: values[8], producer_operation: values[9] }; return { rows: [], rowCount: 1 }; }
     const matches = row && values[0] === row.storage_id && values[1] === row.tenant_id && values[2] === row.user_id && values[3] === row.project_id;
     return { rows: matches ? [row] : [], rowCount: matches ? 1 : 0 };
   } };
   const store = new PostgresMaskArtifactStore(pool, () => '32d931c0-2ae4-4cd6-aa12-000000000001');
   const signed = new SignedArtifactAuthority(secret, ['assets.example.test']); const authority = new ArtifactAuthority(signed, store);
-  const alpha = new Uint8Array([0, 64, 128, 192, 255, 32]); const stored = await store.persist(scope, 3, 2, alpha); const maskId = signed.issueStoredMask(stored.storageId, scope);
+  const alpha = new Uint8Array([0, 64, 128, 192, 255, 32]);
+  const stored = await store.persistManual(scope, 3, 2, alpha, { sourceImageStorageId: '32d931c0-2ae4-4cd6-aa12-0000000000aa', producerOperation: 'MANUAL_SELECTION' });
+  assert.equal(stored.sourceImageStorageId, '32d931c0-2ae4-4cd6-aa12-0000000000aa'); assert.equal(stored.producerOperation, 'MANUAL_SELECTION');
+  const maskId = signed.issueStoredMask(stored.storageId, scope);
   const originalPng = await sharp({ create: { width: 3, height: 2, channels: 4, background: '#112233ff' } }).png().toBuffer();
   const hydrator = new CanonicalArtifactHydrator(authority, async () => new Response(originalPng));
   const artifacts = await hydrator.hydrate(scope, signExternal('https://assets.example.test/original.png'), [maskId]);
