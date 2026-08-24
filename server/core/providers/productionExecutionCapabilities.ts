@@ -10,11 +10,12 @@ const RULES: readonly CapabilityRule[] = Object.freeze([
 ]);
 /** Pure tuple admission; grants no scope, budget, persistence, authentication, runtime, or model trust authority. */
 export class ProductionExecutionCapabilityRegistry implements ExecutionCapabilityPort {
-  admit({ operation, route, target }: Parameters<ExecutionCapabilityPort['admit']>[0]): ExecutionCapabilityDecision {
+  admit({ request, operation, route, target }: Parameters<ExecutionCapabilityPort['admit']>[0]): ExecutionCapabilityDecision {
     if (target === 'BLOCKED') return denied('TARGET_BLOCKED');
     if (route !== 'PROVIDER' && route !== 'INTERNAL' && route !== 'ON_DEVICE') return denied('UNSUPPORTED_ROUTE');
     if (route !== 'PROVIDER' && operation.providerId) return denied('PROVIDER_FORBIDDEN');
     if (route === 'PROVIDER' && !operation.providerId) return denied('PROVIDER_REQUIRED');
+    if (operation.type === 'segment' && request.metadata?.operationIntent !== 'INTERACTIVE_SEGMENTATION') return denied('UNSUPPORTED_OPERATION');
     const operationRules = RULES.filter(rule => rule.operationType === operation.type);
     if (!operationRules.length) return denied('UNSUPPORTED_OPERATION');
     const routeRules = operationRules.filter(rule => rule.route === route);
