@@ -6,6 +6,7 @@ import type {
   LocalExecutionTicket,
 } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
+import type { LocalExecutionFinalization } from './LocalExecutionLedger.ts';
 
 const SHA256 = /^[a-f0-9]{64}$/i;
 const RUNTIMES = new Set(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']);
@@ -38,6 +39,7 @@ export class LocalExecutionAdmissionRegistry {
   readonly #consumed = new Set<string>();
   readonly #claimed = new Set<string>();
   readonly #idempotency = new Map<string, string>();
+  readonly #finalizations = new Map<string, LocalExecutionFinalization>();
 
   issue(ticket: LocalExecutionTicket): LocalExecutionTicket {
     assertTicket(ticket);
@@ -65,6 +67,7 @@ export class LocalExecutionAdmissionRegistry {
     const ticketId = this.#idempotency.get(scopedIdempotencyKey(scope, idempotencyKey));
     return ticketId ? this.#tickets.get(ticketId) : undefined;
   }
+  getFinalization(ticketId: string): LocalExecutionFinalization | undefined { return this.#finalizations.get(ticketId); }
 
   /** Claim prevents concurrent duplicate finalization while canonical persistence is in progress. */
   claim(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
@@ -75,18 +78,27 @@ export class LocalExecutionAdmissionRegistry {
     return decision;
   }
 
-  commit(ticketId: string): void {
-    if (!this.#claimed.delete(ticketId)) throw new Error('Local execution ticket has no active admission claim');
-    if (this.#consumed.has(ticketId)) throw new Error('Local execution ticket is already consumed');
-    this.#consumed.add(ticketId);
+  commit(ticketId: string, status: 'SUCCESS' | 'FAILED' = 'SUCCESS'): Promise<void> {
+    this.#commit(ticketId, status);
+    return Promise.resolve();
   }
 
-  release(ticketId: string): void { this.#claimed.delete(ticketId); }
+  release(ticketId: string): Promise<void> {
+    this.#claimed.delete(ticketId);
+    return Promise.resolve();
+  }
 
   admit(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
     const decision = this.claim(input);
-    if (decision.allowed) this.commit(decision.ticket.ticketId);
+    if (decision.allowed) this.#commit(decision.ticket.ticketId, 'SUCCESS');
     return decision;
+  }
+
+  #commit(ticketId: string, status: 'SUCCESS' | 'FAILED'): void {
+    if (!this.#claimed.delete(ticketId)) throw new Error('Local execution ticket has no active admission claim');
+    if (this.#consumed.has(ticketId)) throw new Error('Local execution ticket is already consumed');
+    this.#consumed.add(ticketId);
+    this.#finalizations.set(ticketId, Object.freeze({ status }));
   }
 
   #validate(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
