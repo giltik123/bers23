@@ -165,13 +165,27 @@ function compareSameCoveragePlans(a: FleetPlan, b: FleetPlan): number {
   if (a.quality !== b.quality) return b.quality - a.quality;
   if (a.stability !== b.stability) return b.stability - a.stability;
   if (a.latency !== b.latency) return a.latency - b.latency;
-  return planIdentity(a).localeCompare(planIdentity(b));
+  return comparePlanIdentity(a, b);
+}
+
+function comparePlanIdentity(a: FleetPlan, b: FleetPlan): number {
+  const left = [...a.selected].sort((x, y) => x.model.modelId.localeCompare(y.model.modelId) || compareVersionDesc(x.model.version, y.model.version));
+  const right = [...b.selected].sort((x, y) => x.model.modelId.localeCompare(y.model.modelId) || compareVersionDesc(x.model.version, y.model.version));
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const leftItem = left[index]; const rightItem = right[index];
+    if (!leftItem) return -1;
+    if (!rightItem) return 1;
+    const modelDifference = leftItem.model.modelId.localeCompare(rightItem.model.modelId);
+    if (modelDifference !== 0) return modelDifference;
+    const versionDifference = compareVersionDesc(leftItem.model.version, rightItem.model.version);
+    if (versionDifference !== 0) return versionDifference;
+  }
+  return 0;
 }
 
 function emptyPlan(): FleetPlan { return Object.freeze({ mask: 0n, selected: Object.freeze([]), bytes: 0, quality: 0, stability: 0, latency: 0 }); }
 function coverageMask(coverage: readonly string[], bitByCapability: ReadonlyMap<string, bigint>): bigint { return coverage.reduce((mask, capability) => mask | (bitByCapability.get(capability) ?? 0n), 0n); }
 function bitCount(value: bigint): number { let count = 0; for (let current = value; current > 0n; current >>= 1n) count += Number(current & 1n); return count; }
-function planIdentity(plan: FleetPlan): string { return plan.selected.map((candidate) => modelFleetKey(candidate.model)).sort().join('|'); }
 
 function result(
   status: ModelFleetRecommendation['status'],
