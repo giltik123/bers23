@@ -30,7 +30,9 @@
       "dtype": "float32",
       "layout": "NCHW",
       "channels": 3,
-      "scale": 4
+      "scale": 4,
+      "networkRange": "UNCLAMPED_FLOAT32",
+      "postprocess": "CLAMP_0_1"
     },
     "dynamicSpatialAxes": true,
     "quantized": false,
