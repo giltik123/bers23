@@ -203,6 +203,16 @@ export class IndexedDbFleetReservations implements FleetStorageReservationPort {
   }
 }
 
+/** Browser composition helper. Trust verification remains owned by LocalAIPlatform. */
+export function createBrowserFleetPersistence(name = 'bers-local-model-fleet-v1') {
+  return Object.freeze({
+    metadata: new IndexedDbFleetMetadata(name),
+    blobs: new IndexedDbFleetBlobs(name),
+    mutationLocks: new BrowserFleetMutationLocks(),
+    reservations: new IndexedDbFleetReservations(name),
+  });
+}
+
 function browserLockManager(): WebLockManagerLike | undefined {
   if (typeof navigator === 'undefined') return undefined;
   return (navigator as Navigator & { locks?: WebLockManagerLike }).locks;
