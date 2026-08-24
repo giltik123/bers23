@@ -115,16 +115,29 @@ function ticketFromRow(row: Record<string, unknown>): LocalExecutionTicket {
     row.request_id !== ticket.requestId ||
     row.workflow_id !== ticket.workflowId ||
     row.step_id !== ticket.stepId
-  ) throw new Error('Local execution ticket ledger row does not match its signed authority fields');
+  ) throw new Error('Local execution ticket ledger row does not match its durable authority fields');
   return ticket;
 }
 
 function reconcileStoredTicket(row: Record<string, unknown>, candidate: LocalExecutionTicket): LocalExecutionTicket {
   const stored = ticketFromRow(row);
-  const validator = new LocalExecutionAdmissionRegistry();
-  validator.issue(stored);
-  validator.issue(candidate);
+  if (!sameAuthorityBinding(stored, candidate)) throw new Error('Local execution idempotency key already bound to another execution');
   return stored;
+}
+
+function sameAuthorityBinding(a: LocalExecutionTicket, b: LocalExecutionTicket): boolean {
+  return a.version === b.version && a.issuer === b.issuer && a.idempotencyKey === b.idempotencyKey &&
+    a.requestId === b.requestId && a.workflowId === b.workflowId && a.stepId === b.stepId &&
+    canonicalJson(a.scope) === canonicalJson(b.scope) && canonicalJson(a.operation) === canonicalJson(b.operation) &&
+    canonicalJson(a.inputs) === canonicalJson(b.inputs) && canonicalJson(a.expectedOutputs) === canonicalJson(b.expectedOutputs) &&
+    canonicalJson(a.allowedModels) === canonicalJson(b.allowedModels) && a.policy === b.policy && canonicalJson(a.cost) === canonicalJson(b.cost);
+}
+
+function canonicalJson(value: unknown): string | undefined { return JSON.stringify(canonicalValue(value)); }
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)]));
 }
 
 function denied(reasonCode: Exclude<LocalExecutionAdmissionDecision['reasonCode'], 'ADMITTED'>): LocalExecutionAdmissionDecision {
