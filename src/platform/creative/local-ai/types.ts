@@ -94,7 +94,10 @@ export type ModelFleetExclusionReason =
   | 'MODEL_TOO_LARGE'
   | 'BUDGET_EXCEEDED'
   | 'CAPABILITY_ALREADY_COVERED'
-  | 'MODEL_VERSION_ALREADY_SELECTED';
+  | 'MODEL_VERSION_ALREADY_SELECTED'
+  | 'BENCHMARK_REQUIRED'
+  | 'BENCHMARK_STALE'
+  | 'BENCHMARK_REJECTED';
 export type ModelFleetExclusion = Readonly<{ modelId: string; version: string; reasons: readonly ModelFleetExclusionReason[] }>;
 export type ModelFleetRecommendationStatus = 'READY' | 'PARTIAL' | 'BLOCKED_INSUFFICIENT_EVIDENCE' | 'BLOCKED_STORAGE' | 'NO_COMPATIBLE_MODELS';
 export type ModelFleetRecommendation = Readonly<{
