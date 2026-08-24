@@ -1,0 +1,51 @@
+name: Sprint 6.42C0 browser Local AI acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/application/local-ai/**'
+      - 'src/application/createSelectionSegmentation.ts'
+      - 'src/pages/Editor.jsx'
+      - 'src/platform/creative/local-ai/**'
+      - 'tests/browser-local-ai-composition.test.ts'
+      - '.github/workflows/sprint-6.42c0-browser-local-ai.yml'
+  workflow_dispatch:
+
+jobs:
+  browser-local-ai-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and lint
+        run: |
+          npm run typecheck
+          npm run lint
+      - name: Production browser build contract
+        run: |
+          npm run build --if-present
+          npm run check:browser-bundle
+      - name: Lazy browser Local AI composition contract
+        run: |
+          mkdir -p .test-cache/6.42c0
+          npx esbuild tests/browser-local-ai-composition.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --loader:.pem=text --loader:.sig=text --loader:.wasm=file \
+            --outfile=.test-cache/6.42c0/browser-local-ai-composition.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42c0/browser-local-ai-composition.test.mjs
+      - name: Editor uses explicit canonical project binding
+        run: grep -F "createSelectionSegmentation({ projectId: project.id, imageArtifactId" src/pages/Editor.jsx
+      - name: Integrated 6.42 device contract regression
+        run: |
+          npx esbuild tests/device-capability-fleet-integration.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c0/device-capability-fleet-integration.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42c0/device-capability-fleet-integration.test.mjs
