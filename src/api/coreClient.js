@@ -2,6 +2,10 @@ import '@/lib/app-params';
 
 const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
 const CSRF_HEADER = 'X-Bers-CSRF-Token';
+const LOCAL_INPUT_WIDTH_HEADER = 'X-Bers-Local-Input-Width';
+const LOCAL_INPUT_HEIGHT_HEADER = 'X-Bers-Local-Input-Height';
+const LOCAL_SOURCE_SHA_HEADER = 'X-Bers-Local-Source-Sha256';
+const LOCAL_MASK_SHA_HEADER = 'X-Bers-Local-Mask-Sha256';
 let browserCsrfToken;
 
 function safeReturnTo(value = '/') {
@@ -27,17 +31,43 @@ async function request(path, options = {}) {
   const response = await fetch(`${API_ROOT}${path}`, { ...options, headers, credentials: 'include' });
   if (response.headers.has(CSRF_HEADER)) browserCsrfToken = response.headers.get(CSRF_HEADER) || undefined;
   const data = response.status === 204 ? undefined : await response.json().catch(() => undefined);
-  if (!response.ok) {
-    if (response.status === 401 && path === '/auth/context') browserCsrfToken = undefined;
-    const error = new Error(data?.message || `Core API request failed (${response.status})`);
-    error.status = response.status;
-    error.code = data?.code;
-    error.correlationId = data?.correlationId;
-    error.retryable = data?.retryable ?? false;
-    error.data = data;
-    throw error;
-  }
+  if (!response.ok) throwResponseError(response, data, path);
   return data;
+}
+
+async function requestBytes(path, options = {}) {
+  const headers = new Headers(options.headers);
+  if (unsafeMethod(options.method) && browserCsrfToken) headers.set(CSRF_HEADER, browserCsrfToken);
+  const response = await fetch(`${API_ROOT}${path}`, { ...options, headers, credentials: 'include' });
+  if (response.headers.has(CSRF_HEADER)) browserCsrfToken = response.headers.get(CSRF_HEADER) || undefined;
+  if (!response.ok) {
+    const data = await response.json().catch(() => undefined);
+    throwResponseError(response, data, path);
+  }
+  if ((response.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase() !== 'application/octet-stream') throw new Error('Core local input delivery returned an unexpected media type');
+  return Object.freeze({ bytes: new Uint8Array(await response.arrayBuffer()), headers: response.headers });
+}
+
+function throwResponseError(response, data, path) {
+  if (response.status === 401 && path === '/auth/context') browserCsrfToken = undefined;
+  const error = new Error(data?.message || `Core API request failed (${response.status})`);
+  error.status = response.status;
+  error.code = data?.code;
+  error.correlationId = data?.correlationId;
+  error.retryable = data?.retryable ?? false;
+  error.data = data;
+  throw error;
+}
+
+function requiredPositiveIntegerHeader(headers, name) {
+  const value = Number(headers.get(name));
+  if (!Number.isInteger(value) || value < 1) throw new Error(`Core local input delivery is missing ${name}`);
+  return value;
+}
+function requiredShaHeader(headers, name) {
+  const value = headers.get(name) || '';
+  if (!/^[a-f0-9]{64}$/i.test(value)) throw new Error(`Core local input delivery is missing ${name}`);
+  return value.toLowerCase();
 }
 
 const json = (method, body) => ({ method, body: JSON.stringify(body) });
@@ -78,6 +108,25 @@ export const coreClient = Object.freeze({
     prepareSegmentation: (payload) => request('/local-execution/segment/prepare', json('POST', payload)),
     uploadMask: ({ ticketId, projectId, width, height, alpha }) => request(`/local-execution/${encodeURIComponent(ticketId)}/mask-upload?${new URLSearchParams({ projectId, width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
     submit: ({ ticketId, projectId, result }) => request(`/local-execution/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareBackgroundIsolation: (payload) => request('/local-execution/background-isolation/prepare', json('POST', payload)),
+    loadBackgroundIsolationInputs: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/background-isolation/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
+      const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
+      const pixelCount = width * height;
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 5) throw new Error('Core local input delivery byte length does not match its geometry');
+      const sourceBytes = pixelCount * 4;
+      return Object.freeze({
+        width,
+        height,
+        sourceSha256: requiredShaHeader(delivered.headers, LOCAL_SOURCE_SHA_HEADER),
+        maskSha256: requiredShaHeader(delivered.headers, LOCAL_MASK_SHA_HEADER),
+        sourceRgba: new Uint8ClampedArray(delivered.bytes.slice(0, sourceBytes).buffer),
+        maskAlpha: delivered.bytes.slice(sourceBytes),
+      });
+    },
+    uploadBackgroundIsolationImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/background-isolation/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitBackgroundIsolation: ({ ticketId, projectId, result }) => request(`/local-execution/background-isolation/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
   },
   artifacts: {
     persistMask: ({ projectId, sourceImageArtifactId, parentMaskArtifactId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, sourceImageArtifactId, ...(parentMaskArtifactId && { parentMaskArtifactId }), width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
