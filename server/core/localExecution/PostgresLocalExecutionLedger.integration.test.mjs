@@ -40,7 +40,7 @@ const result = stored => ({
   metrics: { latencyMs: 10 },
 });
 
-test('PostgreSQL local execution ledger is durable, idempotent and serializes finalization across instances', { skip: !databaseUrl }, async () => {
+test('PostgreSQL local execution ledger is scope-isolated, durable, idempotent and serializes finalization across instances', { skip: !databaseUrl }, async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'bers-local-ledger-integration' });
   const token = `local-ledger-${process.pid}-${Date.now()}`;
   const firstLedger = new PostgresLocalExecutionLedger(pool);
@@ -49,9 +49,20 @@ test('PostgreSQL local execution ledger is durable, idempotent and serializes fi
     const first = await firstLedger.issue(ticket(token));
     const replayCandidate = ticket(token, { ticketId: `${token}-ticket-b`, nonce: `${token}-nonce-b`, issuedAt: 2_000, expiresAt: 62_000 });
     const replay = await secondLedger.issue(replayCandidate);
-    assert.equal(replay.ticketId, first.ticketId, 'same idempotency binding must return the original durable ticket');
-    assert.equal(replay.nonce, first.nonce, 'same idempotency binding must preserve the original nonce');
+    assert.equal(replay.ticketId, first.ticketId, 'same scoped idempotency binding must return the original durable ticket');
+    assert.equal(replay.nonce, first.nonce, 'same scoped idempotency binding must preserve the original nonce');
     assert.deepEqual(await secondLedger.get(first.ticketId), first, 'another Core instance must read the same durable ticket');
+    assert.equal((await secondLedger.getByIdempotencyKey(first.scope, first.idempotencyKey))?.ticketId, first.ticketId);
+
+    const otherScope = scope(`${token}-other`);
+    const sameClientIdOtherScope = await secondLedger.issue(ticket(token, {
+      ticketId: `${token}-ticket-other-scope`,
+      scope: otherScope,
+      idempotencyKey: first.idempotencyKey,
+      nonce: `${token}-other-nonce`,
+    }));
+    assert.equal(sameClientIdOtherScope.ticketId, `${token}-ticket-other-scope`, 'another canonical scope may reuse the same client idempotency key');
+    assert.equal((await firstLedger.getByIdempotencyKey(otherScope, first.idempotencyKey))?.ticketId, sameClientIdOtherScope.ticketId);
 
     await assert.rejects(
       () => secondLedger.issue(ticket(token, { ticketId: `${token}-ticket-c`, workflowId: `${token}-other-workflow` })),
