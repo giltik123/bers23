@@ -5,6 +5,8 @@ import type { LocalExecutionLedger } from './LocalExecutionLedger.ts';
 import { admitLocalExecutionInputs } from './LocalExecutionInputAdmission.ts';
 import type { PostgresLocalExecutionUploadStore } from './PostgresLocalExecutionUploadStore.ts';
 
+const LOCAL_SEGMENTATION_STEP_ID = 'interactive-segmentation';
+
 export type LocalSegmentationPoint = Readonly<{ x: number; y: number; label: 'POSITIVE' | 'NEGATIVE'; coordinateSpace: 'ORIGINAL' }>;
 export type LocalSegmentationAnalysis = Readonly<{
   originalWidth: number;
@@ -64,6 +66,14 @@ export class LocalSegmentationExecutionService {
       if (!ticket) throw serviceError(409, 'local_execution_state_lost', 'Local execution ticket is no longer available');
       return Object.freeze({ executionId, ticket });
     }
+
+    const durable = await this.dependencies.admission.getByIdempotencyKey(scope, localSegmentationTicketIdempotencyKey(normalized.clientRequestId));
+    if (durable) {
+      await this.validateDurablePrepareTicket(durable, normalized, scope, executionId, bindingHash);
+      this.#prepared.set(executionId, Object.freeze({ executionId, ticketId: durable.ticketId, scope, bindingHash }));
+      return Object.freeze({ executionId, ticket: durable });
+    }
+
     if (!await this.dependencies.ownsArtifacts(scope, [normalized.inputArtifactId])) throw serviceError(403, 'artifact_scope_denied', 'Input artifact is outside the authenticated project scope');
     const artifacts = await this.dependencies.hydrateArtifacts(scope, normalized.inputArtifactId, []);
     const source = artifacts.find(artifact => artifact.id === normalized.inputArtifactId && artifact.kind === 'image');
@@ -76,6 +86,7 @@ export class LocalSegmentationExecutionService {
     if (tickets.length !== 1) throw serviceError(500, 'local_ticket_contract_error', 'Expected exactly one local segmentation ticket');
     const ticket = tickets[0];
     if (ticket.inputs.length !== 1 || ticket.inputs[0].kind !== 'image' || !ticket.inputs[0].sha256) throw serviceError(500, 'local_ticket_input_integrity_missing', 'Local segmentation ticket requires one canonical image with SHA-256');
+    if (ticket.idempotencyKey !== localSegmentationTicketIdempotencyKey(normalized.clientRequestId)) throw serviceError(500, 'local_ticket_idempotency_contract', 'Canonical local ticket idempotency binding is invalid');
     this.#prepared.set(executionId, Object.freeze({ executionId, ticketId: ticket.ticketId, scope, bindingHash }));
     return Object.freeze({ executionId, ticket });
   }
@@ -145,6 +156,24 @@ export class LocalSegmentationExecutionService {
     if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local execution ticket has expired');
     assertSegmentationTicket(ticket);
     return ticket;
+  }
+
+  private async validateDurablePrepareTicket(ticket: LocalExecutionTicket, command: LocalSegmentationPrepareCommand, scope: AuthenticatedScope & { projectId: string }, executionId: string, bindingHash: string): Promise<void> {
+    assertSameScope(ticket.scope, scope);
+    assertSegmentationTicket(ticket);
+    if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local execution ticket has expired');
+    if (ticket.requestId !== executionId || ticket.workflowId !== executionId || ticket.idempotencyKey !== localSegmentationTicketIdempotencyKey(command.clientRequestId)) throw serviceError(409, 'local_execution_idempotency_mismatch', 'clientRequestId is already bound to another canonical local execution');
+    const durableBindingHash = prepareBindingHashFromTicket(ticket, command.clientRequestId);
+    if (!durableBindingHash || durableBindingHash !== bindingHash) throw serviceError(409, 'local_execution_idempotency_mismatch', 'clientRequestId is already bound to different segmentation parameters');
+    if (!await this.dependencies.ownsArtifacts(scope, [command.inputArtifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical local execution input is no longer authorized or available');
+    const artifacts = await this.dependencies.hydrateArtifacts(scope, command.inputArtifactId, []);
+    const decision = admitLocalExecutionInputs(ticket, artifacts);
+    if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical local execution input revalidation failed: ${decision.reasonCode}`);
+    const source = artifacts.find(artifact => artifact.id === command.inputArtifactId && artifact.kind === 'image');
+    if (!source?.image?.width || !source.image.height) throw serviceError(409, 'local_execution_recovery_input', 'Canonical image is unavailable for local execution recovery');
+    validateSegmentationGeometry(command.analysis, command.points, source.image.width, source.image.height);
+    const expected = ticket.expectedOutputs[0];
+    if (ticket.expectedOutputs.length !== 1 || expected.kind !== 'mask' || expected.role !== 'MASK' || expected.width !== source.image.width || expected.height !== source.image.height) throw serviceError(409, 'local_execution_idempotency_mismatch', 'Durable local ticket output binding no longer matches the canonical source');
   }
 
   private async revalidateCanonicalInputs(ticket: LocalExecutionTicket): Promise<void> {
@@ -220,13 +249,29 @@ function assertReadySegmentationPlan(status: string, operations: readonly Readon
   if (status !== 'READY' || operations.length !== 1 || operations[0].type !== 'segment') throw serviceError(422, 'local_segmentation_plan_blocked', `Canonical local segmentation plan is ${status ?? 'invalid'}`);
 }
 function assertSegmentationTicket(ticket: LocalExecutionTicket): void {
-  if (ticket.operation.capability !== 'local:mobilesam:segment:v1' || ticket.operation.type !== 'segment' || ticket.policy !== 'LOCAL_ONLY') throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not an accepted local segmentation contract');
+  if (ticket.operation.capability !== 'local:mobilesam:segment:v1' || ticket.operation.type !== 'segment' || ticket.operation.id !== LOCAL_SEGMENTATION_STEP_ID || ticket.stepId !== LOCAL_SEGMENTATION_STEP_ID || ticket.policy !== 'LOCAL_ONLY') throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not an accepted local segmentation contract');
 }
 function sameDurableTicket(a: LocalExecutionTicket, b: LocalExecutionTicket): boolean {
-  return a.ticketId === b.ticketId && a.version === b.version && a.nonce === b.nonce && a.idempotencyKey === b.idempotencyKey && a.requestId === b.requestId && a.workflowId === b.workflowId && a.stepId === b.stepId && JSON.stringify(a.scope) === JSON.stringify(b.scope) && JSON.stringify(a.inputs) === JSON.stringify(b.inputs) && JSON.stringify(a.expectedOutputs) === JSON.stringify(b.expectedOutputs) && JSON.stringify(a.allowedModels) === JSON.stringify(b.allowedModels) && JSON.stringify(a.operation) === JSON.stringify(b.operation);
+  return a.ticketId === b.ticketId && a.version === b.version && a.nonce === b.nonce && a.idempotencyKey === b.idempotencyKey && a.requestId === b.requestId && a.workflowId === b.workflowId && a.stepId === b.stepId && canonicalJson(a.scope) === canonicalJson(b.scope) && canonicalJson(a.inputs) === canonicalJson(b.inputs) && canonicalJson(a.expectedOutputs) === canonicalJson(b.expectedOutputs) && canonicalJson(a.allowedModels) === canonicalJson(b.allowedModels) && canonicalJson(a.operation) === canonicalJson(b.operation);
 }
+function localSegmentationTicketIdempotencyKey(clientRequestId: string): string { return `${clientRequestId}:${LOCAL_SEGMENTATION_STEP_ID}:local-v1`; }
 function prepareBindingHash(command: LocalSegmentationPrepareCommand): string {
-  return createHash('sha256').update(JSON.stringify({ projectId: command.projectId, inputArtifactId: command.inputArtifactId, analysis: command.analysis, points: command.points })).digest('hex');
+  return createHash('sha256').update(canonicalJson({ projectId: command.projectId, inputArtifactId: command.inputArtifactId, analysis: command.analysis, points: command.points }) ?? '').digest('hex');
+}
+function prepareBindingHashFromTicket(ticket: LocalExecutionTicket, clientRequestId: string): string | undefined {
+  if (ticket.inputs.length !== 1 || ticket.inputs[0].kind !== 'image') return undefined;
+  const parameters = ticket.operation.parameters ?? {};
+  const selectionRequestId = typeof parameters.selectionRequestId === 'string' ? parameters.selectionRequestId.trim() : '';
+  const analysis = parameters.analysis as LocalSegmentationAnalysis | undefined;
+  const points = parameters.points as readonly LocalSegmentationPoint[] | undefined;
+  if (selectionRequestId !== clientRequestId || !analysis || !Array.isArray(points)) return undefined;
+  return createHash('sha256').update(canonicalJson({ projectId: ticket.scope.projectId, inputArtifactId: ticket.inputs[0].artifactId, analysis, points }) ?? '').digest('hex');
+}
+function canonicalJson(value: unknown): string | undefined { return JSON.stringify(canonicalValue(value)); }
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)]));
 }
 function finite(value: unknown, field: string): number { if (typeof value !== 'number' || !Number.isFinite(value)) throw serviceError(400, 'invalid_local_segmentation_analysis', `Segmentation analysis ${field} is invalid`); return value; }
 function deterministicExecutionId(scope: AuthenticatedScope & { projectId: string }, clientRequestId: string): string {
