@@ -30,10 +30,12 @@ jobs:
         run: |
           npm run test:creative-route-6.41c4
           mkdir -p .test-cache/6.42a-security
-          npx esbuild tests/creative-on-device-security.test.ts \
+          npx esbuild \
+            tests/creative-on-device-security.test.ts \
+            tests/creative-on-device-local-failure.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
-            --outfile=.test-cache/6.42a-security/security.test.mjs --external:node:*
-          node --test .test-cache/6.42a-security/security.test.mjs
+            --outdir=.test-cache/6.42a-security --external:node:*
+          node --test .test-cache/6.42a-security/*.js
       - name: Browser ticket to admitted MASK boundary
         run: npm run test:intelligent-selection
       - name: Device capability, model trust and resource policy
