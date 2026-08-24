@@ -5,7 +5,7 @@ import { PostgresMaskArtifactStore } from './postgresMaskArtifactStore.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
 
-test('canonical local MASK persistence reuses one row per ticket across Core instances', { skip: !databaseUrl }, async () => {
+test('canonical local MASK persistence reuses and recovers one row per ticket across Core instances', { skip: !databaseUrl }, async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'bers-local-mask-integration' });
   const token = `local-mask-${process.pid}-${Date.now()}`;
   const ticketId = `${token}-ticket`;
@@ -18,6 +18,10 @@ test('canonical local MASK persistence reuses one row per ticket across Core ins
     const retry = await secondStore.persistLocalExecution(ticketId, scope, 2, 2, alpha);
     assert.equal(retry.storageId, first.storageId, 'retry on another Core instance must reuse the canonical MASK row');
     assert.deepEqual([...retry.png], [...first.png]);
+
+    const byTicket = await secondStore.loadLocalExecution(ticketId, scope);
+    assert.equal(byTicket?.storageId, first.storageId, 'committed replay must recover the exact canonical MASK row by ticket');
+    assert.equal(await secondStore.loadLocalExecution(ticketId, { ...scope, projectId: `${token}-other-project` }), undefined, 'ticket lookup remains scope-bound');
 
     await assert.rejects(
       () => secondStore.persistLocalExecution(ticketId, scope, 2, 2, new Uint8Array([0, 255, 255, 0])),
