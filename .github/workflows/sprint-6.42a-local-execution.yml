@@ -16,11 +16,15 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Core local ticket and admission contracts
-        run: >-
-          node --experimental-strip-types --test
-          server/core/localExecution/localExecutionContract.test.mjs
-          server/core/localExecution/localExecutionIdempotency.test.mjs
-          server/core/providers/productionOnDeviceRoute.test.mjs
+        run: |
+          mkdir -p .test-cache/6.42a-core
+          npx esbuild \
+            server/core/localExecution/localExecutionContract.test.mjs \
+            server/core/localExecution/localExecutionIdempotency.test.mjs \
+            server/core/providers/productionOnDeviceRoute.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/6.42a-core --external:node:*
+          node --test .test-cache/6.42a-core/*.js
       - name: Canonical ON_DEVICE route and zero-cloud proof
         run: npm run test:creative-route-6.41c4
       - name: Browser ticket to admitted MASK boundary
