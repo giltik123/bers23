@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import type { LocalExecutionAdmissionDecision, LocalExecutionTicket } from '../../../src/platform/creative/canonical/localExecution.ts';
+import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
 import type { LocalExecutionClaimInput, LocalExecutionLedger } from './LocalExecutionLedger.ts';
 
@@ -31,7 +32,8 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
     ]);
     if (inserted.rows[0]) return ticketFromRow(inserted.rows[0]);
 
-    const byIdempotency = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets WHERE idempotency_key=$1`, [candidate.idempotencyKey]);
+    const byIdempotency = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets
+      WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND idempotency_key=$4`, [candidate.scope.tenantId, candidate.scope.userId, candidate.scope.projectId, candidate.idempotencyKey]);
     if (byIdempotency.rows[0]) return reconcileStoredTicket(byIdempotency.rows[0], candidate);
 
     const byTicketId = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets WHERE ticket_id=$1`, [candidate.ticketId]);
@@ -41,6 +43,12 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
 
   async get(ticketId: string): Promise<LocalExecutionTicket | undefined> {
     const result = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets WHERE ticket_id=$1`, [ticketId]);
+    return result.rows[0] ? ticketFromRow(result.rows[0]) : undefined;
+  }
+
+  async getByIdempotencyKey(scope: Scope, idempotencyKey: string): Promise<LocalExecutionTicket | undefined> {
+    const result = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets
+      WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND idempotency_key=$4`, [scope.tenantId, scope.userId, scope.projectId, idempotencyKey]);
     return result.rows[0] ? ticketFromRow(result.rows[0]) : undefined;
   }
 
