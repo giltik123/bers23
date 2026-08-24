@@ -1,7 +1,7 @@
 import type { CanonicalPlanningPort, CreativeDecision, CreativeOperation, CreativePlan, CreativePlanArtifactSnapshot, CreativePlanCandidate, CreativePlanConstraints, CreativePlannerConfigSnapshot, CreativePlanProvenance, CreativePlanScore, CreativePlanStatus, CreativePlanUncertainty, CreativeRequest, ExecutionTarget, PlanningConfirmationPolicy, PlanningExecutionPolicy, PlanningTelemetryPort } from '../contracts';
 import { buildExplanation, buildReplay, emitPlanTelemetry, fallbackFor, immutable, verificationFor } from './advisoryPolicies';
 
-export const CANONICAL_PLANNER_VERSION = '6.42A.1';
+export const CANONICAL_PLANNER_VERSION = '6.42C2.1';
 type Options = Readonly<{ plannerVersion?: string; minimumIntentConfidence?: number; minimumTargetConfidence?: number; maximumPreservationRisk?: number; compositeExecutionEnabled?: boolean; telemetry?: PlanningTelemetryPort }>;
 
 /** Deterministic advisory planner. Canonical Core revalidates every proposal. */
@@ -15,11 +15,30 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const uncertainty = immutable(readUncertainty(request));
     const plannerConfig = immutable({ minimumIntentConfidence: this.#options.minimumIntentConfidence, minimumTargetConfidence: this.#options.minimumTargetConfidence, maximumPreservationRisk: this.#options.maximumPreservationRisk, compositeExecutionEnabled: this.#options.compositeExecutionEnabled } satisfies CreativePlannerConfigSnapshot);
     const interactiveSegmentation = request.metadata?.operationIntent === 'INTERACTIVE_SEGMENTATION';
+    const backgroundIsolation = request.metadata?.operationIntent === 'BACKGROUND_ISOLATION';
     const composite = request.metadata?.operationIntent === 'COMPOSITE_REPLACE_RELIGHT';
+    const requestedIsolationSourceId = backgroundIsolation && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+    const requestedIsolationMaskId = backgroundIsolation && typeof request.metadata?.maskArtifactId === 'string' ? request.metadata.maskArtifactId : undefined;
     const compositeOriginalUnavailable = composite && !artifacts.some(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
     const segmentationInputUnavailable = interactiveSegmentation && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'WORKING'));
-    const strategies = interactiveSegmentation ? [interactiveSegmentationOperations(artifacts, constraints, request)] : composite ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)] : [simpleOperations(request, artifacts, constraints)];
-    const rawCandidates = strategies.map((operations, index) => candidate(index === 0 ? 'local-efficient' : 'cloud-quality', operations, index === 0 ? 'LOCAL' : 'CLOUD', composite ? (index === 0 ? 1 : 5) : 0, composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : 0, composite ? (index === 0 ? .76 : .94) : .9, uncertainty.aggregateConfidence));
+    const isolationSourceUnavailable = backgroundIsolation && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedIsolationSourceId || artifact.id === requestedIsolationSourceId));
+    const isolationMaskUnavailable = backgroundIsolation && !artifacts.some(artifact => artifact.kind === 'mask' && artifact.role === 'MASK' && (!requestedIsolationMaskId || artifact.id === requestedIsolationMaskId));
+    const strategies = backgroundIsolation
+      ? [backgroundIsolationOperations(artifacts, constraints, request)]
+      : interactiveSegmentation
+        ? [interactiveSegmentationOperations(artifacts, constraints, request)]
+        : composite
+          ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)]
+          : [simpleOperations(request, artifacts, constraints)];
+    const rawCandidates = strategies.map((operations, index) => candidate(
+      index === 0 ? 'local-efficient' : 'cloud-quality',
+      operations,
+      index === 0 ? 'LOCAL' : 'CLOUD',
+      composite ? (index === 0 ? 1 : 5) : 0,
+      composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : 0,
+      composite ? (index === 0 ? .76 : .94) : backgroundIsolation ? 1 : .9,
+      uncertainty.aggregateConfidence,
+    ));
     const ranked = rankAndFilter(rawCandidates, constraints);
     const candidates = immutable(ranked.map(value => ({ ...value, fallbackAdvice: fallbackFor(value, constraints, ranked.find(other => other.id !== value.id && other.status === 'ACCEPTED')) })));
     const selected = candidates.find(item => item.status === 'ACCEPTED');
@@ -31,13 +50,16 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     if (uncertainty.preservationRisk > this.#options.maximumPreservationRisk && constraints.confirmationPolicy !== 'ALLOW_PRESERVATION_RISK') confirmationReasons.push('HIGH_PRESERVATION_RISK');
     if (localUnavailable) confirmationReasons.push('NO_FEASIBLE_LOCAL_STRATEGY');
     if (segmentationInputUnavailable) confirmationReasons.push('CANONICAL_IMAGE_REQUIRED');
+    if (isolationSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
+    if (isolationMaskUnavailable) confirmationReasons.push('CANONICAL_MASK_REQUIRED');
     if (compositeOriginalUnavailable) confirmationReasons.push('CANONICAL_ORIGINAL_REQUIRED');
     if (compositeExecutionUnavailable) confirmationReasons.push('COMPOSITE_EXECUTION_NOT_WIRED');
-    const status: CreativePlanStatus = segmentationInputUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK') ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
+    const hardBlocked = segmentationInputUnavailable || isolationSourceUnavailable || isolationMaskUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK');
+    const status: CreativePlanStatus = hardBlocked ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
     const operations = immutable(status === 'BLOCKED' ? [] : selected?.operations ?? []);
     const rejected = immutable(candidates.filter(item => item.status === 'REJECTED').map(({ id, reasonCodes }) => ({ id, reasonCodes })));
-    const planReason = interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
-    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
+    const planReason = backgroundIsolation ? 'BACKGROUND_ISOLATION_LOCAL_DETERMINISTIC_V1' : interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
+    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(isolationSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(isolationMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
     provenance = immutable({ ...provenance, replay: buildReplay(this.#options.plannerVersion, plannerConfig, { provenance, selectedCandidateId: selected?.id }) });
     const result = immutable({ requestId: request.id, operations, status, planningConstraints: constraints, candidates, selectedCandidateId: selected?.id, uncertainty, confirmationReasons: immutable(confirmationReasons), proposalId: `${this.#options.plannerVersion}:${request.id}`, plannerVersion: this.#options.plannerVersion, goal: decision.goal, assumptions: [], constraints: [...decision.constraints], provenance, explanation: buildExplanation(this.#options.plannerVersion, plannerConfig, selected, candidates, constraints, uncertainty, confirmationReasons) });
     void emitPlanTelemetry(this.#options.telemetry, result);
@@ -50,6 +72,24 @@ function interactiveSegmentationOperations(artifacts: readonly CreativePlanArtif
   if (!source) return immutable([]);
   const id = 'interactive-segmentation';
   return immutable([{ id, type: 'segment', requiredArtifacts: [source.id], produces: ['mask'], verification: verificationFor(id, 'segment', constraints, 'mask'), input: { selectionRequestId: request.metadata?.selectionRequestId, analysis: request.metadata?.analysis, points: request.metadata?.points } }]);
+}
+
+function backgroundIsolationOperations(artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints, request: CreativeRequest): readonly CreativeOperation[] {
+  const requestedSourceId = typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+  const requestedMaskId = typeof request.metadata?.maskArtifactId === 'string' ? request.metadata.maskArtifactId : undefined;
+  const source = artifacts.find(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedSourceId || artifact.id === requestedSourceId));
+  const mask = artifacts.find(artifact => artifact.kind === 'mask' && artifact.role === 'MASK' && (!requestedMaskId || artifact.id === requestedMaskId));
+  if (!source || !mask) return immutable([]);
+  const id = 'background-isolation';
+  return immutable([{
+    id,
+    type: 'BACKGROUND_ISOLATION',
+    requiredArtifacts: [source.id, mask.id],
+    produces: ['image'],
+    outputArtifacts: ['background-isolation:composite'],
+    verification: verificationFor(id, 'BACKGROUND_ISOLATION', constraints, 'image'),
+    input: Object.freeze({ sourceArtifactId: source.id, maskArtifactId: mask.id, deterministicTool: 'background-isolation@1' }),
+  }]);
 }
 
 function simpleOperations(request: CreativeRequest, artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints): readonly CreativeOperation[] {

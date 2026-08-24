@@ -4,6 +4,8 @@ import { ArrowLeft, ScanSearch, Loader2, Download, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
+import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
+import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
 import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
@@ -53,6 +55,11 @@ import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPo
 
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
+function disposePendingPreview(pending) {
+  const url = pending?.kind === 'BACKGROUND_ISOLATION' ? pending.result?.preview_url : null;
+  if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url);
+}
+
 export default function Editor() {
   const projectId = new URLSearchParams(window.location.search).get('id')?.trim() || null;
   const {
@@ -76,13 +83,18 @@ export default function Editor() {
   // Always-fresh pushEdit for multi-step agent runs (avoids stale closures across commits).
   const pushEditRef = useRef();
   pushEditRef.current = pushEdit;
+  const pendingResultRef = useRef(null);
+  pendingResultRef.current = pendingResult;
   const [segMeta, setSegMeta] = useState(null);
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
   const [brushSize, setBrushSize] = useState(24);
+  const [isolatingBackground, setIsolatingBackground] = useState(false);
   const selectionServiceRef = useRef(null);
   const strokeRef = useRef([]);
   const platform = usePlatformProfile();
+
+  useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
 
   const startSelection = () => {
     const imageArtifactId = project.current_image_artifact_id;
@@ -138,6 +150,38 @@ export default function Editor() {
 
   useEffect(() => { if (project) sessionRecovery.saveEditor({ projectId: project.id, selectionId: selected?.id || null, historyIndex: project.history_index }); }, [project?.id, project?.history_index, selected?.id]);
   useEffect(() => { if (platform.formFactor !== 'desktop') return; const shortcut = (event) => { if (event.target.matches('input, textarea')) return; if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return; event.preventDefault(); if (event.shiftKey) redo(); else undo(); }; window.addEventListener('keydown', shortcut); return () => window.removeEventListener('keydown', shortcut); }, [platform.formFactor, undo, redo]);
+
+  const isolateBackground = async (retryContext = null) => {
+    const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
+    const maskArtifactId = retryContext?.maskArtifactId || selected?.mask_artifact_id;
+    if (!project?.id || !sourceArtifactId || !maskArtifactId) return;
+    setIsolatingBackground(true);
+    setAiError(null);
+    setLastAction(() => () => isolateBackground());
+    try {
+      const local = createBackgroundIsolation({ projectId: project.id });
+      const result = await local.run({ requestId: globalThis.crypto.randomUUID(), sourceArtifactId, maskArtifactId });
+      const previewBytes = await encodeDeterministicRgbaPng(result.preview);
+      const previewUrl = URL.createObjectURL(new Blob([previewBytes], { type: 'image/png' }));
+      const editorResult = {
+        finalArtifactId: result.canonicalArtifactId,
+        preview_url: previewUrl,
+        image_url: previewUrl,
+        provider: 'Local deterministic',
+        credits_used: 0,
+        generation_time_ms: result.latencyMs,
+      };
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return { kind: 'BACKGROUND_ISOLATION', result: editorResult, instruction: 'Remove background', beforeUrl: project.current_image_url, context: { sourceArtifactId, maskArtifactId } };
+      });
+    } catch (e) {
+      setAiError(e.message || 'Background isolation failed');
+      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+    } finally {
+      setIsolatingBackground(false);
+    }
+  };
 
   // Every edit request goes through the AI Planner before anything executes.
   const plan = useMemo(() => {
@@ -199,7 +243,7 @@ export default function Editor() {
       if (result.status === 'UNKNOWN') throw Object.assign(new Error('Provider result is pending reconciliation'), { code: 'PROVIDER_OUTCOME_PENDING', retryable: false });
       if (result.status !== 'SUCCESS' || !result.imageUrl) throw Object.assign(new Error('Edit failed'), { code: 'provider_failure' });
       const editorResult = { ...result, image_url: result.imageUrl, generation_time_ms: result.timing?.durationMs, credits_used: result.creditsUsed };
-      setPendingResult({ result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url });
+      setPendingResult((current) => { disposePendingPreview(current); return { result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url }; });
       recipeEngine.recordOutcome(activeRecipe?.id, { success: true, durationMs: editorResult.generation_time_ms, credits: editorResult.credits_used });
     } catch (e) {
       if (e.code !== 'cancelled') {
@@ -215,12 +259,14 @@ export default function Editor() {
   const acceptResult = async () => {
     setCommitting(true);
     try {
-      const { result, instruction: used } = pendingResult;
+      const pending = pendingResult;
+      const { result, instruction: used } = pending;
       if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
       await pushEdit(result.finalArtifactId, used);
       await notificationCenter.push({ title: 'Edit saved', message: 'Your accepted result has been added to project history.', type: 'success', projectId: project.id });
       sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error)); // fingerprint bumps on accepted edits only
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: true, durationMs: result.generation_time_ms || 0 });
+      disposePendingPreview(pending);
       setPendingResult(null);
       setInstruction('');
       setActiveRecipe(null);
@@ -266,8 +312,19 @@ export default function Editor() {
   };
 
   const retryResult = () => {
+    const pending = pendingResult;
+    disposePendingPreview(pending);
     setPendingResult(null);
+    if (pending?.kind === 'BACKGROUND_ISOLATION') {
+      void isolateBackground(pending.context);
+      return;
+    }
     applyEdit(true, { skipDriftCheck: true }); // bypass cache so a retry produces a fresh generation
+  };
+
+  const discardResult = () => {
+    disposePendingPreview(pendingResult);
+    setPendingResult(null);
   };
 
   const handleRename = async () => {
@@ -299,14 +356,14 @@ export default function Editor() {
         </div>
         <AdaptiveToolbar>
           <HistoryControls
-            canUndo={canUndo} canRedo={canRedo} disabled={applying || detecting}
+            canUndo={canUndo} canRedo={canRedo} disabled={applying || detecting || isolatingBackground}
             onUndo={undo} onRedo={redo} onRestore={restoreOriginal}
           />
           <VersionsPanel
             versions={project.versions || []}
             onCreate={handleCreateVersion}
             onRestore={restoreVersion}
-            disabled={applying || detecting}
+            disabled={applying || detecting || isolatingBackground}
           />
           <a href={project.current_image_url} target="_blank" rel="noreferrer" className="p-2 rounded-lg hover:bg-accent transition-colors" aria-label="Download">
             <Download className="w-5 h-5" />
@@ -353,7 +410,7 @@ export default function Editor() {
         objects={objects}
         selectedId={selected?.id}
         onSelect={(obj) => selectObject(obj.id)}
-        busy={applying}
+        busy={applying || isolatingBackground}
         onUndo={undo}
         onRedo={redo}
         selection={selection}
@@ -368,6 +425,9 @@ export default function Editor() {
         onClear={() => updateSelection((service) => service.clear())}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
+        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing}
+        isolatingBackground={isolatingBackground}
+        onIsolateBackground={() => isolateBackground()}
       />
 
       <PipelineStatusBar width={project.width} height={project.height} />
@@ -397,24 +457,24 @@ export default function Editor() {
           beforeUrl={pendingResult.beforeUrl}
           result={pendingResult.result}
           onAccept={acceptResult}
-          onDiscard={() => setPendingResult(null)}
+          onDiscard={discardResult}
           onRetry={retryResult}
-          busy={committing}
+          busy={committing || isolatingBackground}
         />
       ) : (
         <>
           <WorkspaceToolbar
-            disabled={applying}
+            disabled={applying || isolatingBackground}
             onUse={(prompt) => { setInstruction(prompt); setActiveRecipe(null); setEditTab('prompt'); }}
           />
           <WorkspaceRecommendations
-            disabled={applying}
+            disabled={applying || isolatingBackground}
             onUse={(prompt, recipe) => { setInstruction(prompt); setActiveRecipe(recipe); setEditTab('prompt'); }}
           />
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={setEditTab} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
           {editTab === 'creative' ? (
-            <CreativeStudioPanel project={project} objects={objects} onApply={runChain} disabled={applying} />
+            <CreativeStudioPanel project={project} objects={objects} onApply={runChain} disabled={applying || isolatingBackground} />
           ) : editTab === 'outfits' ? (
             <OutfitPanel
               project={project}
@@ -431,7 +491,7 @@ export default function Editor() {
             <AgentPanel
               project={project}
               objects={objects}
-              disabled={applying}
+              disabled={applying || isolatingBackground}
               onCommit={async (result, task) => {
                 await pushEditRef.current(result.image_url, `Agent: ${task.label}`, result.historyEntry);
                 sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
@@ -443,7 +503,7 @@ export default function Editor() {
               objects={objects}
               selectedObjects={objects.filter((o) => o.selected)}
               onRunChain={runChain}
-              disabled={applying}
+              disabled={applying || isolatingBackground}
               onUse={(prompt, recipe) => {
                 // Recipe Engine output enters the normal flow: instruction → AI Planner → Editing Engine.
                 setInstruction(prompt);
@@ -462,7 +522,7 @@ export default function Editor() {
                 instruction={instruction}
                 onInstructionChange={setInstruction}
                 onApply={() => applyEdit(false)}
-                applying={applying}
+                applying={applying || isolatingBackground}
               />
             </>
           )}

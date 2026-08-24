@@ -91,9 +91,10 @@ jobs:
         env:
           LOCAL_EXECUTION_SCHEMA_TEST: '1'
         run: node --experimental-strip-types --test server/core/localExecution/localExecutionLedgerSchema.integration.test.mjs
-      - name: Durable ticket, finalization, quarantine and canonical MASK contracts
+      - name: Durable v1/v2 tickets, finalization, quarantine and canonical MASK contracts
         run: |
           node --experimental-strip-types --test \
             server/core/localExecution/PostgresLocalExecutionLedger.integration.test.mjs \
+            server/core/localExecution/PostgresLocalExecutionLedgerV2.integration.test.mjs \
             server/core/localExecution/PostgresLocalExecutionUploadStore.integration.test.mjs \
             server/core/artifacts/postgresMaskArtifactStore.localExecution.integration.test.mjs

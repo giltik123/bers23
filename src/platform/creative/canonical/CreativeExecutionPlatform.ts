@@ -3,7 +3,7 @@ import { ProductionOperationAuthority } from '../authority';
 import { CreativeCostAuthority } from '../cost/contracts';
 import type { CreativeOperationInstance } from '../operations/contracts';
 import type { CreativeArtifact, CreativeDecision, CreativeExecutionPlan, CreativeOperation, CreativePipeline, CreativePlan, CreativeRequest, ProductionOutcome, VerificationResult } from './contracts';
-import type { LocalExecutionInputBinding, LocalExecutionTicket } from './localExecution';
+import type { LocalExecutionInputBinding, LocalExecutionTicket, LocalExecutionTicketV2 } from './localExecution';
 import type { CreativeExecutionPlatformRuntimeDependencies } from './providerSelection';
 import { validateCreativePlan, validateExecutionTargets } from './planning/planValidation';
 
@@ -17,6 +17,7 @@ type RecordState = {
   operation?: CreativeOperationInstance;
   capabilityIds?: Readonly<Record<string, string>>;
   localTickets?: readonly LocalExecutionTicket[];
+  localTicketsV2?: readonly LocalExecutionTicketV2[];
   admittedOnDevice?: Readonly<Record<string, AdmittedOnDeviceStepResult>>;
   snapshot?: WorkflowSnapshot;
   outcome?: ProductionOutcome;
@@ -120,7 +121,7 @@ export class CreativeExecutionPlatform {
     this.#authority.preflight(record.operation, { target, billable: credits > 0, credits, retries: record.request.budget?.retries ?? 0, policy: { maxCredits: record.request.budget?.credits ?? 0, maxProviderCost: Number(record.request.metadata?.maxProviderCost ?? Number.MAX_SAFE_INTEGER), allowFallback, allowRetry: true, allowEscalation: false, budgetMode: 'HARD' } });
     const authorization = this.#authority.authorize(record.operation, {
       checks: { operationValid: true, capabilityAvailable: true, runtimeAllowed: true, modelTrusted: true, privacyAllowed: true, budgetAllowed: true, scopeValid: true },
-      policyVersion: 'production-6.42A',
+      policyVersion: 'production-6.42C2',
       expiresAt: new Date((this.dependencies.now ?? Date.now)() + 300_000).toISOString(),
       costPolicy: { maxCredits: record.request.budget?.credits ?? 0, maxProviderCost: Number.MAX_SAFE_INTEGER, allowFallback, allowRetry: true, allowEscalation: false, budgetMode: 'HARD' },
     });
@@ -129,6 +130,7 @@ export class CreativeExecutionPlatform {
     return record.execution;
   }
 
+  /** Stable v1 model-only preparation retained for existing segmentation. */
   async prepareLocalExecution(id: string): Promise<readonly LocalExecutionTicket[]> {
     const record = this.require(id);
     if (record.cancelled) throw new Error('Execution is cancelled');
@@ -161,13 +163,49 @@ export class CreativeExecutionPlatform {
     return record.localTickets;
   }
 
+  /** Explicit v2 preparation for executor-union tickets; never silently upgrades a v1 caller. */
+  async prepareLocalExecutionV2(id: string): Promise<readonly LocalExecutionTicketV2[]> {
+    const record = this.require(id);
+    if (record.cancelled) throw new Error('Execution is cancelled');
+    if (!record.execution || !record.workflow || !record.operation) await this.compile(id);
+    if (record.localTicketsV2) return record.localTicketsV2;
+    const onDevice = record.execution!.operations.filter(operation => operation.executionRoute === 'ON_DEVICE');
+    if (!onDevice.length) return Object.freeze([]);
+    const issuer = this.dependencies.localExecutionV2;
+    if (!issuer) throw new Error('ON_DEVICE v2 execution requires Core v2 local ticket authority');
+    const tickets = await Promise.all(onDevice.map(async operation => {
+      if (record.execution!.targets[operation.id] !== 'LOCAL') throw new Error(`ON_DEVICE operation ${operation.id} must have LOCAL target`);
+      const capability = record.capabilityIds?.[operation.id];
+      if (!capability) throw new Error(`ON_DEVICE operation ${operation.id} has no capability binding`);
+      const inputs = localInputs(record.request, operation);
+      if (!inputs.length) throw new Error(`ON_DEVICE operation ${operation.id} has no canonical input artifact`);
+      return await issuer.issue({
+        ticketVersion: '2',
+        requestId: record.request.id,
+        workflowId: record.workflow!.id,
+        stepId: operation.id,
+        operation: { id: operation.id, version: '1', type: operation.type, capability, parameters: operation.input },
+        scope: record.request.scope,
+        inputs,
+        expectedOutputs: expectedLocalOutputs(record.request, operation),
+        policy: record.plan?.planningConstraints?.executionPolicy === 'LOCAL_ONLY' ? 'LOCAL_ONLY' : 'LOCAL_SELECTED',
+        idempotencyKey: `${String(record.request.metadata?.idempotencyKey ?? id)}:${operation.id}:local-v2`,
+      });
+    }));
+    record.localTicketsV2 = Object.freeze(tickets);
+    record.paused = true;
+    return record.localTicketsV2;
+  }
+
   pendingLocalExecution(id: string): readonly LocalExecutionTicket[] { return this.require(id).localTickets ?? Object.freeze([]); }
+  pendingLocalExecutionV2(id: string): readonly LocalExecutionTicketV2[] { return this.require(id).localTicketsV2 ?? Object.freeze([]); }
 
   async completeLocalExecution(id: string, input: Readonly<{ ticketId: string; stepId: string; artifact: CreativeArtifact; latencyMs: number; memoryMb?: number; gpuMs?: number }>): Promise<ProductionOutcome> {
     const record = this.require(id);
     if (record.cancelled) throw new Error('Execution is cancelled');
     if (!record.paused) throw new Error('Execution is not awaiting a local result');
-    const ticket = record.localTickets?.find(candidate => candidate.ticketId === input.ticketId && candidate.stepId === input.stepId);
+    const ticket = record.localTickets?.find(candidate => candidate.ticketId === input.ticketId && candidate.stepId === input.stepId)
+      ?? record.localTicketsV2?.find(candidate => candidate.ticketId === input.ticketId && candidate.stepId === input.stepId);
     if (!ticket) throw new Error('Local execution ticket is not bound to this execution');
     const operation = record.workflow?.operations.find(candidate => candidate.id === input.stepId);
     if (!operation || operation.executionRoute !== 'ON_DEVICE' || record.execution?.targets[operation.id] !== 'LOCAL') throw new Error('Local execution step binding is invalid');
@@ -254,14 +292,15 @@ function artifactSha256(artifact: CreativeArtifact): string | undefined {
 }
 
 function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOperation) {
-  if (operation.type !== 'segment') throw new Error(`No ON_DEVICE output contract for ${operation.type}`);
   const required = new Set(operation.requiredArtifacts ?? []);
   const source = (request.inputArtifacts ?? []).find(artifact => artifact.kind === 'image' && (required.size === 0 || required.has(artifact.id)));
   const value = source?.value && typeof source.value === 'object' ? source.value as Readonly<Record<string, unknown>> : undefined;
   const width = source?.image?.width ?? (typeof value?.width === 'number' ? value.width : undefined);
   const height = source?.image?.height ?? (typeof value?.height === 'number' ? value.height : undefined);
-  if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1) throw new Error('ON_DEVICE segmentation requires canonical source dimensions');
-  return Object.freeze([{ kind: 'mask', role: 'MASK' as const, count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: Number(width), height: Number(height) }]);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1) throw new Error(`ON_DEVICE ${operation.type} requires canonical source dimensions`);
+  if (operation.type === 'segment') return Object.freeze([{ kind: 'mask', role: 'MASK' as const, count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: Number(width), height: Number(height) }]);
+  if (operation.type === 'BACKGROUND_ISOLATION') return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(width), height: Number(height) }]);
+  throw new Error(`No ON_DEVICE output contract for ${operation.type}`);
 }
 
 function sameScope(a: CreativeArtifact['scope'], b: CreativeRequest['scope']): boolean { return a.tenantId === b.tenantId && a.projectId === b.projectId && a.userId === b.userId; }

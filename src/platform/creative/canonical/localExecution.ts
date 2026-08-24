@@ -3,11 +3,16 @@ import type { Scope } from '../workflow-engine/types';
 import type { CreativeArtifactRole } from './contracts';
 
 export const LOCAL_EXECUTION_TICKET_VERSION = '1' as const;
+export const LOCAL_EXECUTION_TICKET_V2_VERSION = '2' as const;
 export const LOCAL_EXECUTION_TICKET_ISSUER = 'CORE' as const;
 export const LOCAL_EXECUTION_POLICIES = ['LOCAL_SELECTED', 'LOCAL_ONLY'] as const;
 export type LocalExecutionPolicy = typeof LOCAL_EXECUTION_POLICIES[number];
 export type LocalExecutionModelBinding = Readonly<{ modelId: string; version: string }>;
+export type LocalExecutionModelExecutorBinding = Readonly<{ kind: 'MODEL'; modelId: string; version: string }>;
+export type LocalExecutionToolExecutorBinding = Readonly<{ kind: 'DETERMINISTIC_TOOL'; toolId: string; version: string }>;
+export type LocalExecutionExecutorBinding = LocalExecutionModelExecutorBinding | LocalExecutionToolExecutorBinding;
 export type LocalExecutionParameters = Readonly<Record<string, unknown>>;
+export type LocalExecutionRuntime = RuntimeKind | 'BROWSER_JS';
 
 export type LocalExecutionInputBinding = Readonly<{
   artifactId: string;
@@ -25,7 +30,7 @@ export type LocalExecutionExpectedOutput = Readonly<{
   height?: number;
 }>;
 
-export type LocalExecutionTicketIssueRequest = Readonly<{
+type LocalExecutionTicketIssueBase = Readonly<{
   requestId: string;
   workflowId: string;
   stepId: string;
@@ -37,14 +42,23 @@ export type LocalExecutionTicketIssueRequest = Readonly<{
   idempotencyKey: string;
 }>;
 
+/** Existing model-only v1 issuance contract. */
+export type LocalExecutionTicketIssueRequest = LocalExecutionTicketIssueBase;
+
+/** Explicit v2 issuance contract for model OR deterministic-tool executors. */
+export type LocalExecutionTicketIssueRequestV2 = LocalExecutionTicketIssueBase & Readonly<{ ticketVersion: typeof LOCAL_EXECUTION_TICKET_V2_VERSION }>;
+
 export interface LocalExecutionTicketIssuerPort {
   issue(input: LocalExecutionTicketIssueRequest): LocalExecutionTicket | Promise<LocalExecutionTicket>;
 }
 
+export interface LocalExecutionTicketV2IssuerPort {
+  issue(input: LocalExecutionTicketIssueRequestV2): LocalExecutionTicketV2 | Promise<LocalExecutionTicketV2>;
+}
+
 /**
- * Server-owned authorization envelope for one narrow on-device operation.
- * The device may execute the computation, but it receives no Project, Artifact,
- * provider or Billing authority from this contract.
+ * Server-owned authorization envelope for one narrow on-device model operation.
+ * Retained as v1 for durable compatibility with already-issued model tickets.
  */
 export type LocalExecutionTicket = Readonly<{
   ticketId: string;
@@ -75,6 +89,38 @@ export type LocalExecutionTicket = Readonly<{
   }>;
 }>;
 
+/** V2 keeps the same canonical authority envelope but generalizes executor identity. */
+export type LocalExecutionTicketV2 = Readonly<{
+  ticketId: string;
+  version: typeof LOCAL_EXECUTION_TICKET_V2_VERSION;
+  issuer: typeof LOCAL_EXECUTION_TICKET_ISSUER;
+  requestId: string;
+  workflowId: string;
+  stepId: string;
+  operation: Readonly<{
+    id: string;
+    version: string;
+    type: string;
+    capability: string;
+    parameters?: LocalExecutionParameters;
+  }>;
+  scope: Scope;
+  inputs: readonly LocalExecutionInputBinding[];
+  expectedOutputs: readonly LocalExecutionExpectedOutput[];
+  allowedExecutors: readonly LocalExecutionExecutorBinding[];
+  policy: LocalExecutionPolicy;
+  idempotencyKey: string;
+  nonce: string;
+  issuedAt: number;
+  expiresAt: number;
+  cost: Readonly<{
+    paidCloudCredits: 0;
+    providerCalls: 0;
+  }>;
+}>;
+
+export type AnyLocalExecutionTicket = LocalExecutionTicket | LocalExecutionTicketV2;
+
 /** Opaque upload handle plus integrity evidence. Never a canonical Artifact ID. */
 export type LocalExecutionOutputEvidence = Readonly<{
   uploadId: string;
@@ -87,6 +133,7 @@ export type LocalExecutionOutputEvidence = Readonly<{
   height?: number;
 }>;
 
+/** Existing v1 model-backed result contract. */
 export type LocalExecutionResult = Readonly<{
   ticketId: string;
   ticketVersion: typeof LOCAL_EXECUTION_TICKET_VERSION;
@@ -107,6 +154,29 @@ export type LocalExecutionResult = Readonly<{
   benchmarkEvidence?: Readonly<Record<string, number | string | boolean>>;
 }>;
 
+/** V2 result reports exactly one executor instead of fabricating a model for deterministic tools. */
+export type LocalExecutionResultV2 = Readonly<{
+  ticketId: string;
+  ticketVersion: typeof LOCAL_EXECUTION_TICKET_V2_VERSION;
+  requestId: string;
+  workflowId: string;
+  stepId: string;
+  nonce: string;
+  executor: LocalExecutionExecutorBinding;
+  runtime: LocalExecutionRuntime;
+  accelerator: ExecutionProvider | 'UNKNOWN';
+  outputs: readonly LocalExecutionOutputEvidence[];
+  metrics: Readonly<{
+    latencyMs: number;
+    memoryBytes?: number;
+    vramBytes?: number;
+    energyEstimate?: number;
+  }>;
+  benchmarkEvidence?: Readonly<Record<string, number | string | boolean>>;
+}>;
+
+export type AnyLocalExecutionResult = LocalExecutionResult | LocalExecutionResultV2;
+
 export type LocalExecutionAdmissionReason =
   | 'ADMITTED'
   | 'UNKNOWN_TICKET'
@@ -116,6 +186,7 @@ export type LocalExecutionAdmissionReason =
   | 'SCOPE_MISMATCH'
   | 'IDENTITY_MISMATCH'
   | 'MODEL_MISMATCH'
+  | 'EXECUTOR_MISMATCH'
   | 'FORBIDDEN_CLIENT_AUTHORITY'
   | 'MALFORMED_RESULT'
   | 'OUTPUT_CONTRACT_MISMATCH';
@@ -123,3 +194,9 @@ export type LocalExecutionAdmissionReason =
 export type LocalExecutionAdmissionDecision =
   | Readonly<{ allowed: true; reasonCode: 'ADMITTED'; ticket: LocalExecutionTicket; result: LocalExecutionResult }>
   | Readonly<{ allowed: false; reasonCode: Exclude<LocalExecutionAdmissionReason, 'ADMITTED'> }>;
+
+export type LocalExecutionAdmissionDecisionV2 =
+  | Readonly<{ allowed: true; reasonCode: 'ADMITTED'; ticket: LocalExecutionTicketV2; result: LocalExecutionResultV2 }>
+  | Readonly<{ allowed: false; reasonCode: Exclude<LocalExecutionAdmissionReason, 'ADMITTED'> }>;
+
+export type AnyLocalExecutionAdmissionDecision = LocalExecutionAdmissionDecision | LocalExecutionAdmissionDecisionV2;

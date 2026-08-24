@@ -18,8 +18,9 @@ import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts'
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
-import { LocalExecutionTicketAuthority, LocalSegmentationExecutionService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
+import { LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalSegmentationExecutionService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
+import { productionLocalExecutorsByCapability } from '../localExecution/productionLocalExecutorPolicy.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
 import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
@@ -65,6 +66,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       nonce: randomUUID,
       ttlMs: LOCAL_EXECUTION_TICKET_TTL_MS,
       modelsByCapability: productionLocalModelsByCapability,
+      executorsByCapability: productionLocalExecutorsByCapability,
     });
     const localUploads = new PostgresLocalExecutionUploadStore(transactions.pool);
     const canonical = {
@@ -80,6 +82,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       recovery: { decide: () => 'MARK_UNKNOWN' as const },
       verifier: productionWorkflowVerifier,
       localExecution,
+      localExecutionV2: localExecution,
       now,
       id: randomUUID,
     };
@@ -114,6 +117,18 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       issueMaskId: (storageId, scope) => externalArtifacts.issueStoredMask(storageId, scope),
       now,
     });
+    const localDeterministicImages = new LocalDeterministicImageExecutionService({
+      platform: canonical,
+      ownsArtifacts,
+      hydrateArtifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      persistFinal: (scope, executionId, operationId, image) => artifacts.images.persistFinal(scope, executionId, operationId, image),
+      loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
+      issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
+      now,
+    });
+    const localInputDelivery = new LocalExecutionInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
     const authStore = new PostgresAuthStore(transactions.pool);
     const authSecurityStore = new PostgresAuthSecurityStore(transactions.pool);
     const authRuntime = resolveAuthRuntime(config);
@@ -133,7 +148,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       sessionIdleTtlMs: config.authSessionIdleTtlMs,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
-    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation }), transactions, close: () => transactions.close() });
+    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, inputDelivery: localInputDelivery }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }
 

@@ -23,13 +23,25 @@ export class PostgresImageArtifactStore {
       DO UPDATE SET execution_id=EXCLUDED.execution_id
       RETURNING *`, [storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId, image.width, image.height, bytes]);
     const row = result.rows[0];
-    return Object.freeze({ storageId: row.storage_id, tenantId: row.tenant_id, userId: row.user_id, projectId: row.project_id, executionId: row.execution_id, operationId: row.operation_id, role: row.role, lifecycle: row.lifecycle, width: row.width, height: row.height, encoding: row.encoding, contentType: row.content_type, bytes: new Uint8Array(row.image_bytes) });
+    return fromFinalRow(row);
   }
   async load(storageId: string, scope: AuthenticatedScope & { projectId: string }): Promise<StoredFinalImage | undefined> {
     const result = await this.pool.query(`SELECT * FROM canonical_image_artifacts WHERE storage_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4
       AND role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL`, [storageId, scope.tenantId, scope.userId, scope.projectId]);
     const row = result.rows[0]; if (!row) return undefined;
-    return Object.freeze({ storageId: row.storage_id, tenantId: row.tenant_id, userId: row.user_id, projectId: row.project_id, executionId: row.execution_id, operationId: row.operation_id, role: row.role, lifecycle: row.lifecycle, width: row.width, height: row.height, encoding: row.encoding, contentType: row.content_type, bytes: new Uint8Array(row.image_bytes) });
+    return fromFinalRow(row);
+  }
+  /** Durable replay lookup for one canonical FINAL produced by a stable execution identity. */
+  async loadFinalByExecution(executionId: string, scope: AuthenticatedScope & { projectId: string }): Promise<StoredFinalImage | undefined> {
+    if (!executionId) return undefined;
+    const result = await this.pool.query(`SELECT * FROM canonical_image_artifacts WHERE execution_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4
+      AND role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL`, [executionId, scope.tenantId, scope.userId, scope.projectId]);
+    const row = result.rows[0]; if (!row) return undefined;
+    return fromFinalRow(row);
   }
   async loadSource(storageId: string, scope: AuthenticatedScope & { projectId: string }): Promise<StoredImage | undefined> { const result=await this.pool.query(`SELECT * FROM canonical_image_artifacts WHERE storage_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4 AND ((role='ORIGINAL' AND lifecycle='IMMUTABLE') OR (role='COMPOSITE' AND lifecycle='FINAL')) AND revoked_at IS NULL AND deleted_at IS NULL`,[storageId,scope.tenantId,scope.userId,scope.projectId]); const row=result.rows[0]; if(!row)return undefined; return Object.freeze({storageId:row.storage_id,tenantId:row.tenant_id,userId:row.user_id,projectId:row.project_id,executionId:row.execution_id,operationId:row.operation_id,role:row.role,lifecycle:row.lifecycle,width:row.width,height:row.height,encoding:row.encoding,contentType:row.content_type,bytes:new Uint8Array(row.image_bytes)}); }
+}
+
+function fromFinalRow(row: any): StoredFinalImage {
+  return Object.freeze({ storageId: row.storage_id, tenantId: row.tenant_id, userId: row.user_id, projectId: row.project_id, executionId: row.execution_id, operationId: row.operation_id, role: row.role, lifecycle: row.lifecycle, width: Number(row.width), height: Number(row.height), encoding: row.encoding, contentType: row.content_type, bytes: new Uint8Array(row.image_bytes) });
 }
