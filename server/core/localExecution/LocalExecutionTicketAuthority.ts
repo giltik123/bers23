@@ -1,5 +1,5 @@
 import type { LocalExecutionModelBinding, LocalExecutionTicket, LocalExecutionTicketIssueRequest, LocalExecutionTicketIssuerPort } from '../../../src/platform/creative/canonical/localExecution.ts';
-import { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
+import type { LocalExecutionLedger } from './LocalExecutionLedger.ts';
 
 export type LocalExecutionTicketAuthorityDependencies = Readonly<{
   now: () => number;
@@ -21,16 +21,16 @@ export class LocalExecutionModelUnavailableError extends Error {
 
 /** Core authority for minting narrow, short-lived, zero-cloud-cost local execution tickets. */
 export class LocalExecutionTicketAuthority implements LocalExecutionTicketIssuerPort {
-  private readonly registry: LocalExecutionAdmissionRegistry;
+  private readonly ledger: Pick<LocalExecutionLedger, 'issue'>;
   private readonly dependencies: LocalExecutionTicketAuthorityDependencies;
 
-  constructor(registry: LocalExecutionAdmissionRegistry, dependencies: LocalExecutionTicketAuthorityDependencies) {
+  constructor(ledger: Pick<LocalExecutionLedger, 'issue'>, dependencies: LocalExecutionTicketAuthorityDependencies) {
     if (!Number.isFinite(dependencies.ttlMs) || dependencies.ttlMs <= 0) throw new Error('Local execution ticket TTL must be positive');
-    this.registry = registry;
+    this.ledger = ledger;
     this.dependencies = dependencies;
   }
 
-  issue(input: LocalExecutionTicketIssueRequest): LocalExecutionTicket {
+  issue(input: LocalExecutionTicketIssueRequest): LocalExecutionTicket | Promise<LocalExecutionTicket> {
     const allowedModels = this.dependencies.modelsByCapability[input.operation.capability];
     if (!allowedModels?.length) throw new LocalExecutionModelUnavailableError(input.operation.capability);
     const issuedAt = this.dependencies.now();
@@ -53,6 +53,6 @@ export class LocalExecutionTicketAuthority implements LocalExecutionTicketIssuer
       expiresAt: issuedAt + this.dependencies.ttlMs,
       cost: { paidCloudCredits: 0, providerCalls: 0 },
     };
-    return this.registry.issue(ticket);
+    return this.ledger.issue(ticket);
   }
 }
