@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LocalAIPlatform } from '../src/platform/creative/local-ai/LocalAIPlatform.ts';
+import { ModelBundleBuilder } from '../src/platform/creative/local-ai/models/ModelBundles.ts';
 import {
   InMemoryFleetBacking,
   InMemoryFleetBlobs,
@@ -8,7 +9,7 @@ import {
   InMemoryFleetMutationLocks,
   InMemoryFleetReservations,
 } from '../src/platform/creative/local-ai/lifecycle/InMemoryFleetStorage.ts';
-import type { LocalAIDependencies, ModelManifest } from '../src/platform/creative/local-ai/types.ts';
+import type { DeviceCapabilityProfile, LocalAIDependencies, ModelManifest, RuntimeCapabilities } from '../src/platform/creative/local-ai/types.ts';
 
 const MIB = 1024 * 1024;
 const digest = 'a'.repeat(64);
@@ -134,4 +135,22 @@ test('untrusted combined recommendation cannot trigger durable or legacy mutatio
   assert.deepEqual(await env.platform.installRecommendedBundle(), []);
   assert.deepEqual(env.calls(), { fetchCalls: 0, legacyWrites: 0 });
   assert.equal((await env.lifecycle.metadata.read())?.models['versioned-segment'], undefined);
+});
+
+test('legacy mobile bundle metadata never promotes UNKNOWN tier to MOBILE_HIGH', () => {
+  const device: DeviceCapabilityProfile = {
+    platform: 'ANDROID', deviceClass: 'MOBILE', cpuCores: 8, ramMb: 8_192, gpu: 'UNKNOWN', vramMb: 0,
+    npu: 'UNKNOWN', architecture: 'UNKNOWN', browser: 'UNKNOWN', webgpu: false, wasm: true, webnn: false,
+    cuda: false, directml: false, metal: false, vulkan: false, storageFreeBytes: 512 * MIB,
+    batteryPercent: 100, powerState: 'CHARGING', thermalState: 'NORMAL', network: 'ONLINE', tier: 'UNKNOWN',
+    ramPressure: 'NORMAL', backgroundRestricted: false,
+  };
+  const runtimes: RuntimeCapabilities = {
+    ONNX_RUNTIME: false, WEBGPU: false, WASM: true, NNAPI: false,
+    DIRECTML: false, CUDA: false, METAL: false, VULKAN: false,
+  };
+  const mobile = manifest('1.0.0', { runtime: 'WASM', supportedAccelerators: ['WASM'], supportedPlatforms: ['ANDROID'] });
+  const bundle = new ModelBundleBuilder().recommend(device, runtimes, [mobile]);
+  assert.equal(bundle.id, 'MOBILE_LOW');
+  assert.deepEqual(bundle.modelIds, [], 'UNKNOWN tier remains non-authorizing even when legacy metadata is conservative');
 });
