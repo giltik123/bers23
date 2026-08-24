@@ -324,10 +324,10 @@ function requireModelExecutor(ticket: LocalExecutionTicketV2, result: LocalExecu
   return allowed;
 }
 
-function requireSource(artifacts: readonly CreativeArtifact[], ticket: LocalExecutionTicketV2) {
+function requireSource(artifacts: readonly CreativeArtifact[], ticket: LocalExecutionTicketV2): Readonly<{ artifact: CreativeArtifact; value: { width: number; height: number; data: Uint8ClampedArray } }> {
   const binding = ticket.inputs[0]; const artifact = artifacts.find(value => value.id === binding.artifactId && value.kind === 'image');
   if (!artifact) throw serviceError(409, 'canonical_source_pixels_unavailable', 'Canonical super-resolution source is unavailable');
-  return Object.assign(artifact, { value: requireSourcePixels(artifact) }) as CreativeArtifact & { value: { width: number; height: number; data: Uint8ClampedArray } };
+  return Object.freeze({ artifact, value: requireSourcePixels(artifact) });
 }
 
 function requireSourcePixels(artifact: CreativeArtifact): { width: number; height: number; data: Uint8ClampedArray } {
