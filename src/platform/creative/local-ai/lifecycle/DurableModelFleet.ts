@@ -77,6 +77,8 @@ export interface FleetStorageReservationPort {
 export type FleetPolicy = Readonly<{ safetyReserveBytes: number; maxHistory: number }>;
 type Clock = () => number;
 
+const LEGACY_BINDING_QUARANTINE_REASON = 'legacy manifest binding missing; revalidation required';
+const EXPLICIT_QUARANTINE_ERROR = 'Quarantined model requires explicit recovery';
 const empty = (): FleetState => ({ schemaVersion: FLEET_SCHEMA_VERSION, revision: 0, models: {} });
 const clone = <T>(value: T): T => structuredClone(value);
 const key = (manifest: ModelManifest) => `${manifest.modelId}@${manifest.version}:${manifest.sha256}`;
@@ -178,8 +180,12 @@ export class DurableModelFleet {
     }
     const model = recovered.models[modelId];
     const active = model?.activeVersion && model.versions[model.activeVersion];
-    if (active?.status === 'READY' && !(await this.#valid(active))) {
-      await this.#quarantine(active.modelId, active.version, 'startup integrity revalidation failed');
+    if (active?.status === 'READY') {
+      if (!active.manifestBinding) {
+        await this.#quarantine(active.modelId, active.version, LEGACY_BINDING_QUARANTINE_REASON);
+      } else if (!(await this.#valid(active))) {
+        await this.#quarantine(active.modelId, active.version, 'startup integrity revalidation failed');
+      }
     }
   }
 
@@ -192,14 +198,26 @@ export class DurableModelFleet {
   }
 
   async #install(manifest: ModelManifest): Promise<FleetVersion> {
-    const preliminary = await this.verifier.verify(manifest);
-    if (!preliminary.trusted) return this.#reject(manifest, preliminary.errors.join('; '));
-
     const before = await this.state();
     const current = before.models[manifest.modelId];
     const exact = current?.versions[manifest.version];
     const binding = manifestBinding(manifest);
-    if (exact?.status === 'READY' && exact.expectedSha256 === manifest.sha256 && exact.manifestBinding === binding && await this.#valid(exact)) return exact;
+
+    if (exact?.manifestBinding && exact.manifestBinding !== binding) {
+      throw new Error(`Model version manifest binding is immutable: ${manifest.modelId}@${manifest.version}`);
+    }
+    if (exact?.status === 'QUARANTINED' && exact.quarantineReason !== LEGACY_BINDING_QUARANTINE_REASON) {
+      throw new Error(EXPLICIT_QUARANTINE_ERROR);
+    }
+
+    const preliminary = await this.verifier.verify(manifest);
+    if (!preliminary.trusted) return this.#reject(manifest, preliminary.errors.join('; '));
+
+    if (exact?.status === 'READY' && exact.expectedSha256 === manifest.sha256 && exact.manifestBinding === binding) {
+      if (await this.#valid(exact)) return exact;
+      await this.#quarantine(exact.modelId, exact.version, 'installed model failed integrity revalidation');
+      throw new Error(EXPLICIT_QUARANTINE_ERROR);
+    }
 
     // Reuse an already trusted CAS object without redownloading it. The manifest is still independently verified.
     const shared = await this.blobs.read(manifest.sha256);
@@ -209,6 +227,8 @@ export class DurableModelFleet {
         contentHash: manifest.sha256,
         installedBytes: shared.byteLength,
         failureCount: exact?.failureCount ?? 0,
+        quarantineReason: undefined,
+        lastFailureReason: undefined,
         partial: undefined,
         transactionId: undefined,
         createdAt: exact?.createdAt ?? this.clock(),
@@ -278,6 +298,8 @@ export class DurableModelFleet {
         const staged = await this.#setStatus(manifest.modelId, manifest.version, 'STAGED', {
           contentHash: manifest.sha256,
           installedBytes: bytes.byteLength,
+          quarantineReason: undefined,
+          lastFailureReason: undefined,
         });
         await lease.assertActive();
         await this.blobs.removePartial(partialId);
@@ -305,6 +327,8 @@ export class DurableModelFleet {
         ...staged,
         status: 'READY',
         partial: undefined,
+        quarantineReason: undefined,
+        lastFailureReason: undefined,
         activatedAt: this.clock(),
         updatedAt: this.clock(),
         transactionId: undefined,
@@ -330,6 +354,8 @@ export class DurableModelFleet {
         (item.versions as Record<string, FleetVersion>)[target.version] = {
           ...item.versions[target.version],
           status: 'READY',
+          quarantineReason: undefined,
+          lastFailureReason: undefined,
           activatedAt: this.clock(),
           updatedAt: this.clock(),
         };
@@ -405,15 +431,25 @@ export class DurableModelFleet {
   async #reject(manifest: ModelManifest, reason: string): Promise<never> {
     const current = (await this.state()).models[manifest.modelId]?.versions[manifest.version];
     if (current?.partial) await this.blobs.removePartial(current.partial.id);
+    if (current) {
+      await this.#setStatus(manifest.modelId, manifest.version, 'QUARANTINED', {
+        failureCount: current.failureCount + 1,
+        quarantineReason: reason,
+        lastFailureReason: reason,
+        partial: undefined,
+        transactionId: undefined,
+      });
+      throw new Error(reason);
+    }
     await this.#writeVersion(manifest, {
       status: 'QUARANTINED',
       installedBytes: 0,
-      failureCount: (current?.failureCount ?? 0) + 1,
+      failureCount: 1,
       quarantineReason: reason,
       lastFailureReason: reason,
       partial: undefined,
       transactionId: undefined,
-      createdAt: current?.createdAt ?? this.clock(),
+      createdAt: this.clock(),
       updatedAt: this.clock(),
     });
     throw new Error(reason);
@@ -430,18 +466,18 @@ export class DurableModelFleet {
       const model = models[manifest.modelId] ?? { modelId: manifest.modelId, versions: {}, history: [] };
       const prior = model.versions[manifest.version];
       const record: FleetVersion = {
+        ...prior,
         modelId: manifest.modelId,
         version: manifest.version,
         manifest: clone(manifest),
         manifestId: manifestIdentity(manifest),
         manifestBinding: manifestBinding(manifest),
         expectedSha256: manifest.sha256,
-        installedBytes: 0,
-        status: 'AVAILABLE',
-        failureCount: 0,
-        createdAt: this.clock(),
+        installedBytes: prior?.installedBytes ?? 0,
+        status: prior?.status ?? 'AVAILABLE',
+        failureCount: prior?.failureCount ?? 0,
+        createdAt: prior?.createdAt ?? this.clock(),
         updatedAt: this.clock(),
-        ...prior,
         ...values,
       };
       (model.versions as Record<string, FleetVersion>)[manifest.version] = record;
