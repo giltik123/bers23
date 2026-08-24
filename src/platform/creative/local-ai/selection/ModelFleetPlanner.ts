@@ -14,7 +14,7 @@ const DEFAULT_BOOTSTRAP_CAPABILITIES = Object.freeze(['ANALYSIS', 'OCR', 'SEGMEN
 const SAFE_CATALOG_STATUSES = new Set(['AVAILABLE', 'INSTALLED', 'READY']);
 const HEAVY_CAPABILITY_MARKERS = Object.freeze(['GENERAT', 'INPAINT', 'OUTPAINT', 'DIFFUSION', 'TEXT_TO_IMAGE', 'IMAGE_TO_IMAGE', 'LOCAL_REASONING', 'VISION_LANGUAGE']);
 
-type Candidate = Readonly<{ model: ModelManifest; coverage: readonly string[] }>;
+type Candidate = Readonly<{ model: ModelManifest; coverage: readonly string[]; latencyMs: number }>;
 type FleetPlan = Readonly<{ mask: bigint; selected: readonly Candidate[]; bytes: number; quality: number; stability: number; latency: number }>;
 
 export function modelFleetKey(model: Pick<ModelManifest, 'modelId' | 'version'>): string { return `${model.modelId}@${model.version}`; }
@@ -69,9 +69,9 @@ export class ModelFleetPlanner {
       const capabilities = uniqueSorted(model.capabilities.map(canonicalCapability));
       const coverage = capabilities.filter((capability) => requestedCapabilities.includes(capability));
       const modelKey = modelFleetKey(model);
+      const promotion = input.promotionDecisions?.[modelKey];
       if (!trusted.has(modelKey)) reasons.push('UNTRUSTED_MANIFEST');
       if (input.promotionDecisions) {
-        const promotion = input.promotionDecisions[modelKey];
         if (!promotion || promotion.status === 'BENCHMARK_REQUIRED') reasons.push('BENCHMARK_REQUIRED');
         else if (promotion.status === 'STALE') reasons.push('BENCHMARK_STALE');
         else if (promotion.status === 'REJECTED') reasons.push('BENCHMARK_REJECTED');
@@ -91,7 +91,11 @@ export class ModelFleetPlanner {
       if (model.sizeBytes > maxModelBytes) reasons.push('MODEL_TOO_LARGE');
       if (reasons.includes('INSUFFICIENT_STORAGE') && reasons.every((reason) => reason === 'INSUFFICIENT_STORAGE' || reason === 'MODEL_TOO_LARGE')) resourceStorageBlocked = true;
       if (reasons.length) exclusions.push(exclusion(model, reasons));
-      else candidates.push(Object.freeze({ model, coverage: Object.freeze(coverage) }));
+      else candidates.push(Object.freeze({
+        model,
+        coverage: Object.freeze(coverage),
+        latencyMs: promotedMeasuredLatency(promotion, model.estimatedLatency),
+      }));
     }
 
     const plan = optimizeFleet(candidates, requestedCapabilities, budgetBytes);
@@ -146,7 +150,7 @@ function optimizeFleet(candidates: readonly Candidate[], requestedCapabilities: 
           bytes,
           quality: state.quality + candidate.model.qualityScore,
           stability: state.stability + candidate.model.stabilityScore,
-          latency: state.latency + candidate.model.estimatedLatency,
+          latency: state.latency + candidate.latencyMs,
         });
         keepBestForMask(next, proposal);
       }
@@ -223,6 +227,11 @@ function result(
 
 function exclusion(model: ModelManifest, reasons: readonly ModelFleetExclusionReason[]): ModelFleetExclusion {
   return Object.freeze({ modelId: model.modelId, version: model.version, reasons: Object.freeze(uniqueSorted(reasons)) });
+}
+
+function promotedMeasuredLatency(promotion: ModelPromotionDecision | undefined, fallback: number): number {
+  const value = promotion?.status === 'PROMOTED' ? promotion.measuredLatencyMs : undefined;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
 function compareIdentity(a: ModelManifest, b: ModelManifest): number { return a.modelId.localeCompare(b.modelId) || compareVersionDesc(a.version, b.version); }
