@@ -60,6 +60,8 @@ export class CreativeExecutionPlatform {
     return request.id;
   }
 
+  hasExecution(id: string): boolean { return this.#records.has(id); }
+
   async plan(id: string): Promise<CreativePlan> {
     const record = this.require(id);
     record.decision ??= await this.dependencies.decision.decide(record.request);
@@ -136,13 +138,13 @@ export class CreativeExecutionPlatform {
     if (!onDevice.length) return Object.freeze([]);
     const issuer = this.dependencies.localExecution;
     if (!issuer) throw new Error('ON_DEVICE execution requires Core local ticket authority');
-    const tickets = onDevice.map(operation => {
+    const tickets = await Promise.all(onDevice.map(async operation => {
       if (record.execution!.targets[operation.id] !== 'LOCAL') throw new Error(`ON_DEVICE operation ${operation.id} must have LOCAL target`);
       const capability = record.capabilityIds?.[operation.id];
       if (!capability) throw new Error(`ON_DEVICE operation ${operation.id} has no capability binding`);
       const inputs = localInputs(record.request, operation);
       if (!inputs.length) throw new Error(`ON_DEVICE operation ${operation.id} has no canonical input artifact`);
-      return issuer.issue({
+      return await issuer.issue({
         requestId: record.request.id,
         workflowId: record.workflow!.id,
         stepId: operation.id,
@@ -153,7 +155,7 @@ export class CreativeExecutionPlatform {
         policy: record.plan?.planningConstraints?.executionPolicy === 'LOCAL_ONLY' ? 'LOCAL_ONLY' : 'LOCAL_SELECTED',
         idempotencyKey: `${String(record.request.metadata?.idempotencyKey ?? id)}:${operation.id}:local-v1`,
       });
-    });
+    }));
     record.localTickets = Object.freeze(tickets);
     record.paused = true;
     return record.localTickets;
