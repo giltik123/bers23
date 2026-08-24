@@ -9,10 +9,6 @@ const approvedMobileSam: readonly LocalExecutionModelBinding[] = manifest.status
   ? Object.freeze([Object.freeze({ modelId: String(manifest.modelId), version: String(manifest.version) })])
   : Object.freeze([]);
 
-const approvedRealEsrgan: readonly LocalExecutionModelBinding[] = isExecutableRealEsrganRelease(upscaleManifest)
-  ? Object.freeze([Object.freeze({ modelId: String(upscaleManifest.modelId), version: String(upscaleManifest.version) })])
-  : Object.freeze([]);
-
 /**
  * Real-ESRGAN's release gate is deliberately stronger than a status flag. The model
  * binding remains non-executable until a dedicated promotion records a materialized,
@@ -50,12 +46,12 @@ function isHttpsUrl(value: unknown): boolean {
 }
 
 /**
- * Core executable model policy. A signed CANDIDATE is discoverable by the device
- * substrate but is not executable authority until its release gate is satisfied.
+ * Legacy v1 executable model policy. It intentionally remains MobileSAM-only.
+ * New image-producing model capabilities use the v2 executor-union policy and must
+ * never silently become mintable through the v1 issuer after release promotion.
  */
 export const productionLocalModelsByCapability: Readonly<Record<string, readonly LocalExecutionModelBinding[]>> = Object.freeze({
   [MOBILE_SAM_LOCAL_CAPABILITY]: approvedMobileSam,
-  [REAL_ESRGAN_LOCAL_CAPABILITY]: approvedRealEsrgan,
 });
 
 export const mobileSamProductionReleaseState = Object.freeze({
@@ -70,5 +66,6 @@ export const realEsrganProductionReleaseState = Object.freeze({
   version: String(upscaleManifest.version),
   releaseStatus: String(upscaleManifest.status),
   artifactState: String(upscaleManifest.artifactState),
-  executable: approvedRealEsrgan.length === 1,
+  executableV2: isExecutableRealEsrganRelease(upscaleManifest),
+  executableV1: false,
 });
