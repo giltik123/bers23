@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
-import type { LocalExecutionAdmissionDecision, LocalExecutionTicket } from '../../../src/platform/creative/canonical/localExecution.ts';
+import type { AnyLocalExecutionAdmissionDecision, AnyLocalExecutionTicket, LocalExecutionAdmissionReason } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
 import type { LocalExecutionClaimInput, LocalExecutionFinalization, LocalExecutionLedger } from './LocalExecutionLedger.ts';
@@ -13,7 +13,7 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
 
   constructor(pool: Pool) { this.pool = pool; }
 
-  async issue(ticket: LocalExecutionTicket): Promise<LocalExecutionTicket> {
+  async issue(ticket: AnyLocalExecutionTicket): Promise<AnyLocalExecutionTicket> {
     const candidate = validateStoredTicket(ticket);
     const inserted = await this.pool.query(`INSERT INTO local_execution_tickets
       (ticket_id,idempotency_key,tenant_id,user_id,project_id,request_id,workflow_id,step_id,ticket_json)
@@ -41,12 +41,12 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
     throw new Error('Local execution ticket persistence conflict could not be reconciled');
   }
 
-  async get(ticketId: string): Promise<LocalExecutionTicket | undefined> {
+  async get(ticketId: string): Promise<AnyLocalExecutionTicket | undefined> {
     const result = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets WHERE ticket_id=$1`, [ticketId]);
     return result.rows[0] ? ticketFromRow(result.rows[0]) : undefined;
   }
 
-  async getByIdempotencyKey(scope: Scope, idempotencyKey: string): Promise<LocalExecutionTicket | undefined> {
+  async getByIdempotencyKey(scope: Scope, idempotencyKey: string): Promise<AnyLocalExecutionTicket | undefined> {
     const result = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets
       WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND idempotency_key=$4`, [scope.tenantId, scope.userId, scope.projectId, idempotencyKey]);
     return result.rows[0] ? ticketFromRow(result.rows[0]) : undefined;
@@ -60,7 +60,7 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
     return Object.freeze({ status, finalizedAt: row.finalized_at instanceof Date ? row.finalized_at.toISOString() : typeof row.finalized_at === 'string' ? row.finalized_at : undefined });
   }
 
-  async claim(input: LocalExecutionClaimInput): Promise<LocalExecutionAdmissionDecision> {
+  async claim(input: LocalExecutionClaimInput): Promise<AnyLocalExecutionAdmissionDecision> {
     const client = await this.pool.connect();
     let lockHeld = false;
     let retained = false;
@@ -115,13 +115,13 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
   }
 }
 
-function validateStoredTicket(ticket: LocalExecutionTicket): LocalExecutionTicket {
+function validateStoredTicket(ticket: AnyLocalExecutionTicket): AnyLocalExecutionTicket {
   const validator = new LocalExecutionAdmissionRegistry();
   return validator.issue(ticket);
 }
 
-function ticketFromRow(row: Record<string, unknown>): LocalExecutionTicket {
-  const ticket = validateStoredTicket(row.ticket_json as LocalExecutionTicket);
+function ticketFromRow(row: Record<string, unknown>): AnyLocalExecutionTicket {
+  const ticket = validateStoredTicket(row.ticket_json as AnyLocalExecutionTicket);
   if (
     row.ticket_id !== ticket.ticketId ||
     row.idempotency_key !== ticket.idempotencyKey ||
@@ -135,18 +135,23 @@ function ticketFromRow(row: Record<string, unknown>): LocalExecutionTicket {
   return ticket;
 }
 
-function reconcileStoredTicket(row: Record<string, unknown>, candidate: LocalExecutionTicket): LocalExecutionTicket {
+function reconcileStoredTicket(row: Record<string, unknown>, candidate: AnyLocalExecutionTicket): AnyLocalExecutionTicket {
   const stored = ticketFromRow(row);
   if (!sameAuthorityBinding(stored, candidate)) throw new Error('Local execution idempotency key already bound to another execution');
   return stored;
 }
 
-function sameAuthorityBinding(a: LocalExecutionTicket, b: LocalExecutionTicket): boolean {
-  return a.version === b.version && a.issuer === b.issuer && a.idempotencyKey === b.idempotencyKey &&
+function sameAuthorityBinding(a: AnyLocalExecutionTicket, b: AnyLocalExecutionTicket): boolean {
+  if (a.version !== b.version) return false;
+  const common = a.issuer === b.issuer && a.idempotencyKey === b.idempotencyKey &&
     a.requestId === b.requestId && a.workflowId === b.workflowId && a.stepId === b.stepId &&
     canonicalJson(a.scope) === canonicalJson(b.scope) && canonicalJson(a.operation) === canonicalJson(b.operation) &&
     canonicalJson(a.inputs) === canonicalJson(b.inputs) && canonicalJson(a.expectedOutputs) === canonicalJson(b.expectedOutputs) &&
-    canonicalJson(a.allowedModels) === canonicalJson(b.allowedModels) && a.policy === b.policy && canonicalJson(a.cost) === canonicalJson(b.cost);
+    a.policy === b.policy && canonicalJson(a.cost) === canonicalJson(b.cost);
+  if (!common) return false;
+  if (a.version === '1' && b.version === '1') return canonicalJson(a.allowedModels) === canonicalJson(b.allowedModels);
+  if (a.version === '2' && b.version === '2') return canonicalJson(a.allowedExecutors) === canonicalJson(b.allowedExecutors);
+  return false;
 }
 
 function canonicalJson(value: unknown): string | undefined { return JSON.stringify(canonicalValue(value)); }
@@ -156,7 +161,7 @@ function canonicalValue(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)]));
 }
 
-function denied(reasonCode: Exclude<LocalExecutionAdmissionDecision['reasonCode'], 'ADMITTED'>): LocalExecutionAdmissionDecision {
+function denied(reasonCode: Exclude<LocalExecutionAdmissionReason, 'ADMITTED'>): AnyLocalExecutionAdmissionDecision {
   return Object.freeze({ allowed: false, reasonCode });
 }
 
