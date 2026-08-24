@@ -11,8 +11,15 @@ CREATE TABLE IF NOT EXISTS local_execution_tickets (
   step_id text NOT NULL,
   ticket_json jsonb NOT NULL,
   consumed_at timestamptz,
+  finalized_status text CHECK (finalized_status IS NULL OR finalized_status IN ('SUCCESS','FAILED')),
+  finalized_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Repair earlier 6.42A prerelease revisions in place.
+ALTER TABLE local_execution_tickets
+  ADD COLUMN IF NOT EXISTS finalized_status text CHECK (finalized_status IS NULL OR finalized_status IN ('SUCCESS','FAILED')),
+  ADD COLUMN IF NOT EXISTS finalized_at timestamptz;
 
 -- Earlier 6.42A prerelease revisions used a globally UNIQUE idempotency key.
 -- Remove that constraint so identical client request IDs remain isolated by canonical scope.
