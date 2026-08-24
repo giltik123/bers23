@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BundleOptimizer, CreativeModelDistribution, DEFAULT_DISTRIBUTION_POLICY, DETERMINISTIC_DEVICE_PROFILES, PROFILE_CAPABILITIES, classifyDevice, type BundleProfile, type DeviceCapabilityProfile, type DistributionPolicy, type ModelManifest } from '../src/platform/creative/model-distribution/index.ts';
+import { InMemoryFleetBacking, InMemoryFleetBlobs, InMemoryFleetMetadata, InMemoryFleetMutationLocks, InMemoryFleetReservations } from '../src/platform/creative/local-ai/lifecycle/InMemoryFleetStorage.ts';
 
 const device = (values: Partial<DeviceCapabilityProfile> = {}): DeviceCapabilityProfile => ({ platform: 'BROWSER', deviceClass: 'BROWSER', cpuCores: 8, ramMb: 16_384, gpu: 'measured', vramMb: 4096, npu: 'UNKNOWN', architecture: 'arm64', browser: 'test', webgpu: true, wasm: true, webnn: false, cuda: false, directml: false, metal: false, vulkan: false, storageFreeBytes: 5e9, batteryPercent: 90, powerState: 'BATTERY', thermalState: 'NORMAL', network: 'ONLINE', tier: 'HIGH', ramPressure: 'NORMAL', backgroundRestricted: false, ...values });
 const model = (id: string, capability = 'segmentation', values: Partial<ModelManifest> = {}): ModelManifest => ({ modelId: id, version: '1.0.0', family: 'test', capabilities: [capability], modelFormat: 'ONNX', runtime: 'WEBGPU', sizeBytes: 10_000_000, requiredRam: 512, requiredVram: 256, supportedPlatforms: ['BROWSER'], supportedAccelerators: ['WEBGPU'], estimatedLatency: 100, qualityScore: .9, energyScore: .9, privacyLevel: 'PRIVATE', license: 'Apache-2.0', publisher: 'trusted', downloadUri: `https://models.example/${id}`, sha256: 'a'.repeat(64), signature: 'signed', status: 'AVAILABLE', stabilityScore: .99, ...values });
@@ -32,7 +33,34 @@ for (const category of categories) for (let variant = 1; variant <= 9; variant +
   if (category === 'explainable-score') assert.match(optimizer.optimize('BALANCED', catalog, context()).bundle.models[0].reasons.join(' '), /quality.*speed.*cloud savings/);
 });
 
-function distribution(deviceValues: Partial<DeviceCapabilityProfile> = {}, policyValues: Partial<DistributionPolicy> = {}) { let now = 0; const files = new Map<string,Uint8Array>(); const catalog = [model('segment')]; return new CreativeModelDistribution({ localAI: { id:()=> 'id', clock:()=>++now, random:()=>.5, deviceProvider:{signals:async()=>device(deviceValues)}, runtimeProbe:{detect:async(kind)=>kind === 'WEBGPU'}, fetch:{fetch:async()=>new Uint8Array(10_000_000)}, storage:{freeBytes:async()=>5e9,read:async(id)=>files.get(id),write:async(id,bytes)=>{files.set(id,bytes)},remove:async(id)=>{files.delete(id)}}, hash:{sha256:async()=> 'a'.repeat(64)}, signatureVerifier:{verify:async()=>true}, modelCatalog:catalog }, bandwidthBytesPerSecond:()=>1_000_000 }, { policy:policy(policyValues), telemetry:[{modelId:'segment',quality:.9,latencyMs:100,successRate:.96,cloudAvoidance:.72,cloudSavings:.45,energy:.1,thermalImpact:.1,samples:100}], scope:{tenantId:'t',projectId:'p',userId:'u'} }); }
+function distribution(deviceValues: Partial<DeviceCapabilityProfile> = {}, policyValues: Partial<DistributionPolicy> = {}) {
+  let now = 0;
+  const files = new Map<string,Uint8Array>();
+  const catalog = [model('segment')];
+  const backing = new InMemoryFleetBacking(5e9);
+  const lifecycle = {
+    metadata: new InMemoryFleetMetadata(backing),
+    blobs: new InMemoryFleetBlobs(backing),
+    mutationLocks: new InMemoryFleetMutationLocks(backing),
+    reservations: new InMemoryFleetReservations(backing),
+    policy: { safetyReserveBytes: 64 * 1024 * 1024, maxHistory: 2 },
+  };
+  return new CreativeModelDistribution({
+    localAI: {
+      id:()=> 'id', clock:()=>++now, random:()=>.5,
+      deviceProvider:{signals:async()=>device(deviceValues)}, runtimeProbe:{detect:async(kind)=>kind === 'WEBGPU'},
+      fetch:{fetch:async()=>new Uint8Array(10_000_000)},
+      storage:{freeBytes:async()=>5e9,read:async(id)=>files.get(id),write:async(id,bytes)=>{files.set(id,bytes)},remove:async(id)=>{files.delete(id)}},
+      hash:{sha256:async()=> 'a'.repeat(64)}, signatureVerifier:{verify:async()=>true}, modelCatalog:catalog,
+    },
+    bandwidthBytesPerSecond:()=>1_000_000,
+  }, {
+    policy:policy(policyValues),
+    telemetry:[{modelId:'segment',quality:.9,latencyMs:100,successRate:.96,cloudAvoidance:.72,cloudSavings:.45,energy:.1,thermalImpact:.1,samples:100}],
+    scope:{tenantId:'t',projectId:'p',userId:'u'},
+    lifecycle,
+  });
+}
 
 test('facade performs analyzed, proposed, consented, verified installation flow', async()=>{ const app=distribution(); await app.analyzeDevice(); const bundle=await app.recommendBundle('MINIMAL'); const proposal=app.propose(bundle); await app.installBundle(bundle,{proposalId:proposal.proposalId,approved:true,scope:{tenantId:'t',projectId:'p',userId:'u'}}); assert.equal(app.inspect('segment')?.status,'INSTALLED'); assert.equal(app.snapshot().trustStatus.segment,true); });
 test('large installation cannot be hidden from user', async()=>{ const app=distribution(); await app.analyzeDevice(); const bundle=await app.recommendBundle(); await assert.rejects(app.installBundle(bundle),/consent/); });

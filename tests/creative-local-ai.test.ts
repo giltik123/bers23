@@ -15,13 +15,13 @@ const digest = 'a'.repeat(64);
 const bytes = new Uint8Array([1, 2, 3, 4]);
 const signals = (overrides: Partial<DeviceSignals> = {}): DeviceSignals => ({
   platform: 'LINUX', deviceClass: 'DESKTOP', cpuCores: 12, ramMb: 16_384, gpu: 'test-gpu', vramMb: 8_192,
-  npu: 'UNKNOWN', architecture: 'x64', browser: 'UNKNOWN', webgpu: true, wasm: true, webnn: false, cuda: true,
+  npu: 'UNKNOWN', architecture: 'x64', browser: 'UNKNOWN', webgpu: true, wasm: true, webnn: false, nnapi: false, cuda: true,
   directml: false, metal: false, vulkan: true, storageFreeBytes: 100_000_000_000, batteryPercent: 90,
   powerState: 'CHARGING', thermalState: 'NORMAL', network: 'ONLINE', ramPressure: 'NORMAL', backgroundRestricted: false, ...overrides,
 });
 const profile = (overrides: Partial<DeviceCapabilityProfile> = {}): DeviceCapabilityProfile => ({
   platform: 'LINUX', deviceClass: 'DESKTOP', cpuCores: 12, ramMb: 16_384, gpu: 'test-gpu', vramMb: 8_192,
-  npu: 'UNKNOWN', architecture: 'x64', browser: 'UNKNOWN', webgpu: true, wasm: true, webnn: false, cuda: true,
+  npu: 'UNKNOWN', architecture: 'x64', browser: 'UNKNOWN', webgpu: true, wasm: true, webnn: false, nnapi: false, cuda: true,
   directml: false, metal: false, vulkan: true, storageFreeBytes: 100_000_000_000, batteryPercent: 90,
   powerState: 'CHARGING', thermalState: 'NORMAL', network: 'ONLINE', tier: 'HIGH', ramPressure: 'NORMAL', backgroundRestricted: false, ...overrides,
 });
@@ -127,7 +127,7 @@ for (const category of categories) {
         const estimate = new LocalAICostModel().estimate(model, 20 + variant, 2); assert.ok(estimate.localCost > 0); assert.ok(estimate.energyCost > 0);
       }
       if (category === 'fallback') {
-        const decision = new ExecutionTargetSelector(runtimes()).select({ operation: { operationId: 'segment', requiredCapabilities: model.capabilities }, device: profile(), models: [model], privacyMode: 'NORMAL', cloudAllowed: true, maxCloudCredits: 10, cloudCredits: 2, qualityRequirement: 0.5, latencyRequirement: 5_000 }); assert.equal(decision.fallback, 'CLOUD');
+        const decision = new ExecutionTargetSelector(runtimes()).select({ operation: { operationId: 'segment', requiredCapabilities: model.capabilities }, device: profile(), models: [model], privacyMode: 'NORMAL', cloudAllowed: true, maxCloudCredits: 10, cloudCredits: 2, qualityRequirement: 0.5, latencyRequirement: 5_000 }); assert.equal(decision.fallback, null);
       }
       if (category === 'explainability' || category === 'snapshot' || category === 'replay') {
         const platform = await readyPlatform(variant); await platform.selectExecutionTarget({ operation: { operationId: 'segment', requiredCapabilities: model.capabilities }, privacyMode: 'PRIVACY_FIRST', cloudAllowed: true, maxCloudCredits: 10, cloudCredits: 2, qualityRequirement: 0.5, latencyRequirement: 5_000 }); const snapshot = platform.snapshot()!;
@@ -151,7 +151,7 @@ for (const category of categories) {
 
 test('unknown device characteristics remain UNKNOWN', async () => {
   const device = await new DeviceAnalyzer({ signals: async () => ({}) }).analyze();
-  assert.equal(device.platform, 'UNKNOWN'); assert.equal(device.ramMb, 'UNKNOWN'); assert.equal(device.webgpu, 'UNKNOWN'); assert.equal(device.network, 'UNKNOWN');
+  assert.equal(device.platform, 'UNKNOWN'); assert.equal(device.ramMb, 'UNKNOWN'); assert.equal(device.webgpu, 'UNKNOWN'); assert.equal(device.nnapi, 'UNKNOWN'); assert.equal(device.network, 'UNKNOWN'); assert.equal(device.tier, 'UNKNOWN');
 });
 test('invalid checksum and signature quarantine models before execution', async () => {
   const badHash = new LocalAIPlatform(dependencies({ hash: { sha256: async () => 'b'.repeat(64) } }), policy);

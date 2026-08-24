@@ -5,6 +5,8 @@ import { checkMaskArtifactSchema, migrateMaskArtifactSchema } from '../../../cor
 import { checkImageArtifactSchema, migrateImageArtifactSchema } from '../../../core/artifacts/imageArtifactSchema.ts';
 import { checkProjectSchema, migrateProjectSchema } from '../../../core/projects/projectSchema.ts';
 import { checkAuthSchema, migrateAuthSchema } from '../../../core/auth/authSchema.ts';
+import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../../../core/artifacts/localExecutionUploadSchema.ts';
+import { checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../../../core/localExecution/localExecutionLedgerSchema.ts';
 
 const command = process.argv[2];
 const databaseUrl = process.env.DATABASE_URL;
@@ -19,6 +21,8 @@ try {
     await migrateImageArtifactSchema(pool);
     await migrateProjectSchema(pool);
     await migrateAuthSchema(pool);
+    await migrateLocalExecutionUploadSchema(pool);
+    await migrateLocalExecutionLedgerSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', version: result.version, status: result.status }));
   } else if (command === 'check') {
     await checkTransactionSchema(pool);
@@ -26,6 +30,8 @@ try {
     await checkImageArtifactSchema(pool);
     await checkProjectSchema(pool);
     await checkAuthSchema(pool);
+    await checkLocalExecutionUploadSchema(pool);
+    await checkLocalExecutionLedgerSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', status: 'ready' }));
   } else {
     throw new Error('expected migrate or check command');

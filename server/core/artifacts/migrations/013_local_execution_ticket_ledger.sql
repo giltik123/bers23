@@ -1,0 +1,48 @@
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS local_execution_tickets (
+  ticket_id text PRIMARY KEY,
+  idempotency_key text NOT NULL,
+  tenant_id text NOT NULL,
+  user_id text NOT NULL,
+  project_id text NOT NULL,
+  request_id text NOT NULL,
+  workflow_id text NOT NULL,
+  step_id text NOT NULL,
+  ticket_json jsonb NOT NULL,
+  consumed_at timestamptz,
+  finalized_status text CHECK (finalized_status IS NULL OR finalized_status IN ('SUCCESS','FAILED')),
+  finalized_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Repair earlier 6.42A prerelease revisions in place.
+ALTER TABLE local_execution_tickets
+  ADD COLUMN IF NOT EXISTS finalized_status text CHECK (finalized_status IS NULL OR finalized_status IN ('SUCCESS','FAILED')),
+  ADD COLUMN IF NOT EXISTS finalized_at timestamptz;
+
+-- Earlier 6.42A prerelease revisions used a globally UNIQUE idempotency key.
+-- Remove that constraint so identical client request IDs remain isolated by canonical scope.
+ALTER TABLE local_execution_tickets
+  DROP CONSTRAINT IF EXISTS local_execution_tickets_idempotency_key_key;
+
+CREATE UNIQUE INDEX IF NOT EXISTS local_execution_tickets_scope_idempotency_unique
+  ON local_execution_tickets (tenant_id, user_id, project_id, idempotency_key);
+
+CREATE INDEX IF NOT EXISTS local_execution_tickets_scope_idx
+  ON local_execution_tickets (tenant_id, user_id, project_id, ticket_id);
+
+CREATE INDEX IF NOT EXISTS local_execution_tickets_request_idx
+  ON local_execution_tickets (request_id, tenant_id, user_id, project_id);
+
+ALTER TABLE local_execution_uploads
+  ALTER COLUMN artifact_role SET NOT NULL;
+
+ALTER TABLE canonical_mask_artifacts
+  ADD COLUMN IF NOT EXISTS local_execution_ticket_id text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS canonical_mask_artifacts_local_execution_ticket_unique
+  ON canonical_mask_artifacts (local_execution_ticket_id)
+  WHERE local_execution_ticket_id IS NOT NULL;
+
+COMMIT;

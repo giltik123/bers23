@@ -1,0 +1,38 @@
+name: Sprint 6.42 integrated acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  integrated-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and lint
+        run: |
+          npm run typecheck
+          npm run lint
+      - name: A plus B device capability integration
+        run: |
+          mkdir -p .test-cache/6.42-integration
+          npx esbuild tests/device-capability-fleet-integration.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/device-capability-fleet-integration.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42-integration/device-capability-fleet-integration.test.mjs
+      - name: Canonical route and durable fleet regressions
+        run: |
+          npm run test:creative-route-6.41c4
+          npm run test:durable-model-fleet
+      - name: Production browser build contract
+        run: |
+          npm run build --if-present
+          npm run check:browser-bundle

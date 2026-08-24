@@ -1,4 +1,5 @@
 import type { CreativeExecutionPlatformDependencies, CreativeOperation, CreativeRequest, ExecutionTarget } from './contracts';
+import type { LocalExecutionTicketIssuerPort } from './localExecution';
 
 export type ProviderSelectionReasonCode =
   | 'PROVIDER_SELECTED'
@@ -15,7 +16,8 @@ export interface ProviderSelectorPort {
   select(input: Readonly<{ request: CreativeRequest; operation: CreativeOperation; target: ExecutionTarget }>): ProviderSelectionDecision;
 }
 
-/** Runtime composition contract: provider choice is mandatory and downstream of advisory planning. */
+/** Runtime composition contract: provider choice is mandatory only for PROVIDER routes. */
 export type CreativeExecutionPlatformRuntimeDependencies = CreativeExecutionPlatformDependencies & Readonly<{
   providerSelector: ProviderSelectorPort;
+  localExecution?: LocalExecutionTicketIssuerPort;
 }>;

@@ -1,14 +1,38 @@
+import { DeviceCapabilitySnapshotBuilder } from '../device/DeviceCapabilitySnapshot';
 import { immutableClone } from '../immutable';
-import type { DeviceCapabilityProfile, ModelBundle, ModelManifest, RuntimeCapabilities } from '../types';
+import { ModelFleetPlanner, modelFleetKey } from '../selection/ModelFleetPlanner';
+import type { DeviceCapabilityProfile, ModelBundle, ModelFleetRecommendationPolicy, ModelManifest, RuntimeCapabilities } from '../types';
 
-const category = (model: ModelManifest) => model.capabilities.map((item) => item.toLowerCase()).join(' ');
+/**
+ * Backward-compatible advisory bundle surface. It now shares the same UNKNOWN/resource/budget
+ * policy as the production recommendation path. This wrapper cannot prove trust by itself;
+ * LocalAIPlatform.recommendFleet/installModel remain the trust-enforcing path.
+ */
 export class ModelBundleBuilder {
-  recommend(device: DeviceCapabilityProfile, runtimes: RuntimeCapabilities, catalog: readonly ModelManifest[]): ModelBundle {
-    const id: ModelBundle['id'] = device.deviceClass === 'BROWSER' ? 'BROWSER' : device.deviceClass === 'MOBILE' ? device.tier === 'LOW' ? 'MOBILE_LOW' : 'MOBILE_HIGH' : (runtimes.CUDA === true || runtimes.METAL === true || runtimes.DIRECTML === true) && device.tier === 'HIGH' ? 'DESKTOP_GPU' : 'DESKTOP_STANDARD';
-    const allowed = id === 'MOBILE_LOW' ? ['analysis', 'ocr'] : id === 'MOBILE_HIGH' ? ['analysis', 'ocr', 'segment', 'upscale', 'reason'] : ['analysis', 'ocr', 'segment', 'upscale', 'reason'];
-    const compatible = catalog.filter((model) => model.supportedPlatforms.includes(device.platform) && allowed.some((cap) => category(model).includes(cap)) && runtimeAvailable(model, runtimes));
-    const modelIds = compatible.sort((a, b) => a.sizeBytes - b.sizeBytes || a.modelId.localeCompare(b.modelId)).map((model) => model.modelId);
-    return immutableClone({ id, modelIds, estimatedBytes: compatible.reduce((sum, model) => sum + model.sizeBytes, 0), reasoning: allowed.includes('reason') ? id === 'MOBILE_HIGH' || id === 'BROWSER' ? 'LIMITED' : 'YES' : 'NO', generation: 'NO' });
+  recommend(device: DeviceCapabilityProfile, runtimes: RuntimeCapabilities, catalog: readonly ModelManifest[], policy?: ModelFleetRecommendationPolicy): ModelBundle {
+    const snapshot = new DeviceCapabilitySnapshotBuilder().build(device, runtimes, 0);
+    const recommendation = new ModelFleetPlanner().recommend({
+      snapshot,
+      catalog,
+      trustedModelKeys: catalog.map(modelFleetKey),
+      storageFreeBytes: device.storageFreeBytes,
+      policy,
+    });
+    return immutableClone({
+      id: bundleId(device, runtimes),
+      modelIds: recommendation.modelIds,
+      estimatedBytes: recommendation.estimatedBytes,
+      reasoning: 'NO' as const,
+      generation: 'NO' as const,
+    });
   }
 }
-function runtimeAvailable(model: ModelManifest, runtimes: RuntimeCapabilities): boolean { return model.supportedAccelerators.some((runtime) => runtimes[runtime] === true); }
+
+function bundleId(device: DeviceCapabilityProfile, runtimes: RuntimeCapabilities): ModelBundle['id'] {
+  if (device.deviceClass === 'BROWSER') return 'BROWSER';
+  if (device.deviceClass === 'MOBILE') {
+    return device.tier === 'HIGH' || device.tier === 'EXTREME' ? 'MOBILE_HIGH' : 'MOBILE_LOW';
+  }
+  const accelerated = runtimes.CUDA === true || runtimes.METAL === true || runtimes.DIRECTML === true;
+  return accelerated && (device.tier === 'HIGH' || device.tier === 'EXTREME') ? 'DESKTOP_GPU' : 'DESKTOP_STANDARD';
+}
