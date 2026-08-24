@@ -16,22 +16,22 @@ export class InMemoryFleetBacking {
   readonly partials = new Map<string, Uint8Array>();
   readonly lockTails = new Map<string, Promise<void>>();
   readonly reservations = new Map<string, number>();
+  metadataTail: Promise<void> = Promise.resolve();
   reservationTail: Promise<void> = Promise.resolve();
   constructor(readonly capacityBytes = Number.MAX_SAFE_INTEGER) {}
 }
 
 export class InMemoryFleetMetadata implements FleetMetadataPort {
-  #tail = Promise.resolve();
   constructor(private readonly backing = new InMemoryFleetBacking()) {}
-  async read(): Promise<FleetState | undefined> { await this.#tail; return this.backing.state && copy(this.backing.state); }
+  async read(): Promise<FleetState | undefined> { await this.backing.metadataTail; return this.backing.state && copy(this.backing.state); }
   update(mutator: (current: FleetState) => FleetState): Promise<FleetState> {
     let result!: FleetState;
-    const work = this.#tail.then(() => {
+    const work = this.backing.metadataTail.then(() => {
       const current = this.backing.state ?? { schemaVersion: 1 as const, revision: 0, models: {} };
       result = copy(mutator(copy(current)));
       this.backing.state = result;
     });
-    this.#tail = work;
+    this.backing.metadataTail = work;
     return work.then(() => copy(result));
   }
 }
