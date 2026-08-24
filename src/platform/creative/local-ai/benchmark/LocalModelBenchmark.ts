@@ -18,6 +18,8 @@ export class LocalModelBenchmarker {
       try {
         result = await runtime.infer({ ...request, requestId: `${request.requestId}:${index}` });
         success += 1;
+      } catch {
+        // Failure is represented by successRate; elapsed time still belongs in latency evidence.
       } finally {
         latencies.push(Math.max(0, this.now() - start));
       }
