@@ -17,8 +17,10 @@ const pool = new Pool({ connectionString: databaseUrl, max: 1,
 try {
   if (command === 'migrate') {
     const result = await migrateTransactionSchema(pool);
-    await migrateMaskArtifactSchema(pool);
+    // 014_canonical_mask_lineage references canonical_image_artifacts, so the image base
+    // schema must exist before the MASK migrator upgrades 002 with lineage constraints.
     await migrateImageArtifactSchema(pool);
+    await migrateMaskArtifactSchema(pool);
     await migrateProjectSchema(pool);
     await migrateAuthSchema(pool);
     await migrateLocalExecutionUploadSchema(pool);
@@ -26,8 +28,8 @@ try {
     console.info(JSON.stringify({ scope: 'transaction_schema', version: result.version, status: result.status }));
   } else if (command === 'check') {
     await checkTransactionSchema(pool);
-    await checkMaskArtifactSchema(pool);
     await checkImageArtifactSchema(pool);
+    await checkMaskArtifactSchema(pool);
     await checkProjectSchema(pool);
     await checkAuthSchema(pool);
     await checkLocalExecutionUploadSchema(pool);

@@ -2,13 +2,13 @@ import { createServer } from 'node:http';
 import { loadCoreServerConfig } from './core/config.ts';
 import { createProductionCore } from './core/composition/createProductionCore.ts';
 import { createLocalExecutionHttpAdapter } from './core/http/localExecutionHttpAdapter.ts';
-import { createNodeHttpAdapter } from './core/http/nodeHttpAdapter.ts';
+import { createCanonicalNodeHttpAdapter } from './core/http/canonicalNodeHttpAdapter.ts';
 import { applyCoreSecurityHeaders } from './core/http/securityHeaders.ts';
 
 export async function startCoreServer() {
   const config = loadCoreServerConfig(); const production = await createProductionCore(config); let accepting = true;
   const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); return true; } catch { return false; } };
-  const adapter = createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
+  const adapter = createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
   const localExecutionAdapter = createLocalExecutionHttpAdapter({ service: production.localExecution.segmentation, auth: production.auth, config });
   const server = createServer((request, response) => {
     applyCoreSecurityHeaders(response, config);

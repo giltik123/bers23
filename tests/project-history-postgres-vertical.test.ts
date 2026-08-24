@@ -7,7 +7,7 @@ import { Pool } from 'pg';
 import sharp from 'sharp';
 import { createProductionCore } from '../server/core/composition/createProductionCore.ts';
 import type { CoreServerConfig } from '../server/core/config.ts';
-import { createNodeHttpAdapter } from '../server/core/http/nodeHttpAdapter.ts';
+import { createCanonicalNodeHttpAdapter } from '../server/core/http/canonicalNodeHttpAdapter.ts';
 import { migrateTransactionSchema } from '../server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts';
 import { migrateMaskArtifactSchema } from '../server/core/artifacts/maskArtifactSchema.ts';
 import { migrateImageArtifactSchema } from '../server/core/artifacts/imageArtifactSchema.ts';
@@ -58,7 +58,7 @@ async function historyCount(pool: Pool, projectId: string) {
 
 async function startProduction(fetcher: typeof fetch) {
   const production = await createProductionCore(config, { fetcher });
-  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready: async () => true, accepting: () => true }));
+  const server = createServer(createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready: async () => true, accepting: () => true }));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert(address && typeof address === 'object');
   return { production, server, baseUrl: `http://127.0.0.1:${address.port}` };
@@ -152,8 +152,10 @@ test('accepted FINAL history, navigation, versions and restart remain server-aut
   for (const [x, y] of [[3, 3], [4, 3], [3, 4], [4, 4]]) alpha[y * width + x] = 255;
   const httpClient = {
     artifacts: {
-      persistMask: async ({ projectId, width, height, alpha }: { projectId: string; width: number; height: number; alpha: Uint8Array }) => {
-        const response = await fetch(`${baseUrl}/api/core/artifacts/masks?projectId=${encodeURIComponent(projectId)}&width=${width}&height=${height}`, { method: 'POST', headers: { authorization: auth, 'content-type': 'application/octet-stream' }, body: alpha });
+      persistMask: async ({ projectId: requestedProjectId, sourceImageArtifactId, parentMaskArtifactId, width: maskWidth, height: maskHeight, alpha: bytes }: { projectId: string; sourceImageArtifactId: string; parentMaskArtifactId?: string; width: number; height: number; alpha: Uint8Array }) => {
+        const query = new URLSearchParams({ projectId: requestedProjectId, sourceImageArtifactId, width: String(maskWidth), height: String(maskHeight) });
+        if (parentMaskArtifactId) query.set('parentMaskArtifactId', parentMaskArtifactId);
+        const response = await fetch(`${baseUrl}/api/core/artifacts/masks?${query}`, { method: 'POST', headers: { authorization: auth, 'content-type': 'application/octet-stream' }, body: bytes });
         assert.equal(response.status, 201); return response.json();
       },
     },
@@ -166,11 +168,16 @@ test('accepted FINAL history, navigation, versions and restart remain server-aut
       status: async () => { throw new Error('not used'); },
     },
   };
-  const maskPort = new CoreMaskArtifactPort(projectId, httpClient as any);
-  const persistedMask = await maskPort.persist({ width, height, alpha, source: 'USER', coordinateSpace: 'ORIGINAL' }, { coordinateSpace: 'ORIGINAL', encoding: 'ALPHA_8_LOSSLESS' });
+  const persistMaskFor = async (sourceImageArtifactId: string) => {
+    const port = new CoreMaskArtifactPort(projectId, sourceImageArtifactId, httpClient as any);
+    return port.persist({ width, height, alpha, source: 'USER', coordinateSpace: 'ORIGINAL' }, { coordinateSpace: 'ORIGINAL', encoding: 'ALPHA_8_LOSSLESS' });
+  };
+  const originalMask = await persistMaskFor(originalArtifactId);
+  const originalMaskRow = (await pool.query('SELECT * FROM canonical_mask_artifacts WHERE storage_id=$1', [decodeClaim(originalMask.id).storageId])).rows[0];
+  assert.equal(originalMaskRow.source_image_storage_id, originalStorageId);
   const editor = createCreativeEditApplicationService(httpClient as any);
 
-  const execute = async (inputArtifactId: string, requestId: string) => editor.execute({ projectId, instruction: `controlled history edit ${requestId}`, selectedObjectIds: ['selected-object'], inputArtifactId, maskArtifactIds: [persistedMask.id], preserveMode: 'STRICT', clientRequestId: requestId });
+  const execute = async (inputArtifactId: string, maskArtifactId: string, requestId: string) => editor.execute({ projectId, instruction: `controlled history edit ${requestId}`, selectedObjectIds: ['selected-object'], inputArtifactId, maskArtifactIds: [maskArtifactId], preserveMode: 'STRICT', clientRequestId: requestId });
   const accept = (finalArtifactId: string, instruction: string) => fetch(`${baseUrl}/api/core/projects/${projectId}/accept-final`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ finalArtifactId, instruction }) });
   const mutate = async (action: string, body?: unknown) => fetch(`${baseUrl}/api/core/projects/${projectId}/${action}`, { method: 'POST', headers: jsonHeaders, body: body === undefined ? undefined : JSON.stringify(body) });
   const reload = async () => {
@@ -178,7 +185,7 @@ test('accepted FINAL history, navigation, versions and restart remain server-aut
   };
 
   // Generate FINAL #1, but the Project must remain on immutable ORIGINAL until explicit acceptance.
-  const result1 = await execute(originalArtifactId, 'history-edit-1');
+  const result1 = await execute(originalArtifactId, originalMask.id, 'history-edit-1');
   assert.equal(result1.status, 'SUCCESS'); assert.equal(result1.verification?.valid, true);
   const final1 = String(result1.finalArtifactId); const final1Storage = decodeClaim(final1).storageId as string;
   project = await reload();
@@ -209,9 +216,13 @@ test('accepted FINAL history, navigation, versions and restart remain server-aut
   assert.equal(decodeClaim(version1.artifact_id).storageId, final1Storage);
   assert.equal(await reservations(pool), 1); assert.equal(inferences.length, 1);
 
-  // FINAL #2 must hydrate accepted FINAL #1 internally, never through a delivery/external source URL.
+  // FINAL #2 must use a MASK explicitly rebound to accepted FINAL #1; ORIGINAL-bound MASK is stale for this source.
   const currentFinal1 = project.current_image_artifact_id as string;
-  const result2 = await execute(currentFinal1, 'history-edit-2');
+  const final1Mask = await persistMaskFor(currentFinal1);
+  const final1MaskRow = (await pool.query('SELECT * FROM canonical_mask_artifacts WHERE storage_id=$1', [decodeClaim(final1Mask.id).storageId])).rows[0];
+  assert.equal(final1MaskRow.source_image_storage_id, final1Storage);
+  assert.notEqual(final1MaskRow.source_image_storage_id, originalMaskRow.source_image_storage_id);
+  const result2 = await execute(currentFinal1, final1Mask.id, 'history-edit-2');
   assert.equal(result2.status, 'SUCCESS'); assert.equal(result2.verification?.valid, true);
   const final2 = String(result2.finalArtifactId); const final2Storage = decodeClaim(final2).storageId as string;
   assert.equal(externalSourceFetches, 0); assert.equal(inferences.length, 2); assert.equal(initiations.length, 4); assert.equal(binaryUploads.length, 4); assert.equal(await reservations(pool), 2);
@@ -232,11 +243,11 @@ test('accepted FINAL history, navigation, versions and restart remain server-aut
   assert.equal(decodeClaim(version2.artifact_id).storageId, final2Storage);
   assert.equal(await reservations(pool), 2); assert.equal(inferences.length, 2);
 
-  // Undo to FINAL #1, generate FINAL #3, and accept it: this retires the old FINAL #2 redo branch.
+  // Undo to exact FINAL #1 permits reuse of the FINAL #1-bound MASK; generate FINAL #3 and retire the old redo branch.
   const undoToFinal1 = await mutate('undo'); assert.equal(undoToFinal1.status, 200);
   project = await undoToFinal1.json() as Record<string, any>;
   assert.equal(decodeClaim(project.current_image_artifact_id).storageId, final1Storage); assert.equal(project.history_index, 1);
-  const result3 = await execute(project.current_image_artifact_id, 'history-edit-3');
+  const result3 = await execute(project.current_image_artifact_id, final1Mask.id, 'history-edit-3');
   assert.equal(result3.status, 'SUCCESS');
   const final3 = String(result3.finalArtifactId); const final3Storage = decodeClaim(final3).storageId as string;
   assert.equal(externalSourceFetches, 0); assert.equal(inferences.length, 3); assert.equal(initiations.length, 6); assert.equal(binaryUploads.length, 6); assert.equal(await reservations(pool), 3);

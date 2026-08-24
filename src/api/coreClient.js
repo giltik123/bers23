@@ -79,7 +79,9 @@ export const coreClient = Object.freeze({
     uploadMask: ({ ticketId, projectId, width, height, alpha }) => request(`/local-execution/${encodeURIComponent(ticketId)}/mask-upload?${new URLSearchParams({ projectId, width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
     submit: ({ ticketId, projectId, result }) => request(`/local-execution/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
   },
-  artifacts: { persistMask: ({ projectId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }) },
+  artifacts: {
+    persistMask: ({ projectId, sourceImageArtifactId, parentMaskArtifactId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, sourceImageArtifactId, ...(parentMaskArtifactId && { parentMaskArtifactId }), width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
+  },
   projects: {
     list: () => request('/projects'), get: (id) => request(`/projects/${encodeURIComponent(id)}`),
     createFromFile: ({ file, name }) => request(`/projects?${new URLSearchParams({ name: name || file.name.replace(/\.[^.]+$/, '') })}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file }),

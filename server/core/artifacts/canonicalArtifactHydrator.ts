@@ -10,16 +10,34 @@ export class CanonicalArtifactHydrator {
   constructor(authority: ArtifactAuthority, fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) { this.authority = authority; this.fetcher = fetcher; }
   async hydrate(scope: Scope, originalId: string, maskIds: readonly string[]): Promise<readonly CreativeArtifact[]> {
     let bytes: Uint8Array;
-    try { const claim=this.authority.external.resolveStoredOriginalId(originalId,scope); const stored=await this.authority.images.loadSource(claim.storageId,scope); if(!stored) throw new Error('Canonical ORIGINAL is unavailable'); bytes=stored.bytes; }
-    catch (originalError) { try { const claim=this.authority.external.resolveStoredFinalId(originalId,scope); const stored=await this.authority.images.loadSource(claim.storageId,scope); if(!stored) throw new Error('Canonical FINAL source is unavailable'); bytes=stored.bytes; } catch { try { const claim=this.authority.external.resolve(originalId,scope); bytes=await this.load(claim.url); } catch { throw originalError; } } }
+    let sourceStorageId: string | undefined;
+    try {
+      const claim=this.authority.external.resolveStoredOriginalId(originalId,scope);
+      const stored=await this.authority.images.loadSource(claim.storageId,scope);
+      if(!stored) throw new Error('Canonical ORIGINAL is unavailable');
+      bytes=stored.bytes; sourceStorageId=claim.storageId;
+    }
+    catch (originalError) {
+      try {
+        const claim=this.authority.external.resolveStoredFinalId(originalId,scope);
+        const stored=await this.authority.images.loadSource(claim.storageId,scope);
+        if(!stored) throw new Error('Canonical FINAL source is unavailable');
+        bytes=stored.bytes; sourceStorageId=claim.storageId;
+      }
+      catch {
+        try { const claim=this.authority.external.resolve(originalId,scope); bytes=await this.load(claim.url); }
+        catch { throw originalError; }
+      }
+    }
     const original = await decodeImage(bytes); const sourceSha256 = createHash('sha256').update(bytes).digest('hex');
     const artifacts: CreativeArtifact[] = [{ id: originalId, kind: 'image', value: original, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'ORIGINAL', image: imageMetadata(original), metadata: Object.freeze({ sha256: sourceSha256 }) }];
     for (const id of maskIds) {
       const claim = this.authority.external.resolveStoredMask(id, scope); const stored = await this.authority.masks.load(claim.storageId, scope);
       if (!stored) throw new Error('Canonical MASK is unavailable');
+      if (stored.sourceImageStorageId && (!sourceStorageId || stored.sourceImageStorageId !== sourceStorageId)) throw new Error('Canonical MASK source lineage does not match the input image');
       const decoded = await decodeMask(stored.png);
       if (decoded.width !== stored.width || decoded.height !== stored.height || decoded.width !== original.width || decoded.height !== original.height) throw new Error('Canonical MASK dimensions must match ORIGINAL');
-      artifacts.push({ id, kind: 'mask', value: { width: decoded.width, height: decoded.height, alpha: decoded.alpha, source: 'USER', coordinateSpace: 'ORIGINAL' }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'MASK', image: { width: decoded.width, height: decoded.height, format: 'ALPHA8', orientation: 1, colorSpace: 'gray', alpha: true }, metadata: Object.freeze({ sha256: createHash('sha256').update(decoded.alpha).digest('hex') }) });
+      artifacts.push({ id, kind: 'mask', value: { width: decoded.width, height: decoded.height, alpha: decoded.alpha, source: 'USER', coordinateSpace: 'ORIGINAL' }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'MASK', image: { width: decoded.width, height: decoded.height, format: 'ALPHA8', orientation: 1, colorSpace: 'gray', alpha: true }, metadata: Object.freeze({ sha256: createHash('sha256').update(decoded.alpha).digest('hex'), sourceImageStorageId: stored.sourceImageStorageId, parentMaskStorageId: stored.parentMaskStorageId, producerOperation: stored.producerOperation }) });
     }
     return artifacts;
   }
