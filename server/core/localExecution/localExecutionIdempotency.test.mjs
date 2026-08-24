@@ -17,11 +17,21 @@ test('same idempotency binding returns the original ticket and nonce', () => {
   assert.equal(second.nonce, first.nonce);
 });
 
-test('same idempotency key cannot be rebound across scope or workflow', () => {
+test('same-scope idempotency key cannot be rebound to another workflow', () => {
   const registry = new LocalExecutionAdmissionRegistry();
   let id = 0;
   const authority = new LocalExecutionTicketAuthority(registry, { now: () => 1_000, id: () => `ticket-${++id}`, nonce: () => `nonce-${id}`, ttlMs: 60_000, modelsByCapability: { 'local:mobilesam:segment:v1': [{ modelId: 'mobilesam-vit-t', version: '1.0.2' }] } });
   authority.issue(issueRequest);
   assert.throws(() => authority.issue({ ...issueRequest, workflowId: 'other-workflow' }), /another execution/);
-  assert.throws(() => authority.issue({ ...issueRequest, scope: { ...scope, projectId: 'other-project' } }), /another execution/);
+});
+
+test('same client idempotency key remains independent across canonical project scopes', () => {
+  const registry = new LocalExecutionAdmissionRegistry();
+  let id = 0;
+  const authority = new LocalExecutionTicketAuthority(registry, { now: () => 1_000, id: () => `ticket-${++id}`, nonce: () => `nonce-${id}`, ttlMs: 60_000, modelsByCapability: { 'local:mobilesam:segment:v1': [{ modelId: 'mobilesam-vit-t', version: '1.0.2' }] } });
+  const first = authority.issue(issueRequest);
+  const second = authority.issue({ ...issueRequest, requestId: 'other-request', workflowId: 'other-workflow', scope: { ...scope, projectId: 'other-project' } });
+  assert.notEqual(second.ticketId, first.ticketId);
+  assert.equal(second.idempotencyKey, first.idempotencyKey);
+  assert.equal(second.scope.projectId, 'other-project');
 });
