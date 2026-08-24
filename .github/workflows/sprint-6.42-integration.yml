@@ -107,7 +107,7 @@ jobs:
           cp server/core/artifacts/migrations/012_local_execution_uploads.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           node --test .test-cache/6.42-integration/background-isolation-postgres-vertical.test.mjs
-      - name: C3 Real-ESRGAN candidate, canonical and server contracts
+      - name: C3 Real-ESRGAN candidate, canonical and browser/server contracts
         run: |
           npx esbuild tests/realesrgan-release-policy.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
@@ -129,6 +129,12 @@ jobs:
             --outfile=.test-cache/6.42-integration/realesrgan-browser-executor.test.mjs \
             --external:node:*
           node --test .test-cache/6.42-integration/realesrgan-browser-executor.test.mjs
+          npx esbuild tests/realesrgan-browser-composition.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --loader:.wasm=file \
+            --outfile=.test-cache/6.42-integration/realesrgan-browser-composition.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42-integration/realesrgan-browser-composition.test.mjs
           npx esbuild tests/realesrgan-service-contract.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/6.42-integration/realesrgan-service-contract.test.mjs \
@@ -136,9 +142,13 @@ jobs:
           node --test .test-cache/6.42-integration/realesrgan-service-contract.test.mjs
           python -m py_compile scripts/build-realesrgan-x4v3-release.py
           grep -F '"artifactState": "EXPORT_REQUIRED"' src/platform/creative/local-ai/models/super-resolution.manifest.json
-      - name: C3 real PostgreSQL model admission, replay and zero-cloud vertical
+      - name: C3 real PostgreSQL model admission, variable-canvas history, replay and zero-cloud vertical
         run: |
           mkdir -p .test-cache/6.42-integration/migrations .test-cache/artifacts/migrations
+          npx esbuild tests/project-dimension-history-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/project-dimension-history-postgres.test.mjs \
+            --external:node:* --external:pg --external:sharp
           npx esbuild tests/realesrgan-postgres-vertical.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/6.42-integration/realesrgan-postgres-vertical.test.mjs \
@@ -156,6 +166,7 @@ jobs:
           cp server/core/auth/migrations/011_auth_abuse_session_controls.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/012_local_execution_uploads.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
+          node --test .test-cache/6.42-integration/project-dimension-history-postgres.test.mjs
           node --test .test-cache/6.42-integration/realesrgan-postgres-vertical.test.mjs
       - name: Canonical route and durable fleet regressions
         run: |
