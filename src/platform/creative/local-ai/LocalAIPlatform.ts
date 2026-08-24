@@ -2,6 +2,7 @@ import { LocalInferenceCache } from './cache/LocalInferenceCache';
 import { LocalAICostModel } from './cost/LocalAICostModel';
 import { LocalAIDebugger } from './debug/LocalAIDebugger';
 import { DeviceAnalyzer } from './device/DeviceAnalyzer';
+import { DeviceCapabilitySnapshotBuilder } from './device/DeviceCapabilitySnapshot';
 import { LocalRuntimeDetector } from './device/LocalRuntimeDetector';
 import { immutableClone } from './immutable';
 import {
@@ -16,17 +17,18 @@ import {
 } from './lifecycle/DurableModelFleet';
 import { LocalModelDownloader } from './models/LocalModelDownloader';
 import { LocalModelRegistry } from './models/LocalModelRegistry';
-import { ModelBundleBuilder } from './models/ModelBundles';
 import { LocalModelBenchmarker } from './benchmark/LocalModelBenchmark';
 import { OnnxLocalRuntime } from './runtimes/OnnxLocalRuntime';
 import { DesktopLocalRuntime, MobileLocalRuntime, WebLocalRuntime } from './runtimes/PlatformRuntimes';
 import { LocalResultVerifier, compareLocalCloud as compare } from './verification/LocalResultVerifier';
 import { ExecutionTargetSelector } from './selection/ExecutionTargetSelector';
+import { ModelFleetPlanner, modelFleetKey } from './selection/ModelFleetPlanner';
 import { ModelSuitabilityScorer } from './selection/ModelSuitabilityScorer';
 import { ResourceGovernor } from './selection/ResourceGovernor';
 import { LocalAISandbox } from './security/LocalAISandbox';
 import { ModelManifestVerifier, ModelSignatureVerifier, ModelTrustRegistry, type TrustPolicy } from './trust/ModelTrust';
 import type {
+  DeviceCapabilitySnapshot,
   InferenceRequest,
   InferenceResult,
   LocalAIDependencies,
@@ -34,6 +36,8 @@ import type {
   LocalModelBenchmark,
   LocalModelRuntime,
   ModelBundle,
+  ModelFleetRecommendation,
+  ModelFleetRecommendationPolicy,
   ModelManifest,
   ModelStatus,
   ResultVerification,
@@ -96,6 +100,13 @@ export class LocalAIPlatform {
   }
 
   analyzeDevice() { return new DeviceAnalyzer(this.dependencies.deviceProvider).analyze(); }
+
+  async capabilitySnapshot(): Promise<DeviceCapabilitySnapshot> {
+    const device = await this.analyzeDevice();
+    const runtimes = await new LocalRuntimeDetector(this.dependencies.runtimeProbe).detect();
+    return new DeviceCapabilitySnapshotBuilder().build(device, runtimes, this.dependencies.clock());
+  }
+
   availableModels(): readonly ModelManifest[] { return this.#registry.list(); }
   durableLifecycleEnabled(): boolean { return Boolean(this.#fleet); }
   async initializeModelFleet(): Promise<void> { await this.#ensureFleetInitialized(); }
@@ -109,6 +120,10 @@ export class LocalAIPlatform {
       .map((model) => ({ model, result: scorer.score(model, operation.requiredCapabilities, device, runtimes) }))
       .filter((item) => item.result.eligible)
       .sort((a, b) => b.result.score - a.result.score || a.model.modelId.localeCompare(b.model.modelId))[0]?.model;
+  }
+
+  async recommendFleet(policy?: ModelFleetRecommendationPolicy): Promise<ModelFleetRecommendation> {
+    return this.#recommendFleet(await this.capabilitySnapshot(), policy);
   }
 
   async installModel(manifest: ModelManifest): Promise<ModelManifest> {
@@ -150,20 +165,26 @@ export class LocalAIPlatform {
   }
 
   async recommendedBundle(): Promise<ModelBundle> {
-    return new ModelBundleBuilder().recommend(
-      await this.analyzeDevice(),
-      await new LocalRuntimeDetector(this.dependencies.runtimeProbe).detect(),
-      this.dependencies.modelCatalog ?? [],
-    );
+    const snapshot = await this.capabilitySnapshot();
+    const fleet = await this.#recommendFleet(snapshot);
+    return immutableClone({
+      id: legacyBundleId(snapshot),
+      modelIds: fleet.modelIds,
+      estimatedBytes: fleet.estimatedBytes,
+      reasoning: 'NO' as const,
+      generation: 'NO' as const,
+    });
   }
 
   async installRecommendedBundle(): Promise<readonly ModelManifest[]> {
-    const bundle = await this.recommendedBundle();
+    const recommendation = await this.recommendFleet();
+    if (recommendation.status !== 'READY' && recommendation.status !== 'PARTIAL') return Object.freeze([]);
     const catalog = this.dependencies.modelCatalog ?? [];
     const installed: ModelManifest[] = [];
-    for (const modelId of bundle.modelIds) {
-      const manifest = catalog.find((item) => item.modelId === modelId);
-      if (manifest) installed.push(await this.installModel(manifest));
+    for (const binding of recommendation.modelBindings) {
+      const manifest = catalog.find((item) => item.modelId === binding.modelId && item.version === binding.version);
+      if (!manifest) throw new Error(`Recommended model binding is no longer available: ${binding.modelId}@${binding.version}`);
+      installed.push(await this.installModel(manifest));
     }
     return immutableClone(installed);
   }
@@ -322,6 +343,28 @@ export class LocalAIPlatform {
     return this.#mirrorFleetRecord(await this.#fleet.restoreQuarantined(modelId, explicitlyAllowed));
   }
 
+  async #recommendFleet(snapshot: DeviceCapabilitySnapshot, policy?: ModelFleetRecommendationPolicy): Promise<ModelFleetRecommendation> {
+    const catalog = this.dependencies.modelCatalog ?? [];
+    const trust = await Promise.all(catalog.map(async (model) => Object.freeze({
+      key: modelFleetKey(model),
+      trusted: (await this.verifyModel(model)).trusted,
+    })));
+    let storageFreeBytes: number | 'UNKNOWN' = 'UNKNOWN';
+    try {
+      const available = this.#fleetBlobs
+        ? await this.#fleetBlobs.freeBytes()
+        : await this.dependencies.storage.freeBytes();
+      if (Number.isFinite(available) && available >= 0) storageFreeBytes = available;
+    } catch { /* storage evidence remains UNKNOWN and recommendation fails closed */ }
+    return new ModelFleetPlanner().recommend({
+      snapshot,
+      catalog,
+      trustedModelKeys: trust.filter((item) => item.trusted).map((item) => item.key),
+      storageFreeBytes,
+      policy,
+    });
+  }
+
   async #ensureFleetInitialized(): Promise<void> {
     if (!this.#fleet) return;
     this.#fleetInitialization ??= (async () => {
@@ -394,6 +437,18 @@ export class LocalAIPlatform {
     }
     return Object.freeze({ model: this.#mirrorFleetRecord(record), bytes });
   }
+}
+
+function legacyBundleId(snapshot: DeviceCapabilitySnapshot): ModelBundle['id'] {
+  const device = snapshot.profile;
+  if (device.deviceClass === 'BROWSER') return 'BROWSER';
+  if (device.deviceClass === 'MOBILE') {
+    return device.tier === 'HIGH' || device.tier === 'EXTREME' ? 'MOBILE_HIGH' : 'MOBILE_LOW';
+  }
+  const accelerated = snapshot.runtimeCapabilities.CUDA === true
+    || snapshot.runtimeCapabilities.METAL === true
+    || snapshot.runtimeCapabilities.DIRECTML === true;
+  return accelerated && (device.tier === 'HIGH' || device.tier === 'EXTREME') ? 'DESKTOP_GPU' : 'DESKTOP_STANDARD';
 }
 
 function newestVersion(model: FleetState['models'][string] | undefined): string | undefined {

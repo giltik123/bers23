@@ -1,7 +1,7 @@
 export type UnknownValue = 'UNKNOWN';
 export type Platform = 'ANDROID' | 'IOS' | 'WINDOWS' | 'MACOS' | 'LINUX' | 'BROWSER' | UnknownValue;
 export type DeviceClass = 'MOBILE' | 'DESKTOP' | 'BROWSER' | UnknownValue;
-export type DeviceTier = 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+export type DeviceTier = 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME' | UnknownValue;
 export type Availability = boolean | UnknownValue;
 export type ThermalState = 'NORMAL' | 'ELEVATED' | 'HIGH' | 'CRITICAL' | UnknownValue;
 export type PowerState = 'CHARGING' | 'BATTERY' | 'FULL' | UnknownValue;
@@ -31,6 +31,26 @@ export type DeviceCapabilityProfile = Readonly<{
   ramPressure: RamPressure; backgroundRestricted: Availability;
 }>;
 export type RuntimeCapabilities = Readonly<Record<RuntimeKind, Availability>>;
+export type DeviceFleetCapabilityProfile = Readonly<{
+  platform: Platform;
+  deviceClass: DeviceClass;
+  tier: DeviceTier;
+  ramMb: number | UnknownValue;
+  vramMb: number | UnknownValue;
+  storageFreeBytes: number | UnknownValue;
+}>;
+export type DeviceCapabilitySnapshot = Readonly<{
+  schemaVersion: 1;
+  capturedAt: number;
+  profile: DeviceFleetCapabilityProfile;
+  runtimeCapabilities: RuntimeCapabilities;
+  evidence: Readonly<{
+    observedSignals: readonly string[];
+    unknownSignals: readonly string[];
+    observedRuntimes: readonly RuntimeKind[];
+    unknownRuntimes: readonly RuntimeKind[];
+  }>;
+}>;
 
 export type ModelManifest = Readonly<{
   modelId: string; version: string; family: string; capabilities: readonly string[]; modelFormat: ModelFormat; runtime: RuntimeKind;
@@ -48,6 +68,48 @@ export type TargetRequest = Readonly<{
   maxCloudCredits: number; cloudCredits: number; qualityRequirement: number; latencyRequirement: number; concurrentJobs?: number;
 }>;
 export type TargetDecision = Readonly<{ target: ExecutionTarget; model?: ModelManifest; reason: string; fallback: ExecutionTarget | null; resource: ResourceDecision; candidates: readonly SuitabilityScore[] }>;
+
+export type ModelFleetRecommendationPolicy = Readonly<{
+  bootstrapCapabilities?: readonly string[];
+  maxAutoInstallBytes?: number;
+  minFreeBytesAfterInstall?: number;
+  maxModelBytes?: number;
+  minQualityScore?: number;
+  minStabilityScore?: number;
+}>;
+export type ModelFleetExclusionReason =
+  | 'UNTRUSTED_MANIFEST'
+  | 'UNSUPPORTED_PLATFORM'
+  | 'RUNTIME_UNAVAILABLE'
+  | 'UNSAFE_STATUS'
+  | 'CAPABILITY_NOT_BOOTSTRAP'
+  | 'HEAVY_CAPABILITY'
+  | 'UNKNOWN_RAM'
+  | 'INSUFFICIENT_RAM'
+  | 'UNKNOWN_VRAM'
+  | 'INSUFFICIENT_VRAM'
+  | 'INSUFFICIENT_STORAGE'
+  | 'QUALITY_BELOW_POLICY'
+  | 'STABILITY_BELOW_POLICY'
+  | 'MODEL_TOO_LARGE'
+  | 'BUDGET_EXCEEDED'
+  | 'CAPABILITY_ALREADY_COVERED'
+  | 'MODEL_VERSION_ALREADY_SELECTED';
+export type ModelFleetExclusion = Readonly<{ modelId: string; version: string; reasons: readonly ModelFleetExclusionReason[] }>;
+export type ModelFleetRecommendationStatus = 'READY' | 'PARTIAL' | 'BLOCKED_INSUFFICIENT_EVIDENCE' | 'BLOCKED_STORAGE' | 'NO_COMPATIBLE_MODELS';
+export type ModelFleetRecommendation = Readonly<{
+  status: ModelFleetRecommendationStatus;
+  modelIds: readonly string[];
+  modelBindings: readonly Readonly<{ modelId: string; version: string }>[];
+  estimatedBytes: number;
+  budgetBytes: number | UnknownValue;
+  freeBytes: number | UnknownValue;
+  reserveBytes: number | UnknownValue;
+  requestedCapabilities: readonly string[];
+  uncoveredCapabilities: readonly string[];
+  exclusions: readonly ModelFleetExclusion[];
+}>;
+
 export type InferenceContext = Readonly<{ prompt: string; operation: string; allowedArtifacts: readonly Readonly<{ id: string; value: unknown }>[]; sanitizedConstraints: Readonly<Record<string, unknown>>; allowedCapabilities: readonly string[]; modelParameters: Readonly<Record<string, unknown>>; scope: Scope }>;
 export type LocalAISnapshot = Readonly<{ deviceProfile: DeviceCapabilityProfile; runtimeCapabilities: RuntimeCapabilities; installedModels: readonly ModelManifest[]; selectedModel?: ModelManifest; executionTarget: ExecutionTarget; resourceDecision: ResourceDecision; privacyPolicy: PrivacyMode; trustStatus: TrustResult | null; fallback: ExecutionTarget | null; timeline: readonly Readonly<{ sequence: number; event: string }>[] }>;
 export type TensorValue = Readonly<{ data: ArrayLike<number>; dims: readonly number[]; type?: string }>;
