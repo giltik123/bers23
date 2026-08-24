@@ -19,6 +19,7 @@ import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { LocalExecutionAdmissionRegistry, LocalExecutionTicketAuthority, LocalSegmentationExecutionService, PostgresLocalExecutionUploadStore } from '../localExecution/index.ts';
+import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
 import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
@@ -60,7 +61,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       id: randomUUID,
       nonce: randomUUID,
       ttlMs: LOCAL_EXECUTION_TICKET_TTL_MS,
-      modelsByCapability: { 'local:mobilesam:segment:v1': [{ modelId: 'mobilesam-vit-t', version: '1.0.2' }] },
+      modelsByCapability: productionLocalModelsByCapability,
     });
     const localUploads = new PostgresLocalExecutionUploadStore(transactions.pool);
     const canonical = {
