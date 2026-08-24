@@ -2,9 +2,9 @@ import type { Pool, PoolClient } from 'pg';
 import type { LocalExecutionAdmissionDecision, LocalExecutionTicket } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
-import type { LocalExecutionClaimInput, LocalExecutionLedger } from './LocalExecutionLedger.ts';
+import type { LocalExecutionClaimInput, LocalExecutionFinalization, LocalExecutionLedger } from './LocalExecutionLedger.ts';
 
-const TICKET_COLUMNS = 'ticket_id,idempotency_key,tenant_id,user_id,project_id,request_id,workflow_id,step_id,ticket_json,consumed_at';
+const TICKET_COLUMNS = 'ticket_id,idempotency_key,tenant_id,user_id,project_id,request_id,workflow_id,step_id,ticket_json,consumed_at,finalized_status,finalized_at';
 
 /** PostgreSQL-backed ticket/replay authority for restart-safe, multi-instance local execution. */
 export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
@@ -52,6 +52,14 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
     return result.rows[0] ? ticketFromRow(result.rows[0]) : undefined;
   }
 
+  async getFinalization(ticketId: string): Promise<LocalExecutionFinalization | undefined> {
+    const result = await this.pool.query('SELECT consumed_at, finalized_status, finalized_at FROM local_execution_tickets WHERE ticket_id=$1', [ticketId]);
+    const row = result.rows[0];
+    if (!row?.consumed_at) return undefined;
+    const status = row.finalized_status === 'SUCCESS' || row.finalized_status === 'FAILED' ? row.finalized_status : 'UNKNOWN';
+    return Object.freeze({ status, finalizedAt: row.finalized_at instanceof Date ? row.finalized_at.toISOString() : typeof row.finalized_at === 'string' ? row.finalized_at : undefined });
+  }
+
   async claim(input: LocalExecutionClaimInput): Promise<LocalExecutionAdmissionDecision> {
     const client = await this.pool.connect();
     let lockHeld = false;
@@ -83,14 +91,14 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
     }
   }
 
-  async commit(ticketId: string): Promise<void> {
+  async commit(ticketId: string, status: 'SUCCESS' | 'FAILED'): Promise<void> {
     const client = this.heldClaims.get(ticketId);
     if (!client) throw new Error('Local execution ticket has no active PostgreSQL admission claim');
     try {
       const result = await client.query(`UPDATE local_execution_tickets
-        SET consumed_at=CURRENT_TIMESTAMP
+        SET consumed_at=CURRENT_TIMESTAMP, finalized_status=$2, finalized_at=CURRENT_TIMESTAMP
         WHERE ticket_id=$1 AND consumed_at IS NULL
-        RETURNING ticket_id`, [ticketId]);
+        RETURNING ticket_id`, [ticketId, status]);
       if (result.rowCount !== 1) throw new Error('Local execution ticket is already consumed or missing');
     } finally {
       this.heldClaims.delete(ticketId);
