@@ -7,6 +7,7 @@ on:
       - 'tests/device-fleet-benchmark-promotion.test.ts'
       - 'tests/benchmark-evidence-corruption.test.ts'
       - 'tests/benchmark-promotion-planner.test.ts'
+      - 'tests/benchmark-promotion-latest-evidence.test.ts'
       - 'tests/local-ai-benchmark-promotion-platform.test.ts'
       - 'tests/device-fleet-recommendation.test.ts'
       - 'tests/creative-durable-model-fleet*.test.ts'
@@ -50,6 +51,13 @@ jobs:
             --outfile=.test-cache/6.42b3/benchmark-promotion-planner.test.mjs \
             --external:node:*
           node --test .test-cache/6.42b3/benchmark-promotion-planner.test.mjs
+      - name: Latest provider evidence governs promotion
+        run: |
+          npx esbuild tests/benchmark-promotion-latest-evidence.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42b3/benchmark-promotion-latest-evidence.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42b3/benchmark-promotion-latest-evidence.test.mjs
       - name: LocalAIPlatform durable benchmark promotion wiring
         run: |
           npx esbuild tests/local-ai-benchmark-promotion-platform.test.ts \
