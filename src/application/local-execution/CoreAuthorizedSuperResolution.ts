@@ -32,7 +32,8 @@ export type LocalSuperResolutionModelRun = Readonly<{
   width: number;
   height: number;
   data: Float32Array;
-  runtime: Exclude<LocalExecutionRuntime, 'BROWSER_JS'>;
+  /** Runtime is reported by the device/model adapter and is validated here. */
+  runtime: LocalExecutionRuntime;
   accelerator: ExecutionProvider | 'UNKNOWN';
   latencyMs: number;
   memoryBytes?: number;
@@ -117,6 +118,7 @@ export class CoreAuthorizedSuperResolution {
       rgbNchw,
     });
     if (inference.runtime === 'BROWSER_JS') throw new Error('Model-backed execution cannot claim deterministic browser runtime');
+    const runtime: Exclude<LocalExecutionRuntime, 'BROWSER_JS'> = inference.runtime;
     if (!Number.isFinite(inference.latencyMs) || inference.latencyMs < 0) throw new Error('Local model latency evidence is invalid');
     if (inference.width !== expected.width || inference.height !== expected.height) throw new Error('Local model output geometry does not match the Core ticket');
     if (!(inference.data instanceof Float32Array) || inference.data.length !== expected.width! * expected.height! * 3) throw new Error('Local model output tensor is malformed');
@@ -134,7 +136,7 @@ export class CoreAuthorizedSuperResolution {
       stepId: ticket.stepId,
       nonce: ticket.nonce,
       executor: Object.freeze({ ...executor }),
-      runtime: inference.runtime,
+      runtime,
       accelerator: inference.accelerator,
       outputs: Object.freeze([Object.freeze({ ...evidence })]),
       metrics: Object.freeze({
@@ -157,7 +159,7 @@ export class CoreAuthorizedSuperResolution {
     return Object.freeze({
       target: 'LOCAL',
       model: Object.freeze({ modelId: executor.modelId, version: executor.version }),
-      runtime: inference.runtime,
+      runtime,
       accelerator: inference.accelerator,
       canonicalArtifactId: finalized.artifactId,
       preview,
