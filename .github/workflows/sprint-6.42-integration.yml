@@ -79,6 +79,13 @@ jobs:
             --outfile=.test-cache/6.42-integration/background-isolation-browser-executor.test.mjs \
             --external:node:* --external:sharp
           node --test .test-cache/6.42-integration/background-isolation-browser-executor.test.mjs
+          npx esbuild tests/background-isolation-browser-composition.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/background-isolation-browser-composition.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42-integration/background-isolation-browser-composition.test.mjs
+          grep -F "createBackgroundIsolation({ projectId: project.id })" src/pages/Editor.jsx
+          grep -F "finalArtifactId: result.canonicalArtifactId" src/pages/Editor.jsx
       - name: C2 real PostgreSQL pixel, lineage, replay and zero-cloud vertical
         run: |
           mkdir -p .test-cache/6.42-integration/migrations .test-cache/artifacts/migrations
