@@ -1,3 +1,5 @@
+import type { PlanningExecutionPolicy } from '../canonical/contracts';
+
 export type UnknownValue = 'UNKNOWN';
 export type Platform = 'ANDROID' | 'IOS' | 'WINDOWS' | 'MACOS' | 'LINUX' | 'BROWSER' | UnknownValue;
 export type DeviceClass = 'MOBILE' | 'DESKTOP' | 'BROWSER' | UnknownValue;
@@ -18,19 +20,21 @@ export type Scope = Readonly<{ tenantId: string; projectId: string; userId: stri
 export type DeviceSignals = Readonly<{
   platform?: Platform; deviceClass?: DeviceClass; cpuCores?: number; ramMb?: number; gpu?: string; vramMb?: number;
   npu?: string; architecture?: string; browser?: string; webgpu?: Availability; wasm?: Availability; webnn?: Availability;
-  cuda?: Availability; directml?: Availability; metal?: Availability; vulkan?: Availability; storageFreeBytes?: number;
+  nnapi?: Availability; cuda?: Availability; directml?: Availability; metal?: Availability; vulkan?: Availability; storageFreeBytes?: number;
   batteryPercent?: number; powerState?: PowerState; thermalState?: ThermalState; network?: NetworkState;
   ramPressure?: RamPressure; backgroundRestricted?: Availability;
 }>;
+export type RuntimeCapabilities = Readonly<Record<RuntimeKind, Availability>>;
 export type DeviceCapabilityProfile = Readonly<{
   platform: Platform; deviceClass: DeviceClass; cpuCores: number | UnknownValue; ramMb: number | UnknownValue;
   gpu: string | UnknownValue; vramMb: number | UnknownValue; npu: string | UnknownValue; architecture: string | UnknownValue;
-  browser: string | UnknownValue; webgpu: Availability; wasm: Availability; webnn: Availability; cuda: Availability;
+  browser: string | UnknownValue; webgpu: Availability; wasm: Availability; webnn: Availability; nnapi?: Availability; cuda: Availability;
   directml: Availability; metal: Availability; vulkan: Availability; storageFreeBytes: number | UnknownValue;
   batteryPercent: number | UnknownValue; powerState: PowerState; thermalState: ThermalState; network: NetworkState; tier: DeviceTier;
   ramPressure: RamPressure; backgroundRestricted: Availability;
+  runtimeCapabilities?: RuntimeCapabilities;
+  benchmarkEvidence?: Readonly<Record<string, number | string | boolean>>;
 }>;
-export type RuntimeCapabilities = Readonly<Record<RuntimeKind, Availability>>;
 export type DeviceFleetCapabilityProfile = Readonly<{
   platform: Platform;
   deviceClass: DeviceClass;
@@ -63,7 +67,7 @@ export type TrustResult = Readonly<{ trusted: boolean; checks: Readonly<Record<s
 export type ResourceDecision = Readonly<{ allowed: boolean; reasons: readonly string[]; suggestedTarget: ExecutionTarget }>;
 export type SuitabilityScore = Readonly<{ modelId: string; eligible: boolean; score: number; factors: Readonly<Record<string, number>>; reasons: readonly string[] }>;
 export type TargetRequest = Readonly<{
-  operation: Readonly<{ operationId: string; requiredCapabilities: readonly string[]; executionPolicy?: string }>;
+  operation: Readonly<{ operationId: string; requiredCapabilities: readonly string[]; executionPolicy?: PlanningExecutionPolicy }>;
   device: DeviceCapabilityProfile; models: readonly ModelManifest[]; privacyMode: PrivacyMode; cloudAllowed: boolean;
   maxCloudCredits: number; cloudCredits: number; qualityRequirement: number; latencyRequirement: number; concurrentJobs?: number;
 }>;
