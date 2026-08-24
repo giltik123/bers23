@@ -55,6 +55,7 @@ export class ModelFleetPlanner {
     const maxModelBytes = Math.min(policy.maxModelBytes ?? budgetBytes, budgetBytes);
     const effectiveProfile = { ...profile, storageFreeBytes: freeBytes } as const;
     const candidates: Array<Readonly<{ model: ModelManifest; coverage: readonly string[] }>> = [];
+    let resourceStorageBlocked = false;
 
     for (const model of [...input.catalog].sort(compareIdentity)) {
       const reasons: ModelFleetExclusionReason[] = [];
@@ -75,6 +76,7 @@ export class ModelFleetPlanner {
       if (model.qualityScore < policy.minQualityScore) reasons.push('QUALITY_BELOW_POLICY');
       if (model.stabilityScore < policy.minStabilityScore) reasons.push('STABILITY_BELOW_POLICY');
       if (model.sizeBytes > maxModelBytes) reasons.push('MODEL_TOO_LARGE');
+      if (reasons.includes('INSUFFICIENT_STORAGE') && reasons.every((reason) => reason === 'INSUFFICIENT_STORAGE' || reason === 'MODEL_TOO_LARGE')) resourceStorageBlocked = true;
       if (reasons.length) exclusions.push(exclusion(model, reasons));
       else candidates.push(Object.freeze({ model, coverage: Object.freeze(coverage) }));
     }
@@ -84,7 +86,7 @@ export class ModelFleetPlanner {
     const selectedModelIds = new Set<string>();
     const covered = new Set<string>();
     let estimatedBytes = 0;
-    let storageBlocked = false;
+    let selectionBudgetBlocked = false;
 
     for (const candidate of candidates) {
       if (selectedModelIds.has(candidate.model.modelId)) {
@@ -98,7 +100,7 @@ export class ModelFleetPlanner {
       }
       if (estimatedBytes + candidate.model.sizeBytes > budgetBytes) {
         exclusions.push(exclusion(candidate.model, ['BUDGET_EXCEEDED']));
-        storageBlocked = true;
+        selectionBudgetBlocked = true;
         continue;
       }
       selected.push(candidate.model);
@@ -108,7 +110,7 @@ export class ModelFleetPlanner {
     }
 
     const uncoveredCapabilities = requestedCapabilities.filter((capability) => !covered.has(capability));
-    const status = selected.length > 0 ? 'READY' : storageBlocked ? 'BLOCKED_STORAGE' : 'NO_COMPATIBLE_MODELS';
+    const status = selected.length > 0 ? 'READY' : resourceStorageBlocked || selectionBudgetBlocked ? 'BLOCKED_STORAGE' : 'NO_COMPATIBLE_MODELS';
     return result(status, requestedCapabilities, selected, uncoveredCapabilities, exclusions, budgetBytes, freeBytes, reserveBytes, estimatedBytes);
   }
 }
