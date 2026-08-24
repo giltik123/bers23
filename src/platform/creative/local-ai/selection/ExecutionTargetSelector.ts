@@ -17,6 +17,19 @@ export class ExecutionTargetSelector {
     else if (localUsable) target = request.privacyMode === 'PRIVACY_FIRST' ? 'LOCAL' : cloudUsable && request.operation.executionPolicy === 'HYBRID' ? 'HYBRID' : 'LOCAL';
     else target = cloudUsable ? 'CLOUD' : 'BLOCKED';
     if (!new LocalInferencePolicy().allow({ requested: target, privacyMode: request.privacyMode, cloudAllowed: request.cloudAllowed, model })) target = 'BLOCKED';
-    return immutableClone({ target, model: target === 'LOCAL' || target === 'HYBRID' ? model : undefined, reason: target === 'BLOCKED' ? resource.reasons.join('; ') || 'Execution policy blocked all targets' : target === 'CLOUD' ? 'Local requirements were not met; cloud fallback is permitted' : `Selected ${model!.modelId}: compatible resources, privacy, quality and latency`, fallback: target === 'LOCAL' && cloudUsable ? 'CLOUD' : null, resource, candidates });
+    return immutableClone({
+      target,
+      model: target === 'LOCAL' || target === 'HYBRID' ? model : undefined,
+      reason: target === 'BLOCKED'
+        ? resource.reasons.join('; ') || 'Execution policy blocked all targets'
+        : target === 'CLOUD'
+          ? 'Local requirements were not met; cloud target is permitted by the current canonical policy'
+          : `Selected ${model!.modelId}: compatible resources, privacy, quality and latency`,
+      // A LOCAL decision never carries a ready-to-execute cloud fallback. Any later cloud
+      // transition requires a new canonical decision/user policy and normal billing authority.
+      fallback: null,
+      resource,
+      candidates,
+    });
   }
 }
