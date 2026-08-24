@@ -1,51 +1,346 @@
-import { LocalAIPlatform } from '../local-ai/LocalAIPlatform';
+import { LocalAIPlatform, type LocalAIPlatformLifecycle } from '../local-ai/LocalAIPlatform';
 import { immutableClone } from '../local-ai/immutable';
 import type { DeviceCapabilityProfile, LocalModelBenchmark, ModelManifest, Scope } from '../local-ai/types';
 import type { TrustPolicy } from '../local-ai/trust/ModelTrust';
 import { BundleOptimizer } from './optimizer';
-import type { AdaptiveRoute, BundleProfile, CachedModel, Consent, DistributionDependencies, DistributionPolicy, DownloadEstimate, DownloadItem, InstallProposal, ModelBundle, ModelDistributionSnapshot, ModelTelemetry, RejectedModel, UsagePattern } from './types';
+import type {
+  AdaptiveRoute,
+  BundleProfile,
+  CachedModel,
+  Consent,
+  DistributionDependencies,
+  DistributionPolicy,
+  DownloadEstimate,
+  DownloadItem,
+  InstallProposal,
+  ModelBundle,
+  ModelDistributionSnapshot,
+  ModelTelemetry,
+  RejectedModel,
+  UsagePattern,
+} from './types';
 
-export const DEFAULT_DISTRIBUTION_POLICY: DistributionPolicy = Object.freeze({ weights: Object.freeze({ quality: 2, compatibility: 3, cloudSavings: 1.5, speed: 1.5, privacy: 1, memoryPressure: 1.5, energyCost: 1, thermalRisk: 1.5, storageCost: 1 }), storageBudget: 2_000_000_000, wifiOnly: true, minimumBattery: 25, maximumAutomaticBytes: 5_000_000, privacyMode: 'NORMAL', allowMandatorySmallModels: true, regressionThreshold: .1 });
+export const DEFAULT_DISTRIBUTION_POLICY: DistributionPolicy = Object.freeze({
+  weights: Object.freeze({ quality: 2, compatibility: 3, cloudSavings: 1.5, speed: 1.5, privacy: 1, memoryPressure: 1.5, energyCost: 1, thermalRisk: 1.5, storageCost: 1 }),
+  storageBudget: 2_000_000_000,
+  wifiOnly: true,
+  minimumBattery: 25,
+  maximumAutomaticBytes: 5_000_000,
+  privacyMode: 'NORMAL',
+  allowMandatorySmallModels: true,
+  regressionThreshold: .1,
+});
+
+type DistributionOptions = Readonly<{
+  policy?: DistributionPolicy;
+  telemetry?: readonly ModelTelemetry[];
+  usage?: readonly UsagePattern[];
+  scope?: Scope;
+  trustPolicy?: TrustPolicy;
+  lifecycle?: LocalAIPlatformLifecycle;
+}>;
 
 export class CreativeModelDistribution {
-  readonly #local: LocalAIPlatform; readonly #catalog: readonly ModelManifest[]; readonly #policy: DistributionPolicy; readonly #scope: Scope;
-  readonly #telemetry: readonly ModelTelemetry[]; readonly #usage: readonly UsagePattern[]; readonly #queue = new Map<string, DownloadItem>(); readonly #cache = new Map<string, CachedModel>(); readonly #benchmarks = new Map<string, LocalModelBenchmark>(); readonly #trust = new Map<string, boolean>(); readonly #rollback = new Map<string, CachedModel>();
-  #recommended?: ModelBundle; #rejected: readonly RejectedModel[] = []; #device?: DeviceCapabilityProfile; #proposal?: InstallProposal; #sequence = 0; readonly #timeline: { sequence: number; at: number; event: string }[] = [];
-  constructor(readonly dependencies: DistributionDependencies, options: Readonly<{ policy?: DistributionPolicy; telemetry?: readonly ModelTelemetry[]; usage?: readonly UsagePattern[]; scope?: Scope; trustPolicy?: TrustPolicy }> = {}) {
-    this.#catalog = immutableClone(dependencies.localAI.modelCatalog ?? []); this.#policy = immutableClone(options.policy ?? DEFAULT_DISTRIBUTION_POLICY); this.#telemetry = immutableClone(options.telemetry ?? []); this.#usage = immutableClone(options.usage ?? []); this.#scope = immutableClone(options.scope ?? { tenantId: 'local', projectId: 'local', userId: 'local' });
-    const trustPolicy = options.trustPolicy ?? { publishers: [...new Set(this.#catalog.map((model) => model.publisher))], formats: ['ONNX', 'TFLITE', 'SAFETENSORS', 'GGUF'], runtimes: ['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN'], licenses: ['Apache-2.0', 'MIT', 'BSD-3-Clause'] };
-    this.#local = new LocalAIPlatform(dependencies.localAI, trustPolicy);
+  readonly #local: LocalAIPlatform;
+  readonly #catalog: readonly ModelManifest[];
+  readonly #policy: DistributionPolicy;
+  readonly #scope: Scope;
+  readonly #telemetry: readonly ModelTelemetry[];
+  readonly #usage: readonly UsagePattern[];
+  readonly #queue = new Map<string, DownloadItem>();
+  readonly #cache = new Map<string, CachedModel>();
+  readonly #benchmarks = new Map<string, LocalModelBenchmark>();
+  readonly #trust = new Map<string, boolean>();
+  readonly #rollback = new Map<string, CachedModel>();
+  #recommended?: ModelBundle;
+  #rejected: readonly RejectedModel[] = [];
+  #device?: DeviceCapabilityProfile;
+  #proposal?: InstallProposal;
+  #sequence = 0;
+  readonly #timeline: { sequence: number; at: number; event: string }[] = [];
+
+  constructor(readonly dependencies: DistributionDependencies, options: DistributionOptions = {}) {
+    if (!options.lifecycle) throw new Error('Durable local model lifecycle composition is required');
+    this.#catalog = immutableClone(dependencies.localAI.modelCatalog ?? []);
+    this.#policy = immutableClone(options.policy ?? DEFAULT_DISTRIBUTION_POLICY);
+    this.#telemetry = immutableClone(options.telemetry ?? []);
+    this.#usage = immutableClone(options.usage ?? []);
+    this.#scope = immutableClone(options.scope ?? { tenantId: 'local', projectId: 'local', userId: 'local' });
+    const trustPolicy = options.trustPolicy ?? {
+      publishers: [...new Set(this.#catalog.map((model) => model.publisher))],
+      formats: ['ONNX', 'TFLITE', 'SAFETENSORS', 'GGUF'],
+      runtimes: ['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN'],
+      licenses: ['Apache-2.0', 'MIT', 'BSD-3-Clause'],
+    };
+    this.#local = new LocalAIPlatform(dependencies.localAI, trustPolicy, options.lifecycle);
   }
-  async analyzeDevice(): Promise<DeviceCapabilityProfile> { this.#device = await this.#local.analyzeDevice(); this.event('device:analyzed'); return immutableClone(this.#device); }
-  async recommendBundle(profile: BundleProfile = 'BALANCED'): Promise<ModelBundle> { const device = this.#device ?? await this.analyzeDevice(); const optimized = new BundleOptimizer().optimize(profile, this.#catalog, { device, telemetry: this.#telemetry, usage: this.#usage, policy: this.#policy, offline: profile === 'OFFLINE' }); this.#recommended = optimized.bundle; this.#rejected = optimized.rejected; this.event(`bundle:recommended:${optimized.bundle.bundleId}`); return immutableClone(optimized.bundle); }
-  estimateDownload(bundle: ModelBundle = this.requiredBundle()): DownloadEstimate { const bandwidth = this.dependencies.bandwidthBytesPerSecond?.(); return immutableClone({ bytes: bundle.sizeBytes, seconds: bandwidth && bandwidth > 0 ? Math.ceil(bundle.sizeBytes / bandwidth) : 'UNKNOWN', requiredStorage: bundle.requiredStorage, requiresConsent: bundle.sizeBytes > this.#policy.maximumAutomaticBytes || !this.#policy.allowMandatorySmallModels }); }
-  propose(bundle: ModelBundle = this.requiredBundle()): InstallProposal { const estimate = this.estimateDownload(bundle); const proposal = { proposalId: `proposal:${bundle.bundleId}:${bundle.version}`, bundle, estimate, summary: `${(bundle.sizeBytes / 1e9).toFixed(2)} GB; estimated cloud savings ${(bundle.expectedCloudSavings * 100).toFixed(0)}%`, reasons: bundle.models.flatMap((model) => model.reasons) }; this.#proposal = immutableClone(proposal); this.event('consent:proposed'); return immutableClone(proposal); }
+
+  async analyzeDevice(): Promise<DeviceCapabilityProfile> {
+    await this.#local.initializeModelFleet();
+    this.#device = await this.#local.analyzeDevice();
+    this.event('device:analyzed');
+    return immutableClone(this.#device);
+  }
+
+  async recommendBundle(profile: BundleProfile = 'BALANCED'): Promise<ModelBundle> {
+    const device = this.#device ?? await this.analyzeDevice();
+    const optimized = new BundleOptimizer().optimize(profile, this.#catalog, {
+      device,
+      telemetry: this.#telemetry,
+      usage: this.#usage,
+      policy: this.#policy,
+      offline: profile === 'OFFLINE',
+    });
+    this.#recommended = optimized.bundle;
+    this.#rejected = optimized.rejected;
+    this.event(`bundle:recommended:${optimized.bundle.bundleId}`);
+    return immutableClone(optimized.bundle);
+  }
+
+  estimateDownload(bundle: ModelBundle = this.requiredBundle()): DownloadEstimate {
+    const bandwidth = this.dependencies.bandwidthBytesPerSecond?.();
+    return immutableClone({
+      bytes: bundle.sizeBytes,
+      seconds: bandwidth && bandwidth > 0 ? Math.ceil(bundle.sizeBytes / bandwidth) : 'UNKNOWN',
+      requiredStorage: bundle.requiredStorage,
+      requiresConsent: bundle.sizeBytes > this.#policy.maximumAutomaticBytes || !this.#policy.allowMandatorySmallModels,
+    });
+  }
+
+  propose(bundle: ModelBundle = this.requiredBundle()): InstallProposal {
+    const estimate = this.estimateDownload(bundle);
+    const proposal = {
+      proposalId: `proposal:${bundle.bundleId}:${bundle.version}`,
+      bundle,
+      estimate,
+      summary: `${(bundle.sizeBytes / 1e9).toFixed(2)} GB; estimated cloud savings ${(bundle.expectedCloudSavings * 100).toFixed(0)}%`,
+      reasons: bundle.models.flatMap((model) => model.reasons),
+    };
+    this.#proposal = immutableClone(proposal);
+    this.event('consent:proposed');
+    return immutableClone(proposal);
+  }
+
   async installBundle(bundle: ModelBundle = this.requiredBundle(), consent?: Consent): Promise<readonly CachedModel[]> {
-    const estimate = this.estimateDownload(bundle); if (estimate.requiresConsent && (!consent?.approved || consent.proposalId !== (this.#proposal?.proposalId ?? this.propose(bundle).proposalId))) throw new Error('Explicit user consent for this structured proposal is required'); this.assertScope(consent?.scope); await this.assertInstallTiming(bundle);
-    for (const model of bundle.models) this.#queue.set(model.manifest.modelId, { modelId: model.manifest.modelId, priority: model.priority, bytes: model.manifest.sizeBytes, downloadedBytes: 0, status: 'QUEUED' });
-    for (const model of bundle.models) { const id = model.manifest.modelId; this.#queue.set(id, { ...this.#queue.get(id)!, status: 'DOWNLOADING' }); try { const trust = await this.#local.verifyModel(model.manifest); this.#trust.set(id, trust.trusted); if (!trust.trusted) throw new Error(`Untrusted model ${id}: ${trust.errors.join('; ')}`); const installed = await this.#local.installModel(model.manifest); const cached = { modelId: id, version: installed.version, lastUsed: this.dependencies.localAI.clock(), performance: model.score, health: 1, cloudSavings: this.#telemetry.find((item) => item.modelId === id)?.cloudSavings ?? 0, status: 'INSTALLED' as const }; this.#cache.set(id, cached); this.#queue.set(id, { ...this.#queue.get(id)!, downloadedBytes: model.manifest.sizeBytes, status: 'INSTALLED' }); await this.runBenchmark(model.manifest); } catch (error) { this.#queue.set(id, { ...this.#queue.get(id)!, status: 'FAILED' }); this.event(`install:failed:${id}`); throw error; } }
-    this.event(`bundle:installed:${bundle.bundleId}`); return immutableClone([...this.#cache.values()]);
+    const estimate = this.estimateDownload(bundle);
+    if (estimate.requiresConsent && (!consent?.approved || consent.proposalId !== (this.#proposal?.proposalId ?? this.propose(bundle).proposalId))) {
+      throw new Error('Explicit user consent for this structured proposal is required');
+    }
+    this.assertScope(consent?.scope);
+    await this.assertInstallTiming(bundle);
+    for (const model of bundle.models) {
+      this.#queue.set(model.manifest.modelId, {
+        modelId: model.manifest.modelId,
+        priority: model.priority,
+        bytes: model.manifest.sizeBytes,
+        downloadedBytes: 0,
+        status: 'QUEUED',
+      });
+    }
+    for (const model of bundle.models) {
+      const id = model.manifest.modelId;
+      this.#queue.set(id, { ...this.#queue.get(id)!, status: 'DOWNLOADING' });
+      try {
+        const trust = await this.#local.verifyModel(model.manifest);
+        this.#trust.set(id, trust.trusted);
+        if (!trust.trusted) throw new Error(`Untrusted model ${id}: ${trust.errors.join('; ')}`);
+        const installed = await this.#local.installModel(model.manifest);
+        const cached = {
+          modelId: id,
+          version: installed.version,
+          lastUsed: this.dependencies.localAI.clock(),
+          performance: model.score,
+          health: 1,
+          cloudSavings: this.#telemetry.find((item) => item.modelId === id)?.cloudSavings ?? 0,
+          status: 'INSTALLED' as const,
+        };
+        this.#cache.set(id, cached);
+        this.#queue.set(id, { ...this.#queue.get(id)!, downloadedBytes: model.manifest.sizeBytes, status: 'INSTALLED' });
+        await this.runBenchmark(model.manifest);
+      } catch (error) {
+        this.#queue.set(id, { ...this.#queue.get(id)!, status: 'FAILED' });
+        this.event(`install:failed:${id}`);
+        throw error;
+      }
+    }
+    this.event(`bundle:installed:${bundle.bundleId}`);
+    return immutableClone([...this.#cache.values()]);
   }
-  async updateBundle(bundle: ModelBundle, consent?: Consent): Promise<readonly CachedModel[]> { for (const model of bundle.models) { const current = this.#cache.get(model.manifest.modelId); if (current && current.version !== model.manifest.version) this.#rollback.set(model.manifest.modelId, immutableClone(current)); } const installed = await this.installBundle(bundle, consent); for (const model of bundle.models) { const old = this.#rollback.get(model.manifest.modelId); const latest = this.#cache.get(model.manifest.modelId); if (old && latest && latest.performance < old.performance - this.#policy.regressionThreshold) await this.rollback(model.manifest.modelId); } this.event('bundle:updated:incremental-when-available'); return installed; }
-  async removeModel(modelId: string): Promise<void> { await this.#local.removeModel(modelId); this.#cache.delete(modelId); this.#queue.delete(modelId); this.event(`model:removed:${modelId}`); }
-  async rollback(modelId: string): Promise<CachedModel> { const prior = this.#rollback.get(modelId); if (!prior) throw new Error('No verified rollback point'); this.#cache.set(modelId, prior); this.event(`model:rollback:${modelId}`); return immutableClone(prior); }
-  async repair(modelId: string): Promise<CachedModel> { const model = this.#catalog.find((item) => item.modelId === modelId); if (!model) throw new Error('Unknown model'); const trust = await this.#local.verifyModel(model); this.#trust.set(modelId, trust.trusted); if (!trust.trusted) throw new Error('Repair blocked by signature or checksum verification'); const cached = this.#cache.get(modelId); if (!cached) throw new Error('Model is not installed'); const repaired = { ...cached, health: 1, status: 'INSTALLED' as const }; this.#cache.set(modelId, repaired); this.event(`model:repaired:${modelId}`); return immutableClone(repaired); }
-  pause(modelId: string): void { this.changeQueue(modelId, 'PAUSED'); this.#local.pauseDownload(modelId); }
-  resume(modelId: string): void { this.changeQueue(modelId, 'QUEUED'); }
-  cancel(modelId: string): void { this.changeQueue(modelId, 'CANCELLED'); this.#local.cancelDownload(modelId); }
-  canary(modelId: string, percent = 10): CachedModel { if (percent <= 0 || percent >= 100) throw new Error('Canary percent must be between 0 and 100'); return this.changeCache(modelId, 'CANARY'); }
+
+  async updateBundle(bundle: ModelBundle, consent?: Consent): Promise<readonly CachedModel[]> {
+    for (const model of bundle.models) {
+      const current = this.#cache.get(model.manifest.modelId);
+      if (current && current.version !== model.manifest.version) this.#rollback.set(model.manifest.modelId, immutableClone(current));
+    }
+    const installed = await this.installBundle(bundle, consent);
+    for (const model of bundle.models) {
+      const old = this.#rollback.get(model.manifest.modelId);
+      const latest = this.#cache.get(model.manifest.modelId);
+      if (old && latest && latest.performance < old.performance - this.#policy.regressionThreshold) await this.rollback(model.manifest.modelId);
+    }
+    this.event('bundle:updated:incremental-when-available');
+    return installed;
+  }
+
+  async removeModel(modelId: string): Promise<void> {
+    await this.#local.removeModel(modelId);
+    this.#cache.delete(modelId);
+    this.#queue.delete(modelId);
+    this.#rollback.delete(modelId);
+    this.event(`model:removed:${modelId}`);
+  }
+
+  async rollback(modelId: string): Promise<CachedModel> {
+    const prior = this.#rollback.get(modelId);
+    if (!prior) throw new Error('No verified rollback point');
+    const restored = await this.#local.rollbackModelAsync(modelId);
+    if (restored.version !== prior.version) throw new Error(`Durable rollback restored unexpected version: ${restored.version}`);
+    this.#cache.set(modelId, prior);
+    this.event(`model:rollback:${modelId}:${prior.version}`);
+    return immutableClone(prior);
+  }
+
+  async repair(modelId: string): Promise<CachedModel> {
+    const model = this.#catalog.find((item) => item.modelId === modelId);
+    if (!model) throw new Error('Unknown model');
+    const trust = await this.#local.verifyModel(model);
+    this.#trust.set(modelId, trust.trusted);
+    if (!trust.trusted) throw new Error('Repair blocked by signature or checksum verification');
+    const cached = this.#cache.get(modelId);
+    if (!cached) throw new Error('Model is not installed');
+    if (this.#local.inspect(modelId)?.status === 'QUARANTINED') await this.#local.restoreQuarantinedAsync(modelId, true);
+    const repaired = { ...cached, health: 1, status: 'INSTALLED' as const };
+    this.#cache.set(modelId, repaired);
+    this.event(`model:repaired:${modelId}`);
+    return immutableClone(repaired);
+  }
+
+  pause(modelId: string): void {
+    this.#local.pauseDownload(modelId);
+    this.changeQueue(modelId, 'PAUSED');
+  }
+
+  resume(modelId: string): void {
+    this.changeQueue(modelId, 'QUEUED');
+  }
+
+  cancel(modelId: string): void {
+    this.#local.cancelDownload(modelId);
+    this.changeQueue(modelId, 'CANCELLED');
+  }
+
+  canary(modelId: string, percent = 10): CachedModel {
+    if (percent <= 0 || percent >= 100) throw new Error('Canary percent must be between 0 and 100');
+    return this.changeCache(modelId, 'CANARY');
+  }
   promote(modelId: string): CachedModel { return this.changeCache(modelId, 'PRIMARY'); }
-  retire(modelId: string, reason: string): CachedModel { const value = this.changeCache(modelId, 'DEPRECATED'); this.event(`model:deprecated:${modelId}:${reason}`); return value; }
-  adaptivePolicy(): readonly AdaptiveRoute[] { const capabilities = [...new Set(this.#catalog.flatMap((model) => model.capabilities))].sort(); return immutableClone(capabilities.map((capability) => { const models = this.#catalog.filter((model) => model.capabilities.includes(capability)); const telemetry = this.#telemetry.filter((item) => models.some((model) => model.modelId === item.modelId)).sort((a,b) => b.successRate-a.successRate)[0]; if (!telemetry || telemetry.successRate < .6) return { capability, preview: 'CLOUD', final: 'CLOUD', reason: 'Local success rate is insufficient' }; if (telemetry.quality < .85) return { capability, preview: 'LOCAL', final: 'CLOUD', reason: 'Local is efficient for preview; cloud preserves final quality' }; return { capability, preview: 'LOCAL', final: telemetry.successRate >= .9 ? 'LOCAL' : 'CLOUD', reason: 'Telemetry favors adaptive local execution' }; })); }
-  inspect(modelId?: string): CachedModel | ModelDistributionSnapshot | undefined { return modelId ? (this.#cache.get(modelId) ? immutableClone(this.#cache.get(modelId)!) : undefined) : this.snapshot(); }
-  snapshot(): ModelDistributionSnapshot { if (!this.#device) throw new Error('Device has not been analyzed'); return immutableClone({ deviceProfile: this.#device, installedModels: [...this.#cache.values()], recommendedBundle: this.#recommended, rejectedModels: this.#rejected, storageBudget: this.#policy.storageBudget, downloadQueue: [...this.#queue.values()].sort((a,b) => a.priority-b.priority || a.modelId.localeCompare(b.modelId)), performanceBenchmarks: [...this.#benchmarks.values()], cloudSavingsEstimate: this.#recommended?.expectedCloudSavings ?? 0, trustStatus: Object.fromEntries(this.#trust), policy: this.#policy, adaptiveRoutes: this.adaptivePolicy(), timeline: this.#timeline }); }
-  debug(): Readonly<Record<string, unknown>> { const snapshot = this.snapshot(); return immutableClone({ snapshot, recommendation: this.explain(), queueBlocked: [...this.#queue.values()].filter((item) => item.status === 'PAUSED' || item.status === 'FAILED') }); }
-  explain(): readonly string[] { const bundle = this.requiredBundle(); return immutableClone([`Selected ${bundle.profile} for measured device capabilities, not its product name.`, `Models provide: ${bundle.capabilities.join(', ') || 'none'}.`, `Download uses ${bundle.sizeBytes} bytes and ${bundle.requiredStorage} bytes with installation overhead.`, `Estimated cloud savings: ${(bundle.expectedCloudSavings*100).toFixed(0)}%.`, ...this.#rejected.map((item) => `${item.modelId} disabled: ${item.reasons.join(', ')}`)]); }
-  private async runBenchmark(model: ModelManifest) { if (!this.dependencies.benchmarkRequest || !this.dependencies.localAI.onnxSessionFactory || model.modelFormat !== 'ONNX') return; await this.#local.loadModel(model.modelId); const benchmark = await this.#local.benchmarkModel(model.modelId, this.dependencies.benchmarkRequest(model)); this.#benchmarks.set(model.modelId, benchmark); const cached = this.#cache.get(model.modelId); if (cached) this.#cache.set(model.modelId, { ...cached, performance: benchmark.successRate * model.qualityScore, health: benchmark.successRate }); await this.#local.unloadModel(model.modelId); }
-  private async assertInstallTiming(bundle: ModelBundle) { const device = this.#device ?? await this.analyzeDevice(); if ((device.batteryPercent !== 'UNKNOWN' && device.powerState === 'BATTERY' && device.batteryPercent < this.#policy.minimumBattery) || device.thermalState === 'HIGH' || device.thermalState === 'CRITICAL') throw new Error('Installation deferred by battery or thermal policy'); if (this.#policy.wifiOnly && (device.network === 'METERED' || device.network === 'SLOW' || device.network === 'OFFLINE')) throw new Error('Installation deferred until an allowed network is available'); if (device.storageFreeBytes === 'UNKNOWN' || device.storageFreeBytes < bundle.requiredStorage) throw new Error('Insufficient storage'); if (this.dependencies.criticalExecution?.()) throw new Error('Installation deferred during critical execution'); }
-  private assertScope(scope?: Scope) { if (scope && (scope.tenantId !== this.#scope.tenantId || scope.projectId !== this.#scope.projectId || scope.userId !== this.#scope.userId)) throw new Error('Cross-scope consent is forbidden'); }
-  private requiredBundle() { if (!this.#recommended) throw new Error('Recommend a bundle first'); return this.#recommended; }
-  private changeQueue(modelId: string, status: DownloadItem['status']) { const item = this.#queue.get(modelId); if (!item) throw new Error('Download is not queued'); this.#queue.set(modelId, { ...item, status }); this.event(`download:${status.toLowerCase()}:${modelId}`); }
-  private changeCache(modelId: string, status: CachedModel['status']) { const item = this.#cache.get(modelId); if (!item) throw new Error('Model is not installed'); const next = { ...item, status }; this.#cache.set(modelId, next); this.event(`model:${status.toLowerCase()}:${modelId}`); return immutableClone(next); }
-  private event(event: string) { this.#timeline.push({ sequence: ++this.#sequence, at: this.dependencies.localAI.clock(), event }); }
+  retire(modelId: string, reason: string): CachedModel {
+    const value = this.changeCache(modelId, 'DEPRECATED');
+    this.event(`model:deprecated:${modelId}:${reason}`);
+    return value;
+  }
+
+  adaptivePolicy(): readonly AdaptiveRoute[] {
+    const capabilities = [...new Set(this.#catalog.flatMap((model) => model.capabilities))].sort();
+    return immutableClone(capabilities.map((capability) => {
+      const models = this.#catalog.filter((model) => model.capabilities.includes(capability));
+      const telemetry = this.#telemetry
+        .filter((item) => models.some((model) => model.modelId === item.modelId))
+        .sort((a, b) => b.successRate - a.successRate)[0];
+      if (!telemetry || telemetry.successRate < .6) return { capability, preview: 'CLOUD', final: 'CLOUD', reason: 'Local success rate is insufficient' };
+      if (telemetry.quality < .85) return { capability, preview: 'LOCAL', final: 'CLOUD', reason: 'Local is efficient for preview; cloud preserves final quality' };
+      return { capability, preview: 'LOCAL', final: telemetry.successRate >= .9 ? 'LOCAL' : 'CLOUD', reason: 'Telemetry favors adaptive local execution' };
+    }));
+  }
+
+  inspect(modelId?: string): CachedModel | ModelDistributionSnapshot | undefined {
+    return modelId ? (this.#cache.get(modelId) ? immutableClone(this.#cache.get(modelId)!) : undefined) : this.snapshot();
+  }
+
+  snapshot(): ModelDistributionSnapshot {
+    if (!this.#device) throw new Error('Device has not been analyzed');
+    return immutableClone({
+      deviceProfile: this.#device,
+      installedModels: [...this.#cache.values()],
+      recommendedBundle: this.#recommended,
+      rejectedModels: this.#rejected,
+      storageBudget: this.#policy.storageBudget,
+      downloadQueue: [...this.#queue.values()].sort((a, b) => a.priority - b.priority || a.modelId.localeCompare(b.modelId)),
+      performanceBenchmarks: [...this.#benchmarks.values()],
+      cloudSavingsEstimate: this.#recommended?.expectedCloudSavings ?? 0,
+      trustStatus: Object.fromEntries(this.#trust),
+      policy: this.#policy,
+      adaptiveRoutes: this.adaptivePolicy(),
+      timeline: this.#timeline,
+    });
+  }
+
+  debug(): Readonly<Record<string, unknown>> {
+    const snapshot = this.snapshot();
+    return immutableClone({ snapshot, recommendation: this.explain(), queueBlocked: [...this.#queue.values()].filter((item) => item.status === 'PAUSED' || item.status === 'FAILED') });
+  }
+
+  explain(): readonly string[] {
+    const bundle = this.requiredBundle();
+    return immutableClone([
+      `Selected ${bundle.profile} for measured device capabilities, not its product name.`,
+      `Models provide: ${bundle.capabilities.join(', ') || 'none'}.`,
+      `Download uses ${bundle.sizeBytes} bytes and ${bundle.requiredStorage} bytes with installation overhead.`,
+      `Estimated cloud savings: ${(bundle.expectedCloudSavings * 100).toFixed(0)}%.`,
+      ...this.#rejected.map((item) => `${item.modelId} disabled: ${item.reasons.join(', ')}`),
+    ]);
+  }
+
+  private async runBenchmark(model: ModelManifest) {
+    if (!this.dependencies.benchmarkRequest || !this.dependencies.localAI.onnxSessionFactory || model.modelFormat !== 'ONNX') return;
+    await this.#local.loadModel(model.modelId);
+    const benchmark = await this.#local.benchmarkModel(model.modelId, this.dependencies.benchmarkRequest(model));
+    this.#benchmarks.set(model.modelId, benchmark);
+    const cached = this.#cache.get(model.modelId);
+    if (cached) this.#cache.set(model.modelId, { ...cached, performance: benchmark.successRate * model.qualityScore, health: benchmark.successRate });
+    await this.#local.unloadModel(model.modelId);
+  }
+
+  private async assertInstallTiming(bundle: ModelBundle) {
+    const device = this.#device ?? await this.analyzeDevice();
+    if ((device.batteryPercent !== 'UNKNOWN' && device.powerState === 'BATTERY' && device.batteryPercent < this.#policy.minimumBattery) || device.thermalState === 'HIGH' || device.thermalState === 'CRITICAL') {
+      throw new Error('Installation deferred by battery or thermal policy');
+    }
+    if (this.#policy.wifiOnly && (device.network === 'METERED' || device.network === 'SLOW' || device.network === 'OFFLINE')) {
+      throw new Error('Installation deferred until an allowed network is available');
+    }
+    if (device.storageFreeBytes === 'UNKNOWN' || device.storageFreeBytes < bundle.requiredStorage) throw new Error('Insufficient storage');
+    if (this.dependencies.criticalExecution?.()) throw new Error('Installation deferred during critical execution');
+  }
+
+  private assertScope(scope?: Scope) {
+    if (scope && (scope.tenantId !== this.#scope.tenantId || scope.projectId !== this.#scope.projectId || scope.userId !== this.#scope.userId)) {
+      throw new Error('Cross-scope consent is forbidden');
+    }
+  }
+
+  private requiredBundle() {
+    if (!this.#recommended) throw new Error('Recommend a bundle first');
+    return this.#recommended;
+  }
+
+  private changeQueue(modelId: string, status: DownloadItem['status']) {
+    const item = this.#queue.get(modelId);
+    if (!item) throw new Error('Download is not queued');
+    this.#queue.set(modelId, { ...item, status });
+    this.event(`download:${status.toLowerCase()}:${modelId}`);
+  }
+
+  private changeCache(modelId: string, status: CachedModel['status']) {
+    const item = this.#cache.get(modelId);
+    if (!item) throw new Error('Model is not installed');
+    const next = { ...item, status };
+    this.#cache.set(modelId, next);
+    this.event(`model:${status.toLowerCase()}:${modelId}`);
+    return immutableClone(next);
+  }
+
+  private event(event: string) {
+    this.#timeline.push({ sequence: ++this.#sequence, at: this.dependencies.localAI.clock(), event });
+  }
 }
