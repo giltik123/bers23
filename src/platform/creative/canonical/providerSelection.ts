@@ -1,5 +1,5 @@
 import type { CreativeExecutionPlatformDependencies, CreativeOperation, CreativeRequest, ExecutionTarget } from './contracts';
-import type { LocalExecutionTicketIssuerPort } from './localExecution';
+import type { LocalExecutionTicketIssuerPort, LocalExecutionTicketV2IssuerPort } from './localExecution';
 
 export type ProviderSelectionReasonCode =
   | 'PROVIDER_SELECTED'
@@ -19,5 +19,8 @@ export interface ProviderSelectorPort {
 /** Runtime composition contract: provider choice is mandatory only for PROVIDER routes. */
 export type CreativeExecutionPlatformRuntimeDependencies = CreativeExecutionPlatformDependencies & Readonly<{
   providerSelector: ProviderSelectorPort;
+  /** Stable v1 model-only issuer used by existing segmentation. */
   localExecution?: LocalExecutionTicketIssuerPort;
+  /** Explicit v2 issuer used by generic model/tool executor tickets. */
+  localExecutionV2?: LocalExecutionTicketV2IssuerPort;
 }>;
