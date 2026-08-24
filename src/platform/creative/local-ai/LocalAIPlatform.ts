@@ -81,7 +81,11 @@ export class LocalAIPlatform {
     const recommendation = await this.recommendFleet();
     if (recommendation.status !== 'READY') return Object.freeze([]);
     const catalog = this.dependencies.modelCatalog ?? []; const installed: ModelManifest[] = [];
-    for (const modelId of recommendation.modelIds) { const manifest = catalog.find((item) => item.modelId === modelId); if (manifest) installed.push(await this.installModel(manifest)); }
+    for (const binding of recommendation.modelBindings) {
+      const manifest = catalog.find((item) => item.modelId === binding.modelId && item.version === binding.version);
+      if (!manifest) throw new Error(`Recommended model binding is no longer available: ${binding.modelId}@${binding.version}`);
+      installed.push(await this.installModel(manifest));
+    }
     return immutableClone(installed);
   }
 
@@ -126,7 +130,7 @@ export class LocalAIPlatform {
   explain(): string | undefined { return this.#lastSnapshot ? new LocalAIDebugger().explain(this.#lastSnapshot) : undefined; }
   replay(snapshot: LocalAISnapshot): LocalAISnapshot { return immutableClone(snapshot) as LocalAISnapshot; }
   pauseDownload(modelId: string): void { this.#downloader.pause(modelId); }
-  resumeDownload(manifest: ModelManifest): Promise<ModelManifest> { return this.#downloader.resume(manifest); }
+  resumeDownload(manifest: ModelManifest): Promise<ModelManifest> { this.#downloader.resume(manifest); return this.#downloader.resume(manifest); }
   cancelDownload(modelId: string): void { this.#downloader.cancel(modelId); }
   rollbackModel(modelId: string): ModelManifest { return this.#downloader.rollback(modelId); }
   reportRuntimeFailure(modelId: string): ModelManifest {
