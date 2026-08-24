@@ -188,3 +188,23 @@ test('durable failure/quarantine survives restart and corrupt bytes cannot be re
   await assert.rejects(() => restarted.restoreQuarantinedAsync('platform-model', true), /revalidation/);
   assert.equal(restarted.inspect('platform-model')?.status, 'QUARANTINED');
 });
+
+test('LocalAIPlatform durable removeModel uninstalls active and rollback-history versions', async () => {
+  const env = harness();
+  const platform = env.platform();
+  await platform.installModel(manifest('1.0.0', bytesA));
+  await platform.installModel(manifest('2.0.0', bytesB));
+  assert.equal(env.backing.blobs.size, 2, 'both rollback-capable versions must exist before uninstall');
+  assert.equal((await env.lifecycle().metadata.read())?.models['platform-model']?.activeVersion, '2.0.0');
+
+  await platform.removeModel('platform-model');
+
+  assert.equal(platform.inspect('platform-model'), undefined, 'public registry must not resurrect a retained history version');
+  assert.equal((await env.lifecycle().metadata.read())?.models['platform-model'], undefined, 'public removeModel means full durable uninstall');
+  assert.equal(env.backing.blobs.size, 0, 'unreferenced active and history CAS bytes must be reclaimed');
+  assert.equal(env.legacyWrites(), 0);
+
+  const restarted = env.platform();
+  await restarted.initializeModelFleet();
+  assert.equal(restarted.inspect('platform-model'), undefined, 'uninstalled model must stay absent after restart');
+});
