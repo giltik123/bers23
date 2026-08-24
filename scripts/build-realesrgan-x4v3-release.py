@@ -7,6 +7,8 @@ This script intentionally does not download or sign artifacts. The caller must p
 
 The checkpoint is size/hash verified before any torch deserialization. The emitted ONNX
 is a CANDIDATE artifact only; hosted export/ORT parity is not production-device approval.
+The exported graph returns the raw network float output. BERS image materialization must
+apply the pinned upstream-compatible `CLAMP_0_1` postprocess before 8-bit RGB encoding.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ MODEL_ID = "realesr-general-x4v3"
 MODEL_VERSION = "1.0.0-candidate.1"
 PARITY_TOLERANCE = 1e-4
 PARITY_SHAPES = ((8, 8), (13, 17), (24, 31))
+POSTPROCESS = "CLAMP_0_1"
 
 
 def sha256(path: Path) -> str:
@@ -173,7 +176,14 @@ def main() -> None:
             "opset": OPSET,
             "precision": "FP32",
             "input": {"name": "input_rgb", "dtype": "float32", "layout": "NCHW", "range": [0, 1]},
-            "output": {"name": "output_rgb", "dtype": "float32", "layout": "NCHW", "scale": 4},
+            "output": {
+                "name": "output_rgb",
+                "dtype": "float32",
+                "layout": "NCHW",
+                "scale": 4,
+                "networkRange": "UNCLAMPED_FLOAT32",
+                "postprocess": POSTPROCESS,
+            },
             "dynamicSpatialAxes": True,
             "graphSimplified": False,
             "quantized": False,
