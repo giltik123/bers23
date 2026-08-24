@@ -8,6 +8,22 @@ on:
 jobs:
   integrated-contract:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: integration_test
+          POSTGRES_USER: integration_test
+          POSTGRES_PASSWORD: integration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U integration_test -d integration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://integration_test:integration_test@127.0.0.1:5432/integration_test
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js 24
@@ -37,6 +53,15 @@ jobs:
             --external:node:*
           node --test .test-cache/6.42-integration/browser-local-ai-composition.test.mjs
           grep -F "createSelectionSegmentation({ projectId: project.id, imageArtifactId" src/pages/Editor.jsx
+      - name: C1 deterministic mask refinement lineage
+        run: |
+          npx esbuild tests/mask-refinement-lineage.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/mask-refinement-lineage.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42-integration/mask-refinement-lineage.test.mjs
+      - name: C1 real PostgreSQL mask lineage authority
+        run: node --experimental-strip-types --test server/core/artifacts/maskArtifactLineage.integration.test.mjs
       - name: Canonical route and durable fleet regressions
         run: |
           npm run test:creative-route-6.41c4
