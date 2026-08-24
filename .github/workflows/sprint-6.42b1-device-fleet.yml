@@ -1,0 +1,35 @@
+name: Sprint 6.42B1 device fleet acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  device-fleet-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck application contracts
+        run: npm run typecheck
+      - name: Device capability and budgeted fleet contract
+        run: |
+          mkdir -p .test-cache/6.42b1
+          npx esbuild tests/device-fleet-recommendation.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42b1/device-fleet-recommendation.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42b1/device-fleet-recommendation.test.mjs
+      - name: Existing local AI security and runtime regression suite
+        run: |
+          npx esbuild tests/creative-local-ai.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --loader:.pem=text --loader:.sig=text --loader:.wasm=file \
+            --outfile=.test-cache/6.42b1/creative-local-ai.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42b1/creative-local-ai.test.mjs
