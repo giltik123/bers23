@@ -31,10 +31,18 @@ export type DeviceCapabilityProfile = Readonly<{
   ramPressure: RamPressure; backgroundRestricted: Availability;
 }>;
 export type RuntimeCapabilities = Readonly<Record<RuntimeKind, Availability>>;
+export type DeviceFleetCapabilityProfile = Readonly<{
+  platform: Platform;
+  deviceClass: DeviceClass;
+  tier: DeviceTier;
+  ramMb: number | UnknownValue;
+  vramMb: number | UnknownValue;
+  storageFreeBytes: number | UnknownValue;
+}>;
 export type DeviceCapabilitySnapshot = Readonly<{
   schemaVersion: 1;
   capturedAt: number;
-  profile: DeviceCapabilityProfile;
+  profile: DeviceFleetCapabilityProfile;
   runtimeCapabilities: RuntimeCapabilities;
   evidence: Readonly<{
     observedSignals: readonly string[];
