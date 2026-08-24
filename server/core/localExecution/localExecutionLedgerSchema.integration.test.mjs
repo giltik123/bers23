@@ -15,6 +15,8 @@ test('migration 013 repairs prerelease local execution ledger authority constrai
       DROP INDEX IF EXISTS local_execution_tickets_scope_idempotency_unique;
       ALTER TABLE local_execution_tickets DROP CONSTRAINT IF EXISTS local_execution_tickets_idempotency_key_key;
       ALTER TABLE local_execution_tickets ADD CONSTRAINT local_execution_tickets_idempotency_key_key UNIQUE (idempotency_key);
+      ALTER TABLE local_execution_tickets DROP COLUMN IF EXISTS finalized_status;
+      ALTER TABLE local_execution_tickets DROP COLUMN IF EXISTS finalized_at;
       ALTER TABLE local_execution_uploads ALTER COLUMN artifact_role DROP NOT NULL;
       DROP INDEX IF EXISTS canonical_mask_artifacts_local_execution_ticket_unique;
     `);
@@ -35,6 +37,13 @@ test('migration 013 repairs prerelease local execution ledger authority constrai
           AND t.relname = 'local_execution_tickets'
           AND c.conname = 'local_execution_tickets_idempotency_key_key'
       ) AS legacy_unique_removed,
+      (
+        SELECT count(*) = 2
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'local_execution_tickets'
+          AND column_name IN ('finalized_status','finalized_at')
+      ) AS finalization_columns,
       EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = current_schema()
@@ -46,6 +55,7 @@ test('migration 013 repairs prerelease local execution ledger authority constrai
       scoped_unique: true,
       mask_unique: true,
       legacy_unique_removed: true,
+      finalization_columns: true,
       artifact_role_not_null: true,
     });
   } finally {
