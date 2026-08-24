@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
+import type { LocalDeterministicImageExecutionService } from '../localExecution/LocalDeterministicImageExecutionService.ts';
 import type { LocalSegmentationExecutionService } from '../localExecution/LocalSegmentationExecutionService.ts';
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
@@ -10,8 +11,8 @@ type LocalExecutionAuth = Readonly<{
   verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
 }>;
 
-/** Narrow production transport for Core-authorized on-device execution. */
-export function createLocalExecutionHttpAdapter(input: Readonly<{ service: LocalSegmentationExecutionService; auth: LocalExecutionAuth; config: CoreServerConfig }>) {
+/** One authenticated transport boundary with capability-specific application services. */
+export function createLocalExecutionHttpAdapter(input: Readonly<{ service: LocalSegmentationExecutionService; deterministicImages?: LocalDeterministicImageExecutionService; auth: LocalExecutionAuth; config: CoreServerConfig }>) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', 'http://core.invalid');
     if (!url.pathname.startsWith(PREFIX)) return false;
@@ -34,6 +35,42 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
           points: (Array.isArray(body.points) ? body.points : []) as never,
         }, principal);
         send(response, 202, prepared); return true;
+      }
+
+      if (url.pathname === `${PREFIX}background-isolation/prepare` && request.method === 'POST') {
+        const service = requireDeterministicImages(input.deterministicImages);
+        requireJson(request);
+        const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
+        const prepared = await service.prepareBackgroundIsolation({
+          projectId: string(body.projectId),
+          sourceArtifactId: string(body.sourceArtifactId),
+          maskArtifactId: string(body.maskArtifactId),
+          clientRequestId: string(body.clientRequestId),
+        }, principal);
+        send(response, 202, prepared); return true;
+      }
+
+      const deterministicUploadMatch = url.pathname.match(/^\/api\/core\/local-execution\/background-isolation\/([^/]+)\/image-upload$/);
+      if (deterministicUploadMatch && request.method === 'POST') {
+        const service = requireDeterministicImages(input.deterministicImages);
+        if (mediaType(request) !== 'image/png') throw httpError(415, 'unsupported_media_type', 'Content-Type must be image/png');
+        const projectId = url.searchParams.get('projectId')?.trim() ?? '';
+        if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
+        const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
+        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(deterministicUploadMatch[1]), projectId, bytes }, principal);
+        if (!evidence.width || !evidence.height || evidence.width > input.config.imageMaxDimension || evidence.height > input.config.imageMaxDimension || evidence.width * evidence.height > input.config.imageMaxPixels) throw httpError(400, 'invalid_image_dimensions', 'Local image dimensions are invalid or unsafe');
+        send(response, 201, evidence); return true;
+      }
+
+      const deterministicResultMatch = url.pathname.match(/^\/api\/core\/local-execution\/background-isolation\/([^/]+)\/result$/);
+      if (deterministicResultMatch && request.method === 'POST') {
+        const service = requireDeterministicImages(input.deterministicImages);
+        requireJson(request);
+        const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
+        const projectId = string(body.projectId);
+        const finalized = await service.submit({ ticketId: decodeURIComponent(deterministicResultMatch[1]), projectId, result: body.result }, principal);
+        const publicResult = Object.freeze({ executionId: finalized.executionId, status: finalized.status, artifactId: finalized.artifactId, verification: Object.freeze({ valid: finalized.outcome.verification.valid }) });
+        send(response, finalized.status === 'SUCCESS' ? 200 : 422, publicResult); return true;
       }
 
       const uploadMatch = url.pathname.match(/^\/api\/core\/local-execution\/([^/]+)\/mask-upload$/);
@@ -67,6 +104,7 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
   };
 }
 
+function requireDeterministicImages(service: LocalDeterministicImageExecutionService | undefined): LocalDeterministicImageExecutionService { if (!service) throw httpError(503, 'deterministic_local_execution_unavailable', 'Deterministic local image execution is unavailable'); return service; }
 function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {
   const origin = header(request, 'origin');
   if (!origin) return;
