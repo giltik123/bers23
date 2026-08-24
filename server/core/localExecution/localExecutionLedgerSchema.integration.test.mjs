@@ -4,8 +4,9 @@ import { Pool } from 'pg';
 import { checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from './localExecutionLedgerSchema.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
+const destructiveSchemaProofEnabled = process.env.LOCAL_EXECUTION_SCHEMA_TEST === '1';
 
-test('migration 013 repairs prerelease local execution ledger authority constraints', { skip: !databaseUrl }, async () => {
+test('migration 013 repairs prerelease local execution ledger authority constraints', { skip: !databaseUrl || !destructiveSchemaProofEnabled }, async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 1, application_name: 'bers-local-ledger-schema-integration' });
   try {
     await pool.query('DELETE FROM local_execution_tickets');
