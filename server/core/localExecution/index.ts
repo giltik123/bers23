@@ -4,4 +4,5 @@ export * from './LocalExecutionTicketAuthority.ts';
 export * from './PostgresLocalExecutionLedger.ts';
 export * from './PostgresLocalExecutionUploadStore.ts';
 export * from './LocalSegmentationExecutionService.ts';
+export * from './LocalDeterministicImageExecutionService.ts';
 export * from './localExecutionLedgerSchema.ts';
