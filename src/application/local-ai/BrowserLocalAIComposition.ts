@@ -1,6 +1,7 @@
 import type { LocalAIPlatform } from '../../platform/creative/local-ai/LocalAIPlatform';
 import type { DeviceExecutionAdmission } from '../../platform/creative/local-ai/selection/DeviceExecutionAdmission';
 import type { OnnxSessionFactory } from '../../platform/creative/local-ai/types';
+import type { TrustPolicy } from '../../platform/creative/local-ai/trust/ModelTrust';
 
 export type BrowserLocalAIComposition = Readonly<{
   platform: LocalAIPlatform;
@@ -39,6 +40,13 @@ export const browserLocalAIComposition = new LazyBrowserLocalAIComposition();
  * dedicated Core-authorized adapter. It must not be represented as one generic READY model blob.
  */
 export const PRODUCTION_BROWSER_FLEET_MODEL_COUNT = 0 as const;
+
+const EMPTY_BROWSER_TRUST_POLICY: TrustPolicy = Object.freeze({
+  publishers: Object.freeze([]),
+  formats: Object.freeze(['ONNX', 'TFLITE', 'SAFETENSORS', 'GGUF']),
+  runtimes: Object.freeze(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']),
+  licenses: Object.freeze(['Apache-2.0', 'MIT', 'BSD-3-Clause']),
+});
 
 async function createProductionBrowserLocalAIComposition(): Promise<BrowserLocalAIComposition> {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') throw new Error('Browser Local AI composition requires a browser runtime');
@@ -79,12 +87,7 @@ async function createProductionBrowserLocalAIComposition(): Promise<BrowserLocal
   });
   const platform = new LocalAIPlatform(
     dependencies,
-    Object.freeze({
-      publishers: Object.freeze([]),
-      formats: Object.freeze(['ONNX', 'TFLITE', 'SAFETENSORS', 'GGUF']),
-      runtimes: Object.freeze(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']),
-      licenses: Object.freeze(['Apache-2.0', 'MIT', 'BSD-3-Clause']),
-    }),
+    EMPTY_BROWSER_TRUST_POLICY,
     lifecycle,
     Object.freeze({ evidence: new IndexedDbBenchmarkEvidencePort(), criteria: Object.freeze([]) }),
   );
@@ -109,7 +112,9 @@ function browserRandom(): number {
 }
 
 async function browserSha256(bytes: Uint8Array): Promise<string> {
-  const digest = await browserCrypto().subtle.digest('SHA-256', bytes);
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const digest = await browserCrypto().subtle.digest('SHA-256', copy.buffer);
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
 }
 
