@@ -20,6 +20,7 @@ import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { LocalExecutionTicketAuthority, LocalSegmentationExecutionService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
+import { productionLocalExecutorsByCapability } from '../localExecution/productionLocalExecutorPolicy.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
 import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
@@ -65,6 +66,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       nonce: randomUUID,
       ttlMs: LOCAL_EXECUTION_TICKET_TTL_MS,
       modelsByCapability: productionLocalModelsByCapability,
+      executorsByCapability: productionLocalExecutorsByCapability,
     });
     const localUploads = new PostgresLocalExecutionUploadStore(transactions.pool);
     const canonical = {
