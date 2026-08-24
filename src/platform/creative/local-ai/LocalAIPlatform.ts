@@ -18,11 +18,17 @@ import {
 import { LocalModelDownloader } from './models/LocalModelDownloader';
 import { LocalModelRegistry } from './models/LocalModelRegistry';
 import { LocalModelBenchmarker } from './benchmark/LocalModelBenchmark';
+import { BenchmarkEvidenceStore, type BenchmarkEvidencePort } from './benchmark/BenchmarkEvidence';
 import { OnnxLocalRuntime } from './runtimes/OnnxLocalRuntime';
 import { DesktopLocalRuntime, MobileLocalRuntime, WebLocalRuntime } from './runtimes/PlatformRuntimes';
 import { LocalResultVerifier, compareLocalCloud as compare } from './verification/LocalResultVerifier';
 import { ExecutionTargetSelector } from './selection/ExecutionTargetSelector';
 import { ModelFleetPlanner, modelFleetKey } from './selection/ModelFleetPlanner';
+import {
+  ModelFleetPromotionPolicy,
+  type ModelPromotionCriteria,
+  type ModelPromotionDecision,
+} from './selection/ModelFleetPromotionPolicy';
 import { ModelSuitabilityScorer } from './selection/ModelSuitabilityScorer';
 import { ResourceGovernor } from './selection/ResourceGovernor';
 import { LocalAISandbox } from './security/LocalAISandbox';
@@ -61,6 +67,15 @@ export type LocalAIPlatformLifecycle = Readonly<{
   policy?: Partial<FleetPolicy>;
 }>;
 
+/** Independent B3 evidence plane. It owns telemetry only, never install or execution authority. */
+export type LocalAIPlatformBenchmarking = Readonly<{
+  evidence: BenchmarkEvidencePort;
+  criteria: readonly ModelPromotionCriteria[];
+  ttlMs?: number;
+}>;
+
+export type ModelFleetRecommendationOptions = Readonly<{ requirePromotion?: boolean }>;
+
 export class LocalAIPlatform {
   readonly #registry = new LocalModelRegistry();
   readonly #verifier: ModelManifestVerifier;
@@ -68,6 +83,8 @@ export class LocalAIPlatform {
   readonly #failures = new Map<string, number>();
   readonly #fleet?: DurableModelFleet;
   readonly #fleetBlobs?: FleetBlobPort;
+  readonly #benchmarkEvidence?: BenchmarkEvidenceStore;
+  readonly #promotionCriteria: readonly ModelPromotionCriteria[];
   #fleetInitialization?: Promise<void>;
   readonly cache: LocalInferenceCache;
   readonly sandbox = new LocalAISandbox();
@@ -79,6 +96,7 @@ export class LocalAIPlatform {
     private readonly dependencies: LocalAIDependencies,
     policy: TrustPolicy = DEFAULT_TRUST_POLICY,
     lifecycle?: LocalAIPlatformLifecycle,
+    benchmarking?: LocalAIPlatformBenchmarking,
   ) {
     const trust = new ModelTrustRegistry(policy);
     this.#verifier = new ModelManifestVerifier(trust, new ModelSignatureVerifier(dependencies.signatureVerifier), dependencies.hash);
@@ -96,6 +114,15 @@ export class LocalAIPlatform {
         lifecycle.policy,
       );
     }
+    this.#promotionCriteria = immutableClone(benchmarking?.criteria ?? []);
+    if (benchmarking) {
+      this.#benchmarkEvidence = new BenchmarkEvidenceStore(
+        benchmarking.evidence,
+        dependencies.hash,
+        dependencies.clock,
+        benchmarking.ttlMs,
+      );
+    }
     this.cache = new LocalInferenceCache(dependencies.clock);
   }
 
@@ -109,6 +136,7 @@ export class LocalAIPlatform {
 
   availableModels(): readonly ModelManifest[] { return this.#registry.list(); }
   durableLifecycleEnabled(): boolean { return Boolean(this.#fleet); }
+  durableBenchmarkEvidenceEnabled(): boolean { return Boolean(this.#benchmarkEvidence); }
   async initializeModelFleet(): Promise<void> { await this.#ensureFleetInitialized(); }
 
   async recommendModel(operation: TargetRequest['operation']): Promise<ModelManifest | undefined> {
@@ -122,8 +150,8 @@ export class LocalAIPlatform {
       .sort((a, b) => b.result.score - a.result.score || a.model.modelId.localeCompare(b.model.modelId))[0]?.model;
   }
 
-  async recommendFleet(policy?: ModelFleetRecommendationPolicy): Promise<ModelFleetRecommendation> {
-    return this.#recommendFleet(await this.capabilitySnapshot(), policy);
+  async recommendFleet(policy?: ModelFleetRecommendationPolicy, options?: ModelFleetRecommendationOptions): Promise<ModelFleetRecommendation> {
+    return this.#recommendFleet(await this.capabilitySnapshot(), policy, Boolean(options?.requirePromotion));
   }
 
   async installModel(manifest: ModelManifest): Promise<ModelManifest> {
@@ -154,7 +182,12 @@ export class LocalAIPlatform {
   }
 
   async removeModel(modelId: string): Promise<void> {
-    if (!this.#fleet) { await this.#downloader.remove(modelId); return; }
+    if (!this.#fleet) {
+      await this.#downloader.remove(modelId);
+      await this.#benchmarkEvidence?.removeForModel(modelId);
+      this.#benchmarks.delete(modelId);
+      return;
+    }
     await this.#ensureFleetInitialized();
     await this.unloadModel(modelId);
     for (;;) {
@@ -166,6 +199,8 @@ export class LocalAIPlatform {
       await this.#fleet.remove(modelId, selected);
     }
     await this.#syncFleetModel(modelId);
+    await this.#benchmarkEvidence?.removeForModel(modelId);
+    this.#benchmarks.delete(modelId);
   }
 
   async recommendedBundle(): Promise<ModelBundle> {
@@ -239,12 +274,14 @@ export class LocalAIPlatform {
 
   async benchmarkModel(modelId: string, request: InferenceRequest): Promise<LocalModelBenchmark> {
     await this.#ensureFleetInitialized();
+    const snapshot = this.#benchmarkEvidence ? await this.capabilitySnapshot() : undefined;
     const artifact = this.#fleet
       ? await this.#durableRuntimeArtifact(modelId)
       : await this.#legacyRuntimeArtifact(modelId);
     let runtime = this.#runtimes.get(modelId);
     if (!runtime) { await this.loadModel(modelId); runtime = this.#runtimes.get(modelId); }
     const result = await new LocalModelBenchmarker(this.dependencies.clock).run(runtime!, artifact.model, artifact.bytes, request);
+    if (snapshot && this.#benchmarkEvidence) await this.#benchmarkEvidence.record(snapshot, artifact.model, result);
     this.#benchmarks.set(modelId, result);
     return result;
   }
@@ -347,7 +384,11 @@ export class LocalAIPlatform {
     return this.#mirrorFleetRecord(await this.#fleet.restoreQuarantined(modelId, explicitlyAllowed));
   }
 
-  async #recommendFleet(snapshot: DeviceCapabilitySnapshot, policy?: ModelFleetRecommendationPolicy): Promise<ModelFleetRecommendation> {
+  async #recommendFleet(
+    snapshot: DeviceCapabilitySnapshot,
+    policy?: ModelFleetRecommendationPolicy,
+    requirePromotion = false,
+  ): Promise<ModelFleetRecommendation> {
     const catalog = this.dependencies.modelCatalog ?? [];
     const trust = await Promise.all(catalog.map(async (model) => Object.freeze({
       key: modelFleetKey(model),
@@ -366,7 +407,35 @@ export class LocalAIPlatform {
       trustedModelKeys: trust.filter((item) => item.trusted).map((item) => item.key),
       storageFreeBytes,
       policy,
+      promotionDecisions: requirePromotion ? await this.#promotionDecisions(snapshot, catalog) : undefined,
     });
+  }
+
+  async #promotionDecisions(
+    snapshot: DeviceCapabilitySnapshot,
+    catalog: readonly ModelManifest[],
+  ): Promise<Readonly<Record<string, ModelPromotionDecision>>> {
+    if (!this.#benchmarkEvidence) {
+      return immutableClone(Object.fromEntries(catalog.map((model) => {
+        const modelKey = modelFleetKey(model);
+        return [modelKey, { modelKey, status: 'BENCHMARK_REQUIRED', reasons: ['BENCHMARK_MISSING'] } satisfies ModelPromotionDecision];
+      })));
+    }
+    const evidence = await this.#benchmarkEvidence.all();
+    const deviceCapabilityKey = await this.#benchmarkEvidence.deviceCapabilityKey(snapshot);
+    const now = this.dependencies.clock();
+    const promotion = new ModelFleetPromotionPolicy();
+    return immutableClone(Object.fromEntries(catalog.map((manifest) => {
+      const decision = promotion.evaluate({
+        snapshot,
+        deviceCapabilityKey,
+        manifest,
+        evidence,
+        criteria: this.#promotionCriteria,
+        now,
+      });
+      return [modelFleetKey(manifest), decision];
+    })));
   }
 
   async #ensureFleetInitialized(): Promise<void> {
