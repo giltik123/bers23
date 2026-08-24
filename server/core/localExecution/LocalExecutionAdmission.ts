@@ -42,7 +42,8 @@ export class LocalExecutionAdmissionRegistry {
   issue(ticket: LocalExecutionTicket): LocalExecutionTicket {
     assertTicket(ticket);
     const stored = immutableTicket(ticket);
-    const existingByIdempotency = this.#idempotency.get(stored.idempotencyKey);
+    const idempotencyLookup = scopedIdempotencyKey(stored.scope, stored.idempotencyKey);
+    const existingByIdempotency = this.#idempotency.get(idempotencyLookup);
     if (existingByIdempotency) {
       const existing = this.#tickets.get(existingByIdempotency);
       if (!existing) throw new Error('Local execution idempotency registry is inconsistent');
@@ -55,11 +56,15 @@ export class LocalExecutionAdmissionRegistry {
       return existing;
     }
     this.#tickets.set(stored.ticketId, stored);
-    this.#idempotency.set(stored.idempotencyKey, stored.ticketId);
+    this.#idempotency.set(idempotencyLookup, stored.ticketId);
     return stored;
   }
 
   get(ticketId: string): LocalExecutionTicket | undefined { return this.#tickets.get(ticketId); }
+  getByIdempotencyKey(scope: Scope, idempotencyKey: string): LocalExecutionTicket | undefined {
+    const ticketId = this.#idempotency.get(scopedIdempotencyKey(scope, idempotencyKey));
+    return ticketId ? this.#tickets.get(ticketId) : undefined;
+  }
 
   /** Claim prevents concurrent duplicate finalization while canonical persistence is in progress. */
   claim(input: Readonly<{ ticketId: string; result: unknown; callerScope: Scope; now: number }>): LocalExecutionAdmissionDecision {
@@ -142,8 +147,18 @@ function immutableTicket(ticket: LocalExecutionTicket): LocalExecutionTicket {
 function sameTicketBinding(a: LocalExecutionTicket, b: LocalExecutionTicket): boolean {
   return a.requestId === b.requestId && a.workflowId === b.workflowId && a.stepId === b.stepId && sameScope(a.scope, b.scope) &&
     a.operation.id === b.operation.id && a.operation.version === b.operation.version && a.operation.type === b.operation.type && a.operation.capability === b.operation.capability &&
-    JSON.stringify(a.operation.parameters ?? {}) === JSON.stringify(b.operation.parameters ?? {}) &&
-    a.policy === b.policy && JSON.stringify(a.inputs) === JSON.stringify(b.inputs) && JSON.stringify(a.expectedOutputs) === JSON.stringify(b.expectedOutputs) && JSON.stringify(a.allowedModels) === JSON.stringify(b.allowedModels);
+    canonicalJson(a.operation.parameters ?? {}) === canonicalJson(b.operation.parameters ?? {}) &&
+    a.policy === b.policy && canonicalJson(a.inputs) === canonicalJson(b.inputs) && canonicalJson(a.expectedOutputs) === canonicalJson(b.expectedOutputs) && canonicalJson(a.allowedModels) === canonicalJson(b.allowedModels);
+}
+
+function scopedIdempotencyKey(scope: Scope, idempotencyKey: string): string {
+  return canonicalJson([scope.tenantId, scope.userId, scope.projectId, idempotencyKey]) ?? '';
+}
+function canonicalJson(value: unknown): string | undefined { return JSON.stringify(canonicalValue(value)); }
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)]));
 }
 
 function immutableResult(result: LocalExecutionResult): LocalExecutionResult {
