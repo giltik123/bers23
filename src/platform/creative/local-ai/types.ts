@@ -18,7 +18,7 @@ export type Scope = Readonly<{ tenantId: string; projectId: string; userId: stri
 export type DeviceSignals = Readonly<{
   platform?: Platform; deviceClass?: DeviceClass; cpuCores?: number; ramMb?: number; gpu?: string; vramMb?: number;
   npu?: string; architecture?: string; browser?: string; webgpu?: Availability; wasm?: Availability; webnn?: Availability;
-  cuda?: Availability; directml?: Availability; metal?: Availability; vulkan?: Availability; storageFreeBytes?: number;
+  nnapi?: Availability; cuda?: Availability; directml?: Availability; metal?: Availability; vulkan?: Availability; storageFreeBytes?: number;
   batteryPercent?: number; powerState?: PowerState; thermalState?: ThermalState; network?: NetworkState;
   ramPressure?: RamPressure; backgroundRestricted?: Availability;
 }>;
@@ -26,7 +26,7 @@ export type RuntimeCapabilities = Readonly<Record<RuntimeKind, Availability>>;
 export type DeviceCapabilityProfile = Readonly<{
   platform: Platform; deviceClass: DeviceClass; cpuCores: number | UnknownValue; ramMb: number | UnknownValue;
   gpu: string | UnknownValue; vramMb: number | UnknownValue; npu: string | UnknownValue; architecture: string | UnknownValue;
-  browser: string | UnknownValue; webgpu: Availability; wasm: Availability; webnn: Availability; cuda: Availability;
+  browser: string | UnknownValue; webgpu: Availability; wasm: Availability; webnn: Availability; nnapi: Availability; cuda: Availability;
   directml: Availability; metal: Availability; vulkan: Availability; storageFreeBytes: number | UnknownValue;
   batteryPercent: number | UnknownValue; powerState: PowerState; thermalState: ThermalState; network: NetworkState; tier: DeviceTier;
   ramPressure: RamPressure; backgroundRestricted: Availability;
