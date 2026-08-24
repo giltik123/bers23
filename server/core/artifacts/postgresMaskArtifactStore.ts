@@ -28,8 +28,11 @@ export class PostgresMaskArtifactStore {
   constructor(pool: Pool, nextId: () => string = randomUUID) { this.pool = pool; this.nextId = nextId; }
 
   /**
-   * Compatibility persistence remains fail-closed and derives its source image from canonical Project
-   * state. Production browser refinement uses persistManual() with explicitly resolved lineage.
+   * Legacy/internal compatibility persistence. When a canonical Project exists its current image is
+   * bound as MANUAL_SELECTION lineage. If there is no canonical Project (older direct-adapter test
+   * harnesses / legacy callers), the row remains explicitly unlineaged under the migration's
+   * backward-compatible NULL lineage shape. The production browser endpoint never calls this method:
+   * server/index routes it through createMaskArtifactHttpAdapter -> persistManual().
    */
   async persist(scope: AuthenticatedScope & { projectId: string }, width: number, height: number, alpha: Uint8Array): Promise<StoredMask> {
     const result = await this.pool.query(`SELECT i.storage_id, i.width, i.height
@@ -40,9 +43,11 @@ export class PostgresMaskArtifactStore {
       WHERE p.tenant_id=$1 AND p.user_id=$2 AND p.project_id::text=$3 AND p.deleted_at IS NULL`,
     [scope.tenantId, scope.userId, scope.projectId]);
     const source = result.rows[0];
-    if (!source) throw new Error('Canonical Project source image is unavailable for MASK persistence');
-    if (Number(source.width) !== width || Number(source.height) !== height) throw new Error('MASK geometry does not match canonical Project source image');
-    return this.persistManual(scope, width, height, alpha, { sourceImageStorageId: source.storage_id, producerOperation: 'MANUAL_SELECTION' });
+    if (source) {
+      if (Number(source.width) !== width || Number(source.height) !== height) throw new Error('MASK geometry does not match canonical Project source image');
+      return this.persistManual(scope, width, height, alpha, { sourceImageStorageId: source.storage_id, producerOperation: 'MANUAL_SELECTION' });
+    }
+    return this.persistLegacyUnlineaged(scope, width, height, alpha);
   }
 
   /** Browser/manual MASK persistence requires lineage that has already been resolved and checked by Core. */
@@ -104,6 +109,16 @@ export class PostgresMaskArtifactStore {
     [storageId, scope.tenantId, scope.userId, scope.projectId]);
     const row = result.rows[0]; if (!row) return undefined;
     return fromRow(row);
+  }
+
+  private async persistLegacyUnlineaged(scope: AuthenticatedScope & { projectId: string }, width: number, height: number, alpha: Uint8Array): Promise<StoredMask> {
+    const png = await encodeMask(width, height, alpha);
+    const storageId = this.nextId();
+    await this.pool.query(`INSERT INTO canonical_mask_artifacts
+      (storage_id, tenant_id, user_id, project_id, role, encoding, coordinate_space, width, height, png_bytes)
+      VALUES ($1,$2,$3,$4,'MASK','ALPHA_8_LOSSLESS','ORIGINAL',$5,$6,$7)`,
+    [storageId, scope.tenantId, scope.userId, scope.projectId, width, height, png]);
+    return freezeStoredMask({ storageId, ...scope, width, height, png: new Uint8Array(png) });
   }
 }
 
