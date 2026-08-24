@@ -18,7 +18,13 @@ export type LocalExecutionUpload = Readonly<{
 }>;
 
 export class PostgresLocalExecutionUploadStore {
-  constructor(private readonly pool: Pool, private readonly nextId: () => string = randomUUID) {}
+  private readonly pool: Pool;
+  private readonly nextId: () => string;
+
+  constructor(pool: Pool, nextId: () => string = randomUUID) {
+    this.pool = pool;
+    this.nextId = nextId;
+  }
 
   async persist(input: Readonly<{ ticketId: string; scope: Scope; kind: string; role?: string; mimeType: string; width?: number; height?: number; bytes: Uint8Array; expiresAt: number; now: number }>): Promise<LocalExecutionUpload> {
     if (!input.ticketId || !input.scope.tenantId || !input.scope.userId || !input.scope.projectId) throw new Error('Local execution upload scope is incomplete');
@@ -31,13 +37,25 @@ export class PostgresLocalExecutionUploadStore {
     }
     const uploadId = this.nextId();
     const sha256 = createHash('sha256').update(input.bytes).digest('hex');
-    await this.pool.query(`INSERT INTO local_execution_uploads
+    await this.pool.query('DELETE FROM local_execution_uploads WHERE expires_at <= $1', [new Date(input.now)]);
+    const result = await this.pool.query(`INSERT INTO local_execution_uploads
       (upload_id,ticket_id,tenant_id,user_id,project_id,kind,artifact_role,mime_type,width,height,size_bytes,sha256,payload,expires_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      ON CONFLICT (ticket_id,kind,artifact_role) DO UPDATE SET ticket_id=EXCLUDED.ticket_id
+      RETURNING upload_id,ticket_id,tenant_id,user_id,project_id,kind,artifact_role,mime_type,width,height,size_bytes,sha256,payload,expires_at,consumed_at`, [
       uploadId, input.ticketId, input.scope.tenantId, input.scope.userId, input.scope.projectId, input.kind, input.role ?? null,
       input.mimeType, input.width ?? null, input.height ?? null, input.bytes.byteLength, sha256, Buffer.from(input.bytes), new Date(input.expiresAt),
     ]);
-    return freezeUpload({ uploadId, ticketId: input.ticketId, scope: input.scope, kind: input.kind, role: input.role, mimeType: input.mimeType, width: input.width, height: input.height, sizeBytes: input.bytes.byteLength, sha256, bytes: input.bytes, expiresAt: input.expiresAt });
+    const row = result.rows[0];
+    if (!row) throw new Error('Local execution upload persistence failed');
+    if (row.consumed_at !== null) throw new Error('Local execution output has already been consumed');
+    const storedBytes = new Uint8Array(row.payload);
+    const same = row.ticket_id === input.ticketId && row.tenant_id === input.scope.tenantId && row.user_id === input.scope.userId && row.project_id === input.scope.projectId &&
+      row.kind === input.kind && (row.artifact_role ?? undefined) === input.role && row.mime_type === input.mimeType && (row.width ?? undefined) === input.width && (row.height ?? undefined) === input.height &&
+      Number(row.size_bytes) === input.bytes.byteLength && row.sha256 === sha256 && storedBytes.byteLength === input.bytes.byteLength && createHash('sha256').update(storedBytes).digest('hex') === sha256 &&
+      new Date(row.expires_at).getTime() === input.expiresAt;
+    if (!same) throw new Error('Local execution upload retry does not match the existing quarantined output');
+    return freezeUpload({ uploadId: row.upload_id, ticketId: row.ticket_id, scope: { tenantId: row.tenant_id, userId: row.user_id, projectId: row.project_id }, kind: row.kind, role: row.artifact_role ?? undefined, mimeType: row.mime_type, width: row.width ?? undefined, height: row.height ?? undefined, sizeBytes: Number(row.size_bytes), sha256: row.sha256, bytes: storedBytes, expiresAt: new Date(row.expires_at).getTime() });
   }
 
   async load(uploadId: string, ticketId: string, scope: Scope, now: number): Promise<LocalExecutionUpload | undefined> {
