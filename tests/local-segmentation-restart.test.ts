@@ -75,10 +75,20 @@ test('local segmentation reconstructs the same canonical execution after Core re
   } as never;
 
   const firstCore = new LocalSegmentationExecutionService(serviceDependencies);
-  const prepared = await firstCore.prepare({ projectId: scope.projectId, inputArtifactId: source.id, clientRequestId: 'restart-selection', analysis, points }, auth);
+  const originalPrepare = { projectId: scope.projectId, inputArtifactId: source.id, clientRequestId: 'restart-selection', analysis, points };
+  const prepared = await firstCore.prepare(originalPrepare, auth);
   assert.equal(prepared.ticket.ticketId, 'ticket-1');
 
   const secondCore = new LocalSegmentationExecutionService(serviceDependencies);
+  await assert.rejects(
+    () => secondCore.prepare({ ...originalPrepare, points: Object.freeze([{ x: 1, y: 0, label: 'POSITIVE' as const, coordinateSpace: 'ORIGINAL' as const }]) }, auth),
+    (error: unknown) => Boolean(error && typeof error === 'object' && (error as { status?: number }).status === 409 && (error as { code?: string }).code === 'local_execution_idempotency_mismatch'),
+    'a changed restart prepare must fail before creating a competing in-memory execution',
+  );
+  const replayPrepared = await secondCore.prepare(originalPrepare, auth);
+  assert.equal(replayPrepared.ticket.ticketId, prepared.ticket.ticketId, 'correct retry after mismatch must recover the original durable ticket');
+  assert.equal(replayPrepared.ticket.nonce, prepared.ticket.nonce);
+
   const result = {
     ticketId: prepared.ticket.ticketId,
     ticketVersion: prepared.ticket.version,
