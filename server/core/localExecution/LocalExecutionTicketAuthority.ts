@@ -14,7 +14,7 @@ export class LocalExecutionModelUnavailableError extends Error {
   readonly code = 'local_model_unavailable';
 
   constructor(capability: string) {
-    super(`No production-approved local models for capability ${capability}`);
+    super(`No approved local models for capability ${capability}; production approval is required`);
     this.name = 'LocalExecutionModelUnavailableError';
   }
 }
