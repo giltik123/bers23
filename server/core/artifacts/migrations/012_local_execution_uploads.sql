@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS local_execution_uploads (
   user_id text NOT NULL,
   project_id text NOT NULL,
   kind text NOT NULL,
-  artifact_role text,
+  artifact_role text NOT NULL,
   mime_type text NOT NULL,
   width integer,
   height integer,
