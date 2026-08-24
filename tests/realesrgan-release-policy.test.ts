@@ -17,6 +17,8 @@ test('Real-ESRGAN candidate descriptor records pinned provenance but has no exec
   assert.equal(manifest.upstream.checkpointSha256, '8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292');
   assert.equal(manifest.upstream.implementationRevision, 'fa4c8a03ae3dbc9ea6ed471a6ab5da94ac15c2ea');
   assert.equal(manifest.export.alphaPolicy, 'OPAQUE_INPUT_ONLY');
+  assert.equal(manifest.export.output.networkRange, 'UNCLAMPED_FLOAT32');
+  assert.equal(manifest.export.output.postprocess, 'CLAMP_0_1');
   assert.equal(manifest.artifacts.model.url, null);
   assert.equal(manifest.artifacts.model.sha256, null);
   assert.equal(manifest.artifacts.model.signatureUrl, null);
