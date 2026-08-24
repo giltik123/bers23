@@ -80,11 +80,16 @@ export class ModelFleetPlanner {
 
     candidates.sort(compareCandidate);
     const selected: ModelManifest[] = [];
+    const selectedModelIds = new Set<string>();
     const covered = new Set<string>();
     let estimatedBytes = 0;
     let storageBlocked = false;
 
     for (const candidate of candidates) {
+      if (selectedModelIds.has(candidate.model.modelId)) {
+        exclusions.push(exclusion(candidate.model, ['MODEL_VERSION_ALREADY_SELECTED']));
+        continue;
+      }
       const uncovered = candidate.coverage.filter((capability) => !covered.has(capability));
       if (uncovered.length === 0) {
         exclusions.push(exclusion(candidate.model, ['CAPABILITY_ALREADY_COVERED']));
@@ -96,6 +101,7 @@ export class ModelFleetPlanner {
         continue;
       }
       selected.push(candidate.model);
+      selectedModelIds.add(candidate.model.modelId);
       estimatedBytes += candidate.model.sizeBytes;
       for (const capability of uncovered) covered.add(capability);
     }
@@ -120,13 +126,14 @@ function result(
   return immutableClone({
     status,
     modelIds: selected.map((model) => model.modelId),
+    modelBindings: selected.map((model) => ({ modelId: model.modelId, version: model.version })),
     estimatedBytes,
     budgetBytes,
     freeBytes,
     reserveBytes,
     requestedCapabilities,
     uncoveredCapabilities,
-    exclusions: [...exclusions].sort((a, b) => a.modelId.localeCompare(b.modelId) || a.version.localeCompare(b.version)),
+    exclusions: [...exclusions].sort((a, b) => a.modelId.localeCompare(b.modelId) || compareVersionDesc(a.version, b.version)),
   });
 }
 
@@ -134,7 +141,7 @@ function exclusion(model: ModelManifest, reasons: readonly ModelFleetExclusionRe
   return Object.freeze({ modelId: model.modelId, version: model.version, reasons: Object.freeze(uniqueSorted(reasons)) });
 }
 
-function compareIdentity(a: ModelManifest, b: ModelManifest): number { return a.modelId.localeCompare(b.modelId) || a.version.localeCompare(b.version); }
+function compareIdentity(a: ModelManifest, b: ModelManifest): number { return a.modelId.localeCompare(b.modelId) || compareVersionDesc(a.version, b.version); }
 function compareCandidate(a: Readonly<{ model: ModelManifest; coverage: readonly string[] }>, b: Readonly<{ model: ModelManifest; coverage: readonly string[] }>): number {
   const efficiency = b.coverage.length * a.model.sizeBytes - a.coverage.length * b.model.sizeBytes;
   if (efficiency !== 0) return efficiency;
@@ -143,6 +150,15 @@ function compareCandidate(a: Readonly<{ model: ModelManifest; coverage: readonly
   if (a.model.estimatedLatency !== b.model.estimatedLatency) return a.model.estimatedLatency - b.model.estimatedLatency;
   if (a.model.sizeBytes !== b.model.sizeBytes) return a.model.sizeBytes - b.model.sizeBytes;
   return compareIdentity(a.model, b.model);
+}
+
+function compareVersionDesc(a: string, b: string): number {
+  const av = a.split('.').map(Number); const bv = b.split('.').map(Number);
+  for (let index = 0; index < Math.max(av.length, bv.length); index += 1) {
+    const difference = (bv[index] ?? 0) - (av[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return b.localeCompare(a);
 }
 
 function effectiveFreeBytes(primary: number | 'UNKNOWN' | undefined, profileValue: number | 'UNKNOWN'): number | 'UNKNOWN' {
