@@ -11,11 +11,13 @@ export type LocalExecutionTicketAuthorityDependencies = Readonly<{
 
 /** Core authority for minting narrow, short-lived, zero-cloud-cost local execution tickets. */
 export class LocalExecutionTicketAuthority implements LocalExecutionTicketIssuerPort {
-  constructor(
-    private readonly registry: LocalExecutionAdmissionRegistry,
-    private readonly dependencies: LocalExecutionTicketAuthorityDependencies,
-  ) {
+  private readonly registry: LocalExecutionAdmissionRegistry;
+  private readonly dependencies: LocalExecutionTicketAuthorityDependencies;
+
+  constructor(registry: LocalExecutionAdmissionRegistry, dependencies: LocalExecutionTicketAuthorityDependencies) {
     if (!Number.isFinite(dependencies.ttlMs) || dependencies.ttlMs <= 0) throw new Error('Local execution ticket TTL must be positive');
+    this.registry = registry;
+    this.dependencies = dependencies;
   }
 
   issue(input: LocalExecutionTicketIssueRequest): LocalExecutionTicket {
