@@ -62,7 +62,7 @@ jobs:
           node --test .test-cache/6.42-integration/mask-refinement-lineage.test.mjs
       - name: C1 real PostgreSQL mask lineage authority
         run: node --experimental-strip-types --test server/core/artifacts/maskArtifactLineage.integration.test.mjs
-      - name: C2 versioned local executor authority and canonical wiring
+      - name: C2 versioned authority, canonical wiring and browser executor
         run: |
           npx esbuild tests/local-execution-v2-executor-contract.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
@@ -74,6 +74,11 @@ jobs:
             --outfile=.test-cache/6.42-integration/background-isolation-canonical-wiring.test.mjs \
             --external:node:*
           node --test .test-cache/6.42-integration/background-isolation-canonical-wiring.test.mjs
+          npx esbuild tests/background-isolation-browser-executor.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/background-isolation-browser-executor.test.mjs \
+            --external:node:* --external:sharp
+          node --test .test-cache/6.42-integration/background-isolation-browser-executor.test.mjs
       - name: Canonical route and durable fleet regressions
         run: |
           npm run test:creative-route-6.41c4
