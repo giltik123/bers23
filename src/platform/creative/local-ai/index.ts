@@ -1,6 +1,7 @@
 export * from './types';
 export * from './immutable';
 export * from './device/DeviceAnalyzer';
+export * from './device/DeviceCapabilitySnapshot';
 export * from './device/LocalRuntimeDetector';
 export * from './models/LocalModelRegistry';
 export * from './models/LocalModelDownloader';
@@ -11,6 +12,7 @@ export * from './security/LocalAISandbox';
 export * from './policy/LocalInferencePolicy';
 export * from './selection/ResourceGovernor';
 export * from './selection/ModelSuitabilityScorer';
+export * from './selection/ModelFleetPlanner';
 export * from './selection/ExecutionTargetSelector';
 export * from './runtimes/PlatformRuntimes';
 export * from './runtimes/OnnxLocalRuntime';
