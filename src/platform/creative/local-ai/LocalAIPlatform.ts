@@ -79,7 +79,7 @@ export class LocalAIPlatform {
 
   async installRecommendedBundle(): Promise<readonly ModelManifest[]> {
     const recommendation = await this.recommendFleet();
-    if (recommendation.status !== 'READY') return Object.freeze([]);
+    if (recommendation.status !== 'READY' && recommendation.status !== 'PARTIAL') return Object.freeze([]);
     const catalog = this.dependencies.modelCatalog ?? []; const installed: ModelManifest[] = [];
     for (const binding of recommendation.modelBindings) {
       const manifest = catalog.find((item) => item.modelId === binding.modelId && item.version === binding.version);
