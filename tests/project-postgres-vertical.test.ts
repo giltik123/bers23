@@ -7,7 +7,7 @@ import { Pool } from 'pg';
 import sharp from 'sharp';
 import { createProductionCore } from '../server/core/composition/createProductionCore.ts';
 import type { CoreServerConfig } from '../server/core/config.ts';
-import { createNodeHttpAdapter } from '../server/core/http/nodeHttpAdapter.ts';
+import { createCanonicalNodeHttpAdapter } from '../server/core/http/canonicalNodeHttpAdapter.ts';
 import { migrateTransactionSchema } from '../server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts';
 import { migrateMaskArtifactSchema } from '../server/core/artifacts/maskArtifactSchema.ts';
 import { migrateImageArtifactSchema } from '../server/core/artifacts/imageArtifactSchema.ts';
@@ -110,7 +110,7 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
   };
 
   const production = await createProductionCore(config, { fetcher });
-  const server = createServer(createNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready: async () => true, accepting: () => true }));
+  const server = createServer(createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready: async () => true, accepting: () => true }));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert(address && typeof address === 'object');
   const baseUrl = `http://127.0.0.1:${address.port}`;
@@ -158,8 +158,11 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
   for (const [x, y] of [[3, 3], [4, 3], [3, 4], [4, 4]]) alpha[y * width + x] = 255;
   const httpClient = {
     artifacts: {
-      persistMask: async ({ projectId, width, height, alpha }: { projectId: string; width: number; height: number; alpha: Uint8Array }) => {
-        const response = await fetch(`${baseUrl}/api/core/artifacts/masks?projectId=${encodeURIComponent(projectId)}&width=${width}&height=${height}`, { method: 'POST', headers: { authorization: auth, 'content-type': 'application/octet-stream' }, body: alpha });
+      persistMask: async ({ projectId, sourceImageArtifactId, parentMaskArtifactId, width, height, alpha }: { projectId: string; sourceImageArtifactId: string; parentMaskArtifactId?: string; width: number; height: number; alpha: Uint8Array }) => {
+        assert.equal(sourceImageArtifactId, project.current_image_artifact_id);
+        const query = new URLSearchParams({ projectId, sourceImageArtifactId, width: String(width), height: String(height) });
+        if (parentMaskArtifactId) query.set('parentMaskArtifactId', parentMaskArtifactId);
+        const response = await fetch(`${baseUrl}/api/core/artifacts/masks?${query}`, { method: 'POST', headers: { authorization: auth, 'content-type': 'application/octet-stream' }, body: alpha });
         assert.equal(response.status, 201); return response.json();
       },
     },
@@ -172,9 +175,13 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
       status: async () => { throw new Error('not used'); },
     },
   };
-  const maskPort = new CoreMaskArtifactPort(project.id, httpClient as any);
+  const maskPort = new CoreMaskArtifactPort(project.id, project.current_image_artifact_id, httpClient as any);
   const persistedMask = await maskPort.persist({ width, height, alpha, source: 'USER', coordinateSpace: 'ORIGINAL' }, { coordinateSpace: 'ORIGINAL', encoding: 'ALPHA_8_LOSSLESS' });
   assert.equal(decodeClaim(persistedMask.id).location, 'STORED_MASK');
+  const maskRow = (await pool.query('SELECT * FROM canonical_mask_artifacts WHERE storage_id=$1', [decodeClaim(persistedMask.id).storageId])).rows[0];
+  assert.equal(maskRow.source_image_storage_id, originalRow.storage_id);
+  assert.equal(maskRow.parent_mask_storage_id, null);
+  assert.equal(maskRow.producer_operation, 'MANUAL_SELECTION');
 
   const objects = [{ id: 'selected-object', label: 'Selection', selected: true, mask_artifact_id: persistedMask.id }];
   const patchProject = await fetch(`${baseUrl}/api/core/projects/${project.id}`, { method: 'PATCH', headers: { authorization: auth, 'content-type': 'application/json' }, body: JSON.stringify({ objects }) });
