@@ -87,7 +87,7 @@ export type ModelFleetExclusionReason =
   | 'CAPABILITY_ALREADY_COVERED'
   | 'MODEL_VERSION_ALREADY_SELECTED';
 export type ModelFleetExclusion = Readonly<{ modelId: string; version: string; reasons: readonly ModelFleetExclusionReason[] }>;
-export type ModelFleetRecommendationStatus = 'READY' | 'BLOCKED_INSUFFICIENT_EVIDENCE' | 'BLOCKED_STORAGE' | 'NO_COMPATIBLE_MODELS';
+export type ModelFleetRecommendationStatus = 'READY' | 'PARTIAL' | 'BLOCKED_INSUFFICIENT_EVIDENCE' | 'BLOCKED_STORAGE' | 'NO_COMPATIBLE_MODELS';
 export type ModelFleetRecommendation = Readonly<{
   status: ModelFleetRecommendationStatus;
   modelIds: readonly string[];
