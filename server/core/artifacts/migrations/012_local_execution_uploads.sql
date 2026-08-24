@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS local_execution_uploads (
   CHECK (sha256 ~ '^[0-9a-f]{64}$')
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS local_execution_uploads_ticket_output_unique
+  ON local_execution_uploads (ticket_id, kind, artifact_role);
+
 CREATE INDEX IF NOT EXISTS local_execution_uploads_ticket_scope_idx
   ON local_execution_uploads (ticket_id, tenant_id, user_id, project_id);
 
