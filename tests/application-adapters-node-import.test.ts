@@ -16,7 +16,7 @@ test('production application adapters import in Node and use injected clients', 
     artifacts: {
       async persistMask(input: unknown) {
         maskCalls.push(input);
-        return { artifactId: 'server-mask-id', role: 'MASK', state: 'READY', encoding: 'ALPHA_8_LOSSLESS', coordinateSpace: 'ORIGINAL' };
+        return { artifactId: 'server-mask-id', role: 'MASK', state: 'READY', encoding: 'ALPHA_8_LOSSLESS', coordinateSpace: 'ORIGINAL', producerOperation: 'MANUAL_SELECTION' };
       },
     },
     creative: {
@@ -30,12 +30,12 @@ test('production application adapters import in Node and use injected clients', 
   };
 
   const alpha = new Uint8Array([255]);
-  const mask = await new CoreMaskArtifactPort('project-id', client).persist(
+  const mask = await new CoreMaskArtifactPort('project-id', 'source-image-id', client).persist(
     { width: 1, height: 1, alpha, coordinateSpace: 'ORIGINAL' },
-    { coordinateSpace: 'ORIGINAL', encoding: 'ALPHA_8_LOSSLESS' },
+    { coordinateSpace: 'ORIGINAL', encoding: 'ALPHA_8_LOSSLESS', sourceImageArtifactId: 'source-image-id' },
   );
   assert.equal(mask.id, 'server-mask-id');
-  assert.deepEqual(maskCalls, [{ projectId: 'project-id', width: 1, height: 1, alpha }]);
+  assert.deepEqual(maskCalls, [{ projectId: 'project-id', sourceImageArtifactId: 'source-image-id', parentMaskArtifactId: undefined, width: 1, height: 1, alpha }]);
 
   const result = await createCreativeEditApplicationService(client).execute({
     projectId: 'project-id', instruction: '  edit  ', inputArtifactId: 'input-id', maskArtifactIds: ['server-mask-id'],
