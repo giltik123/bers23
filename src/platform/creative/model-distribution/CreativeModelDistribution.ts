@@ -215,19 +215,14 @@ export class CreativeModelDistribution {
     return immutableClone(repaired);
   }
 
-  pause(modelId: string): void {
-    this.#local.pauseDownload(modelId);
-    this.changeQueue(modelId, 'PAUSED');
-  }
-
-  resume(modelId: string): void {
-    this.changeQueue(modelId, 'QUEUED');
-  }
-
-  cancel(modelId: string): void {
-    this.#local.cancelDownload(modelId);
-    this.changeQueue(modelId, 'CANCELLED');
-  }
+  /**
+   * Live pause/cancel/resume is deliberately not simulated for the durable lifecycle. Persisted
+   * partials remain restart-resumable through DurableModelFleet.resume(manifest); cooperative live
+   * control across tabs/workers requires a separate protocol and must not be represented as success.
+   */
+  pause(_modelId: string): never { throw new Error('Live pause is not supported by the durable model lifecycle'); }
+  resume(_modelId: string): never { throw new Error('Live resume is not supported by the durable model lifecycle; restart-resume uses the persisted partial binding'); }
+  cancel(_modelId: string): never { throw new Error('Live cancellation is not supported by the durable model lifecycle'); }
 
   canary(modelId: string, percent = 10): CachedModel {
     if (percent <= 0 || percent >= 100) throw new Error('Canary percent must be between 0 and 100');
