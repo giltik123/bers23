@@ -1,9 +1,6 @@
 import manifest from '../../../src/platform/creative/local-ai/models/interactive-segmentation.manifest.json' with { type: 'json' };
 import type { LocalExecutionModelBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
-import {
-  isExecutableRealEsrganRelease,
-  superResolutionReleaseState,
-} from '../../../src/platform/creative/super-resolution/SuperResolutionRelease.ts';
+import { superResolutionReleaseState } from '../../../src/platform/creative/super-resolution/SuperResolutionRelease.ts';
 
 export { isExecutableRealEsrganRelease } from '../../../src/platform/creative/super-resolution/SuperResolutionRelease.ts';
 
@@ -38,7 +35,3 @@ export const realEsrganProductionReleaseState = Object.freeze({
   executableV2: superResolutionReleaseState.productionAvailable,
   executableV1: false,
 });
-
-// Keep this import referenced here so the server policy compile path proves that the
-// shared predicate remains usable from Core, not only from browser code.
-void isExecutableRealEsrganRelease;
