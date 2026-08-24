@@ -3,7 +3,7 @@ import type { LocalExecutionAdmissionDecision, LocalExecutionTicket } from '../.
 import { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
 import type { LocalExecutionClaimInput, LocalExecutionLedger } from './LocalExecutionLedger.ts';
 
-const ADVISORY_LOCK_NAMESPACE = 642;
+const TICKET_COLUMNS = 'ticket_id,idempotency_key,tenant_id,user_id,project_id,request_id,workflow_id,step_id,ticket_json,consumed_at';
 
 /** PostgreSQL-backed ticket/replay authority for restart-safe, multi-instance local execution. */
 export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
@@ -17,7 +17,7 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
       (ticket_id,idempotency_key,tenant_id,user_id,project_id,request_id,workflow_id,step_id,ticket_json)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
       ON CONFLICT DO NOTHING
-      RETURNING ticket_json`, [
+      RETURNING ${TICKET_COLUMNS}`, [
       candidate.ticketId,
       candidate.idempotencyKey,
       candidate.scope.tenantId,
@@ -28,19 +28,19 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
       candidate.stepId,
       JSON.stringify(candidate),
     ]);
-    if (inserted.rows[0]) return candidate;
+    if (inserted.rows[0]) return ticketFromRow(inserted.rows[0]);
 
-    const byIdempotency = await this.pool.query('SELECT ticket_json FROM local_execution_tickets WHERE idempotency_key=$1', [candidate.idempotencyKey]);
-    if (byIdempotency.rows[0]) return reconcileStoredTicket(byIdempotency.rows[0].ticket_json, candidate);
+    const byIdempotency = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets WHERE idempotency_key=$1`, [candidate.idempotencyKey]);
+    if (byIdempotency.rows[0]) return reconcileStoredTicket(byIdempotency.rows[0], candidate);
 
-    const byTicketId = await this.pool.query('SELECT ticket_json FROM local_execution_tickets WHERE ticket_id=$1', [candidate.ticketId]);
-    if (byTicketId.rows[0]) return reconcileStoredTicket(byTicketId.rows[0].ticket_json, candidate);
+    const byTicketId = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets WHERE ticket_id=$1`, [candidate.ticketId]);
+    if (byTicketId.rows[0]) return reconcileStoredTicket(byTicketId.rows[0], candidate);
     throw new Error('Local execution ticket persistence conflict could not be reconciled');
   }
 
   async get(ticketId: string): Promise<LocalExecutionTicket | undefined> {
-    const result = await this.pool.query('SELECT ticket_json FROM local_execution_tickets WHERE ticket_id=$1', [ticketId]);
-    return result.rows[0] ? validateStoredTicket(result.rows[0].ticket_json) : undefined;
+    const result = await this.pool.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets WHERE ticket_id=$1`, [ticketId]);
+    return result.rows[0] ? ticketFromRow(result.rows[0]) : undefined;
   }
 
   async claim(input: LocalExecutionClaimInput): Promise<LocalExecutionAdmissionDecision> {
@@ -48,17 +48,18 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger {
     let lockHeld = false;
     let retained = false;
     try {
-      const lock = await client.query('SELECT pg_try_advisory_lock(hashtextextended($1, $2)) AS locked', [input.ticketId, ADVISORY_LOCK_NAMESPACE]);
+      const lock = await client.query('SELECT pg_try_advisory_lock(hashtextextended($1, 642)) AS locked', [input.ticketId]);
       lockHeld = lock.rows[0]?.locked === true;
       if (!lockHeld) return denied('IN_PROGRESS');
 
-      const stored = await client.query('SELECT ticket_json, consumed_at FROM local_execution_tickets WHERE ticket_id=$1', [input.ticketId]);
+      const stored = await client.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets WHERE ticket_id=$1`, [input.ticketId]);
       const row = stored.rows[0];
       if (!row) return denied('UNKNOWN_TICKET');
       if (row.consumed_at) return denied('REPLAYED_TICKET');
 
+      const ticket = ticketFromRow(row);
       const validator = new LocalExecutionAdmissionRegistry();
-      validator.issue(row.ticket_json as LocalExecutionTicket);
+      validator.issue(ticket);
       const decision = validator.claim(input);
       if (!decision.allowed) return decision;
       if (this.heldClaims.has(input.ticketId)) return denied('IN_PROGRESS');
@@ -102,10 +103,27 @@ function validateStoredTicket(ticket: LocalExecutionTicket): LocalExecutionTicke
   return validator.issue(ticket);
 }
 
-function reconcileStoredTicket(existing: unknown, candidate: LocalExecutionTicket): LocalExecutionTicket {
+function ticketFromRow(row: Record<string, unknown>): LocalExecutionTicket {
+  const ticket = validateStoredTicket(row.ticket_json as LocalExecutionTicket);
+  if (
+    row.ticket_id !== ticket.ticketId ||
+    row.idempotency_key !== ticket.idempotencyKey ||
+    row.tenant_id !== ticket.scope.tenantId ||
+    row.user_id !== ticket.scope.userId ||
+    row.project_id !== ticket.scope.projectId ||
+    row.request_id !== ticket.requestId ||
+    row.workflow_id !== ticket.workflowId ||
+    row.step_id !== ticket.stepId
+  ) throw new Error('Local execution ticket ledger row does not match its signed authority fields');
+  return ticket;
+}
+
+function reconcileStoredTicket(row: Record<string, unknown>, candidate: LocalExecutionTicket): LocalExecutionTicket {
+  const stored = ticketFromRow(row);
   const validator = new LocalExecutionAdmissionRegistry();
-  const stored = validator.issue(existing as LocalExecutionTicket);
-  return validator.issue(candidate) === stored ? stored : stored;
+  validator.issue(stored);
+  validator.issue(candidate);
+  return stored;
 }
 
 function denied(reasonCode: Exclude<LocalExecutionAdmissionDecision['reasonCode'], 'ADMITTED'>): LocalExecutionAdmissionDecision {
@@ -113,5 +131,5 @@ function denied(reasonCode: Exclude<LocalExecutionAdmissionDecision['reasonCode'
 }
 
 async function unlock(client: PoolClient, ticketId: string): Promise<void> {
-  await client.query('SELECT pg_advisory_unlock(hashtextextended($1, $2))', [ticketId, ADVISORY_LOCK_NAMESPACE]);
+  await client.query('SELECT pg_advisory_unlock(hashtextextended($1, 642))', [ticketId]);
 }
