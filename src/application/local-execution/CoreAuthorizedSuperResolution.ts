@@ -8,11 +8,14 @@ import type {
 import type { ExecutionProvider } from '../../platform/creative/local-ai/types';
 import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng';
 import type { PixelImage } from '../../platform/creative/pipeline/ControlledLocalEdit';
-
-export const SUPER_RESOLUTION_OPERATION = 'SUPER_RESOLUTION' as const;
-export const REAL_ESRGAN_UPSCALE_CAPABILITY = 'local:realesrgan:upscale:v1' as const;
-export const SUPER_RESOLUTION_SCALE = 4 as const;
-export const MAX_SUPER_RESOLUTION_OUTPUT_PIXELS = 16_777_216 as const;
+import {
+  MAX_SUPER_RESOLUTION_OUTPUT_PIXELS,
+  REAL_ESRGAN_UPSCALE_CAPABILITY,
+  SUPER_RESOLUTION_ALPHA_POLICY,
+  SUPER_RESOLUTION_OPERATION,
+  SUPER_RESOLUTION_SCALE,
+  SUPER_RESOLUTION_STEP_ID,
+} from '../../platform/creative/super-resolution/SuperResolutionContract';
 
 export type CoreSuperResolutionClient = Readonly<{
   prepareSuperResolution(payload: Readonly<{ projectId: string; sourceArtifactId: string; clientRequestId: string }>): Promise<Readonly<{ executionId: string; ticket: LocalExecutionTicketV2 }>>;
@@ -146,7 +149,7 @@ export class CoreAuthorizedSuperResolution {
         outputPixels: expected.width! * expected.height!,
         scale: SUPER_RESOLUTION_SCALE,
         postprocess: 'CLAMP_0_1',
-        alphaPolicy: 'OPAQUE_INPUT_ONLY',
+        alphaPolicy: SUPER_RESOLUTION_ALPHA_POLICY,
       }),
     });
     const finalized = await this.core.submitSuperResolution({ ticketId: ticket.ticketId, projectId: this.projectId, result });
@@ -166,7 +169,7 @@ export class CoreAuthorizedSuperResolution {
 
 function validateTicket(ticket: LocalExecutionTicketV2, input: SuperResolutionRunInput): LocalExecutionTicketV2 {
   if (!ticket || ticket.version !== '2' || ticket.issuer !== 'CORE' || ticket.policy !== 'LOCAL_ONLY') throw new Error('Invalid Core model local execution ticket');
-  if (ticket.operation.type !== SUPER_RESOLUTION_OPERATION || ticket.operation.capability !== REAL_ESRGAN_UPSCALE_CAPABILITY || ticket.operation.id !== 'super-resolution' || ticket.stepId !== 'super-resolution') throw new Error('Core ticket does not authorize super-resolution');
+  if (ticket.operation.type !== SUPER_RESOLUTION_OPERATION || ticket.operation.capability !== REAL_ESRGAN_UPSCALE_CAPABILITY || ticket.operation.id !== SUPER_RESOLUTION_STEP_ID || ticket.stepId !== SUPER_RESOLUTION_STEP_ID) throw new Error('Core ticket does not authorize super-resolution');
   if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw new Error('Local model ticket contains forbidden cloud cost authority');
   if (ticket.inputs.length !== 1) throw new Error('Super-resolution ticket must bind exactly one canonical IMAGE');
   const source = ticket.inputs[0];
@@ -175,7 +178,7 @@ function validateTicket(ticket: LocalExecutionTicketV2, input: SuperResolutionRu
   if (ticket.expectedOutputs.length !== 1 || output.kind !== 'image' || output.role !== 'COMPOSITE' || !output.width || !output.height || !output.mimeTypes?.includes('image/png')) throw new Error('Core model ticket output contract is invalid');
   if (ticket.allowedExecutors.length !== 1 || ticket.allowedExecutors[0].kind !== 'MODEL') throw new Error('Core super-resolution ticket must authorize exactly one MODEL executor');
   const parameters = ticket.operation.parameters;
-  if (!parameters || parameters.sourceArtifactId !== input.sourceArtifactId || parameters.scale !== SUPER_RESOLUTION_SCALE || parameters.alphaPolicy !== 'OPAQUE_INPUT_ONLY') throw new Error('Core model ticket parameters do not match the requested super-resolution operation');
+  if (!parameters || parameters.sourceArtifactId !== input.sourceArtifactId || parameters.scale !== SUPER_RESOLUTION_SCALE || parameters.alphaPolicy !== SUPER_RESOLUTION_ALPHA_POLICY) throw new Error('Core model ticket parameters do not match the requested super-resolution operation');
   return ticket;
 }
 
