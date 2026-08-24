@@ -79,11 +79,14 @@ type Clock = () => number;
 
 const LEGACY_BINDING_QUARANTINE_REASON = 'legacy manifest binding missing; revalidation required';
 const EXPLICIT_QUARANTINE_ERROR = 'Quarantined model requires explicit recovery';
+const SAFE_INSTALL_SOURCE_STATUSES = new Set(['AVAILABLE', 'INSTALLED', 'READY']);
 const empty = (): FleetState => ({ schemaVersion: FLEET_SCHEMA_VERSION, revision: 0, models: {} });
 const clone = <T>(value: T): T => structuredClone(value);
 const key = (manifest: ModelManifest) => `${manifest.modelId}@${manifest.version}:${manifest.sha256}`;
 const manifestIdentity = (manifest: ModelManifest) => `${manifest.publisher}/${manifest.modelId}@${manifest.version}`;
-const manifestBinding = (manifest: ModelManifest) => JSON.stringify([
+
+/** Pre-hardening binding retained only to recognize and safely migrate already-persisted v1 records. */
+const legacyManifestBinding = (manifest: ModelManifest) => JSON.stringify([
   manifest.publisher,
   manifest.modelId,
   manifest.version,
@@ -101,6 +104,39 @@ const manifestBinding = (manifest: ModelManifest) => JSON.stringify([
   manifest.signature,
   manifest.license,
 ]);
+
+/**
+ * Immutable policy identity. `status` is intentionally excluded because it is a mutable catalog
+ * lifecycle hint; install admission validates source status independently. All metadata that can
+ * affect trust, suitability, resource policy or recommendation is bound here.
+ */
+const manifestBinding = (manifest: ModelManifest) => JSON.stringify([
+  manifest.publisher,
+  manifest.modelId,
+  manifest.version,
+  manifest.family,
+  manifest.modelFormat,
+  manifest.runtime,
+  manifest.sizeBytes,
+  manifest.requiredRam,
+  manifest.requiredVram,
+  manifest.estimatedLatency,
+  manifest.qualityScore,
+  manifest.energyScore,
+  manifest.stabilityScore,
+  manifest.privacyLevel,
+  [...manifest.capabilities].sort(),
+  [...manifest.supportedPlatforms].sort(),
+  [...manifest.supportedAccelerators].sort(),
+  manifest.downloadUri,
+  manifest.sha256,
+  manifest.signature,
+  manifest.license,
+]);
+
+function hasLegacyBinding(record: FleetVersion): boolean {
+  return !record.manifestBinding || record.manifestBinding === legacyManifestBinding(record.manifest);
+}
 
 /**
  * Restart-safe model lifecycle authority. Activation is one metadata transaction; immutable CAS
@@ -181,7 +217,7 @@ export class DurableModelFleet {
     const model = recovered.models[modelId];
     const active = model?.activeVersion && model.versions[model.activeVersion];
     if (active?.status === 'READY') {
-      if (!active.manifestBinding) {
+      if (hasLegacyBinding(active)) {
         await this.#quarantine(active.modelId, active.version, LEGACY_BINDING_QUARANTINE_REASON);
       } else if (!(await this.#valid(active))) {
         await this.#quarantine(active.modelId, active.version, 'startup integrity revalidation failed');
@@ -198,13 +234,23 @@ export class DurableModelFleet {
   }
 
   async #install(manifest: ModelManifest): Promise<FleetVersion> {
+    if (!SAFE_INSTALL_SOURCE_STATUSES.has(manifest.status)) {
+      throw new Error(`Unsafe model source status cannot be installed: ${manifest.status}`);
+    }
+
     const before = await this.state();
     const current = before.models[manifest.modelId];
     const exact = current?.versions[manifest.version];
     const binding = manifestBinding(manifest);
 
-    if (exact?.manifestBinding && exact.manifestBinding !== binding) {
-      throw new Error(`Model version manifest binding is immutable: ${manifest.modelId}@${manifest.version}`);
+    if (exact) {
+      const storedFullBinding = manifestBinding(exact.manifest);
+      const recognizedStoredBinding = !exact.manifestBinding
+        || exact.manifestBinding === legacyManifestBinding(exact.manifest)
+        || exact.manifestBinding === storedFullBinding;
+      if (!recognizedStoredBinding || storedFullBinding !== binding) {
+        throw new Error(`Model version manifest binding is immutable: ${manifest.modelId}@${manifest.version}`);
+      }
     }
     if (exact?.status === 'QUARANTINED' && exact.quarantineReason !== LEGACY_BINDING_QUARANTINE_REASON) {
       throw new Error(EXPLICIT_QUARANTINE_ERROR);
