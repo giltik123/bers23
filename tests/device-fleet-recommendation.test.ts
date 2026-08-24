@@ -110,9 +110,24 @@ test('planner chooses a deterministic compact bootstrap fleet and does not insta
   const input = { snapshot: snapshot(), catalog, trustedModelKeys, storageFreeBytes: 100 * MIB, policy: { bootstrapCapabilities: ['SEGMENTATION', 'UPSCALE'], maxAutoInstallBytes: 24 * MIB, minFreeBytesAfterInstall: 8 * MIB } } as const;
   const first = planner.recommend(input); const second = planner.recommend(input);
   assert.deepEqual(first, second); assert.equal(first.status, 'READY');
-  assert.deepEqual(first.modelIds, ['seg-a-small', 'upscale-small']); assert.equal(first.estimatedBytes, 20 * MIB);
+  assert.deepEqual(first.modelIds, ['seg-a-small', 'upscale-small']); assert.deepEqual(first.modelBindings, [{ modelId: 'seg-a-small', version: '1.0.0' }, { modelId: 'upscale-small', version: '1.0.0' }]); assert.equal(first.estimatedBytes, 20 * MIB);
   assert.ok(first.exclusions.find((item) => item.modelId === 'seg-z-large')?.reasons.includes('CAPABILITY_ALREADY_COVERED'));
   assert.ok(first.exclusions.find((item) => item.modelId === 'tiny-generation')?.reasons.includes('CAPABILITY_NOT_BOOTSTRAP'));
+});
+
+test('recommendation and install are pinned to the selected exact semantic version', async () => {
+  const v1 = manifest('versioned-segment', ['SEGMENTATION'], 1 / MIB, { version: '1.0.0' });
+  const v2 = manifest('versioned-segment', ['SEGMENTATION'], 1 / MIB, { version: '1.2.0' });
+  const catalog = [v1, v2];
+  const planner = new ModelFleetPlanner();
+  const recommendation = planner.recommend({ snapshot: snapshot(), catalog, trustedModelKeys: catalog.map(modelFleetKey), storageFreeBytes: 512 * MIB, policy: { bootstrapCapabilities: ['SEGMENTATION'], minFreeBytesAfterInstall: 1 } });
+  assert.deepEqual(recommendation.modelBindings, [{ modelId: 'versioned-segment', version: '1.2.0' }]);
+  assert.ok(recommendation.exclusions.find((item) => item.version === '1.0.0')?.reasons.includes('MODEL_VERSION_ALREADY_SELECTED'));
+
+  const { deps } = dependencies({ catalog });
+  const platform = new LocalAIPlatform(deps, trustPolicy);
+  const installed = await platform.installRecommendedBundle();
+  assert.equal(installed.length, 1); assert.equal(installed[0].modelId, 'versioned-segment'); assert.equal(installed[0].version, '1.2.0');
 });
 
 test('planner excludes untrusted, heavy, unknown-resource and oversized models before selection', () => {
