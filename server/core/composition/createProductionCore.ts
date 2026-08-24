@@ -110,6 +110,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       admission: localExecutionAdmission,
       uploads: localUploads,
       persistMask: (ticketId, scope, width, height, alpha) => maskArtifacts.persistLocalExecution(ticketId, scope, width, height, alpha),
+      loadPersistedMask: (ticketId, scope) => maskArtifacts.loadLocalExecution(ticketId, scope),
       issueMaskId: (storageId, scope) => externalArtifacts.issueStoredMask(storageId, scope),
       now,
     });
