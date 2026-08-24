@@ -1,10 +1,19 @@
-import type { LocalAIPlatform } from '../../platform/creative/local-ai/LocalAIPlatform';
+import type { DeviceCapabilitySnapshot, OnnxSessionFactory } from '../../platform/creative/local-ai/types';
 import type { DeviceExecutionAdmission } from '../../platform/creative/local-ai/selection/DeviceExecutionAdmission';
-import type { OnnxSessionFactory } from '../../platform/creative/local-ai/types';
 import type { TrustPolicy } from '../../platform/creative/local-ai/trust/ModelTrust';
 
+export const FLEET_RECONCILIATION_DEFERRED = 'DEFERRED_NO_AUTHENTICATED_CATALOG' as const;
+
+export type BrowserFleetPreflight = Readonly<{
+  catalogModelCount: number;
+  durableLifecycleConfigured: boolean;
+  durableBenchmarkEvidenceConfigured: boolean;
+  reconciliation: typeof FLEET_RECONCILIATION_DEFERRED | 'AUTHORIZED';
+}>;
+
 export type BrowserLocalAIComposition = Readonly<{
-  platform: LocalAIPlatform;
+  capabilitySnapshot(): Promise<DeviceCapabilitySnapshot>;
+  fleetPreflight(): BrowserFleetPreflight;
   deviceAdmission: DeviceExecutionAdmission;
   onnxSessionFactory: OnnxSessionFactory;
 }>;
@@ -47,6 +56,16 @@ const EMPTY_BROWSER_TRUST_POLICY: TrustPolicy = Object.freeze({
   runtimes: Object.freeze(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']),
   licenses: Object.freeze(['Apache-2.0', 'MIT', 'BSD-3-Clause']),
 });
+
+/**
+ * Durable reconciliation re-verifies persisted READY records with the current trust policy. It is
+ * therefore authorized only when both an authenticated production catalog and its publisher policy
+ * are present. Empty/untrusted catalog state must never quarantine previously valid durable state.
+ */
+export function browserFleetReconciliationAuthorized(modelCount: number, publisherCount: number): boolean {
+  return Number.isSafeInteger(modelCount) && modelCount > 0
+    && Number.isSafeInteger(publisherCount) && publisherCount > 0;
+}
 
 async function createProductionBrowserLocalAIComposition(): Promise<BrowserLocalAIComposition> {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') throw new Error('Browser Local AI composition requires a browser runtime');
@@ -91,9 +110,22 @@ async function createProductionBrowserLocalAIComposition(): Promise<BrowserLocal
     lifecycle,
     Object.freeze({ evidence: new IndexedDbBenchmarkEvidencePort(), criteria: Object.freeze([]) }),
   );
-  await platform.initializeModelFleet();
+  const reconciliationAuthorized = browserFleetReconciliationAuthorized(
+    dependencies.modelCatalog.length,
+    EMPTY_BROWSER_TRUST_POLICY.publishers.length,
+  );
+  if (reconciliationAuthorized) await platform.initializeModelFleet();
+
+  const fleetPreflight: BrowserFleetPreflight = Object.freeze({
+    catalogModelCount: dependencies.modelCatalog.length,
+    durableLifecycleConfigured: platform.durableLifecycleEnabled(),
+    durableBenchmarkEvidenceConfigured: platform.durableBenchmarkEvidenceEnabled(),
+    reconciliation: reconciliationAuthorized ? 'AUTHORIZED' : FLEET_RECONCILIATION_DEFERRED,
+  });
+
   return Object.freeze({
-    platform,
+    capabilitySnapshot: () => platform.capabilitySnapshot(),
+    fleetPreflight: () => fleetPreflight,
     deviceAdmission: new DeviceExecutionAdmission(deviceProvider, runtimeProbe),
     onnxSessionFactory,
   });
