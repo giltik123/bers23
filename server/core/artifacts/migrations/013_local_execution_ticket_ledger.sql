@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS local_execution_tickets (
   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Earlier 6.42A prerelease revisions used a globally UNIQUE idempotency key.
+-- Remove that constraint so identical client request IDs remain isolated by canonical scope.
+ALTER TABLE local_execution_tickets
+  DROP CONSTRAINT IF EXISTS local_execution_tickets_idempotency_key_key;
+
 CREATE UNIQUE INDEX IF NOT EXISTS local_execution_tickets_scope_idempotency_unique
   ON local_execution_tickets (tenant_id, user_id, project_id, idempotency_key);
 
