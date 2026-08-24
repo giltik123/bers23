@@ -17,10 +17,12 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const interactiveSegmentation = request.metadata?.operationIntent === 'INTERACTIVE_SEGMENTATION';
     const backgroundIsolation = request.metadata?.operationIntent === 'BACKGROUND_ISOLATION';
     const composite = request.metadata?.operationIntent === 'COMPOSITE_REPLACE_RELIGHT';
+    const requestedIsolationSourceId = backgroundIsolation && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+    const requestedIsolationMaskId = backgroundIsolation && typeof request.metadata?.maskArtifactId === 'string' ? request.metadata.maskArtifactId : undefined;
     const compositeOriginalUnavailable = composite && !artifacts.some(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
     const segmentationInputUnavailable = interactiveSegmentation && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'WORKING'));
-    const isolationSourceUnavailable = backgroundIsolation && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE'));
-    const isolationMaskUnavailable = backgroundIsolation && !artifacts.some(artifact => artifact.kind === 'mask' && artifact.role === 'MASK');
+    const isolationSourceUnavailable = backgroundIsolation && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedIsolationSourceId || artifact.id === requestedIsolationSourceId));
+    const isolationMaskUnavailable = backgroundIsolation && !artifacts.some(artifact => artifact.kind === 'mask' && artifact.role === 'MASK' && (!requestedIsolationMaskId || artifact.id === requestedIsolationMaskId));
     const strategies = backgroundIsolation
       ? [backgroundIsolationOperations(artifacts, constraints, request)]
       : interactiveSegmentation
