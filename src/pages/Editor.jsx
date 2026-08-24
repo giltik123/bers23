@@ -87,7 +87,7 @@ export default function Editor() {
   const startSelection = () => {
     const imageArtifactId = project.current_image_artifact_id;
     if (!imageArtifactId) throw new Error('Canonical project image identity is unavailable');
-    const segmentation = createSelectionSegmentation({ imageArtifactId, source: project.current_image_url });
+    const segmentation = createSelectionSegmentation({ projectId: project.id, imageArtifactId, source: project.current_image_url });
     const artifacts = new CoreMaskArtifactPort(project.id);
     const service = new SelectionApplicationService(segmentation, artifacts);
     selectionServiceRef.current = service;
@@ -250,7 +250,7 @@ export default function Editor() {
             onProgress: (steps) => setChainState((cs) => ({ ...cs, steps })),
             onStepCommitted: async (result, step) => {
               if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
-              await pushEdit(result.finalArtifactId, `${chain.name}: ${step.label}`);
+              await pushEditRef.current(result.finalArtifactId, `${chain.name}: ${step.label}`);
               sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
             },
         }),
