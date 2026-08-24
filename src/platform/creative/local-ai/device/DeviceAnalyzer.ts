@@ -21,22 +21,17 @@ export class DeviceAnalyzer {
 }
 
 function tier(signal: DeviceSignals): DeviceTier {
-  const scores: number[] = [];
-  if (finitePositive(signal.cpuCores)) scores.push(signal.cpuCores >= 16 ? 3 : signal.cpuCores >= 8 ? 2 : signal.cpuCores >= 4 ? 1 : 0);
-  if (finiteNonNegative(signal.ramMb)) scores.push(signal.ramMb >= 32_768 ? 3 : signal.ramMb >= 16_384 ? 2 : signal.ramMb >= 8_192 ? 1 : 0);
-  if (finiteNonNegative(signal.vramMb)) scores.push(signal.vramMb >= 16_384 ? 3 : signal.vramMb >= 8_192 ? 2 : signal.vramMb >= 2_048 ? 1 : 0);
+  // CPU and RAM are essential evidence for a general local-model device tier. Disk capacity is
+  // intentionally excluded: large storage does not imply compute capability.
+  if (!finitePositive(signal.cpuCores) || !finitePositive(signal.ramMb)) return 'UNKNOWN';
 
-  const acceleratorSignals = [signal.webgpu, signal.webnn, signal.cuda, signal.directml, signal.metal, signal.vulkan]
-    .filter((value): value is boolean => value === true || value === false);
-  if (acceleratorSignals.length > 0) scores.push(acceleratorSignals.some(Boolean) ? 2 : 0);
+  const accelerated = [signal.webgpu, signal.webnn, signal.cuda, signal.directml, signal.metal, signal.vulkan].some((value) => value === true);
+  const knownVram = finiteNonNegative(signal.vramMb) ? signal.vramMb : undefined;
 
-  if (finiteNonNegative(signal.storageFreeBytes)) scores.push(signal.storageFreeBytes >= 100e9 ? 2 : signal.storageFreeBytes >= 20e9 ? 1 : 0);
-
-  // A single observation is not enough evidence to classify the whole device. UNKNOWN is
-  // intentionally distinct from LOW so policy never treats missing telemetry as weak hardware.
-  if (scores.length < 2) return 'UNKNOWN';
-  const average = scores.reduce((sum, value) => sum + value, 0) / scores.length;
-  return average >= 2.5 ? 'EXTREME' : average >= 1.6 ? 'HIGH' : average >= 0.7 ? 'MEDIUM' : 'LOW';
+  if (signal.cpuCores >= 16 && signal.ramMb >= 32_768 && knownVram !== undefined && knownVram >= 16_384) return 'EXTREME';
+  if (signal.cpuCores >= 8 && signal.ramMb >= 16_384 && (accelerated || (knownVram !== undefined && knownVram >= 4_096))) return 'HIGH';
+  if (signal.cpuCores >= 4 && signal.ramMb >= 8_192) return 'MEDIUM';
+  return 'LOW';
 }
 
 function finitePositive(value: number | undefined): value is number { return typeof value === 'number' && Number.isFinite(value) && value > 0; }
