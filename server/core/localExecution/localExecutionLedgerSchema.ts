@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 
 type LocalExecutionLedgerSchemaState = Readonly<{
   ticketTable: boolean;
+  finalizationColumns: boolean;
   scopedIdempotencyUnique: boolean;
   legacyGlobalIdempotencyUnique: boolean;
   maskTicketColumn: boolean;
@@ -14,6 +15,7 @@ export async function checkLocalExecutionLedgerSchema(pool: Pool): Promise<void>
   const state = await inspectLocalExecutionLedgerSchema(pool);
   if (
     !state.ticketTable ||
+    !state.finalizationColumns ||
     !state.scopedIdempotencyUnique ||
     state.legacyGlobalIdempotencyUnique ||
     !state.maskTicketColumn ||
@@ -26,6 +28,7 @@ export async function migrateLocalExecutionLedgerSchema(pool: Pool): Promise<voi
   const state = await inspectLocalExecutionLedgerSchema(pool);
   if (
     state.ticketTable &&
+    state.finalizationColumns &&
     state.scopedIdempotencyUnique &&
     !state.legacyGlobalIdempotencyUnique &&
     state.maskTicketColumn &&
@@ -39,6 +42,13 @@ export async function migrateLocalExecutionLedgerSchema(pool: Pool): Promise<voi
 async function inspectLocalExecutionLedgerSchema(pool: Pool): Promise<LocalExecutionLedgerSchemaState> {
   const result = await pool.query(`SELECT
     to_regclass('local_execution_tickets') IS NOT NULL AS ticket_table,
+    (
+      SELECT count(*) = 2
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'local_execution_tickets'
+        AND column_name IN ('finalized_status','finalized_at')
+    ) AS finalization_columns,
     EXISTS (
       SELECT 1
       FROM pg_class i
@@ -100,6 +110,7 @@ async function inspectLocalExecutionLedgerSchema(pool: Pool): Promise<LocalExecu
   const row = result.rows[0] ?? {};
   return Object.freeze({
     ticketTable: row.ticket_table === true,
+    finalizationColumns: row.finalization_columns === true,
     scopedIdempotencyUnique: row.scoped_idempotency_unique === true,
     legacyGlobalIdempotencyUnique: row.legacy_global_idempotency_unique === true,
     maskTicketColumn: row.mask_ticket_column === true,
