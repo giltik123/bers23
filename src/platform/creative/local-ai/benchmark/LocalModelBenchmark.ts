@@ -18,9 +18,8 @@ export class LocalModelBenchmarker {
       try {
         result = await runtime.infer({ ...request, requestId: `${request.requestId}:${index}` });
         success += 1;
+      } finally {
         latencies.push(Math.max(0, this.now() - start));
-      } catch {
-        latencies.push(0);
       }
     }
     if (!result) throw new Error('Model warm-up failed');
