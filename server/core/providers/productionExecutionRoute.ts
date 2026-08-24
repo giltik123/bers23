@@ -1,13 +1,13 @@
 import type { ExecutionRouteSelectorPort } from '../../../src/platform/creative/canonical/contracts.ts';
 
-export const PRODUCTION_EXECUTION_ROUTE_VERSION = '6.42A.1';
+export const PRODUCTION_EXECUTION_ROUTE_VERSION = '6.42C2.1';
 
 /** Pure execution policy: no scope, persistence, billing, auth, or provider-call authority. */
 export class ProductionExecutionRouteSelector implements ExecutionRouteSelectorPort {
   select(operation: Parameters<ExecutionRouteSelectorPort['select']>[0]) {
     if (operation.type === 'image-edit' || operation.type === 'CONTROLLED_LOCAL_EDIT') return 'PROVIDER' as const;
     if (operation.type === 'verify') return 'INTERNAL' as const;
-    if (operation.type === 'segment') return 'ON_DEVICE' as const;
+    if (operation.type === 'segment' || operation.type === 'BACKGROUND_ISOLATION') return 'ON_DEVICE' as const;
     throw new Error(`Unsupported production execution route for ${operation.type}`);
   }
 }
