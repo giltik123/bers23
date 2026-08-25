@@ -19,10 +19,12 @@ test('C7 reuses exact C6 checkpoint identity and safe loader instead of inventin
   assert.doesNotMatch(probe, /^\s*import\s+omegaconf\b/m);
 });
 
-test('C7 uses native modern Dynamo export only with no ATen fallback or Fourier rewrite', () => {
+test('C7 uses the PyTorch 2.13 modern-only Dynamo export API with no legacy fallback or Fourier rewrite', () => {
   assert.match(probe, /torch\.onnx\.export\(/);
   assert.match(probe, /dynamo=True/);
-  assert.match(probe, /fallback=False/);
+  assert.match(probe, /legacyFallbackParameterPresent/);
+  assert.match(probe, /REMOVED_IN_PYTORCH_2_11/);
+  assert.match(probe, /legacyFallbackAllowed/);
   assert.match(probe, /OPSET = 18/);
   assert.match(probe, /external_data=False/);
   assert.match(probe, /standardDftNodeCount/);
@@ -30,6 +32,7 @@ test('C7 uses native modern Dynamo export only with no ATen fallback or Fourier 
   assert.match(probe, /EXPORTED_REJECTED_ATEN_NODES/);
   assert.match(probe, /EXPORTED_REJECTED_CUSTOM_DOMAIN_NODES/);
   assert.match(probe, /EXPORTED_REJECTED_NO_STANDARD_DFT/);
+  assert.doesNotMatch(probe, /fallback\s*=/);
   assert.doesNotMatch(probe, /ONNX_ATEN_FALLBACK/);
   assert.doesNotMatch(probe, /operator_export_type/);
   assert.doesNotMatch(probe, /cosine|sine matrix|FourierUnitJIT/i);
