@@ -19,6 +19,8 @@ import { productionLocalModelsByCapability } from '../server/core/localExecution
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
 const MODEL_ID = 'lama-big-places-inpainting';
+const LEGACY_BLOCKER = 'BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED';
+const LEGACY_DIRECT = 'LEGACY_DYNAMO_FALSE_OPSET17_BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN';
 
 test('Big-LaMa pins authoritative archive/checkpoint/config while remaining non-executable', () => {
   assert.equal(manifest.modelId, MODEL_ID);
@@ -27,7 +29,10 @@ test('Big-LaMa pins authoritative archive/checkpoint/config while remaining non-
   assert.equal(manifest.upstream.revision, LAMA_UPSTREAM_REVISION);
   assert.equal(manifest.upstream.license, 'Apache-2.0');
   assert.equal(manifest.upstream.distribution.authoritativeArchiveDriveFileId, LAMA_ARCHIVE_DRIVE_FILE_ID);
+  assert.equal(manifest.upstream.distribution.convenienceMirrorCommit, '05cb2be7f8dbe6ca7c6e78f4fc827a4b2baaa4a9');
+  assert.equal(manifest.upstream.distribution.convenienceMirrorArchiveSha256, 'f1b358ca24093b93a106183b98a3dea6e8ed09f3b43ea7251eb2c81e7b4575f6');
   assert.equal(manifest.upstream.distribution.convenienceMirrorAuthority, false);
+  assert.equal(manifest.upstream.distribution.convenienceMirrorAcceptance, 'TRANSPORT_ONLY_REQUIRES_AUTHORITATIVE_MEMBER_SHA_MATCH');
   assert.equal(manifest.upstream.checkpoint.identityState, 'PINNED');
   assert.equal(manifest.upstream.checkpoint.archiveSize, LAMA_ARCHIVE_SIZE);
   assert.equal(manifest.upstream.checkpoint.archiveSha256, LAMA_ARCHIVE_SHA256);
@@ -38,7 +43,7 @@ test('Big-LaMa pins authoritative archive/checkpoint/config while remaining non-
   assert.equal(manifest.upstream.checkpoint.corroboration.checkpointSha256Matches, true);
   assert.equal(manifest.upstream.checkpoint.corroboration.configSha256Matches, true);
   assert.equal(manifest.bersArtifact.state, 'UNBUILT');
-  assert.equal(manifest.runtimeFeasibility.state, 'UNPROVEN');
+  assert.equal(manifest.runtimeFeasibility.state, LEGACY_BLOCKER);
   assert.equal(LAMA_AUTHORITATIVE_CHECKPOINT_PINNED, true);
   assert.equal(isExecutableLaMaRelease(manifest), false);
   assert.equal(laMaReleaseState.productionAvailable, false);
@@ -60,7 +65,7 @@ test('Big-LaMa semantic contract preserves upstream mask polarity and determinis
   assert.equal(manifest.tensorContract.finalComposite.knownRegionMustEqualOriginal, true);
 });
 
-test('Big-LaMa architecture and browser runtime risks are explicit instead of assumed', () => {
+test('legacy direct ONNX blocker is exact evidence and does not imply CPU/browser support', () => {
   const architecture = manifest.upstream.architecture;
   assert.equal(architecture.generatorKind, 'ffc_resnet');
   assert.equal(architecture.inputChannels, 4);
@@ -71,11 +76,23 @@ test('Big-LaMa architecture and browser runtime risks are explicit instead of as
   assert.equal(architecture.localFourierUnitEnabled, false);
   assert.equal(architecture.fourierForward, 'torch.fft.rfftn');
   assert.equal(architecture.fourierInverse, 'torch.fft.irfftn');
-  assert.equal(manifest.runtimeFeasibility.directTorchOnnx, 'UNPROVEN_FFT_RISK');
-  assert.equal(manifest.runtimeFeasibility.cpuOrt, 'UNPROVEN');
-  assert.equal(manifest.runtimeFeasibility.browserWasm, 'UNPROVEN');
-  assert.equal(manifest.runtimeFeasibility.browserWebGpu, 'UNPROVEN_KNOWN_THIRD_PARTY_SHAPE_RISK');
-  assert.equal(manifest.runtimeFeasibility.thirdPartyReferenceAuthority, false);
+
+  const feasibility = manifest.runtimeFeasibility;
+  assert.equal(feasibility.state, LEGACY_BLOCKER);
+  assert.equal(feasibility.directTorchOnnx, LEGACY_DIRECT);
+  assert.equal(feasibility.directExportEvidence.exporter, 'torch.onnx.export');
+  assert.equal(feasibility.directExportEvidence.torchVersion, '2.6.0+cpu');
+  assert.equal(feasibility.directExportEvidence.dynamo, false);
+  assert.equal(feasibility.directExportEvidence.opset, 17);
+  assert.deepEqual(feasibility.directExportEvidence.inputShape, [1, 4, 64, 64]);
+  assert.equal(feasibility.directExportEvidence.atenFallbackAllowed, false);
+  assert.equal(feasibility.directExportEvidence.result, 'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN');
+  assert.equal(feasibility.directExportEvidence.artifactProduced, false);
+  assert.equal(feasibility.directExportEvidence.runtimeAuthorityGranted, false);
+  assert.equal(feasibility.cpuOrt, 'UNPROVEN');
+  assert.equal(feasibility.browserWasm, 'UNPROVEN');
+  assert.equal(feasibility.browserWebGpu, 'UNPROVEN_KNOWN_THIRD_PARTY_SHAPE_RISK');
+  assert.equal(feasibility.thirdPartyReferenceAuthority, false);
 });
 
 test('LaMa is advisory INPAINTING discovery only and absent from production executable catalogs', () => {
@@ -118,7 +135,7 @@ test('future signed envelope is byte-bound and still blocked until BERS artifact
     (value: any) => { value.upstream.checkpoint.archiveSha256 = 'a'.repeat(64); },
     (value: any) => { value.upstream.checkpoint.checkpointSha256 = 'b'.repeat(64); },
     (value: any) => { value.upstream.checkpoint.configSha256 = 'd'.repeat(64); },
-    (value: any) => { value.runtimeFeasibility.state = 'UNPROVEN'; },
+    (value: any) => { value.runtimeFeasibility.state = LEGACY_BLOCKER; },
     (value: any) => { value.runtimeFeasibility.browserWasm = 'UNPROVEN'; },
     (value: any) => { value.artifacts.model.sha256 = 'e'.repeat(64); },
   ];
