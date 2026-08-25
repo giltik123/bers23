@@ -207,12 +207,26 @@ jobs:
           if (manifest.status !== 'CANDIDATE') throw new Error(`unexpected LaMa status: ${manifest.status}`);
           if (manifest.artifactState !== 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED') throw new Error(`unexpected LaMa artifact state: ${manifest.artifactState}`);
           if (manifest.upstream?.checkpoint?.identityState !== 'PINNED') throw new Error('LaMa checkpoint identity must stay PINNED');
-          if (manifest.runtimeFeasibility?.state !== 'BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED') throw new Error(`unexpected LaMa runtime state: ${manifest.runtimeFeasibility?.state}`);
+          if (manifest.runtimeFeasibility?.state !== 'DYNAMO_ONNX_CPU_WASM_PROVEN_WEBGPU_REAL_DEVICE_REQUIRED') throw new Error(`unexpected LaMa runtime state: ${manifest.runtimeFeasibility?.state}`);
           if (manifest.runtimeFeasibility?.directExportEvidence?.result !== 'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN') throw new Error('LaMa legacy FFT blocker evidence changed');
           if (manifest.runtimeFeasibility?.directExportEvidence?.artifactProduced !== false) throw new Error('LaMa legacy probe must not claim an artifact');
-          if (manifest.runtimeFeasibility?.cpuOrt !== 'UNPROVEN') throw new Error('LaMa CPU ORT must remain unproven');
-          if (manifest.runtimeFeasibility?.browserWasm !== 'UNPROVEN') throw new Error('LaMa browser WASM must remain unproven');
+          if (manifest.runtimeFeasibility?.directExportEvidence?.runtimeAuthorityGranted !== false) throw new Error('LaMa legacy probe must not grant runtime authority');
+          if (manifest.runtimeFeasibility?.cpuOrt !== 'PROVEN_HOSTED_ORT_1_27_MULTISHAPE') throw new Error(`unexpected LaMa CPU ORT evidence: ${manifest.runtimeFeasibility?.cpuOrt}`);
+          if (manifest.runtimeFeasibility?.browserWasm !== 'PROVEN_HOSTED_CHROME_ORT_WEB_1_27_256') throw new Error(`unexpected LaMa browser WASM evidence: ${manifest.runtimeFeasibility?.browserWasm}`);
+          if (manifest.runtimeFeasibility?.browserWebGpu !== 'HOSTED_SWIFTSHADER_INFERENCE_TIMEOUT_REAL_DEVICE_UNPROVEN') throw new Error(`unexpected LaMa browser WebGPU evidence: ${manifest.runtimeFeasibility?.browserWebGpu}`);
+          if (manifest.runtimeFeasibility?.realDeviceWebGpu !== 'UNPROVEN') throw new Error('LaMa real-device WebGPU must remain unproven');
+          const modern = manifest.runtimeFeasibility?.modernDynamoOnnxEvidence;
+          if (modern?.cpuOrtResult !== 'PASS_MULTISHAPE') throw new Error('LaMa modern CPU ORT proof missing');
+          if (modern?.browserWasmResult !== 'PASS') throw new Error('LaMa modern browser WASM proof missing');
+          if (modern?.hostedWebGpu?.result !== 'WEBGPU_INFERENCE_BLOCKED') throw new Error('LaMa hosted WebGPU blocker changed');
+          if (modern?.hostedWebGpu?.timeoutStage !== 'INFERENCE') throw new Error('LaMa hosted WebGPU timeout stage changed');
+          if (modern?.hostedWebGpu?.softwareAdapterLikely !== true) throw new Error('LaMa hosted WebGPU evidence must remain software-adapter-only');
+          if (modern?.hostedWebGpu?.realDeviceEvidence !== false) throw new Error('LaMa hosted WebGPU must not claim real-device evidence');
+          if (modern?.runtimeAuthorityGranted !== false || modern?.productionDeviceApproval !== false || modern?.releaseArtifactIdentityEstablished !== false) throw new Error('LaMa feasibility evidence must not grant release/runtime authority');
+          if (manifest.bersArtifact?.state !== 'UNBUILT' || manifest.bersArtifact?.size !== null || manifest.bersArtifact?.sha256 !== null) throw new Error('LaMa BERS artifact identity must remain unbuilt/unpinned');
           if (manifest.productionApprovalEvidence !== null) throw new Error('LaMa CANDIDATE must not carry production approval evidence');
+          if (manifest.verificationKeyId !== null) throw new Error('LaMa CANDIDATE must not carry a verification key before signed release');
+          if (manifest.artifacts?.model?.url !== null || manifest.artifacts?.model?.signatureUrl !== null || manifest.artifacts?.model?.size !== null || manifest.artifacts?.model?.sha256 !== null) throw new Error('LaMa CANDIDATE must not expose release model bytes before a signed release');
           NODE
       - name: Canonical route and durable fleet regressions
         run: |
