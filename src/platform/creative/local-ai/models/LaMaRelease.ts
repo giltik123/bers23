@@ -13,13 +13,16 @@ export const LAMA_CHECKPOINT_SHA256 = 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e078
 export const LAMA_CONFIG_PATH = 'big-lama/config.yaml' as const;
 export const LAMA_CONFIG_SIZE = 3_947 as const;
 export const LAMA_CONFIG_SHA256 = '4fdeed49926e13b101c4dd9e193acec9e58677dfdb4ba49dd6a3a8927964e2a7' as const;
+export const LAMA_ONNX_SIZE = 208_593_659 as const;
+export const LAMA_ONNX_SHA256 = '8bf7891efa16ea07de31fc98c5f0c017b399956cba0182813ddf23d9072792c7' as const;
+export const LAMA_ONNX_OPSET = 18 as const;
 export const LAMA_AUTHORITATIVE_CHECKPOINT_PINNED = true as const;
 
 /**
  * Release-envelope predicate only. It grants neither installation nor Core execution authority.
- * This BERS model version is byte-bound to the authoritative standalone Big-LaMa archive plus its
- * exact checkpoint/config members. Runtime feasibility and a separately pinned BERS artifact remain
- * mandatory, so checkpoint pinning alone never makes the candidate executable.
+ * This BERS model version is byte-bound to the authoritative Big-LaMa archive/checkpoint/config and
+ * to the exact reproducible C8 ONNX bytes. A signed release is still non-executable until separate
+ * production approval and VERIFIED runtime/device evidence are recorded.
  */
 export function isExecutableLaMaRelease(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -46,8 +49,8 @@ export function isExecutableLaMaRelease(value: unknown): boolean {
     || checkpoint.configSha256 !== LAMA_CONFIG_SHA256) return false;
 
   const artifact = objectRecord(release.bersArtifact);
-  if (!artifact || artifact.state !== 'PINNED') return false;
-  if (!positiveSafeInteger(artifact.size) || !sha256(artifact.sha256)) return false;
+  if (!artifact || artifact.state !== 'PINNED' || artifact.format !== 'ONNX') return false;
+  if (artifact.size !== LAMA_ONNX_SIZE || artifact.sha256 !== LAMA_ONNX_SHA256 || artifact.opset !== LAMA_ONNX_OPSET) return false;
 
   const feasibility = objectRecord(release.runtimeFeasibility);
   if (!feasibility || feasibility.state !== 'VERIFIED') return false;
@@ -57,7 +60,7 @@ export function isExecutableLaMaRelease(value: unknown): boolean {
   const artifacts = objectRecord(release.artifacts);
   const model = objectRecord(artifacts?.model);
   if (!completeArtifact(model)) return false;
-  return Number(model!.size) === Number(artifact.size) && model!.sha256 === artifact.sha256;
+  return model!.size === LAMA_ONNX_SIZE && model!.sha256 === LAMA_ONNX_SHA256;
 }
 
 export const laMaReleaseState = Object.freeze({
@@ -67,6 +70,9 @@ export const laMaReleaseState = Object.freeze({
   artifactState: String(manifest.artifactState),
   checkpointIdentityState: String(manifest.upstream.checkpoint.identityState),
   runtimeFeasibilityState: String(manifest.runtimeFeasibility.state),
+  bersArtifactState: String(manifest.bersArtifact.state),
+  bersArtifactSize: Number(manifest.bersArtifact.size),
+  bersArtifactSha256: String(manifest.bersArtifact.sha256),
   productionAvailable: isExecutableLaMaRelease(manifest),
 });
 
