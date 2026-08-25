@@ -18,12 +18,18 @@ test('D2 cannot advance Tiny-SD production or runtime authority', () => {
   assert.equal('artifacts' in manifest, false);
 });
 
-test('D2 uses only the D1 pinned safetensors bridge and exact synthetic vectors', () => {
+test('D2 uses only the D1 pinned safetensors bridge and a closed derived-buffer allowlist', () => {
   assert.match(common, /TRUST_ROOT_PINNED_RUNTIME_FEASIBILITY_REQUIRED/);
   assert.match(common, /bridgeSha256/);
   assert.match(common, /bridgeSize/);
   assert.match(common, /load_file\(str\(path\), device="cpu"\)/);
-  assert.match(common, /load_state_dict\(state, strict=True\)/);
+  assert.match(common, /CLIP_POSITION_IDS_KEY = "text_model\.embeddings\.position_ids"/);
+  assert.match(common, /missing_parameters = parameter_names - bridge_keys/);
+  assert.match(common, /if missing != allowed_missing/);
+  assert.match(common, /strict=not allowed_missing/);
+  assert.match(common, /DERIVED_FROM_PINNED_CONFIG_NOT_D1_WEIGHT/);
+  assert.match(common, /derivedBufferPolicy": "EXACT_CLOSED_ALLOWLIST/);
+  assert.match(common, /torch\.arange\(/);
   assert.doesNotMatch(common, /torch\.load/);
   assert.doesNotMatch(common, /pickle\.load/);
   assert.match(common, /FP16 -> FP32 is an exact value-preserving widening/);
@@ -41,7 +47,10 @@ test('historical reference and modern exporter environments are independently pi
     assert.match(exporter, new RegExp(token.replaceAll('.', '\\.')));
   }
   assert.match(reference, /HISTORICAL_LIBRARY_SEMANTICS_OVER_D1_PINNED_TENSORS/);
+  assert.match(reference, /ALL_LEARNED_PARAMETERS_EXACT_FROM_D1/);
   assert.match(exporter, /historicalReferenceVerifiedBeforeExport/);
+  assert.match(exporter, /require_state_load/);
+  assert.match(exporter, /text_model\.embeddings\.position_ids/);
 });
 
 test('component export requires reference parity, standard ONNX and CPU ORT parity independently', () => {
