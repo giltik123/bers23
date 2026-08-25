@@ -11,6 +11,13 @@ export const LAMA_PROMOTION_EVIDENCE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 export const LAMA_PROMOTION_MIN_INFERENCE_SAMPLES = 5;
 export const LAMA_PROMOTION_MIN_REAL_IMAGE_CASES = 5;
 export const LAMA_RELEASE_KEY_ID = 'bers-lama-inpainting-release-2026-08' as const;
+export const LAMA_RELEASE_TAG = 'lama-big-places-inpainting-v1.0.0-candidate.1' as const;
+
+const LAMA_RELEASE_BASE = `https://github.com/giltik123/bers23/releases/download/${LAMA_RELEASE_TAG}`;
+const REAL_PLATFORMS = ['ANDROID', 'IOS', 'WINDOWS', 'MACOS', 'LINUX'] as const;
+const REAL_DEVICE_CLASSES = ['MOBILE', 'DESKTOP'] as const;
+const REAL_DEVICE_TIERS = ['LOW', 'MEDIUM', 'HIGH', 'EXTREME'] as const;
+const ACCEPTED_PROVIDERS = ['webgpu', 'wasm'] as const;
 
 export type LaMaPromotionBlocker =
   | 'INVALID_SCHEMA'
@@ -158,6 +165,7 @@ export async function assessLaMaProductionPromotion(
   const capturedAt = finiteNonNegative(evidence.capturedAt);
   const expiresAt = finiteNonNegative(evidence.expiresAt);
   if (capturedAt === null || expiresAt === null || expiresAt < capturedAt) blockers.add('INVALID_SCHEMA');
+  if (capturedAt !== null && expiresAt !== null && expiresAt - capturedAt > LAMA_PROMOTION_EVIDENCE_MAX_AGE_MS) blockers.add('INVALID_SCHEMA');
   if (!Number.isFinite(now) || now < 0) blockers.add('INVALID_SCHEMA');
   if (capturedAt !== null && capturedAt > now) blockers.add('FUTURE_EVIDENCE');
   if (capturedAt !== null && now - capturedAt > LAMA_PROMOTION_EVIDENCE_MAX_AGE_MS) blockers.add('STALE_EVIDENCE');
@@ -167,7 +175,7 @@ export async function assessLaMaProductionPromotion(
   const attestation = parseAttestation(asRecord(evidence.attestation), blockers);
   validateDevice(asRecord(evidence.device), blockers);
   validateBenchmark(asRecord(evidence.benchmark), blockers);
-  validateQuality(asRecord(evidence.quality), blockers);
+  validateQuality(asRecord(evidence.quality), blockers, capturedAt);
   validateLocalExecution(asRecord(evidence.localExecution), blockers);
 
   if (release) {
@@ -211,17 +219,20 @@ function parseRelease(
     || release.modelSha256 !== LAMA_ONNX_SHA256) blockers.add('WRONG_MODEL_IDENTITY');
   if (release.artifactState !== 'SIGNED_RELEASE') blockers.add('SIGNED_RELEASE_REQUIRED');
   if (release.verificationKeyId !== LAMA_RELEASE_KEY_ID) blockers.add('WRONG_RELEASE_KEY');
-  for (const key of ['modelUrl', 'modelSignatureUrl', 'manifestUrl', 'manifestSignatureUrl'] as const) {
-    if (!safeHttpsUrl(release[key])) blockers.add('INVALID_EVIDENCE_URL');
-  }
+
+  const expectedModelUrl = `${LAMA_RELEASE_BASE}/lama-big-places-inpainting.onnx`;
+  const expectedSignatureUrl = `${LAMA_RELEASE_BASE}/lama-big-places-inpainting.onnx.sig`;
+  if (release.modelUrl !== expectedModelUrl || release.modelSignatureUrl !== expectedSignatureUrl) blockers.add('INVALID_EVIDENCE_URL');
+  if (!safeHttpsUrl(release.manifestUrl) || !safeHttpsUrl(release.manifestSignatureUrl)) blockers.add('INVALID_EVIDENCE_URL');
+
   if (release.artifactState !== 'SIGNED_RELEASE'
     || typeof release.modelId !== 'string'
     || typeof release.version !== 'string'
     || typeof release.modelSize !== 'number'
     || typeof release.modelSha256 !== 'string'
     || typeof release.verificationKeyId !== 'string'
-    || !safeHttpsUrl(release.modelUrl)
-    || !safeHttpsUrl(release.modelSignatureUrl)
+    || release.modelUrl !== expectedModelUrl
+    || release.modelSignatureUrl !== expectedSignatureUrl
     || !safeHttpsUrl(release.manifestUrl)
     || !safeHttpsUrl(release.manifestSignatureUrl)) return null;
   return release as unknown as LaMaSignedReleaseEvidence;
@@ -241,14 +252,24 @@ function parseAttestation(
 function validateDevice(device: Readonly<Record<string, unknown>> | null, blockers: Set<LaMaPromotionBlocker>): void {
   if (!device || device.evidenceKind !== 'REAL_PHYSICAL_DEVICE') blockers.add('REAL_DEVICE_REQUIRED');
   if (!device) return;
+
+  if (!REAL_PLATFORMS.includes(String(device.platform) as (typeof REAL_PLATFORMS)[number])
+    || !REAL_DEVICE_CLASSES.includes(String(device.deviceClass) as (typeof REAL_DEVICE_CLASSES)[number])
+    || !REAL_DEVICE_TIERS.includes(String(device.deviceTier) as (typeof REAL_DEVICE_TIERS)[number])) blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
   if (device.softwareAdapter !== false || device.adapterKind === 'SOFTWARE') blockers.add('SOFTWARE_ADAPTER_REJECTED');
-  if (!['webgpu', 'wasm'].includes(String(device.provider))) blockers.add('UNSUPPORTED_PROVIDER');
+  if (!ACCEPTED_PROVIDERS.includes(String(device.provider) as (typeof ACCEPTED_PROVIDERS)[number])) blockers.add('UNSUPPORTED_PROVIDER');
+
+  const expectedRuntime = device.provider === 'webgpu'
+    ? 'onnxruntime-web/webgpu'
+    : device.provider === 'wasm'
+      ? 'onnxruntime-web/wasm'
+      : null;
+  if (expectedRuntime === null || device.runtimeName !== expectedRuntime || device.runtimeVersion !== '1.27.0') blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
+  if (typeof device.browserVersion !== 'string' || !device.browserVersion.trim() || device.browserVersion === 'NOT_APPLICABLE') blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
+  if (typeof device.coarseDeviceEvidenceKey !== 'string' || !device.coarseDeviceEvidenceKey.trim()) blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
+
   if (device.provider === 'webgpu' && device.adapterKind !== 'PHYSICAL') blockers.add('REAL_DEVICE_REQUIRED');
-  if (device.provider === 'wasm' && !['CPU', 'NOT_APPLICABLE'].includes(String(device.adapterKind))) blockers.add('REAL_DEVICE_REQUIRED');
-  if (![device.runtimeName, device.runtimeVersion, device.coarseDeviceEvidenceKey]
-    .every((item) => typeof item === 'string' && item.trim().length > 0)) blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
-  if (device.runtimeVersion !== '1.27.0') blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
-  if (device.platform === 'UNKNOWN' || device.deviceClass === 'UNKNOWN' || device.deviceTier === 'UNKNOWN') blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
+  if (device.provider === 'wasm' && device.adapterKind !== 'CPU') blockers.add('REAL_DEVICE_REQUIRED');
 }
 
 function validateBenchmark(benchmark: Readonly<Record<string, unknown>> | null, blockers: Set<LaMaPromotionBlocker>): void {
@@ -258,6 +279,7 @@ function validateBenchmark(benchmark: Readonly<Record<string, unknown>> | null, 
   }
   if (!Number.isInteger(benchmark.warmupCount) || Number(benchmark.warmupCount) < 1
     || !Number.isInteger(benchmark.sampleCount) || Number(benchmark.sampleCount) < LAMA_PROMOTION_MIN_INFERENCE_SAMPLES
+    || !Number.isInteger(benchmark.successfulSamples)
     || benchmark.successfulSamples !== benchmark.sampleCount) blockers.add('INSUFFICIENT_BENCHMARK_SAMPLES');
   const latency = asRecord(benchmark.latencyMs);
   const values = latency ? [latency.min, latency.median, latency.p95, latency.max].map(finiteNonNegative) : [];
@@ -276,7 +298,11 @@ function validateBenchmark(benchmark: Readonly<Record<string, unknown>> | null, 
   }
 }
 
-function validateQuality(quality: Readonly<Record<string, unknown>> | null, blockers: Set<LaMaPromotionBlocker>): void {
+function validateQuality(
+  quality: Readonly<Record<string, unknown>> | null,
+  blockers: Set<LaMaPromotionBlocker>,
+  capturedAt: number | null,
+): void {
   if (!quality) {
     blockers.add('REAL_IMAGE_REVIEW_REQUIRED');
     return;
@@ -284,25 +310,34 @@ function validateQuality(quality: Readonly<Record<string, unknown>> | null, bloc
   if (typeof quality.datasetId !== 'string' || !quality.datasetId.trim() || !safeHttpsUrl(quality.datasetEvidenceUrl)) blockers.add('INVALID_REAL_IMAGE_BINDING');
   const cases = Array.isArray(quality.cases) ? quality.cases : [];
   if (cases.length < LAMA_PROMOTION_MIN_REAL_IMAGE_CASES) blockers.add('REAL_IMAGE_REVIEW_REQUIRED');
+  const caseIds = new Set<string>();
   for (const item of cases) {
     const testCase = asRecord(item);
     if (!testCase || typeof testCase.caseId !== 'string' || !testCase.caseId.trim()
       || ![testCase.sourceImageSha256, testCase.maskSha256, testCase.rawOutputSha256, testCase.compositeSha256].every(sha256)
       || !positiveInteger(testCase.width) || !positiveInteger(testCase.height)) blockers.add('INVALID_REAL_IMAGE_BINDING');
+    if (testCase && typeof testCase.caseId === 'string') {
+      if (caseIds.has(testCase.caseId)) blockers.add('INVALID_REAL_IMAGE_BINDING');
+      caseIds.add(testCase.caseId);
+    }
     if (testCase?.knownRegionBitExact !== true) blockers.add('KNOWN_REGION_INVARIANT_FAILED');
     if (testCase?.outputGeometryValid !== true || testCase?.outputRangeValid !== true) blockers.add('OUTPUT_CONTRACT_FAILED');
     if (testCase?.humanDecision !== 'PASS') blockers.add('HUMAN_REVIEW_REQUIRED');
   }
   const reviewer = asRecord(quality.reviewer);
+  const reviewedAt = reviewer ? finiteNonNegative(reviewer.reviewedAt) : null;
   if (!reviewer || reviewer.decision !== 'PASS'
     || typeof reviewer.reviewerId !== 'string' || !reviewer.reviewerId.trim()
-    || finiteNonNegative(reviewer.reviewedAt) === null
+    || reviewedAt === null
+    || (capturedAt !== null && reviewedAt > capturedAt)
     || !safeHttpsUrl(reviewer.reviewEvidenceUrl)) blockers.add('HUMAN_REVIEW_REQUIRED');
 }
 
 function validateLocalExecution(local: Readonly<Record<string, unknown>> | null, blockers: Set<LaMaPromotionBlocker>): void {
   if (!local || local.executionTarget !== 'LOCAL') {
     blockers.add('EXTERNAL_NETWORK_USAGE_DETECTED');
+    blockers.add('PROVIDER_API_USAGE_DETECTED');
+    blockers.add('AI_CREDIT_USAGE_DETECTED');
     return;
   }
   if (local.externalNetworkRequests !== 0) blockers.add('EXTERNAL_NETWORK_USAGE_DETECTED');
