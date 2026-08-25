@@ -1,0 +1,176 @@
+name: Sprint 6.42C7 LaMa Dynamo ONNX feasibility
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LAMA_MIRROR_COMMIT: 05cb2be7f8dbe6ca7c6e78f4fc827a4b2baaa4a9
+  LAMA_MIRROR_ARCHIVE_SIZE: '381428720'
+  LAMA_MIRROR_ARCHIVE_SHA256: f1b358ca24093b93a106183b98a3dea6e8ed09f3b43ea7251eb2c81e7b4575f6
+  LAMA_CHECKPOINT_SIZE: '410046389'
+  LAMA_CHECKPOINT_SHA256: fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423
+  LAMA_CONFIG_SIZE: '3947'
+  LAMA_CONFIG_SHA256: 4fdeed49926e13b101c4dd9e193acec9e58677dfdb4ba49dd6a3a8927964e2a7
+
+jobs:
+  native-dynamo-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify C7 static fail-closed policy before network/model work
+        run: |
+          set -euo pipefail
+          node --test tests/lama-dynamo-onnx-security.test.mjs
+          python -m py_compile scripts/probe-lama-dynamo-onnx.py scripts/inspect-lama-checkpoint.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.onnx' | wc -l)" -eq 0
+
+      - name: Clone exact LaMa upstream
+        run: |
+          set -euo pipefail
+          git clone https://github.com/advimman/lama "${RUNNER_TEMP}/lama"
+          git -C "${RUNNER_TEMP}/lama" checkout --detach 786f5936b27fb3dacd2b1ad799e4de968ea697e7
+          test "$(git -C "${RUNNER_TEMP}/lama" rev-parse HEAD)" = 786f5936b27fb3dacd2b1ad799e4de968ea697e7
+          grep -F 'torch.fft.rfftn' "${RUNNER_TEMP}/lama/saicinpainting/training/modules/ffc.py"
+          grep -F 'torch.fft.irfftn' "${RUNNER_TEMP}/lama/saicinpainting/training/modules/ffc.py"
+
+      - name: Acquire pinned transport and materialize authoritative checkpoint member
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/lama-c7" .test-cache/6.42c7
+          archive="${RUNNER_TEMP}/lama-c7/big-lama.zip"
+          curl -fL --retry 3 --retry-all-errors \
+            "https://huggingface.co/smartywu/big-lama/resolve/${LAMA_MIRROR_COMMIT}/big-lama.zip" \
+            -o "${archive}"
+          test "$(stat -c%s "${archive}")" = "${LAMA_MIRROR_ARCHIVE_SIZE}"
+          test "$(sha256sum "${archive}" | cut -d' ' -f1)" = "${LAMA_MIRROR_ARCHIVE_SHA256}"
+          python - "${archive}" "${RUNNER_TEMP}/lama-c7" <<'PY'
+          import hashlib, os, pathlib, sys, zipfile
+          archive = pathlib.Path(sys.argv[1])
+          out = pathlib.Path(sys.argv[2])
+          expected = {
+              'big-lama/config.yaml': (int(os.environ['LAMA_CONFIG_SIZE']), os.environ['LAMA_CONFIG_SHA256']),
+              'big-lama/models/best.ckpt': (int(os.environ['LAMA_CHECKPOINT_SIZE']), os.environ['LAMA_CHECKPOINT_SHA256']),
+          }
+          with zipfile.ZipFile(archive, 'r') as bundle:
+              names = [item.filename for item in bundle.infolist() if not item.is_dir()]
+              if set(names) != set(expected) or len(names) != 2:
+                  raise RuntimeError(f'unexpected Big-LaMa transport members: {names!r}')
+              for name, (expected_size, expected_sha) in expected.items():
+                  info = bundle.getinfo(name)
+                  if info.file_size != expected_size:
+                      raise RuntimeError(f'{name} size mismatch')
+                  digest = hashlib.sha256()
+                  target = out / pathlib.PurePosixPath(name).name
+                  with bundle.open(info, 'r') as source, target.open('wb') as sink:
+                      for chunk in iter(lambda: source.read(1024 * 1024), b''):
+                          digest.update(chunk)
+                          sink.write(chunk)
+                  if digest.hexdigest() != expected_sha:
+                      target.unlink(missing_ok=True)
+                      raise RuntimeError(f'{name} SHA-256 mismatch against authoritative C6 identity')
+          print('C7 AUTHORITATIVE MEMBER IDENTITIES: PASS')
+          PY
+
+      - name: Install pinned modern exporter and matching ORT runtime line
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check \
+            kornia==0.5.0 \
+            onnx==1.22.0 \
+            onnxscript==0.7.1 \
+            onnxruntime==1.27.0
+          python - <<'PY'
+          import onnx, onnxruntime, onnxscript, torch
+          assert torch.__version__.startswith('2.13.0'), torch.__version__
+          assert onnx.__version__ == '1.22.0'
+          assert onnxscript.__version__ == '0.7.1'
+          assert onnxruntime.__version__ == '1.27.0'
+          print('C7 EXPORT ENVIRONMENT: PASS', torch.__version__, onnx.__version__, onnxscript.__version__, onnxruntime.__version__)
+          PY
+
+      - name: Probe native Dynamo export and CPU ORT smoke parity
+        run: |
+          set -euo pipefail
+          python scripts/probe-lama-dynamo-onnx.py \
+            --source "${RUNNER_TEMP}/lama" \
+            --checkpoint "${RUNNER_TEMP}/lama-c7/best.ckpt" \
+            --model-out "${RUNNER_TEMP}/lama-c7/lama-big-dynamo-smoke.onnx" \
+            --report .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
+
+      - name: Validate C7 evidence never widens authority
+        run: |
+          python - <<'PY'
+          import json
+          evidence = json.load(open('.test-cache/6.42c7/lama-dynamo-onnx-smoke.json', encoding='utf-8'))
+          assert evidence['status'] == 'CANDIDATE'
+          assert evidence['productionDeviceApproval'] is False
+          assert evidence['runtimeAuthorityGranted'] is False
+          assert evidence['checkpointSha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
+          export = evidence['export']
+          assert export['dynamo'] is True
+          assert export['fallback'] is False
+          assert export['opset'] == 18
+          allowed = {
+              'DYNAMO_EXPORT_BLOCKED_FFT_OR_COMPLEX',
+              'DYNAMO_EXPORT_BLOCKED_ONNX_TRANSLATION',
+              'EXPORTED_REJECTED_ATEN_NODES',
+              'EXPORTED_REJECTED_CUSTOM_DOMAIN_NODES',
+              'EXPORTED_REJECTED_NO_STANDARD_DFT',
+              'EXPORTED_STANDARD_DFT_CPU_ORT_BLOCKED',
+              'EXPORTED_STANDARD_DFT_CPU_ORT_PARITY_FAILED',
+              'EXPORTED_STANDARD_DFT_CPU_ORT_SMOKE_PASS',
+          }
+          assert export['result'] in allowed, export['result']
+          if export['result'] == 'EXPORTED_STANDARD_DFT_CPU_ORT_SMOKE_PASS':
+              assert evidence['graph']['standardDftNodeCount'] > 0
+              assert evidence['graph']['customNodes'] == []
+              assert evidence['graph']['atenLikeNodes'] == []
+              assert evidence['cpuOrt']['result'] == 'PASS'
+          assert evidence.get('productionPromotionAllowed', False) is False
+          print('C7 native Dynamo result=', export['result'])
+          PY
+
+      - name: Upload C7 feasibility evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: lama-c7-dynamo-feasibility-evidence
+          path: .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish C7 summary
+        run: |
+          result="$(python -c "import json; print(json.load(open('.test-cache/6.42c7/lama-dynamo-onnx-smoke.json'))['export']['result'])")"
+          {
+            echo '## LaMa native Dynamo ONNX feasibility'
+            echo
+            echo '- Status: CANDIDATE / feasibility only'
+            echo '- Upstream revision: `786f5936b27fb3dacd2b1ad799e4de968ea697e7`'
+            echo '- Checkpoint: exact C6 authoritative SHA `fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423`'
+            echo '- Export environment: PyTorch 2.13.0 CPU / ONNX 1.22.0 / ONNXScript 0.7.1'
+            echo '- CPU runtime: ONNX Runtime 1.27.0'
+            echo '- Export: `torch.onnx.export`, `dynamo=true`, `fallback=false`, opset 18'
+            echo "- Result: \`${result}\`"
+            echo '- No ONNX model is committed or published by this workflow'
+            echo '- Production/runtime authority: NOT GRANTED'
+            echo '```json'
+            cat .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
