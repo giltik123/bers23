@@ -168,6 +168,81 @@ def expected_io_from_d2(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def cast_target(node: onnx.NodeProto) -> int | None:
+    if node.domain not in ("", "ai.onnx") or node.op_type != "Cast":
+        return None
+    attributes = [attribute for attribute in node.attribute if attribute.name == "to"]
+    if len(attributes) != 1:
+        raise RuntimeError(f"D3 Cast node has unexpected 'to' attribute count: {node.name!r}")
+    return int(attributes[0].i)
+
+
+def declared_tensor_types(model: onnx.ModelProto) -> dict[str, int]:
+    declared: dict[str, int] = {}
+    for value in (*model.graph.input, *model.graph.output, *model.graph.value_info):
+        elem_type = int(value.type.tensor_type.elem_type)
+        previous = declared.get(value.name)
+        if previous is not None and previous != elem_type:
+            raise RuntimeError(
+                f"D3 conflicting tensor type declarations for {value.name}: "
+                f"{dtype_name(previous)} vs {dtype_name(elem_type)}"
+            )
+        declared[value.name] = elem_type
+    return declared
+
+
+def repair_converter_internal_float_casts(
+    source_model: onnx.ModelProto,
+    converted_model: onnx.ModelProto,
+) -> list[dict[str, str]]:
+    """Repair the narrow onnxconverter-common Cast(FLOAT) -> declared FP16 mismatch.
+
+    The converter changes internal FLOAT value_info to FLOAT16 but, for pre-existing
+    Cast nodes, can leave the node's `to` attribute at FLOAT. We repair only a Cast
+    that existed in the accepted D2 source graph, still has the same output, was a
+    source Cast-to-FLOAT, is not a public graph output, and is now explicitly
+    declared FLOAT16 by the converter. Any broader inconsistency remains fail-closed
+    and is caught by the full ONNX checker immediately afterwards.
+    """
+    source_casts: dict[str, tuple[tuple[str, ...], int]] = {}
+    for node in source_model.graph.node:
+        target = cast_target(node)
+        if target is None:
+            continue
+        if not node.name or node.name in source_casts:
+            raise RuntimeError(f"D3 source Cast names must be unique and non-empty: {node.name!r}")
+        source_casts[node.name] = (tuple(node.output), target)
+
+    converted_types = declared_tensor_types(converted_model)
+    public_outputs = {value.name for value in converted_model.graph.output}
+    repairs: list[dict[str, str]] = []
+    for node in converted_model.graph.node:
+        target = cast_target(node)
+        if target != TensorProto.FLOAT or len(node.output) != 1:
+            continue
+        output_name = node.output[0]
+        if converted_types.get(output_name) != TensorProto.FLOAT16:
+            continue
+        if output_name in public_outputs:
+            raise RuntimeError(f"D3 refuses to rewrite public output Cast: {node.name!r}")
+        source = source_casts.get(node.name)
+        if source != ((output_name,), TensorProto.FLOAT):
+            raise RuntimeError(
+                "D3 refuses broad Cast repair; mismatch is not the same pre-existing "
+                f"D2 Cast-to-FLOAT node: {node.name!r} output={output_name!r}"
+            )
+        attribute = next(attribute for attribute in node.attribute if attribute.name == "to")
+        attribute.i = TensorProto.FLOAT16
+        repairs.append({
+            "node": node.name,
+            "output": output_name,
+            "from": "FLOAT",
+            "to": "FLOAT16",
+            "authority": "NARROW_CONVERTER_COMPATIBILITY_REPAIR_ONLY",
+        })
+    return repairs
+
+
 def convert_one(component: str, source: Path, target: Path, d2_record: dict[str, Any]) -> dict[str, Any]:
     source_model = onnx.load_model(source, load_external_data=True)
     source_contract = io_contract(source_model)
@@ -187,6 +262,7 @@ def convert_one(component: str, source: Path, target: Path, d2_record: dict[str,
             f"D3 FP16 conversion changed public I/O contract for {component}: "
             f"before={source_contract!r} after={converted_contract!r}"
         )
+    cast_repairs = repair_converter_internal_float_casts(source_model, converted)
     converted_inventory = graph_inventory(converted)
     fp16_elements = int(converted_inventory["initializerElementsByType"].get("FLOAT16", 0))
     fp32_elements = int(converted_inventory["initializerElementsByType"].get("FLOAT", 0))
@@ -208,6 +284,8 @@ def convert_one(component: str, source: Path, target: Path, d2_record: dict[str,
             "keepIoTypes": True,
             "disableShapeInfer": False,
             "universalFp16CpuTierClaimed": False,
+            "compatibilityRepairPolicy": "SOURCE_CAST_FLOAT_TO_CONVERTER_DECLARED_FP16_ONLY",
+            "compatibilityRepairs": cast_repairs,
         },
         "fp32": {
             "size": source.stat().st_size,
