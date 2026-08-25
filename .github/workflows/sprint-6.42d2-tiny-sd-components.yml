@@ -191,7 +191,7 @@ jobs:
             --onnx-dir "${RUNNER_TEMP}/tiny-sd-d2-onnx" \
             --report "${GITHUB_WORKSPACE}/.test-cache/6.42d2/tiny-sd-d2-components.json"
 
-      - name: Validate D2 feasibility classification without granting authority
+      - name: Validate D2 all-component acceptance without granting authority
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -206,11 +206,16 @@ jobs:
           assert report['releaseIdentityPinned'] is False
           assert report['onnxArtifactsRunnerLocalOnly'] is True
           assert set(report['components']) == {'text_encoder', 'unet', 'vae_decoder'}
-          assert report['passCount'] + len(report['blockedComponents']) == 3
+          assert report['passCount'] == 3
+          assert report['allComponentsPass'] is True
+          assert report['blockedComponents'] == {}
+          assert all(component['result'] == 'PASS' for component in report['components'].values())
           assert all(component['referenceParityPassed'] is True for component in report['components'].values())
-          allowed = {'PASS', 'BLOCKED_UNSUPPORTED_OPERATOR', 'BLOCKED_ONNX_TRANSLATION', 'BLOCKED_TORCH_EXPORT_CAPTURE'}
-          assert all(component['result'] in allowed for component in report['components'].values())
-          print('TINY-SD D2 FEASIBILITY CLASSIFICATION: PASS', report['blockedComponents'])
+          assert all(component['ortParityPassed'] is True for component in report['components'].values())
+          assert all(component['graph']['domains'] == ['ai.onnx'] for component in report['components'].values())
+          assert all(component['graph']['functionCount'] == 0 for component in report['components'].values())
+          assert all(component['artifact']['releaseIdentityPinned'] is False for component in report['components'].values())
+          print('TINY-SD D2 ALL-COMPONENT ACCEPTANCE: PASS 3/3')
           PY
 
       - name: Destroy Tiny-SD D2 binary evidence before JSON upload
@@ -248,8 +253,9 @@ jobs:
           print()
           print('- D1 pinned trust root reproduced: PASS')
           print('- Historical reference semantics: PASS')
-          print(f"- Standard ONNX + CPU ORT components passing: {report['passCount']}/3")
-          print(f"- Explicitly classified blockers: {report['blockedComponents']}")
+          print('- Standard ONNX + CPU ORT components: PASS 3/3')
+          print('- Exact ONNX/ORT tensor-shape contracts: PASS')
+          print('- Custom/ATen nodes and custom function domains: ABSENT')
           print('- ONNX/reference/model binaries destroyed before JSON upload')
           print('- Runtime/device/production authority: NOT GRANTED')
           PY
