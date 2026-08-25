@@ -10,9 +10,6 @@ permissions:
 
 env:
   UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
-  SNAPSHOT_DIR: ${{ runner.temp }}/tiny-sd
-  BRIDGE_DIR: ${{ runner.temp }}/tiny-sd-bridge
-  EVIDENCE_DIR: ${{ github.workspace }}/.test-cache/6.42d1
 
 jobs:
   trusted-snapshot:
@@ -38,12 +35,12 @@ jobs:
         run: |
           set -euo pipefail
           npm ci
-          mkdir -p "${EVIDENCE_DIR}"
+          mkdir -p "${GITHUB_WORKSPACE}/.test-cache/6.42d1"
           npx esbuild tests/tiny-sd-candidate-policy.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
-            --outfile="${EVIDENCE_DIR}/tiny-sd-candidate-policy.test.mjs" \
+            --outfile="${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-candidate-policy.test.mjs" \
             --external:node:*
-          node --test "${EVIDENCE_DIR}/tiny-sd-candidate-policy.test.mjs"
+          node --test "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-candidate-policy.test.mjs"
           node --test tests/tiny-sd-acquisition-security.test.mjs
           python -m py_compile scripts/inspect-tiny-sd-snapshot.py scripts/bridge-tiny-sd-safetensors.py
           npm run check:model-weight-tracking
@@ -85,14 +82,14 @@ jobs:
           snapshot_download(
               repo_id='segmind/tiny-sd',
               revision=os.environ['UPSTREAM_REVISION'],
-              local_dir=os.environ['SNAPSHOT_DIR'],
+              local_dir=os.path.join(os.environ['RUNNER_TEMP'], 'tiny-sd'),
               allow_patterns=expected,
           )
           PY
           python scripts/inspect-tiny-sd-snapshot.py \
-            --snapshot "${SNAPSHOT_DIR}" \
+            --snapshot "${RUNNER_TEMP}/tiny-sd" \
             --revision "${UPSTREAM_REVISION}" \
-            --report "${EVIDENCE_DIR}/tiny-sd-snapshot.json"
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-snapshot.json"
 
       - name: Install pinned restricted tensor bridge environment
         run: |
@@ -109,14 +106,15 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/bridge-tiny-sd-safetensors.py \
-            --snapshot "${SNAPSHOT_DIR}" \
-            --inventory "${EVIDENCE_DIR}/tiny-sd-snapshot.json" \
-            --out-dir "${BRIDGE_DIR}" \
-            --report "${EVIDENCE_DIR}/tiny-sd-bridge.json"
+            --snapshot "${RUNNER_TEMP}/tiny-sd" \
+            --inventory "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-snapshot.json" \
+            --out-dir "${RUNNER_TEMP}/tiny-sd-bridge" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-bridge.json"
           python - <<'PY'
           import json, os
-          inventory = json.load(open(os.path.join(os.environ['EVIDENCE_DIR'], 'tiny-sd-snapshot.json'), encoding='utf-8'))
-          bridge = json.load(open(os.path.join(os.environ['EVIDENCE_DIR'], 'tiny-sd-bridge.json'), encoding='utf-8'))
+          root = os.path.join(os.environ['GITHUB_WORKSPACE'], '.test-cache', '6.42d1')
+          inventory = json.load(open(os.path.join(root, 'tiny-sd-snapshot.json'), encoding='utf-8'))
+          bridge = json.load(open(os.path.join(root, 'tiny-sd-bridge.json'), encoding='utf-8'))
           assert inventory['status'] == 'CANDIDATE'
           assert inventory['upstreamRevision'] == os.environ['UPSTREAM_REVISION']
           assert len(inventory['inventory']) == 12
@@ -142,7 +140,7 @@ jobs:
           rm -rf "${RUNNER_TEMP}/tiny-sd" "${RUNNER_TEMP}/tiny-sd-bridge"
           test ! -e "${RUNNER_TEMP}/tiny-sd"
           test ! -e "${RUNNER_TEMP}/tiny-sd-bridge"
-          test "$(find "${EVIDENCE_DIR}" -type f \( -name '*.bin' -o -name '*.safetensors' -o -name '*.onnx' -o -name '*.ort' \) | wc -l)" -eq 0
+          test "$(find "${GITHUB_WORKSPACE}/.test-cache/6.42d1" -type f \( -name '*.bin' -o -name '*.safetensors' -o -name '*.onnx' -o -name '*.ort' \) | wc -l)" -eq 0
 
       - name: Upload JSON trust evidence only
         uses: actions/upload-artifact@v4
@@ -156,7 +154,7 @@ jobs:
 
       - name: Publish D1 summary
         run: |
-          total="$(python -c "import json; print(json.load(open('${EVIDENCE_DIR}/tiny-sd-snapshot.json'))['totalRuntimeBytes'])")"
+          total="$(python -c 'import json; print(json.load(open(".test-cache/6.42d1/tiny-sd-snapshot.json"))["totalRuntimeBytes"])')"
           {
             echo '## Tiny-SD D1 trusted acquisition'
             echo
