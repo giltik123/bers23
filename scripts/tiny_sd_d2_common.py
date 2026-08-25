@@ -17,6 +17,7 @@ ARTIFACT_STATE = "TRUST_ROOT_PINNED_RUNTIME_FEASIBILITY_REQUIRED"
 SEQUENCE_LENGTH = 77
 LATENT_HEIGHT = 64
 LATENT_WIDTH = 64
+CLIP_POSITION_IDS_KEY = "text_model.embeddings.position_ids"
 
 
 def sha256_file(path: Path) -> str:
@@ -86,6 +87,89 @@ def _state_for_component(manifest: dict[str, Any], bridge_dir: Path, component: 
     return {key: value.detach().cpu().float().contiguous() for key, value in state.items()}
 
 
+def _exact_state_load(
+    model: torch.nn.Module,
+    state: dict[str, torch.Tensor],
+    *,
+    component: str,
+    clip_max_position_embeddings: int | None = None,
+) -> dict[str, Any]:
+    """Load the D1 tensor state without treating framework-derived buffers as model authority.
+
+    Every learned parameter must be present in the D1 bridge. Every unexpected bridge key is
+    rejected. The only permitted historical-library mismatch is CLIP's non-learned position_ids
+    buffer, which Transformers 4.30 persists in state_dict even though the authoritative Tiny-SD
+    source weights do not serialize it. Its exact value is re-derived from the pinned config.
+    """
+    model_state_keys = set(model.state_dict())
+    bridge_keys = set(state)
+    parameter_names = {name for name, _ in model.named_parameters()}
+    missing = model_state_keys - bridge_keys
+    unexpected = bridge_keys - model_state_keys
+
+    if unexpected:
+        raise RuntimeError(f"Tiny-SD {component} unexpected D1 bridge keys: {sorted(unexpected)}")
+    missing_parameters = parameter_names - bridge_keys
+    if missing_parameters:
+        raise RuntimeError(f"Tiny-SD {component} missing learned parameters: {sorted(missing_parameters)}")
+
+    allowed_missing: set[str] = set()
+    derived_buffers: list[dict[str, Any]] = []
+    if component == "text_encoder" and CLIP_POSITION_IDS_KEY in missing:
+        if clip_max_position_embeddings is None or clip_max_position_embeddings <= 0:
+            raise RuntimeError("Tiny-SD CLIP max_position_embeddings is unavailable")
+        if CLIP_POSITION_IDS_KEY in parameter_names:
+            raise RuntimeError("Tiny-SD CLIP position_ids unexpectedly became a learned parameter")
+        buffers = dict(model.named_buffers())
+        buffer = buffers.get(CLIP_POSITION_IDS_KEY)
+        if buffer is None:
+            raise RuntimeError("Tiny-SD CLIP position_ids missing from named buffers")
+        expected_shape = (1, int(clip_max_position_embeddings))
+        if tuple(buffer.shape) != expected_shape:
+            raise RuntimeError(
+                f"Tiny-SD CLIP position_ids shape drift: {tuple(buffer.shape)} != {expected_shape}"
+            )
+        expected = torch.arange(
+            int(clip_max_position_embeddings),
+            dtype=buffer.dtype,
+            device=buffer.device,
+        ).reshape(expected_shape)
+        if not torch.equal(buffer, expected):
+            raise RuntimeError("Tiny-SD CLIP position_ids is not the exact pinned-config derivation")
+        allowed_missing.add(CLIP_POSITION_IDS_KEY)
+        derived_buffers.append({
+            "key": CLIP_POSITION_IDS_KEY,
+            "authority": "DERIVED_FROM_PINNED_CONFIG_NOT_D1_WEIGHT",
+            "learnedParameter": False,
+            "shape": list(expected_shape),
+            "dtype": str(buffer.dtype),
+            "formula": "arange(max_position_embeddings).reshape(1, max_position_embeddings)",
+        })
+
+    if missing != allowed_missing:
+        raise RuntimeError(
+            f"Tiny-SD {component} unapproved missing state keys: {sorted(missing - allowed_missing)}"
+        )
+
+    # strict=False is used only after the exact key-set checks above and only when the one
+    # closed, deterministic non-learned CLIP buffer is absent from the authoritative bridge.
+    incompatible = model.load_state_dict(state, strict=not allowed_missing)
+    if set(incompatible.missing_keys) != allowed_missing or incompatible.unexpected_keys:
+        raise RuntimeError(
+            f"Tiny-SD {component} state-load result drift: "
+            f"missing={incompatible.missing_keys} unexpected={incompatible.unexpected_keys}"
+        )
+    return {
+        "bridgeKeyCount": len(bridge_keys),
+        "modelStateKeyCount": len(model_state_keys),
+        "learnedParameterCount": len(parameter_names),
+        "allLearnedParametersExactFromD1Bridge": True,
+        "unexpectedBridgeKeys": [],
+        "derivedNonLearnedBuffers": derived_buffers,
+        "derivedBufferPolicy": "EXACT_CLOSED_ALLOWLIST",
+    }
+
+
 def _force_diffusers_eager_attention(model: torch.nn.Module) -> None:
     # Historical and modern Diffusers may otherwise select different attention processors
     # solely because of the installed PyTorch version. D2 compares model semantics, not
@@ -108,11 +192,14 @@ def load_text_encoder(snapshot: Path, bridge_dir: Path, manifest: dict[str, Any]
     setattr(config, "_attn_implementation", "eager")
     model = CLIPTextModel(config).float()
     state = _state_for_component(manifest, bridge_dir, "text_encoder")
-    incompatible = model.load_state_dict(state, strict=True)
-    if incompatible.missing_keys or incompatible.unexpected_keys:
-        raise RuntimeError("Tiny-SD text encoder strict state load failed")
+    load_evidence = _exact_state_load(
+        model,
+        state,
+        component="text_encoder",
+        clip_max_position_embeddings=int(config.max_position_embeddings),
+    )
     model.eval()
-    return model, config
+    return model, config, load_evidence
 
 
 def load_unet(snapshot: Path, bridge_dir: Path, manifest: dict[str, Any]):
@@ -121,12 +208,10 @@ def load_unet(snapshot: Path, bridge_dir: Path, manifest: dict[str, Any]):
     config = json.loads((snapshot / "unet" / "config.json").read_text(encoding="utf-8"))
     model = UNet2DConditionModel.from_config(config).float()
     state = _state_for_component(manifest, bridge_dir, "unet")
-    incompatible = model.load_state_dict(state, strict=True)
-    if incompatible.missing_keys or incompatible.unexpected_keys:
-        raise RuntimeError("Tiny-SD UNet strict state load failed")
+    load_evidence = _exact_state_load(model, state, component="unet")
     _force_diffusers_eager_attention(model)
     model.eval()
-    return model, config
+    return model, config, load_evidence
 
 
 def load_vae(snapshot: Path, bridge_dir: Path, manifest: dict[str, Any]):
@@ -135,12 +220,10 @@ def load_vae(snapshot: Path, bridge_dir: Path, manifest: dict[str, Any]):
     config = json.loads((snapshot / "vae" / "config.json").read_text(encoding="utf-8"))
     model = AutoencoderKL.from_config(config).float()
     state = _state_for_component(manifest, bridge_dir, "vae")
-    incompatible = model.load_state_dict(state, strict=True)
-    if incompatible.missing_keys or incompatible.unexpected_keys:
-        raise RuntimeError("Tiny-SD VAE strict state load failed")
+    load_evidence = _exact_state_load(model, state, component="vae")
     _force_diffusers_eager_attention(model)
     model.eval()
-    return model, config
+    return model, config, load_evidence
 
 
 def deterministic_text_inputs(vocab_size: int) -> tuple[torch.Tensor, torch.Tensor]:
