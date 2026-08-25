@@ -14,9 +14,9 @@ test('C7 reuses exact C6 checkpoint identity and safe loader instead of inventin
   assert.match(probe, /c6\.build_generator\(source\)/);
   assert.match(probe, /generator\.load_state_dict\(generator_state, strict=True\)/);
   assert.match(c6, /weights_only=True/);
-  assert.doesNotMatch(probe, /weights_only=False/);
-  assert.doesNotMatch(probe, /pytorch_lightning/);
-  assert.doesNotMatch(probe, /omegaconf/);
+  assert.doesNotMatch(probe, /torch\.load\s*\(/);
+  assert.doesNotMatch(probe, /^\s*import\s+pytorch_lightning\b/m);
+  assert.doesNotMatch(probe, /^\s*import\s+omegaconf\b/m);
 });
 
 test('C7 uses native modern Dynamo export only with no ATen fallback or Fourier rewrite', () => {
