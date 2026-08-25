@@ -38,6 +38,7 @@ jobs:
           python -m py_compile \
             scripts/bridge-lama-generator-safetensors.py \
             scripts/probe-lama-dynamo-onnx.py \
+            scripts/probe-lama-dynamo-multishape.py \
             scripts/inspect-lama-checkpoint.py
           npm run check:model-weight-tracking
           test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.safetensors' '*.onnx' | wc -l)" -eq 0
@@ -155,25 +156,28 @@ jobs:
           assert onnxscript.__version__ == '0.7.1'
           assert onnxruntime.__version__ == '1.27.0'
           assert 'fallback' not in inspect.signature(torch.onnx.export).parameters
+          assert 'dynamic_shapes' in inspect.signature(torch.onnx.export).parameters
           print('C7 EXPORT ENVIRONMENT: PASS', torch.__version__, numpy.__version__, safetensors.__version__, onnx.__version__, onnxscript.__version__, onnxruntime.__version__)
           PY
 
-      - name: Probe native Dynamo export and CPU ORT smoke parity
+      - name: Probe native dynamic Dynamo export and CPU ORT multi-shape parity
         run: |
           set -euo pipefail
           test ! -e "${RUNNER_TEMP}/lama-c7/best.ckpt"
-          python scripts/probe-lama-dynamo-onnx.py \
+          python scripts/probe-lama-dynamo-multishape.py \
             --source "${RUNNER_TEMP}/lama" \
             --state "${RUNNER_TEMP}/lama-c7/generator.safetensors" \
             --bridge-report .test-cache/6.42c7/lama-generator-bridge.json \
-            --model-out "${RUNNER_TEMP}/lama-c7/lama-big-dynamo-smoke.onnx" \
-            --report .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
+            --model-out "${RUNNER_TEMP}/lama-c7/lama-big-dynamo-dynamic.onnx" \
+            --report .test-cache/6.42c7/lama-dynamo-onnx-multishape.json \
+            --browser-input-out "${RUNNER_TEMP}/lama-c7/browser-input-256.f32" \
+            --browser-reference-out "${RUNNER_TEMP}/lama-c7/browser-reference-256.f32"
 
-      - name: Validate C7 evidence never widens authority
+      - name: Validate dynamic C7 evidence never widens authority
         run: |
           python - <<'PY'
-          import json
-          evidence = json.load(open('.test-cache/6.42c7/lama-dynamo-onnx-smoke.json', encoding='utf-8'))
+          import json, os, pathlib
+          evidence = json.load(open('.test-cache/6.42c7/lama-dynamo-onnx-multishape.json', encoding='utf-8'))
           assert evidence['status'] == 'CANDIDATE'
           assert evidence['productionDeviceApproval'] is False
           assert evidence['runtimeAuthorityGranted'] is False
@@ -190,45 +194,65 @@ jobs:
           assert bridge['generatorTensorElements'] == 51057179
           export = evidence['export']
           assert export['dynamo'] is True
-          assert export['legacyFallbackApi'] == 'REMOVED_IN_PYTORCH_2_11'
           assert export['legacyFallbackAllowed'] is False
           assert export['opset'] == 18
           allowed = {
-              'DYNAMO_EXPORT_BLOCKED_FFT_OR_COMPLEX',
-              'DYNAMO_EXPORT_BLOCKED_ONNX_TRANSLATION',
+              'DYNAMO_DYNAMIC_EXPORT_BLOCKED_SHAPE_CONSTRAINT',
+              'DYNAMO_DYNAMIC_EXPORT_BLOCKED_FFT_OR_COMPLEX',
+              'DYNAMO_DYNAMIC_EXPORT_BLOCKED_ONNX_TRANSLATION',
               'EXPORTED_REJECTED_ATEN_NODES',
               'EXPORTED_REJECTED_CUSTOM_DOMAIN_NODES',
               'EXPORTED_REJECTED_NO_STANDARD_DFT',
-              'EXPORTED_STANDARD_DFT_CPU_ORT_BLOCKED',
-              'EXPORTED_STANDARD_DFT_CPU_ORT_PARITY_FAILED',
-              'EXPORTED_STANDARD_DFT_CPU_ORT_SMOKE_PASS',
+              'EXPORTED_REJECTED_STATIC_SPATIAL_SHAPE',
+              'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_BLOCKED',
+              'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PARITY_FAILED',
+              'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS',
           }
           assert export['result'] in allowed, export['result']
-          if export['result'] == 'EXPORTED_STANDARD_DFT_CPU_ORT_SMOKE_PASS':
+          if export['result'] == 'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS':
               assert evidence['graph']['standardDftNodeCount'] > 0
               assert evidence['graph']['customNodes'] == []
               assert evidence['graph']['atenLikeNodes'] == []
+              assert evidence['graph']['dynamicHeight'] is True
+              assert evidence['graph']['dynamicWidth'] is True
               assert evidence['cpuOrt']['result'] == 'PASS'
+              shapes = [item['shape'] for item in evidence['cpuOrt']['shapeResults']]
+              assert shapes == [[64,64],[256,256],[256,384],[512,512]], shapes
+              for item in evidence['cpuOrt']['shapeResults']:
+                  assert item['result'] == 'PASS', item
+                  assert item['rawParity']['maxAbs'] <= 2e-4
+                  assert item['rawParity']['rmse'] <= 5e-5
+                  assert item['semanticContract']['maskValues'] == [0.0, 1.0]
+                  assert item['semanticContract']['maskOneMeansInpaint'] is True
+                  assert item['semanticContract']['maskChannelExact'] is True
+                  assert item['semanticContract']['maskedRgbZero'] is True
+                  assert item['semanticContract']['knownRgbPreservedInGeneratorInput'] is True
+                  assert item['referenceComposite']['knownRegionBitExact'] is True
+                  assert item['ortComposite']['knownRegionBitExact'] is True
+              assert evidence['browserReference']['shape'] == [256,256]
+              root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'lama-c7'
+              assert (root / 'browser-input-256.f32').is_file()
+              assert (root / 'browser-reference-256.f32').is_file()
           assert evidence.get('productionPromotionAllowed', False) is False
-          print('C7 native Dynamo result=', export['result'])
+          print('C7 dynamic Dynamo result=', export['result'])
           PY
 
-      - name: Upload C7 feasibility evidence only
+      - name: Upload C7 feasibility JSON evidence only
         uses: actions/upload-artifact@v4
         with:
           name: lama-c7-dynamo-feasibility-evidence
           path: |
             .test-cache/6.42c7/lama-generator-bridge.json
-            .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
+            .test-cache/6.42c7/lama-dynamo-onnx-multishape.json
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish C7 summary
+      - name: Publish C7 dynamic summary
         run: |
-          result="$(python -c "import json; print(json.load(open('.test-cache/6.42c7/lama-dynamo-onnx-smoke.json'))['export']['result'])")"
+          result="$(python -c "import json; print(json.load(open('.test-cache/6.42c7/lama-dynamo-onnx-multishape.json'))['export']['result'])")"
           bridge_sha="$(python -c "import json; print(json.load(open('.test-cache/6.42c7/lama-generator-bridge.json'))['bridge']['sha256'])")"
           {
-            echo '## LaMa native Dynamo ONNX feasibility'
+            echo '## LaMa native dynamic Dynamo ONNX feasibility'
             echo
             echo '- Status: CANDIDATE / feasibility only'
             echo '- Upstream revision: `786f5936b27fb3dacd2b1ad799e4de968ea697e7`'
@@ -238,11 +262,13 @@ jobs:
             echo '- Legacy `.ckpt` removed before modern exporter environment'
             echo '- Export environment: PyTorch 2.13.0 CPU / NumPy 2.4.6 / ONNX 1.22.0 / ONNXScript 0.7.1'
             echo '- CPU runtime: ONNX Runtime 1.27.0'
-            echo '- Export: `torch.onnx.export`, `dynamo=true`, opset 18; legacy fallback API removed in PyTorch 2.11+'
+            echo '- Dynamic shapes: modulo-8 H/W, tested 64x64, 256x256, 256x384, 512x512'
+            echo '- Export: `torch.onnx.export`, `dynamo=true`, `dynamic_shapes`, opset 18'
             echo "- Result: \`${result}\`"
-            echo '- No checkpoint, safetensors bridge or ONNX model is committed or published by this workflow'
+            echo '- Browser WASM remains a separate next gate even after CPU multi-shape PASS'
+            echo '- No checkpoint, safetensors bridge, ONNX model, or float reference is uploaded/published by this workflow'
             echo '- Production/runtime authority: NOT GRANTED'
             echo '```json'
-            cat .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
+            cat .test-cache/6.42c7/lama-dynamo-onnx-multishape.json
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
