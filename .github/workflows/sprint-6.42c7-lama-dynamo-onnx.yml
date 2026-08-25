@@ -35,9 +35,12 @@ jobs:
         run: |
           set -euo pipefail
           node --test tests/lama-dynamo-onnx-security.test.mjs
-          python -m py_compile scripts/probe-lama-dynamo-onnx.py scripts/inspect-lama-checkpoint.py
+          python -m py_compile \
+            scripts/bridge-lama-generator-safetensors.py \
+            scripts/probe-lama-dynamo-onnx.py \
+            scripts/inspect-lama-checkpoint.py
           npm run check:model-weight-tracking
-          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.onnx' | wc -l)" -eq 0
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.safetensors' '*.onnx' | wc -l)" -eq 0
 
       - name: Clone exact LaMa upstream
         run: |
@@ -86,32 +89,83 @@ jobs:
           print('C7 AUTHORITATIVE MEMBER IDENTITIES: PASS')
           PY
 
-      - name: Install pinned modern exporter and matching ORT runtime line
+      - name: Install pinned C6-proven bridge environment
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check kornia==0.5.0 safetensors==0.8.0
+          python - <<'PY'
+          import safetensors, torch
+          assert torch.__version__.startswith('2.6.0'), torch.__version__
+          assert safetensors.__version__ == '0.8.0', safetensors.__version__
+          print('C7 BRIDGE ENVIRONMENT: PASS', torch.__version__, safetensors.__version__)
+          PY
+
+      - name: Bridge legacy checkpoint to tensor-only safetensors and remove pickle source
+        run: |
+          set -euo pipefail
+          python scripts/bridge-lama-generator-safetensors.py \
+            --source "${RUNNER_TEMP}/lama" \
+            --checkpoint "${RUNNER_TEMP}/lama-c7/best.ckpt" \
+            --state-out "${RUNNER_TEMP}/lama-c7/generator.safetensors" \
+            --report .test-cache/6.42c7/lama-generator-bridge.json
+          python - <<'PY'
+          import json, pathlib
+          evidence = json.load(open('.test-cache/6.42c7/lama-generator-bridge.json', encoding='utf-8'))
+          assert evidence['status'] == 'CANDIDATE'
+          assert evidence['productionDeviceApproval'] is False
+          assert evidence['runtimeAuthorityGranted'] is False
+          assert evidence['sourceCheckpoint']['sha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
+          assert evidence['sourceCheckpoint']['verifiedBeforeDeserialization'] is True
+          assert evidence['sourceCheckpoint']['weightsOnly'] is True
+          bridge = evidence['bridge']
+          assert bridge['format'] == 'SAFETENSORS'
+          assert bridge['pickleFree'] is True
+          assert bridge['keyCount'] == 989
+          assert bridge['tensorElements'] == 51057179
+          assert bridge['ephemeral'] is True
+          assert bridge['published'] is False
+          state = pathlib.Path('${RUNNER_TEMP}/lama-c7/generator.safetensors')
+          assert state.is_file() and state.stat().st_size == bridge['fileSize']
+          print('C7 TENSOR-ONLY BRIDGE POLICY: PASS', bridge['sha256'])
+          PY
+          rm -f "${RUNNER_TEMP}/lama-c7/best.ckpt" "${RUNNER_TEMP}/lama-c7/big-lama.zip"
+          test ! -e "${RUNNER_TEMP}/lama-c7/best.ckpt"
+          test ! -e "${RUNNER_TEMP}/lama-c7/big-lama.zip"
+          test -s "${RUNNER_TEMP}/lama-c7/generator.safetensors"
+
+      - name: Install pinned modern exporter and matching ORT runtime line
+        run: |
+          set -euo pipefail
           python -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --disable-pip-version-check \
+            numpy==2.4.6 \
             kornia==0.5.0 \
+            safetensors==0.8.0 \
             onnx==1.22.0 \
             onnxscript==0.7.1 \
             onnxruntime==1.27.0
           python - <<'PY'
-          import inspect, onnx, onnxruntime, onnxscript, torch
+          import inspect, numpy, onnx, onnxruntime, onnxscript, safetensors, torch
           assert torch.__version__.startswith('2.13.0'), torch.__version__
+          assert numpy.__version__ == '2.4.6'
+          assert safetensors.__version__ == '0.8.0'
           assert onnx.__version__ == '1.22.0'
           assert onnxscript.__version__ == '0.7.1'
           assert onnxruntime.__version__ == '1.27.0'
           assert 'fallback' not in inspect.signature(torch.onnx.export).parameters
-          print('C7 EXPORT ENVIRONMENT: PASS', torch.__version__, onnx.__version__, onnxscript.__version__, onnxruntime.__version__)
+          print('C7 EXPORT ENVIRONMENT: PASS', torch.__version__, numpy.__version__, safetensors.__version__, onnx.__version__, onnxscript.__version__, onnxruntime.__version__)
           PY
 
       - name: Probe native Dynamo export and CPU ORT smoke parity
         run: |
           set -euo pipefail
+          test ! -e "${RUNNER_TEMP}/lama-c7/best.ckpt"
           python scripts/probe-lama-dynamo-onnx.py \
             --source "${RUNNER_TEMP}/lama" \
-            --checkpoint "${RUNNER_TEMP}/lama-c7/best.ckpt" \
+            --state "${RUNNER_TEMP}/lama-c7/generator.safetensors" \
+            --bridge-report .test-cache/6.42c7/lama-generator-bridge.json \
             --model-out "${RUNNER_TEMP}/lama-c7/lama-big-dynamo-smoke.onnx" \
             --report .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
 
@@ -125,6 +179,15 @@ jobs:
           assert evidence['runtimeAuthorityGranted'] is False
           assert evidence['checkpointSha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
           assert evidence['environment']['legacyFallbackParameterPresent'] is False
+          assert evidence['environment']['safetensors'] == '0.8.0'
+          bridge = evidence['bridgeProof']
+          assert bridge['legacyCheckpointDeserializedInExporterProcess'] is False
+          assert bridge['bridgeFormat'] == 'SAFETENSORS'
+          assert bridge['bridgePickleFree'] is True
+          assert bridge['sourceCheckpointSha256'] == evidence['checkpointSha256']
+          assert bridge['sourceCheckpointWeightsOnlyProof'] is True
+          assert bridge['generatorStateKeyCount'] == 989
+          assert bridge['generatorTensorElements'] == 51057179
           export = evidence['export']
           assert export['dynamo'] is True
           assert export['legacyFallbackApi'] == 'REMOVED_IN_PYTORCH_2_11'
@@ -154,24 +217,30 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lama-c7-dynamo-feasibility-evidence
-          path: .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
+          path: |
+            .test-cache/6.42c7/lama-generator-bridge.json
+            .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
           if-no-files-found: error
           retention-days: 7
 
       - name: Publish C7 summary
         run: |
           result="$(python -c "import json; print(json.load(open('.test-cache/6.42c7/lama-dynamo-onnx-smoke.json'))['export']['result'])")"
+          bridge_sha="$(python -c "import json; print(json.load(open('.test-cache/6.42c7/lama-generator-bridge.json'))['bridge']['sha256'])")"
           {
             echo '## LaMa native Dynamo ONNX feasibility'
             echo
             echo '- Status: CANDIDATE / feasibility only'
             echo '- Upstream revision: `786f5936b27fb3dacd2b1ad799e4de968ea697e7`'
             echo '- Checkpoint: exact C6 authoritative SHA `fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423`'
-            echo '- Export environment: PyTorch 2.13.0 CPU / ONNX 1.22.0 / ONNXScript 0.7.1'
+            echo '- Legacy checkpoint reader: PyTorch 2.6 restricted weights-only loader'
+            echo "- Ephemeral tensor bridge: safetensors 0.8.0 / SHA \`${bridge_sha}\`"
+            echo '- Legacy `.ckpt` removed before modern exporter environment'
+            echo '- Export environment: PyTorch 2.13.0 CPU / NumPy 2.4.6 / ONNX 1.22.0 / ONNXScript 0.7.1'
             echo '- CPU runtime: ONNX Runtime 1.27.0'
             echo '- Export: `torch.onnx.export`, `dynamo=true`, opset 18; legacy fallback API removed in PyTorch 2.11+'
             echo "- Result: \`${result}\`"
-            echo '- No ONNX model is committed or published by this workflow'
+            echo '- No checkpoint, safetensors bridge or ONNX model is committed or published by this workflow'
             echo '- Production/runtime authority: NOT GRANTED'
             echo '```json'
             cat .test-cache/6.42c7/lama-dynamo-onnx-smoke.json
