@@ -5,6 +5,8 @@ import argparse
 import gc
 import json
 import math
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -492,6 +494,79 @@ def main() -> int:
         "TINY-SD D3 WASM COMPACT PREPARATION: "
         f"native_pass={native_pass_count}/3 blocked={report['blockedComponents']} "
         f"candidate_bytes={candidate_bytes}"
+    )
+
+    baseline_report_path = args.report.resolve()
+    matrix_report_path = baseline_report_path.with_name(f"{baseline_report_path.stem}-matrix.json")
+    matrix_script = Path(__file__).with_name("prepare-tiny-sd-d3-wasm-strategy-matrix.py")
+    if not matrix_script.is_file() or matrix_script.is_symlink():
+        raise RuntimeError("D3 WASM strategy matrix script is unavailable or not a regular tracked file")
+    for filename in COMPONENT_FILES.values():
+        candidate = output_dir / filename
+        if candidate.exists():
+            candidate.unlink()
+    subprocess.run(
+        [
+            sys.executable,
+            str(matrix_script),
+            "--fp32-dir",
+            str(fp32_dir),
+            "--d2-report",
+            str(args.d2_report.resolve(strict=True)),
+            "--baseline-report",
+            str(baseline_report_path),
+            "--output-dir",
+            str(output_dir),
+            "--report",
+            str(matrix_report_path),
+        ],
+        check=True,
+    )
+    matrix = json.loads(matrix_report_path.resolve(strict=True).read_text(encoding="utf-8"))
+    if matrix.get("selectionRule") != "MIN_SIZE_AMONG_ORIGINAL_D3_NATIVE_PARITY_PASSING_CANDIDATES":
+        raise RuntimeError("D3 WASM strategy selection rule drift")
+    for component, value in matrix["components"].items():
+        if value["result"] == "WASM_STRATEGY_MATRIX_NO_NATIVE_PASS":
+            strategy_results = [item.get("result") for item in value.get("strategies", {}).values()]
+            if "NUMERIC_RISK" in strategy_results:
+                value["result"] = "WASM_COMPACT_NUMERIC_RISK"
+            elif "SIZE_BLOCKED" in strategy_results:
+                value["result"] = "WASM_COMPACT_SIZE_BLOCKED"
+            else:
+                value["result"] = "WASM_COMPACT_TRANSFORM_BLOCKED"
+        if value["result"] == "WASM_COMPACT_NATIVE_PASS":
+            if value.get("candidate") is None or value.get("nativeOrtParity", {}).get("passed") is not True:
+                raise RuntimeError(f"D3 WASM selected candidate is not parity-qualified: {component}")
+            selected_path = output_dir / COMPONENT_FILES[component]
+            if not selected_path.is_file() or selected_path.is_symlink():
+                raise RuntimeError(f"D3 WASM selected candidate binary missing: {component}")
+            if selected_path.stat().st_size != value["candidate"]["size"] or sha256_file(selected_path) != value["candidate"]["sha256"]:
+                raise RuntimeError(f"D3 WASM selected candidate identity drift: {component}")
+    matrix["environment"] = report["environment"]
+    matrix["strategy"] = "COMPONENT_SPECIFIC_QUANTIZATION_FIRST_BASELINE"
+    matrix["selectionStrategy"] = "MULTI_STRATEGY_NATIVE_PARITY_SELECTION"
+    matrix["textEncoderStrategy"] = "DYNAMIC_U8_WEIGHT_MATMUL"
+    matrix["cnnStrategy"] = "STATIC_QDQ_U8S8_CONV_MATMUL_GEMM"
+    matrix["nativePassCount"] = sum(value["result"] == "WASM_COMPACT_NATIVE_PASS" for value in matrix["components"].values())
+    matrix["blockedComponents"] = {
+        key: value["result"]
+        for key, value in matrix["components"].items()
+        if value["result"] != "WASM_COMPACT_NATIVE_PASS"
+    }
+    selected_bytes = sum(
+        int(value["candidate"]["size"])
+        for value in matrix["components"].values()
+        if value.get("candidate") is not None
+    )
+    matrix["totals"]["baselineCandidateBytesProduced"] = candidate_bytes
+    matrix["totals"]["candidateBytesProduced"] = selected_bytes
+    matrix["totals"]["producedSizeRatio"] = selected_bytes / source_bytes
+    baseline_report_path.write_text(json.dumps(matrix, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    matrix_report_path.unlink()
+    print(
+        "TINY-SD D3 WASM STRATEGY SELECTION: "
+        f"native_pass={matrix['nativePassCount']}/3 blocked={matrix['blockedComponents']} "
+        f"selected_bytes={selected_bytes}"
     )
     return 0
 
