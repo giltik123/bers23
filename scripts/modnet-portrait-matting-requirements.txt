@@ -1,0 +1,6 @@
+# BERS reproducible MODNet CANDIDATE export environment
+# Python 3.11 / ubuntu-24.04 hosted reference
+numpy==1.26.4
+torch==2.1.2
+onnx==1.15.0
+onnxruntime==1.16.3
