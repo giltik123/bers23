@@ -1,0 +1,187 @@
+name: Sprint 6.42D1 Tiny-SD acquisition trust
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+  TINY_SD_MANIFEST: src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json
+
+jobs:
+  trusted-snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Verify D1 fail-closed policy before network/model work
+        run: |
+          set -euo pipefail
+          npm ci
+          mkdir -p "${GITHUB_WORKSPACE}/.test-cache/6.42d1"
+          npx esbuild tests/tiny-sd-candidate-policy.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile="${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-candidate-policy.test.mjs" \
+            --external:node:*
+          node --test "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-candidate-policy.test.mjs"
+          node --test tests/tiny-sd-acquisition-security.test.mjs
+          python -m py_compile scripts/inspect-tiny-sd-snapshot.py scripts/bridge-tiny-sd-safetensors.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+          if git grep -n -I -E -- '^-----BEGIN (ED25519 |EC |RSA |OPENSSH )?PRIVATE KEY-----$'; then
+            echo 'Private key material is tracked by Git' >&2
+            exit 1
+          fi
+
+      - name: Install pinned Hugging Face transport client
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          PY
+
+      - name: Acquire exact Tiny-SD runtime snapshot
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          expected = [
+              'model_index.json',
+              'scheduler/scheduler_config.json',
+              'text_encoder/config.json',
+              'text_encoder/pytorch_model.bin',
+              'tokenizer/merges.txt',
+              'tokenizer/special_tokens_map.json',
+              'tokenizer/tokenizer_config.json',
+              'tokenizer/vocab.json',
+              'unet/config.json',
+              'unet/diffusion_pytorch_model.bin',
+              'vae/config.json',
+              'vae/diffusion_pytorch_model.bin',
+          ]
+          snapshot_download(
+              repo_id='segmind/tiny-sd',
+              revision=os.environ['UPSTREAM_REVISION'],
+              local_dir=os.path.join(os.environ['RUNNER_TEMP'], 'tiny-sd'),
+              allow_patterns=expected,
+          )
+          PY
+          python scripts/inspect-tiny-sd-snapshot.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd" \
+            --revision "${UPSTREAM_REVISION}" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-snapshot.json"
+
+      - name: Install pinned restricted tensor bridge environment
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check safetensors==0.8.0
+          python - <<'PY'
+          import numpy, safetensors, torch
+          assert numpy.__version__ == '1.26.4', numpy.__version__
+          assert torch.__version__.startswith('2.6.0'), torch.__version__
+          assert safetensors.__version__ == '0.8.0', safetensors.__version__
+          PY
+
+      - name: Bridge verified pickle state_dicts to ephemeral safetensors
+        run: |
+          set -euo pipefail
+          python scripts/bridge-tiny-sd-safetensors.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd" \
+            --inventory "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-snapshot.json" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --out-dir "${RUNNER_TEMP}/tiny-sd-bridge" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-bridge.json"
+          python - <<'PY'
+          import json, os
+          workspace = os.environ['GITHUB_WORKSPACE']
+          root = os.path.join(workspace, '.test-cache', '6.42d1')
+          inventory = json.load(open(os.path.join(root, 'tiny-sd-snapshot.json'), encoding='utf-8'))
+          bridge = json.load(open(os.path.join(root, 'tiny-sd-bridge.json'), encoding='utf-8'))
+          manifest = json.load(open(os.path.join(workspace, os.environ['TINY_SD_MANIFEST']), encoding='utf-8'))
+          assert inventory['status'] == 'CANDIDATE'
+          assert inventory['upstreamRevision'] == os.environ['UPSTREAM_REVISION']
+          assert inventory['matchesPinnedManifest'] is True
+          assert inventory['totalRuntimeBytes'] == manifest['upstream']['snapshot']['totalRuntimeBytes']
+          assert len(inventory['inventory']) == 12
+          assert inventory['pickleWeightCount'] == 3
+          assert inventory['runtimeAuthorityGranted'] is False
+          assert inventory['productionApproval'] is False
+          assert bridge['status'] == 'CANDIDATE'
+          assert bridge['sourceVerifiedBeforeDeserialization'] is True
+          assert bridge['weightsOnly'] is True
+          assert bridge['pickleFreeBridge'] is True
+          assert bridge['matchesPinnedManifest'] is True
+          assert bridge['bridgeEphemeral'] is True
+          assert bridge['bridgePublished'] is False
+          assert bridge['runtimeAuthorityGranted'] is False
+          assert bridge['productionApproval'] is False
+          assert [item['component'] for item in bridge['components']] == ['text_encoder', 'unet', 'vae']
+          assert all(item['sourceVerifiedBeforeDeserialization'] is True for item in bridge['components'])
+          assert all(item['weightsOnly'] is True for item in bridge['components'])
+          print('TINY-SD D1 PINNED TRUST REPRODUCTION: PASS')
+          PY
+
+      - name: Destroy model/tensor bytes before evidence upload
+        run: |
+          set -euo pipefail
+          rm -rf "${RUNNER_TEMP}/tiny-sd" "${RUNNER_TEMP}/tiny-sd-bridge"
+          test ! -e "${RUNNER_TEMP}/tiny-sd"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-bridge"
+          test "$(find "${GITHUB_WORKSPACE}/.test-cache/6.42d1" -type f \( -name '*.bin' -o -name '*.safetensors' -o -name '*.onnx' -o -name '*.ort' \) | wc -l)" -eq 0
+
+      - name: Upload JSON trust evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-sd-d1-trust-evidence
+          path: |
+            .test-cache/6.42d1/tiny-sd-snapshot.json
+            .test-cache/6.42d1/tiny-sd-bridge.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish D1 summary
+        run: |
+          total="$(python -c 'import json; print(json.load(open(".test-cache/6.42d1/tiny-sd-snapshot.json"))["totalRuntimeBytes"])')"
+          {
+            echo '## Tiny-SD D1 trusted acquisition'
+            echo
+            echo '- Status: CANDIDATE / LICENSE REVIEWED WITH OBLIGATIONS'
+            echo "- Upstream revision: \`${UPSTREAM_REVISION}\`"
+            echo "- Runtime snapshot bytes: \`${total}\`"
+            echo '- Exact runtime files reproduce PINNED manifest SHA/size: PASS'
+            echo '- Restricted PyTorch 2.6 weights-only bridge: PASS'
+            echo '- Tensor-only safetensors bridge reproduces PINNED identities: PASS and ephemeral'
+            echo '- Binary model evidence destroyed before JSON upload'
+            echo '- Runtime/device/production authority: NOT GRANTED'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Cleanup Tiny-SD binary evidence on failure
+        if: ${{ failure() }}
+        run: |
+          rm -rf "${RUNNER_TEMP}/tiny-sd" "${RUNNER_TEMP}/tiny-sd-bridge"
+          test ! -e "${RUNNER_TEMP}/tiny-sd"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-bridge"
