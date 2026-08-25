@@ -5,6 +5,7 @@ import * as ort from 'onnxruntime-web/webgpu';
 const ORT_WEBGPU_VERSION = '1.27.0';
 const SESSION_TIMEOUT_MS = 120_000;
 const INFERENCE_TIMEOUT_MS = 180_000;
+const REQUIRED_FP16_FEATURES = ['shader-f16'];
 
 const withTimeout = async (promise, timeoutMs, code) => {
   let timer;
@@ -24,6 +25,11 @@ const fetchBytes = async url => {
   return new Uint8Array(await response.arrayBuffer());
 };
 
+const numericLimit = (limits, name) => {
+  const value = limits?.[name];
+  return typeof value === 'number' || typeof value === 'bigint' ? Number(value) : null;
+};
+
 const adapterEvidence = adapter => {
   const info = adapter?.info ?? {};
   const record = {
@@ -32,8 +38,15 @@ const adapterEvidence = adapter => {
     device: String(info.device ?? ''),
     description: String(info.description ?? ''),
     isFallbackAdapter: typeof adapter?.isFallbackAdapter === 'boolean' ? adapter.isFallbackAdapter : null,
+    features: Array.from(adapter?.features ?? []).map(String).sort(),
+    limits: {
+      maxBufferSize: numericLimit(adapter?.limits, 'maxBufferSize'),
+      maxStorageBufferBindingSize: numericLimit(adapter?.limits, 'maxStorageBufferBindingSize'),
+      maxComputeWorkgroupStorageSize: numericLimit(adapter?.limits, 'maxComputeWorkgroupStorageSize'),
+      maxComputeInvocationsPerWorkgroup: numericLimit(adapter?.limits, 'maxComputeInvocationsPerWorkgroup'),
+    },
   };
-  const combined = Object.values(record).join(' ').toLowerCase();
+  const combined = [record.vendor, record.architecture, record.device, record.description].join(' ').toLowerCase();
   record.softwareAdapterLikely = record.isFallbackAdapter === true || /swiftshader|software|llvmpipe/.test(combined);
   return record;
 };
@@ -115,35 +128,39 @@ const base = (component, result, extras = {}) => ({
 globalThis.runTinySdD3WebGpuFeasibility = async ({
   component,
   modelUrl,
+  modelBytes,
   inputs,
   outputName,
   outputDims,
   referenceUrl,
   thresholds,
 }) => {
-  const [modelBytes, referenceBytes, ...inputBytes] = await Promise.all([
-    fetchBytes(modelUrl),
-    fetchBytes(referenceUrl),
-    ...inputs.map(value => fetchBytes(value.url)),
-  ]);
-  const referenceElements = outputDims.reduce((value, item) => value * item, 1);
-  if (referenceBytes.byteLength !== referenceElements * 4) {
-    throw new Error(`${component} reference byte-size mismatch`);
-  }
-  const reference = new Float32Array(referenceBytes.buffer, referenceBytes.byteOffset, referenceElements);
-
   if (!('gpu' in navigator) || !navigator.gpu) {
-    return base(component, 'WEBGPU_API_UNAVAILABLE', { modelBytes: modelBytes.byteLength });
+    return base(component, 'WEBGPU_API_UNAVAILABLE', { modelBytes });
   }
 
   let adapter;
   try {
     adapter = await navigator.gpu.requestAdapter();
   } catch (error) {
-    return base(component, 'WEBGPU_ADAPTER_REQUEST_FAILED', { modelBytes: modelBytes.byteLength, error: String(error) });
+    return base(component, 'WEBGPU_ADAPTER_REQUEST_FAILED', { modelBytes, error: String(error) });
   }
-  if (!adapter) return base(component, 'WEBGPU_ADAPTER_UNAVAILABLE', { modelBytes: modelBytes.byteLength });
+  if (!adapter) return base(component, 'WEBGPU_ADAPTER_UNAVAILABLE', { modelBytes });
   const adapterInfo = adapterEvidence(adapter);
+  const missingRequiredFeatures = REQUIRED_FP16_FEATURES.filter(feature => !adapter.features.has(feature));
+  if (missingRequiredFeatures.length > 0) {
+    return base(component, 'WEBGPU_SESSION_BLOCKED', {
+      modelBytes,
+      adapter: adapterInfo,
+      requiredFeatures: REQUIRED_FP16_FEATURES,
+      missingRequiredFeatures,
+      blockerClass: 'REQUIRED_FEATURE_UNAVAILABLE',
+      sessionAttempted: false,
+      modelMaterializedInJs: false,
+      heap: { beforeCapabilityDecision: heapEvidence() },
+      error: `adapter does not expose required WebGPU feature(s): ${missingRequiredFeatures.join(', ')}`,
+    });
+  }
   ort.env.webgpu.adapter = adapter;
 
   const beforeSessionHeap = heapEvidence();
@@ -151,15 +168,26 @@ globalThis.runTinySdD3WebGpuFeasibility = async ({
   try {
     const started = performance.now();
     session = await withTimeout(
-      ort.InferenceSession.create(modelBytes, { executionProviders: ['webgpu'] }),
+      ort.InferenceSession.create(modelUrl, { executionProviders: ['webgpu'] }),
       SESSION_TIMEOUT_MS,
       'WEBGPU_SESSION_TIMEOUT',
     );
     const sessionCreateMs = performance.now() - started;
+
+    const [referenceBytes, ...inputBytes] = await Promise.all([
+      fetchBytes(referenceUrl),
+      ...inputs.map(value => fetchBytes(value.url)),
+    ]);
+    const referenceElements = outputDims.reduce((value, item) => value * item, 1);
+    if (referenceBytes.byteLength !== referenceElements * 4) {
+      throw new Error(`${component} reference byte-size mismatch`);
+    }
+    const reference = new Float32Array(referenceBytes.buffer, referenceBytes.byteOffset, referenceElements);
     const feeds = {};
     for (let index = 0; index < inputs.length; index++) {
       feeds[inputs[index].name] = tensorFromBytes(inputs[index], inputBytes[index]);
     }
+
     const beforeInferenceHeap = heapEvidence();
     const inferenceStarted = performance.now();
     let outputs;
@@ -172,8 +200,10 @@ globalThis.runTinySdD3WebGpuFeasibility = async ({
     } catch (error) {
       const message = String(error);
       return base(component, 'WEBGPU_INFERENCE_BLOCKED', {
-        modelBytes: modelBytes.byteLength,
+        modelBytes,
+        modelMaterializedInJs: false,
         adapter: adapterInfo,
+        requiredFeatures: REQUIRED_FP16_FEATURES,
         sessionCreateMs,
         timeoutStage: message.includes('WEBGPU_INFERENCE_TIMEOUT') ? 'INFERENCE' : null,
         heap: { beforeSession: beforeSessionHeap, beforeInference: beforeInferenceHeap, afterFailure: heapEvidence() },
@@ -189,8 +219,10 @@ globalThis.runTinySdD3WebGpuFeasibility = async ({
     const parity = metrics(reference, actual);
     const parityPassed = parity.maxAbs <= thresholds.maxAbs && parity.rmse <= thresholds.rmse;
     return base(component, parityPassed ? 'PASS' : 'WEBGPU_PARITY_FAILED', {
-      modelBytes: modelBytes.byteLength,
+      modelBytes,
+      modelMaterializedInJs: false,
       adapter: adapterInfo,
+      requiredFeatures: REQUIRED_FP16_FEATURES,
       inputContracts: inputs.map(({ name, dtype, dims }) => ({ name, dtype, dims })),
       outputContract: { name: outputName, dtype: 'float32', dims },
       referenceKind: 'D2_ACCEPTED_FP32_CPU_ORT_OUTPUT',
@@ -209,8 +241,11 @@ globalThis.runTinySdD3WebGpuFeasibility = async ({
   } catch (error) {
     const message = String(error);
     return base(component, 'WEBGPU_SESSION_BLOCKED', {
-      modelBytes: modelBytes.byteLength,
+      modelBytes,
+      modelMaterializedInJs: false,
       adapter: adapterInfo,
+      requiredFeatures: REQUIRED_FP16_FEATURES,
+      sessionAttempted: true,
       timeoutStage: message.includes('WEBGPU_SESSION_TIMEOUT') ? 'SESSION' : null,
       heap: { beforeSession: beforeSessionHeap, afterFailure: heapEvidence() },
       error: message,
