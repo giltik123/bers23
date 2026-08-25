@@ -3,20 +3,42 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const probe = await readFile(new URL('../scripts/probe-lama-dynamo-onnx.py', import.meta.url), 'utf8');
+const bridge = await readFile(new URL('../scripts/bridge-lama-generator-safetensors.py', import.meta.url), 'utf8');
 const c6 = await readFile(new URL('../scripts/inspect-lama-checkpoint.py', import.meta.url), 'utf8');
+const workflow = await readFile(new URL('../.github/workflows/sprint-6.42c7-lama-dynamo-onnx.yml', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/local-ai/models/lama-inpainting.manifest.json', import.meta.url), 'utf8'));
 
-test('C7 reuses exact C6 checkpoint identity and safe loader instead of inventing a second trust root', () => {
-  assert.match(probe, /CHECKPOINT_SHA256 = "fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423"/);
-  assert.match(probe, /load_c6_module/);
-  assert.match(probe, /module\.CHECKPOINT_SHA256 != CHECKPOINT_SHA256/);
-  assert.match(probe, /c6\.restricted_load\(checkpoint\)/);
+test('C7 bridge reuses exact C6 trust root and restricted loader under the proven PyTorch 2.6 environment', () => {
+  assert.match(bridge, /CHECKPOINT_SHA256 = "fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423"/);
+  assert.match(bridge, /EXPECTED_TORCH_PREFIX = "2\.6\.0"/);
+  assert.match(bridge, /EXPECTED_SAFETENSORS = "0\.8\.0"/);
+  assert.match(bridge, /c6\.restricted_load\(checkpoint\)/);
+  assert.match(bridge, /verifiedBeforeDeserialization/);
+  assert.match(bridge, /"weightsOnly": True/);
+  assert.match(bridge, /save_file\(/);
+  assert.match(bridge, /tensor\.detach\(\)\.cpu\(\)\.contiguous\(\)\.clone\(\)/);
+  assert.match(bridge, /"pickleFree": True/);
+  assert.match(bridge, /"ephemeral": True/);
+  assert.match(bridge, /"published": False/);
+  assert.match(c6, /weights_only=True/);
+  assert.doesNotMatch(bridge, /weights_only\s*=\s*False/);
+  assert.doesNotMatch(bridge, /^\s*import\s+pytorch_lightning\b/m);
+  assert.doesNotMatch(bridge, /^\s*import\s+omegaconf\b/m);
+});
+
+test('PyTorch 2.13 exporter process consumes only SHA-bound safetensors and never deserializes the legacy checkpoint', () => {
+  assert.match(probe, /from safetensors\.torch import load_file/);
+  assert.match(probe, /EXPECTED_SAFETENSORS = "0\.8\.0"/);
+  assert.match(probe, /EXPECTED_GENERATOR_KEY_COUNT = 989/);
+  assert.match(probe, /EXPECTED_GENERATOR_ELEMENTS = 51057179/);
+  assert.match(probe, /bridge\.get\("sha256"\) != sha256\(state_path\)/);
+  assert.match(probe, /load_file\(str\(state_path\), device="cpu"\)/);
   assert.match(probe, /c6\.build_generator\(source\)/);
   assert.match(probe, /generator\.load_state_dict\(generator_state, strict=True\)/);
-  assert.match(c6, /weights_only=True/);
+  assert.match(probe, /legacyCheckpointDeserializedInExporterProcess/);
+  assert.doesNotMatch(probe, /restricted_load\s*\(/);
   assert.doesNotMatch(probe, /torch\.load\s*\(/);
-  assert.doesNotMatch(probe, /^\s*import\s+pytorch_lightning\b/m);
-  assert.doesNotMatch(probe, /^\s*import\s+omegaconf\b/m);
+  assert.doesNotMatch(probe, /--checkpoint/);
 });
 
 test('C7 uses the PyTorch 2.13 modern-only Dynamo export API with no legacy fallback or Fourier rewrite', () => {
@@ -46,6 +68,22 @@ test('C7 environment is fully pinned and CPU ORT matches the repository browser 
   assert.match(probe, /providers=\["CPUExecutionProvider"\]/);
   assert.match(probe, /MAX_ABS_TOL = 2e-4/);
   assert.match(probe, /RMSE_TOL = 5e-5/);
+});
+
+test('workflow physically removes legacy checkpoint before installing or running the PyTorch 2.13 exporter', () => {
+  const bridgeRun = workflow.indexOf('bridge-lama-generator-safetensors.py');
+  const checkpointRemove = workflow.indexOf('rm -f "${RUNNER_TEMP}/lama-c7/best.ckpt"');
+  const modernInstall = workflow.indexOf('torch==2.13.0');
+  const probeRun = workflow.indexOf('probe-lama-dynamo-onnx.py');
+  assert.ok(bridgeRun >= 0 && checkpointRemove >= 0 && modernInstall >= 0 && probeRun >= 0);
+  assert.ok(bridgeRun < checkpointRemove);
+  assert.ok(checkpointRemove < modernInstall);
+  assert.ok(modernInstall < probeRun);
+  assert.match(workflow, /torch==2\.6\.0 --index-url https:\/\/download\.pytorch\.org\/whl\/cpu/);
+  assert.match(workflow, /safetensors==0\.8\.0/);
+  assert.match(workflow, /--state "\$\{RUNNER_TEMP\}\/lama-c7\/generator\.safetensors"/);
+  assert.match(workflow, /--bridge-report \.test-cache\/6\.42c7\/lama-generator-bridge\.json/);
+  assert.match(workflow, /git ls-files '\*\.ckpt' '\*\.pth' '\*\.pt' '\*\.safetensors' '\*\.onnx'/);
 });
 
 test('C7 semantic smoke uses upstream mask polarity and generated proposal remains non-authoritative', () => {
