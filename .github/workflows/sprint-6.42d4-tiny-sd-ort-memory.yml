@@ -1,0 +1,334 @@
+name: Sprint 6.42D4 Tiny-SD ORT memory and latency
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+  TINY_SD_MANIFEST: src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json
+
+jobs:
+  ort-memory-latency-feasibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Use Python 3.11 for trust reproduction
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify D4 fail-closed policy before network/model work
+        run: |
+          set -euo pipefail
+          npm ci
+          mkdir -p .test-cache/d4-owned
+          npx esbuild \
+            tests/tiny-sd-d4-owned-buffer.test.ts \
+            tests/tiny-sd-d4-durable-owned-load.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/d4-owned --external:node:*
+          node --test .test-cache/d4-owned/*.js
+          node --test tests/tiny-sd-d4-policy.test.mjs
+          npm run typecheck
+          python -m py_compile scripts/prepare-tiny-sd-d4-ort.py
+          node --check scripts/test-tiny-sd-d4-browser-wasm.mjs
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' '*.npz' '*.f32' | wc -l)" -eq 0
+          if git grep -n -I -E -- '^-----BEGIN (ED25519 |EC |RSA |OPENSSH )?PRIVATE KEY-----$'; then
+            echo 'Private key material is tracked by Git' >&2
+            exit 1
+          fi
+
+      - name: Install pinned Hugging Face transport client
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          PY
+
+      - name: Reproduce accepted D1 Tiny-SD snapshot
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/.test-cache/6.42d4"
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          expected = [
+              'model_index.json', 'scheduler/scheduler_config.json',
+              'text_encoder/config.json', 'text_encoder/pytorch_model.bin',
+              'tokenizer/merges.txt', 'tokenizer/special_tokens_map.json',
+              'tokenizer/tokenizer_config.json', 'tokenizer/vocab.json',
+              'unet/config.json', 'unet/diffusion_pytorch_model.bin',
+              'vae/config.json', 'vae/diffusion_pytorch_model.bin',
+          ]
+          snapshot_download(
+              repo_id='segmind/tiny-sd', revision=os.environ['UPSTREAM_REVISION'],
+              local_dir=os.path.join(os.environ['RUNNER_TEMP'], 'tiny-sd-d4-snapshot'),
+              allow_patterns=expected,
+          )
+          PY
+          python scripts/inspect-tiny-sd-snapshot.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d4-snapshot" \
+            --revision "${UPSTREAM_REVISION}" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-snapshot.json"
+
+      - name: Install accepted D1 restricted bridge environment
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check safetensors==0.8.0
+          python - <<'PY'
+          import numpy, safetensors, torch
+          assert numpy.__version__ == '1.26.4'
+          assert torch.__version__.startswith('2.6.0')
+          assert safetensors.__version__ == '0.8.0'
+          PY
+
+      - name: Reproduce exact D1 tensor-only bridge
+        run: |
+          set -euo pipefail
+          python scripts/bridge-tiny-sd-safetensors.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d4-snapshot" \
+            --inventory "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-snapshot.json" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --out-dir "${RUNNER_TEMP}/tiny-sd-d4-bridge" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-bridge.json"
+
+      - name: Use Python 3.10 for D2 historical reference
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install exact D2 historical reference environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d4-reference-venv"
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d4-reference-venv/bin/python"
+          "${REF_PY}" -m pip install --disable-pip-version-check --upgrade 'pip<25'
+          "${REF_PY}" -m pip install --disable-pip-version-check numpy==1.24.4 huggingface_hub==0.16.4 safetensors==0.3.1
+          "${REF_PY}" -m pip install --disable-pip-version-check torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+          "${REF_PY}" -m pip install --disable-pip-version-check diffusers==0.19.0 transformers==4.30.2
+          "${REF_PY}" - <<'PY'
+          import diffusers, huggingface_hub, numpy, safetensors, torch, transformers
+          assert numpy.__version__ == '1.24.4'
+          assert torch.__version__ == '2.0.1+cpu'
+          assert diffusers.__version__ == '0.19.0'
+          assert transformers.__version__ == '4.30.2'
+          assert huggingface_hub.__version__ == '0.16.4'
+          assert safetensors.__version__ == '0.3.1'
+          PY
+
+      - name: Re-establish D2 historical component semantics
+        run: |
+          set -euo pipefail
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d4-reference-venv/bin/python"
+          "${REF_PY}" scripts/probe-tiny-sd-reference.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d4-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d4-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference-out "${RUNNER_TEMP}/tiny-sd-d4-reference.npz" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-reference.json"
+
+      - name: Use Python 3.11 for D2/D3/D4 model tools
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact D2 exporter and D3/D4 runtime environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d4-export-venv"
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d4-export-venv/bin/python"
+          "${EXP_PY}" -m pip install --disable-pip-version-check --upgrade pip
+          "${EXP_PY}" -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          "${EXP_PY}" -m pip install --disable-pip-version-check \
+            numpy==2.4.6 safetensors==0.8.0 \
+            diffusers==0.39.0 transformers==4.57.6 \
+            onnx==1.22.0 onnxscript==0.7.1 onnxruntime==1.27.0
+          "${EXP_PY}" - <<'PY'
+          import diffusers, numpy, onnx, onnxruntime, onnxscript, safetensors, torch, transformers
+          assert torch.__version__.startswith('2.13.0')
+          assert numpy.__version__ == '2.4.6'
+          assert diffusers.__version__ == '0.39.0'
+          assert transformers.__version__ == '4.57.6'
+          assert safetensors.__version__ == '0.8.0'
+          assert onnx.__version__ == '1.22.0'
+          assert onnxscript.__version__ == '0.7.1'
+          assert onnxruntime.__version__ == '1.27.0'
+          PY
+
+      - name: Reproduce D2 accepted FP32 graphs and parity
+        run: |
+          set -euo pipefail
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d4-export-venv/bin/python"
+          mkdir -p "${RUNNER_TEMP}/tiny-sd-d4-fp32"
+          "${EXP_PY}" scripts/probe-tiny-sd-component-onnx.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d4-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d4-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference "${RUNNER_TEMP}/tiny-sd-d4-reference.npz" \
+            --reference-report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-reference.json" \
+            --onnx-dir "${RUNNER_TEMP}/tiny-sd-d4-fp32" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-d2-components.json"
+          "${EXP_PY}" - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42d4/tiny-sd-d4-d2-components.json', encoding='utf-8'))
+          assert report['passCount'] == 3 and report['allComponentsPass'] is True and report['blockedComponents'] == {}
+          PY
+
+      - name: Reproduce accepted D3 selected WASM candidates
+        run: |
+          set -euo pipefail
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d4-export-venv/bin/python"
+          "${EXP_PY}" scripts/prepare-tiny-sd-d3-wasm-quantized.py \
+            --fp32-dir "${RUNNER_TEMP}/tiny-sd-d4-fp32" \
+            --d2-report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-d2-components.json" \
+            --output-dir "${RUNNER_TEMP}/tiny-sd-d4-d3-onnx" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d4-fixtures" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-d3-selected.json"
+          "${EXP_PY}" - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42d4/tiny-sd-d4-d3-selected.json', encoding='utf-8'))
+          assert report['nativePassCount'] == 3
+          assert report['blockedComponents'] == {}
+          assert all(value['transform']['scheme'] == 'EXACT_FP16_STORAGE_FP32_COMPUTE' for value in report['components'].values())
+          PY
+
+      - name: Convert D3 candidates to one ORT artifact per component and prove native parity
+        run: |
+          set -euo pipefail
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d4-export-venv/bin/python"
+          "${EXP_PY}" scripts/prepare-tiny-sd-d4-ort.py \
+            --onnx-dir "${RUNNER_TEMP}/tiny-sd-d4-d3-onnx" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d4-fixtures" \
+            --d3-report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-d3-selected.json" \
+            --output-dir "${RUNNER_TEMP}/tiny-sd-d4-ort" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-ort-preparation.json"
+
+      - name: Prove system Google Chrome is installed
+        run: |
+          set -euo pipefail
+          google-chrome --version
+
+      - name: Run real Chrome ONNX vs ORT default vs ORT memory-first comparison
+        run: |
+          set -euo pipefail
+          node scripts/test-tiny-sd-d4-browser-wasm.mjs \
+            --onnx-dir "${RUNNER_TEMP}/tiny-sd-d4-d3-onnx" \
+            --ort-dir "${RUNNER_TEMP}/tiny-sd-d4-ort" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d4-fixtures" \
+            --preparation-report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-ort-preparation.json" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-browser.json"
+
+      - name: Validate D4 classification without granting authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          prep = json.load(open('.test-cache/6.42d4/tiny-sd-d4-ort-preparation.json', encoding='utf-8'))
+          browser = json.load(open('.test-cache/6.42d4/tiny-sd-d4-browser.json', encoding='utf-8'))
+          components = {'text_encoder', 'unet', 'vae_decoder'}
+          variants = {'ONNX_BASELINE', 'ORT_DEFAULT', 'ORT_MEMORY_FIRST'}
+          assert prep['status'] == 'CANDIDATE' and prep['stage'] == 'D4_ORT_PACKAGING_PREPARATION'
+          assert prep['strategy'] == 'ONE_ORT_ARTIFACT_TWO_RUNTIME_POLICIES_PLUS_ONNX_BASELINE'
+          assert prep['runtimeAuthorityGranted'] is False and prep['productionApproval'] is False
+          assert prep['binaryArtifactsRunnerLocalOnly'] is True and prep['releaseIdentityPinned'] is False
+          assert set(prep['components']) == components
+          assert all(value['result'] in {'D4_ORT_NATIVE_PASS', 'D4_ORT_CONVERSION_BLOCKED', 'D4_ORT_PARITY_FAILED'} for value in prep['components'].values())
+          assert browser['status'] == 'CANDIDATE' and browser['stage'] == 'D4_BROWSER_WASM_ORT_COMPARISON'
+          assert browser['provider'] == 'wasm' and browser['productionFactory'] == 'BrowserOnnxSessionFactory'
+          assert browser['providerFallbackAllowed'] is False and browser['workerFreeRuntimeRequired'] is True
+          assert browser['runtimeAuthorityGranted'] is False and browser['productionApproval'] is False
+          assert set(browser['components']) == components and set(browser['variants']) == variants
+          for component, results in browser['components'].items():
+              assert set(results) == variants
+              assert results['ONNX_BASELINE']['browserAttempted'] is True
+              source = prep['components'][component]
+              if source['result'] == 'D4_ORT_NATIVE_PASS':
+                  assert results['ORT_DEFAULT']['browserAttempted'] is True
+                  assert results['ORT_MEMORY_FIRST']['browserAttempted'] is True
+              else:
+                  assert results['ORT_DEFAULT']['result'] == 'D4_ORT_PRE_BROWSER_BLOCKED'
+                  assert results['ORT_MEMORY_FIRST']['result'] == 'D4_ORT_PRE_BROWSER_BLOCKED'
+          print('TINY-SD D4 CLASSIFICATION: PASS', prep['blockedComponents'], browser['blockedVariants'])
+          PY
+
+      - name: Destroy Tiny-SD D4 binary evidence before JSON upload
+        run: |
+          set -euo pipefail
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d4-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d4-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d4-reference.npz" \
+            "${RUNNER_TEMP}/tiny-sd-d4-fp32" \
+            "${RUNNER_TEMP}/tiny-sd-d4-d3-onnx" \
+            "${RUNNER_TEMP}/tiny-sd-d4-fixtures" \
+            "${RUNNER_TEMP}/tiny-sd-d4-ort"
+          test "$(find "${GITHUB_WORKSPACE}/.test-cache/6.42d4" -type f \( -name '*.onnx' -o -name '*.ort' -o -name '*.bin' -o -name '*.safetensors' -o -name '*.npz' -o -name '*.f32' -o -name '*.pt' -o -name '*.pth' \) | wc -l)" -eq 0
+
+      - name: Upload JSON-only D4 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-sd-d4-ort-memory-evidence
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            .test-cache/6.42d4/tiny-sd-d4-snapshot.json
+            .test-cache/6.42d4/tiny-sd-d4-bridge.json
+            .test-cache/6.42d4/tiny-sd-d4-reference.json
+            .test-cache/6.42d4/tiny-sd-d4-d2-components.json
+            .test-cache/6.42d4/tiny-sd-d4-d3-selected.json
+            .test-cache/6.42d4/tiny-sd-d4-ort-preparation.json
+            .test-cache/6.42d4/tiny-sd-d4-browser.json
+
+      - name: Summarize D4 evidence
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          prep_path = pathlib.Path('.test-cache/6.42d4/tiny-sd-d4-ort-preparation.json')
+          browser_path = pathlib.Path('.test-cache/6.42d4/tiny-sd-d4-browser.json')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write('## Tiny-SD D4 ORT packaging / memory\n\n')
+              if prep_path.exists():
+                  prep = json.load(prep_path.open(encoding='utf-8'))
+                  summary.write(f"ORT native pass: **{prep['ortNativePassCount']}/3**  \n")
+                  summary.write(f"Blocked: `{prep['blockedComponents']}`  \n")
+              if browser_path.exists():
+                  browser = json.load(browser_path.open(encoding='utf-8'))
+                  summary.write(f"Browser variant pass: **{browser['passCount']}/9**  \n")
+                  summary.write(f"Browser attempted: **{browser['browserAttemptCount']}/9**  \n")
+                  summary.write(f"Blocked: `{browser['blockedVariants']}`  \n")
+              summary.write('Authority: **CANDIDATE only; no production/Editor/runtime release approval.**\n')
+          PY
+
+      - name: Failure cleanup
+        if: failure()
+        run: |
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d4-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d4-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d4-reference.npz" \
+            "${RUNNER_TEMP}/tiny-sd-d4-fp32" \
+            "${RUNNER_TEMP}/tiny-sd-d4-d3-onnx" \
+            "${RUNNER_TEMP}/tiny-sd-d4-fixtures" \
+            "${RUNNER_TEMP}/tiny-sd-d4-ort"

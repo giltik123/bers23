@@ -230,7 +230,8 @@ export class LocalAIPlatform {
 
   async loadModel(modelId: string): Promise<void> {
     await this.#ensureFleetInitialized();
-    const { model, bytes } = this.#fleet
+    const durableOwnedArtifact = Boolean(this.#fleet);
+    const { model, bytes } = durableOwnedArtifact
       ? await this.#durableRuntimeArtifact(modelId)
       : await this.#legacyRuntimeArtifact(modelId);
     if (!this.dependencies.onnxSessionFactory || model.modelFormat !== 'ONNX') throw new Error('No secure runtime adapter is available');
@@ -243,7 +244,8 @@ export class LocalAIPlatform {
         : new DesktopLocalRuntime().selectProvider(device, capabilities);
     if (provider === 'BLOCKED') throw new Error('No allowed execution provider');
     const runtime = new OnnxLocalRuntime(this.dependencies.onnxSessionFactory, [provider], this.dependencies.clock);
-    await runtime.load(model, bytes);
+    if (durableOwnedArtifact) await runtime.loadOwnedVerifiedArtifact(model, bytes);
+    else await runtime.load(model, bytes);
     this.#runtimes.set(modelId, runtime);
   }
 

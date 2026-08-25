@@ -1,0 +1,48 @@
+name: Sprint 6.42D4 ORT conversion smoke
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ort-conversion-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify smoke source before installing runtime
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            scripts/test-tiny-sd-d4-ort-conversion-smoke.py \
+            scripts/prepare-tiny-sd-d4-ort.py
+          test "$(git ls-files '*.onnx' '*.ort' '*.npz' '*.bin' '*.safetensors' | wc -l)" -eq 0
+
+      - name: Install exact D4 ORT conversion runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            numpy==2.4.6 onnx==1.22.0 onnxruntime==1.27.0
+          python - <<'PY'
+          import numpy, onnx, onnxruntime
+          assert numpy.__version__ == '2.4.6'
+          assert onnx.__version__ == '1.22.0'
+          assert onnxruntime.__version__ == '1.27.0'
+          PY
+
+      - name: Convert and execute tiny ORT model through pinned API
+        run: |
+          set -euo pipefail
+          python scripts/test-tiny-sd-d4-ort-conversion-smoke.py \
+            --work-dir "${RUNNER_TEMP}/tiny-sd-d4-ort-smoke"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d4-ort-smoke"
