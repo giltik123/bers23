@@ -6,6 +6,7 @@ const inspector = await readFile(new URL('../scripts/inspect-modnet-checkpoint.p
 const exporter = await readFile(new URL('../scripts/build-modnet-portrait-matting-release.py', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/local-ai/models/portrait-matting.manifest.json', import.meta.url), 'utf8'));
 const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8';
+const ONNX_SHA = '18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919';
 
 test('checkpoint inspector verifies pinned digest before state_dict deserialization', () => {
   const digestCheck = inspector.indexOf('if sha256 != args.expected_sha256');
@@ -16,7 +17,7 @@ test('checkpoint inspector verifies pinned digest before state_dict deserializat
   assert.ok(torchLoad >= 0);
 });
 
-test('reproducible exporter checks pinned size and SHA before torch.load', () => {
+test('reproducible exporter checks checkpoint before torch.load and output against pinned ONNX identity', () => {
   const sizeCheck = exporter.indexOf('checkpoint.stat().st_size != expected["size"]');
   const shaCheck = exporter.indexOf('sha256(checkpoint) != expected["sha256"]');
   const deserialize = exporter.indexOf('torch.load(checkpoint, map_location=torch.device("cpu"))');
@@ -27,15 +28,19 @@ test('reproducible exporter checks pinned size and SHA before torch.load', () =>
   assert.match(exporter, /PARITY_SHAPES = \(\(128, 160\), \(256, 320\), \(512, 512\)\)/);
   assert.match(exporter, /first_hash != second_hash/);
   assert.match(exporter, /onnx\.checker\.check_model\(model, full_check=True\)/);
+  assert.match(exporter, /MODNet ONNX size mismatch/);
+  assert.match(exporter, /MODNet ONNX SHA-256 mismatch against pinned export identity/);
 });
 
-test('pinned-checkpoint manifest still cannot claim a signed or production-approved MODNet release', () => {
+test('pinned checkpoint and export remain CANDIDATE-only until signed release and separate approval', () => {
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_EXPORT_REQUIRED');
+  assert.equal(manifest.artifactState, 'EXPORT_PINNED_RELEASE_REQUIRED');
   assert.equal(manifest.upstream.checkpoint.identityState, 'PINNED');
   assert.equal(manifest.upstream.checkpoint.size, 26255603);
   assert.equal(manifest.upstream.checkpoint.sha256, CHECKPOINT_SHA);
-  assert.equal(manifest.bersExport.state, 'UNBUILT');
+  assert.equal(manifest.bersExport.state, 'PINNED');
+  assert.equal(manifest.bersExport.onnxSize, 25961178);
+  assert.equal(manifest.bersExport.onnxSha256, ONNX_SHA);
   assert.equal(manifest.productionApprovalEvidence, null);
   assert.equal(manifest.artifacts.model.url, null);
   assert.equal(manifest.verificationKeyId, null);
