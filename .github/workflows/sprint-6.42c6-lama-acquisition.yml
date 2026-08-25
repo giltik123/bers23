@@ -1,0 +1,261 @@
+name: Sprint 6.42C6 LaMa acquisition feasibility
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LAMA_ARCHIVE_DRIVE_FILE_ID: 11RbsVSav3O-fReBsPHBE1nn8kcFIMnKp
+  LAMA_ARCHIVE_SIZE: '381428720'
+  LAMA_ARCHIVE_SHA256: d7161bba4d68b438f9fa7f09dcb750a223804c300c68d214a5e0be16251fba8d
+  LAMA_MIRROR_COMMIT: 05cb2be7f8dbe6ca7c6e78f4fc827a4b2baaa4a9
+  LAMA_MIRROR_ARCHIVE_SHA256: f1b358ca24093b93a106183b98a3dea6e8ed09f3b43ea7251eb2c81e7b4575f6
+  LAMA_CHECKPOINT_SIZE: '410046389'
+  LAMA_CHECKPOINT_SHA256: fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423
+  LAMA_CONFIG_SIZE: '3947'
+  LAMA_CONFIG_SHA256: 4fdeed49926e13b101c4dd9e193acec9e58677dfdb4ba49dd6a3a8927964e2a7
+
+jobs:
+  authoritative-inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned acquisition tooling
+        run: python -m pip install --disable-pip-version-check gdown==5.2.0
+
+      - name: Clone exact LaMa upstream and verify semantic source contract
+        run: |
+          set -euo pipefail
+          git clone https://github.com/advimman/lama "${RUNNER_TEMP}/lama"
+          git -C "${RUNNER_TEMP}/lama" checkout --detach 786f5936b27fb3dacd2b1ad799e4de968ea697e7
+          test "$(git -C "${RUNNER_TEMP}/lama" rev-parse HEAD)" = 786f5936b27fb3dacd2b1ad799e4de968ea697e7
+          python - "${RUNNER_TEMP}/lama" <<'PY'
+          from pathlib import Path
+          import sys
+          root = Path(sys.argv[1])
+          config = (root / 'configs/training/big-lama.yaml').read_text(encoding='utf-8')
+          for fragment in (
+              'kind: ffc_resnet', 'input_nc: 4', 'output_nc: 3', 'ngf: 64',
+              'n_downsampling: 3', 'n_blocks: 18', 'add_out_act: sigmoid',
+              'ratio_gin: 0.75', 'enable_lfu: false',
+          ):
+              assert fragment in config, fragment
+          ffc = (root / 'saicinpainting/training/modules/ffc.py').read_text(encoding='utf-8')
+          assert 'torch.fft.rfftn' in ffc
+          assert 'torch.fft.irfftn' in ffc
+          trainer = (root / 'saicinpainting/training/trainers/default.py').read_text(encoding='utf-8')
+          assert 'masked_img = img * (1 - mask)' in trainer
+          assert 'torch.cat([masked_img, mask], dim=1)' in trainer
+          assert "mask * batch['predicted_image'] + (1 - mask) * batch['image']" in trainer
+          prediction = (root / 'configs/prediction/default.yaml').read_text(encoding='utf-8')
+          assert 'pad_out_to_modulo: 8' in prediction
+          data = (root / 'saicinpainting/evaluation/data.py').read_text(encoding='utf-8')
+          assert "img.astype('float32') / 255" in data
+          print('LAMA PINNED SOURCE CONTRACT: PASS')
+          PY
+
+      - name: Acquire byte-identified Big-LaMa transport
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/lama-authoritative-models"
+          mkdir -p "${root}" .test-cache/6.42c6
+          archive="${root}/big-lama.zip"
+          transport=OFFICIAL_DRIVE
+          if ! gdown "https://drive.google.com/uc?id=${LAMA_ARCHIVE_DRIVE_FILE_ID}" -O "${archive}"; then
+            rm -f "${archive}"
+            transport=PINNED_HF_TRANSPORT_FALLBACK
+            curl -fL --retry 3 --retry-all-errors \
+              "https://huggingface.co/smartywu/big-lama/resolve/${LAMA_MIRROR_COMMIT}/big-lama.zip" \
+              -o "${archive}"
+          fi
+          test "$(stat -c%s "${archive}")" = "${LAMA_ARCHIVE_SIZE}"
+          archive_sha="$(sha256sum "${archive}" | cut -d' ' -f1)"
+          if [ "${transport}" = OFFICIAL_DRIVE ]; then
+            test "${archive_sha}" = "${LAMA_ARCHIVE_SHA256}"
+          else
+            test "${archive_sha}" = "${LAMA_MIRROR_ARCHIVE_SHA256}"
+          fi
+          printf '%s\n' "${transport}" > .test-cache/6.42c6/lama-transport-source.txt
+          printf '%s\n' "${archive_sha}" > .test-cache/6.42c6/lama-transport-archive-sha256.txt
+          python scripts/inspect-lama-authoritative-folder.py \
+            --root "${root}" \
+            --source-revision 786f5936b27fb3dacd2b1ad799e4de968ea697e7 \
+            --report .test-cache/6.42c6/lama-authoritative-inventory.json
+
+      - name: Verify authoritative member identities and materialize pinned checkpoint
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/lama-authoritative-models/big-lama.zip"
+          extract_root="${RUNNER_TEMP}/lama-pinned"
+          mkdir -p "${extract_root}"
+          python - "${archive}" "${extract_root}" <<'PY'
+          import hashlib, os, pathlib, sys, zipfile
+          archive = pathlib.Path(sys.argv[1])
+          out = pathlib.Path(sys.argv[2])
+          expected = {
+              'big-lama/config.yaml': (int(os.environ['LAMA_CONFIG_SIZE']), os.environ['LAMA_CONFIG_SHA256']),
+              'big-lama/models/best.ckpt': (int(os.environ['LAMA_CHECKPOINT_SIZE']), os.environ['LAMA_CHECKPOINT_SHA256']),
+          }
+          with zipfile.ZipFile(archive, 'r') as bundle:
+              names = [item.filename for item in bundle.infolist() if not item.is_dir()]
+              if set(names) != set(expected) or len(names) != 2:
+                  raise RuntimeError(f'unexpected Big-LaMa transport members: {names!r}')
+              for name, (expected_size, expected_sha) in expected.items():
+                  info = bundle.getinfo(name)
+                  if info.file_size != expected_size:
+                      raise RuntimeError(f'{name} size mismatch before materialization')
+                  digest = hashlib.sha256()
+                  target = out / pathlib.PurePosixPath(name).name
+                  with bundle.open(info, 'r') as source, target.open('wb') as sink:
+                      for chunk in iter(lambda: source.read(1024 * 1024), b''):
+                          digest.update(chunk)
+                          sink.write(chunk)
+                  if digest.hexdigest() != expected_sha:
+                      target.unlink(missing_ok=True)
+                      raise RuntimeError(f'{name} SHA-256 mismatch against authoritative Drive identity')
+          print('LAMA AUTHORITATIVE MEMBER IDENTITIES: PASS')
+          PY
+
+      - name: Inspect pinned checkpoint and probe legacy direct ONNX export
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check kornia==0.5.0 onnx==1.17.0
+          python scripts/inspect-lama-checkpoint.py \
+            --source "${RUNNER_TEMP}/lama" \
+            --checkpoint "${RUNNER_TEMP}/lama-pinned/best.ckpt" \
+            --report .test-cache/6.42c6/lama-checkpoint-structure.json \
+            --legacy-onnx-probe-report .test-cache/6.42c6/lama-direct-onnx-legacy.json
+
+      - name: Validate pinned evidence remains non-executable
+        run: |
+          python - <<'PY'
+          import json
+          inventory = json.load(open('.test-cache/6.42c6/lama-authoritative-inventory.json', encoding='utf-8'))
+          assert inventory['status'] == 'CANDIDATE'
+          assert inventory['productionDeviceApproval'] is False
+          assert inventory['deserializationPerformed'] is False
+          identity = inventory['identityDiscovery']
+          assert identity['readyToPin'] is True
+          assert identity['checkpoint']['size'] == 410046389
+          assert identity['checkpoint']['sha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
+          assert identity['config']['size'] == 3947
+          assert identity['config']['sha256'] == '4fdeed49926e13b101c4dd9e193acec9e58677dfdb4ba49dd6a3a8927964e2a7'
+
+          structure = json.load(open('.test-cache/6.42c6/lama-checkpoint-structure.json', encoding='utf-8'))
+          assert structure['status'] == 'CANDIDATE'
+          assert structure['productionDeviceApproval'] is False
+          checkpoint = structure['checkpoint']
+          assert checkpoint['verifiedBeforeDeserialization'] is True
+          assert checkpoint['weightsOnly'] is True
+          assert checkpoint['unsafeGlobalScanPerformed'] is True
+          assert checkpoint['metadataGlobalPolicy'] == 'EXACT_ALLOWLIST_STANDARD_OR_INERT_NO_FRAMEWORK_IMPORT'
+          assert checkpoint['strictGeneratorLoad'] is True
+          assert checkpoint['generatorImportPolicy'] == 'PINNED_SOURCE_MINIMAL_GET_SHAPE_SHIM_NO_LIGHTNING_IMPORT'
+
+          legacy = json.load(open('.test-cache/6.42c6/lama-direct-onnx-legacy.json', encoding='utf-8'))
+          assert legacy['status'] == 'CANDIDATE'
+          assert legacy['productionDeviceApproval'] is False
+          assert legacy['runtimeAuthorityGranted'] is False
+          assert legacy['checkpointSha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
+          probe = legacy['probe']
+          assert probe['exporter'] == 'torch.onnx.export'
+          assert probe['dynamo'] is False
+          assert probe['opset'] == 17
+          assert probe['atenFallbackAllowed'] is False
+          assert probe['inputShape'] == [1, 4, 64, 64]
+          assert probe['temporaryArtifactRetained'] is False
+          allowed = {
+              'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN',
+              'BLOCKED_UNSUPPORTED_ATEN_FFT_IRFFTN',
+              'BLOCKED_UNSUPPORTED_ATEN_COMPLEX',
+              'EXPORTED_UNVALIDATED',
+          }
+          assert probe['result'] in allowed, probe['result']
+          if probe['result'] == 'EXPORTED_UNVALIDATED':
+              assert probe['artifactProduced'] is True
+              assert isinstance(probe['artifactSize'], int) and probe['artifactSize'] > 0
+              assert isinstance(probe['artifactSha256'], str) and len(probe['artifactSha256']) == 64
+          else:
+              assert probe['artifactProduced'] is False
+              assert probe['artifactSize'] is None
+              assert probe['artifactSha256'] is None
+
+          print('transport=', open('.test-cache/6.42c6/lama-transport-source.txt', encoding='utf-8').read().strip())
+          print('allowed checkpoint metadata globals=', checkpoint['quarantinedMetadataGlobals'])
+          print('generator state keys=', checkpoint['generatorStateKeyCount'])
+          print('generator tensor elements=', checkpoint['generatorTensorElements'])
+          print('legacy direct ONNX result=', probe['result'])
+          PY
+
+      - name: C6 candidate authority and repository guards
+        run: |
+          set -euo pipefail
+          npm ci
+          npx esbuild tests/lama-candidate-policy.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c6/lama-candidate-policy.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42c6/lama-candidate-policy.test.mjs
+          node --test tests/lama-acquisition-security.test.mjs
+          python -m py_compile scripts/inspect-lama-authoritative-folder.py scripts/inspect-lama-checkpoint.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.onnx' | wc -l)" -eq 0
+
+      - name: Upload pinned authority evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lama-pinned-authority-evidence
+          path: |
+            .test-cache/6.42c6/lama-authoritative-inventory.json
+            .test-cache/6.42c6/lama-checkpoint-structure.json
+            .test-cache/6.42c6/lama-direct-onnx-legacy.json
+            .test-cache/6.42c6/lama-transport-source.txt
+            .test-cache/6.42c6/lama-transport-archive-sha256.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish C6 feasibility summary
+        run: |
+          legacy_result="$(python -c "import json; print(json.load(open('.test-cache/6.42c6/lama-direct-onnx-legacy.json'))['probe']['result'])")"
+          {
+            echo '## LaMa pinned checkpoint and runtime-feasibility boundary'
+            echo
+            echo '- Status: CANDIDATE'
+            echo '- Upstream revision: `786f5936b27fb3dacd2b1ad799e4de968ea697e7`'
+            echo '- License: Apache-2.0'
+            echo '- Authority: upstream-maintainer Drive inventory + pinned member SHA identities'
+            echo "- Transport used: \`$(cat .test-cache/6.42c6/lama-transport-source.txt)\`"
+            echo '- Hugging Face fallback, when used, is transport only and must reproduce the authoritative checkpoint/config member SHA values'
+            echo "- Authoritative checkpoint SHA-256: \`${LAMA_CHECKPOINT_SHA256}\`"
+            echo "- Authoritative config SHA-256: \`${LAMA_CONFIG_SHA256}\`"
+            echo '- Checkpoint verified before deserialization: PASS'
+            echo '- PyTorch checkpoint inspection: 2.6 weights_only=True + exact standard/inert metadata allowlist, no Lightning/OmegaConf import'
+            echo '- Strict pinned FFCResNetGenerator state load: PASS'
+            echo "- Legacy direct torch.onnx.export opset-17 result: \`${legacy_result}\`"
+            echo '- Legacy probe artifact, if unexpectedly exported, is temporary and UNVALIDATED; no artifact is published or admitted'
+            echo '- Production execution authority: NOT GRANTED'
+            echo '- CPU ORT/WASM/WebGPU runtime feasibility: NOT GRANTED by this job'
+            echo '### Checkpoint structure evidence'
+            echo '```json'
+            cat .test-cache/6.42c6/lama-checkpoint-structure.json
+            echo '```'
+            echo '### Legacy direct ONNX feasibility evidence'
+            echo '```json'
+            cat .test-cache/6.42c6/lama-direct-onnx-legacy.json
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"

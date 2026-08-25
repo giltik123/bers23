@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "modelId": "lama-big-places-inpainting",
+  "version": "1.0.0-candidate.1",
+  "status": "CANDIDATE",
+  "semanticCapabilities": [
+    "inpainting",
+    "object-removal",
+    "large-mask-inpainting"
+  ],
+  "upstream": {
+    "repository": "https://github.com/advimman/lama",
+    "revision": "786f5936b27fb3dacd2b1ad799e4de968ea697e7",
+    "license": "Apache-2.0",
+    "distribution": {
+      "authoritativeFolderUrl": "https://drive.google.com/drive/folders/1B2x7eQDgecTL0oh3LSIBDGj0fTxs6Ips?usp=sharing",
+      "authoritativeArchiveDriveFileId": "11RbsVSav3O-fReBsPHBE1nn8kcFIMnKp",
+      "legacyYandexState": "UNAVAILABLE",
+      "convenienceMirrorUrl": "https://huggingface.co/smartywu/big-lama/resolve/05cb2be7f8dbe6ca7c6e78f4fc827a4b2baaa4a9/big-lama.zip",
+      "convenienceMirrorCommit": "05cb2be7f8dbe6ca7c6e78f4fc827a4b2baaa4a9",
+      "convenienceMirrorArchiveSha256": "f1b358ca24093b93a106183b98a3dea6e8ed09f3b43ea7251eb2c81e7b4575f6",
+      "convenienceMirrorAuthority": false,
+      "convenienceMirrorAcceptance": "TRANSPORT_ONLY_REQUIRES_AUTHORITATIVE_MEMBER_SHA_MATCH"
+    },
+    "architecture": {
+      "generatorKind": "ffc_resnet",
+      "inputChannels": 4,
+      "outputChannels": 3,
+      "ngf": 64,
+      "downsamplingStages": 3,
+      "residualBlocks": 18,
+      "outputActivation": "SIGMOID",
+      "globalFeatureRatio": 0.75,
+      "localFourierUnitEnabled": false,
+      "fourierForward": "torch.fft.rfftn",
+      "fourierInverse": "torch.fft.irfftn",
+      "fftNorm": "ortho"
+    },
+    "checkpoint": {
+      "archiveName": "big-lama.zip",
+      "archiveSize": 381428720,
+      "archiveSha256": "d7161bba4d68b438f9fa7f09dcb750a223804c300c68d214a5e0be16251fba8d",
+      "archiveMemberCount": 2,
+      "checkpointPath": "big-lama/models/best.ckpt",
+      "checkpointSize": 410046389,
+      "checkpointSha256": "fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423",
+      "configPath": "big-lama/config.yaml",
+      "configSize": 3947,
+      "configSha256": "4fdeed49926e13b101c4dd9e193acec9e58677dfdb4ba49dd6a3a8927964e2a7",
+      "identityState": "PINNED",
+      "corroboration": {
+        "container": "LaMa_models.zip",
+        "checkpointPath": "LaMa_models/big-lama/models/best.ckpt",
+        "checkpointSha256Matches": true,
+        "configPath": "LaMa_models/big-lama/config.yaml",
+        "configSha256Matches": true
+      }
+    }
+  },
+  "tensorContract": {
+    "image": {
+      "name": "image",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 3,
+      "colorSpace": "RGB",
+      "range": [0, 1]
+    },
+    "mask": {
+      "name": "mask",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 1,
+      "range": [0, 1],
+      "oneMeans": "INPAINT_REGION"
+    },
+    "preprocess": {
+      "padOutToModulo": 8,
+      "paddingSides": "RIGHT_AND_BOTTOM",
+      "referencePaddingMode": "SYMMETRIC",
+      "generatorInputChannels": 4,
+      "generatorInputFormula": "concat(image * (1 - mask), mask)"
+    },
+    "rawOutput": {
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 3,
+      "range": [0, 1],
+      "activation": "SIGMOID",
+      "semanticType": "GENERATED_RGB_PROPOSAL"
+    },
+    "finalComposite": {
+      "semanticType": "DETERMINISTIC_MASK_COMPOSITE",
+      "formula": "mask * predicted_image + (1 - mask) * original_image",
+      "knownRegionMustEqualOriginal": true
+    }
+  },
+  "runtimeFeasibility": {
+    "state": "BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED",
+    "directTorchOnnx": "LEGACY_DYNAMO_FALSE_OPSET17_BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN",
+    "directExportEvidence": {
+      "exporter": "torch.onnx.export",
+      "torchVersion": "2.6.0+cpu",
+      "dynamo": false,
+      "opset": 17,
+      "inputShape": [1, 4, 64, 64],
+      "atenFallbackAllowed": false,
+      "result": "BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN",
+      "artifactProduced": false,
+      "runtimeAuthorityGranted": false
+    },
+    "cpuOrt": "UNPROVEN",
+    "browserWasm": "UNPROVEN",
+    "browserWebGpu": "UNPROVEN_KNOWN_THIRD_PARTY_SHAPE_RISK",
+    "thirdPartyReferenceAuthority": false
+  },
+  "bersArtifact": {
+    "state": "UNBUILT",
+    "format": null,
+    "size": null,
+    "sha256": null
+  },
+  "artifactState": "CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED",
+  "artifacts": {
+    "model": {
+      "url": null,
+      "size": null,
+      "sha256": null,
+      "signatureUrl": null
+    }
+  },
+  "verificationKeyId": null,
+  "productionApprovalEvidence": null
+}
