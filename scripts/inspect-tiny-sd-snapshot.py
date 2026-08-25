@@ -39,10 +39,29 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--snapshot", required=True)
     parser.add_argument("--revision", required=True)
+    parser.add_argument("--expected-manifest", required=True)
     parser.add_argument("--report", required=True)
     args = parser.parse_args()
 
     snapshot = Path(args.snapshot).resolve(strict=True)
+    manifest = json.loads(Path(args.expected_manifest).read_text(encoding="utf-8"))
+    if manifest.get("modelId") != "segmind-tiny-sd" or manifest.get("status") != "CANDIDATE":
+        raise RuntimeError("unexpected Tiny-SD manifest identity/status")
+    upstream = manifest.get("upstream", {})
+    if upstream.get("revision") != args.revision:
+        raise RuntimeError("Tiny-SD upstream revision differs from pinned manifest")
+    expected_snapshot = upstream.get("snapshot", {})
+    if expected_snapshot.get("identityState") != "PINNED":
+        raise RuntimeError("Tiny-SD snapshot identity must be PINNED before acquisition")
+    if tuple(expected_snapshot.get("expectedRuntimeFiles", ())) != EXPECTED_FILES:
+        raise RuntimeError("Tiny-SD expected runtime file contract changed")
+    pinned_records = expected_snapshot.get("files")
+    if not isinstance(pinned_records, list) or len(pinned_records) != len(EXPECTED_FILES):
+        raise RuntimeError("Tiny-SD pinned snapshot must contain all runtime identities")
+    pinned_by_path = {record.get("path"): record for record in pinned_records}
+    if set(pinned_by_path) != set(EXPECTED_FILES):
+        raise RuntimeError("Tiny-SD pinned snapshot paths are incomplete or ambiguous")
+
     records = []
     for relative in EXPECTED_FILES:
         path = snapshot / relative
@@ -53,12 +72,20 @@ def main() -> int:
         if path.suffix == ".json":
             with path.open("r", encoding="utf-8") as stream:
                 json.load(stream)
-        records.append({
+        record = {
             "path": relative,
             "size": path.stat().st_size,
             "sha256": sha256_file(path),
             "kind": "PICKLE_WEIGHT" if relative in WEIGHT_FILES else "RUNTIME_METADATA",
-        })
+        }
+        pinned = pinned_by_path[relative]
+        if record != {key: pinned.get(key) for key in ("path", "size", "sha256", "kind")}:
+            raise RuntimeError(f"Tiny-SD pinned runtime identity mismatch: {relative}")
+        records.append(record)
+
+    total_runtime_bytes = sum(record["size"] for record in records)
+    if total_runtime_bytes != expected_snapshot.get("totalRuntimeBytes"):
+        raise RuntimeError("Tiny-SD pinned total runtime byte count changed")
 
     model_index = json.loads((snapshot / "model_index.json").read_text(encoding="utf-8"))
     if model_index.get("_class_name") != "StableDiffusionPipeline":
@@ -71,19 +98,20 @@ def main() -> int:
         "modelId": "segmind-tiny-sd",
         "upstreamRevision": args.revision,
         "pipelineClass": "StableDiffusionPipeline",
-        "license": "creativeml-openrail-m",
-        "licenseReview": "REQUIRED",
+        "license": manifest.get("upstream", {}).get("license"),
+        "licenseReview": manifest.get("licenseReview"),
         "inventory": records,
-        "totalRuntimeBytes": sum(record["size"] for record in records),
+        "totalRuntimeBytes": total_runtime_bytes,
         "pickleWeightCount": sum(record["kind"] == "PICKLE_WEIGHT" for record in records),
         "hashBeforeDeserializationRequired": True,
+        "matchesPinnedManifest": True,
         "runtimeAuthorityGranted": False,
         "productionApproval": False,
     }
     target = Path(args.report)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"TINY-SD SNAPSHOT INVENTORY: PASS files={len(records)} bytes={report['totalRuntimeBytes']}")
+    print(f"TINY-SD PINNED SNAPSHOT INVENTORY: PASS files={len(records)} bytes={total_runtime_bytes}")
     return 0
 
 
