@@ -11,6 +11,7 @@ const quantizeWasm = await readFile(new URL('../scripts/prepare-tiny-sd-d3-wasm-
 const matrixWasm = await readFile(new URL('../scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py', import.meta.url), 'utf8');
 const browserWasm = await readFile(new URL('../tests/tiny-sd-d3-browser-wasm.html', import.meta.url), 'utf8');
 const runnerWasm = await readFile(new URL('../scripts/test-tiny-sd-d3-browser-wasm.mjs', import.meta.url), 'utf8');
+const browserFactory = await readFile(new URL('../src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts', import.meta.url), 'utf8');
 
 test('D3 remains advisory and cannot grant Tiny-SD runtime or production authority', () => {
   assert.equal(manifest.status, 'CANDIDATE');
@@ -153,6 +154,25 @@ test('D3 WASM fixtures are generated independently from the D2 FP32 root', () =>
   assert.match(quantizeWasm, /InferenceSession\(str\(fp32\), providers=\["CPUExecutionProvider"\]\)/);
   assert.match(runnerWasm, /const fixture = record\.browserFixture/);
   assert.doesNotMatch(runnerWasm, /fixture-report|fixtureReportPath|D3_WEBGPU_FP16_PREPARATION/);
+});
+
+test('D3 production WASM runtime remains worker-free under Trusted Types', () => {
+  assert.match(browserFactory, /export const BROWSER_WASM_NUM_THREADS = 1;/);
+  assert.match(browserFactory, /export const BROWSER_WASM_PROXY = false;/);
+  assert.match(browserFactory, /export const BROWSER_WASM_WORKER_POLICY = 'DISABLED_PENDING_SEPARATE_SECURITY_REVIEW' as const;/);
+  assert.match(browserFactory, /ort\.env\.wasm\.numThreads = BROWSER_WASM_NUM_THREADS;/);
+  assert.match(browserFactory, /ort\.env\.wasm\.proxy = BROWSER_WASM_PROXY;/);
+  assert.equal((browserFactory.match(/ort\.env\.wasm\.numThreads/g) ?? []).length, 1);
+  assert.equal((browserFactory.match(/ort\.env\.wasm\.proxy/g) ?? []).length, 1);
+  assert.doesNotMatch(browserFactory, /new Worker\(|trustedTypes\.createPolicy|createPolicy\(/);
+  assert.match(browserWasm, /numThreads: BROWSER_WASM_NUM_THREADS/);
+  assert.match(browserWasm, /proxy: BROWSER_WASM_PROXY/);
+  assert.match(browserWasm, /workerFree: BROWSER_WASM_NUM_THREADS === 1 && BROWSER_WASM_PROXY === false/);
+  assert.match(browserWasm, /workerPolicy: BROWSER_WASM_WORKER_POLICY/);
+  assert.match(runnerWasm, /EXPECTED_WORKER_FREE_RUNTIME/);
+  assert.match(runnerWasm, /workerPolicy: 'DISABLED_PENDING_SEPARATE_SECURITY_REVIEW'/);
+  assert.match(runnerWasm, /assert\.deepEqual\(runtimeReport\.wasmRuntime, EXPECTED_WORKER_FREE_RUNTIME/);
+  assert.match(runnerWasm, /workerFreeRuntimeRequired: true/);
 });
 
 test('D3 WASM browser proof uses the production factory, local runtime assets and no provider fallback', () => {
