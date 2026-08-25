@@ -1,5 +1,6 @@
 import efficientSam from './efficient-sam-ti.manifest.json' with { type: 'json' };
 import modNet from './portrait-matting.manifest.json' with { type: 'json' };
+import laMa from './lama-inpainting.manifest.json' with { type: 'json' };
 
 export type LocalModelAcquisitionCandidate = Readonly<{
   modelId: string;
@@ -42,6 +43,20 @@ export const LOCAL_MODEL_ACQUISITION_CANDIDATES: readonly LocalModelAcquisitionC
     upstreamRevision: String(modNet.upstream.revision),
     upstreamLicense: String(modNet.upstream.license),
     upstreamBytes: typeof modNet.upstream.checkpoint.size === 'number' ? Number(modNet.upstream.checkpoint.size) : 'UNKNOWN',
+    productionExecutable: false,
+  }),
+  Object.freeze({
+    modelId: String(laMa.modelId),
+    version: String(laMa.version),
+    packId: 'INPAINTING',
+    status: 'CANDIDATE',
+    artifactState: String(laMa.artifactState),
+    semanticCapabilities: Object.freeze([...laMa.semanticCapabilities]),
+    upstreamRevision: String(laMa.upstream.revision),
+    upstreamLicense: String(laMa.upstream.license),
+    upstreamBytes: typeof laMa.upstream.checkpoint.checkpointSize === 'number'
+      ? Number(laMa.upstream.checkpoint.checkpointSize)
+      : 'UNKNOWN',
     productionExecutable: false,
   }),
 ]);
