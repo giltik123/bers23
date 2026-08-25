@@ -8,22 +8,26 @@ const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/loc
 const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8';
 const ONNX_SHA = '18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919';
 
-test('checkpoint inspector verifies pinned digest before state_dict deserialization', () => {
+test('checkpoint inspector verifies pinned digest before weights-only state_dict deserialization', () => {
   const digestCheck = inspector.indexOf('if sha256 != args.expected_sha256');
   const stateInspect = inspector.indexOf('inspect_state_dict(args.source, args.checkpoint)');
-  const torchLoad = inspector.indexOf('torch.load(checkpoint, map_location=torch.device("cpu"))');
+  const torchLoad = inspector.indexOf('state = torch.load(');
   assert.ok(digestCheck >= 0);
   assert.ok(stateInspect > digestCheck, 'state_dict inspection must occur after digest verification logic');
   assert.ok(torchLoad >= 0);
+  assert.match(inspector, /weights_only=True/);
+  assert.doesNotMatch(inspector, /weights_only=False/);
 });
 
-test('reproducible exporter checks checkpoint before torch.load and output against pinned ONNX identity', () => {
+test('reproducible exporter checks checkpoint before weights-only torch.load and output against pinned ONNX identity', () => {
   const sizeCheck = exporter.indexOf('checkpoint.stat().st_size != expected["size"]');
   const shaCheck = exporter.indexOf('sha256(checkpoint) != expected["sha256"]');
-  const deserialize = exporter.indexOf('torch.load(checkpoint, map_location=torch.device("cpu"))');
+  const deserialize = exporter.indexOf('state = torch.load(');
   assert.ok(sizeCheck >= 0 && shaCheck >= 0 && deserialize >= 0);
   assert.ok(sizeCheck < deserialize);
   assert.ok(shaCheck < deserialize);
+  assert.match(exporter, /weights_only=True/);
+  assert.doesNotMatch(exporter, /weights_only=False/);
   assert.match(exporter, /OPSET = 17/);
   assert.match(exporter, /PARITY_SHAPES = \(\(128, 160\), \(256, 320\), \(512, 512\)\)/);
   assert.match(exporter, /first_hash != second_hash/);
