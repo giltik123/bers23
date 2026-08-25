@@ -9,6 +9,8 @@ const memoryStorage = await readFile(new URL('../src/platform/creative/local-ai/
 const indexedStorage = await readFile(new URL('../src/platform/creative/local-ai/lifecycle/IndexedDbFleetStorage.ts', import.meta.url), 'utf8');
 const factory = await readFile(new URL('../src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts', import.meta.url), 'utf8');
 const prepare = await readFile(new URL('../scripts/prepare-tiny-sd-d4-ort.py', import.meta.url), 'utf8');
+const smoke = await readFile(new URL('../scripts/test-tiny-sd-d4-ort-conversion-smoke.py', import.meta.url), 'utf8');
+const smokeWorkflow = await readFile(new URL('../.github/workflows/sprint-6.42d4-ort-conversion-smoke.yml', import.meta.url), 'utf8');
 const browser = await readFile(new URL('../tests/tiny-sd-d4-browser-wasm.html', import.meta.url), 'utf8');
 const runner = await readFile(new URL('../scripts/test-tiny-sd-d4-browser-wasm.mjs', import.meta.url), 'utf8');
 
@@ -51,6 +53,23 @@ test('D4 ORT converter is pinned, API-based, portable and independently fail-clo
   assert.match(prepare, /ONE_ORT_ARTIFACT_TWO_RUNTIME_POLICIES_PLUS_ONNX_BASELINE/);
   assert.doesNotMatch(prepare, /maxAbsOverReferenceMaxAbs["']?\s*[:=]\s*0\.0[3-9]/);
   assert.doesNotMatch(prepare, /rmseOverReferenceRms["']?\s*[:=]\s*0\.0[2-9]/);
+});
+
+test('D4 has an independent exact-version ORT conversion and inference smoke', () => {
+  execFileSync('python', ['-m', 'py_compile', 'scripts/test-tiny-sd-d4-ort-conversion-smoke.py'], { stdio: 'pipe' });
+  assert.match(smoke, /EXPECTED_ORT_VERSION = "1\.27\.0"/);
+  assert.match(smoke, /helper\.make_node\("Identity"/);
+  assert.match(smoke, /onnx\.checker\.check_model\(model, full_check=True\)/);
+  assert.match(smoke, /optimization_styles=\[OptimizationStyle\.Fixed\]/);
+  assert.match(smoke, /target_platform=None/);
+  assert.match(smoke, /allow_conversion_failures=False/);
+  assert.match(smoke, /InferenceSession\(str\(converted\), providers=\["CPUExecutionProvider"\]\)/);
+  assert.match(smoke, /np\.array_equal\(observed, value\)/);
+  assert.match(smoke, /shutil\.rmtree\(args\.work_dir, ignore_errors=True\)/);
+  assert.match(smokeWorkflow, /name: Sprint 6\.42D4 ORT conversion smoke/);
+  assert.match(smokeWorkflow, /numpy==2\.4\.6 onnx==1\.22\.0 onnxruntime==1\.27\.0/);
+  assert.match(smokeWorkflow, /test-tiny-sd-d4-ort-conversion-smoke\.py/);
+  assert.doesNotMatch(smokeWorkflow, /snapshot_download|segmind\/tiny-sd|pytorch_model\.bin|diffusion_pytorch_model\.bin/);
 });
 
 test('D4 browser ORT modes expose only the reviewed memory policy and keep worker-free security baseline', () => {
