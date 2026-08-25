@@ -105,11 +105,16 @@ test('hosted gate keeps Drive as authority and permits only a byte-pinned transp
   assert.doesNotMatch(workflow, /omegaconf==/);
 });
 
-test('pinned checkpoint remains CANDIDATE-only until runtime/artifact evidence exists', () => {
+test('pinned checkpoint remains CANDIDATE-only after legacy blocker evidence and before runtime/artifact admission', () => {
   assert.equal(manifest.status, 'CANDIDATE');
   assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED');
   assert.equal(manifest.upstream.checkpoint.identityState, 'PINNED');
-  assert.equal(manifest.runtimeFeasibility.state, 'UNPROVEN');
+  assert.equal(manifest.runtimeFeasibility.state, 'BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED');
+  assert.equal(manifest.runtimeFeasibility.directExportEvidence.result, 'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN');
+  assert.equal(manifest.runtimeFeasibility.directExportEvidence.artifactProduced, false);
+  assert.equal(manifest.runtimeFeasibility.directExportEvidence.runtimeAuthorityGranted, false);
+  assert.equal(manifest.runtimeFeasibility.cpuOrt, 'UNPROVEN');
+  assert.equal(manifest.runtimeFeasibility.browserWasm, 'UNPROVEN');
   assert.equal(manifest.bersArtifact.state, 'UNBUILT');
   assert.equal(manifest.productionApprovalEvidence, null);
   assert.equal(manifest.verificationKeyId, null);
