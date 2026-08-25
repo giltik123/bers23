@@ -2,17 +2,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import manifest from '../src/platform/creative/local-ai/models/portrait-matting.manifest.json' with { type: 'json' };
 import { acquisitionCandidatesForPack } from '../src/platform/creative/local-ai/models/CandidateModelCatalog.ts';
-import { isExecutableModNetRelease, modNetReleaseState } from '../src/platform/creative/local-ai/models/ModNetRelease.ts';
+import {
+  isExecutableModNetRelease,
+  modNetReleaseState,
+  MODNET_ONNX_SHA256,
+  MODNET_ONNX_SIZE,
+} from '../src/platform/creative/local-ai/models/ModNetRelease.ts';
 import { productionLocalModelsByCapability } from '../server/core/localExecution/productionLocalModelPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
 const MODEL_ID = 'modnet-photographic-portrait-matting';
 const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8';
 
-test('MODNet pins authoritative checkpoint identity while remaining a non-executable continuous-alpha CANDIDATE', () => {
+test('MODNet pins authoritative checkpoint and reproducible ONNX while remaining a non-executable continuous-alpha CANDIDATE', () => {
   assert.equal(manifest.modelId, MODEL_ID);
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_EXPORT_REQUIRED');
+  assert.equal(manifest.artifactState, 'EXPORT_PINNED_RELEASE_REQUIRED');
   assert.equal(manifest.upstream.revision, '28165a451e4610c9d77cfdf925a94610bb2810fb');
   assert.equal(manifest.upstream.license, 'Apache-2.0');
   assert.equal(manifest.upstream.checkpoint.name, 'modnet_photographic_portrait_matting.ckpt');
@@ -23,12 +28,18 @@ test('MODNet pins authoritative checkpoint identity while remaining a non-execut
   assert.equal(manifest.upstream.checkpoint.stateDictKeyCount, 751);
   assert.equal(manifest.upstream.checkpoint.parameterElementCount, 8780012);
   assert.equal(manifest.upstream.checkpoint.strictPinnedArchitectureLoad, true);
+  assert.equal(manifest.upstream.onnx.authoritativeReference.size, 25888640);
+  assert.equal(manifest.upstream.onnx.authoritativeReference.sha256, '07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9');
+  assert.equal(manifest.upstream.onnx.authoritativeReference.opset, 11);
   assert.equal(manifest.tensorContract.output.semanticType, 'CONTINUOUS_ALPHA_MATTE');
   assert.equal(manifest.tensorContract.output.activation, 'SIGMOID');
   assert.equal(manifest.tensorContract.output.threshold, null);
   assert.deepEqual(manifest.tensorContract.output.range, [0, 1]);
-  assert.equal(manifest.bersExport.state, 'UNBUILT');
-  assert.equal(isExecutableModNetRelease(manifest), false);
+  assert.equal(manifest.bersExport.state, 'PINNED');
+  assert.equal(manifest.bersExport.onnxSize, MODNET_ONNX_SIZE);
+  assert.equal(manifest.bersExport.onnxSha256, MODNET_ONNX_SHA256);
+  assert.equal(manifest.bersExport.opset, 17);
+  assert.equal(isExecutableModNetRelease(manifest), false, 'pinned export without signed release + approval must remain blocked');
   assert.equal(modNetReleaseState.productionAvailable, false);
 });
 
@@ -49,25 +60,33 @@ test('MODNet is advisory MATTING discovery only and is absent from executable ca
   }
 });
 
-test('status/signature envelope cannot promote MODNet before reproducible export identity is pinned', () => {
-  const forged = structuredClone(manifest) as any;
-  forged.status = 'PRODUCTION_APPROVED';
-  forged.artifactState = 'SIGNED_RELEASE';
-  forged.verificationKeyId = 'bers-portrait-matting-release-2026-08';
-  forged.productionApprovalEvidence = 'https://github.com/giltik123/bers23/issues/999';
-  forged.artifacts.model = {
-    url: 'https://github.com/giltik123/bers23/releases/download/modnet-v1/model.onnx',
-    size: 1,
-    sha256: 'a'.repeat(64),
-    signatureUrl: 'https://github.com/giltik123/bers23/releases/download/modnet-v1/model.onnx.sig',
+test('only the exact pinned checkpoint and BERS ONNX bytes can satisfy the future signed release envelope', () => {
+  const approved = structuredClone(manifest) as any;
+  approved.status = 'PRODUCTION_APPROVED';
+  approved.artifactState = 'SIGNED_RELEASE';
+  approved.verificationKeyId = 'bers-portrait-matting-release-2026-08';
+  approved.productionApprovalEvidence = 'https://github.com/giltik123/bers23/issues/999';
+  approved.artifacts.model = {
+    url: 'https://github.com/giltik123/bers23/releases/download/modnet-v1/modnet-photographic-portrait-matting.onnx',
+    size: MODNET_ONNX_SIZE,
+    sha256: MODNET_ONNX_SHA256,
+    signatureUrl: 'https://github.com/giltik123/bers23/releases/download/modnet-v1/modnet-photographic-portrait-matting.onnx.sig',
   };
-  assert.equal(isExecutableModNetRelease(forged), false, 'UNBUILT export must block promotion even with a signed envelope');
+  assert.equal(isExecutableModNetRelease(approved), true, 'complete future envelope is structurally executable only after separate approval evidence');
 
-  forged.bersExport.state = 'PINNED';
-  forged.bersExport.onnxSize = 1;
-  forged.bersExport.onnxSha256 = 'a'.repeat(64);
-  assert.equal(isExecutableModNetRelease(forged), true);
-
-  forged.artifacts.model.sha256 = 'c'.repeat(64);
-  assert.equal(isExecutableModNetRelease(forged), false, 'signed artifact must match pinned reproducible export identity');
+  const mutations = [
+    (value: any) => { value.upstream.revision = '0'.repeat(40); },
+    (value: any) => { value.upstream.checkpoint.sha256 = 'b'.repeat(64); },
+    (value: any) => { value.upstream.checkpoint.size += 1; },
+    (value: any) => { value.bersExport.onnxSha256 = 'c'.repeat(64); },
+    (value: any) => { value.bersExport.onnxSize += 1; },
+    (value: any) => { value.artifacts.model.sha256 = 'd'.repeat(64); },
+    (value: any) => { value.artifacts.model.size += 1; },
+    (value: any) => { value.productionApprovalEvidence = null; },
+  ];
+  for (const mutate of mutations) {
+    const invalid = structuredClone(approved);
+    mutate(invalid);
+    assert.equal(isExecutableModNetRelease(invalid), false);
+  }
 });
