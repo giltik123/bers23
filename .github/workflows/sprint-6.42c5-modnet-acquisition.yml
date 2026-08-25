@@ -1,0 +1,85 @@
+name: Sprint 6.42C5 MODNet acquisition acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authoritative-checkpoint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install acquisition tools
+        run: |
+          python -m pip install --disable-pip-version-check gdown==5.2.0
+          python -m pip install --disable-pip-version-check torch==2.1.2
+      - name: Clone exact MODNet upstream
+        run: |
+          set -euo pipefail
+          git clone https://github.com/ZHKKKe/MODNet "${RUNNER_TEMP}/MODNet"
+          git -C "${RUNNER_TEMP}/MODNet" checkout --detach 28165a451e4610c9d77cfdf925a94610bb2810fb
+          test "$(git -C "${RUNNER_TEMP}/MODNet" rev-parse HEAD)" = 28165a451e4610c9d77cfdf925a94610bb2810fb
+      - name: Download authoritative upstream checkpoint folder
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/modnet-checkpoints"
+          gdown --folder 'https://drive.google.com/drive/folders/1umYmlCulvIFNaqPjwod1SayFmSRHziyR?usp=sharing' \
+            -O "${RUNNER_TEMP}/modnet-checkpoints"
+          mapfile -t matches < <(find "${RUNNER_TEMP}/modnet-checkpoints" -type f -name 'modnet_photographic_portrait_matting.ckpt' -print)
+          test "${#matches[@]}" -eq 1
+          printf '%s\n' "${matches[0]}" > "${RUNNER_TEMP}/modnet-checkpoint-path"
+      - name: Inspect checkpoint identity and strict architecture compatibility
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/6.42c5
+          checkpoint="$(cat "${RUNNER_TEMP}/modnet-checkpoint-path")"
+          python scripts/inspect-modnet-checkpoint.py \
+            --source "${RUNNER_TEMP}/MODNet" \
+            --checkpoint "${checkpoint}" \
+            --metadata .test-cache/6.42c5/modnet-checkpoint-acquisition.json \
+            --inspect-state-dict
+          python - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42c5/modnet-checkpoint-acquisition.json', encoding='utf-8'))
+          assert report['status'] == 'CANDIDATE'
+          assert report['productionDeviceApproval'] is False
+          assert report['checkpoint']['digestPinnedBeforeDeserialization'] is False
+          assert report['checkpoint']['stateDict']['strictArchitectureLoad'] is True
+          print('checkpoint size=', report['checkpoint']['size'])
+          print('checkpoint sha256=', report['checkpoint']['sha256'])
+          print('state_dict keys=', report['checkpoint']['stateDict']['stateDictKeyCount'])
+          print('parameter elements=', report['checkpoint']['stateDict']['parameterElementCount'])
+          PY
+      - name: Repository weight guard
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.onnx' | wc -l)" -eq 0
+      - name: Publish acquisition summary
+        run: |
+          {
+            echo '## MODNet authoritative checkpoint acquisition'
+            echo
+            echo '- Status: CANDIDATE'
+            echo '- Source revision: `28165a451e4610c9d77cfdf925a94610bb2810fb`'
+            echo '- Source license: Apache-2.0'
+            echo '- Checkpoint source: upstream-authoritative Google Drive folder'
+            echo '- Exact filename / byte size / SHA-256 / strict pinned-architecture load: checked'
+            echo '- Initial discovery only: digest is not yet pinned before deserialization on this head'
+            echo '- Production device approval: NOT GRANTED'
+            echo '```json'
+            cat .test-cache/6.42c5/modnet-checkpoint-acquisition.json
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
