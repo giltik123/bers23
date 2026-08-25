@@ -69,7 +69,9 @@ export const LOCAL_MODEL_ACQUISITION_CANDIDATES: readonly LocalModelAcquisitionC
     semanticCapabilities: Object.freeze([...tinySd.semanticCapabilities]),
     upstreamRevision: String(tinySd.upstream.revision),
     upstreamLicense: String(tinySd.upstream.license),
-    upstreamBytes: 'UNKNOWN',
+    upstreamBytes: tinySd.upstream.snapshot.identityState === 'PINNED'
+      ? Number(tinySd.upstream.snapshot.totalRuntimeBytes)
+      : 'UNKNOWN',
     productionExecutable: false,
   }),
 ]);
