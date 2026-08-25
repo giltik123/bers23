@@ -5,7 +5,14 @@ import { acquisitionCandidatesForPack } from '../src/platform/creative/local-ai/
 import {
   isExecutableLaMaRelease,
   laMaReleaseState,
+  LAMA_ARCHIVE_DRIVE_FILE_ID,
+  LAMA_ARCHIVE_SHA256,
+  LAMA_ARCHIVE_SIZE,
   LAMA_AUTHORITATIVE_CHECKPOINT_PINNED,
+  LAMA_CHECKPOINT_SHA256,
+  LAMA_CHECKPOINT_SIZE,
+  LAMA_CONFIG_SHA256,
+  LAMA_CONFIG_SIZE,
   LAMA_UPSTREAM_REVISION,
 } from '../src/platform/creative/local-ai/models/LaMaRelease.ts';
 import { productionLocalModelsByCapability } from '../server/core/localExecution/productionLocalModelPolicy.ts';
@@ -13,18 +20,26 @@ import { productionLocalExecutorsByCapability } from '../server/core/localExecut
 
 const MODEL_ID = 'lama-big-places-inpainting';
 
-test('Big-LaMa starts as a non-executable authoritative-acquisition CANDIDATE', () => {
+test('Big-LaMa pins authoritative archive/checkpoint/config while remaining non-executable', () => {
   assert.equal(manifest.modelId, MODEL_ID);
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'CHECKPOINT_ACQUISITION_REQUIRED');
+  assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED');
   assert.equal(manifest.upstream.revision, LAMA_UPSTREAM_REVISION);
   assert.equal(manifest.upstream.license, 'Apache-2.0');
+  assert.equal(manifest.upstream.distribution.authoritativeArchiveDriveFileId, LAMA_ARCHIVE_DRIVE_FILE_ID);
   assert.equal(manifest.upstream.distribution.convenienceMirrorAuthority, false);
-  assert.equal(manifest.upstream.checkpoint.identityState, 'ACQUISITION_REQUIRED');
-  assert.equal(manifest.upstream.checkpoint.checkpointSha256, null);
+  assert.equal(manifest.upstream.checkpoint.identityState, 'PINNED');
+  assert.equal(manifest.upstream.checkpoint.archiveSize, LAMA_ARCHIVE_SIZE);
+  assert.equal(manifest.upstream.checkpoint.archiveSha256, LAMA_ARCHIVE_SHA256);
+  assert.equal(manifest.upstream.checkpoint.checkpointSize, LAMA_CHECKPOINT_SIZE);
+  assert.equal(manifest.upstream.checkpoint.checkpointSha256, LAMA_CHECKPOINT_SHA256);
+  assert.equal(manifest.upstream.checkpoint.configSize, LAMA_CONFIG_SIZE);
+  assert.equal(manifest.upstream.checkpoint.configSha256, LAMA_CONFIG_SHA256);
+  assert.equal(manifest.upstream.checkpoint.corroboration.checkpointSha256Matches, true);
+  assert.equal(manifest.upstream.checkpoint.corroboration.configSha256Matches, true);
   assert.equal(manifest.bersArtifact.state, 'UNBUILT');
   assert.equal(manifest.runtimeFeasibility.state, 'UNPROVEN');
-  assert.equal(LAMA_AUTHORITATIVE_CHECKPOINT_PINNED, false);
+  assert.equal(LAMA_AUTHORITATIVE_CHECKPOINT_PINNED, true);
   assert.equal(isExecutableLaMaRelease(manifest), false);
   assert.equal(laMaReleaseState.productionAvailable, false);
 });
@@ -57,6 +72,7 @@ test('Big-LaMa architecture and browser runtime risks are explicit instead of as
   assert.equal(architecture.fourierForward, 'torch.fft.rfftn');
   assert.equal(architecture.fourierInverse, 'torch.fft.irfftn');
   assert.equal(manifest.runtimeFeasibility.directTorchOnnx, 'UNPROVEN_FFT_RISK');
+  assert.equal(manifest.runtimeFeasibility.cpuOrt, 'UNPROVEN');
   assert.equal(manifest.runtimeFeasibility.browserWasm, 'UNPROVEN');
   assert.equal(manifest.runtimeFeasibility.browserWebGpu, 'UNPROVEN_KNOWN_THIRD_PARTY_SHAPE_RISK');
   assert.equal(manifest.runtimeFeasibility.thirdPartyReferenceAuthority, false);
@@ -66,7 +82,7 @@ test('LaMa is advisory INPAINTING discovery only and absent from production exec
   const candidates = acquisitionCandidatesForPack('INPAINTING');
   const candidate = candidates.find(value => value.modelId === MODEL_ID);
   assert.ok(candidate);
-  assert.equal(candidate!.upstreamBytes, 'UNKNOWN');
+  assert.equal(candidate!.upstreamBytes, LAMA_CHECKPOINT_SIZE);
   assert.equal(candidate!.productionExecutable, false);
   assert.equal('downloadUri' in candidate!, false);
   assert.equal('signature' in candidate!, false);
@@ -80,24 +96,35 @@ test('LaMa is advisory INPAINTING discovery only and absent from production exec
   }
 });
 
-test('forged signed/approved envelope remains impossible before authoritative checkpoint pin', () => {
-  const forged = structuredClone(manifest) as any;
-  forged.status = 'PRODUCTION_APPROVED';
-  forged.artifactState = 'SIGNED_RELEASE';
-  forged.verificationKeyId = 'forged';
-  forged.productionApprovalEvidence = 'https://example.invalid/evidence';
-  forged.upstream.checkpoint.identityState = 'PINNED';
-  forged.upstream.checkpoint.checkpointSize = 1;
-  forged.upstream.checkpoint.checkpointSha256 = 'a'.repeat(64);
-  forged.upstream.checkpoint.configSize = 1;
-  forged.upstream.checkpoint.configSha256 = 'b'.repeat(64);
-  forged.bersArtifact = { state: 'PINNED', format: 'ONNX', size: 1, sha256: 'c'.repeat(64) };
-  forged.runtimeFeasibility = { ...forged.runtimeFeasibility, state: 'VERIFIED', browserWasm: 'VERIFIED' };
-  forged.artifacts.model = {
+test('future signed envelope is byte-bound and still blocked until BERS artifact/runtime evidence exists', () => {
+  const approved = structuredClone(manifest) as any;
+  approved.status = 'PRODUCTION_APPROVED';
+  approved.artifactState = 'SIGNED_RELEASE';
+  approved.verificationKeyId = 'bers-lama-release-future';
+  approved.productionApprovalEvidence = 'https://example.invalid/evidence';
+  approved.bersArtifact = { state: 'PINNED', format: 'ONNX', size: 1, sha256: 'c'.repeat(64) };
+  approved.runtimeFeasibility = { ...approved.runtimeFeasibility, state: 'VERIFIED', browserWasm: 'VERIFIED' };
+  approved.artifacts.model = {
     url: 'https://example.invalid/lama.onnx',
     size: 1,
     sha256: 'c'.repeat(64),
     signatureUrl: 'https://example.invalid/lama.onnx.sig',
   };
-  assert.equal(isExecutableLaMaRelease(forged), false);
+  assert.equal(isExecutableLaMaRelease(approved), true, 'complete future envelope is structurally valid only after separate approval evidence');
+
+  const mutations = [
+    (value: any) => { value.upstream.revision = '0'.repeat(40); },
+    (value: any) => { value.upstream.distribution.authoritativeArchiveDriveFileId = 'other'; },
+    (value: any) => { value.upstream.checkpoint.archiveSha256 = 'a'.repeat(64); },
+    (value: any) => { value.upstream.checkpoint.checkpointSha256 = 'b'.repeat(64); },
+    (value: any) => { value.upstream.checkpoint.configSha256 = 'd'.repeat(64); },
+    (value: any) => { value.runtimeFeasibility.state = 'UNPROVEN'; },
+    (value: any) => { value.runtimeFeasibility.browserWasm = 'UNPROVEN'; },
+    (value: any) => { value.artifacts.model.sha256 = 'e'.repeat(64); },
+  ];
+  for (const mutate of mutations) {
+    const invalid = structuredClone(approved);
+    mutate(invalid);
+    assert.equal(isExecutableLaMaRelease(invalid), false);
+  }
 });
