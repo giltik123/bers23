@@ -1,0 +1,131 @@
+name: Sprint 6.42C6 LaMa acquisition feasibility
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authoritative-inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned acquisition tooling
+        run: python -m pip install --disable-pip-version-check gdown==5.2.0
+
+      - name: Clone exact LaMa upstream and verify semantic source contract
+        run: |
+          set -euo pipefail
+          git clone https://github.com/advimman/lama "${RUNNER_TEMP}/lama"
+          git -C "${RUNNER_TEMP}/lama" checkout --detach 786f5936b27fb3dacd2b1ad799e4de968ea697e7
+          test "$(git -C "${RUNNER_TEMP}/lama" rev-parse HEAD)" = 786f5936b27fb3dacd2b1ad799e4de968ea697e7
+          python - "${RUNNER_TEMP}/lama" <<'PY'
+          from pathlib import Path
+          import sys
+          root = Path(sys.argv[1])
+          config = (root / 'configs/training/big-lama.yaml').read_text(encoding='utf-8')
+          for fragment in (
+              'kind: ffc_resnet', 'input_nc: 4', 'output_nc: 3', 'ngf: 64',
+              'n_downsampling: 3', 'n_blocks: 18', 'add_out_act: sigmoid',
+              'ratio_gin: 0.75', 'enable_lfu: false',
+          ):
+              assert fragment in config, fragment
+          ffc = (root / 'saicinpainting/training/modules/ffc.py').read_text(encoding='utf-8')
+          assert 'torch.fft.rfftn' in ffc
+          assert 'torch.fft.irfftn' in ffc
+          trainer = (root / 'saicinpainting/training/trainers/default.py').read_text(encoding='utf-8')
+          assert 'masked_img = img * (1 - mask)' in trainer
+          assert 'torch.cat([masked_img, mask], dim=1)' in trainer
+          assert "mask * batch['predicted_image'] + (1 - mask) * batch['image']" in trainer
+          prediction = (root / 'configs/prediction/default.yaml').read_text(encoding='utf-8')
+          assert 'pad_out_to_modulo: 8' in prediction
+          data = (root / 'saicinpainting/evaluation/data.py').read_text(encoding='utf-8')
+          assert "img.astype('float32') / 255" in data
+          print('LAMA PINNED SOURCE CONTRACT: PASS')
+          PY
+
+      - name: Download upstream-authoritative model folder
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/lama-authoritative-models"
+          mkdir -p "${root}" .test-cache/6.42c6
+          gdown --folder --remaining-ok \
+            'https://drive.google.com/drive/folders/1B2x7eQDgecTL0oh3LSIBDGj0fTxs6Ips?usp=sharing' \
+            -O "${root}"
+          python scripts/inspect-lama-authoritative-folder.py \
+            --root "${root}" \
+            --source-revision 786f5936b27fb3dacd2b1ad799e4de968ea697e7 \
+            --report .test-cache/6.42c6/lama-authoritative-inventory.json
+
+      - name: Inspect acquisition evidence without deserializing checkpoint
+        run: |
+          python - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42c6/lama-authoritative-inventory.json', encoding='utf-8'))
+          assert report['status'] == 'CANDIDATE'
+          assert report['productionDeviceApproval'] is False
+          assert report['deserializationPerformed'] is False
+          assert report['completeFolderEnumerationClaimed'] is True
+          identity = report['identityDiscovery']
+          print('downloaded files=', report['downloadedFileCount'])
+          print('exact checkpoint=', identity['exactCheckpointCandidate'])
+          print('exact config=', identity['exactConfigCandidate'])
+          print('architecture match=', identity['architectureMatchesPinnedBigLama'])
+          print('ready to pin=', identity['readyToPin'])
+          if identity['checkpoint']:
+              print('checkpoint=', identity['checkpoint'])
+          if identity['config']:
+              print('config=', identity['config'])
+          PY
+
+      - name: C6 candidate authority and repository guards
+        run: |
+          set -euo pipefail
+          npm ci
+          npx esbuild tests/lama-candidate-policy.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c6/lama-candidate-policy.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42c6/lama-candidate-policy.test.mjs
+          node --test tests/lama-acquisition-security.test.mjs
+          python -m py_compile scripts/inspect-lama-authoritative-folder.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.onnx' | wc -l)" -eq 0
+
+      - name: Upload authoritative inventory evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lama-authoritative-inventory
+          path: .test-cache/6.42c6/lama-authoritative-inventory.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish C6 feasibility summary
+        run: |
+          {
+            echo '## LaMa authoritative acquisition feasibility'
+            echo
+            echo '- Status: CANDIDATE'
+            echo '- Upstream revision: `786f5936b27fb3dacd2b1ad799e4de968ea697e7`'
+            echo '- License: Apache-2.0'
+            echo '- Authority source: upstream-maintainer Google Drive folder'
+            echo '- Hugging Face convenience mirror: reference/distribution hint only'
+            echo '- Checkpoint deserialization: NOT PERFORMED'
+            echo '- Production execution authority: NOT GRANTED'
+            echo '- WASM/WebGPU runtime feasibility: NOT GRANTED by acquisition'
+            echo '```json'
+            cat .test-cache/6.42c6/lama-authoritative-inventory.json
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
