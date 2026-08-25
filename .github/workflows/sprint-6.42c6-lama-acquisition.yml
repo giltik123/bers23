@@ -129,16 +129,17 @@ jobs:
           print('LAMA AUTHORITATIVE MEMBER IDENTITIES: PASS')
           PY
 
-      - name: Inspect pinned checkpoint with restricted weights-only generator load
+      - name: Inspect pinned checkpoint and probe legacy direct ONNX export
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check numpy==1.26.4
           python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install --disable-pip-version-check kornia==0.5.0
+          python -m pip install --disable-pip-version-check kornia==0.5.0 onnx==1.17.0
           python scripts/inspect-lama-checkpoint.py \
             --source "${RUNNER_TEMP}/lama" \
             --checkpoint "${RUNNER_TEMP}/lama-pinned/best.ckpt" \
-            --report .test-cache/6.42c6/lama-checkpoint-structure.json
+            --report .test-cache/6.42c6/lama-checkpoint-structure.json \
+            --legacy-onnx-probe-report .test-cache/6.42c6/lama-direct-onnx-legacy.json
 
       - name: Validate pinned evidence remains non-executable
         run: |
@@ -154,6 +155,7 @@ jobs:
           assert identity['checkpoint']['sha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
           assert identity['config']['size'] == 3947
           assert identity['config']['sha256'] == '4fdeed49926e13b101c4dd9e193acec9e58677dfdb4ba49dd6a3a8927964e2a7'
+
           structure = json.load(open('.test-cache/6.42c6/lama-checkpoint-structure.json', encoding='utf-8'))
           assert structure['status'] == 'CANDIDATE'
           assert structure['productionDeviceApproval'] is False
@@ -163,10 +165,41 @@ jobs:
           assert checkpoint['unsafeGlobalScanPerformed'] is True
           assert checkpoint['metadataGlobalPolicy'] == 'EXACT_ALLOWLIST_STANDARD_OR_INERT_NO_FRAMEWORK_IMPORT'
           assert checkpoint['strictGeneratorLoad'] is True
+          assert checkpoint['generatorImportPolicy'] == 'PINNED_SOURCE_MINIMAL_GET_SHAPE_SHIM_NO_LIGHTNING_IMPORT'
+
+          legacy = json.load(open('.test-cache/6.42c6/lama-direct-onnx-legacy.json', encoding='utf-8'))
+          assert legacy['status'] == 'CANDIDATE'
+          assert legacy['productionDeviceApproval'] is False
+          assert legacy['runtimeAuthorityGranted'] is False
+          assert legacy['checkpointSha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
+          probe = legacy['probe']
+          assert probe['exporter'] == 'torch.onnx.export'
+          assert probe['dynamo'] is False
+          assert probe['opset'] == 17
+          assert probe['atenFallbackAllowed'] is False
+          assert probe['inputShape'] == [1, 4, 64, 64]
+          assert probe['temporaryArtifactRetained'] is False
+          allowed = {
+              'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN',
+              'BLOCKED_UNSUPPORTED_ATEN_FFT_IRFFTN',
+              'BLOCKED_UNSUPPORTED_ATEN_COMPLEX',
+              'EXPORTED_UNVALIDATED',
+          }
+          assert probe['result'] in allowed, probe['result']
+          if probe['result'] == 'EXPORTED_UNVALIDATED':
+              assert probe['artifactProduced'] is True
+              assert isinstance(probe['artifactSize'], int) and probe['artifactSize'] > 0
+              assert isinstance(probe['artifactSha256'], str) and len(probe['artifactSha256']) == 64
+          else:
+              assert probe['artifactProduced'] is False
+              assert probe['artifactSize'] is None
+              assert probe['artifactSha256'] is None
+
           print('transport=', open('.test-cache/6.42c6/lama-transport-source.txt', encoding='utf-8').read().strip())
           print('allowed checkpoint metadata globals=', checkpoint['quarantinedMetadataGlobals'])
           print('generator state keys=', checkpoint['generatorStateKeyCount'])
           print('generator tensor elements=', checkpoint['generatorTensorElements'])
+          print('legacy direct ONNX result=', probe['result'])
           PY
 
       - name: C6 candidate authority and repository guards
@@ -190,6 +223,7 @@ jobs:
           path: |
             .test-cache/6.42c6/lama-authoritative-inventory.json
             .test-cache/6.42c6/lama-checkpoint-structure.json
+            .test-cache/6.42c6/lama-direct-onnx-legacy.json
             .test-cache/6.42c6/lama-transport-source.txt
             .test-cache/6.42c6/lama-transport-archive-sha256.txt
           if-no-files-found: error
@@ -197,6 +231,7 @@ jobs:
 
       - name: Publish C6 feasibility summary
         run: |
+          legacy_result="$(python -c "import json; print(json.load(open('.test-cache/6.42c6/lama-direct-onnx-legacy.json'))['probe']['result'])")"
           {
             echo '## LaMa pinned checkpoint and runtime-feasibility boundary'
             echo
@@ -211,10 +246,16 @@ jobs:
             echo '- Checkpoint verified before deserialization: PASS'
             echo '- PyTorch checkpoint inspection: 2.6 weights_only=True + exact standard/inert metadata allowlist, no Lightning/OmegaConf import'
             echo '- Strict pinned FFCResNetGenerator state load: PASS'
+            echo "- Legacy direct torch.onnx.export opset-17 result: \`${legacy_result}\`"
+            echo '- Legacy probe artifact, if unexpectedly exported, is temporary and UNVALIDATED; no artifact is published or admitted'
             echo '- Production execution authority: NOT GRANTED'
             echo '- CPU ORT/WASM/WebGPU runtime feasibility: NOT GRANTED by this job'
             echo '### Checkpoint structure evidence'
             echo '```json'
             cat .test-cache/6.42c6/lama-checkpoint-structure.json
+            echo '```'
+            echo '### Legacy direct ONNX feasibility evidence'
+            echo '```json'
+            cat .test-cache/6.42c6/lama-direct-onnx-legacy.json
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
