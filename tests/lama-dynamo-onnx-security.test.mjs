@@ -123,15 +123,33 @@ test('workflow orders trust bridge, CPU parity, browser and destroys binary evid
   assert.doesNotMatch(uploadTail, /lama-big-dynamo-dynamic\.onnx|browser-input-256\.f32|browser-reference-256\.f32|generator\.safetensors/);
 });
 
-test('C7 code and manifest remain candidate-only and production authority stays closed', () => {
+test('C7 manifest records proven CPU/WASM and hosted WebGPU blocker while production authority stays closed', () => {
   assert.match(multi, /"runtimeAuthorityGranted": False/);
   assert.match(multi, /"productionPromotionAllowed"\] = False/);
   assert.match(multi, /modelRetainedOnlyAsCiEvidence|browserBinaryEvidenceRunnerLocal/);
   assert.equal(manifest.status, 'CANDIDATE');
   assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED');
-  assert.equal(manifest.runtimeFeasibility.state, 'BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED');
-  assert.equal(manifest.runtimeFeasibility.cpuOrt, 'UNPROVEN');
-  assert.equal(manifest.runtimeFeasibility.browserWasm, 'UNPROVEN');
+  assert.equal(manifest.runtimeFeasibility.state, 'DYNAMO_ONNX_CPU_WASM_PROVEN_WEBGPU_REAL_DEVICE_REQUIRED');
+  assert.equal(manifest.runtimeFeasibility.cpuOrt, 'PROVEN_HOSTED_ORT_1_27_MULTISHAPE');
+  assert.equal(manifest.runtimeFeasibility.browserWasm, 'PROVEN_HOSTED_CHROME_ORT_WEB_1_27_256');
+  assert.equal(manifest.runtimeFeasibility.browserWebGpu, 'HOSTED_SWIFTSHADER_INFERENCE_TIMEOUT_REAL_DEVICE_UNPROVEN');
+  assert.equal(manifest.runtimeFeasibility.realDeviceWebGpu, 'UNPROVEN');
+  const modern = manifest.runtimeFeasibility.modernDynamoOnnxEvidence;
+  assert.equal(modern.standardDftNodeCount, 144);
+  assert.equal(modern.customNodeCount, 0);
+  assert.equal(modern.atenLikeNodeCount, 0);
+  assert.equal(modern.cpuOrtResult, 'PASS_MULTISHAPE');
+  assert.equal(modern.browserWasmResult, 'PASS');
+  assert.equal(modern.hostedWebGpu.result, 'WEBGPU_INFERENCE_BLOCKED');
+  assert.equal(modern.hostedWebGpu.timeoutStage, 'INFERENCE');
+  assert.equal(modern.hostedWebGpu.realDeviceEvidence, false);
+  assert.equal(modern.runtimeAuthorityGranted, false);
+  assert.equal(modern.productionDeviceApproval, false);
+  assert.equal(modern.releaseArtifactIdentityEstablished, false);
   assert.equal(manifest.bersArtifact.state, 'UNBUILT');
+  assert.equal(manifest.artifacts.model.url, null);
+  assert.equal(manifest.artifacts.model.sha256, null);
+  assert.equal(manifest.artifacts.model.signatureUrl, null);
+  assert.equal(manifest.verificationKeyId, null);
   assert.equal(manifest.productionApprovalEvidence, null);
 });
