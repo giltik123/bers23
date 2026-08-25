@@ -1,6 +1,7 @@
 import type { Artifact, WorkflowOperation, WorkflowVerifierPort, VerificationResult } from '../../../src/platform/creative/workflow-engine/types.ts';
+import { SUPER_RESOLUTION_ALPHA_POLICY, SUPER_RESOLUTION_SCALE } from '../../../src/platform/creative/super-resolution/SuperResolutionContract.ts';
 
-export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C2.1';
+export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C3.1';
 
 const CHECKS = Object.freeze({
   supported: 'PRODUCTION_OPERATION_SUPPORTED',
@@ -11,6 +12,9 @@ const CHECKS = Object.freeze({
   maskLineage: 'MASK_LINEAGE_VALID',
   deterministicPixels: 'DETERMINISTIC_PIXELS_VERIFIED',
   localLineage: 'LOCAL_IMAGE_LINEAGE_VALID',
+  modelContract: 'LOCAL_MODEL_CONTRACT_ADMITTED',
+  modelScope: 'LOCAL_MODEL_VERIFICATION_SCOPE_VALID',
+  modelGeometry: 'LOCAL_MODEL_OUTPUT_GEOMETRY_VALID',
 } as const);
 
 const ERRORS = Object.freeze({
@@ -23,12 +27,20 @@ const ERRORS = Object.freeze({
   invalidMaskLineage: 'LOCAL_MASK_LINEAGE_INVALID',
   invalidLocalImage: 'LOCAL_IMAGE_INVALID',
   invalidLocalImageLineage: 'LOCAL_IMAGE_LINEAGE_INVALID',
+  invalidModelImage: 'LOCAL_MODEL_IMAGE_INVALID',
+  invalidModelSemantics: 'LOCAL_MODEL_VERIFICATION_SEMANTICS_INVALID',
+  invalidModelGeometry: 'LOCAL_MODEL_OUTPUT_GEOMETRY_INVALID',
 } as const);
 
 /**
  * Server-owned runtime verification policy for currently accepted production contracts.
  * Planner/client verification claims are intentionally ignored. This component performs no
  * provider call, network access, persistence, access-control or financial mutation.
+ *
+ * Deterministic C2 outputs can carry byte-exact verification. C3 model output cannot: without
+ * re-running the model on a trusted server, Core proves only admitted executor identity,
+ * output contract/geometry and canonical lineage. Metadata is required to state that weaker
+ * verification scope explicitly so a model result cannot masquerade as deterministic proof.
  */
 export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
   async verify(operation: WorkflowOperation, artifacts: readonly Artifact[]): Promise<VerificationResult> {
@@ -55,6 +67,15 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
       if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels]);
       return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels, CHECKS.localLineage], errors: [] });
     }
+    if (operation.type === 'SUPER_RESOLUTION') {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidModelSemantics);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalModelAdmittedImage(artifacts[0])) return invalid(operation.id, ERRORS.invalidModelImage, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.modelContract, CHECKS.modelScope]);
+      if (!hasValidSuperResolutionGeometry(artifacts[0])) return invalid(operation.id, ERRORS.invalidModelGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.modelContract, CHECKS.modelScope, CHECKS.localLineage]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.modelContract, CHECKS.modelScope, CHECKS.localLineage, CHECKS.modelGeometry], errors: [] });
+    }
     if (operation.type === 'CONTROLLED_LOCAL_EDIT') return invalid(operation.id, ERRORS.controlledOwned);
     if (operation.type !== 'image-edit') return invalid(operation.id, ERRORS.unsupported);
     if (artifacts.length === 0) return invalid(operation.id, ERRORS.outputRequired, [CHECKS.supported]);
@@ -76,16 +97,48 @@ function isCanonicalLocalMask(artifact: Artifact): boolean {
 }
 
 function isCanonicalDeterministicImage(artifact: Artifact): boolean {
-  if (!artifact.value || typeof artifact.value !== 'object' || Array.isArray(artifact.value)) return false;
-  const value = artifact.value as Readonly<Record<string, unknown>>;
-  const width = value.width; const height = value.height; const data = value.data;
-  if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1 || !(data instanceof Uint8ClampedArray) || data.length !== Number(width) * Number(height) * 4) return false;
+  if (!isPixelImage(artifact.value)) return false;
   const integrity = artifact.metadata?.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
   return artifact.metadata?.artifactRole === 'COMPOSITE' && artifact.metadata?.localExecutionAdmission === 'ADMITTED' && integrity?.verificationOutcome === 'PASS';
 }
 
+function isCanonicalModelAdmittedImage(artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  if (!metadata || metadata.artifactRole !== 'COMPOSITE' || metadata.localExecutionAdmission !== 'ADMITTED') return false;
+  if (metadata.admissionClass !== 'MODEL_CONTRACT' || metadata.executorKind !== 'MODEL') return false;
+  if (typeof metadata.modelId !== 'string' || !metadata.modelId || typeof metadata.modelVersion !== 'string' || !metadata.modelVersion) return false;
+  if (typeof metadata.runtime !== 'string' || !metadata.runtime || metadata.runtime === 'BROWSER_JS') return false;
+  if (metadata.verificationScope !== 'CONTRACT_AND_LINEAGE_ONLY' || metadata.modelOutputSemantics !== 'UNATTESTED_DEVICE_INFERENCE') return false;
+  if (metadata.postprocess !== 'CLAMP_0_1' || metadata.alphaPolicy !== SUPER_RESOLUTION_ALPHA_POLICY) return false;
+  if (typeof metadata.candidateSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(metadata.candidateSha256)) return false;
+  const integrity = metadata.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  if (integrity?.verificationOutcome === 'PASS' || integrity?.pixelComparison === 'BYTE_EXACT') return false;
+  return true;
+}
+
+function hasValidSuperResolutionGeometry(artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const value = artifact.value;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  const sourceWidth = metadata?.sourceWidth;
+  const sourceHeight = metadata?.sourceHeight;
+  const scale = metadata?.outputScale;
+  if (!Number.isInteger(sourceWidth) || !Number.isInteger(sourceHeight) || Number(sourceWidth) < 1 || Number(sourceHeight) < 1 || scale !== SUPER_RESOLUTION_SCALE) return false;
+  if (value.width !== Number(sourceWidth) * SUPER_RESOLUTION_SCALE || value.height !== Number(sourceHeight) * SUPER_RESOLUTION_SCALE) return false;
+  for (let offset = 3; offset < value.data.length; offset += 4) if (value.data[offset] !== 255) return false;
+  return true;
+}
+
+function isPixelImage(value: unknown): value is Readonly<{ width: number; height: number; data: Uint8ClampedArray }> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Readonly<Record<string, unknown>>;
+  const width = candidate.width; const height = candidate.height; const data = candidate.data;
+  return Number.isInteger(width) && Number.isInteger(height) && Number(width) > 0 && Number(height) > 0 && data instanceof Uint8ClampedArray && data.length === Number(width) * Number(height) * 4;
+}
+
 function isImageReference(value: unknown): boolean {
-  if (value && typeof value === 'object' && Number.isInteger((value as { width?: unknown }).width) && Number.isInteger((value as { height?: unknown }).height) && (value as { data?: unknown }).data instanceof Uint8ClampedArray) return true;
+  if (isPixelImage(value)) return true;
   return isProviderImageReference(value);
 }
 

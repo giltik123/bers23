@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "modelId": "realesr-general-x4v3",
+  "version": "1.0.0-candidate.1",
+  "status": "CANDIDATE",
+  "capability": "local:realesrgan:upscale:v1",
+  "upstream": {
+    "repository": "https://github.com/xinntao/Real-ESRGAN",
+    "weightRelease": "v0.2.5.0",
+    "checkpointSource": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth",
+    "checkpointSize": 4885111,
+    "checkpointSha256": "8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292",
+    "implementationRevision": "fa4c8a03ae3dbc9ea6ed471a6ab5da94ac15c2ea",
+    "architecture": "SRVGGNetCompact(num_in_ch=3,num_out_ch=3,num_feat=64,num_conv=32,upscale=4,act_type=prelu)"
+  },
+  "export": {
+    "implementation": "BERS reproducible SRVGGNetCompact ONNX export",
+    "script": "scripts/build-realesrgan-x4v3-release.py",
+    "opset": 17,
+    "precision": "FP32",
+    "input": {
+      "name": "input_rgb",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 3,
+      "range": [0, 1]
+    },
+    "output": {
+      "name": "output_rgb",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 3,
+      "scale": 4,
+      "networkRange": "UNCLAMPED_FLOAT32",
+      "postprocess": "CLAMP_0_1"
+    },
+    "dynamicSpatialAxes": true,
+    "quantized": false,
+    "graphSimplified": false,
+    "postExportOptimized": false,
+    "alphaPolicy": "OPAQUE_INPUT_ONLY",
+    "environment": {
+      "os": "Ubuntu 24.04",
+      "python": "3.11",
+      "requirements": "scripts/realesrgan-x4v3-requirements.txt"
+    }
+  },
+  "license": "BSD-3-Clause",
+  "artifactState": "EXPORT_REQUIRED",
+  "artifacts": {
+    "model": {
+      "url": null,
+      "size": null,
+      "sha256": null,
+      "signatureUrl": null
+    }
+  },
+  "verificationKeyId": null,
+  "productionApprovalEvidence": null
+}

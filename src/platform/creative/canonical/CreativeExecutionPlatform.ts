@@ -2,6 +2,7 @@ import { CreativeWorkflowEngine, WorkflowCompiler, type AdmittedOnDeviceStepResu
 import { ProductionOperationAuthority } from '../authority';
 import { CreativeCostAuthority } from '../cost/contracts';
 import type { CreativeOperationInstance } from '../operations/contracts';
+import { MAX_SUPER_RESOLUTION_OUTPUT_PIXELS, SUPER_RESOLUTION_SCALE } from '../super-resolution/SuperResolutionContract';
 import type { CreativeArtifact, CreativeDecision, CreativeExecutionPlan, CreativeOperation, CreativePipeline, CreativePlan, CreativeRequest, ProductionOutcome, VerificationResult } from './contracts';
 import type { LocalExecutionInputBinding, LocalExecutionTicket, LocalExecutionTicketV2 } from './localExecution';
 import type { CreativeExecutionPlatformRuntimeDependencies } from './providerSelection';
@@ -121,7 +122,7 @@ export class CreativeExecutionPlatform {
     this.#authority.preflight(record.operation, { target, billable: credits > 0, credits, retries: record.request.budget?.retries ?? 0, policy: { maxCredits: record.request.budget?.credits ?? 0, maxProviderCost: Number(record.request.metadata?.maxProviderCost ?? Number.MAX_SAFE_INTEGER), allowFallback, allowRetry: true, allowEscalation: false, budgetMode: 'HARD' } });
     const authorization = this.#authority.authorize(record.operation, {
       checks: { operationValid: true, capabilityAvailable: true, runtimeAllowed: true, modelTrusted: true, privacyAllowed: true, budgetAllowed: true, scopeValid: true },
-      policyVersion: 'production-6.42C2',
+      policyVersion: 'production-6.42C3',
       expiresAt: new Date((this.dependencies.now ?? Date.now)() + 300_000).toISOString(),
       costPolicy: { maxCredits: record.request.budget?.credits ?? 0, maxProviderCost: Number.MAX_SAFE_INTEGER, allowFallback, allowRetry: true, allowEscalation: false, budgetMode: 'HARD' },
     });
@@ -300,6 +301,13 @@ function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOpera
   if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1) throw new Error(`ON_DEVICE ${operation.type} requires canonical source dimensions`);
   if (operation.type === 'segment') return Object.freeze([{ kind: 'mask', role: 'MASK' as const, count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: Number(width), height: Number(height) }]);
   if (operation.type === 'BACKGROUND_ISOLATION') return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(width), height: Number(height) }]);
+  if (operation.type === 'SUPER_RESOLUTION') {
+    const outputWidth = Number(width) * SUPER_RESOLUTION_SCALE;
+    const outputHeight = Number(height) * SUPER_RESOLUTION_SCALE;
+    const outputPixels = outputWidth * outputHeight;
+    if (!Number.isSafeInteger(outputWidth) || !Number.isSafeInteger(outputHeight) || !Number.isSafeInteger(outputPixels) || outputPixels > MAX_SUPER_RESOLUTION_OUTPUT_PIXELS) throw new Error('ON_DEVICE SUPER_RESOLUTION exceeds the safe full-frame output limit');
+    return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: outputWidth, height: outputHeight }]);
+  }
   throw new Error(`No ON_DEVICE output contract for ${operation.type}`);
 }
 

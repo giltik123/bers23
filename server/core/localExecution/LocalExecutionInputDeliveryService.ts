@@ -4,6 +4,13 @@ import {
   BACKGROUND_ISOLATION_TOOL_ID,
   BACKGROUND_ISOLATION_TOOL_VERSION,
 } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
+import {
+  REAL_ESRGAN_UPSCALE_CAPABILITY,
+  SUPER_RESOLUTION_ALPHA_POLICY,
+  SUPER_RESOLUTION_OPERATION,
+  SUPER_RESOLUTION_SCALE,
+  SUPER_RESOLUTION_STEP_ID,
+} from '../../../src/platform/creative/super-resolution/SuperResolutionContract.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import { admitLocalExecutionInputs } from './LocalExecutionInputAdmission.ts';
 import type { LocalExecutionLedgerV2 } from './LocalExecutionLedger.ts';
@@ -20,6 +27,15 @@ export type BackgroundIsolationInputDelivery = Readonly<{
   maskAlpha: Uint8Array;
 }>;
 
+export type SuperResolutionInputDelivery = Readonly<{
+  ticketId: string;
+  sourceArtifactId: string;
+  sourceSha256: string;
+  width: number;
+  height: number;
+  sourceRgba: Uint8Array;
+}>;
+
 export type LocalExecutionInputDeliveryDependencies = Readonly<{
   admission: LocalExecutionLedgerV2;
   ownsArtifacts: (scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]) => Promise<boolean>;
@@ -30,8 +46,8 @@ export type LocalExecutionInputDeliveryDependencies = Readonly<{
 /**
  * Read-only delivery boundary for bytes already bound by a Core-issued local ticket.
  * It never issues tickets, chooses executors, persists artifacts or mutates Project state.
- * The first consumer is deterministic background isolation; future local model adapters may
- * reuse the same pattern without inheriting deterministic-tool admission semantics.
+ * Capability-specific methods revalidate the exact durable ticket before returning bytes,
+ * so model adapters do not gain a generic read endpoint for arbitrary canonical artifacts.
  */
 export class LocalExecutionInputDeliveryService {
   readonly #now: () => number;
@@ -43,13 +59,8 @@ export class LocalExecutionInputDeliveryService {
     input: Readonly<{ ticketId: string; projectId: string }>,
     auth: AuthenticatedScope,
   ): Promise<BackgroundIsolationInputDelivery> {
-    const ticketId = input.ticketId?.trim(); const projectId = input.projectId?.trim();
-    if (!ticketId || !projectId) throw serviceError(400, 'local_input_delivery_request_invalid', 'ticketId and projectId are required');
-    const ticket = await this.dependencies.admission.getV2(ticketId);
-    if (!ticket) throw serviceError(404, 'local_ticket_not_found', 'Local execution ticket not found');
-    assertSameScope(ticket, { ...auth, projectId });
+    const ticket = await this.requireTicket(input, auth);
     assertBackgroundIsolationTicket(ticket);
-    if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local execution ticket has expired');
 
     const sourceBinding = ticket.inputs.find(binding => binding.kind === 'image');
     const maskBinding = ticket.inputs.find(binding => binding.kind === 'mask');
@@ -59,8 +70,7 @@ export class LocalExecutionInputDeliveryService {
     let artifacts: readonly CreativeArtifact[];
     try { artifacts = await this.dependencies.hydrateArtifacts(ticket.scope, sourceBinding.artifactId, [maskBinding.artifactId]); }
     catch { throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical local input hydration or lineage validation failed'); }
-    const decision = admitLocalExecutionInputs(ticket, artifacts);
-    if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical local input admission failed: ${decision.reasonCode}`);
+    assertInputAdmission(ticket, artifacts);
 
     const source = artifacts.find(artifact => artifact.id === sourceBinding.artifactId && artifact.kind === 'image');
     const mask = artifacts.find(artifact => artifact.id === maskBinding.artifactId && artifact.kind === 'mask');
@@ -83,6 +93,52 @@ export class LocalExecutionInputDeliveryService {
       maskAlpha: Uint8Array.from(maskValue.alpha),
     });
   }
+
+  async superResolution(
+    input: Readonly<{ ticketId: string; projectId: string }>,
+    auth: AuthenticatedScope,
+  ): Promise<SuperResolutionInputDelivery> {
+    const ticket = await this.requireTicket(input, auth);
+    assertSuperResolutionTicket(ticket);
+    if (ticket.inputs.length !== 1 || ticket.inputs[0].kind !== 'image' || !ticket.inputs[0].sha256) throw serviceError(409, 'local_input_contract_mismatch', 'Super-resolution requires exactly one hash-bound IMAGE input');
+    const sourceBinding = ticket.inputs[0];
+    if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical super-resolution source is no longer available for this ticket');
+
+    let artifacts: readonly CreativeArtifact[];
+    try { artifacts = await this.dependencies.hydrateArtifacts(ticket.scope, sourceBinding.artifactId, []); }
+    catch { throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical super-resolution source hydration failed'); }
+    assertInputAdmission(ticket, artifacts);
+    const source = artifacts.find(artifact => artifact.id === sourceBinding.artifactId && artifact.kind === 'image');
+    const value = source?.value as Readonly<{ width?: unknown; height?: unknown; data?: unknown }> | undefined;
+    if (!Number.isInteger(value?.width) || !Number.isInteger(value?.height) || !(value?.data instanceof Uint8ClampedArray)) throw serviceError(409, 'canonical_source_pixels_unavailable', 'Canonical super-resolution source RGBA pixels are unavailable');
+    const width = Number(value.width); const height = Number(value.height);
+    if (width < 1 || height < 1 || value.data.length !== width * height * 4) throw serviceError(409, 'local_input_geometry_mismatch', 'Canonical super-resolution source geometry is invalid');
+    for (let offset = 3; offset < value.data.length; offset += 4) if (value.data[offset] !== 255) throw serviceError(409, 'local_input_alpha_policy_mismatch', 'Super-resolution v1 accepts opaque canonical source images only');
+
+    return Object.freeze({
+      ticketId: ticket.ticketId,
+      sourceArtifactId: sourceBinding.artifactId,
+      sourceSha256: sourceBinding.sha256,
+      width,
+      height,
+      sourceRgba: Uint8Array.from(value.data),
+    });
+  }
+
+  private async requireTicket(input: Readonly<{ ticketId: string; projectId: string }>, auth: AuthenticatedScope): Promise<LocalExecutionTicketV2> {
+    const ticketId = input.ticketId?.trim(); const projectId = input.projectId?.trim();
+    if (!ticketId || !projectId) throw serviceError(400, 'local_input_delivery_request_invalid', 'ticketId and projectId are required');
+    const ticket = await this.dependencies.admission.getV2(ticketId);
+    if (!ticket) throw serviceError(404, 'local_ticket_not_found', 'Local execution ticket not found');
+    assertSameScope(ticket, { ...auth, projectId });
+    if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local execution ticket has expired');
+    return ticket;
+  }
+}
+
+function assertInputAdmission(ticket: LocalExecutionTicketV2, artifacts: readonly CreativeArtifact[]): void {
+  const decision = admitLocalExecutionInputs(ticket, artifacts);
+  if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical local input admission failed: ${decision.reasonCode}`);
 }
 
 function assertBackgroundIsolationTicket(ticket: LocalExecutionTicketV2): void {
@@ -91,6 +147,14 @@ function assertBackgroundIsolationTicket(ticket: LocalExecutionTicketV2): void {
   const executor = ticket.allowedExecutors[0];
   if (executor.kind !== 'DETERMINISTIC_TOOL' || executor.toolId !== BACKGROUND_ISOLATION_TOOL_ID || executor.version !== BACKGROUND_ISOLATION_TOOL_VERSION) throw serviceError(409, 'local_ticket_executor_mismatch', 'Background isolation deterministic executor binding is invalid');
 }
+
+function assertSuperResolutionTicket(ticket: LocalExecutionTicketV2): void {
+  if (ticket.version !== '2' || ticket.issuer !== 'CORE' || ticket.policy !== 'LOCAL_ONLY' || ticket.operation.type !== SUPER_RESOLUTION_OPERATION || ticket.operation.capability !== REAL_ESRGAN_UPSCALE_CAPABILITY || ticket.operation.id !== SUPER_RESOLUTION_STEP_ID || ticket.stepId !== SUPER_RESOLUTION_STEP_ID) throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not a super-resolution local-execution contract');
+  if (ticket.allowedExecutors.length !== 1 || ticket.allowedExecutors[0].kind !== 'MODEL') throw serviceError(409, 'local_ticket_executor_mismatch', 'Super-resolution ticket must bind exactly one MODEL executor');
+  const parameters = ticket.operation.parameters;
+  if (!parameters || parameters.scale !== SUPER_RESOLUTION_SCALE || parameters.alphaPolicy !== SUPER_RESOLUTION_ALPHA_POLICY) throw serviceError(409, 'local_ticket_parameter_mismatch', 'Super-resolution ticket parameters are invalid');
+}
+
 function assertSameScope(ticket: LocalExecutionTicketV2, scope: AuthenticatedScope & { projectId: string }): void {
   if (ticket.scope.tenantId !== scope.tenantId || ticket.scope.userId !== scope.userId || ticket.scope.projectId !== scope.projectId) throw serviceError(403, 'local_ticket_scope_mismatch', 'Local execution ticket is outside the authenticated scope');
 }

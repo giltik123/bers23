@@ -1,11 +1,13 @@
 import React, { lazy, Suspense, useState, useMemo, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ScanSearch, Loader2, Download, Pencil } from 'lucide-react';
+import { ArrowLeft, ScanSearch, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
+import { createSuperResolution } from '@/application/createSuperResolution';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
+import { SUPER_RESOLUTION_PRODUCTION_AVAILABLE } from '@/platform/creative/super-resolution/SuperResolutionRelease';
 import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
@@ -56,7 +58,7 @@ import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPo
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
 function disposePendingPreview(pending) {
-  const url = pending?.kind === 'BACKGROUND_ISOLATION' ? pending.result?.preview_url : null;
+  const url = pending?.result?.preview_url;
   if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url);
 }
 
@@ -90,9 +92,11 @@ export default function Editor() {
   const [selection, setSelection] = useState(null);
   const [brushSize, setBrushSize] = useState(24);
   const [isolatingBackground, setIsolatingBackground] = useState(false);
+  const [upscaling, setUpscaling] = useState(false);
   const selectionServiceRef = useRef(null);
   const strokeRef = useRef([]);
   const platform = usePlatformProfile();
+  const editorBusy = applying || isolatingBackground || upscaling;
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
 
@@ -180,6 +184,41 @@ export default function Editor() {
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
     } finally {
       setIsolatingBackground(false);
+    }
+  };
+
+  const upscaleImage = async (retryContext = null) => {
+    const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
+    if (!project?.id || !sourceArtifactId) return;
+    if (!SUPER_RESOLUTION_PRODUCTION_AVAILABLE) {
+      setAiError('Local Real-ESRGAN x4 is still a candidate and is not production-approved.');
+      return;
+    }
+    setUpscaling(true);
+    setAiError(null);
+    setLastAction(() => () => upscaleImage());
+    try {
+      const local = createSuperResolution({ projectId: project.id });
+      const result = await local.run({ requestId: globalThis.crypto.randomUUID(), sourceArtifactId });
+      const previewBytes = await encodeDeterministicRgbaPng(result.preview);
+      const previewUrl = URL.createObjectURL(new Blob([previewBytes], { type: 'image/png' }));
+      const editorResult = {
+        finalArtifactId: result.canonicalArtifactId,
+        preview_url: previewUrl,
+        image_url: previewUrl,
+        provider: `Local ${result.model.modelId}`,
+        credits_used: 0,
+        generation_time_ms: result.latencyMs,
+      };
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return { kind: 'SUPER_RESOLUTION', result: editorResult, instruction: 'Upscale x4', beforeUrl: project.current_image_url, context: { sourceArtifactId } };
+      });
+    } catch (e) {
+      setAiError(e.message || 'Local super-resolution failed');
+      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+    } finally {
+      setUpscaling(false);
     }
   };
 
@@ -319,6 +358,10 @@ export default function Editor() {
       void isolateBackground(pending.context);
       return;
     }
+    if (pending?.kind === 'SUPER_RESOLUTION') {
+      void upscaleImage(pending.context);
+      return;
+    }
     applyEdit(true, { skipDriftCheck: true }); // bypass cache so a retry produces a fresh generation
   };
 
@@ -356,15 +399,26 @@ export default function Editor() {
         </div>
         <AdaptiveToolbar>
           <HistoryControls
-            canUndo={canUndo} canRedo={canRedo} disabled={applying || detecting || isolatingBackground}
+            canUndo={canUndo} canRedo={canRedo} disabled={editorBusy || detecting}
             onUndo={undo} onRedo={redo} onRestore={restoreOriginal}
           />
           <VersionsPanel
             versions={project.versions || []}
             onCreate={handleCreateVersion}
             onRestore={restoreVersion}
-            disabled={applying || detecting || isolatingBackground}
+            disabled={editorBusy || detecting}
           />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => upscaleImage()}
+            disabled={!SUPER_RESOLUTION_PRODUCTION_AVAILABLE || !project.current_image_artifact_id || editorBusy || detecting || committing || Boolean(pendingResult)}
+            title={SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale the current image 4× on device' : 'Local Real-ESRGAN x4 is a candidate and is not production-approved yet'}
+            aria-label={SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4 locally' : 'Upscale x4 local candidate unavailable'}
+          >
+            {upscaling ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Maximize2 className="w-4 h-4 mr-1.5" />}
+            {SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4' : 'Upscale x4 · Candidate'}
+          </Button>
           <a href={project.current_image_url} target="_blank" rel="noreferrer" className="p-2 rounded-lg hover:bg-accent transition-colors" aria-label="Download">
             <Download className="w-5 h-5" />
           </a>
@@ -410,7 +464,7 @@ export default function Editor() {
         objects={objects}
         selectedId={selected?.id}
         onSelect={(obj) => selectObject(obj.id)}
-        busy={applying || isolatingBackground}
+        busy={editorBusy}
         onUndo={undo}
         onRedo={redo}
         selection={selection}
@@ -425,7 +479,7 @@ export default function Editor() {
         onClear={() => updateSelection((service) => service.clear())}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
-        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing}
+        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling}
         isolatingBackground={isolatingBackground}
         onIsolateBackground={() => isolateBackground()}
       />
@@ -448,7 +502,7 @@ export default function Editor() {
       {objects.length > 0 && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
       {objects.length === 0 ? (
-        <Button onClick={detect} disabled={detecting} className="w-full h-12 rounded-2xl text-base">
+        <Button onClick={detect} disabled={detecting || upscaling} className="w-full h-12 rounded-2xl text-base">
           {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
           {detecting ? 'Detecting objects…' : 'Detect objects'}
         </Button>
@@ -459,22 +513,22 @@ export default function Editor() {
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
-          busy={committing || isolatingBackground}
+          busy={committing || isolatingBackground || upscaling}
         />
       ) : (
         <>
           <WorkspaceToolbar
-            disabled={applying || isolatingBackground}
+            disabled={editorBusy}
             onUse={(prompt) => { setInstruction(prompt); setActiveRecipe(null); setEditTab('prompt'); }}
           />
           <WorkspaceRecommendations
-            disabled={applying || isolatingBackground}
+            disabled={editorBusy}
             onUse={(prompt, recipe) => { setInstruction(prompt); setActiveRecipe(recipe); setEditTab('prompt'); }}
           />
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={setEditTab} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
           {editTab === 'creative' ? (
-            <CreativeStudioPanel project={project} objects={objects} onApply={runChain} disabled={applying || isolatingBackground} />
+            <CreativeStudioPanel project={project} objects={objects} onApply={runChain} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <OutfitPanel
               project={project}
@@ -491,7 +545,7 @@ export default function Editor() {
             <AgentPanel
               project={project}
               objects={objects}
-              disabled={applying || isolatingBackground}
+              disabled={editorBusy}
               onCommit={async (result, task) => {
                 await pushEditRef.current(result.image_url, `Agent: ${task.label}`, result.historyEntry);
                 sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
@@ -503,7 +557,7 @@ export default function Editor() {
               objects={objects}
               selectedObjects={objects.filter((o) => o.selected)}
               onRunChain={runChain}
-              disabled={applying || isolatingBackground}
+              disabled={editorBusy}
               onUse={(prompt, recipe) => {
                 // Recipe Engine output enters the normal flow: instruction → AI Planner → Editing Engine.
                 setInstruction(prompt);
@@ -522,7 +576,7 @@ export default function Editor() {
                 instruction={instruction}
                 onInstructionChange={setInstruction}
                 onApply={() => applyEdit(false)}
-                applying={applying || isolatingBackground}
+                applying={editorBusy}
               />
             </>
           )}

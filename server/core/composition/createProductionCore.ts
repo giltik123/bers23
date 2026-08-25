@@ -9,6 +9,7 @@ import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../artifacts/localExecutionUploadSchema.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
+import type { LocalExecutionExecutorBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import { CanonicalDecisionService, CanonicalPlanningService } from '../../../src/platform/creative/canonical/index.ts';
 import { checkAuthSchema, migrateAuthSchema } from '../auth/authSchema.ts';
@@ -18,7 +19,7 @@ import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts'
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
-import { LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalSegmentationExecutionService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
+import { LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../localExecution/productionLocalExecutorPolicy.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
@@ -33,7 +34,16 @@ import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 
 const LOCAL_EXECUTION_TICKET_TTL_MS = 5 * 60_000;
 
-export async function createProductionCore(config: CoreServerConfig, options: Readonly<{ fetcher?: typeof fetch; now?: () => number }> = {}) {
+type ProductionCoreOptions = Readonly<{
+  fetcher?: typeof fetch;
+  now?: () => number;
+  /** Test-only authority catalog. Never accepted by production/staging composition. */
+  testLocalExecutorsByCapability?: Readonly<Record<string, readonly LocalExecutionExecutorBinding[]>>;
+}>;
+
+export async function createProductionCore(config: CoreServerConfig, options: ProductionCoreOptions = {}) {
+  if (options.testLocalExecutorsByCapability && config.nodeEnv !== 'test') throw new Error('Test local executor injection is forbidden outside nodeEnv=test');
+  const localExecutorsByCapability = options.testLocalExecutorsByCapability ?? productionLocalExecutorsByCapability;
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
   try {
     await transactions.pool.query('SELECT 1');
@@ -66,7 +76,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       nonce: randomUUID,
       ttlMs: LOCAL_EXECUTION_TICKET_TTL_MS,
       modelsByCapability: productionLocalModelsByCapability,
-      executorsByCapability: productionLocalExecutorsByCapability,
+      executorsByCapability: localExecutorsByCapability,
     });
     const localUploads = new PostgresLocalExecutionUploadStore(transactions.pool);
     const canonical = {
@@ -128,6 +138,17 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
       now,
     });
+    const localSuperResolution = new LocalSuperResolutionExecutionService({
+      platform: canonical,
+      ownsArtifacts,
+      hydrateArtifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      persistFinal: (scope, executionId, operationId, image) => artifacts.images.persistFinal(scope, executionId, operationId, image),
+      loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
+      issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
+      now,
+    });
     const localInputDelivery = new LocalExecutionInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
     const authStore = new PostgresAuthStore(transactions.pool);
     const authSecurityStore = new PostgresAuthSecurityStore(transactions.pool);
@@ -148,7 +169,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Re
       sessionIdleTtlMs: config.authSessionIdleTtlMs,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
-    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, inputDelivery: localInputDelivery }), transactions, close: () => transactions.close() });
+    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, superResolution: localSuperResolution, inputDelivery: localInputDelivery }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }
 

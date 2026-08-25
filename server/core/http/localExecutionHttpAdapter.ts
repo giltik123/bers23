@@ -4,6 +4,7 @@ import type { CoreServerConfig } from '../config.ts';
 import type { LocalDeterministicImageExecutionService } from '../localExecution/LocalDeterministicImageExecutionService.ts';
 import type { LocalExecutionInputDeliveryService } from '../localExecution/LocalExecutionInputDeliveryService.ts';
 import type { LocalSegmentationExecutionService } from '../localExecution/LocalSegmentationExecutionService.ts';
+import type { LocalSuperResolutionExecutionService } from '../localExecution/LocalSuperResolutionExecutionService.ts';
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/local-execution/';
@@ -17,7 +18,7 @@ type LocalExecutionAuth = Readonly<{
 }>;
 
 /** One authenticated transport boundary with capability-specific application services. */
-export function createLocalExecutionHttpAdapter(input: Readonly<{ service: LocalSegmentationExecutionService; deterministicImages?: LocalDeterministicImageExecutionService; inputDelivery?: LocalExecutionInputDeliveryService; auth: LocalExecutionAuth; config: CoreServerConfig }>) {
+export function createLocalExecutionHttpAdapter(input: Readonly<{ service: LocalSegmentationExecutionService; deterministicImages?: LocalDeterministicImageExecutionService; superResolution?: LocalSuperResolutionExecutionService; inputDelivery?: LocalExecutionInputDeliveryService; auth: LocalExecutionAuth; config: CoreServerConfig }>) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', 'http://core.invalid');
     if (!url.pathname.startsWith(PREFIX)) return false;
@@ -55,6 +56,18 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         send(response, 202, prepared); return true;
       }
 
+      if (url.pathname === `${PREFIX}super-resolution/prepare` && request.method === 'POST') {
+        const service = requireSuperResolution(input.superResolution);
+        requireJson(request);
+        const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
+        const prepared = await service.prepare({
+          projectId: string(body.projectId),
+          sourceArtifactId: string(body.sourceArtifactId),
+          clientRequestId: string(body.clientRequestId),
+        }, principal);
+        send(response, 202, prepared); return true;
+      }
+
       const deterministicInputMatch = url.pathname.match(/^\/api\/core\/local-execution\/background-isolation\/([^/]+)\/inputs$/);
       if (deterministicInputMatch && request.method === 'GET') {
         const delivery = requireInputDelivery(input.inputDelivery);
@@ -72,6 +85,20 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         sendBytes(response, 200, bytes, 'application/octet-stream'); return true;
       }
 
+      const superResolutionInputMatch = url.pathname.match(/^\/api\/core\/local-execution\/super-resolution\/([^/]+)\/inputs$/);
+      if (superResolutionInputMatch && request.method === 'GET') {
+        const delivery = requireInputDelivery(input.inputDelivery);
+        const projectId = url.searchParams.get('projectId')?.trim() ?? '';
+        if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
+        const canonical = await delivery.superResolution({ ticketId: decodeURIComponent(superResolutionInputMatch[1]), projectId }, principal);
+        const expectedBytes = canonical.width * canonical.height * 4;
+        if (canonical.sourceRgba.byteLength !== expectedBytes) throw httpError(500, 'local_input_delivery_contract', 'Canonical super-resolution input delivery length is invalid');
+        response.setHeader(INPUT_WIDTH_HEADER, String(canonical.width));
+        response.setHeader(INPUT_HEIGHT_HEADER, String(canonical.height));
+        response.setHeader(SOURCE_SHA_HEADER, canonical.sourceSha256);
+        sendBytes(response, 200, canonical.sourceRgba, 'application/octet-stream'); return true;
+      }
+
       const deterministicUploadMatch = url.pathname.match(/^\/api\/core\/local-execution\/background-isolation\/([^/]+)\/image-upload$/);
       if (deterministicUploadMatch && request.method === 'POST') {
         const service = requireDeterministicImages(input.deterministicImages);
@@ -80,7 +107,19 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
         const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
         const evidence = await service.uploadImage({ ticketId: decodeURIComponent(deterministicUploadMatch[1]), projectId, bytes }, principal);
-        if (!evidence.width || !evidence.height || evidence.width > input.config.imageMaxDimension || evidence.height > input.config.imageMaxDimension || evidence.width * evidence.height > input.config.imageMaxPixels) throw httpError(400, 'invalid_image_dimensions', 'Local image dimensions are invalid or unsafe');
+        assertSafeImageEvidence(evidence, input.config);
+        send(response, 201, evidence); return true;
+      }
+
+      const superResolutionUploadMatch = url.pathname.match(/^\/api\/core\/local-execution\/super-resolution\/([^/]+)\/image-upload$/);
+      if (superResolutionUploadMatch && request.method === 'POST') {
+        const service = requireSuperResolution(input.superResolution);
+        if (mediaType(request) !== 'image/png') throw httpError(415, 'unsupported_media_type', 'Content-Type must be image/png');
+        const projectId = url.searchParams.get('projectId')?.trim() ?? '';
+        if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
+        const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
+        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(superResolutionUploadMatch[1]), projectId, bytes }, principal);
+        assertSafeImageEvidence(evidence, input.config);
         send(response, 201, evidence); return true;
       }
 
@@ -91,6 +130,17 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
         const projectId = string(body.projectId);
         const finalized = await service.submit({ ticketId: decodeURIComponent(deterministicResultMatch[1]), projectId, result: body.result }, principal);
+        const publicResult = Object.freeze({ executionId: finalized.executionId, status: finalized.status, artifactId: finalized.artifactId, verification: Object.freeze({ valid: finalized.outcome.verification.valid }) });
+        send(response, finalized.status === 'SUCCESS' ? 200 : 422, publicResult); return true;
+      }
+
+      const superResolutionResultMatch = url.pathname.match(/^\/api\/core\/local-execution\/super-resolution\/([^/]+)\/result$/);
+      if (superResolutionResultMatch && request.method === 'POST') {
+        const service = requireSuperResolution(input.superResolution);
+        requireJson(request);
+        const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
+        const projectId = string(body.projectId);
+        const finalized = await service.submit({ ticketId: decodeURIComponent(superResolutionResultMatch[1]), projectId, result: body.result }, principal);
         const publicResult = Object.freeze({ executionId: finalized.executionId, status: finalized.status, artifactId: finalized.artifactId, verification: Object.freeze({ valid: finalized.outcome.verification.valid }) });
         send(response, finalized.status === 'SUCCESS' ? 200 : 422, publicResult); return true;
       }
@@ -126,7 +176,11 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
   };
 }
 
+function assertSafeImageEvidence(evidence: Readonly<{ width?: number; height?: number }>, config: CoreServerConfig): void {
+  if (!evidence.width || !evidence.height || evidence.width > config.imageMaxDimension || evidence.height > config.imageMaxDimension || evidence.width * evidence.height > config.imageMaxPixels) throw httpError(400, 'invalid_image_dimensions', 'Local image dimensions are invalid or unsafe');
+}
 function requireDeterministicImages(service: LocalDeterministicImageExecutionService | undefined): LocalDeterministicImageExecutionService { if (!service) throw httpError(503, 'deterministic_local_execution_unavailable', 'Deterministic local image execution is unavailable'); return service; }
+function requireSuperResolution(service: LocalSuperResolutionExecutionService | undefined): LocalSuperResolutionExecutionService { if (!service) throw httpError(503, 'super_resolution_local_execution_unavailable', 'Local super-resolution execution is unavailable'); return service; }
 function requireInputDelivery(service: LocalExecutionInputDeliveryService | undefined): LocalExecutionInputDeliveryService { if (!service) throw httpError(503, 'local_input_delivery_unavailable', 'Canonical local input delivery is unavailable'); return service; }
 function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {
   const origin = header(request, 'origin');
