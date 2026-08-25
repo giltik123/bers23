@@ -15,13 +15,24 @@
     "checkpoint": {
       "name": "modnet_photographic_portrait_matting.ckpt",
       "authoritativeFolderUrl": "https://drive.google.com/drive/folders/1umYmlCulvIFNaqPjwod1SayFmSRHziyR?usp=sharing",
-      "size": null,
-      "sha256": null,
-      "identityState": "ACQUISITION_REQUIRED"
+      "authoritativeDriveFileId": "1mcr7ALciuAsHCpLnrtG_eop5-EYhbCmz",
+      "size": 26255603,
+      "sha256": "7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8",
+      "identityState": "PINNED",
+      "stateDictKeyCount": 751,
+      "parameterElementCount": 8780012,
+      "strictPinnedArchitectureLoad": true
     },
     "onnx": {
       "exportScript": "onnx/export_onnx.py",
-      "modelSource": "onnx/modnet_onnx.py"
+      "modelSource": "onnx/modnet_onnx.py",
+      "authoritativeReference": {
+        "name": "modnet_photographic_portrait_matting.onnx",
+        "driveFileId": "1IxxExwrUe4_yQnlEx389tmQI8luX7z5m",
+        "size": null,
+        "sha256": null,
+        "role": "UPSTREAM_REFERENCE_NOT_BERS_RELEASE_AUTHORITY"
+      }
     }
   },
   "tensorContract": {
@@ -62,7 +73,7 @@
     "onnxSize": null,
     "onnxSha256": null
   },
-  "artifactState": "CHECKPOINT_ACQUISITION_REQUIRED",
+  "artifactState": "CHECKPOINT_PINNED_EXPORT_REQUIRED",
   "artifacts": {
     "model": {
       "url": null,
