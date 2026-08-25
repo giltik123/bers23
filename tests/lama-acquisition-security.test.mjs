@@ -7,6 +7,9 @@ const checkpointInspector = await readFile(new URL('../scripts/inspect-lama-chec
 const workflow = await readFile(new URL('../.github/workflows/sprint-6.42c6-lama-acquisition.yml', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/local-ai/models/lama-inpainting.manifest.json', import.meta.url), 'utf8'));
 
+const LAMA_ONNX_SIZE = 208593659;
+const LAMA_ONNX_SHA256 = '8bf7891efa16ea07de31fc98c5f0c017b399956cba0182813ddf23d9072792c7';
+
 test('authoritative inventory hashes ZIP members without deserialization and rejects ambiguous member paths', () => {
   assert.doesNotMatch(inventoryInspector, /^\s*import\s+torch\b/m);
   assert.doesNotMatch(inventoryInspector, /torch\.load\s*\(/);
@@ -105,9 +108,9 @@ test('hosted gate keeps Drive as authority and permits only a byte-pinned transp
   assert.doesNotMatch(workflow, /omegaconf==/);
 });
 
-test('pinned checkpoint remains CANDIDATE-only after later C7 runtime feasibility evidence', () => {
+test('C6 trust root remains CANDIDATE-only after C7 runtime and C8 reproducible artifact pinning', () => {
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED');
+  assert.equal(manifest.artifactState, 'EXPORT_PINNED_RELEASE_REQUIRED');
   assert.equal(manifest.upstream.checkpoint.identityState, 'PINNED');
   assert.equal(manifest.runtimeFeasibility.directExportEvidence.result, 'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN');
   assert.equal(manifest.runtimeFeasibility.directExportEvidence.artifactProduced, false);
@@ -121,10 +124,19 @@ test('pinned checkpoint remains CANDIDATE-only after later C7 runtime feasibilit
   const modern = manifest.runtimeFeasibility.modernDynamoOnnxEvidence;
   assert.equal(modern.runtimeAuthorityGranted, false);
   assert.equal(modern.productionDeviceApproval, false);
-  assert.equal(modern.releaseArtifactIdentityEstablished, false);
+  assert.equal(modern.releaseArtifactIdentityEstablished, true);
   assert.equal(modern.hostedWebGpu.realDeviceEvidence, false);
 
-  assert.equal(manifest.bersArtifact.state, 'UNBUILT');
+  assert.equal(manifest.bersArtifact.state, 'PINNED');
+  assert.equal(manifest.bersArtifact.format, 'ONNX');
+  assert.equal(manifest.bersArtifact.size, LAMA_ONNX_SIZE);
+  assert.equal(manifest.bersArtifact.sha256, LAMA_ONNX_SHA256);
+  assert.equal(manifest.bersArtifact.opset, 18);
+  assert.equal(manifest.bersArtifact.reproducibility.result, 'PASS');
+  assert.equal(manifest.bersArtifact.reproducibility.independentPythonProcesses, 2);
+  assert.equal(manifest.bersArtifact.reproducibility.pythonHashSeed, '0');
+  assert.equal(manifest.bersArtifact.reproducibility.byteIdentical, true);
+
   assert.equal(manifest.productionApprovalEvidence, null);
   assert.equal(manifest.verificationKeyId, null);
   assert.equal(manifest.artifacts.model.url, null);

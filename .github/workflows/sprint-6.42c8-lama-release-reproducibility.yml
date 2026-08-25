@@ -1,0 +1,247 @@
+name: Sprint 6.42C8 LaMa release reproducibility
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LAMA_MIRROR_COMMIT: 05cb2be7f8dbe6ca7c6e78f4fc827a4b2baaa4a9
+  LAMA_MIRROR_ARCHIVE_SIZE: '381428720'
+  LAMA_MIRROR_ARCHIVE_SHA256: f1b358ca24093b93a106183b98a3dea6e8ed09f3b43ea7251eb2c81e7b4575f6
+  LAMA_CHECKPOINT_SIZE: '410046389'
+  LAMA_CHECKPOINT_SHA256: fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423
+  LAMA_CONFIG_SIZE: '3947'
+  LAMA_CONFIG_SHA256: 4fdeed49926e13b101c4dd9e193acec9e58677dfdb4ba49dd6a3a8927964e2a7
+
+jobs:
+  cross-process-reproducibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify C8 fail-closed reproducibility policy before model work
+        run: |
+          set -euo pipefail
+          node --test tests/lama-release-reproducibility.test.mjs
+          node --test tests/lama-dynamo-onnx-security.test.mjs tests/lama-webgpu-feasibility.test.mjs
+          python -m py_compile \
+            scripts/bridge-lama-generator-safetensors.py \
+            scripts/probe-lama-dynamo-onnx.py \
+            scripts/probe-lama-dynamo-multishape.py \
+            scripts/probe-lama-cross-process-reproducibility.py \
+            scripts/inspect-lama-checkpoint.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+
+      - name: Clone exact LaMa upstream
+        run: |
+          set -euo pipefail
+          git clone https://github.com/advimman/lama "${RUNNER_TEMP}/lama"
+          git -C "${RUNNER_TEMP}/lama" checkout --detach 786f5936b27fb3dacd2b1ad799e4de968ea697e7
+          test "$(git -C "${RUNNER_TEMP}/lama" rev-parse HEAD)" = 786f5936b27fb3dacd2b1ad799e4de968ea697e7
+          grep -F 'torch.fft.rfftn' "${RUNNER_TEMP}/lama/saicinpainting/training/modules/ffc.py"
+          grep -F 'torch.fft.irfftn' "${RUNNER_TEMP}/lama/saicinpainting/training/modules/ffc.py"
+
+      - name: Acquire pinned transport and materialize authoritative members
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/lama-c8" .test-cache/6.42c8
+          archive="${RUNNER_TEMP}/lama-c8/big-lama.zip"
+          curl -fL --retry 3 --retry-all-errors \
+            "https://huggingface.co/smartywu/big-lama/resolve/${LAMA_MIRROR_COMMIT}/big-lama.zip" \
+            -o "${archive}"
+          test "$(stat -c%s "${archive}")" = "${LAMA_MIRROR_ARCHIVE_SIZE}"
+          test "$(sha256sum "${archive}" | cut -d' ' -f1)" = "${LAMA_MIRROR_ARCHIVE_SHA256}"
+          python - "${archive}" "${RUNNER_TEMP}/lama-c8" <<'PY'
+          import hashlib, os, pathlib, sys, zipfile
+          archive = pathlib.Path(sys.argv[1])
+          out = pathlib.Path(sys.argv[2])
+          expected = {
+              'big-lama/config.yaml': (int(os.environ['LAMA_CONFIG_SIZE']), os.environ['LAMA_CONFIG_SHA256']),
+              'big-lama/models/best.ckpt': (int(os.environ['LAMA_CHECKPOINT_SIZE']), os.environ['LAMA_CHECKPOINT_SHA256']),
+          }
+          with zipfile.ZipFile(archive, 'r') as bundle:
+              names = [item.filename for item in bundle.infolist() if not item.is_dir()]
+              if set(names) != set(expected) or len(names) != 2:
+                  raise RuntimeError(f'unexpected Big-LaMa transport members: {names!r}')
+              for name, (expected_size, expected_sha) in expected.items():
+                  info = bundle.getinfo(name)
+                  if info.file_size != expected_size:
+                      raise RuntimeError(f'{name} size mismatch')
+                  digest = hashlib.sha256()
+                  target = out / pathlib.PurePosixPath(name).name
+                  with bundle.open(info, 'r') as source, target.open('wb') as sink:
+                      for chunk in iter(lambda: source.read(1024 * 1024), b''):
+                          digest.update(chunk)
+                          sink.write(chunk)
+                  if digest.hexdigest() != expected_sha:
+                      target.unlink(missing_ok=True)
+                      raise RuntimeError(f'{name} SHA-256 mismatch against authoritative identity')
+          print('C8 AUTHORITATIVE MEMBER IDENTITIES: PASS')
+          PY
+
+      - name: Install pinned restricted bridge environment
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check kornia==0.5.0 safetensors==0.8.0
+          python - <<'PY'
+          import safetensors, torch
+          assert torch.__version__.startswith('2.6.0'), torch.__version__
+          assert safetensors.__version__ == '0.8.0'
+          print('C8 BRIDGE ENVIRONMENT: PASS', torch.__version__, safetensors.__version__)
+          PY
+
+      - name: Bridge legacy checkpoint to tensor-only safetensors and remove pickle source
+        run: |
+          set -euo pipefail
+          python scripts/bridge-lama-generator-safetensors.py \
+            --source "${RUNNER_TEMP}/lama" \
+            --checkpoint "${RUNNER_TEMP}/lama-c8/best.ckpt" \
+            --state-out "${RUNNER_TEMP}/lama-c8/generator.safetensors" \
+            --report .test-cache/6.42c8/lama-generator-bridge.json
+          python - <<'PY'
+          import json
+          evidence = json.load(open('.test-cache/6.42c8/lama-generator-bridge.json', encoding='utf-8'))
+          assert evidence['status'] == 'CANDIDATE'
+          assert evidence['productionDeviceApproval'] is False
+          assert evidence['runtimeAuthorityGranted'] is False
+          assert evidence['sourceCheckpoint']['sha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
+          assert evidence['sourceCheckpoint']['verifiedBeforeDeserialization'] is True
+          assert evidence['sourceCheckpoint']['weightsOnly'] is True
+          assert evidence['bridge']['format'] == 'SAFETENSORS'
+          assert evidence['bridge']['pickleFree'] is True
+          assert evidence['bridge']['keyCount'] == 989
+          assert evidence['bridge']['tensorElements'] == 51057179
+          assert evidence['bridge']['ephemeral'] is True
+          assert evidence['bridge']['published'] is False
+          print('C8 TENSOR-ONLY BRIDGE: PASS', evidence['bridge']['sha256'])
+          PY
+          rm -f "${RUNNER_TEMP}/lama-c8/best.ckpt" "${RUNNER_TEMP}/lama-c8/big-lama.zip"
+          test ! -e "${RUNNER_TEMP}/lama-c8/best.ckpt"
+          test ! -e "${RUNNER_TEMP}/lama-c8/big-lama.zip"
+          test -s "${RUNNER_TEMP}/lama-c8/generator.safetensors"
+
+      - name: Install exact C7 modern exporter environment
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check \
+            numpy==2.4.6 \
+            kornia==0.5.0 \
+            safetensors==0.8.0 \
+            onnx==1.22.0 \
+            onnxscript==0.7.1 \
+            onnxruntime==1.27.0
+          python - <<'PY'
+          import inspect, numpy, onnx, onnxruntime, onnxscript, safetensors, torch
+          assert torch.__version__.startswith('2.13.0'), torch.__version__
+          assert numpy.__version__ == '2.4.6'
+          assert safetensors.__version__ == '0.8.0'
+          assert onnx.__version__ == '1.22.0'
+          assert onnxscript.__version__ == '0.7.1'
+          assert onnxruntime.__version__ == '1.27.0'
+          assert 'fallback' not in inspect.signature(torch.onnx.export).parameters
+          assert 'dynamic_shapes' in inspect.signature(torch.onnx.export).parameters
+          print('C8 EXPORT ENVIRONMENT: PASS', torch.__version__, numpy.__version__, onnx.__version__, onnxruntime.__version__)
+          PY
+
+      - name: Prove independent-process LaMa ONNX byte reproducibility
+        run: |
+          set -euo pipefail
+          test ! -e "${RUNNER_TEMP}/lama-c8/best.ckpt"
+          python scripts/probe-lama-cross-process-reproducibility.py \
+            --source "${RUNNER_TEMP}/lama" \
+            --state "${RUNNER_TEMP}/lama-c8/generator.safetensors" \
+            --bridge-report .test-cache/6.42c8/lama-generator-bridge.json \
+            --model-out "${RUNNER_TEMP}/lama-c8/lama-big-release-candidate.onnx" \
+            --report .test-cache/6.42c8/lama-release-reproducibility.json
+
+      - name: Require exact reproducibility evidence without granting release authority
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          evidence = json.load(open('.test-cache/6.42c8/lama-release-reproducibility.json', encoding='utf-8'))
+          assert evidence['status'] == 'CANDIDATE'
+          assert evidence['productionDeviceApproval'] is False
+          assert evidence['runtimeAuthorityGranted'] is False
+          assert evidence['productionPromotionAllowed'] is False
+          assert evidence['releasePublicationAllowed'] is False
+          assert evidence['checkpointSha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
+          proof = evidence['reproducibility']
+          assert proof['result'] == 'PASS'
+          assert proof['independentPythonProcesses'] == 2
+          assert proof['pythonHashSeed'] == '0'
+          assert proof['byteIdentical'] is True
+          assert isinstance(proof['size'], int) and proof['size'] > 0
+          assert isinstance(proof['sha256'], str) and len(proof['sha256']) == 64
+          assert evidence['first']['size'] == evidence['second']['size'] == proof['size']
+          assert evidence['first']['sha256'] == evidence['second']['sha256'] == proof['sha256']
+          assert evidence['graph']['standardDftNodeCount'] > 0
+          assert evidence['graph']['customNodes'] == []
+          assert evidence['graph']['atenLikeNodes'] == []
+          retained = evidence['retainedRunnerLocalCandidate']
+          assert retained['size'] == proof['size']
+          assert retained['sha256'] == proof['sha256']
+          assert retained['published'] is False
+          assert retained['signed'] is False
+          assert retained['gitTracked'] is False
+          model = pathlib.Path(os.environ['RUNNER_TEMP']) / 'lama-c8' / 'lama-big-release-candidate.onnx'
+          assert model.is_file() and model.stat().st_size == proof['size']
+          print('C8 RELEASE REPRODUCIBILITY: PASS size=', proof['size'], 'sha256=', proof['sha256'])
+          PY
+
+      - name: Destroy ephemeral tensor/model bytes before JSON evidence upload
+        run: |
+          set -euo pipefail
+          rm -f \
+            "${RUNNER_TEMP}/lama-c8/generator.safetensors" \
+            "${RUNNER_TEMP}/lama-c8/lama-big-release-candidate.onnx"
+          test ! -e "${RUNNER_TEMP}/lama-c8/generator.safetensors"
+          test ! -e "${RUNNER_TEMP}/lama-c8/lama-big-release-candidate.onnx"
+
+      - name: Upload C8 JSON evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: lama-c8-release-reproducibility-evidence
+          path: |
+            .test-cache/6.42c8/lama-generator-bridge.json
+            .test-cache/6.42c8/lama-release-reproducibility.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish C8 reproducibility summary
+        run: |
+          size="$(python -c "import json; print(json.load(open('.test-cache/6.42c8/lama-release-reproducibility.json'))['reproducibility']['size'])")"
+          sha="$(python -c "import json; print(json.load(open('.test-cache/6.42c8/lama-release-reproducibility.json'))['reproducibility']['sha256'])")"
+          {
+            echo '## LaMa release-grade cross-process reproducibility discovery'
+            echo
+            echo '- Status: CANDIDATE / reproducibility discovery only'
+            echo '- Independent exporter processes: 2'
+            echo '- PYTHONHASHSEED: `0`'
+            echo "- Reproducible ONNX size: \`${size}\`"
+            echo "- Reproducible ONNX SHA-256: \`${sha}\`"
+            echo '- Model bytes destroyed before artifact upload'
+            echo '- Signed release publication: NOT GRANTED by this workflow'
+            echo '- Real-device WebGPU approval: UNPROVEN'
+            echo '- Production/runtime authority: NOT GRANTED'
+          } >> "${GITHUB_STEP_SUMMARY}"

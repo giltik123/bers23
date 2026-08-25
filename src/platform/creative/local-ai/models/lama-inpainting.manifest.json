@@ -151,7 +151,7 @@
       },
       "runtimeAuthorityGranted": false,
       "productionDeviceApproval": false,
-      "releaseArtifactIdentityEstablished": false
+      "releaseArtifactIdentityEstablished": true
     },
     "cpuOrt": "PROVEN_HOSTED_ORT_1_27_MULTISHAPE",
     "browserWasm": "PROVEN_HOSTED_CHROME_ORT_WEB_1_27_256",
@@ -160,12 +160,23 @@
     "thirdPartyReferenceAuthority": false
   },
   "bersArtifact": {
-    "state": "UNBUILT",
-    "format": null,
-    "size": null,
-    "sha256": null
+    "state": "PINNED",
+    "format": "ONNX",
+    "size": 208593659,
+    "sha256": "8bf7891efa16ea07de31fc98c5f0c017b399956cba0182813ddf23d9072792c7",
+    "opset": 18,
+    "reproducibility": {
+      "result": "PASS",
+      "independentPythonProcesses": 2,
+      "pythonHashSeed": "0",
+      "byteIdentical": true,
+      "torchVersion": "2.13.0+cpu",
+      "onnxVersion": "1.22.0",
+      "onnxScriptVersion": "0.7.1",
+      "onnxRuntimeVersion": "1.27.0"
+    }
   },
-  "artifactState": "CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED",
+  "artifactState": "EXPORT_PINNED_RELEASE_REQUIRED",
   "artifacts": {
     "model": {
       "url": null,

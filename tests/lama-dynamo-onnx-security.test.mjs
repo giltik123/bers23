@@ -12,6 +12,9 @@ const c6 = await readFile(new URL('../scripts/inspect-lama-checkpoint.py', impor
 const workflow = await readFile(new URL('../.github/workflows/sprint-6.42c7-lama-dynamo-onnx.yml', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/local-ai/models/lama-inpainting.manifest.json', import.meta.url), 'utf8'));
 
+const LAMA_ONNX_SIZE = 208593659;
+const LAMA_ONNX_SHA256 = '8bf7891efa16ea07de31fc98c5f0c017b399956cba0182813ddf23d9072792c7';
+
 test('C7 bridge preserves the exact C6 trust root and restricted PyTorch 2.6 loader', () => {
   assert.match(bridge, /CHECKPOINT_SHA256 = "fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423"/);
   assert.match(bridge, /EXPECTED_TORCH_PREFIX = "2\.6\.0"/);
@@ -123,12 +126,12 @@ test('workflow orders trust bridge, CPU parity, browser and destroys binary evid
   assert.doesNotMatch(uploadTail, /lama-big-dynamo-dynamic\.onnx|browser-input-256\.f32|browser-reference-256\.f32|generator\.safetensors/);
 });
 
-test('C7 manifest records proven CPU/WASM and hosted WebGPU blocker while production authority stays closed', () => {
+test('C7 runtime evidence stays unchanged after C8 pins release bytes and production authority remains closed', () => {
   assert.match(multi, /"runtimeAuthorityGranted": False/);
   assert.match(multi, /"productionPromotionAllowed"\] = False/);
   assert.match(multi, /modelRetainedOnlyAsCiEvidence|browserBinaryEvidenceRunnerLocal/);
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED');
+  assert.equal(manifest.artifactState, 'EXPORT_PINNED_RELEASE_REQUIRED');
   assert.equal(manifest.runtimeFeasibility.state, 'DYNAMO_ONNX_CPU_WASM_PROVEN_WEBGPU_REAL_DEVICE_REQUIRED');
   assert.equal(manifest.runtimeFeasibility.cpuOrt, 'PROVEN_HOSTED_ORT_1_27_MULTISHAPE');
   assert.equal(manifest.runtimeFeasibility.browserWasm, 'PROVEN_HOSTED_CHROME_ORT_WEB_1_27_256');
@@ -145,9 +148,14 @@ test('C7 manifest records proven CPU/WASM and hosted WebGPU blocker while produc
   assert.equal(modern.hostedWebGpu.realDeviceEvidence, false);
   assert.equal(modern.runtimeAuthorityGranted, false);
   assert.equal(modern.productionDeviceApproval, false);
-  assert.equal(modern.releaseArtifactIdentityEstablished, false);
-  assert.equal(manifest.bersArtifact.state, 'UNBUILT');
+  assert.equal(modern.releaseArtifactIdentityEstablished, true);
+  assert.equal(manifest.bersArtifact.state, 'PINNED');
+  assert.equal(manifest.bersArtifact.format, 'ONNX');
+  assert.equal(manifest.bersArtifact.size, LAMA_ONNX_SIZE);
+  assert.equal(manifest.bersArtifact.sha256, LAMA_ONNX_SHA256);
+  assert.equal(manifest.bersArtifact.opset, 18);
   assert.equal(manifest.artifacts.model.url, null);
+  assert.equal(manifest.artifacts.model.size, null);
   assert.equal(manifest.artifacts.model.sha256, null);
   assert.equal(manifest.artifacts.model.signatureUrl, null);
   assert.equal(manifest.verificationKeyId, null);
