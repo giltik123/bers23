@@ -53,7 +53,7 @@ test('historical reference and modern exporter environments are independently pi
   assert.match(exporter, /text_model\.embeddings\.position_ids/);
 });
 
-test('component export requires reference parity, standard ONNX and CPU ORT parity independently', () => {
+test('component export requires reference parity, standard ONNX, exact tensor shapes and CPU ORT parity independently', () => {
   assert.match(exporter, /TextEncoderWrapper/);
   assert.match(exporter, /UNetWrapper/);
   assert.match(exporter, /VaeDecoderWrapper/);
@@ -64,6 +64,12 @@ test('component export requires reference parity, standard ONNX and CPU ORT pari
   assert.match(exporter, /onnx\.checker\.check_model/);
   assert.match(exporter, /custom-domain ONNX nodes rejected/);
   assert.match(exporter, /ATen-like ONNX nodes rejected/);
+  assert.match(exporter, /custom function domains rejected/);
+  assert.match(exporter, /ONNX input tensor contract drift/);
+  assert.match(exporter, /ONNX output tensor contract drift/);
+  assert.match(exporter, /ORT input shape contract changed/);
+  assert.match(exporter, /ORT output shape contract changed/);
+  assert.match(exporter, /tensorContract/);
   assert.match(exporter, /CPUExecutionProvider/);
   assert.match(exporter, /releaseIdentityPinned.*False/);
   assert.match(exporter, /runtimeAuthorityGranted.*False/);
