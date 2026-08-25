@@ -17,7 +17,7 @@ const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab25
 test('MODNet pins authoritative checkpoint and reproducible ONNX while remaining a non-executable continuous-alpha CANDIDATE', () => {
   assert.equal(manifest.modelId, MODEL_ID);
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'EXPORT_PINNED_RELEASE_REQUIRED');
+  assert.ok(manifest.artifactState === 'EXPORT_PINNED_RELEASE_REQUIRED' || manifest.artifactState === 'SIGNED_RELEASE');
   assert.equal(manifest.upstream.revision, '28165a451e4610c9d77cfdf925a94610bb2810fb');
   assert.equal(manifest.upstream.license, 'Apache-2.0');
   assert.equal(manifest.upstream.checkpoint.name, 'modnet_photographic_portrait_matting.ckpt');
@@ -39,7 +39,20 @@ test('MODNet pins authoritative checkpoint and reproducible ONNX while remaining
   assert.equal(manifest.bersExport.onnxSize, MODNET_ONNX_SIZE);
   assert.equal(manifest.bersExport.onnxSha256, MODNET_ONNX_SHA256);
   assert.equal(manifest.bersExport.opset, 17);
-  assert.equal(isExecutableModNetRelease(manifest), false, 'pinned export without signed release + approval must remain blocked');
+  assert.equal(manifest.productionApprovalEvidence, null);
+
+  if (manifest.artifactState === 'EXPORT_PINNED_RELEASE_REQUIRED') {
+    assert.equal(manifest.artifacts.model.url, null);
+    assert.equal(manifest.artifacts.model.signatureUrl, null);
+    assert.equal(manifest.verificationKeyId, null);
+  } else {
+    assert.equal(manifest.artifacts.model.size, MODNET_ONNX_SIZE);
+    assert.equal(manifest.artifacts.model.sha256, MODNET_ONNX_SHA256);
+    assert.equal(typeof manifest.artifacts.model.url, 'string');
+    assert.equal(typeof manifest.artifacts.model.signatureUrl, 'string');
+    assert.equal(typeof manifest.verificationKeyId, 'string');
+  }
+  assert.equal(isExecutableModNetRelease(manifest), false, 'CANDIDATE cannot become production executable merely by publishing a signed pack');
   assert.equal(modNetReleaseState.productionAvailable, false);
 });
 
