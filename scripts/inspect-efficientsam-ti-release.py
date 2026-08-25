@@ -7,6 +7,10 @@ This script does not trust a filename or Git checkout alone. It verifies:
 - SHA-256 of the exact bytes used for the BERS pack;
 - ONNX structural validity, opset and exact split graph I/O names/types.
 
+The pinned upstream decoder has a third exporter-generated output, `onnx::Shape_1830`.
+BERS records that exact auxiliary output but runtime adapters must request only the two
+semantic outputs: `output_masks` and `iou_predictions`.
+
 It only produces acquisition metadata. It does not sign, publish or grant production approval.
 """
 
@@ -27,6 +31,8 @@ UPSTREAM_REVISION = "d525f622e6f640acf5a0fc37c7ca1f243da5bde0"
 OPSET = 17
 MODEL_ID = "efficient-sam-ti"
 MODEL_VERSION = "1.0.0-candidate.1"
+DECODER_SEMANTIC_OUTPUTS = ("output_masks", "iou_predictions")
+DECODER_AUXILIARY_OUTPUTS = ("onnx::Shape_1830",)
 
 ARTIFACTS = {
     "encoder": {
@@ -49,6 +55,7 @@ ARTIFACTS = {
         "outputs": {
             "output_masks": TensorProto.FLOAT,
             "iou_predictions": TensorProto.FLOAT,
+            "onnx::Shape_1830": TensorProto.FLOAT,
         },
     },
 }
@@ -169,6 +176,9 @@ def main() -> None:
         "runtimeContract": {
             "imageRange": [0, 1],
             "imageLayout": "NCHW",
+            "decoderSemanticOutputs": list(DECODER_SEMANTIC_OUTPUTS),
+            "decoderAuxiliaryOutputs": list(DECODER_AUXILIARY_OUTPUTS),
+            "decoderAuxiliaryOutputPolicy": "EXACT_PINNED_BUT_NOT_REQUESTED",
             "maskDecision": "output_masks >= 0",
         },
     }
