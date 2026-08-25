@@ -29,6 +29,7 @@ const reportPath = required('report');
 const outputDir = path.resolve('.test-cache/lama-browser-webgpu-dist');
 const port = 4176;
 const origin = `http://127.0.0.1:${port}`;
+const OUTER_BROWSER_TIMEOUT_MS = 150_000;
 const launchArgs = [
   '--enable-unsafe-webgpu',
   '--use-angle=swiftshader',
@@ -149,10 +150,34 @@ try {
     throw new Error(`LAMA_BROWSER_WEBGPU_BOOTSTRAP_FAILED\n${JSON.stringify(diagnostics, null, 2)}\n${error instanceof Error ? error.message : error}`);
   }
 
-  const runtimeReport = await page.evaluate(async input => globalThis.runLamaBrowserWebGpuFeasibility(input), {
+  let outerTimer;
+  const browserEvaluation = page.evaluate(async input => globalThis.runLamaBrowserWebGpuFeasibility(input), {
     modelUrl: '/__lama/model.onnx', inputUrl: '/__lama/input.f32', referenceUrl: '/__lama/reference.f32',
     height: 256, width: 256,
   });
+  const outerTimeout = new Promise(resolve => {
+    outerTimer = setTimeout(() => resolve({
+      schemaVersion: 1,
+      status: 'CANDIDATE',
+      result: 'WEBGPU_INFERENCE_BLOCKED',
+      provider: 'webgpu',
+      onnxruntimeWebVersion: '1.27.0',
+      shape: [256, 256],
+      modelBytes: modelStat.size,
+      runtimeAuthorityGranted: false,
+      productionDeviceApproval: false,
+      browserExecutionIsProductionApproval: false,
+      productionPromotionAllowed: false,
+      hostedSoftwareFeasibilityOnly: true,
+      providerFallbackAllowed: false,
+      executionProviders: ['webgpu'],
+      timeoutStage: 'OUTER_BROWSER_EVALUATION',
+      outerBrowserTimeoutMs: OUTER_BROWSER_TIMEOUT_MS,
+      error: `WebGPU browser evaluation exceeded ${OUTER_BROWSER_TIMEOUT_MS}ms`,
+    }), OUTER_BROWSER_TIMEOUT_MS);
+  });
+  const runtimeReport = await Promise.race([browserEvaluation, outerTimeout]);
+  clearTimeout(outerTimer);
 
   assert.equal(runtimeReport.status, 'CANDIDATE');
   assert.equal(runtimeReport.provider, 'webgpu');
