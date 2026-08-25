@@ -36,6 +36,18 @@ test('WebGPU page classifies API, adapter, session, inference and parity separat
   assert.match(page, /rmse <= 5e-5/);
 });
 
+test('hosted WebGPU has both renderer and Playwright deadlines while preserving blocked policy states', () => {
+  assert.match(page, /SESSION_TIMEOUT_MS = 60_000/);
+  assert.match(page, /INFERENCE_TIMEOUT_MS = 120_000/);
+  assert.match(page, /timeoutStage: message\.includes\('WEBGPU_SESSION_TIMEOUT'\) \? 'SESSION' : null/);
+  assert.match(page, /timeoutStage: message\.includes\('WEBGPU_INFERENCE_TIMEOUT'\) \? 'INFERENCE' : null/);
+  assert.match(harness, /OUTER_BROWSER_TIMEOUT_MS = 150_000/);
+  assert.match(harness, /Promise\.race\(\[browserEvaluation, outerTimeout\]\)/);
+  assert.match(harness, /timeoutStage: 'OUTER_BROWSER_EVALUATION'/);
+  assert.match(harness, /result: 'WEBGPU_INFERENCE_BLOCKED'/);
+  assert.doesNotMatch(page, /result.*WEBGPU_(?:SESSION|INFERENCE)_TIMEOUT/);
+});
+
 test('hosted WebGPU harness reuses exact CPU/WASM-proven model and never grants real-device approval', () => {
   assert.match(harness, /cpuEvidence\.export\.result, 'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS'/);
   assert.match(harness, /wasmEvidence\.result, 'PASS'/);
