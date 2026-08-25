@@ -15,11 +15,32 @@ ort.env.wasm.numThreads = BROWSER_WASM_NUM_THREADS;
 ort.env.wasm.proxy = BROWSER_WASM_PROXY;
 
 export const ONNX_RUNTIME_WEB_VERSION = '1.27.0';
+export type BrowserOrtFormatMemoryMode = 'DEFAULT' | 'MEMORY_FIRST';
+export const BROWSER_ORT_MEMORY_FIRST_SESSION_CONFIG = Object.freeze({
+  load_model_format: 'ORT',
+  use_ort_model_bytes_for_initializers: '1',
+  disable_prepacking: '1',
+} as const);
 
 export class BrowserOnnxSessionFactory implements OnnxSessionFactory {
   async create(bytes: Uint8Array, options: Readonly<{ executionProviders: readonly ('wasm' | 'webgpu' | 'cuda' | 'dml' | 'coreml' | 'cpu' | 'nnapi')[] }>): Promise<OnnxSession> {
     if (options.executionProviders.some(provider => provider !== 'wasm')) throw new Error('Browser acceptance runtime only permits the WASM execution provider');
-    const session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
+    return this.#create(bytes, { executionProviders: ['wasm'] });
+  }
+
+  /** D4 research surface: same local worker-free WASM runtime, explicitly loading ORT-format bytes. */
+  async createOrtFormat(bytes: Uint8Array, mode: BrowserOrtFormatMemoryMode): Promise<OnnxSession> {
+    const sessionConfig = mode === 'MEMORY_FIRST'
+      ? BROWSER_ORT_MEMORY_FIRST_SESSION_CONFIG
+      : Object.freeze({ load_model_format: 'ORT' as const });
+    return this.#create(bytes, {
+      executionProviders: ['wasm'],
+      extra: { session: sessionConfig },
+    });
+  }
+
+  async #create(bytes: Uint8Array, sessionOptions: ort.InferenceSession.SessionOptions): Promise<OnnxSession> {
+    const session = await ort.InferenceSession.create(bytes, sessionOptions);
     const disposeOnnxSession = session.release.bind(session);
     return {
       async run(inputs: Readonly<Record<string, TensorValue>>, outputNames?: readonly string[]) {
