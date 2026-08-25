@@ -2,20 +2,24 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import io
 import json
+import os
 import pathlib
 import shutil
-import subprocess
 import sys
 from typing import Any
 
 import numpy as np
 import onnxruntime as ort
+from onnxruntime.tools.convert_onnx_models_to_ort import OptimizationStyle, convert_onnx_models_to_ort
 
 COMPONENTS = ("text_encoder", "unet", "vae_decoder")
 EXPECTED_ORT_VERSION = "1.27.0"
 THRESHOLD_KEYS = ("maxAbsOverReferenceMaxAbs", "rmseOverReferenceRms")
+CONVERTER_DIAGNOSTIC_LIMIT = 4096
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -99,22 +103,42 @@ def native_ort_parity(component: str, ort_path: pathlib.Path, fixture_dir: pathl
     return normalized_parity(reference, output, record["nativeOrtParity"]["thresholds"])
 
 
-def convert_component(source: pathlib.Path, output_dir: pathlib.Path) -> tuple[pathlib.Path, list[str]]:
-    command = [
-        sys.executable,
-        "-m",
-        "onnxruntime.tools.convert_onnx_models_to_ort",
-        "--output_dir",
-        str(output_dir),
-        "--optimization_style",
-        "Fixed",
-        str(source),
-    ]
-    completed = subprocess.run(command, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+def diagnostic_tail(value: str) -> str:
+    return value[-CONVERTER_DIAGNOSTIC_LIMIT:]
+
+
+def convert_component(source: pathlib.Path, output_dir: pathlib.Path) -> tuple[pathlib.Path, dict[str, Any]]:
+    diagnostics = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(diagnostics), contextlib.redirect_stderr(diagnostics):
+            convert_onnx_models_to_ort(
+                source,
+                output_dir=output_dir,
+                optimization_styles=[OptimizationStyle.Fixed],
+                custom_op_library_path=None,
+                target_platform=None,
+                save_optimized_onnx_model=False,
+                allow_conversion_failures=False,
+                enable_type_reduction=False,
+            )
+    except Exception as error:
+        tail = diagnostic_tail(diagnostics.getvalue())
+        if tail:
+            print(tail, file=sys.stderr)
+        raise RuntimeError(
+            f"ORT conversion API failed ({type(error).__name__}: {error}); converterOutputTail={tail!r}"
+        ) from error
+
     ort_path = output_dir / f"{source.stem}.ort"
     if not ort_path.is_file():
         raise RuntimeError(f"ORT converter reported success but did not create {ort_path}")
-    return ort_path, command
+    return ort_path, {
+        "api": "onnxruntime.tools.convert_onnx_models_to_ort.convert_onnx_models_to_ort",
+        "optimizationStyle": "Fixed",
+        "optimizationLevel": "all",
+        "targetPlatform": None,
+        "converterOutputTail": diagnostic_tail(diagnostics.getvalue()),
+    }
 
 
 def main() -> None:
@@ -128,6 +152,9 @@ def main() -> None:
 
     if ort.__version__ != EXPECTED_ORT_VERSION:
         raise RuntimeError(f"D4 ORT converter version mismatch: {ort.__version__} != {EXPECTED_ORT_VERSION}")
+    optimization_level = os.environ.get("ORT_CONVERT_ONNX_MODELS_TO_ORT_OPTIMIZATION_LEVEL", "all")
+    if optimization_level != "all":
+        raise RuntimeError(f"D4 ORT optimization level must remain all, got {optimization_level!r}")
 
     d3_bytes = args.d3_report.read_bytes()
     d3 = json.loads(d3_bytes)
@@ -175,7 +202,7 @@ def main() -> None:
             "productionApproval": False,
         }
         try:
-            ort_path, command = convert_component(source, args.output_dir)
+            ort_path, conversion_details = convert_component(source, args.output_dir)
             ort_identity = file_identity(ort_path)
             parity = native_ort_parity(component, ort_path, args.fixture_dir, source_record)
             result = "D4_ORT_NATIVE_PASS" if parity["passed"] else "D4_ORT_PARITY_FAILED"
@@ -193,11 +220,8 @@ def main() -> None:
                 "conversion": {
                     "onnxruntimeVersion": ort.__version__,
                     "module": "onnxruntime.tools.convert_onnx_models_to_ort",
-                    "optimizationStyle": "Fixed",
-                    "optimizationLevel": "all",
-                    "targetPlatform": None,
+                    **conversion_details,
                     "nchwcTransformerExcludedByConverterForNonAmd64Target": True,
-                    "command": command,
                 },
                 "nativeOrtParity": parity,
                 "browserVariants": [
@@ -210,6 +234,7 @@ def main() -> None:
             components[component] = {
                 **base,
                 "result": "D4_ORT_CONVERSION_BLOCKED",
+                "errorType": type(error).__name__,
                 "error": str(error),
                 "ortArtifact": None,
                 "nativeOrtParity": None,
