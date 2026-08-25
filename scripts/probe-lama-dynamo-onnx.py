@@ -2,12 +2,13 @@
 """Probe faithful Big-LaMa export through the modern torch.export-based ONNX path.
 
 C7 deliberately reuses the C6 byte-pinned checkpoint loader and exact pinned upstream generator.
-It never accepts an unpinned checkpoint, never uses weights_only=False, never substitutes a
+It never accepts an unpinned checkpoint, never requests unsafe pickle loading, never substitutes a
 community Fourier implementation, and never grants runtime/production authority.
 
 The first C7 gate is intentionally narrow:
   * PyTorch 2.13.0 CPU;
-  * torch.onnx.export(..., dynamo=True, fallback=False), opset 18;
+  * torch.onnx.export(..., dynamo=True), opset 18;
+  * verify the legacy exporter fallback option is absent from the PyTorch 2.13 API;
   * one deterministic 64x64 semantic image/mask smoke input;
   * ONNX checker and graph-domain inspection;
   * require standard ai.onnx DFT nodes and reject ATen/custom runtime nodes;
@@ -21,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import inspect
 import json
 import math
 import sys
@@ -115,14 +117,16 @@ def load_strict_generator(source: Path, checkpoint: Path, script_dir: Path) -> t
     }
 
 
-def environment() -> dict[str, str]:
+def environment() -> dict[str, Any]:
     import onnxscript
 
-    values = {
+    signature = inspect.signature(torch.onnx.export)
+    values: dict[str, Any] = {
         "torch": torch.__version__,
         "onnx": onnx.__version__,
         "onnxscript": onnxscript.__version__,
         "onnxruntime": ort.__version__,
+        "legacyFallbackParameterPresent": "fallback" in signature.parameters,
     }
     if not values["torch"].startswith(EXPECTED_TORCH_PREFIX):
         raise RuntimeError(f"unexpected torch version: {values['torch']}")
@@ -132,6 +136,8 @@ def environment() -> dict[str, str]:
         raise RuntimeError(f"unexpected ONNXScript version: {values['onnxscript']}")
     if values["onnxruntime"] != EXPECTED_ORT:
         raise RuntimeError(f"unexpected ONNX Runtime version: {values['onnxruntime']}")
+    if values["legacyFallbackParameterPresent"] is not False:
+        raise RuntimeError("PyTorch 2.13 ONNX API unexpectedly exposes the removed fallback parameter")
     return values
 
 
@@ -212,7 +218,8 @@ def main() -> None:
         "export": {
             "api": "torch.onnx.export",
             "dynamo": True,
-            "fallback": False,
+            "legacyFallbackApi": "REMOVED_IN_PYTORCH_2_11",
+            "legacyFallbackAllowed": False,
             "opset": OPSET,
             "inputShape": list(generator_input.shape),
             "result": None,
@@ -234,7 +241,6 @@ def main() -> None:
             (generator_input,),
             str(args.model_out),
             dynamo=True,
-            fallback=False,
             opset_version=OPSET,
             input_names=["generator_input"],
             output_names=["generated_rgb"],
