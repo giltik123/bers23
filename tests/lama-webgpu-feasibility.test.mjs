@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const page = await readFile(new URL('./lama-browser-webgpu-feasibility.html', import.meta.url), 'utf8');
 const harness = await readFile(new URL('../scripts/test-lama-browser-webgpu-feasibility.mjs', import.meta.url), 'utf8');
+const workflow = await readFile(new URL('../.github/workflows/sprint-6.42c7-lama-dynamo-onnx.yml', import.meta.url), 'utf8');
 
 test('WebGPU page uses webgpu-only ORT 1.27 with no WASM fallback', () => {
   assert.match(page, /import \* as ort from 'onnxruntime-web\/webgpu'/);
@@ -49,4 +50,20 @@ test('hosted WebGPU harness reuses exact CPU/WASM-proven model and never grants 
   assert.match(harness, /browserExecutionIsProductionApproval: false/);
   assert.match(harness, /productionPromotionAllowed: false/);
   assert.doesNotMatch(harness, /executionProviders:\s*\[[^\]]*wasm/);
+});
+
+test('workflow runs WebGPU only after exact CPU and WASM PASS and before destroying model bytes', () => {
+  const cpu = workflow.indexOf("assert export['result'] == 'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS'");
+  const wasm = workflow.indexOf("assert.equal(browser.result, 'PASS')");
+  const webgpu = workflow.indexOf('node scripts/test-lama-browser-webgpu-feasibility.mjs');
+  const destroy = workflow.indexOf('Destroy ephemeral tensor/model/reference bytes before evidence upload');
+  assert.ok(cpu >= 0 && wasm >= 0 && webgpu >= 0 && destroy >= 0);
+  assert.ok(cpu < wasm && wasm < webgpu && webgpu < destroy);
+  assert.match(workflow, /--wasm-evidence \.test-cache\/6\.42c7\/lama-browser-wasm\.json/);
+  assert.match(workflow, /lama-browser-webgpu\.json/);
+  assert.match(workflow, /realDeviceEvidence, false/);
+  assert.match(workflow, /providerFallbackAllowed, false/);
+  assert.doesNotMatch(workflow, /upload-artifact[\s\S]*lama-big-dynamo-dynamic\.onnx/);
+  assert.doesNotMatch(workflow, /upload-artifact[\s\S]*browser-input-256\.f32/);
+  assert.doesNotMatch(workflow, /upload-artifact[\s\S]*browser-reference-256\.f32/);
 });
