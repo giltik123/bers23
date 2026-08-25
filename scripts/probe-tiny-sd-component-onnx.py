@@ -135,7 +135,27 @@ def require_state_load(label: str, evidence: dict[str, Any]) -> None:
             raise RuntimeError(f"{label} derived buffer unexpectedly became learned")
 
 
-def graph_inventory(path: Path) -> dict[str, Any]:
+def _onnx_shape(value: onnx.ValueInfoProto) -> list[int | str | None]:
+    tensor_type = value.type.tensor_type
+    if not tensor_type.HasField("shape"):
+        return []
+    result: list[int | str | None] = []
+    for dimension in tensor_type.shape.dim:
+        if dimension.HasField("dim_value"):
+            result.append(int(dimension.dim_value))
+        elif dimension.HasField("dim_param"):
+            result.append(str(dimension.dim_param))
+        else:
+            result.append(None)
+    return result
+
+
+def graph_inventory(
+    path: Path,
+    *,
+    expected_inputs: list[dict[str, Any]],
+    expected_output: dict[str, Any],
+) -> dict[str, Any]:
     model = onnx.load(path, load_external_data=True)
     onnx.checker.check_model(model, full_check=True)
     domains = sorted({node.domain or "ai.onnx" for node in model.graph.node})
@@ -149,15 +169,30 @@ def graph_inventory(path: Path) -> dict[str, Any]:
         for node in model.graph.node
         if "aten" in (node.domain or "").lower() or "aten" in node.op_type.lower()
     })
+    function_domains = sorted({function.domain or "ai.onnx" for function in model.functions})
+    custom_function_domains = [domain for domain in function_domains if domain not in ("ai.onnx", "")]
     if custom_nodes:
         raise RuntimeError(f"custom-domain ONNX nodes rejected: {custom_nodes[:20]}")
     if aten_like:
         raise RuntimeError(f"ATen-like ONNX nodes rejected: {aten_like[:20]}")
+    if custom_function_domains:
+        raise RuntimeError(f"custom function domains rejected: {custom_function_domains[:20]}")
+
+    actual_inputs = [{"name": value.name, "shape": _onnx_shape(value)} for value in model.graph.input]
+    actual_outputs = [{"name": value.name, "shape": _onnx_shape(value)} for value in model.graph.output]
+    if actual_inputs != expected_inputs:
+        raise RuntimeError(f"ONNX input tensor contract drift: actual={actual_inputs!r} expected={expected_inputs!r}")
+    if actual_outputs != [expected_output]:
+        raise RuntimeError(f"ONNX output tensor contract drift: actual={actual_outputs!r} expected={[expected_output]!r}")
+
     return {
         "nodeCount": len(model.graph.node),
         "domains": domains,
         "opsetImports": sorted({(item.domain or "ai.onnx", int(item.version)) for item in model.opset_import}),
         "functionCount": len(model.functions),
+        "functionDomains": function_domains,
+        "inputs": actual_inputs,
+        "outputs": actual_outputs,
     }
 
 
@@ -191,6 +226,12 @@ def export_and_ort(
     reference_metrics = numeric_metrics(reference, modern)
     require_metrics(f"{name} historical-reference", reference_metrics, REFERENCE_TOLERANCE[name])
 
+    expected_inputs = [
+        {"name": input_name, "shape": [int(value) for value in tensor.shape]}
+        for input_name, tensor in zip(input_names, torch_inputs, strict=True)
+    ]
+    expected_output = {"name": output_name, "shape": [int(value) for value in modern.shape]}
+
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         torch.onnx.export(
@@ -213,12 +254,17 @@ def export_and_ort(
             "stateLoad": state_load,
             "referenceParity": reference_metrics,
             "referenceParityPassed": True,
+            "tensorContract": {"inputs": expected_inputs, "output": expected_output},
             "artifactProduced": False,
         }
 
     if not onnx_path.is_file() or onnx_path.stat().st_size <= 0:
         raise RuntimeError(f"{name} exporter produced no ONNX bytes")
-    inventory = graph_inventory(onnx_path)
+    inventory = graph_inventory(
+        onnx_path,
+        expected_inputs=expected_inputs,
+        expected_output=expected_output,
+    )
     size = onnx_path.stat().st_size
     digest = sha256_file(onnx_path)
 
@@ -226,11 +272,23 @@ def export_and_ort(
     gc.collect()
 
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
-    expected_inputs = [value.name for value in session.get_inputs()]
-    if expected_inputs != input_names:
-        raise RuntimeError(f"{name} ORT input contract changed: {expected_inputs!r}")
-    if [value.name for value in session.get_outputs()] != [output_name]:
+    expected_ort_inputs = [value["name"] for value in expected_inputs]
+    actual_ort_inputs = [value.name for value in session.get_inputs()]
+    if actual_ort_inputs != expected_ort_inputs:
+        raise RuntimeError(f"{name} ORT input contract changed: {actual_ort_inputs!r}")
+    actual_ort_input_shapes = [list(value.shape) for value in session.get_inputs()]
+    expected_ort_input_shapes = [value["shape"] for value in expected_inputs]
+    if actual_ort_input_shapes != expected_ort_input_shapes:
+        raise RuntimeError(
+            f"{name} ORT input shape contract changed: actual={actual_ort_input_shapes!r} expected={expected_ort_input_shapes!r}"
+        )
+    outputs = session.get_outputs()
+    if [value.name for value in outputs] != [output_name]:
         raise RuntimeError(f"{name} ORT output contract changed")
+    if [list(value.shape) for value in outputs] != [expected_output["shape"]]:
+        raise RuntimeError(
+            f"{name} ORT output shape contract changed: actual={[list(value.shape) for value in outputs]!r} expected={[expected_output['shape']]!r}"
+        )
     feeds = {
         input_name: tensor.detach().cpu().numpy()
         for input_name, tensor in zip(input_names, torch_inputs, strict=True)
@@ -248,6 +306,7 @@ def export_and_ort(
         "referenceParityPassed": True,
         "ortParity": ort_metrics,
         "ortParityPassed": True,
+        "tensorContract": {"inputs": expected_inputs, "output": expected_output},
         "artifactProduced": True,
         "artifact": {"size": size, "sha256": digest, "releaseIdentityPinned": False},
         "graph": inventory,
