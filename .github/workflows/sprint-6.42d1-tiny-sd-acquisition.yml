@@ -94,10 +94,12 @@ jobs:
       - name: Install pinned restricted tensor bridge environment
         run: |
           set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
           python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --disable-pip-version-check safetensors==0.8.0
           python - <<'PY'
-          import safetensors, torch
+          import numpy, safetensors, torch
+          assert numpy.__version__ == '1.26.4', numpy.__version__
           assert torch.__version__.startswith('2.6.0'), torch.__version__
           assert safetensors.__version__ == '0.8.0', safetensors.__version__
           PY
@@ -167,3 +169,10 @@ jobs:
             echo '- Binary model evidence destroyed before JSON upload'
             echo '- Runtime/device/production authority: NOT GRANTED'
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Cleanup Tiny-SD binary evidence on failure
+        if: ${{ failure() }}
+        run: |
+          rm -rf "${RUNNER_TEMP}/tiny-sd" "${RUNNER_TEMP}/tiny-sd-bridge"
+          test ! -e "${RUNNER_TEMP}/tiny-sd"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-bridge"
