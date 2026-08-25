@@ -19,15 +19,21 @@ test('authoritative inventory hashes ZIP members without deserialization and rej
   assert.match(inventoryInspector, /Duplicate LaMa ZIP member path/);
 });
 
-test('checkpoint inspector verifies exact bytes before an exact-allowlist weights-only load', () => {
-  const sizeCheck = checkpointInspector.indexOf('args.checkpoint.stat().st_size != CHECKPOINT_SIZE');
-  const shaCheck = checkpointInspector.indexOf('sha256(args.checkpoint) != CHECKPOINT_SHA256');
-  const unsafeScan = checkpointInspector.indexOf('scan(checkpoint)');
-  const deserialize = checkpointInspector.indexOf('torch.load(');
-  assert.ok(sizeCheck >= 0 && shaCheck >= 0 && unsafeScan >= 0 && deserialize >= 0);
-  assert.ok(sizeCheck < unsafeScan);
-  assert.ok(shaCheck < unsafeScan);
+test('checkpoint inspector verifies exact bytes before restricted load and scans globals before deserialization', () => {
+  const mainStart = checkpointInspector.indexOf('def main()');
+  const sizeCheck = checkpointInspector.indexOf('args.checkpoint.stat().st_size != CHECKPOINT_SIZE', mainStart);
+  const shaCheck = checkpointInspector.indexOf('sha256(args.checkpoint) != CHECKPOINT_SHA256', mainStart);
+  const restrictedCall = checkpointInspector.indexOf('restricted_load(args.checkpoint)', mainStart);
+  assert.ok(mainStart >= 0 && sizeCheck >= 0 && shaCheck >= 0 && restrictedCall >= 0);
+  assert.ok(sizeCheck < restrictedCall);
+  assert.ok(shaCheck < restrictedCall);
+
+  const restrictedStart = checkpointInspector.indexOf('def restricted_load(');
+  const unsafeScan = checkpointInspector.indexOf('scan(checkpoint)', restrictedStart);
+  const deserialize = checkpointInspector.indexOf('torch.load(', restrictedStart);
+  assert.ok(restrictedStart >= 0 && unsafeScan >= 0 && deserialize >= 0);
   assert.ok(unsafeScan < deserialize);
+
   assert.match(checkpointInspector, /get_unsafe_globals_in_checkpoint/);
   assert.match(checkpointInspector, /STANDARD_METADATA_GLOBALS/);
   assert.match(checkpointInspector, /INERT_METADATA_GLOBALS/);
@@ -60,6 +66,22 @@ test('generator import uses only the pinned FFC source and a minimal get_shape s
   assert.doesNotMatch(checkpointInspector, /pip install.*pytorch-lightning/);
 });
 
+test('legacy ONNX probe is exact, fail-closed and never grants runtime authority', () => {
+  assert.match(checkpointInspector, /--legacy-onnx-probe-report/);
+  assert.match(checkpointInspector, /torch\.onnx\.export\(/);
+  assert.match(checkpointInspector, /opset_version=LEGACY_ONNX_OPSET/);
+  assert.match(checkpointInspector, /LEGACY_ONNX_OPSET = 17/);
+  assert.match(checkpointInspector, /dynamo=False/);
+  assert.match(checkpointInspector, /do_constant_folding=False/);
+  assert.match(checkpointInspector, /BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN/);
+  assert.match(checkpointInspector, /BLOCKED_UNSUPPORTED_ATEN_FFT_IRFFTN/);
+  assert.match(checkpointInspector, /EXPORTED_UNVALIDATED/);
+  assert.match(checkpointInspector, /"runtimeAuthorityGranted": False/);
+  assert.match(checkpointInspector, /"temporaryArtifactRetained": False/);
+  assert.match(checkpointInspector, /"atenFallbackAllowed": False/);
+  assert.doesNotMatch(checkpointInspector, /ONNX_ATEN_FALLBACK/);
+});
+
 test('hosted gate keeps Drive as authority and permits only a byte-pinned transport fallback', () => {
   assert.match(workflow, /786f5936b27fb3dacd2b1ad799e4de968ea697e7/);
   assert.match(workflow, /11RbsVSav3O-fReBsPHBE1nn8kcFIMnKp/);
@@ -74,6 +96,9 @@ test('hosted gate keeps Drive as authority and permits only a byte-pinned transp
   assert.match(workflow, /gdown==5\.2\.0/);
   assert.match(workflow, /torch==2\.6\.0 --index-url https:\/\/download\.pytorch\.org\/whl\/cpu/);
   assert.match(workflow, /kornia==0\.5\.0/);
+  assert.match(workflow, /onnx==1\.17\.0/);
+  assert.match(workflow, /--legacy-onnx-probe-report/);
+  assert.match(workflow, /lama-direct-onnx-legacy\.json/);
   assert.match(workflow, /inspect-lama-authoritative-folder\.py/);
   assert.match(workflow, /inspect-lama-checkpoint\.py/);
   assert.doesNotMatch(workflow, /pytorch-lightning==/);
