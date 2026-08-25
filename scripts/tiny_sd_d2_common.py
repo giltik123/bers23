@@ -86,11 +86,26 @@ def _state_for_component(manifest: dict[str, Any], bridge_dir: Path, component: 
     return {key: value.detach().cpu().float().contiguous() for key, value in state.items()}
 
 
+def _force_diffusers_eager_attention(model: torch.nn.Module) -> None:
+    # Historical and modern Diffusers may otherwise select different attention processors
+    # solely because of the installed PyTorch version. D2 compares model semantics, not
+    # backend-specific fused-attention numerics, so force the common mathematical path.
+    from diffusers.models.attention_processor import AttnProcessor
+
+    setter = getattr(model, "set_attn_processor", None)
+    if callable(setter):
+        setter(AttnProcessor())
+
+
 def load_text_encoder(snapshot: Path, bridge_dir: Path, manifest: dict[str, Any]):
     from transformers import CLIPTextConfig, CLIPTextModel
 
     config_path = snapshot / "text_encoder" / "config.json"
     config = CLIPTextConfig.from_json_file(str(config_path))
+    # Modern Transformers can select SDPA while the 2023 reference path was eager attention.
+    # Force eager attention in both environments so library-version parity tests semantics,
+    # not a backend optimization choice.
+    setattr(config, "_attn_implementation", "eager")
     model = CLIPTextModel(config).float()
     state = _state_for_component(manifest, bridge_dir, "text_encoder")
     incompatible = model.load_state_dict(state, strict=True)
@@ -109,6 +124,7 @@ def load_unet(snapshot: Path, bridge_dir: Path, manifest: dict[str, Any]):
     incompatible = model.load_state_dict(state, strict=True)
     if incompatible.missing_keys or incompatible.unexpected_keys:
         raise RuntimeError("Tiny-SD UNet strict state load failed")
+    _force_diffusers_eager_attention(model)
     model.eval()
     return model, config
 
@@ -122,6 +138,7 @@ def load_vae(snapshot: Path, bridge_dir: Path, manifest: dict[str, Any]):
     incompatible = model.load_state_dict(state, strict=True)
     if incompatible.missing_keys or incompatible.unexpected_keys:
         raise RuntimeError("Tiny-SD VAE strict state load failed")
+    _force_diffusers_eager_attention(model)
     model.eval()
     return model, config
 
