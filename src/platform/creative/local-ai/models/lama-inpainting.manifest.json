@@ -16,8 +16,11 @@
       "authoritativeFolderUrl": "https://drive.google.com/drive/folders/1B2x7eQDgecTL0oh3LSIBDGj0fTxs6Ips?usp=sharing",
       "authoritativeArchiveDriveFileId": "11RbsVSav3O-fReBsPHBE1nn8kcFIMnKp",
       "legacyYandexState": "UNAVAILABLE",
-      "convenienceMirrorUrl": "https://huggingface.co/smartywu/big-lama/resolve/main/big-lama.zip",
-      "convenienceMirrorAuthority": false
+      "convenienceMirrorUrl": "https://huggingface.co/smartywu/big-lama/resolve/05cb2be7f8dbe6ca7c6e78f4fc827a4b2baaa4a9/big-lama.zip",
+      "convenienceMirrorCommit": "05cb2be7f8dbe6ca7c6e78f4fc827a4b2baaa4a9",
+      "convenienceMirrorArchiveSha256": "f1b358ca24093b93a106183b98a3dea6e8ed09f3b43ea7251eb2c81e7b4575f6",
+      "convenienceMirrorAuthority": false,
+      "convenienceMirrorAcceptance": "TRANSPORT_ONLY_REQUIRES_AUTHORITATIVE_MEMBER_SHA_MATCH"
     },
     "architecture": {
       "generatorKind": "ffc_resnet",
@@ -93,8 +96,19 @@
     }
   },
   "runtimeFeasibility": {
-    "state": "UNPROVEN",
-    "directTorchOnnx": "UNPROVEN_FFT_RISK",
+    "state": "BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED",
+    "directTorchOnnx": "LEGACY_DYNAMO_FALSE_OPSET17_BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN",
+    "directExportEvidence": {
+      "exporter": "torch.onnx.export",
+      "torchVersion": "2.6.0+cpu",
+      "dynamo": false,
+      "opset": 17,
+      "inputShape": [1, 4, 64, 64],
+      "atenFallbackAllowed": false,
+      "result": "BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN",
+      "artifactProduced": false,
+      "runtimeAuthorityGranted": false
+    },
     "cpuOrt": "UNPROVEN",
     "browserWasm": "UNPROVEN",
     "browserWebGpu": "UNPROVEN_KNOWN_THIRD_PARTY_SHAPE_RISK",
