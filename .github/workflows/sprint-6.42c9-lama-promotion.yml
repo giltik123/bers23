@@ -22,7 +22,7 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Compile exact C9 promotion contract
+      - name: Compile exact C9 promotion contracts
         run: |
           set -euo pipefail
           npm run typecheck
@@ -31,8 +31,14 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/6.42c9/lama-production-promotion.test.mjs \
             --external:node:*
+          npx esbuild tests/lama-promotion-evidence-builder.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c9/lama-promotion-evidence-builder.test.mjs \
+            --external:node:*
       - name: Run adversarial C9 promotion gates
-        run: node --test .test-cache/6.42c9/lama-production-promotion.test.mjs
+        run: |
+          node --test .test-cache/6.42c9/lama-production-promotion.test.mjs
+          node --test .test-cache/6.42c9/lama-promotion-evidence-builder.test.mjs
       - name: Preserve candidate and repository byte boundaries
         run: |
           set -euo pipefail
