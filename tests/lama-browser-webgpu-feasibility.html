@@ -78,8 +78,10 @@ globalThis.runLamaBrowserWebGpuFeasibility = async ({ modelUrl, inputUrl, refere
     );
   } catch (error) {
     const message = String(error);
-    const result = message.includes('WEBGPU_SESSION_TIMEOUT') ? 'WEBGPU_SESSION_TIMEOUT' : 'WEBGPU_SESSION_BLOCKED';
-    return base(result, { shape: [height, width], modelBytes: modelBytes.byteLength, adapter: adapterInfo, error: message });
+    return base('WEBGPU_SESSION_BLOCKED', {
+      shape: [height, width], modelBytes: modelBytes.byteLength, adapter: adapterInfo,
+      timeoutStage: message.includes('WEBGPU_SESSION_TIMEOUT') ? 'SESSION' : null, error: message,
+    });
   }
 
   try {
@@ -93,8 +95,10 @@ globalThis.runLamaBrowserWebGpuFeasibility = async ({ modelUrl, inputUrl, refere
       );
     } catch (error) {
       const message = String(error);
-      const result = message.includes('WEBGPU_INFERENCE_TIMEOUT') ? 'WEBGPU_INFERENCE_TIMEOUT' : 'WEBGPU_INFERENCE_BLOCKED';
-      return base(result, { shape: [height, width], modelBytes: modelBytes.byteLength, adapter: adapterInfo, error: message });
+      return base('WEBGPU_INFERENCE_BLOCKED', {
+        shape: [height, width], modelBytes: modelBytes.byteLength, adapter: adapterInfo,
+        timeoutStage: message.includes('WEBGPU_INFERENCE_TIMEOUT') ? 'INFERENCE' : null, error: message,
+      });
     }
     const latencyMs = performance.now() - started;
     const output = outputs.generated_rgb;
