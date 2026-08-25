@@ -39,10 +39,15 @@ test('checkpoint inspector verifies exact bytes before restricted weights-only d
   assert.doesNotMatch(checkpointInspector, /import pytorch_lightning/);
 });
 
-test('hosted gate uses exact official Drive archive and pinned restricted inspection environment', () => {
+test('hosted gate keeps Drive as authority and permits only a byte-pinned transport fallback', () => {
   assert.match(workflow, /786f5936b27fb3dacd2b1ad799e4de968ea697e7/);
   assert.match(workflow, /11RbsVSav3O-fReBsPHBE1nn8kcFIMnKp/);
   assert.match(workflow, /d7161bba4d68b438f9fa7f09dcb750a223804c300c68d214a5e0be16251fba8d/);
+  assert.match(workflow, /05cb2be7f8dbe6ca7c6e78f4fc827a4b2baaa4a9/);
+  assert.match(workflow, /f1b358ca24093b93a106183b98a3dea6e8ed09f3b43ea7251eb2c81e7b4575f6/);
+  assert.match(workflow, /PINNED_HF_TRANSPORT_FALLBACK/);
+  assert.match(workflow, /smartywu\/big-lama\/resolve\/\$\{LAMA_MIRROR_COMMIT\}\/big-lama\.zip/);
+  assert.match(workflow, /SHA-256 mismatch against authoritative Drive identity/);
   assert.match(workflow, /fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423/);
   assert.match(workflow, /4fdeed49926e13b101c4dd9e193acec9e58677dfdb4ba49dd6a3a8927964e2a7/);
   assert.match(workflow, /gdown==5\.2\.0/);
@@ -50,7 +55,6 @@ test('hosted gate uses exact official Drive archive and pinned restricted inspec
   assert.match(workflow, /kornia==0\.5\.0/);
   assert.match(workflow, /inspect-lama-authoritative-folder\.py/);
   assert.match(workflow, /inspect-lama-checkpoint\.py/);
-  assert.doesNotMatch(workflow, /smartywu\/big-lama/);
   assert.doesNotMatch(workflow, /pytorch-lightning==/);
 });
 
