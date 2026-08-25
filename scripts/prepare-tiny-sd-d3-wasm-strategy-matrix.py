@@ -173,6 +173,101 @@ def weight_only_qdq(source: Path, target: Path, component: str) -> dict[str, Any
     }
 
 
+def exact_fp16_storage_fp32_compute(source: Path, target: Path) -> dict[str, Any]:
+    model = onnx.load_model(source, load_external_data=True)
+    public_input_names = {value.name for value in model.graph.input if value.name}
+    reserved_tensor_names = {value.name for value in model.graph.initializer if value.name}
+    for value in [*model.graph.input, *model.graph.output, *model.graph.value_info]:
+        if value.name:
+            reserved_tensor_names.add(value.name)
+    for node in model.graph.node:
+        reserved_tensor_names.update(name for name in node.output if name)
+
+    retained_initializers: list[onnx.TensorProto] = []
+    storage_initializers: list[onnx.TensorProto] = []
+    cast_nodes: list[onnx.NodeProto] = []
+    converted_count = 0
+    converted_elements = 0
+    converted_fp32_bytes = 0
+    total_fp32_bytes = 0
+    non_roundtrip_count = 0
+    non_roundtrip_fp32_bytes = 0
+    graph_input_initializer_count = 0
+
+    for initializer in model.graph.initializer:
+        if initializer.data_type != TensorProto.FLOAT:
+            retained_initializers.append(initializer)
+            continue
+        elements = int(np.prod(initializer.dims, dtype=np.int64)) if initializer.dims else 1
+        total_fp32_bytes += elements * 4
+        if initializer.name in public_input_names:
+            retained_initializers.append(initializer)
+            graph_input_initializer_count += 1
+            continue
+        values = np.asarray(numpy_helper.to_array(initializer), dtype=np.float32)
+        half = values.astype(np.float16)
+        roundtrip = half.astype(np.float32)
+        exact = bool(np.isfinite(values).all() and np.array_equal(values, roundtrip))
+        if not exact:
+            retained_initializers.append(initializer)
+            non_roundtrip_count += 1
+            non_roundtrip_fp32_bytes += int(values.size) * 4
+            del values, half, roundtrip
+            continue
+        storage_name = f"{initializer.name}__d3_exact_fp16_storage"
+        if storage_name in reserved_tensor_names:
+            raise RuntimeError(f"exact FP16 storage tensor-name collision: {initializer.name}")
+        reserved_tensor_names.add(storage_name)
+        storage_initializers.append(numpy_helper.from_array(half, name=storage_name))
+        cast_nodes.append(helper.make_node(
+            "Cast",
+            [storage_name],
+            [initializer.name],
+            name=f"{initializer.name}__d3_exact_fp16_to_fp32",
+            to=TensorProto.FLOAT,
+        ))
+        converted_count += 1
+        converted_elements += int(values.size)
+        converted_fp32_bytes += int(values.size) * 4
+        del values, half, roundtrip
+
+    if converted_count == 0 or converted_fp32_bytes == 0:
+        raise RuntimeError("exact FP16 storage found no exactly round-trippable FLOAT initializers")
+
+    del model.graph.initializer[:]
+    model.graph.initializer.extend(retained_initializers)
+    model.graph.initializer.extend(storage_initializers)
+    original_nodes = list(model.graph.node)
+    del model.graph.node[:]
+    model.graph.node.extend(cast_nodes)
+    model.graph.node.extend(original_nodes)
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    onnx.checker.check_model(model, full_check=True)
+    onnx.save_model(model, target)
+    del model
+    gc.collect()
+    return {
+        "scheme": "EXACT_FP16_STORAGE_FP32_COMPUTE",
+        "storageType": "FLOAT16",
+        "restoredTypeBeforeConsumer": "FLOAT",
+        "exactRoundtripRequired": True,
+        "convertedInitializerCount": converted_count,
+        "convertedElements": converted_elements,
+        "sourceFp32BytesConverted": converted_fp32_bytes,
+        "totalSourceFp32InitializerBytes": total_fp32_bytes,
+        "convertedFp32ByteCoverage": converted_fp32_bytes / max(total_fp32_bytes, 1),
+        "nonRoundtripInitializerCountRetainedFp32": non_roundtrip_count,
+        "nonRoundtripFp32BytesRetained": non_roundtrip_fp32_bytes,
+        "graphInputInitializerCountRetained": graph_input_initializer_count,
+        "storagePrecisionIsNotComputePrecision": True,
+        "runtimeResidentMemoryReductionClaimed": False,
+        "fileFootprintOnlyUntilBrowserMeasured": True,
+        "valueRoundtripExactByConstruction": True,
+        "purpose": "LOSSLESS_STORAGE_FOOTPRINT_FEASIBILITY",
+    }
+
+
 def dynamic_signed(source: Path, target: Path, reduce_range: bool) -> dict[str, Any]:
     quantize_dynamic(
         model_input=source,
@@ -282,16 +377,19 @@ def _baseline_control(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _strategy_definitions(component: str):
+    storage = ("exact_fp16_storage", exact_fp16_storage_fp32_compute)
     if component == "text_encoder":
         return [
             ("dynamic_signed", lambda source, target: dynamic_signed(source, target, False)),
             ("dynamic_signed_reduce_range", lambda source, target: dynamic_signed(source, target, True)),
             ("weight_only_s8", lambda source, target: weight_only_qdq(source, target, component)),
+            storage,
         ]
     return [
         ("static_s8s8_qdq", lambda source, target: static_qdq(source, target, component, QuantType.QInt8, QuantType.QInt8, "STATIC_QDQ_S8S8_CONV_MATMUL_GEMM")),
         ("static_u8u8_qdq", lambda source, target: static_qdq(source, target, component, QuantType.QUInt8, QuantType.QUInt8, "STATIC_QDQ_U8U8_CONV_MATMUL_GEMM")),
         ("weight_only_s8", lambda source, target: weight_only_qdq(source, target, component)),
+        storage,
     ]
 
 
