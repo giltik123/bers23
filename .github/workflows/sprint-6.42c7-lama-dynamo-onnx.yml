@@ -31,6 +31,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Verify C7 static fail-closed policy before network/model work
         run: |
           set -euo pipefail
@@ -40,6 +45,7 @@ jobs:
             scripts/probe-lama-dynamo-onnx.py \
             scripts/probe-lama-dynamo-multishape.py \
             scripts/inspect-lama-checkpoint.py
+          node --check scripts/test-lama-browser-wasm-acceptance.mjs
           npm run check:model-weight-tracking
           test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.safetensors' '*.onnx' | wc -l)" -eq 0
 
@@ -173,7 +179,7 @@ jobs:
             --browser-input-out "${RUNNER_TEMP}/lama-c7/browser-input-256.f32" \
             --browser-reference-out "${RUNNER_TEMP}/lama-c7/browser-reference-256.f32"
 
-      - name: Validate dynamic C7 evidence never widens authority
+      - name: Require exact CPU multi-shape parity before browser gate
         run: |
           python - <<'PY'
           import json, os, pathlib
@@ -196,46 +202,95 @@ jobs:
           assert export['dynamo'] is True
           assert export['legacyFallbackAllowed'] is False
           assert export['opset'] == 18
-          allowed = {
-              'DYNAMO_DYNAMIC_EXPORT_BLOCKED_SHAPE_CONSTRAINT',
-              'DYNAMO_DYNAMIC_EXPORT_BLOCKED_FFT_OR_COMPLEX',
-              'DYNAMO_DYNAMIC_EXPORT_BLOCKED_ONNX_TRANSLATION',
-              'EXPORTED_REJECTED_ATEN_NODES',
-              'EXPORTED_REJECTED_CUSTOM_DOMAIN_NODES',
-              'EXPORTED_REJECTED_NO_STANDARD_DFT',
-              'EXPORTED_REJECTED_STATIC_SPATIAL_SHAPE',
-              'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_BLOCKED',
-              'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PARITY_FAILED',
-              'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS',
-          }
-          assert export['result'] in allowed, export['result']
-          if export['result'] == 'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS':
-              assert evidence['graph']['standardDftNodeCount'] > 0
-              assert evidence['graph']['customNodes'] == []
-              assert evidence['graph']['atenLikeNodes'] == []
-              assert evidence['graph']['dynamicHeight'] is True
-              assert evidence['graph']['dynamicWidth'] is True
-              assert evidence['cpuOrt']['result'] == 'PASS'
-              shapes = [item['shape'] for item in evidence['cpuOrt']['shapeResults']]
-              assert shapes == [[64,64],[256,256],[256,384],[512,512]], shapes
-              for item in evidence['cpuOrt']['shapeResults']:
-                  assert item['result'] == 'PASS', item
-                  assert item['rawParity']['maxAbs'] <= 2e-4
-                  assert item['rawParity']['rmse'] <= 5e-5
-                  assert item['semanticContract']['maskValues'] == [0.0, 1.0]
-                  assert item['semanticContract']['maskOneMeansInpaint'] is True
-                  assert item['semanticContract']['maskChannelExact'] is True
-                  assert item['semanticContract']['maskedRgbZero'] is True
-                  assert item['semanticContract']['knownRgbPreservedInGeneratorInput'] is True
-                  assert item['referenceComposite']['knownRegionBitExact'] is True
-                  assert item['ortComposite']['knownRegionBitExact'] is True
-              assert evidence['browserReference']['shape'] == [256,256]
-              root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'lama-c7'
-              assert (root / 'browser-input-256.f32').is_file()
-              assert (root / 'browser-reference-256.f32').is_file()
+          assert export['result'] == 'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS', export['result']
+          assert evidence['graph']['standardDftNodeCount'] > 0
+          assert evidence['graph']['customNodes'] == []
+          assert evidence['graph']['atenLikeNodes'] == []
+          assert evidence['graph']['dynamicHeight'] is True
+          assert evidence['graph']['dynamicWidth'] is True
+          assert evidence['cpuOrt']['result'] == 'PASS'
+          shapes = [item['shape'] for item in evidence['cpuOrt']['shapeResults']]
+          assert shapes == [[64,64],[256,256],[256,384],[512,512]], shapes
+          for item in evidence['cpuOrt']['shapeResults']:
+              assert item['result'] == 'PASS', item
+              assert item['rawParity']['maxAbs'] <= 2e-4
+              assert item['rawParity']['rmse'] <= 5e-5
+              assert item['semanticContract']['maskValues'] == [0.0, 1.0]
+              assert item['semanticContract']['maskOneMeansInpaint'] is True
+              assert item['semanticContract']['maskChannelExact'] is True
+              assert item['semanticContract']['maskedRgbZero'] is True
+              assert item['semanticContract']['knownRgbPreservedInGeneratorInput'] is True
+              assert item['referenceComposite']['knownRegionBitExact'] is True
+              assert item['ortComposite']['knownRegionBitExact'] is True
+          assert evidence['browserReference']['shape'] == [256,256]
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'lama-c7'
+          assert (root / 'browser-input-256.f32').is_file()
+          assert (root / 'browser-reference-256.f32').is_file()
           assert evidence.get('productionPromotionAllowed', False) is False
-          print('C7 dynamic Dynamo result=', export['result'])
+          print('C7 exact CPU multi-shape gate: PASS')
           PY
+
+      - name: Install pinned repository browser dependencies
+        run: |
+          set -euo pipefail
+          npm ci
+          node -e "const p=require('./node_modules/onnxruntime-web/package.json'); if(p.version!=='1.27.0') throw new Error(p.version); console.log('ONNX Runtime Web 1.27.0: PASS')"
+          google-chrome --version
+
+      - name: Run local Chrome LaMa WASM parity
+        run: |
+          set -euo pipefail
+          node scripts/test-lama-browser-wasm-acceptance.mjs \
+            --model "${RUNNER_TEMP}/lama-c7/lama-big-dynamo-dynamic.onnx" \
+            --input "${RUNNER_TEMP}/lama-c7/browser-input-256.f32" \
+            --reference "${RUNNER_TEMP}/lama-c7/browser-reference-256.f32" \
+            --cpu-evidence .test-cache/6.42c7/lama-dynamo-onnx-multishape.json \
+            --report .test-cache/6.42c7/lama-browser-wasm.json
+
+      - name: Validate browser WASM evidence without granting authority
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs/promises';
+          const browser = JSON.parse(await fs.readFile('.test-cache/6.42c7/lama-browser-wasm.json', 'utf8'));
+          const cpu = JSON.parse(await fs.readFile('.test-cache/6.42c7/lama-dynamo-onnx-multishape.json', 'utf8'));
+          assert.equal(browser.status, 'CANDIDATE');
+          assert.equal(browser.provider, 'wasm');
+          assert.equal(browser.onnxruntimeWebVersion, '1.27.0');
+          assert.deepEqual(browser.shape, [256,256]);
+          assert.equal(browser.modelSha256, cpu.export.sha256);
+          assert.equal(browser.cpuEvidenceResult, 'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS');
+          assert.equal(browser.cpuOrtSameShapeResult, 'PASS');
+          assert.equal(browser.runtimeAuthorityGranted, false);
+          assert.equal(browser.productionDeviceApproval, false);
+          assert.equal(browser.browserExecutionIsProductionApproval, false);
+          assert.equal(browser.productionPromotionAllowed, false);
+          assert.deepEqual(browser.networkDiagnostics.externalHttpRequests, []);
+          assert.deepEqual(browser.networkDiagnostics.pageErrors, []);
+          assert.ok(browser.ortLocalAssets.some(item => item.url.includes('.wasm') && item.status === 200));
+          assert.ok(browser.ortLocalAssets.some(item => item.url.includes('.mjs') && item.status === 200));
+          assert.ok(['PASS','BLOCKED_SESSION_CREATE','BLOCKED_INFERENCE','PARITY_FAILED'].includes(browser.result), browser.result);
+          if (browser.result === 'PASS') {
+            assert.deepEqual(browser.outputTensorShape, [1,3,256,256]);
+            assert.equal(browser.referenceKind, 'PINNED_PYTORCH_GENERATOR_FLOAT32');
+            assert.ok(browser.metrics.maxAbs <= 2e-4, browser.metrics.maxAbs);
+            assert.ok(browser.metrics.rmse <= 5e-5, browser.metrics.rmse);
+          }
+          console.log('C7 browser WASM result=', browser.result);
+          NODE
+
+      - name: Destroy ephemeral tensor/model/reference bytes before evidence upload
+        run: |
+          set -euo pipefail
+          rm -f \
+            "${RUNNER_TEMP}/lama-c7/generator.safetensors" \
+            "${RUNNER_TEMP}/lama-c7/lama-big-dynamo-dynamic.onnx" \
+            "${RUNNER_TEMP}/lama-c7/browser-input-256.f32" \
+            "${RUNNER_TEMP}/lama-c7/browser-reference-256.f32"
+          test ! -e "${RUNNER_TEMP}/lama-c7/generator.safetensors"
+          test ! -e "${RUNNER_TEMP}/lama-c7/lama-big-dynamo-dynamic.onnx"
+          test ! -e "${RUNNER_TEMP}/lama-c7/browser-input-256.f32"
+          test ! -e "${RUNNER_TEMP}/lama-c7/browser-reference-256.f32"
 
       - name: Upload C7 feasibility JSON evidence only
         uses: actions/upload-artifact@v4
@@ -244,31 +299,32 @@ jobs:
           path: |
             .test-cache/6.42c7/lama-generator-bridge.json
             .test-cache/6.42c7/lama-dynamo-onnx-multishape.json
+            .test-cache/6.42c7/lama-browser-wasm.json
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish C7 dynamic summary
+      - name: Publish C7 dynamic and browser summary
         run: |
-          result="$(python -c "import json; print(json.load(open('.test-cache/6.42c7/lama-dynamo-onnx-multishape.json'))['export']['result'])")"
+          cpu_result="$(python -c "import json; print(json.load(open('.test-cache/6.42c7/lama-dynamo-onnx-multishape.json'))['export']['result'])")"
+          browser_result="$(node -e "const x=require('./.test-cache/6.42c7/lama-browser-wasm.json'); console.log(x.result)")"
           bridge_sha="$(python -c "import json; print(json.load(open('.test-cache/6.42c7/lama-generator-bridge.json'))['bridge']['sha256'])")"
           {
-            echo '## LaMa native dynamic Dynamo ONNX feasibility'
+            echo '## LaMa native dynamic Dynamo ONNX + browser WASM feasibility'
             echo
             echo '- Status: CANDIDATE / feasibility only'
             echo '- Upstream revision: `786f5936b27fb3dacd2b1ad799e4de968ea697e7`'
             echo '- Checkpoint: exact C6 authoritative SHA `fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423`'
             echo '- Legacy checkpoint reader: PyTorch 2.6 restricted weights-only loader'
             echo "- Ephemeral tensor bridge: safetensors 0.8.0 / SHA \`${bridge_sha}\`"
-            echo '- Legacy `.ckpt` removed before modern exporter environment'
+            echo '- Legacy checkpoint removed before modern exporter environment'
             echo '- Export environment: PyTorch 2.13.0 CPU / NumPy 2.4.6 / ONNX 1.22.0 / ONNXScript 0.7.1'
             echo '- CPU runtime: ONNX Runtime 1.27.0'
             echo '- Dynamic shapes: modulo-8 H/W, tested 64x64, 256x256, 256x384, 512x512'
-            echo '- Export: `torch.onnx.export`, `dynamo=true`, `dynamic_shapes`, opset 18'
-            echo "- Result: \`${result}\`"
-            echo '- Browser WASM remains a separate next gate even after CPU multi-shape PASS'
-            echo '- No checkpoint, safetensors bridge, ONNX model, or float reference is uploaded/published by this workflow'
+            echo "- CPU result: \`${cpu_result}\`"
+            echo '- Browser runtime: production BrowserOnnxSessionFactory / ONNX Runtime Web 1.27.0 / WASM'
+            echo "- Browser 256x256 result: \`${browser_result}\`"
+            echo '- Browser run is hosted feasibility evidence, not real-device production approval'
+            echo '- WebGPU remains an independent unproven gate'
+            echo '- Ephemeral tensor/model/reference bytes were destroyed before JSON artifact upload'
             echo '- Production/runtime authority: NOT GRANTED'
-            echo '```json'
-            cat .test-cache/6.42c7/lama-dynamo-onnx-multishape.json
-            echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
