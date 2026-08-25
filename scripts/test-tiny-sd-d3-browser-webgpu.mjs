@@ -155,6 +155,7 @@ const componentConfig = component => {
   return {
     component,
     modelUrl: `/__tiny_sd/model/${component}.onnx`,
+    modelBytes: record.fp16.size,
     inputs,
     outputName: reference.name,
     outputDims: reference.shape,
@@ -286,10 +287,19 @@ const runComponent = async component => {
       'PASS',
     ]);
     assert.ok(allowed.has(runtimeReport.result), `unexpected ${component} WebGPU result: ${runtimeReport.result}`);
+    if (runtimeReport.blockerClass === 'REQUIRED_FEATURE_UNAVAILABLE') {
+      assert.equal(runtimeReport.result, 'WEBGPU_SESSION_BLOCKED');
+      assert.equal(runtimeReport.sessionAttempted, false);
+      assert.equal(runtimeReport.modelMaterializedInJs, false);
+      assert.deepEqual(runtimeReport.requiredFeatures, ['shader-f16']);
+      assert.ok(runtimeReport.missingRequiredFeatures.includes('shader-f16'));
+      assert.ok(!runtimeReport.adapter.features.includes('shader-f16'));
+    }
     if (runtimeReport.result === 'PASS') {
       assert.equal(runtimeReport.parityPassed, true);
       assert.ok(runtimeReport.metrics.maxAbs <= thresholds[component].maxAbs);
       assert.ok(runtimeReport.metrics.rmse <= thresholds[component].rmse);
+      assert.equal(runtimeReport.modelMaterializedInJs, false);
     }
     return {
       ...runtimeReport,
