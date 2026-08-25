@@ -10,6 +10,7 @@ permissions:
 
 env:
   UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+  TINY_SD_MANIFEST: src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json
 
 jobs:
   trusted-snapshot:
@@ -89,6 +90,7 @@ jobs:
           python scripts/inspect-tiny-sd-snapshot.py \
             --snapshot "${RUNNER_TEMP}/tiny-sd" \
             --revision "${UPSTREAM_REVISION}" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
             --report "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-snapshot.json"
 
       - name: Install pinned restricted tensor bridge environment
@@ -110,15 +112,20 @@ jobs:
           python scripts/bridge-tiny-sd-safetensors.py \
             --snapshot "${RUNNER_TEMP}/tiny-sd" \
             --inventory "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-snapshot.json" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
             --out-dir "${RUNNER_TEMP}/tiny-sd-bridge" \
             --report "${GITHUB_WORKSPACE}/.test-cache/6.42d1/tiny-sd-bridge.json"
           python - <<'PY'
           import json, os
-          root = os.path.join(os.environ['GITHUB_WORKSPACE'], '.test-cache', '6.42d1')
+          workspace = os.environ['GITHUB_WORKSPACE']
+          root = os.path.join(workspace, '.test-cache', '6.42d1')
           inventory = json.load(open(os.path.join(root, 'tiny-sd-snapshot.json'), encoding='utf-8'))
           bridge = json.load(open(os.path.join(root, 'tiny-sd-bridge.json'), encoding='utf-8'))
+          manifest = json.load(open(os.path.join(workspace, os.environ['TINY_SD_MANIFEST']), encoding='utf-8'))
           assert inventory['status'] == 'CANDIDATE'
           assert inventory['upstreamRevision'] == os.environ['UPSTREAM_REVISION']
+          assert inventory['matchesPinnedManifest'] is True
+          assert inventory['totalRuntimeBytes'] == manifest['upstream']['snapshot']['totalRuntimeBytes']
           assert len(inventory['inventory']) == 12
           assert inventory['pickleWeightCount'] == 3
           assert inventory['runtimeAuthorityGranted'] is False
@@ -127,13 +134,15 @@ jobs:
           assert bridge['sourceVerifiedBeforeDeserialization'] is True
           assert bridge['weightsOnly'] is True
           assert bridge['pickleFreeBridge'] is True
+          assert bridge['matchesPinnedManifest'] is True
+          assert bridge['bridgeEphemeral'] is True
           assert bridge['bridgePublished'] is False
           assert bridge['runtimeAuthorityGranted'] is False
           assert bridge['productionApproval'] is False
           assert [item['component'] for item in bridge['components']] == ['text_encoder', 'unet', 'vae']
           assert all(item['sourceVerifiedBeforeDeserialization'] is True for item in bridge['components'])
           assert all(item['weightsOnly'] is True for item in bridge['components'])
-          print('TINY-SD D1 TRUST BRIDGE EVIDENCE: PASS')
+          print('TINY-SD D1 PINNED TRUST REPRODUCTION: PASS')
           PY
 
       - name: Destroy model/tensor bytes before evidence upload
@@ -160,12 +169,12 @@ jobs:
           {
             echo '## Tiny-SD D1 trusted acquisition'
             echo
-            echo '- Status: CANDIDATE / LICENSE_REVIEW'
+            echo '- Status: CANDIDATE / LICENSE REVIEWED WITH OBLIGATIONS'
             echo "- Upstream revision: \`${UPSTREAM_REVISION}\`"
             echo "- Runtime snapshot bytes: \`${total}\`"
-            echo '- Exact runtime files inventoried with SHA-256 before deserialization: PASS'
+            echo '- Exact runtime files reproduce PINNED manifest SHA/size: PASS'
             echo '- Restricted PyTorch 2.6 weights-only bridge: PASS'
-            echo '- Tensor-only safetensors bridge: PASS and ephemeral'
+            echo '- Tensor-only safetensors bridge reproduces PINNED identities: PASS and ephemeral'
             echo '- Binary model evidence destroyed before JSON upload'
             echo '- Runtime/device/production authority: NOT GRANTED'
           } >> "${GITHUB_STEP_SUMMARY}"
