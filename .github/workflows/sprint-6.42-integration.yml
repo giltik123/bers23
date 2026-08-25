@@ -193,6 +193,27 @@ jobs:
           if (manifest.bersExport?.state !== 'PINNED') throw new Error('MODNet BERS export identity must stay PINNED');
           if (manifest.productionApprovalEvidence !== null) throw new Error('MODNet CANDIDATE must not carry production approval evidence');
           NODE
+      - name: C6 LaMa candidate provenance and fail-closed runtime feasibility
+        run: |
+          npx esbuild tests/lama-candidate-policy.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/lama-candidate-policy.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42-integration/lama-candidate-policy.test.mjs
+          node --test tests/lama-acquisition-security.test.mjs
+          python -m py_compile scripts/inspect-lama-authoritative-folder.py scripts/inspect-lama-checkpoint.py
+          node --input-type=module <<'NODE'
+          import manifest from './src/platform/creative/local-ai/models/lama-inpainting.manifest.json' with { type: 'json' };
+          if (manifest.status !== 'CANDIDATE') throw new Error(`unexpected LaMa status: ${manifest.status}`);
+          if (manifest.artifactState !== 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED') throw new Error(`unexpected LaMa artifact state: ${manifest.artifactState}`);
+          if (manifest.upstream?.checkpoint?.identityState !== 'PINNED') throw new Error('LaMa checkpoint identity must stay PINNED');
+          if (manifest.runtimeFeasibility?.state !== 'BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED') throw new Error(`unexpected LaMa runtime state: ${manifest.runtimeFeasibility?.state}`);
+          if (manifest.runtimeFeasibility?.directExportEvidence?.result !== 'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN') throw new Error('LaMa legacy FFT blocker evidence changed');
+          if (manifest.runtimeFeasibility?.directExportEvidence?.artifactProduced !== false) throw new Error('LaMa legacy probe must not claim an artifact');
+          if (manifest.runtimeFeasibility?.cpuOrt !== 'UNPROVEN') throw new Error('LaMa CPU ORT must remain unproven');
+          if (manifest.runtimeFeasibility?.browserWasm !== 'UNPROVEN') throw new Error('LaMa browser WASM must remain unproven');
+          if (manifest.productionApprovalEvidence !== null) throw new Error('LaMa CANDIDATE must not carry production approval evidence');
+          NODE
       - name: Canonical route and durable fleet regressions
         run: |
           npm run test:creative-route-6.41c4
