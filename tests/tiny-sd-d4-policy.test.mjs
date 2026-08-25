@@ -51,6 +51,9 @@ test('D4 browser ORT modes expose only the reviewed memory policy and keep worke
   assert.match(factory, /load_model_format: 'ORT'/);
   assert.match(factory, /use_ort_model_bytes_for_initializers: '1'/);
   assert.match(factory, /disable_prepacking: '1'/);
+  assert.match(factory, /extra: \{ session: \{ \.\.\.sessionConfig \} \}/);
+  assert.doesNotMatch(factory, /extra: \{ session: sessionConfig \}/);
+  assert.match(factory, /ORT Web 1\.27 appends use_ort_model_bytes_directly/);
   assert.match(factory, /BROWSER_WASM_NUM_THREADS = 1/);
   assert.match(factory, /BROWSER_WASM_PROXY = false/);
   assert.match(factory, /DISABLED_PENDING_SEPARATE_SECURITY_REVIEW/);
