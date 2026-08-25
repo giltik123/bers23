@@ -7,17 +7,21 @@ standard-library metadata types and serialized Lightning/OmegaConf metadata name
 byte-pinned checkpoint. Standard containers map to their real side-effect-free builtins; framework
 metadata maps to an inert local placeholder, so Lightning/OmegaConf code is never imported or run.
 The script then isolates tensor-only `state_dict`, strict-loads only `generator.*` into the pinned
-FFCResNetGenerator, and discards all metadata. It never uses weights_only=False, exports, installs,
-signs, publishes or grants authority.
+FFCResNetGenerator, and discards all metadata. The pinned FFC source imports `saicinpainting.utils`
+only for `get_shape`; BERS supplies that one pinned-compatible helper through an in-memory module
+shim rather than importing the upstream training utility module and its Lightning-only seed helper.
+It never uses weights_only=False, exports, installs, signs, publishes or grants authority.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
+import importlib
 import json
+import numbers
 import subprocess
 import sys
+import types
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -82,15 +86,52 @@ def git(source: Path, *args: str) -> str:
         raise RuntimeError(f"Git verification failed: {' '.join(args)}") from error
 
 
+def _pinned_get_shape(value: Any) -> Any:
+    """Pinned-compatible copy of the only helper imported by upstream FFC from utils.py."""
+    if torch.is_tensor(value):
+        return tuple(value.shape)
+    if isinstance(value, dict):
+        return {name: _pinned_get_shape(item) for name, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_pinned_get_shape(item) for item in value]
+    if isinstance(value, numbers.Number):
+        return type(value)
+    raise ValueError(f"unexpected type {type(value)}")
+
+
+def _install_minimal_pinned_utils(source: Path) -> None:
+    module_name = "saicinpainting.utils"
+    if module_name in sys.modules:
+        raise RuntimeError("saicinpainting.utils was imported before the minimal pinned shim")
+
+    upstream_utils = source / "saicinpainting" / "utils.py"
+    utils_text = upstream_utils.read_text(encoding="utf-8")
+    for fragment in (
+        "from pytorch_lightning import seed_everything",
+        "def get_shape(t):",
+        "if torch.is_tensor(t):",
+        "elif isinstance(t, numbers.Number):",
+    ):
+        if fragment not in utils_text:
+            raise RuntimeError(f"Pinned LaMa utils source contract changed: missing {fragment!r}")
+
+    shim = types.ModuleType(module_name)
+    shim.__file__ = str(upstream_utils)
+    shim.get_shape = _pinned_get_shape
+    sys.modules[module_name] = shim
+
+
 def load_generator_class(source: Path):
+    source = source.resolve()
+    expected_ffc = (source / "saicinpainting" / "training" / "modules" / "ffc.py").resolve()
     sys.path.insert(0, str(source))
-    spec = importlib.util.spec_from_file_location(
-        "bers_lama_ffc", source / "saicinpainting" / "training" / "modules" / "ffc.py"
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Cannot import pinned LaMa FFC source")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    _install_minimal_pinned_utils(source)
+    module = importlib.import_module("saicinpainting.training.modules.ffc")
+    actual_ffc = Path(module.__file__).resolve() if module.__file__ else None
+    if actual_ffc != expected_ffc:
+        raise RuntimeError(
+            f"LaMa FFC import did not resolve to pinned checkout: actual={actual_ffc} expected={expected_ffc}"
+        )
     return module.FFCResNetGenerator
 
 
@@ -210,6 +251,7 @@ def main() -> None:
             "generatorTensorElements": sum(int(value.numel()) for value in generator_state.values()),
             "strictGeneratorLoad": True,
             "generatorClass": "saicinpainting.training.modules.ffc.FFCResNetGenerator",
+            "generatorImportPolicy": "PINNED_SOURCE_MINIMAL_GET_SHAPE_SHIM_NO_LIGHTNING_IMPORT",
         },
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
