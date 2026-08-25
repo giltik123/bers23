@@ -10,6 +10,7 @@ ort.env.wasm.wasmPaths = { wasm: wasmUrl, mjs: wasmModuleUrl };
 // Keep the production browser runtime worker-free unless a separately reviewed worker policy is introduced.
 export const BROWSER_WASM_NUM_THREADS = 1;
 export const BROWSER_WASM_PROXY = false;
+export const BROWSER_WASM_WORKER_POLICY = 'DISABLED_PENDING_SEPARATE_SECURITY_REVIEW' as const;
 ort.env.wasm.numThreads = BROWSER_WASM_NUM_THREADS;
 ort.env.wasm.proxy = BROWSER_WASM_PROXY;
 

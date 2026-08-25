@@ -30,6 +30,12 @@ const origin = `http://127.0.0.1:${port}`;
 const OUTER_BROWSER_TIMEOUT_MS = 540_000;
 const COMPONENTS = ['text_encoder', 'unet', 'vae_decoder'];
 const launchArgs = ['--enable-precise-memory-info'];
+const EXPECTED_WORKER_FREE_RUNTIME = Object.freeze({
+  numThreads: 1,
+  proxy: false,
+  workerFree: true,
+  workerPolicy: 'DISABLED_PENDING_SEPARATE_SECURITY_REVIEW',
+});
 
 const hashFile = async file => new Promise((resolve, reject) => {
   const hash = createHash('sha256');
@@ -300,6 +306,7 @@ const runComponent = async component => {
     assert.ok(allowed.has(runtimeReport.result), `unexpected ${component} WASM result: ${runtimeReport.result}`);
     if (!['WASM_BROWSER_LAUNCH_BLOCKED', 'WASM_BROWSER_PROCESS_BLOCKED'].includes(runtimeReport.result)) {
       assert.equal(runtimeReport.crossOriginIsolated, true, `${component} WASM run was not cross-origin isolated`);
+      assert.deepEqual(runtimeReport.wasmRuntime, EXPECTED_WORKER_FREE_RUNTIME, `${component} WASM runtime escaped the worker-free Trusted Types baseline`);
     }
     if (runtimeReport.result === 'PASS') {
       assert.equal(runtimeReport.parityPassed, true);
@@ -339,6 +346,7 @@ try {
       Object.entries(components).filter(([, value]) => value.result !== 'PASS').map(([key, value]) => [key, value.result]),
     ),
     providerFallbackAllowed: false,
+    workerFreeRuntimeRequired: true,
     runtimeAuthorityGranted: false,
     productionDeviceApproval: false,
     productionApproval: false,
