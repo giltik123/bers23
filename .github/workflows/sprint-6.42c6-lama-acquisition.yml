@@ -118,6 +118,7 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check numpy==1.26.4
           python -m pip install --disable-pip-version-check torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check kornia==0.5.0
           python scripts/inspect-lama-checkpoint.py \
             --source "${RUNNER_TEMP}/lama" \
             --checkpoint "${RUNNER_TEMP}/lama-pinned/best.ckpt" \
