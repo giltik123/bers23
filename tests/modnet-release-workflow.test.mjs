@@ -6,6 +6,7 @@ const workflow = await readFile(new URL('../.github/workflows/modnet-release.yml
 
 const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8';
 const ONNX_SHA = '18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919';
+const RELEASE_MARKER = 'modnet-release-created-by-this-run';
 
 test('MODNet release is manual exact-main only and uses a dedicated signing domain', () => {
   assert.match(workflow, /workflow_dispatch:/);
@@ -29,13 +30,25 @@ test('release reproduces only the exact byte-pinned checkpoint and ONNX candidat
   assert.match(workflow, /sha256sum .*modnet-photographic-portrait-matting\.onnx/);
 });
 
-test('release signs, rejects tamper, re-downloads bytes and cleans orphan release on failure', () => {
+test('release signs, rejects tamper and re-downloads published bytes', () => {
   assert.match(workflow, /pkeyutl -sign -rawin/);
   assert.match(workflow, /Tampered MODNet artifact signature was accepted/);
   assert.match(workflow, /gh release download/);
   assert.match(workflow, /pkeyutl -verify -rawin -pubin/);
+});
+
+test('failure cleanup can delete only a release created by the current run', () => {
+  const createIndex = workflow.indexOf('gh release create "${RELEASE_TAG}"');
+  const markerIndex = workflow.indexOf(`touch "\${RUNNER_TEMP}/${RELEASE_MARKER}"`);
+  const cleanupGateIndex = workflow.indexOf(`if test -f "\${RUNNER_TEMP}/${RELEASE_MARKER}"; then`);
+  const deleteIndex = workflow.indexOf('gh release delete "${RELEASE_TAG}" --yes --cleanup-tag');
+
+  assert.ok(createIndex >= 0, 'release create command is required');
+  assert.ok(markerIndex > createIndex, 'ownership marker must be written only after release creation succeeds');
+  assert.ok(cleanupGateIndex > markerIndex, 'cleanup must test ownership marker written by this run');
+  assert.ok(deleteIndex > cleanupGateIndex, 'release deletion must occur only inside marker-gated cleanup');
   assert.match(workflow, /if: \$\{\{ failure\(\) \}\}/);
-  assert.match(workflow, /gh release delete .*--cleanup-tag/);
+  assert.equal((workflow.match(new RegExp(RELEASE_MARKER, 'g')) ?? []).length >= 2, true);
 });
 
 test('candidate release cannot grant production approval or commit model/private-key bytes', () => {
