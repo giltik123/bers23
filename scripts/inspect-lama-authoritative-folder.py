@@ -48,6 +48,13 @@ def normalize(path: str) -> str:
     return str(PurePosixPath(path.replace("\\", "/")))
 
 
+def safe_zip_member(path: str) -> str:
+    candidate = PurePosixPath(path.replace("\\", "/"))
+    if candidate.is_absolute() or ".." in candidate.parts or not candidate.parts:
+        raise RuntimeError(f"Unsafe/ambiguous LaMa ZIP member path: {path!r}")
+    return str(candidate)
+
+
 def is_big_lama_checkpoint(path: str) -> bool:
     normalized = normalize(path).lower()
     return "big-lama" in normalized and PurePosixPath(normalized).name == CHECKPOINT_BASENAME
@@ -91,8 +98,12 @@ def zip_candidates(path: Path, root: Path) -> tuple[dict[str, Any], list[dict[st
     with zipfile.ZipFile(path, "r") as bundle:
         members = [item for item in bundle.infolist() if not item.is_dir()]
         archive["memberCount"] = len(members)
+        seen: set[str] = set()
         for item in members:
-            member = normalize(item.filename)
+            member = safe_zip_member(item.filename)
+            if member in seen:
+                raise RuntimeError(f"Duplicate LaMa ZIP member path: {member!r}")
+            seen.add(member)
             if not (is_big_lama_checkpoint(member) or is_big_lama_config(member)):
                 continue
             with bundle.open(item, "r") as stream:
