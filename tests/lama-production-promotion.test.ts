@@ -93,7 +93,7 @@ function validEvidence(provider: 'webgpu' | 'wasm' = 'wasm'): LaMaProductionProm
       cases,
       reviewer: {
         reviewerId: 'reviewer-opaque-1',
-        reviewedAt: NOW - 30_000,
+        reviewedAt: NOW - 90_000,
         decision: 'PASS',
         reviewEvidenceUrl: 'https://evidence.example/lama/review.json',
       },
