@@ -1,0 +1,53 @@
+{
+  "modelId": "segmind-tiny-sd",
+  "version": "1.0.0-candidate.1",
+  "status": "CANDIDATE",
+  "artifactState": "TRUST_ROOT_DISCOVERY_REQUIRED",
+  "semanticCapabilities": [
+    "text-to-image",
+    "image-generation"
+  ],
+  "licenseReview": "REQUIRED",
+  "upstream": {
+    "repository": "https://huggingface.co/segmind/tiny-sd",
+    "revision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
+    "license": "creativeml-openrail-m",
+    "licenseState": "LICENSE_REVIEW",
+    "pipelineClass": "StableDiffusionPipeline",
+    "snapshot": {
+      "identityState": "DISCOVERY_REQUIRED",
+      "expectedRuntimeFiles": [
+        "model_index.json",
+        "scheduler/scheduler_config.json",
+        "text_encoder/config.json",
+        "text_encoder/pytorch_model.bin",
+        "tokenizer/merges.txt",
+        "tokenizer/special_tokens_map.json",
+        "tokenizer/tokenizer_config.json",
+        "tokenizer/vocab.json",
+        "unet/config.json",
+        "unet/diffusion_pytorch_model.bin",
+        "vae/config.json",
+        "vae/diffusion_pytorch_model.bin"
+      ],
+      "files": []
+    }
+  },
+  "tensorBridge": {
+    "state": "REQUIRED",
+    "sourceFormat": "PYTORCH_PICKLE_STATE_DICT",
+    "targetFormat": "SAFETENSORS",
+    "hashBeforeDeserializationRequired": true,
+    "weightsOnlyRequired": true,
+    "components": []
+  },
+  "runtimeFeasibility": {
+    "state": "UNPROVEN",
+    "browserWasm": "UNPROVEN",
+    "browserWebGpu": "UNPROVEN",
+    "nativeGpu": "UNPROVEN",
+    "realDeviceEvidence": false,
+    "runtimeAuthorityGranted": false
+  },
+  "productionApprovalEvidence": null
+}

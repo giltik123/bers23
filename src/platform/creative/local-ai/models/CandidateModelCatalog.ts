@@ -1,11 +1,12 @@
 import efficientSam from './efficient-sam-ti.manifest.json' with { type: 'json' };
 import modNet from './portrait-matting.manifest.json' with { type: 'json' };
 import laMa from './lama-inpainting.manifest.json' with { type: 'json' };
+import tinySd from './tiny-sd-generation.manifest.json' with { type: 'json' };
 
 export type LocalModelAcquisitionCandidate = Readonly<{
   modelId: string;
   version: string;
-  packId: 'SEGMENTATION' | 'UPSCALE' | 'MATTING' | 'INPAINTING' | 'DEPTH';
+  packId: 'SEGMENTATION' | 'UPSCALE' | 'MATTING' | 'INPAINTING' | 'GENERATION' | 'DEPTH';
   status: 'CANDIDATE';
   artifactState: string;
   semanticCapabilities: readonly string[];
@@ -56,6 +57,20 @@ export const LOCAL_MODEL_ACQUISITION_CANDIDATES: readonly LocalModelAcquisitionC
     upstreamLicense: String(laMa.upstream.license),
     upstreamBytes: typeof laMa.upstream.checkpoint.checkpointSize === 'number'
       ? Number(laMa.upstream.checkpoint.checkpointSize)
+      : 'UNKNOWN',
+    productionExecutable: false,
+  }),
+  Object.freeze({
+    modelId: String(tinySd.modelId),
+    version: String(tinySd.version),
+    packId: 'GENERATION',
+    status: 'CANDIDATE',
+    artifactState: String(tinySd.artifactState),
+    semanticCapabilities: Object.freeze([...tinySd.semanticCapabilities]),
+    upstreamRevision: String(tinySd.upstream.revision),
+    upstreamLicense: String(tinySd.upstream.license),
+    upstreamBytes: tinySd.upstream.snapshot.identityState === 'PINNED'
+      ? tinySd.upstream.snapshot.files.reduce((sum, file) => sum + Number(file.size), 0)
       : 'UNKNOWN',
     productionExecutable: false,
   }),
