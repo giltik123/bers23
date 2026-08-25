@@ -3,11 +3,14 @@ import manifest from './portrait-matting.manifest.json' with { type: 'json' };
 export const MODNET_MODEL_ID = 'modnet-photographic-portrait-matting' as const;
 export const MODNET_VERSION = '1.0.0-candidate.1' as const;
 export const MODNET_UPSTREAM_REVISION = '28165a451e4610c9d77cfdf925a94610bb2810fb' as const;
+export const MODNET_CHECKPOINT_NAME = 'modnet_photographic_portrait_matting.ckpt' as const;
+export const MODNET_CHECKPOINT_SIZE = 26_255_603 as const;
+export const MODNET_CHECKPOINT_SHA256 = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8' as const;
 
 /**
  * Release-envelope predicate only. It cannot authorize install, READY fleet state or Core execution.
- * This candidate remains blocked until both the official checkpoint identity and reproducible BERS
- * ONNX identity have been pinned, signed and separately approved with device evidence.
+ * This model/version is byte-bound to the authoritative upstream checkpoint. Any checkpoint change
+ * requires a new BERS version, even if a replacement artifact is otherwise correctly signed.
  */
 export function isExecutableModNetRelease(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -18,9 +21,11 @@ export function isExecutableModNetRelease(value: unknown): boolean {
   if (!isHttpsUrl(release.productionApprovalEvidence)) return false;
 
   const upstream = objectRecord(release.upstream);
-  const checkpoint = objectRecord(upstream?.checkpoint);
+  if (!upstream || upstream.revision !== MODNET_UPSTREAM_REVISION) return false;
+  const checkpoint = objectRecord(upstream.checkpoint);
   if (!checkpoint || checkpoint.identityState !== 'PINNED') return false;
-  if (!positiveSafeInteger(checkpoint.size) || !sha256(checkpoint.sha256)) return false;
+  if (checkpoint.name !== MODNET_CHECKPOINT_NAME) return false;
+  if (checkpoint.size !== MODNET_CHECKPOINT_SIZE || checkpoint.sha256 !== MODNET_CHECKPOINT_SHA256) return false;
 
   const bersExport = objectRecord(release.bersExport);
   if (!bersExport || bersExport.state !== 'PINNED') return false;
