@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Probe faithful Big-LaMa export through the modern torch.export-based ONNX path.
 
-C7 deliberately reuses the C6 byte-pinned checkpoint loader and exact pinned upstream generator.
-It never accepts an unpinned checkpoint, never requests unsafe pickle loading, never substitutes a
-community Fourier implementation, and never grants runtime/production authority.
+C7 deliberately keeps legacy checkpoint deserialization out of the PyTorch 2.13 exporter process.
+A separate PyTorch 2.6 bridge, using the already-proven C6 restricted loader, extracts only the
+strict Big-LaMa `generator.*` tensor state into an ephemeral safetensors file. This probe verifies
+that bridge evidence and file SHA before loading tensor state, reconstructs the exact pinned
+upstream generator, performs a strict state load, and only then probes native Dynamo ONNX export.
 
-The first C7 gate is intentionally narrow:
+The first C7 gate remains intentionally narrow:
   * PyTorch 2.13.0 CPU;
+  * safetensors 0.8.0 tensor-only input;
   * torch.onnx.export(..., dynamo=True), opset 18;
   * verify the legacy exporter fallback option is absent from the PyTorch 2.13 API;
   * one deterministic 64x64 semantic image/mask smoke input;
@@ -32,11 +35,16 @@ from typing import Any
 import numpy as np
 import onnx
 import onnxruntime as ort
+import safetensors
 import torch
+from safetensors.torch import load_file
 
 UPSTREAM_REVISION = "786f5936b27fb3dacd2b1ad799e4de968ea697e7"
 CHECKPOINT_SHA256 = "fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423"
+EXPECTED_GENERATOR_KEY_COUNT = 989
+EXPECTED_GENERATOR_ELEMENTS = 51057179
 EXPECTED_TORCH_PREFIX = "2.13.0"
+EXPECTED_SAFETENSORS = "0.8.0"
 EXPECTED_ONNX = "1.22.0"
 EXPECTED_ONNXSCRIPT = "0.7.1"
 EXPECTED_ORT = "1.27.0"
@@ -57,9 +65,9 @@ def sha256(path: Path) -> str:
 
 def load_c6_module(script_dir: Path):
     path = script_dir / "inspect-lama-checkpoint.py"
-    spec = importlib.util.spec_from_file_location("bers_lama_c6_checkpoint", path)
+    spec = importlib.util.spec_from_file_location("bers_lama_c7_generator_builder", path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("Cannot load the C6 LaMa checkpoint inspector")
+        raise RuntimeError("Cannot load the C6 LaMa generator builder")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -84,36 +92,78 @@ def semantic_smoke_input() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return image, mask, generator_input
 
 
-def load_strict_generator(source: Path, checkpoint: Path, script_dir: Path) -> tuple[torch.nn.Module, dict[str, Any]]:
+def load_bridge_report(path: Path, state_path: Path) -> dict[str, Any]:
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if report.get("status") != "CANDIDATE":
+        raise RuntimeError("safetensors bridge status is not CANDIDATE")
+    if report.get("productionDeviceApproval") is not False or report.get("runtimeAuthorityGranted") is not False:
+        raise RuntimeError("safetensors bridge unexpectedly grants authority")
+    if report.get("sourceRevision") != UPSTREAM_REVISION:
+        raise RuntimeError("safetensors bridge source revision mismatch")
+
+    source = report.get("sourceCheckpoint") or {}
+    if source.get("sha256") != CHECKPOINT_SHA256:
+        raise RuntimeError("safetensors bridge source checkpoint SHA mismatch")
+    if source.get("verifiedBeforeDeserialization") is not True or source.get("weightsOnly") is not True:
+        raise RuntimeError("safetensors bridge did not preserve the C6 restricted-load proof")
+
+    bridge = report.get("bridge") or {}
+    if bridge.get("format") != "SAFETENSORS" or bridge.get("pickleFree") is not True:
+        raise RuntimeError("C7 bridge is not the required pickle-free safetensors format")
+    if bridge.get("ephemeral") is not True or bridge.get("published") is not False:
+        raise RuntimeError("C7 bridge lifecycle is not runner-local and unpublished")
+    if bridge.get("generatorPrefixRemoved") is not True:
+        raise RuntimeError("C7 bridge did not normalize generator state keys")
+    if bridge.get("keyCount") != EXPECTED_GENERATOR_KEY_COUNT:
+        raise RuntimeError("C7 bridge generator key count mismatch")
+    if bridge.get("tensorElements") != EXPECTED_GENERATOR_ELEMENTS:
+        raise RuntimeError("C7 bridge generator tensor element count mismatch")
+    if bridge.get("fileSize") != state_path.stat().st_size:
+        raise RuntimeError("C7 bridge safetensors file size mismatch")
+    if bridge.get("sha256") != sha256(state_path):
+        raise RuntimeError("C7 bridge safetensors SHA mismatch")
+    return report
+
+
+def load_strict_generator(
+    source: Path,
+    state_path: Path,
+    bridge_report_path: Path,
+    script_dir: Path,
+) -> tuple[torch.nn.Module, dict[str, Any]]:
     c6 = load_c6_module(script_dir)
     if c6.git(source, "rev-parse", "HEAD") != UPSTREAM_REVISION:
         raise RuntimeError("LaMa source revision mismatch")
-    if checkpoint.stat().st_size != c6.CHECKPOINT_SIZE:
-        raise RuntimeError("LaMa checkpoint size mismatch before C7 deserialization")
-    if sha256(checkpoint) != CHECKPOINT_SHA256:
-        raise RuntimeError("LaMa checkpoint SHA mismatch before C7 deserialization")
+    if not state_path.is_file() or state_path.stat().st_size <= 0:
+        raise RuntimeError("C7 safetensors state bridge is missing")
 
-    state, metadata_globals = c6.restricted_load(checkpoint)
-    model_state = state.get("state_dict")
-    if not isinstance(model_state, dict) or not model_state:
-        raise RuntimeError("LaMa checkpoint has no state_dict")
-    if not all(isinstance(key, str) and torch.is_tensor(value) for key, value in model_state.items()):
-        raise RuntimeError("LaMa state_dict is not string-to-tensor only")
-    generator_state = {
-        key[len("generator."):]: value
-        for key, value in model_state.items()
-        if key.startswith("generator.")
-    }
+    bridge_report = load_bridge_report(bridge_report_path, state_path)
+    generator_state = load_file(str(state_path), device="cpu")
+    if not generator_state:
+        raise RuntimeError("C7 safetensors bridge contains no generator tensors")
+    if len(generator_state) != EXPECTED_GENERATOR_KEY_COUNT:
+        raise RuntimeError("C7 loaded generator key count mismatch")
+    if not all(isinstance(key, str) and torch.is_tensor(value) for key, value in generator_state.items()):
+        raise RuntimeError("C7 safetensors state is not string-to-tensor only")
+    tensor_elements = sum(int(value.numel()) for value in generator_state.values())
+    if tensor_elements != EXPECTED_GENERATOR_ELEMENTS:
+        raise RuntimeError("C7 loaded generator tensor element count mismatch")
+
     generator = c6.build_generator(source)
     incompatible = generator.load_state_dict(generator_state, strict=True)
     if incompatible.missing_keys or incompatible.unexpected_keys:
-        raise RuntimeError("C7 strict generator state load failed")
+        raise RuntimeError("C7 strict generator state load from safetensors failed")
     generator.eval()
+    bridge = bridge_report["bridge"]
     return generator, {
-        "weightsOnly": True,
-        "checkpointVerifiedBeforeLoad": True,
-        "metadataGlobals": metadata_globals,
+        "legacyCheckpointDeserializedInExporterProcess": False,
+        "bridgeFormat": "SAFETENSORS",
+        "bridgePickleFree": True,
+        "bridgeSha256": bridge["sha256"],
+        "sourceCheckpointSha256": CHECKPOINT_SHA256,
+        "sourceCheckpointWeightsOnlyProof": True,
         "generatorStateKeyCount": len(generator_state),
+        "generatorTensorElements": tensor_elements,
     }
 
 
@@ -123,6 +173,7 @@ def environment() -> dict[str, Any]:
     signature = inspect.signature(torch.onnx.export)
     values: dict[str, Any] = {
         "torch": torch.__version__,
+        "safetensors": safetensors.__version__,
         "onnx": onnx.__version__,
         "onnxscript": onnxscript.__version__,
         "onnxruntime": ort.__version__,
@@ -130,6 +181,8 @@ def environment() -> dict[str, Any]:
     }
     if not values["torch"].startswith(EXPECTED_TORCH_PREFIX):
         raise RuntimeError(f"unexpected torch version: {values['torch']}")
+    if values["safetensors"] != EXPECTED_SAFETENSORS:
+        raise RuntimeError(f"unexpected safetensors version: {values['safetensors']}")
     if values["onnx"] != EXPECTED_ONNX:
         raise RuntimeError(f"unexpected ONNX version: {values['onnx']}")
     if values["onnxscript"] != EXPECTED_ONNXSCRIPT:
@@ -193,28 +246,32 @@ def classify_export_error(error: BaseException) -> tuple[str, str]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--state", type=Path, required=True)
+    parser.add_argument("--bridge-report", type=Path, required=True)
     parser.add_argument("--model-out", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
 
     env = environment()
-    generator, checkpoint_proof = load_strict_generator(
-        args.source.resolve(), args.checkpoint.resolve(), Path(__file__).resolve().parent
+    generator, bridge_proof = load_strict_generator(
+        args.source.resolve(),
+        args.state.resolve(),
+        args.bridge_report.resolve(),
+        Path(__file__).resolve().parent,
     )
     image, mask, generator_input = semantic_smoke_input()
     with torch.inference_mode():
         reference = generator(generator_input).detach().cpu().numpy()
 
     report: dict[str, Any] = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "status": "CANDIDATE",
         "productionDeviceApproval": False,
         "runtimeAuthorityGranted": False,
         "sourceRevision": UPSTREAM_REVISION,
         "checkpointSha256": CHECKPOINT_SHA256,
         "environment": env,
-        "checkpointProof": checkpoint_proof,
+        "bridgeProof": bridge_proof,
         "export": {
             "api": "torch.onnx.export",
             "dynamo": True,
