@@ -1,4 +1,4 @@
-import manifest from '../local-ai/models/super-resolution.manifest.json';
+import manifest from '../local-ai/models/super-resolution.manifest.json' with { type: 'json' };
 
 /**
  * Shared release-availability predicate used by both Core execution policy and browser UI.
