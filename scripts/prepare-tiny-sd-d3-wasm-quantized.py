@@ -207,6 +207,44 @@ def exact_inputs(component: str) -> dict[str, np.ndarray]:
     raise RuntimeError(component)
 
 
+def write_array(path: Path, array: np.ndarray) -> dict[str, Any]:
+    values = np.ascontiguousarray(array)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(values.tobytes(order="C"))
+    return {
+        "path": path.name,
+        "dtype": str(values.dtype),
+        "shape": list(values.shape),
+        "elements": int(values.size),
+        "bytes": path.stat().st_size,
+        "sha256": sha256_file(path),
+    }
+
+
+def browser_fixture(component: str, fp32: Path, fixture_dir: Path, d2_record: dict[str, Any]) -> dict[str, Any]:
+    feeds = exact_inputs(component)
+    expected_names = [value["name"] for value in d2_record["tensorContract"]["inputs"]]
+    if list(feeds) != expected_names:
+        raise RuntimeError(f"D3 WASM fixture input contract drift: {component}")
+    output_name = d2_record["tensorContract"]["output"]["name"]
+    session = ort.InferenceSession(str(fp32), providers=["CPUExecutionProvider"])
+    output = session.run([output_name], feeds)[0].astype(np.float32, copy=False)
+    if list(output.shape) != d2_record["tensorContract"]["output"]["shape"] or not np.isfinite(output).all():
+        raise RuntimeError(f"D3 WASM fixture output drift: {component}")
+    component_dir = fixture_dir / component
+    inputs: list[dict[str, Any]] = []
+    for name in expected_names:
+        item = write_array(component_dir / f"{name}.bin", feeds[name])
+        item["name"] = name
+        inputs.append(item)
+    reference = write_array(component_dir / "reference.f32", output)
+    reference["name"] = output_name
+    reference["authority"] = "D2_ACCEPTED_FP32_CPU_ORT_OUTPUT"
+    del session
+    gc.collect()
+    return {"inputs": inputs, "reference": reference}
+
+
 def calibration_samples(component: str) -> list[dict[str, np.ndarray]]:
     if component == "unet":
         base_sample, _, base_hidden = deterministic_unet_inputs(768)
@@ -342,6 +380,7 @@ def main() -> int:
     parser.add_argument("--fp32-dir", type=Path, required=True)
     parser.add_argument("--d2-report", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--fixture-dir", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
 
@@ -354,6 +393,7 @@ def main() -> int:
     d2_report = json.loads(args.d2_report.resolve(strict=True).read_text(encoding="utf-8"))
     require_d2_report(d2_report, fp32_dir)
     output_dir = args.output_dir.resolve()
+    fixture_dir = args.fixture_dir.resolve()
 
     components: dict[str, Any] = {}
     for component, filename in COMPONENT_FILES.items():
@@ -362,6 +402,7 @@ def main() -> int:
         record: dict[str, Any] = {
             "status": "CANDIDATE",
             "source": {"size": source.stat().st_size, "sha256": sha256_file(source)},
+            "browserFixture": browser_fixture(component, source, fixture_dir, d2_report["components"][component]),
             "releaseIdentityPinned": False,
             "runtimeAuthorityGranted": False,
             "productionApproval": False,
