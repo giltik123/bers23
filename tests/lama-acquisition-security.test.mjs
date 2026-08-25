@@ -19,7 +19,7 @@ test('authoritative inventory hashes ZIP members without deserialization and rej
   assert.match(inventoryInspector, /Duplicate LaMa ZIP member path/);
 });
 
-test('checkpoint inspector verifies exact bytes before restricted weights-only deserialization', () => {
+test('checkpoint inspector verifies exact bytes before an exact-allowlist weights-only load', () => {
   const sizeCheck = checkpointInspector.indexOf('args.checkpoint.stat().st_size != CHECKPOINT_SIZE');
   const shaCheck = checkpointInspector.indexOf('sha256(args.checkpoint) != CHECKPOINT_SHA256');
   const unsafeScan = checkpointInspector.indexOf('scan(checkpoint)');
@@ -29,14 +29,22 @@ test('checkpoint inspector verifies exact bytes before restricted weights-only d
   assert.ok(shaCheck < unsafeScan);
   assert.ok(unsafeScan < deserialize);
   assert.match(checkpointInspector, /get_unsafe_globals_in_checkpoint/);
-  assert.match(checkpointInspector, /SAFE_METADATA_PREFIX = "pytorch_lightning\."/);
-  assert.match(checkpointInspector, /Unexpected non-Lightning checkpoint globals/);
-  assert.match(checkpointInspector, /_InertLightningMetadata/);
+  assert.match(checkpointInspector, /STANDARD_METADATA_GLOBALS/);
+  assert.match(checkpointInspector, /INERT_METADATA_GLOBALS/);
+  assert.match(checkpointInspector, /ALLOWED_METADATA_GLOBALS/);
+  assert.match(checkpointInspector, /pytorch_lightning\.callbacks\.model_checkpoint\.ModelCheckpoint/);
+  assert.match(checkpointInspector, /omegaconf\.dictconfig\.DictConfig/);
+  assert.match(checkpointInspector, /collections\.defaultdict/);
+  assert.match(checkpointInspector, /Unexpected checkpoint globals/);
+  assert.match(checkpointInspector, /_InertSerializedMetadata/);
   assert.match(checkpointInspector, /safe_globals\(aliases\)/);
   assert.match(checkpointInspector, /weights_only=True/);
   assert.match(checkpointInspector, /generator\.load_state_dict\(generator_state, strict=True\)/);
+  assert.doesNotMatch(checkpointInspector, /SAFE_METADATA_PREFIX/);
+  assert.doesNotMatch(checkpointInspector, /startswith\(.*pytorch_lightning/);
   assert.doesNotMatch(checkpointInspector, /weights_only=False/);
   assert.doesNotMatch(checkpointInspector, /import pytorch_lightning/);
+  assert.doesNotMatch(checkpointInspector, /import omegaconf/);
 });
 
 test('hosted gate keeps Drive as authority and permits only a byte-pinned transport fallback', () => {
@@ -56,6 +64,7 @@ test('hosted gate keeps Drive as authority and permits only a byte-pinned transp
   assert.match(workflow, /inspect-lama-authoritative-folder\.py/);
   assert.match(workflow, /inspect-lama-checkpoint\.py/);
   assert.doesNotMatch(workflow, /pytorch-lightning==/);
+  assert.doesNotMatch(workflow, /omegaconf==/);
 });
 
 test('pinned checkpoint remains CANDIDATE-only until runtime/artifact evidence exists', () => {
