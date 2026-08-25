@@ -42,6 +42,19 @@ test('D3 FP16 preparation is bound to D2 3/3 identities and standard ONNX graphs
   assert.match(prepare, /FP16 conversion produced no FLOAT16 initializer elements/);
   assert.match(prepare, /0\.45 <= ratio <= 0\.75/);
   assert.match(prepare, /releaseIdentityPinned["']?: False/);
+  assert.match(prepare, /onnx\.checker\.check_model\(model, full_check=True\)/);
+});
+
+test('D3 repairs only the known converter Cast-to-FLOAT inconsistency and remains fail-closed', () => {
+  assert.match(prepare, /repair_converter_internal_float_casts/);
+  assert.match(prepare, /SOURCE_CAST_FLOAT_TO_CONVERTER_DECLARED_FP16_ONLY/);
+  assert.match(prepare, /converted_types\.get\(output_name\) != TensorProto\.FLOAT16/);
+  assert.match(prepare, /output_name in public_outputs/);
+  assert.match(prepare, /source != \(\(output_name,\), TensorProto\.FLOAT\)/);
+  assert.match(prepare, /attribute\.i = TensorProto\.FLOAT16/);
+  assert.match(prepare, /NARROW_CONVERTER_COMPATIBILITY_REPAIR_ONLY/);
+  assert.doesNotMatch(prepare, /value_info\.clear\(|ClearField\(["']value_info["']\)/);
+  assert.doesNotMatch(prepare, /full_check=False/);
 });
 
 test('D3 browser WebGPU proof forbids WASM fallback and records software-adapter boundary', () => {
