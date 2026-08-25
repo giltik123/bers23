@@ -5,6 +5,9 @@ import test from 'node:test';
 const probe = await readFile(new URL('../scripts/probe-lama-dynamo-onnx.py', import.meta.url), 'utf8');
 const multi = await readFile(new URL('../scripts/probe-lama-dynamo-multishape.py', import.meta.url), 'utf8');
 const bridge = await readFile(new URL('../scripts/bridge-lama-generator-safetensors.py', import.meta.url), 'utf8');
+const browserHarness = await readFile(new URL('../scripts/test-lama-browser-wasm-acceptance.mjs', import.meta.url), 'utf8');
+const browserPage = await readFile(new URL('./lama-browser-wasm-acceptance.html', import.meta.url), 'utf8');
+const browserFactory = await readFile(new URL('../src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts', import.meta.url), 'utf8');
 const c6 = await readFile(new URL('../scripts/inspect-lama-checkpoint.py', import.meta.url), 'utf8');
 const workflow = await readFile(new URL('../.github/workflows/sprint-6.42c7-lama-dynamo-onnx.yml', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/local-ai/models/lama-inpainting.manifest.json', import.meta.url), 'utf8'));
@@ -95,6 +98,10 @@ test('C7 environment is fully pinned and CPU ORT matches the repository browser 
   assert.match(probe, /EXPECTED_ORT = "1\.27\.0"/);
   assert.match(probe, /MAX_ABS_TOL = 2e-4/);
   assert.match(probe, /RMSE_TOL = 5e-5/);
+  assert.match(browserFactory, /import \* as ort from 'onnxruntime-web\/wasm'/);
+  assert.match(browserFactory, /ONNX_RUNTIME_WEB_VERSION = '1\.27\.0'/);
+  assert.match(browserFactory, /executionProviders: \['wasm'\]/);
+  assert.match(browserFactory, /Never fall back to ORT's CDN/);
 });
 
 test('workflow physically removes legacy checkpoint before installing or running the PyTorch 2.13 exporter', () => {
@@ -113,6 +120,39 @@ test('workflow physically removes legacy checkpoint before installing or running
   assert.match(workflow, /--browser-input-out "\$\{RUNNER_TEMP\}\/lama-c7\/browser-input-256\.f32"/);
   assert.match(workflow, /--browser-reference-out "\$\{RUNNER_TEMP\}\/lama-c7\/browser-reference-256\.f32"/);
   assert.match(workflow, /git ls-files '\*\.ckpt' '\*\.pth' '\*\.pt' '\*\.safetensors' '\*\.onnx'/);
+});
+
+test('browser WASM runs the exact CPU-tested model through production session factory with local-only assets', () => {
+  assert.match(browserPage, /BrowserOnnxSessionFactory/);
+  assert.match(browserPage, /executionProviders: \['wasm'\]/);
+  assert.match(browserPage, /PINNED_PYTORCH_GENERATOR_FLOAT32/);
+  assert.match(browserPage, /maxAbs <= 2e-4/);
+  assert.match(browserPage, /rmse <= 5e-5/);
+  assert.doesNotMatch(browserPage, /onnxruntime-web\/webgpu/);
+  assert.doesNotMatch(browserPage, /https?:\/\//);
+
+  assert.match(browserHarness, /assert\.equal\(modelSha, cpuEvidence\.export\.sha256/);
+  assert.match(browserHarness, /BrowserOnnxSessionFactory/);
+  assert.match(browserHarness, /channel: 'chrome'/);
+  assert.match(browserHarness, /externalHttpRequests/);
+  assert.match(browserHarness, /ort-wasm.*\\\.(?:wasm\|mjs)/);
+  assert.match(browserHarness, /LAMA C7 BROWSER WASM/);
+  assert.match(browserHarness, /browserExecutionIsProductionApproval: false/);
+  assert.match(browserHarness, /productionPromotionAllowed: false/);
+  assert.doesNotMatch(browserHarness, /chromium\.launch\(\{\s*headless: true\s*\}\)/);
+});
+
+test('workflow makes CPU multi-shape PASS a prerequisite for browser and never uploads model/reference bytes', () => {
+  const cpuRun = workflow.indexOf('python scripts/probe-lama-dynamo-multishape.py');
+  const exactCpuGate = workflow.indexOf("assert export['result'] == 'EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS'");
+  const browserRun = workflow.indexOf('node scripts/test-lama-browser-wasm-acceptance.mjs');
+  assert.ok(cpuRun >= 0 && exactCpuGate >= 0 && browserRun >= 0);
+  assert.ok(cpuRun < exactCpuGate && exactCpuGate < browserRun);
+  assert.match(workflow, /onnxruntime-web.*1\.27\.0|ONNX Runtime Web 1\.27\.0/);
+  assert.match(workflow, /lama-browser-wasm\.json/);
+  assert.doesNotMatch(workflow, /upload-artifact[\s\S]*lama-big-dynamo-dynamic\.onnx/);
+  assert.doesNotMatch(workflow, /upload-artifact[\s\S]*browser-input-256\.f32/);
+  assert.doesNotMatch(workflow, /upload-artifact[\s\S]*browser-reference-256\.f32/);
 });
 
 test('C7 evidence remains candidate-only and browser reference files are runner-local', () => {
