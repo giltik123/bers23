@@ -33,12 +33,14 @@ test('bridge verifies recorded bytes before restricted weights-only deserializat
   assert.match(bridge, /runtimeAuthorityGranted.*False/);
 });
 
-test('hosted D1 acquisition pins upstream revision and destroys binary evidence before JSON upload', () => {
+test('hosted D1 acquisition pins restricted bridge dependencies and destroys binaries before JSON upload', () => {
   assert.match(workflow, /cad0bd7495fa6c4bcca01b19a723dc91627fe84f/);
   assert.match(workflow, /snapshot_download/);
   assert.match(workflow, /inspect-tiny-sd-snapshot\.py/);
+  assert.match(workflow, /numpy==1\.26\.4/);
   assert.match(workflow, /torch==2\.6\.0/);
   assert.match(workflow, /safetensors==0\.8\.0/);
+  assert.match(workflow, /assert numpy\.__version__ == '1\.26\.4'/);
   assert.match(workflow, /bridge-tiny-sd-safetensors\.py/);
   assert.match(workflow, /rm -rf "\$\{RUNNER_TEMP\}\/tiny-sd" "\$\{RUNNER_TEMP\}\/tiny-sd-bridge"/);
   const destroy = workflow.indexOf('rm -rf "${RUNNER_TEMP}/tiny-sd" "${RUNNER_TEMP}/tiny-sd-bridge"');
@@ -46,6 +48,15 @@ test('hosted D1 acquisition pins upstream revision and destroys binary evidence 
   assert.ok(destroy >= 0 && upload > destroy);
   assert.doesNotMatch(workflow, /upload-artifact@[\s\S]*\.bin/);
   assert.doesNotMatch(workflow, /upload-artifact@[\s\S]*\.safetensors/);
+});
+
+test('D1 failure cleanup explicitly removes downloaded and bridged model bytes', () => {
+  const failureCleanup = workflow.indexOf('Cleanup Tiny-SD binary evidence on failure');
+  const failureCondition = workflow.indexOf('if: ${{ failure() }}', failureCleanup);
+  const failureRm = workflow.indexOf('rm -rf "${RUNNER_TEMP}/tiny-sd" "${RUNNER_TEMP}/tiny-sd-bridge"', failureCleanup);
+  assert.ok(failureCleanup >= 0 && failureCondition > failureCleanup && failureRm > failureCondition);
+  assert.match(workflow.slice(failureCleanup), /test ! -e "\$\{RUNNER_TEMP\}\/tiny-sd"/);
+  assert.match(workflow.slice(failureCleanup), /test ! -e "\$\{RUNNER_TEMP\}\/tiny-sd-bridge"/);
 });
 
 test('D1 manifest cannot grant release or production authority', () => {
