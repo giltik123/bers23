@@ -57,7 +57,7 @@ test('D3 repairs only the known converter Cast-to-FLOAT inconsistency and remain
   assert.doesNotMatch(prepare, /full_check=False/);
 });
 
-test('D3 browser WebGPU proof forbids WASM fallback and records software-adapter boundary', () => {
+test('D3 browser WebGPU proof is capability-first, URL-backed and forbids WASM fallback', () => {
   assert.match(browser, /onnxruntime-web\/webgpu/);
   assert.match(browser, /executionProviders: \['webgpu'\]/);
   assert.match(browser, /providerFallbackAllowed: false/);
@@ -65,9 +65,21 @@ test('D3 browser WebGPU proof forbids WASM fallback and records software-adapter
   assert.match(browser, /realDeviceEvidence: false/);
   assert.match(browser, /gpuPeakMemoryApi: 'UNAVAILABLE_STANDARD_BROWSER_API'/);
   assert.match(browser, /softwareAdapterLikely/);
+  assert.match(browser, /features: Array\.from\(adapter\?\.features/);
+  assert.match(browser, /maxBufferSize/);
+  assert.match(browser, /maxStorageBufferBindingSize/);
+  assert.match(browser, /REQUIRED_FP16_FEATURES = \['shader-f16'\]/);
+  assert.match(browser, /missingRequiredFeatures/);
+  assert.match(browser, /blockerClass: 'REQUIRED_FEATURE_UNAVAILABLE'/);
+  assert.match(browser, /sessionAttempted: false/);
+  assert.match(browser, /modelMaterializedInJs: false/);
+  assert.match(browser, /InferenceSession\.create\(modelUrl, \{ executionProviders: \['webgpu'\] \}\)/);
+  assert.doesNotMatch(browser, /fetchBytes\(modelUrl\)/);
   assert.match(browser, /D2_ACCEPTED_FP32_CPU_ORT_OUTPUT/);
+  assert.match(runner, /modelBytes: record\.fp16\.size/);
   assert.match(runner, /--use-angle=swiftshader/);
   assert.match(runner, /externalHttpRequests/);
+  assert.match(runner, /REQUIRED_FEATURE_UNAVAILABLE/);
   assert.match(runner, /WEBGPU_PARITY_FAILED/);
   assert.match(runner, /WEBGPU_BROWSER_PROCESS_BLOCKED/);
   assert.match(runner, /PASS/);
