@@ -97,11 +97,12 @@ jobs:
             onnxscript==0.7.1 \
             onnxruntime==1.27.0
           python - <<'PY'
-          import onnx, onnxruntime, onnxscript, torch
+          import inspect, onnx, onnxruntime, onnxscript, torch
           assert torch.__version__.startswith('2.13.0'), torch.__version__
           assert onnx.__version__ == '1.22.0'
           assert onnxscript.__version__ == '0.7.1'
           assert onnxruntime.__version__ == '1.27.0'
+          assert 'fallback' not in inspect.signature(torch.onnx.export).parameters
           print('C7 EXPORT ENVIRONMENT: PASS', torch.__version__, onnx.__version__, onnxscript.__version__, onnxruntime.__version__)
           PY
 
@@ -123,9 +124,11 @@ jobs:
           assert evidence['productionDeviceApproval'] is False
           assert evidence['runtimeAuthorityGranted'] is False
           assert evidence['checkpointSha256'] == 'fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423'
+          assert evidence['environment']['legacyFallbackParameterPresent'] is False
           export = evidence['export']
           assert export['dynamo'] is True
-          assert export['fallback'] is False
+          assert export['legacyFallbackApi'] == 'REMOVED_IN_PYTORCH_2_11'
+          assert export['legacyFallbackAllowed'] is False
           assert export['opset'] == 18
           allowed = {
               'DYNAMO_EXPORT_BLOCKED_FFT_OR_COMPLEX',
@@ -166,7 +169,7 @@ jobs:
             echo '- Checkpoint: exact C6 authoritative SHA `fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423`'
             echo '- Export environment: PyTorch 2.13.0 CPU / ONNX 1.22.0 / ONNXScript 0.7.1'
             echo '- CPU runtime: ONNX Runtime 1.27.0'
-            echo '- Export: `torch.onnx.export`, `dynamo=true`, `fallback=false`, opset 18'
+            echo '- Export: `torch.onnx.export`, `dynamo=true`, opset 18; legacy fallback API removed in PyTorch 2.11+'
             echo "- Result: \`${result}\`"
             echo '- No ONNX model is committed or published by this workflow'
             echo '- Production/runtime authority: NOT GRANTED'
