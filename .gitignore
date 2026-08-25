@@ -35,6 +35,10 @@ base44/.app.jsonc
 # fixtures must use an explicit non-production format rather than bypassing this.
 *.onnx
 *.ort
+*.ckpt
+*.pt
+*.pth
+*.safetensors
 models/releases/
 models/cache/
 models/downloads/
