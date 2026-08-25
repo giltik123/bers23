@@ -1,7 +1,7 @@
 import {
-  LAMA_ARTIFACT_SHA256,
-  LAMA_ARTIFACT_SIZE,
   LAMA_MODEL_ID,
+  LAMA_ONNX_SHA256,
+  LAMA_ONNX_SIZE,
   LAMA_VERSION,
 } from '../models/LaMaRelease';
 import type { DeviceClass, DeviceTier, ExecutionProvider, Platform } from '../types';
@@ -166,8 +166,8 @@ function validateRelease(release: Readonly<Record<string, unknown>> | null, bloc
   }
   if (release.modelId !== LAMA_MODEL_ID
     || release.version !== LAMA_VERSION
-    || release.modelSize !== LAMA_ARTIFACT_SIZE
-    || release.modelSha256 !== LAMA_ARTIFACT_SHA256) {
+    || release.modelSize !== LAMA_ONNX_SIZE
+    || release.modelSha256 !== LAMA_ONNX_SHA256) {
     blockers.add('WRONG_MODEL_IDENTITY');
   }
   if (release.artifactState !== 'SIGNED_RELEASE') blockers.add('SIGNED_RELEASE_REQUIRED');
