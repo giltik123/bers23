@@ -41,7 +41,9 @@
         "batched_point_labels",
         "orig_im_size"
       ],
-      "outputs": ["output_masks", "iou_predictions"]
+      "outputs": ["output_masks", "iou_predictions"],
+      "auxiliaryOutputs": ["onnx::Shape_1830"],
+      "auxiliaryOutputPolicy": "EXACT_PINNED_BUT_NOT_REQUESTED"
     },
     "maskDecision": "output_masks >= 0"
   },
