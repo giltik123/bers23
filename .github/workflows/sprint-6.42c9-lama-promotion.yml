@@ -35,10 +35,15 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/6.42c9/lama-promotion-evidence-builder.test.mjs \
             --external:node:*
+          npx esbuild tests/lama-promotion-hostile-input.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c9/lama-promotion-hostile-input.test.mjs \
+            --external:node:*
       - name: Run adversarial C9 promotion gates
         run: |
           node --test .test-cache/6.42c9/lama-production-promotion.test.mjs
           node --test .test-cache/6.42c9/lama-promotion-evidence-builder.test.mjs
+          node --test .test-cache/6.42c9/lama-promotion-hostile-input.test.mjs
       - name: Preserve candidate and repository byte boundaries
         run: |
           set -euo pipefail
