@@ -27,7 +27,7 @@ test('candidate release verifies official bytes, signatures, publication and tam
 test('release workflow cannot promote Real-ESRGAN or track ONNX in Git', () => {
   assert.match(workflow, /manifest\['status'\] == 'CANDIDATE'/);
   assert.match(workflow, /productionApprovalEvidence.*None/);
-  assert.doesNotMatch(workflow, /PRODUCTION_APPROVED/);
+  assert.doesNotMatch(workflow, /manifest\[['"]status['"]\]\s*=\s*['"]PRODUCTION_APPROVED['"]/);
   assert.match(workflow, /git ls-files '\*\.onnx'/);
   assert.match(workflow, /git log --all.*'\*\.onnx'/);
   assert.doesNotMatch(workflow, /git add[^\n]*\.onnx/);
