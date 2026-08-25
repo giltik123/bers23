@@ -16,12 +16,16 @@ test('EfficientSAM candidate descriptor pins official split ONNX provenance and 
     path: 'weights/efficient_sam_vitt_encoder.onnx',
     gitBlob: '6458f72477ae216a1bd68db41ffa14802c8d54f1',
     size: 24799761,
+    sha256: '84ed466ffcc5c1f8d08409bc34a23bb364ab2c15e402cb12d4335a42be0e0951',
   });
   assert.deepEqual(manifest.upstream.artifacts.decoder, {
     path: 'weights/efficient_sam_vitt_decoder.onnx',
     gitBlob: 'f9310202c916fe5a4ec9a6897edae855caf023f4',
     size: 16565728,
+    sha256: 'a62f8fa5ea080447c0689418d69e58f1e83e0b7adf9c142e2bd9bcc8045c0b11',
   });
+  assert.deepEqual(manifest.tensorContract.decoder.auxiliaryOutputs, ['onnx::Shape_1830']);
+  assert.equal(manifest.tensorContract.decoder.auxiliaryOutputPolicy, 'EXACT_PINNED_BUT_NOT_REQUESTED');
   if (manifest.artifactState === 'UPSTREAM_PINNED') {
     assert.equal(manifest.artifacts.encoder.url, null);
     assert.equal(manifest.artifacts.decoder.url, null);
