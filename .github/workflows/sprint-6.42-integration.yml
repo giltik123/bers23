@@ -175,6 +175,24 @@ jobs:
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           node --test .test-cache/6.42-integration/project-dimension-history-postgres.test.mjs
           node --test .test-cache/6.42-integration/realesrgan-postgres-vertical.test.mjs
+      - name: C5 MODNet candidate trust, export and release contracts
+        run: |
+          npx esbuild tests/modnet-release-policy.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/modnet-release-policy.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42-integration/modnet-release-policy.test.mjs
+          node --test tests/modnet-export-security.test.mjs
+          node --test tests/modnet-release-workflow.test.mjs
+          python -m py_compile scripts/inspect-modnet-checkpoint.py scripts/build-modnet-portrait-matting-release.py
+          node --input-type=module <<'NODE'
+          import manifest from './src/platform/creative/local-ai/models/portrait-matting.manifest.json' with { type: 'json' };
+          if (manifest.status !== 'CANDIDATE') throw new Error(`unexpected MODNet release status: ${manifest.status}`);
+          if (!['EXPORT_PINNED_RELEASE_REQUIRED', 'SIGNED_RELEASE'].includes(manifest.artifactState)) throw new Error(`unexpected MODNet artifact state: ${manifest.artifactState}`);
+          if (manifest.upstream?.checkpoint?.identityState !== 'PINNED') throw new Error('MODNet checkpoint identity must stay PINNED');
+          if (manifest.bersExport?.state !== 'PINNED') throw new Error('MODNet BERS export identity must stay PINNED');
+          if (manifest.productionApprovalEvidence !== null) throw new Error('MODNet CANDIDATE must not carry production approval evidence');
+          NODE
       - name: Canonical route and durable fleet regressions
         run: |
           npm run test:creative-route-6.41c4
