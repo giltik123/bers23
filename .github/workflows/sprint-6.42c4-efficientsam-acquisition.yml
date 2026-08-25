@@ -50,7 +50,7 @@ jobs:
               assert len(value['sha256']) == 64
               print(f"{name}: size={value['size']} sha256={value['sha256']}")
           PY
-      - name: Run C4 release policy and workflow contracts
+      - name: Run C4 release, workflow and acquisition-catalog contracts
         run: |
           set -euo pipefail
           npm ci
@@ -59,6 +59,11 @@ jobs:
             --outfile=.test-cache/6.42c4/efficientsam-release-policy.test.mjs \
             --external:node:*
           node --test .test-cache/6.42c4/efficientsam-release-policy.test.mjs
+          npx esbuild tests/local-model-candidate-catalog.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c4/local-model-candidate-catalog.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42c4/local-model-candidate-catalog.test.mjs
           node --test tests/efficientsam-release-workflow.test.mjs
           python -m py_compile scripts/inspect-efficientsam-ti-release.py
           npm run check:model-weight-tracking
@@ -73,6 +78,7 @@ jobs:
             echo '- Upstream revision: `d525f622e6f640acf5a0fc37c7ca1f243da5bde0`'
             echo '- License: Apache-2.0'
             echo '- Git blob / exact size / SHA-256 / ONNX checker / split I/O contract: PASS'
+            echo '- Acquisition catalog remains separate from installable ModelManifest authority: PASS'
             echo '- Production device approval: NOT GRANTED by this workflow'
             echo '```json'
             cat .test-cache/6.42c4/efficient-sam-ti-acquisition.json
