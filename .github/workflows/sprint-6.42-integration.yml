@@ -193,7 +193,7 @@ jobs:
           if (manifest.bersExport?.state !== 'PINNED') throw new Error('MODNet BERS export identity must stay PINNED');
           if (manifest.productionApprovalEvidence !== null) throw new Error('MODNet CANDIDATE must not carry production approval evidence');
           NODE
-      - name: C6 LaMa candidate provenance and fail-closed runtime feasibility
+      - name: C6/C8 LaMa candidate provenance, pinned artifact and release contracts
         run: |
           npx esbuild tests/lama-candidate-policy.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
@@ -201,11 +201,14 @@ jobs:
             --external:node:*
           node --test .test-cache/6.42-integration/lama-candidate-policy.test.mjs
           node --test tests/lama-acquisition-security.test.mjs
-          python -m py_compile scripts/inspect-lama-authoritative-folder.py scripts/inspect-lama-checkpoint.py
+          node --test tests/lama-dynamo-onnx-security.test.mjs
+          node --test tests/lama-release-reproducibility.test.mjs
+          node --test tests/lama-release-workflow.test.mjs
+          python -m py_compile scripts/inspect-lama-authoritative-folder.py scripts/inspect-lama-checkpoint.py scripts/probe-lama-cross-process-reproducibility.py
           node --input-type=module <<'NODE'
           import manifest from './src/platform/creative/local-ai/models/lama-inpainting.manifest.json' with { type: 'json' };
           if (manifest.status !== 'CANDIDATE') throw new Error(`unexpected LaMa status: ${manifest.status}`);
-          if (manifest.artifactState !== 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED') throw new Error(`unexpected LaMa artifact state: ${manifest.artifactState}`);
+          if (!['EXPORT_PINNED_RELEASE_REQUIRED', 'SIGNED_RELEASE'].includes(manifest.artifactState)) throw new Error(`unexpected LaMa artifact state: ${manifest.artifactState}`);
           if (manifest.upstream?.checkpoint?.identityState !== 'PINNED') throw new Error('LaMa checkpoint identity must stay PINNED');
           if (manifest.runtimeFeasibility?.state !== 'DYNAMO_ONNX_CPU_WASM_PROVEN_WEBGPU_REAL_DEVICE_REQUIRED') throw new Error(`unexpected LaMa runtime state: ${manifest.runtimeFeasibility?.state}`);
           if (manifest.runtimeFeasibility?.directExportEvidence?.result !== 'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN') throw new Error('LaMa legacy FFT blocker evidence changed');
@@ -220,13 +223,23 @@ jobs:
           if (modern?.browserWasmResult !== 'PASS') throw new Error('LaMa modern browser WASM proof missing');
           if (modern?.hostedWebGpu?.result !== 'WEBGPU_INFERENCE_BLOCKED') throw new Error('LaMa hosted WebGPU blocker changed');
           if (modern?.hostedWebGpu?.timeoutStage !== 'INFERENCE') throw new Error('LaMa hosted WebGPU timeout stage changed');
+          if (modern?.softwareAdapterLikely === false) throw new Error('LaMa hosted WebGPU evidence unexpectedly claims hardware');
           if (modern?.hostedWebGpu?.softwareAdapterLikely !== true) throw new Error('LaMa hosted WebGPU evidence must remain software-adapter-only');
           if (modern?.hostedWebGpu?.realDeviceEvidence !== false) throw new Error('LaMa hosted WebGPU must not claim real-device evidence');
-          if (modern?.runtimeAuthorityGranted !== false || modern?.productionDeviceApproval !== false || modern?.releaseArtifactIdentityEstablished !== false) throw new Error('LaMa feasibility evidence must not grant release/runtime authority');
-          if (manifest.bersArtifact?.state !== 'UNBUILT' || manifest.bersArtifact?.size !== null || manifest.bersArtifact?.sha256 !== null) throw new Error('LaMa BERS artifact identity must remain unbuilt/unpinned');
+          if (modern?.runtimeAuthorityGranted !== false || modern?.productionDeviceApproval !== false || modern?.releaseArtifactIdentityEstablished !== true) throw new Error('LaMa C8 identity/runtime boundary changed');
+          if (manifest.bersArtifact?.state !== 'PINNED' || manifest.bersArtifact?.format !== 'ONNX' || manifest.bersArtifact?.opset !== 18) throw new Error('LaMa BERS artifact must stay exact PINNED ONNX opset 18');
+          if (manifest.bersArtifact?.size !== 208593659 || manifest.bersArtifact?.sha256 !== '8bf7891efa16ea07de31fc98c5f0c017b399956cba0182813ddf23d9072792c7') throw new Error('LaMa BERS artifact byte identity changed');
           if (manifest.productionApprovalEvidence !== null) throw new Error('LaMa CANDIDATE must not carry production approval evidence');
-          if (manifest.verificationKeyId !== null) throw new Error('LaMa CANDIDATE must not carry a verification key before signed release');
-          if (manifest.artifacts?.model?.url !== null || manifest.artifacts?.model?.signatureUrl !== null || manifest.artifacts?.model?.size !== null || manifest.artifacts?.model?.sha256 !== null) throw new Error('LaMa CANDIDATE must not expose release model bytes before a signed release');
+          if (manifest.artifactState === 'EXPORT_PINNED_RELEASE_REQUIRED') {
+            if (manifest.verificationKeyId !== null) throw new Error('LaMa pre-release candidate must not carry a verification key');
+            if (manifest.artifacts?.model?.url !== null || manifest.artifacts?.model?.signatureUrl !== null || manifest.artifacts?.model?.size !== null || manifest.artifacts?.model?.sha256 !== null) throw new Error('LaMa pre-release candidate must not expose signed release assets');
+          } else {
+            if (manifest.verificationKeyId !== 'bers-lama-inpainting-release-2026-08') throw new Error('LaMa signed release key id changed');
+            const model = manifest.artifacts?.model;
+            if (model?.size !== 208593659 || model?.sha256 !== '8bf7891efa16ea07de31fc98c5f0c017b399956cba0182813ddf23d9072792c7') throw new Error('LaMa signed release model identity changed');
+            if (typeof model?.url !== 'string' || !model.url.startsWith('https://github.com/giltik123/bers23/releases/download/lama-big-places-inpainting-v1.0.0-candidate.1/')) throw new Error('LaMa signed release model URL changed');
+            if (typeof model?.signatureUrl !== 'string' || !model.signatureUrl.startsWith('https://github.com/giltik123/bers23/releases/download/lama-big-places-inpainting-v1.0.0-candidate.1/')) throw new Error('LaMa signed release signature URL changed');
+          }
           NODE
       - name: Canonical route and durable fleet regressions
         run: |
