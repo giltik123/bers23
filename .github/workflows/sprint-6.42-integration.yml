@@ -136,6 +136,7 @@ jobs:
             --external:node:*
           node --test .test-cache/6.42-integration/realesrgan-browser-composition.test.mjs
           node --test tests/realesrgan-editor-boundary.test.mjs
+          node --test tests/realesrgan-release-workflow.test.mjs
           npx esbuild tests/realesrgan-service-contract.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/6.42-integration/realesrgan-service-contract.test.mjs \
