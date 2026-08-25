@@ -3,8 +3,7 @@
 
 This script does not trust a filename or Git checkout alone. It verifies:
 - exact upstream Git revision;
-- exact Git blob identity and byte size for both ONNX files;
-- SHA-256 of the exact bytes used for the BERS pack;
+- exact Git blob identity, byte size and SHA-256 for both ONNX files;
 - ONNX structural validity, opset and exact split graph I/O names/types.
 
 The pinned upstream decoder has a third exporter-generated output, `onnx::Shape_1830`.
@@ -39,6 +38,7 @@ ARTIFACTS = {
         "path": "weights/efficient_sam_vitt_encoder.onnx",
         "gitBlob": "6458f72477ae216a1bd68db41ffa14802c8d54f1",
         "size": 24_799_761,
+        "sha256": "84ed466ffcc5c1f8d08409bc34a23bb364ab2c15e402cb12d4335a42be0e0951",
         "inputs": {"batched_images": TensorProto.FLOAT},
         "outputs": {"image_embeddings": TensorProto.FLOAT},
     },
@@ -46,6 +46,7 @@ ARTIFACTS = {
         "path": "weights/efficient_sam_vitt_decoder.onnx",
         "gitBlob": "f9310202c916fe5a4ec9a6897edae855caf023f4",
         "size": 16_565_728,
+        "sha256": "a62f8fa5ea080447c0689418d69e58f1e83e0b7adf9c142e2bd9bcc8045c0b11",
         "inputs": {
             "image_embeddings": TensorProto.FLOAT,
             "batched_point_coords": TensorProto.FLOAT,
@@ -151,12 +152,15 @@ def main() -> None:
         blob = run_git(args.source, "hash-object", str(contract["path"]))
         if blob != contract["gitBlob"]:
             raise RuntimeError(f"{name}: Git blob mismatch {blob} != {contract['gitBlob']}")
+        digest = sha256(path)
+        if digest != contract["sha256"]:
+            raise RuntimeError(f"{name}: SHA-256 mismatch {digest} != {contract['sha256']}")
         graph = validate_graph(path, contract["inputs"], contract["outputs"])
         report_artifacts[name] = {
             "upstreamPath": contract["path"],
             "gitBlob": blob,
             "size": actual_size,
-            "sha256": sha256(path),
+            "sha256": digest,
             "graph": graph,
         }
 
