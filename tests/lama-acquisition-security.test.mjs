@@ -43,8 +43,21 @@ test('checkpoint inspector verifies exact bytes before an exact-allowlist weight
   assert.doesNotMatch(checkpointInspector, /SAFE_METADATA_PREFIX/);
   assert.doesNotMatch(checkpointInspector, /startswith\(.*pytorch_lightning/);
   assert.doesNotMatch(checkpointInspector, /weights_only=False/);
-  assert.doesNotMatch(checkpointInspector, /import pytorch_lightning/);
-  assert.doesNotMatch(checkpointInspector, /import omegaconf/);
+  assert.doesNotMatch(checkpointInspector, /^\s*import\s+pytorch_lightning\b/m);
+  assert.doesNotMatch(checkpointInspector, /^\s*import\s+omegaconf\b/m);
+});
+
+test('generator import uses only the pinned FFC source and a minimal get_shape shim', () => {
+  assert.match(checkpointInspector, /def _pinned_get_shape\(value: Any\)/);
+  assert.match(checkpointInspector, /module_name = "saicinpainting\.utils"/);
+  assert.match(checkpointInspector, /sys\.modules\[module_name\] = shim/);
+  assert.match(checkpointInspector, /shim\.get_shape = _pinned_get_shape/);
+  assert.match(checkpointInspector, /importlib\.import_module\("saicinpainting\.training\.modules\.ffc"\)/);
+  assert.match(checkpointInspector, /actual_ffc != expected_ffc/);
+  assert.match(checkpointInspector, /from pytorch_lightning import seed_everything/);
+  assert.match(checkpointInspector, /generatorImportPolicy/);
+  assert.match(checkpointInspector, /PINNED_SOURCE_MINIMAL_GET_SHAPE_SHIM_NO_LIGHTNING_IMPORT/);
+  assert.doesNotMatch(checkpointInspector, /pip install.*pytorch-lightning/);
 });
 
 test('hosted gate keeps Drive as authority and permits only a byte-pinned transport fallback', () => {
