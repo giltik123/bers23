@@ -1,6 +1,12 @@
 <!doctype html><meta charset="utf-8"><link rel="icon" href="data:,"/><title>Tiny-SD D3 WASM compact feasibility</title>
 <script type="module">
-import { BrowserOnnxSessionFactory, ONNX_RUNTIME_WEB_VERSION } from '../src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts';
+import {
+  BrowserOnnxSessionFactory,
+  BROWSER_WASM_NUM_THREADS,
+  BROWSER_WASM_PROXY,
+  BROWSER_WASM_WORKER_POLICY,
+  ONNX_RUNTIME_WEB_VERSION,
+} from '../src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts';
 
 const SESSION_TIMEOUT_MS = 180_000;
 const INFERENCE_TIMEOUT_MS = 300_000;
@@ -91,6 +97,12 @@ const base = (component, result, extras = {}) => ({
   onnxruntimeWebVersion: ONNX_RUNTIME_WEB_VERSION,
   executionProviders: ['wasm'],
   providerFallbackAllowed: false,
+  wasmRuntime: {
+    numThreads: BROWSER_WASM_NUM_THREADS,
+    proxy: BROWSER_WASM_PROXY,
+    workerFree: BROWSER_WASM_NUM_THREADS === 1 && BROWSER_WASM_PROXY === false,
+    workerPolicy: BROWSER_WASM_WORKER_POLICY,
+  },
   crossOriginIsolated: globalThis.crossOriginIsolated === true,
   hardwareConcurrency: Number(navigator.hardwareConcurrency ?? 0),
   runtimeAuthorityGranted: false,
