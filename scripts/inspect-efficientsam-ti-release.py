@@ -116,7 +116,7 @@ def validate_graph(path: Path, expected_inputs: dict[str, int], expected_outputs
 
     return {
         "irVersion": int(model.ir_version),
-        "opset": OPSSET if False else OPSET,
+        "opset": OPSET,
         "inputs": inputs,
         "outputs": outputs,
         "nodeCount": len(model.graph.node),
