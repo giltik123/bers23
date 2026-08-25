@@ -33,9 +33,11 @@ export class BrowserOnnxSessionFactory implements OnnxSessionFactory {
     const sessionConfig = mode === 'MEMORY_FIRST'
       ? BROWSER_ORT_MEMORY_FIRST_SESSION_CONFIG
       : Object.freeze({ load_model_format: 'ORT' as const });
+    // ORT Web 1.27 appends use_ort_model_bytes_directly to options.extra.session.
+    // Pass a fresh mutable copy while keeping the exported reviewed policy constants immutable.
     return this.#create(bytes, {
       executionProviders: ['wasm'],
-      extra: { session: sessionConfig },
+      extra: { session: { ...sessionConfig } },
     });
   }
 
