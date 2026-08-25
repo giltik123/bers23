@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Prove release-grade cross-process byte reproducibility for the C7 LaMa ONNX graph.
+"""Prove release-grade cross-process byte reproducibility for the pinned C8 LaMa ONNX graph.
 
-This parent process never sees the legacy checkpoint. It invokes the already accepted C7
-multi-shape exporter in two independent Python interpreters with a fixed PYTHONHASHSEED, requires
-both child runs to pass the exact C7 graph/CPU-parity gate, then requires byte-for-byte identical
-ONNX size/SHA before retaining one runner-local candidate artifact.
+This parent process never sees the legacy checkpoint. It invokes the accepted C7 multi-shape
+exporter in two independent Python interpreters with a fixed PYTHONHASHSEED, requires both child
+runs to pass the exact C7 graph/CPU-parity gate, requires byte-for-byte equality across processes,
+and then requires the result to match the already discovered C8 release identity exactly.
 
 Passing this probe establishes reproducibility evidence only. It does not sign, publish, install,
 or grant production/runtime authority.
@@ -25,6 +25,8 @@ from typing import Any
 EXPORT_PYTHON_HASH_SEED = "0"
 EXPECTED_RESULT = "EXPORTED_STANDARD_DFT_CPU_ORT_MULTISHAPE_PASS"
 EXPECTED_CHECKPOINT_SHA256 = "fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423"
+EXPECTED_RELEASE_SIZE = 208_593_659
+EXPECTED_RELEASE_SHA256 = "8bf7891efa16ea07de31fc98c5f0c017b399956cba0182813ddf23d9072792c7"
 
 
 def sha256(path: Path) -> str:
@@ -144,12 +146,17 @@ def main() -> None:
                 "LaMa ONNX is not byte-reproducible across independent fixed-hash-seed processes: "
                 f"first={first['size']}/{first['sha256']} second={second['size']}/{second['sha256']}"
             )
+        if first["size"] != EXPECTED_RELEASE_SIZE or first["sha256"] != EXPECTED_RELEASE_SHA256:
+            raise RuntimeError(
+                "LaMa reproducible bytes differ from pinned C8 release identity; a new model version is required: "
+                f"actual={first['size']}/{first['sha256']} expected={EXPECTED_RELEASE_SIZE}/{EXPECTED_RELEASE_SHA256}"
+            )
         if first["graph"] != second["graph"]:
             raise RuntimeError("LaMa child graph inventories differ despite identical bytes")
         shutil.copyfile(first["model"], args.model_out)
         retained_sha = sha256(args.model_out)
-        if args.model_out.stat().st_size != first["size"] or retained_sha != first["sha256"]:
-            raise RuntimeError("retained LaMa candidate bytes differ from proven reproducible child output")
+        if args.model_out.stat().st_size != EXPECTED_RELEASE_SIZE or retained_sha != EXPECTED_RELEASE_SHA256:
+            raise RuntimeError("retained LaMa candidate bytes differ from pinned C8 release identity")
 
         report = {
             "schemaVersion": 1,
@@ -163,9 +170,10 @@ def main() -> None:
                 "result": "PASS",
                 "independentPythonProcesses": 2,
                 "pythonHashSeed": EXPORT_PYTHON_HASH_SEED,
-                "size": first["size"],
-                "sha256": first["sha256"],
+                "size": EXPECTED_RELEASE_SIZE,
+                "sha256": EXPECTED_RELEASE_SHA256,
                 "byteIdentical": True,
+                "matchesPinnedReleaseIdentity": True,
                 "c7ResultRequired": EXPECTED_RESULT,
             },
             "first": {
@@ -190,7 +198,7 @@ def main() -> None:
         args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(
             "LAMA C8 CROSS-PROCESS REPRODUCIBILITY: PASS "
-            f"size={first['size']} sha256={first['sha256']}"
+            f"size={EXPECTED_RELEASE_SIZE} sha256={EXPECTED_RELEASE_SHA256}"
         )
 
 
