@@ -6,11 +6,13 @@ export const MODNET_UPSTREAM_REVISION = '28165a451e4610c9d77cfdf925a94610bb2810f
 export const MODNET_CHECKPOINT_NAME = 'modnet_photographic_portrait_matting.ckpt' as const;
 export const MODNET_CHECKPOINT_SIZE = 26_255_603 as const;
 export const MODNET_CHECKPOINT_SHA256 = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8' as const;
+export const MODNET_ONNX_SIZE = 25_961_178 as const;
+export const MODNET_ONNX_SHA256 = '18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919' as const;
 
 /**
  * Release-envelope predicate only. It cannot authorize install, READY fleet state or Core execution.
- * This model/version is byte-bound to the authoritative upstream checkpoint. Any checkpoint change
- * requires a new BERS version, even if a replacement artifact is otherwise correctly signed.
+ * This model/version is byte-bound to both the authoritative upstream checkpoint and the reproducible
+ * BERS ONNX export. Any source/checkpoint/export byte change requires a new BERS version.
  */
 export function isExecutableModNetRelease(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -29,14 +31,12 @@ export function isExecutableModNetRelease(value: unknown): boolean {
 
   const bersExport = objectRecord(release.bersExport);
   if (!bersExport || bersExport.state !== 'PINNED') return false;
-  if (!positiveSafeInteger(bersExport.onnxSize) || !sha256(bersExport.onnxSha256)) return false;
+  if (bersExport.onnxSize !== MODNET_ONNX_SIZE || bersExport.onnxSha256 !== MODNET_ONNX_SHA256) return false;
 
   const artifacts = objectRecord(release.artifacts);
   const model = objectRecord(artifacts?.model);
   if (!completeArtifact(model)) return false;
-
-  return Number(model!.size) === Number(bersExport.onnxSize)
-    && model!.sha256 === bersExport.onnxSha256;
+  return model!.size === MODNET_ONNX_SIZE && model!.sha256 === MODNET_ONNX_SHA256;
 }
 
 export const modNetReleaseState = Object.freeze({
