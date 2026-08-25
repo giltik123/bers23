@@ -111,7 +111,7 @@ jobs:
             --state-out "${RUNNER_TEMP}/lama-c7/generator.safetensors" \
             --report .test-cache/6.42c7/lama-generator-bridge.json
           python - <<'PY'
-          import json, pathlib
+          import json, os, pathlib
           evidence = json.load(open('.test-cache/6.42c7/lama-generator-bridge.json', encoding='utf-8'))
           assert evidence['status'] == 'CANDIDATE'
           assert evidence['productionDeviceApproval'] is False
@@ -126,7 +126,7 @@ jobs:
           assert bridge['tensorElements'] == 51057179
           assert bridge['ephemeral'] is True
           assert bridge['published'] is False
-          state = pathlib.Path('${RUNNER_TEMP}/lama-c7/generator.safetensors')
+          state = pathlib.Path(os.environ['RUNNER_TEMP']) / 'lama-c7' / 'generator.safetensors'
           assert state.is_file() and state.stat().st_size == bridge['fileSize']
           print('C7 TENSOR-ONLY BRIDGE POLICY: PASS', bridge['sha256'])
           PY
