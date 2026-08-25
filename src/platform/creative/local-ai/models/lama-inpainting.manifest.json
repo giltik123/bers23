@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "modelId": "lama-big-places-inpainting",
+  "version": "1.0.0-candidate.1",
+  "status": "CANDIDATE",
+  "semanticCapabilities": [
+    "inpainting",
+    "object-removal",
+    "large-mask-inpainting"
+  ],
+  "upstream": {
+    "repository": "https://github.com/advimman/lama",
+    "revision": "786f5936b27fb3dacd2b1ad799e4de968ea697e7",
+    "license": "Apache-2.0",
+    "distribution": {
+      "authoritativeFolderUrl": "https://drive.google.com/drive/folders/1B2x7eQDgecTL0oh3LSIBDGj0fTxs6Ips?usp=sharing",
+      "legacyYandexState": "UNAVAILABLE",
+      "convenienceMirrorUrl": "https://huggingface.co/smartywu/big-lama/resolve/main/big-lama.zip",
+      "convenienceMirrorAuthority": false
+    },
+    "architecture": {
+      "generatorKind": "ffc_resnet",
+      "inputChannels": 4,
+      "outputChannels": 3,
+      "ngf": 64,
+      "downsamplingStages": 3,
+      "residualBlocks": 18,
+      "outputActivation": "SIGMOID",
+      "globalFeatureRatio": 0.75,
+      "localFourierUnitEnabled": false,
+      "fourierForward": "torch.fft.rfftn",
+      "fourierInverse": "torch.fft.irfftn",
+      "fftNorm": "ortho"
+    },
+    "checkpoint": {
+      "archiveName": null,
+      "archiveSize": null,
+      "archiveSha256": null,
+      "checkpointPath": null,
+      "checkpointSize": null,
+      "checkpointSha256": null,
+      "configPath": null,
+      "configSize": null,
+      "configSha256": null,
+      "identityState": "ACQUISITION_REQUIRED"
+    }
+  },
+  "tensorContract": {
+    "image": {
+      "name": "image",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 3,
+      "colorSpace": "RGB",
+      "range": [0, 1]
+    },
+    "mask": {
+      "name": "mask",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 1,
+      "range": [0, 1],
+      "oneMeans": "INPAINT_REGION"
+    },
+    "preprocess": {
+      "padOutToModulo": 8,
+      "paddingSides": "RIGHT_AND_BOTTOM",
+      "referencePaddingMode": "SYMMETRIC",
+      "generatorInputChannels": 4,
+      "generatorInputFormula": "concat(image * (1 - mask), mask)"
+    },
+    "rawOutput": {
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 3,
+      "range": [0, 1],
+      "activation": "SIGMOID",
+      "semanticType": "GENERATED_RGB_PROPOSAL"
+    },
+    "finalComposite": {
+      "semanticType": "DETERMINISTIC_MASK_COMPOSITE",
+      "formula": "mask * predicted_image + (1 - mask) * original_image",
+      "knownRegionMustEqualOriginal": true
+    }
+  },
+  "runtimeFeasibility": {
+    "state": "UNPROVEN",
+    "directTorchOnnx": "UNPROVEN_FFT_RISK",
+    "cpuOrt": "UNPROVEN",
+    "browserWasm": "UNPROVEN",
+    "browserWebGpu": "UNPROVEN_KNOWN_THIRD_PARTY_SHAPE_RISK",
+    "thirdPartyReferenceAuthority": false
+  },
+  "bersArtifact": {
+    "state": "UNBUILT",
+    "format": null,
+    "size": null,
+    "sha256": null
+  },
+  "artifactState": "CHECKPOINT_ACQUISITION_REQUIRED",
+  "artifacts": {
+    "model": {
+      "url": null,
+      "size": null,
+      "sha256": null,
+      "signatureUrl": null
+    }
+  },
+  "verificationKeyId": null,
+  "productionApprovalEvidence": null
+}
