@@ -113,11 +113,11 @@ jobs:
           print('LAMA CANONICAL ARCHIVE MEMBERS: PASS')
           PY
 
-      - name: Inspect pinned checkpoint with weights-only strict generator load
+      - name: Inspect pinned checkpoint with restricted weights-only generator load
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check numpy==1.26.4
-          python -m pip install --disable-pip-version-check torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --disable-pip-version-check kornia==0.5.0
           python scripts/inspect-lama-checkpoint.py \
             --source "${RUNNER_TEMP}/lama" \
@@ -144,7 +144,10 @@ jobs:
           checkpoint = structure['checkpoint']
           assert checkpoint['verifiedBeforeDeserialization'] is True
           assert checkpoint['weightsOnly'] is True
+          assert checkpoint['unsafeGlobalScanPerformed'] is True
+          assert checkpoint['quarantineStrategy'] == 'INERT_LOCAL_PLACEHOLDER_NO_LIGHTNING_IMPORT'
           assert checkpoint['strictGeneratorLoad'] is True
+          print('quarantined metadata globals=', checkpoint['quarantinedMetadataGlobals'])
           print('generator state keys=', checkpoint['generatorStateKeyCount'])
           print('generator tensor elements=', checkpoint['generatorTensorElements'])
           PY
@@ -186,7 +189,7 @@ jobs:
             echo "- Checkpoint SHA-256: \`${LAMA_CHECKPOINT_SHA256}\`"
             echo "- Config SHA-256: \`${LAMA_CONFIG_SHA256}\`"
             echo '- Checkpoint verified before deserialization: PASS'
-            echo '- PyTorch checkpoint load mode: weights_only=True'
+            echo '- PyTorch checkpoint inspection: 2.6 weights_only=True + inert Lightning metadata quarantine'
             echo '- Strict pinned FFCResNetGenerator state load: PASS'
             echo '- Production execution authority: NOT GRANTED'
             echo '- CPU ORT/WASM/WebGPU runtime feasibility: NOT GRANTED by this job'
