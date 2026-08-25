@@ -7,17 +7,22 @@ import { productionLocalModelsByCapability } from '../server/core/localExecution
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
 const MODEL_ID = 'modnet-photographic-portrait-matting';
+const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8';
 
-test('MODNet starts as checkpoint-acquisition-required CANDIDATE with continuous alpha semantics', () => {
+test('MODNet pins authoritative checkpoint identity while remaining a non-executable continuous-alpha CANDIDATE', () => {
   assert.equal(manifest.modelId, MODEL_ID);
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'CHECKPOINT_ACQUISITION_REQUIRED');
+  assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_EXPORT_REQUIRED');
   assert.equal(manifest.upstream.revision, '28165a451e4610c9d77cfdf925a94610bb2810fb');
   assert.equal(manifest.upstream.license, 'Apache-2.0');
   assert.equal(manifest.upstream.checkpoint.name, 'modnet_photographic_portrait_matting.ckpt');
-  assert.equal(manifest.upstream.checkpoint.identityState, 'ACQUISITION_REQUIRED');
-  assert.equal(manifest.upstream.checkpoint.size, null);
-  assert.equal(manifest.upstream.checkpoint.sha256, null);
+  assert.equal(manifest.upstream.checkpoint.authoritativeDriveFileId, '1mcr7ALciuAsHCpLnrtG_eop5-EYhbCmz');
+  assert.equal(manifest.upstream.checkpoint.identityState, 'PINNED');
+  assert.equal(manifest.upstream.checkpoint.size, 26255603);
+  assert.equal(manifest.upstream.checkpoint.sha256, CHECKPOINT_SHA);
+  assert.equal(manifest.upstream.checkpoint.stateDictKeyCount, 751);
+  assert.equal(manifest.upstream.checkpoint.parameterElementCount, 8780012);
+  assert.equal(manifest.upstream.checkpoint.strictPinnedArchitectureLoad, true);
   assert.equal(manifest.tensorContract.output.semanticType, 'CONTINUOUS_ALPHA_MATTE');
   assert.equal(manifest.tensorContract.output.activation, 'SIGMOID');
   assert.equal(manifest.tensorContract.output.threshold, null);
@@ -30,7 +35,7 @@ test('MODNet starts as checkpoint-acquisition-required CANDIDATE with continuous
 test('MODNet is advisory MATTING discovery only and is absent from executable catalogs', () => {
   const [candidate] = acquisitionCandidatesForPack('MATTING');
   assert.equal(candidate.modelId, MODEL_ID);
-  assert.equal(candidate.upstreamBytes, 'UNKNOWN');
+  assert.equal(candidate.upstreamBytes, 26255603);
   assert.equal(candidate.productionExecutable, false);
   assert.equal('downloadUri' in candidate, false);
   assert.equal('signature' in candidate, false);
@@ -44,7 +49,7 @@ test('MODNet is advisory MATTING discovery only and is absent from executable ca
   }
 });
 
-test('status/signature envelope cannot promote MODNet before checkpoint and export identities are pinned', () => {
+test('status/signature envelope cannot promote MODNet before reproducible export identity is pinned', () => {
   const forged = structuredClone(manifest) as any;
   forged.status = 'PRODUCTION_APPROVED';
   forged.artifactState = 'SIGNED_RELEASE';
@@ -56,11 +61,8 @@ test('status/signature envelope cannot promote MODNet before checkpoint and expo
     sha256: 'a'.repeat(64),
     signatureUrl: 'https://github.com/giltik123/bers23/releases/download/modnet-v1/model.onnx.sig',
   };
-  assert.equal(isExecutableModNetRelease(forged), false);
+  assert.equal(isExecutableModNetRelease(forged), false, 'UNBUILT export must block promotion even with a signed envelope');
 
-  forged.upstream.checkpoint.identityState = 'PINNED';
-  forged.upstream.checkpoint.size = 1;
-  forged.upstream.checkpoint.sha256 = 'b'.repeat(64);
   forged.bersExport.state = 'PINNED';
   forged.bersExport.onnxSize = 1;
   forged.bersExport.onnxSha256 = 'a'.repeat(64);
