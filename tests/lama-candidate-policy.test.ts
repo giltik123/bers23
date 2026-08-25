@@ -13,6 +13,9 @@ import {
   LAMA_CHECKPOINT_SIZE,
   LAMA_CONFIG_SHA256,
   LAMA_CONFIG_SIZE,
+  LAMA_ONNX_OPSET,
+  LAMA_ONNX_SHA256,
+  LAMA_ONNX_SIZE,
   LAMA_UPSTREAM_REVISION,
 } from '../src/platform/creative/local-ai/models/LaMaRelease.ts';
 import { productionLocalModelsByCapability } from '../server/core/localExecution/productionLocalModelPolicy.ts';
@@ -25,10 +28,10 @@ const CPU_PROVEN = 'PROVEN_HOSTED_ORT_1_27_MULTISHAPE';
 const WASM_PROVEN = 'PROVEN_HOSTED_CHROME_ORT_WEB_1_27_256';
 const HOSTED_WEBGPU_BLOCKED = 'HOSTED_SWIFTSHADER_INFERENCE_TIMEOUT_REAL_DEVICE_UNPROVEN';
 
-test('Big-LaMa pins authoritative archive/checkpoint/config while remaining non-executable', () => {
+test('Big-LaMa pins authoritative checkpoint plus exact reproducible C8 ONNX while remaining non-executable', () => {
   assert.equal(manifest.modelId, MODEL_ID);
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED');
+  assert.equal(manifest.artifactState, 'EXPORT_PINNED_RELEASE_REQUIRED');
   assert.equal(manifest.upstream.revision, LAMA_UPSTREAM_REVISION);
   assert.equal(manifest.upstream.license, 'Apache-2.0');
   assert.equal(manifest.upstream.distribution.authoritativeArchiveDriveFileId, LAMA_ARCHIVE_DRIVE_FILE_ID);
@@ -45,11 +48,27 @@ test('Big-LaMa pins authoritative archive/checkpoint/config while remaining non-
   assert.equal(manifest.upstream.checkpoint.configSha256, LAMA_CONFIG_SHA256);
   assert.equal(manifest.upstream.checkpoint.corroboration.checkpointSha256Matches, true);
   assert.equal(manifest.upstream.checkpoint.corroboration.configSha256Matches, true);
-  assert.equal(manifest.bersArtifact.state, 'UNBUILT');
+  assert.equal(manifest.bersArtifact.state, 'PINNED');
+  assert.equal(manifest.bersArtifact.format, 'ONNX');
+  assert.equal(manifest.bersArtifact.size, LAMA_ONNX_SIZE);
+  assert.equal(manifest.bersArtifact.sha256, LAMA_ONNX_SHA256);
+  assert.equal(manifest.bersArtifact.opset, LAMA_ONNX_OPSET);
+  assert.deepEqual(manifest.bersArtifact.reproducibility, {
+    result: 'PASS',
+    independentPythonProcesses: 2,
+    pythonHashSeed: '0',
+    byteIdentical: true,
+    torchVersion: '2.13.0+cpu',
+    onnxVersion: '1.22.0',
+    onnxScriptVersion: '0.7.1',
+    onnxRuntimeVersion: '1.27.0',
+  });
   assert.equal(manifest.runtimeFeasibility.state, C7_FEASIBILITY);
   assert.equal(LAMA_AUTHORITATIVE_CHECKPOINT_PINNED, true);
   assert.equal(isExecutableLaMaRelease(manifest), false);
   assert.equal(laMaReleaseState.productionAvailable, false);
+  assert.equal(laMaReleaseState.bersArtifactSize, LAMA_ONNX_SIZE);
+  assert.equal(laMaReleaseState.bersArtifactSha256, LAMA_ONNX_SHA256);
 });
 
 test('Big-LaMa semantic contract preserves upstream mask polarity and deterministic known-region composite', () => {
@@ -68,7 +87,7 @@ test('Big-LaMa semantic contract preserves upstream mask polarity and determinis
   assert.equal(manifest.tensorContract.finalComposite.knownRegionMustEqualOriginal, true);
 });
 
-test('legacy exporter blocker remains historical evidence while modern Dynamo CPU and WASM feasibility are proven', () => {
+test('legacy exporter blocker remains historical evidence while modern Dynamo CPU/WASM and release identity are proven', () => {
   const architecture = manifest.upstream.architecture;
   assert.equal(architecture.generatorKind, 'ffc_resnet');
   assert.equal(architecture.inputChannels, 4);
@@ -116,8 +135,8 @@ test('legacy exporter blocker remains historical evidence while modern Dynamo CP
   assert.deepEqual(modern.browserWasmThresholds, { maxAbs: 0.0002, rmse: 0.00005 });
   assert.equal(modern.runtimeAuthorityGranted, false);
   assert.equal(modern.productionDeviceApproval, false);
-  assert.equal(modern.releaseArtifactIdentityEstablished, false);
-  assert.equal('sha256' in modern, false, 'runner-local ONNX serialization must not become release identity');
+  assert.equal(modern.releaseArtifactIdentityEstablished, true);
+  assert.equal('sha256' in modern, false, 'release identity belongs to the byte-bound bersArtifact envelope');
 
   assert.equal(feasibility.cpuOrt, CPU_PROVEN);
   assert.equal(feasibility.browserWasm, WASM_PROVEN);
@@ -126,7 +145,7 @@ test('legacy exporter blocker remains historical evidence while modern Dynamo CP
   assert.equal(feasibility.thirdPartyReferenceAuthority, false);
 });
 
-test('hosted SwiftShader WebGPU timeout is recorded as feasibility only, never device approval', () => {
+test('hosted SwiftShader WebGPU timeout is feasibility only, never device approval', () => {
   const hosted = manifest.runtimeFeasibility.modernDynamoOnnxEvidence.hostedWebGpu;
   assert.equal(hosted.runtimeVersion, '1.27.0');
   assert.deepEqual(hosted.shape, [256,256]);
@@ -142,7 +161,7 @@ test('hosted SwiftShader WebGPU timeout is recorded as feasibility only, never d
   assert.equal(manifest.productionApprovalEvidence, null);
 });
 
-test('LaMa is advisory INPAINTING discovery only and absent from production executable catalogs', () => {
+test('LaMa remains advisory INPAINTING discovery only and absent from production executable catalogs', () => {
   const candidates = acquisitionCandidatesForPack('INPAINTING');
   const candidate = candidates.find(value => value.modelId === MODEL_ID);
   assert.ok(candidate);
@@ -160,18 +179,17 @@ test('LaMa is advisory INPAINTING discovery only and absent from production exec
   }
 });
 
-test('future signed envelope is byte-bound and still blocked until BERS artifact/runtime evidence exists', () => {
+test('future signed production envelope must preserve exact C8 bytes and still needs separate runtime/device approval', () => {
   const approved = structuredClone(manifest) as any;
   approved.status = 'PRODUCTION_APPROVED';
   approved.artifactState = 'SIGNED_RELEASE';
   approved.verificationKeyId = 'bers-lama-release-future';
   approved.productionApprovalEvidence = 'https://example.invalid/evidence';
-  approved.bersArtifact = { state: 'PINNED', format: 'ONNX', size: 1, sha256: 'c'.repeat(64) };
   approved.runtimeFeasibility = { ...approved.runtimeFeasibility, state: 'VERIFIED', browserWasm: 'VERIFIED' };
   approved.artifacts.model = {
     url: 'https://example.invalid/lama.onnx',
-    size: 1,
-    sha256: 'c'.repeat(64),
+    size: LAMA_ONNX_SIZE,
+    sha256: LAMA_ONNX_SHA256,
     signatureUrl: 'https://example.invalid/lama.onnx.sig',
   };
   assert.equal(isExecutableLaMaRelease(approved), true, 'complete future envelope is structurally valid only after separate approval evidence');
@@ -182,8 +200,12 @@ test('future signed envelope is byte-bound and still blocked until BERS artifact
     (value: any) => { value.upstream.checkpoint.archiveSha256 = 'a'.repeat(64); },
     (value: any) => { value.upstream.checkpoint.checkpointSha256 = 'b'.repeat(64); },
     (value: any) => { value.upstream.checkpoint.configSha256 = 'd'.repeat(64); },
+    (value: any) => { value.bersArtifact.size = LAMA_ONNX_SIZE - 1; },
+    (value: any) => { value.bersArtifact.sha256 = 'c'.repeat(64); },
+    (value: any) => { value.bersArtifact.opset = 17; },
     (value: any) => { value.runtimeFeasibility.state = C7_FEASIBILITY; },
     (value: any) => { value.runtimeFeasibility.browserWasm = WASM_PROVEN; },
+    (value: any) => { value.artifacts.model.size = LAMA_ONNX_SIZE - 1; },
     (value: any) => { value.artifacts.model.sha256 = 'e'.repeat(64); },
   ];
   for (const mutate of mutations) {
