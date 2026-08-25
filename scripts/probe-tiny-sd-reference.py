@@ -77,7 +77,7 @@ def main() -> int:
     outputs: dict[str, np.ndarray] = {}
     semantics: dict[str, Any] = {}
 
-    text_encoder, text_config = load_text_encoder(snapshot, bridge_dir, manifest)
+    text_encoder, text_config, text_load = load_text_encoder(snapshot, bridge_dir, manifest)
     input_ids, attention_mask = deterministic_text_inputs(int(text_config.vocab_size))
     with torch.inference_mode():
         text_output = text_encoder(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state
@@ -88,11 +88,12 @@ def main() -> int:
         "hiddenSize": int(text_config.hidden_size),
         "sequenceLength": int(input_ids.shape[1]),
         "attentionMaskIncludesPaddingProbe": True,
+        "stateLoad": text_load,
         "output": array_summary(outputs["text_encoder"]),
     }
     del text_encoder, text_output
 
-    unet, unet_config = load_unet(snapshot, bridge_dir, manifest)
+    unet, unet_config, unet_load = load_unet(snapshot, bridge_dir, manifest)
     cross_attention_dim = int(unet_config["cross_attention_dim"])
     sample, timestep, encoder_hidden_states = deterministic_unet_inputs(cross_attention_dim)
     with torch.inference_mode():
@@ -105,11 +106,12 @@ def main() -> int:
         "outChannels": int(unet_config["out_channels"]),
         "crossAttentionDim": cross_attention_dim,
         "timestep": int(timestep.item()),
+        "stateLoad": unet_load,
         "output": array_summary(outputs["unet"]),
     }
     del unet, unet_output
 
-    vae, vae_config = load_vae(snapshot, bridge_dir, manifest)
+    vae, vae_config, vae_load = load_vae(snapshot, bridge_dir, manifest)
     scaling_factor = float(vae_config.get("scaling_factor", 0.18215))
     if abs(scaling_factor - 0.18215) > 1e-12:
         raise RuntimeError(f"unexpected Tiny-SD VAE scaling factor: {scaling_factor}")
@@ -124,6 +126,7 @@ def main() -> int:
         "sampleSize": int(vae_config["sample_size"]),
         "scalingFactor": scaling_factor,
         "pipelineInputContract": "vae.decode(stable_diffusion_latent / scaling_factor).sample",
+        "stateLoad": vae_load,
         "output": array_summary(outputs["vae_decoder"]),
     }
     del vae, vae_output
@@ -140,6 +143,7 @@ def main() -> int:
         "bridgeFormat": "SAFETENSORS",
         "fp16SourceToFp32CpuReference": "EXACT_VALUE_PRESERVING_WIDENING",
         "deterministicSyntheticInputsOnly": True,
+        "stateLoadPolicy": "ALL_LEARNED_PARAMETERS_EXACT_FROM_D1; ONLY_CLOSED_DERIVED_NONLEARNED_BUFFERS_ALLOWED",
         "semantics": semantics,
         "referenceBundle": {
             "format": "NPZ_RUNNER_LOCAL_ONLY",
