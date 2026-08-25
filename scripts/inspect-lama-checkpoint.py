@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect the byte-pinned Big-LaMa checkpoint using restricted weights-only loading.
+"""Inspect the byte-pinned Big-LaMa checkpoint and probe direct legacy ONNX export.
 
 The checkpoint bytes must match the repository-pinned identity before any deserialization. PyTorch
 2.6+ statically enumerates globals in the checkpoint. BERS accepts only an exact, audited set of
@@ -10,7 +10,11 @@ The script then isolates tensor-only `state_dict`, strict-loads only `generator.
 FFCResNetGenerator, and discards all metadata. The pinned FFC source imports `saicinpainting.utils`
 only for `get_shape`; BERS supplies that one pinned-compatible helper through an in-memory module
 shim rather than importing the upstream training utility module and its Lightning-only seed helper.
-It never uses weights_only=False, exports, installs, signs, publishes or grants authority.
+
+When requested, the same strict-loaded generator is used for a legacy `torch.onnx.export` probe with
+`dynamo=False`, opset 17 and no ATen fallback. A known FFT/complex-path unsupported error is recorded
+as fail-closed feasibility evidence; any unrelated exporter failure fails the probe. An unexpected
+successful export is recorded only as UNVALIDATED and grants no runtime or production authority.
 """
 from __future__ import annotations
 
@@ -21,6 +25,7 @@ import json
 import numbers
 import subprocess
 import sys
+import tempfile
 import types
 from collections import defaultdict
 from pathlib import Path
@@ -33,6 +38,8 @@ CHECKPOINT_NAME = "best.ckpt"
 CHECKPOINT_SIZE = 410_046_389
 CHECKPOINT_SHA256 = "fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423"
 MAX_ALLOWED_METADATA_GLOBALS = 16
+LEGACY_ONNX_OPSET = 17
+LEGACY_PROBE_INPUT_SHAPE = (1, 4, 64, 64)
 
 # Exact names observed by torch.serialization.get_unsafe_globals_in_checkpoint on the byte-pinned
 # authoritative checkpoint. Never broaden these to module-prefix matching.
@@ -189,11 +196,89 @@ def restricted_load(checkpoint: Path) -> tuple[dict[str, Any], list[str]]:
     return value, unsafe
 
 
+def _classify_legacy_export_error(error: BaseException) -> tuple[str, str]:
+    message = f"{type(error).__name__}: {error}"
+    lowered = message.lower()
+    if "fft_rfftn" in lowered and ("unsupported" in lowered or "not supported" in lowered):
+        return "BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN", message
+    if "fft_irfftn" in lowered and ("unsupported" in lowered or "not supported" in lowered):
+        return "BLOCKED_UNSUPPORTED_ATEN_FFT_IRFFTN", message
+    if "aten::complex" in lowered and ("unsupported" in lowered or "not supported" in lowered):
+        return "BLOCKED_UNSUPPORTED_ATEN_COMPLEX", message
+    raise RuntimeError(f"Unexpected legacy ONNX export failure: {message[:2000]}") from error
+
+
+def probe_legacy_direct_onnx(generator: torch.nn.Module, report_path: Path) -> None:
+    """Probe exact strict-loaded generator with legacy exporter; never publish the temporary model."""
+    dummy = torch.zeros(LEGACY_PROBE_INPUT_SHAPE, dtype=torch.float32)
+    result: str
+    error_type: str | None = None
+    error_message: str | None = None
+    artifact_size: int | None = None
+    artifact_sha256: str | None = None
+    artifact_produced = False
+
+    with tempfile.TemporaryDirectory(prefix="bers-lama-legacy-onnx-") as temp_dir:
+        model_path = Path(temp_dir) / "lama-big-legacy-probe.onnx"
+        try:
+            with torch.inference_mode():
+                torch.onnx.export(
+                    generator,
+                    dummy,
+                    str(model_path),
+                    export_params=True,
+                    opset_version=LEGACY_ONNX_OPSET,
+                    do_constant_folding=False,
+                    input_names=["generator_input"],
+                    output_names=["generated_rgb"],
+                    dynamo=False,
+                )
+        except Exception as error:
+            result, full_message = _classify_legacy_export_error(error)
+            error_type = type(error).__name__
+            error_message = full_message[:2000]
+        else:
+            if not model_path.is_file() or model_path.stat().st_size <= 0:
+                raise RuntimeError("Legacy ONNX export returned without producing a non-empty artifact")
+            result = "EXPORTED_UNVALIDATED"
+            artifact_produced = True
+            artifact_size = model_path.stat().st_size
+            artifact_sha256 = sha256(model_path)
+
+    report = {
+        "schemaVersion": 1,
+        "status": "CANDIDATE",
+        "productionDeviceApproval": False,
+        "runtimeAuthorityGranted": False,
+        "sourceRevision": UPSTREAM_REVISION,
+        "checkpointSha256": CHECKPOINT_SHA256,
+        "probe": {
+            "exporter": "torch.onnx.export",
+            "torchVersion": torch.__version__,
+            "dynamo": False,
+            "opset": LEGACY_ONNX_OPSET,
+            "atenFallbackAllowed": False,
+            "inputShape": list(LEGACY_PROBE_INPUT_SHAPE),
+            "result": result,
+            "artifactProduced": artifact_produced,
+            "artifactSize": artifact_size,
+            "artifactSha256": artifact_sha256,
+            "temporaryArtifactRetained": False,
+            "errorType": error_type,
+            "errorMessage": error_message,
+        },
+    }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(f"LAMA LEGACY ONNX PROBE: {result}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--legacy-onnx-probe-report", type=Path)
     args = parser.parse_args()
 
     if git(args.source, "rev-parse", "HEAD") != UPSTREAM_REVISION:
@@ -262,6 +347,9 @@ def main() -> None:
         f"state_keys={len(model_state)} generator_keys={len(generator_state)} "
         f"generator_elements={report['checkpoint']['generatorTensorElements']}"
     )
+
+    if args.legacy_onnx_probe_report is not None:
+        probe_legacy_direct_onnx(generator, args.legacy_onnx_probe_report)
 
 
 if __name__ == "__main__":
