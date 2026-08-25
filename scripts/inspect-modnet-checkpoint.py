@@ -6,6 +6,7 @@ Two-phase trust model:
 2. after that digest is pinned in the repository, every later invocation MUST pass
    --expected-sha256 and the digest is checked before torch.load/deserialization.
 
+State-dict deserialization uses torch weights-only mode to avoid unnecessary pickle object loading.
 The script never signs, publishes, installs or grants production execution authority.
 """
 from __future__ import annotations
@@ -53,7 +54,11 @@ def inspect_state_dict(source: Path, checkpoint: Path) -> dict[str, Any]:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    state = torch.load(checkpoint, map_location=torch.device("cpu"))
+    state = torch.load(
+        checkpoint,
+        map_location=torch.device("cpu"),
+        weights_only=True,
+    )
     if not isinstance(state, dict) or not state:
         raise RuntimeError("MODNet checkpoint is not a non-empty state_dict mapping")
     if not all(isinstance(key, str) for key in state):
@@ -80,6 +85,7 @@ def inspect_state_dict(source: Path, checkpoint: Path) -> dict[str, Any]:
         "lastKey": next(reversed(state)),
         "tensorShapes": tensor_shapes,
         "strictArchitectureLoad": True,
+        "weightsOnlyDeserialization": True,
         "architecture": "onnx.modnet_onnx.MODNet(backbone_pretrained=False) wrapped in DataParallel",
     }
 
