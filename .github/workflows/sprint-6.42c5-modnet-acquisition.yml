@@ -61,10 +61,17 @@ jobs:
           print('state_dict keys=', report['checkpoint']['stateDict']['stateDictKeyCount'])
           print('parameter elements=', report['checkpoint']['stateDict']['parameterElementCount'])
           PY
-      - name: Repository weight guard
+      - name: C5 candidate policy and repository weight guards
         run: |
           set -euo pipefail
           npm ci
+          mkdir -p .test-cache/6.42c5
+          npx esbuild tests/modnet-release-policy.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c5/modnet-release-policy.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42c5/modnet-release-policy.test.mjs
+          python -m py_compile scripts/inspect-modnet-checkpoint.py scripts/build-modnet-portrait-matting-release.py
           npm run check:model-weight-tracking
           test "$(git ls-files '*.ckpt' '*.onnx' | wc -l)" -eq 0
       - name: Publish acquisition summary
@@ -78,6 +85,7 @@ jobs:
             echo '- Checkpoint source: upstream-authoritative Google Drive folder'
             echo '- Exact filename / byte size / SHA-256 / strict pinned-architecture load: checked'
             echo '- Initial discovery only: digest is not yet pinned before deserialization on this head'
+            echo '- Candidate remains absent from production executable catalogs'
             echo '- Production device approval: NOT GRANTED'
             echo '```json'
             cat .test-cache/6.42c5/modnet-checkpoint-acquisition.json
