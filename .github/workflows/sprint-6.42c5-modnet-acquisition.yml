@@ -1,0 +1,220 @@
+name: Sprint 6.42C5 MODNet acquisition acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MODNET_CHECKPOINT_SHA256: 7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8
+  MODNET_CHECKPOINT_SIZE: '26255603'
+  MODNET_REFERENCE_ONNX_SHA256: 07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9
+  MODNET_REFERENCE_ONNX_SIZE: '25888640'
+  MODNET_ONNX_SHA256: 18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919
+  MODNET_ONNX_SIZE: '25961178'
+
+jobs:
+  authoritative-checkpoint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install acquisition tools
+        run: |
+          python -m pip install --disable-pip-version-check gdown==5.2.0
+          python -m pip install --disable-pip-version-check torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+      - name: Clone exact MODNet upstream
+        run: |
+          set -euo pipefail
+          git clone https://github.com/ZHKKKe/MODNet "${RUNNER_TEMP}/MODNet"
+          git -C "${RUNNER_TEMP}/MODNet" checkout --detach 28165a451e4610c9d77cfdf925a94610bb2810fb
+          test "$(git -C "${RUNNER_TEMP}/MODNet" rev-parse HEAD)" = 28165a451e4610c9d77cfdf925a94610bb2810fb
+      - name: Download authoritative upstream model folder
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/modnet-checkpoints"
+          gdown --folder 'https://drive.google.com/drive/folders/1umYmlCulvIFNaqPjwod1SayFmSRHziyR?usp=sharing' \
+            -O "${RUNNER_TEMP}/modnet-checkpoints"
+          mapfile -t checkpoints < <(find "${RUNNER_TEMP}/modnet-checkpoints" -type f -name 'modnet_photographic_portrait_matting.ckpt' -print)
+          mapfile -t references < <(find "${RUNNER_TEMP}/modnet-checkpoints" -type f -name 'modnet_photographic_portrait_matting.onnx' -print)
+          test "${#checkpoints[@]}" -eq 1
+          test "${#references[@]}" -eq 1
+          printf '%s\n' "${checkpoints[0]}" > "${RUNNER_TEMP}/modnet-checkpoint-path"
+          printf '%s\n' "${references[0]}" > "${RUNNER_TEMP}/modnet-reference-onnx-path"
+      - name: Verify pinned checkpoint before strict architecture load
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/6.42c5
+          checkpoint="$(cat "${RUNNER_TEMP}/modnet-checkpoint-path")"
+          test "$(stat -c%s "${checkpoint}")" = "${MODNET_CHECKPOINT_SIZE}"
+          python scripts/inspect-modnet-checkpoint.py \
+            --source "${RUNNER_TEMP}/MODNet" \
+            --checkpoint "${checkpoint}" \
+            --expected-sha256 "${MODNET_CHECKPOINT_SHA256}" \
+            --metadata .test-cache/6.42c5/modnet-checkpoint-acquisition.json \
+            --inspect-state-dict
+          python - <<'PY'
+          import json, os
+          report = json.load(open('.test-cache/6.42c5/modnet-checkpoint-acquisition.json', encoding='utf-8'))
+          assert report['status'] == 'CANDIDATE'
+          assert report['productionDeviceApproval'] is False
+          assert report['checkpoint']['size'] == int(os.environ['MODNET_CHECKPOINT_SIZE'])
+          assert report['checkpoint']['sha256'] == os.environ['MODNET_CHECKPOINT_SHA256']
+          assert report['checkpoint']['digestPinnedBeforeDeserialization'] is True
+          state = report['checkpoint']['stateDict']
+          assert state['strictArchitectureLoad'] is True
+          assert state['stateDictKeyCount'] == 751
+          assert state['parameterElementCount'] == 8780012
+          print('checkpoint size=', report['checkpoint']['size'])
+          print('checkpoint sha256=', report['checkpoint']['sha256'])
+          PY
+      - name: Verify authoritative upstream ONNX independent reference identity
+        run: |
+          set -euo pipefail
+          reference="$(cat "${RUNNER_TEMP}/modnet-reference-onnx-path")"
+          python - "${reference}" <<'PY'
+          import hashlib, json, os, pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          report = {
+              'name': path.name,
+              'size': path.stat().st_size,
+              'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+              'role': 'UPSTREAM_REFERENCE_NOT_BERS_RELEASE_AUTHORITY',
+          }
+          assert report['size'] == int(os.environ['MODNET_REFERENCE_ONNX_SIZE'])
+          assert report['sha256'] == os.environ['MODNET_REFERENCE_ONNX_SHA256']
+          pathlib.Path('.test-cache/6.42c5/modnet-upstream-onnx-reference.json').write_text(
+              json.dumps(report, indent=2) + '\n', encoding='utf-8')
+          print('upstream ONNX size=', report['size'])
+          print('upstream ONNX sha256=', report['sha256'])
+          PY
+      - name: Reproduce exact BERS ONNX and prove PyTorch/ORT parity
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            numpy==1.26.4 onnx==1.15.0 onnxruntime==1.16.3
+          checkpoint="$(cat "${RUNNER_TEMP}/modnet-checkpoint-path")"
+          python scripts/build-modnet-portrait-matting-release.py \
+            --source "${RUNNER_TEMP}/MODNet" \
+            --checkpoint "${checkpoint}" \
+            --manifest src/platform/creative/local-ai/models/portrait-matting.manifest.json \
+            --output .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx \
+            --report .test-cache/6.42c5/modnet-bers-export.json
+          test "$(stat -c%s .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx)" = "${MODNET_ONNX_SIZE}"
+          test "$(sha256sum .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx | cut -d' ' -f1)" = "${MODNET_ONNX_SHA256}"
+      - name: Cross-check BERS export against official upstream ONNX reference
+        run: |
+          set -euo pipefail
+          reference="$(cat "${RUNNER_TEMP}/modnet-reference-onnx-path")"
+          python - "${reference}" .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx <<'PY'
+          import hashlib, json, os, pathlib, sys
+          import numpy as np
+          import onnx
+          import onnxruntime as ort
+
+          reference = pathlib.Path(sys.argv[1])
+          bers = pathlib.Path(sys.argv[2])
+          reference_model = onnx.load(reference, load_external_data=False)
+          onnx.checker.check_model(reference_model, full_check=True)
+          inputs = [v.name for v in reference_model.graph.input]
+          outputs = [v.name for v in reference_model.graph.output]
+          if inputs != ['input'] or outputs != ['output']:
+              raise RuntimeError(f'unexpected official MODNet ONNX I/O: {inputs!r} -> {outputs!r}')
+          if reference.stat().st_size != int(os.environ['MODNET_REFERENCE_ONNX_SIZE']):
+              raise RuntimeError('official MODNet ONNX reference size drift')
+          if hashlib.sha256(reference.read_bytes()).hexdigest() != os.environ['MODNET_REFERENCE_ONNX_SHA256']:
+              raise RuntimeError('official MODNet ONNX reference SHA drift')
+          if bers.stat().st_size != int(os.environ['MODNET_ONNX_SIZE']):
+              raise RuntimeError('BERS MODNet ONNX size drift')
+          if hashlib.sha256(bers.read_bytes()).hexdigest() != os.environ['MODNET_ONNX_SHA256']:
+              raise RuntimeError('BERS MODNet ONNX SHA drift')
+
+          reference_session = ort.InferenceSession(str(reference), providers=['CPUExecutionProvider'])
+          bers_session = ort.InferenceSession(str(bers), providers=['CPUExecutionProvider'])
+          rng = np.random.default_rng(6425)
+          comparisons = []
+          for height, width in ((128, 160), (256, 320), (512, 512)):
+              values = rng.uniform(-1.0, 1.0, size=(1, 3, height, width)).astype(np.float32)
+              expected = reference_session.run(['output'], {'input': values})[0]
+              actual = bers_session.run(['output'], {'input': values})[0]
+              if expected.shape != actual.shape:
+                  raise RuntimeError(f'upstream/BERS output shape mismatch: {expected.shape} != {actual.shape}')
+              max_abs = float(np.max(np.abs(expected - actual)))
+              if max_abs > 1e-4:
+                  raise RuntimeError(f'upstream/BERS output parity failed: {max_abs} > 1e-4')
+              comparisons.append({'height': height, 'width': width, 'maxAbsError': max_abs})
+
+          default_opsets = [int(x.version) for x in reference_model.opset_import if x.domain in ('', 'ai.onnx')]
+          if default_opsets != [11]:
+              raise RuntimeError(f'unexpected official MODNet reference opset: {default_opsets!r}')
+          report = {
+              'reference': {
+                  'size': reference.stat().st_size,
+                  'sha256': hashlib.sha256(reference.read_bytes()).hexdigest(),
+                  'opset': 11,
+                  'nodeCount': len(reference_model.graph.node),
+              },
+              'bers': {
+                  'size': bers.stat().st_size,
+                  'sha256': hashlib.sha256(bers.read_bytes()).hexdigest(),
+                  'opset': 17,
+              },
+              'comparisons': comparisons,
+              'authority': 'REFERENCE_ONLY',
+          }
+          pathlib.Path('.test-cache/6.42c5/modnet-upstream-reference-parity.json').write_text(
+              json.dumps(report, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(report, indent=2))
+          PY
+      - name: C5 candidate policy, release and repository weight guards
+        run: |
+          set -euo pipefail
+          npm ci
+          mkdir -p .test-cache/6.42c5
+          npx esbuild tests/modnet-release-policy.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c5/modnet-release-policy.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42c5/modnet-release-policy.test.mjs
+          node --test tests/modnet-export-security.test.mjs
+          node --test tests/modnet-release-workflow.test.mjs
+          python -m py_compile scripts/inspect-modnet-checkpoint.py scripts/build-modnet-portrait-matting-release.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.onnx' | wc -l)" -eq 0
+      - name: Publish acquisition and export summary
+        run: |
+          {
+            echo '## MODNet authoritative candidate evidence'
+            echo
+            echo '- Status: CANDIDATE'
+            echo '- Source revision: `28165a451e4610c9d77cfdf925a94610bb2810fb`'
+            echo '- Source license: Apache-2.0'
+            echo '- Pinned checkpoint size / SHA-256 verified before deserialization: PASS'
+            echo '- Strict pinned-architecture state_dict load: PASS'
+            echo '- BERS CPU ONNX exact pinned reproduction + ONNX checker + PyTorch/ORT parity: PASS'
+            echo '- Official upstream ONNX pinned as independent reference only; cross-parity: PASS'
+            echo '- Protected signed-CANDIDATE release authority guards: PASS'
+            echo '- Candidate remains absent from production executable catalogs'
+            echo '- Production device approval: NOT GRANTED'
+            echo '### Checkpoint evidence'
+            echo '```json'
+            cat .test-cache/6.42c5/modnet-checkpoint-acquisition.json
+            echo '```'
+            echo '### BERS export evidence'
+            echo '```json'
+            cat .test-cache/6.42c5/modnet-bers-export.json
+            echo '```'
+            echo '### Upstream reference comparison'
+            echo '```json'
+            cat .test-cache/6.42c5/modnet-upstream-reference-parity.json
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"

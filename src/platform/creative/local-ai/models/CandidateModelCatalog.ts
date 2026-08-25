@@ -1,4 +1,5 @@
 import efficientSam from './efficient-sam-ti.manifest.json' with { type: 'json' };
+import modNet from './portrait-matting.manifest.json' with { type: 'json' };
 
 export type LocalModelAcquisitionCandidate = Readonly<{
   modelId: string;
@@ -9,7 +10,7 @@ export type LocalModelAcquisitionCandidate = Readonly<{
   semanticCapabilities: readonly string[];
   upstreamRevision: string;
   upstreamLicense: string;
-  upstreamBytes: number;
+  upstreamBytes: number | 'UNKNOWN';
   productionExecutable: false;
 }>;
 
@@ -29,6 +30,18 @@ export const LOCAL_MODEL_ACQUISITION_CANDIDATES: readonly LocalModelAcquisitionC
     upstreamRevision: String(efficientSam.upstream.revision),
     upstreamLicense: String(efficientSam.upstream.license),
     upstreamBytes: Number(efficientSam.upstream.artifacts.encoder.size) + Number(efficientSam.upstream.artifacts.decoder.size),
+    productionExecutable: false,
+  }),
+  Object.freeze({
+    modelId: String(modNet.modelId),
+    version: String(modNet.version),
+    packId: 'MATTING',
+    status: 'CANDIDATE',
+    artifactState: String(modNet.artifactState),
+    semanticCapabilities: Object.freeze([...modNet.semanticCapabilities]),
+    upstreamRevision: String(modNet.upstream.revision),
+    upstreamLicense: String(modNet.upstream.license),
+    upstreamBytes: typeof modNet.upstream.checkpoint.size === 'number' ? Number(modNet.upstream.checkpoint.size) : 'UNKNOWN',
     productionExecutable: false,
   }),
 ]);

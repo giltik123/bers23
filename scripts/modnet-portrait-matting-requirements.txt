@@ -1,0 +1,8 @@
+# BERS reproducible MODNet CANDIDATE export environment
+# Python 3.11 / ubuntu-24.04 hosted reference
+# Exact proven torch wheel comes from the official PyTorch CPU index.
+--extra-index-url https://download.pytorch.org/whl/cpu
+numpy==1.26.4
+torch==2.1.2+cpu
+onnx==1.15.0
+onnxruntime==1.16.3

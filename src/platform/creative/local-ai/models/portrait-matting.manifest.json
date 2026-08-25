@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "modelId": "modnet-photographic-portrait-matting",
+  "version": "1.0.0-candidate.1",
+  "status": "CANDIDATE",
+  "semanticCapabilities": [
+    "portrait-matting",
+    "alpha-matte",
+    "background-removal"
+  ],
+  "upstream": {
+    "repository": "https://github.com/ZHKKKe/MODNet",
+    "revision": "28165a451e4610c9d77cfdf925a94610bb2810fb",
+    "license": "Apache-2.0",
+    "checkpoint": {
+      "name": "modnet_photographic_portrait_matting.ckpt",
+      "authoritativeFolderUrl": "https://drive.google.com/drive/folders/1umYmlCulvIFNaqPjwod1SayFmSRHziyR?usp=sharing",
+      "authoritativeDriveFileId": "1mcr7ALciuAsHCpLnrtG_eop5-EYhbCmz",
+      "size": 26255603,
+      "sha256": "7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8",
+      "identityState": "PINNED",
+      "stateDictKeyCount": 751,
+      "parameterElementCount": 8780012,
+      "strictPinnedArchitectureLoad": true
+    },
+    "onnx": {
+      "exportScript": "onnx/export_onnx.py",
+      "modelSource": "onnx/modnet_onnx.py",
+      "authoritativeReference": {
+        "name": "modnet_photographic_portrait_matting.onnx",
+        "driveFileId": "1IxxExwrUe4_yQnlEx389tmQI8luX7z5m",
+        "size": 25888640,
+        "sha256": "07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9",
+        "opset": 11,
+        "nodeCount": 487,
+        "role": "UPSTREAM_REFERENCE_NOT_BERS_RELEASE_AUTHORITY"
+      }
+    }
+  },
+  "tensorContract": {
+    "input": {
+      "name": "input",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 3,
+      "colorSpace": "RGB",
+      "normalization": "(uint8 - 127.5) / 127.5",
+      "range": [-1, 1]
+    },
+    "resize": {
+      "referenceSize": 512,
+      "preserveAspectRatio": true,
+      "spatialMultiple": 32,
+      "inputInterpolation": "AREA",
+      "restoreMatteInterpolation": "AREA"
+    },
+    "output": {
+      "name": "output",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 1,
+      "range": [0, 1],
+      "activation": "SIGMOID",
+      "semanticType": "CONTINUOUS_ALPHA_MATTE",
+      "threshold": null
+    }
+  },
+  "bersExport": {
+    "state": "PINNED",
+    "opset": 17,
+    "device": "CPU",
+    "quantization": "NONE",
+    "simplification": "NONE",
+    "parityRequired": true,
+    "environment": {
+      "python": "3.11",
+      "torch": "2.1.2+cpu",
+      "numpy": "1.26.4",
+      "onnx": "1.15.0",
+      "onnxruntime": "1.16.3"
+    },
+    "onnxSize": 25961178,
+    "onnxSha256": "18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919",
+    "referenceParity": {
+      "tolerance": 0.0001,
+      "maxAbsErrorByShape": {
+        "128x160": 0.000002562999725341797,
+        "256x320": 0.000006943941116333008,
+        "512x512": 0.000015974044799804688
+      }
+    }
+  },
+  "artifactState": "EXPORT_PINNED_RELEASE_REQUIRED",
+  "artifacts": {
+    "model": {
+      "url": null,
+      "size": null,
+      "sha256": null,
+      "signatureUrl": null
+    }
+  },
+  "verificationKeyId": null,
+  "productionApprovalEvidence": null
+}
