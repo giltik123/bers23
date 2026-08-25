@@ -534,9 +534,16 @@ def main() -> int:
                 value["result"] = "WASM_COMPACT_SIZE_BLOCKED"
             else:
                 value["result"] = "WASM_COMPACT_TRANSFORM_BLOCKED"
+        value["compactSizePassed"] = bool(
+            value["result"] == "WASM_COMPACT_NATIVE_PASS"
+            and value.get("candidate") is not None
+            and value["candidate"].get("sizeRatio", 1.0) < 0.80
+        )
         if value["result"] == "WASM_COMPACT_NATIVE_PASS":
             if value.get("candidate") is None or value.get("nativeOrtParity", {}).get("passed") is not True:
                 raise RuntimeError(f"D3 WASM selected candidate is not parity-qualified: {component}")
+            if value["compactSizePassed"] is not True:
+                raise RuntimeError(f"D3 WASM selected candidate is not compact: {component}")
             selected_path = output_dir / COMPONENT_FILES[component]
             if not selected_path.is_file() or selected_path.is_symlink():
                 raise RuntimeError(f"D3 WASM selected candidate binary missing: {component}")
