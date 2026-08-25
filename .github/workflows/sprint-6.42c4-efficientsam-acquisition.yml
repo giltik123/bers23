@@ -50,7 +50,7 @@ jobs:
               assert len(value['sha256']) == 64
               print(f"{name}: size={value['size']} sha256={value['sha256']}")
           PY
-      - name: Run C4 release policy contract
+      - name: Run C4 release policy and workflow contracts
         run: |
           set -euo pipefail
           npm ci
@@ -59,6 +59,7 @@ jobs:
             --outfile=.test-cache/6.42c4/efficientsam-release-policy.test.mjs \
             --external:node:*
           node --test .test-cache/6.42c4/efficientsam-release-policy.test.mjs
+          node --test tests/efficientsam-release-workflow.test.mjs
           python -m py_compile scripts/inspect-efficientsam-ti-release.py
           npm run check:model-weight-tracking
           test "$(git ls-files '*.onnx' | wc -l)" -eq 0
