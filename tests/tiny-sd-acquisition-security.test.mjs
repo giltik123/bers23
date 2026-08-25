@@ -9,6 +9,10 @@ const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/loc
 
 test('snapshot inspector inventories exact runtime files without deserializing weights', () => {
   assert.match(inspector, /EXPECTED_FILES = \(/);
+  assert.match(inspector, /--expected-manifest/);
+  assert.match(inspector, /identityState.*PINNED/);
+  assert.match(inspector, /Tiny-SD pinned runtime identity mismatch/);
+  assert.match(inspector, /matchesPinnedManifest.*True/);
   assert.match(inspector, /text_encoder\/pytorch_model\.bin/);
   assert.match(inspector, /unet\/diffusion_pytorch_model\.bin/);
   assert.match(inspector, /vae\/diffusion_pytorch_model\.bin/);
@@ -24,6 +28,9 @@ test('bridge verifies recorded bytes before restricted weights-only deserializat
   const driftGate = bridge.indexOf('source weight drift before deserialization');
   const load = bridge.indexOf('torch.load(source, map_location="cpu", weights_only=True)');
   assert.ok(verifySha >= 0 && driftGate > verifySha && load > driftGate);
+  assert.match(bridge, /--expected-manifest/);
+  assert.match(bridge, /matchesPinnedManifest/);
+  assert.match(bridge, /Tiny-SD pinned tensor bridge identity mismatch/);
   assert.match(bridge, /weights_only=True/);
   assert.doesNotMatch(bridge, /weights_only=False/);
   assert.match(bridge, /non-tensor state_dict value/);
@@ -33,8 +40,9 @@ test('bridge verifies recorded bytes before restricted weights-only deserializat
   assert.match(bridge, /runtimeAuthorityGranted.*False/);
 });
 
-test('hosted D1 acquisition pins restricted bridge dependencies and destroys binaries before JSON upload', () => {
+test('hosted D1 acquisition reproduces pinned identities and destroys binaries before JSON upload', () => {
   assert.match(workflow, /cad0bd7495fa6c4bcca01b19a723dc91627fe84f/);
+  assert.match(workflow, /TINY_SD_MANIFEST: src\/platform\/creative\/local-ai\/models\/tiny-sd-generation\.manifest\.json/);
   assert.match(workflow, /snapshot_download/);
   assert.match(workflow, /inspect-tiny-sd-snapshot\.py/);
   assert.match(workflow, /numpy==1\.26\.4/);
@@ -42,6 +50,9 @@ test('hosted D1 acquisition pins restricted bridge dependencies and destroys bin
   assert.match(workflow, /safetensors==0\.8\.0/);
   assert.match(workflow, /assert numpy\.__version__ == '1\.26\.4'/);
   assert.match(workflow, /bridge-tiny-sd-safetensors\.py/);
+  assert.equal((workflow.match(/--expected-manifest/g) ?? []).length, 2);
+  assert.match(workflow, /inventory\['matchesPinnedManifest'\] is True/);
+  assert.match(workflow, /bridge\['matchesPinnedManifest'\] is True/);
   assert.match(workflow, /rm -rf "\$\{RUNNER_TEMP\}\/tiny-sd" "\$\{RUNNER_TEMP\}\/tiny-sd-bridge"/);
   const destroy = workflow.indexOf('rm -rf "${RUNNER_TEMP}/tiny-sd" "${RUNNER_TEMP}/tiny-sd-bridge"');
   const upload = workflow.indexOf('actions/upload-artifact@v4');
