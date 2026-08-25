@@ -3,6 +3,19 @@
 import * as ort from 'onnxruntime-web/webgpu';
 
 const ORT_WEBGPU_VERSION = '1.27.0';
+const SESSION_TIMEOUT_MS = 60_000;
+const INFERENCE_TIMEOUT_MS = 120_000;
+const withTimeout = async (promise, timeoutMs, code) => {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(code)), timeoutMs); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
 const metrics = (reference, actual) => {
   let maxAbs = 0, sumAbs = 0, sumSquared = 0;
   for (let index = 0; index < reference.length; index++) {
@@ -35,7 +48,8 @@ const base = (result, extras = {}) => ({
   onnxruntimeWebVersion: ORT_WEBGPU_VERSION, runtimeAuthorityGranted: false,
   productionDeviceApproval: false, browserExecutionIsProductionApproval: false,
   productionPromotionAllowed: false, hostedSoftwareFeasibilityOnly: true,
-  providerFallbackAllowed: false, executionProviders: ['webgpu'], ...extras,
+  providerFallbackAllowed: false, executionProviders: ['webgpu'],
+  timeoutsMs: { session: SESSION_TIMEOUT_MS, inference: INFERENCE_TIMEOUT_MS }, ...extras,
 });
 
 globalThis.runLamaBrowserWebGpuFeasibility = async ({ modelUrl, inputUrl, referenceUrl, height, width }) => {
@@ -57,18 +71,30 @@ globalThis.runLamaBrowserWebGpuFeasibility = async ({ modelUrl, inputUrl, refere
   const reference = new Float32Array(referenceBytes.buffer, referenceBytes.byteOffset, referenceBytes.byteLength / 4);
   let session;
   try {
-    session = await ort.InferenceSession.create(modelBytes, { executionProviders: ['webgpu'] });
+    session = await withTimeout(
+      ort.InferenceSession.create(modelBytes, { executionProviders: ['webgpu'] }),
+      SESSION_TIMEOUT_MS,
+      'WEBGPU_SESSION_TIMEOUT',
+    );
   } catch (error) {
-    return base('WEBGPU_SESSION_BLOCKED', { shape: [height, width], modelBytes: modelBytes.byteLength, adapter: adapterInfo, error: String(error) });
+    const message = String(error);
+    const result = message.includes('WEBGPU_SESSION_TIMEOUT') ? 'WEBGPU_SESSION_TIMEOUT' : 'WEBGPU_SESSION_BLOCKED';
+    return base(result, { shape: [height, width], modelBytes: modelBytes.byteLength, adapter: adapterInfo, error: message });
   }
 
   try {
     const started = performance.now();
     let outputs;
     try {
-      outputs = await session.run({ generator_input: new ort.Tensor('float32', input, [1, 4, height, width]) }, ['generated_rgb']);
+      outputs = await withTimeout(
+        session.run({ generator_input: new ort.Tensor('float32', input, [1, 4, height, width]) }, ['generated_rgb']),
+        INFERENCE_TIMEOUT_MS,
+        'WEBGPU_INFERENCE_TIMEOUT',
+      );
     } catch (error) {
-      return base('WEBGPU_INFERENCE_BLOCKED', { shape: [height, width], modelBytes: modelBytes.byteLength, adapter: adapterInfo, error: String(error) });
+      const message = String(error);
+      const result = message.includes('WEBGPU_INFERENCE_TIMEOUT') ? 'WEBGPU_INFERENCE_TIMEOUT' : 'WEBGPU_INFERENCE_BLOCKED';
+      return base(result, { shape: [height, width], modelBytes: modelBytes.byteLength, adapter: adapterInfo, error: message });
     }
     const latencyMs = performance.now() - started;
     const output = outputs.generated_rgb;
