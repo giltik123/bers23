@@ -6,6 +6,9 @@ const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/loc
 const prepare = await readFile(new URL('../scripts/prepare-tiny-sd-d3-fp16-webgpu.py', import.meta.url), 'utf8');
 const browser = await readFile(new URL('../tests/tiny-sd-d3-browser-webgpu.html', import.meta.url), 'utf8');
 const runner = await readFile(new URL('../scripts/test-tiny-sd-d3-browser-webgpu.mjs', import.meta.url), 'utf8');
+const quantizeWasm = await readFile(new URL('../scripts/prepare-tiny-sd-d3-wasm-quantized.py', import.meta.url), 'utf8');
+const browserWasm = await readFile(new URL('../tests/tiny-sd-d3-browser-wasm.html', import.meta.url), 'utf8');
+const runnerWasm = await readFile(new URL('../scripts/test-tiny-sd-d3-browser-wasm.mjs', import.meta.url), 'utf8');
 
 test('D3 remains advisory and cannot grant Tiny-SD runtime or production authority', () => {
   assert.equal(manifest.status, 'CANDIDATE');
@@ -13,7 +16,7 @@ test('D3 remains advisory and cannot grant Tiny-SD runtime or production authori
   assert.equal(manifest.runtimeFeasibility.runtimeAuthorityGranted, false);
   assert.equal(manifest.productionApprovalEvidence, null);
   assert.equal('artifacts' in manifest, false);
-  for (const source of [prepare, browser, runner]) {
+  for (const source of [prepare, browser, runner, quantizeWasm, browserWasm, runnerWasm]) {
     assert.match(source, /runtimeAuthorityGranted["']?\s*[:=]\s*False|runtimeAuthorityGranted:\s*false/);
     assert.match(source, /productionApproval["']?\s*[:=]\s*False|productionApproval:\s*false|productionDeviceApproval:\s*false/);
   }
@@ -86,8 +89,48 @@ test('D3 browser WebGPU proof is capability-first, URL-backed and forbids WASM f
   assert.doesNotMatch(browser, /executionProviders:\s*\[['"]webgpu['"],\s*['"]wasm['"]\]/);
 });
 
+test('D3 WASM baseline is component-specific and fail-closed before browser execution', () => {
+  assert.match(quantizeWasm, /DYNAMIC_U8_WEIGHT_MATMUL/);
+  assert.match(quantizeWasm, /STATIC_QDQ_U8S8_CONV_MATMUL_GEMM/);
+  assert.match(quantizeWasm, /fullInt8UniversalPackClaimed["']?: False/);
+  assert.match(quantizeWasm, /CalibrationMethod\.MinMax/);
+  assert.match(quantizeWasm, /QuantFormat\.QDQ/);
+  assert.match(quantizeWasm, /activation_type=QuantType\.QUInt8/);
+  assert.match(quantizeWasm, /weight_type=QuantType\.QInt8/);
+  assert.match(quantizeWasm, /weight_type=QuantType\.QUInt8/);
+  assert.match(quantizeWasm, /SYNTHETIC_DETERMINISTIC_RANGE_PROBE_NOT_DATASET_AUTHORITY/);
+  assert.match(quantizeWasm, /productionQualityAuthority["']?: False/);
+  assert.match(quantizeWasm, /onnx\.checker\.check_model\(model, full_check=True\)/);
+  assert.match(quantizeWasm, /inventory\["domains"\] != \["ai\.onnx"\]/);
+  assert.match(quantizeWasm, /inventory\["functionCount"\] != 0/);
+  assert.match(quantizeWasm, /WASM_COMPACT_NUMERIC_RISK/);
+  assert.match(quantizeWasm, /WASM_COMPACT_SIZE_BLOCKED/);
+  assert.match(quantizeWasm, /WASM_COMPACT_TRANSFORM_BLOCKED/);
+  assert.match(quantizeWasm, /maxAbsOverReferenceMaxAbs/);
+  assert.match(quantizeWasm, /rmseOverReferenceRms/);
+  assert.doesNotMatch(quantizeWasm, /strict=False/);
+});
+
+test('D3 WASM browser proof uses the production factory, local runtime assets and no provider fallback', () => {
+  assert.match(browserWasm, /BrowserOnnxSessionFactory/);
+  assert.match(browserWasm, /factory\.create\(modelBytes, \{ executionProviders: \['wasm'\] \}\)/);
+  assert.match(browserWasm, /providerFallbackAllowed: false/);
+  assert.match(browserWasm, /crossOriginIsolated/);
+  assert.match(browserWasm, /D2_ACCEPTED_FP32_CPU_ORT_OUTPUT/);
+  assert.match(runnerWasm, /Cross-Origin-Opener-Policy/);
+  assert.match(runnerWasm, /Cross-Origin-Embedder-Policy/);
+  assert.match(runnerWasm, /externalHttpRequests/);
+  assert.match(runnerWasm, /WASM_COMPACT_PRE_BROWSER_BLOCKED/);
+  assert.match(runnerWasm, /productionFactory: 'BrowserOnnxSessionFactory'/);
+  assert.match(runnerWasm, /PASS/);
+  assert.doesNotMatch(browserWasm, /executionProviders:\s*\[['"]wasm['"],\s*['"]webgpu['"]\]/);
+});
+
 test('D3 precision and browser evidence keep binaries runner-local', () => {
   assert.match(prepare, /binaryArtifactsRunnerLocalOnly["']?: True/);
   assert.match(prepare, /releaseIdentityPinned["']?: False/);
+  assert.match(quantizeWasm, /binaryArtifactsRunnerLocalOnly["']?: True/);
+  assert.match(quantizeWasm, /releaseIdentityPinned["']?: False/);
   assert.doesNotMatch(prepare, /PRIVATE KEY/);
+  assert.doesNotMatch(quantizeWasm, /PRIVATE KEY/);
 });
