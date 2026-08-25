@@ -17,6 +17,7 @@ export type LaMaPromotionBlocker =
   | 'WRONG_MODEL_IDENTITY'
   | 'SIGNED_RELEASE_REQUIRED'
   | 'RELEASE_SIGNATURE_UNVERIFIED'
+  | 'EVIDENCE_SIGNATURE_UNVERIFIED'
   | 'WRONG_RELEASE_KEY'
   | 'INVALID_EVIDENCE_URL'
   | 'STALE_EVIDENCE'
@@ -43,10 +44,26 @@ export type LaMaSignedReleaseEvidence = Readonly<{
   modelSize: number;
   modelSha256: string;
   verificationKeyId: string | null;
-  modelSignatureVerified: boolean;
-  manifestSignatureVerified: boolean;
-  releaseEvidenceUrl: string | null;
+  modelUrl: string | null;
+  modelSignatureUrl: string | null;
+  manifestUrl: string | null;
+  manifestSignatureUrl: string | null;
 }>;
+
+export type LaMaPromotionAttestation = Readonly<{
+  evidenceUrl: string;
+  signatureUrl: string;
+}>;
+
+/**
+ * Cryptographic verification is deliberately outside the untrusted evidence document.
+ * Production callers must provide an implementation backed by the trusted signature/key boundary;
+ * there is no permissive/default verifier.
+ */
+export interface LaMaPromotionTrustPort {
+  verifySignedRelease(release: LaMaSignedReleaseEvidence): Promise<boolean>;
+  verifyPromotionEvidence(attestation: LaMaPromotionAttestation): Promise<boolean>;
+}
 
 export type LaMaRealDeviceEvidence = Readonly<{
   evidenceKind: 'REAL_PHYSICAL_DEVICE' | 'HOSTED_SOFTWARE_ADAPTER' | 'UNKNOWN';
@@ -66,12 +83,7 @@ export type LaMaBenchmarkPromotionEvidence = Readonly<{
   warmupCount: number;
   sampleCount: number;
   successfulSamples: number;
-  latencyMs: Readonly<{
-    min: number;
-    median: number;
-    p95: number;
-    max: number;
-  }>;
+  latencyMs: Readonly<{ min: number; median: number; p95: number; max: number }>;
   peakRamBytes: number | 'UNKNOWN';
   peakVramBytes: number | 'UNKNOWN';
   testedShapes: readonly Readonly<[number, number]>[];
@@ -114,7 +126,7 @@ export type LaMaProductionPromotionEvidence = Readonly<{
   schemaVersion: 1;
   capturedAt: number;
   expiresAt: number;
-  evidenceUrl: string;
+  attestation: LaMaPromotionAttestation;
   release: LaMaSignedReleaseEvidence;
   device: LaMaRealDeviceEvidence;
   benchmark: LaMaBenchmarkPromotionEvidence;
@@ -128,13 +140,15 @@ export type LaMaPromotionAssessment = Readonly<{
 }>;
 
 /**
- * Pure admission predicate for untrusted promotion evidence.
- * It does not install a model, mutate the LaMa manifest, approve a runtime tier, or grant Core authority.
+ * Admission-only gate. The evidence object is untrusted and neither it nor a browser may self-assert
+ * signature success. The separate trust port must cryptographically verify both the signed C8 release
+ * and the detached promotion-evidence attestation. This function never mutates model/runtime/Core state.
  */
-export function assessLaMaProductionPromotion(
+export async function assessLaMaProductionPromotion(
   value: unknown,
+  trust: LaMaPromotionTrustPort,
   now: number = Date.now(),
-): LaMaPromotionAssessment {
+): Promise<LaMaPromotionAssessment> {
   const blockers = new Set<LaMaPromotionBlocker>();
   const evidence = asRecord(value);
   if (!evidence || evidence.schemaVersion !== LAMA_PROMOTION_EVIDENCE_SCHEMA_VERSION) {
@@ -148,34 +162,80 @@ export function assessLaMaProductionPromotion(
   if (capturedAt !== null && capturedAt > now) blockers.add('FUTURE_EVIDENCE');
   if (capturedAt !== null && now - capturedAt > LAMA_PROMOTION_EVIDENCE_MAX_AGE_MS) blockers.add('STALE_EVIDENCE');
   if (expiresAt !== null && expiresAt < now) blockers.add('STALE_EVIDENCE');
-  if (!safeHttpsUrl(evidence.evidenceUrl)) blockers.add('INVALID_EVIDENCE_URL');
 
-  validateRelease(asRecord(evidence.release), blockers);
+  const release = parseRelease(asRecord(evidence.release), blockers);
+  const attestation = parseAttestation(asRecord(evidence.attestation), blockers);
   validateDevice(asRecord(evidence.device), blockers);
   validateBenchmark(asRecord(evidence.benchmark), blockers);
   validateQuality(asRecord(evidence.quality), blockers);
   validateLocalExecution(asRecord(evidence.localExecution), blockers);
 
+  if (release) {
+    let verified = false;
+    try {
+      verified = await trust.verifySignedRelease(release);
+    } catch {
+      verified = false;
+    }
+    if (!verified) blockers.add('RELEASE_SIGNATURE_UNVERIFIED');
+  } else {
+    blockers.add('RELEASE_SIGNATURE_UNVERIFIED');
+  }
+
+  if (attestation) {
+    let verified = false;
+    try {
+      verified = await trust.verifyPromotionEvidence(attestation);
+    } catch {
+      verified = false;
+    }
+    if (!verified) blockers.add('EVIDENCE_SIGNATURE_UNVERIFIED');
+  } else {
+    blockers.add('EVIDENCE_SIGNATURE_UNVERIFIED');
+  }
+
   return assessment([...blockers]);
 }
 
-function validateRelease(release: Readonly<Record<string, unknown>> | null, blockers: Set<LaMaPromotionBlocker>): void {
+function parseRelease(
+  release: Readonly<Record<string, unknown>> | null,
+  blockers: Set<LaMaPromotionBlocker>,
+): LaMaSignedReleaseEvidence | null {
   if (!release) {
     blockers.add('SIGNED_RELEASE_REQUIRED');
-    return;
+    return null;
   }
   if (release.modelId !== LAMA_MODEL_ID
     || release.version !== LAMA_VERSION
     || release.modelSize !== LAMA_ONNX_SIZE
-    || release.modelSha256 !== LAMA_ONNX_SHA256) {
-    blockers.add('WRONG_MODEL_IDENTITY');
-  }
+    || release.modelSha256 !== LAMA_ONNX_SHA256) blockers.add('WRONG_MODEL_IDENTITY');
   if (release.artifactState !== 'SIGNED_RELEASE') blockers.add('SIGNED_RELEASE_REQUIRED');
   if (release.verificationKeyId !== LAMA_RELEASE_KEY_ID) blockers.add('WRONG_RELEASE_KEY');
-  if (release.modelSignatureVerified !== true || release.manifestSignatureVerified !== true) {
-    blockers.add('RELEASE_SIGNATURE_UNVERIFIED');
+  for (const key of ['modelUrl', 'modelSignatureUrl', 'manifestUrl', 'manifestSignatureUrl'] as const) {
+    if (!safeHttpsUrl(release[key])) blockers.add('INVALID_EVIDENCE_URL');
   }
-  if (!safeHttpsUrl(release.releaseEvidenceUrl)) blockers.add('INVALID_EVIDENCE_URL');
+  if (release.artifactState !== 'SIGNED_RELEASE'
+    || typeof release.modelId !== 'string'
+    || typeof release.version !== 'string'
+    || typeof release.modelSize !== 'number'
+    || typeof release.modelSha256 !== 'string'
+    || typeof release.verificationKeyId !== 'string'
+    || !safeHttpsUrl(release.modelUrl)
+    || !safeHttpsUrl(release.modelSignatureUrl)
+    || !safeHttpsUrl(release.manifestUrl)
+    || !safeHttpsUrl(release.manifestSignatureUrl)) return null;
+  return release as unknown as LaMaSignedReleaseEvidence;
+}
+
+function parseAttestation(
+  attestation: Readonly<Record<string, unknown>> | null,
+  blockers: Set<LaMaPromotionBlocker>,
+): LaMaPromotionAttestation | null {
+  if (!attestation || !safeHttpsUrl(attestation.evidenceUrl) || !safeHttpsUrl(attestation.signatureUrl)) {
+    blockers.add('INVALID_EVIDENCE_URL');
+    return null;
+  }
+  return attestation as unknown as LaMaPromotionAttestation;
 }
 
 function validateDevice(device: Readonly<Record<string, unknown>> | null, blockers: Set<LaMaPromotionBlocker>): void {
@@ -188,9 +248,7 @@ function validateDevice(device: Readonly<Record<string, unknown>> | null, blocke
   if (![device.runtimeName, device.runtimeVersion, device.coarseDeviceEvidenceKey]
     .every((item) => typeof item === 'string' && item.trim().length > 0)) blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
   if (device.runtimeVersion !== '1.27.0') blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
-  if (device.platform === 'UNKNOWN' || device.deviceClass === 'UNKNOWN' || device.deviceTier === 'UNKNOWN') {
-    blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
-  }
+  if (device.platform === 'UNKNOWN' || device.deviceClass === 'UNKNOWN' || device.deviceTier === 'UNKNOWN') blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
 }
 
 function validateBenchmark(benchmark: Readonly<Record<string, unknown>> | null, blockers: Set<LaMaPromotionBlocker>): void {
@@ -200,9 +258,7 @@ function validateBenchmark(benchmark: Readonly<Record<string, unknown>> | null, 
   }
   if (!Number.isInteger(benchmark.warmupCount) || Number(benchmark.warmupCount) < 1
     || !Number.isInteger(benchmark.sampleCount) || Number(benchmark.sampleCount) < LAMA_PROMOTION_MIN_INFERENCE_SAMPLES
-    || benchmark.successfulSamples !== benchmark.sampleCount) {
-    blockers.add('INSUFFICIENT_BENCHMARK_SAMPLES');
-  }
+    || benchmark.successfulSamples !== benchmark.sampleCount) blockers.add('INSUFFICIENT_BENCHMARK_SAMPLES');
   const latency = asRecord(benchmark.latencyMs);
   const values = latency ? [latency.min, latency.median, latency.p95, latency.max].map(finiteNonNegative) : [];
   if (!latency || values.length !== 4 || values.some((item) => item === null)
@@ -210,8 +266,8 @@ function validateBenchmark(benchmark: Readonly<Record<string, unknown>> | null, 
     || Number(latency.median) > Number(latency.p95)
     || Number(latency.p95) > Number(latency.max)) blockers.add('INVALID_BENCHMARK_METRICS');
   for (const key of ['peakRamBytes', 'peakVramBytes'] as const) {
-    const value = benchmark[key];
-    if (value !== 'UNKNOWN' && finiteNonNegative(value) === null) blockers.add('INVALID_BENCHMARK_METRICS');
+    const metric = benchmark[key];
+    if (metric !== 'UNKNOWN' && finiteNonNegative(metric) === null) blockers.add('INVALID_BENCHMARK_METRICS');
   }
   if (!Array.isArray(benchmark.testedShapes) || benchmark.testedShapes.length === 0
     || benchmark.testedShapes.some((shape) => !Array.isArray(shape) || shape.length !== 2
@@ -225,9 +281,7 @@ function validateQuality(quality: Readonly<Record<string, unknown>> | null, bloc
     blockers.add('REAL_IMAGE_REVIEW_REQUIRED');
     return;
   }
-  if (typeof quality.datasetId !== 'string' || !quality.datasetId.trim() || !safeHttpsUrl(quality.datasetEvidenceUrl)) {
-    blockers.add('INVALID_REAL_IMAGE_BINDING');
-  }
+  if (typeof quality.datasetId !== 'string' || !quality.datasetId.trim() || !safeHttpsUrl(quality.datasetEvidenceUrl)) blockers.add('INVALID_REAL_IMAGE_BINDING');
   const cases = Array.isArray(quality.cases) ? quality.cases : [];
   if (cases.length < LAMA_PROMOTION_MIN_REAL_IMAGE_CASES) blockers.add('REAL_IMAGE_REVIEW_REQUIRED');
   for (const item of cases) {
@@ -260,9 +314,7 @@ function assessment(blockers: readonly LaMaPromotionBlocker[]): LaMaPromotionAss
   return Object.freeze({ eligible: blockers.length === 0, blockers: Object.freeze([...new Set(blockers)].sort()) });
 }
 function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Readonly<Record<string, unknown>>
-    : null;
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : null;
 }
 function safeHttpsUrl(value: unknown): boolean {
   if (typeof value !== 'string' || !value.trim()) return false;
