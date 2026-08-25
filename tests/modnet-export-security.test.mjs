@@ -5,8 +5,9 @@ import test from 'node:test';
 const inspector = await readFile(new URL('../scripts/inspect-modnet-checkpoint.py', import.meta.url), 'utf8');
 const exporter = await readFile(new URL('../scripts/build-modnet-portrait-matting-release.py', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/local-ai/models/portrait-matting.manifest.json', import.meta.url), 'utf8'));
+const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8';
 
-test('checkpoint inspector verifies optional pinned digest before any state_dict deserialization', () => {
+test('checkpoint inspector verifies pinned digest before state_dict deserialization', () => {
   const digestCheck = inspector.indexOf('if sha256 != args.expected_sha256');
   const stateInspect = inspector.indexOf('inspect_state_dict(args.source, args.checkpoint)');
   const torchLoad = inspector.indexOf('torch.load(checkpoint, map_location=torch.device("cpu"))');
@@ -28,11 +29,14 @@ test('reproducible exporter checks pinned size and SHA before torch.load', () =>
   assert.match(exporter, /onnx\.checker\.check_model\(model, full_check=True\)/);
 });
 
-test('bootstrap manifest cannot claim signed or production-approved MODNet', () => {
+test('pinned-checkpoint manifest still cannot claim a signed or production-approved MODNet release', () => {
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'CHECKPOINT_ACQUISITION_REQUIRED');
-  assert.equal(manifest.upstream.checkpoint.identityState, 'ACQUISITION_REQUIRED');
+  assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_EXPORT_REQUIRED');
+  assert.equal(manifest.upstream.checkpoint.identityState, 'PINNED');
+  assert.equal(manifest.upstream.checkpoint.size, 26255603);
+  assert.equal(manifest.upstream.checkpoint.sha256, CHECKPOINT_SHA);
   assert.equal(manifest.bersExport.state, 'UNBUILT');
   assert.equal(manifest.productionApprovalEvidence, null);
   assert.equal(manifest.artifacts.model.url, null);
+  assert.equal(manifest.verificationKeyId, null);
 });
