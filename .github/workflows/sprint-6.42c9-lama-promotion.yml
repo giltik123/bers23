@@ -1,0 +1,46 @@
+name: Sprint 6.42C9 LaMa production promotion contract
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  promotion-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Compile exact C9 promotion contract
+        run: |
+          set -euo pipefail
+          npm run typecheck
+          mkdir -p .test-cache/6.42c9
+          npx esbuild tests/lama-production-promotion.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c9/lama-production-promotion.test.mjs \
+            --external:node:*
+      - name: Run adversarial C9 promotion gates
+        run: node --test .test-cache/6.42c9/lama-production-promotion.test.mjs
+      - name: Preserve candidate and repository byte boundaries
+        run: |
+          set -euo pipefail
+          npm run check:model-weight-tracking
+          node --input-type=module <<'NODE'
+          import manifest from './src/platform/creative/local-ai/models/lama-inpainting.manifest.json' with { type: 'json' };
+          if (manifest.status !== 'CANDIDATE') throw new Error(`C9 must not promote LaMa: ${manifest.status}`);
+          if (manifest.productionApprovalEvidence !== null) throw new Error('C9 must not manufacture productionApprovalEvidence');
+          if (manifest.runtimeFeasibility?.realDeviceWebGpu !== 'UNPROVEN') throw new Error('C9 must not manufacture real-device WebGPU evidence');
+          NODE
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
