@@ -111,6 +111,15 @@ test('D3 WASM baseline is component-specific and fail-closed before browser exec
   assert.doesNotMatch(quantizeWasm, /strict=False/);
 });
 
+test('D3 WASM fixtures are generated independently from the D2 FP32 root', () => {
+  assert.match(quantizeWasm, /parser\.add_argument\("--fixture-dir"/);
+  assert.match(quantizeWasm, /"browserFixture": browser_fixture\(/);
+  assert.match(quantizeWasm, /D2_ACCEPTED_FP32_CPU_ORT_OUTPUT/);
+  assert.match(quantizeWasm, /InferenceSession\(str\(fp32\), providers=\["CPUExecutionProvider"\]\)/);
+  assert.match(runnerWasm, /const fixture = record\.browserFixture/);
+  assert.doesNotMatch(runnerWasm, /fixture-report|fixtureReportPath|D3_WEBGPU_FP16_PREPARATION/);
+});
+
 test('D3 WASM browser proof uses the production factory, local runtime assets and no provider fallback', () => {
   assert.match(browserWasm, /BrowserOnnxSessionFactory/);
   assert.match(browserWasm, /factory\.create\(modelBytes, \{ executionProviders: \['wasm'\] \}\)/);
