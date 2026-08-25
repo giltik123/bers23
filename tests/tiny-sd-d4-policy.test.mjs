@@ -57,9 +57,12 @@ test('D4 browser ORT modes expose only the reviewed memory policy and keep worke
   assert.match(factory, /BROWSER_WASM_NUM_THREADS = 1/);
   assert.match(factory, /BROWSER_WASM_PROXY = false/);
   assert.match(factory, /DISABLED_PENDING_SEPARATE_SECURITY_REVIEW/);
+  assert.match(factory, /node_modules\/onnxruntime-web\/dist\/ort-wasm-simd-threaded\.wasm\?url/);
+  assert.match(factory, /node_modules\/onnxruntime-web\/dist\/ort-wasm-simd-threaded\.mjs\?url/);
+  assert.doesNotMatch(factory, /https?:\/\//i);
+  assert.doesNotMatch(factory, /from\s+['"]\/\//i);
   assert.doesNotMatch(factory, /new Worker\s*\(/);
   assert.doesNotMatch(factory, /trustedTypes\.createPolicy|createPolicy\s*\(/);
-  assert.doesNotMatch(factory, /cdn|unpkg|jsdelivr/i);
   assert.doesNotMatch(factory, /createOrtFormat\([^)]*sessionConfig/);
 });
 
