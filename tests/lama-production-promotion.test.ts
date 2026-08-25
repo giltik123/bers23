@@ -8,6 +8,7 @@ import {
   LAMA_PROMOTION_MIN_REAL_IMAGE_CASES,
   LAMA_RELEASE_KEY_ID,
   type LaMaProductionPromotionEvidence,
+  type LaMaPromotionTrustPort,
 } from '../src/platform/creative/local-ai/benchmark/LaMaProductionPromotion.ts';
 import {
   LAMA_MODEL_ID,
@@ -20,6 +21,14 @@ import { productionLocalExecutorsByCapability } from '../server/core/localExecut
 
 const NOW = 2_000_000_000_000;
 const SHA = (character: string) => character.repeat(64);
+const TRUSTED: LaMaPromotionTrustPort = {
+  verifySignedRelease: async () => true,
+  verifyPromotionEvidence: async () => true,
+};
+const UNTRUSTED: LaMaPromotionTrustPort = {
+  verifySignedRelease: async () => false,
+  verifyPromotionEvidence: async () => false,
+};
 
 function validEvidence(provider: 'webgpu' | 'wasm' = 'wasm'): LaMaProductionPromotionEvidence {
   const cases = Array.from({ length: LAMA_PROMOTION_MIN_REAL_IMAGE_CASES }, (_, index) => ({
@@ -35,11 +44,15 @@ function validEvidence(provider: 'webgpu' | 'wasm' = 'wasm'): LaMaProductionProm
     outputRangeValid: true,
     humanDecision: 'PASS' as const,
   }));
+  const releaseBase = 'https://github.com/giltik123/bers23/releases/download/lama-big-places-inpainting-v1.0.0-candidate.1';
   return {
     schemaVersion: 1,
     capturedAt: NOW - 60_000,
     expiresAt: NOW + 60_000,
-    evidenceUrl: 'https://evidence.example/lama/device-run.json',
+    attestation: {
+      evidenceUrl: 'https://evidence.example/lama/device-run.json',
+      signatureUrl: 'https://evidence.example/lama/device-run.json.sig',
+    },
     release: {
       artifactState: 'SIGNED_RELEASE',
       modelId: LAMA_MODEL_ID,
@@ -47,9 +60,10 @@ function validEvidence(provider: 'webgpu' | 'wasm' = 'wasm'): LaMaProductionProm
       modelSize: LAMA_ONNX_SIZE,
       modelSha256: LAMA_ONNX_SHA256,
       verificationKeyId: LAMA_RELEASE_KEY_ID,
-      modelSignatureVerified: true,
-      manifestSignatureVerified: true,
-      releaseEvidenceUrl: 'https://github.com/giltik123/bers23/releases/tag/lama-big-places-inpainting-v1.0.0-candidate.1',
+      modelUrl: `${releaseBase}/lama-big-places-inpainting.onnx`,
+      modelSignatureUrl: `${releaseBase}/lama-big-places-inpainting.onnx.sig`,
+      manifestUrl: 'https://evidence.example/lama/lama-inpainting.manifest.json',
+      manifestSignatureUrl: 'https://evidence.example/lama/lama-inpainting.manifest.sig',
     },
     device: {
       evidenceKind: 'REAL_PHYSICAL_DEVICE',
@@ -99,103 +113,122 @@ function mutate(base: LaMaProductionPromotionEvidence, change: (value: any) => v
   return value;
 }
 
-test('complete evidence envelope is structurally eligible but grants no authority by itself', () => {
-  const assessment = assessLaMaProductionPromotion(validEvidence(), NOW);
+async function assess(value: unknown, trust: LaMaPromotionTrustPort = TRUSTED) {
+  return assessLaMaProductionPromotion(value, trust, NOW);
+}
+
+test('complete externally verified evidence envelope is structurally eligible but grants no authority by itself', async () => {
+  const assessment = await assess(validEvidence());
   assert.equal(assessment.eligible, true);
   assert.deepEqual(assessment.blockers, []);
   assert.equal(manifest.status, 'CANDIDATE');
   assert.equal(manifest.productionApprovalEvidence, null);
 });
 
-test('current repository is blocked because the signed C8 candidate release has not been activated', () => {
-  const current = validEvidence();
-  const evidence = mutate(current, value => {
-    value.release.artifactState = manifest.artifactState;
-    value.release.verificationKeyId = manifest.verificationKeyId;
-    value.release.modelSignatureVerified = false;
-    value.release.manifestSignatureVerified = false;
-    value.release.releaseEvidenceUrl = null;
-  });
-  const result = assessLaMaProductionPromotion(evidence, NOW);
+test('self-asserted evidence cannot replace independent cryptographic verification', async () => {
+  const result = await assess(validEvidence(), UNTRUSTED);
   assert.equal(result.eligible, false);
-  assert.ok(result.blockers.includes('SIGNED_RELEASE_REQUIRED'));
   assert.ok(result.blockers.includes('RELEASE_SIGNATURE_UNVERIFIED'));
+  assert.ok(result.blockers.includes('EVIDENCE_SIGNATURE_UNVERIFIED'));
+
+  const throwing: LaMaPromotionTrustPort = {
+    verifySignedRelease: async () => { throw new Error('verification backend unavailable'); },
+    verifyPromotionEvidence: async () => { throw new Error('verification backend unavailable'); },
+  };
+  const unavailable = await assess(validEvidence(), throwing);
+  assert.ok(unavailable.blockers.includes('RELEASE_SIGNATURE_UNVERIFIED'));
+  assert.ok(unavailable.blockers.includes('EVIDENCE_SIGNATURE_UNVERIFIED'));
 });
 
-test('wrong exact model bytes or release key fail closed', () => {
-  const wrongSha = assessLaMaProductionPromotion(mutate(validEvidence(), value => { value.release.modelSha256 = SHA('e'); }), NOW);
+test('current repository is blocked because the signed C8 candidate release has not been activated', async () => {
+  const evidence = mutate(validEvidence(), value => {
+    value.release.artifactState = manifest.artifactState;
+    value.release.verificationKeyId = manifest.verificationKeyId;
+    value.release.modelUrl = manifest.artifacts.model.url;
+    value.release.modelSignatureUrl = manifest.artifacts.model.signatureUrl;
+  });
+  const result = await assess(evidence);
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('SIGNED_RELEASE_REQUIRED'));
+  assert.ok(result.blockers.includes('WRONG_RELEASE_KEY'));
+  assert.ok(result.blockers.includes('INVALID_EVIDENCE_URL'));
+});
+
+test('wrong exact model bytes or release key fail closed', async () => {
+  const wrongSha = await assess(mutate(validEvidence(), value => { value.release.modelSha256 = SHA('e'); }));
   assert.ok(wrongSha.blockers.includes('WRONG_MODEL_IDENTITY'));
-  const wrongSize = assessLaMaProductionPromotion(mutate(validEvidence(), value => { value.release.modelSize += 1; }), NOW);
+  const wrongSize = await assess(mutate(validEvidence(), value => { value.release.modelSize += 1; }));
   assert.ok(wrongSize.blockers.includes('WRONG_MODEL_IDENTITY'));
-  const wrongKey = assessLaMaProductionPromotion(mutate(validEvidence(), value => { value.release.verificationKeyId = 'other'; }), NOW);
+  const wrongKey = await assess(mutate(validEvidence(), value => { value.release.verificationKeyId = 'other'; }));
   assert.ok(wrongKey.blockers.includes('WRONG_RELEASE_KEY'));
 });
 
-test('hosted SwiftShader/software adapter can never satisfy real-device WebGPU promotion', () => {
-  const result = assessLaMaProductionPromotion(mutate(validEvidence('webgpu'), value => {
+test('hosted SwiftShader/software adapter can never satisfy real-device WebGPU promotion', async () => {
+  const result = await assess(mutate(validEvidence('webgpu'), value => {
     value.device.evidenceKind = 'HOSTED_SOFTWARE_ADAPTER';
     value.device.adapterKind = 'SOFTWARE';
     value.device.softwareAdapter = true;
-  }), NOW);
+  }));
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('REAL_DEVICE_REQUIRED'));
   assert.ok(result.blockers.includes('SOFTWARE_ADAPTER_REJECTED'));
 });
 
-test('benchmark must include warmup, repeated successful samples and sane modulo-8 shapes', () => {
-  const insufficient = assessLaMaProductionPromotion(mutate(validEvidence(), value => {
+test('benchmark must include warmup, repeated successful samples and sane modulo-8 shapes', async () => {
+  const insufficient = await assess(mutate(validEvidence(), value => {
     value.benchmark.warmupCount = 0;
     value.benchmark.sampleCount = LAMA_PROMOTION_MIN_INFERENCE_SAMPLES - 1;
     value.benchmark.successfulSamples = 1;
-  }), NOW);
+  }));
   assert.ok(insufficient.blockers.includes('INSUFFICIENT_BENCHMARK_SAMPLES'));
 
-  const invalid = assessLaMaProductionPromotion(mutate(validEvidence(), value => {
+  const invalid = await assess(mutate(validEvidence(), value => {
     value.benchmark.latencyMs = { min: 200, median: 150, p95: 100, max: 50 };
     value.benchmark.testedShapes = [[255, 256]];
-  }), NOW);
+  }));
   assert.ok(invalid.blockers.includes('INVALID_BENCHMARK_METRICS'));
 });
 
-test('real-image quality requires enough hash-bound cases, deterministic invariants and human PASS', () => {
-  const tooFew = assessLaMaProductionPromotion(mutate(validEvidence(), value => { value.quality.cases.length = 1; }), NOW);
+test('real-image quality requires enough hash-bound cases, deterministic invariants and human PASS', async () => {
+  const tooFew = await assess(mutate(validEvidence(), value => { value.quality.cases.length = 1; }));
   assert.ok(tooFew.blockers.includes('REAL_IMAGE_REVIEW_REQUIRED'));
 
-  const broken = assessLaMaProductionPromotion(mutate(validEvidence(), value => {
+  const broken = await assess(mutate(validEvidence(), value => {
     value.quality.cases[0].sourceImageSha256 = 'not-a-sha';
     value.quality.cases[0].knownRegionBitExact = false;
     value.quality.cases[0].outputRangeValid = false;
     value.quality.cases[0].humanDecision = 'NOT_REVIEWED';
     value.quality.reviewer.decision = 'NOT_REVIEWED';
-  }), NOW);
+  }));
   assert.ok(broken.blockers.includes('INVALID_REAL_IMAGE_BINDING'));
   assert.ok(broken.blockers.includes('KNOWN_REGION_INVARIANT_FAILED'));
   assert.ok(broken.blockers.includes('OUTPUT_CONTRACT_FAILED'));
   assert.ok(broken.blockers.includes('HUMAN_REVIEW_REQUIRED'));
 });
 
-test('stale/future evidence and credential-bearing/non-HTTPS evidence URLs are rejected', () => {
-  const stale = assessLaMaProductionPromotion(mutate(validEvidence(), value => {
+test('stale/future evidence and credential-bearing/non-HTTPS evidence URLs are rejected', async () => {
+  const stale = await assess(mutate(validEvidence(), value => {
     value.capturedAt = NOW - LAMA_PROMOTION_EVIDENCE_MAX_AGE_MS - 1;
     value.expiresAt = NOW + 1;
-  }), NOW);
+  }));
   assert.ok(stale.blockers.includes('STALE_EVIDENCE'));
 
-  const future = assessLaMaProductionPromotion(mutate(validEvidence(), value => { value.capturedAt = NOW + 1; }), NOW);
+  const future = await assess(mutate(validEvidence(), value => { value.capturedAt = NOW + 1; }));
   assert.ok(future.blockers.includes('FUTURE_EVIDENCE'));
 
-  const unsafeUrl = assessLaMaProductionPromotion(mutate(validEvidence(), value => {
-    value.evidenceUrl = 'https://user:secret@example.com/evidence';
-  }), NOW);
+  const unsafeUrl = await assess(mutate(validEvidence(), value => {
+    value.attestation.evidenceUrl = 'https://user:secret@example.com/evidence';
+  }));
   assert.ok(unsafeUrl.blockers.includes('INVALID_EVIDENCE_URL'));
+  assert.ok(unsafeUrl.blockers.includes('EVIDENCE_SIGNATURE_UNVERIFIED'));
 });
 
-test('any cloud/provider/credit use blocks LOCAL promotion', () => {
-  const network = assessLaMaProductionPromotion(mutate(validEvidence(), value => { value.localExecution.externalNetworkRequests = 1; }), NOW);
+test('any cloud/provider/credit use blocks LOCAL promotion', async () => {
+  const network = await assess(mutate(validEvidence(), value => { value.localExecution.externalNetworkRequests = 1; }));
   assert.ok(network.blockers.includes('EXTERNAL_NETWORK_USAGE_DETECTED'));
-  const provider = assessLaMaProductionPromotion(mutate(validEvidence(), value => { value.localExecution.providerApiCalls = 1; }), NOW);
+  const provider = await assess(mutate(validEvidence(), value => { value.localExecution.providerApiCalls = 1; }));
   assert.ok(provider.blockers.includes('PROVIDER_API_USAGE_DETECTED'));
-  const credits = assessLaMaProductionPromotion(mutate(validEvidence(), value => { value.localExecution.aiCreditsConsumed = 1; }), NOW);
+  const credits = await assess(mutate(validEvidence(), value => { value.localExecution.aiCreditsConsumed = 1; }));
   assert.ok(credits.blockers.includes('AI_CREDIT_USAGE_DETECTED'));
 });
 
