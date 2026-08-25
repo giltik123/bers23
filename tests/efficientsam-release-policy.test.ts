@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import manifest from '../src/platform/creative/local-ai/models/efficient-sam-ti.manifest.json';
-import { isExecutableEfficientSamRelease } from '../src/platform/creative/local-ai/models/EfficientSamRelease';
+import {
+  EFFICIENT_SAM_PINNED_ARTIFACTS,
+  isExecutableEfficientSamRelease,
+} from '../src/platform/creative/local-ai/models/EfficientSamRelease';
 import { productionLocalModelsByCapability } from '../server/core/localExecution/productionLocalModelPolicy';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy';
 
@@ -23,6 +26,10 @@ test('EfficientSAM candidate descriptor pins official split ONNX provenance and 
     gitBlob: 'f9310202c916fe5a4ec9a6897edae855caf023f4',
     size: 16565728,
     sha256: 'a62f8fa5ea080447c0689418d69e58f1e83e0b7adf9c142e2bd9bcc8045c0b11',
+  });
+  assert.deepEqual(EFFICIENT_SAM_PINNED_ARTIFACTS, {
+    encoder: { size: 24799761, sha256: manifest.upstream.artifacts.encoder.sha256 },
+    decoder: { size: 16565728, sha256: manifest.upstream.artifacts.decoder.sha256 },
   });
   assert.deepEqual(manifest.tensorContract.decoder.auxiliaryOutputs, ['onnx::Shape_1830']);
   assert.equal(manifest.tensorContract.decoder.auxiliaryOutputPolicy, 'EXACT_PINNED_BUT_NOT_REQUESTED');
@@ -56,12 +63,18 @@ test('status flag alone cannot promote an unsigned EfficientSAM release', () => 
   assert.equal(isExecutableEfficientSamRelease(forged), false);
 });
 
-test('release predicate requires exact model identity and a complete signed two-artifact envelope', () => {
-  const artifact = Object.freeze({
+test('release predicate requires exact model identity and exact signed official bytes', () => {
+  const encoder = Object.freeze({
     url: 'https://github.com/giltik123/bers23/releases/download/efficient-sam-ti-v1/encoder.onnx',
-    size: 1,
-    sha256: 'a'.repeat(64),
+    size: EFFICIENT_SAM_PINNED_ARTIFACTS.encoder.size,
+    sha256: EFFICIENT_SAM_PINNED_ARTIFACTS.encoder.sha256,
     signatureUrl: 'https://github.com/giltik123/bers23/releases/download/efficient-sam-ti-v1/encoder.onnx.sig',
+  });
+  const decoder = Object.freeze({
+    url: 'https://github.com/giltik123/bers23/releases/download/efficient-sam-ti-v1/decoder.onnx',
+    size: EFFICIENT_SAM_PINNED_ARTIFACTS.decoder.size,
+    sha256: EFFICIENT_SAM_PINNED_ARTIFACTS.decoder.sha256,
+    signatureUrl: 'https://github.com/giltik123/bers23/releases/download/efficient-sam-ti-v1/decoder.onnx.sig',
   });
   const complete = {
     ...manifest,
@@ -69,11 +82,12 @@ test('release predicate requires exact model identity and a complete signed two-
     artifactState: 'SIGNED_RELEASE',
     verificationKeyId: 'bers-interactive-segmentation-release-2026-08',
     productionApprovalEvidence: 'https://github.com/giltik123/bers23/issues/999',
-    artifacts: { encoder: artifact, decoder: { ...artifact, url: artifact.url.replace('encoder', 'decoder'), signatureUrl: artifact.signatureUrl.replace('encoder', 'decoder') } },
+    artifacts: { encoder, decoder },
   };
   assert.equal(isExecutableEfficientSamRelease(complete), true);
   assert.equal(isExecutableEfficientSamRelease({ ...complete, modelId: 'forged-model' }), false);
-  assert.equal(isExecutableEfficientSamRelease({ ...complete, artifacts: { ...complete.artifacts, decoder: { ...complete.artifacts.decoder, sha256: 'bad' } } }), false);
+  assert.equal(isExecutableEfficientSamRelease({ ...complete, artifacts: { ...complete.artifacts, decoder: { ...decoder, sha256: 'a'.repeat(64) } } }), false);
+  assert.equal(isExecutableEfficientSamRelease({ ...complete, artifacts: { ...complete.artifacts, encoder: { ...encoder, size: encoder.size + 1 } } }), false);
   assert.equal(isExecutableEfficientSamRelease({ ...complete, productionApprovalEvidence: 'http://example.com/evidence' }), false);
 });
 
