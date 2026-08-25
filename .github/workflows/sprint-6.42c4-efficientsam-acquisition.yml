@@ -1,0 +1,86 @@
+name: Sprint 6.42C4 EfficientSAM acquisition acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-upstream-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install ONNX validator
+        run: python -m pip install --disable-pip-version-check onnx==1.15.0
+      - name: Clone exact EfficientSAM upstream
+        run: |
+          set -euo pipefail
+          git clone https://github.com/yformer/EfficientSAM "${RUNNER_TEMP}/EfficientSAM"
+          git -C "${RUNNER_TEMP}/EfficientSAM" checkout --detach d525f622e6f640acf5a0fc37c7ca1f243da5bde0
+          test "$(git -C "${RUNNER_TEMP}/EfficientSAM" rev-parse HEAD)" = d525f622e6f640acf5a0fc37c7ca1f243da5bde0
+      - name: Verify exact upstream ONNX bytes and graph contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/6.42c4
+          python scripts/inspect-efficientsam-ti-release.py \
+            --source "${RUNNER_TEMP}/EfficientSAM" \
+            --metadata .test-cache/6.42c4/efficient-sam-ti-acquisition.json
+          python - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42c4/efficient-sam-ti-acquisition.json', encoding='utf-8'))
+          assert report['status'] == 'CANDIDATE'
+          assert report['productionDeviceApproval'] is False
+          for name in ('encoder', 'decoder'):
+              value = report['artifacts'][name]
+              assert len(value['sha256']) == 64
+              print(f"{name}: size={value['size']} sha256={value['sha256']}")
+          PY
+      - name: Run C4 release, workflow and acquisition-catalog contracts
+        run: |
+          set -euo pipefail
+          npm ci
+          npx esbuild tests/efficientsam-release-policy.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c4/efficientsam-release-policy.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42c4/efficientsam-release-policy.test.mjs
+          npx esbuild tests/local-model-candidate-catalog.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42c4/local-model-candidate-catalog.test.mjs \
+            --external:node:*
+          node --test .test-cache/6.42c4/local-model-candidate-catalog.test.mjs
+          node --test tests/efficientsam-release-workflow.test.mjs
+          python -m py_compile scripts/inspect-efficientsam-ti-release.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.onnx' | wc -l)" -eq 0
+          test "$(git log --all --format= --name-only -- '*.onnx' | sed '/^$/d' | sort -u | wc -l)" -eq 0
+      - name: Publish acquisition evidence summary
+        run: |
+          {
+            echo '## EfficientSAM-Ti pinned upstream acquisition'
+            echo
+            echo '- Status: CANDIDATE'
+            echo '- Upstream revision: `d525f622e6f640acf5a0fc37c7ca1f243da5bde0`'
+            echo '- License: Apache-2.0'
+            echo '- Git blob / exact size / SHA-256 / ONNX checker / split I/O contract: PASS'
+            echo '- Acquisition catalog remains separate from installable ModelManifest authority: PASS'
+            echo '- Production device approval: NOT GRANTED by this workflow'
+            echo '```json'
+            cat .test-cache/6.42c4/efficient-sam-ti-acquisition.json
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"

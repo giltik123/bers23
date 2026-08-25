@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "modelId": "efficient-sam-ti",
+  "version": "1.0.0-candidate.1",
+  "status": "CANDIDATE",
+  "semanticCapabilities": [
+    "interactive-segmentation",
+    "segmentation",
+    "mask"
+  ],
+  "upstream": {
+    "repository": "https://github.com/yformer/EfficientSAM",
+    "revision": "d525f622e6f640acf5a0fc37c7ca1f243da5bde0",
+    "license": "Apache-2.0",
+    "exportScript": "export_to_onnx.py",
+    "opset": 17,
+    "artifacts": {
+      "encoder": {
+        "path": "weights/efficient_sam_vitt_encoder.onnx",
+        "gitBlob": "6458f72477ae216a1bd68db41ffa14802c8d54f1",
+        "size": 24799761,
+        "sha256": "84ed466ffcc5c1f8d08409bc34a23bb364ab2c15e402cb12d4335a42be0e0951"
+      },
+      "decoder": {
+        "path": "weights/efficient_sam_vitt_decoder.onnx",
+        "gitBlob": "f9310202c916fe5a4ec9a6897edae855caf023f4",
+        "size": 16565728,
+        "sha256": "a62f8fa5ea080447c0689418d69e58f1e83e0b7adf9c142e2bd9bcc8045c0b11"
+      }
+    }
+  },
+  "tensorContract": {
+    "imageRange": [0, 1],
+    "imageLayout": "NCHW",
+    "encoder": {
+      "inputs": ["batched_images"],
+      "outputs": ["image_embeddings"]
+    },
+    "decoder": {
+      "inputs": [
+        "image_embeddings",
+        "batched_point_coords",
+        "batched_point_labels",
+        "orig_im_size"
+      ],
+      "outputs": ["output_masks", "iou_predictions"],
+      "auxiliaryOutputs": ["onnx::Shape_1830"],
+      "auxiliaryOutputPolicy": "EXACT_PINNED_BUT_NOT_REQUESTED"
+    },
+    "maskDecision": "output_masks >= 0"
+  },
+  "artifactState": "UPSTREAM_PINNED",
+  "artifacts": {
+    "encoder": {
+      "url": null,
+      "size": null,
+      "sha256": null,
+      "signatureUrl": null
+    },
+    "decoder": {
+      "url": null,
+      "size": null,
+      "sha256": null,
+      "signatureUrl": null
+    }
+  },
+  "verificationKeyId": null,
+  "productionApprovalEvidence": null
+}

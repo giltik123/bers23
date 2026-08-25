@@ -8,6 +8,8 @@ export * from './models/LocalModelRegistry';
 export * from './models/LocalModelDownloader';
 export * from './models/ModelBundles';
 export * from './models/ModelPacks';
+export * from './models/CandidateModelCatalog';
+export * from './models/EfficientSamRelease';
 export * from './trust/ModelTrust';
 export * from './security/LocalAISandbox';
 export * from './policy/LocalInferencePolicy';

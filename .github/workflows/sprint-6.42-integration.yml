@@ -143,7 +143,12 @@ jobs:
             --external:node:* --external:sharp
           node --test .test-cache/6.42-integration/realesrgan-service-contract.test.mjs
           python -m py_compile scripts/build-realesrgan-x4v3-release.py
-          grep -F '"artifactState": "EXPORT_REQUIRED"' src/platform/creative/local-ai/models/super-resolution.manifest.json
+          node --input-type=module <<'NODE'
+          import manifest from './src/platform/creative/local-ai/models/super-resolution.manifest.json' with { type: 'json' };
+          if (manifest.status !== 'CANDIDATE') throw new Error(`unexpected Real-ESRGAN release status: ${manifest.status}`);
+          if (!['EXPORT_REQUIRED', 'SIGNED_RELEASE'].includes(manifest.artifactState)) throw new Error(`unexpected Real-ESRGAN artifact state: ${manifest.artifactState}`);
+          if (manifest.productionApprovalEvidence !== null) throw new Error('CANDIDATE must not carry production approval evidence');
+          NODE
       - name: C3 real PostgreSQL model admission, variable-canvas history, replay and zero-cloud vertical
         run: |
           mkdir -p .test-cache/6.42-integration/migrations .test-cache/artifacts/migrations
