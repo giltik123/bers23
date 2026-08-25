@@ -96,7 +96,7 @@
     }
   },
   "runtimeFeasibility": {
-    "state": "BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED",
+    "state": "DYNAMO_ONNX_CPU_WASM_PROVEN_WEBGPU_REAL_DEVICE_REQUIRED",
     "directTorchOnnx": "LEGACY_DYNAMO_FALSE_OPSET17_BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN",
     "directExportEvidence": {
       "exporter": "torch.onnx.export",
@@ -109,9 +109,54 @@
       "artifactProduced": false,
       "runtimeAuthorityGranted": false
     },
-    "cpuOrt": "UNPROVEN",
-    "browserWasm": "UNPROVEN",
-    "browserWebGpu": "UNPROVEN_KNOWN_THIRD_PARTY_SHAPE_RISK",
+    "modernDynamoOnnxEvidence": {
+      "status": "CANDIDATE",
+      "exporter": "torch.onnx.export",
+      "torchVersion": "2.13.0+cpu",
+      "onnxVersion": "1.22.0",
+      "onnxScriptVersion": "0.7.1",
+      "dynamo": true,
+      "opset": 18,
+      "legacyFallbackAllowed": false,
+      "dynamicSpatialModulo": 8,
+      "testedShapes": [[64, 64], [256, 256], [256, 384], [512, 512]],
+      "standardDftNodeCount": 144,
+      "customNodeCount": 0,
+      "atenLikeNodeCount": 0,
+      "cpuOrtVersion": "1.27.0",
+      "cpuOrtResult": "PASS_MULTISHAPE",
+      "cpuOrtThresholds": {
+        "maxAbs": 0.0002,
+        "rmse": 0.00005
+      },
+      "browserWasmVersion": "1.27.0",
+      "browserWasmShape": [256, 256],
+      "browserWasmResult": "PASS",
+      "browserWasmThresholds": {
+        "maxAbs": 0.0002,
+        "rmse": 0.00005
+      },
+      "hostedWebGpu": {
+        "runtimeVersion": "1.27.0",
+        "shape": [256, 256],
+        "provider": "webgpu",
+        "providerFallbackAllowed": false,
+        "adapterArchitecture": "swiftshader",
+        "softwareAdapterLikely": true,
+        "result": "WEBGPU_INFERENCE_BLOCKED",
+        "timeoutStage": "INFERENCE",
+        "inferenceTimeoutMs": 120000,
+        "hostedSoftwareFeasibilityOnly": true,
+        "realDeviceEvidence": false
+      },
+      "runtimeAuthorityGranted": false,
+      "productionDeviceApproval": false,
+      "releaseArtifactIdentityEstablished": false
+    },
+    "cpuOrt": "PROVEN_HOSTED_ORT_1_27_MULTISHAPE",
+    "browserWasm": "PROVEN_HOSTED_CHROME_ORT_WEB_1_27_256",
+    "browserWebGpu": "HOSTED_SWIFTSHADER_INFERENCE_TIMEOUT_REAL_DEVICE_UNPROVEN",
+    "realDeviceWebGpu": "UNPROVEN",
     "thirdPartyReferenceAuthority": false
   },
   "bersArtifact": {

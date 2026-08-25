@@ -19,7 +19,7 @@ test('checkpoint inspector verifies pinned digest before weights-only state_dict
   assert.doesNotMatch(inspector, /weights_only=False/);
 });
 
-test('reproducible exporter checks checkpoint before weights-only torch.load and output against pinned ONNX identity', () => {
+test('reproducible exporter verifies checkpoint before weights-only load and byte-binds output identity', () => {
   const sizeCheck = exporter.indexOf('checkpoint.stat().st_size != expected["size"]');
   const shaCheck = exporter.indexOf('sha256(checkpoint) != expected["sha256"]');
   const deserialize = exporter.indexOf('state = torch.load(');
@@ -30,10 +30,24 @@ test('reproducible exporter checks checkpoint before weights-only torch.load and
   assert.doesNotMatch(exporter, /weights_only=False/);
   assert.match(exporter, /OPSET = 17/);
   assert.match(exporter, /PARITY_SHAPES = \(\(128, 160\), \(256, 320\), \(512, 512\)\)/);
-  assert.match(exporter, /first_hash != second_hash/);
   assert.match(exporter, /onnx\.checker\.check_model\(model, full_check=True\)/);
   assert.match(exporter, /MODNet ONNX size mismatch/);
   assert.match(exporter, /MODNet ONNX SHA-256 mismatch against pinned export identity/);
+});
+
+test('MODNet export reproducibility is proven across independent fixed-hash-seed Python processes', () => {
+  assert.match(exporter, /EXPORT_PYTHON_HASH_SEED = "0"/);
+  assert.match(exporter, /env\["PYTHONHASHSEED"\] = EXPORT_PYTHON_HASH_SEED/);
+  assert.match(exporter, /subprocess\.run\(/);
+  assert.match(exporter, /"--single-export"/);
+  assert.match(exporter, /run_export_child\(args\.source, args\.checkpoint, args\.manifest, first\)/);
+  assert.match(exporter, /run_export_child\(args\.source, args\.checkpoint, args\.manifest, second\)/);
+  assert.match(exporter, /first_hash != second_hash/);
+  assert.match(exporter, /not byte-reproducible across independent fixed-hash-seed processes/);
+  assert.match(exporter, /os\.environ\.get\("PYTHONHASHSEED"\) != EXPORT_PYTHON_HASH_SEED/);
+  assert.match(exporter, /"crossProcessReproducible": True/);
+  assert.match(exporter, /"independentExportProcesses": 2/);
+  assert.match(exporter, /"exportPythonHashSeed": EXPORT_PYTHON_HASH_SEED/);
 });
 
 test('pinned checkpoint and export remain CANDIDATE-only before and after signed-pack publication', () => {

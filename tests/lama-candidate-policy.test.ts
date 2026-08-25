@@ -19,8 +19,11 @@ import { productionLocalModelsByCapability } from '../server/core/localExecution
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
 const MODEL_ID = 'lama-big-places-inpainting';
-const LEGACY_BLOCKER = 'BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED';
+const C7_FEASIBILITY = 'DYNAMO_ONNX_CPU_WASM_PROVEN_WEBGPU_REAL_DEVICE_REQUIRED';
 const LEGACY_DIRECT = 'LEGACY_DYNAMO_FALSE_OPSET17_BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN';
+const CPU_PROVEN = 'PROVEN_HOSTED_ORT_1_27_MULTISHAPE';
+const WASM_PROVEN = 'PROVEN_HOSTED_CHROME_ORT_WEB_1_27_256';
+const HOSTED_WEBGPU_BLOCKED = 'HOSTED_SWIFTSHADER_INFERENCE_TIMEOUT_REAL_DEVICE_UNPROVEN';
 
 test('Big-LaMa pins authoritative archive/checkpoint/config while remaining non-executable', () => {
   assert.equal(manifest.modelId, MODEL_ID);
@@ -43,7 +46,7 @@ test('Big-LaMa pins authoritative archive/checkpoint/config while remaining non-
   assert.equal(manifest.upstream.checkpoint.corroboration.checkpointSha256Matches, true);
   assert.equal(manifest.upstream.checkpoint.corroboration.configSha256Matches, true);
   assert.equal(manifest.bersArtifact.state, 'UNBUILT');
-  assert.equal(manifest.runtimeFeasibility.state, LEGACY_BLOCKER);
+  assert.equal(manifest.runtimeFeasibility.state, C7_FEASIBILITY);
   assert.equal(LAMA_AUTHORITATIVE_CHECKPOINT_PINNED, true);
   assert.equal(isExecutableLaMaRelease(manifest), false);
   assert.equal(laMaReleaseState.productionAvailable, false);
@@ -65,7 +68,7 @@ test('Big-LaMa semantic contract preserves upstream mask polarity and determinis
   assert.equal(manifest.tensorContract.finalComposite.knownRegionMustEqualOriginal, true);
 });
 
-test('legacy direct ONNX blocker is exact evidence and does not imply CPU/browser support', () => {
+test('legacy exporter blocker remains historical evidence while modern Dynamo CPU and WASM feasibility are proven', () => {
   const architecture = manifest.upstream.architecture;
   assert.equal(architecture.generatorKind, 'ffc_resnet');
   assert.equal(architecture.inputChannels, 4);
@@ -78,7 +81,7 @@ test('legacy direct ONNX blocker is exact evidence and does not imply CPU/browse
   assert.equal(architecture.fourierInverse, 'torch.fft.irfftn');
 
   const feasibility = manifest.runtimeFeasibility;
-  assert.equal(feasibility.state, LEGACY_BLOCKER);
+  assert.equal(feasibility.state, C7_FEASIBILITY);
   assert.equal(feasibility.directTorchOnnx, LEGACY_DIRECT);
   assert.equal(feasibility.directExportEvidence.exporter, 'torch.onnx.export');
   assert.equal(feasibility.directExportEvidence.torchVersion, '2.6.0+cpu');
@@ -89,10 +92,54 @@ test('legacy direct ONNX blocker is exact evidence and does not imply CPU/browse
   assert.equal(feasibility.directExportEvidence.result, 'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN');
   assert.equal(feasibility.directExportEvidence.artifactProduced, false);
   assert.equal(feasibility.directExportEvidence.runtimeAuthorityGranted, false);
-  assert.equal(feasibility.cpuOrt, 'UNPROVEN');
-  assert.equal(feasibility.browserWasm, 'UNPROVEN');
-  assert.equal(feasibility.browserWebGpu, 'UNPROVEN_KNOWN_THIRD_PARTY_SHAPE_RISK');
+
+  const modern = feasibility.modernDynamoOnnxEvidence;
+  assert.equal(modern.status, 'CANDIDATE');
+  assert.equal(modern.exporter, 'torch.onnx.export');
+  assert.equal(modern.torchVersion, '2.13.0+cpu');
+  assert.equal(modern.onnxVersion, '1.22.0');
+  assert.equal(modern.onnxScriptVersion, '0.7.1');
+  assert.equal(modern.dynamo, true);
+  assert.equal(modern.opset, 18);
+  assert.equal(modern.legacyFallbackAllowed, false);
+  assert.equal(modern.dynamicSpatialModulo, 8);
+  assert.deepEqual(modern.testedShapes, [[64,64],[256,256],[256,384],[512,512]]);
+  assert.equal(modern.standardDftNodeCount, 144);
+  assert.equal(modern.customNodeCount, 0);
+  assert.equal(modern.atenLikeNodeCount, 0);
+  assert.equal(modern.cpuOrtVersion, '1.27.0');
+  assert.equal(modern.cpuOrtResult, 'PASS_MULTISHAPE');
+  assert.deepEqual(modern.cpuOrtThresholds, { maxAbs: 0.0002, rmse: 0.00005 });
+  assert.equal(modern.browserWasmVersion, '1.27.0');
+  assert.deepEqual(modern.browserWasmShape, [256,256]);
+  assert.equal(modern.browserWasmResult, 'PASS');
+  assert.deepEqual(modern.browserWasmThresholds, { maxAbs: 0.0002, rmse: 0.00005 });
+  assert.equal(modern.runtimeAuthorityGranted, false);
+  assert.equal(modern.productionDeviceApproval, false);
+  assert.equal(modern.releaseArtifactIdentityEstablished, false);
+  assert.equal('sha256' in modern, false, 'runner-local ONNX serialization must not become release identity');
+
+  assert.equal(feasibility.cpuOrt, CPU_PROVEN);
+  assert.equal(feasibility.browserWasm, WASM_PROVEN);
+  assert.equal(feasibility.browserWebGpu, HOSTED_WEBGPU_BLOCKED);
+  assert.equal(feasibility.realDeviceWebGpu, 'UNPROVEN');
   assert.equal(feasibility.thirdPartyReferenceAuthority, false);
+});
+
+test('hosted SwiftShader WebGPU timeout is recorded as feasibility only, never device approval', () => {
+  const hosted = manifest.runtimeFeasibility.modernDynamoOnnxEvidence.hostedWebGpu;
+  assert.equal(hosted.runtimeVersion, '1.27.0');
+  assert.deepEqual(hosted.shape, [256,256]);
+  assert.equal(hosted.provider, 'webgpu');
+  assert.equal(hosted.providerFallbackAllowed, false);
+  assert.equal(hosted.adapterArchitecture, 'swiftshader');
+  assert.equal(hosted.softwareAdapterLikely, true);
+  assert.equal(hosted.result, 'WEBGPU_INFERENCE_BLOCKED');
+  assert.equal(hosted.timeoutStage, 'INFERENCE');
+  assert.equal(hosted.inferenceTimeoutMs, 120000);
+  assert.equal(hosted.hostedSoftwareFeasibilityOnly, true);
+  assert.equal(hosted.realDeviceEvidence, false);
+  assert.equal(manifest.productionApprovalEvidence, null);
 });
 
 test('LaMa is advisory INPAINTING discovery only and absent from production executable catalogs', () => {
@@ -135,8 +182,8 @@ test('future signed envelope is byte-bound and still blocked until BERS artifact
     (value: any) => { value.upstream.checkpoint.archiveSha256 = 'a'.repeat(64); },
     (value: any) => { value.upstream.checkpoint.checkpointSha256 = 'b'.repeat(64); },
     (value: any) => { value.upstream.checkpoint.configSha256 = 'd'.repeat(64); },
-    (value: any) => { value.runtimeFeasibility.state = LEGACY_BLOCKER; },
-    (value: any) => { value.runtimeFeasibility.browserWasm = 'UNPROVEN'; },
+    (value: any) => { value.runtimeFeasibility.state = C7_FEASIBILITY; },
+    (value: any) => { value.runtimeFeasibility.browserWasm = WASM_PROVEN; },
     (value: any) => { value.artifacts.model.sha256 = 'e'.repeat(64); },
   ];
   for (const mutate of mutations) {

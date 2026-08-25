@@ -105,18 +105,30 @@ test('hosted gate keeps Drive as authority and permits only a byte-pinned transp
   assert.doesNotMatch(workflow, /omegaconf==/);
 });
 
-test('pinned checkpoint remains CANDIDATE-only after legacy blocker evidence and before runtime/artifact admission', () => {
+test('pinned checkpoint remains CANDIDATE-only after later C7 runtime feasibility evidence', () => {
   assert.equal(manifest.status, 'CANDIDATE');
   assert.equal(manifest.artifactState, 'CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED');
   assert.equal(manifest.upstream.checkpoint.identityState, 'PINNED');
-  assert.equal(manifest.runtimeFeasibility.state, 'BLOCKED_DIRECT_LEGACY_EXPORT_ALTERNATE_EXPORTER_REQUIRED');
   assert.equal(manifest.runtimeFeasibility.directExportEvidence.result, 'BLOCKED_UNSUPPORTED_ATEN_FFT_RFFTN');
   assert.equal(manifest.runtimeFeasibility.directExportEvidence.artifactProduced, false);
   assert.equal(manifest.runtimeFeasibility.directExportEvidence.runtimeAuthorityGranted, false);
-  assert.equal(manifest.runtimeFeasibility.cpuOrt, 'UNPROVEN');
-  assert.equal(manifest.runtimeFeasibility.browserWasm, 'UNPROVEN');
+
+  assert.equal(manifest.runtimeFeasibility.state, 'DYNAMO_ONNX_CPU_WASM_PROVEN_WEBGPU_REAL_DEVICE_REQUIRED');
+  assert.equal(manifest.runtimeFeasibility.cpuOrt, 'PROVEN_HOSTED_ORT_1_27_MULTISHAPE');
+  assert.equal(manifest.runtimeFeasibility.browserWasm, 'PROVEN_HOSTED_CHROME_ORT_WEB_1_27_256');
+  assert.equal(manifest.runtimeFeasibility.browserWebGpu, 'HOSTED_SWIFTSHADER_INFERENCE_TIMEOUT_REAL_DEVICE_UNPROVEN');
+  assert.equal(manifest.runtimeFeasibility.realDeviceWebGpu, 'UNPROVEN');
+  const modern = manifest.runtimeFeasibility.modernDynamoOnnxEvidence;
+  assert.equal(modern.runtimeAuthorityGranted, false);
+  assert.equal(modern.productionDeviceApproval, false);
+  assert.equal(modern.releaseArtifactIdentityEstablished, false);
+  assert.equal(modern.hostedWebGpu.realDeviceEvidence, false);
+
   assert.equal(manifest.bersArtifact.state, 'UNBUILT');
   assert.equal(manifest.productionApprovalEvidence, null);
   assert.equal(manifest.verificationKeyId, null);
   assert.equal(manifest.artifacts.model.url, null);
+  assert.equal(manifest.artifacts.model.size, null);
+  assert.equal(manifest.artifacts.model.sha256, null);
+  assert.equal(manifest.artifacts.model.signatureUrl, null);
 });
