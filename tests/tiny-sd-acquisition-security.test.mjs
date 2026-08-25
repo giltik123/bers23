@@ -59,10 +59,18 @@ test('D1 failure cleanup explicitly removes downloaded and bridged model bytes',
   assert.match(workflow.slice(failureCleanup), /test ! -e "\$\{RUNNER_TEMP\}\/tiny-sd-bridge"/);
 });
 
-test('D1 manifest cannot grant release or production authority', () => {
+test('D1 pinned trust root still cannot grant release, runtime or production authority', () => {
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'TRUST_ROOT_DISCOVERY_REQUIRED');
-  assert.equal(manifest.licenseReview, 'REQUIRED');
+  assert.equal(manifest.artifactState, 'TRUST_ROOT_PINNED_RUNTIME_FEASIBILITY_REQUIRED');
+  assert.equal(manifest.licenseReview, 'REVIEWED_WITH_USE_AND_REDISTRIBUTION_OBLIGATIONS');
+  assert.equal(manifest.licenseReviewEvidence.licenseIdentifier, 'creativeml-openrail-m');
+  assert.equal(manifest.licenseReviewEvidence.productionApprovalGranted, false);
+  assert.equal(manifest.upstream.snapshot.identityState, 'PINNED');
+  assert.equal(manifest.upstream.snapshot.files.length, 12);
+  assert.equal(manifest.tensorBridge.state, 'PINNED');
+  assert.equal(manifest.tensorBridge.pickleFree, true);
+  assert.equal(manifest.tensorBridge.ephemeral, true);
+  assert.equal(manifest.tensorBridge.published, false);
   assert.equal(manifest.runtimeFeasibility.state, 'UNPROVEN');
   assert.equal(manifest.runtimeFeasibility.runtimeAuthorityGranted, false);
   assert.equal(manifest.productionApprovalEvidence, null);
