@@ -23,7 +23,6 @@ const required = name => {
 const modelDir = required('model-dir');
 const fixtureDir = required('fixture-dir');
 const quantReportPath = required('quant-report');
-const fixtureReportPath = required('fixture-report');
 const reportPath = required('report');
 const outputDir = path.resolve('.test-cache/tiny-sd-d3-wasm-dist');
 const port = 4178;
@@ -42,20 +41,28 @@ const hashFile = async file => new Promise((resolve, reject) => {
 
 const quantBytes = await fs.readFile(quantReportPath);
 const quant = JSON.parse(quantBytes.toString('utf8'));
-const fixtures = JSON.parse(await fs.readFile(fixtureReportPath, 'utf8'));
 assert.equal(quant.status, 'CANDIDATE');
 assert.equal(quant.stage, 'D3_WASM_COMPACT_PREPARATION');
 assert.equal(quant.fullInt8UniversalPackClaimed, false);
 assert.equal(quant.browserWasmStillRequired, true);
 assert.equal(quant.runtimeAuthorityGranted, false);
 assert.equal(quant.productionApproval, false);
-assert.equal(fixtures.status, 'CANDIDATE');
-assert.equal(fixtures.stage, 'D3_WEBGPU_FP16_PREPARATION');
 assert.deepEqual(Object.keys(quant.components).sort(), [...COMPONENTS].sort());
-assert.deepEqual(Object.keys(fixtures.components).sort(), [...COMPONENTS].sort());
 
 for (const component of COMPONENTS) {
   const record = quant.components[component];
+  const fixture = record.browserFixture;
+  assert.ok(fixture, `${component} independent D2 browser fixture missing`);
+  for (const input of fixture.inputs) {
+    const fixturePath = path.join(fixtureDir, component, input.path);
+    assert.equal((await fs.stat(fixturePath)).size, input.bytes, `${component}/${input.name} fixture size mismatch`);
+    assert.equal(await hashFile(fixturePath), input.sha256, `${component}/${input.name} fixture SHA mismatch`);
+  }
+  const referencePath = path.join(fixtureDir, component, fixture.reference.path);
+  assert.equal((await fs.stat(referencePath)).size, fixture.reference.bytes, `${component} reference size mismatch`);
+  assert.equal(await hashFile(referencePath), fixture.reference.sha256, `${component} reference SHA mismatch`);
+  assert.equal(fixture.reference.authority, 'D2_ACCEPTED_FP32_CPU_ORT_OUTPUT');
+
   if (record.result !== 'WASM_COMPACT_NATIVE_PASS') continue;
   assert.ok(record.candidate);
   assert.equal(record.nativeOrtParity.passed, true);
@@ -66,19 +73,6 @@ for (const component of COMPONENTS) {
   const stat = await fs.stat(modelPath);
   assert.equal(stat.size, record.candidate.size, `${component} WASM model size mismatch`);
   assert.equal(await hashFile(modelPath), record.candidate.sha256, `${component} WASM model SHA mismatch`);
-}
-
-for (const component of COMPONENTS) {
-  const fixture = fixtures.components[component].browserFixture;
-  for (const input of fixture.inputs) {
-    const fixturePath = path.join(fixtureDir, component, input.path);
-    assert.equal((await fs.stat(fixturePath)).size, input.bytes, `${component}/${input.name} fixture size mismatch`);
-    assert.equal(await hashFile(fixturePath), input.sha256, `${component}/${input.name} fixture SHA mismatch`);
-  }
-  const referencePath = path.join(fixtureDir, component, fixture.reference.path);
-  assert.equal((await fs.stat(referencePath)).size, fixture.reference.bytes, `${component} reference size mismatch`);
-  assert.equal(await hashFile(referencePath), fixture.reference.sha256, `${component} reference SHA mismatch`);
-  assert.equal(fixture.reference.authority, 'D2_ACCEPTED_FP32_CPU_ORT_OUTPUT');
 }
 
 await build({
@@ -147,7 +141,7 @@ await new Promise((resolve, reject) => {
 
 const componentConfig = component => {
   const record = quant.components[component];
-  const fixture = fixtures.components[component].browserFixture;
+  const fixture = record.browserFixture;
   return {
     component,
     modelUrl: `/__tiny_sd_wasm/model/${component}.onnx`,
