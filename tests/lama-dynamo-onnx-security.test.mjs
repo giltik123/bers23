@@ -74,7 +74,7 @@ test('workflow physically removes legacy checkpoint before installing or running
   const bridgeRun = workflow.indexOf('bridge-lama-generator-safetensors.py');
   const checkpointRemove = workflow.indexOf('rm -f "${RUNNER_TEMP}/lama-c7/best.ckpt"');
   const modernInstall = workflow.indexOf('torch==2.13.0');
-  const probeRun = workflow.indexOf('probe-lama-dynamo-onnx.py');
+  const probeRun = workflow.indexOf('python scripts/probe-lama-dynamo-onnx.py');
   assert.ok(bridgeRun >= 0 && checkpointRemove >= 0 && modernInstall >= 0 && probeRun >= 0);
   assert.ok(bridgeRun < checkpointRemove);
   assert.ok(checkpointRemove < modernInstall);
