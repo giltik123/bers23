@@ -14,6 +14,7 @@
     "license": "Apache-2.0",
     "distribution": {
       "authoritativeFolderUrl": "https://drive.google.com/drive/folders/1B2x7eQDgecTL0oh3LSIBDGj0fTxs6Ips?usp=sharing",
+      "authoritativeArchiveDriveFileId": "11RbsVSav3O-fReBsPHBE1nn8kcFIMnKp",
       "legacyYandexState": "UNAVAILABLE",
       "convenienceMirrorUrl": "https://huggingface.co/smartywu/big-lama/resolve/main/big-lama.zip",
       "convenienceMirrorAuthority": false
@@ -33,16 +34,24 @@
       "fftNorm": "ortho"
     },
     "checkpoint": {
-      "archiveName": null,
-      "archiveSize": null,
-      "archiveSha256": null,
-      "checkpointPath": null,
-      "checkpointSize": null,
-      "checkpointSha256": null,
-      "configPath": null,
-      "configSize": null,
-      "configSha256": null,
-      "identityState": "ACQUISITION_REQUIRED"
+      "archiveName": "big-lama.zip",
+      "archiveSize": 381428720,
+      "archiveSha256": "d7161bba4d68b438f9fa7f09dcb750a223804c300c68d214a5e0be16251fba8d",
+      "archiveMemberCount": 2,
+      "checkpointPath": "big-lama/models/best.ckpt",
+      "checkpointSize": 410046389,
+      "checkpointSha256": "fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423",
+      "configPath": "big-lama/config.yaml",
+      "configSize": 3947,
+      "configSha256": "4fdeed49926e13b101c4dd9e193acec9e58677dfdb4ba49dd6a3a8927964e2a7",
+      "identityState": "PINNED",
+      "corroboration": {
+        "container": "LaMa_models.zip",
+        "checkpointPath": "LaMa_models/big-lama/models/best.ckpt",
+        "checkpointSha256Matches": true,
+        "configPath": "LaMa_models/big-lama/config.yaml",
+        "configSha256Matches": true
+      }
     }
   },
   "tensorContract": {
@@ -97,7 +106,7 @@
     "size": null,
     "sha256": null
   },
-  "artifactState": "CHECKPOINT_ACQUISITION_REQUIRED",
+  "artifactState": "CHECKPOINT_PINNED_RUNTIME_FEASIBILITY_REQUIRED",
   "artifacts": {
     "model": {
       "url": null,
