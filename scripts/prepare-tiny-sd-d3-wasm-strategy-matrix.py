@@ -67,6 +67,13 @@ def _quantize_per_channel_s8(array: np.ndarray, axis: int) -> tuple[np.ndarray, 
 def weight_only_qdq(source: Path, target: Path, component: str) -> dict[str, Any]:
     model = onnx.load_model(source, load_external_data=True)
     initializers = {value.name: value for value in model.graph.initializer}
+    reserved_tensor_names = set(initializers)
+    for value in [*model.graph.input, *model.graph.output, *model.graph.value_info]:
+        if value.name:
+            reserved_tensor_names.add(value.name)
+    for node in model.graph.node:
+        reserved_tensor_names.update(name for name in node.output if name)
+
     consumers: dict[str, list[tuple[str, int]]] = {}
     all_uses: dict[str, list[tuple[str, int]]] = {}
     for node in model.graph.node:
@@ -103,16 +110,20 @@ def weight_only_qdq(source: Path, target: Path, component: str) -> dict[str, Any
         initializer = initializers[weight_name]
         array = numpy_helper.to_array(initializer)
         quantized, scales, zero_points = _quantize_per_channel_s8(array, axis)
+        quantized_name = f"{weight_name}__d3_weight_quantized"
         scale_name = f"{weight_name}__d3_weight_scale"
         zero_name = f"{weight_name}__d3_weight_zero"
-        dequant_name = f"{weight_name}__d3_weight_dequantized"
+        generated_names = {quantized_name, scale_name, zero_name}
+        if len(generated_names) != 3 or generated_names & reserved_tensor_names:
+            raise RuntimeError(f"weight-only generated tensor-name collision: {weight_name}")
+        reserved_tensor_names.update(generated_names)
         new_initializers.extend([
-            numpy_helper.from_array(quantized, name=weight_name),
+            numpy_helper.from_array(quantized, name=quantized_name),
             numpy_helper.from_array(scales, name=scale_name),
             numpy_helper.from_array(zero_points, name=zero_name),
         ])
         replaced_names.add(weight_name)
-        quantized_weights[weight_name] = (scale_name, zero_name, dequant_name, axis)
+        quantized_weights[weight_name] = (quantized_name, scale_name, zero_name, axis)
         quantized_elements += int(array.size)
         quantized_logical_fp32_bytes += int(array.size) * 4
         del array, quantized, scales, zero_points
@@ -127,17 +138,16 @@ def weight_only_qdq(source: Path, target: Path, component: str) -> dict[str, Any
     for node in model.graph.node:
         if len(node.input) >= 2 and node.input[1] in quantized_weights:
             weight_name = node.input[1]
-            scale_name, zero_name, dequant_name, axis = quantized_weights[weight_name]
+            quantized_name, scale_name, zero_name, axis = quantized_weights[weight_name]
             if weight_name not in emitted_dq:
                 new_nodes.append(helper.make_node(
                     "DequantizeLinear",
-                    [weight_name, scale_name, zero_name],
-                    [dequant_name],
+                    [quantized_name, scale_name, zero_name],
+                    [weight_name],
                     name=f"{weight_name}__d3_weight_dequantize",
                     axis=axis,
                 ))
                 emitted_dq.add(weight_name)
-            node.input[1] = dequant_name
         new_nodes.append(node)
     del model.graph.node[:]
     model.graph.node.extend(new_nodes)
@@ -156,6 +166,8 @@ def weight_only_qdq(source: Path, target: Path, component: str) -> dict[str, Any
         "quantizedWeightInitializerCount": len(quantized_weights),
         "quantizedWeightElements": quantized_elements,
         "sourceFp32WeightBytesCovered": quantized_logical_fp32_bytes,
+        "quantizedInitializerNamesAreDisjointFromSourceFp32Names": True,
+        "sourceWeightNamePreservedAsFloatDequantizedValue": True,
         "runtimeComputeClaimedInteger": False,
         "purpose": "PARITY_PRESERVING_MODEL_SIZE_FEASIBILITY",
     }
