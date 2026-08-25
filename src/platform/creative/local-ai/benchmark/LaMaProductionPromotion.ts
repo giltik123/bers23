@@ -149,7 +149,7 @@ export type LaMaPromotionAssessment = Readonly<{
 /**
  * Admission-only gate. The evidence object is untrusted and neither it nor a browser may self-assert
  * signature success. The separate trust port must cryptographically verify both the signed C8 release
- * and the detached promotion-evidence attestation. This function never mutates model/runtime/Core state.
+ * and the detached promotion-evidence attestation. This function never mutates model, runtime, or Core state.
  */
 export async function assessLaMaProductionPromotion(
   value: unknown,
