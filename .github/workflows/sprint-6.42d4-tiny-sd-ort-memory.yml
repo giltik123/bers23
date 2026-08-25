@@ -304,7 +304,7 @@ jobs:
         if: always()
         run: |
           python - <<'PY'
-          import json, pathlib
+          import json, os, pathlib
           prep_path = pathlib.Path('.test-cache/6.42d4/tiny-sd-d4-ort-preparation.json')
           browser_path = pathlib.Path('.test-cache/6.42d4/tiny-sd-d4-browser.json')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
@@ -320,8 +320,6 @@ jobs:
                   summary.write(f"Blocked: `{browser['blockedVariants']}`  \n")
               summary.write('Authority: **CANDIDATE only; no production/Editor/runtime release approval.**\n')
           PY
-        env:
-          PYTHONUNBUFFERED: '1'
 
       - name: Failure cleanup
         if: failure()
