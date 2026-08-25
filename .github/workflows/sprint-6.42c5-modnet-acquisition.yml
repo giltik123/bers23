@@ -11,6 +11,10 @@ permissions:
 env:
   MODNET_CHECKPOINT_SHA256: 7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8
   MODNET_CHECKPOINT_SIZE: '26255603'
+  MODNET_REFERENCE_ONNX_SHA256: 07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9
+  MODNET_REFERENCE_ONNX_SIZE: '25888640'
+  MODNET_ONNX_SHA256: 18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919
+  MODNET_ONNX_SIZE: '25961178'
 
 jobs:
   authoritative-checkpoint:
@@ -72,15 +76,13 @@ jobs:
           assert state['parameterElementCount'] == 8780012
           print('checkpoint size=', report['checkpoint']['size'])
           print('checkpoint sha256=', report['checkpoint']['sha256'])
-          print('state_dict keys=', state['stateDictKeyCount'])
-          print('parameter elements=', state['parameterElementCount'])
           PY
-      - name: Record authoritative upstream ONNX as independent reference
+      - name: Verify authoritative upstream ONNX independent reference identity
         run: |
           set -euo pipefail
           reference="$(cat "${RUNNER_TEMP}/modnet-reference-onnx-path")"
           python - "${reference}" <<'PY'
-          import hashlib, json, pathlib, sys
+          import hashlib, json, os, pathlib, sys
           path = pathlib.Path(sys.argv[1])
           report = {
               'name': path.name,
@@ -88,12 +90,14 @@ jobs:
               'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
               'role': 'UPSTREAM_REFERENCE_NOT_BERS_RELEASE_AUTHORITY',
           }
+          assert report['size'] == int(os.environ['MODNET_REFERENCE_ONNX_SIZE'])
+          assert report['sha256'] == os.environ['MODNET_REFERENCE_ONNX_SHA256']
           pathlib.Path('.test-cache/6.42c5/modnet-upstream-onnx-reference.json').write_text(
               json.dumps(report, indent=2) + '\n', encoding='utf-8')
           print('upstream ONNX size=', report['size'])
           print('upstream ONNX sha256=', report['sha256'])
           PY
-      - name: Build reproducible BERS ONNX and prove PyTorch/ORT parity
+      - name: Reproduce exact BERS ONNX and prove PyTorch/ORT parity
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check \
@@ -105,12 +109,14 @@ jobs:
             --manifest src/platform/creative/local-ai/models/portrait-matting.manifest.json \
             --output .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx \
             --report .test-cache/6.42c5/modnet-bers-export.json
+          test "$(stat -c%s .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx)" = "${MODNET_ONNX_SIZE}"
+          test "$(sha256sum .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx | cut -d' ' -f1)" = "${MODNET_ONNX_SHA256}"
       - name: Cross-check BERS export against official upstream ONNX reference
         run: |
           set -euo pipefail
           reference="$(cat "${RUNNER_TEMP}/modnet-reference-onnx-path")"
           python - "${reference}" .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx <<'PY'
-          import hashlib, json, pathlib, sys
+          import hashlib, json, os, pathlib, sys
           import numpy as np
           import onnx
           import onnxruntime as ort
@@ -123,6 +129,14 @@ jobs:
           outputs = [v.name for v in reference_model.graph.output]
           if inputs != ['input'] or outputs != ['output']:
               raise RuntimeError(f'unexpected official MODNet ONNX I/O: {inputs!r} -> {outputs!r}')
+          if reference.stat().st_size != int(os.environ['MODNET_REFERENCE_ONNX_SIZE']):
+              raise RuntimeError('official MODNet ONNX reference size drift')
+          if hashlib.sha256(reference.read_bytes()).hexdigest() != os.environ['MODNET_REFERENCE_ONNX_SHA256']:
+              raise RuntimeError('official MODNet ONNX reference SHA drift')
+          if bers.stat().st_size != int(os.environ['MODNET_ONNX_SIZE']):
+              raise RuntimeError('BERS MODNet ONNX size drift')
+          if hashlib.sha256(bers.read_bytes()).hexdigest() != os.environ['MODNET_ONNX_SHA256']:
+              raise RuntimeError('BERS MODNet ONNX SHA drift')
 
           reference_session = ort.InferenceSession(str(reference), providers=['CPUExecutionProvider'])
           bers_session = ort.InferenceSession(str(bers), providers=['CPUExecutionProvider'])
@@ -139,16 +153,20 @@ jobs:
                   raise RuntimeError(f'upstream/BERS output parity failed: {max_abs} > 1e-4')
               comparisons.append({'height': height, 'width': width, 'maxAbsError': max_abs})
 
+          default_opsets = [int(x.version) for x in reference_model.opset_import if x.domain in ('', 'ai.onnx')]
+          if default_opsets != [11]:
+              raise RuntimeError(f'unexpected official MODNet reference opset: {default_opsets!r}')
           report = {
               'reference': {
                   'size': reference.stat().st_size,
                   'sha256': hashlib.sha256(reference.read_bytes()).hexdigest(),
-                  'opsets': [{'domain': x.domain, 'version': int(x.version)} for x in reference_model.opset_import],
+                  'opset': 11,
                   'nodeCount': len(reference_model.graph.node),
               },
               'bers': {
                   'size': bers.stat().st_size,
                   'sha256': hashlib.sha256(bers.read_bytes()).hexdigest(),
+                  'opset': 17,
               },
               'comparisons': comparisons,
               'authority': 'REFERENCE_ONLY',
@@ -157,7 +175,7 @@ jobs:
               json.dumps(report, indent=2) + '\n', encoding='utf-8')
           print(json.dumps(report, indent=2))
           PY
-      - name: C5 candidate policy and repository weight guards
+      - name: C5 candidate policy, release and repository weight guards
         run: |
           set -euo pipefail
           npm ci
@@ -168,6 +186,7 @@ jobs:
             --external:node:*
           node --test .test-cache/6.42c5/modnet-release-policy.test.mjs
           node --test tests/modnet-export-security.test.mjs
+          node --test tests/modnet-release-workflow.test.mjs
           python -m py_compile scripts/inspect-modnet-checkpoint.py scripts/build-modnet-portrait-matting-release.py
           npm run check:model-weight-tracking
           test "$(git ls-files '*.ckpt' '*.onnx' | wc -l)" -eq 0
@@ -181,8 +200,9 @@ jobs:
             echo '- Source license: Apache-2.0'
             echo '- Pinned checkpoint size / SHA-256 verified before deserialization: PASS'
             echo '- Strict pinned-architecture state_dict load: PASS'
-            echo '- BERS CPU ONNX double-export reproducibility + ONNX checker + PyTorch/ORT parity: PASS'
-            echo '- Official upstream ONNX: independent reference only; cross-parity: PASS'
+            echo '- BERS CPU ONNX exact pinned reproduction + ONNX checker + PyTorch/ORT parity: PASS'
+            echo '- Official upstream ONNX pinned as independent reference only; cross-parity: PASS'
+            echo '- Protected signed-CANDIDATE release authority guards: PASS'
             echo '- Candidate remains absent from production executable catalogs'
             echo '- Production device approval: NOT GRANTED'
             echo '### Checkpoint evidence'
