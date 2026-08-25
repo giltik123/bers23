@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Inspect the byte-pinned Big-LaMa checkpoint using weights-only PyTorch loading.
+"""Inspect the byte-pinned Big-LaMa checkpoint using restricted weights-only loading.
 
-The archive/member bytes must already match repository-pinned identities before this script runs.
-It loads only the Lightning checkpoint mapping with weights_only=True, isolates generator.* tensors,
-constructs the pinned upstream FFCResNetGenerator directly (without Lightning), and requires a strict
-state_dict load. It does not export, install, sign, publish, or grant runtime authority.
+The checkpoint bytes must match the repository-pinned identity before any deserialization. PyTorch
+2.6+ statically enumerates globals in the checkpoint; only `pytorch_lightning.*` metadata globals
+may be present beyond PyTorch's built-in safe set. Those globals are mapped to an inert local
+placeholder instead of importing/executing Lightning classes. The script then isolates tensor-only
+`state_dict`, strict-loads only `generator.*` into the pinned FFCResNetGenerator, and discards all
+metadata. It never uses weights_only=False, exports, installs, signs, publishes or grants authority.
 """
 from __future__ import annotations
 
@@ -23,6 +25,23 @@ UPSTREAM_REVISION = "786f5936b27fb3dacd2b1ad799e4de968ea697e7"
 CHECKPOINT_NAME = "best.ckpt"
 CHECKPOINT_SIZE = 410_046_389
 CHECKPOINT_SHA256 = "fccb7adffd53ec0974ee5503c3731c2c2f1e7e07856fd9228cdcc0b46fd5d423"
+SAFE_METADATA_PREFIX = "pytorch_lightning."
+MAX_QUARANTINED_METADATA_GLOBALS = 64
+
+
+class _InertLightningMetadata:
+    """Harmless sink used in place of serialized Lightning callback/config classes."""
+
+    def __new__(cls, *args: Any, **kwargs: Any):
+        return super().__new__(cls)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._args = args
+        self._kwargs = kwargs
+        self._state: Any = None
+
+    def __setstate__(self, state: Any) -> None:
+        self._state = state
 
 
 def sha256(path: Path) -> str:
@@ -69,6 +88,33 @@ def build_generator(source: Path) -> torch.nn.Module:
     )
 
 
+def restricted_load(checkpoint: Path) -> tuple[dict[str, Any], list[str]]:
+    scan = getattr(torch.serialization, "get_unsafe_globals_in_checkpoint", None)
+    safe_globals = getattr(torch.serialization, "safe_globals", None)
+    if scan is None or safe_globals is None:
+        raise RuntimeError("PyTorch inspection environment lacks safe-global checkpoint APIs")
+
+    unsafe = sorted(str(value) for value in scan(checkpoint))
+    if len(unsafe) > MAX_QUARANTINED_METADATA_GLOBALS:
+        raise RuntimeError(f"Too many non-default checkpoint globals: {len(unsafe)}")
+    foreign = [name for name in unsafe if not name.startswith(SAFE_METADATA_PREFIX)]
+    if foreign:
+        raise RuntimeError(f"Unexpected non-Lightning checkpoint globals: {foreign!r}")
+
+    # Do not import any serialized Lightning class. Map each exact serialized name to a local,
+    # inert type whose construction/state assignment has no external side effects.
+    aliases = [(_InertLightningMetadata, name) for name in unsafe]
+    with safe_globals(aliases):
+        value: Any = torch.load(
+            checkpoint,
+            map_location=torch.device("cpu"),
+            weights_only=True,
+        )
+    if not isinstance(value, dict) or not value:
+        raise RuntimeError("LaMa checkpoint is not a non-empty mapping")
+    return value, unsafe
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
@@ -85,14 +131,7 @@ def main() -> None:
     if sha256(args.checkpoint) != CHECKPOINT_SHA256:
         raise RuntimeError("LaMa checkpoint SHA-256 mismatch before deserialization")
 
-    # The pinned checkpoint is a Lightning mapping. Do not allow arbitrary pickle object loading.
-    state: Any = torch.load(
-        args.checkpoint,
-        map_location=torch.device("cpu"),
-        weights_only=True,
-    )
-    if not isinstance(state, dict) or not state:
-        raise RuntimeError("LaMa checkpoint is not a non-empty mapping")
+    state, quarantined_globals = restricted_load(args.checkpoint)
     model_state = state.get("state_dict")
     if not isinstance(model_state, dict) or not model_state:
         raise RuntimeError("LaMa checkpoint has no non-empty state_dict mapping")
@@ -129,6 +168,9 @@ def main() -> None:
             "sha256": CHECKPOINT_SHA256,
             "verifiedBeforeDeserialization": True,
             "weightsOnly": True,
+            "unsafeGlobalScanPerformed": True,
+            "quarantinedMetadataGlobals": quarantined_globals,
+            "quarantineStrategy": "INERT_LOCAL_PLACEHOLDER_NO_LIGHTNING_IMPORT",
             "topLevelKeys": sorted(str(key) for key in state.keys()),
             "stateDictKeyCount": len(model_state),
             "generatorStateKeyCount": len(generator_state),
@@ -139,6 +181,7 @@ def main() -> None:
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print("quarantined metadata globals=", quarantined_globals)
     print(
         "LAMA CHECKPOINT INSPECTION: PASS "
         f"state_keys={len(model_state)} generator_keys={len(generator_state)} "
