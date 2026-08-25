@@ -6,7 +6,7 @@ import gc
 import inspect
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import diffusers
 import numpy as np
@@ -116,6 +116,25 @@ def require_metrics(label: str, metrics: dict[str, float], tolerance: dict[str, 
         )
 
 
+def require_state_load(label: str, evidence: dict[str, Any]) -> None:
+    if evidence.get("allLearnedParametersExactFromD1Bridge") is not True:
+        raise RuntimeError(f"{label} does not prove exact learned-parameter loading from D1")
+    if evidence.get("unexpectedBridgeKeys") != []:
+        raise RuntimeError(f"{label} has unexpected bridge keys")
+    if evidence.get("derivedBufferPolicy") != "EXACT_CLOSED_ALLOWLIST":
+        raise RuntimeError(f"{label} derived-buffer policy drift")
+    derived = evidence.get("derivedNonLearnedBuffers")
+    if not isinstance(derived, list):
+        raise RuntimeError(f"{label} derived-buffer evidence is malformed")
+    for item in derived:
+        if item.get("key") != "text_model.embeddings.position_ids":
+            raise RuntimeError(f"{label} contains unapproved derived buffer: {item!r}")
+        if item.get("authority") != "DERIVED_FROM_PINNED_CONFIG_NOT_D1_WEIGHT":
+            raise RuntimeError(f"{label} derived buffer authority drift")
+        if item.get("learnedParameter") is not False:
+            raise RuntimeError(f"{label} derived buffer unexpectedly became learned")
+
+
 def graph_inventory(path: Path) -> dict[str, Any]:
     model = onnx.load(path, load_external_data=True)
     onnx.checker.check_model(model, full_check=True)
@@ -163,7 +182,9 @@ def export_and_ort(
     output_name: str,
     reference: np.ndarray,
     onnx_path: Path,
+    state_load: dict[str, Any],
 ) -> dict[str, Any]:
+    require_state_load(f"{name} modern state-load", state_load)
     wrapper.eval()
     with torch.inference_mode():
         modern = wrapper(*torch_inputs).detach().cpu().float().numpy()
@@ -189,6 +210,7 @@ def export_and_ort(
         return {
             "result": result,
             "error": message,
+            "stateLoad": state_load,
             "referenceParity": reference_metrics,
             "referenceParityPassed": True,
             "artifactProduced": False,
@@ -200,7 +222,6 @@ def export_and_ort(
     size = onnx_path.stat().st_size
     digest = sha256_file(onnx_path)
 
-    # Release PyTorch graph/model memory before constructing ORT session for large components.
     del wrapper
     gc.collect()
 
@@ -222,6 +243,7 @@ def export_and_ort(
 
     return {
         "result": "PASS",
+        "stateLoad": state_load,
         "referenceParity": reference_metrics,
         "referenceParityPassed": True,
         "ortParity": ort_metrics,
@@ -257,6 +279,14 @@ def main() -> int:
         raise RuntimeError("Tiny-SD D2 reference bundle SHA mismatch")
     if reference_report.get("runtimeAuthorityGranted") is not False or reference_report.get("productionApproval") is not False:
         raise RuntimeError("Tiny-SD D2 reference evidence unexpectedly grants authority")
+    if reference_report.get("stateLoadPolicy") != "ALL_LEARNED_PARAMETERS_EXACT_FROM_D1; ONLY_CLOSED_DERIVED_NONLEARNED_BUFFERS_ALLOWED":
+        raise RuntimeError("Tiny-SD D2 historical state-load policy drift")
+    historical_semantics = reference_report.get("semantics") or {}
+    for key in ("textEncoder", "unet", "vaeDecoder"):
+        state_load = (historical_semantics.get(key) or {}).get("stateLoad")
+        if not isinstance(state_load, dict):
+            raise RuntimeError(f"Tiny-SD D2 historical state-load evidence missing: {key}")
+        require_state_load(f"historical {key}", state_load)
 
     with np.load(reference_path, allow_pickle=False) as bundle:
         reference = {key: np.ascontiguousarray(bundle[key].astype(np.float32, copy=False)) for key in bundle.files}
@@ -265,7 +295,7 @@ def main() -> int:
 
     components: dict[str, Any] = {}
 
-    text_encoder, text_config = load_text_encoder(snapshot, bridge_dir, manifest)
+    text_encoder, text_config, text_load = load_text_encoder(snapshot, bridge_dir, manifest)
     text_inputs = deterministic_text_inputs(int(text_config.vocab_size))
     components["text_encoder"] = export_and_ort(
         name="text_encoder",
@@ -275,11 +305,12 @@ def main() -> int:
         output_name="last_hidden_state",
         reference=reference["text_encoder"],
         onnx_path=args.onnx_dir / "text_encoder.onnx",
+        state_load=text_load,
     )
     del text_encoder
     gc.collect()
 
-    unet, unet_config = load_unet(snapshot, bridge_dir, manifest)
+    unet, unet_config, unet_load = load_unet(snapshot, bridge_dir, manifest)
     unet_inputs = deterministic_unet_inputs(int(unet_config["cross_attention_dim"]))
     components["unet"] = export_and_ort(
         name="unet",
@@ -289,11 +320,12 @@ def main() -> int:
         output_name="noise_prediction",
         reference=reference["unet"],
         onnx_path=args.onnx_dir / "unet.onnx",
+        state_load=unet_load,
     )
     del unet
     gc.collect()
 
-    vae, vae_config = load_vae(snapshot, bridge_dir, manifest)
+    vae, vae_config, vae_load = load_vae(snapshot, bridge_dir, manifest)
     scaling_factor = float(vae_config.get("scaling_factor", 0.18215))
     vae_inputs = (deterministic_vae_input(),)
     components["vae_decoder"] = export_and_ort(
@@ -304,6 +336,7 @@ def main() -> int:
         output_name="decoded_rgb",
         reference=reference["vae_decoder"],
         onnx_path=args.onnx_dir / "vae_decoder.onnx",
+        state_load=vae_load,
     )
     del vae
     gc.collect()
@@ -319,6 +352,7 @@ def main() -> int:
         "d1TrustRootReused": True,
         "historicalReferenceVerifiedBeforeExport": True,
         "referenceEnvironment": reference_report["environment"],
+        "stateLoadPolicy": reference_report["stateLoadPolicy"],
         "components": components,
         "passCount": pass_count,
         "blockedComponents": blocked,
