@@ -76,6 +76,17 @@ test('component export requires reference parity, standard ONNX, exact tensor sh
   assert.match(exporter, /productionApproval.*False/);
 });
 
+test('D2 merge acceptance requires all three components to remain PASS', () => {
+  assert.match(workflow, /Validate D2 all-component acceptance without granting authority/);
+  assert.match(workflow, /assert report\['passCount'\] == 3/);
+  assert.match(workflow, /assert report\['allComponentsPass'\] is True/);
+  assert.match(workflow, /assert report\['blockedComponents'\] == \{\}/);
+  assert.match(workflow, /component\['result'\] == 'PASS'/);
+  assert.match(workflow, /component\['ortParityPassed'\] is True/);
+  assert.match(workflow, /component\['graph'\]\['domains'\] == \['ai\.onnx'\]/);
+  assert.match(workflow, /component\['graph'\]\['functionCount'\] == 0/);
+});
+
 test('D2 hosted workflow destroys binary/model/reference evidence before JSON upload', () => {
   assert.match(workflow, /sprint-6\.42d1-tiny-sd-acquisition/);
   assert.match(workflow, /probe-tiny-sd-reference\.py/);
