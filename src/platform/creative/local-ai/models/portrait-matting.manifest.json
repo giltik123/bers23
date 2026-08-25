@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "modelId": "modnet-photographic-portrait-matting",
+  "version": "1.0.0-candidate.1",
+  "status": "CANDIDATE",
+  "semanticCapabilities": [
+    "portrait-matting",
+    "alpha-matte",
+    "background-removal"
+  ],
+  "upstream": {
+    "repository": "https://github.com/ZHKKKe/MODNet",
+    "revision": "28165a451e4610c9d77cfdf925a94610bb2810fb",
+    "license": "Apache-2.0",
+    "checkpoint": {
+      "name": "modnet_photographic_portrait_matting.ckpt",
+      "authoritativeFolderUrl": "https://drive.google.com/drive/folders/1umYmlCulvIFNaqPjwod1SayFmSRHziyR?usp=sharing",
+      "size": null,
+      "sha256": null,
+      "identityState": "ACQUISITION_REQUIRED"
+    },
+    "onnx": {
+      "exportScript": "onnx/export_onnx.py",
+      "modelSource": "onnx/modnet_onnx.py"
+    }
+  },
+  "tensorContract": {
+    "input": {
+      "name": "input",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 3,
+      "colorSpace": "RGB",
+      "normalization": "(uint8 - 127.5) / 127.5",
+      "range": [-1, 1]
+    },
+    "resize": {
+      "referenceSize": 512,
+      "preserveAspectRatio": true,
+      "spatialMultiple": 32,
+      "inputInterpolation": "AREA",
+      "restoreMatteInterpolation": "AREA"
+    },
+    "output": {
+      "name": "output",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "channels": 1,
+      "range": [0, 1],
+      "activation": "SIGMOID",
+      "semanticType": "CONTINUOUS_ALPHA_MATTE",
+      "threshold": null
+    }
+  },
+  "bersExport": {
+    "state": "UNBUILT",
+    "opset": 17,
+    "device": "CPU",
+    "quantization": "NONE",
+    "simplification": "NONE",
+    "parityRequired": true,
+    "onnxSize": null,
+    "onnxSha256": null
+  },
+  "artifactState": "CHECKPOINT_ACQUISITION_REQUIRED",
+  "artifacts": {
+    "model": {
+      "url": null,
+      "size": null,
+      "sha256": null,
+      "signatureUrl": null
+    }
+  },
+  "verificationKeyId": null,
+  "productionApprovalEvidence": null
+}
