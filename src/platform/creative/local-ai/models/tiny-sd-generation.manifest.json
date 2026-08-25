@@ -2,20 +2,28 @@
   "modelId": "segmind-tiny-sd",
   "version": "1.0.0-candidate.1",
   "status": "CANDIDATE",
-  "artifactState": "TRUST_ROOT_DISCOVERY_REQUIRED",
+  "artifactState": "TRUST_ROOT_PINNED_RUNTIME_FEASIBILITY_REQUIRED",
   "semanticCapabilities": [
     "text-to-image",
     "image-generation"
   ],
-  "licenseReview": "REQUIRED",
+  "licenseReview": "REVIEWED_WITH_USE_AND_REDISTRIBUTION_OBLIGATIONS",
+  "licenseReviewEvidence": {
+    "licenseIdentifier": "creativeml-openrail-m",
+    "reference": "https://huggingface.co/spaces/CompVis/stable-diffusion-license",
+    "commercialUse": "PERMITTED_SUBJECT_TO_LICENSE_TERMS",
+    "redistribution": "PERMITTED_WITH_USE_RESTRICTIONS_NOTICE_AND_LICENSE_COPY",
+    "productionApprovalGranted": false
+  },
   "upstream": {
     "repository": "https://huggingface.co/segmind/tiny-sd",
     "revision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
     "license": "creativeml-openrail-m",
-    "licenseState": "LICENSE_REVIEW",
+    "licenseState": "REVIEWED_WITH_OBLIGATIONS",
     "pipelineClass": "StableDiffusionPipeline",
     "snapshot": {
-      "identityState": "DISCOVERY_REQUIRED",
+      "identityState": "PINNED",
+      "totalRuntimeBytes": 1062108664,
       "expectedRuntimeFiles": [
         "model_index.json",
         "scheduler/scheduler_config.json",
@@ -30,16 +38,138 @@
         "vae/config.json",
         "vae/diffusion_pytorch_model.bin"
       ],
-      "files": []
+      "files": [
+        {
+          "path": "model_index.json",
+          "size": 584,
+          "sha256": "7e6de3ddb77ce79e23a68b8d946b413eabe958a7affbda0f5297e78824377268",
+          "kind": "RUNTIME_METADATA"
+        },
+        {
+          "path": "scheduler/scheduler_config.json",
+          "size": 691,
+          "sha256": "ea897eb6e9c5e7dc3e02121dcb9ae6ac3cd97c0cd59bf750f6f3058a3e4d02dc",
+          "kind": "RUNTIME_METADATA"
+        },
+        {
+          "path": "text_encoder/config.json",
+          "size": 722,
+          "sha256": "e05f77e7bfcd3c155689d90bd3686d36f9ec0d43a4435cf8336198ee3e7c8871",
+          "kind": "RUNTIME_METADATA"
+        },
+        {
+          "path": "text_encoder/pytorch_model.bin",
+          "size": 246187869,
+          "sha256": "f99d8915149c782551f7d14aae5ca0b6e76a6e94d30e5dc86a349b228fbf92ad",
+          "kind": "PICKLE_WEIGHT"
+        },
+        {
+          "path": "tokenizer/merges.txt",
+          "size": 524619,
+          "sha256": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+          "kind": "RUNTIME_METADATA"
+        },
+        {
+          "path": "tokenizer/special_tokens_map.json",
+          "size": 472,
+          "sha256": "c4864a9376a8401918425bed71fc14fc0e81f9b59ec45c1cf96cccb2df508eac",
+          "kind": "RUNTIME_METADATA"
+        },
+        {
+          "path": "tokenizer/tokenizer_config.json",
+          "size": 737,
+          "sha256": "19d7b034cb0cc3ce9766c2231373ab8aa8991fc72e2c8f76558bfaae3de0d563",
+          "kind": "RUNTIME_METADATA"
+        },
+        {
+          "path": "tokenizer/vocab.json",
+          "size": 1059962,
+          "sha256": "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349",
+          "kind": "RUNTIME_METADATA"
+        },
+        {
+          "path": "unet/config.json",
+          "size": 755,
+          "sha256": "55326b8bef1a709254cbb66fdadef156bbe81c011a6be67638a73026be680929",
+          "kind": "RUNTIME_METADATA"
+        },
+        {
+          "path": "unet/diffusion_pytorch_model.bin",
+          "size": 646923637,
+          "sha256": "c9b63e57cb1479c946c73bf5484bc1a823dbe565158ea0ee40015a18844d9f29",
+          "kind": "PICKLE_WEIGHT"
+        },
+        {
+          "path": "vae/config.json",
+          "size": 759,
+          "sha256": "7abe76f4219f3f523e089a028730103474449c74398e1537dc2338c365a11e41",
+          "kind": "RUNTIME_METADATA"
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.bin",
+          "size": 167407857,
+          "sha256": "279228e5296858f5d330db506ff6a51fdcad0d69f87634b5e9133406110af9bf",
+          "kind": "PICKLE_WEIGHT"
+        }
+      ]
     }
   },
   "tensorBridge": {
-    "state": "REQUIRED",
+    "state": "PINNED",
     "sourceFormat": "PYTORCH_PICKLE_STATE_DICT",
     "targetFormat": "SAFETENSORS",
     "hashBeforeDeserializationRequired": true,
     "weightsOnlyRequired": true,
-    "components": []
+    "environment": {
+      "python": "3.11",
+      "numpy": "1.26.4",
+      "torch": "2.6.0+cpu",
+      "safetensors": "0.8.0"
+    },
+    "components": [
+      {
+        "component": "text_encoder",
+        "sourcePath": "text_encoder/pytorch_model.bin",
+        "sourceSize": 246187869,
+        "sourceSha256": "f99d8915149c782551f7d14aae5ca0b6e76a6e94d30e5dc86a349b228fbf92ad",
+        "keyCount": 196,
+        "tensorElements": 123060480,
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bridgeSize": 246144128,
+        "bridgeSha256": "661d1a0cecb35abca0b09f5aec8aaa88bb8075c6b6790e7fff4118a48d42d769"
+      },
+      {
+        "component": "unet",
+        "sourcePath": "unet/diffusion_pytorch_model.bin",
+        "sourceSize": 646923637,
+        "sourceSha256": "c9b63e57cb1479c946c73bf5484bc1a823dbe565158ea0ee40015a18844d9f29",
+        "keyCount": 358,
+        "tensorElements": 323384964,
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bridgeSize": 646813280,
+        "bridgeSha256": "41632b9654182b79e31a69eb8f54987f5f408cb7911cce1f79bd7f36ba980822"
+      },
+      {
+        "component": "vae",
+        "sourcePath": "vae/diffusion_pytorch_model.bin",
+        "sourceSize": 167407857,
+        "sourceSha256": "279228e5296858f5d330db506ff6a51fdcad0d69f87634b5e9133406110af9bf",
+        "keyCount": 248,
+        "tensorElements": 83653863,
+        "dtypes": [
+          "torch.float16"
+        ],
+        "bridgeSize": 167335310,
+        "bridgeSha256": "ce33869425b6a133059fd4349507790e4de6226027c58348195d28d4d76491dd"
+      }
+    ],
+    "pickleFree": true,
+    "ephemeral": true,
+    "published": false
   },
   "runtimeFeasibility": {
     "state": "UNPROVEN",
