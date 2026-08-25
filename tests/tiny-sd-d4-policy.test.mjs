@@ -27,13 +27,20 @@ test('D4 owned bytes remain an explicit capability while borrowed loads keep clo
   assert.match(indexedStorage, /read\(hash: string\).*store\.get\(hash\)/s);
 });
 
-test('D4 ORT converter is pinned, portable and independently fail-closed per component', () => {
+test('D4 ORT converter is pinned, API-based, portable and independently fail-closed per component', () => {
   execFileSync('python', ['-m', 'py_compile', 'scripts/prepare-tiny-sd-d4-ort.py'], { stdio: 'pipe' });
   assert.match(prepare, /EXPECTED_ORT_VERSION = "1\.27\.0"/);
-  assert.match(prepare, /onnxruntime\.tools\.convert_onnx_models_to_ort/);
-  assert.match(prepare, /"--optimization_style",\s*"Fixed"/s);
-  assert.match(prepare, /"optimizationLevel": "all"/);
-  assert.match(prepare, /"targetPlatform": None/);
+  assert.match(prepare, /from onnxruntime\.tools\.convert_onnx_models_to_ort import OptimizationStyle, convert_onnx_models_to_ort/);
+  assert.match(prepare, /convert_onnx_models_to_ort\([\s\S]*optimization_styles=\[OptimizationStyle\.Fixed\]/);
+  assert.match(prepare, /target_platform=None/);
+  assert.match(prepare, /allow_conversion_failures=False/);
+  assert.match(prepare, /enable_type_reduction=False/);
+  assert.match(prepare, /ORT_CONVERT_ONNX_MODELS_TO_ORT_OPTIMIZATION_LEVEL/);
+  assert.match(prepare, /optimization_level != "all"/);
+  assert.match(prepare, /CONVERTER_DIAGNOSTIC_LIMIT = 4096/);
+  assert.match(prepare, /converterOutputTail/);
+  assert.doesNotMatch(prepare, /subprocess\.run/);
+  assert.doesNotMatch(prepare, /["']-m["']\s*,\s*["']onnxruntime\.tools\.convert_onnx_models_to_ort/);
   assert.doesNotMatch(prepare, /--target_platform["']?,\s*["']amd64/);
   assert.match(prepare, /EXACT_FP16_STORAGE_FP32_COMPUTE/);
   assert.match(prepare, /D4_ORT_CONVERSION_BLOCKED/);
