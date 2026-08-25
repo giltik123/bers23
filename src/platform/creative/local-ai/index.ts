@@ -27,6 +27,7 @@ export * from './browser/MobileSamBrowserSegmentation';
 export * from './benchmark/LocalModelBenchmark';
 export * from './benchmark/BenchmarkEvidence';
 export * from './benchmark/BenchmarkEvidencePersistence';
+export * from './benchmark/LaMaProductionPromotion';
 export * from './verification/LocalResultVerifier';
 export * from './cache/LocalInferenceCache';
 export * from './cost/LocalAICostModel';
