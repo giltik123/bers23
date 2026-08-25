@@ -7,6 +7,7 @@ const prepare = await readFile(new URL('../scripts/prepare-tiny-sd-d3-fp16-webgp
 const browser = await readFile(new URL('../tests/tiny-sd-d3-browser-webgpu.html', import.meta.url), 'utf8');
 const runner = await readFile(new URL('../scripts/test-tiny-sd-d3-browser-webgpu.mjs', import.meta.url), 'utf8');
 const quantizeWasm = await readFile(new URL('../scripts/prepare-tiny-sd-d3-wasm-quantized.py', import.meta.url), 'utf8');
+const matrixWasm = await readFile(new URL('../scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py', import.meta.url), 'utf8');
 const browserWasm = await readFile(new URL('../tests/tiny-sd-d3-browser-wasm.html', import.meta.url), 'utf8');
 const runnerWasm = await readFile(new URL('../scripts/test-tiny-sd-d3-browser-wasm.mjs', import.meta.url), 'utf8');
 
@@ -16,7 +17,7 @@ test('D3 remains advisory and cannot grant Tiny-SD runtime or production authori
   assert.equal(manifest.runtimeFeasibility.runtimeAuthorityGranted, false);
   assert.equal(manifest.productionApprovalEvidence, null);
   assert.equal('artifacts' in manifest, false);
-  for (const source of [prepare, browser, runner, quantizeWasm, browserWasm, runnerWasm]) {
+  for (const source of [prepare, browser, runner, quantizeWasm, matrixWasm, browserWasm, runnerWasm]) {
     assert.match(source, /runtimeAuthorityGranted["']?\s*[:=]\s*False|runtimeAuthorityGranted:\s*false/);
     assert.match(source, /productionApproval["']?\s*[:=]\s*False|productionApproval:\s*false|productionDeviceApproval:\s*false/);
   }
@@ -111,6 +112,26 @@ test('D3 WASM baseline is component-specific and fail-closed before browser exec
   assert.doesNotMatch(quantizeWasm, /strict=False/);
 });
 
+test('D3 WASM strategy matrix compares signed, unsigned and weight-only paths without weakening parity', () => {
+  assert.match(quantizeWasm, /prepare-tiny-sd-d3-wasm-strategy-matrix\.py/);
+  assert.match(quantizeWasm, /MULTI_STRATEGY_NATIVE_PARITY_SELECTION/);
+  assert.match(quantizeWasm, /MIN_SIZE_AMONG_ORIGINAL_D3_NATIVE_PARITY_PASSING_CANDIDATES/);
+  assert.match(quantizeWasm, /nativeOrtParity.*passed/s);
+  assert.match(matrixWasm, /DYNAMIC_U8S8_WEIGHT_MATMUL/);
+  assert.match(matrixWasm, /STATIC_QDQ_S8S8_CONV_MATMUL_GEMM/);
+  assert.match(matrixWasm, /STATIC_QDQ_U8U8_CONV_MATMUL_GEMM/);
+  assert.match(matrixWasm, /WEIGHT_ONLY_QDQ_S8_FP32_ACTIVATIONS/);
+  assert.match(matrixWasm, /runtimeComputeClaimedInteger["']?: False/);
+  assert.match(matrixWasm, /activationType["']?: "FLOAT"/);
+  assert.match(matrixWasm, /onnx\.checker\.check_model\(model, full_check=True\)/);
+  assert.match(matrixWasm, /inventory\["ioContract"\] != expected_io/);
+  assert.match(matrixWasm, /inventory\["domains"\] != \["ai\.onnx"\]/);
+  assert.match(matrixWasm, /inventory\["functionCount"\] != 0/);
+  assert.match(matrixWasm, /ratio < 0\.80 and parity\["passed"\]/);
+  assert.match(matrixWasm, /fullInt8UniversalPackClaimed["']?: False/);
+  assert.doesNotMatch(matrixWasm, /strict=False|full_check=False/);
+});
+
 test('D3 WASM fixtures are generated independently from the D2 FP32 root', () => {
   assert.match(quantizeWasm, /parser\.add_argument\("--fixture-dir"/);
   assert.match(quantizeWasm, /"browserFixture": browser_fixture\(/);
@@ -140,6 +161,9 @@ test('D3 precision and browser evidence keep binaries runner-local', () => {
   assert.match(prepare, /releaseIdentityPinned["']?: False/);
   assert.match(quantizeWasm, /binaryArtifactsRunnerLocalOnly["']?: True/);
   assert.match(quantizeWasm, /releaseIdentityPinned["']?: False/);
+  assert.match(matrixWasm, /binaryArtifactsRunnerLocalOnly["']?: True/);
+  assert.match(matrixWasm, /releaseIdentityPinned["']?: False/);
   assert.doesNotMatch(prepare, /PRIVATE KEY/);
   assert.doesNotMatch(quantizeWasm, /PRIVATE KEY/);
+  assert.doesNotMatch(matrixWasm, /PRIVATE KEY/);
 });
