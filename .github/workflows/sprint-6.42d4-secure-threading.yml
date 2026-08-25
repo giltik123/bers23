@@ -1,0 +1,49 @@
+name: Sprint 6.42D4 secure threading classification
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secure-threading-classification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Verify and classify pinned worker boundary
+        run: |
+          set -euo pipefail
+          npm ci
+          node --check scripts/classify-tiny-sd-d4-secure-threading.mjs
+          node scripts/classify-tiny-sd-d4-secure-threading.mjs \
+            --report .test-cache/6.42d4/tiny-sd-d4-secure-threading.json
+          node - <<'JS'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('.test-cache/6.42d4/tiny-sd-d4-secure-threading.json', 'utf8'));
+          if (report.status !== 'CANDIDATE') throw new Error('D4 threading status changed');
+          if (report.result !== 'SECURE_THREADING_BLOCKED') throw new Error('D4 threading classification changed');
+          if (report.onnxRuntimeWeb.version !== '1.27.0') throw new Error('ORT Web pin changed');
+          if (report.onnxRuntimeWeb.workerFactoryOrWorkerUrlHookInPinnedPublicApi !== false) throw new Error('Unexpected worker hook authority');
+          if (report.acceptedBaseline.numThreads !== 1 || report.acceptedBaseline.proxy !== false || report.acceptedBaseline.workerFree !== true) throw new Error('Worker-free baseline changed');
+          if (report.runtimeAuthorityGranted !== false || report.productionApproval !== false || report.editorAuthorityGranted !== false) throw new Error('Threading evidence granted authority');
+          JS
+          test "$(git ls-files '*.onnx' '*.ort' '*.npz' '*.bin' '*.safetensors' | wc -l)" -eq 0
+
+      - name: Upload JSON-only threading evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-sd-d4-secure-threading-evidence
+          retention-days: 14
+          if-no-files-found: error
+          path: .test-cache/6.42d4/tiny-sd-d4-secure-threading.json
