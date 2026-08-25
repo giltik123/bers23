@@ -184,6 +184,7 @@ jobs:
             --title 'MODNet Portrait Matting CANDIDATE Pack' \
             --target "${GITHUB_SHA}" \
             --notes 'Signed reproducible MODNet portrait-matting CANDIDATE pack. This is not production approval.'
+          touch "${RUNNER_TEMP}/modnet-release-created-by-this-run"
           gh release upload "${RELEASE_TAG}" \
             "${PACK_DIR}/modnet-photographic-portrait-matting.onnx" \
             "${PACK_DIR}/modnet-photographic-portrait-matting.onnx.sig" \
@@ -226,12 +227,14 @@ jobs:
           git commit -m 'chore: publish signed MODNet portrait-matting CANDIDATE manifest'
           git push origin HEAD:main
 
-      - name: Cleanup orphan release on failure
+      - name: Cleanup orphan release created by this run on failure
         if: ${{ failure() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete "${RELEASE_TAG}" --yes --cleanup-tag >/dev/null 2>&1 || true
+          if test -f "${RUNNER_TEMP}/modnet-release-created-by-this-run"; then
+            gh release delete "${RELEASE_TAG}" --yes --cleanup-tag >/dev/null 2>&1 || true
+          fi
 
       - name: Publish release summary
         run: |
@@ -246,5 +249,6 @@ jobs:
             echo '- Reproducible ONNX + PyTorch/ORT parity: PASS'
             echo '- Detached model/manifest signatures: PASS; one-byte tamper rejected'
             echo '- Published asset re-download verification: PASS'
+            echo '- Failure cleanup is ownership-gated to releases created by this run'
             echo '- Real browser/device quality/performance approval: NOT GRANTED by this workflow'
           } >> "${GITHUB_STEP_SUMMARY}"
