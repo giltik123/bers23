@@ -7,9 +7,9 @@ import { productionLocalExecutorsByCapability } from '../server/core/localExecut
 
 const MODEL_ID = 'efficient-sam-ti';
 
-test('EfficientSAM candidate descriptor pins official split ONNX provenance without executable BERS artifacts', () => {
+test('EfficientSAM candidate descriptor pins official split ONNX provenance and remains non-executable', () => {
   assert.equal(manifest.status, 'CANDIDATE');
-  assert.equal(manifest.artifactState, 'UPSTREAM_PINNED');
+  assert.ok(manifest.artifactState === 'UPSTREAM_PINNED' || manifest.artifactState === 'SIGNED_RELEASE');
   assert.equal(manifest.upstream.revision, 'd525f622e6f640acf5a0fc37c7ca1f243da5bde0');
   assert.equal(manifest.upstream.license, 'Apache-2.0');
   assert.deepEqual(manifest.upstream.artifacts.encoder, {
@@ -22,15 +22,33 @@ test('EfficientSAM candidate descriptor pins official split ONNX provenance with
     gitBlob: 'f9310202c916fe5a4ec9a6897edae855caf023f4',
     size: 16565728,
   });
-  assert.equal(manifest.artifacts.encoder.url, null);
-  assert.equal(manifest.artifacts.decoder.url, null);
-  assert.equal(manifest.verificationKeyId, null);
+  if (manifest.artifactState === 'UPSTREAM_PINNED') {
+    assert.equal(manifest.artifacts.encoder.url, null);
+    assert.equal(manifest.artifacts.decoder.url, null);
+    assert.equal(manifest.verificationKeyId, null);
+  } else {
+    for (const artifact of [manifest.artifacts.encoder, manifest.artifacts.decoder]) {
+      assert.equal(typeof artifact.url, 'string');
+      assert.equal(typeof artifact.size, 'number');
+      assert.equal(typeof artifact.sha256, 'string');
+      assert.equal(typeof artifact.signatureUrl, 'string');
+    }
+    assert.equal(typeof manifest.verificationKeyId, 'string');
+  }
   assert.equal(manifest.productionApprovalEvidence, null);
   assert.equal(isExecutableEfficientSamRelease(manifest), false);
 });
 
 test('status flag alone cannot promote an unsigned EfficientSAM release', () => {
-  const forged = { ...manifest, status: 'PRODUCTION_APPROVED' };
+  const forged = structuredClone(manifest) as any;
+  forged.status = 'PRODUCTION_APPROVED';
+  forged.artifactState = 'UPSTREAM_PINNED';
+  forged.artifacts = {
+    encoder: { url: null, size: null, sha256: null, signatureUrl: null },
+    decoder: { url: null, size: null, sha256: null, signatureUrl: null },
+  };
+  forged.verificationKeyId = null;
+  forged.productionApprovalEvidence = null;
   assert.equal(isExecutableEfficientSamRelease(forged), false);
 });
 
