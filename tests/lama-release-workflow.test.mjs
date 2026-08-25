@@ -65,8 +65,8 @@ test('published asset is re-downloaded and byte/signature verified before metada
   const activate = workflow.indexOf('Atomically activate signed CANDIDATE metadata on main');
   assert.ok(create >= 0 && marker > create && upload > marker && download > upload && activate > download);
   assert.match(workflow, /assets \| length'\)" -eq 4/);
-  assert.match(workflow, /published\/lama-big-places-inpainting\.onnx/);
-  assert.match(workflow, /published\/lama-big-places-inpainting\.onnx\.sig/);
+  assert.match(workflow, /\$\{published\}\/lama-big-places-inpainting\.onnx/);
+  assert.match(workflow, /\$\{published\}\/lama-big-places-inpainting\.onnx\.sig/);
   assert.match(workflow, /stat -c%s "\$\{published\}\/lama-big-places-inpainting\.onnx"/);
   assert.match(workflow, /sha256sum "\$\{published\}\/lama-big-places-inpainting\.onnx"/);
 });
