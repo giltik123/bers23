@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
@@ -130,6 +131,19 @@ test('D3 WASM strategy matrix compares signed, unsigned and weight-only paths wi
   assert.match(matrixWasm, /ratio < 0\.80 and parity\["passed"\]/);
   assert.match(matrixWasm, /fullInt8UniversalPackClaimed["']?: False/);
   assert.doesNotMatch(matrixWasm, /strict=False|full_check=False/);
+});
+
+test('D3 WASM weight-only rewrite preserves FLOAT metadata instead of erasing type evidence', () => {
+  execFileSync('python', ['-m', 'py_compile', 'scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py'], { stdio: 'pipe' });
+  assert.match(matrixWasm, /quantized_name = f"\{weight_name\}__d3_weight_quantized"/);
+  assert.match(matrixWasm, /numpy_helper\.from_array\(quantized, name=quantized_name\)/);
+  assert.match(matrixWasm, /\[quantized_name, scale_name, zero_name\]/);
+  assert.match(matrixWasm, /\[weight_name\]/);
+  assert.match(matrixWasm, /sourceWeightNamePreservedAsFloatDequantizedValue["']?: True/);
+  assert.match(matrixWasm, /quantizedInitializerNamesAreDisjointFromSourceFp32Names["']?: True/);
+  assert.match(matrixWasm, /generated_names & reserved_tensor_names/);
+  assert.doesNotMatch(matrixWasm, /numpy_helper\.from_array\(quantized, name=weight_name\)/);
+  assert.doesNotMatch(matrixWasm, /value_info\.clear\(|ClearField\(["']value_info["']\)/);
 });
 
 test('D3 WASM fixtures are generated independently from the D2 FP32 root', () => {
