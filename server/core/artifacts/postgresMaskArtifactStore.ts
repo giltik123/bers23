@@ -70,23 +70,43 @@ export class PostgresMaskArtifactStore {
     return freezeStoredMask({ storageId, ...scope, width, height, png: new Uint8Array(png), ...lineage });
   }
 
-  /** One local execution ticket may mint at most one immutable canonical MASK row. */
-  async persistLocalExecution(ticketId: string, scope: AuthenticatedScope & { projectId: string }, width: number, height: number, alpha: Uint8Array): Promise<StoredMask> {
+  /**
+   * One local execution ticket may mint at most one immutable canonical MASK row.
+   * When Core can resolve the ticket input to a stored canonical IMAGE, persist that
+   * storage identity as durable lineage so restart/reconnect verification does not
+   * depend on process-local Artifact metadata.
+   */
+  async persistLocalExecution(
+    ticketId: string,
+    scope: AuthenticatedScope & { projectId: string },
+    width: number,
+    height: number,
+    alpha: Uint8Array,
+    sourceImageStorageId?: string,
+  ): Promise<StoredMask> {
     if (!ticketId) throw new Error('Local execution ticket identity is required for MASK persistence');
+    const normalizedSource = sourceImageStorageId?.trim() || undefined;
     const png = await encodeMask(width, height, alpha);
     const storageId = this.nextId();
     const result = await this.pool.query(`INSERT INTO canonical_mask_artifacts
-      (storage_id, tenant_id, user_id, project_id, role, encoding, coordinate_space, width, height, png_bytes, local_execution_ticket_id)
-      VALUES ($1,$2,$3,$4,'MASK','ALPHA_8_LOSSLESS','ORIGINAL',$5,$6,$7,$8)
+      (storage_id, tenant_id, user_id, project_id, role, encoding, coordinate_space, width, height, png_bytes, local_execution_ticket_id, source_image_storage_id)
+      VALUES ($1,$2,$3,$4,'MASK','ALPHA_8_LOSSLESS','ORIGINAL',$5,$6,$7,$8,$9)
       ON CONFLICT (local_execution_ticket_id) WHERE local_execution_ticket_id IS NOT NULL
       DO UPDATE SET local_execution_ticket_id=EXCLUDED.local_execution_ticket_id
       RETURNING storage_id, tenant_id, user_id, project_id, width, height, png_bytes, source_image_storage_id, parent_mask_storage_id, producer_operation`,
-    [storageId, scope.tenantId, scope.userId, scope.projectId, width, height, png, ticketId]);
+    [storageId, scope.tenantId, scope.userId, scope.projectId, width, height, png, ticketId, normalizedSource ?? null]);
     const row = result.rows[0];
     if (!row) throw new Error('Canonical local MASK persistence failed');
     const storedPng = Buffer.from(row.png_bytes);
-    const same = row.tenant_id === scope.tenantId && row.user_id === scope.userId && row.project_id === scope.projectId && Number(row.width) === width && Number(row.height) === height && storedPng.equals(png);
-    if (!same) throw new Error('Local execution ticket is already bound to a different canonical MASK');
+    const persistedSource = row.source_image_storage_id ?? undefined;
+    const same = row.tenant_id === scope.tenantId
+      && row.user_id === scope.userId
+      && row.project_id === scope.projectId
+      && Number(row.width) === width
+      && Number(row.height) === height
+      && storedPng.equals(png)
+      && persistedSource === normalizedSource;
+    if (!same) throw new Error('Local execution ticket is already bound to a different canonical MASK or source lineage');
     return fromRow(row, storedPng);
   }
 
