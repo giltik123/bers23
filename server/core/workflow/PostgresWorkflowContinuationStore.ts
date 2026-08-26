@@ -314,7 +314,7 @@ function isSnapshot(value: WorkflowContinuationSnapshot | MutableContinuation): 
 }
 
 function lockKey(scope: Scope, executionId: string): string {
-  return `${scope.tenantId}\u0000${scope.userId}\u0000${scope.projectId}\u0000${executionId}`;
+  return JSON.stringify(['workflow-continuation-v1', scope.tenantId, scope.userId, scope.projectId, executionId]);
 }
 
 function conflict(message: string): Error {
