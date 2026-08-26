@@ -9,3 +9,14 @@ test('browser source imports no transaction internals and canonical edit boundar
 async function collect(directory) { const entries = await readdir(directory, { withFileTypes: true }); return (await Promise.all(entries.map((entry) => entry.isDirectory() ? collect(join(directory, entry.name)) : [join(directory, entry.name)]))).flat().filter((file) => /\.(js|jsx|ts|tsx)$/.test(file)); }
 test('Editor selection uses the Core mask port and never manufactures a mask UUID', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); assert.match(source, /new CoreMaskArtifactPort\(project\.id\)/); assert.doesNotMatch(source, /persist:\s*async[\s\S]*randomUUID/); assert.match(source, /mask_artifact_id: artifact\.id/); });
 test('Core mask port sends exact alpha and maps the server artifact identity', async () => { const source = await readFile('src/application/selection/CoreMaskArtifactPort.js', 'utf8'); assert.match(source, /alpha: mask\.alpha/); assert.match(source, /id: response\.artifactId/); assert.match(source, /ALPHA_8_LOSSLESS/); });
+
+test('Agent image execution stays gated until canonical composite execution exists', async () => {
+  const panel = await readFile('src/components/editor/agent/AgentPanel.jsx', 'utf8');
+  const queue = await readFile('src/lib/agent/executionQueue.js', 'utf8');
+  assert.match(panel, /Canonical Agent execution is not enabled yet/);
+  assert.match(panel, /Use the Prompt tab for canonical single edits/);
+  for (const forbidden of ['aiAgent', 'executionQueue', 'taskHistory', 'onCommit', 'onRollback']) assert.equal(panel.includes(forbidden), false, forbidden);
+  assert.match(queue, /AGENT_EXECUTION_NOT_WIRED/);
+  assert.match(queue, /async run\(\)/);
+  for (const forbidden of ['editingEngine', 'recipeEngine', 'aiPlanner', 'taskHistory', 'result.image_url']) assert.equal(queue.includes(forbidden), false, forbidden);
+});
