@@ -16,3 +16,10 @@ test('Editor chain cancellation and credit estimate stay bound to the active exe
   assert.match(source, /<CreditsBar estimate=\{!pendingResult && plan\?\.status === 'ready' \? \(plan\.credits\?\.credits \?\? 0\) : 0\} \/>/);
   assert.doesNotMatch(source, /\bcreditsCalculator\b/);
 });
+test('zero-object projects keep the canonical whole-image prompt path reachable', async () => {
+  const source = await readFile('src/pages/Editor.jsx', 'utf8');
+  assert.match(source, /\{objects\.length === 0 && !pendingResult && \(/);
+  assert.match(source, /Object detection is optional/);
+  assert.match(source, /\) : objects\.length === 0 \? \([\s\S]*?<InstructionBar[\s\S]*?onApply=\{\(\) => applyEdit\(false\)\}/);
+  assert.doesNotMatch(source, /\{objects\.length === 0 \? \(\s*<Button[\s\S]*?\) : pendingResult \?/);
+});
