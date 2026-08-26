@@ -187,28 +187,18 @@ jobs:
         run: |
           npm run db:migrate:transactions
           npm run db:check:transactions
-          node --input-type=module <<'NODE'
-          import { basename } from 'node:path';
-          import { readFile, readdir } from 'node:fs/promises';
+          node --experimental-strip-types --input-type=module <<'NODE'
           import { Pool } from 'pg';
-          const directories = [
-            'server/core/artifacts/migrations',
-            'server/core/projects/migrations',
-            'server/core/auth/migrations',
-          ];
-          const migrations = [];
-          for (const directory of directories) {
-            for (const name of await readdir(directory)) {
-              if (!name.endsWith('.sql') || name.endsWith('.down.sql')) continue;
-              migrations.push({ name, path: `${directory}/${name}` });
-            }
-          }
-          migrations.sort((a, b) => a.name.localeCompare(b.name));
-          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-production-image-smoke-migrations' });
+          import { migrateFinalImageLineageSchema, checkFinalImageLineageSchema } from './server/core/artifacts/finalImageLineageSchema.ts';
+          import { migrateWorkflowContinuationSchema, checkWorkflowContinuationSchema } from './server/core/workflow/workflowContinuationSchema.ts';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-production-image-smoke-c5b-migrations' });
           try {
-            for (const migration of migrations) await pool.query(await readFile(migration.path, 'utf8'));
+            await migrateWorkflowContinuationSchema(pool);
+            await migrateFinalImageLineageSchema(pool);
+            await checkWorkflowContinuationSchema(pool);
+            await checkFinalImageLineageSchema(pool);
           } finally { await pool.end(); }
-          console.log(`Applied ${migrations.length} Core smoke migrations through ${basename(migrations.at(-1).path)}`);
+          console.log('Production smoke canonical C5B schema: ready');
           NODE
       - name: Build production image
         run: docker build --tag bers-core:${{ github.sha }} .
