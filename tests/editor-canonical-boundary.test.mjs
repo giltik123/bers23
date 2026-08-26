@@ -9,3 +9,21 @@ test('browser source imports no transaction internals and canonical edit boundar
 async function collect(directory) { const entries = await readdir(directory, { withFileTypes: true }); return (await Promise.all(entries.map((entry) => entry.isDirectory() ? collect(join(directory, entry.name)) : [join(directory, entry.name)]))).flat().filter((file) => /\.(js|jsx|ts|tsx)$/.test(file)); }
 test('Editor selection uses the Core mask port and never manufactures a mask UUID', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); assert.match(source, /new CoreMaskArtifactPort\(project\.id\)/); assert.doesNotMatch(source, /persist:\s*async[\s\S]*randomUUID/); assert.match(source, /mask_artifact_id: artifact\.id/); });
 test('Core mask port sends exact alpha and maps the server artifact identity', async () => { const source = await readFile('src/application/selection/CoreMaskArtifactPort.js', 'utf8'); assert.match(source, /alpha: mask\.alpha/); assert.match(source, /id: response\.artifactId/); assert.match(source, /ALPHA_8_LOSSLESS/); });
+
+test('recipe templates remain canonical Prompt inputs while multi-step execution stays locked down', async () => {
+  const panel = await readFile('src/components/editor/recipes/RecipePanel.jsx', 'utf8');
+  const detail = await readFile('src/components/editor/recipes/RecipeDetail.jsx', 'utf8');
+  const studio = await readFile('src/components/editor/creative/CreativeStudioPanel.jsx', 'utf8');
+  const summary = await readFile('src/components/editor/creative/CreativeStrategySummary.jsx', 'utf8');
+  const adapter = await readFile('src/application/creative/LegacyRecipeExecutionAdapter.js', 'utf8');
+
+  assert.match(panel, /Individual recipes remain available as prompt templates/);
+  for (const forbidden of ['RECIPE_CHAINS', 'onRunChain', 'Apply strategy']) assert.equal(panel.includes(forbidden), false, forbidden);
+  assert.match(detail, /onUse\(prompt, recipe\)/);
+  assert.match(detail, /recipeEngine\.compile/);
+  assert.doesNotMatch(studio, /onApply|strategy_applied/);
+  assert.doesNotMatch(summary, /Apply strategy|onApply/);
+  assert.match(summary, /Preview only/);
+  assert.match(adapter, /RECIPE_CHAIN_EXECUTION_NOT_WIRED/);
+  for (const forbidden of ['chainRunner', 'creditsEngine', 'editingEngine']) assert.equal(adapter.includes(forbidden), false, forbidden);
+});
