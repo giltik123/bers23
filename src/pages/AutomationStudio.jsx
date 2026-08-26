@@ -1,15 +1,90 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { coreClient } from '@/api/coreClient';
+import React, { useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import AutomationTemplateGallery from '@/components/automation/AutomationTemplateGallery';
-import AutomationLibraryPanel from '@/components/automation/AutomationLibraryPanel';
 import AutomationBuilderPanel from '@/components/automation/AutomationBuilderPanel';
-import AutomationHistoryPanel from '@/components/automation/AutomationHistoryPanel';
-import { automationManager } from '@/lib/automation/AutomationManager';
 import { automationBuilder } from '@/lib/automation/AutomationBuilder';
 import { automationRunner } from '@/lib/automation/AutomationRunner';
-import { automationHistory } from '@/lib/automation/AutomationHistory';
-import { automationAnalytics } from '@/lib/automation/AutomationAnalytics';
+import { actionLabel } from '@/lib/automation/AutomationActions';
 import { useTranslation } from '@/lib/i18n/TranslationProvider';
 
 export default function AutomationStudio() {
-  const { t } = useTranslation(); const [automations, setAutomations] = useState([]); const [runs, setRuns] = useState([]); const [projects, setProjects] = useState([]); const [draft, setDraft] = useState(null); const [running, setRunning] = useState(false); const load = async () => { const [saved, history, allProjects] = await Promise.all([automationManager.list(), automationHistory.list(), coreClient.entities.Project.list('-updated_date', 100)]); setAutomations(saved); setRuns(history); setProjects(allProjects); }; useEffect(() => { load(); }, []); const analytics = useMemo(() => automationAnalytics.summary(runs), [runs]); const chooseTemplate = (id) => setDraft(automationBuilder.fromTemplate(id)); const create = () => setDraft(automationBuilder.blank()); const save = async () => { const estimate = automationBuilder.estimate(draft); const existing = automations.find((item) => item.id === draft.id); const saved = existing ? await automationManager.update(existing, { ...draft, ...estimate }) : await automationManager.create({ ...draft, ...estimate }); setAutomations((items) => existing ? items.map((item) => item.id === saved.id ? saved : item) : [saved, ...items]); setDraft(saved); automationAnalytics.track('saved', { actions: saved.actions.length }); }; const run = async () => { setRunning(true); try { const automation = automations.find((item) => item.id === draft.id) || draft; const result = await automationRunner.run({ automation, context: { project: projects[0] } }); setRuns((items) => [{ automation_name: automation.name, status: 'completed', action_count: automation.actions.length, result, id: `local-${Date.now()}` }, ...items]); } finally { setRunning(false); } }; return <div className="mx-auto max-w-7xl space-y-5 px-4 py-6"><div><h1 className="text-2xl font-semibold">{t('automation.title')}</h1><p className="text-sm text-muted-foreground">{t('automation.subtitle')}</p></div><AutomationTemplateGallery onChoose={chooseTemplate} /><div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]"><AutomationLibraryPanel automations={automations} selectedId={draft?.id} onSelect={setDraft} onCreate={create} onFavorite={async (automation) => { const updated = await automationManager.favorite(automation); setAutomations((items) => items.map((item) => item.id === updated.id ? updated : item)); }} /><AutomationBuilderPanel automation={draft} projects={projects} onChange={setDraft} onSave={save} onRun={run} running={running} /></div><AutomationHistoryPanel runs={runs} analytics={analytics} /></div>; }
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState(null);
+
+  const preparedDraft = useMemo(() => {
+    if (!draft) return null;
+    return { ...draft, ...automationBuilder.estimate(draft) };
+  }, [draft]);
+
+  const preview = useMemo(() => {
+    if (!preparedDraft) return null;
+    try {
+      return { plan: automationRunner.plan({ automation: preparedDraft }), error: null };
+    } catch (error) {
+      return { plan: null, error: error?.message || t('automation.planInvalid') };
+    }
+  }, [preparedDraft, t]);
+
+  const chooseTemplate = (id) => setDraft(automationBuilder.fromTemplate(id));
+  const createDraft = () => setDraft(automationBuilder.blank());
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-5 px-4 py-6">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold">{t('automation.title')}</h1>
+            <p className="text-sm text-muted-foreground">{t('automation.previewSubtitle')}</p>
+          </div>
+          <Button variant="outline" onClick={createDraft}>{t('automation.newDraft')}</Button>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-secondary/40 p-3 text-sm text-muted-foreground" role="status">
+          {t('automation.previewOnlyNotice')}
+        </div>
+      </div>
+
+      <AutomationTemplateGallery onChoose={chooseTemplate} />
+
+      <AutomationBuilderPanel
+        automation={preparedDraft}
+        projects={[]}
+        onChange={setDraft}
+        previewOnly
+      />
+
+      {preparedDraft && (
+        <section className="rounded-2xl border border-border/60 p-4" aria-label={t('automation.planPreview')}>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium">{t('automation.planPreview')}</p>
+              <p className="text-xs text-muted-foreground">{t('automation.conditionsDeferred')}</p>
+            </div>
+            <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              {preview?.plan?.status || t('automation.planInvalid')}
+            </span>
+          </div>
+
+          {preview?.error ? (
+            <p className="text-sm text-destructive">{preview.error}</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                <span>{t('automation.actionsCount', { count: preview?.plan?.actions?.length || 0 })}</span>
+                <span>{t('automation.estimatedCredits')}: {preparedDraft.estimated_credits || 0}</span>
+                <span>{t('automation.estimatedTime')}: {t('common.minutes', { count: Math.ceil((preparedDraft.estimated_time || 0) / 60000) })}</span>
+              </div>
+              <ol className="space-y-2">
+                {(preview?.plan?.actions || []).map((action, index) => (
+                  <li key={action.id || `${action.type}-${index}`} className="rounded-lg bg-secondary/50 px-3 py-2 text-sm">
+                    <span className="mr-2 text-xs text-muted-foreground">{index + 1}.</span>
+                    {actionLabel(action.type)}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
