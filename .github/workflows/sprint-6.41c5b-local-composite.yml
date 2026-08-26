@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  planner-boundary:
+  capability-boundary:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -39,17 +39,19 @@ jobs:
         run: npm run server:typecheck
       - name: Prove narrow C5B planner semantics and broad-composite isolation
         run: npm run test:creative-planning-v2
-      - name: Prove production local capabilities remain fail closed for the new intent
+      - name: Prove exact purpose-bound production capability routing
         run: node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
-      - name: Preserve planner-only authority boundary
+      - name: Prove capability aliases preserve existing model and executor trust authority
+        run: node --experimental-strip-types --test server/core/localExecution/localCompositeCapabilityPolicy.test.mjs server/core/localExecution/productionLocalModelPolicy.test.mjs
+      - name: Preserve CANDIDATE MobileSAM and no-public-composite boundary
         run: |
           node --input-type=module <<'NODE'
           import { readFile } from 'node:fs/promises';
-          const intent = 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE';
-          const planner = await readFile('src/platform/creative/canonical/planning/CanonicalPlanningService.ts', 'utf8');
-          const capabilities = await readFile('server/core/providers/productionExecutionCapabilities.ts', 'utf8');
-          if (!planner.includes(intent)) throw new Error('C5B narrow planner intent is missing');
-          if (!planner.includes('LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED')) throw new Error('C5B planner fail-closed gate is missing');
-          if (capabilities.includes(intent)) throw new Error('Planner-only C5B slice must not grant production execution capability');
-          console.log('C5B planner-only authority boundary: PASS');
+          const manifest = JSON.parse(await readFile('src/platform/creative/local-ai/models/interactive-segmentation.manifest.json', 'utf8'));
+          const server = await readFile('server/index.ts', 'utf8');
+          const productionCore = await readFile('server/core/composition/createProductionCore.ts', 'utf8');
+          if (manifest.status !== 'CANDIDATE') throw new Error(`C5B must not change MobileSAM release state; found ${manifest.status}`);
+          if (server.includes('/api/core/composite-continuations/')) throw new Error('Capability slice must not expose a public composite HTTP route');
+          if (productionCore.includes('localCompositeContinuationEnabled: true')) throw new Error('Capability slice must not globally enable local composite planning');
+          console.log('C5B capability-only authority boundary: PASS');
           NODE
