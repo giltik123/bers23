@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, onMode, onUndo, onRedo, onClear, onCancel, onDone, onStart, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" onClick={onStart}>Smart Select</Button>
@@ -13,6 +13,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, on
       </Button>
     </div>
   );
+  const canInvert = selection.state !== 'NOTHING_SELECTED' && selection.state !== 'SELECTING';
   return (
     <section className="rounded-xl border bg-card p-3 space-y-3" aria-label="Selection tools">
       <div className="flex flex-wrap gap-2">
@@ -25,6 +26,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, on
         <Button type="button" size="sm" variant="outline" disabled={!selection.canUndo} onClick={onUndo}>Undo</Button>
         <Button type="button" size="sm" variant="outline" disabled={!selection.canRedo} onClick={onRedo}>Redo</Button>
         <Button type="button" size="sm" variant="outline" onClick={onClear}>Clear</Button>
+        <Button type="button" size="sm" variant="outline" disabled={!canInvert} onClick={onInvert}>Invert</Button>
         <span className="flex-1" />
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="button" size="sm" disabled={selection.state === 'NOTHING_SELECTED' || selection.state === 'SELECTING'} onClick={onDone}>Done</Button>
