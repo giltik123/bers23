@@ -3,6 +3,7 @@ name: Sprint 6.41C5B local composite acceptance
 on:
   pull_request:
     paths:
+      - 'src/api/coreClient.js'
       - 'src/platform/creative/canonical/**'
       - 'server/core/providers/**'
       - 'server/core/workflow/**'
@@ -10,6 +11,7 @@ on:
       - 'server/core/http/**'
       - 'server/core/composition/**'
       - 'server/core/artifacts/**'
+      - 'scripts/test-local-composite-browser-reconnect.mjs'
       - 'tests/**'
       - 'package.json'
       - 'package-lock.json'
@@ -26,7 +28,7 @@ concurrency:
 jobs:
   capability-replay-and-sequencing-boundary:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -120,6 +122,32 @@ jobs:
           cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
           node --test .test-cache/c5b-postgres/background-isolation-postgres-vertical.test.mjs
           node --test .test-cache/c5b-postgres/local-composite-postgres-vertical.test.mjs
+      - name: Prove real Chrome refresh + Core restart continuation recovery
+        run: |
+          mkdir -p .test-cache/c5b-browser/migrations .test-cache/artifacts/migrations
+          npx esbuild scripts/test-local-composite-browser-reconnect.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/c5b-browser/test-local-composite-browser-reconnect.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright --external:vite
+          cp server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql .test-cache/c5b-browser/migrations/
+          cp server/core/artifacts/migrations/002_canonical_mask_artifacts.sql .test-cache/c5b-browser/migrations/
+          cp server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql .test-cache/c5b-browser/migrations/
+          cp server/core/projects/migrations/004_canonical_projects_and_originals.sql .test-cache/c5b-browser/migrations/
+          cp server/core/projects/migrations/005_canonical_project_history_versions.sql .test-cache/c5b-browser/migrations/
+          cp server/core/projects/migrations/006_project_history_acceptance_hardening.sql .test-cache/c5b-browser/migrations/
+          cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/c5b-browser/migrations/
+          cp server/core/auth/migrations/008_canonical_auth_identity_sessions.sql .test-cache/c5b-browser/migrations/
+          cp server/core/auth/migrations/009_auth_lifecycle_oauth.sql .test-cache/c5b-browser/migrations/
+          cp server/core/auth/migrations/010_registration_attempt_binding.sql .test-cache/c5b-browser/migrations/
+          cp server/core/auth/migrations/011_auth_abuse_session_controls.sql .test-cache/c5b-browser/migrations/
+          cp server/core/artifacts/migrations/012_local_execution_uploads.sql .test-cache/c5b-browser/migrations/
+          cp server/core/artifacts/migrations/014_canonical_mask_lineage.sql .test-cache/c5b-browser/migrations/
+          cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/c5b-browser/migrations/
+          cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/c5b-browser/migrations/
+          cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
+          node .test-cache/c5b-browser/test-local-composite-browser-reconnect.mjs
       - name: Prove LOCAL_SEGMENTATION MASK lineage survives independent Core stores
         run: node --experimental-strip-types --test server/core/artifacts/postgresMaskArtifactStore.localExecution.integration.test.mjs
       - name: Prove BACKGROUND_ISOLATION FINAL lineage survives independent Core stores
