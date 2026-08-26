@@ -9,3 +9,10 @@ test('browser source imports no transaction internals and canonical edit boundar
 async function collect(directory) { const entries = await readdir(directory, { withFileTypes: true }); return (await Promise.all(entries.map((entry) => entry.isDirectory() ? collect(join(directory, entry.name)) : [join(directory, entry.name)]))).flat().filter((file) => /\.(js|jsx|ts|tsx)$/.test(file)); }
 test('Editor selection uses the Core mask port and never manufactures a mask UUID', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); assert.match(source, /new CoreMaskArtifactPort\(project\.id\)/); assert.doesNotMatch(source, /persist:\s*async[\s\S]*randomUUID/); assert.match(source, /mask_artifact_id: artifact\.id/); });
 test('Core mask port sends exact alpha and maps the server artifact identity', async () => { const source = await readFile('src/application/selection/CoreMaskArtifactPort.js', 'utf8'); assert.match(source, /alpha: mask\.alpha/); assert.match(source, /id: response\.artifactId/); assert.match(source, /ALPHA_8_LOSSLESS/); });
+test('Editor chain cancellation and credit estimate stay bound to the active execution/planning objects', async () => {
+  const source = await readFile('src/pages/Editor.jsx', 'utf8');
+  assert.match(source, /onCancel=\{\(\) => legacyRecipeExecutionAdapter\.cancel\(\)\}/);
+  assert.doesNotMatch(source, /\bchainRunner\b/);
+  assert.match(source, /<CreditsBar estimate=\{!pendingResult && plan\?\.status === 'ready' \? \(plan\.credits\?\.credits \?\? 0\) : 0\} \/>/);
+  assert.doesNotMatch(source, /\bcreditsCalculator\b/);
+});
