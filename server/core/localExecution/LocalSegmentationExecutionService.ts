@@ -34,7 +34,7 @@ export type LocalSegmentationServiceDependencies = Readonly<{
   hydrateArtifacts: (scope: AuthenticatedScope & { projectId: string }, originalId: string, maskIds: readonly string[]) => Promise<readonly CreativeArtifact[]>;
   admission: LocalExecutionLedger;
   uploads: PostgresLocalExecutionUploadStore;
-  persistMask: (ticketId: string, scope: AuthenticatedScope & { projectId: string }, width: number, height: number, alpha: Uint8Array) => Promise<Readonly<{ storageId: string }>>;
+  persistMask: (ticketId: string, scope: AuthenticatedScope & { projectId: string }, width: number, height: number, alpha: Uint8Array, sourceArtifactId?: string) => Promise<Readonly<{ storageId: string }>>;
   loadPersistedMask: (ticketId: string, scope: AuthenticatedScope & { projectId: string }) => Promise<Readonly<{ storageId: string }> | undefined>;
   issueMaskId: (storageId: string, scope: AuthenticatedScope & { projectId: string }) => string;
   now?: () => number;
