@@ -152,8 +152,10 @@ globalThis.replayC5BBrowserAcceptanceAfterSecondReload = async () => {
   const fixture = await loadFixture();
   const executionId = sessionStorage.getItem(EXECUTION_KEY);
   requireCondition(executionId, 'Execution reference missing after second reload');
+  requireCondition(sessionStorage.length === 1 && sessionStorage.getItem(EXECUTION_KEY) === executionId, 'Terminal reload persisted browser workflow state beyond executionId');
   await coreClient.auth.me();
   const replay = await coreClient.compositeContinuations.resume({ executionId, projectId: fixture.projectId });
   requireCondition(replay.state === 'SUCCESS' && replay.terminalArtifactId, 'Terminal continuation did not survive second browser reload');
+  requireCondition(sessionStorage.length === 1 && sessionStorage.getItem(EXECUTION_KEY) === executionId, 'Terminal replay accumulated browser workflow authority');
   return Object.freeze({ executionId, state: replay.state, terminalArtifactId: replay.terminalArtifactId, sessionStorageLength: sessionStorage.length });
 };
