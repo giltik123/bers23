@@ -114,6 +114,7 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
   runInternalStep(input: RunInternalStepInput): Promise<WorkflowContinuationSnapshot> {
     const stepId = requireToken(input.stepId, 'stepId');
     return this.mutate(input.executionId, input.scope, async snapshot => {
+      if (snapshot.state === 'RUNNING_INTERNAL' && snapshot.currentStepId === stepId) return snapshot;
       assertMutable(snapshot);
       if (snapshot.state !== 'READY') throw conflict(`Internal step cannot start from state ${snapshot.state}`);
       assertExpectedRevision(snapshot.revision, input.expectedRevision);
@@ -146,7 +147,8 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
       assertMutable(snapshot);
       if (snapshot.state !== 'READY') throw conflict(`Workflow cannot succeed from state ${snapshot.state}`);
       assertExpectedRevision(snapshot.revision, input.expectedRevision);
-      if (!snapshot.completedSteps.some(step => step.artifactIds.includes(terminalArtifactId))) throw conflict('Terminal Artifact is not bound to a completed workflow step');
+      const latest = snapshot.completedSteps.at(-1);
+      if (!latest?.artifactIds.includes(terminalArtifactId)) throw conflict('Terminal Artifact is not bound to the latest completed workflow step');
       return Object.freeze({ state: 'SUCCESS', completedSteps: snapshot.completedSteps, terminalArtifactId });
     });
   }
