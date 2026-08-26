@@ -42,7 +42,13 @@ export type LocalDeterministicImageServiceDependencies = Readonly<{
   hydrateArtifacts: (scope: AuthenticatedScope & { projectId: string }, sourceId: string, maskIds: readonly string[]) => Promise<readonly CreativeArtifact[]>;
   admission: LocalExecutionLedgerV2;
   uploads: PostgresLocalExecutionUploadStore;
-  persistFinal: (scope: AuthenticatedScope & { projectId: string }, executionId: string, operationId: string, image: PixelImage) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
+  persistFinal: (
+    scope: AuthenticatedScope & { projectId: string },
+    executionId: string,
+    operationId: string,
+    image: PixelImage,
+    lineage?: Readonly<{ sourceArtifactId: string; maskArtifactId: string; producerOperation: 'BACKGROUND_ISOLATION' }>,
+  ) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
   loadPersistedFinal: (executionId: string, scope: AuthenticatedScope & { projectId: string }) => Promise<Readonly<{ storageId: string; width: number; height: number }> | undefined>;
   issueFinalId: (storageId: string, scope: AuthenticatedScope & { projectId: string }) => string;
   now?: () => number;
