@@ -35,7 +35,7 @@ type ExactLocalContract = Readonly<{ capability: string; stepId: string }>;
 type SegmentationDependencies = ScopeArtifactAccess & Readonly<{
   admission: LocalExecutionLedger;
   uploads: UploadReader;
-  persistMask: (ticketId: string, scope: Scope, width: number, height: number, alpha: Uint8Array) => Promise<Readonly<{ storageId: string }>>;
+  persistMask: (ticketId: string, scope: Scope, width: number, height: number, alpha: Uint8Array, sourceArtifactId?: string) => Promise<Readonly<{ storageId: string }>>;
   loadPersistedMask: (ticketId: string, scope: Scope) => Promise<Readonly<{ storageId: string }> | undefined>;
   issueMaskId: (storageId: string, scope: Scope) => string;
   now?: () => number;
@@ -102,7 +102,7 @@ export class SegmentationResultAuthority {
       const upload = await loadExactEvidence(this.dependencies.uploads, ticket, evidence, this.now());
       if (upload.kind !== 'mask' || upload.role !== 'MASK' || !upload.width || !upload.height) throw serviceError(400, 'local_upload_contract_mismatch', 'Quarantined output is not a canonical MASK candidate');
 
-      const stored = await this.dependencies.persistMask(ticket.ticketId, ticket.scope, upload.width, upload.height, upload.bytes);
+      const stored = await this.dependencies.persistMask(ticket.ticketId, ticket.scope, upload.width, upload.height, upload.bytes, ticket.inputs[0].artifactId);
       const artifactId = this.dependencies.issueMaskId(stored.storageId, ticket.scope);
       const artifact: CreativeArtifact = Object.freeze({
         id: artifactId,
