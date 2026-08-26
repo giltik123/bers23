@@ -18,7 +18,7 @@ const source = Object.freeze({
 const analysis = Object.freeze({ originalWidth: 2, originalHeight: 2, analysisWidth: 2, analysisHeight: 2, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 });
 const points = Object.freeze([{ x: 0, y: 0, label: 'POSITIVE' as const, coordinateSpace: 'ORIGINAL' as const }]);
 
-test('successful local workflow survives transient ledger commit failure and committed replay returns the same canonical MASK', async () => {
+test('successful local workflow survives transient ledger commit failure; exact replay is idempotent and conflicting replay fails closed', async () => {
   const registry = new LocalExecutionAdmissionRegistry();
   let commitAttempts = 0;
   const ledger = {
@@ -105,10 +105,17 @@ test('successful local workflow survives transient ledger commit failure and com
   assert.equal(verificationCalls, 1, 'retry must reuse the completed in-memory canonical workflow');
   assert.equal(registry.getFinalization(prepared.ticket.ticketId)?.status, 'SUCCESS');
 
-  const replay = await service.submit({ ticketId: prepared.ticket.ticketId, projectId: scope.projectId, result: { ignored: 'already committed' } }, auth);
+  const replay = await service.submit({ ticketId: prepared.ticket.ticketId, projectId: scope.projectId, result }, auth);
   assert.equal(replay.status, 'SUCCESS');
-  assert.equal(replay.artifactId, retry.artifactId, 'committed replay must recover the same server-owned canonical MASK');
-  assert.equal(verificationCalls, 1, 'committed replay must not execute workflow verification again');
+  assert.equal(replay.artifactId, retry.artifactId, 'exact committed replay must recover the same server-owned canonical MASK');
+  assert.equal(verificationCalls, 1, 'exact committed replay must not execute workflow verification again');
+
+  await assert.rejects(
+    () => service.submit({ ticketId: prepared.ticket.ticketId, projectId: scope.projectId, result: { ...result, metrics: { latencyMs: 13 } } }, auth),
+    /local_result_conflicting_replay/,
+    'a different valid payload for a consumed ticket must not inherit exact replay authority',
+  );
+  assert.equal(verificationCalls, 1);
   assert.equal(commitAttempts, 2);
   assert.equal(consumed, 1);
   assert.equal(maskPersists, 2, 'pre-commit retry may re-enter idempotent MASK persistence but must not mint another canonical identity');
