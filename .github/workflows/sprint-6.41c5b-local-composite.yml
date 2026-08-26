@@ -89,12 +89,16 @@ jobs:
         run: node --experimental-strip-types --test server/core/localExecution/localExecutionLedgerSchema.integration.test.mjs
       - name: Prove v1 and v2 exact replay versus conflicting replay across Core restart
         run: node --experimental-strip-types --test server/core/localExecution/PostgresLocalExecutionLedger.integration.test.mjs server/core/localExecution/PostgresLocalExecutionLedgerV2.integration.test.mjs
-      - name: Prove standalone Background Isolation keeps PostgreSQL pixel, lineage, restart and zero-cloud authority
+      - name: Prove standalone and composite PostgreSQL local execution verticals
         run: |
           mkdir -p .test-cache/c5b-postgres/migrations .test-cache/artifacts/migrations
           npx esbuild tests/background-isolation-postgres-vertical.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/c5b-postgres/background-isolation-postgres-vertical.test.mjs \
+            --external:node:* --external:pg --external:sharp
+          npx esbuild tests/local-composite-postgres-vertical.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/c5b-postgres/local-composite-postgres-vertical.test.mjs \
             --external:node:* --external:pg --external:sharp
           cp server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql .test-cache/c5b-postgres/migrations/
           cp server/core/artifacts/migrations/002_canonical_mask_artifacts.sql .test-cache/c5b-postgres/migrations/
@@ -115,6 +119,7 @@ jobs:
           cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
           node --test .test-cache/c5b-postgres/background-isolation-postgres-vertical.test.mjs
+          node --test .test-cache/c5b-postgres/local-composite-postgres-vertical.test.mjs
       - name: Prove LOCAL_SEGMENTATION MASK lineage survives independent Core stores
         run: node --experimental-strip-types --test server/core/artifacts/postgresMaskArtifactStore.localExecution.integration.test.mjs
       - name: Prove BACKGROUND_ISOLATION FINAL lineage survives independent Core stores
