@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  capability-and-replay-boundary:
+  capability-replay-and-sequencing-boundary:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -61,6 +61,8 @@ jobs:
         run: node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
       - name: Prove capability aliases preserve existing model and executor trust authority
         run: node --experimental-strip-types --test server/core/localExecution/localCompositeCapabilityPolicy.test.mjs server/core/localExecution/productionLocalModelPolicy.test.mjs
+      - name: Prove ticket-first crash recovery and server-owned step sequencing
+        run: node --experimental-strip-types --test server/core/workflow/LocalCompositeContinuationService.test.mjs
       - name: Apply exact local-execution replay authority schemas
         run: |
           node --input-type=module <<'NODE'
@@ -90,7 +92,7 @@ jobs:
           const server = await readFile('server/index.ts', 'utf8');
           const productionCore = await readFile('server/core/composition/createProductionCore.ts', 'utf8');
           if (manifest.status !== 'CANDIDATE') throw new Error(`C5B must not change MobileSAM release state; found ${manifest.status}`);
-          if (server.includes('/api/core/composite-continuations/')) throw new Error('Replay-authority slice must not expose a public composite HTTP route');
-          if (productionCore.includes('localCompositeContinuationEnabled: true')) throw new Error('Replay-authority slice must not globally enable local composite planning');
-          console.log('C5B replay authority boundary: PASS');
+          if (server.includes('/api/core/composite-continuations/')) throw new Error('Sequencing slice must not expose a public composite HTTP route');
+          if (productionCore.includes('localCompositeContinuationEnabled: true')) throw new Error('Sequencing slice must not globally enable local composite planning');
+          console.log('C5B internal sequencing authority boundary: PASS');
           NODE
