@@ -61,8 +61,8 @@ jobs:
         run: node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
       - name: Prove capability aliases preserve existing model and executor trust authority
         run: node --experimental-strip-types --test server/core/localExecution/localCompositeCapabilityPolicy.test.mjs server/core/localExecution/productionLocalModelPolicy.test.mjs
-      - name: Prove ticket-first sequencing and authenticated HTTP authority boundary
-        run: node --experimental-strip-types --test server/core/workflow/LocalCompositeContinuationService.test.mjs server/core/http/localCompositeContinuationHttpAdapter.test.mjs
+      - name: Prove ticket-first sequencing, output quarantine and authenticated HTTP authority
+        run: node --experimental-strip-types --test server/core/workflow/LocalCompositeContinuationService.test.mjs server/core/workflow/LocalCompositeOutputUploadService.test.mjs server/core/http/localCompositeContinuationHttpAdapter.test.mjs
       - name: Prove in-memory and standalone segmentation obey exact replay identity
         run: |
           mkdir -p .test-cache/c5b-replay
