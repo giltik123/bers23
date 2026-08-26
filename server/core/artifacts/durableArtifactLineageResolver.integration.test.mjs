@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { Pool } from 'pg';
 import sharp from 'sharp';
 import { migrateFinalImageLineageSchema } from './finalImageLineageSchema.ts';
@@ -7,26 +9,32 @@ import { DurableArtifactLineageResolver } from './durableArtifactLineageResolver
 import { PostgresImageArtifactStore } from './postgresImageArtifactStore.ts';
 import { PostgresMaskArtifactStore } from './postgresMaskArtifactStore.ts';
 import { SignedArtifactAuthority } from './signedArtifactAuthority.ts';
-import { migrateProjectSchema } from '../projects/projectSchema.ts';
-import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
 
 test('durable resolver reconstructs ORIGINAL -> LOCAL_SEGMENTATION MASK -> BACKGROUND_ISOLATION FINAL lineage after restart', { skip: !databaseUrl }, async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'bers-durable-artifact-resolver' });
   const token = `resolver-${process.pid}-${Date.now()}`;
-  const auth = Object.freeze({ tenantId: `${token}-tenant`, userId: `${token}-user` });
+  const scope = Object.freeze({ tenantId: `${token}-tenant`, userId: `${token}-user`, projectId: `${token}-project` });
   const signed = new SignedArtifactAuthority(`${token}-secret`, [], () => 10_000);
   const images = new PostgresImageArtifactStore(pool);
   const masks = new PostgresMaskArtifactStore(pool);
+  const originalStorageId = randomUUID();
   try {
     await migrateFinalImageLineageSchema(pool);
-    await migrateProjectSchema(pool);
-    const projectStore = new PostgresProjectStore(pool);
+    // Migration 004 is the canonical schema transition that admits immutable ORIGINAL rows.
+    // This Artifact-authority test applies only that required transition and deliberately
+    // avoids the Project application store so the test remains runnable in Node strip mode.
+    const roleState = await pool.query("SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('canonical_image_artifacts') AND conname='canonical_image_artifacts_role_check' AND position('ORIGINAL' in pg_get_constraintdef(oid)) > 0) AS original_allowed");
+    if (!roleState.rows[0]?.original_allowed) {
+      await pool.query(await readFile(new URL('../projects/migrations/004_canonical_projects_and_originals.sql', import.meta.url), 'utf8'));
+    }
+
     const sourcePng = new Uint8Array(await sharp({ create: { width: 2, height: 2, channels: 4, background: '#112233ff' } }).png().toBuffer());
-    const project = await projectStore.create(auth, 'Resolver project', sourcePng, { maxDimension: 64, maxPixels: 4096 });
-    const scope = Object.freeze({ ...auth, projectId: String(project.project_id) });
-    const originalStorageId = String(project.original_image_storage_id);
+    await pool.query(`INSERT INTO canonical_image_artifacts
+      (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes)
+      VALUES ($1,$2,$3,$4,NULL,NULL,'ORIGINAL','IMMUTABLE',2,2,'PNG_RGBA8_LOSSLESS','image/png',$5)`,
+    [originalStorageId, scope.tenantId, scope.userId, scope.projectId, Buffer.from(sourcePng)]);
     const originalId = signed.issueStoredOriginal(originalStorageId, scope);
 
     const maskStored = await masks.persistLocalExecution(`${token}-segment-ticket`, scope, 2, 2, new Uint8Array([255,0,255,0]), originalStorageId);
@@ -59,13 +67,11 @@ test('durable resolver reconstructs ORIGINAL -> LOCAL_SEGMENTATION MASK -> BACKG
     assert.deepEqual(await restarted.resolve(scope, originalId), original);
     assert.deepEqual(await restarted.resolve(scope, maskId), mask);
     assert.deepEqual(await restarted.resolve(scope, finalId), final);
-
     await assert.rejects(() => restarted.resolve({ ...scope, userId: `${token}-other` }, finalId), /durable canonical IMAGE or MASK/);
   } finally {
-    await pool.query("DELETE FROM canonical_image_artifacts WHERE tenant_id=$1 AND user_id=$2 AND producer_operation='BACKGROUND_ISOLATION'", [auth.tenantId, auth.userId]).catch(() => undefined);
-    await pool.query('DELETE FROM canonical_mask_artifacts WHERE tenant_id=$1 AND user_id=$2', [auth.tenantId, auth.userId]).catch(() => undefined);
-    await pool.query('DELETE FROM canonical_projects WHERE tenant_id=$1 AND user_id=$2', [auth.tenantId, auth.userId]).catch(() => undefined);
-    await pool.query('DELETE FROM canonical_image_artifacts WHERE tenant_id=$1 AND user_id=$2', [auth.tenantId, auth.userId]).catch(() => undefined);
+    await pool.query("DELETE FROM canonical_image_artifacts WHERE tenant_id=$1 AND user_id=$2 AND producer_operation='BACKGROUND_ISOLATION'", [scope.tenantId, scope.userId]).catch(() => undefined);
+    await pool.query('DELETE FROM canonical_mask_artifacts WHERE tenant_id=$1 AND user_id=$2', [scope.tenantId, scope.userId]).catch(() => undefined);
+    await pool.query('DELETE FROM canonical_image_artifacts WHERE tenant_id=$1 AND user_id=$2', [scope.tenantId, scope.userId]).catch(() => undefined);
     await pool.end();
   }
 });
