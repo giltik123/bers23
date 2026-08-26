@@ -501,12 +501,17 @@ export default function Editor() {
 
       {objects.length > 0 && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
-      {objects.length === 0 ? (
-        <Button onClick={detect} disabled={detecting || upscaling} className="w-full h-12 rounded-2xl text-base">
-          {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
-          {detecting ? 'Detecting objects…' : 'Detect objects'}
-        </Button>
-      ) : pendingResult ? (
+      {objects.length === 0 && !pendingResult && (
+        <div className="space-y-2">
+          <Button onClick={detect} disabled={detecting || editorBusy || committing} className="w-full h-12 rounded-2xl text-base" variant="outline">
+            {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
+            {detecting ? 'Detecting objects…' : 'Detect objects'}
+          </Button>
+          <p className="text-[11px] text-muted-foreground text-center">Object detection is optional. You can edit the whole image now or detect/select an object first.</p>
+        </div>
+      )}
+
+      {pendingResult ? (
         <ResultCompare
           beforeUrl={pendingResult.beforeUrl}
           result={pendingResult.result}
@@ -515,6 +520,17 @@ export default function Editor() {
           onRetry={retryResult}
           busy={committing || isolatingBackground || upscaling}
         />
+      ) : objects.length === 0 ? (
+        <>
+          {plan && <PlanPreview plan={plan} />}
+          <InstructionBar
+            selectedObject={selected}
+            instruction={instruction}
+            onInstructionChange={setInstruction}
+            onApply={() => applyEdit(false)}
+            applying={editorBusy}
+          />
+        </>
       ) : (
         <>
           <WorkspaceToolbar
