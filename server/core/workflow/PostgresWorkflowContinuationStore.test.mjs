@@ -94,6 +94,7 @@ test('continuation is scoped, durable across store instances, CAS-bound and repl
 
   const running = await firstStore.runInternalStep({ executionId: created.executionId, scope: created.scope, expectedRevision: 2, stepId: 'verify' });
   assert.equal(running.state, 'RUNNING_INTERNAL'); assert.equal(running.revision, 3);
+  assert.deepEqual(await afterRestart.runInternalStep({ executionId: created.executionId, scope: created.scope, expectedRevision: 2, stepId: 'verify' }), running, 'exact internal-start replay is idempotent after a lost response');
   const verified = await firstStore.completeInternalStep({ executionId: created.executionId, scope: created.scope, expectedRevision: 3, stepId: 'verify', artifactIds: ['mask-a'] });
   assert.equal(verified.state, 'READY'); assert.equal(verified.revision, 4);
   const success = await firstStore.succeed({ executionId: created.executionId, scope: created.scope, expectedRevision: 4, terminalArtifactId: 'mask-a' });
