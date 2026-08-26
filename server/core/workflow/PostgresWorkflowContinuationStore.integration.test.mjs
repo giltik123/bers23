@@ -9,6 +9,9 @@ const databaseUrl = process.env.DATABASE_URL;
 const NOW = Date.parse('2026-08-26T06:00:00.000Z');
 const scope = token => Object.freeze({ tenantId: `${token}-tenant`, userId: `${token}-user`, projectId: `${token}-project` });
 
+function rootInput(token) {
+  return Object.freeze({ artifactId: `${token}-source`, kind: 'image', role: 'WORKING', sha256: 'b'.repeat(64), parentArtifactIds: Object.freeze([]) });
+}
 function ticket(token, executionId, scoped) {
   return Object.freeze({
     ticketId: `${token}-ticket`, version: '1', issuer: 'CORE', requestId: `${token}-request`, workflowId: executionId, stepId: 'segment',
@@ -30,10 +33,11 @@ function result(stored) {
   });
 }
 
-test('PostgreSQL continuation survives Core restart and serializes exact local completion', { skip: !databaseUrl }, async () => {
+test('PostgreSQL continuation survives Core restart with immutable roots and serializes exact local completion', { skip: !databaseUrl }, async () => {
   const token = `workflow-continuation-${process.pid}-${Date.now()}`;
   const scoped = scope(token); const executionId = `${token}-execution`; const clientRequestId = `${token}-client`;
   const plan = Object.freeze({ planId: `${token}-plan`, planRevision: '1', planDigest: 'a'.repeat(64) });
+  const inputArtifacts = Object.freeze([rootInput(token)]);
   let storedTicket;
 
   const firstPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-continuation-first' });
@@ -45,7 +49,12 @@ test('PostgreSQL continuation survives Core restart and serializes exact local c
     await checkWorkflowContinuationSchema(firstPool);
     const continuations = new PostgresWorkflowContinuationStore(firstPool, () => NOW);
     const ledger = new PostgresLocalExecutionLedger(firstPool);
-    const created = await continuations.create({ executionId, clientRequestId, scope: scoped, plan });
+    const created = await continuations.create({ executionId, clientRequestId, scope: scoped, plan, inputArtifacts });
+    assert.deepEqual(created.inputArtifacts, inputArtifacts, 'Core must persist the exact immutable root Artifact identity/integrity binding');
+    await assert.rejects(() => continuations.create({
+      executionId, clientRequestId, scope: scoped, plan,
+      inputArtifacts: [{ ...rootInput(token), sha256: 'd'.repeat(64) }],
+    }), /already bound to another workflow continuation/, 'scoped replay cannot rebind a root Artifact digest');
     storedTicket = await ledger.issue(ticket(token, executionId, scoped));
     const waiting = await continuations.waitForLocalResult({ executionId, scope: scoped, expectedRevision: created.revision, ticket: { stepId: storedTicket.stepId, ticketId: storedTicket.ticketId, ticketVersion: storedTicket.version, nonce: storedTicket.nonce, expiresAt: new Date(storedTicket.expiresAt).toISOString() } });
     assert.equal(waiting.state, 'WAITING_FOR_LOCAL_RESULT'); assert.equal(waiting.revision, 1);
@@ -59,6 +68,7 @@ test('PostgreSQL continuation survives Core restart and serializes exact local c
     const recovered = await first.get(executionId, scoped);
     assert.equal(recovered.state, 'WAITING_FOR_LOCAL_RESULT', 'new Core instance must recover outstanding local step');
     assert.equal(recovered.outstandingLocal.ticketId, storedTicket.ticketId);
+    assert.deepEqual(recovered.inputArtifacts, inputArtifacts, 'new Core instance must recover exact immutable root Artifact bindings');
 
     const admitted = await ledger.claim({ ticketId: storedTicket.ticketId, result: result(storedTicket), callerScope: scoped, now: NOW + 1_000 });
     assert.equal(admitted.allowed, true); await ledger.commit(storedTicket.ticketId, 'SUCCESS');
@@ -80,6 +90,7 @@ test('PostgreSQL continuation survives Core restart and serializes exact local c
     const afterRestart = new PostgresWorkflowContinuationStore(thirdPool, () => NOW);
     const terminal = await afterRestart.get(executionId, scoped);
     assert.equal(terminal.state, 'SUCCESS'); assert.equal(terminal.terminalArtifactId, `${token}-canonical-mask`);
+    assert.deepEqual(terminal.inputArtifacts, inputArtifacts);
     assert.equal((await afterRestart.getByClientRequestId(scoped, clientRequestId)).executionId, executionId);
     await assert.rejects(() => afterRestart.cancel({ executionId, scope: scoped, expectedRevision: terminal.revision }), /Terminal workflow continuation SUCCESS cannot advance/);
   } finally {

@@ -15,6 +15,15 @@ export type WorkflowPlanBinding = Readonly<{
   planDigest: string;
 }>;
 
+/** Immutable canonical inputs from which the durable workflow was authorized. */
+export type WorkflowInputArtifactBinding = Readonly<{
+  artifactId: string;
+  kind: string;
+  role: string;
+  sha256: string;
+  parentArtifactIds: readonly string[];
+}>;
+
 export type WorkflowLocalTicketBinding = Readonly<{
   stepId: string;
   ticketId: string;
@@ -34,6 +43,7 @@ export type WorkflowContinuationSnapshot = Readonly<{
   clientRequestId: string;
   scope: Scope;
   plan: WorkflowPlanBinding;
+  inputArtifacts: readonly WorkflowInputArtifactBinding[];
   state: WorkflowContinuationState;
   currentStepId?: string;
   outstandingLocal?: WorkflowLocalTicketBinding;
@@ -50,6 +60,7 @@ export type CreateWorkflowContinuationInput = Readonly<{
   clientRequestId: string;
   scope: Scope;
   plan: WorkflowPlanBinding;
+  inputArtifacts: readonly WorkflowInputArtifactBinding[];
 }>;
 
 export type WaitForLocalResultInput = Readonly<{
@@ -112,7 +123,25 @@ export function normalizeWorkflowContinuationCreate(input: CreateWorkflowContinu
     planRevision: requireToken(input.plan?.planRevision, 'planRevision'),
     planDigest: requireSha256(input.plan?.planDigest, 'planDigest'),
   });
-  return Object.freeze({ executionId, clientRequestId, scope, plan });
+  const inputArtifacts = normalizeInputArtifactBindings(input.inputArtifacts);
+  return Object.freeze({ executionId, clientRequestId, scope, plan, inputArtifacts });
+}
+
+export function normalizeInputArtifactBindings(values: readonly WorkflowInputArtifactBinding[]): readonly WorkflowInputArtifactBinding[] {
+  if (!Array.isArray(values) || values.length < 1) throw new Error('At least one canonical workflow input Artifact binding is required');
+  const normalized = values.map((value, index) => {
+    if (!value || typeof value !== 'object') throw new Error(`inputArtifacts[${index}] is invalid`);
+    const parentArtifactIds = normalizeOptionalArtifactIds(value.parentArtifactIds, `inputArtifacts[${index}].parentArtifactIds`);
+    return Object.freeze({
+      artifactId: requireToken(value.artifactId, `inputArtifacts[${index}].artifactId`),
+      kind: requireToken(value.kind, `inputArtifacts[${index}].kind`),
+      role: requireToken(value.role, `inputArtifacts[${index}].role`),
+      sha256: requireSha256(value.sha256, `inputArtifacts[${index}].sha256`),
+      parentArtifactIds,
+    });
+  }).sort((a, b) => a.artifactId.localeCompare(b.artifactId));
+  if (new Set(normalized.map(value => value.artifactId)).size !== normalized.length) throw new Error('Canonical workflow input Artifact identities must be unique');
+  return Object.freeze(normalized);
 }
 
 export function normalizeTicketBinding(ticket: WorkflowLocalTicketBinding): WorkflowLocalTicketBinding {
@@ -149,6 +178,18 @@ export function samePlanBinding(a: WorkflowPlanBinding, b: WorkflowPlanBinding):
   return a.planId === b.planId && a.planRevision === b.planRevision && a.planDigest === b.planDigest;
 }
 
+export function sameInputArtifactBindings(a: readonly WorkflowInputArtifactBinding[], b: readonly WorkflowInputArtifactBinding[]): boolean {
+  return a.length === b.length && a.every((value, index) => {
+    const other = b[index];
+    return Boolean(other)
+      && value.artifactId === other.artifactId
+      && value.kind === other.kind
+      && value.role === other.role
+      && value.sha256 === other.sha256
+      && sameStringSetInOrder(value.parentArtifactIds, other.parentArtifactIds);
+  });
+}
+
 export function sameStringSetInOrder(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
@@ -160,6 +201,14 @@ export function assertExpectedRevision(actual: number, expected: number): void {
 
 export function isTerminalWorkflowState(state: WorkflowContinuationState): boolean {
   return state === 'SUCCESS' || state === 'FAILED' || state === 'CANCELLED' || state === 'UNKNOWN';
+}
+
+function normalizeOptionalArtifactIds(values: readonly string[] | undefined, field: string): readonly string[] {
+  if (values === undefined) return Object.freeze([]);
+  if (!Array.isArray(values)) throw new Error(`${field} must be an array`);
+  const normalized = values.map((value, index) => requireToken(value, `${field}[${index}]`)).sort((a, b) => a.localeCompare(b));
+  if (new Set(normalized).size !== normalized.length) throw new Error(`${field} must contain unique canonical Artifact identities`);
+  return Object.freeze(normalized);
 }
 
 function requireToken(value: unknown, field: string): string {

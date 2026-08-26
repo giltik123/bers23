@@ -6,13 +6,14 @@ type WorkflowContinuationSchemaState = Readonly<{
   table: boolean;
   scopeClientRequestUnique: boolean;
   outstandingTicketForeignKey: boolean;
+  inputArtifactsJson: boolean;
   completedStepsJson: boolean;
   revision: boolean;
 }>;
 
 export async function checkWorkflowContinuationSchema(pool: Pool): Promise<void> {
   const state = await inspectWorkflowContinuationSchema(pool);
-  if (!state.table || !state.scopeClientRequestUnique || !state.outstandingTicketForeignKey || !state.completedStepsJson || !state.revision) {
+  if (!state.table || !state.scopeClientRequestUnique || !state.outstandingTicketForeignKey || !state.inputArtifactsJson || !state.completedStepsJson || !state.revision) {
     throw new Error('workflow continuation schema is incomplete; apply migration 015_workflow_continuations.sql');
   }
 }
@@ -20,7 +21,7 @@ export async function checkWorkflowContinuationSchema(pool: Pool): Promise<void>
 export async function migrateWorkflowContinuationSchema(pool: Pool): Promise<void> {
   await checkLocalExecutionLedgerSchema(pool);
   const state = await inspectWorkflowContinuationSchema(pool);
-  if (state.table && state.scopeClientRequestUnique && state.outstandingTicketForeignKey && state.completedStepsJson && state.revision) return;
+  if (state.table && state.scopeClientRequestUnique && state.outstandingTicketForeignKey && state.inputArtifactsJson && state.completedStepsJson && state.revision) return;
   await pool.query(await readFile(new URL('../artifacts/migrations/015_workflow_continuations.sql', import.meta.url), 'utf8'));
   await checkWorkflowContinuationSchema(pool);
 }
@@ -63,6 +64,19 @@ async function inspectWorkflowContinuationSchema(pool: Pool): Promise<WorkflowCo
       SELECT 1 FROM information_schema.columns
       WHERE table_schema = current_schema()
         AND table_name = 'workflow_continuations'
+        AND column_name = 'input_artifacts_json'
+        AND data_type = 'jsonb'
+        AND is_nullable = 'NO'
+    ) AND EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = to_regclass('workflow_continuations')
+        AND conname = 'workflow_continuations_input_artifacts_shape_check'
+        AND contype = 'c'
+    ) AS input_artifacts_json,
+    EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'workflow_continuations'
         AND column_name = 'completed_steps_json'
         AND data_type = 'jsonb'
         AND is_nullable = 'NO'
@@ -80,6 +94,7 @@ async function inspectWorkflowContinuationSchema(pool: Pool): Promise<WorkflowCo
     table: row.table_exists === true,
     scopeClientRequestUnique: row.scope_client_request_unique === true,
     outstandingTicketForeignKey: row.outstanding_ticket_foreign_key === true,
+    inputArtifactsJson: row.input_artifacts_json === true,
     completedStepsJson: row.completed_steps_json === true,
     revision: row.revision === true,
   });

@@ -4,9 +4,11 @@ import {
   assertExpectedRevision,
   isTerminalWorkflowState,
   normalizeArtifactIds,
+  normalizeInputArtifactBindings,
   normalizeScope,
   normalizeTicketBinding,
   normalizeWorkflowContinuationCreate,
+  sameInputArtifactBindings,
   samePlanBinding,
   sameScope,
   sameStringSetInOrder,
@@ -20,10 +22,11 @@ import {
   type WorkflowContinuationSnapshot,
   type WorkflowContinuationState,
   type WorkflowContinuationStore,
+  type WorkflowInputArtifactBinding,
   type WorkflowLocalTicketBinding,
 } from './WorkflowContinuationStore.ts';
 
-const COLUMNS = `execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,state,current_step_id,
+const COLUMNS = `execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,input_artifacts_json,state,current_step_id,
   outstanding_ticket_id,outstanding_ticket_version,outstanding_ticket_nonce,outstanding_ticket_expires_at,completed_steps_json,
   terminal_artifact_id,failure_code,revision,created_at,updated_at`;
 const LOCK_SALT = 643;
@@ -51,10 +54,10 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
   async create(input: CreateWorkflowContinuationInput): Promise<WorkflowContinuationSnapshot> {
     const normalized = normalizeWorkflowContinuationCreate(input);
     const inserted = await this.pool.query(`INSERT INTO workflow_continuations
-      (execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,state,completed_steps_json)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'READY','[]'::jsonb)
+      (execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,input_artifacts_json,state,completed_steps_json)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,'READY','[]'::jsonb)
       ON CONFLICT DO NOTHING RETURNING ${COLUMNS}`,
-      [normalized.executionId, normalized.clientRequestId, normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId, normalized.plan.planId, normalized.plan.planRevision, normalized.plan.planDigest]);
+      [normalized.executionId, normalized.clientRequestId, normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId, normalized.plan.planId, normalized.plan.planRevision, normalized.plan.planDigest, JSON.stringify(normalized.inputArtifacts)]);
     if (inserted.rows[0]) return snapshotFromRow(inserted.rows[0]);
 
     const byClient = await this.getByClientRequestId(normalized.scope, normalized.clientRequestId);
@@ -195,6 +198,7 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
     const cost = durable.cost as Record<string, unknown> | undefined;
     if (cost?.providerCalls !== 0 || cost?.paidCloudCredits !== 0) throw conflict('Local composite step contains forbidden provider or paid-credit authority');
     if (Date.parse(ticket.expiresAt) <= this.now()) throw conflict('Expired local execution ticket cannot become outstanding work');
+    assertTicketInputsBound(snapshot, durable.inputs);
   }
 
   private async mutate(executionIdInput: string, scopeInput: Scope, mutation: Mutation): Promise<WorkflowContinuationSnapshot> {
@@ -235,7 +239,7 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
 }
 
 function reconcileCreate(stored: WorkflowContinuationSnapshot, candidate: ReturnType<typeof normalizeWorkflowContinuationCreate>): WorkflowContinuationSnapshot {
-  if (stored.executionId !== candidate.executionId || stored.clientRequestId !== candidate.clientRequestId || !sameScope(stored.scope, candidate.scope) || !samePlanBinding(stored.plan, candidate.plan)) {
+  if (stored.executionId !== candidate.executionId || stored.clientRequestId !== candidate.clientRequestId || !sameScope(stored.scope, candidate.scope) || !samePlanBinding(stored.plan, candidate.plan) || !sameInputArtifactBindings(stored.inputArtifacts, candidate.inputArtifacts)) {
     throw conflict('Scoped client request id is already bound to another workflow continuation');
   }
   return stored;
@@ -246,6 +250,9 @@ function snapshotFromRow(row: Record<string, unknown>): WorkflowContinuationSnap
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('Workflow continuation revision is invalid');
   const state = String(row.state) as WorkflowContinuationState;
   if (!['READY','WAITING_FOR_LOCAL_RESULT','RUNNING_INTERNAL','SUCCESS','FAILED','CANCELLED','UNKNOWN'].includes(state)) throw new Error('Workflow continuation state is invalid');
+  const inputRaw = row.input_artifacts_json;
+  if (!Array.isArray(inputRaw)) throw new Error('Workflow continuation input Artifact binding is invalid');
+  const inputArtifacts = normalizeInputArtifactBindings(inputRaw as readonly WorkflowInputArtifactBinding[]);
   const completedRaw = row.completed_steps_json;
   if (!Array.isArray(completedRaw)) throw new Error('Workflow continuation completed-step binding is invalid');
   const completedSteps = Object.freeze(completedRaw.map((value, index) => normalizeCompletedBinding(value, index)));
@@ -261,6 +268,7 @@ function snapshotFromRow(row: Record<string, unknown>): WorkflowContinuationSnap
     clientRequestId: requireToken(row.client_request_id, 'client_request_id'),
     scope: Object.freeze({ tenantId: requireToken(row.tenant_id, 'tenant_id'), userId: requireToken(row.user_id, 'user_id'), projectId: requireToken(row.project_id, 'project_id') }),
     plan: Object.freeze({ planId: requireToken(row.plan_id, 'plan_id'), planRevision: requireToken(row.plan_revision, 'plan_revision'), planDigest: requireSha256(row.plan_digest, 'plan_digest') }),
+    inputArtifacts,
     state,
     currentStepId: optionalToken(row.current_step_id),
     outstandingLocal,
@@ -286,6 +294,7 @@ function normalizeCompletedBinding(value: unknown, index: number): WorkflowCompl
 }
 
 function validateStoredSnapshot(snapshot: WorkflowContinuationSnapshot): void {
+  if (!snapshot.inputArtifacts.length) throw new Error('Workflow continuation has no immutable canonical input Artifact bindings');
   const stepIds = snapshot.completedSteps.map(step => step.stepId);
   if (new Set(stepIds).size !== stepIds.length) throw new Error('Workflow continuation contains duplicate completed step ids');
   if (snapshot.state === 'WAITING_FOR_LOCAL_RESULT') {
@@ -293,6 +302,30 @@ function validateStoredSnapshot(snapshot: WorkflowContinuationSnapshot): void {
   } else if (snapshot.outstandingLocal) throw new Error('Non-waiting workflow continuation retains a local ticket binding');
   if (snapshot.state === 'RUNNING_INTERNAL' && !snapshot.currentStepId) throw new Error('RUNNING_INTERNAL snapshot is missing current step identity');
   if (snapshot.state === 'SUCCESS' && !snapshot.terminalArtifactId) throw new Error('SUCCESS workflow continuation is missing terminal Artifact identity');
+}
+
+function assertTicketInputsBound(snapshot: WorkflowContinuationSnapshot, value: unknown): void {
+  if (!Array.isArray(value) || value.length < 1) throw conflict('Local execution ticket has no durable canonical input bindings');
+  const roots = new Map(snapshot.inputArtifacts.map(binding => [binding.artifactId, binding]));
+  const allowed = new Set([
+    ...roots.keys(),
+    ...snapshot.completedSteps.flatMap(step => step.artifactIds),
+  ]);
+  const seen = new Set<string>();
+  for (const [index, raw] of value.entries()) {
+    if (!raw || typeof raw !== 'object') throw conflict(`Local execution ticket input ${index} is invalid`);
+    const binding = raw as Record<string, unknown>;
+    const artifactId = requireToken(binding.artifactId, `ticket.inputs[${index}].artifactId`);
+    if (seen.has(artifactId)) throw conflict('Local execution ticket contains duplicate canonical input bindings');
+    seen.add(artifactId);
+    if (!allowed.has(artifactId)) throw conflict('Local execution ticket input is not bound to a workflow root or completed dependency');
+    const root = roots.get(artifactId);
+    if (root) {
+      if (binding.kind !== root.kind || binding.role !== root.role || requireSha256(binding.sha256, `ticket.inputs[${index}].sha256`) !== root.sha256) {
+        throw conflict('Local execution ticket root input integrity does not match the durable workflow binding');
+      }
+    }
+  }
 }
 
 async function assertTicketFinalizedSuccess(client: PoolClient, ticketId: string): Promise<void> {

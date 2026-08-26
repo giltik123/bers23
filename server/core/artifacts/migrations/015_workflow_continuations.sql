@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS workflow_continuations (
   plan_id text NOT NULL,
   plan_revision text NOT NULL,
   plan_digest text NOT NULL CHECK (plan_digest ~ '^[a-f0-9]{64}$'),
+  input_artifacts_json jsonb NOT NULL,
   state text NOT NULL CHECK (state IN (
     'READY',
     'WAITING_FOR_LOCAL_RESULT',
@@ -29,6 +30,13 @@ CREATE TABLE IF NOT EXISTS workflow_continuations (
   revision bigint NOT NULL DEFAULT 0 CHECK (revision >= 0),
   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT workflow_continuations_input_artifacts_shape_check CHECK (
+    CASE
+      WHEN jsonb_typeof(input_artifacts_json) = 'array'
+      THEN jsonb_array_length(input_artifacts_json) > 0
+      ELSE false
+    END
+  ),
   CHECK (
     (
       state = 'WAITING_FOR_LOCAL_RESULT'
@@ -50,6 +58,39 @@ CREATE TABLE IF NOT EXISTS workflow_continuations (
   CHECK (state <> 'RUNNING_INTERNAL' OR current_step_id IS NOT NULL),
   CHECK ((state = 'SUCCESS' AND terminal_artifact_id IS NOT NULL) OR state <> 'SUCCESS')
 );
+
+-- C5A is still prerelease. Repair an empty earlier C5A table, but fail closed rather
+-- than inventing immutable canonical input bindings for rows that already exist.
+ALTER TABLE workflow_continuations
+  ADD COLUMN IF NOT EXISTS input_artifacts_json jsonb;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM workflow_continuations WHERE input_artifacts_json IS NULL) THEN
+    RAISE EXCEPTION 'cannot upgrade workflow_continuations with existing rows lacking immutable input bindings';
+  END IF;
+END $$;
+
+ALTER TABLE workflow_continuations
+  ALTER COLUMN input_artifacts_json SET NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'workflow_continuations'::regclass
+      AND conname = 'workflow_continuations_input_artifacts_shape_check'
+  ) THEN
+    ALTER TABLE workflow_continuations
+      ADD CONSTRAINT workflow_continuations_input_artifacts_shape_check CHECK (
+        CASE
+          WHEN jsonb_typeof(input_artifacts_json) = 'array'
+          THEN jsonb_array_length(input_artifacts_json) > 0
+          ELSE false
+        END
+      );
+  END IF;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS workflow_continuations_scope_client_request_unique
   ON workflow_continuations (tenant_id, user_id, project_id, client_request_id);
