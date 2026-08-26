@@ -65,8 +65,9 @@ test('Background Isolation FINAL persists exact IMAGE + MASK lineage across inde
       'same lineage cannot authorize different FINAL bytes',
     );
   } finally {
-    await pool.query('DELETE FROM canonical_image_artifacts WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3', [scope.tenantId, scope.userId, scope.projectId]).catch(() => undefined);
+    await pool.query("DELETE FROM canonical_image_artifacts WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND producer_operation='BACKGROUND_ISOLATION'", [scope.tenantId, scope.userId, scope.projectId]).catch(() => undefined);
     await pool.query('DELETE FROM canonical_mask_artifacts WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3', [scope.tenantId, scope.userId, scope.projectId]).catch(() => undefined);
+    await pool.query('DELETE FROM canonical_image_artifacts WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3', [scope.tenantId, scope.userId, scope.projectId]).catch(() => undefined);
     await pool.end();
   }
 });
