@@ -13,17 +13,18 @@ const dispatch = (action, variables) => action.type === 'run_recipe'
         : 'AI Planner → Recipe Engine → Job System → Editing Engine',
     };
 
-function buildPlan({ automation, context = {} }) {
+function buildPlan({ automation, context }) {
   const validation = automationValidator.validate(automation, context);
   if (!validation.valid) {
     const error = new Error(validation.errors.join(' '));
     error.code = 'AUTOMATION_PLAN_INVALID';
     throw error;
   }
-  const variables = automationVariables.resolve(automation.variables, context);
+  const variables = automationVariables.resolve(automation.variables, context || {});
   return Object.freeze({
     status: 'PLANNED_NOT_EXECUTED',
     automationId: automation.automation_id,
+    conditionsEvaluated: Boolean(context),
     variables: Object.freeze({ ...variables }),
     actions: Object.freeze(automation.actions.map((action) => Object.freeze(dispatch(action, variables)))),
   });
