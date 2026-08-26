@@ -9,3 +9,16 @@ test('browser source imports no transaction internals and canonical edit boundar
 async function collect(directory) { const entries = await readdir(directory, { withFileTypes: true }); return (await Promise.all(entries.map((entry) => entry.isDirectory() ? collect(join(directory, entry.name)) : [join(directory, entry.name)]))).flat().filter((file) => /\.(js|jsx|ts|tsx)$/.test(file)); }
 test('Editor selection uses the Core mask port and never manufactures a mask UUID', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); assert.match(source, /new CoreMaskArtifactPort\(project\.id\)/); assert.doesNotMatch(source, /persist:\s*async[\s\S]*randomUUID/); assert.match(source, /mask_artifact_id: artifact\.id/); });
 test('Core mask port sends exact alpha and maps the server artifact identity', async () => { const source = await readFile('src/application/selection/CoreMaskArtifactPort.js', 'utf8'); assert.match(source, /alpha: mask\.alpha/); assert.match(source, /id: response\.artifactId/); assert.match(source, /ALPHA_8_LOSSLESS/); });
+
+test('Automation Studio remains preview-only until durable server execution authority exists', async () => {
+  const page = await readFile('src/pages/AutomationStudio.jsx', 'utf8');
+  const runner = await readFile('src/lib/automation/AutomationRunner.js', 'utf8');
+  for (const forbidden of ['coreClient', 'automationManager', 'automationHistory', 'AutomationHistoryPanel']) assert.equal(page.includes(forbidden), false, forbidden);
+  assert.match(page, /automationRunner\.plan\(/);
+  assert.doesNotMatch(page, /automationRunner\.run\(/);
+  assert.match(page, /previewOnly/);
+  assert.match(runner, /status:\s*'PLANNED_NOT_EXECUTED'/);
+  assert.match(runner, /conditionsEvaluated:\s*Boolean\(context\)/);
+  assert.match(runner, /AUTOMATION_EXECUTION_NOT_WIRED/);
+  for (const forbidden of ['jobManager', 'automationHistory', "status: 'completed'", 'credits_consumed']) assert.equal(runner.includes(forbidden), false, forbidden);
+});
