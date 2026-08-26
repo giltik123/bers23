@@ -68,6 +68,8 @@ jobs:
           mkdir -p .test-cache/c5b-replay
           npx esbuild tests/local-segmentation-finalization-retry.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/c5b-replay/local-segmentation-finalization-retry.mjs --external:node:* --external:sharp
           node --test .test-cache/c5b-replay/local-segmentation-finalization-retry.mjs
+      - name: Prove standalone Background Isolation keeps PostgreSQL pixel, lineage, restart and zero-cloud authority
+        run: node --experimental-strip-types --test tests/background-isolation-postgres-vertical.test.ts
       - name: Apply exact local-execution replay authority schemas
         run: |
           node --input-type=module <<'NODE'
