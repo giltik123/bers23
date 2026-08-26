@@ -69,7 +69,7 @@ export class DurableArtifactLineageResolver {
 
   private async resolveMask(scope: Scope, artifactId: string): Promise<DurableResolvedArtifact | undefined> {
     let storageId: string;
-    try { storageId = this.signed.resolveStoredMaskId(artifactId, scope).storageId; } catch { return undefined; }
+    try { storageId = this.signed.resolveStoredMask(artifactId, scope).storageId; } catch { return undefined; }
     const stored = await this.masks.load(storageId, scope);
     if (!stored) throw resolverError('durable_artifact_unavailable', 'Signed MASK identity has no matching durable canonical row');
     if (!stored.sourceImageStorageId) throw resolverError('durable_lineage_unavailable', 'Canonical MASK has no durable source IMAGE lineage');
