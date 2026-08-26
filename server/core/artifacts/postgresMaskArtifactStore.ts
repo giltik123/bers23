@@ -6,7 +6,7 @@ import type { AuthenticatedScope } from '../application/creativeExecutionService
 export const MASK_ROLE = 'MASK' as const;
 export const MASK_ENCODING = 'ALPHA_8_LOSSLESS' as const;
 export const MASK_COORDINATE_SPACE = 'ORIGINAL' as const;
-export type MaskProducerOperation = 'MANUAL_SELECTION' | 'MASK_REFINEMENT';
+export type MaskProducerOperation = 'MANUAL_SELECTION' | 'LOCAL_SEGMENTATION' | 'MASK_REFINEMENT';
 export type MaskLineage = Readonly<{ sourceImageStorageId: string; parentMaskStorageId?: string; producerOperation: MaskProducerOperation }>;
 
 export type StoredMask = Readonly<{
@@ -59,7 +59,7 @@ export class PostgresMaskArtifactStore {
     lineage: MaskLineage,
   ): Promise<StoredMask> {
     if (!lineage.sourceImageStorageId) throw new Error('Canonical source image lineage is required');
-    if (lineage.producerOperation === 'MANUAL_SELECTION' && lineage.parentMaskStorageId) throw new Error('MANUAL_SELECTION cannot claim a parent MASK');
+    if ((lineage.producerOperation === 'MANUAL_SELECTION' || lineage.producerOperation === 'LOCAL_SEGMENTATION') && lineage.parentMaskStorageId) throw new Error(`${lineage.producerOperation} cannot claim a parent MASK`);
     if (lineage.producerOperation === 'MASK_REFINEMENT' && !lineage.parentMaskStorageId) throw new Error('MASK_REFINEMENT requires a parent MASK');
     const png = await encodeMask(width, height, alpha);
     const storageId = this.nextId();
@@ -73,8 +73,8 @@ export class PostgresMaskArtifactStore {
   /**
    * One local execution ticket may mint at most one immutable canonical MASK row.
    * When Core can resolve the ticket input to a stored canonical IMAGE, persist that
-   * storage identity as durable lineage so restart/reconnect verification does not
-   * depend on process-local Artifact metadata.
+   * storage identity as durable LOCAL_SEGMENTATION lineage so restart/reconnect
+   * verification does not depend on process-local Artifact metadata.
    */
   async persistLocalExecution(
     ticketId: string,
@@ -86,26 +86,29 @@ export class PostgresMaskArtifactStore {
   ): Promise<StoredMask> {
     if (!ticketId) throw new Error('Local execution ticket identity is required for MASK persistence');
     const normalizedSource = sourceImageStorageId?.trim() || undefined;
+    const producerOperation: MaskProducerOperation | undefined = normalizedSource ? 'LOCAL_SEGMENTATION' : undefined;
     const png = await encodeMask(width, height, alpha);
     const storageId = this.nextId();
     const result = await this.pool.query(`INSERT INTO canonical_mask_artifacts
-      (storage_id, tenant_id, user_id, project_id, role, encoding, coordinate_space, width, height, png_bytes, local_execution_ticket_id, source_image_storage_id)
-      VALUES ($1,$2,$3,$4,'MASK','ALPHA_8_LOSSLESS','ORIGINAL',$5,$6,$7,$8,$9)
+      (storage_id, tenant_id, user_id, project_id, role, encoding, coordinate_space, width, height, png_bytes, local_execution_ticket_id, source_image_storage_id, producer_operation)
+      VALUES ($1,$2,$3,$4,'MASK','ALPHA_8_LOSSLESS','ORIGINAL',$5,$6,$7,$8,$9,$10)
       ON CONFLICT (local_execution_ticket_id) WHERE local_execution_ticket_id IS NOT NULL
       DO UPDATE SET local_execution_ticket_id=EXCLUDED.local_execution_ticket_id
       RETURNING storage_id, tenant_id, user_id, project_id, width, height, png_bytes, source_image_storage_id, parent_mask_storage_id, producer_operation`,
-    [storageId, scope.tenantId, scope.userId, scope.projectId, width, height, png, ticketId, normalizedSource ?? null]);
+    [storageId, scope.tenantId, scope.userId, scope.projectId, width, height, png, ticketId, normalizedSource ?? null, producerOperation ?? null]);
     const row = result.rows[0];
     if (!row) throw new Error('Canonical local MASK persistence failed');
     const storedPng = Buffer.from(row.png_bytes);
     const persistedSource = row.source_image_storage_id ?? undefined;
+    const persistedProducer = row.producer_operation ?? undefined;
     const same = row.tenant_id === scope.tenantId
       && row.user_id === scope.userId
       && row.project_id === scope.projectId
       && Number(row.width) === width
       && Number(row.height) === height
       && storedPng.equals(png)
-      && persistedSource === normalizedSource;
+      && persistedSource === normalizedSource
+      && persistedProducer === producerOperation;
     if (!same) throw new Error('Local execution ticket is already bound to a different canonical MASK or source lineage');
     return fromRow(row, storedPng);
   }
