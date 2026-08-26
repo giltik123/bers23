@@ -3,6 +3,7 @@ export * from './LocalExecutionLedger.ts';
 export * from './LocalExecutionTicketAuthority.ts';
 export * from './PostgresLocalExecutionLedger.ts';
 export * from './PostgresLocalExecutionUploadStore.ts';
+export * from './LocalExecutionResultAuthority.ts';
 export * from './LocalSegmentationExecutionService.ts';
 export * from './LocalDeterministicImageExecutionService.ts';
 export * from './LocalSuperResolutionExecutionService.ts';
