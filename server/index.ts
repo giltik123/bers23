@@ -28,4 +28,25 @@ export async function startCoreServer() {
   return Object.freeze({ server, stop, config });
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) startCoreServer().catch(() => { process.exitCode = 1; });
+function startupFailure(error: unknown): Readonly<{ event: 'core_startup_failed'; name: string; code?: string; message: string }> {
+  const candidate = error && typeof error === 'object' ? error as { name?: unknown; code?: unknown; message?: unknown } : undefined;
+  const name = typeof candidate?.name === 'string' && candidate.name ? candidate.name.slice(0, 80) : 'Error';
+  const code = typeof candidate?.code === 'string' && /^[A-Za-z0-9_.:-]{1,100}$/.test(candidate.code) ? candidate.code : undefined;
+  const rawMessage = typeof candidate?.message === 'string' && candidate.message ? candidate.message : 'Core startup failed';
+  return Object.freeze({ event: 'core_startup_failed', name, ...(code ? { code } : {}), message: sanitizeStartupMessage(rawMessage) });
+}
+
+function sanitizeStartupMessage(message: string): string {
+  let sanitized = message.slice(0, 1000)
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+):([^\s/@]+)@/gi, '$1[redacted]@');
+  for (const name of ['DATABASE_URL','FAL_KEY','JWT_SECRET','AUTH_CHALLENGE_SECRET','RESEND_API_KEY','GOOGLE_OAUTH_CLIENT_SECRET','ARTIFACT_SIGNING_SECRET']) {
+    const secret = process.env[name];
+    if (secret && secret.length >= 4) sanitized = sanitized.split(secret).join('[redacted]');
+  }
+  return sanitized.replace(/[\r\n\t]+/g, ' ').trim() || 'Core startup failed';
+}
+
+if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) startCoreServer().catch((error) => {
+  console.error(JSON.stringify(startupFailure(error)));
+  process.exitCode = 1;
+});
