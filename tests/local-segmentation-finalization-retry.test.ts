@@ -112,7 +112,7 @@ test('successful local workflow survives transient ledger commit failure; exact 
 
   await assert.rejects(
     () => service.submit({ ticketId: prepared.ticket.ticketId, projectId: scope.projectId, result: { ...result, metrics: { latencyMs: 13 } } }, auth),
-    /local_result_conflicting_replay/,
+    (error: unknown) => Boolean(error && typeof error === 'object' && (error as { status?: number }).status === 400 && (error as { code?: string }).code === 'local_result_conflicting_replay'),
     'a different valid payload for a consumed ticket must not inherit exact replay authority',
   );
   assert.equal(verificationCalls, 1);
