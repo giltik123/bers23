@@ -4,9 +4,6 @@ import pluginReact from "eslint-plugin-react";
 import pluginReactHooks from "eslint-plugin-react-hooks";
 import pluginUnusedImports from "eslint-plugin-unused-imports";
 
-const privilegedEntityMutation = /^(CreditsWallet|CreditTransaction|UserSubscription|SubscriptionUsage)$/;
-const privilegedMutationMethod = /^(create|update|delete|bulkCreate)$/;
-
 export default [
   {
     files: ["src/**/*.{js,mjs,cjs,jsx}"],
