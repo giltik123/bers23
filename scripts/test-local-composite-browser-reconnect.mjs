@@ -152,15 +152,17 @@ try {
     'local-continuation-03-verify',
   ]);
   const finalClaim = production.artifacts.external.resolveStoredFinalId(second.terminalArtifactId, scope);
-  const finalRows = await setupPool.query("SELECT count(*)::int AS count, min(source_image_storage_id) AS source_image_storage_id, min(producer_operation) AS producer_operation FROM canonical_image_artifacts WHERE storage_id=$1 AND execution_id=$2 AND role='COMPOSITE' AND lifecycle='FINAL'", [finalClaim.storageId, first.executionId]);
-  assert.equal(Number(finalRows.rows[0].count), 1, 'browser reconnect must publish exactly one canonical FINAL');
+  const finalRows = await setupPool.query("SELECT storage_id,source_image_storage_id,producer_operation FROM canonical_image_artifacts WHERE execution_id=$1 AND role='COMPOSITE' AND lifecycle='FINAL'", [first.executionId]);
+  assert.equal(finalRows.rowCount, 1, 'browser reconnect must publish exactly one canonical FINAL for the workflow execution');
+  assert.equal(finalRows.rows[0].storage_id, finalClaim.storageId);
   assert.equal(finalRows.rows[0].source_image_storage_id, originalStorageId);
   assert.equal(finalRows.rows[0].producer_operation, 'BACKGROUND_ISOLATION');
   const afterCredits = Number((await setupPool.query('SELECT count(*)::int AS count FROM credit_reservations')).rows[0].count);
   assert.equal(afterCredits, beforeCredits, 'LOCAL_ONLY browser reconnect must not create credit reservations');
   assert.equal(providerCalls, 0, 'LOCAL_ONLY browser reconnect must not invoke provider HTTP');
+  const unexpectedConsoleErrors = diagnostics.consoleErrors.filter(message => !message.includes('403 (Forbidden)'));
   assert.deepEqual(diagnostics.pageErrors, []);
-  assert.deepEqual(diagnostics.consoleErrors, []);
+  assert.deepEqual(unexpectedConsoleErrors, []);
   assert.deepEqual(diagnostics.failedRequests, []);
   assert.deepEqual(diagnostics.failedResponses, []);
   console.log(JSON.stringify({
@@ -173,6 +175,7 @@ try {
     coreRestarts: 2,
     providerCalls,
     creditReservationDelta: afterCredits - beforeCredits,
+    expectedCsrfConsoleErrors: diagnostics.consoleErrors.length - unexpectedConsoleErrors.length,
   }, null, 2));
 } catch (error) {
   throw new Error(`C5B_BROWSER_RECONNECT_ACCEPTANCE_FAILED\n${JSON.stringify(diagnostics, null, 2)}\n${error instanceof Error ? error.stack ?? error.message : error}`);

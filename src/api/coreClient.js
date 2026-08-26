@@ -52,7 +52,7 @@ function throwResponseError(response, data, path) {
   if (response.status === 401 && path === '/auth/context') browserCsrfToken = undefined;
   const error = new Error(data?.message || `Core API request failed (${response.status})`);
   error.status = response.status;
-  error.code = data?.code;
+  error.code = data?.code ?? data?.error;
   error.correlationId = data?.correlationId;
   error.retryable = data?.retryable ?? false;
   error.data = data;
@@ -133,7 +133,7 @@ export const coreClient = Object.freeze({
       const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
       const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
       const pixelCount = width * height;
-      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core super-resolution input delivery byte length does not match its geometry');
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core super-resolution input byte length does not match its geometry');
       return Object.freeze({
         width,
         height,
