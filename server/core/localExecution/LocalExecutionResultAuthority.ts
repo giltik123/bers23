@@ -41,10 +41,16 @@ type SegmentationDependencies = ScopeArtifactAccess & Readonly<{
   now?: () => number;
 }>;
 
+type BackgroundIsolationArtifactLineage = Readonly<{
+  sourceArtifactId: string;
+  maskArtifactId: string;
+  producerOperation: 'BACKGROUND_ISOLATION';
+}>;
+
 type DeterministicDependencies = ScopeArtifactAccess & Readonly<{
   admission: LocalExecutionLedgerV2;
   uploads: UploadReader;
-  persistFinal: (scope: Scope, executionId: string, operationId: string, image: PixelImage) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
+  persistFinal: (scope: Scope, executionId: string, operationId: string, image: PixelImage, lineage?: BackgroundIsolationArtifactLineage) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
   loadPersistedFinal: (executionId: string, scope: Scope) => Promise<Readonly<{ storageId: string; width: number; height: number }> | undefined>;
   issueFinalId: (storageId: string, scope: Scope) => string;
   now?: () => number;
@@ -235,7 +241,13 @@ export class BackgroundIsolationResultAuthority {
 
       const outcome = await input.verify({ ticket, result, artifact });
       if (outcome.status !== 'SUCCESS') throw serviceError(422, 'local_execution_verification_failed', 'Canonical deterministic execution did not pass workflow verification');
-      const stored = await this.dependencies.persistFinal(ticket.scope, ticket.workflowId, ticket.stepId, { width: sourcePixels.width, height: sourcePixels.height, data: expected });
+      const stored = await this.dependencies.persistFinal(
+        ticket.scope,
+        ticket.workflowId,
+        ticket.stepId,
+        { width: sourcePixels.width, height: sourcePixels.height, data: expected },
+        { sourceArtifactId: source.id, maskArtifactId: mask.id, producerOperation: 'BACKGROUND_ISOLATION' },
+      );
       const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
       await this.dependencies.admission.commit(ticket.ticketId, 'SUCCESS');
       await this.dependencies.uploads.consume(upload.uploadId, ticket.ticketId, ticket.scope, this.now());
