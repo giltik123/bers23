@@ -7,6 +7,7 @@ import { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import { PostgresMaskArtifactStore } from '../artifacts/postgresMaskArtifactStore.ts';
 import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
+import { checkFinalImageLineageSchema, migrateFinalImageLineageSchema } from '../artifacts/finalImageLineageSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../artifacts/localExecutionUploadSchema.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
 import type { LocalExecutionExecutorBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
@@ -48,8 +49,12 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
   try {
     await transactions.pool.query('SELECT 1');
     await checkTransactionSchema(transactions.pool);
-    await checkMaskArtifactSchema(transactions.pool);
-    await checkImageArtifactSchema(transactions.pool);
+    if (config.nodeEnv === 'test') await migrateFinalImageLineageSchema(transactions.pool);
+    else {
+      await checkMaskArtifactSchema(transactions.pool);
+      await checkImageArtifactSchema(transactions.pool);
+      await checkFinalImageLineageSchema(transactions.pool);
+    }
     await checkProjectSchema(transactions.pool);
     if (config.nodeEnv === 'test') {
       await migrateAuthSchema(transactions.pool);
@@ -133,7 +138,13 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       hydrateArtifacts,
       admission: localExecutionAdmission,
       uploads: localUploads,
-      persistFinal: (scope, executionId, operationId, image) => artifacts.images.persistFinal(scope, executionId, operationId, image),
+      persistFinal: (scope, executionId, operationId, image, lineage) => {
+        if (!lineage) return artifacts.images.persistFinal(scope, executionId, operationId, image);
+        const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
+        const maskStorageId = resolveStoredMaskStorageId(externalArtifacts, lineage.maskArtifactId, scope);
+        if (!sourceImageStorageId || !maskStorageId) throw new Error('Background Isolation FINAL requires stored canonical IMAGE + MASK parents');
+        return artifacts.images.persistFinal(scope, executionId, operationId, image, { sourceImageStorageId, maskStorageId, producerOperation: 'BACKGROUND_ISOLATION' });
+      },
       loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
       issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
       now,
@@ -176,6 +187,10 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
 function resolveStoredImageStorageId(authority: SignedArtifactAuthority, artifactId: string, scope: Parameters<ArtifactAuthority['owns']>[0]): string | undefined {
   try { return authority.resolveStoredOriginalId(artifactId, scope).storageId; } catch { /* stored FINAL below */ }
   try { return authority.resolveStoredFinalId(artifactId, scope).storageId; } catch { return undefined; }
+}
+
+function resolveStoredMaskStorageId(authority: SignedArtifactAuthority, artifactId: string, scope: Parameters<ArtifactAuthority['owns']>[0]): string | undefined {
+  try { return authority.resolveStoredMaskId(artifactId, scope).storageId; } catch { return undefined; }
 }
 
 function resolveAuthRuntime(config: CoreServerConfig) {
