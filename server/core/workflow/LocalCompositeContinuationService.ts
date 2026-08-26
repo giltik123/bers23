@@ -78,7 +78,11 @@ export type LocalCompositeContinuationDependencies = Readonly<{
  * This service grants no public HTTP authority by itself.
  */
 export class LocalCompositeContinuationService {
-  constructor(private readonly dependencies: LocalCompositeContinuationDependencies) {}
+  private readonly dependencies: LocalCompositeContinuationDependencies;
+
+  constructor(dependencies: LocalCompositeContinuationDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async start(commandInput: LocalCompositeStartCommand, scopeInput: Scope): Promise<LocalCompositeContinuationView> {
     const scope = normalizeScope(scopeInput);
@@ -360,7 +364,7 @@ function normalizeStart(command: LocalCompositeStartCommand) {
   return Object.freeze({ clientRequestId, inputArtifactId, analysis: deepFreeze(structuredClone(command.analysis)), points: deepFreeze(structuredClone(command.points)) });
 }
 function canonicalJson(value: unknown): string { return JSON.stringify(canonicalValue(value)); }
-function canonicalValue(value: unknown): unknown { if (Array.isArray(value)) return value.map(canonicalValue); if (!value || typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a],[b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)])); }
+function canonicalValue(value: unknown): unknown { if (Array.isArray(value)) return value.map(canonicalValue); if (!value || typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a],[b])=>a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)])); }
 function deepFreeze<T>(value: T): T { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child); } return value; }
 function requireToken(value: unknown, field: string): string { if (typeof value !== 'string' || !value.trim()) throw serviceError(400, 'local_composite_invalid_request', `${field} is required`); return value.trim(); }
 function serviceError(status: number, code: string, message: string): Error & { status: number; code: string } { return Object.assign(new Error(message), { status, code }); }
