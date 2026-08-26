@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES, LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT } from '../../../src/platform/creative/canonical/localComposite.ts';
 import { ProductionExecutionCapabilityRegistry } from './productionExecutionCapabilities.ts';
 import { productionExecutionRoute } from './productionExecutionRoute.ts';
 import { productionTargetSelection } from './productionTargetSelection.ts';
@@ -7,6 +8,7 @@ import { productionTargetSelection } from './productionTargetSelection.ts';
 const request = Object.freeze({ id: 'request', intent: 'segment subject', scope: Object.freeze({ tenantId: 'tenant', projectId: 'project', userId: 'user' }), metadata: Object.freeze({ operationIntent: 'INTERACTIVE_SEGMENTATION' }) });
 const segment = Object.freeze({ id: 'segment-step', type: 'segment', requiredArtifacts: ['input'], produces: ['mask'] });
 const backgroundIsolation = Object.freeze({ id: 'background-isolation-step', type: 'BACKGROUND_ISOLATION', requiredArtifacts: ['input', 'mask'], produces: ['image'] });
+const verify = Object.freeze({ id: 'verify-step', type: 'verify', requiredArtifacts: ['composite'], produces: ['image'] });
 
 test('production segmentation selects ON_DEVICE + LOCAL', () => {
   assert.equal(productionExecutionRoute.select(segment, request), 'ON_DEVICE');
@@ -22,15 +24,28 @@ test('production capability admits only the ON_DEVICE + LOCAL interactive segmen
   assert.equal(registry.admit({ request, operation: segment, route: 'PROVIDER', target: 'LOCAL' }).reasonCode, 'PROVIDER_REQUIRED');
 });
 
-test('generic, broad composite, and narrow C5B composite cannot inherit standalone local execution authority', () => {
+test('narrow C5B composite receives only its exact purpose-bound segment, isolation and verify capabilities', () => {
+  const registry = new ProductionExecutionCapabilityRegistry();
+  const narrowComposite = { ...request, metadata: { operationIntent: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT } };
+  assert.deepEqual(registry.admit({ request: narrowComposite, operation: segment, route: 'ON_DEVICE', target: 'LOCAL' }), {
+    allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment,
+  });
+  assert.deepEqual(registry.admit({ request: narrowComposite, operation: backgroundIsolation, route: 'ON_DEVICE', target: 'LOCAL' }), {
+    allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation,
+  });
+  assert.deepEqual(registry.admit({ request: narrowComposite, operation: verify, route: 'INTERNAL', target: 'LOCAL' }), {
+    allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.verify,
+  });
+});
+
+test('generic and broad composite operations cannot inherit narrow or standalone local model/tool authority', () => {
   const registry = new ProductionExecutionCapabilityRegistry();
   const generic = { ...request, metadata: {} };
   const broadComposite = { ...request, metadata: { operationIntent: 'COMPOSITE_REPLACE_RELIGHT' } };
-  const narrowComposite = { ...request, metadata: { operationIntent: 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE' } };
-  assert.equal(registry.admit({ request: generic, operation: segment, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
-  assert.equal(registry.admit({ request: broadComposite, operation: segment, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
-  assert.equal(registry.admit({ request: narrowComposite, operation: segment, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
-  assert.equal(registry.admit({ request: narrowComposite, operation: backgroundIsolation, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
+  for (const candidateRequest of [generic, broadComposite]) {
+    assert.equal(registry.admit({ request: candidateRequest, operation: segment, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
+    assert.equal(registry.admit({ request: candidateRequest, operation: backgroundIsolation, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
+  }
 });
 
 test('ON_DEVICE forbids provider identity and existing routes stay unchanged', () => {
