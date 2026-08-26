@@ -9,6 +9,7 @@ on:
       - "server/core/artifacts/migrations/012_local_execution_uploads.sql"
       - "server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql"
       - "server/core/artifacts/migrations/015_workflow_continuations.sql"
+      - "server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql"
       - "src/platform/creative/canonical/planning/**"
       - "server/core/providers/productionExecutionCapabilities.ts"
       - "server/core/providers/productionOnDeviceRoute.test.mjs"
@@ -60,6 +61,7 @@ jobs:
               'server/core/artifacts/migrations/002_canonical_mask_artifacts.sql',
               'server/core/artifacts/migrations/012_local_execution_uploads.sql',
               'server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql',
+              'server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql',
               'server/core/artifacts/migrations/015_workflow_continuations.sql',
             ]) await pool.query(await readFile(path, 'utf8'));
           } finally { await pool.end(); }
