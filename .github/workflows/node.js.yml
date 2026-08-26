@@ -185,12 +185,13 @@ jobs:
         env:
           DATABASE_URL: postgresql://core_image_test:core_image_test@127.0.0.1:5432/core_image_test
         run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
           node --input-type=module <<'NODE'
           import { basename } from 'node:path';
           import { readFile, readdir } from 'node:fs/promises';
           import { Pool } from 'pg';
           const directories = [
-            'server/transactions/infrastructure/postgres/migrations',
             'server/core/artifacts/migrations',
             'server/core/projects/migrations',
             'server/core/auth/migrations',
@@ -207,7 +208,7 @@ jobs:
           try {
             for (const migration of migrations) await pool.query(await readFile(migration.path, 'utf8'));
           } finally { await pool.end(); }
-          console.log(`Applied ${migrations.length} production smoke migrations through ${basename(migrations.at(-1).path)}`);
+          console.log(`Applied ${migrations.length} Core smoke migrations through ${basename(migrations.at(-1).path)}`);
           NODE
       - name: Build production image
         run: docker build --tag bers-core:${{ github.sha }} .
