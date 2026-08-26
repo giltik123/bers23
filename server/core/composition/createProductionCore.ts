@@ -10,7 +10,7 @@ import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
 import { checkFinalImageLineageSchema, migrateFinalImageLineageSchema } from '../artifacts/finalImageLineageSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../artifacts/localExecutionUploadSchema.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
-import type { LocalExecutionExecutorBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
+import type { LocalExecutionExecutorBinding, LocalExecutionModelBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import { CanonicalDecisionService, CanonicalPlanningService } from '../../../src/platform/creative/canonical/index.ts';
 import { checkAuthSchema, migrateAuthSchema } from '../auth/authSchema.ts';
@@ -32,18 +32,23 @@ import { productionWorkflowVerifier } from '../providers/productionWorkflowVerif
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
 import { checkProjectSchema } from '../projects/projectSchema.ts';
 import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
+import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from '../workflow/workflowContinuationSchema.ts';
+import { createProductionLocalCompositeContinuation } from '../workflow/createProductionLocalCompositeContinuation.ts';
 
 const LOCAL_EXECUTION_TICKET_TTL_MS = 5 * 60_000;
 
 type ProductionCoreOptions = Readonly<{
   fetcher?: typeof fetch;
   now?: () => number;
-  /** Test-only authority catalog. Never accepted by production/staging composition. */
+  /** Test-only model authority catalog. Never accepted by production/staging composition. */
+  testLocalModelsByCapability?: Readonly<Record<string, readonly LocalExecutionModelBinding[]>>;
+  /** Test-only executor authority catalog. Never accepted by production/staging composition. */
   testLocalExecutorsByCapability?: Readonly<Record<string, readonly LocalExecutionExecutorBinding[]>>;
 }>;
 
 export async function createProductionCore(config: CoreServerConfig, options: ProductionCoreOptions = {}) {
-  if (options.testLocalExecutorsByCapability && config.nodeEnv !== 'test') throw new Error('Test local executor injection is forbidden outside nodeEnv=test');
+  if ((options.testLocalModelsByCapability || options.testLocalExecutorsByCapability) && config.nodeEnv !== 'test') throw new Error('Test local authority injection is forbidden outside nodeEnv=test');
+  const localModelsByCapability = options.testLocalModelsByCapability ?? productionLocalModelsByCapability;
   const localExecutorsByCapability = options.testLocalExecutorsByCapability ?? productionLocalExecutorsByCapability;
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
   try {
@@ -60,10 +65,12 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       await migrateAuthSchema(transactions.pool);
       await migrateLocalExecutionUploadSchema(transactions.pool);
       await migrateLocalExecutionLedgerSchema(transactions.pool);
+      await migrateWorkflowContinuationSchema(transactions.pool);
     } else {
       await checkAuthSchema(transactions.pool);
       await checkLocalExecutionUploadSchema(transactions.pool);
       await checkLocalExecutionLedgerSchema(transactions.pool);
+      await checkWorkflowContinuationSchema(transactions.pool);
     }
     const now = options.now ?? Date.now;
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
@@ -80,7 +87,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       id: randomUUID,
       nonce: randomUUID,
       ttlMs: LOCAL_EXECUTION_TICKET_TTL_MS,
-      modelsByCapability: productionLocalModelsByCapability,
+      modelsByCapability: localModelsByCapability,
       executorsByCapability: localExecutorsByCapability,
     });
     const localUploads = new PostgresLocalExecutionUploadStore(transactions.pool);
@@ -161,6 +168,18 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       now,
     });
     const localInputDelivery = new LocalExecutionInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
+    const localComposite = createProductionLocalCompositeContinuation({
+      pool: transactions.pool,
+      now,
+      tickets: localExecution,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      artifacts,
+      hydrator,
+      signed: externalArtifacts,
+      masks: maskArtifacts,
+      verifier: productionWorkflowVerifier,
+    });
     const authStore = new PostgresAuthStore(transactions.pool);
     const authSecurityStore = new PostgresAuthSecurityStore(transactions.pool);
     const authRuntime = resolveAuthRuntime(config);
@@ -180,7 +199,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       sessionIdleTtlMs: config.authSessionIdleTtlMs,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
-    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, superResolution: localSuperResolution, inputDelivery: localInputDelivery }), transactions, close: () => transactions.close() });
+    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, superResolution: localSuperResolution, inputDelivery: localInputDelivery, composite: localComposite }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }
 
