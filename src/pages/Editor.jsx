@@ -452,7 +452,7 @@ export default function Editor() {
           chain={chainState.chain}
           steps={chainState.steps}
           running={chainState.running}
-          onCancel={() => chainRunner.cancel()}
+          onCancel={() => legacyRecipeExecutionAdapter.cancel()}
           onDismiss={() => setChainState(null)}
         />
       )}
@@ -486,7 +486,7 @@ export default function Editor() {
 
       <PipelineStatusBar width={project.width} height={project.height} />
 
-      <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? creditsCalculator.estimateEdit({ plan, recipe: activeRecipe }).credits : 0} />
+      <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
 
       <AdaptivePanel title="Scene Memory"><SceneMemoryPanel project={project} /></AdaptivePanel>
 
