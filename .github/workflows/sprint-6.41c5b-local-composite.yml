@@ -110,11 +110,14 @@ jobs:
           cp server/core/artifacts/migrations/012_local_execution_uploads.sql .test-cache/c5b-postgres/migrations/
           cp server/core/artifacts/migrations/014_canonical_mask_lineage.sql .test-cache/c5b-postgres/migrations/
           cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/c5b-postgres/migrations/
+          cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/c5b-postgres/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
           node --test .test-cache/c5b-postgres/background-isolation-postgres-vertical.test.mjs
       - name: Prove LOCAL_SEGMENTATION MASK lineage survives independent Core stores
         run: node --experimental-strip-types --test server/core/artifacts/postgresMaskArtifactStore.localExecution.integration.test.mjs
+      - name: Prove BACKGROUND_ISOLATION FINAL lineage survives independent Core stores
+        run: node --experimental-strip-types --test server/core/artifacts/postgresImageArtifactStore.backgroundIsolationLineage.integration.test.mjs
       - name: Preserve CANDIDATE MobileSAM and no-public-composite boundary
         run: |
           node --input-type=module <<'NODE'
