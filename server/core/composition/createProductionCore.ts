@@ -122,7 +122,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       hydrateArtifacts,
       admission: localExecutionAdmission,
       uploads: localUploads,
-      persistMask: (ticketId, scope, width, height, alpha) => maskArtifacts.persistLocalExecution(ticketId, scope, width, height, alpha),
+      persistMask: (ticketId, scope, width, height, alpha, sourceArtifactId) => maskArtifacts.persistLocalExecution(ticketId, scope, width, height, alpha, sourceArtifactId ? resolveStoredImageStorageId(externalArtifacts, sourceArtifactId, scope) : undefined),
       loadPersistedMask: (ticketId, scope) => maskArtifacts.loadLocalExecution(ticketId, scope),
       issueMaskId: (storageId, scope) => externalArtifacts.issueStoredMask(storageId, scope),
       now,
@@ -171,6 +171,11 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     });
     return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, superResolution: localSuperResolution, inputDelivery: localInputDelivery }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
+}
+
+function resolveStoredImageStorageId(authority: SignedArtifactAuthority, artifactId: string, scope: Parameters<ArtifactAuthority['owns']>[0]): string | undefined {
+  try { return authority.resolveStoredOriginalId(artifactId, scope).storageId; } catch { /* stored FINAL below */ }
+  try { return authority.resolveStoredFinalId(artifactId, scope).storageId; } catch { return undefined; }
 }
 
 function resolveAuthRuntime(config: CoreServerConfig) {
