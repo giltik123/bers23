@@ -115,7 +115,6 @@ try {
   assert.deepEqual(first.sessionStorageKeys, ['bers:c5b:execution-id']);
   assert.ok(first.executionId && first.backgroundTicketId);
 
-  // Full Core + HTTP restart between the two ON_DEVICE boundaries. PostgreSQL is the only workflow state authority.
   await stopHttp(server); server = undefined;
   await production.close();
   production = await createProductionCore(config, { fetcher: forbiddenFetcher, testLocalModelsByCapability: testModels });
@@ -130,7 +129,6 @@ try {
   assert.equal(second.state, 'SUCCESS');
   assert.ok(second.terminalArtifactId);
 
-  // A second Core restart plus browser reload must recover the terminal outcome without republishing the FINAL.
   await stopHttp(server); server = undefined;
   await production.close();
   production = await createProductionCore(config, { fetcher: forbiddenFetcher, testLocalModelsByCapability: testModels });
@@ -193,10 +191,14 @@ async function startHttp(runtime, fixtureValue) {
   const contentTypes = new Map([['.html', 'text/html; charset=utf-8'], ['.js', 'text/javascript; charset=utf-8'], ['.css', 'text/css; charset=utf-8'], ['.map', 'application/json']]);
   const server = http.createServer((request, response) => {
     void (async () => {
-      applyCoreSecurityHeaders(response, config);
       const requestPath = decodeURIComponent(new URL(request.url ?? '/', origin).pathname);
-      if (requestPath.startsWith('/api/core/composite-continuations/')) { await composite(request, response); return; }
-      if (requestPath.startsWith('/api/core/')) { await canonical(request, response); return; }
+      if (requestPath.startsWith('/api/core/')) {
+        applyCoreSecurityHeaders(response, config);
+        if (requestPath.startsWith('/api/core/composite-continuations/')) { await composite(request, response); return; }
+        await canonical(request, response); return;
+      }
+      response.setHeader('X-Content-Type-Options', 'nosniff');
+      response.setHeader('Referrer-Policy', 'no-referrer');
       if (requestPath === '/__c5b-fixture.json') {
         const body = Buffer.from(JSON.stringify(fixtureValue));
         response.statusCode = 200; response.setHeader('Content-Type', 'application/json'); response.setHeader('Content-Length', body.byteLength); response.setHeader('Cache-Control', 'no-store'); response.end(body); return;
