@@ -190,7 +190,7 @@ function resolveStoredImageStorageId(authority: SignedArtifactAuthority, artifac
 }
 
 function resolveStoredMaskStorageId(authority: SignedArtifactAuthority, artifactId: string, scope: Parameters<ArtifactAuthority['owns']>[0]): string | undefined {
-  try { return authority.resolveStoredMaskId(artifactId, scope).storageId; } catch { return undefined; }
+  try { return authority.resolveStoredMask(artifactId, scope).storageId; } catch { return undefined; }
 }
 
 function resolveAuthRuntime(config: CoreServerConfig) {
