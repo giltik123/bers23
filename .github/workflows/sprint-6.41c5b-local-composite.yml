@@ -9,6 +9,7 @@ on:
       - 'server/core/localExecution/**'
       - 'server/core/http/**'
       - 'server/core/composition/**'
+      - 'server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql'
       - 'tests/**'
       - 'package.json'
       - 'package-lock.json'
@@ -23,8 +24,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  capability-boundary:
+  capability-and-replay-boundary:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: c5b_test
+          POSTGRES_USER: c5b_test
+          POSTGRES_PASSWORD: c5b_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U c5b_test -d c5b_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://c5b_test:c5b_test@127.0.0.1:5432/c5b_test
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js 24
@@ -43,6 +61,27 @@ jobs:
         run: node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
       - name: Prove capability aliases preserve existing model and executor trust authority
         run: node --experimental-strip-types --test server/core/localExecution/localCompositeCapabilityPolicy.test.mjs server/core/localExecution/productionLocalModelPolicy.test.mjs
+      - name: Apply exact local-execution replay authority schemas
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import { Pool } from 'pg';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-c5b-schema' });
+          try {
+            for (const path of [
+              'server/core/artifacts/migrations/002_canonical_mask_artifacts.sql',
+              'server/core/artifacts/migrations/012_local_execution_uploads.sql',
+              'server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql',
+              'server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql',
+            ]) await pool.query(await readFile(path, 'utf8'));
+          } finally { await pool.end(); }
+          NODE
+      - name: Prove schema repair includes durable result fingerprint authority
+        env:
+          LOCAL_EXECUTION_SCHEMA_TEST: '1'
+        run: node --experimental-strip-types --test server/core/localExecution/localExecutionLedgerSchema.integration.test.mjs
+      - name: Prove v1 and v2 exact replay versus conflicting replay across Core restart
+        run: node --experimental-strip-types --test server/core/localExecution/PostgresLocalExecutionLedger.integration.test.mjs server/core/localExecution/PostgresLocalExecutionLedgerV2.integration.test.mjs
       - name: Preserve CANDIDATE MobileSAM and no-public-composite boundary
         run: |
           node --input-type=module <<'NODE'
@@ -51,7 +90,7 @@ jobs:
           const server = await readFile('server/index.ts', 'utf8');
           const productionCore = await readFile('server/core/composition/createProductionCore.ts', 'utf8');
           if (manifest.status !== 'CANDIDATE') throw new Error(`C5B must not change MobileSAM release state; found ${manifest.status}`);
-          if (server.includes('/api/core/composite-continuations/')) throw new Error('Capability slice must not expose a public composite HTTP route');
-          if (productionCore.includes('localCompositeContinuationEnabled: true')) throw new Error('Capability slice must not globally enable local composite planning');
-          console.log('C5B capability-only authority boundary: PASS');
+          if (server.includes('/api/core/composite-continuations/')) throw new Error('Replay-authority slice must not expose a public composite HTTP route');
+          if (productionCore.includes('localCompositeContinuationEnabled: true')) throw new Error('Replay-authority slice must not globally enable local composite planning');
+          console.log('C5B replay authority boundary: PASS');
           NODE
