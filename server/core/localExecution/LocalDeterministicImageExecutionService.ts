@@ -4,7 +4,6 @@ import {
   CreativeExecutionPlatform,
   type CreativeArtifact,
   type CreativeExecutionPlatformRuntimeDependencies,
-  type LocalExecutionResultV2,
   type LocalExecutionTicketV2,
   type ProductionOutcome,
 } from '../../../src/platform/creative/canonical/index.ts';
@@ -12,12 +11,12 @@ import {
   BACKGROUND_ISOLATION_CAPABILITY,
   BACKGROUND_ISOLATION_TOOL_ID,
   BACKGROUND_ISOLATION_TOOL_VERSION,
-  isolateBackgroundRgba,
 } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import { admitLocalExecutionInputs } from './LocalExecutionInputAdmission.ts';
 import type { LocalExecutionLedgerV2 } from './LocalExecutionLedger.ts';
+import { BackgroundIsolationResultAuthority } from './LocalExecutionResultAuthority.ts';
 import type { PostgresLocalExecutionUploadStore } from './PostgresLocalExecutionUploadStore.ts';
 
 const STEP_ID = 'background-isolation';
@@ -58,10 +57,12 @@ export type LocalDeterministicImageServiceDependencies = Readonly<{
 export class LocalDeterministicImageExecutionService {
   readonly #platform: CreativeExecutionPlatform;
   readonly #now: () => number;
+  readonly #results: BackgroundIsolationResultAuthority;
 
   constructor(private readonly dependencies: LocalDeterministicImageServiceDependencies) {
     this.#platform = new CreativeExecutionPlatform(dependencies.platform);
     this.#now = dependencies.now ?? Date.now;
+    this.#results = new BackgroundIsolationResultAuthority(dependencies, { capability: BACKGROUND_ISOLATION_CAPABILITY, stepId: STEP_ID });
   }
 
   async prepareBackgroundIsolation(command: LocalBackgroundIsolationPrepareCommand, auth: AuthenticatedScope): Promise<Readonly<{ executionId: string; ticket: LocalExecutionTicketV2 }>> {
@@ -114,86 +115,25 @@ export class LocalDeterministicImageExecutionService {
 
   async submit(input: Readonly<{ ticketId: string; projectId: string; result: unknown }>, auth: AuthenticatedScope): Promise<LocalDeterministicImageSubmission> {
     const ticket = await this.requireTicket(input.ticketId, auth, input.projectId);
-    const claim = await this.dependencies.admission.claimV2({ ticketId: ticket.ticketId, result: input.result, callerScope: ticket.scope, now: this.#now() });
-    if (!claim.allowed) {
-      if (claim.reasonCode === 'REPLAYED_TICKET') return this.replayFinalized(ticket);
-      const status = claim.reasonCode === 'IN_PROGRESS' ? 409 : claim.reasonCode === 'EXPIRED_TICKET' ? 410 : 400;
-      throw serviceError(status, `local_result_${claim.reasonCode.toLowerCase()}`, `Local result admission denied: ${claim.reasonCode}`);
-    }
-
-    try {
-      const artifacts = await this.revalidateCanonicalInputs(ticket);
-      await this.ensurePlatformExecution(ticket, artifacts);
-      const result = claim.result as LocalExecutionResultV2;
-      if (result.executor.kind !== 'DETERMINISTIC_TOOL' || result.executor.toolId !== BACKGROUND_ISOLATION_TOOL_ID || result.executor.version !== BACKGROUND_ISOLATION_TOOL_VERSION) throw serviceError(400, 'local_executor_mismatch', 'Result is not the authorized deterministic executor');
-      if (result.outputs.length !== 1) throw serviceError(400, 'local_result_output_count', 'Background isolation requires exactly one output');
-      const evidence = result.outputs[0];
-      const upload = await this.dependencies.uploads.load(evidence.uploadId, ticket.ticketId, ticket.scope, this.#now());
-      if (!upload) throw serviceError(400, 'local_upload_unavailable', 'Quarantined local output is unavailable or expired');
-      if (upload.sha256 !== evidence.sha256 || upload.sizeBytes !== evidence.sizeBytes || upload.kind !== evidence.kind || upload.role !== evidence.role || upload.mimeType !== evidence.mimeType || upload.width !== evidence.width || upload.height !== evidence.height) throw serviceError(400, 'local_upload_evidence_mismatch', 'Submitted result evidence does not match quarantined bytes');
-      if (upload.kind !== 'image' || upload.role !== 'COMPOSITE' || upload.mimeType !== 'image/png') throw serviceError(400, 'local_upload_contract_mismatch', 'Quarantined output is not a deterministic PNG COMPOSITE candidate');
-
-      const source = requireSource(artifacts, ticket);
-      const mask = requireMask(artifacts, ticket);
-      const sourcePixels = source.value as Readonly<{ width: number; height: number; data: Uint8ClampedArray }>;
-      const maskPixels = mask.value as Readonly<{ width: number; height: number; alpha: Uint8Array }>;
-      const candidate = await decodePngRgba(upload.bytes);
-      if (candidate.width !== sourcePixels.width || candidate.height !== sourcePixels.height || maskPixels.width !== sourcePixels.width || maskPixels.height !== sourcePixels.height) throw serviceError(400, 'local_image_dimensions_mismatch', 'Deterministic image geometry no longer matches canonical inputs');
-      const expected = isolateBackgroundRgba(sourcePixels.data, maskPixels.alpha, sourcePixels.width, sourcePixels.height);
-      assertExactPixels(expected, candidate.data);
-
-      const verifiedArtifact: CreativeArtifact = Object.freeze({
-        id: `core-verified-local:${ticket.ticketId}`,
-        kind: 'image',
-        value: Object.freeze({ width: sourcePixels.width, height: sourcePixels.height, data: expected, format: 'RGBA8', orientation: 1 as const, colorSpace: 'srgb' }),
-        producerOperationId: ticket.stepId,
-        scope: ticket.scope,
-        state: 'FINAL',
-        role: 'COMPOSITE',
-        image: Object.freeze({ width: sourcePixels.width, height: sourcePixels.height, format: 'RGBA8', orientation: 1 as const, colorSpace: 'srgb', alpha: true }),
-        metadata: Object.freeze({
-          artifactRole: 'COMPOSITE',
-          localExecutionAdmission: 'ADMITTED',
-          ticketId: ticket.ticketId,
-          executorKind: result.executor.kind,
-          toolId: result.executor.toolId,
-          toolVersion: result.executor.version,
-          runtime: result.runtime,
-          accelerator: result.accelerator,
-          candidateSha256: upload.sha256,
-          verifiedPixelSha256: createHash('sha256').update(expected).digest('hex'),
-          integrityMetrics: Object.freeze({ verificationOutcome: 'PASS', pixelComparison: 'BYTE_EXACT' }),
-          parentArtifactIds: Object.freeze(ticket.inputs.map(binding => binding.artifactId)),
-        }),
-      });
-
-      const existingOutcome = this.#platform.result(ticket.requestId);
-      const outcome = existingOutcome ?? await this.#platform.completeLocalExecution(ticket.requestId, { ticketId: ticket.ticketId, stepId: ticket.stepId, artifact: verifiedArtifact, latencyMs: result.metrics.latencyMs, memoryMb: result.metrics.memoryBytes === undefined ? undefined : result.metrics.memoryBytes / (1024 * 1024) });
-      if (outcome.status !== 'SUCCESS') throw serviceError(422, 'local_execution_verification_failed', 'Canonical deterministic execution did not pass workflow verification');
-
-      const stored = await this.dependencies.persistFinal(ticket.scope, ticket.requestId, ticket.stepId, { width: sourcePixels.width, height: sourcePixels.height, data: expected });
-      const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
-      await this.dependencies.admission.commit(ticket.ticketId, 'SUCCESS');
-      await this.dependencies.uploads.consume(upload.uploadId, ticket.ticketId, ticket.scope, this.#now());
-      return Object.freeze({ executionId: ticket.requestId, status: 'SUCCESS', artifactId, outcome });
-    } catch (error) {
-      await this.dependencies.admission.release(ticket.ticketId).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  private async replayFinalized(ticket: LocalExecutionTicketV2): Promise<LocalDeterministicImageSubmission> {
-    const finalization = await this.dependencies.admission.getFinalization(ticket.ticketId);
-    if (!finalization || finalization.status === 'UNKNOWN') throw serviceError(409, 'local_finalization_unknown', 'Local execution was consumed without a recoverable terminal status');
-    if (finalization.status === 'FAILED') {
-      const outcome: ProductionOutcome = Object.freeze({ executionId: ticket.requestId, status: 'FAILED', verification: Object.freeze({ valid: false, checks: Object.freeze(['LOCAL_EXECUTION_TERMINAL_REPLAY']), errors: Object.freeze(['LOCAL_EXECUTION_PREVIOUSLY_FAILED']) }), artifacts: Object.freeze([]) });
-      return Object.freeze({ executionId: ticket.requestId, status: 'FAILED', outcome });
-    }
-    const stored = await this.dependencies.loadPersistedFinal(ticket.requestId, ticket.scope);
-    if (!stored) throw serviceError(409, 'local_finalization_artifact_unavailable', 'Committed deterministic FINAL is unavailable');
-    const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
-    const outcome: ProductionOutcome = Object.freeze({ executionId: ticket.requestId, status: 'SUCCESS', verification: Object.freeze({ valid: true, checks: Object.freeze(['LOCAL_EXECUTION_TERMINAL_REPLAY']), errors: Object.freeze([]) }), artifacts: Object.freeze([]) });
-    return Object.freeze({ executionId: ticket.requestId, status: 'SUCCESS', artifactId, outcome });
+    return this.#results.submit({
+      ticket,
+      result: input.result,
+      verify: async ({ ticket: admittedTicket, result, artifact }) => {
+        const sourceBinding = admittedTicket.inputs.find(binding => binding.kind === 'image');
+        const maskBinding = admittedTicket.inputs.find(binding => binding.kind === 'mask');
+        if (!sourceBinding || !maskBinding) throw serviceError(409, 'local_execution_recovery_input', 'Durable deterministic ticket lacks IMAGE + MASK bindings');
+        const artifacts = await this.hydrateExactInputs(admittedTicket.scope, sourceBinding.artifactId, maskBinding.artifactId);
+        await this.ensurePlatformExecution(admittedTicket, artifacts);
+        const existingOutcome = this.#platform.result(admittedTicket.requestId);
+        return existingOutcome ?? await this.#platform.completeLocalExecution(admittedTicket.requestId, {
+          ticketId: admittedTicket.ticketId,
+          stepId: admittedTicket.stepId,
+          artifact,
+          latencyMs: result.metrics.latencyMs,
+          memoryMb: result.metrics.memoryBytes === undefined ? undefined : result.metrics.memoryBytes / (1024 * 1024),
+        });
+      },
+    });
   }
 
   private async requireTicket(ticketId: string, auth: AuthenticatedScope, projectId: string): Promise<LocalExecutionTicketV2> {
@@ -214,19 +154,6 @@ export class LocalDeterministicImageExecutionService {
     const artifacts = await this.hydrateExactInputs(scope, command.sourceArtifactId, command.maskArtifactId);
     const decision = admitLocalExecutionInputs(ticket, artifacts);
     if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical local execution input revalidation failed: ${decision.reasonCode}`);
-  }
-
-  private async revalidateCanonicalInputs(ticket: LocalExecutionTicketV2): Promise<readonly CreativeArtifact[]> {
-    assertBackgroundIsolationTicket(ticket);
-    if (ticket.inputs.length !== 2) throw serviceError(409, 'local_input_contract_mismatch', 'Background isolation requires exactly two canonical inputs');
-    const sourceBinding = ticket.inputs.find(binding => binding.kind === 'image');
-    const maskBinding = ticket.inputs.find(binding => binding.kind === 'mask');
-    if (!sourceBinding || !maskBinding) throw serviceError(409, 'local_input_contract_mismatch', 'Background isolation requires IMAGE + MASK inputs');
-    if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId, maskBinding.artifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical deterministic inputs are no longer authorized or available');
-    const artifacts = await this.hydrateExactInputs(ticket.scope, sourceBinding.artifactId, maskBinding.artifactId);
-    const decision = admitLocalExecutionInputs(ticket, artifacts);
-    if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical local execution input revalidation failed: ${decision.reasonCode}`);
-    return artifacts;
   }
 
   private async hydrateExactInputs(scope: AuthenticatedScope & { projectId: string }, sourceArtifactId: string, maskArtifactId: string): Promise<readonly CreativeArtifact[]> {
@@ -296,18 +223,6 @@ function assertInputBindings(ticket: LocalExecutionTicketV2, sourceArtifactId: s
   const output = ticket.expectedOutputs[0];
   if (ticket.expectedOutputs.length !== 1 || output.kind !== 'image' || output.role !== 'COMPOSITE' || output.mimeTypes?.length !== 1 || output.mimeTypes[0] !== 'image/png' || !output.width || !output.height) throw serviceError(409, 'local_execution_idempotency_mismatch', 'Durable deterministic output contract changed');
 }
-function requireSource(artifacts: readonly CreativeArtifact[], ticket: LocalExecutionTicketV2) {
-  const binding = ticket.inputs.find(value => value.kind === 'image'); const artifact = binding && artifacts.find(value => value.id === binding.artifactId && value.kind === 'image');
-  const value = artifact?.value as Readonly<{ width?: unknown; height?: unknown; data?: unknown }> | undefined;
-  if (!artifact || !Number.isInteger(value?.width) || !Number.isInteger(value?.height) || !(value?.data instanceof Uint8ClampedArray)) throw serviceError(409, 'canonical_source_pixels_unavailable', 'Canonical source RGBA pixels are unavailable');
-  return artifact as CreativeArtifact & { value: { width: number; height: number; data: Uint8ClampedArray } };
-}
-function requireMask(artifacts: readonly CreativeArtifact[], ticket: LocalExecutionTicketV2) {
-  const binding = ticket.inputs.find(value => value.kind === 'mask'); const artifact = binding && artifacts.find(value => value.id === binding.artifactId && value.kind === 'mask');
-  const value = artifact?.value as Readonly<{ width?: unknown; height?: unknown; alpha?: unknown }> | undefined;
-  if (!artifact || !Number.isInteger(value?.width) || !Number.isInteger(value?.height) || !(value?.alpha instanceof Uint8Array)) throw serviceError(409, 'canonical_mask_pixels_unavailable', 'Canonical MASK alpha pixels are unavailable');
-  return artifact as CreativeArtifact & { value: { width: number; height: number; alpha: Uint8Array } };
-}
 async function decodePngRgba(bytes: Uint8Array): Promise<Readonly<{ width: number; height: number; data: Uint8ClampedArray }>> {
   if (!bytes.byteLength) throw serviceError(400, 'local_image_empty', 'Local image upload is empty');
   try {
@@ -320,10 +235,6 @@ async function decodePngRgba(bytes: Uint8Array): Promise<Readonly<{ width: numbe
     if (error && typeof error === 'object' && 'status' in error) throw error;
     throw serviceError(400, 'local_image_decode_failed', 'Deterministic PNG could not be decoded');
   }
-}
-function assertExactPixels(expected: Uint8ClampedArray, actual: Uint8ClampedArray): void {
-  if (actual.length !== expected.length) throw serviceError(400, 'local_pixel_verification_failed', 'Deterministic candidate pixel length mismatch');
-  for (let index = 0; index < expected.length; index += 1) if (actual[index] !== expected[index]) throw serviceError(400, 'local_pixel_verification_failed', `Deterministic candidate differs from Core recomputation at RGBA byte ${index}`);
 }
 function ticketIdempotencyKey(clientRequestId: string): string { return `${clientRequestId}${IDEMPOTENCY_SUFFIX}`; }
 function clientRequestIdFromTicket(ticket: LocalExecutionTicketV2): string {
