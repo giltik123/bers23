@@ -64,6 +64,7 @@ function v2Result(ticket, evidence) {
 /** First page lifetime: authenticate, start, finish segment, persist only executionId. */
 globalThis.beginC5BBrowserAcceptance = async () => {
   const fixture = await loadFixture();
+  await coreClient.auth.loginViaEmailPassword(fixture.email, fixture.password);
   const user = await coreClient.auth.me();
   requireCondition(user?.id === fixture.userId || user?.user_id === fixture.userId, 'Authenticated browser user does not match fixture scope');
   const started = await coreClient.compositeContinuations.start({
@@ -104,12 +105,9 @@ globalThis.resumeC5BBrowserAcceptanceAfterReload = async () => {
   const executionId = sessionStorage.getItem(EXECUTION_KEY);
   requireCondition(executionId && sessionStorage.length === 1, 'Reload did not preserve exactly one durable execution reference');
 
-  // GET resume is safe and must work from cookie authority even though module-memory CSRF is gone.
   const beforeAuthRefresh = await coreClient.compositeContinuations.resume({ executionId, projectId: fixture.projectId });
   requireCondition(beforeAuthRefresh.state === 'WAITING_FOR_LOCAL_RESULT' && beforeAuthRefresh.nextAction?.ticket?.version === '2', 'Reload resume did not recover the outstanding Background Isolation ticket');
 
-  // Prove reload cleared the module-memory anti-forgery token. The cookie is still present,
-  // therefore a mutation before /auth/context must fail CSRF before upload persistence.
   let preRefreshFailure;
   try {
     await coreClient.compositeContinuations.uploadOutput({
