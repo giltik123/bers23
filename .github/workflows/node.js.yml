@@ -184,7 +184,31 @@ jobs:
       - name: Migrate container smoke database
         env:
           DATABASE_URL: postgresql://core_image_test:core_image_test@127.0.0.1:5432/core_image_test
-        run: npm run db:migrate:transactions
+        run: |
+          node --input-type=module <<'NODE'
+          import { basename } from 'node:path';
+          import { readFile, readdir } from 'node:fs/promises';
+          import { Pool } from 'pg';
+          const directories = [
+            'server/transactions/infrastructure/postgres/migrations',
+            'server/core/artifacts/migrations',
+            'server/core/projects/migrations',
+            'server/core/auth/migrations',
+          ];
+          const migrations = [];
+          for (const directory of directories) {
+            for (const name of await readdir(directory)) {
+              if (!name.endsWith('.sql') || name.endsWith('.down.sql')) continue;
+              migrations.push({ name, path: `${directory}/${name}` });
+            }
+          }
+          migrations.sort((a, b) => a.name.localeCompare(b.name));
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-production-image-smoke-migrations' });
+          try {
+            for (const migration of migrations) await pool.query(await readFile(migration.path, 'utf8'));
+          } finally { await pool.end(); }
+          console.log(`Applied ${migrations.length} production smoke migrations through ${basename(migrations.at(-1).path)}`);
+          NODE
       - name: Build production image
         run: docker build --tag bers-core:${{ github.sha }} .
       - name: Prove sharp loads in the production image
