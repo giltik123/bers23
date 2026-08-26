@@ -40,7 +40,13 @@ type MutableContinuation = Readonly<{
 
 /** PostgreSQL authority for durable composite continuation state. It never executes a provider or publishes an Artifact. */
 export class PostgresWorkflowContinuationStore implements WorkflowContinuationStore {
-  constructor(private readonly pool: Pool, private readonly now: () => number = Date.now) {}
+  private readonly pool: Pool;
+  private readonly now: () => number;
+
+  constructor(pool: Pool, now: () => number = Date.now) {
+    this.pool = pool;
+    this.now = now;
+  }
 
   async create(input: CreateWorkflowContinuationInput): Promise<WorkflowContinuationSnapshot> {
     const normalized = normalizeWorkflowContinuationCreate(input);
