@@ -3,7 +3,7 @@ import test from 'node:test';
 import { Pool } from 'pg';
 import { PostgresLocalExecutionLedger } from '../localExecution/PostgresLocalExecutionLedger.ts';
 import { PostgresWorkflowContinuationStore } from './PostgresWorkflowContinuationStore.ts';
-import { checkWorkflowContinuationSchema } from './workflowContinuationSchema.ts';
+import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from './workflowContinuationSchema.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
 const NOW = Date.parse('2026-08-26T06:00:00.000Z');
@@ -38,6 +38,10 @@ test('PostgreSQL continuation survives Core restart and serializes exact local c
 
   const firstPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-continuation-first' });
   try {
+    // Keep this integration test autonomous when it is discovered by the broad server:test command.
+    // The dedicated C5A workflow separately applies the exact SQL migration chain before running this test,
+    // so this test bootstrap does not replace the hosted production-migration acceptance gate.
+    await migrateWorkflowContinuationSchema(firstPool);
     await checkWorkflowContinuationSchema(firstPool);
     const continuations = new PostgresWorkflowContinuationStore(firstPool, () => NOW);
     const ledger = new PostgresLocalExecutionLedger(firstPool);
