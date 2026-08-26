@@ -1,0 +1,55 @@
+name: Sprint 6.41C5B local composite acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/canonical/**'
+      - 'server/core/providers/**'
+      - 'server/core/workflow/**'
+      - 'server/core/localExecution/**'
+      - 'server/core/http/**'
+      - 'server/core/composition/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/sprint-6.41c5b-local-composite.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c5b-local-composite-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  planner-boundary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and shared canonical contracts
+        run: npm run typecheck
+      - name: Typecheck Core server
+        run: npm run server:typecheck
+      - name: Prove narrow C5B planner semantics and broad-composite isolation
+        run: npm run test:creative-planning-v2
+      - name: Prove production local capabilities remain fail closed for the new intent
+        run: node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
+      - name: Preserve planner-only authority boundary
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const intent = 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE';
+          const planner = await readFile('src/platform/creative/canonical/planning/CanonicalPlanningService.ts', 'utf8');
+          const capabilities = await readFile('server/core/providers/productionExecutionCapabilities.ts', 'utf8');
+          if (!planner.includes(intent)) throw new Error('C5B narrow planner intent is missing');
+          if (!planner.includes('LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED')) throw new Error('C5B planner fail-closed gate is missing');
+          if (capabilities.includes(intent)) throw new Error('Planner-only C5B slice must not grant production execution capability');
+          console.log('C5B planner-only authority boundary: PASS');
+          NODE
