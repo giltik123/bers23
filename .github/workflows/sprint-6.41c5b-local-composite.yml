@@ -61,8 +61,8 @@ jobs:
         run: node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
       - name: Prove capability aliases preserve existing model and executor trust authority
         run: node --experimental-strip-types --test server/core/localExecution/localCompositeCapabilityPolicy.test.mjs server/core/localExecution/productionLocalModelPolicy.test.mjs
-      - name: Prove ticket-first crash recovery and server-owned step sequencing
-        run: node --experimental-strip-types --test server/core/workflow/LocalCompositeContinuationService.test.mjs
+      - name: Prove ticket-first sequencing and authenticated HTTP authority boundary
+        run: node --experimental-strip-types --test server/core/workflow/LocalCompositeContinuationService.test.mjs server/core/http/localCompositeContinuationHttpAdapter.test.mjs
       - name: Prove in-memory and standalone segmentation obey exact replay identity
         run: |
           mkdir -p .test-cache/c5b-replay
@@ -134,7 +134,7 @@ jobs:
           const server = await readFile('server/index.ts', 'utf8');
           const productionCore = await readFile('server/core/composition/createProductionCore.ts', 'utf8');
           if (manifest.status !== 'CANDIDATE') throw new Error(`C5B must not change MobileSAM release state; found ${manifest.status}`);
-          if (server.includes('/api/core/composite-continuations/')) throw new Error('Sequencing slice must not expose a public composite HTTP route');
-          if (productionCore.includes('localCompositeContinuationEnabled: true')) throw new Error('Sequencing slice must not globally enable local composite planning');
-          console.log('C5B internal sequencing authority boundary: PASS');
+          if (server.includes('/api/core/composite-continuations/')) throw new Error('HTTP adapter may exist but server route must remain unwired until transport acceptance is complete');
+          if (productionCore.includes('localCompositeContinuationEnabled: true')) throw new Error('Composite transport must not globally enable local composite planning');
+          console.log('C5B transport staged but production route still fail-closed: PASS');
           NODE
