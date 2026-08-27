@@ -356,8 +356,12 @@ function artifactSha256(artifact: CreativeArtifact): string | undefined {
 }
 
 function admissionExecutionId(scope: Scope, clientRequestId: string): string {
-  const digest = createHash('sha256').update(`bers:c5b:canonical-admission:v1\0${scope.tenantId}\0${scope.userId}\0${scope.projectId}\0${clientRequestId}`).digest('hex').slice(0, 32);
-  return `local-composite-admission-${digest}`;
+  const digest = createHash('sha256')
+    .update('bers:local-background-isolation-composite:execution:v1\0')
+    .update(`${scope.tenantId}\0${scope.userId}\0${scope.projectId}\0${clientRequestId}`)
+    .digest('hex')
+    .slice(0, 32);
+  return `local-composite-${digest}`;
 }
 
 async function recoverFinalizedCompositeResult(
