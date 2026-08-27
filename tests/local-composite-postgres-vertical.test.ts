@@ -143,12 +143,25 @@ test('C5B production composition survives restart across both ON_DEVICE boundari
   }, scope);
   assert.equal(started.state, 'WAITING_FOR_LOCAL_RESULT');
   assert.equal(started.nextAction?.type, 'LOCAL_EXECUTION');
-  const segmentTicket = started.nextAction?.ticket as LocalExecutionTicket;
-  assert.equal(segmentTicket.version, '1');
-  assert.equal(segmentTicket.operation.capability, LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment);
-  assert.equal(segmentTicket.policy, 'LOCAL_ONLY');
-  assert.deepEqual(segmentTicket.allowedModels, [testMobileSam]);
-  assert.deepEqual(segmentTicket.cost, { paidCloudCredits: 0, providerCalls: 0 });
+  const issuedSegmentTicket = started.nextAction?.ticket as LocalExecutionTicket;
+  assert.equal(issuedSegmentTicket.version, '1');
+  assert.equal(issuedSegmentTicket.operation.capability, LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment);
+  assert.equal(issuedSegmentTicket.policy, 'LOCAL_ONLY');
+  assert.deepEqual(issuedSegmentTicket.allowedModels, [testMobileSam]);
+  assert.deepEqual(issuedSegmentTicket.cost, { paidCloudCredits: 0, providerCalls: 0 });
+
+  // Hard restart immediately after the first ON_DEVICE dispatch. The new Core must recover
+  // exactly the same outstanding MobileSAM ticket before any result is submitted.
+  await production.close();
+  production = await createProductionCore(config, { fetcher: forbiddenFetcher, now: () => 10_500, testLocalModelsByCapability: testModels });
+  const resumedSegment = await production.localExecution.composite.resume(started.executionId, scope);
+  assert.equal(resumedSegment.state, 'WAITING_FOR_LOCAL_RESULT');
+  const segmentTicket = resumedSegment.nextAction?.ticket as LocalExecutionTicket;
+  assert.equal(segmentTicket.ticketId, issuedSegmentTicket.ticketId);
+  assert.equal(segmentTicket.nonce, issuedSegmentTicket.nonce);
+  assert.equal(segmentTicket.operation.capability, issuedSegmentTicket.operation.capability);
+  assert.deepEqual(segmentTicket.inputs, issuedSegmentTicket.inputs);
+  assert.deepEqual(segmentTicket.allowedModels, issuedSegmentTicket.allowedModels);
 
   const maskUpload = await production.localExecution.uploads.persist({
     ticketId: segmentTicket.ticketId,
@@ -160,7 +173,7 @@ test('C5B production composition survives restart across both ON_DEVICE boundari
     height: 4,
     bytes: maskAlpha,
     expiresAt: segmentTicket.expiresAt,
-    now: 10_001,
+    now: 10_501,
   });
   const segmentResult = v1Result(segmentTicket, evidenceFrom(maskUpload));
   const afterSegment = await production.localExecution.composite.submitLocalResult(started.executionId, scope, segmentResult);
