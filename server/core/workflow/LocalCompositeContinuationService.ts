@@ -10,6 +10,11 @@ import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES, LOCAL_BACKGROUND_ISO
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import type { LocalExecutionLedger, LocalExecutionLedgerV2 } from '../localExecution/LocalExecutionLedger.ts';
 import {
+  LocalSegmentationContractError,
+  normalizeLocalSegmentationSelection,
+  validateLocalSegmentationGeometry,
+} from '../localExecution/localSegmentationInputContract.ts';
+import {
   normalizeScope,
   type WorkflowContinuationSnapshot,
   type WorkflowContinuationStore,
@@ -89,6 +94,7 @@ export class LocalCompositeContinuationService {
     const command = normalizeStart(commandInput);
     const root = await this.dependencies.artifacts.resolve(scope, command.inputArtifactId);
     assertRoot(root);
+    validateStartGeometry(command, root);
     const executionId = executionIdFor(scope, command.clientRequestId);
     const createInput = Object.freeze({
       executionId,
@@ -193,15 +199,15 @@ export class LocalCompositeContinuationService {
       if (snapshot.state !== 'READY') throw serviceError(409, 'local_composite_state_contract', `Unsupported continuation state ${snapshot.state}`);
       const completedIds = snapshot.completedSteps.map(step => step.stepId);
       if (completedIds.length === 0) {
+        const root = await this.resolveImmutableRoot(snapshot);
         const ticket = await this.dependencies.tickets.getByIdempotencyKey(snapshot.scope, segmentIdempotencyKey(snapshot.clientRequestId));
         if (!ticket) throw serviceError(409, 'local_composite_segment_ticket_missing', 'Ticket-first segment dispatch is missing from the durable local ledger');
-        validateSegmentTicket(ticket, snapshot.executionId, snapshot.scope, snapshot.inputArtifacts[0]);
+        validateSegmentTicket(ticket, snapshot.executionId, snapshot.scope, root);
         snapshot = await this.dependencies.continuations.waitForLocalResult({ executionId: snapshot.executionId, scope: snapshot.scope, expectedRevision: snapshot.revision, ticket: ticketBinding(ticket) });
         continue;
       }
       if (sameSteps(completedIds, [LOCAL_COMPOSITE_CONTINUATION_STEPS.segment])) {
-        const root = await this.dependencies.artifacts.resolve(snapshot.scope, snapshot.inputArtifacts[0].artifactId);
-        assertRoot(root);
+        const root = await this.resolveImmutableRoot(snapshot);
         const maskId = completedArtifactId(snapshot, LOCAL_COMPOSITE_CONTINUATION_STEPS.segment);
         const mask = await this.dependencies.artifacts.resolve(snapshot.scope, maskId);
         assertMask(mask, snapshot.inputArtifacts[0]);
@@ -241,7 +247,7 @@ export class LocalCompositeContinuationService {
       policy: 'LOCAL_ONLY',
       idempotencyKey: segmentIdempotencyKey(command.clientRequestId),
     });
-    validateSegmentTicket(issued, executionId, scope, workflowBinding(root));
+    validateSegmentTicket(issued, executionId, scope, root);
     return issued;
   }
 
@@ -300,18 +306,29 @@ export class LocalCompositeContinuationService {
   private async requireV1Ticket(ticketId: string, snapshot: WorkflowContinuationSnapshot): Promise<LocalExecutionTicket> {
     const ticket = await this.dependencies.tickets.get(ticketId);
     if (!ticket) throw serviceError(409, 'local_composite_ticket_missing', 'Durable segment ticket is unavailable');
-    validateSegmentTicket(ticket, snapshot.executionId, snapshot.scope, snapshot.inputArtifacts[0]);
+    const root = await this.resolveImmutableRoot(snapshot);
+    validateSegmentTicket(ticket, snapshot.executionId, snapshot.scope, root);
     return ticket;
   }
 
   private async requireV2Ticket(ticketId: string, snapshot: WorkflowContinuationSnapshot): Promise<LocalExecutionTicketV2> {
     const ticket = await this.dependencies.tickets.getV2(ticketId);
     if (!ticket) throw serviceError(409, 'local_composite_ticket_missing', 'Durable background-isolation ticket is unavailable');
-    const root = await this.dependencies.artifacts.resolve(snapshot.scope, snapshot.inputArtifacts[0].artifactId);
+    const root = await this.resolveImmutableRoot(snapshot);
     const maskId = completedArtifactId(snapshot, LOCAL_COMPOSITE_CONTINUATION_STEPS.segment);
     const mask = await this.dependencies.artifacts.resolve(snapshot.scope, maskId);
+    assertMask(mask, snapshot.inputArtifacts[0]);
     validateBackgroundTicket(ticket, snapshot.executionId, snapshot.scope, root, mask);
     return ticket;
+  }
+
+  private async resolveImmutableRoot(snapshot: WorkflowContinuationSnapshot): Promise<LocalCompositeResolvedArtifact> {
+    if (snapshot.inputArtifacts.length !== 1) throw serviceError(409, 'local_composite_root_binding', 'Local composite continuation must have exactly one immutable root binding');
+    const binding = snapshot.inputArtifacts[0];
+    const root = await this.dependencies.artifacts.resolve(snapshot.scope, binding.artifactId);
+    assertRoot(root);
+    assertSameArtifactBinding(root, binding, 'local_composite_root_binding', 'Durable ORIGINAL no longer matches the immutable continuation root binding');
+    return root;
   }
 }
 
@@ -338,18 +355,24 @@ function backgroundIdempotencyKey(clientRequestId: string): string { return `c5b
 function ticketBinding(ticket: AnyLocalExecutionTicket) { return Object.freeze({ stepId: ticket.stepId, ticketId: ticket.ticketId, ticketVersion: ticket.version, nonce: ticket.nonce, expiresAt: new Date(ticket.expiresAt).toISOString() }); }
 function workflowBinding(artifact: LocalCompositeResolvedArtifact): WorkflowInputArtifactBinding { return Object.freeze({ artifactId: artifact.artifactId, kind: artifact.kind, role: artifact.role, sha256: artifact.sha256.toLowerCase(), parentArtifactIds: Object.freeze([...artifact.parentArtifactIds].sort()) }); }
 
-function validateSegmentTicket(ticket: LocalExecutionTicket, executionId: string, scope: Scope, root: WorkflowInputArtifactBinding): void {
+function validateSegmentTicket(ticket: LocalExecutionTicket, executionId: string, scope: Scope, root: LocalCompositeResolvedArtifact): void {
   if (ticket.workflowId !== executionId || ticket.requestId !== executionId || ticket.stepId !== LOCAL_COMPOSITE_CONTINUATION_STEPS.segment || ticket.operation.id !== LOCAL_COMPOSITE_CONTINUATION_STEPS.segment || ticket.operation.type !== 'segment' || ticket.operation.capability !== LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment || ticket.policy !== 'LOCAL_ONLY' || !sameScope(ticket.scope, scope) || ticket.cost.providerCalls !== 0 || ticket.cost.paidCloudCredits !== 0) throw serviceError(409, 'local_composite_segment_ticket_contract', 'Segment ticket does not match the durable local composite authority');
   if (ticket.inputs.length !== 1 || ticket.inputs[0].artifactId !== root.artifactId || ticket.inputs[0].kind !== 'image' || ticket.inputs[0].role !== 'ORIGINAL' || ticket.inputs[0].sha256?.toLowerCase() !== root.sha256.toLowerCase()) throw serviceError(409, 'local_composite_segment_input_contract', 'Segment ticket input does not match the immutable root Artifact');
+  const output = ticket.expectedOutputs[0];
+  if (ticket.expectedOutputs.length !== 1 || output.kind !== 'mask' || output.role !== 'MASK' || output.count !== 1 || output.mimeTypes?.length !== 1 || output.mimeTypes[0] !== 'application/octet-stream' || output.width !== root.width || output.height !== root.height) throw serviceError(409, 'local_composite_segment_output_contract', 'Segment ticket output does not match the immutable root geometry');
 }
 function validateBackgroundTicket(ticket: LocalExecutionTicketV2, executionId: string, scope: Scope, root: LocalCompositeResolvedArtifact, mask: LocalCompositeResolvedArtifact): void {
   if (ticket.workflowId !== executionId || ticket.requestId !== executionId || ticket.stepId !== LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation || ticket.operation.id !== LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation || ticket.operation.type !== 'BACKGROUND_ISOLATION' || ticket.operation.capability !== LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation || ticket.policy !== 'LOCAL_ONLY' || !sameScope(ticket.scope, scope) || ticket.cost.providerCalls !== 0 || ticket.cost.paidCloudCredits !== 0) throw serviceError(409, 'local_composite_background_ticket_contract', 'Background-isolation ticket does not match the durable local composite authority');
-  const ids = ticket.inputs.map(value => value.artifactId);
-  if (ticket.inputs.length !== 2 || !ids.includes(root.artifactId) || !ids.includes(mask.artifactId)) throw serviceError(409, 'local_composite_background_input_contract', 'Background-isolation ticket inputs do not match canonical IMAGE + MASK bindings');
+  const sourceBinding = ticket.inputs.find(value => value.artifactId === root.artifactId);
+  const maskBinding = ticket.inputs.find(value => value.artifactId === mask.artifactId);
+  if (ticket.inputs.length !== 2 || !sourceBinding || !maskBinding || sourceBinding.kind !== 'image' || sourceBinding.role !== 'ORIGINAL' || sourceBinding.sha256?.toLowerCase() !== root.sha256.toLowerCase() || maskBinding.kind !== 'mask' || maskBinding.role !== 'MASK' || maskBinding.sha256?.toLowerCase() !== mask.sha256.toLowerCase()) throw serviceError(409, 'local_composite_background_input_contract', 'Background-isolation ticket inputs do not exactly match canonical IMAGE + MASK bindings');
+  const output = ticket.expectedOutputs[0];
+  if (ticket.expectedOutputs.length !== 1 || output.kind !== 'image' || output.role !== 'COMPOSITE' || output.count !== 1 || output.mimeTypes?.length !== 1 || output.mimeTypes[0] !== 'image/png' || output.width !== root.width || output.height !== root.height) throw serviceError(409, 'local_composite_background_output_contract', 'Background-isolation ticket output does not match canonical source geometry');
 }
-function assertRoot(root: LocalCompositeResolvedArtifact): void { assertArtifact(root); if (root.kind !== 'image' || root.role !== 'ORIGINAL') throw serviceError(422, 'local_composite_root_contract', 'First local composite requires one canonical ORIGINAL IMAGE'); }
-function assertMask(mask: LocalCompositeResolvedArtifact, root: WorkflowInputArtifactBinding): void { assertArtifact(mask); if (mask.kind !== 'mask' || mask.role !== 'MASK' || !mask.parentArtifactIds.includes(root.artifactId)) throw serviceError(409, 'local_composite_mask_lineage', 'Segment result is not a canonical MASK descended from the immutable root IMAGE'); }
-function assertComposite(composite: LocalCompositeResolvedArtifact, root: WorkflowInputArtifactBinding, maskArtifactId: string): void { assertArtifact(composite); if (composite.kind !== 'image' || composite.role !== 'COMPOSITE' || !composite.parentArtifactIds.includes(root.artifactId) || !composite.parentArtifactIds.includes(maskArtifactId)) throw serviceError(409, 'local_composite_image_lineage', 'Background isolation result is not a canonical COMPOSITE with exact IMAGE + MASK lineage'); }
+function assertRoot(root: LocalCompositeResolvedArtifact): void { assertArtifact(root); if (root.kind !== 'image' || root.role !== 'ORIGINAL' || root.parentArtifactIds.length !== 0) throw serviceError(422, 'local_composite_root_contract', 'First local composite requires one canonical parentless ORIGINAL IMAGE'); }
+function assertMask(mask: LocalCompositeResolvedArtifact, root: WorkflowInputArtifactBinding): void { assertArtifact(mask); if (mask.kind !== 'mask' || mask.role !== 'MASK' || mask.parentArtifactIds.length !== 1 || mask.parentArtifactIds[0] !== root.artifactId) throw serviceError(409, 'local_composite_mask_lineage', 'Segment result is not a canonical MASK with exact immutable root IMAGE lineage'); }
+function assertComposite(composite: LocalCompositeResolvedArtifact, root: WorkflowInputArtifactBinding, maskArtifactId: string): void { assertArtifact(composite); const parents = [...composite.parentArtifactIds].sort(); const expected = [root.artifactId, maskArtifactId].sort(); if (composite.kind !== 'image' || composite.role !== 'COMPOSITE' || parents.length !== 2 || parents[0] !== expected[0] || parents[1] !== expected[1]) throw serviceError(409, 'local_composite_image_lineage', 'Background isolation result is not a canonical COMPOSITE with exact IMAGE + MASK lineage'); }
+function assertSameArtifactBinding(actual: LocalCompositeResolvedArtifact, expected: WorkflowInputArtifactBinding, code: string, message: string): void { const actualParents = [...actual.parentArtifactIds].sort(); const expectedParents = [...expected.parentArtifactIds].sort(); if (actual.artifactId !== expected.artifactId || actual.kind !== expected.kind || actual.role !== expected.role || actual.sha256.toLowerCase() !== expected.sha256.toLowerCase() || actualParents.length !== expectedParents.length || actualParents.some((value, index) => value !== expectedParents[index])) throw serviceError(409, code, message); }
 function assertArtifact(value: LocalCompositeResolvedArtifact): void { if (!value.artifactId || !value.kind || !value.role || !SHA256.test(value.sha256) || !Number.isInteger(value.width) || !Number.isInteger(value.height) || value.width < 1 || value.height < 1 || !Array.isArray(value.parentArtifactIds)) throw serviceError(409, 'local_composite_artifact_contract', 'Canonical Artifact binding is incomplete'); }
 function completedArtifactId(snapshot: WorkflowContinuationSnapshot, stepId: string): string { const completed = snapshot.completedSteps.find(step => step.stepId === stepId); if (!completed || completed.artifactIds.length !== 1) throw serviceError(409, 'local_composite_completed_artifact', `Workflow step ${stepId} does not have exactly one canonical Artifact`); return completed.artifactIds[0]; }
 function sameSteps(actual: readonly string[], expected: readonly string[]): boolean { return actual.length === expected.length && actual.every((value, index) => value === expected[index]); }
@@ -359,9 +382,23 @@ function resultTicketId(result: unknown): string { if (!result || typeof result 
 function normalizeStart(command: LocalCompositeStartCommand) {
   const clientRequestId = requireToken(command?.clientRequestId, 'clientRequestId');
   const inputArtifactId = requireToken(command?.inputArtifactId, 'inputArtifactId');
-  if (!command.analysis || typeof command.analysis !== 'object' || Array.isArray(command.analysis)) throw serviceError(400, 'local_composite_analysis_required', 'Segmentation analysis transform is required');
-  if (!Array.isArray(command.points) || command.points.length < 1 || command.points.length > 64 || command.points.some(point => !point || typeof point !== 'object' || Array.isArray(point))) throw serviceError(400, 'local_composite_points_required', 'Local composite requires between 1 and 64 segmentation prompt points');
-  return Object.freeze({ clientRequestId, inputArtifactId, analysis: deepFreeze(structuredClone(command.analysis)), points: deepFreeze(structuredClone(command.points)) });
+  try {
+    const selection = normalizeLocalSegmentationSelection(command?.analysis, command?.points);
+    return Object.freeze({ clientRequestId, inputArtifactId, analysis: deepFreeze(structuredClone(selection.analysis)), points: deepFreeze(structuredClone(selection.points)) });
+  } catch (error) {
+    if (error instanceof LocalSegmentationContractError) {
+      const code = error.reason === 'POINTS_INVALID' ? 'local_composite_points_required' : 'local_composite_analysis_required';
+      throw serviceError(400, code, error.message);
+    }
+    throw error;
+  }
+}
+function validateStartGeometry(command: ReturnType<typeof normalizeStart>, root: LocalCompositeResolvedArtifact): void {
+  try { validateLocalSegmentationGeometry(command.analysis, command.points, root.width, root.height); }
+  catch (error) {
+    if (error instanceof LocalSegmentationContractError) throw serviceError(400, error.reason === 'POINT_OUT_OF_BOUNDS' ? 'local_composite_point_out_of_bounds' : error.reason === 'SOURCE_MISMATCH' ? 'local_composite_source_mismatch' : 'local_composite_analysis_required', error.message);
+    throw error;
+  }
 }
 function canonicalJson(value: unknown): string { return JSON.stringify(canonicalValue(value)); }
 function canonicalValue(value: unknown): unknown { if (Array.isArray(value)) return value.map(canonicalValue); if (!value || typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a],[b])=>a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)])); }
