@@ -104,6 +104,20 @@ export function validateLocalSegmentationGeometry(
   if (!(analysis.scaleX > 0) || !(analysis.scaleY > 0) || analysis.offsetX !== 0 || analysis.offsetY !== 0) {
     throw contractError('ANALYSIS_INVALID', 'Analysis transform must be a positive zero-offset source transform');
   }
+
+  // scaleX/scaleY are derived geometry, not client-owned authority. The browser may use a
+  // uniform pre-rounding scale while analysisWidth/analysisHeight are rounded to integer pixels,
+  // so admit at most the half-analysis-pixel error introduced by that rounding. Anything wider
+  // could move a prompt materially away from the canonical ORIGINAL coordinate selected by user.
+  const expectedScaleX = analysis.analysisWidth / analysis.originalWidth;
+  const expectedScaleY = analysis.analysisHeight / analysis.originalHeight;
+  const toleranceX = 0.5 / analysis.originalWidth + Number.EPSILON;
+  const toleranceY = 0.5 / analysis.originalHeight + Number.EPSILON;
+  if (Math.abs(analysis.scaleX - expectedScaleX) > toleranceX
+      || Math.abs(analysis.scaleY - expectedScaleY) > toleranceY) {
+    throw contractError('ANALYSIS_INVALID', 'Analysis scale is inconsistent with the admitted analysis resolution');
+  }
+
   for (const point of points) {
     if (point.x < 0 || point.y < 0 || point.x >= width || point.y >= height) {
       throw contractError('POINT_OUT_OF_BOUNDS', 'Segmentation prompt point is outside the canonical source');
