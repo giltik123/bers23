@@ -258,13 +258,13 @@ async function admitCanonicalCompositeStart(
 
   platform.createExecution(request);
   const plan = await platform.plan(executionId);
-  assertCanonicalCompositePlan(plan, root.artifactId);
+  assertCanonicalCompositePlan(plan, root.artifactId, command);
   const execution = await platform.compile(executionId);
   assertCanonicalCompositeExecution(request, execution);
   if (runtimeCalls !== 0) throw admissionError(500, 'local_composite_admission_runtime_called', 'Canonical composite admission crossed an execution runtime boundary');
 }
 
-function assertCanonicalCompositePlan(plan: CreativePlan, rootArtifactId: string): void {
+function assertCanonicalCompositePlan(plan: CreativePlan, rootArtifactId: string, command: AdmittedCompositeCommand): void {
   if (plan.status !== 'READY') throw admissionError(422, 'local_composite_canonical_plan_blocked', `Canonical local composite plan is ${plan.status ?? 'invalid'}`);
   if (plan.planningConstraints?.executionPolicy !== 'LOCAL_ONLY' || plan.planningConstraints.confirmationPolicy !== 'BLOCK' || plan.planningConstraints.maxCredits !== 0) {
     throw admissionError(409, 'local_composite_canonical_plan_policy', 'Canonical local composite plan lost its LOCAL_ONLY zero-credit policy');
@@ -282,12 +282,33 @@ function assertCanonicalCompositePlan(plan: CreativePlan, rootArtifactId: string
   const maskArtifact = segment.outputArtifacts?.[0];
   const compositeArtifact = isolate.outputArtifacts?.[0];
   if (!maskArtifact || !compositeArtifact
+      || segment.dependencies?.length !== 0
+      || segment.outputArtifacts?.length !== 1
       || segment.requiredArtifacts?.length !== 1 || segment.requiredArtifacts[0] !== rootArtifactId
       || isolate.dependencies?.length !== 1 || isolate.dependencies[0] !== segment.id
+      || isolate.outputArtifacts?.length !== 1
       || isolate.requiredArtifacts?.length !== 2 || !isolate.requiredArtifacts.includes(rootArtifactId) || !isolate.requiredArtifacts.includes(maskArtifact)
       || verify.dependencies?.length !== 1 || verify.dependencies[0] !== isolate.id
+      || verify.outputArtifacts?.length !== 1
       || verify.requiredArtifacts?.length !== 1 || verify.requiredArtifacts[0] !== compositeArtifact) {
     throw admissionError(409, 'local_composite_canonical_plan_lineage', 'Canonical local composite dependency and Artifact graph is not exact');
+  }
+
+  const segmentInput = segment.input as Readonly<Record<string, unknown>> | undefined;
+  const isolationInput = isolate.input as Readonly<Record<string, unknown>> | undefined;
+  const verifyInput = verify.input as Readonly<Record<string, unknown>> | undefined;
+  if (!segmentInput
+      || segmentInput.selectionRequestId !== `${command.clientRequestId}:segment`
+      || !sameCanonicalValue(segmentInput.analysis, command.analysis)
+      || !sameCanonicalValue(segmentInput.points, command.points)
+      || !isolationInput
+      || isolationInput.sourceArtifactId !== rootArtifactId
+      || isolationInput.maskArtifactId !== maskArtifact
+      || isolationInput.deterministicTool !== 'background-isolation@1'
+      || !verifyInput
+      || verifyInput.sourceArtifactId !== compositeArtifact
+      || verifyInput.semanticOperation !== 'verify') {
+    throw admissionError(409, 'local_composite_canonical_plan_parameters', 'Canonical local composite parameters no longer match the admitted durable command');
   }
 }
 
@@ -430,6 +451,18 @@ function normalizeCompositeSubmission(submission: Readonly<{ status: ProductionO
   }
   if (submission.status === 'FAILED' || submission.status === 'UNKNOWN') return Object.freeze({ status: submission.status });
   throw compositionError('local_composite_result_status_unsupported', `Local composite step returned unsupported terminal status ${submission.status}`);
+}
+
+function sameCanonicalValue(left: unknown, right: unknown): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(canonicalValue(value));
+}
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)]));
 }
 
 function resolveStoredImageStorageId(authority: SignedArtifactAuthority, artifactId: string, scope: Scope): string | undefined {
