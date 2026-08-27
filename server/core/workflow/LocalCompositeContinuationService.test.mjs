@@ -45,7 +45,12 @@ class MemoryContinuationStore {
   async fail(input) { return this.terminal(input, 'FAILED', input.failureCode); }
   async cancel(input) { return this.terminal(input, 'CANCELLED', 'WORKFLOW_CANCELLED'); }
   async markUnknown(input) { return this.terminal(input, 'UNKNOWN', input.failureCode); }
-  async terminal(input, state, failureCode) { const row = this.must(input.executionId, input.scope); return this.write(row, { state, completedSteps: row.completedSteps, failureCode }); }
+  async terminal(input, state, failureCode) {
+    const row = this.must(input.executionId, input.scope);
+    if (row.state === state && row.failureCode === failureCode) return row;
+    assert.equal(row.revision, input.expectedRevision);
+    return this.write(row, { state, completedSteps: row.completedSteps, failureCode });
+  }
   must(executionId, scoped) { const row = this.rows.get(executionId); assert.ok(row); assert.ok(sameScope(row.scope, scoped)); return row; }
   write(row, patch) { const next = freeze({ ...row, currentStepId: undefined, outstandingLocal: undefined, terminalArtifactId: undefined, failureCode: undefined, ...patch, revision: row.revision + 1, updatedAt: '2026-08-26T00:00:01.000Z' }); this.rows.set(row.executionId, next); return next; }
 }
@@ -54,6 +59,8 @@ function fixture() {
   const continuations = new MemoryContinuationStore();
   const ledger = new LocalExecutionAdmissionRegistry();
   const clock = { now: 1_000 };
+  const controls = { segmentStatus: 'SUCCESS', isolationStatus: 'SUCCESS' };
+  const finalized = new Map();
   let sequence = 0;
   const ticketAuthority = new LocalExecutionTicketAuthority(ledger, {
     now: () => clock.now, id: () => `ticket-${++sequence}`, nonce: () => `nonce-${sequence}`, ttlMs: 60_000,
@@ -65,12 +72,26 @@ function fixture() {
   const service = new LocalCompositeContinuationService({
     continuations, tickets: ledger, v1Tickets: ticketAuthority, v2Tickets: ticketAuthority,
     artifacts: { resolve: async (_scope, artifactId) => { const value = artifacts.get(artifactId); if (!value) throw new Error(`missing artifact ${artifactId}`); return value; } },
-    segmentResults: { submit: async ({ ticket }) => { calls.segment++; const value = freeze({ artifactId: 'mask-1', kind: 'mask', role: 'MASK', sha256: 'b'.repeat(64), parentArtifactIds: [root.artifactId], width: 2, height: 2 }); artifacts.set(value.artifactId, value); return freeze({ artifactId: value.artifactId }); } },
-    backgroundIsolationResults: { submit: async ({ ticket }) => { calls.isolation++; assert.equal(ticket.inputs.some(input => input.artifactId === 'mask-1'), true); const value = freeze({ artifactId: 'composite-1', kind: 'image', role: 'COMPOSITE', sha256: 'c'.repeat(64), parentArtifactIds: [root.artifactId, 'mask-1'], width: 2, height: 2 }); artifacts.set(value.artifactId, value); return freeze({ artifactId: value.artifactId }); } },
+    segmentResults: { submit: async () => {
+      calls.segment++;
+      if (controls.segmentStatus !== 'SUCCESS') return freeze({ status: controls.segmentStatus });
+      const value = freeze({ artifactId: 'mask-1', kind: 'mask', role: 'MASK', sha256: 'b'.repeat(64), parentArtifactIds: [root.artifactId], width: 2, height: 2 });
+      artifacts.set(value.artifactId, value);
+      return freeze({ status: 'SUCCESS', artifactId: value.artifactId });
+    } },
+    backgroundIsolationResults: { submit: async ({ ticket }) => {
+      calls.isolation++;
+      if (controls.isolationStatus !== 'SUCCESS') return freeze({ status: controls.isolationStatus });
+      assert.equal(ticket.inputs.some(input => input.artifactId === 'mask-1'), true);
+      const value = freeze({ artifactId: 'composite-1', kind: 'image', role: 'COMPOSITE', sha256: 'c'.repeat(64), parentArtifactIds: [root.artifactId, 'mask-1'], width: 2, height: 2 });
+      artifacts.set(value.artifactId, value);
+      return freeze({ status: 'SUCCESS', artifactId: value.artifactId });
+    } },
+    finalizedResults: { recover: async (ticket) => finalized.get(ticket.ticketId) },
     internalVerifier: { verify: async ({ stepId, artifactId }) => { calls.verify++; assert.equal(stepId, LOCAL_COMPOSITE_CONTINUATION_STEPS.verify); assert.equal(artifactId, 'composite-1'); } },
     now: () => clock.now,
   });
-  return { service, continuations, ledger, calls, clock };
+  return { service, continuations, ledger, calls, clock, controls, finalized, artifacts };
 }
 
 test('ticket-first start survives a crash before continuation creation and reuses the durable segment ticket', async () => {
@@ -117,6 +138,55 @@ test('Core alone selects segment -> background isolation -> internal verify and 
   const idempotentStart = await service.start(command, scope);
   assert.equal(idempotentStart.state, 'SUCCESS');
   await assert.rejects(() => service.start({ ...command, points: [{ x: 1, y: 1, label: 'POSITIVE', coordinateSpace: 'ORIGINAL' }] }, scope), /already bound to another workflow continuation/);
+});
+
+test('resume binds already-finalized SUCCESS artifacts without reissuing completed local work', async () => {
+  const { service, finalized, artifacts, calls } = fixture();
+  let view = await service.start(command, scope);
+  const segmentTicket = view.nextAction.ticket;
+  const mask = freeze({ artifactId: 'mask-1', kind: 'mask', role: 'MASK', sha256: 'b'.repeat(64), parentArtifactIds: [root.artifactId], width: 2, height: 2 });
+  artifacts.set(mask.artifactId, mask);
+  finalized.set(segmentTicket.ticketId, freeze({ status: 'SUCCESS', artifactId: mask.artifactId }));
+
+  view = await service.resume(view.executionId, scope);
+  assert.equal(view.state, 'WAITING_FOR_LOCAL_RESULT');
+  assert.equal(view.nextAction.ticket.stepId, LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation);
+  assert.equal(calls.segment, 0, 'durably finalized segment must be rebound without browser/local re-execution');
+  const backgroundTicket = view.nextAction.ticket;
+
+  const composite = freeze({ artifactId: 'composite-1', kind: 'image', role: 'COMPOSITE', sha256: 'c'.repeat(64), parentArtifactIds: [root.artifactId, mask.artifactId], width: 2, height: 2 });
+  artifacts.set(composite.artifactId, composite);
+  finalized.set(backgroundTicket.ticketId, freeze({ status: 'SUCCESS', artifactId: composite.artifactId }));
+  view = await service.resume(view.executionId, scope);
+  assert.equal(view.state, 'SUCCESS');
+  assert.equal(view.terminalArtifactId, composite.artifactId);
+  assert.deepEqual(calls, { segment: 0, isolation: 0, verify: 1 }, 'both local steps recover from durable finalization; only server-owned INTERNAL verify executes');
+});
+
+test('durably finalized FAILED or UNKNOWN local ticket becomes terminal and is never returned as executable nextAction', async t => {
+  for (const terminal of ['FAILED', 'UNKNOWN']) {
+    await t.test(terminal, async () => {
+      const { service, finalized, calls } = fixture();
+      const waiting = await service.start(command, scope);
+      finalized.set(waiting.nextAction.ticket.ticketId, freeze({ status: terminal }));
+      const recovered = await service.resume(waiting.executionId, scope);
+      assert.equal(recovered.state, terminal);
+      assert.equal(recovered.nextAction, undefined);
+      assert.equal(recovered.failureCode, terminal === 'FAILED' ? 'LOCAL_SEGMENTATION_FAILED' : 'LOCAL_SEGMENTATION_UNKNOWN');
+      assert.deepEqual(calls, { segment: 0, isolation: 0, verify: 0 });
+    });
+  }
+});
+
+test('a newly returned FAILED local result transitions continuation terminal before any next step is authorized', async () => {
+  const { service, controls, calls } = fixture();
+  const waiting = await service.start(command, scope);
+  controls.segmentStatus = 'FAILED';
+  const failed = await service.submitLocalResult(waiting.executionId, scope, { ticketId: waiting.nextAction.ticket.ticketId });
+  assert.equal(failed.state, 'FAILED');
+  assert.equal(failed.failureCode, 'LOCAL_SEGMENTATION_FAILED');
+  assert.equal(failed.nextAction, undefined);
+  assert.deepEqual(calls, { segment: 1, isolation: 0, verify: 0 });
 });
 
 test('expired outstanding work and durable ticket-binding drift fail closed before result authority', async () => {
