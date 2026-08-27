@@ -108,10 +108,10 @@ export class SegmentationResultAuthority {
       const upload = await loadExactEvidence(this.dependencies.uploads, ticket, evidence, this.now());
       if (upload.kind !== 'mask' || upload.role !== 'MASK' || !upload.width || !upload.height) throw serviceError(400, 'local_upload_contract_mismatch', 'Quarantined output is not a canonical MASK candidate');
 
-      const stored = await this.dependencies.persistMask(ticket.ticketId, ticket.scope, upload.width, upload.height, upload.bytes, ticket.inputs[0].artifactId);
-      const artifactId = this.dependencies.issueMaskId(stored.storageId, ticket.scope);
+      // Verification is intentionally pre-persistence. A rejected candidate must not create a
+      // canonical MASK row; durable identity is minted only after canonical workflow SUCCESS.
       const artifact: CreativeArtifact = Object.freeze({
-        id: artifactId,
+        id: `core-verified-local:${ticket.ticketId}`,
         kind: 'mask',
         value: Object.freeze({ width: upload.width, height: upload.height, alpha: Uint8Array.from(upload.bytes), source: 'SEGMENTATION', coordinateSpace: 'ORIGINAL' }),
         producerOperationId: ticket.stepId,
@@ -134,11 +134,16 @@ export class SegmentationResultAuthority {
 
       const outcome = await input.verify({ ticket, result, artifact });
       if (outcome.status === 'UNKNOWN') throw serviceError(409, 'local_execution_outcome_unknown', 'Local execution finalization outcome is unknown and cannot be consumed');
-      if (outcome.status === 'SUCCESS' && !outcome.artifacts.some(candidate => candidate.id === artifactId)) throw serviceError(409, 'local_execution_recovery_mismatch', 'Completed canonical local execution is bound to a different artifact');
+      if (outcome.status === 'SUCCESS' && !outcome.artifacts.some(candidate => candidate.id === artifact.id)) throw serviceError(409, 'local_execution_recovery_mismatch', 'Completed canonical local execution is bound to a different verified candidate');
 
+      let artifactId: string | undefined;
+      if (outcome.status === 'SUCCESS') {
+        const stored = await this.dependencies.persistMask(ticket.ticketId, ticket.scope, upload.width, upload.height, upload.bytes, ticket.inputs[0].artifactId);
+        artifactId = this.dependencies.issueMaskId(stored.storageId, ticket.scope);
+      }
       await this.dependencies.admission.commit(ticket.ticketId, outcome.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED');
       await this.dependencies.uploads.consume(upload.uploadId, ticket.ticketId, ticket.scope, this.now());
-      return Object.freeze({ executionId: ticket.workflowId, status: outcome.status, artifactId: outcome.status === 'SUCCESS' ? artifactId : undefined, outcome });
+      return Object.freeze({ executionId: ticket.workflowId, status: outcome.status, artifactId, outcome });
     } catch (error) {
       await this.dependencies.admission.release(ticket.ticketId).catch(() => undefined);
       throw error;
