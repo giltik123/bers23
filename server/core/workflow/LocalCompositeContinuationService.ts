@@ -40,11 +40,17 @@ export type LocalCompositeResolvedArtifact = WorkflowInputArtifactBinding & Read
 export type LocalCompositeArtifactResolver = Readonly<{
   resolve(scope: Scope, artifactId: string): Promise<LocalCompositeResolvedArtifact>;
 }>;
+export type LocalCompositeLocalResult =
+  | Readonly<{ status: 'SUCCESS'; artifactId: string }>
+  | Readonly<{ status: 'FAILED' | 'UNKNOWN' }>;
 export type LocalCompositeV1ResultAuthority = Readonly<{
-  submit(input: Readonly<{ ticket: LocalExecutionTicket; result: unknown }>): Promise<Readonly<{ artifactId: string }>>;
+  submit(input: Readonly<{ ticket: LocalExecutionTicket; result: unknown }>): Promise<LocalCompositeLocalResult>;
 }>;
 export type LocalCompositeV2ResultAuthority = Readonly<{
-  submit(input: Readonly<{ ticket: LocalExecutionTicketV2; result: unknown }>): Promise<Readonly<{ artifactId: string }>>;
+  submit(input: Readonly<{ ticket: LocalExecutionTicketV2; result: unknown }>): Promise<LocalCompositeLocalResult>;
+}>;
+export type LocalCompositeFinalizedResultRecovery = Readonly<{
+  recover(ticket: AnyLocalExecutionTicket): Promise<LocalCompositeLocalResult | undefined>;
 }>;
 export type LocalCompositeInternalVerifier = Readonly<{
   verify(input: Readonly<{ executionId: string; scope: Scope; stepId: typeof LOCAL_COMPOSITE_CONTINUATION_STEPS.verify; artifactId: string }>): Promise<void>;
@@ -74,6 +80,7 @@ export type LocalCompositeContinuationDependencies = Readonly<{
   artifacts: LocalCompositeArtifactResolver;
   segmentResults: LocalCompositeV1ResultAuthority;
   backgroundIsolationResults: LocalCompositeV2ResultAuthority;
+  finalizedResults: LocalCompositeFinalizedResultRecovery;
   internalVerifier: LocalCompositeInternalVerifier;
   now?: () => number;
 }>;
@@ -153,21 +160,30 @@ export class LocalCompositeContinuationService {
     }
 
     const stepId = snapshot.currentStepId;
-    let artifactId: string;
+    let ticket: LocalExecutionTicket | LocalExecutionTicketV2;
+    let recovered: LocalCompositeLocalResult | undefined;
+    let submission: LocalCompositeLocalResult;
     if (stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.segment) {
-      const ticket = await this.requireV1Ticket(ticketId, snapshot);
-      artifactId = (await this.dependencies.segmentResults.submit({ ticket, result })).artifactId;
-      const mask = await this.dependencies.artifacts.resolve(scope, artifactId);
-      assertMask(mask, snapshot.inputArtifacts[0]);
+      ticket = await this.requireV1Ticket(ticketId, snapshot);
+      recovered = await this.dependencies.finalizedResults.recover(ticket);
+      if (recovered?.status === 'UNKNOWN') return this.transitionUnknown(snapshot, stepId);
+      if (!recovered) assertTicketNotExpired(ticket, this.now());
+      submission = await this.dependencies.segmentResults.submit({ ticket, result });
     } else if (stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation) {
-      const ticket = await this.requireV2Ticket(ticketId, snapshot);
-      artifactId = (await this.dependencies.backgroundIsolationResults.submit({ ticket, result })).artifactId;
-      const composite = await this.dependencies.artifacts.resolve(scope, artifactId);
-      const maskId = completedArtifactId(snapshot, LOCAL_COMPOSITE_CONTINUATION_STEPS.segment);
-      assertComposite(composite, snapshot.inputArtifacts[0], maskId);
+      ticket = await this.requireV2Ticket(ticketId, snapshot);
+      recovered = await this.dependencies.finalizedResults.recover(ticket);
+      if (recovered?.status === 'UNKNOWN') return this.transitionUnknown(snapshot, stepId);
+      if (!recovered) assertTicketNotExpired(ticket, this.now());
+      submission = await this.dependencies.backgroundIsolationResults.submit({ ticket, result });
     } else {
       throw serviceError(409, 'local_composite_step_contract', 'Continuation is waiting for an unsupported local step');
     }
+
+    assertRecoveredSubmissionConsistency(recovered, submission);
+    if (submission.status === 'FAILED') return this.transitionFailed(snapshot, stepId);
+    if (submission.status === 'UNKNOWN') return this.transitionUnknown(snapshot, stepId);
+    const artifactId = submission.artifactId;
+    await this.validateCompletedLocalArtifact(snapshot, stepId, artifactId);
 
     snapshot = await this.dependencies.continuations.completeLocalStep({
       executionId,
@@ -188,6 +204,28 @@ export class LocalCompositeContinuationService {
       if (snapshot.state === 'WAITING_FOR_LOCAL_RESULT') {
         if (!snapshot.outstandingLocal) throw serviceError(409, 'local_composite_ticket_binding_missing', 'Waiting continuation has no durable local ticket binding');
         const ticket = await this.requireTicketForStep(snapshot.currentStepId, snapshot.outstandingLocal.ticketId, snapshot);
+        const recovered = await this.dependencies.finalizedResults.recover(ticket);
+        if (recovered) {
+          if (recovered.status === 'FAILED') {
+            snapshot = await this.failSnapshot(snapshot, snapshot.currentStepId);
+            continue;
+          }
+          if (recovered.status === 'UNKNOWN') {
+            snapshot = await this.markUnknownSnapshot(snapshot, snapshot.currentStepId);
+            continue;
+          }
+          await this.validateCompletedLocalArtifact(snapshot, snapshot.currentStepId, recovered.artifactId);
+          snapshot = await this.dependencies.continuations.completeLocalStep({
+            executionId: snapshot.executionId,
+            scope: snapshot.scope,
+            expectedRevision: snapshot.revision,
+            stepId: requireLocalStep(snapshot.currentStepId),
+            ticketId: ticket.ticketId,
+            artifactIds: Object.freeze([recovered.artifactId]),
+          });
+          continue;
+        }
+        assertTicketNotExpired(ticket, this.now());
         return Object.freeze({ executionId: snapshot.executionId, revision: snapshot.revision, state: snapshot.state, nextAction: Object.freeze({ type: 'LOCAL_EXECUTION' as const, ticket }) });
       }
 
@@ -231,6 +269,50 @@ export class LocalCompositeContinuationService {
       throw serviceError(409, 'local_composite_step_order', 'Durable continuation step order does not match the accepted local composite');
     }
     throw serviceError(500, 'local_composite_advance_guard', 'Local composite continuation exceeded the bounded server-side advance loop');
+  }
+
+  private async transitionFailed(snapshot: WorkflowContinuationSnapshot, stepId: string | undefined): Promise<LocalCompositeContinuationView> {
+    return this.advance(await this.failSnapshot(snapshot, stepId));
+  }
+
+  private async transitionUnknown(snapshot: WorkflowContinuationSnapshot, stepId: string | undefined): Promise<LocalCompositeContinuationView> {
+    return this.advance(await this.markUnknownSnapshot(snapshot, stepId));
+  }
+
+  private failSnapshot(snapshot: WorkflowContinuationSnapshot, stepId: string | undefined): Promise<WorkflowContinuationSnapshot> {
+    return this.dependencies.continuations.fail({
+      executionId: snapshot.executionId,
+      scope: snapshot.scope,
+      expectedRevision: snapshot.revision,
+      failureCode: `${localStepFailurePrefix(stepId)}_FAILED`,
+    });
+  }
+
+  private markUnknownSnapshot(snapshot: WorkflowContinuationSnapshot, stepId: string | undefined): Promise<WorkflowContinuationSnapshot> {
+    return this.dependencies.continuations.markUnknown({
+      executionId: snapshot.executionId,
+      scope: snapshot.scope,
+      expectedRevision: snapshot.revision,
+      failureCode: `${localStepFailurePrefix(stepId)}_UNKNOWN`,
+    });
+  }
+
+  private async validateCompletedLocalArtifact(snapshot: WorkflowContinuationSnapshot, stepId: string | undefined, artifactId: string): Promise<void> {
+    await this.resolveImmutableRoot(snapshot);
+    if (stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.segment) {
+      const mask = await this.dependencies.artifacts.resolve(snapshot.scope, artifactId);
+      assertMask(mask, snapshot.inputArtifacts[0]);
+      return;
+    }
+    if (stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation) {
+      const maskId = completedArtifactId(snapshot, LOCAL_COMPOSITE_CONTINUATION_STEPS.segment);
+      const mask = await this.dependencies.artifacts.resolve(snapshot.scope, maskId);
+      assertMask(mask, snapshot.inputArtifacts[0]);
+      const composite = await this.dependencies.artifacts.resolve(snapshot.scope, artifactId);
+      assertComposite(composite, snapshot.inputArtifacts[0], maskId);
+      return;
+    }
+    throw serviceError(409, 'local_composite_step_contract', 'Recovered local result belongs to an unsupported workflow step');
   }
 
   private async issueSegmentTicket(executionId: string, scope: Scope, command: ReturnType<typeof normalizeStart>, root: LocalCompositeResolvedArtifact): Promise<LocalExecutionTicket> {
@@ -294,12 +376,12 @@ export class LocalCompositeContinuationService {
     if (stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.segment) {
       const ticket = await this.dependencies.tickets.get(ticketId);
       if (!ticket) throw serviceError(409, 'local_composite_replay_ticket_missing', 'Completed segment ticket is missing from the durable local ledger');
-      return (await this.dependencies.segmentResults.submit({ ticket, result })).artifactId;
+      return requireSuccessfulLocalResult(await this.dependencies.segmentResults.submit({ ticket, result })).artifactId;
     }
     if (stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation) {
       const ticket = await this.dependencies.tickets.getV2(ticketId);
       if (!ticket) throw serviceError(409, 'local_composite_replay_ticket_missing', 'Completed background-isolation ticket is missing from the durable local ledger');
-      return (await this.dependencies.backgroundIsolationResults.submit({ ticket, result })).artifactId;
+      return requireSuccessfulLocalResult(await this.dependencies.backgroundIsolationResults.submit({ ticket, result })).artifactId;
     }
     throw serviceError(409, 'local_composite_replay_step', 'Only completed local steps accept local result replay');
   }
@@ -314,7 +396,6 @@ export class LocalCompositeContinuationService {
     const ticket = await this.dependencies.tickets.get(ticketId);
     if (!ticket) throw serviceError(409, 'local_composite_ticket_missing', 'Durable segment ticket is unavailable');
     assertOutstandingTicketBinding(ticket, snapshot);
-    assertTicketNotExpired(ticket, this.now());
     const root = await this.resolveImmutableRoot(snapshot);
     validateSegmentTicket(ticket, snapshot.executionId, snapshot.scope, root);
     return ticket;
@@ -324,7 +405,6 @@ export class LocalCompositeContinuationService {
     const ticket = await this.dependencies.tickets.getV2(ticketId);
     if (!ticket) throw serviceError(409, 'local_composite_ticket_missing', 'Durable background-isolation ticket is unavailable');
     assertOutstandingTicketBinding(ticket, snapshot);
-    assertTicketNotExpired(ticket, this.now());
     const root = await this.resolveImmutableRoot(snapshot);
     const maskId = completedArtifactId(snapshot, LOCAL_COMPOSITE_CONTINUATION_STEPS.segment);
     const mask = await this.dependencies.artifacts.resolve(snapshot.scope, maskId);
@@ -393,6 +473,25 @@ function assertOutstandingTicketBinding(ticket: AnyLocalExecutionTicket, snapsho
 }
 function assertTicketNotExpired(ticket: AnyLocalExecutionTicket, now: number): void {
   if (now >= ticket.expiresAt) throw serviceError(410, 'local_composite_ticket_expired', 'Outstanding local execution ticket has expired and cannot authorize workflow advancement');
+}
+function assertRecoveredSubmissionConsistency(recovered: LocalCompositeLocalResult | undefined, submission: LocalCompositeLocalResult): void {
+  if (!recovered) return;
+  if (recovered.status !== submission.status || (recovered.status === 'SUCCESS' && submission.status === 'SUCCESS' && recovered.artifactId !== submission.artifactId)) {
+    throw serviceError(409, 'local_composite_finalization_recovery_mismatch', 'Submitted replay does not match the durable local result finalization');
+  }
+}
+function requireSuccessfulLocalResult(result: LocalCompositeLocalResult): Readonly<{ status: 'SUCCESS'; artifactId: string }> {
+  if (result.status !== 'SUCCESS') throw serviceError(409, 'local_composite_replay_finalization_mismatch', 'Completed workflow step replay no longer resolves to SUCCESS');
+  return result;
+}
+function requireLocalStep(stepId: string | undefined): typeof LOCAL_COMPOSITE_CONTINUATION_STEPS.segment | typeof LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation {
+  if (stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.segment || stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation) return stepId;
+  throw serviceError(409, 'local_composite_step_contract', 'Outstanding continuation is not bound to an accepted local step');
+}
+function localStepFailurePrefix(stepId: string | undefined): 'LOCAL_SEGMENTATION' | 'LOCAL_BACKGROUND_ISOLATION' {
+  if (stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.segment) return 'LOCAL_SEGMENTATION';
+  if (stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation) return 'LOCAL_BACKGROUND_ISOLATION';
+  throw serviceError(409, 'local_composite_step_contract', 'Terminal local result belongs to an unsupported workflow step');
 }
 function assertRoot(root: LocalCompositeResolvedArtifact): void { assertArtifact(root); if (root.kind !== 'image' || root.role !== 'ORIGINAL' || root.parentArtifactIds.length !== 0) throw serviceError(422, 'local_composite_root_contract', 'First local composite requires one canonical parentless ORIGINAL IMAGE'); }
 function assertMask(mask: LocalCompositeResolvedArtifact, root: WorkflowInputArtifactBinding): void { assertArtifact(mask); if (mask.kind !== 'mask' || mask.role !== 'MASK' || mask.parentArtifactIds.length !== 1 || mask.parentArtifactIds[0] !== root.artifactId) throw serviceError(409, 'local_composite_mask_lineage', 'Segment result is not a canonical MASK with exact immutable root IMAGE lineage'); }
