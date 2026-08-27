@@ -83,6 +83,25 @@ test('narrow production admission compiles exact LOCAL_ONLY graph through canoni
     LOCAL_COMPOSITE_CONTINUATION_STEPS.verify,
   ]);
 
+  const [segmentPlan, isolationPlan, verifyPlan] = plan.operations;
+  assert.deepEqual(segmentPlan.input, {
+    selectionRequestId: request.metadata.selectionRequestId,
+    analysis: request.metadata.analysis,
+    points: request.metadata.points,
+  });
+  assert.equal(segmentPlan.outputArtifacts.length, 1);
+  assert.deepEqual(isolationPlan.input, {
+    sourceArtifactId: source.id,
+    maskArtifactId: segmentPlan.outputArtifacts[0],
+    deterministicTool: 'background-isolation@1',
+  });
+  assert.equal(isolationPlan.outputArtifacts.length, 1);
+  assert.deepEqual(verifyPlan.input, {
+    sourceArtifactId: isolationPlan.outputArtifacts[0],
+    semanticOperation: 'verify',
+  });
+  assert.equal(verifyPlan.outputArtifacts.length, 1);
+
   const execution = await runtime.compile(request.id);
   const expected = [
     [LOCAL_COMPOSITE_CONTINUATION_STEPS.segment, 'segment', 'ON_DEVICE', LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment],
@@ -108,6 +127,7 @@ test('production C5B composition cannot return an unadmitted raw sequencer', asy
   assert.match(sourceText, /class CanonicallyAdmittedLocalCompositeContinuationService extends LocalCompositeContinuationService/);
   assert.match(sourceText, /await this\.admitStart\(command, scope\);\s*return super\.start\(command, scope\);/s);
   assert.match(sourceText, /const execution = await platform\.compile\(executionId\);/);
+  assert.match(sourceText, /local_composite_canonical_plan_parameters/);
   assert.doesNotMatch(sourceText, /return new LocalCompositeContinuationService\(/);
 });
 
