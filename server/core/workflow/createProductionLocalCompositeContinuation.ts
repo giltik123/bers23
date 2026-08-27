@@ -39,6 +39,7 @@ import {
   LocalCompositeContinuationService,
   LOCAL_COMPOSITE_CONTINUATION_STEPS,
   type LocalCompositeContinuationDependencies,
+  type LocalCompositeLocalResult,
   type LocalCompositeResolvedArtifact,
   type LocalCompositeStartCommand,
 } from './LocalCompositeContinuationService.ts';
@@ -131,18 +132,21 @@ export function createProductionLocalCompositeContinuation(input: ProductionLoca
     v2Tickets: input.tickets,
     artifacts: resolver,
     segmentResults: Object.freeze({
-      submit: async ({ ticket, result }) => requireSuccessfulSubmission(await segmentAuthority.submit({
+      submit: async ({ ticket, result }) => normalizeCompositeSubmission(await segmentAuthority.submit({
         ticket,
         result,
         verify: ({ ticket: admittedTicket, artifact }) => verifyLocalArtifact(verifier, admittedTicket, artifact),
       })),
     }),
     backgroundIsolationResults: Object.freeze({
-      submit: async ({ ticket, result }) => requireSuccessfulSubmission(await backgroundAuthority.submit({
+      submit: async ({ ticket, result }) => normalizeCompositeSubmission(await backgroundAuthority.submit({
         ticket,
         result,
         verify: ({ ticket: admittedTicket, artifact }) => verifyLocalArtifact(verifier, admittedTicket, artifact),
       })),
+    }),
+    finalizedResults: Object.freeze({
+      recover: (ticket) => recoverFinalizedCompositeResult(input, ticket),
     }),
     internalVerifier: Object.freeze({
       verify: async ({ scope, stepId, artifactId }) => {
@@ -356,6 +360,33 @@ function admissionExecutionId(scope: Scope, clientRequestId: string): string {
   return `local-composite-admission-${digest}`;
 }
 
+async function recoverFinalizedCompositeResult(
+  input: ProductionLocalCompositeContinuationInput,
+  ticket: LocalExecutionTicket | LocalExecutionTicketV2,
+): Promise<LocalCompositeLocalResult | undefined> {
+  const finalization = await input.admission.getFinalization(ticket.ticketId);
+  if (!finalization) return undefined;
+  if (finalization.status === 'FAILED' || finalization.status === 'UNKNOWN') return Object.freeze({ status: finalization.status });
+
+  if (ticket.version === '1'
+      && ticket.stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.segment
+      && ticket.operation.capability === LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment) {
+    const stored = await input.masks.loadLocalExecution(ticket.ticketId, ticket.scope);
+    if (!stored) throw admissionError(409, 'local_composite_finalized_mask_unavailable', 'Finalized SUCCESS segment ticket has no recoverable canonical MASK');
+    return Object.freeze({ status: 'SUCCESS' as const, artifactId: input.signed.issueStoredMask(stored.storageId, ticket.scope) });
+  }
+
+  if (ticket.version === '2'
+      && ticket.stepId === LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation
+      && ticket.operation.capability === LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation) {
+    const stored = await input.artifacts.images.loadFinalByExecution(ticket.workflowId, ticket.scope);
+    if (!stored) throw admissionError(409, 'local_composite_finalized_composite_unavailable', 'Finalized SUCCESS Background Isolation ticket has no recoverable canonical COMPOSITE');
+    return Object.freeze({ status: 'SUCCESS' as const, artifactId: input.signed.issueStoredFinal(stored.storageId, ticket.scope) });
+  }
+
+  throw admissionError(409, 'local_composite_finalization_ticket_contract', 'Finalized local ticket does not belong to an accepted C5B local step');
+}
+
 async function verifyLocalArtifact(
   verifier: WorkflowVerifierPort,
   ticket: LocalExecutionTicket | LocalExecutionTicketV2,
@@ -388,9 +419,13 @@ function asWorkflowArtifact(artifact: CreativeArtifact, producerStepId: string):
   });
 }
 
-function requireSuccessfulSubmission(submission: Readonly<{ status: ProductionOutcome['status']; artifactId?: string }>): Readonly<{ artifactId: string }> {
-  if (submission.status !== 'SUCCESS' || !submission.artifactId) throw compositionError('local_composite_result_not_successful', 'Local composite step did not produce a canonical successful Artifact');
-  return Object.freeze({ artifactId: submission.artifactId });
+function normalizeCompositeSubmission(submission: Readonly<{ status: ProductionOutcome['status']; artifactId?: string }>): LocalCompositeLocalResult {
+  if (submission.status === 'SUCCESS') {
+    if (!submission.artifactId) throw compositionError('local_composite_result_not_successful', 'Successful local composite step did not produce a canonical Artifact');
+    return Object.freeze({ status: 'SUCCESS' as const, artifactId: submission.artifactId });
+  }
+  if (submission.status === 'FAILED' || submission.status === 'UNKNOWN') return Object.freeze({ status: submission.status });
+  throw compositionError('local_composite_result_status_unsupported', `Local composite step returned unsupported terminal status ${submission.status}`);
 }
 
 function resolveStoredImageStorageId(authority: SignedArtifactAuthority, artifactId: string, scope: Scope): string | undefined {
