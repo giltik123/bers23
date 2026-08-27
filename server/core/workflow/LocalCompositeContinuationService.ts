@@ -75,6 +75,7 @@ export type LocalCompositeContinuationDependencies = Readonly<{
   segmentResults: LocalCompositeV1ResultAuthority;
   backgroundIsolationResults: LocalCompositeV2ResultAuthority;
   internalVerifier: LocalCompositeInternalVerifier;
+  now?: () => number;
 }>;
 
 /**
@@ -84,9 +85,11 @@ export type LocalCompositeContinuationDependencies = Readonly<{
  */
 export class LocalCompositeContinuationService {
   private readonly dependencies: LocalCompositeContinuationDependencies;
+  private readonly now: () => number;
 
   constructor(dependencies: LocalCompositeContinuationDependencies) {
     this.dependencies = dependencies;
+    this.now = dependencies.now ?? Date.now;
   }
 
   async start(commandInput: LocalCompositeStartCommand, scopeInput: Scope): Promise<LocalCompositeContinuationView> {
@@ -203,6 +206,7 @@ export class LocalCompositeContinuationService {
         const ticket = await this.dependencies.tickets.getByIdempotencyKey(snapshot.scope, segmentIdempotencyKey(snapshot.clientRequestId));
         if (!ticket) throw serviceError(409, 'local_composite_segment_ticket_missing', 'Ticket-first segment dispatch is missing from the durable local ledger');
         validateSegmentTicket(ticket, snapshot.executionId, snapshot.scope, root);
+        assertTicketNotExpired(ticket, this.now());
         snapshot = await this.dependencies.continuations.waitForLocalResult({ executionId: snapshot.executionId, scope: snapshot.scope, expectedRevision: snapshot.revision, ticket: ticketBinding(ticket) });
         continue;
       }
@@ -248,6 +252,7 @@ export class LocalCompositeContinuationService {
       idempotencyKey: segmentIdempotencyKey(command.clientRequestId),
     });
     validateSegmentTicket(issued, executionId, scope, root);
+    assertTicketNotExpired(issued, this.now());
     return issued;
   }
 
@@ -256,6 +261,7 @@ export class LocalCompositeContinuationService {
     const existing = await this.dependencies.tickets.getByIdempotencyKeyV2(snapshot.scope, key);
     if (existing) {
       validateBackgroundTicket(existing, snapshot.executionId, snapshot.scope, root, mask);
+      assertTicketNotExpired(existing, this.now());
       return existing;
     }
     const issued = await this.dependencies.v2Tickets.issue({
@@ -280,6 +286,7 @@ export class LocalCompositeContinuationService {
       idempotencyKey: key,
     });
     validateBackgroundTicket(issued, snapshot.executionId, snapshot.scope, root, mask);
+    assertTicketNotExpired(issued, this.now());
     return issued;
   }
 
@@ -306,6 +313,8 @@ export class LocalCompositeContinuationService {
   private async requireV1Ticket(ticketId: string, snapshot: WorkflowContinuationSnapshot): Promise<LocalExecutionTicket> {
     const ticket = await this.dependencies.tickets.get(ticketId);
     if (!ticket) throw serviceError(409, 'local_composite_ticket_missing', 'Durable segment ticket is unavailable');
+    assertOutstandingTicketBinding(ticket, snapshot);
+    assertTicketNotExpired(ticket, this.now());
     const root = await this.resolveImmutableRoot(snapshot);
     validateSegmentTicket(ticket, snapshot.executionId, snapshot.scope, root);
     return ticket;
@@ -314,6 +323,8 @@ export class LocalCompositeContinuationService {
   private async requireV2Ticket(ticketId: string, snapshot: WorkflowContinuationSnapshot): Promise<LocalExecutionTicketV2> {
     const ticket = await this.dependencies.tickets.getV2(ticketId);
     if (!ticket) throw serviceError(409, 'local_composite_ticket_missing', 'Durable background-isolation ticket is unavailable');
+    assertOutstandingTicketBinding(ticket, snapshot);
+    assertTicketNotExpired(ticket, this.now());
     const root = await this.resolveImmutableRoot(snapshot);
     const maskId = completedArtifactId(snapshot, LOCAL_COMPOSITE_CONTINUATION_STEPS.segment);
     const mask = await this.dependencies.artifacts.resolve(snapshot.scope, maskId);
@@ -368,6 +379,20 @@ function validateBackgroundTicket(ticket: LocalExecutionTicketV2, executionId: s
   if (ticket.inputs.length !== 2 || !sourceBinding || !maskBinding || sourceBinding.kind !== 'image' || sourceBinding.role !== 'ORIGINAL' || sourceBinding.sha256?.toLowerCase() !== root.sha256.toLowerCase() || maskBinding.kind !== 'mask' || maskBinding.role !== 'MASK' || maskBinding.sha256?.toLowerCase() !== mask.sha256.toLowerCase()) throw serviceError(409, 'local_composite_background_input_contract', 'Background-isolation ticket inputs do not exactly match canonical IMAGE + MASK bindings');
   const output = ticket.expectedOutputs[0];
   if (ticket.expectedOutputs.length !== 1 || output.kind !== 'image' || output.role !== 'COMPOSITE' || output.count !== 1 || output.mimeTypes?.length !== 1 || output.mimeTypes[0] !== 'image/png' || output.width !== root.width || output.height !== root.height) throw serviceError(409, 'local_composite_background_output_contract', 'Background-isolation ticket output does not match canonical source geometry');
+}
+function assertOutstandingTicketBinding(ticket: AnyLocalExecutionTicket, snapshot: WorkflowContinuationSnapshot): void {
+  const binding = snapshot.outstandingLocal;
+  if (!binding
+      || binding.ticketId !== ticket.ticketId
+      || binding.stepId !== ticket.stepId
+      || binding.ticketVersion !== ticket.version
+      || binding.nonce !== ticket.nonce
+      || binding.expiresAt !== new Date(ticket.expiresAt).toISOString()) {
+    throw serviceError(409, 'local_composite_ticket_binding_mismatch', 'Durable local ticket no longer matches the immutable continuation outstanding-work binding');
+  }
+}
+function assertTicketNotExpired(ticket: AnyLocalExecutionTicket, now: number): void {
+  if (now >= ticket.expiresAt) throw serviceError(410, 'local_composite_ticket_expired', 'Outstanding local execution ticket has expired and cannot authorize workflow advancement');
 }
 function assertRoot(root: LocalCompositeResolvedArtifact): void { assertArtifact(root); if (root.kind !== 'image' || root.role !== 'ORIGINAL' || root.parentArtifactIds.length !== 0) throw serviceError(422, 'local_composite_root_contract', 'First local composite requires one canonical parentless ORIGINAL IMAGE'); }
 function assertMask(mask: LocalCompositeResolvedArtifact, root: WorkflowInputArtifactBinding): void { assertArtifact(mask); if (mask.kind !== 'mask' || mask.role !== 'MASK' || mask.parentArtifactIds.length !== 1 || mask.parentArtifactIds[0] !== root.artifactId) throw serviceError(409, 'local_composite_mask_lineage', 'Segment result is not a canonical MASK with exact immutable root IMAGE lineage'); }
