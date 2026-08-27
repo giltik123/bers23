@@ -3,6 +3,7 @@ import test from 'node:test';
 import { CanonicalPlanningService } from '../src/platform/creative/canonical/index.ts';
 import { LocalExecutionAdmissionRegistry } from '../server/core/localExecution/LocalExecutionAdmission.ts';
 import { LocalExecutionTicketAuthority } from '../server/core/localExecution/LocalExecutionTicketAuthority.ts';
+import { SegmentationResultAuthority } from '../server/core/localExecution/LocalExecutionResultAuthority.ts';
 import { LocalSegmentationExecutionService } from '../server/core/localExecution/LocalSegmentationExecutionService.ts';
 
 const scope = Object.freeze({ tenantId: 'tenant-finalize', userId: 'user-finalize', projectId: 'project-finalize' });
@@ -118,8 +119,91 @@ test('successful local workflow survives transient ledger commit failure; exact 
   assert.equal(verificationCalls, 1);
   assert.equal(commitAttempts, 2);
   assert.equal(consumed, 1);
-  assert.equal(maskPersists, 2, 'pre-commit retry may re-enter idempotent MASK persistence but must not mint another canonical identity');
+  assert.equal(maskPersists, 2, 'post-verification pre-commit retry may re-enter idempotent MASK persistence but must not mint another canonical identity');
   assert.equal(providerSelections, 0);
   assert.equal(providerExecutions, 0);
   assert.equal(billingCalls, 0);
+});
+
+test('rejected segmentation verification cannot create a canonical MASK and exact FAILED replay stays side-effect free', async () => {
+  const registry = new LocalExecutionAdmissionRegistry();
+  const ticketAuthority = new LocalExecutionTicketAuthority(registry, {
+    now: () => 1_000,
+    id: () => 'rejected-ticket',
+    nonce: () => 'rejected-nonce',
+    ttlMs: 60_000,
+    modelsByCapability: { 'local:mobilesam:segment:v1': [{ modelId: 'mobilesam-vit-t', version: '1.0.2' }] },
+  });
+  const ticket = await ticketAuthority.issue({
+    requestId: 'rejected-execution',
+    workflowId: 'rejected-execution',
+    stepId: 'interactive-segmentation',
+    operation: Object.freeze({ id: 'interactive-segmentation', version: '1', type: 'segment', capability: 'local:mobilesam:segment:v1' }),
+    scope,
+    inputs: Object.freeze([{ artifactId: source.id, kind: 'image', role: 'WORKING', sha256: inputHash }]),
+    expectedOutputs: Object.freeze([{ kind: 'mask', role: 'MASK', count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: 2, height: 2 }]),
+    policy: 'LOCAL_ONLY',
+    idempotencyKey: 'rejected-segmentation',
+  });
+  const upload = Object.freeze({
+    uploadId: 'rejected-upload', ticketId: ticket.ticketId, scope, kind: 'mask', role: 'MASK', mimeType: 'application/octet-stream',
+    width: 2, height: 2, sizeBytes: 4, sha256: outputHash, bytes: new Uint8Array([255, 0, 255, 0]), expiresAt: ticket.expiresAt,
+  });
+  let maskPersists = 0;
+  let maskIds = 0;
+  let consumed = 0;
+  let verificationCalls = 0;
+  const authority = new SegmentationResultAuthority({
+    admission: registry,
+    uploads: {
+      load: async (uploadId, ticketId, callerScope, now) => uploadId === upload.uploadId && ticketId === ticket.ticketId && callerScope === scope && now < upload.expiresAt ? upload : undefined,
+      consume: async () => { consumed += 1; return true; },
+    },
+    ownsArtifacts: async (_scope, ids) => ids.length === 1 && ids[0] === source.id,
+    hydrateArtifacts: async () => [source] as never,
+    persistMask: async () => { maskPersists += 1; return Object.freeze({ storageId: 'must-not-exist' }); },
+    loadPersistedMask: async () => undefined,
+    issueMaskId: () => { maskIds += 1; return 'must-not-be-issued'; },
+    now: () => 2_000,
+  } as never, { capability: 'local:mobilesam:segment:v1', stepId: 'interactive-segmentation' });
+  const result = Object.freeze({
+    ticketId: ticket.ticketId,
+    ticketVersion: ticket.version,
+    requestId: ticket.requestId,
+    workflowId: ticket.workflowId,
+    stepId: ticket.stepId,
+    nonce: ticket.nonce,
+    model: ticket.allowedModels[0],
+    runtime: 'WASM',
+    accelerator: 'wasm',
+    outputs: Object.freeze([{ uploadId: upload.uploadId, kind: 'mask', role: 'MASK', sha256: outputHash, sizeBytes: 4, mimeType: 'application/octet-stream', width: 2, height: 2 }]),
+    metrics: Object.freeze({ latencyMs: 7 }),
+  });
+  const verify = async ({ artifact }: { artifact: { id: string } }) => {
+    verificationCalls += 1;
+    assert.equal(artifact.id, `core-verified-local:${ticket.ticketId}`, 'verifier must receive an ephemeral Core-owned candidate, not a canonical MASK identity');
+    return Object.freeze({
+      executionId: ticket.workflowId,
+      status: 'FAILED' as const,
+      verification: Object.freeze({ valid: false, checks: Object.freeze(['REJECTED_MASK_PROOF']), errors: Object.freeze(['synthetic rejection']) }),
+      artifacts: Object.freeze([]),
+    });
+  };
+
+  const rejected = await authority.submit({ ticket, result, verify: verify as never });
+  assert.equal(rejected.status, 'FAILED');
+  assert.equal(rejected.artifactId, undefined);
+  assert.equal(registry.getFinalization(ticket.ticketId)?.status, 'FAILED');
+  assert.equal(maskPersists, 0, 'FAILED verifier outcome must leave canonical MASK storage unchanged');
+  assert.equal(maskIds, 0, 'FAILED verifier outcome must not mint canonical MASK identity');
+  assert.equal(consumed, 1, 'rejected terminal result consumes its quarantined evidence exactly once');
+  assert.equal(verificationCalls, 1);
+
+  const replay = await authority.submit({ ticket, result, verify: verify as never });
+  assert.equal(replay.status, 'FAILED');
+  assert.equal(replay.artifactId, undefined);
+  assert.equal(maskPersists, 0);
+  assert.equal(maskIds, 0);
+  assert.equal(consumed, 1, 'exact FAILED replay must not consume or mutate output state again');
+  assert.equal(verificationCalls, 1, 'exact FAILED replay must not rerun canonical verification');
 });
