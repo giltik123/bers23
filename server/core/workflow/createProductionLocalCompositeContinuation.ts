@@ -23,6 +23,13 @@ import type { SignedArtifactAuthority } from '../artifacts/signedArtifactAuthori
 import { BackgroundIsolationResultAuthority, SegmentationResultAuthority } from '../localExecution/LocalExecutionResultAuthority.ts';
 import type { PostgresLocalExecutionLedger } from '../localExecution/PostgresLocalExecutionLedger.ts';
 import type { PostgresLocalExecutionUploadStore } from '../localExecution/PostgresLocalExecutionUploadStore.ts';
+import {
+  LocalSegmentationContractError,
+  normalizeLocalSegmentationSelection,
+  validateLocalSegmentationGeometry,
+  type LocalSegmentationAnalysis,
+  type LocalSegmentationPoint,
+} from '../localExecution/localSegmentationInputContract.ts';
 import { productionExecutionCapabilities } from '../providers/productionExecutionCapabilities.ts';
 import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
@@ -39,22 +46,11 @@ import { normalizeScope } from './WorkflowContinuationStore.ts';
 import { PostgresWorkflowContinuationStore } from './PostgresWorkflowContinuationStore.ts';
 
 type TicketAuthority = LocalExecutionTicketIssuerPort & LocalExecutionTicketV2IssuerPort;
-type CompositeAnalysis = Readonly<{
-  originalWidth: number;
-  originalHeight: number;
-  analysisWidth: number;
-  analysisHeight: number;
-  scaleX: number;
-  scaleY: number;
-  offsetX: number;
-  offsetY: number;
-}>;
-type CompositePoint = Readonly<{ x: number; y: number; label: 'POSITIVE' | 'NEGATIVE'; coordinateSpace: 'ORIGINAL' }>;
 type AdmittedCompositeCommand = Readonly<{
   clientRequestId: string;
   inputArtifactId: string;
-  analysis: CompositeAnalysis;
-  points: readonly CompositePoint[];
+  analysis: LocalSegmentationAnalysis;
+  points: readonly LocalSegmentationPoint[];
 }>;
 
 export type ProductionLocalCompositeContinuationInput = Readonly<{
@@ -313,45 +309,31 @@ function assertCanonicalCompositeExecution(request: CreativeRequest, execution: 
 function normalizeAdmissionCommand(command: LocalCompositeStartCommand): AdmittedCompositeCommand {
   const clientRequestId = requireAdmissionToken(command?.clientRequestId, 'clientRequestId');
   const inputArtifactId = requireAdmissionToken(command?.inputArtifactId, 'inputArtifactId');
-  const rawAnalysis = command?.analysis;
-  if (!rawAnalysis || typeof rawAnalysis !== 'object' || Array.isArray(rawAnalysis)) throw admissionError(400, 'invalid_local_composite_analysis', 'Segmentation analysis transform is required');
-  const analysis = Object.freeze({
-    originalWidth: finiteAdmission(rawAnalysis.originalWidth, 'originalWidth'),
-    originalHeight: finiteAdmission(rawAnalysis.originalHeight, 'originalHeight'),
-    analysisWidth: finiteAdmission(rawAnalysis.analysisWidth, 'analysisWidth'),
-    analysisHeight: finiteAdmission(rawAnalysis.analysisHeight, 'analysisHeight'),
-    scaleX: finiteAdmission(rawAnalysis.scaleX, 'scaleX'),
-    scaleY: finiteAdmission(rawAnalysis.scaleY, 'scaleY'),
-    offsetX: finiteAdmission(rawAnalysis.offsetX, 'offsetX'),
-    offsetY: finiteAdmission(rawAnalysis.offsetY, 'offsetY'),
-  });
-  if (!Array.isArray(command.points) || command.points.length < 1 || command.points.length > 64) throw admissionError(400, 'invalid_local_composite_points', 'Local composite segmentation requires between 1 and 64 prompt points');
-  const points = Object.freeze(command.points.map(point => {
-    if (!point || typeof point !== 'object' || Array.isArray(point)
-        || !Number.isFinite(point.x) || !Number.isFinite(point.y)
-        || (point.label !== 'POSITIVE' && point.label !== 'NEGATIVE')
-        || point.coordinateSpace !== 'ORIGINAL') {
-      throw admissionError(400, 'invalid_local_composite_points', 'Local composite segmentation prompt point is invalid');
+  try {
+    const selection = normalizeLocalSegmentationSelection(command?.analysis, command?.points);
+    return Object.freeze({ clientRequestId, inputArtifactId, analysis: selection.analysis, points: selection.points });
+  } catch (error) {
+    if (error instanceof LocalSegmentationContractError) {
+      const code = error.reason === 'POINTS_INVALID' ? 'invalid_local_composite_points' : 'invalid_local_composite_analysis';
+      throw admissionError(400, code, error.message);
     }
-    return Object.freeze({ x: Number(point.x), y: Number(point.y), label: point.label, coordinateSpace: 'ORIGINAL' as const });
-  }));
-  return Object.freeze({ clientRequestId, inputArtifactId, analysis, points });
+    throw error;
+  }
 }
 
-function validateAdmissionGeometry(analysis: CompositeAnalysis, points: readonly CompositePoint[], width: number, height: number): void {
-  if (!Number.isInteger(analysis.originalWidth) || !Number.isInteger(analysis.originalHeight) || analysis.originalWidth !== width || analysis.originalHeight !== height) {
-    throw admissionError(400, 'local_composite_source_mismatch', 'Segmentation analysis transform does not match the canonical source dimensions');
-  }
-  if (!Number.isInteger(analysis.analysisWidth) || !Number.isInteger(analysis.analysisHeight) || analysis.analysisWidth < 1 || analysis.analysisHeight < 1 || analysis.analysisWidth > width || analysis.analysisHeight > height) {
-    throw admissionError(400, 'invalid_local_composite_analysis', 'Segmentation analysis resolution is invalid');
-  }
-  if (!(analysis.scaleX > 0) || !(analysis.scaleY > 0) || analysis.offsetX !== 0 || analysis.offsetY !== 0) {
-    throw admissionError(400, 'invalid_local_composite_analysis', 'Segmentation analysis transform must be a positive zero-offset source transform');
-  }
-  for (const point of points) {
-    if (point.x < 0 || point.y < 0 || point.x >= width || point.y >= height) {
-      throw admissionError(400, 'local_composite_point_out_of_bounds', 'Segmentation prompt point is outside the canonical source');
+function validateAdmissionGeometry(analysis: LocalSegmentationAnalysis, points: readonly LocalSegmentationPoint[], width: number, height: number): void {
+  try {
+    validateLocalSegmentationGeometry(analysis, points, width, height);
+  } catch (error) {
+    if (error instanceof LocalSegmentationContractError) {
+      const code = error.reason === 'SOURCE_MISMATCH'
+        ? 'local_composite_source_mismatch'
+        : error.reason === 'POINT_OUT_OF_BOUNDS'
+          ? 'local_composite_point_out_of_bounds'
+          : 'invalid_local_composite_analysis';
+      throw admissionError(400, code, error.message);
     }
+    throw error;
   }
 }
 
@@ -419,10 +401,6 @@ function resolveStoredMaskStorageId(authority: SignedArtifactAuthority, artifact
   try { return authority.resolveStoredMask(artifactId, scope).storageId; } catch { return undefined; }
 }
 
-function finiteAdmission(value: unknown, field: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw admissionError(400, 'invalid_local_composite_analysis', `Segmentation analysis ${field} is invalid`);
-  return value;
-}
 function requireAdmissionToken(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) throw admissionError(400, 'invalid_local_composite_request', `${field} is required`);
   return value.trim();
