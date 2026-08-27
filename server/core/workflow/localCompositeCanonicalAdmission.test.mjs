@@ -110,3 +110,15 @@ test('production C5B composition cannot return an unadmitted raw sequencer', asy
   assert.match(sourceText, /const execution = await platform\.compile\(executionId\);/);
   assert.doesNotMatch(sourceText, /return new LocalCompositeContinuationService\(/);
 });
+
+test('canonical admission and durable continuation share one composite execution identity scheme', async () => {
+  const [compositionText, sequencerText] = await Promise.all([
+    readFile(new URL('./createProductionLocalCompositeContinuation.ts', import.meta.url), 'utf8'),
+    readFile(new URL('./LocalCompositeContinuationService.ts', import.meta.url), 'utf8'),
+  ]);
+  assert.match(compositionText, /\.update\('bers:local-background-isolation-composite:execution:v1\\0'\)/);
+  assert.match(compositionText, /return `local-composite-\$\{digest\}`;/);
+  assert.doesNotMatch(compositionText, /bers:c5b:canonical-admission:v1|local-composite-admission-/);
+  assert.match(sequencerText, /const EXECUTION_ID_DOMAIN = 'bers:local-background-isolation-composite:execution:v1\\0';/);
+  assert.match(sequencerText, /return `local-composite-\$\{createHash\('sha256'\)/);
+});
