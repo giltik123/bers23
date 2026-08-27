@@ -122,3 +122,12 @@ test('canonical admission and durable continuation share one composite execution
   assert.match(sequencerText, /const EXECUTION_ID_DOMAIN = 'bers:local-background-isolation-composite:execution:v1\\0';/);
   assert.match(sequencerText, /return `local-composite-\$\{createHash\('sha256'\)/);
 });
+
+test('durable sequencer requires exact root, MASK and COMPOSITE parent cardinality', async () => {
+  const sequencerText = await readFile(new URL('./LocalCompositeContinuationService.ts', import.meta.url), 'utf8');
+  assert.match(sequencerText, /root\.parentArtifactIds\.length !== 0/);
+  assert.match(sequencerText, /mask\.parentArtifactIds\.length !== 1 \|\| mask\.parentArtifactIds\[0\] !== root\.artifactId/);
+  assert.match(sequencerText, /parents\.length !== 2 \|\| parents\[0\] !== expected\[0\] \|\| parents\[1\] !== expected\[1\]/);
+  assert.match(sequencerText, /local_composite_mask_lineage/);
+  assert.match(sequencerText, /local_composite_image_lineage/);
+});
