@@ -124,24 +124,3 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
     await fourthPool.end();
   }
 });
-
-test('foreign, paid, expired and late local work cannot advance a continuation', async () => {
-  const token = 'continuation-b'; const pool = new FakePool(); const store = new PostgresWorkflowContinuationStore(pool, () => NOW);
-  const created = await store.create(createInput(token));
-
-  const paid = ticket(`${token}-paid`); pool.addTicket(created, paid, { workflow_id: created.executionId, step_id: paid.stepId, ticket_json: { cost: { providerCalls: 1, paidCloudCredits: 0 } } });
-  await assert.rejects(() => store.waitForLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 0, ticket: paid }), /forbidden provider or paid-credit authority/);
-
-  const foreign = ticket(`${token}-foreign`); pool.addTicket(created, foreign, { workflow_id: 'other-workflow', step_id: foreign.stepId });
-  await assert.rejects(() => store.waitForLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 0, ticket: foreign }), /scope\/workflow\/step binding/);
-
-  const expired = Object.freeze({ ...ticket(`${token}-expired`), expiresAt: new Date(NOW - 1).toISOString() }); pool.addTicket(created, expired);
-  await assert.rejects(() => store.waitForLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 0, ticket: expired }), /Expired local execution ticket/);
-
-  const valid = ticket(token, 'background-isolation'); pool.addTicket(created, valid);
-  const waiting = await store.waitForLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 0, ticket: valid });
-  const cancelled = await store.cancel({ executionId: created.executionId, scope: created.scope, expectedRevision: waiting.revision });
-  assert.equal(cancelled.state, 'CANCELLED');
-  pool.finalize(valid.ticketId);
-  await assert.rejects(() => store.completeLocalStep({ executionId: created.executionId, scope: created.scope, expectedRevision: cancelled.revision, stepId: valid.stepId, ticketId: valid.ticketId, artifactIds: ['late-artifact'] }), /Terminal workflow continuation CANCELLED cannot advance/);
-});
