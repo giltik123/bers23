@@ -162,6 +162,7 @@ export function createProductionLocalCompositeContinuation(input: ProductionLoca
         if (!verification.valid) throw compositionError('local_composite_internal_verification_failed', `INTERNAL verify failed: ${verification.errors.join(',')}`);
       },
     }),
+    now: input.now,
   });
 
   return new CanonicallyAdmittedLocalCompositeContinuationService(
