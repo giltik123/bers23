@@ -31,6 +31,30 @@ test('shared local segmentation contract normalizes one exact immutable selectio
   validateLocalSegmentationGeometry(normalized.analysis, normalized.points, 4, 3);
 });
 
+test('shared local segmentation contract accepts only rounding-safe scale drift', () => {
+  const roundedUniformScale = Object.freeze({
+    originalWidth: 333,
+    originalHeight: 1000,
+    analysisWidth: 85,
+    analysisHeight: 256,
+    scaleX: 0.256,
+    scaleY: 0.256,
+    offsetX: 0,
+    offsetY: 0,
+  });
+  validateLocalSegmentationGeometry(
+    roundedUniformScale,
+    [{ x: 332, y: 999, label: 'POSITIVE', coordinateSpace: 'ORIGINAL' }],
+    333,
+    1000,
+  );
+
+  assert.throws(
+    () => validateLocalSegmentationGeometry({ ...analysis, analysisWidth: 2, scaleX: 1 }, points, 4, 3),
+    error => error instanceof LocalSegmentationContractError && error.reason === 'ANALYSIS_INVALID',
+  );
+});
+
 test('shared local segmentation contract fails closed on malformed and out-of-bounds selections', () => {
   assert.throws(
     () => normalizeLocalSegmentationSelection(analysis, []),
