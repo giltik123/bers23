@@ -1,5 +1,17 @@
+import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
-import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../../../src/platform/creative/canonical/localComposite.ts';
+import {
+  CanonicalDecisionService,
+  CanonicalPlanningService,
+  CreativeExecutionPlatform,
+  type CreativeExecutionPlan,
+  type CreativePlan,
+  type CreativeRequest,
+} from '../../../src/platform/creative/canonical/index.ts';
+import {
+  LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES,
+  LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT,
+} from '../../../src/platform/creative/canonical/localComposite.ts';
 import type { CreativeArtifact, ProductionOutcome } from '../../../src/platform/creative/canonical/contracts.ts';
 import type { LocalExecutionTicket, LocalExecutionTicketIssuerPort, LocalExecutionTicketV2, LocalExecutionTicketV2IssuerPort } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { Artifact, Scope, WorkflowOperation, WorkflowVerifierPort } from '../../../src/platform/creative/workflow-engine/types.ts';
@@ -11,11 +23,39 @@ import type { SignedArtifactAuthority } from '../artifacts/signedArtifactAuthori
 import { BackgroundIsolationResultAuthority, SegmentationResultAuthority } from '../localExecution/LocalExecutionResultAuthority.ts';
 import type { PostgresLocalExecutionLedger } from '../localExecution/PostgresLocalExecutionLedger.ts';
 import type { PostgresLocalExecutionUploadStore } from '../localExecution/PostgresLocalExecutionUploadStore.ts';
+import { productionExecutionCapabilities } from '../providers/productionExecutionCapabilities.ts';
+import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
+import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
+import { productionTargetSelection } from '../providers/productionTargetSelection.ts';
 import { productionWorkflowVerifier } from '../providers/productionWorkflowVerifier.ts';
-import { LocalCompositeContinuationService, LOCAL_COMPOSITE_CONTINUATION_STEPS } from './LocalCompositeContinuationService.ts';
+import {
+  LocalCompositeContinuationService,
+  LOCAL_COMPOSITE_CONTINUATION_STEPS,
+  type LocalCompositeContinuationDependencies,
+  type LocalCompositeResolvedArtifact,
+  type LocalCompositeStartCommand,
+} from './LocalCompositeContinuationService.ts';
+import { normalizeScope } from './WorkflowContinuationStore.ts';
 import { PostgresWorkflowContinuationStore } from './PostgresWorkflowContinuationStore.ts';
 
 type TicketAuthority = LocalExecutionTicketIssuerPort & LocalExecutionTicketV2IssuerPort;
+type CompositeAnalysis = Readonly<{
+  originalWidth: number;
+  originalHeight: number;
+  analysisWidth: number;
+  analysisHeight: number;
+  scaleX: number;
+  scaleY: number;
+  offsetX: number;
+  offsetY: number;
+}>;
+type CompositePoint = Readonly<{ x: number; y: number; label: 'POSITIVE' | 'NEGATIVE'; coordinateSpace: 'ORIGINAL' }>;
+type AdmittedCompositeCommand = Readonly<{
+  clientRequestId: string;
+  inputArtifactId: string;
+  analysis: CompositeAnalysis;
+  points: readonly CompositePoint[];
+}>;
 
 export type ProductionLocalCompositeContinuationInput = Readonly<{
   pool: Pool;
@@ -32,7 +72,9 @@ export type ProductionLocalCompositeContinuationInput = Readonly<{
 
 /**
  * Wires the first durable LOCAL_ONLY composite to existing Core authorities.
- * This module exposes no HTTP route and grants no model-release authority.
+ * The public production service is wrapped by canonical compile admission before
+ * the first durable ticket can be issued. Durable continuation remains the only
+ * restart/replay authority after that admission succeeds.
  */
 export function createProductionLocalCompositeContinuation(input: ProductionLocalCompositeContinuationInput): LocalCompositeContinuationService {
   const verifier = input.verifier ?? productionWorkflowVerifier;
@@ -86,7 +128,7 @@ export function createProductionLocalCompositeContinuation(input: ProductionLoca
     stepId: LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation,
   });
 
-  return new LocalCompositeContinuationService({
+  const dependencies: LocalCompositeContinuationDependencies = Object.freeze({
     continuations,
     tickets: input.admission,
     v1Tickets: input.tickets,
@@ -125,6 +167,210 @@ export function createProductionLocalCompositeContinuation(input: ProductionLoca
       },
     }),
   });
+
+  return new CanonicallyAdmittedLocalCompositeContinuationService(
+    dependencies,
+    (command, scope) => admitCanonicalCompositeStart(input, resolver, command, scope),
+  );
+}
+
+/** Production-only wrapper: no first ticket exists unless the canonical platform compiles the exact narrow graph. */
+class CanonicallyAdmittedLocalCompositeContinuationService extends LocalCompositeContinuationService {
+  constructor(
+    dependencies: LocalCompositeContinuationDependencies,
+    private readonly admitStart: (command: LocalCompositeStartCommand, scope: Scope) => Promise<void>,
+  ) {
+    super(dependencies);
+  }
+
+  override async start(command: LocalCompositeStartCommand, scope: Scope) {
+    await this.admitStart(command, scope);
+    return super.start(command, scope);
+  }
+}
+
+async function admitCanonicalCompositeStart(
+  input: ProductionLocalCompositeContinuationInput,
+  resolver: DurableArtifactLineageResolver,
+  commandInput: LocalCompositeStartCommand,
+  scopeInput: Scope,
+): Promise<void> {
+  const scope = normalizeScope(scopeInput);
+  const command = normalizeAdmissionCommand(commandInput);
+  const root = await resolver.resolve(scope, command.inputArtifactId);
+  assertAdmissionRoot(root);
+  validateAdmissionGeometry(command.analysis, command.points, root.width, root.height);
+
+  const hydrated = await input.hydrator.hydrate(scope, root.artifactId, []);
+  const source = hydrated.find(candidate => candidate.id === root.artifactId && candidate.kind === 'image' && candidate.role === 'ORIGINAL');
+  if (!source?.image || source.image.width !== root.width || source.image.height !== root.height) {
+    throw admissionError(409, 'local_composite_canonical_source_mismatch', 'Canonical planner admission could not rehydrate the exact durable ORIGINAL');
+  }
+  const hydratedSha = artifactSha256(source);
+  if (!hydratedSha || hydratedSha !== root.sha256.toLowerCase()) {
+    throw admissionError(409, 'local_composite_canonical_source_integrity', 'Canonical planner admission source SHA-256 does not match durable Artifact authority');
+  }
+
+  const executionId = admissionExecutionId(scope, command.clientRequestId);
+  const request: CreativeRequest = Object.freeze({
+    id: executionId,
+    intent: 'local segment and background isolation composite',
+    scope,
+    inputArtifacts: Object.freeze([source]),
+    budget: Object.freeze({ credits: 0, aiCalls: 0, retries: 0 }),
+    metadata: Object.freeze({
+      operationIntent: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT,
+      selectionRequestId: `${command.clientRequestId}:segment`,
+      analysis: command.analysis,
+      points: command.points,
+      idempotencyKey: command.clientRequestId,
+      planningConstraints: Object.freeze({ executionPolicy: 'LOCAL_ONLY', confirmationPolicy: 'BLOCK', maxCredits: 0 }),
+    }),
+  });
+
+  let runtimeCalls = 0;
+  const platform = new CreativeExecutionPlatform({
+    runtime: Object.freeze({
+      execute: async () => {
+        runtimeCalls += 1;
+        throw admissionError(500, 'local_composite_admission_runtime_forbidden', 'Canonical composite admission must never execute a runtime');
+      },
+    }),
+    providers: Object.freeze({ isAvailable: () => false, fallback: () => undefined }),
+    decision: new CanonicalDecisionService(),
+    planning: new CanonicalPlanningService({ localCompositeContinuationEnabled: true }),
+    routeSelector: productionExecutionRoute,
+    targetSelector: productionTargetSelection,
+    providerSelector: productionProviderSelection,
+    capabilityAdmission: productionExecutionCapabilities,
+    securityGate: Object.freeze({
+      authorize: (candidateRequest: CreativeRequest, operation: Readonly<{ providerId?: string }>, target: string) =>
+        candidateRequest.metadata?.operationIntent === LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT
+        && target === 'LOCAL'
+        && Number(candidateRequest.budget?.credits ?? -1) === 0
+        && !operation.providerId,
+    }),
+    recovery: Object.freeze({ decide: () => 'MARK_UNKNOWN' as const }),
+    verifier: productionWorkflowVerifier,
+    now: input.now,
+  });
+
+  platform.createExecution(request);
+  const plan = await platform.plan(executionId);
+  assertCanonicalCompositePlan(plan, root.artifactId);
+  const execution = await platform.compile(executionId);
+  assertCanonicalCompositeExecution(request, execution);
+  if (runtimeCalls !== 0) throw admissionError(500, 'local_composite_admission_runtime_called', 'Canonical composite admission crossed an execution runtime boundary');
+}
+
+function assertCanonicalCompositePlan(plan: CreativePlan, rootArtifactId: string): void {
+  if (plan.status !== 'READY') throw admissionError(422, 'local_composite_canonical_plan_blocked', `Canonical local composite plan is ${plan.status ?? 'invalid'}`);
+  if (plan.planningConstraints?.executionPolicy !== 'LOCAL_ONLY' || plan.planningConstraints.confirmationPolicy !== 'BLOCK' || plan.planningConstraints.maxCredits !== 0) {
+    throw admissionError(409, 'local_composite_canonical_plan_policy', 'Canonical local composite plan lost its LOCAL_ONLY zero-credit policy');
+  }
+  if (plan.provenance?.plannerConfig?.localCompositeContinuationEnabled !== true || plan.provenance.plannerConfig.compositeExecutionEnabled !== false) {
+    throw admissionError(409, 'local_composite_canonical_planner_scope', 'Canonical local composite planner enablement is not narrowly scoped');
+  }
+  const [segment, isolate, verify] = plan.operations;
+  if (plan.operations.length !== 3
+      || segment?.id !== LOCAL_COMPOSITE_CONTINUATION_STEPS.segment || segment.type !== 'segment'
+      || isolate?.id !== LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation || isolate.type !== 'BACKGROUND_ISOLATION'
+      || verify?.id !== LOCAL_COMPOSITE_CONTINUATION_STEPS.verify || verify.type !== 'verify') {
+    throw admissionError(409, 'local_composite_canonical_plan_shape', 'Canonical planner did not compile the exact accepted three-step local composite');
+  }
+  const maskArtifact = segment.outputArtifacts?.[0];
+  const compositeArtifact = isolate.outputArtifacts?.[0];
+  if (!maskArtifact || !compositeArtifact
+      || segment.requiredArtifacts?.length !== 1 || segment.requiredArtifacts[0] !== rootArtifactId
+      || isolate.dependencies?.length !== 1 || isolate.dependencies[0] !== segment.id
+      || isolate.requiredArtifacts?.length !== 2 || !isolate.requiredArtifacts.includes(rootArtifactId) || !isolate.requiredArtifacts.includes(maskArtifact)
+      || verify.dependencies?.length !== 1 || verify.dependencies[0] !== isolate.id
+      || verify.requiredArtifacts?.length !== 1 || verify.requiredArtifacts[0] !== compositeArtifact) {
+    throw admissionError(409, 'local_composite_canonical_plan_lineage', 'Canonical local composite dependency and Artifact graph is not exact');
+  }
+}
+
+function assertCanonicalCompositeExecution(request: CreativeRequest, execution: CreativeExecutionPlan): void {
+  const expected = Object.freeze([
+    Object.freeze({ id: LOCAL_COMPOSITE_CONTINUATION_STEPS.segment, type: 'segment', route: 'ON_DEVICE' as const, capability: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment }),
+    Object.freeze({ id: LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation, type: 'BACKGROUND_ISOLATION', route: 'ON_DEVICE' as const, capability: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation }),
+    Object.freeze({ id: LOCAL_COMPOSITE_CONTINUATION_STEPS.verify, type: 'verify', route: 'INTERNAL' as const, capability: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.verify }),
+  ]);
+  if (execution.operations.length !== expected.length) throw admissionError(409, 'local_composite_canonical_compile_shape', 'Canonical compile changed the accepted local composite operation count');
+  for (const contract of expected) {
+    const operation = execution.operations.find(candidate => candidate.id === contract.id);
+    const target = execution.targets[contract.id];
+    if (!operation || operation.type !== contract.type || operation.executionRoute !== contract.route || target !== 'LOCAL' || operation.providerId) {
+      throw admissionError(409, 'local_composite_canonical_compile_route', `Canonical compile changed route/target contract for ${contract.id}`);
+    }
+    const capability = productionExecutionCapabilities.admit({ request, operation, route: contract.route, target });
+    if (!capability.allowed || capability.capabilityId !== contract.capability) {
+      throw admissionError(409, 'local_composite_canonical_compile_capability', `Production capability registry did not admit the exact composite capability for ${contract.id}`);
+    }
+  }
+}
+
+function normalizeAdmissionCommand(command: LocalCompositeStartCommand): AdmittedCompositeCommand {
+  const clientRequestId = requireAdmissionToken(command?.clientRequestId, 'clientRequestId');
+  const inputArtifactId = requireAdmissionToken(command?.inputArtifactId, 'inputArtifactId');
+  const rawAnalysis = command?.analysis;
+  if (!rawAnalysis || typeof rawAnalysis !== 'object' || Array.isArray(rawAnalysis)) throw admissionError(400, 'invalid_local_composite_analysis', 'Segmentation analysis transform is required');
+  const analysis = Object.freeze({
+    originalWidth: finiteAdmission(rawAnalysis.originalWidth, 'originalWidth'),
+    originalHeight: finiteAdmission(rawAnalysis.originalHeight, 'originalHeight'),
+    analysisWidth: finiteAdmission(rawAnalysis.analysisWidth, 'analysisWidth'),
+    analysisHeight: finiteAdmission(rawAnalysis.analysisHeight, 'analysisHeight'),
+    scaleX: finiteAdmission(rawAnalysis.scaleX, 'scaleX'),
+    scaleY: finiteAdmission(rawAnalysis.scaleY, 'scaleY'),
+    offsetX: finiteAdmission(rawAnalysis.offsetX, 'offsetX'),
+    offsetY: finiteAdmission(rawAnalysis.offsetY, 'offsetY'),
+  });
+  if (!Array.isArray(command.points) || command.points.length < 1 || command.points.length > 64) throw admissionError(400, 'invalid_local_composite_points', 'Local composite segmentation requires between 1 and 64 prompt points');
+  const points = Object.freeze(command.points.map(point => {
+    if (!point || typeof point !== 'object' || Array.isArray(point)
+        || !Number.isFinite(point.x) || !Number.isFinite(point.y)
+        || (point.label !== 'POSITIVE' && point.label !== 'NEGATIVE')
+        || point.coordinateSpace !== 'ORIGINAL') {
+      throw admissionError(400, 'invalid_local_composite_points', 'Local composite segmentation prompt point is invalid');
+    }
+    return Object.freeze({ x: Number(point.x), y: Number(point.y), label: point.label, coordinateSpace: 'ORIGINAL' as const });
+  }));
+  return Object.freeze({ clientRequestId, inputArtifactId, analysis, points });
+}
+
+function validateAdmissionGeometry(analysis: CompositeAnalysis, points: readonly CompositePoint[], width: number, height: number): void {
+  if (!Number.isInteger(analysis.originalWidth) || !Number.isInteger(analysis.originalHeight) || analysis.originalWidth !== width || analysis.originalHeight !== height) {
+    throw admissionError(400, 'local_composite_source_mismatch', 'Segmentation analysis transform does not match the canonical source dimensions');
+  }
+  if (!Number.isInteger(analysis.analysisWidth) || !Number.isInteger(analysis.analysisHeight) || analysis.analysisWidth < 1 || analysis.analysisHeight < 1 || analysis.analysisWidth > width || analysis.analysisHeight > height) {
+    throw admissionError(400, 'invalid_local_composite_analysis', 'Segmentation analysis resolution is invalid');
+  }
+  if (!(analysis.scaleX > 0) || !(analysis.scaleY > 0) || analysis.offsetX !== 0 || analysis.offsetY !== 0) {
+    throw admissionError(400, 'invalid_local_composite_analysis', 'Segmentation analysis transform must be a positive zero-offset source transform');
+  }
+  for (const point of points) {
+    if (point.x < 0 || point.y < 0 || point.x >= width || point.y >= height) {
+      throw admissionError(400, 'local_composite_point_out_of_bounds', 'Segmentation prompt point is outside the canonical source');
+    }
+  }
+}
+
+function assertAdmissionRoot(root: LocalCompositeResolvedArtifact): void {
+  if (root.kind !== 'image' || root.role !== 'ORIGINAL' || !/^[a-f0-9]{64}$/i.test(root.sha256) || !Number.isInteger(root.width) || !Number.isInteger(root.height) || root.width < 1 || root.height < 1) {
+    throw admissionError(422, 'local_composite_canonical_root_required', 'Canonical admission requires one durable ORIGINAL IMAGE with exact integrity and geometry');
+  }
+}
+
+function artifactSha256(artifact: CreativeArtifact): string | undefined {
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  const value = artifact.value && typeof artifact.value === 'object' ? artifact.value as Readonly<Record<string, unknown>> : undefined;
+  const candidate = metadata?.sha256 ?? metadata?.hash ?? value?.sha256 ?? value?.hash;
+  return typeof candidate === 'string' && /^[a-f0-9]{64}$/i.test(candidate) ? candidate.toLowerCase() : undefined;
+}
+
+function admissionExecutionId(scope: Scope, clientRequestId: string): string {
+  const digest = createHash('sha256').update(`bers:c5b:canonical-admission:v1\0${scope.tenantId}\0${scope.userId}\0${scope.projectId}\0${clientRequestId}`).digest('hex').slice(0, 32);
+  return `local-composite-admission-${digest}`;
 }
 
 async function verifyLocalArtifact(
@@ -173,4 +419,13 @@ function resolveStoredMaskStorageId(authority: SignedArtifactAuthority, artifact
   try { return authority.resolveStoredMask(artifactId, scope).storageId; } catch { return undefined; }
 }
 
+function finiteAdmission(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw admissionError(400, 'invalid_local_composite_analysis', `Segmentation analysis ${field} is invalid`);
+  return value;
+}
+function requireAdmissionToken(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw admissionError(400, 'invalid_local_composite_request', `${field} is required`);
+  return value.trim();
+}
+function admissionError(status: number, code: string, message: string): Error & { status: number; code: string } { return Object.assign(new Error(message), { status, code }); }
 function compositionError(code: string, message: string): Error & { code: string } { return Object.assign(new Error(message), { code }); }
