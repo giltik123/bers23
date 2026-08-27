@@ -156,7 +156,12 @@ test('rejected segmentation verification cannot create a canonical MASK and exac
   const authority = new SegmentationResultAuthority({
     admission: registry,
     uploads: {
-      load: async (uploadId, ticketId, callerScope, now) => uploadId === upload.uploadId && ticketId === ticket.ticketId && callerScope === scope && now < upload.expiresAt ? upload : undefined,
+      load: async (uploadId, ticketId, callerScope, now) => uploadId === upload.uploadId
+        && ticketId === ticket.ticketId
+        && callerScope.tenantId === scope.tenantId
+        && callerScope.userId === scope.userId
+        && callerScope.projectId === scope.projectId
+        && now < upload.expiresAt ? upload : undefined,
       consume: async () => { consumed += 1; return true; },
     },
     ownsArtifacts: async (_scope, ids) => ids.length === 1 && ids[0] === source.id,
