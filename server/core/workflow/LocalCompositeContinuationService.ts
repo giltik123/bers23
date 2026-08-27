@@ -42,7 +42,8 @@ export type LocalCompositeArtifactResolver = Readonly<{
 }>;
 export type LocalCompositeLocalResult =
   | Readonly<{ status: 'SUCCESS'; artifactId: string }>
-  | Readonly<{ status: 'FAILED' | 'UNKNOWN' }>;
+  | Readonly<{ status: 'FAILED' }>
+  | Readonly<{ status: 'UNKNOWN' }>;
 export type LocalCompositeV1ResultAuthority = Readonly<{
   submit(input: Readonly<{ ticket: LocalExecutionTicket; result: unknown }>): Promise<LocalCompositeLocalResult>;
 }>;
