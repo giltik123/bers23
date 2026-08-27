@@ -38,8 +38,8 @@ export function createLocalCompositeContinuationHttpAdapter(input: Readonly<{
         const view = await input.continuation.start({
           clientRequestId: string(body.clientRequestId),
           inputArtifactId: string(body.inputArtifactId),
-          analysis: record(body.analysis) ?? Object.freeze({}),
-          points: (Array.isArray(body.points) ? body.points.filter(record).map(value => record(value)!) : []),
+          analysis: requiredRecord(body.analysis, 'analysis'),
+          points: requiredRecordArray(body.points, 'points'),
         }, scope(principal, projectId));
         send(response, 202, publicView(view)); return true;
       }
@@ -124,4 +124,13 @@ async function readBytes(request: IncomingMessage, limit: number): Promise<Uint8
 function send(response: ServerResponse, status: number, body: unknown): void { response.statusCode = status; if (body === undefined) { response.end(); return; } const bytes = Buffer.from(JSON.stringify(body)); response.setHeader('Content-Type', 'application/json'); response.setHeader('Content-Length', bytes.byteLength); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(bytes); }
 function string(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined; }
+function requiredRecord(value: unknown, field: string): Readonly<Record<string, unknown>> {
+  const parsed = record(value);
+  if (!parsed) throw httpError(400, 'invalid_local_selection', `${field} must be an object`);
+  return parsed;
+}
+function requiredRecordArray(value: unknown, field: string): readonly Readonly<Record<string, unknown>>[] {
+  if (!Array.isArray(value) || value.some(candidate => !record(candidate))) throw httpError(400, 'invalid_local_selection', `${field} must be an array of objects`);
+  return Object.freeze(value.map(candidate => record(candidate)!));
+}
 function httpError(status: number, code: string, message: string): Error & { status: number; code: string } { return Object.assign(new Error(message), { status, code }); }
