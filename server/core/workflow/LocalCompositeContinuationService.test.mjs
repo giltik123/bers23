@@ -53,9 +53,10 @@ class MemoryContinuationStore {
 function fixture() {
   const continuations = new MemoryContinuationStore();
   const ledger = new LocalExecutionAdmissionRegistry();
+  const clock = { now: 1_000 };
   let sequence = 0;
   const ticketAuthority = new LocalExecutionTicketAuthority(ledger, {
-    now: () => 1_000, id: () => `ticket-${++sequence}`, nonce: () => `nonce-${sequence}`, ttlMs: 60_000,
+    now: () => clock.now, id: () => `ticket-${++sequence}`, nonce: () => `nonce-${sequence}`, ttlMs: 60_000,
     modelsByCapability: { [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment]: [Object.freeze({ modelId: 'test-mobilesam', version: '1' })] },
     executorsByCapability: { [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation]: [Object.freeze({ kind: 'DETERMINISTIC_TOOL', toolId: 'background-isolation', version: '1' })] },
   });
@@ -67,8 +68,9 @@ function fixture() {
     segmentResults: { submit: async ({ ticket }) => { calls.segment++; const value = freeze({ artifactId: 'mask-1', kind: 'mask', role: 'MASK', sha256: 'b'.repeat(64), parentArtifactIds: [root.artifactId], width: 2, height: 2 }); artifacts.set(value.artifactId, value); return freeze({ artifactId: value.artifactId }); } },
     backgroundIsolationResults: { submit: async ({ ticket }) => { calls.isolation++; assert.equal(ticket.inputs.some(input => input.artifactId === 'mask-1'), true); const value = freeze({ artifactId: 'composite-1', kind: 'image', role: 'COMPOSITE', sha256: 'c'.repeat(64), parentArtifactIds: [root.artifactId, 'mask-1'], width: 2, height: 2 }); artifacts.set(value.artifactId, value); return freeze({ artifactId: value.artifactId }); } },
     internalVerifier: { verify: async ({ stepId, artifactId }) => { calls.verify++; assert.equal(stepId, LOCAL_COMPOSITE_CONTINUATION_STEPS.verify); assert.equal(artifactId, 'composite-1'); } },
+    now: () => clock.now,
   });
-  return { service, continuations, ledger, calls };
+  return { service, continuations, ledger, calls, clock };
 }
 
 test('ticket-first start survives a crash before continuation creation and reuses the durable segment ticket', async () => {
@@ -115,6 +117,59 @@ test('Core alone selects segment -> background isolation -> internal verify and 
   const idempotentStart = await service.start(command, scope);
   assert.equal(idempotentStart.state, 'SUCCESS');
   await assert.rejects(() => service.start({ ...command, points: [{ x: 1, y: 1, label: 'POSITIVE', coordinateSpace: 'ORIGINAL' }] }, scope), /already bound to another workflow continuation/);
+});
+
+test('expired outstanding work and durable ticket-binding drift fail closed before result authority', async () => {
+  const { service, continuations, calls, clock } = fixture();
+  const view = await service.start(command, scope);
+  const ticket = view.nextAction.ticket;
+
+  clock.now = ticket.expiresAt;
+  await assert.rejects(
+    () => service.resume(view.executionId, scope),
+    error => error?.status === 410 && error?.code === 'local_composite_ticket_expired',
+  );
+  await assert.rejects(
+    () => service.submitLocalResult(view.executionId, scope, { ticketId: ticket.ticketId }),
+    error => error?.status === 410 && error?.code === 'local_composite_ticket_expired',
+  );
+  assert.deepEqual(calls, { segment: 0, isolation: 0, verify: 0 });
+
+  clock.now = 1_000;
+  const snapshot = continuations.must(view.executionId, scope);
+  continuations.rows.set(view.executionId, freeze({
+    ...snapshot,
+    outstandingLocal: { ...snapshot.outstandingLocal, nonce: 'drifted-durable-nonce' },
+  }));
+  await assert.rejects(
+    () => service.resume(view.executionId, scope),
+    error => error?.status === 409 && error?.code === 'local_composite_ticket_binding_mismatch',
+  );
+  assert.deepEqual(calls, { segment: 0, isolation: 0, verify: 0 });
+});
+
+test('FAILED, UNKNOWN and CANCELLED are terminal and a late local result cannot resurrect cancelled work', async t => {
+  for (const state of ['FAILED', 'UNKNOWN', 'CANCELLED']) {
+    await t.test(state, async () => {
+      const { service, continuations, calls } = fixture();
+      const waiting = await service.start(command, scope);
+      const row = continuations.must(waiting.executionId, scope);
+      if (state === 'FAILED') await continuations.fail({ executionId: waiting.executionId, scope, expectedRevision: row.revision, failureCode: 'TEST_FAILURE' });
+      else if (state === 'UNKNOWN') await continuations.markUnknown({ executionId: waiting.executionId, scope, expectedRevision: row.revision, failureCode: 'TEST_UNKNOWN' });
+      else await continuations.cancel({ executionId: waiting.executionId, scope, expectedRevision: row.revision });
+
+      const terminal = await service.resume(waiting.executionId, scope);
+      assert.equal(terminal.state, state);
+      assert.equal(terminal.nextAction, undefined);
+      await assert.rejects(
+        () => service.submitLocalResult(waiting.executionId, scope, { ticketId: waiting.nextAction.ticket.ticketId }),
+        error => error?.status === 409 && error?.code === 'local_composite_result_not_outstanding',
+      );
+      const afterLateResult = await service.resume(waiting.executionId, scope);
+      assert.equal(afterLateResult.state, state);
+      assert.deepEqual(calls, { segment: 0, isolation: 0, verify: 0 });
+    });
+  }
 });
 
 function sameScope(a, b) { return a.tenantId === b.tenantId && a.userId === b.userId && a.projectId === b.projectId; }
