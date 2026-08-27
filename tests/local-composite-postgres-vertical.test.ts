@@ -89,6 +89,11 @@ function evidenceFrom(upload: Readonly<{ uploadId: string; kind: string; role: s
   });
 }
 
+function assertConcurrentRejection(reason: unknown): void {
+  const error = reason as { code?: string } | undefined;
+  assert.equal(error?.code, 'local_result_in_progress', 'Concurrent duplicate may only lose the ticket advisory-lock race');
+}
+
 test('C5B production composition survives restart across both ON_DEVICE boundaries and reaches SUCCESS only after INTERNAL verify', async t => {
   const pool = new Pool({ connectionString: databaseUrl, max: 8, application_name: 'bers-c5b-composite-vertical' });
   await migrateTransactionSchema(pool);
@@ -176,8 +181,33 @@ test('C5B production composition survives restart across both ON_DEVICE boundari
     now: 10_501,
   });
   const segmentResult = v1Result(segmentTicket, evidenceFrom(maskUpload));
-  const afterSegment = await production.localExecution.composite.submitLocalResult(started.executionId, scope, segmentResult);
-  assert.equal(afterSegment.state, 'WAITING_FOR_LOCAL_RESULT');
+
+  // Two independent Core instances race the exact same admitted result. The PostgreSQL ticket
+  // lock may make one caller return IN_PROGRESS, or a sufficiently late caller may observe an
+  // exact terminal replay; neither path may publish/bind a second MASK or select a different next ticket.
+  const concurrentSegmentCore = await createProductionCore(config, { fetcher: forbiddenFetcher, now: () => 10_500, testLocalModelsByCapability: testModels });
+  let afterSegment;
+  try {
+    const raced = await Promise.allSettled([
+      production.localExecution.composite.submitLocalResult(started.executionId, scope, segmentResult),
+      concurrentSegmentCore.localExecution.composite.submitLocalResult(started.executionId, scope, segmentResult),
+    ]);
+    const fulfilled = raced.filter((entry): entry is PromiseFulfilledResult<Awaited<ReturnType<typeof production.localExecution.composite.submitLocalResult>>> => entry.status === 'fulfilled').map(entry => entry.value);
+    const rejected = raced.filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected');
+    assert.ok(fulfilled.length >= 1, 'At least one independent Core must commit the exact segmentation result');
+    rejected.forEach(entry => assertConcurrentRejection(entry.reason));
+
+    const replayed = await concurrentSegmentCore.localExecution.composite.submitLocalResult(started.executionId, scope, segmentResult);
+    fulfilled.push(replayed);
+    afterSegment = fulfilled[0];
+    for (const view of fulfilled) {
+      assert.equal(view.state, 'WAITING_FOR_LOCAL_RESULT');
+      assert.equal(view.nextAction?.ticket?.ticketId, afterSegment.nextAction?.ticket?.ticketId);
+    }
+  } finally {
+    await concurrentSegmentCore.close();
+  }
+
   const backgroundTicket = afterSegment.nextAction?.ticket as LocalExecutionTicketV2;
   assert.equal(backgroundTicket.version, '2');
   assert.equal(backgroundTicket.operation.capability, LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation);
@@ -187,7 +217,7 @@ test('C5B production composition survives restart across both ON_DEVICE boundari
 
   const segmentRows = await pool.query(`SELECT storage_id,source_image_storage_id,producer_operation FROM canonical_mask_artifacts
     WHERE local_execution_ticket_id=$1`, [segmentTicket.ticketId]);
-  assert.equal(segmentRows.rowCount, 1);
+  assert.equal(segmentRows.rowCount, 1, 'concurrent exact segmentation submit must publish one canonical MASK');
   assert.equal(segmentRows.rows[0].source_image_storage_id, originalStorageId);
   assert.equal(segmentRows.rows[0].producer_operation, 'LOCAL_SEGMENTATION');
   const maskStorageId = String(segmentRows.rows[0].storage_id);
@@ -219,7 +249,30 @@ test('C5B production composition survives restart across both ON_DEVICE boundari
     now: 11_001,
   });
   const backgroundResult = v2Result(resumedTicket, evidenceFrom(imageUpload));
-  const completed = await production.localExecution.composite.submitLocalResult(started.executionId, scope, backgroundResult);
+
+  const concurrentBackgroundCore = await createProductionCore(config, { fetcher: forbiddenFetcher, now: () => 11_000, testLocalModelsByCapability: testModels });
+  let completed;
+  try {
+    const raced = await Promise.allSettled([
+      production.localExecution.composite.submitLocalResult(started.executionId, scope, backgroundResult),
+      concurrentBackgroundCore.localExecution.composite.submitLocalResult(started.executionId, scope, backgroundResult),
+    ]);
+    const fulfilled = raced.filter((entry): entry is PromiseFulfilledResult<Awaited<ReturnType<typeof production.localExecution.composite.submitLocalResult>>> => entry.status === 'fulfilled').map(entry => entry.value);
+    const rejected = raced.filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected');
+    assert.ok(fulfilled.length >= 1, 'At least one independent Core must commit the exact Background Isolation result');
+    rejected.forEach(entry => assertConcurrentRejection(entry.reason));
+
+    const replayed = await concurrentBackgroundCore.localExecution.composite.submitLocalResult(started.executionId, scope, backgroundResult);
+    fulfilled.push(replayed);
+    completed = fulfilled[0];
+    for (const view of fulfilled) {
+      assert.equal(view.state, 'SUCCESS');
+      assert.equal(view.terminalArtifactId, completed.terminalArtifactId);
+    }
+  } finally {
+    await concurrentBackgroundCore.close();
+  }
+
   assert.equal(completed.state, 'SUCCESS', 'workflow may become SUCCESS only after server-owned INTERNAL verify completes');
   assert.ok(completed.terminalArtifactId);
 
@@ -232,6 +285,7 @@ test('C5B production composition survives restart across both ON_DEVICE boundari
   assert.equal(finalRows.rows[0].producer_operation, 'BACKGROUND_ISOLATION');
   const finalPixels = await decodedRgba(new Uint8Array(finalRows.rows[0].image_bytes));
   assert.deepEqual([...finalPixels.data], [...expected], 'canonical FINAL must contain Core-recomputed deterministic pixels');
+  assert.equal(Number((await pool.query("SELECT count(*)::int AS count FROM canonical_image_artifacts WHERE execution_id=$1 AND role='COMPOSITE' AND lifecycle='FINAL'", [started.executionId])).rows[0].count), 1, 'concurrent exact Background Isolation submit must publish one canonical FINAL');
 
   const continuation = await pool.query('SELECT state,current_step_id,terminal_artifact_id,completed_steps_json FROM workflow_continuations WHERE execution_id=$1', [started.executionId]);
   assert.equal(continuation.rowCount, 1);
