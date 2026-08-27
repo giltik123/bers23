@@ -62,6 +62,14 @@ test('composite HTTP transport is authenticated/CSRF-bound and never accepts cli
     });
     assert.equal(forged.status, 400); assert.equal((await forged.json()).error, 'client_workflow_authority_forbidden'); assert.equal(calls.length, 0);
 
+    const malformedSelection = await fetch(`${base}/api/core/composite-continuations/start`, {
+      method: 'POST', headers: browserHeaders(),
+      body: JSON.stringify({ projectId: 'project-http', clientRequestId: 'client-http', inputArtifactId: 'original-http', analysis: { originalWidth: 2 }, points: [{ x: 1 }, 'discard-me'] }),
+    });
+    assert.equal(malformedSelection.status, 400);
+    assert.equal((await malformedSelection.json()).error, 'invalid_local_selection');
+    assert.equal(calls.length, 0, 'transport must reject the whole malformed selection instead of filtering individual points');
+
     const started = await fetch(`${base}/api/core/composite-continuations/start`, {
       method: 'POST', headers: browserHeaders(),
       body: JSON.stringify({ projectId: 'project-http', clientRequestId: 'client-http', inputArtifactId: 'original-http', analysis: { originalWidth: 2 }, points: [{ x: 1 }] }),
