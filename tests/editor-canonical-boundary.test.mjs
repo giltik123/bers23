@@ -127,3 +127,16 @@ test('browser financial surfaces and legacy writers cannot mutate privileged aut
   ]) assert.equal(eslint.includes(`\"${legacyException}\"`), false, legacyException);
   assert.match(eslint, /callee\.object\.object\.object\.name='coreClient'/);
 });
+
+test('Automation Studio remains preview-only until durable server execution authority exists', async () => {
+  const page = await readFile('src/pages/AutomationStudio.jsx', 'utf8');
+  const runner = await readFile('src/lib/automation/AutomationRunner.js', 'utf8');
+  for (const forbidden of ['coreClient', 'automationManager', 'automationHistory', 'AutomationHistoryPanel']) assert.equal(page.includes(forbidden), false, forbidden);
+  assert.match(page, /automationRunner\.plan\(/);
+  assert.doesNotMatch(page, /automationRunner\.run\(/);
+  assert.match(page, /previewOnly/);
+  assert.match(runner, /status:\s*'PLANNED_NOT_EXECUTED'/);
+  assert.match(runner, /conditionsEvaluated:\s*Boolean\(context\)/);
+  assert.match(runner, /AUTOMATION_EXECUTION_NOT_WIRED/);
+  for (const forbidden of ['jobManager', 'automationHistory', "status: 'completed'", 'credits_consumed']) assert.equal(runner.includes(forbidden), false, forbidden);
+});
