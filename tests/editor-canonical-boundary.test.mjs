@@ -140,3 +140,21 @@ test('Automation Studio remains preview-only until durable server execution auth
   assert.match(runner, /AUTOMATION_EXECUTION_NOT_WIRED/);
   for (const forbidden of ['jobManager', 'automationHistory', "status: 'completed'", 'credits_consumed']) assert.equal(runner.includes(forbidden), false, forbidden);
 });
+
+test('Asset Library indexes canonical Project artifacts without generic asset CRUD', async () => {
+  const source = await readFile('src/pages/AssetLibrary.jsx', 'utf8');
+  assert.match(source, /coreClient\.projects\.list\(\)/);
+  assert.match(source, /current_image_artifact_id/);
+  assert.match(source, /canonical_artifact_id:\s*artifactId/);
+  assert.match(source, /coreClient\.projects\.update\(asset\.project_id, \{ favorite:/);
+  assert.match(source, /only indexes canonical Project artifacts/);
+  for (const forbidden of [
+    'coreClient.entities',
+    'assetLibrary',
+    'assetCollections',
+    'assetFavorites',
+    'assetHistory',
+    'Garment.list',
+    'Outfit.list',
+  ]) assert.equal(source.includes(forbidden), false, forbidden);
+});
