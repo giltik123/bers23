@@ -30,7 +30,8 @@ test('Editor Crop UI is exact, accessible and fail-closed instead of clamping in
   assert.match(editor, /\[x, y, width, height\]\.every\(Number\.isSafeInteger\)/);
   assert.match(editor, /x \+ width > sourceWidth \|\| y \+ height > sourceHeight/);
   assert.match(toolbar, /aria-label="Crop controls"/);
-  for (const label of ['x', 'y', 'width', 'height']) assert.match(toolbar, new RegExp(`aria-label=\\{\`Crop \\${label}`));
+  for (const field of ["{ key: 'x', label: 'X' }", "{ key: 'y', label: 'Y' }", "{ key: 'width', label: 'Width' }", "{ key: 'height', label: 'Height' }"]) assert.equal(toolbar.includes(field), true, field);
+  assert.match(toolbar, /aria-label=\{`Crop \$\{label\.toLowerCase\(\)\}`\}/);
   assert.match(toolbar, /disabled=\{busy \|\| !valid\}/);
   assert.doesNotMatch(toolbar, /Math\.(round|floor|ceil)\(Number\(raw\)\)/);
   assert.match(canvas, /Math\.floor\(\(event\.clientX - rect\.left\) \/ rect\.width \* cropSource\.sourceWidth\)/);
