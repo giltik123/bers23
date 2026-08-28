@@ -7,9 +7,10 @@ import { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import { PostgresMaskArtifactStore } from '../artifacts/postgresMaskArtifactStore.ts';
 import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
+import { checkFinalImageLineageSchema, migrateFinalImageLineageSchema } from '../artifacts/finalImageLineageSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../artifacts/localExecutionUploadSchema.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
-import type { LocalExecutionExecutorBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
+import type { LocalExecutionExecutorBinding, LocalExecutionModelBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import { CanonicalDecisionService, CanonicalPlanningService } from '../../../src/platform/creative/canonical/index.ts';
 import { checkAuthSchema, migrateAuthSchema } from '../auth/authSchema.ts';
@@ -19,7 +20,7 @@ import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts'
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
-import { LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
+import { LocalCropExecutionService, LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalOrthogonalTransformExecutionService, LocalResizeExecutionService, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, OrthogonalTransformInputDeliveryService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../localExecution/productionLocalExecutorPolicy.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
@@ -31,34 +32,45 @@ import { productionWorkflowVerifier } from '../providers/productionWorkflowVerif
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
 import { checkProjectSchema } from '../projects/projectSchema.ts';
 import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
+import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from '../workflow/workflowContinuationSchema.ts';
+import { createProductionLocalCompositeContinuation } from '../workflow/createProductionLocalCompositeContinuation.ts';
 
 const LOCAL_EXECUTION_TICKET_TTL_MS = 5 * 60_000;
 
 type ProductionCoreOptions = Readonly<{
   fetcher?: typeof fetch;
   now?: () => number;
-  /** Test-only authority catalog. Never accepted by production/staging composition. */
+  /** Test-only model authority catalog. Never accepted by production/staging composition. */
+  testLocalModelsByCapability?: Readonly<Record<string, readonly LocalExecutionModelBinding[]>>;
+  /** Test-only executor authority catalog. Never accepted by production/staging composition. */
   testLocalExecutorsByCapability?: Readonly<Record<string, readonly LocalExecutionExecutorBinding[]>>;
 }>;
 
 export async function createProductionCore(config: CoreServerConfig, options: ProductionCoreOptions = {}) {
-  if (options.testLocalExecutorsByCapability && config.nodeEnv !== 'test') throw new Error('Test local executor injection is forbidden outside nodeEnv=test');
+  if ((options.testLocalModelsByCapability || options.testLocalExecutorsByCapability) && config.nodeEnv !== 'test') throw new Error('Test local authority injection is forbidden outside nodeEnv=test');
+  const localModelsByCapability = options.testLocalModelsByCapability ?? productionLocalModelsByCapability;
   const localExecutorsByCapability = options.testLocalExecutorsByCapability ?? productionLocalExecutorsByCapability;
   const transactions = createPostgresTransactionRuntime({ databaseUrl: config.databaseUrl, applicationName: 'bers-core-server' });
   try {
     await transactions.pool.query('SELECT 1');
     await checkTransactionSchema(transactions.pool);
-    await checkMaskArtifactSchema(transactions.pool);
-    await checkImageArtifactSchema(transactions.pool);
+    if (config.nodeEnv === 'test') await migrateFinalImageLineageSchema(transactions.pool);
+    else {
+      await checkMaskArtifactSchema(transactions.pool);
+      await checkImageArtifactSchema(transactions.pool);
+      await checkFinalImageLineageSchema(transactions.pool);
+    }
     await checkProjectSchema(transactions.pool);
     if (config.nodeEnv === 'test') {
       await migrateAuthSchema(transactions.pool);
       await migrateLocalExecutionUploadSchema(transactions.pool);
       await migrateLocalExecutionLedgerSchema(transactions.pool);
+      await migrateWorkflowContinuationSchema(transactions.pool);
     } else {
       await checkAuthSchema(transactions.pool);
       await checkLocalExecutionUploadSchema(transactions.pool);
       await checkLocalExecutionLedgerSchema(transactions.pool);
+      await checkWorkflowContinuationSchema(transactions.pool);
     }
     const now = options.now ?? Date.now;
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
@@ -75,7 +87,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       id: randomUUID,
       nonce: randomUUID,
       ttlMs: LOCAL_EXECUTION_TICKET_TTL_MS,
-      modelsByCapability: productionLocalModelsByCapability,
+      modelsByCapability: localModelsByCapability,
       executorsByCapability: localExecutorsByCapability,
     });
     const localUploads = new PostgresLocalExecutionUploadStore(transactions.pool);
@@ -122,7 +134,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       hydrateArtifacts,
       admission: localExecutionAdmission,
       uploads: localUploads,
-      persistMask: (ticketId, scope, width, height, alpha) => maskArtifacts.persistLocalExecution(ticketId, scope, width, height, alpha),
+      persistMask: (ticketId, scope, width, height, alpha, sourceArtifactId) => maskArtifacts.persistLocalExecution(ticketId, scope, width, height, alpha, sourceArtifactId ? resolveStoredImageStorageId(externalArtifacts, sourceArtifactId, scope) : undefined),
       loadPersistedMask: (ticketId, scope) => maskArtifacts.loadLocalExecution(ticketId, scope),
       issueMaskId: (storageId, scope) => externalArtifacts.issueStoredMask(storageId, scope),
       now,
@@ -133,11 +145,65 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       hydrateArtifacts,
       admission: localExecutionAdmission,
       uploads: localUploads,
-      persistFinal: (scope, executionId, operationId, image) => artifacts.images.persistFinal(scope, executionId, operationId, image),
+      persistFinal: (scope, executionId, operationId, image, lineage) => {
+        if (!lineage) return artifacts.images.persistFinal(scope, executionId, operationId, image);
+        const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
+        const maskStorageId = resolveStoredMaskStorageId(externalArtifacts, lineage.maskArtifactId, scope);
+        if (!sourceImageStorageId || !maskStorageId) throw new Error('Background Isolation FINAL requires stored canonical IMAGE + MASK parents');
+        return artifacts.images.persistFinal(scope, executionId, operationId, image, { sourceImageStorageId, maskStorageId, producerOperation: 'BACKGROUND_ISOLATION' });
+      },
       loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
       issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
       now,
     });
+    const localCrop = new LocalCropExecutionService({
+      platform: canonical,
+      ownsArtifacts,
+      hydrateArtifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      persistFinal: (scope, executionId, operationId, image, lineage) => {
+        const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
+        if (!sourceImageStorageId || lineage.producerOperation !== 'CROP') throw new Error('Crop FINAL requires one stored canonical IMAGE parent');
+        return artifacts.images.persistFinal(scope, executionId, operationId, image, { sourceImageStorageId, producerOperation: 'CROP' });
+      },
+      loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
+      issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
+      now,
+    });
+    const localResize = new LocalResizeExecutionService({
+      platform: canonical,
+      ownsArtifacts,
+      hydrateArtifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels, maxUploadBytes: config.imageUploadLimitBytes }),
+      persistFinal: (scope, executionId, operationId, image, lineage) => {
+        const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
+        if (!sourceImageStorageId || lineage.producerOperation !== 'RESIZE') throw new Error('Resize FINAL requires one stored canonical IMAGE parent');
+        return artifacts.images.persistFinal(scope, executionId, operationId, image, { sourceImageStorageId, producerOperation: 'RESIZE' });
+      },
+      loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
+      issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
+      now,
+    });
+    const localOrthogonalTransform = new LocalOrthogonalTransformExecutionService({
+      platform: canonical,
+      ownsArtifacts,
+      hydrateArtifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels, maxUploadBytes: config.imageUploadLimitBytes }),
+      persistFinal: (scope, executionId, operationId, image, lineage) => {
+        const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
+        if (!sourceImageStorageId || lineage.producerOperation !== 'ORTHOGONAL_TRANSFORM') throw new Error('Orthogonal-transform FINAL requires one stored canonical IMAGE parent');
+        return artifacts.images.persistFinal(scope, executionId, operationId, image, { sourceImageStorageId, producerOperation: 'ORTHOGONAL_TRANSFORM' });
+      },
+      loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
+      issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
+      now,
+    });
+    const orthogonalTransformInputDelivery = new OrthogonalTransformInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
     const localSuperResolution = new LocalSuperResolutionExecutionService({
       platform: canonical,
       ownsArtifacts,
@@ -150,6 +216,18 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       now,
     });
     const localInputDelivery = new LocalExecutionInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
+    const localComposite = createProductionLocalCompositeContinuation({
+      pool: transactions.pool,
+      now,
+      tickets: localExecution,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      artifacts,
+      hydrator,
+      signed: externalArtifacts,
+      masks: maskArtifacts,
+      verifier: productionWorkflowVerifier,
+    });
     const authStore = new PostgresAuthStore(transactions.pool);
     const authSecurityStore = new PostgresAuthSecurityStore(transactions.pool);
     const authRuntime = resolveAuthRuntime(config);
@@ -169,8 +247,17 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       sessionIdleTtlMs: config.authSessionIdleTtlMs,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
-    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, superResolution: localSuperResolution, inputDelivery: localInputDelivery }), transactions, close: () => transactions.close() });
+    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, crop: localCrop, resize: localResize, orthogonalTransform: localOrthogonalTransform, orthogonalTransformInputDelivery, superResolution: localSuperResolution, inputDelivery: localInputDelivery, composite: localComposite }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
+}
+
+function resolveStoredImageStorageId(authority: SignedArtifactAuthority, artifactId: string, scope: Parameters<ArtifactAuthority['owns']>[0]): string | undefined {
+  try { return authority.resolveStoredOriginalId(artifactId, scope).storageId; } catch { /* stored FINAL below */ }
+  try { return authority.resolveStoredFinalId(artifactId, scope).storageId; } catch { return undefined; }
+}
+
+function resolveStoredMaskStorageId(authority: SignedArtifactAuthority, artifactId: string, scope: Parameters<ArtifactAuthority['owns']>[0]): string | undefined {
+  try { return authority.resolveStoredMask(artifactId, scope).storageId; } catch { return undefined; }
 }
 
 function resolveAuthRuntime(config: CoreServerConfig) {

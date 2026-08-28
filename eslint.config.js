@@ -7,15 +7,6 @@ import pluginUnusedImports from "eslint-plugin-unused-imports";
 export default [
   {
     files: ["src/**/*.{js,mjs,cjs,jsx}"],
-    ignores: [
-      // Temporary legacy adapters. Remove each exception only in the same
-      // coordinated deployment that introduces its atomic server writer.
-      "src/lib/credits/creditsManager.js",
-      "src/lib/credits/creditsReservation.js",
-      "src/lib/credits/creditsWallet.js",
-      "src/lib/subscriptions/subscriptionManager.js",
-      "src/lib/subscriptions/subscriptionUsage.js",
-    ],
     languageOptions: {
       parserOptions: {
         ecmaVersion: 2022,
@@ -32,6 +23,10 @@ export default [
         {
           selector: "CallExpression[callee.object.object.object.name='base44'][callee.object.object.property.name='entities'][callee.object.property.name=/^(CreditsWallet|CreditTransaction|UserSubscription|SubscriptionUsage)$/][callee.property.name=/^(create|update|delete|bulkCreate)$/]",
           message: "Privileged entities are server-owned. Add a narrow command to the owning server service instead of a browser mutation.",
+        },
+        {
+          selector: "CallExpression[callee.object.object.object.name='coreClient'][callee.object.object.property.name='entities'][callee.object.property.name=/^(CreditsWallet|CreditTransaction|UserSubscription|SubscriptionUsage)$/][callee.property.name=/^(create|update|delete|bulkCreate)$/]",
+          message: "Privileged entities are server-owned. Browser coreClient entity mutation is forbidden; use the owning server authority.",
         },
       ],
     },

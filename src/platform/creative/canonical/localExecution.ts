@@ -182,6 +182,7 @@ export type LocalExecutionAdmissionReason =
   | 'UNKNOWN_TICKET'
   | 'EXPIRED_TICKET'
   | 'REPLAYED_TICKET'
+  | 'CONFLICTING_REPLAY'
   | 'IN_PROGRESS'
   | 'SCOPE_MISMATCH'
   | 'IDENTITY_MISMATCH'

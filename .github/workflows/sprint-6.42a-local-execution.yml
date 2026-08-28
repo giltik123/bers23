@@ -41,7 +41,7 @@ jobs:
             tests/local-segmentation-restart.test.ts \
             tests/local-segmentation-finalization-retry.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
-            --outdir=.test-cache/6.42a-security --external:node:*
+            --outdir=.test-cache/6.42a-security --external:node:* --external:sharp
           node --test .test-cache/6.42a-security/*.js
       - name: Browser ticket to admitted MASK boundary
         run: npm run test:intelligent-selection

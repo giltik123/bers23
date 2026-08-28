@@ -23,13 +23,14 @@ function ticket(token, overrides = {}) {
     ...overrides,
   });
 }
-function result(stored) {
+function result(stored, overrides = {}) {
   return Object.freeze({
     ticketId: stored.ticketId, ticketVersion: '2', requestId: stored.requestId, workflowId: stored.workflowId, stepId: stored.stepId, nonce: stored.nonce,
     executor: Object.freeze({ kind: 'DETERMINISTIC_TOOL', toolId: 'background-isolation', version: '1' }),
     runtime: 'BROWSER_JS', accelerator: 'cpu',
     outputs: Object.freeze([Object.freeze({ uploadId: `${stored.ticketId}-upload`, kind: 'image', role: 'COMPOSITE', sha256: 'c'.repeat(64), sizeBytes: 64, mimeType: 'image/png', width: 2, height: 2 })]),
     metrics: Object.freeze({ latencyMs: 4 }),
+    ...overrides,
   });
 }
 
@@ -69,6 +70,8 @@ test('PostgreSQL v2 deterministic ticket survives Core restart and reconciles id
     assert.equal(admitted.allowed, true);
     await second.commit(stored.ticketId, 'SUCCESS');
     assert.equal((await second.getFinalization(stored.ticketId))?.status, 'SUCCESS');
+    const replayBinding = await secondPool.query('SELECT admitted_result_sha256 FROM local_execution_tickets WHERE ticket_id=$1', [stored.ticketId]);
+    assert.match(replayBinding.rows[0]?.admitted_result_sha256 ?? '', /^[a-f0-9]{64}$/);
   } finally {
     await secondPool.end();
   }
@@ -77,7 +80,8 @@ test('PostgreSQL v2 deterministic ticket survives Core restart and reconciles id
   try {
     const third = new PostgresLocalExecutionLedger(thirdPool);
     assert.equal((await third.getFinalization(stored.ticketId))?.status, 'SUCCESS', 'terminal v2 finalization must survive another Core restart');
-    assert.equal((await third.claimV2({ ticketId: stored.ticketId, result: result(stored), callerScope: stored.scope, now: 2_600 })).reasonCode, 'REPLAYED_TICKET');
+    assert.equal((await third.claimV2({ ticketId: stored.ticketId, result: result(stored), callerScope: stored.scope, now: 99_000 })).reasonCode, 'REPLAYED_TICKET', 'exact v2 replay must remain idempotent after restart and expiry');
+    assert.equal((await third.claimV2({ ticketId: stored.ticketId, result: result(stored, { metrics: Object.freeze({ latencyMs: 5 }) }), callerScope: stored.scope, now: 99_001 })).reasonCode, 'CONFLICTING_REPLAY', 'different valid v2 payload must fail closed after restart');
     await thirdPool.query('DELETE FROM local_execution_tickets WHERE idempotency_key=$1', [`${token}-idem`]);
   } finally {
     await thirdPool.end();

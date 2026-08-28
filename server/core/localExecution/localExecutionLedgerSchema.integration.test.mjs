@@ -6,7 +6,7 @@ import { checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } fr
 const databaseUrl = process.env.DATABASE_URL;
 const destructiveSchemaProofEnabled = process.env.LOCAL_EXECUTION_SCHEMA_TEST === '1';
 
-test('migration 013 repairs prerelease local execution ledger authority constraints', { skip: !databaseUrl || !destructiveSchemaProofEnabled }, async () => {
+test('migrations 013 and 016 repair prerelease local execution ledger authority constraints', { skip: !databaseUrl || !destructiveSchemaProofEnabled }, async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 1, application_name: 'bers-local-ledger-schema-integration' });
   try {
     await pool.query('DELETE FROM local_execution_tickets');
@@ -17,6 +17,8 @@ test('migration 013 repairs prerelease local execution ledger authority constrai
       ALTER TABLE local_execution_tickets ADD CONSTRAINT local_execution_tickets_idempotency_key_key UNIQUE (idempotency_key);
       ALTER TABLE local_execution_tickets DROP COLUMN IF EXISTS finalized_status;
       ALTER TABLE local_execution_tickets DROP COLUMN IF EXISTS finalized_at;
+      ALTER TABLE local_execution_tickets DROP CONSTRAINT IF EXISTS local_execution_tickets_admitted_result_sha256_check;
+      ALTER TABLE local_execution_tickets DROP COLUMN IF EXISTS admitted_result_sha256;
       ALTER TABLE local_execution_uploads ALTER COLUMN artifact_role DROP NOT NULL;
       DROP INDEX IF EXISTS canonical_mask_artifacts_local_execution_ticket_unique;
     `);
@@ -47,6 +49,22 @@ test('migration 013 repairs prerelease local execution ledger authority constrai
       EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = current_schema()
+          AND table_name = 'local_execution_tickets'
+          AND column_name = 'admitted_result_sha256'
+      ) AS replay_digest_column,
+      EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = current_schema()
+          AND t.relname = 'local_execution_tickets'
+          AND c.conname = 'local_execution_tickets_admitted_result_sha256_check'
+          AND c.contype = 'c'
+      ) AS replay_digest_constraint,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
           AND table_name = 'local_execution_uploads'
           AND column_name = 'artifact_role'
           AND is_nullable = 'NO'
@@ -56,6 +74,8 @@ test('migration 013 repairs prerelease local execution ledger authority constrai
       mask_unique: true,
       legacy_unique_removed: true,
       finalization_columns: true,
+      replay_digest_column: true,
+      replay_digest_constraint: true,
       artifact_role_not_null: true,
     });
   } finally {

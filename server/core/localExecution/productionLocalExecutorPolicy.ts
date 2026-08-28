@@ -1,13 +1,21 @@
 import upscaleManifest from '../../../src/platform/creative/local-ai/models/super-resolution.manifest.json' with { type: 'json' };
 import type { LocalExecutionExecutorBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
-import { BACKGROUND_ISOLATION_CAPABILITY, BACKGROUND_ISOLATION_TOOL_ID, BACKGROUND_ISOLATION_TOOL_VERSION } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
+import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../../../src/platform/creative/canonical/localComposite.ts';
+import { BACKGROUND_ISOLATION_CAPABILITY } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
+import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
+import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
+import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
+import { requireDeterministicToolByCapability } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { REAL_ESRGAN_LOCAL_CAPABILITY, isExecutableRealEsrganRelease } from './productionLocalModelPolicy.ts';
 
-const backgroundIsolationExecutor = Object.freeze({
-  kind: 'DETERMINISTIC_TOOL',
-  toolId: BACKGROUND_ISOLATION_TOOL_ID,
-  version: BACKGROUND_ISOLATION_TOOL_VERSION,
-} satisfies LocalExecutionExecutorBinding);
+const backgroundIsolationTool = requireDeterministicToolByCapability(BACKGROUND_ISOLATION_CAPABILITY);
+const backgroundIsolationExecutors = Object.freeze([backgroundIsolationTool.executor]);
+const cropTool = requireDeterministicToolByCapability(CROP_CAPABILITY);
+const cropExecutors = Object.freeze([cropTool.executor]);
+const resizeTool = requireDeterministicToolByCapability(RESIZE_CAPABILITY);
+const resizeExecutors = Object.freeze([resizeTool.executor]);
+const orthogonalTransformTool = requireDeterministicToolByCapability(ORTHOGONAL_TRANSFORM_CAPABILITY);
+const orthogonalTransformExecutors = Object.freeze([orthogonalTransformTool.executor]);
 
 const realEsrganExecutors: readonly LocalExecutionExecutorBinding[] = isExecutableRealEsrganRelease(upscaleManifest)
   ? Object.freeze([Object.freeze({
@@ -18,12 +26,16 @@ const realEsrganExecutors: readonly LocalExecutionExecutorBinding[] = isExecutab
   : Object.freeze([]);
 
 /**
- * Production v2 executor policy. Deterministic tools and model executors share the
- * ticket authority but remain exact-kind bound. Real-ESRGAN is deliberately absent
- * until its complete signed release gate is satisfied; it never inherits the v1
- * MobileSAM model catalog implicitly.
+ * Production v2 executor policy. The deterministic registry describes reviewed
+ * contracts but does not auto-admit them: every production capability remains an
+ * explicit key here. C5B deliberately reuses the exact registered Background
+ * Isolation executor rather than creating a second tool-trust decision.
  */
 export const productionLocalExecutorsByCapability: Readonly<Record<string, readonly LocalExecutionExecutorBinding[]>> = Object.freeze({
-  [BACKGROUND_ISOLATION_CAPABILITY]: Object.freeze([backgroundIsolationExecutor]),
+  [BACKGROUND_ISOLATION_CAPABILITY]: backgroundIsolationExecutors,
+  [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation]: backgroundIsolationExecutors,
+  [CROP_CAPABILITY]: cropExecutors,
+  [RESIZE_CAPABILITY]: resizeExecutors,
+  [ORTHOGONAL_TRANSFORM_CAPABILITY]: orthogonalTransformExecutors,
   [REAL_ESRGAN_LOCAL_CAPABILITY]: realEsrganExecutors,
 });
