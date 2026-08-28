@@ -9,6 +9,137 @@ test('browser source imports no transaction internals and canonical edit boundar
 async function collect(directory) { const entries = await readdir(directory, { withFileTypes: true }); return (await Promise.all(entries.map((entry) => entry.isDirectory() ? collect(join(directory, entry.name)) : [join(directory, entry.name)]))).flat().filter((file) => /\.(js|jsx|ts|tsx)$/.test(file)); }
 test('Editor selection uses the Core mask port and never manufactures a mask UUID', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); assert.match(source, /new CoreMaskArtifactPort\(project\.id\)/); assert.doesNotMatch(source, /persist:\s*async[\s\S]*randomUUID/); assert.match(source, /mask_artifact_id: artifact\.id/); });
 test('Core mask port sends exact alpha and maps the server artifact identity', async () => { const source = await readFile('src/application/selection/CoreMaskArtifactPort.js', 'utf8'); assert.match(source, /alpha: mask\.alpha/); assert.match(source, /id: response\.artifactId/); assert.match(source, /ALPHA_8_LOSSLESS/); });
+test('Editor invert stays bound to SelectionApplicationService and the toolbar exposes only stable editable states', async () => { const editor = await readFile('src/pages/Editor.jsx', 'utf8'); const toolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'); assert.match(editor, /onInvert=\{\(\) => updateSelection\(\(service\) => service\.invert\(\)\)\}/); assert.match(toolbar, /aria-label="Invert selection"/); assert.match(toolbar, /const editable = selection\.state === 'SELECTED' \|\| selection\.state === 'REFINING'/); assert.match(toolbar, /disabled=\{!editable\} onClick=\{onInvert\}/); assert.match(toolbar, /const canDone = editable && !selection\.quality\?\.empty/); assert.match(toolbar, /disabled=\{!canDone\} onClick=\{onDone\}/); });
+test('Editor Crop remains a Core-authorized preview then explicit canonical Accept flow', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const crop = await readFile('src/application/createCrop.ts', 'utf8');
+  assert.match(editor, /const local = createCrop\(\{ projectId: project\.id \}\)/);
+  assert.match(editor, /local\.run\(\{ requestId: globalThis\.crypto\.randomUUID\(\), sourceArtifactId, rect \}\)/);
+  assert.match(editor, /finalArtifactId: result\.canonicalArtifactId/);
+  assert.match(editor, /kind: 'CROP'/);
+  assert.match(editor, /await pushEdit\(result\.finalArtifactId, used\)/);
+  assert.doesNotMatch(editor, /crop[\s\S]{0,300}(persistFinal|issueStoredFinal|acceptFinal)/);
+  assert.match(crop, /loadImage:[\s\S]*loadDelivered/);
+  assert.match(crop, /prepareCrop:[\s\S]*activeTicketId = prepared\.ticket\.ticketId/);
+});
+test('Editor Crop UI is exact, accessible and fail-closed instead of clamping invalid numeric drafts', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const toolbar = await readFile('src/components/editor/CropToolbar.jsx', 'utf8');
+  const canvas = await readFile('src/components/editor/ImageCanvas.jsx', 'utf8');
+  assert.match(editor, /function exactCropRect\(draft, sourceWidth, sourceHeight\)/);
+  assert.match(editor, /\[x, y, width, height\]\.every\(Number\.isSafeInteger\)/);
+  assert.match(editor, /x \+ width > sourceWidth \|\| y \+ height > sourceHeight/);
+  assert.match(toolbar, /aria-label="Crop controls"/);
+  for (const field of ["{ key: 'x', label: 'X' }", "{ key: 'y', label: 'Y' }", "{ key: 'width', label: 'Width' }", "{ key: 'height', label: 'Height' }"]) assert.equal(toolbar.includes(field), true, field);
+  assert.match(toolbar, /aria-label=\{`Crop \$\{label\.toLowerCase\(\)\}`\}/);
+  assert.match(toolbar, /disabled=\{busy \|\| !valid\}/);
+  assert.doesNotMatch(toolbar, /Math\.(round|floor|ceil)\(Number\(raw\)\)/);
+  assert.match(canvas, /Math\.floor\(\(event\.clientX - rect\.left\) \/ rect\.width \* cropSource\.sourceWidth\)/);
+  assert.match(editor, /Math\.abs\(point\.x - anchor\.x\) \+ 1/);
+  assert.match(editor, /Math\.abs\(point\.y - anchor\.y\) \+ 1/);
+});
+test('Editor Resize remains a Core-authorized preview then explicit canonical Accept flow', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const resize = await readFile('src/application/createResize.ts', 'utf8');
+  assert.match(editor, /const local = createResize\(\{ projectId: project\.id \}\)/);
+  assert.match(editor, /local\.run\(\{ requestId: globalThis\.crypto\.randomUUID\(\), sourceArtifactId, target \}\)/);
+  assert.match(editor, /kind: 'RESIZE'/);
+  assert.match(editor, /finalArtifactId: result\.canonicalArtifactId/);
+  assert.match(editor, /await pushEdit\(result\.finalArtifactId, used\)/);
+  assert.doesNotMatch(editor, /resize[\s\S]{0,300}(persistFinal|issueStoredFinal|acceptFinal)/);
+  assert.match(resize, /loadImage:[\s\S]*loadDelivered/);
+  assert.match(resize, /prepareResize:[\s\S]*activeTicketId = prepared\.ticket\.ticketId/);
+});
+test('Editor Resize UI keeps exact integer bounds and explicit deterministic aspect locking', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const toolbar = await readFile('src/components/editor/ResizeToolbar.jsx', 'utf8');
+  assert.match(editor, /function exactResizeTarget\(draft\)/);
+  assert.match(editor, /width > RESIZE_MAX_DIMENSION \|\| height > RESIZE_MAX_DIMENSION/);
+  assert.match(editor, /width \* height > RESIZE_MAX_OUTPUT_PIXELS/);
+  assert.match(editor, /function proportionalResizeDimension\(value, sourceSame, sourceOther\)/);
+  assert.match(editor, /const rounded = \(numerator \* 2n \+ same\) \/ \(same \* 2n\)/);
+  assert.match(toolbar, /aria-label="Resize controls"/);
+  assert.match(toolbar, /aria-label="Keep resize aspect ratio"/);
+  assert.match(toolbar, /aria-label=\{`Resize \$\{label\.toLowerCase\(\)\}`\}/);
+  assert.match(toolbar, /max=\{RESIZE_MAX_DIMENSION\}/);
+  assert.match(toolbar, /disabled=\{busy \|\| !valid\}/);
+  assert.doesNotMatch(toolbar, /Math\.(round|floor|ceil)\(Number\(raw\)\)/);
+});
+test('Crop, Resize and Selection interactions are mutually exclusive and reset on canonical image change', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const selectionToolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8');
+  assert.match(editor, /setCropDraft\(null\); cropAnchorRef\.current = null; setResizeDraft\(null\); setResizeAspectLocked\(true\); \}, \[project\?\.current_image_artifact_id\]\)/);
+  assert.match(editor, /startDisabled=\{cropInteractionActive \|\| resizeInteractionActive \|\| editorBusy \|\| Boolean\(pendingResult\)\}/);
+  assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| resizeInteractionActive \|\| !project\?\.current_image_artifact_id\) return/);
+  assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| cropInteractionActive \|\| !project\?\.current_image_artifact_id\) return/);
+  assert.match(editor, /busy=\{editorBusy \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| resizeInteractionActive\}/);
+  assert.match(editor, /busy=\{editorBusy \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| cropInteractionActive\}/);
+  assert.match(selectionToolbar, /disabled=\{startDisabled\} onClick=\{onStart\}/);
+});
+test('Pending canonical results outrank empty-object CTA and geometry tools lock keyboard/history edit surfaces', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const pendingIndex = editor.indexOf('{pendingResult ? (');
+  const emptyIndex = editor.indexOf(') : objects.length === 0 ? (');
+  assert.ok(pendingIndex >= 0 && emptyIndex > pendingIndex, 'pending ResultCompare must render before empty-object detection CTA');
+  assert.match(editor, /if \(editorBusy \|\| detecting \|\| cropInteractionActive \|\| resizeInteractionActive \|\| pendingResult\) return/);
+  assert.match(editor, /disabled=\{editorBusy \|\| detecting \|\| cropInteractionActive \|\| resizeInteractionActive \|\| Boolean\(pendingResult\)\}/);
+  assert.match(editor, /\) : cropInteractionActive \? \(/);
+  assert.match(editor, /\) : resizeInteractionActive \? \(/);
+  assert.match(editor, /Adjust the crop rectangle above, then apply or cancel it before starting another edit\./);
+  assert.match(editor, /Set the exact resize dimensions above, then apply or cancel them before starting another edit\./);
+});
+
+test('browser financial surfaces and legacy writers cannot mutate privileged authority', async () => {
+  const subscriptionPage = await readFile('src/pages/Subscription.jsx', 'utf8');
+  const settingsCard = await readFile('src/components/subscription/SubscriptionSettingsCard.jsx', 'utf8');
+  const creditsBar = await readFile('src/components/editor/credits/CreditsBar.jsx', 'utf8');
+  const projectService = await readFile('src/lib/projectService.js', 'utf8');
+  const authority = await readFile('src/lib/financial/clientFinancialAuthority.js', 'utf8');
+  const eslint = await readFile('eslint.config.js', 'utf8');
+
+  for (const source of [subscriptionPage, settingsCard]) {
+    for (const forbidden of ['subscriptionManager', 'creditsWallet', 'changePlan(', 'startTrial(', 'coreClient.entities']) assert.equal(source.includes(forbidden), false, forbidden);
+  }
+  assert.doesNotMatch(creditsBar, /creditsWallet|Balance:|Reserved:|After:/);
+  assert.match(creditsBar, /Advisory only/);
+  assert.doesNotMatch(projectService, /subscriptionValidator|subscriptionUsage/);
+  assert.match(projectService, /coreClient\.projects\.createFromFile/);
+  assert.match(authority, /CLIENT_FINANCIAL_AUTHORITY_DISABLED/);
+
+  for (const file of [
+    'src/lib/credits/creditsManager.js',
+    'src/lib/credits/creditsReservation.js',
+    'src/lib/credits/creditsWallet.js',
+    'src/lib/subscriptions/subscriptionManager.js',
+    'src/lib/subscriptions/subscriptionUsage.js',
+  ]) {
+    const source = await readFile(file, 'utf8');
+    assert.match(source, /requireServerFinancialAuthority/);
+    assert.doesNotMatch(source, /coreClient\.entities\.(CreditsWallet|CreditTransaction|UserSubscription|SubscriptionUsage)\.(create|update|delete|bulkCreate)/);
+  }
+
+  for (const legacyException of [
+    'src/lib/credits/creditsManager.js',
+    'src/lib/credits/creditsReservation.js',
+    'src/lib/credits/creditsWallet.js',
+    'src/lib/subscriptions/subscriptionManager.js',
+    'src/lib/subscriptions/subscriptionUsage.js',
+  ]) assert.equal(eslint.includes(`\"${legacyException}\"`), false, legacyException);
+  assert.match(eslint, /callee\.object\.object\.object\.name='coreClient'/);
+});
+
+test('Automation Studio remains preview-only until durable server execution authority exists', async () => {
+  const page = await readFile('src/pages/AutomationStudio.jsx', 'utf8');
+  const runner = await readFile('src/lib/automation/AutomationRunner.js', 'utf8');
+  for (const forbidden of ['coreClient', 'automationManager', 'automationHistory', 'AutomationHistoryPanel']) assert.equal(page.includes(forbidden), false, forbidden);
+  assert.match(page, /automationRunner\.plan\(/);
+  assert.doesNotMatch(page, /automationRunner\.run\(/);
+  assert.match(page, /previewOnly/);
+  assert.match(runner, /status:\s*'PLANNED_NOT_EXECUTED'/);
+  assert.match(runner, /conditionsEvaluated:\s*Boolean\(context\)/);
+  assert.match(runner, /AUTOMATION_EXECUTION_NOT_WIRED/);
+  for (const forbidden of ['jobManager', 'automationHistory', "status: 'completed'", 'credits_consumed']) assert.equal(runner.includes(forbidden), false, forbidden);
+});
 
 test('Asset Library indexes canonical Project artifacts without generic asset CRUD', async () => {
   const source = await readFile('src/pages/AssetLibrary.jsx', 'utf8');
