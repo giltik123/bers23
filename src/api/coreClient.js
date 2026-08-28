@@ -127,6 +127,22 @@ export const coreClient = Object.freeze({
     },
     uploadBackgroundIsolationImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/background-isolation/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
     submitBackgroundIsolation: ({ ticketId, projectId, result }) => request(`/local-execution/background-isolation/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareCrop: (payload) => request('/local-execution/crop/prepare', json('POST', payload)),
+    loadCropInput: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/crop/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
+      const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
+      const pixelCount = width * height;
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core Crop input byte length does not match its canonical geometry');
+      return Object.freeze({
+        width,
+        height,
+        sourceSha256: requiredShaHeader(delivered.headers, LOCAL_SOURCE_SHA_HEADER),
+        sourceRgba: Uint8ClampedArray.from(delivered.bytes),
+      });
+    },
+    uploadCropImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/crop/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitCrop: ({ ticketId, projectId, result }) => request(`/local-execution/crop/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
     prepareSuperResolution: (payload) => request('/local-execution/super-resolution/prepare', json('POST', payload)),
     loadSuperResolutionInput: async ({ ticketId, projectId }) => {
       const delivered = await requestBytes(`/local-execution/super-resolution/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
