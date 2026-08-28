@@ -32,29 +32,28 @@ function CropOverlay({ crop }) {
   const height = crop.height / crop.sourceHeight * 100;
   return (
     <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
-      <div className="absolute inset-0 bg-black/35" />
       <div
-        className="absolute border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.65)]"
+        className="absolute border-2 border-white"
         style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`, boxShadow: '0 0 0 9999px rgba(0,0,0,0.35)' }}
       />
     </div>
   );
 }
 
-export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, crop, onCropPointer }) {
+export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, crop, cropSource, onCropPointer }) {
   const gestures = useAdaptiveGestures({ onSwipeLeft: onRedo, onSwipeRight: onUndo });
   const renderer = adaptiveRenderer(usePlatformProfile());
   const drawing = useRef(false);
-  const interactive = Boolean(selection || crop);
+  const interactive = Boolean(selection || cropSource);
   const pointer = (phase) => (event) => {
     if (!interactive) return;
     event.preventDefault(); event.stopPropagation();
     if (phase === 'down') { drawing.current = true; event.currentTarget.setPointerCapture(event.pointerId); }
     if (phase === 'move' && !drawing.current) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    if (crop && onCropPointer) {
-      const x = Math.max(0, Math.min(crop.sourceWidth - 1, Math.floor((event.clientX - rect.left) / rect.width * crop.sourceWidth)));
-      const y = Math.max(0, Math.min(crop.sourceHeight - 1, Math.floor((event.clientY - rect.top) / rect.height * crop.sourceHeight)));
+    if (cropSource && onCropPointer) {
+      const x = Math.max(0, Math.min(cropSource.sourceWidth - 1, Math.floor((event.clientX - rect.left) / rect.width * cropSource.sourceWidth)));
+      const y = Math.max(0, Math.min(cropSource.sourceHeight - 1, Math.floor((event.clientY - rect.top) / rect.height * cropSource.sourceHeight)));
       onCropPointer(phase, { x, y });
     } else if (selection && onSelectionPointer) {
       onSelectionPointer(phase, { x: event.clientX - rect.left, y: event.clientY - rect.top }, { displayWidth: rect.width, displayHeight: rect.height, originalWidth: selection.width, originalHeight: selection.height });
