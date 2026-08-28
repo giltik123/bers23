@@ -7,7 +7,7 @@ export class ProductionExecutionRouteSelector implements ExecutionRouteSelectorP
   select(operation: Parameters<ExecutionRouteSelectorPort['select']>[0]) {
     if (operation.type === 'image-edit' || operation.type === 'CONTROLLED_LOCAL_EDIT') return 'PROVIDER' as const;
     if (operation.type === 'verify') return 'INTERNAL' as const;
-    if (operation.type === 'segment' || operation.type === 'BACKGROUND_ISOLATION' || operation.type === 'CROP' || operation.type === 'SUPER_RESOLUTION') return 'ON_DEVICE' as const;
+    if (operation.type === 'segment' || operation.type === 'BACKGROUND_ISOLATION' || operation.type === 'CROP' || operation.type === 'RESIZE' || operation.type === 'SUPER_RESOLUTION') return 'ON_DEVICE' as const;
     throw new Error(`Unsupported production execution route for ${operation.type}`);
   }
 }
