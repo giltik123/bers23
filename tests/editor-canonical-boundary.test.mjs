@@ -35,7 +35,8 @@ test('Editor Crop UI is exact, accessible and fail-closed instead of clamping in
   assert.match(toolbar, /disabled=\{busy \|\| !valid\}/);
   assert.doesNotMatch(toolbar, /Math\.(round|floor|ceil)\(Number\(raw\)\)/);
   assert.match(canvas, /Math\.floor\(\(event\.clientX - rect\.left\) \/ rect\.width \* cropSource\.sourceWidth\)/);
-  assert.match(canvas, /Math\.abs\(point\.x - anchor\.x\) \+ 1/);
+  assert.match(editor, /Math\.abs\(point\.x - anchor\.x\) \+ 1/);
+  assert.match(editor, /Math\.abs\(point\.y - anchor\.y\) \+ 1/);
 });
 test('Crop interaction cannot overlap selection and resets when canonical current image changes', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
