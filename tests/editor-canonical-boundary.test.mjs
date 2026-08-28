@@ -43,5 +43,16 @@ test('Crop interaction cannot overlap selection and resets when canonical curren
   assert.match(editor, /setCropDraft\(null\); cropAnchorRef\.current = null; \}, \[project\?\.current_image_artifact_id\]\)/);
   assert.match(editor, /startDisabled=\{cropInteractionActive \|\| editorBusy \|\| Boolean\(pendingResult\)\}/);
   assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| !project\?\.current_image_artifact_id\) return/);
+  assert.match(editor, /busy=\{editorBusy \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\)\}/);
   assert.match(selectionToolbar, /disabled=\{startDisabled\} onClick=\{onStart\}/);
+});
+test('Pending canonical results outrank empty-object CTA and Crop locks keyboard/history edit surfaces', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const pendingIndex = editor.indexOf('{pendingResult ? (');
+  const emptyIndex = editor.indexOf(') : objects.length === 0 ? (');
+  assert.ok(pendingIndex >= 0 && emptyIndex > pendingIndex, 'pending ResultCompare must render before empty-object detection CTA');
+  assert.match(editor, /if \(editorBusy \|\| detecting \|\| cropInteractionActive \|\| pendingResult\) return/);
+  assert.match(editor, /disabled=\{editorBusy \|\| detecting \|\| cropInteractionActive \|\| Boolean\(pendingResult\)\}/);
+  assert.match(editor, /\) : cropInteractionActive \? \(/);
+  assert.match(editor, /Adjust the crop rectangle above, then apply or cancel it before starting another edit\./);
 });
