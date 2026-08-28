@@ -4,11 +4,19 @@ import type { Pool } from 'pg';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 
-export type FinalImageLineage = Readonly<{
+export type BackgroundIsolationFinalImageLineage = Readonly<{
   sourceImageStorageId: string;
   maskStorageId: string;
   producerOperation: 'BACKGROUND_ISOLATION';
 }>;
+
+export type CropFinalImageLineage = Readonly<{
+  sourceImageStorageId: string;
+  maskStorageId?: undefined;
+  producerOperation: 'CROP';
+}>;
+
+export type FinalImageLineage = BackgroundIsolationFinalImageLineage | CropFinalImageLineage;
 
 export type StoredFinalImage = Readonly<{
   storageId: string;
@@ -26,7 +34,7 @@ export type StoredFinalImage = Readonly<{
   bytes: Uint8Array;
   sourceImageStorageId?: string;
   maskStorageId?: string;
-  producerOperation?: 'BACKGROUND_ISOLATION';
+  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP';
 }>;
 export type StoredImage = Omit<StoredFinalImage, 'executionId'|'operationId'|'role'|'lifecycle'> & { executionId?: string; operationId?: string; role: 'ORIGINAL'|'COMPOSITE'; lifecycle: 'IMMUTABLE'|'FINAL' };
 
@@ -53,7 +61,7 @@ export class PostgresImageArtifactStore {
           ON CONFLICT (tenant_id,user_id,project_id,execution_id)
           WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
           DO UPDATE SET execution_id=EXCLUDED.execution_id
-          RETURNING *`, [storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId, image.width, image.height, bytes, normalizedLineage.sourceImageStorageId, normalizedLineage.maskStorageId, normalizedLineage.producerOperation])
+          RETURNING *`, [storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId, image.width, image.height, bytes, normalizedLineage.sourceImageStorageId, normalizedLineage.maskStorageId ?? null, normalizedLineage.producerOperation])
       : await this.pool.query(`INSERT INTO canonical_image_artifacts
           (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes)
           VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9)
@@ -97,10 +105,18 @@ export class PostgresImageArtifactStore {
 
 function normalizeLineage(value: FinalImageLineage): FinalImageLineage {
   const sourceImageStorageId = value?.sourceImageStorageId?.trim();
-  const maskStorageId = value?.maskStorageId?.trim();
-  if (!sourceImageStorageId || !maskStorageId || value.producerOperation !== 'BACKGROUND_ISOLATION') throw new Error('Canonical Background Isolation FINAL lineage is incomplete');
-  if (sourceImageStorageId === maskStorageId) throw new Error('Canonical Background Isolation source and MASK storage identities must differ');
-  return Object.freeze({ sourceImageStorageId, maskStorageId, producerOperation: 'BACKGROUND_ISOLATION' as const });
+  if (!sourceImageStorageId) throw new Error('Canonical FINAL source lineage is incomplete');
+  if (value.producerOperation === 'BACKGROUND_ISOLATION') {
+    const maskStorageId = value.maskStorageId?.trim();
+    if (!maskStorageId) throw new Error('Canonical Background Isolation FINAL MASK lineage is incomplete');
+    if (sourceImageStorageId === maskStorageId) throw new Error('Canonical Background Isolation source and MASK storage identities must differ');
+    return Object.freeze({ sourceImageStorageId, maskStorageId, producerOperation: 'BACKGROUND_ISOLATION' as const });
+  }
+  if (value.producerOperation === 'CROP') {
+    if (value.maskStorageId !== undefined) throw new Error('Canonical Crop FINAL must not carry MASK lineage');
+    return Object.freeze({ sourceImageStorageId, producerOperation: 'CROP' as const });
+  }
+  throw new Error('Canonical FINAL producer operation is not admitted for lineage');
 }
 
 function assertExactLineagedReplay(
@@ -114,6 +130,7 @@ function assertExactLineagedReplay(
   lineage: FinalImageLineage,
 ): void {
   const storedBytes = Buffer.from(row.image_bytes ?? []);
+  const expectedMaskStorageId = lineage.producerOperation === 'BACKGROUND_ISOLATION' ? lineage.maskStorageId : null;
   const same = row.tenant_id === scope.tenantId
     && row.user_id === scope.userId
     && row.project_id === scope.projectId
@@ -127,9 +144,9 @@ function assertExactLineagedReplay(
     && row.content_type === 'image/png'
     && storedBytes.equals(bytes)
     && row.source_image_storage_id === lineage.sourceImageStorageId
-    && row.mask_storage_id === lineage.maskStorageId
+    && (row.mask_storage_id ?? null) === expectedMaskStorageId
     && row.producer_operation === lineage.producerOperation;
-  if (!same) throw new Error('Canonical Background Isolation execution is already bound to a different FINAL or parent lineage');
+  if (!same) throw new Error('Canonical deterministic execution is already bound to a different FINAL or parent lineage');
 }
 
 function fromFinalRow(row: any): StoredFinalImage {
