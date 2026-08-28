@@ -1,6 +1,6 @@
 import type { TargetSelectorPort } from '../../../src/platform/creative/canonical/contracts.ts';
 
-export const PRODUCTION_TARGET_SELECTION_VERSION = '6.42C3.1';
+export const PRODUCTION_TARGET_SELECTION_VERSION = '6.42C3.2';
 /** Pure target policy; BLOCKED is the fail-closed default. */
 export const productionTargetSelection: TargetSelectorPort = Object.freeze({
   select(operation) {
