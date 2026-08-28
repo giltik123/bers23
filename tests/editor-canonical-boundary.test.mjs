@@ -158,3 +158,14 @@ test('Asset Library indexes canonical Project artifacts without generic asset CR
     'Outfit.list',
   ]) assert.equal(source.includes(forbidden), false, forbidden);
 });
+
+test('Agent image execution stays gated until canonical composite execution exists', async () => {
+  const panel = await readFile('src/components/editor/agent/AgentPanel.jsx', 'utf8');
+  const queue = await readFile('src/lib/agent/executionQueue.js', 'utf8');
+  assert.match(panel, /Canonical Agent execution is not enabled yet/);
+  assert.match(panel, /Use the Prompt tab for canonical single edits/);
+  for (const forbidden of ['aiAgent', 'executionQueue', 'taskHistory', 'onCommit', 'onRollback']) assert.equal(panel.includes(forbidden), false, forbidden);
+  assert.match(queue, /AGENT_EXECUTION_NOT_WIRED/);
+  assert.match(queue, /async run\(\)/);
+  for (const forbidden of ['editingEngine', 'recipeEngine', 'aiPlanner', 'taskHistory', 'result.image_url']) assert.equal(queue.includes(forbidden), false, forbidden);
+});
