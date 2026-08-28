@@ -30,6 +30,7 @@ const config: CoreServerConfig = Object.freeze({
   artifactSigningSecret: artifactSecret, trustedAssetHosts: Object.freeze(['assets.vertical.test']), allowLegacyAssetUrls: false,
   allowedWebOrigins: Object.freeze([]), hardBudgetCredits: 1, creditsPerEdit: 1, bodyLimitBytes: 64_000,
   maskUploadLimitBytes: 64_000, maskMaxDimension: 256,
+  imageUploadLimitBytes: 2_000_000, imageMaxDimension: 256, imageMaxPixels: 65_536,
   requestTimeoutMs: 5_000, providerTimeoutMs: 2_000, shutdownTimeoutMs: 2_000,
 });
 

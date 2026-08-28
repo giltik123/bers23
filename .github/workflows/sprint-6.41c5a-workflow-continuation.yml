@@ -1,0 +1,80 @@
+name: Sprint 6.41C5A workflow continuation acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "server/core/workflow/**"
+      - "server/core/localExecution/**"
+      - "server/core/artifacts/migrations/012_local_execution_uploads.sql"
+      - "server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql"
+      - "server/core/artifacts/migrations/015_workflow_continuations.sql"
+      - "server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql"
+      - "src/platform/creative/canonical/planning/**"
+      - "server/core/providers/productionExecutionCapabilities.ts"
+      - "server/core/providers/productionOnDeviceRoute.test.mjs"
+      - ".github/workflows/sprint-6.41c5a-workflow-continuation.yml"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+jobs:
+  continuation-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: continuation_test
+          POSTGRES_USER: continuation_test
+          POSTGRES_PASSWORD: continuation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U continuation_test -d continuation_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://continuation_test:continuation_test@127.0.0.1:5432/continuation_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck continuation authority
+        run: npm run server:typecheck
+      - name: Run fail-closed continuation unit tests
+        run: node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.test.mjs
+      - name: Apply exact prerequisite and C5A schemas
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import { Pool } from 'pg';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-c5a-schema' });
+          try {
+            for (const path of [
+              'server/core/artifacts/migrations/002_canonical_mask_artifacts.sql',
+              'server/core/artifacts/migrations/012_local_execution_uploads.sql',
+              'server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql',
+              'server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql',
+              'server/core/artifacts/migrations/015_workflow_continuations.sql',
+            ]) await pool.query(await readFile(path, 'utf8'));
+          } finally { await pool.end(); }
+          NODE
+      - name: Prove PostgreSQL restart, concurrency and replay semantics
+        run: node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.integration.test.mjs
+      - name: Preserve composite and capability fail-closed boundaries
+        run: |
+          npm run test:creative-planning-v2
+          node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
+          grep -F "compositeExecutionEnabled: options.compositeExecutionEnabled ?? false" src/platform/creative/canonical/planning/CanonicalPlanningService.ts
+          grep -F "COMPOSITE_EXECUTION_NOT_WIRED" src/platform/creative/canonical/planning/CanonicalPlanningService.ts
+          if grep -R -n -E "falWorkflowRuntime|fashnProvider|editingEngine|creditsEngine" server/core/workflow; then
+            echo "Workflow continuation authority must not execute providers or browser financial paths" >&2
+            exit 1
+          fi
