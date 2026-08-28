@@ -2,11 +2,14 @@ import upscaleManifest from '../../../src/platform/creative/local-ai/models/supe
 import type { LocalExecutionExecutorBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
 import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../../../src/platform/creative/canonical/localComposite.ts';
 import { BACKGROUND_ISOLATION_CAPABILITY } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
+import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { requireDeterministicToolByCapability } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { REAL_ESRGAN_LOCAL_CAPABILITY, isExecutableRealEsrganRelease } from './productionLocalModelPolicy.ts';
 
 const backgroundIsolationTool = requireDeterministicToolByCapability(BACKGROUND_ISOLATION_CAPABILITY);
 const backgroundIsolationExecutors = Object.freeze([backgroundIsolationTool.executor]);
+const cropTool = requireDeterministicToolByCapability(CROP_CAPABILITY);
+const cropExecutors = Object.freeze([cropTool.executor]);
 
 const realEsrganExecutors: readonly LocalExecutionExecutorBinding[] = isExecutableRealEsrganRelease(upscaleManifest)
   ? Object.freeze([Object.freeze({
@@ -25,5 +28,6 @@ const realEsrganExecutors: readonly LocalExecutionExecutorBinding[] = isExecutab
 export const productionLocalExecutorsByCapability: Readonly<Record<string, readonly LocalExecutionExecutorBinding[]>> = Object.freeze({
   [BACKGROUND_ISOLATION_CAPABILITY]: backgroundIsolationExecutors,
   [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation]: backgroundIsolationExecutors,
+  [CROP_CAPABILITY]: cropExecutors,
   [REAL_ESRGAN_LOCAL_CAPABILITY]: realEsrganExecutors,
 });
