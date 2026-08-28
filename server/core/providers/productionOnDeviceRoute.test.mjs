@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES, LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT } from '../../../src/platform/creative/canonical/localComposite.ts';
 import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
+import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
 import { ProductionExecutionCapabilityRegistry } from './productionExecutionCapabilities.ts';
 import { productionExecutionRoute } from './productionExecutionRoute.ts';
 import { productionTargetSelection } from './productionTargetSelection.ts';
@@ -10,6 +11,7 @@ const request = Object.freeze({ id: 'request', intent: 'segment subject', scope:
 const segment = Object.freeze({ id: 'segment-step', type: 'segment', requiredArtifacts: ['input'], produces: ['mask'] });
 const backgroundIsolation = Object.freeze({ id: 'background-isolation-step', type: 'BACKGROUND_ISOLATION', requiredArtifacts: ['input', 'mask'], produces: ['image'] });
 const crop = Object.freeze({ id: 'crop', type: 'CROP', requiredArtifacts: ['input'], produces: ['image'] });
+const resize = Object.freeze({ id: 'resize', type: 'RESIZE', requiredArtifacts: ['input'], produces: ['image'] });
 const verify = Object.freeze({ id: 'verify-step', type: 'verify', requiredArtifacts: ['composite'], produces: ['image'] });
 
 test('production segmentation selects ON_DEVICE + LOCAL', () => {
@@ -40,6 +42,20 @@ test('deterministic Crop is admitted only for its exact CROP purpose and LOCAL O
   assert.equal(registry.admit({ request: cropRequest, operation: { ...crop, providerId: 'fal' }, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'PROVIDER_FORBIDDEN');
 });
 
+test('deterministic Resize is admitted only for its exact RESIZE purpose and LOCAL ON_DEVICE tuple', () => {
+  const registry = new ProductionExecutionCapabilityRegistry();
+  const resizeRequest = { ...request, metadata: { operationIntent: 'RESIZE' } };
+  assert.equal(productionExecutionRoute.select(resize, resizeRequest), 'ON_DEVICE');
+  assert.equal(productionTargetSelection.select(resize, resizeRequest), 'LOCAL');
+  assert.deepEqual(registry.admit({ request: resizeRequest, operation: resize, route: 'ON_DEVICE', target: 'LOCAL' }), {
+    allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: RESIZE_CAPABILITY,
+  });
+  assert.equal(registry.admit({ request, operation: resize, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
+  assert.equal(registry.admit({ request: resizeRequest, operation: resize, route: 'ON_DEVICE', target: 'CLOUD' }).reasonCode, 'UNSUPPORTED_TARGET');
+  assert.equal(registry.admit({ request: resizeRequest, operation: resize, route: 'PROVIDER', target: 'LOCAL' }).reasonCode, 'PROVIDER_REQUIRED');
+  assert.equal(registry.admit({ request: resizeRequest, operation: { ...resize, providerId: 'fal' }, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'PROVIDER_FORBIDDEN');
+});
+
 test('narrow C5B composite receives only its exact purpose-bound segment, isolation and verify capabilities', () => {
   const registry = new ProductionExecutionCapabilityRegistry();
   const narrowComposite = { ...request, metadata: { operationIntent: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT } };
@@ -53,6 +69,7 @@ test('narrow C5B composite receives only its exact purpose-bound segment, isolat
     allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.verify,
   });
   assert.equal(registry.admit({ request: narrowComposite, operation: crop, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
+  assert.equal(registry.admit({ request: narrowComposite, operation: resize, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
 });
 
 test('generic and broad composite operations cannot inherit narrow or standalone local model/tool authority', () => {
@@ -63,6 +80,7 @@ test('generic and broad composite operations cannot inherit narrow or standalone
     assert.equal(registry.admit({ request: candidateRequest, operation: segment, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
     assert.equal(registry.admit({ request: candidateRequest, operation: backgroundIsolation, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
     assert.equal(registry.admit({ request: candidateRequest, operation: crop, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
+    assert.equal(registry.admit({ request: candidateRequest, operation: resize, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
   }
 });
 
