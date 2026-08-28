@@ -6,6 +6,7 @@ export * from './PostgresLocalExecutionUploadStore.ts';
 export * from './LocalExecutionResultAuthority.ts';
 export * from './LocalSegmentationExecutionService.ts';
 export * from './LocalDeterministicImageExecutionService.ts';
+export * from './LocalCropExecutionService.ts';
 export * from './LocalSuperResolutionExecutionService.ts';
 export * from './LocalExecutionInputDeliveryService.ts';
 export * from './localExecutionLedgerSchema.ts';
