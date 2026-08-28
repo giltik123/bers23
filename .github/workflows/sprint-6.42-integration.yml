@@ -94,7 +94,7 @@ jobs:
           grep -F "finalArtifactId: result.canonicalArtifactId" src/pages/Editor.jsx
       - name: C2 real PostgreSQL deterministic pixel, lineage, replay and zero-cloud verticals
         run: |
-          mkdir -p .test-cache/6.42-integration/migrations .test-cache/artifacts/migrations .test-cache/6.42-integration/c2-postgres
+          mkdir -p .test-cache/6.42-integration/migrations .test-cache/artifacts/migrations .test-cache/6.42-integration/c2-postgres/migrations
           npx esbuild tests/background-isolation-postgres-vertical.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/6.42-integration/c2-postgres/background-isolation-postgres-vertical.test.mjs \
@@ -119,6 +119,7 @@ jobs:
           cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/019_canonical_crop_final_lineage.sql .test-cache/6.42-integration/migrations/
+          cp .test-cache/6.42-integration/migrations/*.sql .test-cache/6.42-integration/c2-postgres/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
