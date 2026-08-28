@@ -1,6 +1,7 @@
 import type { CanonicalPlanningPort, CreativeDecision, CreativeOperation, CreativePlan, CreativePlanArtifactSnapshot, CreativePlanCandidate, CreativePlanConstraints, CreativePlannerConfigSnapshot, CreativePlanProvenance, CreativePlanScore, CreativePlanStatus, CreativePlanUncertainty, CreativeRequest, ExecutionTarget, PlanningConfirmationPolicy, PlanningExecutionPolicy, PlanningTelemetryPort } from '../contracts';
 import { buildExplanation, buildReplay, emitPlanTelemetry, fallbackFor, immutable, verificationFor } from './advisoryPolicies';
 import {
+  RESIZE_FIXED_POINT_BITS,
   RESIZE_MAX_DIMENSION,
   RESIZE_MAX_OUTPUT_PIXELS,
   RESIZE_OPERATION,
@@ -176,7 +177,7 @@ function resizeOperations(artifacts: readonly CreativePlanArtifactSnapshot[], co
       deterministicTool: `${RESIZE_TOOL_ID}@${RESIZE_TOOL_VERSION}`,
       coordinateSpace: 'CANONICAL_ORIENTATION_1_PIXEL_CENTERS',
       interpolation: 'BILINEAR_FIXED_16_16_PIXEL_CENTER',
-      fixedPointBits: 16,
+      fixedPointBits: RESIZE_FIXED_POINT_BITS,
       rounding: 'ROUND_HALF_UP',
       borderPolicy: 'CLAMP_TO_EDGE',
       alphaPolicy: 'PREMULTIPLIED_ALPHA_WITH_STRAIGHT_RGB_WHEN_WEIGHTED_ALPHA_ZERO',
