@@ -1,5 +1,7 @@
 import type { Artifact, WorkflowOperation, WorkflowVerifierPort, VerificationResult } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { CROP_TOOL_ID, CROP_TOOL_VERSION } from '../../../src/platform/creative/deterministic/Crop.ts';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS, RESIZE_TOOL_ID, RESIZE_TOOL_VERSION } from '../../../src/platform/creative/deterministic/Resize.ts';
+import { RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { SUPER_RESOLUTION_ALPHA_POLICY, SUPER_RESOLUTION_SCALE } from '../../../src/platform/creative/super-resolution/SuperResolutionContract.ts';
 
 export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C3.1';
@@ -37,17 +39,7 @@ const ERRORS = Object.freeze({
   invalidModelGeometry: 'LOCAL_MODEL_OUTPUT_GEOMETRY_INVALID',
 } as const);
 
-/**
- * Server-owned runtime verification policy for currently accepted production contracts.
- * Planner/client verification claims are intentionally ignored. This component performs no
- * provider call, network access, persistence, access-control or financial mutation.
- *
- * Deterministic outputs can carry byte-exact verification only when the admitted artifact
- * proves the exact reviewed deterministic contract. Model output cannot: without re-running
- * the model on a trusted server, Core proves only admitted executor identity, output
- * contract/geometry and canonical lineage. Metadata is required to state that weaker scope
- * explicitly so a model result cannot masquerade as deterministic proof.
- */
+/** Server-owned runtime verification policy for currently accepted production contracts. */
 export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
   async verify(operation: WorkflowOperation, artifacts: readonly Artifact[]): Promise<VerificationResult> {
     if (operation.type === 'verify') {
@@ -80,6 +72,15 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
       const parents = artifacts[0].metadata?.parentArtifactIds;
       if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
       if (!hasValidCropGeometry(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage, CHECKS.deterministicGeometry], errors: [] });
+    }
+    if (operation.type === 'RESIZE') {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalResizeImage(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicSemantics, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
+      if (!hasValidResizeGeometry(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage]);
       return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage, CHECKS.deterministicGeometry], errors: [] });
     }
     if (operation.type === 'SUPER_RESOLUTION') {
@@ -142,6 +143,39 @@ function hasValidCropGeometry(operation: WorkflowOperation, artifact: Artifact):
   const x = exactInteger(rect.x, 0); const y = exactInteger(rect.y, 0); const width = exactInteger(rect.width, 1); const height = exactInteger(rect.height, 1);
   if (x === undefined || y === undefined || width === undefined || height === undefined) return false;
   if (input.x !== x || input.y !== y || input.width !== width || input.height !== height) return false;
+  return artifact.value.width === width && artifact.value.height === height;
+}
+
+function isCanonicalResizeImage(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  if (!metadata || metadata.artifactRole !== 'COMPOSITE' || metadata.localExecutionAdmission !== 'ADMITTED') return false;
+  if (metadata.admissionClass !== 'DETERMINISTIC_BYTE_EXACT' || metadata.verificationScope !== 'BYTE_EXACT_CORE_RECOMPUTE') return false;
+  if (metadata.executorKind !== 'DETERMINISTIC_TOOL' || metadata.toolId !== RESIZE_TOOL_ID || metadata.toolVersion !== RESIZE_TOOL_VERSION) return false;
+  if (metadata.runtime !== 'BROWSER_JS' || metadata.accelerator !== 'cpu') return false;
+  if (!sha256(metadata.candidateSha256) || !sha256(metadata.verifiedPixelSha256)) return false;
+  const exact = RESIZE_TOOL_DEFINITION.parameters.exact;
+  if (metadata.coordinateSpace !== exact.coordinateSpace || metadata.interpolation !== exact.interpolation || metadata.fixedPointBits !== exact.fixedPointBits || metadata.rounding !== exact.rounding || metadata.borderPolicy !== exact.borderPolicy || metadata.alphaPolicy !== exact.alphaPolicy || metadata.maxOutputPixels !== exact.maxOutputPixels) return false;
+  const integrity = metadata.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  if (integrity?.verificationOutcome !== 'PASS' || integrity.pixelComparison !== 'BYTE_EXACT') return false;
+  const input = operation.input;
+  if (!input || input.deterministicTool !== `${RESIZE_TOOL_ID}@${RESIZE_TOOL_VERSION}` || input.coordinateSpace !== exact.coordinateSpace || input.interpolation !== exact.interpolation || input.fixedPointBits !== exact.fixedPointBits || input.rounding !== exact.rounding || input.borderPolicy !== exact.borderPolicy || input.alphaPolicy !== exact.alphaPolicy || input.maxOutputPixels !== exact.maxOutputPixels) return false;
+  return true;
+}
+
+function hasValidResizeGeometry(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  const target = record(metadata?.resizeTarget);
+  const input = operation.input;
+  if (!target || !input) return false;
+  const width = exactInteger(target.width, 1); const height = exactInteger(target.height, 1);
+  const sourceWidth = exactInteger(metadata?.sourceWidth, 1); const sourceHeight = exactInteger(metadata?.sourceHeight, 1);
+  if (width === undefined || height === undefined || sourceWidth === undefined || sourceHeight === undefined) return false;
+  if (width > RESIZE_MAX_DIMENSION || height > RESIZE_MAX_DIMENSION || sourceWidth > RESIZE_MAX_DIMENSION || sourceHeight > RESIZE_MAX_DIMENSION) return false;
+  const pixels = width * height;
+  if (!Number.isSafeInteger(pixels) || pixels > RESIZE_MAX_OUTPUT_PIXELS) return false;
+  if (input.width !== width || input.height !== height) return false;
   return artifact.value.width === width && artifact.value.height === height;
 }
 
