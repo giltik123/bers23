@@ -1,0 +1,210 @@
+name: Sprint 6.42D5 Tiny-SD control semantics
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  control-semantics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+      D5_AUTHORITY: COMPOSITION_ONLY_NOT_QUALITY_ADMISSION
+      TRANSFORMERS_JS_VERSION: '3.8.1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Static fail-closed D5 control policy
+        run: |
+          set -euo pipefail
+          npm ci
+          node --test tests/tiny-sd-d5-control-policy.test.mjs
+          node --check scripts/tiny-sd-d5-control-constants.mjs
+          node --check scripts/tiny-sd-d5-dpm-solver.mjs
+          node --check scripts/test-tiny-sd-d5-dpm-parity.mjs
+          node --check scripts/test-tiny-sd-d5-control-browser.mjs
+          python -m py_compile scripts/probe-tiny-sd-d5-control.py scripts/prepare-tiny-sd-d5-browser-tokenizer.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' '*.npz' '*.f32' | wc -l)" -eq 0
+          if git grep -n -I -E -- '^-----BEGIN (ED25519 |EC |RSA |OPENSSH )?PRIVATE KEY-----$'; then
+            echo 'Private key material is tracked by Git' >&2
+            exit 1
+          fi
+
+      - name: Use Python 3.10 historical control reference
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install pinned Hugging Face transport client
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+
+      - name: Fetch only pinned Tiny-SD control assets
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/6.42d5-control
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          expected = [
+              'model_index.json',
+              'scheduler/scheduler_config.json',
+              'text_encoder/config.json',
+              'tokenizer/merges.txt',
+              'tokenizer/special_tokens_map.json',
+              'tokenizer/tokenizer_config.json',
+              'tokenizer/vocab.json',
+          ]
+          snapshot_download(
+              repo_id='segmind/tiny-sd',
+              revision=os.environ['UPSTREAM_REVISION'],
+              local_dir=os.path.join(os.environ['RUNNER_TEMP'], 'tiny-sd-d5-control-snapshot'),
+              allow_patterns=expected,
+          )
+          PY
+          test "$(find "${RUNNER_TEMP}/tiny-sd-d5-control-snapshot" -type f | wc -l)" -ge 7
+          test "$(find "${RUNNER_TEMP}/tiny-sd-d5-control-snapshot" -type f \( -name '*.bin' -o -name '*.safetensors' -o -name '*.onnx' -o -name '*.ort' -o -name '*.pt' -o -name '*.pth' \) | wc -l)" -eq 0
+
+      - name: Install pinned historical tokenizer/scheduler reference
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.24.4 huggingface_hub==0.16.4 safetensors==0.3.1 ftfy==6.1.1
+          python -m pip install --disable-pip-version-check torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check diffusers==0.19.0 transformers==4.30.2
+          python - <<'PY'
+          import diffusers, huggingface_hub, numpy, torch, transformers
+          assert diffusers.__version__ == '0.19.0'
+          assert transformers.__version__ == '4.30.2'
+          assert huggingface_hub.__version__ == '0.16.4'
+          assert numpy.__version__ == '1.24.4'
+          assert torch.__version__ == '2.0.1+cpu'
+          PY
+
+      - name: Produce pinned Python tokenizer and DPM-Solver reference
+        run: |
+          set -euo pipefail
+          python scripts/probe-tiny-sd-d5-control.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d5-control-snapshot" \
+            --report .test-cache/6.42d5-control/tiny-sd-d5-control-reference.json
+
+      - name: Prove BERS JS DPM-Solver math against historical reference
+        run: |
+          set -euo pipefail
+          node scripts/test-tiny-sd-d5-dpm-parity.mjs \
+            --reference .test-cache/6.42d5-control/tiny-sd-d5-control-reference.json \
+            --report .test-cache/6.42d5-control/tiny-sd-d5-dpm-js-parity.json
+
+      - name: Prepare local browser tokenizer from the pinned CLIP assets
+        run: |
+          set -euo pipefail
+          python scripts/prepare-tiny-sd-d5-browser-tokenizer.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d5-control-snapshot" \
+            --reference .test-cache/6.42d5-control/tiny-sd-d5-control-reference.json \
+            --output-dir "${RUNNER_TEMP}/tiny-sd-d5-browser-tokenizer" \
+            --report .test-cache/6.42d5-control/tiny-sd-d5-browser-tokenizer.json
+          test -s "${RUNNER_TEMP}/tiny-sd-d5-browser-tokenizer/tokenizer.json"
+          test -s "${RUNNER_TEMP}/tiny-sd-d5-browser-tokenizer/config.json"
+
+      - name: Install CI-only pinned Transformers.js tokenizer runtime
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --ignore-scripts "@huggingface/transformers@${TRANSFORMERS_JS_VERSION}"
+          node --input-type=module - <<'JS'
+          import { env } from '@huggingface/transformers';
+          if (String(env.version) !== process.env.TRANSFORMERS_JS_VERSION) throw new Error(`Transformers.js drift: ${env.version}`);
+          JS
+          git diff --exit-code -- package.json package-lock.json
+
+      - name: Prove system Google Chrome is installed
+        run: |
+          set -euo pipefail
+          google-chrome --version
+
+      - name: Prove local CLIP tokenizer and DPM-Solver semantics in real Chrome
+        run: |
+          set -euo pipefail
+          node scripts/test-tiny-sd-d5-control-browser.mjs \
+            --tokenizer-dir "${RUNNER_TEMP}/tiny-sd-d5-browser-tokenizer" \
+            --reference .test-cache/6.42d5-control/tiny-sd-d5-control-reference.json \
+            --preparation .test-cache/6.42d5-control/tiny-sd-d5-browser-tokenizer.json \
+            --report .test-cache/6.42d5-control/tiny-sd-d5-browser-control.json
+
+      - name: Validate D5 control classification without granting authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          root = '.test-cache/6.42d5-control'
+          ref = json.load(open(f'{root}/tiny-sd-d5-control-reference.json', encoding='utf-8'))
+          js = json.load(open(f'{root}/tiny-sd-d5-dpm-js-parity.json', encoding='utf-8'))
+          prep = json.load(open(f'{root}/tiny-sd-d5-browser-tokenizer.json', encoding='utf-8'))
+          browser = json.load(open(f'{root}/tiny-sd-d5-browser-control.json', encoding='utf-8'))
+          assert os.environ['D5_AUTHORITY'] == 'COMPOSITION_ONLY_NOT_QUALITY_ADMISSION'
+          assert ref['authority'] == js['authority'] == prep['authority'] == browser['authority'] == os.environ['D5_AUTHORITY']
+          assert ref['runtimeAuthorityGranted'] is False and ref['productionApproval'] is False
+          assert ref['cloudFallbackAllowed'] is False and ref['realDeviceApproval'] is False
+          assert js['runtimeAuthorityGranted'] is False and js['productionApproval'] is False
+          assert js['cloudFallbackAllowed'] is False and js['passed'] is True
+          assert prep['runtimeAuthorityGranted'] is False and prep['productionApproval'] is False
+          assert prep['pinnedSourceAssetsPreservedByteExactly'] is True
+          assert prep['fastVsHistoricalReferenceExact'] is True
+          assert browser['runtimeAuthorityGranted'] is False and browser['productionApproval'] is False
+          assert browser['cloudFallbackAllowed'] is False and browser['realDeviceApproval'] is False
+          assert browser['transformersJsVersion'] == os.environ['TRANSFORMERS_JS_VERSION']
+          assert len(ref['tokenizer']['cases']) == 5 and len(browser['tokenizerCases']) == 5
+          assert all(value['exactInputIds'] and value['exactAttentionMask'] for value in browser['tokenizerCases'].values())
+          assert set(ref['scheduler']['schedules']) == {'2', '4', '10'}
+          assert browser['networkDiagnostics']['externalHttpRequests'] == []
+          print('TINY-SD D5 CONTROL CLASSIFICATION: PASS', js['observed'], browser['scheduler']['observed'])
+          PY
+
+      - name: Destroy control/tokenizer assets before JSON upload
+        run: |
+          set -euo pipefail
+          rm -rf "${RUNNER_TEMP}/tiny-sd-d5-control-snapshot" "${RUNNER_TEMP}/tiny-sd-d5-browser-tokenizer"
+          test "$(find .test-cache/6.42d5-control -type f \( -name '*.bin' -o -name '*.safetensors' -o -name '*.onnx' -o -name '*.ort' -o -name '*.npz' -o -name '*.f32' -o -name '*.png' -o -name '*.pt' -o -name '*.pth' -o -name 'tokenizer.json' \) | wc -l)" -eq 0
+
+      - name: Upload JSON-only D5 control evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-sd-d5-control-evidence
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            .test-cache/6.42d5-control/tiny-sd-d5-control-reference.json
+            .test-cache/6.42d5-control/tiny-sd-d5-dpm-js-parity.json
+            .test-cache/6.42d5-control/tiny-sd-d5-browser-tokenizer.json
+            .test-cache/6.42d5-control/tiny-sd-d5-browser-control.json
+
+      - name: Summarize D5 control semantics
+        run: |
+          python - <<'PY'
+          import json, os
+          root = '.test-cache/6.42d5-control'
+          js = json.load(open(f'{root}/tiny-sd-d5-dpm-js-parity.json', encoding='utf-8'))
+          browser = json.load(open(f'{root}/tiny-sd-d5-browser-control.json', encoding='utf-8'))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write('## Tiny-SD D5 control semantics\n\n')
+              summary.write(f"DPM-Solver Node parity: **PASS**; maxAbs `{js['observed']['maxAbs']}`, RMSE `{js['observed']['rmse']}`.  \n")
+              summary.write(f"Real Chrome CLIP tokenizer parity: **{len(browser['tokenizerCases'])}/5 exact**.  \n")
+              summary.write(f"Real Chrome DPM-Solver parity: **PASS**; maxAbs `{browser['scheduler']['observed']['maxAbs']}`, RMSE `{browser['scheduler']['observed']['rmse']}`.  \n")
+              summary.write('External tokenizer/model HTTP(S): **0**.  \n')
+              summary.write('Authority: **COMPOSITION_ONLY_NOT_QUALITY_ADMISSION; no runtime/Editor/cloud/real-device approval.**\n')
+          PY
+
+      - name: Failure cleanup
+        if: failure()
+        run: |
+          rm -rf "${RUNNER_TEMP}/tiny-sd-d5-control-snapshot" "${RUNNER_TEMP}/tiny-sd-d5-browser-tokenizer"
