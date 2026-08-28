@@ -43,12 +43,19 @@ export type LocalResizeSubmission = Readonly<{
   outcome: ProductionOutcome;
 }>;
 
+export type LocalResizeResourceLimits = Readonly<{
+  maxDimension: number;
+  maxPixels: number;
+  maxUploadBytes: number;
+}>;
+
 export type LocalResizeServiceDependencies = Readonly<{
   platform: CreativeExecutionPlatformRuntimeDependencies;
   ownsArtifacts: (scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]) => Promise<boolean>;
   hydrateArtifacts: (scope: AuthenticatedScope & { projectId: string }, sourceId: string, maskIds: readonly string[]) => Promise<readonly CreativeArtifact[]>;
   admission: LocalExecutionLedgerV2;
   uploads: PostgresLocalExecutionUploadStore;
+  limits: LocalResizeResourceLimits;
   persistFinal: (
     scope: AuthenticatedScope & { projectId: string },
     executionId: string,
@@ -71,14 +78,17 @@ export type LocalResizeServiceDependencies = Readonly<{
 export class LocalResizeExecutionService {
   readonly #platform: CreativeExecutionPlatform;
   readonly #now: () => number;
+  readonly #limits: LocalResizeResourceLimits;
 
   constructor(private readonly dependencies: LocalResizeServiceDependencies) {
     this.#platform = new CreativeExecutionPlatform(dependencies.platform);
     this.#now = dependencies.now ?? Date.now;
+    this.#limits = normalizeResourceLimits(dependencies.limits);
   }
 
   async prepare(command: LocalResizePrepareCommand, auth: AuthenticatedScope): Promise<Readonly<{ executionId: string; ticket: LocalExecutionTicketV2 }>> {
     const normalized = normalizePrepare(command);
+    assertWithinCoreLimits(normalized, this.#limits);
     const scope = Object.freeze({ ...auth, projectId: normalized.projectId });
     const executionId = resizeExecutionId(scope, normalized.clientRequestId);
     const idempotencyKey = ticketIdempotencyKey(normalized.clientRequestId);
@@ -98,6 +108,7 @@ export class LocalResizeExecutionService {
     if (tickets.length !== 1) throw serviceError(500, 'local_ticket_contract_error', 'Expected exactly one deterministic Resize ticket');
     const ticket = tickets[0];
     assertResizeTicket(ticket);
+    assertTicketWithinCoreLimits(ticket, this.#limits);
     if (ticket.idempotencyKey !== idempotencyKey) throw serviceError(500, 'local_ticket_idempotency_contract', 'Canonical Resize ticket idempotency binding is invalid');
     assertExactCommandBinding(ticket, normalized);
     return Object.freeze({ executionId, ticket });
@@ -106,6 +117,8 @@ export class LocalResizeExecutionService {
   async uploadImage(input: Readonly<{ ticketId: string; projectId: string; bytes: Uint8Array }>, auth: AuthenticatedScope) {
     const ticket = await this.requireTicket(input.ticketId, auth, input.projectId);
     if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local Resize ticket has expired');
+    assertTicketWithinCoreLimits(ticket, this.#limits);
+    if (input.bytes.byteLength > this.#limits.maxUploadBytes) throw serviceError(413, 'local_image_upload_too_large', 'Local Resize image upload exceeds the Core image upload limit');
     const output = requireOutputContract(ticket);
     const decoded = await decodePngRgba(input.bytes, Number(output.width), Number(output.height));
     const upload = await this.dependencies.uploads.persist({
@@ -133,6 +146,7 @@ export class LocalResizeExecutionService {
     }
 
     try {
+      assertTicketWithinCoreLimits(ticket, this.#limits);
       const artifacts = await this.revalidateCanonicalSource(ticket);
       await this.ensurePlatformExecution(ticket, artifacts);
       const result = claim.result as LocalExecutionResultV2;
@@ -240,6 +254,7 @@ export class LocalResizeExecutionService {
   private async validateDurablePrepareTicket(ticket: LocalExecutionTicketV2, command: LocalResizePrepareCommand, scope: AuthenticatedScope & { projectId: string }, executionId: string): Promise<void> {
     assertSameScope(ticket.scope, scope);
     assertResizeTicket(ticket);
+    assertTicketWithinCoreLimits(ticket, this.#limits);
     if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local Resize ticket has expired');
     if (ticket.requestId !== executionId || ticket.workflowId !== executionId || ticket.idempotencyKey !== ticketIdempotencyKey(command.clientRequestId)) throw serviceError(409, 'local_execution_idempotency_mismatch', 'clientRequestId is already bound to another Resize execution');
     assertExactCommandBinding(ticket, command);
@@ -315,6 +330,21 @@ function normalizePrepare(command: LocalResizePrepareCommand): LocalResizePrepar
   } catch (error) {
     throw serviceError(400, 'invalid_resize_request', error instanceof Error ? error.message : 'Resize target dimensions are invalid');
   }
+}
+
+function normalizeResourceLimits(value: LocalResizeResourceLimits): LocalResizeResourceLimits {
+  if (!Number.isSafeInteger(value?.maxDimension) || value.maxDimension < 1 || !Number.isSafeInteger(value?.maxPixels) || value.maxPixels < 1 || !Number.isSafeInteger(value?.maxUploadBytes) || value.maxUploadBytes < 1) throw new Error('Resize Core resource limits are invalid');
+  return Object.freeze({ maxDimension: value.maxDimension, maxPixels: value.maxPixels, maxUploadBytes: value.maxUploadBytes });
+}
+
+function assertWithinCoreLimits(target: ResizeDimensions, limits: LocalResizeResourceLimits): void {
+  const pixels = target.width * target.height;
+  if (!Number.isSafeInteger(pixels) || target.width > limits.maxDimension || target.height > limits.maxDimension || pixels > limits.maxPixels) throw serviceError(422, 'resize_resource_limit_exceeded', 'Resize target exceeds the current Core image resource limits');
+}
+
+function assertTicketWithinCoreLimits(ticket: LocalExecutionTicketV2, limits: LocalResizeResourceLimits): void {
+  const output = requireOutputContract(ticket);
+  assertWithinCoreLimits({ width: Number(output.width), height: Number(output.height) }, limits);
 }
 
 function assertReadyPlan(status: string | undefined, operations: readonly Readonly<{ type: string; id: string }>[]): void {
