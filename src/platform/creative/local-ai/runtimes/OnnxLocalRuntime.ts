@@ -2,19 +2,47 @@ import { immutableClone } from '../immutable';
 import type { ExecutionProvider, InferenceRequest, InferenceResult, LocalArtifact, LocalModelRuntime, ModelManifest, OnnxSession, OnnxSessionFactory, RuntimeEstimate, RuntimeHealth, RuntimeSnapshot, TensorValue } from '../types';
 
 const PROVIDERS: readonly ExecutionProvider[] = ['webgpu', 'wasm', 'cuda', 'dml', 'coreml', 'cpu', 'nnapi'];
+type ModelBytesOwnership = 'BORROWED_CLONED' | 'OWNED_VERIFIED';
 
 export class OnnxLocalRuntime implements LocalModelRuntime {
-  #model?: ModelManifest; #session?: OnnxSession; #provider?: ExecutionProvider; #active = new Map<string, AbortController>(); #lastLatency?: number;
+  #model?: ModelManifest; #session?: OnnxSession; #provider?: ExecutionProvider; #active = new Map<string, AbortController>(); #lastLatency?: number; #ownedModelBytes?: Uint8Array; #modelBytesOwnership?: ModelBytesOwnership;
   constructor(private readonly sessions: OnnxSessionFactory, private readonly allowedProviders: readonly ExecutionProvider[], private readonly now: () => number = () => performance.now()) {
     if (!allowedProviders.length || allowedProviders.some((provider) => !PROVIDERS.includes(provider))) throw new Error('No allowed ONNX execution provider');
   }
   async load(model: ModelManifest, bytes: Uint8Array): Promise<void> {
+    await this.#load(model, bytes, 'BORROWED_CLONED');
+  }
+  /**
+   * No-copy model-byte path for a caller-owned artifact that has already been revalidated against
+   * durable trust/content authority. The runtime retains the exact buffer until session release.
+   * Generic/legacy callers must use load(), which keeps the defensive clone boundary.
+   */
+  async loadOwnedVerifiedArtifact(model: ModelManifest, bytes: Uint8Array): Promise<void> {
+    await this.#load(model, bytes, 'OWNED_VERIFIED');
+  }
+  async #load(model: ModelManifest, bytes: Uint8Array, ownership: ModelBytesOwnership): Promise<void> {
     if (model.status !== 'READY') throw new Error('ModelTrustRegistry approval and READY status are required');
     if (model.modelFormat !== 'ONNX') throw new Error('ONNX runtime only loads ONNX models');
     if (!bytes.byteLength) throw new Error('Model artifact is empty');
-    await this.unload(); this.#session = await this.sessions.create(bytes.slice(), { executionProviders: this.allowedProviders }); this.#model = immutableClone(model) as ModelManifest; this.#provider = this.allowedProviders[0];
+    const sessionBytes = ownership === 'OWNED_VERIFIED' ? bytes : bytes.slice();
+    await this.unload();
+    try {
+      this.#session = await this.sessions.create(sessionBytes, { executionProviders: this.allowedProviders });
+      this.#model = immutableClone(model) as ModelManifest;
+      this.#provider = this.allowedProviders[0];
+      this.#modelBytesOwnership = ownership;
+      if (ownership === 'OWNED_VERIFIED') this.#ownedModelBytes = bytes;
+    } catch (error) {
+      this.#session = undefined; this.#model = undefined; this.#provider = undefined; this.#modelBytesOwnership = undefined; this.#ownedModelBytes = undefined;
+      throw error;
+    }
   }
-  async unload(): Promise<void> { for (const controller of this.#active.values()) controller.abort(); this.#active.clear(); await this.#session?.release?.(); this.#session = undefined; this.#model = undefined; this.#provider = undefined; }
+  async unload(): Promise<void> {
+    for (const controller of this.#active.values()) controller.abort();
+    this.#active.clear();
+    await this.#session?.release?.();
+    this.#session = undefined; this.#model = undefined; this.#provider = undefined; this.#modelBytesOwnership = undefined; this.#ownedModelBytes = undefined;
+  }
   async infer(request: InferenceRequest): Promise<InferenceResult> {
     if (!this.#session || !this.#model || !this.#provider) throw new Error('Runtime is not loaded');
     if (this.#active.has(request.requestId)) throw new Error('Duplicate request id');
@@ -26,7 +54,7 @@ export class OnnxLocalRuntime implements LocalModelRuntime {
   health(): RuntimeHealth { return immutableClone(this.#session ? { status: 'READY', provider: this.#provider } : { status: 'UNLOADED' }); }
   estimate(): RuntimeEstimate { return immutableClone({ latencyMs: this.#lastLatency ?? this.#model?.estimatedLatency ?? 0, memoryBytes: this.#model ? (this.#model.requiredRam + this.#model.requiredVram) * 1024 * 1024 : 0, energy: this.#model ? 1 - this.#model.energyScore : 0 }); }
   snapshot(): RuntimeSnapshot { return immutableClone({ loaded: Boolean(this.#session), modelId: this.#model?.modelId, provider: this.#provider, activeRequests: this.#active.size, lastLatencyMs: this.#lastLatency }); }
-  debug(): Readonly<Record<string, unknown>> { return immutableClone({ ...this.snapshot(), allowedProviders: this.allowedProviders }); }
+  debug(): Readonly<Record<string, unknown>> { return immutableClone({ ...this.snapshot(), allowedProviders: this.allowedProviders, modelBytesOwnership: this.#modelBytesOwnership, ownedModelBytesRetained: Boolean(this.#ownedModelBytes) }); }
 }
 function tensorBytes(outputs: Readonly<Record<string, TensorValue>>): number { return Object.values(outputs).reduce((sum, value) => sum + value.data.length * 4, 0); }
 function normalizeArtifact(id: string, outputs: Readonly<Record<string, TensorValue>>): LocalArtifact { const first = Object.values(outputs)[0]; return immutableClone({ id, kind: 'TENSOR', mimeType: 'application/x-local-ai-tensor', width: first?.dims.at(-1), height: first?.dims.at(-2), data: outputs, metadata: { local: true, dimensions: first?.dims ?? [] } }) as LocalArtifact; }

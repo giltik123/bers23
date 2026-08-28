@@ -1,0 +1,399 @@
+name: Sprint 6.42D3 Tiny-SD precision tiers
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+  TINY_SD_MANIFEST: src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json
+
+jobs:
+  classify_tiny_sd_relevance:
+    name: classify-tiny-sd-relevance
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.classify.outputs.relevant }}
+      classification: ${{ steps.classify.outputs.classification }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Prove Tiny-SD relevance classifier contract
+        run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs
+
+      - name: Classify heavyweight Tiny-SD relevance
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            printf '%s\n' \
+              'relevant=true' \
+              'classification=RELEVANT_HEAVY_ACCEPTANCE_REQUIRED' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          test "${EVENT_NAME}" = "pull_request"
+          test -n "${BASE_SHA}"
+          test -n "${HEAD_SHA}"
+          git diff --name-only --no-renames -z "${BASE_SHA}" "${HEAD_SHA}" \
+            | node scripts/classify-tiny-sd-heavy-ci.mjs --stdin0 --github-output "${GITHUB_OUTPUT}"
+
+  heavy_fp16_webgpu_feasibility:
+    name: fp16-webgpu-feasibility-heavy
+    needs: classify_tiny_sd_relevance
+    if: ${{ needs.classify_tiny_sd_relevance.outputs.relevant == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Use Python 3.11 for trust reproduction
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify D3 fail-closed policy before network/model work
+        run: |
+          set -euo pipefail
+          npm ci
+          node --test tests/tiny-sd-d3-policy.test.mjs
+          python -m py_compile \
+            scripts/prepare-tiny-sd-d3-fp16-webgpu.py \
+            scripts/tiny_sd_d2_common.py \
+            scripts/probe-tiny-sd-reference.py \
+            scripts/probe-tiny-sd-component-onnx.py
+          node --check scripts/test-tiny-sd-d3-browser-webgpu.mjs
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+          if git grep -n -I -E -- '^-----BEGIN (ED25519 |EC |RSA |OPENSSH )?PRIVATE KEY-----$'; then
+            echo 'Private key material is tracked by Git' >&2
+            exit 1
+          fi
+
+      - name: Install pinned Hugging Face transport client
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          PY
+
+      - name: Reproduce accepted D1 Tiny-SD snapshot
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/.test-cache/6.42d3"
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          expected = [
+              'model_index.json',
+              'scheduler/scheduler_config.json',
+              'text_encoder/config.json',
+              'text_encoder/pytorch_model.bin',
+              'tokenizer/merges.txt',
+              'tokenizer/special_tokens_map.json',
+              'tokenizer/tokenizer_config.json',
+              'tokenizer/vocab.json',
+              'unet/config.json',
+              'unet/diffusion_pytorch_model.bin',
+              'vae/config.json',
+              'vae/diffusion_pytorch_model.bin',
+          ]
+          snapshot_download(
+              repo_id='segmind/tiny-sd',
+              revision=os.environ['UPSTREAM_REVISION'],
+              local_dir=os.path.join(os.environ['RUNNER_TEMP'], 'tiny-sd-d3-snapshot'),
+              allow_patterns=expected,
+          )
+          PY
+          python scripts/inspect-tiny-sd-snapshot.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-snapshot" \
+            --revision "${UPSTREAM_REVISION}" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-snapshot.json"
+
+      - name: Install accepted D1 restricted bridge environment
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check safetensors==0.8.0
+          python - <<'PY'
+          import numpy, safetensors, torch
+          assert numpy.__version__ == '1.26.4'
+          assert torch.__version__.startswith('2.6.0')
+          assert safetensors.__version__ == '0.8.0'
+          PY
+
+      - name: Reproduce exact D1 tensor-only bridge
+        run: |
+          set -euo pipefail
+          python scripts/bridge-tiny-sd-safetensors.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-snapshot" \
+            --inventory "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-snapshot.json" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --out-dir "${RUNNER_TEMP}/tiny-sd-d3-bridge" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-bridge.json"
+
+      - name: Use Python 3.10 for D2 historical reference
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install exact D2 historical reference environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d3-reference-venv"
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d3-reference-venv/bin/python"
+          "${REF_PY}" -m pip install --disable-pip-version-check --upgrade 'pip<25'
+          "${REF_PY}" -m pip install --disable-pip-version-check numpy==1.24.4 huggingface_hub==0.16.4 safetensors==0.3.1
+          "${REF_PY}" -m pip install --disable-pip-version-check torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+          "${REF_PY}" -m pip install --disable-pip-version-check diffusers==0.19.0 transformers==4.30.2
+          "${REF_PY}" - <<'PY'
+          import diffusers, huggingface_hub, numpy, safetensors, torch, transformers
+          assert numpy.__version__ == '1.24.4'
+          assert torch.__version__ == '2.0.1+cpu'
+          assert diffusers.__version__ == '0.19.0'
+          assert transformers.__version__ == '4.30.2'
+          assert huggingface_hub.__version__ == '0.16.4'
+          assert safetensors.__version__ == '0.3.1'
+          PY
+
+      - name: Re-establish D2 historical component semantics
+        run: |
+          set -euo pipefail
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d3-reference-venv/bin/python"
+          "${REF_PY}" scripts/probe-tiny-sd-reference.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d3-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference-out "${RUNNER_TEMP}/tiny-sd-d3-reference.npz" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-reference.json"
+
+      - name: Use Python 3.11 for D2 modern exporter and D3 transform
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact D2 exporter and D3 FP16 converter environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d3-export-venv"
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d3-export-venv/bin/python"
+          "${EXP_PY}" -m pip install --disable-pip-version-check --upgrade pip
+          "${EXP_PY}" -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          "${EXP_PY}" -m pip install --disable-pip-version-check \
+            numpy==2.4.6 safetensors==0.8.0 \
+            diffusers==0.39.0 transformers==4.57.6 \
+            onnx==1.22.0 onnxscript==0.7.1 onnxruntime==1.27.0 \
+            onnxconverter-common==1.16.0
+          "${EXP_PY}" - <<'PY'
+          import diffusers, numpy, onnx, onnxruntime, onnxscript, onnxconverter_common, safetensors, torch, transformers
+          assert torch.__version__.startswith('2.13.0')
+          assert numpy.__version__ == '2.4.6'
+          assert diffusers.__version__ == '0.39.0'
+          assert transformers.__version__ == '4.57.6'
+          assert safetensors.__version__ == '0.8.0'
+          assert onnx.__version__ == '1.22.0'
+          assert onnxscript.__version__ == '0.7.1'
+          assert onnxruntime.__version__ == '1.27.0'
+          assert onnxconverter_common.__version__ == '1.16.0'
+          PY
+
+      - name: Reproduce D2 accepted FP32 component graphs and CPU parity
+        run: |
+          set -euo pipefail
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d3-export-venv/bin/python"
+          mkdir -p "${RUNNER_TEMP}/tiny-sd-d3-fp32"
+          "${EXP_PY}" scripts/probe-tiny-sd-component-onnx.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d3-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference "${RUNNER_TEMP}/tiny-sd-d3-reference.npz" \
+            --reference-report "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-reference.json" \
+            --onnx-dir "${RUNNER_TEMP}/tiny-sd-d3-fp32" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-d2-components.json"
+          "${EXP_PY}" - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42d3/tiny-sd-d3-d2-components.json', encoding='utf-8'))
+          assert report['passCount'] == 3
+          assert report['allComponentsPass'] is True
+          assert report['blockedComponents'] == {}
+          assert all(value['result'] == 'PASS' and value['ortParityPassed'] is True for value in report['components'].values())
+          PY
+
+      - name: Prepare D3 FP16 WebGPU component candidates
+        run: |
+          set -euo pipefail
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d3-export-venv/bin/python"
+          "${EXP_PY}" scripts/prepare-tiny-sd-d3-fp16-webgpu.py \
+            --fp32-dir "${RUNNER_TEMP}/tiny-sd-d3-fp32" \
+            --d2-report "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-d2-components.json" \
+            --fp16-dir "${RUNNER_TEMP}/tiny-sd-d3-fp16" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d3-fixtures" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-fp16.json"
+
+      - name: Prove system Google Chrome is installed
+        run: |
+          set -euo pipefail
+          google-chrome --version
+
+      - name: Run real Chrome WebGPU-only FP16 component feasibility
+        run: |
+          set -euo pipefail
+          node scripts/test-tiny-sd-d3-browser-webgpu.mjs \
+            --model-dir "${RUNNER_TEMP}/tiny-sd-d3-fp16" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d3-fixtures" \
+            --precision-report "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-fp16.json" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3/tiny-sd-d3-webgpu.json"
+
+      - name: Validate D3 WebGPU classification without granting authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          precision = json.load(open('.test-cache/6.42d3/tiny-sd-d3-fp16.json', encoding='utf-8'))
+          browser = json.load(open('.test-cache/6.42d3/tiny-sd-d3-webgpu.json', encoding='utf-8'))
+          assert precision['status'] == 'CANDIDATE'
+          assert precision['stage'] == 'D3_WEBGPU_FP16_PREPARATION'
+          assert precision['providerSpecificPrecisionTiers'] is True
+          assert precision['selectedWebGpuCandidatePrecision'] == 'FP16_INTERNAL_FP32_INT64_IO'
+          assert precision['wasmPrecisionDecision'] == 'SEPARATE_UINT8_OR_FP32_FEASIBILITY_REQUIRED'
+          assert precision['runtimeAuthorityGranted'] is False
+          assert precision['productionApproval'] is False
+          assert precision['realDeviceApproval'] is False
+          assert precision['releaseIdentityPinned'] is False
+          assert precision['totals']['fp16Bytes'] < precision['totals']['fp32Bytes']
+          assert 0.45 <= precision['totals']['sizeRatio'] <= 0.75
+          assert set(precision['components']) == {'text_encoder', 'unet', 'vae_decoder'}
+          assert all(value['result'] == 'FP16_GRAPH_PASS' for value in precision['components'].values())
+          assert all(value['fp16']['graph']['domains'] == ['ai.onnx'] for value in precision['components'].values())
+          assert all(value['fp16']['graph']['functionCount'] == 0 for value in precision['components'].values())
+          assert browser['status'] == 'CANDIDATE'
+          assert browser['stage'] == 'D3_BROWSER_WEBGPU_FP16'
+          assert browser['provider'] == 'webgpu'
+          assert browser['providerFallbackAllowed'] is False
+          assert browser['runtimeAuthorityGranted'] is False
+          assert browser['productionDeviceApproval'] is False
+          assert browser['productionApproval'] is False
+          assert browser['realDeviceEvidence'] is False
+          assert set(browser['components']) == {'text_encoder', 'unet', 'vae_decoder'}
+          allowed = {
+              'WEBGPU_API_UNAVAILABLE', 'WEBGPU_ADAPTER_REQUEST_FAILED', 'WEBGPU_ADAPTER_UNAVAILABLE',
+              'WEBGPU_BROWSER_LAUNCH_BLOCKED', 'WEBGPU_SESSION_BLOCKED', 'WEBGPU_INFERENCE_BLOCKED',
+              'WEBGPU_BROWSER_EVALUATION_BLOCKED', 'WEBGPU_BROWSER_PROCESS_BLOCKED',
+              'WEBGPU_PARITY_FAILED', 'PASS',
+          }
+          assert all(value['result'] in allowed for value in browser['components'].values())
+          print('TINY-SD D3 WEBGPU CLASSIFICATION: PASS', browser['blockedComponents'])
+          PY
+
+      - name: Destroy Tiny-SD D3 binary evidence before JSON upload
+        run: |
+          set -euo pipefail
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d3-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d3-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d3-fp32" \
+            "${RUNNER_TEMP}/tiny-sd-d3-fp16" \
+            "${RUNNER_TEMP}/tiny-sd-d3-fixtures" \
+            "${RUNNER_TEMP}/tiny-sd-d3-reference.npz"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-snapshot"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-bridge"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-fp32"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-fp16"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-fixtures"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-reference.npz"
+          test "$(find "${GITHUB_WORKSPACE}/.test-cache/6.42d3" -type f \( -name '*.bin' -o -name '*.safetensors' -o -name '*.onnx' -o -name '*.ort' -o -name '*.npz' -o -name '*.f32' \) | wc -l)" -eq 0
+
+      - name: Upload D3 JSON feasibility evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-sd-d3-precision-evidence
+          path: |
+            .test-cache/6.42d3/tiny-sd-d3-snapshot.json
+            .test-cache/6.42d3/tiny-sd-d3-bridge.json
+            .test-cache/6.42d3/tiny-sd-d3-reference.json
+            .test-cache/6.42d3/tiny-sd-d3-d2-components.json
+            .test-cache/6.42d3/tiny-sd-d3-fp16.json
+            .test-cache/6.42d3/tiny-sd-d3-webgpu.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish D3 WebGPU summary
+        run: |
+          python - <<'PY' >> "${GITHUB_STEP_SUMMARY}"
+          import json
+          precision = json.load(open('.test-cache/6.42d3/tiny-sd-d3-fp16.json', encoding='utf-8'))
+          browser = json.load(open('.test-cache/6.42d3/tiny-sd-d3-webgpu.json', encoding='utf-8'))
+          print('## Tiny-SD D3 provider-specific precision feasibility')
+          print()
+          print('- D1 trust root reproduced: PASS')
+          print('- D2 historical + FP32 CPU ORT baseline reproduced: PASS 3/3')
+          print(f"- FP32 baseline bytes: {precision['totals']['fp32Bytes']:,}")
+          print(f"- FP16 WebGPU candidate bytes: {precision['totals']['fp16Bytes']:,}")
+          print(f"- FP16 size ratio: {precision['totals']['sizeRatio']:.4f}")
+          print(f"- Hosted WebGPU component PASS count: {browser['passCount']}/3")
+          print(f"- Hosted WebGPU classifications: {browser['blockedComponents']}")
+          print('- Hosted software WebGPU is not real-device or production approval')
+          print('- WASM compact precision tier remains separate and unproven')
+          print('- Runtime/device/production authority: NOT GRANTED')
+          PY
+
+      - name: Cleanup Tiny-SD D3 binary evidence on failure
+        if: ${{ failure() }}
+        run: |
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d3-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d3-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d3-fp32" \
+            "${RUNNER_TEMP}/tiny-sd-d3-fp16" \
+            "${RUNNER_TEMP}/tiny-sd-d3-fixtures" \
+            "${RUNNER_TEMP}/tiny-sd-d3-reference.npz"
+
+  fp16_webgpu_feasibility_gate:
+    name: fp16-webgpu-feasibility
+    needs: [classify_tiny_sd_relevance, heavy_fp16_webgpu_feasibility]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require D3 precision heavy acceptance when relevant
+        env:
+          RELEVANT: ${{ needs.classify_tiny_sd_relevance.outputs.relevant }}
+          CLASSIFICATION: ${{ needs.classify_tiny_sd_relevance.outputs.classification }}
+          HEAVY_RESULT: ${{ needs.heavy_fp16_webgpu_feasibility.result }}
+        run: |
+          set -euo pipefail
+          if [ "${RELEVANT}" = "true" ]; then
+            test "${CLASSIFICATION}" = "RELEVANT_HEAVY_ACCEPTANCE_REQUIRED"
+            test "${HEAVY_RESULT}" = "success"
+            echo "Tiny-SD D3 precision heavy acceptance: SUCCESS"
+            exit 0
+          fi
+          test "${RELEVANT}" = "false"
+          test "${CLASSIFICATION}" = "NOT_APPLICABLE_PRODUCT_ONLY_CHANGE"
+          test "${HEAVY_RESULT}" = "skipped"
+          echo "Tiny-SD D3 precision: NOT_APPLICABLE_PRODUCT_ONLY_CHANGE"

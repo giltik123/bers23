@@ -26,7 +26,7 @@ const ticket = (token, overrides = {}) => ({
   cost: { paidCloudCredits: 0, providerCalls: 0 },
   ...overrides,
 });
-const result = stored => ({
+const result = (stored, overrides = {}) => ({
   ticketId: stored.ticketId,
   ticketVersion: stored.version,
   requestId: stored.requestId,
@@ -38,6 +38,7 @@ const result = stored => ({
   accelerator: 'wasm',
   outputs: [{ uploadId: 'upload', kind: 'mask', role: 'MASK', sha256: 'b'.repeat(64), sizeBytes: 4, mimeType: 'application/octet-stream', width: 2, height: 2 }],
   metrics: { latencyMs: 10 },
+  ...overrides,
 });
 
 test('PostgreSQL local execution ledger is scope-isolated, durable, idempotent and serializes finalization across instances', { skip: !databaseUrl }, async () => {
@@ -81,8 +82,13 @@ test('PostgreSQL local execution ledger is scope-isolated, durable, idempotent a
 
     assert.equal((await firstLedger.getFinalization(first.ticketId))?.status, 'SUCCESS');
     assert.equal((await secondLedger.getFinalization(first.ticketId))?.status, 'SUCCESS');
-    assert.equal((await firstLedger.claim({ ticketId: first.ticketId, result: result(first), callerScope: first.scope, now: 2_503 })).reasonCode, 'REPLAYED_TICKET');
-    assert.equal((await secondLedger.claim({ ticketId: first.ticketId, result: result(first), callerScope: first.scope, now: 2_504 })).reasonCode, 'REPLAYED_TICKET');
+    const replayBinding = await pool.query('SELECT admitted_result_sha256 FROM local_execution_tickets WHERE ticket_id=$1', [first.ticketId]);
+    assert.match(replayBinding.rows[0]?.admitted_result_sha256 ?? '', /^[a-f0-9]{64}$/);
+    assert.equal((await firstLedger.claim({ ticketId: first.ticketId, result: result(first), callerScope: first.scope, now: 99_000 })).reasonCode, 'REPLAYED_TICKET', 'exact replay remains idempotent after ticket expiry');
+    assert.equal((await secondLedger.claim({ ticketId: first.ticketId, result: result(first, { metrics: { latencyMs: 11 } }), callerScope: first.scope, now: 99_001 })).reasonCode, 'CONFLICTING_REPLAY', 'valid but different replay payload must fail closed');
+
+    await pool.query('UPDATE local_execution_tickets SET admitted_result_sha256=NULL WHERE ticket_id=$1', [first.ticketId]);
+    assert.equal((await firstLedger.claim({ ticketId: first.ticketId, result: result(first), callerScope: first.scope, now: 99_002 })).reasonCode, 'CONFLICTING_REPLAY', 'legacy consumed rows without a replay digest cannot be treated as exact replay');
   } finally {
     await firstLedger.release(`${token}-ticket-a`).catch(() => undefined);
     await secondLedger.release(`${token}-ticket-a`).catch(() => undefined);

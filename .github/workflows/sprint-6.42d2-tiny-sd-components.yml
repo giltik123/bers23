@@ -1,0 +1,274 @@
+name: Sprint 6.42D2 Tiny-SD component ONNX feasibility
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+  TINY_SD_MANIFEST: src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json
+
+jobs:
+  component-feasibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Use Python 3.11 for D1 trust reproduction
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify D2 fail-closed policy before network/model work
+        run: |
+          set -euo pipefail
+          npm ci
+          node --test tests/tiny-sd-d2-policy.test.mjs
+          python -m py_compile \
+            scripts/tiny_sd_d2_common.py \
+            scripts/probe-tiny-sd-reference.py \
+            scripts/probe-tiny-sd-component-onnx.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+          if git grep -n -I -E -- '^-----BEGIN (ED25519 |EC |RSA |OPENSSH )?PRIVATE KEY-----$'; then
+            echo 'Private key material is tracked by Git' >&2
+            exit 1
+          fi
+
+      - name: Install pinned Hugging Face transport client
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          PY
+
+      - name: Reproduce accepted sprint-6.42d1-tiny-sd-acquisition trust root
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/.test-cache/6.42d2"
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          expected = [
+              'model_index.json',
+              'scheduler/scheduler_config.json',
+              'text_encoder/config.json',
+              'text_encoder/pytorch_model.bin',
+              'tokenizer/merges.txt',
+              'tokenizer/special_tokens_map.json',
+              'tokenizer/tokenizer_config.json',
+              'tokenizer/vocab.json',
+              'unet/config.json',
+              'unet/diffusion_pytorch_model.bin',
+              'vae/config.json',
+              'vae/diffusion_pytorch_model.bin',
+          ]
+          snapshot_download(
+              repo_id='segmind/tiny-sd',
+              revision=os.environ['UPSTREAM_REVISION'],
+              local_dir=os.path.join(os.environ['RUNNER_TEMP'], 'tiny-sd-d2-snapshot'),
+              allow_patterns=expected,
+          )
+          PY
+          python scripts/inspect-tiny-sd-snapshot.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d2-snapshot" \
+            --revision "${UPSTREAM_REVISION}" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d2/tiny-sd-d2-snapshot.json"
+
+      - name: Install accepted D1 restricted bridge environment
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check safetensors==0.8.0
+          python - <<'PY'
+          import numpy, safetensors, torch
+          assert numpy.__version__ == '1.26.4'
+          assert torch.__version__.startswith('2.6.0')
+          assert safetensors.__version__ == '0.8.0'
+          PY
+
+      - name: Reproduce exact D1 tensor-only bridge
+        run: |
+          set -euo pipefail
+          python scripts/bridge-tiny-sd-safetensors.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d2-snapshot" \
+            --inventory "${GITHUB_WORKSPACE}/.test-cache/6.42d2/tiny-sd-d2-snapshot.json" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --out-dir "${RUNNER_TEMP}/tiny-sd-d2-bridge" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d2/tiny-sd-d2-bridge.json"
+
+      - name: Use Python 3.10 for historical reference environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install exact Tiny-SD historical reference environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d2-reference-venv"
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d2-reference-venv/bin/python"
+          "${REF_PY}" -m pip install --disable-pip-version-check --upgrade 'pip<25'
+          "${REF_PY}" -m pip install --disable-pip-version-check numpy==1.24.4 huggingface_hub==0.16.4 safetensors==0.3.1
+          "${REF_PY}" -m pip install --disable-pip-version-check torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+          "${REF_PY}" -m pip install --disable-pip-version-check diffusers==0.19.0 transformers==4.30.2
+          "${REF_PY}" - <<'PY'
+          import diffusers, huggingface_hub, numpy, safetensors, torch, transformers
+          assert numpy.__version__ == '1.24.4'
+          assert torch.__version__ == '2.0.1+cpu'
+          assert diffusers.__version__ == '0.19.0'
+          assert transformers.__version__ == '4.30.2'
+          assert huggingface_hub.__version__ == '0.16.4'
+          assert safetensors.__version__ == '0.3.1'
+          PY
+
+      - name: Establish historical component reference semantics
+        run: |
+          set -euo pipefail
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d2-reference-venv/bin/python"
+          "${REF_PY}" scripts/probe-tiny-sd-reference.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d2-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d2-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference-out "${RUNNER_TEMP}/tiny-sd-d2-reference.npz" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d2/tiny-sd-d2-reference.json"
+
+      - name: Use Python 3.11 for modern exporter environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact modern ONNX exporter environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d2-export-venv"
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d2-export-venv/bin/python"
+          "${EXP_PY}" -m pip install --disable-pip-version-check --upgrade pip
+          "${EXP_PY}" -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          "${EXP_PY}" -m pip install --disable-pip-version-check \
+            numpy==2.4.6 safetensors==0.8.0 \
+            diffusers==0.39.0 transformers==4.57.6 \
+            onnx==1.22.0 onnxscript==0.7.1 onnxruntime==1.27.0
+          "${EXP_PY}" - <<'PY'
+          import diffusers, numpy, onnx, onnxruntime, onnxscript, safetensors, torch, transformers
+          assert torch.__version__.startswith('2.13.0')
+          assert numpy.__version__ == '2.4.6'
+          assert diffusers.__version__ == '0.39.0'
+          assert transformers.__version__ == '4.57.6'
+          assert safetensors.__version__ == '0.8.0'
+          assert onnx.__version__ == '1.22.0'
+          assert onnxscript.__version__ == '0.7.1'
+          assert onnxruntime.__version__ == '1.27.0'
+          PY
+
+      - name: Probe modern standard-ONNX component export and CPU ORT parity
+        run: |
+          set -euo pipefail
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d2-export-venv/bin/python"
+          mkdir -p "${RUNNER_TEMP}/tiny-sd-d2-onnx"
+          "${EXP_PY}" scripts/probe-tiny-sd-component-onnx.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d2-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d2-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference "${RUNNER_TEMP}/tiny-sd-d2-reference.npz" \
+            --reference-report "${GITHUB_WORKSPACE}/.test-cache/6.42d2/tiny-sd-d2-reference.json" \
+            --onnx-dir "${RUNNER_TEMP}/tiny-sd-d2-onnx" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d2/tiny-sd-d2-components.json"
+
+      - name: Validate D2 all-component acceptance without granting authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42d2/tiny-sd-d2-components.json', encoding='utf-8'))
+          assert report['status'] == 'CANDIDATE'
+          assert report['stage'] == 'D2_COMPONENT_ONNX_CPU_FEASIBILITY'
+          assert report['d1TrustRootReused'] is True
+          assert report['historicalReferenceVerifiedBeforeExport'] is True
+          assert report['runtimeAuthorityGranted'] is False
+          assert report['productionApproval'] is False
+          assert report['releaseIdentityPinned'] is False
+          assert report['onnxArtifactsRunnerLocalOnly'] is True
+          assert set(report['components']) == {'text_encoder', 'unet', 'vae_decoder'}
+          assert report['passCount'] == 3
+          assert report['allComponentsPass'] is True
+          assert report['blockedComponents'] == {}
+          assert all(component['result'] == 'PASS' for component in report['components'].values())
+          assert all(component['referenceParityPassed'] is True for component in report['components'].values())
+          assert all(component['ortParityPassed'] is True for component in report['components'].values())
+          assert all(component['graph']['domains'] == ['ai.onnx'] for component in report['components'].values())
+          assert all(component['graph']['functionCount'] == 0 for component in report['components'].values())
+          assert all(component['artifact']['releaseIdentityPinned'] is False for component in report['components'].values())
+          print('TINY-SD D2 ALL-COMPONENT ACCEPTANCE: PASS 3/3')
+          PY
+
+      - name: Destroy Tiny-SD D2 binary evidence before JSON upload
+        run: |
+          set -euo pipefail
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d2-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d2-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d2-onnx" \
+            "${RUNNER_TEMP}/tiny-sd-d2-reference.npz"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d2-snapshot"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d2-bridge"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d2-onnx"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d2-reference.npz"
+          test "$(find "${GITHUB_WORKSPACE}/.test-cache/6.42d2" -type f \( -name '*.bin' -o -name '*.safetensors' -o -name '*.onnx' -o -name '*.ort' -o -name '*.npz' \) | wc -l)" -eq 0
+
+      - name: Upload D2 JSON feasibility evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-sd-d2-component-feasibility-evidence
+          path: |
+            .test-cache/6.42d2/tiny-sd-d2-snapshot.json
+            .test-cache/6.42d2/tiny-sd-d2-bridge.json
+            .test-cache/6.42d2/tiny-sd-d2-reference.json
+            .test-cache/6.42d2/tiny-sd-d2-components.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish D2 summary
+        run: |
+          python - <<'PY' >> "${GITHUB_STEP_SUMMARY}"
+          import json
+          report = json.load(open('.test-cache/6.42d2/tiny-sd-d2-components.json', encoding='utf-8'))
+          print('## Tiny-SD D2 component feasibility')
+          print()
+          print('- D1 pinned trust root reproduced: PASS')
+          print('- Historical reference semantics: PASS')
+          print('- Standard ONNX + CPU ORT components: PASS 3/3')
+          print('- Exact ONNX/ORT tensor-shape contracts: PASS')
+          print('- Custom/ATen nodes and custom function domains: ABSENT')
+          print('- ONNX/reference/model binaries destroyed before JSON upload')
+          print('- Runtime/device/production authority: NOT GRANTED')
+          PY
+
+      - name: Cleanup Tiny-SD D2 binary evidence on failure
+        if: ${{ failure() }}
+        run: |
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d2-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d2-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d2-onnx" \
+            "${RUNNER_TEMP}/tiny-sd-d2-reference.npz"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d2-snapshot"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d2-bridge"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d2-onnx"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d2-reference.npz"
