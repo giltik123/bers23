@@ -121,7 +121,7 @@ test('deterministic Crop PostgreSQL vertical rejects tamper/scope/replay conflic
 
   const wrongDimensionsTicket = (await prepare('crop-wrong-dimensions')).ticket;
   await assert.rejects(
-    () => production.localExecution.crop.uploadImage({ ticketId: wrongDimensionsTicket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(1, 1, new Uint8ClampedArray([1,2,3,4])) }, auth),
+    async () => production.localExecution.crop.uploadImage({ ticketId: wrongDimensionsTicket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(1, 1, new Uint8ClampedArray([1,2,3,4])) }, auth),
     (error: any) => error?.code === 'local_image_dimensions_mismatch',
   );
 
