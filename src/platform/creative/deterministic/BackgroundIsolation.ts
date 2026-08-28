@@ -1,6 +1,8 @@
-export const BACKGROUND_ISOLATION_TOOL_ID = 'background-isolation' as const;
-export const BACKGROUND_ISOLATION_TOOL_VERSION = '1' as const;
-export const BACKGROUND_ISOLATION_CAPABILITY = 'local:tool:background-isolation:v1' as const;
+export {
+  BACKGROUND_ISOLATION_TOOL_ID,
+  BACKGROUND_ISOLATION_TOOL_VERSION,
+  BACKGROUND_ISOLATION_CAPABILITY,
+} from './BackgroundIsolationIdentity.js';
 
 /**
  * Pure pixel contract for preserving the source RGB while multiplying source
