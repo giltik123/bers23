@@ -1,0 +1,138 @@
+import type { CreativeArtifactRole } from '../canonical/contracts';
+import type { LocalExecutionToolExecutorBinding } from '../canonical/localExecution';
+import {
+  BACKGROUND_ISOLATION_CAPABILITY,
+  BACKGROUND_ISOLATION_TOOL_ID,
+  BACKGROUND_ISOLATION_TOOL_VERSION,
+} from './BackgroundIsolation';
+
+export type DeterministicToolInputContract = Readonly<{
+  name: string;
+  kind: string;
+  roles: readonly CreativeArtifactRole[];
+  sha256: 'REQUIRED';
+  geometry: 'SOURCE' | 'MATCH_SOURCE';
+}>;
+
+export type DeterministicToolOutputContract = Readonly<{
+  kind: string;
+  role: CreativeArtifactRole;
+  count: 1;
+  mimeTypes: readonly string[];
+  geometry: 'MATCH_SOURCE';
+}>;
+
+export type DeterministicToolParameterContract = Readonly<{
+  artifactIdBindings: readonly Readonly<{ parameter: string; input: string }>[];
+  exact: Readonly<Record<string, string | number | boolean>>;
+}>;
+
+export type DeterministicToolDefinition = Readonly<{
+  capability: string;
+  operation: Readonly<{ id: string; type: string; version: string }>;
+  executor: LocalExecutionToolExecutorBinding;
+  inputs: readonly DeterministicToolInputContract[];
+  output: DeterministicToolOutputContract;
+  parameters: DeterministicToolParameterContract;
+  browser: Readonly<{
+    executorId: string;
+    runtime: 'BROWSER_JS';
+    accelerator: 'cpu';
+  }>;
+  verification: Readonly<{
+    verifierId: string;
+    comparison: 'BYTE_EXACT_CORE_RECOMPUTE';
+  }>;
+  pixelContract: Readonly<{
+    format: 'RGBA8';
+    colorSpace: 'srgb';
+    orientation: 1;
+    rgb: 'PRESERVE_SOURCE_BYTES';
+    alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255';
+  }>;
+  resourcePolicy: Readonly<{
+    enforcement: 'CORE_CONFIG_AND_TICKET';
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION';
+    pixels: 'CORE_IMAGE_MAX_PIXELS';
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES';
+  }>;
+  lineage: Readonly<{
+    parentInputs: readonly string[];
+    finalRole: CreativeArtifactRole;
+    producerOperation: string;
+  }>;
+}>;
+
+const backgroundIsolationDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: BACKGROUND_ISOLATION_CAPABILITY,
+  operation: { id: 'background-isolation', type: 'BACKGROUND_ISOLATION', version: '1' },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: BACKGROUND_ISOLATION_TOOL_ID, version: BACKGROUND_ISOLATION_TOOL_VERSION },
+  inputs: [
+    { name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+    { name: 'mask', kind: 'mask', roles: ['MASK'], sha256: 'REQUIRED', geometry: 'MATCH_SOURCE' },
+  ],
+  output: { kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: ['image/png'], geometry: 'MATCH_SOURCE' },
+  parameters: {
+    artifactIdBindings: [
+      { parameter: 'sourceArtifactId', input: 'source' },
+      { parameter: 'maskArtifactId', input: 'mask' },
+    ],
+    exact: { deterministicTool: `${BACKGROUND_ISOLATION_TOOL_ID}@${BACKGROUND_ISOLATION_TOOL_VERSION}` },
+  },
+  browser: { executorId: 'background-isolation-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'background-isolation-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'PRESERVE_SOURCE_BYTES',
+    alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+  },
+  lineage: { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: 'BACKGROUND_ISOLATION' },
+});
+
+/**
+ * Data-only deterministic tool catalog. It describes already-reviewed tool contracts;
+ * it is not capability admission and contains no executable callback or fallback.
+ * Production admission remains an explicit server policy.
+ */
+export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[] = Object.freeze([
+  backgroundIsolationDefinition,
+]);
+
+export const BACKGROUND_ISOLATION_TOOL_DEFINITION = backgroundIsolationDefinition;
+
+export function findDeterministicToolByCapability(capability: string): DeterministicToolDefinition | undefined {
+  return DETERMINISTIC_TOOL_REGISTRY.find(definition => definition.capability === capability);
+}
+
+export function requireDeterministicToolByCapability(capability: string): DeterministicToolDefinition {
+  const definition = findDeterministicToolByCapability(capability);
+  if (!definition) throw new Error(`Deterministic tool capability is not registered: ${capability}`);
+  return definition;
+}
+
+export function findDeterministicToolByExecutor(executor: Readonly<{ kind: string; toolId?: string; version?: string }>): DeterministicToolDefinition | undefined {
+  if (executor.kind !== 'DETERMINISTIC_TOOL' || !executor.toolId || !executor.version) return undefined;
+  return DETERMINISTIC_TOOL_REGISTRY.find(definition => definition.executor.toolId === executor.toolId && definition.executor.version === executor.version);
+}
+
+export function requireDeterministicToolByExecutor(executor: Readonly<{ kind: string; toolId?: string; version?: string }>): DeterministicToolDefinition {
+  const definition = findDeterministicToolByExecutor(executor);
+  if (!definition) throw new Error(`Deterministic tool executor is not registered: ${executor.toolId ?? 'unknown'}@${executor.version ?? 'unknown'}`);
+  return definition;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  }
+  return value;
+}
