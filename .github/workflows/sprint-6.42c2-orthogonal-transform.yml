@@ -1,0 +1,76 @@
+name: Sprint 6.42C2 orthogonal transform acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deterministic-orthogonal-transform-authority:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: orthogonal_test
+          POSTGRES_USER: orthogonal_test
+          POSTGRES_PASSWORD: orthogonal_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orthogonal_test -d orthogonal_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://orthogonal_test:orthogonal_test@127.0.0.1:5432/orthogonal_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core authority
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove exact kernel planner ticket verifier and purpose-bound routing
+        run: |
+          mkdir -p .test-cache/orthogonal
+          npx esbuild tests/deterministic-orthogonal-transform.test.ts tests/deterministic-orthogonal-transform-canonical-wiring.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/orthogonal \
+            --external:node:* --external:sharp
+          node --test .test-cache/orthogonal/*.js
+          node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
+      - name: Prove PostgreSQL tamper rejection durable source lineage restart replay and zero cloud
+        run: |
+          mkdir -p .test-cache/orthogonal-postgres/migrations .test-cache/artifacts/migrations
+          npx esbuild tests/deterministic-orthogonal-transform-postgres-vertical.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/orthogonal-postgres/deterministic-orthogonal-transform-postgres-vertical.test.mjs \
+            --external:node:* --external:pg --external:sharp
+          cp server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/002_canonical_mask_artifacts.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/projects/migrations/004_canonical_projects_and_originals.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/projects/migrations/005_canonical_project_history_versions.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/projects/migrations/006_project_history_acceptance_hardening.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/auth/migrations/008_canonical_auth_identity_sessions.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/auth/migrations/009_auth_lifecycle_oauth.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/auth/migrations/010_registration_attempt_binding.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/auth/migrations/011_auth_abuse_session_controls.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/012_local_execution_uploads.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/014_canonical_mask_lineage.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/019_canonical_crop_final_lineage.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/020_canonical_resize_final_lineage.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/021_canonical_orthogonal_transform_final_lineage.sql .test-cache/orthogonal-postgres/migrations/
+          cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
+          node --test --test-concurrency=1 .test-cache/orthogonal-postgres/deterministic-orthogonal-transform-postgres-vertical.test.mjs
