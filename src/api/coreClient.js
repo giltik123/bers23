@@ -143,6 +143,22 @@ export const coreClient = Object.freeze({
     },
     uploadCropImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/crop/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
     submitCrop: ({ ticketId, projectId, result }) => request(`/local-execution/crop/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareResize: (payload) => request('/local-execution/resize/prepare', json('POST', payload)),
+    loadResizeInput: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/resize/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
+      const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
+      const pixelCount = width * height;
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core Resize input byte length does not match its canonical geometry');
+      return Object.freeze({
+        width,
+        height,
+        sourceSha256: requiredShaHeader(delivered.headers, LOCAL_SOURCE_SHA_HEADER),
+        sourceRgba: Uint8ClampedArray.from(delivered.bytes),
+      });
+    },
+    uploadResizeImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/resize/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitResize: ({ ticketId, projectId, result }) => request(`/local-execution/resize/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
     prepareSuperResolution: (payload) => request('/local-execution/super-resolution/prepare', json('POST', payload)),
     loadSuperResolutionInput: async ({ ticketId, projectId }) => {
       const delivered = await requestBytes(`/local-execution/super-resolution/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
