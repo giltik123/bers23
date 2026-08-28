@@ -16,7 +16,13 @@ export type CropFinalImageLineage = Readonly<{
   producerOperation: 'CROP';
 }>;
 
-export type FinalImageLineage = BackgroundIsolationFinalImageLineage | CropFinalImageLineage;
+export type ResizeFinalImageLineage = Readonly<{
+  sourceImageStorageId: string;
+  maskStorageId?: undefined;
+  producerOperation: 'RESIZE';
+}>;
+
+export type FinalImageLineage = BackgroundIsolationFinalImageLineage | CropFinalImageLineage | ResizeFinalImageLineage;
 
 export type StoredFinalImage = Readonly<{
   storageId: string;
@@ -34,7 +40,7 @@ export type StoredFinalImage = Readonly<{
   bytes: Uint8Array;
   sourceImageStorageId?: string;
   maskStorageId?: string;
-  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP';
+  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP' | 'RESIZE';
 }>;
 export type StoredImage = Omit<StoredFinalImage, 'executionId'|'operationId'|'role'|'lifecycle'> & { executionId?: string; operationId?: string; role: 'ORIGINAL'|'COMPOSITE'; lifecycle: 'IMMUTABLE'|'FINAL' };
 
@@ -115,6 +121,10 @@ function normalizeLineage(value: FinalImageLineage): FinalImageLineage {
   if (value.producerOperation === 'CROP') {
     if (value.maskStorageId !== undefined) throw new Error('Canonical Crop FINAL must not carry MASK lineage');
     return Object.freeze({ sourceImageStorageId, producerOperation: 'CROP' as const });
+  }
+  if (value.producerOperation === 'RESIZE') {
+    if (value.maskStorageId !== undefined) throw new Error('Canonical Resize FINAL must not carry MASK lineage');
+    return Object.freeze({ sourceImageStorageId, producerOperation: 'RESIZE' as const });
   }
   throw new Error('Canonical FINAL producer operation is not admitted for lineage');
 }
