@@ -4,7 +4,7 @@ import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Cr
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY, ORTHOGONAL_TRANSFORM_OPERATION } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
 
-export const PRODUCTION_EXECUTION_CAPABILITY_VERSION = '6.42C3.1';
+export const PRODUCTION_EXECUTION_CAPABILITY_VERSION = '6.42C3.2';
 type CapabilityRule = Readonly<{ capabilityId: string; route: ExecutionRoute; operationType: string; target: Exclude<ExecutionTarget, 'BLOCKED'>; providerId?: string; operationIntent?: string }>;
 const RULES: readonly CapabilityRule[] = Object.freeze([
   Object.freeze({ capabilityId: 'fal:image-edit:v1', route: 'PROVIDER', operationType: 'image-edit', target: 'CLOUD', providerId: 'fal' }),
