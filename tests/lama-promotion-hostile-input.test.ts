@@ -15,7 +15,8 @@ import {
 } from '../src/platform/creative/local-ai/models/LaMaRelease.ts';
 
 const NOW = 2_000_000_000_000;
-const SHA = (character: string) => character.repeat(64);
+const TESTED_COMMIT_SHA = '1'.repeat(40);
+const indexedSha = (value: number) => value.toString(16).padStart(64, '0');
 const TRUSTED: LaMaPromotionTrustPort = {
   verifySignedRelease: async () => true,
   verifyPromotionEvidence: async () => true,
@@ -24,7 +25,8 @@ const TRUSTED: LaMaPromotionTrustPort = {
 function evidence(): LaMaProductionPromotionEvidence {
   const releaseBase = 'https://github.com/giltik123/bers23/releases/download/lama-big-places-inpainting-v1.0.0-candidate.1';
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    testedCommitSha: TESTED_COMMIT_SHA,
     capturedAt: NOW - 60_000,
     expiresAt: NOW + 60_000,
     attestation: {
@@ -48,11 +50,11 @@ function evidence(): LaMaProductionPromotionEvidence {
       platform: 'WINDOWS',
       deviceClass: 'DESKTOP',
       deviceTier: 'HIGH',
-      provider: 'wasm',
-      runtimeName: 'onnxruntime-web/wasm',
+      provider: 'webgpu',
+      runtimeName: 'onnxruntime-web/webgpu',
       runtimeVersion: '1.27.0',
       browserVersion: 'Chrome 150',
-      adapterKind: 'CPU',
+      adapterKind: 'PHYSICAL',
       softwareAdapter: false,
       coarseDeviceEvidenceKey: 'coarse-real-device-key',
     },
@@ -70,10 +72,10 @@ function evidence(): LaMaProductionPromotionEvidence {
       datasetEvidenceUrl: 'https://evidence.example/lama/dataset.json',
       cases: Array.from({ length: 5 }, (_, index) => ({
         caseId: `case-${index + 1}`,
-        sourceImageSha256: SHA('a'),
-        maskSha256: SHA('b'),
-        rawOutputSha256: SHA('c'),
-        compositeSha256: SHA('d'),
+        sourceImageSha256: indexedSha(index + 1),
+        maskSha256: indexedSha(index + 101),
+        rawOutputSha256: indexedSha(index + 201),
+        compositeSha256: indexedSha(index + 301),
         width: 512,
         height: 512,
         knownRegionBitExact: true,
@@ -104,7 +106,7 @@ function mutate(change: (value: any) => void): unknown {
 }
 
 async function assess(value: unknown) {
-  return assessLaMaProductionPromotion(value, TRUSTED, NOW);
+  return assessLaMaProductionPromotion(value, TRUSTED, TESTED_COMMIT_SHA, NOW);
 }
 
 test('garbage platform, device class and tier cannot masquerade as real hardware', async () => {
@@ -118,7 +120,7 @@ test('garbage platform, device class and tier cannot masquerade as real hardware
 });
 
 test('provider/runtime pairing and exact runtime version are closed allowlists', async () => {
-  const wrongName = await assess(mutate(value => { value.device.runtimeName = 'onnxruntime-web/webgpu'; }));
+  const wrongName = await assess(mutate(value => { value.device.runtimeName = 'onnxruntime-web/wasm'; }));
   assert.ok(wrongName.blockers.includes('INCOMPLETE_RUNTIME_IDENTITY'));
 
   const wrongVersion = await assess(mutate(value => { value.device.runtimeVersion = '1.28.0'; }));
@@ -126,6 +128,17 @@ test('provider/runtime pairing and exact runtime version are closed allowlists',
 
   const unknownProvider = await assess(mutate(value => { value.device.provider = 'cuda'; }));
   assert.ok(unknownProvider.blockers.includes('UNSUPPORTED_PROVIDER'));
+  assert.ok(unknownProvider.blockers.includes('PHYSICAL_WEBGPU_REQUIRED'));
+});
+
+test('CPU/WASM evidence remains diagnostic and cannot satisfy global physical-WebGPU production eligibility', async () => {
+  const result = await assess(mutate(value => {
+    value.device.provider = 'wasm';
+    value.device.runtimeName = 'onnxruntime-web/wasm';
+    value.device.adapterKind = 'CPU';
+  }));
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('PHYSICAL_WEBGPU_REQUIRED'));
 });
 
 test('release model and signature URLs are pinned to the exact C8 tag and filenames', async () => {
@@ -161,4 +174,30 @@ test('duplicate real-image case IDs are rejected instead of inflating review cou
     value.quality.cases[1].caseId = value.quality.cases[0].caseId;
   }));
   assert.ok(result.blockers.includes('INVALID_REAL_IMAGE_BINDING'));
+});
+
+test('duplicate source/mask bindings cannot be relabeled into the minimum real-image count', async () => {
+  const result = await assess(mutate(value => {
+    value.quality.cases[1].sourceImageSha256 = value.quality.cases[0].sourceImageSha256;
+    value.quality.cases[1].maskSha256 = value.quality.cases[0].maskSha256;
+  }));
+  assert.ok(result.blockers.includes('INVALID_REAL_IMAGE_BINDING'));
+  assert.ok(result.blockers.includes('REAL_IMAGE_REVIEW_REQUIRED'));
+});
+
+test('cyclic or otherwise non-canonical evidence fails closed before trust verification', async () => {
+  const hostile = structuredClone(evidence()) as any;
+  hostile.quality.loop = hostile;
+  let promotionVerifyCalls = 0;
+  const trust: LaMaPromotionTrustPort = {
+    verifySignedRelease: async () => true,
+    verifyPromotionEvidence: async () => {
+      promotionVerifyCalls += 1;
+      return true;
+    },
+  };
+  const result = await assessLaMaProductionPromotion(hostile, trust, TESTED_COMMIT_SHA, NOW);
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('INVALID_SCHEMA'));
+  assert.equal(promotionVerifyCalls, 0);
 });

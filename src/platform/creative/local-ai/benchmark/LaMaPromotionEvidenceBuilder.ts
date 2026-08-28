@@ -15,6 +15,7 @@ export type LaMaMeasuredInferenceSample = Readonly<{
 }>;
 
 export type LaMaPromotionEvidenceDraft = Readonly<{
+  testedCommitSha: string;
   capturedAt: number;
   expiresAt: number;
   attestation: LaMaPromotionAttestation;
@@ -37,10 +38,16 @@ export type LaMaPromotionEvidenceDraft = Readonly<{
  * promotion method; only assessLaMaProductionPromotion may evaluate it through an external trust port.
  */
 export function buildLaMaPromotionEvidence(draft: LaMaPromotionEvidenceDraft): LaMaProductionPromotionEvidence {
+  if (!/^[a-f0-9]{40}$/.test(draft.testedCommitSha)) {
+    throw new Error('LaMa promotion evidence requires an exact lowercase 40-hex tested commit SHA');
+  }
   if (!Array.isArray(draft.benchmark.samples) || draft.benchmark.samples.length === 0) {
     throw new Error('LaMa promotion evidence requires at least one measured inference sample');
   }
   const latencies = draft.benchmark.samples.map((sample) => {
+    if (typeof sample.success !== 'boolean') {
+      throw new Error('LaMa measured inference success must be boolean');
+    }
     if (!Number.isFinite(sample.latencyMs) || sample.latencyMs < 0) {
       throw new Error('LaMa measured inference latency must be finite and non-negative');
     }
@@ -49,6 +56,7 @@ export function buildLaMaPromotionEvidence(draft: LaMaPromotionEvidenceDraft): L
 
   const evidence: LaMaProductionPromotionEvidence = {
     schemaVersion: LAMA_PROMOTION_EVIDENCE_SCHEMA_VERSION,
+    testedCommitSha: draft.testedCommitSha,
     capturedAt: draft.capturedAt,
     expiresAt: draft.expiresAt,
     attestation: draft.attestation,
@@ -57,7 +65,7 @@ export function buildLaMaPromotionEvidence(draft: LaMaPromotionEvidenceDraft): L
     benchmark: {
       warmupCount: draft.benchmark.warmupCount,
       sampleCount: draft.benchmark.samples.length,
-      successfulSamples: draft.benchmark.samples.filter((sample) => sample.success).length,
+      successfulSamples: draft.benchmark.samples.filter((sample) => sample.success === true).length,
       latencyMs: {
         min: latencies[0]!,
         median: percentileNearestRank(latencies, 0.5),

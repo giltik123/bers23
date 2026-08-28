@@ -6,7 +6,7 @@ import {
 } from '../models/LaMaRelease';
 import type { DeviceClass, DeviceTier, ExecutionProvider, Platform } from '../types';
 
-export const LAMA_PROMOTION_EVIDENCE_SCHEMA_VERSION = 1 as const;
+export const LAMA_PROMOTION_EVIDENCE_SCHEMA_VERSION = 2 as const;
 export const LAMA_PROMOTION_EVIDENCE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 export const LAMA_PROMOTION_MIN_INFERENCE_SAMPLES = 5;
 export const LAMA_PROMOTION_MIN_REAL_IMAGE_CASES = 5;
@@ -18,9 +18,11 @@ const REAL_PLATFORMS = ['ANDROID', 'IOS', 'WINDOWS', 'MACOS', 'LINUX'] as const;
 const REAL_DEVICE_CLASSES = ['MOBILE', 'DESKTOP'] as const;
 const REAL_DEVICE_TIERS = ['LOW', 'MEDIUM', 'HIGH', 'EXTREME'] as const;
 const ACCEPTED_PROVIDERS = ['webgpu', 'wasm'] as const;
+const COMMIT_SHA = /^[a-f0-9]{40}$/;
 
 export type LaMaPromotionBlocker =
   | 'INVALID_SCHEMA'
+  | 'TESTED_COMMIT_MISMATCH'
   | 'WRONG_MODEL_IDENTITY'
   | 'SIGNED_RELEASE_REQUIRED'
   | 'RELEASE_SIGNATURE_UNVERIFIED'
@@ -30,6 +32,7 @@ export type LaMaPromotionBlocker =
   | 'STALE_EVIDENCE'
   | 'FUTURE_EVIDENCE'
   | 'UNSUPPORTED_PROVIDER'
+  | 'PHYSICAL_WEBGPU_REQUIRED'
   | 'REAL_DEVICE_REQUIRED'
   | 'SOFTWARE_ADAPTER_REJECTED'
   | 'INCOMPLETE_RUNTIME_IDENTITY'
@@ -63,13 +66,13 @@ export type LaMaPromotionAttestation = Readonly<{
 }>;
 
 /**
- * Cryptographic verification is deliberately outside the untrusted evidence document.
- * Production callers must provide an implementation backed by the trusted signature/key boundary;
- * there is no permissive/default verifier.
+ * Cryptographic verification is outside the untrusted evidence document. Promotion signatures are
+ * defined over the exact canonical JSON payload supplied to verifyPromotionEvidence, not merely over
+ * the attestation URLs. Production implementations must compare/verify that payload at the trust boundary.
  */
 export interface LaMaPromotionTrustPort {
   verifySignedRelease(release: LaMaSignedReleaseEvidence): Promise<boolean>;
-  verifyPromotionEvidence(attestation: LaMaPromotionAttestation): Promise<boolean>;
+  verifyPromotionEvidence(attestation: LaMaPromotionAttestation, canonicalPayload: string): Promise<boolean>;
 }
 
 export type LaMaRealDeviceEvidence = Readonly<{
@@ -129,16 +132,20 @@ export type LaMaLocalExecutionEvidence = Readonly<{
   aiCreditsConsumed: number;
 }>;
 
-export type LaMaProductionPromotionEvidence = Readonly<{
-  schemaVersion: 1;
+export type LaMaProductionPromotionSignedPayload = Readonly<{
+  schemaVersion: 2;
+  testedCommitSha: string;
   capturedAt: number;
   expiresAt: number;
-  attestation: LaMaPromotionAttestation;
   release: LaMaSignedReleaseEvidence;
   device: LaMaRealDeviceEvidence;
   benchmark: LaMaBenchmarkPromotionEvidence;
   quality: LaMaQualityPromotionEvidence;
   localExecution: LaMaLocalExecutionEvidence;
+}>;
+
+export type LaMaProductionPromotionEvidence = Readonly<LaMaProductionPromotionSignedPayload & {
+  attestation: LaMaPromotionAttestation;
 }>;
 
 export type LaMaPromotionAssessment = Readonly<{
@@ -147,20 +154,24 @@ export type LaMaPromotionAssessment = Readonly<{
 }>;
 
 /**
- * Admission-only gate. The evidence object is untrusted and neither it nor a browser may self-assert
- * signature success. The separate trust port must cryptographically verify both the signed C8 release
- * and the detached promotion-evidence attestation. This function never mutates model, runtime, or Core state.
+ * Admission-only global production gate. The caller supplies the trusted commit SHA being promoted.
+ * The untrusted input is first snapshotted through canonical JSON, then validated, and the exact signed
+ * payload snapshot is passed to the trust port. This function never mutates model, runtime, or Core state.
  */
 export async function assessLaMaProductionPromotion(
   value: unknown,
   trust: LaMaPromotionTrustPort,
+  expectedCommitSha: string,
   now: number = Date.now(),
 ): Promise<LaMaPromotionAssessment> {
   const blockers = new Set<LaMaPromotionBlocker>();
-  const evidence = asRecord(value);
+  const evidence = snapshotJsonRecord(value);
   if (!evidence || evidence.schemaVersion !== LAMA_PROMOTION_EVIDENCE_SCHEMA_VERSION) {
     return assessment(['INVALID_SCHEMA']);
   }
+
+  if (!commitSha(evidence.testedCommitSha)) blockers.add('INVALID_SCHEMA');
+  if (!commitSha(expectedCommitSha) || evidence.testedCommitSha !== expectedCommitSha) blockers.add('TESTED_COMMIT_MISMATCH');
 
   const capturedAt = finiteNonNegative(evidence.capturedAt);
   const expiresAt = finiteNonNegative(evidence.expiresAt);
@@ -177,6 +188,8 @@ export async function assessLaMaProductionPromotion(
   validateBenchmark(asRecord(evidence.benchmark), blockers);
   validateQuality(asRecord(evidence.quality), blockers, capturedAt);
   validateLocalExecution(asRecord(evidence.localExecution), blockers);
+  const canonicalPayload = canonicalPromotionPayload(evidence);
+  if (canonicalPayload === null) blockers.add('INVALID_SCHEMA');
 
   if (release) {
     let verified = false;
@@ -190,10 +203,10 @@ export async function assessLaMaProductionPromotion(
     blockers.add('RELEASE_SIGNATURE_UNVERIFIED');
   }
 
-  if (attestation) {
+  if (attestation && canonicalPayload !== null) {
     let verified = false;
     try {
-      verified = await trust.verifyPromotionEvidence(attestation);
+      verified = await trust.verifyPromotionEvidence(attestation, canonicalPayload);
     } catch {
       verified = false;
     }
@@ -251,8 +264,10 @@ function parseAttestation(
 
 function validateDevice(device: Readonly<Record<string, unknown>> | null, blockers: Set<LaMaPromotionBlocker>): void {
   if (!device || device.evidenceKind !== 'REAL_PHYSICAL_DEVICE') blockers.add('REAL_DEVICE_REQUIRED');
-  if (!device) return;
-
+  if (!device) {
+    blockers.add('PHYSICAL_WEBGPU_REQUIRED');
+    return;
+  }
   if (!REAL_PLATFORMS.includes(String(device.platform) as (typeof REAL_PLATFORMS)[number])
     || !REAL_DEVICE_CLASSES.includes(String(device.deviceClass) as (typeof REAL_DEVICE_CLASSES)[number])
     || !REAL_DEVICE_TIERS.includes(String(device.deviceTier) as (typeof REAL_DEVICE_TIERS)[number])) blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
@@ -268,6 +283,7 @@ function validateDevice(device: Readonly<Record<string, unknown>> | null, blocke
   if (typeof device.browserVersion !== 'string' || !device.browserVersion.trim() || device.browserVersion === 'NOT_APPLICABLE') blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
   if (typeof device.coarseDeviceEvidenceKey !== 'string' || !device.coarseDeviceEvidenceKey.trim()) blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
 
+  if (device.provider !== 'webgpu' || device.adapterKind !== 'PHYSICAL') blockers.add('PHYSICAL_WEBGPU_REQUIRED');
   if (device.provider === 'webgpu' && device.adapterKind !== 'PHYSICAL') blockers.add('REAL_DEVICE_REQUIRED');
   if (device.provider === 'wasm' && device.adapterKind !== 'CPU') blockers.add('REAL_DEVICE_REQUIRED');
 }
@@ -311,8 +327,10 @@ function validateQuality(
   const cases = Array.isArray(quality.cases) ? quality.cases : [];
   if (cases.length < LAMA_PROMOTION_MIN_REAL_IMAGE_CASES) blockers.add('REAL_IMAGE_REVIEW_REQUIRED');
   const caseIds = new Set<string>();
+  const sourceMaskBindings = new Set<string>();
   for (const item of cases) {
     const testCase = asRecord(item);
+    const validSourceMask = Boolean(testCase && sha256(testCase.sourceImageSha256) && sha256(testCase.maskSha256));
     if (!testCase || typeof testCase.caseId !== 'string' || !testCase.caseId.trim()
       || ![testCase.sourceImageSha256, testCase.maskSha256, testCase.rawOutputSha256, testCase.compositeSha256].every(sha256)
       || !positiveInteger(testCase.width) || !positiveInteger(testCase.height)) blockers.add('INVALID_REAL_IMAGE_BINDING');
@@ -320,10 +338,16 @@ function validateQuality(
       if (caseIds.has(testCase.caseId)) blockers.add('INVALID_REAL_IMAGE_BINDING');
       caseIds.add(testCase.caseId);
     }
+    if (testCase && validSourceMask) {
+      const binding = `${String(testCase.sourceImageSha256)}:${String(testCase.maskSha256)}`;
+      if (sourceMaskBindings.has(binding)) blockers.add('INVALID_REAL_IMAGE_BINDING');
+      sourceMaskBindings.add(binding);
+    }
     if (testCase?.knownRegionBitExact !== true) blockers.add('KNOWN_REGION_INVARIANT_FAILED');
     if (testCase?.outputGeometryValid !== true || testCase?.outputRangeValid !== true) blockers.add('OUTPUT_CONTRACT_FAILED');
     if (testCase?.humanDecision !== 'PASS') blockers.add('HUMAN_REVIEW_REQUIRED');
   }
+  if (sourceMaskBindings.size < LAMA_PROMOTION_MIN_REAL_IMAGE_CASES) blockers.add('REAL_IMAGE_REVIEW_REQUIRED');
   const reviewer = asRecord(quality.reviewer);
   const reviewedAt = reviewer ? finiteNonNegative(reviewer.reviewedAt) : null;
   if (!reviewer || reviewer.decision !== 'PASS'
@@ -345,6 +369,60 @@ function validateLocalExecution(local: Readonly<Record<string, unknown>> | null,
   if (local.aiCreditsConsumed !== 0) blockers.add('AI_CREDIT_USAGE_DETECTED');
 }
 
+function canonicalPromotionPayload(evidence: Readonly<Record<string, unknown>>): string | null {
+  return canonicalJson({
+    schemaVersion: evidence.schemaVersion,
+    testedCommitSha: evidence.testedCommitSha,
+    capturedAt: evidence.capturedAt,
+    expiresAt: evidence.expiresAt,
+    release: evidence.release,
+    device: evidence.device,
+    benchmark: evidence.benchmark,
+    quality: evidence.quality,
+    localExecution: evidence.localExecution,
+  });
+}
+
+function snapshotJsonRecord(value: unknown): Readonly<Record<string, unknown>> | null {
+  const serialized = canonicalJson(value);
+  if (serialized === null) return null;
+  try {
+    return asRecord(JSON.parse(serialized));
+  } catch {
+    return null;
+  }
+}
+
+function canonicalJson(value: unknown): string | null {
+  try {
+    return canonicalJsonValue(value, new Set<object>());
+  } catch {
+    return null;
+  }
+}
+
+function canonicalJsonValue(value: unknown, seen: Set<object>): string {
+  if (value === null) return 'null';
+  if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)!;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('canonical payload contains a non-finite number');
+    return JSON.stringify(value)!;
+  }
+  if (typeof value !== 'object') throw new Error('canonical payload contains a non-JSON value');
+  if (seen.has(value)) throw new Error('canonical payload contains a cycle');
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => canonicalJsonValue(item, seen)).join(',')}]`;
+    }
+    const record = value as Readonly<Record<string, unknown>>;
+    const keys = Object.keys(record).sort();
+    return `{${keys.map((key) => `${canonicalJsonValue(key, seen)}:${canonicalJsonValue(record[key], seen)}`).join(',')}}`;
+  } finally {
+    seen.delete(value);
+  }
+}
+
 function assessment(blockers: readonly LaMaPromotionBlocker[]): LaMaPromotionAssessment {
   return Object.freeze({ eligible: blockers.length === 0, blockers: Object.freeze([...new Set(blockers)].sort()) });
 }
@@ -362,6 +440,9 @@ function safeHttpsUrl(value: unknown): boolean {
 }
 function sha256(value: unknown): boolean {
   return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+}
+function commitSha(value: unknown): value is string {
+  return typeof value === 'string' && COMMIT_SHA.test(value);
 }
 function finiteNonNegative(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;

@@ -20,7 +20,10 @@ import { productionLocalModelsByCapability } from '../server/core/localExecution
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
 const NOW = 2_000_000_000_000;
+const TESTED_COMMIT_SHA = '1'.repeat(40);
+const OTHER_COMMIT_SHA = '2'.repeat(40);
 const SHA = (character: string) => character.repeat(64);
+const indexedSha = (value: number) => value.toString(16).padStart(64, '0');
 const TRUSTED: LaMaPromotionTrustPort = {
   verifySignedRelease: async () => true,
   verifyPromotionEvidence: async () => true,
@@ -30,13 +33,13 @@ const UNTRUSTED: LaMaPromotionTrustPort = {
   verifyPromotionEvidence: async () => false,
 };
 
-function validEvidence(provider: 'webgpu' | 'wasm' = 'wasm'): LaMaProductionPromotionEvidence {
+function validEvidence(provider: 'webgpu' | 'wasm' = 'webgpu'): LaMaProductionPromotionEvidence {
   const cases = Array.from({ length: LAMA_PROMOTION_MIN_REAL_IMAGE_CASES }, (_, index) => ({
     caseId: `real-image-${index + 1}`,
-    sourceImageSha256: SHA('a'),
-    maskSha256: SHA('b'),
-    rawOutputSha256: SHA('c'),
-    compositeSha256: SHA('d'),
+    sourceImageSha256: indexedSha(index + 1),
+    maskSha256: indexedSha(index + 101),
+    rawOutputSha256: indexedSha(index + 201),
+    compositeSha256: indexedSha(index + 301),
     width: 512,
     height: 512,
     knownRegionBitExact: true,
@@ -46,7 +49,8 @@ function validEvidence(provider: 'webgpu' | 'wasm' = 'wasm'): LaMaProductionProm
   }));
   const releaseBase = 'https://github.com/giltik123/bers23/releases/download/lama-big-places-inpainting-v1.0.0-candidate.1';
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    testedCommitSha: TESTED_COMMIT_SHA,
     capturedAt: NOW - 60_000,
     expiresAt: NOW + 60_000,
     attestation: {
@@ -114,15 +118,54 @@ function mutate(base: LaMaProductionPromotionEvidence, change: (value: any) => v
 }
 
 async function assess(value: unknown, trust: LaMaPromotionTrustPort = TRUSTED) {
-  return assessLaMaProductionPromotion(value, trust, NOW);
+  return assessLaMaProductionPromotion(value, trust, TESTED_COMMIT_SHA, NOW);
 }
 
-test('complete externally verified evidence envelope is structurally eligible but grants no authority by itself', async () => {
-  const assessment = await assess(validEvidence());
-  assert.equal(assessment.eligible, true);
-  assert.deepEqual(assessment.blockers, []);
+test('complete externally verified physical-WebGPU evidence envelope is structurally eligible but grants no authority by itself', async () => {
+  const result = await assess(validEvidence());
+  assert.equal(result.eligible, true);
+  assert.deepEqual(result.blockers, []);
   assert.equal(manifest.status, 'CANDIDATE');
   assert.equal(manifest.productionApprovalEvidence, null);
+});
+
+test('WASM evidence cannot satisfy the global production gate while physical WebGPU remains outstanding', async () => {
+  const result = await assess(validEvidence('wasm'));
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('PHYSICAL_WEBGPU_REQUIRED'));
+});
+
+test('promotion attestation verification is bound to the exact canonical assessed payload', async () => {
+  const base = validEvidence();
+  let signedPayload = '';
+  const capture: LaMaPromotionTrustPort = {
+    verifySignedRelease: async () => true,
+    verifyPromotionEvidence: async (_attestation, canonicalPayload) => {
+      signedPayload = canonicalPayload;
+      return true;
+    },
+  };
+  const initial = await assess(base, capture);
+  assert.equal(initial.eligible, true);
+  assert.ok(signedPayload.includes(`\"testedCommitSha\":\"${TESTED_COMMIT_SHA}\"`));
+
+  const boundTrust: LaMaPromotionTrustPort = {
+    verifySignedRelease: async () => true,
+    verifyPromotionEvidence: async (_attestation, canonicalPayload) => canonicalPayload === signedPayload,
+  };
+  const substituted = await assess(mutate(base, value => { value.device.deviceTier = 'LOW'; }), boundTrust);
+  assert.equal(substituted.eligible, false);
+  assert.ok(substituted.blockers.includes('EVIDENCE_SIGNATURE_UNVERIFIED'));
+});
+
+test('signed promotion evidence is bound to the trusted commit being promoted', async () => {
+  const wrongHead = await assess(mutate(validEvidence(), value => { value.testedCommitSha = OTHER_COMMIT_SHA; }));
+  assert.equal(wrongHead.eligible, false);
+  assert.ok(wrongHead.blockers.includes('TESTED_COMMIT_MISMATCH'));
+
+  const malformed = await assess(mutate(validEvidence(), value => { value.testedCommitSha = 'not-a-commit'; }));
+  assert.ok(malformed.blockers.includes('INVALID_SCHEMA'));
+  assert.ok(malformed.blockers.includes('TESTED_COMMIT_MISMATCH'));
 });
 
 test('self-asserted evidence cannot replace independent cryptographic verification', async () => {
@@ -172,6 +215,7 @@ test('hosted SwiftShader/software adapter can never satisfy real-device WebGPU p
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('REAL_DEVICE_REQUIRED'));
   assert.ok(result.blockers.includes('SOFTWARE_ADAPTER_REJECTED'));
+  assert.ok(result.blockers.includes('PHYSICAL_WEBGPU_REQUIRED'));
 });
 
 test('benchmark must include warmup, repeated successful samples and sane modulo-8 shapes', async () => {
@@ -189,9 +233,16 @@ test('benchmark must include warmup, repeated successful samples and sane modulo
   assert.ok(invalid.blockers.includes('INVALID_BENCHMARK_METRICS'));
 });
 
-test('real-image quality requires enough hash-bound cases, deterministic invariants and human PASS', async () => {
+test('real-image quality requires distinct hash-bound inputs, deterministic invariants and human PASS', async () => {
   const tooFew = await assess(mutate(validEvidence(), value => { value.quality.cases.length = 1; }));
   assert.ok(tooFew.blockers.includes('REAL_IMAGE_REVIEW_REQUIRED'));
+
+  const duplicateInput = await assess(mutate(validEvidence(), value => {
+    value.quality.cases[1].sourceImageSha256 = value.quality.cases[0].sourceImageSha256;
+    value.quality.cases[1].maskSha256 = value.quality.cases[0].maskSha256;
+  }));
+  assert.ok(duplicateInput.blockers.includes('INVALID_REAL_IMAGE_BINDING'));
+  assert.ok(duplicateInput.blockers.includes('REAL_IMAGE_REVIEW_REQUIRED'));
 
   const broken = await assess(mutate(validEvidence(), value => {
     value.quality.cases[0].sourceImageSha256 = 'not-a-sha';

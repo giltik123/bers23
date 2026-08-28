@@ -5,10 +5,12 @@ import { LAMA_RELEASE_KEY_ID } from '../src/platform/creative/local-ai/benchmark
 import { LAMA_MODEL_ID, LAMA_ONNX_SHA256, LAMA_ONNX_SIZE, LAMA_VERSION } from '../src/platform/creative/local-ai/models/LaMaRelease.ts';
 
 const releaseBase = 'https://github.com/giltik123/bers23/releases/download/lama-big-places-inpainting-v1.0.0-candidate.1';
-const SHA = (value: string) => value.repeat(64);
+const TESTED_COMMIT_SHA = '1'.repeat(40);
+const indexedSha = (value: number) => value.toString(16).padStart(64, '0');
 
 function draft() {
   return {
+    testedCommitSha: TESTED_COMMIT_SHA,
     capturedAt: 1_000,
     expiresAt: 2_000,
     attestation: {
@@ -32,11 +34,11 @@ function draft() {
       platform: 'WINDOWS' as const,
       deviceClass: 'DESKTOP' as const,
       deviceTier: 'HIGH' as const,
-      provider: 'wasm' as const,
-      runtimeName: 'onnxruntime-web/wasm',
+      provider: 'webgpu' as const,
+      runtimeName: 'onnxruntime-web/webgpu',
       runtimeVersion: '1.27.0',
       browserVersion: 'Chrome 150',
-      adapterKind: 'CPU' as const,
+      adapterKind: 'PHYSICAL' as const,
       softwareAdapter: false,
       coarseDeviceEvidenceKey: 'opaque-coarse-device-key',
     },
@@ -58,10 +60,10 @@ function draft() {
       datasetEvidenceUrl: 'https://evidence.example/lama/dataset.json',
       cases: Array.from({ length: 5 }, (_, index) => ({
         caseId: `case-${index}`,
-        sourceImageSha256: SHA('a'),
-        maskSha256: SHA('b'),
-        rawOutputSha256: SHA('c'),
-        compositeSha256: SHA('d'),
+        sourceImageSha256: indexedSha(index + 1),
+        maskSha256: indexedSha(index + 101),
+        rawOutputSha256: indexedSha(index + 201),
+        compositeSha256: indexedSha(index + 301),
         width: 512,
         height: 512,
         knownRegionBitExact: true,
@@ -85,9 +87,10 @@ function draft() {
   };
 }
 
-test('builder deterministically derives sample counts and latency order statistics', () => {
+test('builder deterministically derives v2 commit-bound sample counts and latency order statistics', () => {
   const evidence = buildLaMaPromotionEvidence(draft());
-  assert.equal(evidence.schemaVersion, 1);
+  assert.equal(evidence.schemaVersion, 2);
+  assert.equal(evidence.testedCommitSha, TESTED_COMMIT_SHA);
   assert.equal(evidence.benchmark.sampleCount, 5);
   assert.equal(evidence.benchmark.successfulSamples, 4);
   assert.deepEqual(evidence.benchmark.latencyMs, { min: 10, median: 30, p95: 50, max: 50 });
@@ -103,6 +106,18 @@ test('builder rejects missing or invalid measured latency instead of inventing v
   const invalid = draft();
   invalid.benchmark.samples[0] = { latencyMs: Number.NaN, success: true };
   assert.throws(() => buildLaMaPromotionEvidence(invalid), /finite and non-negative/);
+});
+
+test('builder rejects non-boolean sample outcomes instead of counting truthy hostile input', () => {
+  const hostile = draft() as any;
+  hostile.benchmark.samples[0].success = 'false';
+  assert.throws(() => buildLaMaPromotionEvidence(hostile), /success must be boolean/);
+});
+
+test('builder rejects malformed tested commit identity before emitting canonical evidence', () => {
+  const invalid = draft() as any;
+  invalid.testedCommitSha = 'main';
+  assert.throws(() => buildLaMaPromotionEvidence(invalid), /40-hex tested commit SHA/);
 });
 
 test('builder preserves failures and UNKNOWN memory; it has no promotion decision output', () => {
