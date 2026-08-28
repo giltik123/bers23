@@ -1,10 +1,10 @@
-import type { CreativeArtifactRole } from '../canonical/contracts';
-import type { LocalExecutionToolExecutorBinding } from '../canonical/localExecution';
+import type { CreativeArtifactRole } from '../canonical/contracts.ts';
+import type { LocalExecutionToolExecutorBinding } from '../canonical/localExecution.ts';
 import {
   BACKGROUND_ISOLATION_CAPABILITY,
   BACKGROUND_ISOLATION_TOOL_ID,
   BACKGROUND_ISOLATION_TOOL_VERSION,
-} from './BackgroundIsolation';
+} from './BackgroundIsolation.ts';
 
 export type DeterministicToolInputContract = Readonly<{
   name: string;
