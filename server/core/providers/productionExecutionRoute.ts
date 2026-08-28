@@ -1,6 +1,6 @@
 import type { ExecutionRouteSelectorPort } from '../../../src/platform/creative/canonical/contracts.ts';
 
-export const PRODUCTION_EXECUTION_ROUTE_VERSION = '6.42C3.2';
+export const PRODUCTION_EXECUTION_ROUTE_VERSION = '6.42C3.1';
 
 /** Pure execution policy: no scope, persistence, billing, auth, or provider-call authority. */
 export class ProductionExecutionRouteSelector implements ExecutionRouteSelectorPort {
