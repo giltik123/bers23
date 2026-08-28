@@ -199,3 +199,18 @@ test('recipe templates remain canonical Prompt inputs while multi-step execution
   assert.match(adapter, /retryable = false/);
   for (const forbidden of ['chainRunner', 'creditsEngine', 'editingEngine']) assert.equal(adapter.includes(forbidden), false, forbidden);
 });
+
+test('Editor removes dead recipe-chain execution wiring and uses planner advisory credits', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  for (const forbidden of [
+    'legacyRecipeExecutionAdapter',
+    'ChainProgress',
+    'chainState',
+    'runChain',
+    'onRunChain=',
+    'onApply={runChain}',
+    'creditsCalculator',
+  ]) assert.equal(editor.includes(forbidden), false, forbidden);
+  assert.match(editor, /<CreditsBar estimate=\{!pendingResult && plan\?\.status === 'ready' \? \(plan\.credits\?\.credits \?\? 0\) : 0\} \/>/);
+  assert.match(editor, /type: 'segmentation'[\s\S]*jobManager\.submit|jobManager\.submit\([\s\S]*type: 'segmentation'/);
+});

@@ -16,8 +16,6 @@ import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
 const AgentPanel = lazy(() => import('@/components/editor/agent/AgentPanel'));
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
-import { legacyRecipeExecutionAdapter } from '@/application/creative/LegacyRecipeExecutionAdapter';
-import ChainProgress from '@/components/editor/recipes/ChainProgress';
 import ImageCanvas from '@/components/editor/ImageCanvas';
 import CropToolbar from '@/components/editor/CropToolbar';
 import ResizeToolbar from '@/components/editor/ResizeToolbar';
@@ -118,7 +116,6 @@ export default function Editor() {
   const [committing, setCommitting] = useState(false);
   const [editTab, setEditTab] = useState('prompt');
   const [activeRecipe, setActiveRecipe] = useState(null);
-  const [chainState, setChainState] = useState(null); // { chain, steps, running }
   const [lastAction, setLastAction] = useState(null);
   // Always-fresh pushEdit for multi-step agent runs (avoids stale closures across commits).
   const pushEditRef = useRef();
@@ -494,42 +491,6 @@ export default function Editor() {
     }
   };
 
-  // Runs a recipe chain: each step flows through Planner → Editing Engine and is committed to history.
-  const runChain = async (chain) => {
-    setApplying(true);
-    setAiError(null);
-    setChainState({ chain, steps: chain.steps.map((s) => ({ label: s.label, status: 'pending' })), running: true });
-    try {
-      await jobManager.submit({
-        type: 'chain',
-        label: chain.name,
-        priority: 'normal',
-        projectId: project.id,
-        provider: 'reve',
-        estimatedTime: 60000,
-        creditsReserved: legacyRecipeExecutionAdapter.estimate(chain),
-        onCancel: () => legacyRecipeExecutionAdapter.cancel(),
-        notifyOnComplete: true,
-        run: () => legacyRecipeExecutionAdapter.execute({
-            chain, project, objects,
-            onProgress: (steps) => setChainState((cs) => ({ ...cs, steps })),
-            onStepCommitted: async (result, step) => {
-              if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
-              await pushEdit(result.finalArtifactId, `${chain.name}: ${step.label}`);
-              sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
-            },
-        }),
-      });
-      setChainState((cs) => ({ ...cs, running: false }));
-    } catch (e) {
-      setChainState((cs) => (cs ? { ...cs, running: false } : cs));
-      if (e.code !== 'cancelled') setAiError(e.message || 'Chain failed');
-      else setChainState(null);
-    } finally {
-      setApplying(false);
-    }
-  };
-
   const retryResult = () => {
     const pending = pendingResult;
     disposePendingPreview(pending);
@@ -635,16 +596,6 @@ export default function Editor() {
 
       <GenerationProgress />
 
-      {chainState && (
-        <ChainProgress
-          chain={chainState.chain}
-          steps={chainState.steps}
-          running={chainState.running}
-          onCancel={() => chainRunner.cancel()}
-          onDismiss={() => setChainState(null)}
-        />
-      )}
-
       <SegmentationProgress />
 
       <ImageCanvas
@@ -707,7 +658,7 @@ export default function Editor() {
 
       <PipelineStatusBar width={project.width} height={project.height} />
 
-      <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? creditsCalculator.estimateEdit({ plan, recipe: activeRecipe }).credits : 0} />
+      <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
 
       <AdaptivePanel title="Scene Memory"><SceneMemoryPanel project={project} /></AdaptivePanel>
 
@@ -753,7 +704,7 @@ export default function Editor() {
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={setEditTab} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
           {editTab === 'creative' ? (
-            <CreativeStudioPanel project={project} objects={objects} onApply={runChain} disabled={editorBusy} />
+            <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <OutfitPanel
               project={project}
@@ -781,7 +732,6 @@ export default function Editor() {
             <RecipePanel
               objects={objects}
               selectedObjects={objects.filter((o) => o.selected)}
-              onRunChain={runChain}
               disabled={editorBusy}
               onUse={(prompt, recipe) => {
                 // Recipe Engine output enters the normal flow: instruction → AI Planner → Editing Engine.
