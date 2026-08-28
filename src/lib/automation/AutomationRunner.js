@@ -1,10 +1,45 @@
 import { recipeManager } from '@/lib/recipes/recipeManager';
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
-import { jobManager } from '@/lib/jobs/jobManager';
 import { automationValidator } from '@/lib/automation/AutomationValidator';
 import { automationVariables } from '@/lib/automation/AutomationVariables';
-import { automationHistory } from '@/lib/automation/AutomationHistory';
-import { automationAnalytics } from '@/lib/automation/AutomationAnalytics';
 
-const dispatch = (action, variables) => action.type === 'run_recipe' ? { ...action, compiledRecipe: recipeEngine.compile(recipeManager.get(action.recipeId) || recipeManager.all()[0], variables) } : { ...action, variables, orchestrationTarget: action.type === 'run_ai_agent' ? 'AI Agent → Recipe Engine → AI Planner → Job System → Editing Engine' : 'AI Planner → Recipe Engine → Job System → Editing Engine' };
-export const automationRunner = { async run({ automation, context = {} }) { const validation = automationValidator.validate(automation, context); if (!validation.valid) { const error = validation.errors.join(' '); await automationHistory.record({ automation_id: automation.automation_id, automation_name: automation.name, project_id: context.project?.id, status: 'skipped', estimated_credits: automation.estimated_credits, error }); throw new Error(error); } const started = Date.now(); const variables = automationVariables.resolve(automation.variables, context); const plan = { automationId: automation.automation_id, variables, actions: automation.actions.map((action) => dispatch(action, variables)) }; const result = await jobManager.submit({ type: 'automation', label: automation.name, priority: 'normal', projectId: context.project?.id, provider: 'orchestrator', estimatedTime: automation.estimated_time, creditsReserved: 0, payload: plan, metadata: { automationId: automation.automation_id }, run: async () => plan, notifyOnComplete: true }); await automationHistory.record({ automation_id: automation.automation_id, automation_name: automation.name, project_id: context.project?.id, status: 'completed', estimated_credits: automation.estimated_credits, credits_consumed: 0, duration_ms: Date.now() - started, action_count: automation.actions.length, result }); automationAnalytics.track('executed', { actions: automation.actions.length }); return result; } };
+const dispatch = (action, variables) => action.type === 'run_recipe'
+  ? { ...action, compiledRecipe: recipeEngine.compile(recipeManager.get(action.recipeId) || recipeManager.all()[0], variables) }
+  : {
+      ...action,
+      variables,
+      orchestrationTarget: action.type === 'run_ai_agent'
+        ? 'AI Agent → Recipe Engine → AI Planner → Job System → Editing Engine'
+        : 'AI Planner → Recipe Engine → Job System → Editing Engine',
+    };
+
+function buildPlan({ automation, context }) {
+  const validation = automationValidator.validate(automation, context);
+  if (!validation.valid) {
+    const error = new Error(validation.errors.join(' '));
+    error.code = 'AUTOMATION_PLAN_INVALID';
+    throw error;
+  }
+  const variables = automationVariables.resolve(automation.variables, context || {});
+  return Object.freeze({
+    status: 'PLANNED_NOT_EXECUTED',
+    automationId: automation.automation_id,
+    conditionsEvaluated: Boolean(context),
+    variables: Object.freeze({ ...variables }),
+    actions: Object.freeze(automation.actions.map((action) => Object.freeze(dispatch(action, variables)))),
+  });
+}
+
+// Preview/planning surface only. Durable automation execution is intentionally
+// fail-closed until a server-owned run authority is wired through Execution Fabric.
+export const automationRunner = Object.freeze({
+  plan(input) {
+    return buildPlan(input);
+  },
+  async run(input) {
+    buildPlan(input);
+    const error = new Error('Automation execution is not wired to a durable server authority.');
+    error.code = 'AUTOMATION_EXECUTION_NOT_WIRED';
+    throw error;
+  },
+});

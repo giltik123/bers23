@@ -1,6 +1,13 @@
 export default {
   title: 'Automation Studio',
   subtitle: 'Build reusable editing workflows that orchestrate existing tools—without writing code.',
+  previewSubtitle: 'Design and inspect workflow plans before durable automation execution is enabled.',
+  previewOnlyNotice: 'Preview only. Automation definitions, schedules and runs are not persisted or executed by production Core yet.',
+  previewOnlyBadge: 'Preview only',
+  newDraft: 'New draft',
+  planPreview: 'Plan preview',
+  planInvalid: 'Plan invalid',
+  conditionsDeferred: 'Runtime conditions are shown in the draft but are not evaluated without an execution context.',
   library: 'Automation library', templateGallery: 'Template gallery', builder: 'Builder',
   history: 'Execution history', run: 'Run', queuing: 'Queuing…', save: 'Save',
   trigger: 'Trigger', conditions: 'Conditions', condition: 'Condition', actions: 'Actions',

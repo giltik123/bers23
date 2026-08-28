@@ -1,24 +1,110 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
 import AssetCard from '@/components/assets/AssetCard';
 import AssetDetails from '@/components/assets/AssetDetails';
-import AssetFilters from '@/components/assets/AssetFilters';
-import AssetCollectionsPanel from '@/components/assets/AssetCollectionsPanel';
-import { assetLibrary } from '@/lib/assets/AssetLibrary';
-import { assetCollections } from '@/lib/assets/AssetCollections';
-import { assetFavorites } from '@/lib/assets/AssetFavorites';
-import { assetHistory } from '@/lib/assets/AssetHistory';
-import { assetAnalytics } from '@/lib/assets/AssetAnalytics';
+
+function projectAsset(project) {
+  const artifactId = project.current_image_artifact_id;
+  return Object.freeze({
+    id: `project:${project.id}:${artifactId}`,
+    asset_key: `project:${project.id}:${artifactId}`,
+    canonical_artifact_id: artifactId,
+    project_id: project.id,
+    type: 'project',
+    name: project.name || 'Untitled project',
+    thumbnail: project.thumbnail_url || project.current_image_url,
+    preview: project.current_image_url,
+    favorite: Boolean(project.favorite),
+    tags: Object.freeze(['project', 'canonical artifact']),
+    relations: Object.freeze([]),
+  });
+}
 
 export default function AssetLibrary() {
-  const [assets, setAssets] = useState([]); const [collections, setCollections] = useState([]); const [selected, setSelected] = useState(null); const [filters, setFilters] = useState({ text: '', type: 'all', favorite: false, collectionId: '' }); const [loading, setLoading] = useState(true);
-  const load = async () => { setLoading(true); const [projects, garments, outfits, nextCollections] = await Promise.all([coreClient.entities.Project.list('-updated_date', 200), coreClient.entities.Garment.list('-updated_date', 200), coreClient.entities.Outfit.list('-updated_date', 200), assetCollections.list()]); setAssets(await assetLibrary.index({ projects, garments, outfits })); setCollections(nextCollections); setLoading(false); };
-  useEffect(() => { load(); }, []);
-  const activeCollection = collections.find((collection) => collection.id === filters.collectionId);
-  const visible = useMemo(() => assetLibrary.search(assets, { ...filters, collectionId: activeCollection?.kind === 'smart' ? '' : filters.collectionId, text: activeCollection?.kind === 'smart' ? `${filters.text} ${activeCollection.query || ''}` : filters.text }), [assets, filters, activeCollection]);
-  const choose = (asset) => { setSelected(asset); assetHistory.record(asset); assetAnalytics.track('asset_viewed', { type: asset.type }); };
-  const favorite = async (asset) => { const updated = await assetFavorites.toggle(asset); setAssets((items) => items.map((item) => item.id === updated.id ? updated : item)); if (selected?.id === updated.id) setSelected(updated); };
-  const createCollection = async () => { const name = window.prompt('Collection name'); if (!name) return; const kind = window.prompt('Collection type: folder, pinned, or smart', 'folder') || 'folder'; const query = kind === 'smart' ? window.prompt('Smart collection search query', '') : ''; const created = await assetCollections.create({ name, kind, pinned: kind === 'pinned', query }); setCollections((items) => [...items, created]); assetAnalytics.track('collection_created', { kind }); };
-  const addToCollection = async (asset) => { if (!activeCollection || activeCollection.kind === 'smart') return; const collection_ids = [...new Set([...(asset.collection_ids || []), activeCollection.id])]; const updated = await coreClient.entities.Asset.update(asset.id, { collection_ids }); setAssets((items) => items.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); assetAnalytics.track('asset_collected', { type: asset.type }); };
-  return <div className="mx-auto max-w-7xl space-y-5 px-4 py-6"><div><h1 className="text-2xl font-semibold">Asset Library</h1><p className="text-sm text-muted-foreground">Centralized search and reuse for your projects, resources, and creative plans.</p></div><AssetFilters text={filters.text} onText={(text) => setFilters((current) => ({ ...current, text }))} type={filters.type} onType={(type) => setFilters((current) => ({ ...current, type }))} favorite={filters.favorite} onFavorite={(favorite) => setFilters((current) => ({ ...current, favorite }))} /><div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)_280px]"><AssetCollectionsPanel collections={collections} activeId={filters.collectionId} onSelect={(collectionId) => setFilters((current) => ({ ...current, collectionId }))} onCreate={createCollection} /><main>{loading ? <p className="py-12 text-center text-sm text-muted-foreground">Indexing reusable assets…</p> : visible.length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">{visible.map((asset) => <AssetCard key={asset.id} asset={asset} selected={selected?.id === asset.id} onSelect={choose} onFavorite={favorite} />)}</div> : <p className="py-12 text-center text-sm text-muted-foreground">No assets match these filters.</p>}</main><AssetDetails asset={selected} history={assetHistory.recent()} onAddToCollection={activeCollection && activeCollection.kind !== 'smart' ? addToCollection : null} /></div></div>;
+  const [assets, setAssets] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [text, setText] = useState('');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const projects = await coreClient.projects.list();
+      setAssets(projects.filter((project) => project.current_image_artifact_id).map(projectAsset));
+    } catch (loadError) {
+      setAssets([]);
+      setError(loadError?.message || 'Unable to load canonical project assets.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const visible = useMemo(() => {
+    const query = text.trim().toLowerCase();
+    return assets.filter((asset) => {
+      if (favoritesOnly && !asset.favorite) return false;
+      if (!query) return true;
+      return [asset.name, asset.type, ...(asset.tags || [])].join(' ').toLowerCase().includes(query);
+    });
+  }, [assets, favoritesOnly, text]);
+
+  const selected = assets.find((asset) => asset.id === selectedId) || null;
+
+  const toggleFavorite = async (asset) => {
+    const project = await coreClient.projects.update(asset.project_id, { favorite: !asset.favorite });
+    const updated = projectAsset(project);
+    setAssets((items) => items.map((item) => item.project_id === updated.project_id ? updated : item));
+    setSelectedId(updated.id);
+  };
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-5 px-4 py-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Asset Library</h1>
+        <p className="text-sm text-muted-foreground">Canonical Project artifacts available for safe reuse and navigation.</p>
+      </div>
+
+      <div className="rounded-xl border border-border/60 bg-secondary/40 p-3 text-sm text-muted-foreground" role="status">
+        Managed uploads, garments, outfits and collections are not connected to the production Asset authority yet. This view only indexes canonical Project artifacts.
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input value={text} onChange={(event) => setText(event.target.value)} placeholder="Search project assets…" className="pl-9" />
+        </div>
+        <Button variant={favoritesOnly ? 'default' : 'outline'} onClick={() => setFavoritesOnly((value) => !value)}>Favorites</Button>
+      </div>
+
+      {error && <div className="rounded-xl border border-destructive/30 p-3 text-sm text-destructive">{error} <button className="underline" onClick={() => void load()}>Retry</button></div>}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <main>
+          {loading ? (
+            <p className="py-12 text-center text-sm text-muted-foreground">Loading canonical assets…</p>
+          ) : visible.length ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+              {visible.map((asset) => <AssetCard key={asset.id} asset={asset} selected={selectedId === asset.id} onSelect={(value) => setSelectedId(value.id)} onFavorite={toggleFavorite} />)}
+            </div>
+          ) : (
+            <p className="py-12 text-center text-sm text-muted-foreground">No canonical Project assets match these filters.</p>
+          )}
+        </main>
+
+        <div className="space-y-2">
+          <AssetDetails asset={selected} history={[]} onAddToCollection={null} />
+          {selected && <Button asChild className="w-full" variant="outline"><Link to={`/editor?id=${encodeURIComponent(selected.project_id)}`}>Open project</Link></Button>}
+        </div>
+      </div>
+    </div>
+  );
 }

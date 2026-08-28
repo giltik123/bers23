@@ -17,6 +17,65 @@ test('composite intent creates a deterministic five-step advisory DAG but stays 
   const enabled = await plan({ operationIntent: 'COMPOSITE_REPLACE_RELIGHT' }, { compositeExecutionEnabled: true }); assert.equal(enabled.status, 'READY'); assert.equal(enabled.operations.length, 5); validateCreativePlan(enabled);
 });
 
+test('C5B narrow LOCAL_ONLY composite is deterministic, separately gated and cannot enable the broad composite', async () => {
+  const metadata = {
+    operationIntent: 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE',
+    selectionRequestId: 'selection-1',
+    analysis: { originalWidth: 2, originalHeight: 2, analysisWidth: 2, analysisHeight: 2, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 },
+    points: [{ x: 1, y: 1, label: 'POSITIVE', coordinateSpace: 'ORIGINAL' }],
+    planningConstraints: { executionPolicy: 'LOCAL_ONLY' },
+  };
+  const request = base(metadata);
+  const decision = await new CanonicalDecisionService().decide(request);
+  const disabled = await new CanonicalPlanningService().plan(request, decision);
+  const disabledAgain = await new CanonicalPlanningService().plan(request, decision);
+  assert.deepEqual(disabled, disabledAgain, 'narrow composite planning must be deterministic');
+  assert.equal(disabled.status, 'BLOCKED');
+  assert.deepEqual(disabled.operations, []);
+  assert.ok(disabled.confirmationReasons?.includes('LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'));
+  assert.equal(disabled.confirmationReasons?.includes('COMPOSITE_EXECUTION_NOT_WIRED'), false);
+  assert.equal(disabled.selectedCandidateId, 'candidate-v1-local-continuation');
+  assert.deepEqual(disabled.provenance?.plannerConfig, {
+    minimumIntentConfidence: .65,
+    minimumTargetConfidence: .65,
+    maximumPreservationRisk: .7,
+    compositeExecutionEnabled: false,
+    localCompositeContinuationEnabled: false,
+  });
+  assert.ok(disabled.provenance?.reasons.includes('LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE_V1'));
+  const selected = disabled.candidates?.find(item => item.id === disabled.selectedCandidateId);
+  assert.ok(selected);
+  assert.equal(selected.targetPreference, 'LOCAL');
+  assert.equal(selected.estimatedCredits, 0);
+  assert.deepEqual(selected.operations.map(item => item.type), ['segment', 'BACKGROUND_ISOLATION', 'verify']);
+  assert.deepEqual(selected.operations.map(item => item.dependencies), [[], ['local-continuation-01-segment'], ['local-continuation-02-background-isolation']]);
+  assert.deepEqual(selected.operations.map(item => item.requiredArtifacts), [
+    ['original'],
+    ['original', 'local-continuation:segmentation-mask'],
+    ['local-continuation:background-isolation-composite'],
+  ]);
+  assert.deepEqual(selected.operations.map(item => item.outputArtifacts), [
+    ['local-continuation:segmentation-mask'],
+    ['local-continuation:background-isolation-composite'],
+    ['local-continuation:verified'],
+  ]);
+  assert.equal(selected.operations.some(item => Boolean(item.providerId)), false);
+  assert.throws(() => validateCreativePlan(disabled), /not executable/);
+
+  const enabled = await new CanonicalPlanningService({ localCompositeContinuationEnabled: true }).plan(request, decision);
+  assert.equal(enabled.status, 'READY');
+  assert.deepEqual(enabled.operations.map(item => item.type), ['segment', 'BACKGROUND_ISOLATION', 'verify']);
+  assert.equal(enabled.provenance?.plannerConfig?.localCompositeContinuationEnabled, true);
+  assert.equal(enabled.provenance?.plannerConfig?.compositeExecutionEnabled, false);
+  validateCreativePlan(enabled);
+
+  const broadRequest = base({ operationIntent: 'COMPOSITE_REPLACE_RELIGHT' });
+  const broad = await new CanonicalPlanningService({ localCompositeContinuationEnabled: true }).plan(broadRequest, await new CanonicalDecisionService().decide(broadRequest));
+  assert.equal(broad.status, 'BLOCKED', 'narrow C5B admission must not enable the legacy five-step composite');
+  assert.ok(broad.confirmationReasons?.includes('COMPOSITE_EXECUTION_NOT_WIRED'));
+  assert.equal(broad.confirmationReasons?.includes('LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'), false);
+});
+
 test('DAG validation rejects cycles, missing/self/duplicate dependencies, illegal artifacts and terminal writers', () => {
   const make = (operations: CreativePlan['operations']): CreativePlan => ({ requestId: 'x', status: 'READY', operations, provenance: { plannerVersion: 'x', decisionGoal: 'x', inputArtifacts: [{ id: 'input', kind: 'image' }], reasons: [] } });
   assert.throws(() => validateCreativePlan(make([{ id: 'a', type: 'x', dependencies: ['b'] }, { id: 'b', type: 'x', dependencies: ['a'] }])), /cycle/);

@@ -11,12 +11,14 @@ import type {
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
 import type { LocalExecutionClaimInput, LocalExecutionFinalization, LocalExecutionLedger, LocalExecutionLedgerV2 } from './LocalExecutionLedger.ts';
+import { localExecutionResultReplayDigest } from './localExecutionReplayDigest.ts';
 
-const TICKET_COLUMNS = 'ticket_id,idempotency_key,tenant_id,user_id,project_id,request_id,workflow_id,step_id,ticket_json,consumed_at,finalized_status,finalized_at';
+const TICKET_COLUMNS = 'ticket_id,idempotency_key,tenant_id,user_id,project_id,request_id,workflow_id,step_id,ticket_json,consumed_at,finalized_status,finalized_at,admitted_result_sha256';
+type HeldClaim = Readonly<{ client: PoolClient; resultDigest: string }>;
 
 /** One PostgreSQL authority exposing explicit v1/v2 typed surfaces over the same table and advisory locks. */
 export class PostgresLocalExecutionLedger implements LocalExecutionLedger, LocalExecutionLedgerV2 {
-  private readonly heldClaims = new Map<string, PoolClient>();
+  private readonly heldClaims = new Map<string, HeldClaim>();
   private readonly pool: Pool;
   constructor(pool: Pool) { this.pool = pool; }
 
@@ -40,19 +42,22 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger, Local
   async claimV2(input: LocalExecutionClaimInput): Promise<LocalExecutionAdmissionDecisionV2> { return requireDecisionV2(await this.claimAny(input, '2')); }
 
   async commit(ticketId: string, status: 'SUCCESS' | 'FAILED'): Promise<void> {
-    const client = this.heldClaims.get(ticketId);
-    if (!client) throw new Error('Local execution ticket has no active PostgreSQL admission claim');
+    const held = this.heldClaims.get(ticketId);
+    if (!held) throw new Error('Local execution ticket has no active PostgreSQL admission claim');
     try {
-      const result = await client.query(`UPDATE local_execution_tickets SET consumed_at=CURRENT_TIMESTAMP, finalized_status=$2, finalized_at=CURRENT_TIMESTAMP WHERE ticket_id=$1 AND consumed_at IS NULL RETURNING ticket_id`, [ticketId, status]);
+      const result = await held.client.query(`UPDATE local_execution_tickets
+        SET consumed_at=CURRENT_TIMESTAMP, finalized_status=$2, finalized_at=CURRENT_TIMESTAMP, admitted_result_sha256=$3
+        WHERE ticket_id=$1 AND consumed_at IS NULL
+        RETURNING ticket_id`, [ticketId, status, held.resultDigest]);
       if (result.rowCount !== 1) throw new Error('Local execution ticket is already consumed or missing');
     } finally {
-      this.heldClaims.delete(ticketId); await unlock(client, ticketId).catch(() => undefined); client.release();
+      this.heldClaims.delete(ticketId); await unlock(held.client, ticketId).catch(() => undefined); held.client.release();
     }
   }
 
   async release(ticketId: string): Promise<void> {
-    const client = this.heldClaims.get(ticketId); if (!client) return;
-    this.heldClaims.delete(ticketId); try { await unlock(client, ticketId); } finally { client.release(); }
+    const held = this.heldClaims.get(ticketId); if (!held) return;
+    this.heldClaims.delete(ticketId); try { await unlock(held.client, ticketId); } finally { held.client.release(); }
   }
 
   private async issueAny(ticket: AnyLocalExecutionTicket): Promise<AnyLocalExecutionTicket> {
@@ -84,13 +89,23 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger, Local
       const lock = await client.query('SELECT pg_try_advisory_lock(hashtextextended($1, 642)) AS locked', [input.ticketId]);
       lockHeld = lock.rows[0]?.locked === true; if (!lockHeld) return denied('IN_PROGRESS');
       const stored = await client.query(`SELECT ${TICKET_COLUMNS} FROM local_execution_tickets WHERE ticket_id=$1`, [input.ticketId]);
-      const row = stored.rows[0]; if (!row) return denied('UNKNOWN_TICKET'); if (row.consumed_at) return denied('REPLAYED_TICKET');
+      const row = stored.rows[0]; if (!row) return denied('UNKNOWN_TICKET');
       const ticket = ticketFromRow(row); if (ticket.version !== expectedVersion) return denied('IDENTITY_MISMATCH');
       const validator = new LocalExecutionAdmissionRegistry();
-      const decision = ticket.version === '1' ? (validator.issue(ticket), validator.claim(input)) : (validator.issueV2(ticket), validator.claimV2(input));
+      const validationInput = row.consumed_at
+        ? { ...input, now: Math.min(input.now, ticket.expiresAt - 1) }
+        : input;
+      const decision = ticket.version === '1'
+        ? (validator.issue(ticket), validator.claim(validationInput))
+        : (validator.issueV2(ticket), validator.claimV2(validationInput));
       if (!decision.allowed) return decision;
+      const resultDigest = localExecutionResultReplayDigest(decision.result);
+      if (row.consumed_at) {
+        const storedDigest = typeof row.admitted_result_sha256 === 'string' ? row.admitted_result_sha256 : undefined;
+        return denied(storedDigest === resultDigest ? 'REPLAYED_TICKET' : 'CONFLICTING_REPLAY');
+      }
       if (this.heldClaims.has(input.ticketId)) return denied('IN_PROGRESS');
-      this.heldClaims.set(input.ticketId, client); retained = true; return decision;
+      this.heldClaims.set(input.ticketId, Object.freeze({ client, resultDigest })); retained = true; return decision;
     } finally {
       if (!retained) { if (lockHeld) await unlock(client, input.ticketId).catch(() => undefined); client.release(); }
     }

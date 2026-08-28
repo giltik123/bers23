@@ -6,16 +6,19 @@ import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createSuperResolution } from '@/application/createSuperResolution';
+import { createCrop } from '@/application/createCrop';
+import { createResize } from '@/application/createResize';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '@/platform/creative/deterministic/ResizeIdentity';
 import { SUPER_RESOLUTION_PRODUCTION_AVAILABLE } from '@/platform/creative/super-resolution/SuperResolutionRelease';
 import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
 const AgentPanel = lazy(() => import('@/components/editor/agent/AgentPanel'));
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
-import { legacyRecipeExecutionAdapter } from '@/application/creative/LegacyRecipeExecutionAdapter';
-import ChainProgress from '@/components/editor/recipes/ChainProgress';
 import ImageCanvas from '@/components/editor/ImageCanvas';
+import CropToolbar from '@/components/editor/CropToolbar';
+import ResizeToolbar from '@/components/editor/ResizeToolbar';
 import InstructionBar from '@/components/editor/InstructionBar';
 import HistoryControls from '@/components/editor/HistoryControls';
 import VersionsPanel from '@/components/editor/VersionsPanel';
@@ -62,6 +65,39 @@ function disposePendingPreview(pending) {
   if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url);
 }
 
+function exactCropRect(draft, sourceWidth, sourceHeight) {
+  if (!draft || !Number.isSafeInteger(sourceWidth) || !Number.isSafeInteger(sourceHeight) || sourceWidth < 1 || sourceHeight < 1) return null;
+  const { x, y, width, height } = draft;
+  if (![x, y, width, height].every(Number.isSafeInteger)) return null;
+  if (x < 0 || y < 0 || width < 1 || height < 1) return null;
+  if (x + width > sourceWidth || y + height > sourceHeight) return null;
+  return Object.freeze({ x, y, width, height });
+}
+
+function defaultCropRect(sourceWidth, sourceHeight) {
+  const insetX = sourceWidth > 2 ? Math.floor(sourceWidth * .1) : 0;
+  const insetY = sourceHeight > 2 ? Math.floor(sourceHeight * .1) : 0;
+  return Object.freeze({ x: insetX, y: insetY, width: Math.max(1, sourceWidth - insetX * 2), height: Math.max(1, sourceHeight - insetY * 2) });
+}
+
+function exactResizeTarget(draft) {
+  if (!draft) return null;
+  const { width, height } = draft;
+  if (![width, height].every(Number.isSafeInteger)) return null;
+  if (width < 1 || height < 1 || width > RESIZE_MAX_DIMENSION || height > RESIZE_MAX_DIMENSION) return null;
+  if (width * height > RESIZE_MAX_OUTPUT_PIXELS) return null;
+  return Object.freeze({ width, height });
+}
+
+function proportionalResizeDimension(value, sourceSame, sourceOther) {
+  if (![value, sourceSame, sourceOther].every(Number.isSafeInteger) || value < 1 || sourceSame < 1 || sourceOther < 1) return null;
+  const same = BigInt(sourceSame);
+  const numerator = BigInt(value) * BigInt(sourceOther);
+  const rounded = (numerator * 2n + same) / (same * 2n);
+  if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return Math.max(1, Number(rounded));
+}
+
 export default function Editor() {
   const projectId = new URLSearchParams(window.location.search).get('id')?.trim() || null;
   const {
@@ -80,7 +116,6 @@ export default function Editor() {
   const [committing, setCommitting] = useState(false);
   const [editTab, setEditTab] = useState('prompt');
   const [activeRecipe, setActiveRecipe] = useState(null);
-  const [chainState, setChainState] = useState(null); // { chain, steps, running }
   const [lastAction, setLastAction] = useState(null);
   // Always-fresh pushEdit for multi-step agent runs (avoids stale closures across commits).
   const pushEditRef = useRef();
@@ -93,14 +128,26 @@ export default function Editor() {
   const [brushSize, setBrushSize] = useState(24);
   const [isolatingBackground, setIsolatingBackground] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
+  const [cropDraft, setCropDraft] = useState(null);
+  const [cropping, setCropping] = useState(false);
+  const [resizeDraft, setResizeDraft] = useState(null);
+  const [resizeAspectLocked, setResizeAspectLocked] = useState(true);
+  const [resizing, setResizing] = useState(false);
   const selectionServiceRef = useRef(null);
   const strokeRef = useRef([]);
+  const cropAnchorRef = useRef(null);
   const platform = usePlatformProfile();
-  const editorBusy = applying || isolatingBackground || upscaling;
+  const editorBusy = applying || isolatingBackground || upscaling || cropping || resizing;
+  const cropRect = exactCropRect(cropDraft, project?.width, project?.height);
+  const cropInteractionActive = Boolean(cropDraft);
+  const resizeTarget = exactResizeTarget(resizeDraft);
+  const resizeInteractionActive = Boolean(resizeDraft);
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
+  useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
 
   const startSelection = () => {
+    if (cropInteractionActive || resizeInteractionActive) return;
     const imageArtifactId = project.current_image_artifact_id;
     if (!imageArtifactId) throw new Error('Canonical project image identity is unavailable');
     const segmentation = createSelectionSegmentation({ projectId: project.id, imageArtifactId, source: project.current_image_url });
@@ -134,6 +181,125 @@ export default function Editor() {
     selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null);
   };
 
+  const startCrop = () => {
+    if (selection || pendingResult || editorBusy || resizeInteractionActive || !project?.current_image_artifact_id) return;
+    const rect = defaultCropRect(project.width, project.height);
+    setAiError(null);
+    cropAnchorRef.current = null;
+    setCropDraft(rect);
+  };
+  const cropPointer = (phase, point) => {
+    if (!cropDraft) return;
+    if (phase === 'cancel') { cropAnchorRef.current = null; return; }
+    if (phase === 'down') {
+      cropAnchorRef.current = point;
+      setCropDraft({ x: point.x, y: point.y, width: 1, height: 1 });
+      return;
+    }
+    const anchor = cropAnchorRef.current;
+    if (!anchor) return;
+    const x = Math.min(anchor.x, point.x); const y = Math.min(anchor.y, point.y);
+    const width = Math.abs(point.x - anchor.x) + 1; const height = Math.abs(point.y - anchor.y) + 1;
+    setCropDraft({ x, y, width, height });
+    if (phase === 'up') cropAnchorRef.current = null;
+  };
+  const applyCrop = async (retryContext = null) => {
+    const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
+    const requestedRect = retryContext?.rect || cropRect;
+    const rect = exactCropRect(requestedRect, project?.width, project?.height);
+    if (!project?.id || !sourceArtifactId || !rect) {
+      setAiError('Crop requires an integer rectangle fully inside the current canonical image.');
+      return;
+    }
+    setCropping(true);
+    setAiError(null);
+    setLastAction(() => () => applyCrop({ sourceArtifactId, rect }));
+    try {
+      const local = createCrop({ projectId: project.id });
+      const result = await local.run({ requestId: globalThis.crypto.randomUUID(), sourceArtifactId, rect });
+      const previewBytes = await encodeDeterministicRgbaPng(result.preview);
+      const previewUrl = URL.createObjectURL(new Blob([previewBytes], { type: 'image/png' }));
+      const editorResult = {
+        finalArtifactId: result.canonicalArtifactId,
+        preview_url: previewUrl,
+        image_url: previewUrl,
+        provider: 'Local deterministic',
+        credits_used: 0,
+        generation_time_ms: result.latencyMs,
+      };
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return { kind: 'CROP', result: editorResult, instruction: `Crop ${rect.width}×${rect.height}`, beforeUrl: project.current_image_url, context: { sourceArtifactId, rect } };
+      });
+      cropAnchorRef.current = null;
+      setCropDraft(null);
+    } catch (e) {
+      setAiError(e.message || 'Crop failed');
+      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+    } finally {
+      setCropping(false);
+    }
+  };
+
+  const startResize = () => {
+    if (selection || pendingResult || editorBusy || cropInteractionActive || !project?.current_image_artifact_id) return;
+    if (!Number.isSafeInteger(project.width) || !Number.isSafeInteger(project.height) || project.width < 1 || project.height < 1) {
+      setAiError('Resize requires valid canonical image dimensions.');
+      return;
+    }
+    setAiError(null);
+    setResizeAspectLocked(true);
+    setResizeDraft({ width: project.width, height: project.height });
+  };
+  const updateResizeField = (key, value) => {
+    setResizeDraft((current) => {
+      if (!current) return current;
+      const next = { ...current, [key]: value };
+      if (!resizeAspectLocked || !Number.isSafeInteger(value) || value < 1) return next;
+      const otherKey = key === 'width' ? 'height' : 'width';
+      const sourceSame = key === 'width' ? project?.width : project?.height;
+      const sourceOther = key === 'width' ? project?.height : project?.width;
+      const proportional = proportionalResizeDimension(value, sourceSame, sourceOther);
+      return proportional === null ? next : { ...next, [otherKey]: proportional };
+    });
+  };
+  const applyResize = async (retryContext = null) => {
+    const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
+    const target = exactResizeTarget(retryContext?.target || resizeTarget);
+    if (!project?.id || !sourceArtifactId || !target) {
+      setAiError(`Resize requires integer dimensions within ${RESIZE_MAX_DIMENSION}px and ${RESIZE_MAX_OUTPUT_PIXELS.toLocaleString()} output pixels.`);
+      return;
+    }
+    setResizing(true);
+    setAiError(null);
+    setLastAction(() => () => applyResize({ sourceArtifactId, target }));
+    try {
+      const local = createResize({ projectId: project.id });
+      const result = await local.run({ requestId: globalThis.crypto.randomUUID(), sourceArtifactId, target });
+      const previewBytes = await encodeDeterministicRgbaPng(result.preview);
+      const previewUrl = URL.createObjectURL(new Blob([previewBytes], { type: 'image/png' }));
+      const editorResult = {
+        finalArtifactId: result.canonicalArtifactId,
+        preview_url: previewUrl,
+        image_url: previewUrl,
+        provider: 'Local deterministic',
+        credits_used: 0,
+        generation_time_ms: result.latencyMs,
+      };
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return { kind: 'RESIZE', result: editorResult, instruction: `Resize ${target.width}×${target.height}`, beforeUrl: project.current_image_url, context: { sourceArtifactId, target } };
+      });
+      setResizeDraft(null);
+      setResizeAspectLocked(true);
+    } catch (e) {
+      setAiError(e.message || 'Resize failed');
+      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+    } finally {
+      setResizing(false);
+    }
+  };
+
   // Scene Memory: auto-analyze when the project loads or the original image changes.
   // Once memory is ready, workspace auto-detection re-evaluates with full context.
   useEffect(() => {
@@ -153,7 +319,18 @@ export default function Editor() {
   const selected = objects.find((o) => o.selected) || null;
 
   useEffect(() => { if (project) sessionRecovery.saveEditor({ projectId: project.id, selectionId: selected?.id || null, historyIndex: project.history_index }); }, [project?.id, project?.history_index, selected?.id]);
-  useEffect(() => { if (platform.formFactor !== 'desktop') return; const shortcut = (event) => { if (event.target.matches('input, textarea')) return; if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return; event.preventDefault(); if (event.shiftKey) redo(); else undo(); }; window.addEventListener('keydown', shortcut); return () => window.removeEventListener('keydown', shortcut); }, [platform.formFactor, undo, redo]);
+  useEffect(() => {
+    if (platform.formFactor !== 'desktop') return;
+    const shortcut = (event) => {
+      if (editorBusy || detecting || cropInteractionActive || resizeInteractionActive || pendingResult) return;
+      if (event.target.matches('input, textarea')) return;
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
+      event.preventDefault();
+      if (event.shiftKey) redo(); else undo();
+    };
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, [platform.formFactor, undo, redo, editorBusy, detecting, cropInteractionActive, resizeInteractionActive, pendingResult]);
 
   const isolateBackground = async (retryContext = null) => {
     const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
@@ -314,42 +491,6 @@ export default function Editor() {
     }
   };
 
-  // Runs a recipe chain: each step flows through Planner → Editing Engine and is committed to history.
-  const runChain = async (chain) => {
-    setApplying(true);
-    setAiError(null);
-    setChainState({ chain, steps: chain.steps.map((s) => ({ label: s.label, status: 'pending' })), running: true });
-    try {
-      await jobManager.submit({
-        type: 'chain',
-        label: chain.name,
-        priority: 'normal',
-        projectId: project.id,
-        provider: 'reve',
-        estimatedTime: 60000,
-        creditsReserved: legacyRecipeExecutionAdapter.estimate(chain),
-        onCancel: () => legacyRecipeExecutionAdapter.cancel(),
-        notifyOnComplete: true,
-        run: () => legacyRecipeExecutionAdapter.execute({
-            chain, project, objects,
-            onProgress: (steps) => setChainState((cs) => ({ ...cs, steps })),
-            onStepCommitted: async (result, step) => {
-              if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
-              await pushEdit(result.finalArtifactId, `${chain.name}: ${step.label}`);
-              sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
-            },
-        }),
-      });
-      setChainState((cs) => ({ ...cs, running: false }));
-    } catch (e) {
-      setChainState((cs) => (cs ? { ...cs, running: false } : cs));
-      if (e.code !== 'cancelled') setAiError(e.message || 'Chain failed');
-      else setChainState(null);
-    } finally {
-      setApplying(false);
-    }
-  };
-
   const retryResult = () => {
     const pending = pendingResult;
     disposePendingPreview(pending);
@@ -360,6 +501,14 @@ export default function Editor() {
     }
     if (pending?.kind === 'SUPER_RESOLUTION') {
       void upscaleImage(pending.context);
+      return;
+    }
+    if (pending?.kind === 'CROP') {
+      void applyCrop(pending.context);
+      return;
+    }
+    if (pending?.kind === 'RESIZE') {
+      void applyResize(pending.context);
       return;
     }
     applyEdit(true, { skipDriftCheck: true }); // bypass cache so a retry produces a fresh generation
@@ -399,20 +548,20 @@ export default function Editor() {
         </div>
         <AdaptiveToolbar>
           <HistoryControls
-            canUndo={canUndo} canRedo={canRedo} disabled={editorBusy || detecting}
+            canUndo={canUndo} canRedo={canRedo} disabled={editorBusy || detecting || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
             onUndo={undo} onRedo={redo} onRestore={restoreOriginal}
           />
           <VersionsPanel
             versions={project.versions || []}
             onCreate={handleCreateVersion}
             onRestore={restoreVersion}
-            disabled={editorBusy || detecting}
+            disabled={editorBusy || detecting || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
           />
           <Button
             variant="ghost"
             size="sm"
             onClick={() => upscaleImage()}
-            disabled={!SUPER_RESOLUTION_PRODUCTION_AVAILABLE || !project.current_image_artifact_id || editorBusy || detecting || committing || Boolean(pendingResult)}
+            disabled={!SUPER_RESOLUTION_PRODUCTION_AVAILABLE || !project.current_image_artifact_id || editorBusy || detecting || committing || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
             title={SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale the current image 4× on device' : 'Local Real-ESRGAN x4 is a candidate and is not production-approved yet'}
             aria-label={SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4 locally' : 'Upscale x4 local candidate unavailable'}
           >
@@ -447,16 +596,6 @@ export default function Editor() {
 
       <GenerationProgress />
 
-      {chainState && (
-        <ChainProgress
-          chain={chainState.chain}
-          steps={chainState.steps}
-          running={chainState.running}
-          onCancel={() => legacyRecipeExecutionAdapter.cancel()}
-          onDismiss={() => setChainState(null)}
-        />
-      )}
-
       <SegmentationProgress />
 
       <ImageCanvas
@@ -469,17 +608,50 @@ export default function Editor() {
         onRedo={redo}
         selection={selection}
         onSelectionPointer={selectionPointer}
+        crop={cropRect ? { ...cropRect, sourceWidth: project.width, sourceHeight: project.height } : null}
+        cropSource={cropInteractionActive ? { sourceWidth: project.width, sourceHeight: project.height } : null}
+        onCropPointer={cropPointer}
+      />
+
+      <CropToolbar
+        active={cropInteractionActive}
+        draft={cropDraft}
+        valid={Boolean(cropRect)}
+        sourceWidth={project.width}
+        sourceHeight={project.height}
+        busy={editorBusy || Boolean(selection) || Boolean(pendingResult) || resizeInteractionActive}
+        onStart={startCrop}
+        onChange={setCropDraft}
+        onApply={() => applyCrop()}
+        onCancel={() => { cropAnchorRef.current = null; setCropDraft(null); }}
+      />
+
+      <ResizeToolbar
+        active={resizeInteractionActive}
+        draft={resizeDraft}
+        valid={Boolean(resizeTarget)}
+        sourceWidth={project.width}
+        sourceHeight={project.height}
+        busy={editorBusy || Boolean(selection) || Boolean(pendingResult) || cropInteractionActive}
+        aspectLocked={resizeAspectLocked}
+        onAspectLockedChange={setResizeAspectLocked}
+        onStart={startResize}
+        onFieldChange={updateResizeField}
+        onApply={() => applyResize()}
+        onCancel={() => { setResizeDraft(null); setResizeAspectLocked(true); }}
       />
 
       <SelectionToolbar
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} onStart={startSelection}
+        startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}
         onRedo={() => updateSelection((service) => service.redo())}
         onClear={() => updateSelection((service) => service.clear())}
+        onInvert={() => updateSelection((service) => service.invert())}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
-        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling}
+        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling && !cropping && !resizing && !cropInteractionActive && !resizeInteractionActive}
         isolatingBackground={isolatingBackground}
         onIsolateBackground={() => isolateBackground()}
       />
@@ -499,9 +671,9 @@ export default function Editor() {
         cacheStatus={segMeta ? (segMeta.fromCache ? 'hit' : 'miss') : 'empty'}
       />
 
-      {objects.length > 0 && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
+      {objects.length > 0 && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
-      {objects.length === 0 && !pendingResult && (
+      {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
         <div className="space-y-2">
           <Button onClick={detect} disabled={detecting || editorBusy || committing} className="w-full h-12 rounded-2xl text-base" variant="outline">
             {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
@@ -518,17 +690,22 @@ export default function Editor() {
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
-          busy={committing || isolatingBackground || upscaling}
+          busy={committing || isolatingBackground || upscaling || cropping || resizing}
         />
+      ) : cropInteractionActive ? (
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
+      ) : resizeInteractionActive ? (
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel them before starting another edit.</p>
       ) : objects.length === 0 ? (
         <>
           {plan && <PlanPreview plan={plan} />}
           <InstructionBar
             selectedObject={selected}
+            allowWholeImage
             instruction={instruction}
             onInstructionChange={setInstruction}
             onApply={() => applyEdit(false)}
-            applying={editorBusy}
+            applying={editorBusy || detecting || committing}
           />
         </>
       ) : (
@@ -544,7 +721,7 @@ export default function Editor() {
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={setEditTab} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
           {editTab === 'creative' ? (
-            <CreativeStudioPanel project={project} objects={objects} onApply={runChain} disabled={editorBusy} />
+            <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <OutfitPanel
               project={project}
@@ -572,7 +749,6 @@ export default function Editor() {
             <RecipePanel
               objects={objects}
               selectedObjects={objects.filter((o) => o.selected)}
-              onRunChain={runChain}
               disabled={editorBusy}
               onUse={(prompt, recipe) => {
                 // Recipe Engine output enters the normal flow: instruction → AI Planner → Editing Engine.
