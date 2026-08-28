@@ -4,7 +4,7 @@ import {
   BACKGROUND_ISOLATION_CAPABILITY,
   BACKGROUND_ISOLATION_TOOL_ID,
   BACKGROUND_ISOLATION_TOOL_VERSION,
-} from './BackgroundIsolation.ts';
+} from './BackgroundIsolationIdentity.js';
 
 export type DeterministicToolInputContract = Readonly<{
   name: string;
