@@ -1,17 +1,23 @@
+import {
+  RESIZE_FIXED_POINT_BITS,
+  RESIZE_MAX_DIMENSION,
+  RESIZE_MAX_OUTPUT_PIXELS,
+} from './ResizeIdentity.js';
+
 export {
   RESIZE_TOOL_ID,
   RESIZE_TOOL_VERSION,
   RESIZE_CAPABILITY,
   RESIZE_OPERATION,
   RESIZE_STEP_ID,
+  RESIZE_FIXED_POINT_BITS,
+  RESIZE_MAX_DIMENSION,
+  RESIZE_MAX_OUTPUT_PIXELS,
 } from './ResizeIdentity.js';
 
 export type ResizeDimensions = Readonly<{ width: number; height: number }>;
 
-export const RESIZE_FIXED_POINT_BITS = 16 as const;
 export const RESIZE_FIXED_POINT_ONE = 1 << RESIZE_FIXED_POINT_BITS;
-export const RESIZE_MAX_DIMENSION = 16_384 as const;
-export const RESIZE_MAX_OUTPUT_PIXELS = 16_777_216 as const;
 
 const FIXED_HALF = RESIZE_FIXED_POINT_ONE / 2;
 const WEIGHT_SUM = RESIZE_FIXED_POINT_ONE * RESIZE_FIXED_POINT_ONE;
@@ -102,8 +108,6 @@ export function resizeRgba8(
 }
 
 function axisSample(index: number, sourceSize: number, targetSize: number): AxisSample {
-  // floor((((2*i + 1) * sourceSize) / (2*targetSize)) * 65536) - 32768
-  // represented without floating-point source coordinates.
   const numerator = (2 * index + 1) * sourceSize * RESIZE_FIXED_POINT_ONE;
   const denominator = 2 * targetSize;
   if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator)) throw new Error('Resize coordinate mapping exceeded safe integer range');
