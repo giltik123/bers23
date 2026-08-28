@@ -9,7 +9,7 @@ const FIELDS = Object.freeze([
   { key: 'height', label: 'Height' },
 ]);
 
-export default function CropToolbar({ active, draft, sourceWidth, sourceHeight, busy, onStart, onChange, onApply, onCancel }) {
+export default function CropToolbar({ active, draft, valid, sourceWidth, sourceHeight, busy, onStart, onChange, onApply, onCancel }) {
   if (!active) {
     return (
       <div className="flex items-center gap-2">
@@ -30,9 +30,7 @@ export default function CropToolbar({ active, draft, sourceWidth, sourceHeight, 
   }
 
   const setField = (key, raw) => {
-    if (raw === '') return;
-    const value = Number(raw);
-    if (!Number.isSafeInteger(value)) return;
+    const value = raw === '' ? '' : Number(raw);
     onChange({ ...draft, [key]: value });
   };
 
@@ -62,6 +60,7 @@ export default function CropToolbar({ active, draft, sourceWidth, sourceHeight, 
               onChange={(event) => setField(key, event.target.value)}
               disabled={busy}
               aria-label={`Crop ${label.toLowerCase()}`}
+              aria-invalid={!valid}
               className="w-full h-9 rounded-md border bg-background px-2 text-sm text-foreground disabled:opacity-50"
             />
           </label>
@@ -69,10 +68,10 @@ export default function CropToolbar({ active, draft, sourceWidth, sourceHeight, 
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground" aria-live="polite">
-          Output: {draft.width} × {draft.height}px
+        <p className={`text-xs ${valid ? 'text-muted-foreground' : 'text-destructive'}`} role="status" aria-live="polite">
+          {valid ? `Output: ${draft.width} × ${draft.height}px` : 'Enter an integer rectangle fully inside the image.'}
         </p>
-        <Button type="button" size="sm" onClick={onApply} disabled={busy} aria-label="Apply crop">
+        <Button type="button" size="sm" onClick={onApply} disabled={busy || !valid} aria-label="Apply crop">
           {busy ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Crop className="w-4 h-4 mr-1.5" />}
           {busy ? 'Cropping…' : 'Apply Crop'}
         </Button>
