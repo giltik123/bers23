@@ -673,6 +673,16 @@ export default function Editor() {
 
       {objects.length > 0 && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
+      {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
+        <div className="space-y-2">
+          <Button onClick={detect} disabled={detecting || editorBusy || committing} className="w-full h-12 rounded-2xl text-base" variant="outline">
+            {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
+            {detecting ? 'Detecting objects…' : 'Detect objects'}
+          </Button>
+          <p className="text-[11px] text-muted-foreground text-center">Object detection is optional. You can edit the whole image now or detect/select an object first.</p>
+        </div>
+      )}
+
       {pendingResult ? (
         <ResultCompare
           beforeUrl={pendingResult.beforeUrl}
@@ -687,10 +697,17 @@ export default function Editor() {
       ) : resizeInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel them before starting another edit.</p>
       ) : objects.length === 0 ? (
-        <Button onClick={detect} disabled={detecting || editorBusy || cropInteractionActive || resizeInteractionActive} className="w-full h-12 rounded-2xl text-base">
-          {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
-          {detecting ? 'Detecting objects…' : 'Detect objects'}
-        </Button>
+        <>
+          {plan && <PlanPreview plan={plan} />}
+          <InstructionBar
+            selectedObject={selected}
+            allowWholeImage
+            instruction={instruction}
+            onInstructionChange={setInstruction}
+            onApply={() => applyEdit(false)}
+            applying={editorBusy || detecting || committing}
+          />
+        </>
       ) : (
         <>
           <WorkspaceToolbar
