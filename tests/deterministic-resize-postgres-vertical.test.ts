@@ -79,6 +79,14 @@ test('deterministic Resize PostgreSQL vertical rejects tamper/scope/rebind and p
   const canonicalSource = await decodedRgba(storedSource.bytes);
 
   const prepare = async (clientRequestId: string, patch: Partial<typeof target> = {}) => production.localExecution.resize.prepare({ projectId: scope.projectId, sourceArtifactId: originalId, clientRequestId, ...target, ...patch }, auth);
+  assert.equal(Number((await pool.query('SELECT count(*)::int AS count FROM local_execution_tickets')).rows[0].count), 0);
+  await assert.rejects(
+    () => prepare('resize-core-dimension-limit', { width: 257, height: 1 }),
+    (error: any) => error?.code === 'resize_resource_limit_exceeded',
+    'Core imageMaxDimension must reject Resize before durable ticket publication',
+  );
+  assert.equal(Number((await pool.query('SELECT count(*)::int AS count FROM local_execution_tickets')).rows[0].count), 0, 'rejected Resize target must not publish a ticket');
+
   const prepared = await prepare('resize-success-replay');
   const ticket = prepared.ticket;
   assert.equal(ticket.operation.capability, 'local:tool:resize:v1');
@@ -129,6 +137,13 @@ test('deterministic Resize PostgreSQL vertical rejects tamper/scope/rebind and p
   await assert.rejects(
     async () => production.localExecution.resize.uploadImage({ ticketId: wrongDimensionsTicket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(1, 1, new Uint8ClampedArray([1,2,3,4])) }, auth),
     (error: any) => error?.code === 'local_image_dimensions_mismatch',
+  );
+
+  const oversizedUploadTicket = (await prepare('resize-oversized-upload')).ticket;
+  await assert.rejects(
+    () => production.localExecution.resize.uploadImage({ ticketId: oversizedUploadTicket.ticketId, projectId: scope.projectId, bytes: new Uint8Array(config.imageUploadLimitBytes + 1) }, auth),
+    (error: any) => error?.code === 'local_image_upload_too_large',
+    'direct service upload must obey Core imageUploadLimitBytes before decoding',
   );
 
   const evidence = await production.localExecution.resize.uploadImage({ ticketId: ticket.ticketId, projectId: scope.projectId, bytes: await rgbaPng(target.width, target.height, expected) }, auth);
