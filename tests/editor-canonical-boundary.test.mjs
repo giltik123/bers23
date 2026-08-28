@@ -169,3 +169,14 @@ test('Agent image execution stays gated until canonical composite execution exis
   assert.match(queue, /async run\(\)/);
   for (const forbidden of ['editingEngine', 'recipeEngine', 'aiPlanner', 'taskHistory', 'result.image_url']) assert.equal(queue.includes(forbidden), false, forbidden);
 });
+
+test('Virtual Try-On cannot use the legacy direct provider execution path', async () => {
+  const panel = await readFile('src/components/editor/outfits/TryOnPanel.jsx', 'utf8');
+  const engine = await readFile('src/lib/tryon/tryonEngine.js', 'utf8');
+  assert.match(panel, /Canonical Try-On execution is not enabled yet/);
+  assert.match(panel, /legacy browser FASHN execution path is disabled/);
+  for (const forbidden of ['tryonEngine', 'ResultCompare', 'onCommit', 'garmentManager', 'outfitManager']) assert.equal(panel.includes(forbidden), false, forbidden);
+  assert.match(engine, /TRYON_EXECUTION_NOT_WIRED/);
+  assert.match(engine, /retryable = false/);
+  for (const forbidden of ['fashnProvider', 'imagePipeline', 'qualityValidator', 'composer', 'resultManager', 'original_image_url', 'currentUrl']) assert.equal(engine.includes(forbidden), false, forbidden);
+});
