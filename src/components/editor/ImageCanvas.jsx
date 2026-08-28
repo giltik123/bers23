@@ -24,25 +24,49 @@ function SelectionOverlay({ selection }) {
   return <canvas ref={ref} className="absolute inset-0 size-full pointer-events-none" aria-hidden="true" />;
 }
 
-export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, busy, onUndo, onRedo, selection, onSelectionPointer }) {
+function CropOverlay({ crop }) {
+  if (!crop) return null;
+  const left = crop.x / crop.sourceWidth * 100;
+  const top = crop.y / crop.sourceHeight * 100;
+  const width = crop.width / crop.sourceWidth * 100;
+  const height = crop.height / crop.sourceHeight * 100;
+  return (
+    <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+      <div
+        className="absolute border-2 border-white"
+        style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`, boxShadow: '0 0 0 9999px rgba(0,0,0,0.35)' }}
+      />
+    </div>
+  );
+}
+
+export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, crop, cropSource, onCropPointer }) {
   const gestures = useAdaptiveGestures({ onSwipeLeft: onRedo, onSwipeRight: onUndo });
   const renderer = adaptiveRenderer(usePlatformProfile());
   const drawing = useRef(false);
+  const interactive = Boolean(selection || cropSource);
   const pointer = (phase) => (event) => {
-    if (!selection || !onSelectionPointer) return;
+    if (!interactive) return;
     event.preventDefault(); event.stopPropagation();
     if (phase === 'down') { drawing.current = true; event.currentTarget.setPointerCapture(event.pointerId); }
     if (phase === 'move' && !drawing.current) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    onSelectionPointer(phase, { x: event.clientX - rect.left, y: event.clientY - rect.top }, { displayWidth: rect.width, displayHeight: rect.height, originalWidth: selection.width, originalHeight: selection.height });
+    if (cropSource && onCropPointer) {
+      const x = Math.max(0, Math.min(cropSource.sourceWidth - 1, Math.floor((event.clientX - rect.left) / rect.width * cropSource.sourceWidth)));
+      const y = Math.max(0, Math.min(cropSource.sourceHeight - 1, Math.floor((event.clientY - rect.top) / rect.height * cropSource.sourceHeight)));
+      onCropPointer(phase, { x, y });
+    } else if (selection && onSelectionPointer) {
+      onSelectionPointer(phase, { x: event.clientX - rect.left, y: event.clientY - rect.top }, { displayWidth: rect.width, displayHeight: rect.height, originalWidth: selection.width, originalHeight: selection.height });
+    }
     if (phase === 'up' || phase === 'cancel') drawing.current = false;
   };
   return (
-    <div className={`relative rounded-2xl overflow-hidden bg-muted select-none ${selection ? 'touch-none' : ''}`} {...(!selection ? gestures.handlers : {})} onPointerDown={pointer('down')} onPointerMove={pointer('move')} onPointerUp={pointer('up')} onPointerCancel={pointer('cancel')}>
+    <div className={`relative rounded-2xl overflow-hidden bg-muted select-none ${interactive ? 'touch-none' : ''}`} {...(!interactive ? gestures.handlers : {})} onPointerDown={pointer('down')} onPointerMove={pointer('move')} onPointerUp={pointer('up')} onPointerCancel={pointer('cancel')}>
       <div className="relative" style={gestures.style}>
       <img src={imageUrl} alt="Project" decoding={renderer.decoding} fetchPriority="high" style={{ imageRendering: renderer.imageRendering }} onLoad={(event) => { if (event.currentTarget.naturalWidth * event.currentTarget.naturalHeight > 2000000) performanceMonitor.markLargeDecode(); }} className="w-full h-auto block" draggable={false} />
       <SelectionOverlay selection={selection} />
-      {!selection && objects.map((obj) => {
+      <CropOverlay crop={crop} />
+      {!interactive && objects.map((obj) => {
         const selected = obj.id === selectedId;
         return (
           <button
