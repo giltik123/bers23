@@ -117,6 +117,7 @@ jobs:
           cp server/core/artifacts/migrations/014_canonical_mask_lineage.sql .test-cache/c5b-postgres/migrations/
           cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/c5b-postgres/migrations/
           cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/c5b-postgres/migrations/
+          cp server/core/artifacts/migrations/019_canonical_crop_final_lineage.sql .test-cache/c5b-postgres/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
@@ -144,6 +145,7 @@ jobs:
           cp server/core/artifacts/migrations/014_canonical_mask_lineage.sql .test-cache/c5b-browser/migrations/
           cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/c5b-browser/migrations/
           cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/c5b-browser/migrations/
+          cp server/core/artifacts/migrations/019_canonical_crop_final_lineage.sql .test-cache/c5b-browser/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
