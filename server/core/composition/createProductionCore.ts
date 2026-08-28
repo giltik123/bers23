@@ -177,6 +177,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       hydrateArtifacts,
       admission: localExecutionAdmission,
       uploads: localUploads,
+      limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels, maxUploadBytes: config.imageUploadLimitBytes }),
       persistFinal: (scope, executionId, operationId, image, lineage) => {
         const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
         if (!sourceImageStorageId || lineage.producerOperation !== 'RESIZE') throw new Error('Resize FINAL requires one stored canonical IMAGE parent');
