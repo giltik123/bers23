@@ -1,7 +1,16 @@
 import type { Artifact, WorkflowOperation, WorkflowVerifierPort, VerificationResult } from '../../../src/platform/creative/workflow-engine/types.ts';
+import { CROP_TOOL_ID, CROP_TOOL_VERSION } from '../../../src/platform/creative/deterministic/Crop.ts';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS, RESIZE_TOOL_ID, RESIZE_TOOL_VERSION } from '../../../src/platform/creative/deterministic/Resize.ts';
+import {
+  ORTHOGONAL_TRANSFORM_TOOL_ID,
+  ORTHOGONAL_TRANSFORM_TOOL_VERSION,
+  normalizeOrthogonalTransformMode,
+  orthogonalTransformOutputGeometry,
+} from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
+import { ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { SUPER_RESOLUTION_ALPHA_POLICY, SUPER_RESOLUTION_SCALE } from '../../../src/platform/creative/super-resolution/SuperResolutionContract.ts';
 
-export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C3.1';
+export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C3.2';
 
 const CHECKS = Object.freeze({
   supported: 'PRODUCTION_OPERATION_SUPPORTED',
@@ -11,6 +20,8 @@ const CHECKS = Object.freeze({
   maskPixels: 'MASK_PIXELS_VALID',
   maskLineage: 'MASK_LINEAGE_VALID',
   deterministicPixels: 'DETERMINISTIC_PIXELS_VERIFIED',
+  deterministicContract: 'DETERMINISTIC_TOOL_CONTRACT_VALID',
+  deterministicGeometry: 'DETERMINISTIC_OUTPUT_GEOMETRY_VALID',
   localLineage: 'LOCAL_IMAGE_LINEAGE_VALID',
   modelContract: 'LOCAL_MODEL_CONTRACT_ADMITTED',
   modelScope: 'LOCAL_MODEL_VERIFICATION_SCOPE_VALID',
@@ -27,21 +38,14 @@ const ERRORS = Object.freeze({
   invalidMaskLineage: 'LOCAL_MASK_LINEAGE_INVALID',
   invalidLocalImage: 'LOCAL_IMAGE_INVALID',
   invalidLocalImageLineage: 'LOCAL_IMAGE_LINEAGE_INVALID',
+  invalidDeterministicSemantics: 'DETERMINISTIC_TOOL_VERIFICATION_SEMANTICS_INVALID',
+  invalidDeterministicGeometry: 'DETERMINISTIC_OUTPUT_GEOMETRY_INVALID',
   invalidModelImage: 'LOCAL_MODEL_IMAGE_INVALID',
   invalidModelSemantics: 'LOCAL_MODEL_VERIFICATION_SEMANTICS_INVALID',
   invalidModelGeometry: 'LOCAL_MODEL_OUTPUT_GEOMETRY_INVALID',
 } as const);
 
-/**
- * Server-owned runtime verification policy for currently accepted production contracts.
- * Planner/client verification claims are intentionally ignored. This component performs no
- * provider call, network access, persistence, access-control or financial mutation.
- *
- * Deterministic C2 outputs can carry byte-exact verification. C3 model output cannot: without
- * re-running the model on a trusted server, Core proves only admitted executor identity,
- * output contract/geometry and canonical lineage. Metadata is required to state that weaker
- * verification scope explicitly so a model result cannot masquerade as deterministic proof.
- */
+/** Server-owned runtime verification policy for currently accepted production contracts. */
 export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
   async verify(operation: WorkflowOperation, artifacts: readonly Artifact[]): Promise<VerificationResult> {
     if (operation.type === 'verify') {
@@ -66,6 +70,33 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
       const parents = artifacts[0].metadata?.parentArtifactIds;
       if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels]);
       return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels, CHECKS.localLineage], errors: [] });
+    }
+    if (operation.type === 'CROP') {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalCropImage(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicSemantics, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
+      if (!hasValidCropGeometry(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage, CHECKS.deterministicGeometry], errors: [] });
+    }
+    if (operation.type === 'RESIZE') {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalResizeImage(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicSemantics, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
+      if (!hasValidResizeGeometry(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage, CHECKS.deterministicGeometry], errors: [] });
+    }
+    if (operation.type === 'ORTHOGONAL_TRANSFORM') {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalOrthogonalTransformImage(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicSemantics, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
+      if (!hasValidOrthogonalTransformGeometry(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage, CHECKS.deterministicGeometry], errors: [] });
     }
     if (operation.type === 'SUPER_RESOLUTION') {
       if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidModelSemantics);
@@ -100,6 +131,100 @@ function isCanonicalDeterministicImage(artifact: Artifact): boolean {
   if (!isPixelImage(artifact.value)) return false;
   const integrity = artifact.metadata?.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
   return artifact.metadata?.artifactRole === 'COMPOSITE' && artifact.metadata?.localExecutionAdmission === 'ADMITTED' && integrity?.verificationOutcome === 'PASS';
+}
+
+function isCanonicalCropImage(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  if (!metadata || metadata.artifactRole !== 'COMPOSITE' || metadata.localExecutionAdmission !== 'ADMITTED') return false;
+  if (metadata.admissionClass !== 'DETERMINISTIC_BYTE_EXACT' || metadata.verificationScope !== 'BYTE_EXACT_CORE_RECOMPUTE') return false;
+  if (metadata.executorKind !== 'DETERMINISTIC_TOOL' || metadata.toolId !== CROP_TOOL_ID || metadata.toolVersion !== CROP_TOOL_VERSION) return false;
+  if (metadata.runtime !== 'BROWSER_JS' || metadata.accelerator !== 'cpu') return false;
+  if (!sha256(metadata.candidateSha256) || !sha256(metadata.verifiedPixelSha256)) return false;
+  if (metadata.coordinateSpace !== 'CANONICAL_ORIENTATION_1_PIXEL_INDICES' || metadata.rectangleSemantics !== 'HALF_OPEN' || metadata.interpolation !== 'NONE' || metadata.borderPolicy !== 'REJECT_OUT_OF_BOUNDS') return false;
+  const integrity = metadata.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  if (integrity?.verificationOutcome !== 'PASS' || integrity.pixelComparison !== 'BYTE_EXACT') return false;
+  const input = operation.input;
+  if (!input || input.deterministicTool !== `${CROP_TOOL_ID}@${CROP_TOOL_VERSION}` || input.coordinateSpace !== metadata.coordinateSpace || input.rectangleSemantics !== metadata.rectangleSemantics) return false;
+  return true;
+}
+
+function hasValidCropGeometry(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  const rect = record(metadata?.cropRect);
+  const input = operation.input;
+  if (!rect || !input) return false;
+  const x = exactInteger(rect.x, 0); const y = exactInteger(rect.y, 0); const width = exactInteger(rect.width, 1); const height = exactInteger(rect.height, 1);
+  if (x === undefined || y === undefined || width === undefined || height === undefined) return false;
+  if (input.x !== x || input.y !== y || input.width !== width || input.height !== height) return false;
+  return artifact.value.width === width && artifact.value.height === height;
+}
+
+function isCanonicalResizeImage(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  if (!metadata || metadata.artifactRole !== 'COMPOSITE' || metadata.localExecutionAdmission !== 'ADMITTED') return false;
+  if (metadata.admissionClass !== 'DETERMINISTIC_BYTE_EXACT' || metadata.verificationScope !== 'BYTE_EXACT_CORE_RECOMPUTE') return false;
+  if (metadata.executorKind !== 'DETERMINISTIC_TOOL' || metadata.toolId !== RESIZE_TOOL_ID || metadata.toolVersion !== RESIZE_TOOL_VERSION) return false;
+  if (metadata.runtime !== 'BROWSER_JS' || metadata.accelerator !== 'cpu') return false;
+  if (!sha256(metadata.candidateSha256) || !sha256(metadata.verifiedPixelSha256)) return false;
+  const exact = RESIZE_TOOL_DEFINITION.parameters.exact;
+  if (metadata.coordinateSpace !== exact.coordinateSpace || metadata.interpolation !== exact.interpolation || metadata.fixedPointBits !== exact.fixedPointBits || metadata.rounding !== exact.rounding || metadata.borderPolicy !== exact.borderPolicy || metadata.alphaPolicy !== exact.alphaPolicy || metadata.maxOutputPixels !== exact.maxOutputPixels) return false;
+  const integrity = metadata.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  if (integrity?.verificationOutcome !== 'PASS' || integrity.pixelComparison !== 'BYTE_EXACT') return false;
+  const input = operation.input;
+  if (!input || input.deterministicTool !== `${RESIZE_TOOL_ID}@${RESIZE_TOOL_VERSION}` || input.coordinateSpace !== exact.coordinateSpace || input.interpolation !== exact.interpolation || input.fixedPointBits !== exact.fixedPointBits || input.rounding !== exact.rounding || input.borderPolicy !== exact.borderPolicy || input.alphaPolicy !== exact.alphaPolicy || input.maxOutputPixels !== exact.maxOutputPixels) return false;
+  return true;
+}
+
+function hasValidResizeGeometry(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  const target = record(metadata?.resizeTarget);
+  const input = operation.input;
+  if (!target || !input) return false;
+  const width = exactInteger(target.width, 1); const height = exactInteger(target.height, 1);
+  const sourceWidth = exactInteger(metadata?.sourceWidth, 1); const sourceHeight = exactInteger(metadata?.sourceHeight, 1);
+  if (width === undefined || height === undefined || sourceWidth === undefined || sourceHeight === undefined) return false;
+  if (width > RESIZE_MAX_DIMENSION || height > RESIZE_MAX_DIMENSION || sourceWidth > RESIZE_MAX_DIMENSION || sourceHeight > RESIZE_MAX_DIMENSION) return false;
+  const pixels = width * height;
+  if (!Number.isSafeInteger(pixels) || pixels > RESIZE_MAX_OUTPUT_PIXELS) return false;
+  if (input.width !== width || input.height !== height) return false;
+  return artifact.value.width === width && artifact.value.height === height;
+}
+
+function isCanonicalOrthogonalTransformImage(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  if (!metadata || metadata.artifactRole !== 'COMPOSITE' || metadata.localExecutionAdmission !== 'ADMITTED') return false;
+  if (metadata.admissionClass !== 'DETERMINISTIC_BYTE_EXACT' || metadata.verificationScope !== 'BYTE_EXACT_CORE_RECOMPUTE') return false;
+  if (metadata.executorKind !== 'DETERMINISTIC_TOOL' || metadata.toolId !== ORTHOGONAL_TRANSFORM_TOOL_ID || metadata.toolVersion !== ORTHOGONAL_TRANSFORM_TOOL_VERSION) return false;
+  if (metadata.runtime !== 'BROWSER_JS' || metadata.accelerator !== 'cpu') return false;
+  if (!sha256(metadata.candidateSha256) || !sha256(metadata.verifiedPixelSha256)) return false;
+  const exact = ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.parameters.exact;
+  if (metadata.coordinateSpace !== exact.coordinateSpace || metadata.mapping !== exact.mapping || metadata.interpolation !== exact.interpolation || metadata.rounding !== exact.rounding || metadata.alphaPolicy !== exact.alphaPolicy) return false;
+  const integrity = metadata.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  if (integrity?.verificationOutcome !== 'PASS' || integrity.pixelComparison !== 'BYTE_EXACT') return false;
+  const input = operation.input;
+  if (!input || input.deterministicTool !== exact.deterministicTool || input.coordinateSpace !== exact.coordinateSpace || input.mapping !== exact.mapping || input.interpolation !== exact.interpolation || input.rounding !== exact.rounding || input.alphaPolicy !== exact.alphaPolicy) return false;
+  try {
+    const mode = normalizeOrthogonalTransformMode(input.mode);
+    return metadata.orthogonalTransformMode === mode;
+  } catch { return false; }
+}
+
+function hasValidOrthogonalTransformGeometry(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  const sourceWidth = exactInteger(metadata?.sourceWidth, 1); const sourceHeight = exactInteger(metadata?.sourceHeight, 1);
+  if (sourceWidth === undefined || sourceHeight === undefined || !operation.input) return false;
+  try {
+    const mode = normalizeOrthogonalTransformMode(operation.input.mode);
+    if (metadata?.orthogonalTransformMode !== mode) return false;
+    const expected = orthogonalTransformOutputGeometry(sourceWidth, sourceHeight, mode);
+    return artifact.value.width === expected.width && artifact.value.height === expected.height;
+  } catch { return false; }
 }
 
 function isCanonicalModelAdmittedImage(artifact: Artifact): boolean {
@@ -151,5 +276,8 @@ function isProviderImageReference(value: unknown): boolean {
   try { const url = new URL(candidate.url); return url.protocol === 'https:' && !url.username && !url.password; } catch { return false; }
 }
 
+function sha256(value: unknown): value is string { return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value); }
+function record(value: unknown): Readonly<Record<string, unknown>> | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined; }
+function exactInteger(value: unknown, minimum: number): number | undefined { return Number.isSafeInteger(value) && Number(value) >= minimum ? Number(value) : undefined; }
 function invalid(stepId: string, error: string, checks: readonly string[] = []): VerificationResult { return freezeResult({ stepId, valid: false, checks, errors: [error] }); }
 function freezeResult(result: VerificationResult): VerificationResult { return Object.freeze({ stepId: result.stepId, valid: result.valid, checks: Object.freeze([...result.checks]), errors: Object.freeze([...result.errors]) }); }

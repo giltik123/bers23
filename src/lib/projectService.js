@@ -1,9 +1,10 @@
 import { coreClient } from '@/api/coreClient';
-import { subscriptionValidator } from '@/lib/subscriptions/subscriptionValidator';
-import { subscriptionUsage } from '@/lib/subscriptions/subscriptionUsage';
 
 // Project Engine service layer — ALL project CRUD/business operations live here.
 // UI components never call the entities SDK directly for projects.
+//
+// Subscription/storage entitlement enforcement is server-owned. The browser must
+// not manufacture usage counters or treat client plan state as authorization.
 
 export const genId = () =>
   `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -25,12 +26,7 @@ export const projectService = {
 
   update: (id, data) => coreClient.projects.update(id, data),
 
-  createFromFile: async (file) => {
-    await subscriptionValidator.validateStorage(file.size);
-    const project = await coreClient.projects.createFromFile({ file, name: file.name.replace(/\.[^.]+$/, '') });
-    await subscriptionUsage.track({ projects: 1, storage: file.size, feature: 'projects' });
-    return project;
-  },
+  createFromFile: (file) => coreClient.projects.createFromFile({ file, name: file.name.replace(/\.[^.]+$/, '') }),
 
   rename: (id, name) => coreClient.projects.update(id, { name }),
 

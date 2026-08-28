@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search } from 'lucide-react';
+import { Search, ShieldCheck } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import RecipeCard from '@/components/editor/recipes/RecipeCard';
 import RecipeDetail from '@/components/editor/recipes/RecipeDetail';
@@ -8,9 +8,6 @@ import { recipeManager } from '@/lib/recipes/recipeManager';
 import { recipeSearch } from '@/lib/recipes/recipeSearch';
 import { recipeFavorites } from '@/lib/recipes/recipeFavorites';
 import { recipeHistory } from '@/lib/recipes/recipeHistory';
-import { RECIPE_CHAINS } from '@/lib/recipes/recipeChains';
-import RecipeIcon from '@/components/editor/recipes/RecipeIcon';
-import { Play } from 'lucide-react';
 
 const VIEWS = [
   { id: 'recommended', label: 'Recommended' },
@@ -19,7 +16,7 @@ const VIEWS = [
   { id: 'favorites', label: 'Favorites' },
 ];
 
-export default function RecipePanel({ objects = [], selectedObjects = [], onUse, onRunChain, disabled }) {
+export default function RecipePanel({ objects = [], selectedObjects = [], onUse, disabled }) {
   const [query, setQuery] = useState('');
   const [view, setView] = useState('recommended');
   const [category, setCategory] = useState(null);
@@ -45,21 +42,10 @@ export default function RecipePanel({ objects = [], selectedObjects = [], onUse,
 
   return (
     <div className="border border-border/60 rounded-2xl p-4 space-y-3">
-      {onRunChain && !query && (
-        <div className="space-y-1.5">
-          {RECIPE_CHAINS.map((chain) => (
-            <button key={chain.id} onClick={() => onRunChain(chain)} disabled={disabled}
-              className="w-full flex items-center gap-2.5 border border-primary/30 bg-primary/5 rounded-xl p-3 text-left hover:bg-primary/10 transition-colors disabled:opacity-40">
-              <span className="p-1.5 rounded-lg bg-primary text-primary-foreground"><RecipeIcon name={chain.icon} className="w-3.5 h-3.5" /></span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm font-medium">{chain.name}</span>
-                <span className="block text-[11px] text-muted-foreground">{chain.description} · {chain.steps.length} steps · ~{chain.credits} credits</span>
-              </span>
-              <Play className="w-4 h-4 text-primary shrink-0" />
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="rounded-xl bg-secondary/50 p-3 text-xs text-muted-foreground" role="status">
+        <p className="flex items-center gap-1.5 font-medium text-foreground"><ShieldCheck className="w-3.5 h-3.5" />Recipe chains are not enabled yet.</p>
+        <p className="mt-1">Individual recipes remain available as prompt templates and enter the canonical Prompt single-edit flow. Multi-step chains require server-owned composite execution.</p>
+      </div>
 
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -68,20 +54,20 @@ export default function RecipePanel({ objects = [], selectedObjects = [], onUse,
 
       {!query && (
         <div className="flex gap-1.5">
-          {VIEWS.map((v) => (
-            <button key={v.id} onClick={() => { setView(v.id); setCategory(null); }}
-              className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${view === v.id && !category ? 'bg-primary text-primary-foreground' : 'bg-secondary hover:bg-accent'}`}>
-              {v.label}
+          {VIEWS.map((item) => (
+            <button key={item.id} onClick={() => { setView(item.id); setCategory(null); }}
+              className={`px-2.5 py-1 rounded-lg text-[11px] transition-colors ${view === item.id && !category ? 'bg-primary text-primary-foreground' : 'bg-secondary hover:bg-accent'}`}>
+              {item.label}
             </button>
           ))}
         </div>
       )}
 
       <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-        {RECIPE_CATEGORIES.map((c) => (
-          <button key={c.id} onClick={() => setCategory(category === c.id ? null : c.id)}
-            className={`px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap border transition-colors ${category === c.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'}`}>
-            {c.label}
+        {RECIPE_CATEGORIES.map((item) => (
+          <button key={item.id} onClick={() => setCategory(category === item.id ? null : item.id)}
+            className={`px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap border transition-colors ${category === item.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'}`}>
+            {item.label}
           </button>
         ))}
       </div>
@@ -98,7 +84,7 @@ export default function RecipePanel({ objects = [], selectedObjects = [], onUse,
               recipe={recipe}
               isFavorite={recipeFavorites.isFavorite(recipe.id)}
               onSelect={setSelectedRecipe}
-              onToggleFavorite={(id) => { recipeFavorites.toggle(id); setFavVersion((v) => v + 1); }}
+              onToggleFavorite={(id) => { recipeFavorites.toggle(id); setFavVersion((value) => value + 1); }}
               disabled={disabled || !recipeManager.isApplicable(recipe, selectedObjects)}
             />
           ))}

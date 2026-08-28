@@ -3,6 +3,8 @@ import { ProductionOperationAuthority } from '../authority';
 import { CreativeCostAuthority } from '../cost/contracts';
 import type { CreativeOperationInstance } from '../operations/contracts';
 import { MAX_SUPER_RESOLUTION_OUTPUT_PIXELS, SUPER_RESOLUTION_SCALE } from '../super-resolution/SuperResolutionContract';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS, RESIZE_OPERATION } from '../deterministic/ResizeIdentity.js';
+import { ORTHOGONAL_TRANSFORM_MODES, ORTHOGONAL_TRANSFORM_OPERATION } from '../deterministic/OrthogonalTransformIdentity.js';
 import type { CreativeArtifact, CreativeDecision, CreativeExecutionPlan, CreativeOperation, CreativePipeline, CreativePlan, CreativeRequest, ProductionOutcome, VerificationResult } from './contracts';
 import type { LocalExecutionInputBinding, LocalExecutionTicket, LocalExecutionTicketV2 } from './localExecution';
 import type { CreativeExecutionPlatformRuntimeDependencies } from './providerSelection';
@@ -287,7 +289,7 @@ function localInputs(request: CreativeRequest, operation: CreativeOperation): re
 
 function artifactSha256(artifact: CreativeArtifact): string | undefined {
   const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
-  const value = artifact.value && typeof artifact.value === 'object' ? artifact.value as Readonly<Record<string, unknown>> : undefined;
+  const value = artifact.value && typeof artifact.value === 'object' ? artifact.value as Readonly<Record<string, unknown>> | undefined : undefined;
   const candidate = metadata?.sha256 ?? metadata?.hash ?? value?.sha256 ?? value?.hash;
   return typeof candidate === 'string' && /^[a-f0-9]{64}$/i.test(candidate) ? candidate : undefined;
 }
@@ -301,6 +303,30 @@ function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOpera
   if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1) throw new Error(`ON_DEVICE ${operation.type} requires canonical source dimensions`);
   if (operation.type === 'segment') return Object.freeze([{ kind: 'mask', role: 'MASK' as const, count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: Number(width), height: Number(height) }]);
   if (operation.type === 'BACKGROUND_ISOLATION') return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(width), height: Number(height) }]);
+  if (operation.type === 'CROP') {
+    const input = operation.input && typeof operation.input === 'object' ? operation.input as Readonly<Record<string, unknown>> : undefined;
+    const x = input?.x; const y = input?.y; const cropWidth = input?.width; const cropHeight = input?.height;
+    const sourceWidth = Number(width); const sourceHeight = Number(height);
+    if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || !Number.isSafeInteger(cropWidth) || !Number.isSafeInteger(cropHeight) || Number(x) < 0 || Number(y) < 0 || Number(cropWidth) < 1 || Number(cropHeight) < 1) throw new Error('ON_DEVICE CROP requires exact positive integer rectangle parameters');
+    const right = Number(x) + Number(cropWidth); const bottom = Number(y) + Number(cropHeight);
+    if (!Number.isSafeInteger(right) || !Number.isSafeInteger(bottom) || right > sourceWidth || bottom > sourceHeight) throw new Error('ON_DEVICE CROP rectangle exceeds canonical source bounds');
+    return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(cropWidth), height: Number(cropHeight) }]);
+  }
+  if (operation.type === RESIZE_OPERATION) {
+    const input = operation.input && typeof operation.input === 'object' ? operation.input as Readonly<Record<string, unknown>> : undefined;
+    const resizeWidth = input?.width; const resizeHeight = input?.height;
+    if (!Number.isSafeInteger(resizeWidth) || !Number.isSafeInteger(resizeHeight) || Number(resizeWidth) < 1 || Number(resizeHeight) < 1 || Number(resizeWidth) > RESIZE_MAX_DIMENSION || Number(resizeHeight) > RESIZE_MAX_DIMENSION) throw new Error('ON_DEVICE RESIZE requires exact bounded positive integer target dimensions');
+    const outputPixels = Number(resizeWidth) * Number(resizeHeight);
+    if (!Number.isSafeInteger(outputPixels) || outputPixels > RESIZE_MAX_OUTPUT_PIXELS) throw new Error('ON_DEVICE RESIZE exceeds the Resize v1 output pixel limit');
+    return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(resizeWidth), height: Number(resizeHeight) }]);
+  }
+  if (operation.type === ORTHOGONAL_TRANSFORM_OPERATION) {
+    const input = operation.input && typeof operation.input === 'object' ? operation.input as Readonly<Record<string, unknown>> : undefined;
+    const mode = input?.mode;
+    if (typeof mode !== 'string' || !(ORTHOGONAL_TRANSFORM_MODES as readonly string[]).includes(mode)) throw new Error('ON_DEVICE ORTHOGONAL_TRANSFORM requires one exact reviewed transform mode');
+    const swapsAxes = mode === 'ROTATE_90_CW' || mode === 'ROTATE_270_CW';
+    return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: swapsAxes ? Number(height) : Number(width), height: swapsAxes ? Number(width) : Number(height) }]);
+  }
   if (operation.type === 'SUPER_RESOLUTION') {
     const outputWidth = Number(width) * SUPER_RESOLUTION_SCALE;
     const outputHeight = Number(height) * SUPER_RESOLUTION_SCALE;

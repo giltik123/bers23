@@ -1,7 +1,10 @@
 import type { LocalExecutionOutputEvidence, LocalExecutionResultV2, LocalExecutionTicketV2 } from '../../platform/creative/canonical';
-import { BACKGROUND_ISOLATION_CAPABILITY, BACKGROUND_ISOLATION_TOOL_ID, BACKGROUND_ISOLATION_TOOL_VERSION, isolateBackgroundRgba } from '../../platform/creative/deterministic/BackgroundIsolation';
+import { isolateBackgroundRgba } from '../../platform/creative/deterministic/BackgroundIsolation';
+import { BACKGROUND_ISOLATION_TOOL_DEFINITION } from '../../platform/creative/deterministic/DeterministicToolRegistry';
 import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng';
 import type { PixelImage } from '../../platform/creative/pipeline/ControlledLocalEdit';
+
+const TOOL = BACKGROUND_ISOLATION_TOOL_DEFINITION;
 
 export type CoreDeterministicImageClient = Readonly<{
   prepareBackgroundIsolation(payload: Readonly<{ projectId: string; sourceArtifactId: string; maskArtifactId: string; clientRequestId: string }>): Promise<Readonly<{ executionId: string; ticket: LocalExecutionTicketV2 }>>;
@@ -32,8 +35,8 @@ export type BackgroundIsolationRunResult = Readonly<{
 
 /**
  * Browser application adapter for Core-authorized deterministic background isolation.
- * No model is selected here: this capability is a local tool. Model-backed capabilities
- * continue through the separate device/model admission path.
+ * The data-only registry supplies the already-reviewed tool contract; the Core ticket
+ * remains execution authority and this adapter still performs no capability selection.
  */
 export class CoreAuthorizedBackgroundIsolation {
   constructor(
@@ -50,8 +53,8 @@ export class CoreAuthorizedBackgroundIsolation {
     const prepared = await this.core.prepareBackgroundIsolation({ projectId: this.projectId, sourceArtifactId: input.sourceArtifactId, maskArtifactId: input.maskArtifactId, clientRequestId: input.requestId });
     const ticket = validateTicket(prepared.ticket, input);
 
-    const sourceBinding = ticket.inputs.find(binding => binding.kind === 'image' && binding.artifactId === input.sourceArtifactId)!;
-    const maskBinding = ticket.inputs.find(binding => binding.kind === 'mask' && binding.artifactId === input.maskArtifactId)!;
+    const sourceBinding = ticket.inputs.find(binding => binding.kind === TOOL.inputs[0].kind && binding.artifactId === input.sourceArtifactId)!;
+    const maskBinding = ticket.inputs.find(binding => binding.kind === TOOL.inputs[1].kind && binding.artifactId === input.maskArtifactId)!;
     const [sourceHash, maskHash, source, mask] = await Promise.all([
       this.inputs.sha256(input.sourceArtifactId),
       this.inputs.sha256(input.maskArtifactId),
@@ -65,7 +68,7 @@ export class CoreAuthorizedBackgroundIsolation {
 
     const startedAt = this.clock();
     const rgba = isolateBackgroundRgba(source.data, mask.alpha, source.width, source.height);
-    const preview = Object.freeze({ ...source, data: rgba, orientation: 1 as const });
+    const preview = Object.freeze({ ...source, data: rgba, orientation: TOOL.pixelContract.orientation });
     const png = await encodeDeterministicRgbaPng(preview);
     const evidence = await this.core.uploadImage({ ticketId: ticket.ticketId, projectId: this.projectId, bytes: png });
     assertEvidence(evidence, output.width!, output.height!);
@@ -77,36 +80,37 @@ export class CoreAuthorizedBackgroundIsolation {
       workflowId: ticket.workflowId,
       stepId: ticket.stepId,
       nonce: ticket.nonce,
-      executor: Object.freeze({ kind: 'DETERMINISTIC_TOOL', toolId: BACKGROUND_ISOLATION_TOOL_ID, version: BACKGROUND_ISOLATION_TOOL_VERSION }),
-      runtime: 'BROWSER_JS',
-      accelerator: 'cpu',
+      executor: TOOL.executor,
+      runtime: TOOL.browser.runtime,
+      accelerator: TOOL.browser.accelerator,
       outputs: Object.freeze([Object.freeze({ ...evidence })]),
       metrics: Object.freeze({ latencyMs }),
-      benchmarkEvidence: Object.freeze({ pixelCount: source.width * source.height, deterministicTool: `${BACKGROUND_ISOLATION_TOOL_ID}@${BACKGROUND_ISOLATION_TOOL_VERSION}` }),
+      benchmarkEvidence: Object.freeze({ pixelCount: source.width * source.height, deterministicTool: TOOL.parameters.exact.deterministicTool }),
     });
     const finalized = await this.core.submitBackgroundIsolation({ ticketId: ticket.ticketId, projectId: this.projectId, result });
     if (finalized.status !== 'SUCCESS' || finalized.verification?.valid === false || !finalized.artifactId) throw new Error('Core rejected deterministic background isolation');
-    return Object.freeze({ target: 'LOCAL', runtime: 'BROWSER_JS', accelerator: 'cpu', canonicalArtifactId: finalized.artifactId, preview, latencyMs });
+    return Object.freeze({ target: 'LOCAL', runtime: TOOL.browser.runtime, accelerator: TOOL.browser.accelerator, canonicalArtifactId: finalized.artifactId, preview, latencyMs });
   }
 }
 
 function validateTicket(ticket: LocalExecutionTicketV2, input: BackgroundIsolationRunInput): LocalExecutionTicketV2 {
   if (!ticket || ticket.version !== '2' || ticket.issuer !== 'CORE' || ticket.policy !== 'LOCAL_ONLY') throw new Error('Invalid Core deterministic local execution ticket');
-  if (ticket.operation.type !== 'BACKGROUND_ISOLATION' || ticket.operation.capability !== BACKGROUND_ISOLATION_CAPABILITY || ticket.operation.id !== 'background-isolation' || ticket.stepId !== 'background-isolation') throw new Error('Core ticket does not authorize background isolation');
+  if (ticket.operation.type !== TOOL.operation.type || ticket.operation.capability !== TOOL.capability || ticket.operation.id !== TOOL.operation.id || ticket.stepId !== TOOL.operation.id) throw new Error('Core ticket does not authorize background isolation');
   if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw new Error('Deterministic local execution ticket contains forbidden cloud cost authority');
-  if (ticket.inputs.length !== 2) throw new Error('Background isolation ticket must bind exactly IMAGE + MASK');
-  const source = ticket.inputs.find(binding => binding.kind === 'image' && binding.artifactId === input.sourceArtifactId);
-  const mask = ticket.inputs.find(binding => binding.kind === 'mask' && binding.artifactId === input.maskArtifactId);
+  if (ticket.inputs.length !== TOOL.inputs.length) throw new Error('Background isolation ticket must bind exactly IMAGE + MASK');
+  const source = ticket.inputs.find(binding => binding.kind === TOOL.inputs[0].kind && binding.artifactId === input.sourceArtifactId);
+  const mask = ticket.inputs.find(binding => binding.kind === TOOL.inputs[1].kind && binding.artifactId === input.maskArtifactId);
   if (!source?.sha256 || !mask?.sha256 || !/^[a-f0-9]{64}$/i.test(source.sha256) || !/^[a-f0-9]{64}$/i.test(mask.sha256)) throw new Error('Core deterministic ticket input bindings are invalid');
   const output = ticket.expectedOutputs[0];
-  if (ticket.expectedOutputs.length !== 1 || output.kind !== 'image' || output.role !== 'COMPOSITE' || !output.width || !output.height || !output.mimeTypes?.includes('image/png')) throw new Error('Core deterministic ticket output contract is invalid');
+  if (ticket.expectedOutputs.length !== TOOL.output.count || output.kind !== TOOL.output.kind || output.role !== TOOL.output.role || !output.width || !output.height || output.mimeTypes?.length !== TOOL.output.mimeTypes.length || output.mimeTypes[0] !== TOOL.output.mimeTypes[0]) throw new Error('Core deterministic ticket output contract is invalid');
   if (ticket.allowedExecutors.length !== 1) throw new Error('Core deterministic ticket must authorize exactly one executor');
   const executor = ticket.allowedExecutors[0];
-  if (executor.kind !== 'DETERMINISTIC_TOOL' || executor.toolId !== BACKGROUND_ISOLATION_TOOL_ID || executor.version !== BACKGROUND_ISOLATION_TOOL_VERSION) throw new Error('Core deterministic executor binding is invalid');
+  if (executor.kind !== TOOL.executor.kind || executor.toolId !== TOOL.executor.toolId || executor.version !== TOOL.executor.version) throw new Error('Core deterministic executor binding is invalid');
   const parameters = ticket.operation.parameters;
-  if (!parameters || parameters.sourceArtifactId !== input.sourceArtifactId || parameters.maskArtifactId !== input.maskArtifactId || parameters.deterministicTool !== `${BACKGROUND_ISOLATION_TOOL_ID}@${BACKGROUND_ISOLATION_TOOL_VERSION}`) throw new Error('Core deterministic ticket parameters do not match the requested operation');
+  const deterministicTool = TOOL.parameters.exact.deterministicTool;
+  if (!parameters || parameters.sourceArtifactId !== input.sourceArtifactId || parameters.maskArtifactId !== input.maskArtifactId || parameters.deterministicTool !== deterministicTool) throw new Error('Core deterministic ticket parameters do not match the requested operation');
   return ticket;
 }
 function assertEvidence(evidence: LocalExecutionOutputEvidence, width: number, height: number): void {
-  if (!evidence.uploadId || evidence.kind !== 'image' || evidence.role !== 'COMPOSITE' || evidence.mimeType !== 'image/png' || evidence.width !== width || evidence.height !== height || !/^[a-f0-9]{64}$/i.test(evidence.sha256) || !Number.isInteger(evidence.sizeBytes) || evidence.sizeBytes < 1) throw new Error('Core deterministic upload evidence is invalid');
+  if (!evidence.uploadId || evidence.kind !== TOOL.output.kind || evidence.role !== TOOL.output.role || evidence.mimeType !== TOOL.output.mimeTypes[0] || evidence.width !== width || evidence.height !== height || !/^[a-f0-9]{64}$/i.test(evidence.sha256) || !Number.isInteger(evidence.sizeBytes) || evidence.sizeBytes < 1) throw new Error('Core deterministic upload evidence is invalid');
 }

@@ -41,7 +41,8 @@ jobs:
             --external:node:*
           node --test .test-cache/6.42c0/browser-local-ai-composition.test.mjs
       - name: Editor uses explicit canonical project binding
-        run: grep -F "createSelectionSegmentation({ projectId: project.id, imageArtifactId" src/pages/Editor.jsx
+        run: |
+          grep -F "createSelectionSegmentation({ projectId: project.id, imageArtifactId" src/pages/Editor.jsx
       - name: Integrated 6.42 device contract regression
         run: |
           npx esbuild tests/device-capability-fleet-integration.test.ts \
