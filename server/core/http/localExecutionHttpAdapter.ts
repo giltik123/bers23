@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
+import type { LocalCropExecutionService } from '../localExecution/LocalCropExecutionService.ts';
 import type { LocalDeterministicImageExecutionService } from '../localExecution/LocalDeterministicImageExecutionService.ts';
 import type { LocalExecutionInputDeliveryService } from '../localExecution/LocalExecutionInputDeliveryService.ts';
 import type { LocalSegmentationExecutionService } from '../localExecution/LocalSegmentationExecutionService.ts';
@@ -18,7 +19,7 @@ type LocalExecutionAuth = Readonly<{
 }>;
 
 /** One authenticated transport boundary with capability-specific application services. */
-export function createLocalExecutionHttpAdapter(input: Readonly<{ service: LocalSegmentationExecutionService; deterministicImages?: LocalDeterministicImageExecutionService; superResolution?: LocalSuperResolutionExecutionService; inputDelivery?: LocalExecutionInputDeliveryService; auth: LocalExecutionAuth; config: CoreServerConfig }>) {
+export function createLocalExecutionHttpAdapter(input: Readonly<{ service: LocalSegmentationExecutionService; deterministicImages?: LocalDeterministicImageExecutionService; crop?: LocalCropExecutionService; superResolution?: LocalSuperResolutionExecutionService; inputDelivery?: LocalExecutionInputDeliveryService; auth: LocalExecutionAuth; config: CoreServerConfig }>) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', 'http://core.invalid');
     if (!url.pathname.startsWith(PREFIX)) return false;
@@ -56,6 +57,22 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         send(response, 202, prepared); return true;
       }
 
+      if (url.pathname === `${PREFIX}crop/prepare` && request.method === 'POST') {
+        const service = requireCrop(input.crop);
+        requireJson(request);
+        const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
+        const prepared = await service.prepare({
+          projectId: string(body.projectId),
+          sourceArtifactId: string(body.sourceArtifactId),
+          clientRequestId: string(body.clientRequestId),
+          x: number(body.x),
+          y: number(body.y),
+          width: number(body.width),
+          height: number(body.height),
+        }, principal);
+        send(response, 202, prepared); return true;
+      }
+
       if (url.pathname === `${PREFIX}super-resolution/prepare` && request.method === 'POST') {
         const service = requireSuperResolution(input.superResolution);
         requireJson(request);
@@ -85,6 +102,20 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         sendBytes(response, 200, bytes, 'application/octet-stream'); return true;
       }
 
+      const cropInputMatch = url.pathname.match(/^\/api\/core\/local-execution\/crop\/([^/]+)\/inputs$/);
+      if (cropInputMatch && request.method === 'GET') {
+        const delivery = requireInputDelivery(input.inputDelivery);
+        const projectId = url.searchParams.get('projectId')?.trim() ?? '';
+        if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
+        const canonical = await delivery.crop({ ticketId: decodeURIComponent(cropInputMatch[1]), projectId }, principal);
+        const expectedBytes = canonical.width * canonical.height * 4;
+        if (canonical.sourceRgba.byteLength !== expectedBytes) throw httpError(500, 'local_input_delivery_contract', 'Canonical Crop input delivery length is invalid');
+        response.setHeader(INPUT_WIDTH_HEADER, String(canonical.width));
+        response.setHeader(INPUT_HEIGHT_HEADER, String(canonical.height));
+        response.setHeader(SOURCE_SHA_HEADER, canonical.sourceSha256);
+        sendBytes(response, 200, canonical.sourceRgba, 'application/octet-stream'); return true;
+      }
+
       const superResolutionInputMatch = url.pathname.match(/^\/api\/core\/local-execution\/super-resolution\/([^/]+)\/inputs$/);
       if (superResolutionInputMatch && request.method === 'GET') {
         const delivery = requireInputDelivery(input.inputDelivery);
@@ -111,6 +142,18 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         send(response, 201, evidence); return true;
       }
 
+      const cropUploadMatch = url.pathname.match(/^\/api\/core\/local-execution\/crop\/([^/]+)\/image-upload$/);
+      if (cropUploadMatch && request.method === 'POST') {
+        const service = requireCrop(input.crop);
+        if (mediaType(request) !== 'image/png') throw httpError(415, 'unsupported_media_type', 'Content-Type must be image/png');
+        const projectId = url.searchParams.get('projectId')?.trim() ?? '';
+        if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
+        const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
+        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(cropUploadMatch[1]), projectId, bytes }, principal);
+        assertSafeImageEvidence(evidence, input.config);
+        send(response, 201, evidence); return true;
+      }
+
       const superResolutionUploadMatch = url.pathname.match(/^\/api\/core\/local-execution\/super-resolution\/([^/]+)\/image-upload$/);
       if (superResolutionUploadMatch && request.method === 'POST') {
         const service = requireSuperResolution(input.superResolution);
@@ -130,6 +173,17 @@ export function createLocalExecutionHttpAdapter(input: Readonly<{ service: Local
         const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
         const projectId = string(body.projectId);
         const finalized = await service.submit({ ticketId: decodeURIComponent(deterministicResultMatch[1]), projectId, result: body.result }, principal);
+        const publicResult = Object.freeze({ executionId: finalized.executionId, status: finalized.status, artifactId: finalized.artifactId, verification: Object.freeze({ valid: finalized.outcome.verification.valid }) });
+        send(response, finalized.status === 'SUCCESS' ? 200 : 422, publicResult); return true;
+      }
+
+      const cropResultMatch = url.pathname.match(/^\/api\/core\/local-execution\/crop\/([^/]+)\/result$/);
+      if (cropResultMatch && request.method === 'POST') {
+        const service = requireCrop(input.crop);
+        requireJson(request);
+        const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
+        const projectId = string(body.projectId);
+        const finalized = await service.submit({ ticketId: decodeURIComponent(cropResultMatch[1]), projectId, result: body.result }, principal);
         const publicResult = Object.freeze({ executionId: finalized.executionId, status: finalized.status, artifactId: finalized.artifactId, verification: Object.freeze({ valid: finalized.outcome.verification.valid }) });
         send(response, finalized.status === 'SUCCESS' ? 200 : 422, publicResult); return true;
       }
@@ -180,6 +234,7 @@ function assertSafeImageEvidence(evidence: Readonly<{ width?: number; height?: n
   if (!evidence.width || !evidence.height || evidence.width > config.imageMaxDimension || evidence.height > config.imageMaxDimension || evidence.width * evidence.height > config.imageMaxPixels) throw httpError(400, 'invalid_image_dimensions', 'Local image dimensions are invalid or unsafe');
 }
 function requireDeterministicImages(service: LocalDeterministicImageExecutionService | undefined): LocalDeterministicImageExecutionService { if (!service) throw httpError(503, 'deterministic_local_execution_unavailable', 'Deterministic local image execution is unavailable'); return service; }
+function requireCrop(service: LocalCropExecutionService | undefined): LocalCropExecutionService { if (!service) throw httpError(503, 'crop_local_execution_unavailable', 'Deterministic Crop execution is unavailable'); return service; }
 function requireSuperResolution(service: LocalSuperResolutionExecutionService | undefined): LocalSuperResolutionExecutionService { if (!service) throw httpError(503, 'super_resolution_local_execution_unavailable', 'Local super-resolution execution is unavailable'); return service; }
 function requireInputDelivery(service: LocalExecutionInputDeliveryService | undefined): LocalExecutionInputDeliveryService { if (!service) throw httpError(503, 'local_input_delivery_unavailable', 'Canonical local input delivery is unavailable'); return service; }
 function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {
@@ -201,5 +256,6 @@ async function readBytes(request: IncomingMessage, limit: number): Promise<Uint8
 function send(response: ServerResponse, status: number, body: unknown): void { response.statusCode = status; if (body === undefined) { response.end(); return; } const bytes = Buffer.from(JSON.stringify(body)); response.setHeader('Content-Type', 'application/json'); response.setHeader('Content-Length', bytes.byteLength); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(bytes); }
 function sendBytes(response: ServerResponse, status: number, bytes: Uint8Array, contentType: string): void { response.statusCode = status; response.setHeader('Content-Type', contentType); response.setHeader('Content-Length', bytes.byteLength); response.setHeader('Cache-Control', 'no-store'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(Buffer.from(bytes)); }
 function string(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
+function number(value: unknown): number { return typeof value === 'number' ? value : Number.NaN; }
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined; }
 function httpError(status: number, code: string, message: string): Error & { status: number; code: string } { return Object.assign(new Error(message), { status, code }); }
