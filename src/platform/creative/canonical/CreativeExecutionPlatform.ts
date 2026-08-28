@@ -3,6 +3,7 @@ import { ProductionOperationAuthority } from '../authority';
 import { CreativeCostAuthority } from '../cost/contracts';
 import type { CreativeOperationInstance } from '../operations/contracts';
 import { MAX_SUPER_RESOLUTION_OUTPUT_PIXELS, SUPER_RESOLUTION_SCALE } from '../super-resolution/SuperResolutionContract';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS, RESIZE_OPERATION } from '../deterministic/ResizeIdentity.js';
 import type { CreativeArtifact, CreativeDecision, CreativeExecutionPlan, CreativeOperation, CreativePipeline, CreativePlan, CreativeRequest, ProductionOutcome, VerificationResult } from './contracts';
 import type { LocalExecutionInputBinding, LocalExecutionTicket, LocalExecutionTicketV2 } from './localExecution';
 import type { CreativeExecutionPlatformRuntimeDependencies } from './providerSelection';
@@ -309,6 +310,14 @@ function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOpera
     const right = Number(x) + Number(cropWidth); const bottom = Number(y) + Number(cropHeight);
     if (!Number.isSafeInteger(right) || !Number.isSafeInteger(bottom) || right > sourceWidth || bottom > sourceHeight) throw new Error('ON_DEVICE CROP rectangle exceeds canonical source bounds');
     return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(cropWidth), height: Number(cropHeight) }]);
+  }
+  if (operation.type === RESIZE_OPERATION) {
+    const input = operation.input && typeof operation.input === 'object' ? operation.input as Readonly<Record<string, unknown>> : undefined;
+    const resizeWidth = input?.width; const resizeHeight = input?.height;
+    if (!Number.isSafeInteger(resizeWidth) || !Number.isSafeInteger(resizeHeight) || Number(resizeWidth) < 1 || Number(resizeHeight) < 1 || Number(resizeWidth) > RESIZE_MAX_DIMENSION || Number(resizeHeight) > RESIZE_MAX_DIMENSION) throw new Error('ON_DEVICE RESIZE requires exact bounded positive integer target dimensions');
+    const outputPixels = Number(resizeWidth) * Number(resizeHeight);
+    if (!Number.isSafeInteger(outputPixels) || outputPixels > RESIZE_MAX_OUTPUT_PIXELS) throw new Error('ON_DEVICE RESIZE exceeds the Resize v1 output pixel limit');
+    return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(resizeWidth), height: Number(resizeHeight) }]);
   }
   if (operation.type === 'SUPER_RESOLUTION') {
     const outputWidth = Number(width) * SUPER_RESOLUTION_SCALE;
