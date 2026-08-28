@@ -13,6 +13,15 @@ import {
   normalizeCropRect,
 } from '../../../src/platform/creative/deterministic/Crop.ts';
 import {
+  RESIZE_CAPABILITY,
+  RESIZE_OPERATION,
+  RESIZE_STEP_ID,
+  RESIZE_TOOL_ID,
+  RESIZE_TOOL_VERSION,
+  normalizeResizeDimensions,
+} from '../../../src/platform/creative/deterministic/Resize.ts';
+import { RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import {
   REAL_ESRGAN_UPSCALE_CAPABILITY,
   SUPER_RESOLUTION_ALPHA_POLICY,
   SUPER_RESOLUTION_OPERATION,
@@ -44,6 +53,7 @@ export type CropInputDelivery = Readonly<{
   sourceRgba: Uint8Array;
 }>;
 
+export type ResizeInputDelivery = CropInputDelivery;
 export type SuperResolutionInputDelivery = CropInputDelivery;
 
 export type LocalExecutionInputDeliveryDependencies = Readonly<{
@@ -137,6 +147,39 @@ export class LocalExecutionInputDeliveryService {
     });
   }
 
+  async resize(
+    input: Readonly<{ ticketId: string; projectId: string }>,
+    auth: AuthenticatedScope,
+  ): Promise<ResizeInputDelivery> {
+    const ticket = await this.requireTicket(input, auth);
+    assertResizeTicket(ticket);
+    if (ticket.inputs.length !== 1 || ticket.inputs[0].kind !== 'image' || !ticket.inputs[0].sha256) throw serviceError(409, 'local_input_contract_mismatch', 'Resize requires exactly one hash-bound IMAGE input');
+    const sourceBinding = ticket.inputs[0];
+    if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Resize source is no longer available for this ticket');
+
+    let artifacts: readonly CreativeArtifact[];
+    try { artifacts = await this.dependencies.hydrateArtifacts(ticket.scope, sourceBinding.artifactId, []); }
+    catch { throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Resize source hydration failed'); }
+    assertInputAdmission(ticket, artifacts);
+    const source = artifacts.find(artifact => artifact.id === sourceBinding.artifactId && artifact.kind === 'image');
+    const value = source?.value as Readonly<{ width?: unknown; height?: unknown; data?: unknown }> | undefined;
+    if (!Number.isSafeInteger(value?.width) || !Number.isSafeInteger(value?.height) || !(value?.data instanceof Uint8ClampedArray)) throw serviceError(409, 'canonical_source_pixels_unavailable', 'Canonical Resize source RGBA pixels are unavailable');
+    const width = Number(value.width); const height = Number(value.height);
+    if (width < 1 || height < 1 || value.data.length !== width * height * 4) throw serviceError(409, 'local_input_geometry_mismatch', 'Canonical Resize source geometry is invalid');
+    const parameters = ticket.operation.parameters as Readonly<Record<string, unknown>> | undefined;
+    try { normalizeResizeDimensions({ width: Number(parameters?.width), height: Number(parameters?.height) }, width, height); }
+    catch { throw serviceError(409, 'local_ticket_parameter_mismatch', 'Resize ticket target dimensions are invalid for the canonical source'); }
+
+    return Object.freeze({
+      ticketId: ticket.ticketId,
+      sourceArtifactId: sourceBinding.artifactId,
+      sourceSha256: sourceBinding.sha256,
+      width,
+      height,
+      sourceRgba: Uint8Array.from(value.data),
+    });
+  }
+
   async superResolution(
     input: Readonly<{ ticketId: string; projectId: string }>,
     auth: AuthenticatedScope,
@@ -200,6 +243,20 @@ function assertCropTicket(ticket: LocalExecutionTicketV2): void {
   if (!parameters || parameters.deterministicTool !== `${CROP_TOOL_ID}@${CROP_TOOL_VERSION}` || parameters.coordinateSpace !== 'CANONICAL_ORIENTATION_1_PIXEL_INDICES' || parameters.rectangleSemantics !== 'HALF_OPEN' || !Number.isSafeInteger(parameters.x) || !Number.isSafeInteger(parameters.y) || !Number.isSafeInteger(parameters.width) || !Number.isSafeInteger(parameters.height)) throw serviceError(409, 'local_ticket_parameter_mismatch', 'Crop ticket parameters are invalid');
   const output = ticket.expectedOutputs[0];
   if (ticket.expectedOutputs.length !== 1 || output.kind !== 'image' || output.role !== 'COMPOSITE' || output.mimeTypes?.length !== 1 || output.mimeTypes[0] !== 'image/png' || output.width !== parameters.width || output.height !== parameters.height) throw serviceError(409, 'local_output_contract_error', 'Crop ticket output geometry is invalid');
+}
+
+function assertResizeTicket(ticket: LocalExecutionTicketV2): void {
+  if (ticket.version !== '2' || ticket.issuer !== 'CORE' || ticket.policy !== 'LOCAL_ONLY' || ticket.operation.type !== RESIZE_OPERATION || ticket.operation.capability !== RESIZE_CAPABILITY || ticket.operation.id !== RESIZE_STEP_ID || ticket.stepId !== RESIZE_STEP_ID) throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not a Resize local-execution contract');
+  if (ticket.allowedExecutors.length !== 1) throw serviceError(409, 'local_ticket_executor_mismatch', 'Resize ticket must bind exactly one executor');
+  const executor = ticket.allowedExecutors[0];
+  if (executor.kind !== 'DETERMINISTIC_TOOL' || executor.toolId !== RESIZE_TOOL_ID || executor.version !== RESIZE_TOOL_VERSION) throw serviceError(409, 'local_ticket_executor_mismatch', 'Resize deterministic executor binding is invalid');
+  const parameters = ticket.operation.parameters;
+  const exact = RESIZE_TOOL_DEFINITION.parameters.exact;
+  if (!parameters || !Number.isSafeInteger(parameters.width) || !Number.isSafeInteger(parameters.height) || parameters.deterministicTool !== exact.deterministicTool || parameters.coordinateSpace !== exact.coordinateSpace || parameters.interpolation !== exact.interpolation || parameters.fixedPointBits !== exact.fixedPointBits || parameters.rounding !== exact.rounding || parameters.borderPolicy !== exact.borderPolicy || parameters.alphaPolicy !== exact.alphaPolicy || parameters.maxOutputPixels !== exact.maxOutputPixels) throw serviceError(409, 'local_ticket_parameter_mismatch', 'Resize ticket parameters are invalid');
+  try { normalizeResizeDimensions({ width: Number(parameters.width), height: Number(parameters.height) }, 1, 1); }
+  catch { throw serviceError(409, 'local_ticket_parameter_mismatch', 'Resize ticket target dimensions exceed v1 limits'); }
+  const output = ticket.expectedOutputs[0];
+  if (ticket.expectedOutputs.length !== 1 || output.kind !== 'image' || output.role !== 'COMPOSITE' || output.mimeTypes?.length !== 1 || output.mimeTypes[0] !== 'image/png' || output.width !== parameters.width || output.height !== parameters.height) throw serviceError(409, 'local_output_contract_error', 'Resize ticket output geometry is invalid');
 }
 
 function assertSuperResolutionTicket(ticket: LocalExecutionTicketV2): void {
