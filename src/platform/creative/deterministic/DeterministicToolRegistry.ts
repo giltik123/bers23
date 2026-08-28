@@ -5,6 +5,13 @@ import {
   BACKGROUND_ISOLATION_TOOL_ID,
   BACKGROUND_ISOLATION_TOOL_VERSION,
 } from './BackgroundIsolationIdentity.js';
+import {
+  CROP_CAPABILITY,
+  CROP_OPERATION,
+  CROP_STEP_ID,
+  CROP_TOOL_ID,
+  CROP_TOOL_VERSION,
+} from './CropIdentity.js';
 
 export type DeterministicToolInputContract = Readonly<{
   name: string;
@@ -19,12 +26,20 @@ export type DeterministicToolOutputContract = Readonly<{
   role: CreativeArtifactRole;
   count: 1;
   mimeTypes: readonly string[];
-  geometry: 'MATCH_SOURCE';
+  geometry: 'MATCH_SOURCE' | 'CROP_RECT';
+}>;
+
+export type DeterministicToolIntegerBound = Readonly<{
+  parameter: string;
+  min: number;
+  maxReference: 'SOURCE_WIDTH_MINUS_1' | 'SOURCE_HEIGHT_MINUS_1' | 'SOURCE_WIDTH' | 'SOURCE_HEIGHT';
 }>;
 
 export type DeterministicToolParameterContract = Readonly<{
   artifactIdBindings: readonly Readonly<{ parameter: string; input: string }>[];
   exact: Readonly<Record<string, string | number | boolean>>;
+  integerBounds?: readonly DeterministicToolIntegerBound[];
+  relationships?: readonly ('X_PLUS_WIDTH_LE_SOURCE_WIDTH' | 'Y_PLUS_HEIGHT_LE_SOURCE_HEIGHT')[];
 }>;
 
 export type DeterministicToolDefinition = Readonly<{
@@ -47,8 +62,11 @@ export type DeterministicToolDefinition = Readonly<{
     format: 'RGBA8';
     colorSpace: 'srgb';
     orientation: 1;
-    rgb: 'PRESERVE_SOURCE_BYTES';
-    alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255';
+    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES';
+    alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES';
+    interpolation?: 'NONE';
+    rounding?: 'INTEGER_EXACT';
+    border?: 'REJECT_OUT_OF_BOUNDS';
   }>;
   resourcePolicy: Readonly<{
     enforcement: 'CORE_CONFIG_AND_TICKET';
@@ -97,6 +115,50 @@ const backgroundIsolationDefinition: DeterministicToolDefinition = deepFreeze({
   lineage: { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: 'BACKGROUND_ISOLATION' },
 });
 
+const cropDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: CROP_CAPABILITY,
+  operation: { id: CROP_STEP_ID, type: CROP_OPERATION, version: '1' },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: CROP_TOOL_ID, version: CROP_TOOL_VERSION },
+  inputs: [
+    { name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+  ],
+  output: { kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: ['image/png'], geometry: 'CROP_RECT' },
+  parameters: {
+    artifactIdBindings: [{ parameter: 'sourceArtifactId', input: 'source' }],
+    exact: {
+      deterministicTool: `${CROP_TOOL_ID}@${CROP_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_PIXEL_INDICES',
+      rectangleSemantics: 'HALF_OPEN',
+    },
+    integerBounds: [
+      { parameter: 'x', min: 0, maxReference: 'SOURCE_WIDTH_MINUS_1' },
+      { parameter: 'y', min: 0, maxReference: 'SOURCE_HEIGHT_MINUS_1' },
+      { parameter: 'width', min: 1, maxReference: 'SOURCE_WIDTH' },
+      { parameter: 'height', min: 1, maxReference: 'SOURCE_HEIGHT' },
+    ],
+    relationships: ['X_PLUS_WIDTH_LE_SOURCE_WIDTH', 'Y_PLUS_HEIGHT_LE_SOURCE_HEIGHT'],
+  },
+  browser: { executorId: 'crop-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'crop-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'COPY_SOURCE_SUBRECT_BYTES',
+    alpha: 'COPY_SOURCE_ALPHA_BYTES',
+    interpolation: 'NONE',
+    rounding: 'INTEGER_EXACT',
+    border: 'REJECT_OUT_OF_BOUNDS',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+  },
+  lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: CROP_OPERATION },
+});
+
 /**
  * Data-only deterministic tool catalog. It describes already-reviewed tool contracts;
  * it is not capability admission and contains no executable callback or fallback.
@@ -104,9 +166,11 @@ const backgroundIsolationDefinition: DeterministicToolDefinition = deepFreeze({
  */
 export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[] = Object.freeze([
   backgroundIsolationDefinition,
+  cropDefinition,
 ]);
 
 export const BACKGROUND_ISOLATION_TOOL_DEFINITION = backgroundIsolationDefinition;
+export const CROP_TOOL_DEFINITION = cropDefinition;
 
 export function findDeterministicToolByCapability(capability: string): DeterministicToolDefinition | undefined {
   return DETERMINISTIC_TOOL_REGISTRY.find(definition => definition.capability === capability);

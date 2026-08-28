@@ -3,7 +3,8 @@ import test from 'node:test';
 import { CanonicalDecisionService, CanonicalPlanningService, CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformRuntimeDependencies, type CreativeRequest } from '../src/platform/creative/canonical/index.ts';
 import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../src/platform/creative/canonical/localComposite.ts';
 import { BACKGROUND_ISOLATION_CAPABILITY, BACKGROUND_ISOLATION_TOOL_ID, BACKGROUND_ISOLATION_TOOL_VERSION } from '../src/platform/creative/deterministic/BackgroundIsolation.ts';
-import { BACKGROUND_ISOLATION_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { CROP_CAPABILITY } from '../src/platform/creative/deterministic/Crop.ts';
+import { BACKGROUND_ISOLATION_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { LocalExecutionAdmissionRegistry } from '../server/core/localExecution/LocalExecutionAdmission.ts';
 import { LocalExecutionTicketAuthority } from '../server/core/localExecution/LocalExecutionTicketAuthority.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
@@ -33,8 +34,8 @@ function request(): CreativeRequest {
   });
 }
 
-test('C2 deterministic registry is data-only and does not widen production admission', () => {
-  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 1, 'registry extraction must not add a second production tool');
+test('C2 deterministic registry remains data-only while each production capability is explicitly admitted', () => {
+  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 2, 'Background Isolation and Crop are the only reviewed deterministic tools');
   const definition = requireDeterministicToolByCapability(BACKGROUND_ISOLATION_CAPABILITY);
   assert.equal(definition, BACKGROUND_ISOLATION_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor(definition.executor), definition);
@@ -54,8 +55,9 @@ test('C2 deterministic registry is data-only and does not widen production admis
   assert.deepEqual(definition.lineage, { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: 'BACKGROUND_ISOLATION' });
   assert.equal(containsFunction(definition), false, 'registry definitions must not contain executable callbacks');
   assert.equal(isDeepFrozen(definition), true, 'registry contracts must be immutable');
-  assert.throws(() => requireDeterministicToolByCapability('local:tool:crop:v1'), /not registered/);
-  assert.throws(() => requireDeterministicToolByExecutor({ kind: 'DETERMINISTIC_TOOL', toolId: 'crop', version: '1' }), /not registered/);
+  assert.equal(requireDeterministicToolByCapability(CROP_CAPABILITY), CROP_TOOL_DEFINITION);
+  assert.throws(() => requireDeterministicToolByCapability('local:tool:resize:v1'), /not registered/);
+  assert.throws(() => requireDeterministicToolByExecutor({ kind: 'DETERMINISTIC_TOOL', toolId: 'resize', version: '1' }), /not registered/);
 
   const deterministicCapabilities = Object.entries(productionLocalExecutorsByCapability)
     .filter(([, bindings]) => bindings.some(binding => binding.kind === 'DETERMINISTIC_TOOL'))
@@ -63,10 +65,12 @@ test('C2 deterministic registry is data-only and does not widen production admis
     .sort();
   assert.deepEqual(deterministicCapabilities, [
     BACKGROUND_ISOLATION_CAPABILITY,
+    CROP_CAPABILITY,
     LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation,
-  ].sort(), 'registry presence alone must not create a production capability');
+  ].sort(), 'registry presence alone must not create any capability beyond explicit server policy keys');
   assert.deepEqual(productionLocalExecutorsByCapability[BACKGROUND_ISOLATION_CAPABILITY], [definition.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation], [definition.executor]);
+  assert.deepEqual(productionLocalExecutorsByCapability[CROP_CAPABILITY], [CROP_TOOL_DEFINITION.executor]);
 });
 
 test('C2 planner and production policy bind background isolation to LOCAL ON_DEVICE deterministic v2 executor', async () => {

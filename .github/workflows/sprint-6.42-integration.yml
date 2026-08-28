@@ -62,7 +62,7 @@ jobs:
           node --test .test-cache/6.42-integration/mask-refinement-lineage.test.mjs
       - name: C1 real PostgreSQL mask lineage authority
         run: node --experimental-strip-types --test server/core/artifacts/maskArtifactLineage.integration.test.mjs
-      - name: C2 versioned authority, canonical wiring and browser executor
+      - name: C2 deterministic tool authority, canonical wiring and browser executors
         run: |
           npx esbuild tests/local-execution-v2-executor-contract.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
@@ -74,6 +74,12 @@ jobs:
             --outfile=.test-cache/6.42-integration/background-isolation-canonical-wiring.test.mjs \
             --external:node:*
           node --test .test-cache/6.42-integration/background-isolation-canonical-wiring.test.mjs
+          mkdir -p .test-cache/6.42-integration/crop
+          npx esbuild tests/deterministic-crop-contract.test.ts tests/deterministic-crop-canonical-wiring.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/6.42-integration/crop \
+            --external:node:* --external:sharp
+          node --test .test-cache/6.42-integration/crop/*.js
           npx esbuild tests/background-isolation-browser-executor.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/6.42-integration/background-isolation-browser-executor.test.mjs \
@@ -86,12 +92,16 @@ jobs:
           node --test .test-cache/6.42-integration/background-isolation-browser-composition.test.mjs
           grep -F "createBackgroundIsolation({ projectId: project.id })" src/pages/Editor.jsx
           grep -F "finalArtifactId: result.canonicalArtifactId" src/pages/Editor.jsx
-      - name: C2 real PostgreSQL pixel, lineage, replay and zero-cloud vertical
+      - name: C2 real PostgreSQL deterministic pixel, lineage, replay and zero-cloud verticals
         run: |
-          mkdir -p .test-cache/6.42-integration/migrations .test-cache/artifacts/migrations
+          mkdir -p .test-cache/6.42-integration/migrations .test-cache/artifacts/migrations .test-cache/6.42-integration/c2-postgres/migrations .test-cache/6.42-integration/artifacts/migrations
           npx esbuild tests/background-isolation-postgres-vertical.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
-            --outfile=.test-cache/6.42-integration/background-isolation-postgres-vertical.test.mjs \
+            --outfile=.test-cache/6.42-integration/c2-postgres/background-isolation-postgres-vertical.test.mjs \
+            --external:node:* --external:pg --external:sharp
+          npx esbuild tests/deterministic-crop-postgres-vertical.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/6.42-integration/c2-postgres/deterministic-crop-postgres-vertical.test.mjs \
             --external:node:* --external:pg --external:sharp
           cp server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/002_canonical_mask_artifacts.sql .test-cache/6.42-integration/migrations/
@@ -108,10 +118,13 @@ jobs:
           cp server/core/artifacts/migrations/014_canonical_mask_lineage.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/019_canonical_crop_final_lineage.sql .test-cache/6.42-integration/migrations/
+          cp .test-cache/6.42-integration/migrations/*.sql .test-cache/6.42-integration/c2-postgres/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
-          node --test .test-cache/6.42-integration/background-isolation-postgres-vertical.test.mjs
+          cp .test-cache/artifacts/migrations/*.sql .test-cache/6.42-integration/artifacts/migrations/
+          node --test --test-concurrency=1 .test-cache/6.42-integration/c2-postgres/background-isolation-postgres-vertical.test.mjs .test-cache/6.42-integration/c2-postgres/deterministic-crop-postgres-vertical.test.mjs
       - name: C3 Real-ESRGAN candidate, canonical and browser/server contracts
         run: |
           npx esbuild tests/realesrgan-release-policy.test.ts \
@@ -180,6 +193,7 @@ jobs:
           cp server/core/artifacts/migrations/014_canonical_mask_lineage.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/019_canonical_crop_final_lineage.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/

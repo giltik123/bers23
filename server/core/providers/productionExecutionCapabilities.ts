@@ -1,5 +1,6 @@
 import type { ExecutionCapabilityDecision, ExecutionCapabilityPort, ExecutionRoute, ExecutionTarget } from '../../../src/platform/creative/canonical/contracts.ts';
 import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES, LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT } from '../../../src/platform/creative/canonical/localComposite.ts';
+import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 
 export const PRODUCTION_EXECUTION_CAPABILITY_VERSION = '6.42C3.1';
 type CapabilityRule = Readonly<{ capabilityId: string; route: ExecutionRoute; operationType: string; target: Exclude<ExecutionTarget, 'BLOCKED'>; providerId?: string; operationIntent?: string }>;
@@ -12,6 +13,7 @@ const RULES: readonly CapabilityRule[] = Object.freeze([
   Object.freeze({ capabilityId: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment, route: 'ON_DEVICE', operationType: 'segment', target: 'LOCAL', operationIntent: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT }),
   Object.freeze({ capabilityId: 'local:tool:background-isolation:v1', route: 'ON_DEVICE', operationType: 'BACKGROUND_ISOLATION', target: 'LOCAL', operationIntent: 'BACKGROUND_ISOLATION' }),
   Object.freeze({ capabilityId: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation, route: 'ON_DEVICE', operationType: 'BACKGROUND_ISOLATION', target: 'LOCAL', operationIntent: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT }),
+  Object.freeze({ capabilityId: CROP_CAPABILITY, route: 'ON_DEVICE', operationType: 'CROP', target: 'LOCAL', operationIntent: 'CROP' }),
   Object.freeze({ capabilityId: 'local:realesrgan:upscale:v1', route: 'ON_DEVICE', operationType: 'SUPER_RESOLUTION', target: 'LOCAL', operationIntent: 'SUPER_RESOLUTION' }),
 ]);
 /** Pure tuple admission; grants no scope, budget, persistence, authentication, runtime, or model trust authority. */

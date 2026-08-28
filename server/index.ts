@@ -11,7 +11,7 @@ export async function startCoreServer() {
   const config = loadCoreServerConfig(); const production = await createProductionCore(config); let accepting = true;
   const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); return true; } catch { return false; } };
   const adapter = createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
-  const localExecutionAdapter = createLocalExecutionHttpAdapter({ service: production.localExecution.segmentation, deterministicImages: production.localExecution.deterministicImages, superResolution: production.localExecution.superResolution, inputDelivery: production.localExecution.inputDelivery, auth: production.auth, config });
+  const localExecutionAdapter = createLocalExecutionHttpAdapter({ service: production.localExecution.segmentation, deterministicImages: production.localExecution.deterministicImages, crop: production.localExecution.crop, superResolution: production.localExecution.superResolution, inputDelivery: production.localExecution.inputDelivery, auth: production.auth, config });
   const localCompositeOutputs = new LocalCompositeOutputUploadService({ continuation: production.localExecution.composite, uploads: production.localExecution.uploads });
   const localCompositeAdapter = createLocalCompositeContinuationHttpAdapter({ continuation: production.localExecution.composite, outputs: localCompositeOutputs, auth: production.auth, config });
   const server = createServer((request, response) => {

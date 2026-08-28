@@ -19,28 +19,30 @@ export async function checkFinalImageLineageSchema(pool: Pool): Promise<void> {
         AND conname='canonical_image_artifacts_lineage_shape_check'
         AND contype='c'
         AND position('BACKGROUND_ISOLATION' in pg_get_constraintdef(oid)) > 0
+        AND position('CROP' in pg_get_constraintdef(oid)) > 0
     ) AS shape_check,
     to_regclass('canonical_image_artifacts_source_image_idx') IS NOT NULL AS source_idx,
     to_regclass('canonical_image_artifacts_mask_idx') IS NOT NULL AS mask_idx`);
   const row = result.rows[0] ?? {};
   if (!row.image_table || !row.mask_table || !row.lineage_columns || !row.source_fk || !row.mask_fk || !row.shape_check || !row.source_idx || !row.mask_idx) {
-    throw new Error('canonical FINAL image lineage schema is incomplete; apply migration 018_canonical_final_image_lineage.sql');
+    throw new Error('canonical FINAL image lineage schema is incomplete; apply migrations 018_canonical_final_image_lineage.sql and 019_canonical_crop_final_lineage.sql');
   }
 }
 
 export async function migrateFinalImageLineageSchema(pool: Pool): Promise<void> {
   await migrateImageArtifactSchema(pool);
   await migrateMaskArtifactSchema(pool);
-  try { await checkFinalImageLineageSchema(pool); return; } catch { /* apply exact lineage upgrade below */ }
-  await pool.query(await readFinalImageLineageMigration());
+  try { await checkFinalImageLineageSchema(pool); return; } catch { /* apply exact lineage upgrades below */ }
+  await pool.query(await readMigration('018_canonical_final_image_lineage.sql'));
+  await pool.query(await readMigration('019_canonical_crop_final_lineage.sql'));
   await checkFinalImageLineageSchema(pool);
 }
 
-async function readFinalImageLineageMigration(): Promise<string> {
+async function readMigration(name: string): Promise<string> {
   try {
-    return await readFile(new URL('./migrations/018_canonical_final_image_lineage.sql', import.meta.url), 'utf8');
+    return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8');
   } catch (error) {
     if (process.env.NODE_ENV === 'production') throw error;
-    return readFile(resolve(process.cwd(), 'server/core/artifacts/migrations/018_canonical_final_image_lineage.sql'), 'utf8');
+    return readFile(resolve(process.cwd(), `server/core/artifacts/migrations/${name}`), 'utf8');
   }
 }

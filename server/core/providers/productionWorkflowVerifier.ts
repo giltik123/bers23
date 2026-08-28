@@ -1,4 +1,5 @@
 import type { Artifact, WorkflowOperation, WorkflowVerifierPort, VerificationResult } from '../../../src/platform/creative/workflow-engine/types.ts';
+import { CROP_TOOL_ID, CROP_TOOL_VERSION } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { SUPER_RESOLUTION_ALPHA_POLICY, SUPER_RESOLUTION_SCALE } from '../../../src/platform/creative/super-resolution/SuperResolutionContract.ts';
 
 export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C3.1';
@@ -11,6 +12,8 @@ const CHECKS = Object.freeze({
   maskPixels: 'MASK_PIXELS_VALID',
   maskLineage: 'MASK_LINEAGE_VALID',
   deterministicPixels: 'DETERMINISTIC_PIXELS_VERIFIED',
+  deterministicContract: 'DETERMINISTIC_TOOL_CONTRACT_VALID',
+  deterministicGeometry: 'DETERMINISTIC_OUTPUT_GEOMETRY_VALID',
   localLineage: 'LOCAL_IMAGE_LINEAGE_VALID',
   modelContract: 'LOCAL_MODEL_CONTRACT_ADMITTED',
   modelScope: 'LOCAL_MODEL_VERIFICATION_SCOPE_VALID',
@@ -27,6 +30,8 @@ const ERRORS = Object.freeze({
   invalidMaskLineage: 'LOCAL_MASK_LINEAGE_INVALID',
   invalidLocalImage: 'LOCAL_IMAGE_INVALID',
   invalidLocalImageLineage: 'LOCAL_IMAGE_LINEAGE_INVALID',
+  invalidDeterministicSemantics: 'DETERMINISTIC_TOOL_VERIFICATION_SEMANTICS_INVALID',
+  invalidDeterministicGeometry: 'DETERMINISTIC_OUTPUT_GEOMETRY_INVALID',
   invalidModelImage: 'LOCAL_MODEL_IMAGE_INVALID',
   invalidModelSemantics: 'LOCAL_MODEL_VERIFICATION_SEMANTICS_INVALID',
   invalidModelGeometry: 'LOCAL_MODEL_OUTPUT_GEOMETRY_INVALID',
@@ -37,10 +42,11 @@ const ERRORS = Object.freeze({
  * Planner/client verification claims are intentionally ignored. This component performs no
  * provider call, network access, persistence, access-control or financial mutation.
  *
- * Deterministic C2 outputs can carry byte-exact verification. C3 model output cannot: without
- * re-running the model on a trusted server, Core proves only admitted executor identity,
- * output contract/geometry and canonical lineage. Metadata is required to state that weaker
- * verification scope explicitly so a model result cannot masquerade as deterministic proof.
+ * Deterministic outputs can carry byte-exact verification only when the admitted artifact
+ * proves the exact reviewed deterministic contract. Model output cannot: without re-running
+ * the model on a trusted server, Core proves only admitted executor identity, output
+ * contract/geometry and canonical lineage. Metadata is required to state that weaker scope
+ * explicitly so a model result cannot masquerade as deterministic proof.
  */
 export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
   async verify(operation: WorkflowOperation, artifacts: readonly Artifact[]): Promise<VerificationResult> {
@@ -66,6 +72,15 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
       const parents = artifacts[0].metadata?.parentArtifactIds;
       if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels]);
       return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels, CHECKS.localLineage], errors: [] });
+    }
+    if (operation.type === 'CROP') {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalCropImage(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicSemantics, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
+      if (!hasValidCropGeometry(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage, CHECKS.deterministicGeometry], errors: [] });
     }
     if (operation.type === 'SUPER_RESOLUTION') {
       if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidModelSemantics);
@@ -100,6 +115,34 @@ function isCanonicalDeterministicImage(artifact: Artifact): boolean {
   if (!isPixelImage(artifact.value)) return false;
   const integrity = artifact.metadata?.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
   return artifact.metadata?.artifactRole === 'COMPOSITE' && artifact.metadata?.localExecutionAdmission === 'ADMITTED' && integrity?.verificationOutcome === 'PASS';
+}
+
+function isCanonicalCropImage(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  if (!metadata || metadata.artifactRole !== 'COMPOSITE' || metadata.localExecutionAdmission !== 'ADMITTED') return false;
+  if (metadata.admissionClass !== 'DETERMINISTIC_BYTE_EXACT' || metadata.verificationScope !== 'BYTE_EXACT_CORE_RECOMPUTE') return false;
+  if (metadata.executorKind !== 'DETERMINISTIC_TOOL' || metadata.toolId !== CROP_TOOL_ID || metadata.toolVersion !== CROP_TOOL_VERSION) return false;
+  if (metadata.runtime !== 'BROWSER_JS' || metadata.accelerator !== 'cpu') return false;
+  if (!sha256(metadata.candidateSha256) || !sha256(metadata.verifiedPixelSha256)) return false;
+  if (metadata.coordinateSpace !== 'CANONICAL_ORIENTATION_1_PIXEL_INDICES' || metadata.rectangleSemantics !== 'HALF_OPEN' || metadata.interpolation !== 'NONE' || metadata.borderPolicy !== 'REJECT_OUT_OF_BOUNDS') return false;
+  const integrity = metadata.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  if (integrity?.verificationOutcome !== 'PASS' || integrity.pixelComparison !== 'BYTE_EXACT') return false;
+  const input = operation.input;
+  if (!input || input.deterministicTool !== `${CROP_TOOL_ID}@${CROP_TOOL_VERSION}` || input.coordinateSpace !== metadata.coordinateSpace || input.rectangleSemantics !== metadata.rectangleSemantics) return false;
+  return true;
+}
+
+function hasValidCropGeometry(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  const rect = record(metadata?.cropRect);
+  const input = operation.input;
+  if (!rect || !input) return false;
+  const x = exactInteger(rect.x, 0); const y = exactInteger(rect.y, 0); const width = exactInteger(rect.width, 1); const height = exactInteger(rect.height, 1);
+  if (x === undefined || y === undefined || width === undefined || height === undefined) return false;
+  if (input.x !== x || input.y !== y || input.width !== width || input.height !== height) return false;
+  return artifact.value.width === width && artifact.value.height === height;
 }
 
 function isCanonicalModelAdmittedImage(artifact: Artifact): boolean {
@@ -151,5 +194,8 @@ function isProviderImageReference(value: unknown): boolean {
   try { const url = new URL(candidate.url); return url.protocol === 'https:' && !url.username && !url.password; } catch { return false; }
 }
 
+function sha256(value: unknown): value is string { return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value); }
+function record(value: unknown): Readonly<Record<string, unknown>> | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined; }
+function exactInteger(value: unknown, minimum: number): number | undefined { return Number.isSafeInteger(value) && Number(value) >= minimum ? Number(value) : undefined; }
 function invalid(stepId: string, error: string, checks: readonly string[] = []): VerificationResult { return freezeResult({ stepId, valid: false, checks, errors: [error] }); }
 function freezeResult(result: VerificationResult): VerificationResult { return Object.freeze({ stepId: result.stepId, valid: result.valid, checks: Object.freeze([...result.checks]), errors: Object.freeze([...result.errors]) }); }
