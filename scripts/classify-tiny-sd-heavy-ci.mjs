@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 export const RELEVANT_CLASSIFICATION = 'RELEVANT_HEAVY_ACCEPTANCE_REQUIRED';
 export const NOT_APPLICABLE_CLASSIFICATION = 'NOT_APPLICABLE_PRODUCT_ONLY_CHANGE';
@@ -94,7 +95,7 @@ function writeGithubOutputs(outputPath, result) {
   );
 }
 
-const invokedAsCli = process.argv[1] && new URL(import.meta.url).pathname === process.argv[1];
+const invokedAsCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 
 if (invokedAsCli) {
   try {
