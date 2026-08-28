@@ -1,5 +1,6 @@
 import manifest from '../../../src/platform/creative/local-ai/models/interactive-segmentation.manifest.json' with { type: 'json' };
 import type { LocalExecutionModelBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
+import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../../../src/platform/creative/canonical/localComposite.ts';
 import { superResolutionReleaseState } from '../../../src/platform/creative/super-resolution/SuperResolutionRelease.ts';
 
 export { isExecutableRealEsrganRelease } from '../../../src/platform/creative/super-resolution/SuperResolutionRelease.ts';
@@ -13,11 +14,13 @@ const approvedMobileSam: readonly LocalExecutionModelBinding[] = manifest.status
 
 /**
  * Legacy v1 executable model policy. It intentionally remains MobileSAM-only.
- * New image-producing model capabilities use the v2 executor-union policy and must
- * never silently become mintable through the v1 issuer after release promotion.
+ * The C5B composite segment capability aliases this exact release decision rather
+ * than creating an independent model-trust authority. While MobileSAM is CANDIDATE,
+ * both standalone and composite catalogs remain empty and ticket minting fails closed.
  */
 export const productionLocalModelsByCapability: Readonly<Record<string, readonly LocalExecutionModelBinding[]>> = Object.freeze({
   [MOBILE_SAM_LOCAL_CAPABILITY]: approvedMobileSam,
+  [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment]: approvedMobileSam,
 });
 
 export const mobileSamProductionReleaseState = Object.freeze({

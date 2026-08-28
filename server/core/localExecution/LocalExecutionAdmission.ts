@@ -15,6 +15,7 @@ import type {
 } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import type { LocalExecutionFinalization, LocalExecutionClaimInput } from './LocalExecutionLedger.ts';
+import { localExecutionResultReplayDigest } from './localExecutionReplayDigest.ts';
 
 const SHA256 = /^[a-f0-9]{64}$/i;
 const MODEL_RUNTIMES = new Set(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']);
@@ -30,7 +31,8 @@ const FORBIDDEN_RESULT_KEYS = new Set([
 export class LocalExecutionAdmissionRegistry {
   readonly #tickets = new Map<string, AnyLocalExecutionTicket>();
   readonly #consumed = new Set<string>();
-  readonly #claimed = new Set<string>();
+  readonly #claimedResultDigests = new Map<string, string>();
+  readonly #admittedResultDigests = new Map<string, string>();
   readonly #idempotency = new Map<string, string>();
   readonly #finalizations = new Map<string, LocalExecutionFinalization>();
 
@@ -56,7 +58,7 @@ export class LocalExecutionAdmissionRegistry {
   }
 
   commit(ticketId: string, status: 'SUCCESS' | 'FAILED' = 'SUCCESS'): Promise<void> { this.#commit(ticketId, status); return Promise.resolve(); }
-  release(ticketId: string): Promise<void> { this.#claimed.delete(ticketId); return Promise.resolve(); }
+  release(ticketId: string): Promise<void> { this.#claimedResultDigests.delete(ticketId); return Promise.resolve(); }
 
   admit(input: LocalExecutionClaimInput): LocalExecutionAdmissionDecision {
     const decision = this.claim(input); if (decision.allowed) this.#commit(decision.ticket.ticketId, 'SUCCESS'); return decision;
@@ -94,15 +96,18 @@ export class LocalExecutionAdmissionRegistry {
   #claimAny(input: LocalExecutionClaimInput, expectedVersion: '1' | '2'): AnyLocalExecutionAdmissionDecision {
     const decision = this.#validate(input, expectedVersion);
     if (!decision.allowed) return decision;
-    if (this.#claimed.has(decision.ticket.ticketId)) return denied('IN_PROGRESS');
-    this.#claimed.add(decision.ticket.ticketId);
+    if (this.#claimedResultDigests.has(decision.ticket.ticketId)) return denied('IN_PROGRESS');
+    this.#claimedResultDigests.set(decision.ticket.ticketId, localExecutionResultReplayDigest(decision.result));
     return decision;
   }
 
   #commit(ticketId: string, status: 'SUCCESS' | 'FAILED'): void {
-    if (!this.#claimed.delete(ticketId)) throw new Error('Local execution ticket has no active admission claim');
+    const digest = this.#claimedResultDigests.get(ticketId);
+    if (!digest) throw new Error('Local execution ticket has no active admission claim');
     if (this.#consumed.has(ticketId)) throw new Error('Local execution ticket is already consumed');
+    this.#claimedResultDigests.delete(ticketId);
     this.#consumed.add(ticketId);
+    this.#admittedResultDigests.set(ticketId, digest);
     this.#finalizations.set(ticketId, Object.freeze({ status }));
   }
 
@@ -110,12 +115,17 @@ export class LocalExecutionAdmissionRegistry {
     const ticket = this.#tickets.get(input.ticketId);
     if (!ticket) return denied('UNKNOWN_TICKET');
     if (ticket.version !== expectedVersion) return denied('IDENTITY_MISMATCH');
-    if (this.#consumed.has(ticket.ticketId)) return denied('REPLAYED_TICKET');
-    if (this.#claimed.has(ticket.ticketId)) return denied('IN_PROGRESS');
+    if (this.#claimedResultDigests.has(ticket.ticketId)) return denied('IN_PROGRESS');
     if (!sameScope(ticket.scope, input.callerScope)) return denied('SCOPE_MISMATCH');
-    if (input.now >= ticket.expiresAt) return denied('EXPIRED_TICKET');
+    const consumed = this.#consumed.has(ticket.ticketId);
+    if (!consumed && input.now >= ticket.expiresAt) return denied('EXPIRED_TICKET');
     if (containsForbiddenAuthority(input.result)) return denied('FORBIDDEN_CLIENT_AUTHORITY');
-    return ticket.version === '1' ? validateV1(ticket, input.result) : validateV2(ticket, input.result);
+    const decision = ticket.version === '1' ? validateV1(ticket, input.result) : validateV2(ticket, input.result);
+    if (!decision.allowed) return decision;
+    if (!consumed) return decision;
+    const storedDigest = this.#admittedResultDigests.get(ticket.ticketId);
+    const replayDigest = localExecutionResultReplayDigest(decision.result);
+    return denied(storedDigest === replayDigest ? 'REPLAYED_TICKET' : 'CONFLICTING_REPLAY');
   }
 }
 

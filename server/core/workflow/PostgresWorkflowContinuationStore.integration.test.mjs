@@ -38,7 +38,9 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
   const scoped = scope(token); const executionId = `${token}-execution`; const clientRequestId = `${token}-client`;
   const plan = Object.freeze({ planId: `${token}-plan`, planRevision: '1', planDigest: 'a'.repeat(64) });
   const inputArtifacts = Object.freeze([rootInput(token)]);
+  const canonicalArtifactId = `${token}-canonical-mask`;
   let storedTicket;
+  let runningRevision;
 
   const firstPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-continuation-first' });
   try {
@@ -73,29 +75,52 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
     const admitted = await ledger.claim({ ticketId: storedTicket.ticketId, result: result(storedTicket), callerScope: scoped, now: NOW + 1_000 });
     assert.equal(admitted.allowed, true); await ledger.commit(storedTicket.ticketId, 'SUCCESS');
 
-    const completion = { executionId, scope: scoped, expectedRevision: recovered.revision, stepId: storedTicket.stepId, ticketId: storedTicket.ticketId, artifactIds: [`${token}-canonical-mask`] };
+    const completion = { executionId, scope: scoped, expectedRevision: recovered.revision, stepId: storedTicket.stepId, ticketId: storedTicket.ticketId, artifactIds: [canonicalArtifactId] };
     const [a, b] = await Promise.all([first.completeLocalStep(completion), second.completeLocalStep(completion)]);
     assert.deepEqual(a, b, 'concurrent exact completion must converge on one durable binding');
     assert.equal(a.revision, 2); assert.equal(a.completedSteps.length, 1);
     await assert.rejects(() => first.completeLocalStep({ ...completion, expectedRevision: 2, artifactIds: [`${token}-other-mask`] }), /different canonical result/);
 
+    // Persist RUNNING_INTERNAL, then deliberately destroy this Core/Pool before verify completes.
+    // The next independent Core instance must recover exactly this internal step rather than
+    // reissuing local work or skipping directly to SUCCESS.
     const running = await first.runInternalStep({ executionId, scope: scoped, expectedRevision: 2, stepId: 'verify' });
-    const verified = await first.completeInternalStep({ executionId, scope: scoped, expectedRevision: running.revision, stepId: 'verify', artifactIds: [`${token}-canonical-mask`] });
-    const success = await first.succeed({ executionId, scope: scoped, expectedRevision: verified.revision, terminalArtifactId: `${token}-canonical-mask` });
-    assert.equal(success.state, 'SUCCESS'); assert.equal(success.revision, 5);
+    assert.equal(running.state, 'RUNNING_INTERNAL');
+    assert.equal(running.currentStepId, 'verify');
+    assert.equal(running.revision, 3);
+    runningRevision = running.revision;
   } finally { await secondPool.end(); }
 
-  const thirdPool = new Pool({ connectionString: databaseUrl, max: 2, application_name: 'bers-workflow-continuation-third' });
+  const thirdPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-continuation-third' });
   try {
-    const afterRestart = new PostgresWorkflowContinuationStore(thirdPool, () => NOW);
-    const terminal = await afterRestart.get(executionId, scoped);
-    assert.equal(terminal.state, 'SUCCESS'); assert.equal(terminal.terminalArtifactId, `${token}-canonical-mask`);
+    const afterInternalRestart = new PostgresWorkflowContinuationStore(thirdPool, () => NOW);
+    const recoveredInternal = await afterInternalRestart.get(executionId, scoped);
+    assert.equal(recoveredInternal.state, 'RUNNING_INTERNAL', 'new Core instance must recover the durable INTERNAL verify state');
+    assert.equal(recoveredInternal.currentStepId, 'verify');
+    assert.equal(recoveredInternal.revision, runningRevision);
+    assert.deepEqual(recoveredInternal.completedSteps[0].artifactIds, [canonicalArtifactId]);
+
+    // Lost response/replay of the internal-start transition is idempotent across the restart.
+    const replayedRunning = await afterInternalRestart.runInternalStep({ executionId, scope: scoped, expectedRevision: 2, stepId: 'verify' });
+    assert.deepEqual(replayedRunning, recoveredInternal);
+
+    const verified = await afterInternalRestart.completeInternalStep({ executionId, scope: scoped, expectedRevision: recoveredInternal.revision, stepId: 'verify', artifactIds: [canonicalArtifactId] });
+    assert.equal(verified.state, 'READY');
+    const success = await afterInternalRestart.succeed({ executionId, scope: scoped, expectedRevision: verified.revision, terminalArtifactId: canonicalArtifactId });
+    assert.equal(success.state, 'SUCCESS'); assert.equal(success.revision, 5);
+  } finally { await thirdPool.end(); }
+
+  const fourthPool = new Pool({ connectionString: databaseUrl, max: 2, application_name: 'bers-workflow-continuation-fourth' });
+  try {
+    const afterTerminalRestart = new PostgresWorkflowContinuationStore(fourthPool, () => NOW);
+    const terminal = await afterTerminalRestart.get(executionId, scoped);
+    assert.equal(terminal.state, 'SUCCESS'); assert.equal(terminal.terminalArtifactId, canonicalArtifactId);
     assert.deepEqual(terminal.inputArtifacts, inputArtifacts);
-    assert.equal((await afterRestart.getByClientRequestId(scoped, clientRequestId)).executionId, executionId);
-    await assert.rejects(() => afterRestart.cancel({ executionId, scope: scoped, expectedRevision: terminal.revision }), /Terminal workflow continuation SUCCESS cannot advance/);
+    assert.equal((await afterTerminalRestart.getByClientRequestId(scoped, clientRequestId)).executionId, executionId);
+    await assert.rejects(() => afterTerminalRestart.cancel({ executionId, scope: scoped, expectedRevision: terminal.revision }), /Terminal workflow continuation SUCCESS cannot advance/);
   } finally {
-    await thirdPool.query('DELETE FROM workflow_continuations WHERE execution_id=$1', [executionId]).catch(() => undefined);
-    await thirdPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [storedTicket.ticketId]).catch(() => undefined);
-    await thirdPool.end();
+    await fourthPool.query('DELETE FROM workflow_continuations WHERE execution_id=$1', [executionId]).catch(() => undefined);
+    await fourthPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [storedTicket.ticketId]).catch(() => undefined);
+    await fourthPool.end();
   }
 });

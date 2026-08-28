@@ -52,7 +52,7 @@ function throwResponseError(response, data, path) {
   if (response.status === 401 && path === '/auth/context') browserCsrfToken = undefined;
   const error = new Error(data?.message || `Core API request failed (${response.status})`);
   error.status = response.status;
-  error.code = data?.code;
+  error.code = data?.code ?? data?.error;
   error.correlationId = data?.correlationId;
   error.retryable = data?.retryable ?? false;
   error.data = data;
@@ -143,6 +143,12 @@ export const coreClient = Object.freeze({
     },
     uploadSuperResolutionImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/super-resolution/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
     submitSuperResolution: ({ ticketId, projectId, result }) => request(`/local-execution/super-resolution/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+  },
+  compositeContinuations: {
+    start: (payload) => request('/composite-continuations/start', json('POST', payload)),
+    resume: ({ executionId, projectId }) => request(`/composite-continuations/${encodeURIComponent(executionId)}?${new URLSearchParams({ projectId })}`),
+    uploadOutput: ({ executionId, projectId, bytes, mimeType }) => request(`/composite-continuations/${encodeURIComponent(executionId)}/output?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': mimeType }, body: bytes }),
+    submitResult: ({ executionId, projectId, result }) => request(`/composite-continuations/${encodeURIComponent(executionId)}/result`, json('POST', { projectId, result })),
   },
   artifacts: {
     persistMask: ({ projectId, sourceImageArtifactId, parentMaskArtifactId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, sourceImageArtifactId, ...(parentMaskArtifactId && { parentMaskArtifactId }), width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),

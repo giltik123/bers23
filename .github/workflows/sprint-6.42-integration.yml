@@ -105,7 +105,12 @@ jobs:
           cp server/core/auth/migrations/010_registration_attempt_binding.sql .test-cache/6.42-integration/migrations/
           cp server/core/auth/migrations/011_auth_abuse_session_controls.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/012_local_execution_uploads.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/014_canonical_mask_lineage.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
           node --test .test-cache/6.42-integration/background-isolation-postgres-vertical.test.mjs
       - name: C3 Real-ESRGAN candidate, canonical and browser/server contracts
         run: |
@@ -172,7 +177,12 @@ jobs:
           cp server/core/auth/migrations/010_registration_attempt_binding.sql .test-cache/6.42-integration/migrations/
           cp server/core/auth/migrations/011_auth_abuse_session_controls.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/012_local_execution_uploads.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/014_canonical_mask_lineage.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/017_local_segmentation_mask_lineage.sql .test-cache/6.42-integration/migrations/
+          cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/6.42-integration/migrations/
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
           node --test .test-cache/6.42-integration/project-dimension-history-postgres.test.mjs
           node --test .test-cache/6.42-integration/realesrgan-postgres-vertical.test.mjs
       - name: C5 MODNet candidate trust, export and release contracts

@@ -184,7 +184,22 @@ jobs:
       - name: Migrate container smoke database
         env:
           DATABASE_URL: postgresql://core_image_test:core_image_test@127.0.0.1:5432/core_image_test
-        run: npm run db:migrate:transactions
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+          node --experimental-strip-types --input-type=module <<'NODE'
+          import { Pool } from 'pg';
+          import { migrateFinalImageLineageSchema, checkFinalImageLineageSchema } from './server/core/artifacts/finalImageLineageSchema.ts';
+          import { migrateWorkflowContinuationSchema, checkWorkflowContinuationSchema } from './server/core/workflow/workflowContinuationSchema.ts';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-production-image-smoke-c5b-migrations' });
+          try {
+            await migrateWorkflowContinuationSchema(pool);
+            await migrateFinalImageLineageSchema(pool);
+            await checkWorkflowContinuationSchema(pool);
+            await checkFinalImageLineageSchema(pool);
+          } finally { await pool.end(); }
+          console.log('Production smoke canonical C5B schema: ready');
+          NODE
       - name: Build production image
         run: docker build --tag bers-core:${{ github.sha }} .
       - name: Prove sharp loads in the production image
