@@ -1,9 +1,18 @@
 import type { CanonicalPlanningPort, CreativeDecision, CreativeOperation, CreativePlan, CreativePlanArtifactSnapshot, CreativePlanCandidate, CreativePlanConstraints, CreativePlannerConfigSnapshot, CreativePlanProvenance, CreativePlanScore, CreativePlanStatus, CreativePlanUncertainty, CreativeRequest, ExecutionTarget, PlanningConfirmationPolicy, PlanningExecutionPolicy, PlanningTelemetryPort } from '../contracts';
 import { buildExplanation, buildReplay, emitPlanTelemetry, fallbackFor, immutable, verificationFor } from './advisoryPolicies';
+import {
+  RESIZE_MAX_DIMENSION,
+  RESIZE_MAX_OUTPUT_PIXELS,
+  RESIZE_OPERATION,
+  RESIZE_STEP_ID,
+  RESIZE_TOOL_ID,
+  RESIZE_TOOL_VERSION,
+} from '../../deterministic/ResizeIdentity.js';
 
 export const CANONICAL_PLANNER_VERSION = '6.42C3.1';
 type Options = Readonly<{ plannerVersion?: string; minimumIntentConfidence?: number; minimumTargetConfidence?: number; maximumPreservationRisk?: number; compositeExecutionEnabled?: boolean; localCompositeContinuationEnabled?: boolean; telemetry?: PlanningTelemetryPort }>;
 type PlannerCropRect = Readonly<{ x: number; y: number; width: number; height: number }>;
+type PlannerResizeDimensions = Readonly<{ width: number; height: number }>;
 
 /** Deterministic advisory planner. Canonical Core revalidates every proposal. */
 export class CanonicalPlanningService implements CanonicalPlanningPort {
@@ -18,12 +27,14 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const interactiveSegmentation = request.metadata?.operationIntent === 'INTERACTIVE_SEGMENTATION';
     const backgroundIsolation = request.metadata?.operationIntent === 'BACKGROUND_ISOLATION';
     const crop = request.metadata?.operationIntent === 'CROP';
+    const resize = request.metadata?.operationIntent === RESIZE_OPERATION;
     const superResolution = request.metadata?.operationIntent === 'SUPER_RESOLUTION';
     const localComposite = request.metadata?.operationIntent === 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE';
     const composite = request.metadata?.operationIntent === 'COMPOSITE_REPLACE_RELIGHT';
     const requestedIsolationSourceId = backgroundIsolation && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedIsolationMaskId = backgroundIsolation && typeof request.metadata?.maskArtifactId === 'string' ? request.metadata.maskArtifactId : undefined;
     const requestedCropSourceId = crop && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+    const requestedResizeSourceId = resize && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedSuperResolutionSourceId = superResolution && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const localCompositeOriginalUnavailable = localComposite && !artifacts.some(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
     const compositeOriginalUnavailable = composite && !artifacts.some(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
@@ -32,27 +43,31 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const isolationMaskUnavailable = backgroundIsolation && !artifacts.some(artifact => artifact.kind === 'mask' && artifact.role === 'MASK' && (!requestedIsolationMaskId || artifact.id === requestedIsolationMaskId));
     const cropSourceUnavailable = crop && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedCropSourceId || artifact.id === requestedCropSourceId));
     const cropRectInvalid = crop && !readPlannerCropRect(request.metadata?.cropRect);
+    const resizeSourceUnavailable = resize && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedResizeSourceId || artifact.id === requestedResizeSourceId));
+    const resizeDimensionsInvalid = resize && !readPlannerResizeDimensions(request.metadata?.resizeDimensions);
     const superResolutionSourceUnavailable = superResolution && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedSuperResolutionSourceId || artifact.id === requestedSuperResolutionSourceId));
-    const strategies = crop
-      ? [cropOperations(artifacts, constraints, request)]
-      : superResolution
-        ? [superResolutionOperations(artifacts, constraints, request)]
-        : backgroundIsolation
-          ? [backgroundIsolationOperations(artifacts, constraints, request)]
-          : interactiveSegmentation
-            ? [interactiveSegmentationOperations(artifacts, constraints, request)]
-            : localComposite
-              ? [localCompositeOperations(artifacts, constraints, request)]
-              : composite
-                ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)]
-                : [simpleOperations(request, artifacts, constraints)];
+    const strategies = resize
+      ? [resizeOperations(artifacts, constraints, request)]
+      : crop
+        ? [cropOperations(artifacts, constraints, request)]
+        : superResolution
+          ? [superResolutionOperations(artifacts, constraints, request)]
+          : backgroundIsolation
+            ? [backgroundIsolationOperations(artifacts, constraints, request)]
+            : interactiveSegmentation
+              ? [interactiveSegmentationOperations(artifacts, constraints, request)]
+              : localComposite
+                ? [localCompositeOperations(artifacts, constraints, request)]
+                : composite
+                  ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)]
+                  : [simpleOperations(request, artifacts, constraints)];
     const rawCandidates = strategies.map((operations, index) => candidate(
       localComposite ? 'local-continuation' : index === 0 ? 'local-efficient' : 'cloud-quality',
       operations,
       localComposite ? 'LOCAL' : index === 0 ? 'LOCAL' : 'CLOUD',
       localComposite ? 0 : composite ? (index === 0 ? 1 : 5) : 0,
-      localComposite ? 180 : composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : crop ? 5 : superResolution ? 900 : 0,
-      localComposite ? 1 : composite ? (index === 0 ? .76 : .94) : backgroundIsolation || crop ? 1 : superResolution ? .9 : .9,
+      localComposite ? 180 : composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : crop ? 5 : resize ? 25 : superResolution ? 900 : 0,
+      localComposite ? 1 : composite ? (index === 0 ? .76 : .94) : backgroundIsolation || crop || resize ? 1 : superResolution ? .9 : .9,
       uncertainty.aggregateConfidence,
     ));
     const ranked = rankAndFilter(rawCandidates, constraints);
@@ -71,17 +86,19 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     if (isolationMaskUnavailable) confirmationReasons.push('CANONICAL_MASK_REQUIRED');
     if (cropSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
     if (cropRectInvalid) confirmationReasons.push('INVALID_CROP_RECT');
+    if (resizeSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
+    if (resizeDimensionsInvalid) confirmationReasons.push('INVALID_RESIZE_DIMENSIONS');
     if (superResolutionSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
     if (localCompositeOriginalUnavailable) confirmationReasons.push('CANONICAL_ORIGINAL_REQUIRED');
     if (compositeOriginalUnavailable) confirmationReasons.push('CANONICAL_ORIGINAL_REQUIRED');
     if (localCompositeExecutionUnavailable) confirmationReasons.push('LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED');
     if (compositeExecutionUnavailable) confirmationReasons.push('COMPOSITE_EXECUTION_NOT_WIRED');
-    const hardBlocked = segmentationInputUnavailable || isolationSourceUnavailable || isolationMaskUnavailable || cropSourceUnavailable || cropRectInvalid || superResolutionSourceUnavailable || localCompositeExecutionUnavailable || localCompositeOriginalUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK');
+    const hardBlocked = segmentationInputUnavailable || isolationSourceUnavailable || isolationMaskUnavailable || cropSourceUnavailable || cropRectInvalid || resizeSourceUnavailable || resizeDimensionsInvalid || superResolutionSourceUnavailable || localCompositeExecutionUnavailable || localCompositeOriginalUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK');
     const status: CreativePlanStatus = hardBlocked ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
     const operations = immutable(status === 'BLOCKED' ? [] : selected?.operations ?? []);
     const rejected = immutable(candidates.filter(item => item.status === 'REJECTED').map(({ id, reasonCodes }) => ({ id, reasonCodes })));
-    const planReason = crop ? 'CROP_LOCAL_DETERMINISTIC_V1' : superResolution ? 'SUPER_RESOLUTION_LOCAL_MODEL_V1' : backgroundIsolation ? 'BACKGROUND_ISOLATION_LOCAL_DETERMINISTIC_V1' : interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : localComposite ? 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
-    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(isolationSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(isolationMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(cropSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(cropRectInvalid ? ['INVALID_CROP_RECT'] : []), ...(superResolutionSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(localCompositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(localCompositeExecutionUnavailable ? ['LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
+    const planReason = resize ? 'RESIZE_LOCAL_DETERMINISTIC_V1' : crop ? 'CROP_LOCAL_DETERMINISTIC_V1' : superResolution ? 'SUPER_RESOLUTION_LOCAL_MODEL_V1' : backgroundIsolation ? 'BACKGROUND_ISOLATION_LOCAL_DETERMINISTIC_V1' : interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : localComposite ? 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
+    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(isolationSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(isolationMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(cropSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(cropRectInvalid ? ['INVALID_CROP_RECT'] : []), ...(resizeSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(resizeDimensionsInvalid ? ['INVALID_RESIZE_DIMENSIONS'] : []), ...(superResolutionSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(localCompositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(localCompositeExecutionUnavailable ? ['LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
     provenance = immutable({ ...provenance, replay: buildReplay(this.#options.plannerVersion, plannerConfig, { provenance, selectedCandidateId: selected?.id }) });
     const result = immutable({ requestId: request.id, operations, status, planningConstraints: constraints, candidates, selectedCandidateId: selected?.id, uncertainty, confirmationReasons: immutable(confirmationReasons), proposalId: `${this.#options.plannerVersion}:${request.id}`, plannerVersion: this.#options.plannerVersion, goal: decision.goal, assumptions: [], constraints: [...decision.constraints], provenance, explanation: buildExplanation(this.#options.plannerVersion, plannerConfig, selected, candidates, constraints, uncertainty, confirmationReasons) });
     void emitPlanTelemetry(this.#options.telemetry, result);
@@ -136,6 +153,34 @@ function cropOperations(artifacts: readonly CreativePlanArtifactSnapshot[], cons
       deterministicTool: 'crop@1',
       coordinateSpace: 'CANONICAL_ORIENTATION_1_PIXEL_INDICES',
       rectangleSemantics: 'HALF_OPEN',
+    }),
+  }]);
+}
+
+function resizeOperations(artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints, request: CreativeRequest): readonly CreativeOperation[] {
+  const requestedSourceId = typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+  const source = artifacts.find(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedSourceId || artifact.id === requestedSourceId));
+  const dimensions = readPlannerResizeDimensions(request.metadata?.resizeDimensions);
+  if (!source || !dimensions) return immutable([]);
+  return immutable([{
+    id: RESIZE_STEP_ID,
+    type: RESIZE_OPERATION,
+    requiredArtifacts: [source.id],
+    produces: ['image'],
+    outputArtifacts: ['resize:composite'],
+    verification: verificationFor(RESIZE_STEP_ID, RESIZE_OPERATION, constraints, 'image'),
+    input: Object.freeze({
+      sourceArtifactId: source.id,
+      width: dimensions.width,
+      height: dimensions.height,
+      deterministicTool: `${RESIZE_TOOL_ID}@${RESIZE_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_PIXEL_CENTERS',
+      interpolation: 'BILINEAR_FIXED_16_16_PIXEL_CENTER',
+      fixedPointBits: 16,
+      rounding: 'ROUND_HALF_UP',
+      borderPolicy: 'CLAMP_TO_EDGE',
+      alphaPolicy: 'PREMULTIPLIED_ALPHA_WITH_STRAIGHT_RGB_WHEN_WEIGHTED_ALPHA_ZERO',
+      maxOutputPixels: RESIZE_MAX_OUTPUT_PIXELS,
     }),
   }]);
 }
@@ -233,6 +278,7 @@ export function rankAndFilter(input: readonly CreativePlanCandidate[], constrain
 function readConstraints(request: CreativeRequest, decision: CreativeDecision): CreativePlanConstraints { const source = object(request.metadata?.planningConstraints); const policy = enumValue(source.executionPolicy, ['LOCAL_ONLY', 'CLOUD_ALLOWED', 'CLOUD_PREFERRED', 'AUTO'], 'AUTO') as PlanningExecutionPolicy; return { preserveMode: stringValue(source.preserveMode, stringValue(request.metadata?.preserveMode, 'STRICT')), mustPreserve: strings(source.mustPreserve), mustChange: strings(source.mustChange), forbiddenTargets: strings(source.forbiddenTargets).filter(value => ['LOCAL', 'CLOUD', 'HYBRID'].includes(value)) as Exclude<ExecutionTarget, 'BLOCKED'>[], forbiddenRegions: strings(source.forbiddenRegions), executionPolicy: policy, maxCredits: numberValue(source.maxCredits), maxLatencyMs: numberValue(source.maxLatencyMs), minimumQuality: numberValue(source.minimumQuality), confirmationPolicy: enumValue(source.confirmationPolicy, ['ASK', 'BLOCK', 'ALLOW_PRESERVATION_RISK'], 'ASK') as PlanningConfirmationPolicy }; }
 function readUncertainty(request: CreativeRequest): CreativePlanUncertainty { const source = object(request.metadata?.uncertainty); const intentInterpretation = confidence(source.intentInterpretation, .95); const targetResolution = confidence(source.targetResolution, .95); const feasibilityCapability = confidence(source.feasibilityCapability, .9); const preservationRisk = confidence(source.preservationRisk, .1); return { intentInterpretation, targetResolution, feasibilityCapability, preservationRisk, aggregateConfidence: round((intentInterpretation + targetResolution + feasibilityCapability + (1 - preservationRisk)) / 4) }; }
 function readPlannerCropRect(value: unknown): PlannerCropRect | undefined { const source = object(value); const x = source.x; const y = source.y; const width = source.width; const height = source.height; if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || Number(x) < 0 || Number(y) < 0 || Number(width) < 1 || Number(height) < 1) return undefined; return immutable({ x: Number(x), y: Number(y), width: Number(width), height: Number(height) }); }
+function readPlannerResizeDimensions(value: unknown): PlannerResizeDimensions | undefined { const source = object(value); const width = source.width; const height = source.height; if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || Number(width) < 1 || Number(height) < 1 || Number(width) > RESIZE_MAX_DIMENSION || Number(height) > RESIZE_MAX_DIMENSION) return undefined; const pixels = Number(width) * Number(height); if (!Number.isSafeInteger(pixels) || pixels > RESIZE_MAX_OUTPUT_PIXELS) return undefined; return immutable({ width: Number(width), height: Number(height) }); }
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function strings(value: unknown): string[] { return Array.isArray(value) ? value.filter(item => typeof item === 'string') : []; }
 function numberValue(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined; }
