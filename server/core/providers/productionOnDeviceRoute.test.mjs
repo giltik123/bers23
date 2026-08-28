@@ -3,6 +3,7 @@ import test from 'node:test';
 import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES, LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT } from '../../../src/platform/creative/canonical/localComposite.ts';
 import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
+import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { ProductionExecutionCapabilityRegistry } from './productionExecutionCapabilities.ts';
 import { productionExecutionRoute } from './productionExecutionRoute.ts';
 import { productionTargetSelection } from './productionTargetSelection.ts';
@@ -12,6 +13,7 @@ const segment = Object.freeze({ id: 'segment-step', type: 'segment', requiredArt
 const backgroundIsolation = Object.freeze({ id: 'background-isolation-step', type: 'BACKGROUND_ISOLATION', requiredArtifacts: ['input', 'mask'], produces: ['image'] });
 const crop = Object.freeze({ id: 'crop', type: 'CROP', requiredArtifacts: ['input'], produces: ['image'] });
 const resize = Object.freeze({ id: 'resize', type: 'RESIZE', requiredArtifacts: ['input'], produces: ['image'] });
+const orthogonalTransform = Object.freeze({ id: 'orthogonal-transform', type: 'ORTHOGONAL_TRANSFORM', requiredArtifacts: ['input'], produces: ['image'] });
 const verify = Object.freeze({ id: 'verify-step', type: 'verify', requiredArtifacts: ['composite'], produces: ['image'] });
 
 test('production segmentation selects ON_DEVICE + LOCAL', () => {
@@ -56,6 +58,20 @@ test('deterministic Resize is admitted only for its exact RESIZE purpose and LOC
   assert.equal(registry.admit({ request: resizeRequest, operation: { ...resize, providerId: 'fal' }, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'PROVIDER_FORBIDDEN');
 });
 
+test('deterministic orthogonal transform is admitted only for its exact purpose and LOCAL ON_DEVICE tuple', () => {
+  const registry = new ProductionExecutionCapabilityRegistry();
+  const orthogonalRequest = { ...request, metadata: { operationIntent: 'ORTHOGONAL_TRANSFORM' } };
+  assert.equal(productionExecutionRoute.select(orthogonalTransform, orthogonalRequest), 'ON_DEVICE');
+  assert.equal(productionTargetSelection.select(orthogonalTransform, orthogonalRequest), 'LOCAL');
+  assert.deepEqual(registry.admit({ request: orthogonalRequest, operation: orthogonalTransform, route: 'ON_DEVICE', target: 'LOCAL' }), {
+    allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: ORTHOGONAL_TRANSFORM_CAPABILITY,
+  });
+  assert.equal(registry.admit({ request, operation: orthogonalTransform, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
+  assert.equal(registry.admit({ request: orthogonalRequest, operation: orthogonalTransform, route: 'ON_DEVICE', target: 'CLOUD' }).reasonCode, 'UNSUPPORTED_TARGET');
+  assert.equal(registry.admit({ request: orthogonalRequest, operation: orthogonalTransform, route: 'PROVIDER', target: 'LOCAL' }).reasonCode, 'PROVIDER_REQUIRED');
+  assert.equal(registry.admit({ request: orthogonalRequest, operation: { ...orthogonalTransform, providerId: 'fal' }, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'PROVIDER_FORBIDDEN');
+});
+
 test('narrow C5B composite receives only its exact purpose-bound segment, isolation and verify capabilities', () => {
   const registry = new ProductionExecutionCapabilityRegistry();
   const narrowComposite = { ...request, metadata: { operationIntent: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT } };
@@ -70,6 +86,7 @@ test('narrow C5B composite receives only its exact purpose-bound segment, isolat
   });
   assert.equal(registry.admit({ request: narrowComposite, operation: crop, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
   assert.equal(registry.admit({ request: narrowComposite, operation: resize, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
+  assert.equal(registry.admit({ request: narrowComposite, operation: orthogonalTransform, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
 });
 
 test('generic and broad composite operations cannot inherit narrow or standalone local model/tool authority', () => {
@@ -81,6 +98,7 @@ test('generic and broad composite operations cannot inherit narrow or standalone
     assert.equal(registry.admit({ request: candidateRequest, operation: backgroundIsolation, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
     assert.equal(registry.admit({ request: candidateRequest, operation: crop, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
     assert.equal(registry.admit({ request: candidateRequest, operation: resize, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
+    assert.equal(registry.admit({ request: candidateRequest, operation: orthogonalTransform, route: 'ON_DEVICE', target: 'LOCAL' }).reasonCode, 'UNSUPPORTED_OPERATION');
   }
 });
 

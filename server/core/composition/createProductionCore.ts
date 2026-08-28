@@ -20,7 +20,7 @@ import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts'
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
-import { LocalCropExecutionService, LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalResizeExecutionService, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
+import { LocalCropExecutionService, LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalOrthogonalTransformExecutionService, LocalResizeExecutionService, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, OrthogonalTransformInputDeliveryService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../localExecution/productionLocalExecutorPolicy.ts';
 import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
@@ -187,6 +187,23 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
       now,
     });
+    const localOrthogonalTransform = new LocalOrthogonalTransformExecutionService({
+      platform: canonical,
+      ownsArtifacts,
+      hydrateArtifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels, maxUploadBytes: config.imageUploadLimitBytes }),
+      persistFinal: (scope, executionId, operationId, image, lineage) => {
+        const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
+        if (!sourceImageStorageId || lineage.producerOperation !== 'ORTHOGONAL_TRANSFORM') throw new Error('Orthogonal-transform FINAL requires one stored canonical IMAGE parent');
+        return artifacts.images.persistFinal(scope, executionId, operationId, image, { sourceImageStorageId, producerOperation: 'ORTHOGONAL_TRANSFORM' });
+      },
+      loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
+      issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
+      now,
+    });
+    const orthogonalTransformInputDelivery = new OrthogonalTransformInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
     const localSuperResolution = new LocalSuperResolutionExecutionService({
       platform: canonical,
       ownsArtifacts,
@@ -230,7 +247,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       sessionIdleTtlMs: config.authSessionIdleTtlMs,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
-    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, crop: localCrop, resize: localResize, superResolution: localSuperResolution, inputDelivery: localInputDelivery, composite: localComposite }), transactions, close: () => transactions.close() });
+    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, crop: localCrop, resize: localResize, orthogonalTransform: localOrthogonalTransform, orthogonalTransformInputDelivery, superResolution: localSuperResolution, inputDelivery: localInputDelivery, composite: localComposite }), transactions, close: () => transactions.close() });
   } catch (error) { await transactions.close(); throw error; }
 }
 

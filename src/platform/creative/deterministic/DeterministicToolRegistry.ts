@@ -22,6 +22,14 @@ import {
   RESIZE_TOOL_ID,
   RESIZE_TOOL_VERSION,
 } from './ResizeIdentity.js';
+import {
+  ORTHOGONAL_TRANSFORM_CAPABILITY,
+  ORTHOGONAL_TRANSFORM_MODES,
+  ORTHOGONAL_TRANSFORM_OPERATION,
+  ORTHOGONAL_TRANSFORM_STEP_ID,
+  ORTHOGONAL_TRANSFORM_TOOL_ID,
+  ORTHOGONAL_TRANSFORM_TOOL_VERSION,
+} from './OrthogonalTransformIdentity.js';
 
 export type DeterministicToolInputContract = Readonly<{
   name: string;
@@ -36,7 +44,7 @@ export type DeterministicToolOutputContract = Readonly<{
   role: CreativeArtifactRole;
   count: 1;
   mimeTypes: readonly string[];
-  geometry: 'MATCH_SOURCE' | 'CROP_RECT' | 'TARGET_DIMENSIONS';
+  geometry: 'MATCH_SOURCE' | 'CROP_RECT' | 'TARGET_DIMENSIONS' | 'ORTHOGONAL_MODE';
 }>;
 
 export type DeterministicToolIntegerBound = Readonly<{
@@ -49,6 +57,7 @@ export type DeterministicToolParameterContract = Readonly<{
   artifactIdBindings: readonly Readonly<{ parameter: string; input: string }>[];
   exact: Readonly<Record<string, string | number | boolean>>;
   integerBounds?: readonly DeterministicToolIntegerBound[];
+  enumValues?: readonly Readonly<{ parameter: string; values: readonly string[] }>[];
   relationships?: readonly ('X_PLUS_WIDTH_LE_SOURCE_WIDTH' | 'Y_PLUS_HEIGHT_LE_SOURCE_HEIGHT' | 'TARGET_PIXELS_LE_RESIZE_MAX_OUTPUT_PIXELS')[];
 }>;
 
@@ -72,7 +81,7 @@ export type DeterministicToolDefinition = Readonly<{
     format: 'RGBA8';
     colorSpace: 'srgb';
     orientation: 1;
-    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY';
+    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION';
     alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP';
     interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER';
     rounding?: 'INTEGER_EXACT' | 'ROUND_HALF_UP';
@@ -220,6 +229,46 @@ const resizeDefinition: DeterministicToolDefinition = deepFreeze({
   lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: RESIZE_OPERATION },
 });
 
+const orthogonalTransformDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: ORTHOGONAL_TRANSFORM_CAPABILITY,
+  operation: { id: ORTHOGONAL_TRANSFORM_STEP_ID, type: ORTHOGONAL_TRANSFORM_OPERATION, version: '1' },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: ORTHOGONAL_TRANSFORM_TOOL_ID, version: ORTHOGONAL_TRANSFORM_TOOL_VERSION },
+  inputs: [
+    { name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+  ],
+  output: { kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: ['image/png'], geometry: 'ORTHOGONAL_MODE' },
+  parameters: {
+    artifactIdBindings: [{ parameter: 'sourceArtifactId', input: 'source' }],
+    exact: {
+      deterministicTool: `${ORTHOGONAL_TRANSFORM_TOOL_ID}@${ORTHOGONAL_TRANSFORM_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_INTEGER_PIXEL_INDICES',
+      mapping: 'ORTHOGONAL_INVERSE_INDEX_PERMUTATION',
+      interpolation: 'NONE',
+      rounding: 'INTEGER_EXACT',
+      alphaPolicy: 'COPY_RGBA_TUPLE_EXACTLY',
+    },
+    enumValues: [{ parameter: 'mode', values: ORTHOGONAL_TRANSFORM_MODES }],
+  },
+  browser: { executorId: 'orthogonal-transform-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'orthogonal-transform-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION',
+    alpha: 'COPY_SOURCE_ALPHA_BYTES',
+    interpolation: 'NONE',
+    rounding: 'INTEGER_EXACT',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+  },
+  lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: ORTHOGONAL_TRANSFORM_OPERATION },
+});
+
 /**
  * Data-only deterministic tool catalog. It describes already-reviewed tool contracts;
  * it is not capability admission and contains no executable callback or fallback.
@@ -229,11 +278,13 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
   backgroundIsolationDefinition,
   cropDefinition,
   resizeDefinition,
+  orthogonalTransformDefinition,
 ]);
 
 export const BACKGROUND_ISOLATION_TOOL_DEFINITION = backgroundIsolationDefinition;
 export const CROP_TOOL_DEFINITION = cropDefinition;
 export const RESIZE_TOOL_DEFINITION = resizeDefinition;
+export const ORTHOGONAL_TRANSFORM_TOOL_DEFINITION = orthogonalTransformDefinition;
 
 export function findDeterministicToolByCapability(capability: string): DeterministicToolDefinition | undefined {
   return DETERMINISTIC_TOOL_REGISTRY.find(definition => definition.capability === capability);

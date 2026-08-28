@@ -1,10 +1,16 @@
 import type { Artifact, WorkflowOperation, WorkflowVerifierPort, VerificationResult } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { CROP_TOOL_ID, CROP_TOOL_VERSION } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS, RESIZE_TOOL_ID, RESIZE_TOOL_VERSION } from '../../../src/platform/creative/deterministic/Resize.ts';
-import { RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import {
+  ORTHOGONAL_TRANSFORM_TOOL_ID,
+  ORTHOGONAL_TRANSFORM_TOOL_VERSION,
+  normalizeOrthogonalTransformMode,
+  orthogonalTransformOutputGeometry,
+} from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
+import { ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { SUPER_RESOLUTION_ALPHA_POLICY, SUPER_RESOLUTION_SCALE } from '../../../src/platform/creative/super-resolution/SuperResolutionContract.ts';
 
-export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C3.1';
+export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C3.2';
 
 const CHECKS = Object.freeze({
   supported: 'PRODUCTION_OPERATION_SUPPORTED',
@@ -81,6 +87,15 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
       const parents = artifacts[0].metadata?.parentArtifactIds;
       if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
       if (!hasValidResizeGeometry(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage, CHECKS.deterministicGeometry], errors: [] });
+    }
+    if (operation.type === 'ORTHOGONAL_TRANSFORM') {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalOrthogonalTransformImage(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicSemantics, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
+      if (!hasValidOrthogonalTransformGeometry(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicGeometry, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage]);
       return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage, CHECKS.deterministicGeometry], errors: [] });
     }
     if (operation.type === 'SUPER_RESOLUTION') {
@@ -177,6 +192,39 @@ function hasValidResizeGeometry(operation: WorkflowOperation, artifact: Artifact
   if (!Number.isSafeInteger(pixels) || pixels > RESIZE_MAX_OUTPUT_PIXELS) return false;
   if (input.width !== width || input.height !== height) return false;
   return artifact.value.width === width && artifact.value.height === height;
+}
+
+function isCanonicalOrthogonalTransformImage(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  if (!metadata || metadata.artifactRole !== 'COMPOSITE' || metadata.localExecutionAdmission !== 'ADMITTED') return false;
+  if (metadata.admissionClass !== 'DETERMINISTIC_BYTE_EXACT' || metadata.verificationScope !== 'BYTE_EXACT_CORE_RECOMPUTE') return false;
+  if (metadata.executorKind !== 'DETERMINISTIC_TOOL' || metadata.toolId !== ORTHOGONAL_TRANSFORM_TOOL_ID || metadata.toolVersion !== ORTHOGONAL_TRANSFORM_TOOL_VERSION) return false;
+  if (metadata.runtime !== 'BROWSER_JS' || metadata.accelerator !== 'cpu') return false;
+  if (!sha256(metadata.candidateSha256) || !sha256(metadata.verifiedPixelSha256)) return false;
+  const exact = ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.parameters.exact;
+  if (metadata.coordinateSpace !== exact.coordinateSpace || metadata.mapping !== exact.mapping || metadata.interpolation !== exact.interpolation || metadata.rounding !== exact.rounding || metadata.alphaPolicy !== exact.alphaPolicy) return false;
+  const integrity = metadata.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  if (integrity?.verificationOutcome !== 'PASS' || integrity.pixelComparison !== 'BYTE_EXACT') return false;
+  const input = operation.input;
+  if (!input || input.deterministicTool !== exact.deterministicTool || input.coordinateSpace !== exact.coordinateSpace || input.mapping !== exact.mapping || input.interpolation !== exact.interpolation || input.rounding !== exact.rounding || input.alphaPolicy !== exact.alphaPolicy) return false;
+  try {
+    const mode = normalizeOrthogonalTransformMode(input.mode);
+    return metadata.orthogonalTransformMode === mode;
+  } catch { return false; }
+}
+
+function hasValidOrthogonalTransformGeometry(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  const sourceWidth = exactInteger(metadata?.sourceWidth, 1); const sourceHeight = exactInteger(metadata?.sourceHeight, 1);
+  if (sourceWidth === undefined || sourceHeight === undefined || !operation.input) return false;
+  try {
+    const mode = normalizeOrthogonalTransformMode(operation.input.mode);
+    if (metadata?.orthogonalTransformMode !== mode) return false;
+    const expected = orthogonalTransformOutputGeometry(sourceWidth, sourceHeight, mode);
+    return artifact.value.width === expected.width && artifact.value.height === expected.height;
+  } catch { return false; }
 }
 
 function isCanonicalModelAdmittedImage(artifact: Artifact): boolean {

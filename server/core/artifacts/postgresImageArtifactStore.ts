@@ -22,7 +22,13 @@ export type ResizeFinalImageLineage = Readonly<{
   producerOperation: 'RESIZE';
 }>;
 
-export type FinalImageLineage = BackgroundIsolationFinalImageLineage | CropFinalImageLineage | ResizeFinalImageLineage;
+export type OrthogonalTransformFinalImageLineage = Readonly<{
+  sourceImageStorageId: string;
+  maskStorageId?: undefined;
+  producerOperation: 'ORTHOGONAL_TRANSFORM';
+}>;
+
+export type FinalImageLineage = BackgroundIsolationFinalImageLineage | CropFinalImageLineage | ResizeFinalImageLineage | OrthogonalTransformFinalImageLineage;
 
 export type StoredFinalImage = Readonly<{
   storageId: string;
@@ -40,7 +46,7 @@ export type StoredFinalImage = Readonly<{
   bytes: Uint8Array;
   sourceImageStorageId?: string;
   maskStorageId?: string;
-  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP' | 'RESIZE';
+  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM';
 }>;
 export type StoredImage = Omit<StoredFinalImage, 'executionId'|'operationId'|'role'|'lifecycle'> & { executionId?: string; operationId?: string; role: 'ORIGINAL'|'COMPOSITE'; lifecycle: 'IMMUTABLE'|'FINAL' };
 
@@ -125,6 +131,10 @@ function normalizeLineage(value: FinalImageLineage): FinalImageLineage {
   if (value.producerOperation === 'RESIZE') {
     if (value.maskStorageId !== undefined) throw new Error('Canonical Resize FINAL must not carry MASK lineage');
     return Object.freeze({ sourceImageStorageId, producerOperation: 'RESIZE' as const });
+  }
+  if (value.producerOperation === 'ORTHOGONAL_TRANSFORM') {
+    if (value.maskStorageId !== undefined) throw new Error('Canonical orthogonal-transform FINAL must not carry MASK lineage');
+    return Object.freeze({ sourceImageStorageId, producerOperation: 'ORTHOGONAL_TRANSFORM' as const });
   }
   throw new Error('Canonical FINAL producer operation is not admitted for lineage');
 }

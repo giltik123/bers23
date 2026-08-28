@@ -3,7 +3,8 @@ import test from 'node:test';
 import './deterministic-crop-workflow-verifier.test.ts';
 import { CROP_CAPABILITY, CROP_TOOL_ID, CROP_TOOL_VERSION, cropRgba8, normalizeCropRect } from '../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_CAPABILITY } from '../src/platform/creative/deterministic/Resize.ts';
-import { CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../src/platform/creative/deterministic/OrthogonalTransform.ts';
+import { CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
 const source = new Uint8ClampedArray([
@@ -35,10 +36,11 @@ test('Crop v1 rejects fractional, empty, negative and out-of-bounds rectangles w
 });
 
 test('Crop registry contract is immutable data and production executor admission stays explicit', () => {
-  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 3, 'Background Isolation, Crop and Resize are the reviewed deterministic tools');
+  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 4, 'Background Isolation, Crop, Resize and Orthogonal Transform are the reviewed deterministic tools');
   assert.equal(requireDeterministicToolByCapability(CROP_CAPABILITY), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor({ kind: 'DETERMINISTIC_TOOL', toolId: CROP_TOOL_ID, version: CROP_TOOL_VERSION }), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(RESIZE_CAPABILITY), RESIZE_TOOL_DEFINITION, 'adding Resize must not weaken Crop identity or registry lookup');
+  assert.equal(requireDeterministicToolByCapability(ORTHOGONAL_TRANSFORM_CAPABILITY), ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, 'adding Orthogonal Transform must not weaken Crop identity or registry lookup');
   assert.deepEqual(CROP_TOOL_DEFINITION.operation, { id: 'crop', type: 'CROP', version: '1' });
   assert.deepEqual(CROP_TOOL_DEFINITION.executor, { kind: 'DETERMINISTIC_TOOL', toolId: 'crop', version: '1' });
   assert.deepEqual(CROP_TOOL_DEFINITION.inputs, [{ name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' }]);
@@ -56,6 +58,7 @@ test('Crop registry contract is immutable data and production executor admission
   assert.equal(isDeepFrozen(CROP_TOOL_DEFINITION), true);
   assert.deepEqual(productionLocalExecutorsByCapability[CROP_CAPABILITY], [CROP_TOOL_DEFINITION.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[RESIZE_CAPABILITY], [RESIZE_TOOL_DEFINITION.executor]);
+  assert.deepEqual(productionLocalExecutorsByCapability[ORTHOGONAL_TRANSFORM_CAPABILITY], [ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.executor]);
   assert.throws(() => requireDeterministicToolByCapability('local:tool:unknown:v1'), /not registered/);
 });
 
