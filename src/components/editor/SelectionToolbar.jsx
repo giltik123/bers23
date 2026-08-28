@@ -3,11 +3,11 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
-      <Button type="button" variant="outline" onClick={onStart}>Smart Select</Button>
-      <Button type="button" variant="outline" disabled={!canIsolateBackground || isolatingBackground} onClick={onIsolateBackground}>
+      <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
+      <Button type="button" variant="outline" disabled={startDisabled || !canIsolateBackground || isolatingBackground} onClick={onIsolateBackground}>
         {isolatingBackground && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         {isolatingBackground ? 'Removing background…' : 'Remove background'}
       </Button>
