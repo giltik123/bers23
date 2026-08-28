@@ -47,7 +47,7 @@ jobs:
           node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
       - name: Prove PostgreSQL tamper rejection durable lineage restart replay and zero cloud
         run: |
-          mkdir -p .test-cache/resize-postgres/migrations .test-cache/resize-postgres/artifacts/migrations
+          mkdir -p .test-cache/resize-postgres/migrations .test-cache/artifacts/migrations
           npx esbuild tests/deterministic-resize-postgres-vertical.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/resize-postgres/deterministic-resize-postgres-vertical.test.mjs \
@@ -69,7 +69,7 @@ jobs:
           cp server/core/artifacts/migrations/018_canonical_final_image_lineage.sql .test-cache/resize-postgres/migrations/
           cp server/core/artifacts/migrations/019_canonical_crop_final_lineage.sql .test-cache/resize-postgres/migrations/
           cp server/core/artifacts/migrations/020_canonical_resize_final_lineage.sql .test-cache/resize-postgres/migrations/
-          cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/resize-postgres/artifacts/migrations/
-          cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/resize-postgres/artifacts/migrations/
-          cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/resize-postgres/artifacts/migrations/
+          cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
           node --test --test-concurrency=1 .test-cache/resize-postgres/deterministic-resize-postgres-vertical.test.mjs
