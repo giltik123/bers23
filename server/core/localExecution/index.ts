@@ -9,6 +9,7 @@ export * from './LocalDeterministicImageExecutionService.ts';
 export * from './LocalCropExecutionService.ts';
 export * from './LocalResizeExecutionService.ts';
 export * from './LocalOrthogonalTransformExecutionService.ts';
+export * from './OrthogonalTransformInputDeliveryService.ts';
 export * from './LocalSuperResolutionExecutionService.ts';
 export * from './LocalExecutionInputDeliveryService.ts';
 export * from './localExecutionLedgerSchema.ts';
