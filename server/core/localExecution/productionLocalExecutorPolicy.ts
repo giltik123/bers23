@@ -4,6 +4,7 @@ import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../../../src/
 import { BACKGROUND_ISOLATION_CAPABILITY } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
 import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
+import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { requireDeterministicToolByCapability } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { REAL_ESRGAN_LOCAL_CAPABILITY, isExecutableRealEsrganRelease } from './productionLocalModelPolicy.ts';
 
@@ -13,6 +14,8 @@ const cropTool = requireDeterministicToolByCapability(CROP_CAPABILITY);
 const cropExecutors = Object.freeze([cropTool.executor]);
 const resizeTool = requireDeterministicToolByCapability(RESIZE_CAPABILITY);
 const resizeExecutors = Object.freeze([resizeTool.executor]);
+const orthogonalTransformTool = requireDeterministicToolByCapability(ORTHOGONAL_TRANSFORM_CAPABILITY);
+const orthogonalTransformExecutors = Object.freeze([orthogonalTransformTool.executor]);
 
 const realEsrganExecutors: readonly LocalExecutionExecutorBinding[] = isExecutableRealEsrganRelease(upscaleManifest)
   ? Object.freeze([Object.freeze({
@@ -33,5 +36,6 @@ export const productionLocalExecutorsByCapability: Readonly<Record<string, reado
   [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation]: backgroundIsolationExecutors,
   [CROP_CAPABILITY]: cropExecutors,
   [RESIZE_CAPABILITY]: resizeExecutors,
+  [ORTHOGONAL_TRANSFORM_CAPABILITY]: orthogonalTransformExecutors,
   [REAL_ESRGAN_LOCAL_CAPABILITY]: realEsrganExecutors,
 });
