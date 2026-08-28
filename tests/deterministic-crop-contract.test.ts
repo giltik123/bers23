@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import './deterministic-crop-workflow-verifier.test.ts';
 import { CROP_CAPABILITY, CROP_TOOL_ID, CROP_TOOL_VERSION, cropRgba8, normalizeCropRect } from '../src/platform/creative/deterministic/Crop.ts';
 import { CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
