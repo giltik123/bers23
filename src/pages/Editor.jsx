@@ -7,7 +7,9 @@ import { creativeEditApplicationService } from '@/application/creative/CreativeE
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createSuperResolution } from '@/application/createSuperResolution';
 import { createCrop } from '@/application/createCrop';
+import { createResize } from '@/application/createResize';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
+import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '@/platform/creative/deterministic/ResizeIdentity';
 import { SUPER_RESOLUTION_PRODUCTION_AVAILABLE } from '@/platform/creative/super-resolution/SuperResolutionRelease';
 import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
@@ -18,6 +20,7 @@ import { legacyRecipeExecutionAdapter } from '@/application/creative/LegacyRecip
 import ChainProgress from '@/components/editor/recipes/ChainProgress';
 import ImageCanvas from '@/components/editor/ImageCanvas';
 import CropToolbar from '@/components/editor/CropToolbar';
+import ResizeToolbar from '@/components/editor/ResizeToolbar';
 import InstructionBar from '@/components/editor/InstructionBar';
 import HistoryControls from '@/components/editor/HistoryControls';
 import VersionsPanel from '@/components/editor/VersionsPanel';
@@ -79,6 +82,24 @@ function defaultCropRect(sourceWidth, sourceHeight) {
   return Object.freeze({ x: insetX, y: insetY, width: Math.max(1, sourceWidth - insetX * 2), height: Math.max(1, sourceHeight - insetY * 2) });
 }
 
+function exactResizeTarget(draft) {
+  if (!draft) return null;
+  const { width, height } = draft;
+  if (![width, height].every(Number.isSafeInteger)) return null;
+  if (width < 1 || height < 1 || width > RESIZE_MAX_DIMENSION || height > RESIZE_MAX_DIMENSION) return null;
+  if (width * height > RESIZE_MAX_OUTPUT_PIXELS) return null;
+  return Object.freeze({ width, height });
+}
+
+function proportionalResizeDimension(value, sourceSame, sourceOther) {
+  if (![value, sourceSame, sourceOther].every(Number.isSafeInteger) || value < 1 || sourceSame < 1 || sourceOther < 1) return null;
+  const same = BigInt(sourceSame);
+  const numerator = BigInt(value) * BigInt(sourceOther);
+  const rounded = (numerator * 2n + same) / (same * 2n);
+  if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+  return Math.max(1, Number(rounded));
+}
+
 export default function Editor() {
   const projectId = new URLSearchParams(window.location.search).get('id')?.trim() || null;
   const {
@@ -112,19 +133,24 @@ export default function Editor() {
   const [upscaling, setUpscaling] = useState(false);
   const [cropDraft, setCropDraft] = useState(null);
   const [cropping, setCropping] = useState(false);
+  const [resizeDraft, setResizeDraft] = useState(null);
+  const [resizeAspectLocked, setResizeAspectLocked] = useState(true);
+  const [resizing, setResizing] = useState(false);
   const selectionServiceRef = useRef(null);
   const strokeRef = useRef([]);
   const cropAnchorRef = useRef(null);
   const platform = usePlatformProfile();
-  const editorBusy = applying || isolatingBackground || upscaling || cropping;
+  const editorBusy = applying || isolatingBackground || upscaling || cropping || resizing;
   const cropRect = exactCropRect(cropDraft, project?.width, project?.height);
   const cropInteractionActive = Boolean(cropDraft);
+  const resizeTarget = exactResizeTarget(resizeDraft);
+  const resizeInteractionActive = Boolean(resizeDraft);
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
-  useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; }, [project?.current_image_artifact_id]);
+  useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
 
   const startSelection = () => {
-    if (cropInteractionActive) return;
+    if (cropInteractionActive || resizeInteractionActive) return;
     const imageArtifactId = project.current_image_artifact_id;
     if (!imageArtifactId) throw new Error('Canonical project image identity is unavailable');
     const segmentation = createSelectionSegmentation({ projectId: project.id, imageArtifactId, source: project.current_image_url });
@@ -159,7 +185,7 @@ export default function Editor() {
   };
 
   const startCrop = () => {
-    if (selection || pendingResult || editorBusy || !project?.current_image_artifact_id) return;
+    if (selection || pendingResult || editorBusy || resizeInteractionActive || !project?.current_image_artifact_id) return;
     const rect = defaultCropRect(project.width, project.height);
     setAiError(null);
     cropAnchorRef.current = null;
@@ -218,6 +244,65 @@ export default function Editor() {
     }
   };
 
+  const startResize = () => {
+    if (selection || pendingResult || editorBusy || cropInteractionActive || !project?.current_image_artifact_id) return;
+    if (!Number.isSafeInteger(project.width) || !Number.isSafeInteger(project.height) || project.width < 1 || project.height < 1) {
+      setAiError('Resize requires valid canonical image dimensions.');
+      return;
+    }
+    setAiError(null);
+    setResizeAspectLocked(true);
+    setResizeDraft({ width: project.width, height: project.height });
+  };
+  const updateResizeField = (key, value) => {
+    setResizeDraft((current) => {
+      if (!current) return current;
+      const next = { ...current, [key]: value };
+      if (!resizeAspectLocked || !Number.isSafeInteger(value) || value < 1) return next;
+      const otherKey = key === 'width' ? 'height' : 'width';
+      const sourceSame = key === 'width' ? project?.width : project?.height;
+      const sourceOther = key === 'width' ? project?.height : project?.width;
+      const proportional = proportionalResizeDimension(value, sourceSame, sourceOther);
+      return proportional === null ? next : { ...next, [otherKey]: proportional };
+    });
+  };
+  const applyResize = async (retryContext = null) => {
+    const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
+    const target = exactResizeTarget(retryContext?.target || resizeTarget);
+    if (!project?.id || !sourceArtifactId || !target) {
+      setAiError(`Resize requires integer dimensions within ${RESIZE_MAX_DIMENSION}px and ${RESIZE_MAX_OUTPUT_PIXELS.toLocaleString()} output pixels.`);
+      return;
+    }
+    setResizing(true);
+    setAiError(null);
+    setLastAction(() => () => applyResize({ sourceArtifactId, target }));
+    try {
+      const local = createResize({ projectId: project.id });
+      const result = await local.run({ requestId: globalThis.crypto.randomUUID(), sourceArtifactId, target });
+      const previewBytes = await encodeDeterministicRgbaPng(result.preview);
+      const previewUrl = URL.createObjectURL(new Blob([previewBytes], { type: 'image/png' }));
+      const editorResult = {
+        finalArtifactId: result.canonicalArtifactId,
+        preview_url: previewUrl,
+        image_url: previewUrl,
+        provider: 'Local deterministic',
+        credits_used: 0,
+        generation_time_ms: result.latencyMs,
+      };
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return { kind: 'RESIZE', result: editorResult, instruction: `Resize ${target.width}×${target.height}`, beforeUrl: project.current_image_url, context: { sourceArtifactId, target } };
+      });
+      setResizeDraft(null);
+      setResizeAspectLocked(true);
+    } catch (e) {
+      setAiError(e.message || 'Resize failed');
+      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+    } finally {
+      setResizing(false);
+    }
+  };
+
   // Scene Memory: auto-analyze when the project loads or the original image changes.
   // Once memory is ready, workspace auto-detection re-evaluates with full context.
   useEffect(() => {
@@ -240,7 +325,7 @@ export default function Editor() {
   useEffect(() => {
     if (platform.formFactor !== 'desktop') return;
     const shortcut = (event) => {
-      if (editorBusy || detecting || cropInteractionActive || pendingResult) return;
+      if (editorBusy || detecting || cropInteractionActive || resizeInteractionActive || pendingResult) return;
       if (event.target.matches('input, textarea')) return;
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
       event.preventDefault();
@@ -248,7 +333,7 @@ export default function Editor() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [platform.formFactor, undo, redo, editorBusy, detecting, cropInteractionActive, pendingResult]);
+  }, [platform.formFactor, undo, redo, editorBusy, detecting, cropInteractionActive, resizeInteractionActive, pendingResult]);
 
   const isolateBackground = async (retryContext = null) => {
     const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
@@ -461,6 +546,10 @@ export default function Editor() {
       void applyCrop(pending.context);
       return;
     }
+    if (pending?.kind === 'RESIZE') {
+      void applyResize(pending.context);
+      return;
+    }
     applyEdit(true, { skipDriftCheck: true }); // bypass cache so a retry produces a fresh generation
   };
 
@@ -498,20 +587,20 @@ export default function Editor() {
         </div>
         <AdaptiveToolbar>
           <HistoryControls
-            canUndo={canUndo} canRedo={canRedo} disabled={editorBusy || detecting || cropInteractionActive || Boolean(pendingResult)}
+            canUndo={canUndo} canRedo={canRedo} disabled={editorBusy || detecting || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
             onUndo={undo} onRedo={redo} onRestore={restoreOriginal}
           />
           <VersionsPanel
             versions={project.versions || []}
             onCreate={handleCreateVersion}
             onRestore={restoreVersion}
-            disabled={editorBusy || detecting || cropInteractionActive || Boolean(pendingResult)}
+            disabled={editorBusy || detecting || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
           />
           <Button
             variant="ghost"
             size="sm"
             onClick={() => upscaleImage()}
-            disabled={!SUPER_RESOLUTION_PRODUCTION_AVAILABLE || !project.current_image_artifact_id || editorBusy || detecting || committing || Boolean(pendingResult) || cropInteractionActive}
+            disabled={!SUPER_RESOLUTION_PRODUCTION_AVAILABLE || !project.current_image_artifact_id || editorBusy || detecting || committing || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
             title={SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale the current image 4× on device' : 'Local Real-ESRGAN x4 is a candidate and is not production-approved yet'}
             aria-label={SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4 locally' : 'Upscale x4 local candidate unavailable'}
           >
@@ -579,16 +668,31 @@ export default function Editor() {
         valid={Boolean(cropRect)}
         sourceWidth={project.width}
         sourceHeight={project.height}
-        busy={editorBusy || Boolean(selection) || Boolean(pendingResult)}
+        busy={editorBusy || Boolean(selection) || Boolean(pendingResult) || resizeInteractionActive}
         onStart={startCrop}
         onChange={setCropDraft}
         onApply={() => applyCrop()}
         onCancel={() => { cropAnchorRef.current = null; setCropDraft(null); }}
       />
 
+      <ResizeToolbar
+        active={resizeInteractionActive}
+        draft={resizeDraft}
+        valid={Boolean(resizeTarget)}
+        sourceWidth={project.width}
+        sourceHeight={project.height}
+        busy={editorBusy || Boolean(selection) || Boolean(pendingResult) || cropInteractionActive}
+        aspectLocked={resizeAspectLocked}
+        onAspectLockedChange={setResizeAspectLocked}
+        onStart={startResize}
+        onFieldChange={updateResizeField}
+        onApply={() => applyResize()}
+        onCancel={() => { setResizeDraft(null); setResizeAspectLocked(true); }}
+      />
+
       <SelectionToolbar
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} onStart={startSelection}
-        startDisabled={cropInteractionActive || editorBusy || Boolean(pendingResult)}
+        startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}
         onRedo={() => updateSelection((service) => service.redo())}
@@ -596,7 +700,7 @@ export default function Editor() {
         onInvert={() => updateSelection((service) => service.invert())}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
-        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling && !cropping && !cropInteractionActive}
+        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling && !cropping && !resizing && !cropInteractionActive && !resizeInteractionActive}
         isolatingBackground={isolatingBackground}
         onIsolateBackground={() => isolateBackground()}
       />
@@ -616,7 +720,7 @@ export default function Editor() {
         cacheStatus={segMeta ? (segMeta.fromCache ? 'hit' : 'miss') : 'empty'}
       />
 
-      {objects.length > 0 && !cropInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
+      {objects.length > 0 && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
       {pendingResult ? (
         <ResultCompare
@@ -625,12 +729,14 @@ export default function Editor() {
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
-          busy={committing || isolatingBackground || upscaling || cropping}
+          busy={committing || isolatingBackground || upscaling || cropping || resizing}
         />
       ) : cropInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
+      ) : resizeInteractionActive ? (
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel them before starting another edit.</p>
       ) : objects.length === 0 ? (
-        <Button onClick={detect} disabled={detecting || upscaling || cropping} className="w-full h-12 rounded-2xl text-base">
+        <Button onClick={detect} disabled={detecting || editorBusy || cropInteractionActive || resizeInteractionActive} className="w-full h-12 rounded-2xl text-base">
           {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
           {detecting ? 'Detecting objects…' : 'Detect objects'}
         </Button>
