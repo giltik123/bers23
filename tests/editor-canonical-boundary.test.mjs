@@ -38,22 +38,53 @@ test('Editor Crop UI is exact, accessible and fail-closed instead of clamping in
   assert.match(editor, /Math\.abs\(point\.x - anchor\.x\) \+ 1/);
   assert.match(editor, /Math\.abs\(point\.y - anchor\.y\) \+ 1/);
 });
-test('Crop interaction cannot overlap selection and resets when canonical current image changes', async () => {
+test('Editor Resize remains a Core-authorized preview then explicit canonical Accept flow', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const resize = await readFile('src/application/createResize.ts', 'utf8');
+  assert.match(editor, /const local = createResize\(\{ projectId: project\.id \}\)/);
+  assert.match(editor, /local\.run\(\{ requestId: globalThis\.crypto\.randomUUID\(\), sourceArtifactId, target \}\)/);
+  assert.match(editor, /kind: 'RESIZE'/);
+  assert.match(editor, /finalArtifactId: result\.canonicalArtifactId/);
+  assert.match(editor, /await pushEdit\(result\.finalArtifactId, used\)/);
+  assert.doesNotMatch(editor, /resize[\s\S]{0,300}(persistFinal|issueStoredFinal|acceptFinal)/);
+  assert.match(resize, /loadImage:[\s\S]*loadDelivered/);
+  assert.match(resize, /prepareResize:[\s\S]*activeTicketId = prepared\.ticket\.ticketId/);
+});
+test('Editor Resize UI keeps exact integer bounds and explicit deterministic aspect locking', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const toolbar = await readFile('src/components/editor/ResizeToolbar.jsx', 'utf8');
+  assert.match(editor, /function exactResizeTarget\(draft\)/);
+  assert.match(editor, /width > RESIZE_MAX_DIMENSION \|\| height > RESIZE_MAX_DIMENSION/);
+  assert.match(editor, /width \* height > RESIZE_MAX_OUTPUT_PIXELS/);
+  assert.match(editor, /function proportionalResizeDimension\(value, sourceSame, sourceOther\)/);
+  assert.match(editor, /const rounded = \(numerator \* 2n \+ same\) \/ \(same \* 2n\)/);
+  assert.match(toolbar, /aria-label="Resize controls"/);
+  assert.match(toolbar, /aria-label="Keep resize aspect ratio"/);
+  assert.match(toolbar, /aria-label=\{`Resize \$\{label\.toLowerCase\(\)\}`\}/);
+  assert.match(toolbar, /max=\{RESIZE_MAX_DIMENSION\}/);
+  assert.match(toolbar, /disabled=\{busy \|\| !valid\}/);
+  assert.doesNotMatch(toolbar, /Math\.(round|floor|ceil)\(Number\(raw\)\)/);
+});
+test('Crop, Resize and Selection interactions are mutually exclusive and reset on canonical image change', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const selectionToolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8');
-  assert.match(editor, /setCropDraft\(null\); cropAnchorRef\.current = null; \}, \[project\?\.current_image_artifact_id\]\)/);
-  assert.match(editor, /startDisabled=\{cropInteractionActive \|\| editorBusy \|\| Boolean\(pendingResult\)\}/);
-  assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| !project\?\.current_image_artifact_id\) return/);
-  assert.match(editor, /busy=\{editorBusy \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\)\}/);
+  assert.match(editor, /setCropDraft\(null\); cropAnchorRef\.current = null; setResizeDraft\(null\); setResizeAspectLocked\(true\); \}, \[project\?\.current_image_artifact_id\]\)/);
+  assert.match(editor, /startDisabled=\{cropInteractionActive \|\| resizeInteractionActive \|\| editorBusy \|\| Boolean\(pendingResult\)\}/);
+  assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| resizeInteractionActive \|\| !project\?\.current_image_artifact_id\) return/);
+  assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| cropInteractionActive \|\| !project\?\.current_image_artifact_id\) return/);
+  assert.match(editor, /busy=\{editorBusy \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| resizeInteractionActive\}/);
+  assert.match(editor, /busy=\{editorBusy \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| cropInteractionActive\}/);
   assert.match(selectionToolbar, /disabled=\{startDisabled\} onClick=\{onStart\}/);
 });
-test('Pending canonical results outrank empty-object CTA and Crop locks keyboard/history edit surfaces', async () => {
+test('Pending canonical results outrank empty-object CTA and geometry tools lock keyboard/history edit surfaces', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const pendingIndex = editor.indexOf('{pendingResult ? (');
   const emptyIndex = editor.indexOf(') : objects.length === 0 ? (');
   assert.ok(pendingIndex >= 0 && emptyIndex > pendingIndex, 'pending ResultCompare must render before empty-object detection CTA');
-  assert.match(editor, /if \(editorBusy \|\| detecting \|\| cropInteractionActive \|\| pendingResult\) return/);
-  assert.match(editor, /disabled=\{editorBusy \|\| detecting \|\| cropInteractionActive \|\| Boolean\(pendingResult\)\}/);
+  assert.match(editor, /if \(editorBusy \|\| detecting \|\| cropInteractionActive \|\| resizeInteractionActive \|\| pendingResult\) return/);
+  assert.match(editor, /disabled=\{editorBusy \|\| detecting \|\| cropInteractionActive \|\| resizeInteractionActive \|\| Boolean\(pendingResult\)\}/);
   assert.match(editor, /\) : cropInteractionActive \? \(/);
+  assert.match(editor, /\) : resizeInteractionActive \? \(/);
   assert.match(editor, /Adjust the crop rectangle above, then apply or cancel it before starting another edit\./);
+  assert.match(editor, /Set the exact resize dimensions above, then apply or cancel them before starting another edit\./);
 });
