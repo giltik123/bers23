@@ -4,6 +4,7 @@ import { CreativeCostAuthority } from '../cost/contracts';
 import type { CreativeOperationInstance } from '../operations/contracts';
 import { MAX_SUPER_RESOLUTION_OUTPUT_PIXELS, SUPER_RESOLUTION_SCALE } from '../super-resolution/SuperResolutionContract';
 import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS, RESIZE_OPERATION } from '../deterministic/ResizeIdentity.js';
+import { ORTHOGONAL_TRANSFORM_MODES, ORTHOGONAL_TRANSFORM_OPERATION } from '../deterministic/OrthogonalTransformIdentity.js';
 import type { CreativeArtifact, CreativeDecision, CreativeExecutionPlan, CreativeOperation, CreativePipeline, CreativePlan, CreativeRequest, ProductionOutcome, VerificationResult } from './contracts';
 import type { LocalExecutionInputBinding, LocalExecutionTicket, LocalExecutionTicketV2 } from './localExecution';
 import type { CreativeExecutionPlatformRuntimeDependencies } from './providerSelection';
@@ -318,6 +319,13 @@ function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOpera
     const outputPixels = Number(resizeWidth) * Number(resizeHeight);
     if (!Number.isSafeInteger(outputPixels) || outputPixels > RESIZE_MAX_OUTPUT_PIXELS) throw new Error('ON_DEVICE RESIZE exceeds the Resize v1 output pixel limit');
     return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(resizeWidth), height: Number(resizeHeight) }]);
+  }
+  if (operation.type === ORTHOGONAL_TRANSFORM_OPERATION) {
+    const input = operation.input && typeof operation.input === 'object' ? operation.input as Readonly<Record<string, unknown>> : undefined;
+    const mode = input?.mode;
+    if (typeof mode !== 'string' || !(ORTHOGONAL_TRANSFORM_MODES as readonly string[]).includes(mode)) throw new Error('ON_DEVICE ORTHOGONAL_TRANSFORM requires one exact reviewed transform mode');
+    const swapsAxes = mode === 'ROTATE_90_CW' || mode === 'ROTATE_270_CW';
+    return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: swapsAxes ? Number(height) : Number(width), height: swapsAxes ? Number(width) : Number(height) }]);
   }
   if (operation.type === 'SUPER_RESOLUTION') {
     const outputWidth = Number(width) * SUPER_RESOLUTION_SCALE;
