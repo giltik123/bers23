@@ -47,6 +47,30 @@ test('late A cannot replace B', async () => { let resolveA!: (v: any) => void; c
 test('local unavailable preserves manual brush fallback and privacy is passed through', async () => { let privacy = ''; const { service } = fixture(async i => { privacy = i.privacyMode; throw new Error('WASM unavailable'); }); service.start({ imageArtifactId: 'i', width: 20, height: 20 }); const result = await service.smartPoint({ displayPoint: { x: 4, y: 4 }, view: { displayWidth: 20, displayHeight: 20, originalWidth: 20, originalHeight: 20 }, privacyMode: 'LOCAL_ONLY' }); assert.equal(privacy, 'LOCAL_ONLY'); assert.equal(result.state, 'LOCAL_UNAVAILABLE'); service.setMode('BRUSH_ADD'); assert.doesNotThrow(() => service.brush({ points: [{ x: 4, y: 4 }], radius: 3, hardness: .5, view: { displayWidth: 20, displayHeight: 20, originalWidth: 20, originalHeight: 20 } })); });
 test('quality flags empty, tiny and suspicious full masks', () => { assert.equal(assessMask(new Uint8Array(100), 10, 10, 1).warning, 'EMPTY'); const tiny = new Uint8Array(20000); tiny[0] = 255; assert.equal(assessMask(tiny, 200, 100, 1).warning, 'TINY'); assert.equal(assessMask(new Uint8Array(100).fill(255), 10, 10, 1).warning, 'SUSPICIOUSLY_FULL'); });
 
+test('invert is an exact bounded manual refinement and undo redo keep quality synchronized', async () => {
+  const source = new Uint8Array([0, 0, 128, 255]);
+  const { service } = fixture(async input => ({
+    target: 'LOCAL', modelId: 'm', modelVersion: '1', latencyMs: 1,
+    candidates: [{ alpha: source, width: input.analysis.analysisWidth, height: input.analysis.analysisHeight, coordinateSpace: 'ANALYSIS', score: .9 }],
+  }));
+  const smallView = { displayWidth: 2, displayHeight: 2, originalWidth: 2, originalHeight: 2 };
+  service.start({ imageArtifactId: 'image', width: 2, height: 2 });
+  assert.throws(() => service.invert(), /not ready to invert/);
+  await service.smartPoint({ displayPoint: { x: 1, y: 1 }, view: smallView, privacyMode: 'LOCAL_ONLY' });
+  assert.equal(service.snapshot().state, 'SELECTED');
+  assert.deepEqual([...service.snapshot().alpha], [0, 0, 128, 255]);
+  const inverted = service.invert();
+  assert.equal(inverted.state, 'REFINING');
+  assert.deepEqual([...inverted.alpha], [255, 255, 127, 0]);
+  assert.equal(inverted.quality?.coverage, .75);
+  const undone = service.undo();
+  assert.deepEqual([...undone.alpha], [0, 0, 128, 255]);
+  assert.equal(undone.quality?.coverage, .5);
+  const redone = service.redo();
+  assert.deepEqual([...redone.alpha], [255, 255, 127, 0]);
+  assert.equal(redone.quality?.coverage, .75);
+});
+
 test('Core-authorized segmentation binds ticket, device admission, local runtime, quarantine upload and canonical result', async () => {
   const analysis = { originalWidth: 4, originalHeight: 4, analysisWidth: 2, analysisHeight: 2, scaleX: .5, scaleY: .5, offsetX: 0, offsetY: 0 };
   const points = [{ x: 1, y: 1, label: 'POSITIVE' as const, coordinateSpace: 'ORIGINAL' as const }];

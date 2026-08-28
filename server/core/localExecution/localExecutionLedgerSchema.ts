@@ -4,6 +4,8 @@ import type { Pool } from 'pg';
 type LocalExecutionLedgerSchemaState = Readonly<{
   ticketTable: boolean;
   finalizationColumns: boolean;
+  resultReplayDigestColumn: boolean;
+  resultReplayDigestConstraint: boolean;
   scopedIdempotencyUnique: boolean;
   legacyGlobalIdempotencyUnique: boolean;
   maskTicketColumn: boolean;
@@ -14,29 +16,32 @@ type LocalExecutionLedgerSchemaState = Readonly<{
 export async function checkLocalExecutionLedgerSchema(pool: Pool): Promise<void> {
   const state = await inspectLocalExecutionLedgerSchema(pool);
   if (
-    !state.ticketTable ||
-    !state.finalizationColumns ||
-    !state.scopedIdempotencyUnique ||
-    state.legacyGlobalIdempotencyUnique ||
-    !state.maskTicketColumn ||
-    !state.maskTicketUnique ||
-    !state.uploadArtifactRoleNotNull
-  ) throw new Error('local execution ledger schema is incomplete; apply migration 013_local_execution_ticket_ledger.sql');
+    !baseLedgerSchemaReady(state) ||
+    !state.resultReplayDigestColumn ||
+    !state.resultReplayDigestConstraint
+  ) throw new Error('local execution ledger schema is incomplete; apply migrations 013_local_execution_ticket_ledger.sql and 016_local_execution_result_replay_binding.sql');
 }
 
 export async function migrateLocalExecutionLedgerSchema(pool: Pool): Promise<void> {
-  const state = await inspectLocalExecutionLedgerSchema(pool);
-  if (
-    state.ticketTable &&
+  let state = await inspectLocalExecutionLedgerSchema(pool);
+  if (!baseLedgerSchemaReady(state)) {
+    await pool.query(await readFile(new URL('../artifacts/migrations/013_local_execution_ticket_ledger.sql', import.meta.url), 'utf8'));
+    state = await inspectLocalExecutionLedgerSchema(pool);
+  }
+  if (!state.resultReplayDigestColumn || !state.resultReplayDigestConstraint) {
+    await pool.query(await readFile(new URL('../artifacts/migrations/016_local_execution_result_replay_binding.sql', import.meta.url), 'utf8'));
+  }
+  await checkLocalExecutionLedgerSchema(pool);
+}
+
+function baseLedgerSchemaReady(state: LocalExecutionLedgerSchemaState): boolean {
+  return state.ticketTable &&
     state.finalizationColumns &&
     state.scopedIdempotencyUnique &&
     !state.legacyGlobalIdempotencyUnique &&
     state.maskTicketColumn &&
     state.maskTicketUnique &&
-    state.uploadArtifactRoleNotNull
-  ) return;
-  await pool.query(await readFile(new URL('../artifacts/migrations/013_local_execution_ticket_ledger.sql', import.meta.url), 'utf8'));
-  await checkLocalExecutionLedgerSchema(pool);
+    state.uploadArtifactRoleNotNull;
 }
 
 async function inspectLocalExecutionLedgerSchema(pool: Pool): Promise<LocalExecutionLedgerSchemaState> {
@@ -49,6 +54,22 @@ async function inspectLocalExecutionLedgerSchema(pool: Pool): Promise<LocalExecu
         AND table_name = 'local_execution_tickets'
         AND column_name IN ('finalized_status','finalized_at')
     ) AS finalization_columns,
+    EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'local_execution_tickets'
+        AND column_name = 'admitted_result_sha256'
+    ) AS result_replay_digest_column,
+    EXISTS (
+      SELECT 1
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE n.nspname = current_schema()
+        AND t.relname = 'local_execution_tickets'
+        AND c.conname = 'local_execution_tickets_admitted_result_sha256_check'
+        AND c.contype = 'c'
+    ) AS result_replay_digest_constraint,
     EXISTS (
       SELECT 1
       FROM pg_class i
@@ -111,6 +132,8 @@ async function inspectLocalExecutionLedgerSchema(pool: Pool): Promise<LocalExecu
   return Object.freeze({
     ticketTable: row.ticket_table === true,
     finalizationColumns: row.finalization_columns === true,
+    resultReplayDigestColumn: row.result_replay_digest_column === true,
+    resultReplayDigestConstraint: row.result_replay_digest_constraint === true,
     scopedIdempotencyUnique: row.scoped_idempotency_unique === true,
     legacyGlobalIdempotencyUnique: row.legacy_global_idempotency_unique === true,
     maskTicketColumn: row.mask_ticket_column === true,

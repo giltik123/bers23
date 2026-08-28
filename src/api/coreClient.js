@@ -52,7 +52,7 @@ function throwResponseError(response, data, path) {
   if (response.status === 401 && path === '/auth/context') browserCsrfToken = undefined;
   const error = new Error(data?.message || `Core API request failed (${response.status})`);
   error.status = response.status;
-  error.code = data?.code;
+  error.code = data?.code ?? data?.error;
   error.correlationId = data?.correlationId;
   error.retryable = data?.retryable ?? false;
   error.data = data;
@@ -127,6 +127,54 @@ export const coreClient = Object.freeze({
     },
     uploadBackgroundIsolationImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/background-isolation/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
     submitBackgroundIsolation: ({ ticketId, projectId, result }) => request(`/local-execution/background-isolation/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareCrop: (payload) => request('/local-execution/crop/prepare', json('POST', payload)),
+    loadCropInput: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/crop/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
+      const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
+      const pixelCount = width * height;
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core Crop input byte length does not match its canonical geometry');
+      return Object.freeze({
+        width,
+        height,
+        sourceSha256: requiredShaHeader(delivered.headers, LOCAL_SOURCE_SHA_HEADER),
+        sourceRgba: Uint8ClampedArray.from(delivered.bytes),
+      });
+    },
+    uploadCropImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/crop/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitCrop: ({ ticketId, projectId, result }) => request(`/local-execution/crop/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareResize: (payload) => request('/local-execution/resize/prepare', json('POST', payload)),
+    loadResizeInput: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/resize/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
+      const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
+      const pixelCount = width * height;
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core Resize input byte length does not match its canonical geometry');
+      return Object.freeze({
+        width,
+        height,
+        sourceSha256: requiredShaHeader(delivered.headers, LOCAL_SOURCE_SHA_HEADER),
+        sourceRgba: Uint8ClampedArray.from(delivered.bytes),
+      });
+    },
+    uploadResizeImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/resize/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitResize: ({ ticketId, projectId, result }) => request(`/local-execution/resize/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareOrthogonalTransform: (payload) => request('/local-execution/orthogonal-transform/prepare', json('POST', payload)),
+    loadOrthogonalTransformInput: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/orthogonal-transform/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
+      const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
+      const pixelCount = width * height;
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core orthogonal-transform input byte length does not match its canonical geometry');
+      return Object.freeze({
+        width,
+        height,
+        sourceSha256: requiredShaHeader(delivered.headers, LOCAL_SOURCE_SHA_HEADER),
+        sourceRgba: Uint8ClampedArray.from(delivered.bytes),
+      });
+    },
+    uploadOrthogonalTransformImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/orthogonal-transform/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitOrthogonalTransform: ({ ticketId, projectId, result }) => request(`/local-execution/orthogonal-transform/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
     prepareSuperResolution: (payload) => request('/local-execution/super-resolution/prepare', json('POST', payload)),
     loadSuperResolutionInput: async ({ ticketId, projectId }) => {
       const delivered = await requestBytes(`/local-execution/super-resolution/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
@@ -143,6 +191,12 @@ export const coreClient = Object.freeze({
     },
     uploadSuperResolutionImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/super-resolution/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
     submitSuperResolution: ({ ticketId, projectId, result }) => request(`/local-execution/super-resolution/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+  },
+  compositeContinuations: {
+    start: (payload) => request('/composite-continuations/start', json('POST', payload)),
+    resume: ({ executionId, projectId }) => request(`/composite-continuations/${encodeURIComponent(executionId)}?${new URLSearchParams({ projectId })}`),
+    uploadOutput: ({ executionId, projectId, bytes, mimeType }) => request(`/composite-continuations/${encodeURIComponent(executionId)}/output?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': mimeType }, body: bytes }),
+    submitResult: ({ executionId, projectId, result }) => request(`/composite-continuations/${encodeURIComponent(executionId)}/result`, json('POST', { projectId, result })),
   },
   artifacts: {
     persistMask: ({ projectId, sourceImageArtifactId, parentMaskArtifactId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, sourceImageArtifactId, ...(parentMaskArtifactId && { parentMaskArtifactId }), width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
