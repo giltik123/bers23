@@ -180,3 +180,22 @@ test('Virtual Try-On cannot use the legacy direct provider execution path', asyn
   assert.match(engine, /retryable = false/);
   for (const forbidden of ['fashnProvider', 'imagePipeline', 'qualityValidator', 'composer', 'resultManager', 'original_image_url', 'currentUrl']) assert.equal(engine.includes(forbidden), false, forbidden);
 });
+
+test('recipe templates remain canonical Prompt inputs while multi-step execution stays locked down', async () => {
+  const panel = await readFile('src/components/editor/recipes/RecipePanel.jsx', 'utf8');
+  const detail = await readFile('src/components/editor/recipes/RecipeDetail.jsx', 'utf8');
+  const studio = await readFile('src/components/editor/creative/CreativeStudioPanel.jsx', 'utf8');
+  const summary = await readFile('src/components/editor/creative/CreativeStrategySummary.jsx', 'utf8');
+  const adapter = await readFile('src/application/creative/LegacyRecipeExecutionAdapter.js', 'utf8');
+
+  assert.match(panel, /Individual recipes remain available as prompt templates/);
+  for (const forbidden of ['RECIPE_CHAINS', 'onRunChain', 'Apply strategy']) assert.equal(panel.includes(forbidden), false, forbidden);
+  assert.match(detail, /onUse\(prompt, recipe\)/);
+  assert.match(detail, /recipeEngine\.compile/);
+  assert.doesNotMatch(studio, /onApply|strategy_applied/);
+  assert.doesNotMatch(summary, /Apply strategy|onApply/);
+  assert.match(summary, /Preview only/);
+  assert.match(adapter, /RECIPE_CHAIN_EXECUTION_NOT_WIRED/);
+  assert.match(adapter, /retryable = false/);
+  for (const forbidden of ['chainRunner', 'creditsEngine', 'editingEngine']) assert.equal(adapter.includes(forbidden), false, forbidden);
+});
