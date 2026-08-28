@@ -237,7 +237,18 @@ export default function Editor() {
   const selected = objects.find((o) => o.selected) || null;
 
   useEffect(() => { if (project) sessionRecovery.saveEditor({ projectId: project.id, selectionId: selected?.id || null, historyIndex: project.history_index }); }, [project?.id, project?.history_index, selected?.id]);
-  useEffect(() => { if (platform.formFactor !== 'desktop') return; const shortcut = (event) => { if (event.target.matches('input, textarea')) return; if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return; event.preventDefault(); if (event.shiftKey) redo(); else undo(); }; window.addEventListener('keydown', shortcut); return () => window.removeEventListener('keydown', shortcut); }, [platform.formFactor, undo, redo]);
+  useEffect(() => {
+    if (platform.formFactor !== 'desktop') return;
+    const shortcut = (event) => {
+      if (editorBusy || detecting || cropInteractionActive || pendingResult) return;
+      if (event.target.matches('input, textarea')) return;
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
+      event.preventDefault();
+      if (event.shiftKey) redo(); else undo();
+    };
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, [platform.formFactor, undo, redo, editorBusy, detecting, cropInteractionActive, pendingResult]);
 
   const isolateBackground = async (retryContext = null) => {
     const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
@@ -568,7 +579,7 @@ export default function Editor() {
         valid={Boolean(cropRect)}
         sourceWidth={project.width}
         sourceHeight={project.height}
-        busy={cropping}
+        busy={editorBusy || Boolean(selection) || Boolean(pendingResult)}
         onStart={startCrop}
         onChange={setCropDraft}
         onApply={() => applyCrop()}
@@ -605,14 +616,9 @@ export default function Editor() {
         cacheStatus={segMeta ? (segMeta.fromCache ? 'hit' : 'miss') : 'empty'}
       />
 
-      {objects.length > 0 && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
+      {objects.length > 0 && !cropInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
-      {objects.length === 0 ? (
-        <Button onClick={detect} disabled={detecting || upscaling || cropping || cropInteractionActive} className="w-full h-12 rounded-2xl text-base">
-          {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
-          {detecting ? 'Detecting objects…' : 'Detect objects'}
-        </Button>
-      ) : pendingResult ? (
+      {pendingResult ? (
         <ResultCompare
           beforeUrl={pendingResult.beforeUrl}
           result={pendingResult.result}
@@ -621,20 +627,27 @@ export default function Editor() {
           onRetry={retryResult}
           busy={committing || isolatingBackground || upscaling || cropping}
         />
+      ) : cropInteractionActive ? (
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
+      ) : objects.length === 0 ? (
+        <Button onClick={detect} disabled={detecting || upscaling || cropping} className="w-full h-12 rounded-2xl text-base">
+          {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
+          {detecting ? 'Detecting objects…' : 'Detect objects'}
+        </Button>
       ) : (
         <>
           <WorkspaceToolbar
-            disabled={editorBusy || cropInteractionActive}
+            disabled={editorBusy}
             onUse={(prompt) => { setInstruction(prompt); setActiveRecipe(null); setEditTab('prompt'); }}
           />
           <WorkspaceRecommendations
-            disabled={editorBusy || cropInteractionActive}
+            disabled={editorBusy}
             onUse={(prompt, recipe) => { setInstruction(prompt); setActiveRecipe(recipe); setEditTab('prompt'); }}
           />
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={setEditTab} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
           {editTab === 'creative' ? (
-            <CreativeStudioPanel project={project} objects={objects} onApply={runChain} disabled={editorBusy || cropInteractionActive} />
+            <CreativeStudioPanel project={project} objects={objects} onApply={runChain} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <OutfitPanel
               project={project}
@@ -651,7 +664,7 @@ export default function Editor() {
             <AgentPanel
               project={project}
               objects={objects}
-              disabled={editorBusy || cropInteractionActive}
+              disabled={editorBusy}
               onCommit={async (result, task) => {
                 await pushEditRef.current(result.image_url, `Agent: ${task.label}`, result.historyEntry);
                 sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
@@ -663,7 +676,7 @@ export default function Editor() {
               objects={objects}
               selectedObjects={objects.filter((o) => o.selected)}
               onRunChain={runChain}
-              disabled={editorBusy || cropInteractionActive}
+              disabled={editorBusy}
               onUse={(prompt, recipe) => {
                 // Recipe Engine output enters the normal flow: instruction → AI Planner → Editing Engine.
                 setInstruction(prompt);
@@ -682,7 +695,7 @@ export default function Editor() {
                 instruction={instruction}
                 onInstructionChange={setInstruction}
                 onApply={() => applyEdit(false)}
-                applying={editorBusy || cropInteractionActive}
+                applying={editorBusy}
               />
             </>
           )}
