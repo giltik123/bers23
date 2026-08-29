@@ -21,6 +21,29 @@ CREATE TABLE IF NOT EXISTS canonical_garment_collection_members (
 );
 
 ALTER TABLE canonical_garment_collections
+  ADD COLUMN IF NOT EXISTS collection_id UUID,
+  ADD COLUMN IF NOT EXISTS tenant_id TEXT,
+  ADD COLUMN IF NOT EXISTS user_id TEXT,
+  ADD COLUMN IF NOT EXISTS name TEXT,
+  ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS revision BIGINT DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE canonical_garment_collection_members
+  ADD COLUMN IF NOT EXISTS collection_id UUID,
+  ADD COLUMN IF NOT EXISTS garment_id UUID,
+  ADD COLUMN IF NOT EXISTS tenant_id TEXT,
+  ADD COLUMN IF NOT EXISTS user_id TEXT,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+UPDATE canonical_garment_collections SET description='' WHERE description IS NULL;
+UPDATE canonical_garment_collections SET revision=1 WHERE revision IS NULL;
+UPDATE canonical_garment_collections SET created_at=CURRENT_TIMESTAMP WHERE created_at IS NULL;
+UPDATE canonical_garment_collections SET updated_at=CURRENT_TIMESTAMP WHERE updated_at IS NULL;
+UPDATE canonical_garment_collection_members SET created_at=CURRENT_TIMESTAMP WHERE created_at IS NULL;
+
+ALTER TABLE canonical_garment_collections
   ALTER COLUMN collection_id SET NOT NULL,
   ALTER COLUMN tenant_id SET NOT NULL,
   ALTER COLUMN user_id SET NOT NULL,
