@@ -12,8 +12,8 @@ export type ManagedGarmentCaptureAssessment = Readonly<{
   detailViewCount: number;
   unspecifiedViewCount: number;
   technicalResolution: Readonly<{
-    status: 'ADEQUATE' | 'NEEDS_HIGHER_RESOLUTION';
-    minimumBestCardinalShortEdgePx: number;
+    status: 'NOT_ASSESSED' | 'ADEQUATE' | 'NEEDS_HIGHER_RESOLUTION';
+    minimumBestCardinalShortEdgePx: number | null;
     thresholdShortEdgePx: number;
     lowResolutionCardinalViewKinds: readonly CardinalViewKind[];
     lowResolutionViewIds: readonly string[];
@@ -46,7 +46,7 @@ export function assessManagedGarmentCapture(garment: ManagedGarment): ManagedGar
   const lowKinds = present.filter(kind => (bestByKind.get(kind)?.shortEdgePx ?? 0) < MIN_TECHNICAL_CAPTURE_SHORT_EDGE_PX);
   const lowResolutionViewIds = lowKinds.map(kind => bestByKind.get(kind)!.id);
   const bestShortEdges = present.map(kind => bestByKind.get(kind)!.shortEdgePx);
-  const minimumBestCardinalShortEdgePx = bestShortEdges.length > 0 ? Math.min(...bestShortEdges) : 0;
+  const minimumBestCardinalShortEdgePx = bestShortEdges.length > 0 ? Math.min(...bestShortEdges) : null;
 
   return Object.freeze({
     cardinalComplete: missing.length === 0,
@@ -56,7 +56,7 @@ export function assessManagedGarmentCapture(garment: ManagedGarment): ManagedGar
     detailViewCount: garment.views.filter(view => view.kind === 'DETAIL').length,
     unspecifiedViewCount: garment.views.filter(view => view.kind === 'UNSPECIFIED').length,
     technicalResolution: Object.freeze({
-      status: lowKinds.length === 0 ? 'ADEQUATE' : 'NEEDS_HIGHER_RESOLUTION',
+      status: present.length === 0 ? 'NOT_ASSESSED' : lowKinds.length === 0 ? 'ADEQUATE' : 'NEEDS_HIGHER_RESOLUTION',
       minimumBestCardinalShortEdgePx,
       thresholdShortEdgePx: MIN_TECHNICAL_CAPTURE_SHORT_EDGE_PX,
       lowResolutionCardinalViewKinds: Object.freeze([...lowKinds]),
