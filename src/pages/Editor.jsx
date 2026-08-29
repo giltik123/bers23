@@ -8,8 +8,10 @@ import { createBackgroundIsolation } from '@/application/createBackgroundIsolati
 import { createSuperResolution } from '@/application/createSuperResolution';
 import { createCrop } from '@/application/createCrop';
 import { createResize } from '@/application/createResize';
+import { createOrthogonalTransform } from '@/application/createOrthogonalTransform';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
 import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '@/platform/creative/deterministic/ResizeIdentity';
+import { ORTHOGONAL_TRANSFORM_MODES } from '@/platform/creative/deterministic/OrthogonalTransformIdentity';
 import { SUPER_RESOLUTION_PRODUCTION_AVAILABLE } from '@/platform/creative/super-resolution/SuperResolutionRelease';
 import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
@@ -19,6 +21,7 @@ import { recipeEngine } from '@/lib/recipes/recipeEngine';
 import ImageCanvas from '@/components/editor/ImageCanvas';
 import CropToolbar from '@/components/editor/CropToolbar';
 import ResizeToolbar from '@/components/editor/ResizeToolbar';
+import OrthogonalTransformToolbar, { ORTHOGONAL_TRANSFORM_LABELS } from '@/components/editor/OrthogonalTransformToolbar';
 import InstructionBar from '@/components/editor/InstructionBar';
 import HistoryControls from '@/components/editor/HistoryControls';
 import VersionsPanel from '@/components/editor/VersionsPanel';
@@ -133,11 +136,13 @@ export default function Editor() {
   const [resizeDraft, setResizeDraft] = useState(null);
   const [resizeAspectLocked, setResizeAspectLocked] = useState(true);
   const [resizing, setResizing] = useState(false);
+  const [orthogonalTransformingMode, setOrthogonalTransformingMode] = useState(null);
   const selectionServiceRef = useRef(null);
   const strokeRef = useRef([]);
   const cropAnchorRef = useRef(null);
+  const orthogonalTransformInFlightRef = useRef(false);
   const platform = usePlatformProfile();
-  const editorBusy = applying || isolatingBackground || upscaling || cropping || resizing;
+  const editorBusy = applying || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
   const cropRect = exactCropRect(cropDraft, project?.width, project?.height);
   const cropInteractionActive = Boolean(cropDraft);
   const resizeTarget = exactResizeTarget(resizeDraft);
@@ -147,7 +152,7 @@ export default function Editor() {
   useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
 
   const startSelection = () => {
-    if (cropInteractionActive || resizeInteractionActive) return;
+    if (editorBusy || detecting || committing || pendingResult || cropInteractionActive || resizeInteractionActive) return;
     const imageArtifactId = project.current_image_artifact_id;
     if (!imageArtifactId) throw new Error('Canonical project image identity is unavailable');
     const segmentation = createSelectionSegmentation({ projectId: project.id, imageArtifactId, source: project.current_image_url });
@@ -297,6 +302,46 @@ export default function Editor() {
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
     } finally {
       setResizing(false);
+    }
+  };
+
+  const applyOrthogonalTransform = async (mode, retryContext = null) => {
+    const normalizedMode = typeof mode === 'string' && ORTHOGONAL_TRANSFORM_MODES.includes(mode) ? mode : null;
+    const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
+    const beforeUrl = retryContext?.beforeUrl || project?.current_image_url;
+    const label = normalizedMode ? ORTHOGONAL_TRANSFORM_LABELS[normalizedMode] : null;
+    if (!project?.id || !sourceArtifactId || !beforeUrl || !normalizedMode || !label) {
+      setAiError('Rotate/Flip requires the current canonical image and one supported orthogonal transform mode.');
+      return;
+    }
+    if (orthogonalTransformInFlightRef.current) return;
+    orthogonalTransformInFlightRef.current = true;
+    setOrthogonalTransformingMode(normalizedMode);
+    setAiError(null);
+    setLastAction(() => () => applyOrthogonalTransform(normalizedMode, { sourceArtifactId, beforeUrl }));
+    try {
+      const local = createOrthogonalTransform({ projectId: project.id });
+      const result = await local.run({ requestId: globalThis.crypto.randomUUID(), sourceArtifactId, mode: normalizedMode });
+      const previewBytes = await encodeDeterministicRgbaPng(result.preview);
+      const previewUrl = URL.createObjectURL(new Blob([previewBytes], { type: 'image/png' }));
+      const editorResult = {
+        finalArtifactId: result.canonicalArtifactId,
+        preview_url: previewUrl,
+        image_url: previewUrl,
+        provider: 'Local deterministic',
+        credits_used: 0,
+        generation_time_ms: result.latencyMs,
+      };
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return { kind: 'ORTHOGONAL_TRANSFORM', result: editorResult, instruction: label, beforeUrl, context: { sourceArtifactId, mode: normalizedMode, beforeUrl } };
+      });
+    } catch (e) {
+      setAiError(e.message || 'Rotate/Flip failed');
+      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+    } finally {
+      orthogonalTransformInFlightRef.current = false;
+      setOrthogonalTransformingMode(null);
     }
   };
 
@@ -511,6 +556,10 @@ export default function Editor() {
       void applyResize(pending.context);
       return;
     }
+    if (pending?.kind === 'ORTHOGONAL_TRANSFORM') {
+      void applyOrthogonalTransform(pending.context?.mode, pending.context);
+      return;
+    }
     applyEdit(true, { skipDriftCheck: true }); // bypass cache so a retry produces a fresh generation
   };
 
@@ -641,9 +690,16 @@ export default function Editor() {
         onCancel={() => { setResizeDraft(null); setResizeAspectLocked(true); }}
       />
 
+      <OrthogonalTransformToolbar
+        busy={Boolean(orthogonalTransformingMode)}
+        activeMode={orthogonalTransformingMode}
+        disabled={!project.current_image_artifact_id || editorBusy || detecting || committing || Boolean(selection) || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
+        onApply={(mode) => applyOrthogonalTransform(mode)}
+      />
+
       <SelectionToolbar
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} onStart={startSelection}
-        startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
+        startDisabled={detecting || committing || cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}
         onRedo={() => updateSelection((service) => service.redo())}
@@ -651,7 +707,7 @@ export default function Editor() {
         onInvert={() => updateSelection((service) => service.invert())}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
-        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling && !cropping && !resizing && !cropInteractionActive && !resizeInteractionActive}
+        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
         isolatingBackground={isolatingBackground}
         onIsolateBackground={() => isolateBackground()}
       />
@@ -671,7 +727,7 @@ export default function Editor() {
         cacheStatus={segMeta ? (segMeta.fromCache ? 'hit' : 'miss') : 'empty'}
       />
 
-      {objects.length > 0 && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
+      {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
       {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
         <div className="space-y-2">
@@ -690,12 +746,12 @@ export default function Editor() {
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
-          busy={committing || isolatingBackground || upscaling || cropping || resizing}
+          busy={committing || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
         />
       ) : cropInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
       ) : resizeInteractionActive ? (
-        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel them before starting another edit.</p>
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel it before starting another edit.</p>
       ) : objects.length === 0 ? (
         <>
           {plan && <PlanPreview plan={plan} />}
