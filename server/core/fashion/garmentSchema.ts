@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
+import { checkGarmentWardrobeSchema, migrateGarmentWardrobeSchema } from './garmentWardrobeSchema.ts';
 
 const MIGRATION = '022_managed_garments_and_initial_views.sql';
 
@@ -125,17 +126,22 @@ function schemaReady(state: any): boolean {
   );
 }
 
-export async function checkGarmentSchema(pool: Pool): Promise<void> {
+async function checkBaseGarmentSchema(pool: Pool): Promise<void> {
   const state = await schemaState(pool);
   if (!schemaReady(state)) {
     throw new Error('canonical managed Garment schema columns or ownership constraints are incomplete; apply migration 022');
   }
 }
 
+export async function checkGarmentSchema(pool: Pool): Promise<void> {
+  await checkBaseGarmentSchema(pool);
+  await checkGarmentWardrobeSchema(pool);
+}
+
 export async function migrateGarmentSchema(pool: Pool): Promise<void> {
   const state = await schemaState(pool);
-  if (!schemaReady(state)) {
-    await pool.query(await migration());
-  }
+  if (!schemaReady(state)) await pool.query(await migration());
+  await checkBaseGarmentSchema(pool);
+  await migrateGarmentWardrobeSchema(pool);
   await checkGarmentSchema(pool);
 }
