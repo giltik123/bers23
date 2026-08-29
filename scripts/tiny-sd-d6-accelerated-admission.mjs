@@ -82,7 +82,16 @@ function canonicalJsonValue(value) {
     if (!Number.isFinite(value)) throw new TypeError('D6 evidence contains a non-finite number');
     return value;
   }
-  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (Array.isArray(value)) {
+    const dense = [];
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, index)) {
+        throw new TypeError(`D6 evidence contains a sparse array at index ${index}`);
+      }
+      dense.push(canonicalJsonValue(value[index]));
+    }
+    return dense;
+  }
   if (isRecord(value)) {
     return Object.fromEntries(
       Object.keys(value).sort().map(key => {
@@ -246,7 +255,7 @@ function validateDevice(device, blockers) {
   if (device.provider !== 'webgpu') blockers.add('UNSUPPORTED_PROVIDER');
   if (device.executionProviders?.length !== 1 || device.executionProviders?.[0] !== 'webgpu' || device.providerFallbackAllowed !== false) blockers.add('PROVIDER_FALLBACK_OR_DRIFT');
   if (device.softwareAdapter !== false || device.adapterKind !== 'PHYSICAL') blockers.add('SOFTWARE_OR_UNKNOWN_ADAPTER');
-  if (!nonEmpty(device.vendor) || !nonEmpty(device.architecture) || /swiftshader|software|llvmpipe|lavapipe/i.test(`${device.vendor} ${device.architecture} ${device.description ?? ''}`)) blockers.add('SOFTWARE_OR_UNKNOWN_ADAPTER');
+  if (!nonEmpty(device.vendor) || !nonEmpty(device.architecture) || /swiftshader|software|llvmpipe|lavapipe/i.test(`${device.vendor} ${device.architecture} ${device.device ?? ''} ${device.description ?? ''}`)) blockers.add('SOFTWARE_OR_UNKNOWN_ADAPTER');
   if (!nonEmpty(device.browserVersion)) blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
   if (device.runtimeName !== 'onnxruntime-web' || device.runtimeVersion !== D6_ORT_WEB_VERSION) blockers.add('RUNTIME_IDENTITY_DRIFT');
   if (!Array.isArray(device.features)) blockers.add('REQUIRED_FEATURE_MISSING');

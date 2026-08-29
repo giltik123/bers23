@@ -317,6 +317,48 @@ test('known Mesa software renderers cannot masquerade as physical adapters', asy
   }
 });
 
+test('device identifier alone cannot hide a software renderer', async () => {
+  const evidence = validDeviceEvidence();
+  evidence.device.device = 'ANGLE (Mesa, llvmpipe)';
+  evidence.device.softwareAdapter = false;
+  evidence.device.adapterKind = 'PHYSICAL';
+  const result = await assessTrusted(evidence);
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('SOFTWARE_OR_UNKNOWN_ADAPTER'));
+});
+
+test('sparse evidence arrays are rejected before signing or semantic validation', async () => {
+  const evidence = validDeviceEvidence();
+  evidence.control.timesteps = new Array(evidence.control.stepCount);
+  let verifierCalled = false;
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
+    expectedTestedCommitSha: TESTED_COMMIT_SHA,
+    trustVerifier: () => {
+      verifierCalled = true;
+      return { verified: true };
+    },
+    now,
+  });
+  assert.equal(result.eligible, false);
+  assert.deepEqual(result.blockers, ['INVALID_CANONICAL_PAYLOAD']);
+  assert.equal(verifierCalled, false);
+});
+
+test('snapshotting arrays does not call input-controlled map methods', async () => {
+  const evidence = validDeviceEvidence();
+  let mapCalled = false;
+  Object.defineProperty(evidence.control.timesteps, 'map', {
+    enumerable: false,
+    value() {
+      mapCalled = true;
+      throw new Error('input-controlled map must not run');
+    },
+  });
+  const result = await assessTrusted(evidence);
+  assert.equal(result.eligible, true);
+  assert.equal(mapCalled, false);
+});
+
 test('provider fallback, cloud usage and authority escalation fail closed', async () => {
   const evidence = validDeviceEvidence();
   evidence.device.executionProviders = ['webgpu', 'wasm'];
