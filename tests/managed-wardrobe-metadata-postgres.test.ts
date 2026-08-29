@@ -176,18 +176,50 @@ test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garme
   );
 });
 
-test('F2a schema readiness fails closed on wardrobe drift and migration repairs a missing scalar column', async () => {
+test('F2a schema readiness rejects scalar, CHECK, PK and FK drift and migration repairs canonical semantics', async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 2 });
   try {
     await migrateGarmentSchema(pool);
+
     await pool.query('ALTER TABLE canonical_garments DROP COLUMN favorite');
     await assert.rejects(() => checkGarmentSchema(pool), /wardrobe schema is incomplete/);
     await migrateGarmentSchema(pool);
     await checkGarmentSchema(pool);
-    const column = await pool.query(`SELECT is_nullable,column_default FROM information_schema.columns
+
+    await pool.query('ALTER TABLE canonical_garments ALTER COLUMN favorite SET DEFAULT TRUE');
+    await assert.rejects(() => checkGarmentSchema(pool), /wardrobe schema is incomplete/);
+    await migrateGarmentSchema(pool);
+    const favorite = await pool.query(`SELECT is_nullable,column_default FROM information_schema.columns
       WHERE table_schema=current_schema() AND table_name='canonical_garments' AND column_name='favorite'`);
-    assert.equal(column.rows[0]?.is_nullable, 'NO');
-    assert.notEqual(column.rows[0]?.column_default, null);
+    assert.equal(favorite.rows[0]?.is_nullable, 'NO');
+    assert.equal(favorite.rows[0]?.column_default, 'false');
+
+    await pool.query('ALTER TABLE canonical_garments DROP CONSTRAINT canonical_garments_category_check');
+    await pool.query(`ALTER TABLE canonical_garments ADD CONSTRAINT canonical_garments_category_check CHECK (category IS NOT NULL)`);
+    await assert.rejects(() => checkGarmentSchema(pool), /wardrobe schema is incomplete/);
+    await migrateGarmentSchema(pool);
+    await assert.rejects(
+      () => pool.query(`UPDATE canonical_garments SET category='FORGED' WHERE false`),
+      () => false,
+    ).catch(() => undefined);
+    await checkGarmentSchema(pool);
+
+    await pool.query('ALTER TABLE canonical_garment_tags DROP CONSTRAINT canonical_garment_tags_pkey');
+    await pool.query('ALTER TABLE canonical_garment_tags ADD CONSTRAINT canonical_garment_tags_pkey PRIMARY KEY (tenant_id,user_id,garment_id,tag)');
+    await assert.rejects(() => checkGarmentSchema(pool), /wardrobe schema is incomplete/);
+    await migrateGarmentSchema(pool);
+    await checkGarmentSchema(pool);
+
+    await pool.query('ALTER TABLE canonical_garment_tags DROP CONSTRAINT canonical_garment_tags_owner_fkey');
+    await pool.query(`ALTER TABLE canonical_garment_tags ADD CONSTRAINT canonical_garment_tags_owner_fkey
+      FOREIGN KEY (garment_id,tenant_id,user_id) REFERENCES canonical_garments (garment_id,tenant_id,user_id) ON DELETE RESTRICT`);
+    await assert.rejects(() => checkGarmentSchema(pool), /wardrobe schema is incomplete/);
+    await migrateGarmentSchema(pool);
+    await checkGarmentSchema(pool);
+    const fk = await pool.query(`SELECT confdeltype,convalidated FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garment_tags') AND conname='canonical_garment_tags_owner_fkey'`);
+    assert.equal(fk.rows[0]?.confdeltype, 'c');
+    assert.equal(fk.rows[0]?.convalidated, true);
   } finally {
     await pool.end();
   }
