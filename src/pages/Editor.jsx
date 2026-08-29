@@ -57,6 +57,7 @@ import SelectionToolbar from '@/components/editor/SelectionToolbar';
 import { SelectionApplicationService } from '@/application/selection';
 import { createSelectionSegmentation } from '@/application/createSelectionSegmentation';
 import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPort';
+import { commitAcceptedResult } from '@/application/editor/commitAcceptedResult';
 
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
@@ -478,14 +479,29 @@ export default function Editor() {
       const pending = pendingResult;
       const { result, instruction: used } = pending;
       if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
-      await pushEdit(result.finalArtifactId, used);
-      await notificationCenter.push({ title: 'Edit saved', message: 'Your accepted result has been added to project history.', type: 'success', projectId: project.id });
-      sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error)); // fingerprint bumps on accepted edits only
-      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: true, durationMs: result.generation_time_ms || 0 });
-      disposePendingPreview(pending);
-      setPendingResult(null);
-      setInstruction('');
-      setActiveRecipe(null);
+      await commitAcceptedResult({
+        commitCanonical: () => pushEdit(result.finalArtifactId, used),
+        cleanupAcceptedResult: () => {
+          setPendingResult(null);
+          disposePendingPreview(pending);
+          setInstruction('');
+          setActiveRecipe(null);
+        },
+        sideEffects: [
+          {
+            label: 'Failed to create accepted-edit notification',
+            run: () => notificationCenter.push({ title: 'Edit saved', message: 'Your accepted result has been added to project history.', type: 'success', projectId: project.id }),
+          },
+          {
+            label: 'Failed to update scene memory',
+            run: () => sceneMemory.recordAcceptedEdit(project),
+          },
+          {
+            label: 'Failed to record workspace history',
+            run: () => workspaceHistory.recordEdit(workspaceManager.activeId(), { success: true, durationMs: result.generation_time_ms || 0 }),
+          },
+        ],
+      });
     } finally {
       setCommitting(false);
     }
@@ -695,7 +711,7 @@ export default function Editor() {
       ) : cropInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
       ) : resizeInteractionActive ? (
-        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel them before starting another edit.</p>
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel it before starting another edit.</p>
       ) : objects.length === 0 ? (
         <>
           {plan && <PlanPreview plan={plan} />}
