@@ -40,6 +40,8 @@ type CreateGarmentInput = Readonly<{
   bytes: Uint8Array;
 }>;
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class PostgresGarmentStore {
   constructor(private readonly pool: Pool, private readonly nextId: () => string = randomUUID) {}
 
@@ -118,7 +120,7 @@ export class PostgresGarmentStore {
   }
 
   async get(scope: GarmentOwnerScope, garmentId: string): Promise<ManagedGarment | undefined> {
-    if (!garmentId) return undefined;
+    if (!isUuid(garmentId)) return undefined;
     const result = await this.pool.query(`${GARMENT_SELECT}
       WHERE g.garment_id=$1 AND g.tenant_id=$2 AND g.user_id=$3 AND g.deleted_at IS NULL`,
     [garmentId, scope.tenantId, scope.userId]);
@@ -126,6 +128,7 @@ export class PostgresGarmentStore {
   }
 
   async loadView(scope: GarmentOwnerScope, garmentId: string, viewId: string): Promise<Readonly<{ bytes: Uint8Array; contentType: 'image/png'; contentSha256: string }> | undefined> {
+    if (!isUuid(garmentId) || !isUuid(viewId)) return undefined;
     const result = await this.pool.query(`SELECT v.image_bytes,v.content_type,v.content_sha256
       FROM canonical_garment_views v
       JOIN canonical_garments g ON g.garment_id=v.garment_id AND g.tenant_id=v.tenant_id AND g.user_id=v.user_id
@@ -187,6 +190,8 @@ function fromGarmentRow(row: any): ManagedGarment {
     updatedAt: new Date(row.updated_at).toISOString(),
   });
 }
+
+function isUuid(value: unknown): value is string { return typeof value === 'string' && UUID_PATTERN.test(value); }
 
 function normalizeName(value: string): string {
   const name = typeof value === 'string' ? value.trim() : '';

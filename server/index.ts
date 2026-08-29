@@ -1,10 +1,11 @@
-import { createServer } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { loadCoreServerConfig } from './core/config.ts';
 import { createProductionCore } from './core/composition/createProductionCore.ts';
 import { createLocalExecutionHttpAdapter } from './core/http/localExecutionHttpAdapter.ts';
 import { createOrthogonalTransformHttpAdapter } from './core/http/orthogonalTransformHttpAdapter.ts';
 import { createLocalCompositeContinuationHttpAdapter } from './core/http/localCompositeContinuationHttpAdapter.ts';
 import { createManagedGarmentHttpAdapter } from './core/http/managedGarmentHttpAdapter.ts';
+import { parseCoreRequestTarget } from './core/http/requestTarget.ts';
 import { LocalCompositeOutputUploadService } from './core/workflow/LocalCompositeOutputUploadService.ts';
 import { createCanonicalNodeHttpAdapter } from './core/http/canonicalNodeHttpAdapter.ts';
 import { applyCoreSecurityHeaders } from './core/http/securityHeaders.ts';
@@ -29,7 +30,9 @@ export async function startCoreServer() {
   const localCompositeAdapter = createLocalCompositeContinuationHttpAdapter({ continuation: production.localExecution.composite, outputs: localCompositeOutputs, auth: production.auth, config });
   const server = createServer((request, response) => {
     applyCoreSecurityHeaders(response, config);
-    const path = new URL(request.url ?? '/', 'http://core.invalid').pathname;
+    const target = parseCoreRequestTarget(request.url);
+    if (!target.ok) { sendInvalidRequestTarget(response, target); return; }
+    const path = target.path;
     if (path === '/api/core/garments' || path.startsWith('/api/core/garments/')) return void managedGarmentAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/orthogonal-transform/')) return void orthogonalTransformAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/')) return void localExecutionAdapter(request, response);
@@ -42,6 +45,16 @@ export async function startCoreServer() {
   const stop = () => stopping ??= (async () => { accepting = false; await Promise.race([new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())), new Promise<void>(resolve => setTimeout(resolve, config.shutdownTimeoutMs))]); server.closeIdleConnections(); await production.close(); })();
   process.once('SIGTERM', () => { void stop(); }); process.once('SIGINT', () => { void stop(); });
   return Object.freeze({ server, stop, config });
+}
+
+function sendInvalidRequestTarget(response: ServerResponse, error: Readonly<{ status: 400; code: string; message: string }>): void {
+  const bytes = Buffer.from(JSON.stringify({ error: error.code, message: error.message }));
+  response.statusCode = error.status;
+  response.setHeader('Content-Type', 'application/json');
+  response.setHeader('Content-Length', bytes.byteLength);
+  response.setHeader('Cache-Control', 'no-store');
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.end(bytes);
 }
 
 function startupFailure(error: unknown): Readonly<{ event: 'core_startup_failed'; name: string; code?: string; message: string }> {

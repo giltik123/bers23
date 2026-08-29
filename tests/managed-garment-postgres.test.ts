@@ -7,6 +7,7 @@ import { GarmentDeliveryAuthority } from '../server/core/fashion/garmentDelivery
 import { checkGarmentSchema, migrateGarmentSchema } from '../server/core/fashion/garmentSchema.ts';
 import { PostgresGarmentStore } from '../server/core/fashion/postgresGarmentStore.ts';
 import { createManagedGarmentHttpAdapter } from '../server/core/http/managedGarmentHttpAdapter.ts';
+import { parseCoreRequestTarget } from '../server/core/http/requestTarget.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for managed Garment acceptance');
@@ -117,6 +118,11 @@ test('managed Garment creation owns canonical bytes and fails closed across user
   );
   assert.equal((await store.list(owner)).length, 1, 'failed ingestion must not create a partial Garment row');
 
+  const invalidTarget = parseCoreRequestTarget('http://[');
+  assert.equal(invalidTarget.ok, false);
+  if (!invalidTarget.ok) assert.equal(invalidTarget.code, 'invalid_request_target');
+  assert.deepEqual(parseCoreRequestTarget('/api/core/garments?name=x'), { ok: true, path: '/api/core/garments' });
+
   let now = 10_000;
   let accepting = true;
   const delivery = new GarmentDeliveryAuthority('managed-garment-http-delivery-secret', () => now);
@@ -171,6 +177,10 @@ test('managed Garment creation owns canonical bytes and fails closed across user
   const otherItemResponse = await fetch(`${origin}/api/core/garments/${encodeURIComponent(created.id)}`, { headers: { authorization: 'Bearer other-token' } });
   assert.equal(otherItemResponse.status, 404);
   assert.equal((await otherItemResponse.json() as any).error, 'garment_not_found');
+
+  const nonUuidResponse = await fetch(`${origin}/api/core/garments/not-a-uuid`, { headers: { authorization: 'Bearer owner-token' } });
+  assert.equal(nonUuidResponse.status, 404);
+  assert.equal((await nonUuidResponse.json() as any).error, 'garment_not_found');
 
   const malformedIdResponse = await fetch(`${origin}/api/core/garments/%E0%A4%A`, { headers: { authorization: 'Bearer owner-token' } });
   assert.equal(malformedIdResponse.status, 400);
@@ -235,12 +245,25 @@ test('managed Garment creation owns canonical bytes and fails closed across user
   assert.equal((await expiredDelivery.json() as any).error, 'garment_view_not_found');
 
   await pool.query('ALTER TABLE canonical_garments DROP CONSTRAINT canonical_garments_primary_view_owner_fkey');
-  await assert.rejects(
-    () => checkGarmentSchema(pool),
-    /ownership constraints are incomplete/,
-  );
+  await assert.rejects(() => checkGarmentSchema(pool), /ownership constraints are incomplete/);
   await migrateGarmentSchema(pool);
   await checkGarmentSchema(pool);
+
+  const columnDrift = await pool.connect();
+  try {
+    await columnDrift.query('BEGIN');
+    await columnDrift.query('ALTER TABLE canonical_garment_views DROP COLUMN image_bytes');
+    await assert.rejects(() => checkGarmentSchema(columnDrift as unknown as Pool), /schema columns or ownership constraints are incomplete/);
+    await columnDrift.query('ROLLBACK');
+
+    await columnDrift.query('BEGIN');
+    await columnDrift.query('ALTER TABLE canonical_garment_views ALTER COLUMN tenant_id DROP NOT NULL');
+    await assert.rejects(() => checkGarmentSchema(columnDrift as unknown as Pool), /schema columns or ownership constraints are incomplete/);
+    await columnDrift.query('ROLLBACK');
+  } finally {
+    await columnDrift.query('ROLLBACK').catch(() => undefined);
+    columnDrift.release();
+  }
 });
 
 test('garment delivery capabilities are owner-bound and expire without changing durable garment/view identity', () => {

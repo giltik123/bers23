@@ -4,31 +4,55 @@ import type { Pool } from 'pg';
 
 const MIGRATION = '022_managed_garments_and_initial_views.sql';
 
+type ColumnContract = Readonly<{
+  table: 'canonical_garments' | 'canonical_garment_views';
+  name: string;
+  udtName: string;
+  nullable: boolean;
+  maxLength?: number;
+  requiresDefault?: boolean;
+}>;
+
+const REQUIRED_COLUMNS: readonly ColumnContract[] = Object.freeze([
+  { table: 'canonical_garments', name: 'garment_id', udtName: 'uuid', nullable: false },
+  { table: 'canonical_garments', name: 'tenant_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garments', name: 'user_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garments', name: 'name', udtName: 'text', nullable: false },
+  { table: 'canonical_garments', name: 'representation_tier', udtName: 'text', nullable: false },
+  { table: 'canonical_garments', name: 'status', udtName: 'text', nullable: false },
+  { table: 'canonical_garments', name: 'revision', udtName: 'int8', nullable: false },
+  { table: 'canonical_garments', name: 'primary_view_id', udtName: 'uuid', nullable: false },
+  { table: 'canonical_garments', name: 'created_at', udtName: 'timestamptz', nullable: false, requiresDefault: true },
+  { table: 'canonical_garments', name: 'updated_at', udtName: 'timestamptz', nullable: false, requiresDefault: true },
+  { table: 'canonical_garments', name: 'deleted_at', udtName: 'timestamptz', nullable: true },
+  { table: 'canonical_garment_views', name: 'view_id', udtName: 'uuid', nullable: false },
+  { table: 'canonical_garment_views', name: 'garment_id', udtName: 'uuid', nullable: false },
+  { table: 'canonical_garment_views', name: 'tenant_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_views', name: 'user_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_views', name: 'ordinal', udtName: 'int4', nullable: false },
+  { table: 'canonical_garment_views', name: 'view_kind', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_views', name: 'source_content_type', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_views', name: 'width', udtName: 'int4', nullable: false },
+  { table: 'canonical_garment_views', name: 'height', udtName: 'int4', nullable: false },
+  { table: 'canonical_garment_views', name: 'encoding', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_views', name: 'content_type', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_views', name: 'content_sha256', udtName: 'bpchar', nullable: false, maxLength: 64 },
+  { table: 'canonical_garment_views', name: 'storage_backend', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_views', name: 'image_bytes', udtName: 'bytea', nullable: false },
+  { table: 'canonical_garment_views', name: 'created_at', udtName: 'timestamptz', nullable: false, requiresDefault: true },
+  { table: 'canonical_garment_views', name: 'revoked_at', udtName: 'timestamptz', nullable: true },
+  { table: 'canonical_garment_views', name: 'deleted_at', udtName: 'timestamptz', nullable: true },
+]);
+
 async function migration(): Promise<string> {
   try { return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8'); }
   catch { return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', MIGRATION), 'utf8'); }
 }
 
 async function schemaState(pool: Pool) {
-  const result = await pool.query(`SELECT
+  const structural = await pool.query(`SELECT
     to_regclass('canonical_garments')::text AS garments,
     to_regclass('canonical_garment_views')::text AS views,
-    EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema=current_schema() AND table_name='canonical_garments' AND column_name='representation_tier'
-    ) AS representation_tier,
-    EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema=current_schema() AND table_name='canonical_garment_views' AND column_name='content_sha256'
-    ) AS content_hash,
-    EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema=current_schema() AND table_name='canonical_garment_views' AND column_name='storage_backend'
-    ) AS storage_provenance,
-    EXISTS (
-      SELECT 1 FROM pg_attribute
-      WHERE attrelid=to_regclass('canonical_garments') AND attname='primary_view_id' AND attnotnull AND NOT attisdropped
-    ) AS primary_view_not_null,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garments') AND contype='p'
@@ -67,17 +91,29 @@ async function schemaState(pool: Pool) {
         AND condeferrable AND condeferred
         AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (primary_view_id, garment_id, tenant_id, user_id) REFERENCES canonical_garment_views(view_id, garment_id, tenant_id, user_id)%'
     ) AS primary_view_owner_fk`);
-  return result.rows[0];
+  const columns = await pool.query(`SELECT table_name,column_name,udt_name,is_nullable,character_maximum_length,column_default
+    FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name IN ('canonical_garments','canonical_garment_views')`);
+  return Object.freeze({ ...(structural.rows[0] ?? {}), columns: columns.rows });
+}
+
+function columnsReady(rows: readonly any[]): boolean {
+  const columns = new Map(rows.map(row => [`${String(row.table_name)}.${String(row.column_name)}`, row]));
+  return REQUIRED_COLUMNS.every(expected => {
+    const row = columns.get(`${expected.table}.${expected.name}`);
+    if (!row || String(row.udt_name) !== expected.udtName) return false;
+    if ((String(row.is_nullable) === 'YES') !== expected.nullable) return false;
+    if (expected.maxLength !== undefined && Number(row.character_maximum_length) !== expected.maxLength) return false;
+    if (expected.requiresDefault && (row.column_default === null || row.column_default === undefined || String(row.column_default).trim() === '')) return false;
+    return true;
+  });
 }
 
 function schemaReady(state: any): boolean {
   return Boolean(
     state?.garments
     && state?.views
-    && state?.representation_tier
-    && state?.content_hash
-    && state?.storage_provenance
-    && state?.primary_view_not_null
+    && columnsReady(Array.isArray(state?.columns) ? state.columns : [])
     && state?.garment_pk
     && state?.view_pk
     && state?.garment_owner_unique
@@ -91,7 +127,7 @@ function schemaReady(state: any): boolean {
 export async function checkGarmentSchema(pool: Pool): Promise<void> {
   const state = await schemaState(pool);
   if (!schemaReady(state)) {
-    throw new Error('canonical managed Garment schema or ownership constraints are incomplete; apply migration 022');
+    throw new Error('canonical managed Garment schema columns or ownership constraints are incomplete; apply migration 022');
   }
 }
 
