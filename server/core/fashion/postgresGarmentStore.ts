@@ -17,6 +17,7 @@ export type ManagedGarmentView = Readonly<{
   encoding: 'PNG_RGBA8_LOSSLESS';
   contentType: 'image/png';
   contentSha256: string;
+  storageBackend: 'POSTGRES_BYTEA_V1';
   createdAt: string;
 }>;
 
@@ -84,8 +85,8 @@ export class PostgresGarmentStore {
         (garment_id,tenant_id,user_id,name,representation_tier,status,revision)
         VALUES ($1,$2,$3,$4,'BASIC','ACTIVE',1)`, [garmentId, scope.tenantId, scope.userId, name]);
       await client.query(`INSERT INTO canonical_garment_views
-        (view_id,garment_id,tenant_id,user_id,ordinal,view_kind,source_content_type,width,height,encoding,content_type,content_sha256,image_bytes)
-        VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,$10)`,
+        (view_id,garment_id,tenant_id,user_id,ordinal,view_kind,source_content_type,width,height,encoding,content_type,content_sha256,storage_backend,image_bytes)
+        VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,'POSTGRES_BYTEA_V1',$10)`,
       [viewId, garmentId, scope.tenantId, scope.userId, viewKind, sourceContentType, width, height, contentSha256, png]);
       await client.query(`UPDATE canonical_garments SET primary_view_id=$2,updated_at=CURRENT_TIMESTAMP
         WHERE garment_id=$1 AND tenant_id=$3 AND user_id=$4`, [garmentId, viewId, scope.tenantId, scope.userId]);
@@ -140,6 +141,7 @@ const GARMENT_SELECT = `SELECT g.*,
     'encoding',v.encoding,
     'contentType',v.content_type,
     'contentSha256',v.content_sha256,
+    'storageBackend',v.storage_backend,
     'createdAt',v.created_at
   ) ORDER BY v.ordinal)
   FROM canonical_garment_views v
@@ -158,6 +160,7 @@ function fromGarmentRow(row: any): ManagedGarment {
     encoding: 'PNG_RGBA8_LOSSLESS' as const,
     contentType: 'image/png' as const,
     contentSha256: String(view.contentSha256),
+    storageBackend: normalizeStorageBackend(view.storageBackend),
     createdAt: new Date(view.createdAt).toISOString(),
   }));
   const primaryViewId = String(row.primary_view_id ?? '');
@@ -192,6 +195,11 @@ function normalizeViewKind(value: unknown): GarmentViewKind {
 function normalizeSourceContentType(value: unknown): 'image/png' | 'image/jpeg' | 'image/webp' {
   if (value === 'image/png' || value === 'image/jpeg' || value === 'image/webp') return value;
   throw httpError(415, 'unsupported_media_type', 'Supported garment images are PNG, JPEG and WebP');
+}
+
+function normalizeStorageBackend(value: unknown): 'POSTGRES_BYTEA_V1' {
+  if (value === 'POSTGRES_BYTEA_V1') return value;
+  throw new Error('Managed garment storage provenance is unsupported');
 }
 
 function httpError(status: number, code: string, message: string): Error & { status: number; code: string } {
