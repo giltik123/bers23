@@ -291,6 +291,42 @@ test('assessment snapshots untrusted evidence before signature and semantic vali
   assert.equal(softwareAdapterReads, 1, 'untrusted getter must be read only once into the immutable assessment snapshot');
 });
 
+test('sparse evidence arrays are rejected before attestation', async () => {
+  const evidence = validDeviceEvidence();
+  evidence.control.timesteps = new Array(evidence.control.stepCount);
+  let verifierCalls = 0;
+
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
+    expectedTestedCommitSha: TESTED_COMMIT_SHA,
+    trustVerifier: () => {
+      verifierCalls += 1;
+      return { verified: true };
+    },
+    now,
+  });
+
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('INVALID_CANONICAL_PAYLOAD'));
+  assert.equal(verifierCalls, 0, 'invalid sparse evidence must not reach attestation');
+});
+
+test('canonical snapshot never invokes an input-controlled array map', async () => {
+  const evidence = validDeviceEvidence();
+  let mapCalls = 0;
+  Object.defineProperty(evidence.control.timesteps, 'map', {
+    configurable: true,
+    value() {
+      mapCalls += 1;
+      throw new Error('input-controlled map must not be called');
+    },
+  });
+
+  const result = await assessTrusted(evidence);
+
+  assert.equal(result.eligible, true);
+  assert.equal(mapCalls, 0);
+});
+
 test('software adapter spoofing and missing shader-f16 fail closed', async () => {
   const evidence = validDeviceEvidence();
   evidence.device.softwareAdapter = true;
@@ -315,6 +351,16 @@ test('known Mesa software renderers cannot masquerade as physical adapters', asy
     assert.equal(result.eligible, false);
     assert.ok(result.blockers.includes('SOFTWARE_OR_UNKNOWN_ADAPTER'));
   }
+});
+
+test('device-only software renderer identifiers cannot masquerade as physical adapters', async () => {
+  const evidence = validDeviceEvidence();
+  evidence.device.device = 'ANGLE (Mesa, llvmpipe)';
+  evidence.device.softwareAdapter = false;
+  evidence.device.adapterKind = 'PHYSICAL';
+  const result = await assessTrusted(evidence);
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('SOFTWARE_OR_UNKNOWN_ADAPTER'));
 });
 
 test('provider fallback, cloud usage and authority escalation fail closed', async () => {
