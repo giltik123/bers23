@@ -180,15 +180,19 @@ const assessTrusted = evidence => assessTinySdD6RealDeviceEvidence(evidence, {
   now,
 });
 
-test('hosted SwiftShader is accepted only as a blocked negative control', () => {
+test('hosted SwiftShader is accepted only as a blocked negative control', async () => {
   const result = validateHostedWebGpuNegativeControl(hostedNegativeControl());
   assert.equal(result.acceptedNegativeControl, true);
   assert.equal(result.realDeviceAdmission, false);
 });
 
-test('complete physical WebGPU evidence can satisfy the contract without production authority', () => {
+test('complete physical WebGPU evidence can satisfy the contract without production authority', async () => {
   const evidence = validDeviceEvidence();
-  const result = assessTrusted(evidence);
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
+    expectedTestedCommitSha: TESTED_COMMIT_SHA,
+    trustVerifier: async input => verifierFor(evidence)(input),
+    now,
+  });
   assert.equal(result.eligible, true);
   assert.deepEqual(result.blockers, []);
   assert.equal(result.productionApproval, false);
@@ -196,18 +200,18 @@ test('complete physical WebGPU evidence can satisfy the contract without product
   assert.equal(result.releaseAuthorityGranted, false);
 });
 
-test('D6 is bound to accepted D5 commit, exact D5 evidence head and fresh artifact digest', () => {
+test('D6 is bound to accepted D5 commit, exact D5 evidence head and fresh artifact digest', async () => {
   const evidence = validDeviceEvidence();
   evidence.d5EvidenceArtifactDigest = `sha256:${'f'.repeat(64)}`;
-  const result = assessTrusted(evidence);
+  const result = await assessTrusted(evidence);
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('D5_ROOT_DRIFT'));
 });
 
-test('tested commit must exactly match the trusted caller expectation', () => {
+test('tested commit must exactly match the trusted caller expectation', async () => {
   const evidence = validDeviceEvidence();
   evidence.testedCommitSha = '2'.repeat(40);
-  const result = assessTinySdD6RealDeviceEvidence(evidence, {
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
     expectedTestedCommitSha: TESTED_COMMIT_SHA,
     trustVerifier: verifierFor(evidence),
     now,
@@ -216,9 +220,9 @@ test('tested commit must exactly match the trusted caller expectation', () => {
   assert.ok(result.blockers.includes('TESTED_COMMIT_DRIFT'));
 });
 
-test('missing expected tested commit fails closed even with a valid payload verifier', () => {
+test('missing expected tested commit fails closed even with a valid payload verifier', async () => {
   const evidence = validDeviceEvidence();
-  const result = assessTinySdD6RealDeviceEvidence(evidence, {
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
     trustVerifier: verifierFor(evidence),
     now,
   });
@@ -226,9 +230,9 @@ test('missing expected tested commit fails closed even with a valid payload veri
   assert.ok(result.blockers.includes('TESTED_COMMIT_DRIFT'));
 });
 
-test('detached attestationVerified boolean cannot grant trust', () => {
+test('detached attestationVerified boolean cannot grant trust', async () => {
   const evidence = validDeviceEvidence();
-  const result = assessTinySdD6RealDeviceEvidence(evidence, {
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
     expectedTestedCommitSha: TESTED_COMMIT_SHA,
     attestationVerified: true,
     now,
@@ -237,11 +241,11 @@ test('detached attestationVerified boolean cannot grant trust', () => {
   assert.ok(result.blockers.includes('ATTESTATION_UNVERIFIED'));
 });
 
-test('attestation verifier is bound to the exact canonical assessed payload', () => {
+test('attestation verifier is bound to the exact canonical assessed payload', async () => {
   const evidence = validDeviceEvidence();
   const verifier = verifierFor(evidence);
   evidence.device.vendor = 'different-physical-vendor';
-  const result = assessTinySdD6RealDeviceEvidence(evidence, {
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
     expectedTestedCommitSha: TESTED_COMMIT_SHA,
     trustVerifier: verifier,
     now,
@@ -250,7 +254,7 @@ test('attestation verifier is bound to the exact canonical assessed payload', ()
   assert.ok(result.blockers.includes('ATTESTATION_UNVERIFIED'));
 });
 
-test('canonical payload excludes only attestation and is stable across object key order', () => {
+test('canonical payload excludes only attestation and is stable across object key order', async () => {
   const evidence = validDeviceEvidence();
   const canonical = canonicalizeTinySdD6EvidencePayload(evidence);
   const reordered = Object.fromEntries(Object.entries(evidence).reverse());
@@ -260,7 +264,7 @@ test('canonical payload excludes only attestation and is stable across object ke
   assert.match(canonical, new RegExp(TESTED_COMMIT_SHA));
 });
 
-test('assessment snapshots untrusted evidence before signature and semantic validation', () => {
+test('assessment snapshots untrusted evidence before signature and semantic validation', async () => {
   const signedEvidence = validDeviceEvidence();
   signedEvidence.device.softwareAdapter = true;
   const signedPayload = canonicalizeTinySdD6EvidencePayload(signedEvidence);
@@ -276,7 +280,7 @@ test('assessment snapshots untrusted evidence before signature and semantic vali
     },
   });
 
-  const result = assessTinySdD6RealDeviceEvidence(evidence, {
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
     expectedTestedCommitSha: TESTED_COMMIT_SHA,
     trustVerifier: ({ canonicalPayload }) => ({ verified: canonicalPayload === signedPayload }),
     now,
@@ -287,19 +291,33 @@ test('assessment snapshots untrusted evidence before signature and semantic vali
   assert.equal(softwareAdapterReads, 1, 'untrusted getter must be read only once into the immutable assessment snapshot');
 });
 
-test('software adapter spoofing and missing shader-f16 fail closed', () => {
+test('software adapter spoofing and missing shader-f16 fail closed', async () => {
   const evidence = validDeviceEvidence();
   evidence.device.softwareAdapter = true;
   evidence.device.adapterKind = 'SOFTWARE';
   evidence.device.architecture = 'swiftshader';
   evidence.device.features = [];
-  const result = assessTrusted(evidence);
+  const result = await assessTrusted(evidence);
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('SOFTWARE_OR_UNKNOWN_ADAPTER'));
   assert.ok(result.blockers.includes('REQUIRED_FEATURE_MISSING'));
 });
 
-test('provider fallback, cloud usage and authority escalation fail closed', () => {
+test('known Mesa software renderers cannot masquerade as physical adapters', async () => {
+  for (const softwareName of ['llvmpipe', 'lavapipe']) {
+    const evidence = validDeviceEvidence();
+    evidence.device.vendor = 'Mesa';
+    evidence.device.architecture = softwareName;
+    evidence.device.description = `${softwareName} renderer`;
+    evidence.device.softwareAdapter = false;
+    evidence.device.adapterKind = 'PHYSICAL';
+    const result = await assessTrusted(evidence);
+    assert.equal(result.eligible, false);
+    assert.ok(result.blockers.includes('SOFTWARE_OR_UNKNOWN_ADAPTER'));
+  }
+});
+
+test('provider fallback, cloud usage and authority escalation fail closed', async () => {
   const evidence = validDeviceEvidence();
   evidence.device.executionProviders = ['webgpu', 'wasm'];
   evidence.device.providerFallbackAllowed = true;
@@ -307,17 +325,17 @@ test('provider fallback, cloud usage and authority escalation fail closed', () =
   evidence.localExecution.providerApiCalls = 1;
   evidence.localExecution.aiCreditsConsumed = 3;
   evidence.productionApproval = true;
-  const result = assessTrusted(evidence);
+  const result = await assessTrusted(evidence);
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('PROVIDER_FALLBACK_OR_DRIFT'));
   assert.ok(result.blockers.includes('NON_LOCAL_EXECUTION_DETECTED'));
   assert.ok(result.blockers.includes('AUTHORITY_ESCALATION'));
 });
 
-test('wrong candidate identity and missing verifier are rejected independently', () => {
+test('wrong candidate identity and missing verifier are rejected independently', async () => {
   const evidence = validDeviceEvidence();
   evidence.components.unet.sha256 = 'f'.repeat(64);
-  const result = assessTinySdD6RealDeviceEvidence(evidence, {
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
     expectedTestedCommitSha: TESTED_COMMIT_SHA,
     now,
   });
@@ -326,25 +344,25 @@ test('wrong candidate identity and missing verifier are rejected independently',
   assert.ok(result.blockers.includes('ATTESTATION_UNVERIFIED'));
 });
 
-test('short D5-style three-step fixture cannot masquerade as practical quality evidence', () => {
+test('short D5-style three-step fixture cannot masquerade as practical quality evidence', async () => {
   const evidence = validDeviceEvidence();
   evidence.control.stepCount = 3;
   evidence.quality.cases = evidence.quality.cases.slice(0, 3);
   evidence.quality.reviewer.decision = 'NOT_REVIEWED';
-  const result = assessTrusted(evidence);
+  const result = await assessTrusted(evidence);
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('PRACTICAL_GENERATION_PROTOCOL_REQUIRED'));
   assert.ok(result.blockers.includes('QUALITY_REVIEW_REQUIRED'));
   assert.ok(result.blockers.includes('HUMAN_REVIEW_REQUIRED'));
 });
 
-test('stale evidence, fabricated memory and incomplete device identity are rejected independently', () => {
+test('stale evidence, fabricated memory and incomplete device identity are rejected independently', async () => {
   const evidence = validDeviceEvidence();
   evidence.capturedAt = now - (31 * 24 * 60 * 60 * 1000);
   evidence.expiresAt = now + 60_000;
   evidence.device.coarseDeviceEvidenceKey = '';
   evidence.benchmark.peakRamBytes = '8GB';
-  const result = assessTrusted(evidence);
+  const result = await assessTrusted(evidence);
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('INVALID_TIME'));
   assert.ok(result.blockers.includes('STALE_EVIDENCE'));
@@ -352,58 +370,58 @@ test('stale evidence, fabricated memory and incomplete device identity are rejec
   assert.ok(result.blockers.includes('INVALID_MEMORY_EVIDENCE'));
 });
 
-test('quality evidence must be hash-bound to the exact practical prompt corpus', () => {
+test('quality evidence must be hash-bound to the exact practical prompt corpus', async () => {
   const evidence = validDeviceEvidence();
   evidence.quality.corpusId = 'different-corpus';
   evidence.quality.corpusSha256 = 'not-a-sha';
   evidence.quality.reviewer.reviewSha256 = 'not-a-sha';
-  const result = assessTrusted(evidence);
+  const result = await assessTrusted(evidence);
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('QUALITY_REVIEW_REQUIRED'));
   assert.ok(result.blockers.includes('HUMAN_REVIEW_REQUIRED'));
   assert.ok(result.blockers.includes('EVIDENCE_BINDING_MISMATCH'));
 });
 
-test('quality matrix cannot duplicate easy cases while omitting required prompt-seed entries', () => {
+test('quality matrix cannot duplicate easy cases while omitting required prompt-seed entries', async () => {
   const evidence = validDeviceEvidence();
   const duplicate = { ...evidence.quality.cases[0], caseId: 'duplicate-easy-case' };
   evidence.quality.cases[evidence.quality.cases.length - 1] = duplicate;
-  const result = assessTrusted(evidence);
+  const result = await assessTrusted(evidence);
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('QUALITY_REVIEW_REQUIRED'));
 });
 
-test('runtime identity and platform-device-class pairing are exact admission inputs', () => {
+test('runtime identity and platform-device-class pairing are exact admission inputs', async () => {
   const evidence = validDeviceEvidence();
   evidence.device.runtimeName = 'different-runtime';
   evidence.device.runtimeVersion = '1.28.0';
   evidence.device.platform = 'ANDROID';
   evidence.device.deviceClass = 'DESKTOP';
-  const result = assessTrusted(evidence);
+  const result = await assessTrusted(evidence);
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('RUNTIME_IDENTITY_DRIFT'));
   assert.ok(result.blockers.includes('INCOMPLETE_DEVICE_IDENTITY'));
 });
 
-test('human review must follow device capture and cannot be future-dated', () => {
+test('human review must follow device capture and cannot be future-dated', async () => {
   const beforeCapture = validDeviceEvidence();
   beforeCapture.quality.reviewer.reviewedAt = beforeCapture.capturedAt - 1;
-  const first = assessTrusted(beforeCapture);
+  const first = await assessTrusted(beforeCapture);
   assert.equal(first.eligible, false);
   assert.ok(first.blockers.includes('HUMAN_REVIEW_REQUIRED'));
 
   const future = validDeviceEvidence();
   future.quality.reviewer.reviewedAt = now + 1;
-  const second = assessTrusted(future);
+  const second = await assessTrusted(future);
   assert.equal(second.eligible, false);
   assert.ok(second.blockers.includes('HUMAN_REVIEW_REQUIRED'));
 });
 
-test('quality evidence cannot reuse case identities or output hashes even with a complete matrix', () => {
+test('quality evidence cannot reuse case identities or output hashes even with a complete matrix', async () => {
   const evidence = validDeviceEvidence();
   evidence.quality.cases[1].caseId = evidence.quality.cases[0].caseId;
   evidence.quality.cases[1].outputImageSha256 = evidence.quality.cases[0].outputImageSha256;
-  const result = assessTrusted(evidence);
+  const result = await assessTrusted(evidence);
   assert.equal(result.eligible, false);
   assert.ok(result.blockers.includes('QUALITY_REVIEW_REQUIRED'));
 });
