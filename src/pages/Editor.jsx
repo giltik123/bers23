@@ -57,7 +57,7 @@ import SelectionToolbar from '@/components/editor/SelectionToolbar';
 import { SelectionApplicationService } from '@/application/selection';
 import { createSelectionSegmentation } from '@/application/createSelectionSegmentation';
 import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPort';
-import { commitAcceptedResult } from '@/application/editor/commitAcceptedResult';
+import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
 
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
@@ -479,8 +479,8 @@ export default function Editor() {
       const pending = pendingResult;
       const { result, instruction: used } = pending;
       if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
-      await commitAcceptedResult({
-        commitCanonical: () => pushEdit(result.finalArtifactId, used),
+      await pushEdit(result.finalArtifactId, used);
+      finalizeAcceptedResult({
         cleanupAcceptedResult: () => {
           setPendingResult(null);
           disposePendingPreview(pending);
@@ -711,7 +711,7 @@ export default function Editor() {
       ) : cropInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
       ) : resizeInteractionActive ? (
-        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel it before starting another edit.</p>
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel them before starting another edit.</p>
       ) : objects.length === 0 ? (
         <>
           {plan && <PlanPreview plan={plan} />}
