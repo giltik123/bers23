@@ -50,18 +50,22 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const PATCH_KEYS = new Set(['name','style','season','occasion','favorite']);
 const MAX_ENTRIES = 32;
 
+function roles(...values: OutfitLayerRole[]): readonly OutfitLayerRole[] {
+  return Object.freeze(values);
+}
+
 const CATEGORY_ROLES: Readonly<Record<GarmentCategory, readonly OutfitLayerRole[]>> = Object.freeze({
-  tshirts: Object.freeze(['BASE_TOP']),
-  shirts: Object.freeze(['BASE_TOP','MID_TOP']),
-  jackets: Object.freeze(['OUTER_TOP']),
-  hoodies: Object.freeze(['MID_TOP','OUTER_TOP']),
-  sweaters: Object.freeze(['MID_TOP']),
-  pants: Object.freeze(['BOTTOM']), shorts: Object.freeze(['BOTTOM']), jeans: Object.freeze(['BOTTOM']), skirts: Object.freeze(['BOTTOM']),
-  dresses: Object.freeze(['FULL_BODY']),
-  shoes: Object.freeze(['FOOTWEAR']), boots: Object.freeze(['FOOTWEAR']), sneakers: Object.freeze(['FOOTWEAR']), sandals: Object.freeze(['FOOTWEAR']),
-  hats: Object.freeze(['ACCESSORY']), glasses: Object.freeze(['ACCESSORY']), scarves: Object.freeze(['ACCESSORY']), bags: Object.freeze(['ACCESSORY']),
-  belts: Object.freeze(['ACCESSORY']), jewelry: Object.freeze(['ACCESSORY']), gloves: Object.freeze(['ACCESSORY']), socks: Object.freeze(['ACCESSORY']),
-  other: Object.freeze(['ACCESSORY']),
+  tshirts: roles('BASE_TOP'),
+  shirts: roles('BASE_TOP','MID_TOP'),
+  jackets: roles('OUTER_TOP'),
+  hoodies: roles('MID_TOP','OUTER_TOP'),
+  sweaters: roles('MID_TOP'),
+  pants: roles('BOTTOM'), shorts: roles('BOTTOM'), jeans: roles('BOTTOM'), skirts: roles('BOTTOM'),
+  dresses: roles('FULL_BODY'),
+  shoes: roles('FOOTWEAR'), boots: roles('FOOTWEAR'), sneakers: roles('FOOTWEAR'), sandals: roles('FOOTWEAR'),
+  hats: roles('ACCESSORY'), glasses: roles('ACCESSORY'), scarves: roles('ACCESSORY'), bags: roles('ACCESSORY'),
+  belts: roles('ACCESSORY'), jewelry: roles('ACCESSORY'), gloves: roles('ACCESSORY'), socks: roles('ACCESSORY'),
+  other: roles('ACCESSORY'),
 });
 
 export function allowedOutfitLayerRoles(category: GarmentCategory): readonly OutfitLayerRole[] {
