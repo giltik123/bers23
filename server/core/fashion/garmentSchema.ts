@@ -20,20 +20,24 @@ async function schemaState(pool: Pool) {
     EXISTS (
       SELECT 1 FROM information_schema.columns
       WHERE table_name='canonical_garment_views' AND column_name='content_sha256'
-    ) AS content_hash`);
+    ) AS content_hash,
+    EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name='canonical_garment_views' AND column_name='storage_backend'
+    ) AS storage_provenance`);
   return result.rows[0];
 }
 
 export async function checkGarmentSchema(pool: Pool): Promise<void> {
   const state = await schemaState(pool);
-  if (!state?.garments || !state?.views || !state?.representation_tier || !state?.content_hash) {
+  if (!state?.garments || !state?.views || !state?.representation_tier || !state?.content_hash || !state?.storage_provenance) {
     throw new Error('canonical managed Garment schema is incomplete; apply migration 022');
   }
 }
 
 export async function migrateGarmentSchema(pool: Pool): Promise<void> {
   const state = await schemaState(pool);
-  if (!state?.garments || !state?.views || !state?.representation_tier || !state?.content_hash) {
+  if (!state?.garments || !state?.views || !state?.representation_tier || !state?.content_hash || !state?.storage_provenance) {
     await pool.query(await migration());
   }
   await checkGarmentSchema(pool);
