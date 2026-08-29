@@ -47,18 +47,28 @@ jobs:
           mkdir -p .test-cache/managed-garment-f1b/migrations
           node --input-type=module - <<'EOF'
           import { build } from 'esbuild';
-          await build({
-            entryPoints: ['tests/managed-garment-multiview-postgres.test.ts'],
+          const common = {
             bundle: true,
             platform: 'node',
             format: 'esm',
             target: 'node24',
-            outfile: '.test-cache/managed-garment-f1b/managed-garment-multiview-postgres.test.mjs',
             external: ['pg', 'sharp', 'node:*'],
+          };
+          await build({
+            ...common,
+            entryPoints: ['tests/managed-garment-multiview-postgres.test.ts'],
+            outfile: '.test-cache/managed-garment-f1b/managed-garment-multiview-postgres.test.mjs',
+          });
+          await build({
+            ...common,
+            entryPoints: ['tests/managed-garment-capture-contract-postgres.test.ts'],
+            outfile: '.test-cache/managed-garment-f1b/managed-garment-capture-contract-postgres.test.mjs',
           });
           EOF
           cp server/core/fashion/migrations/022_managed_garments_and_initial_views.sql .test-cache/managed-garment-f1b/migrations/
       - name: Prove same-garment view append, revision serialization and truthful capture assessment
         run: node --test .test-cache/managed-garment-f1b/managed-garment-multiview-postgres.test.mjs
+      - name: Prove UNSPECIFIED is initial-only and empty cardinal evidence is not overclaimed
+        run: node --test .test-cache/managed-garment-f1b/managed-garment-capture-contract-postgres.test.mjs
       - name: Preserve F1a authority regression
         run: node --test tests/editor-zero-object-navigation.test.mjs
