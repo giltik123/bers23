@@ -212,7 +212,8 @@ BEGIN
     SELECT 1 FROM pg_constraint
     WHERE conrelid=to_regclass('canonical_outfit_entries')
       AND conname='canonical_outfit_entries_outfit_position_unique'
-      AND NOT (contype='u' AND condeferrable AND condeferred AND pg_get_constraintdef(oid) LIKE 'UNIQUE (outfit_id, "position")%')
+      AND NOT (contype='u' AND condeferrable AND condeferred
+        AND replace(pg_get_constraintdef(oid), '"', '') LIKE 'UNIQUE (outfit_id, position)%')
   ) THEN
     EXECUTE 'ALTER TABLE canonical_outfit_entries DROP CONSTRAINT canonical_outfit_entries_outfit_position_unique';
   END IF;
@@ -221,14 +222,14 @@ BEGIN
     WHERE conrelid=to_regclass('canonical_outfit_entries')
       AND conname='canonical_outfit_entries_outfit_position_unique' AND contype='u'
       AND condeferrable AND condeferred
-      AND pg_get_constraintdef(oid) LIKE 'UNIQUE (outfit_id, "position")%'
+      AND replace(pg_get_constraintdef(oid), '"', '') LIKE 'UNIQUE (outfit_id, position)%'
   ) THEN
     correct_name := NULL;
     SELECT conname INTO correct_name
       FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_outfit_entries') AND contype='u'
         AND condeferrable AND condeferred
-        AND pg_get_constraintdef(oid) LIKE 'UNIQUE (outfit_id, "position")%'
+        AND replace(pg_get_constraintdef(oid), '"', '') LIKE 'UNIQUE (outfit_id, position)%'
       LIMIT 1;
     IF correct_name IS NOT NULL THEN
       EXECUTE format('ALTER TABLE canonical_outfit_entries RENAME CONSTRAINT %I TO canonical_outfit_entries_outfit_position_unique', correct_name);
@@ -305,7 +306,7 @@ BEGIN
     WHERE conrelid=to_regclass('canonical_outfit_entries')
       AND conname='canonical_outfit_entries_outfit_position_unique' AND contype='u'
       AND condeferrable AND condeferred
-      AND pg_get_constraintdef(oid) LIKE 'UNIQUE (outfit_id, "position")%'
+      AND replace(pg_get_constraintdef(oid), '"', '') LIKE 'UNIQUE (outfit_id, position)%'
   ) THEN
     EXECUTE 'ALTER TABLE canonical_outfit_entries ADD CONSTRAINT canonical_outfit_entries_outfit_position_unique UNIQUE (outfit_id, position) DEFERRABLE INITIALLY DEFERRED';
   END IF;
