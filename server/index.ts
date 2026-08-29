@@ -22,7 +22,7 @@ export async function startCoreServer() {
   const adapter = createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
   const garments = new PostgresGarmentStore(production.transactions.pool);
   const garmentDelivery = new GarmentDeliveryAuthority(config.artifactSigningSecret);
-  const managedGarmentAdapter = createManagedGarmentHttpAdapter({ garments, delivery: garmentDelivery, auth: production.auth, config });
+  const managedGarmentAdapter = createManagedGarmentHttpAdapter({ garments, delivery: garmentDelivery, auth: production.auth, config, accepting: () => accepting });
   const orthogonalTransformAdapter = createOrthogonalTransformHttpAdapter({ service: production.localExecution.orthogonalTransform, inputDelivery: production.localExecution.orthogonalTransformInputDelivery, auth: production.auth, config });
   const localExecutionAdapter = createLocalExecutionHttpAdapter({ service: production.localExecution.segmentation, deterministicImages: production.localExecution.deterministicImages, crop: production.localExecution.crop, resize: production.localExecution.resize, superResolution: production.localExecution.superResolution, inputDelivery: production.localExecution.inputDelivery, auth: production.auth, config });
   const localCompositeOutputs = new LocalCompositeOutputUploadService({ continuation: production.localExecution.composite, uploads: production.localExecution.uploads });
