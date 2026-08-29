@@ -7,6 +7,7 @@ import { checkProjectSchema, migrateProjectSchema } from '../../../core/projects
 import { checkAuthSchema, migrateAuthSchema } from '../../../core/auth/authSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../../../core/artifacts/localExecutionUploadSchema.ts';
 import { checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../../../core/localExecution/localExecutionLedgerSchema.ts';
+import { checkGarmentSchema, migrateGarmentSchema } from '../../../core/fashion/garmentSchema.ts';
 
 const command = process.argv[2];
 const databaseUrl = process.env.DATABASE_URL;
@@ -25,6 +26,7 @@ try {
     await migrateAuthSchema(pool);
     await migrateLocalExecutionUploadSchema(pool);
     await migrateLocalExecutionLedgerSchema(pool);
+    await migrateGarmentSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', version: result.version, status: result.status }));
   } else if (command === 'check') {
     await checkTransactionSchema(pool);
@@ -34,6 +36,7 @@ try {
     await checkAuthSchema(pool);
     await checkLocalExecutionUploadSchema(pool);
     await checkLocalExecutionLedgerSchema(pool);
+    await checkGarmentSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', status: 'ready' }));
   } else {
     throw new Error('expected migrate or check command');

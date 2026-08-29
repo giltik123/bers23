@@ -173,8 +173,13 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://core_image_test:core_image_test@host.docker.internal:5432/core_image_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before database or image work
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -190,20 +195,23 @@ jobs:
           node --experimental-strip-types --input-type=module <<'NODE'
           import { Pool } from 'pg';
           import { migrateFinalImageLineageSchema, checkFinalImageLineageSchema } from './server/core/artifacts/finalImageLineageSchema.ts';
+          import { migrateGarmentSchema, checkGarmentSchema } from './server/core/fashion/garmentSchema.ts';
           import { migrateWorkflowContinuationSchema, checkWorkflowContinuationSchema } from './server/core/workflow/workflowContinuationSchema.ts';
           const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-production-image-smoke-c5b-migrations' });
           try {
             await migrateWorkflowContinuationSchema(pool);
             await migrateFinalImageLineageSchema(pool);
+            await migrateGarmentSchema(pool);
             await checkWorkflowContinuationSchema(pool);
             await checkFinalImageLineageSchema(pool);
+            await checkGarmentSchema(pool);
           } finally { await pool.end(); }
-          console.log('Production smoke canonical C5B schema: ready');
+          console.log('Production smoke canonical C5B + Fashion F1a schema: ready');
           NODE
       - name: Build production image
-        run: docker build --tag bers-core:${{ github.sha }} .
+        run: docker build --tag bers-core:${{ env.CANDIDATE_SHA }} .
       - name: Prove sharp loads in the production image
-        run: docker run --rm --entrypoint node bers-core:${{ github.sha }} -e "import('sharp').then(() => console.log('sharp production runtime PASS'))"
+        run: docker run --rm --entrypoint node bers-core:${{ env.CANDIDATE_SHA }} -e "import('sharp').then(() => console.log('sharp production runtime PASS'))"
       - name: Assert production migration package matches source
         run: |
           expected="$(
@@ -212,17 +220,19 @@ jobs:
               server/core/artifacts/migrations \
               server/core/projects/migrations \
               server/core/auth/migrations \
+              server/core/fashion/migrations \
               -maxdepth 1 -type f -name '*.sql' ! -name '*.down.sql' -printf '%f\n' | sort
           )"
           actual="$(
-            docker run --rm --entrypoint sh bers-core:${{ github.sha }} -c \
+            docker run --rm --entrypoint sh bers-core:${{ env.CANDIDATE_SHA }} -c \
               "find /app/dist-server/migrations -maxdepth 1 -type f -name '*.sql' -exec basename {} \\; | sort"
           )"
           test "$expected" = "$actual"
           printf '%s\n' "$actual" | grep -qx '011_auth_abuse_session_controls.sql'
+          printf '%s\n' "$actual" | grep -qx '022_managed_garments_and_initial_views.sql'
       - name: Assert production image contents
         run: |
-          docker run --rm --entrypoint sh bers-core:${{ github.sha }} -c '
+          docker run --rm --entrypoint sh bers-core:${{ env.CANDIDATE_SHA }} -c '
             test ! -e /app/.git &&
             test ! -e /app/tests &&
             test ! -e /app/.env &&
@@ -231,7 +241,7 @@ jobs:
           '
       - name: Smoke production health endpoints
         env:
-          IMAGE: bers-core:${{ github.sha }}
+          IMAGE: bers-core:${{ env.CANDIDATE_SHA }}
         run: |
           cleanup() {
             docker rm -f bers-core-smoke >/dev/null 2>&1 || true
