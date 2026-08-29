@@ -1,0 +1,34 @@
+name: Editor zero-object navigation
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  editor-zero-object-navigation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove zero-object Editor navigation
+        run: node --test tests/editor-zero-object-navigation.test.mjs
+      - name: Preserve deterministic Editor and stale FINAL contracts
+        run: |
+          node --test tests/editor-orthogonal-transform-ui.test.mjs tests/editor-final-source-conflict-recovery.test.mjs
+          npm run test:canonical-product-vertical
+      - name: Build and typecheck browser boundary
+        run: |
+          npm run build
+          npm run typecheck
