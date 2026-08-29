@@ -49,7 +49,7 @@ export class PostgresGarmentStore {
     if (!input.bytes.byteLength) throw httpError(400, 'empty_garment_image', 'Garment image body is required');
     if (input.bytes.byteLength > limits.maxUploadBytes) throw httpError(413, 'garment_image_too_large', 'Garment image exceeds the configured upload limit');
 
-    let normalized: Awaited<ReturnType<ReturnType<typeof sharp>['raw']>['toBuffer']>;
+    let normalized: { data: Buffer; info: { width: number; height: number } };
     try {
       normalized = await sharp(input.bytes, { failOn: 'error', limitInputPixels: limits.maxPixels })
         .rotate()
@@ -161,8 +161,8 @@ function fromGarmentRow(row: any): ManagedGarment {
     createdAt: new Date(view.createdAt).toISOString(),
   }));
   const primaryViewId = String(row.primary_view_id ?? '');
-  if (!primaryViewId || views.length !== 1 || views[0]?.id !== primaryViewId) {
-    throw new Error('Managed garment initial-view invariant is violated');
+  if (!primaryViewId || views.length < 1 || !views.some((view) => view.id === primaryViewId)) {
+    throw new Error('Managed garment primary-view invariant is violated');
   }
   return Object.freeze({
     id: String(row.garment_id),
