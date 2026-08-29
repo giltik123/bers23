@@ -84,6 +84,7 @@ const validDeviceEvidence = () => ({
     softwareAdapter: false,
     vendor: 'vendor-x',
     architecture: 'gpu-x',
+    device: 'physical-gpu-x',
     description: 'physical adapter',
     runtimeName: 'onnxruntime-web',
     runtimeVersion: D6_ORT_WEB_VERSION,
@@ -291,6 +292,39 @@ test('assessment snapshots untrusted evidence before signature and semantic vali
   assert.equal(softwareAdapterReads, 1, 'untrusted getter must be read only once into the immutable assessment snapshot');
 });
 
+test('sparse arrays fail before signing or semantic validation', async () => {
+  const evidence = validDeviceEvidence();
+  evidence.control.timesteps = new Array(evidence.control.stepCount);
+  let verifierCalled = false;
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
+    expectedTestedCommitSha: TESTED_COMMIT_SHA,
+    trustVerifier: () => {
+      verifierCalled = true;
+      return { verified: true };
+    },
+    now,
+  });
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('INVALID_CANONICAL_PAYLOAD'));
+  assert.equal(verifierCalled, false);
+});
+
+test('snapshot never dispatches to an input-controlled array map method', async () => {
+  const evidence = validDeviceEvidence();
+  let mapCalls = 0;
+  Object.defineProperty(evidence.control.timesteps, 'map', {
+    enumerable: false,
+    configurable: true,
+    value() {
+      mapCalls += 1;
+      throw new Error('hostile map must never run');
+    },
+  });
+  const result = await assessTrusted(evidence);
+  assert.equal(result.eligible, true);
+  assert.equal(mapCalls, 0);
+});
+
 test('software adapter spoofing and missing shader-f16 fail closed', async () => {
   const evidence = validDeviceEvidence();
   evidence.device.softwareAdapter = true;
@@ -309,6 +343,21 @@ test('known Mesa software renderers cannot masquerade as physical adapters', asy
     evidence.device.vendor = 'Mesa';
     evidence.device.architecture = softwareName;
     evidence.device.description = `${softwareName} renderer`;
+    evidence.device.softwareAdapter = false;
+    evidence.device.adapterKind = 'PHYSICAL';
+    const result = await assessTrusted(evidence);
+    assert.equal(result.eligible, false);
+    assert.ok(result.blockers.includes('SOFTWARE_OR_UNKNOWN_ADAPTER'));
+  }
+});
+
+test('software renderer identifiers in adapter device field cannot masquerade as physical', async () => {
+  for (const softwareName of ['SwiftShader', 'llvmpipe', 'lavapipe']) {
+    const evidence = validDeviceEvidence();
+    evidence.device.vendor = 'apparently-physical-vendor';
+    evidence.device.architecture = 'apparently-physical-architecture';
+    evidence.device.description = 'apparently physical adapter';
+    evidence.device.device = softwareName;
     evidence.device.softwareAdapter = false;
     evidence.device.adapterKind = 'PHYSICAL';
     const result = await assessTrusted(evidence);
