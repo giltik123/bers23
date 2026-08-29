@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS canonical_garments (
   status TEXT NOT NULL DEFAULT 'ACTIVE'
     CHECK (status IN ('ACTIVE','ARCHIVED')),
   revision BIGINT NOT NULL DEFAULT 1 CHECK (revision >= 1),
-  primary_view_id UUID,
+  primary_view_id UUID NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted_at TIMESTAMPTZ,
@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS canonical_garment_views (
     REFERENCES canonical_garments (garment_id, tenant_id, user_id)
     ON DELETE RESTRICT
 );
+
+ALTER TABLE canonical_garments
+  ALTER COLUMN primary_view_id SET NOT NULL;
 
 ALTER TABLE canonical_garments
   DROP CONSTRAINT IF EXISTS canonical_garments_primary_view_owner_fkey;
