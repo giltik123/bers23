@@ -26,6 +26,12 @@ jobs:
       DATABASE_URL: postgresql://project_source_test:project_source_test@127.0.0.1:5432/project_source_test
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before dependency or database work
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Use Node.js 24
         uses: actions/setup-node@v4
         with:
