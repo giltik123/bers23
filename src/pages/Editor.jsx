@@ -790,28 +790,20 @@ export default function Editor() {
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
       ) : resizeInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel them before starting another edit.</p>
-      ) : objects.length === 0 ? (
-        <>
-          {plan && <PlanPreview plan={plan} />}
-          <InstructionBar
-            selectedObject={selected}
-            allowWholeImage
-            instruction={instruction}
-            onInstructionChange={setInstruction}
-            onApply={() => applyEdit(false)}
-            applying={editorBusy || detecting || committing}
-          />
-        </>
       ) : (
         <>
-          <WorkspaceToolbar
-            disabled={editorBusy}
-            onUse={(prompt) => { setInstruction(prompt); setActiveRecipe(null); setEditTab('prompt'); }}
-          />
-          <WorkspaceRecommendations
-            disabled={editorBusy}
-            onUse={(prompt, recipe) => { setInstruction(prompt); setActiveRecipe(recipe); setEditTab('prompt'); }}
-          />
+          {objects.length > 0 && (
+            <>
+              <WorkspaceToolbar
+                disabled={editorBusy}
+                onUse={(prompt) => { setInstruction(prompt); setActiveRecipe(null); setEditTab('prompt'); }}
+              />
+              <WorkspaceRecommendations
+                disabled={editorBusy}
+                onUse={(prompt, recipe) => { setInstruction(prompt); setActiveRecipe(recipe); setEditTab('prompt'); }}
+              />
+            </>
+          )}
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={setEditTab} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
           {editTab === 'creative' ? (
@@ -859,10 +851,11 @@ export default function Editor() {
               {plan && <PlanPreview plan={plan} />}
               <InstructionBar
                 selectedObject={selected}
+                allowWholeImage={objects.length === 0}
                 instruction={instruction}
                 onInstructionChange={setInstruction}
                 onApply={() => applyEdit(false)}
-                applying={editorBusy}
+                applying={editorBusy || detecting || committing}
               />
             </>
           )}
