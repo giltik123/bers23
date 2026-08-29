@@ -9,6 +9,7 @@ import { createSuperResolution } from '@/application/createSuperResolution';
 import { createCrop } from '@/application/createCrop';
 import { createResize } from '@/application/createResize';
 import { createOrthogonalTransform } from '@/application/createOrthogonalTransform';
+import { isOrthogonalTransformStartBlocked } from '@/application/editor/orthogonalTransformStartPolicy';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
 import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS } from '@/platform/creative/deterministic/ResizeIdentity';
 import { ORTHOGONAL_TRANSFORM_MODES } from '@/platform/creative/deterministic/OrthogonalTransformIdentity';
@@ -309,7 +310,7 @@ export default function Editor() {
     }
   };
 
-  const applyOrthogonalTransform = async (mode, retryContext = null) => {
+  const applyOrthogonalTransform = async (mode, retryContext = null, { allowPendingResult = false } = {}) => {
     const normalizedMode = typeof mode === 'string' && ORTHOGONAL_TRANSFORM_MODES.includes(mode) ? mode : null;
     const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
     const beforeUrl = retryContext?.beforeUrl || project?.current_image_url;
@@ -319,7 +320,15 @@ export default function Editor() {
       return;
     }
     if (orthogonalTransformInFlightRef.current) return;
-    if (editorBusy || detecting || committing || pendingResult || selection || cropInteractionActive || resizeInteractionActive) return;
+    if (isOrthogonalTransformStartBlocked({
+      editorBusy,
+      detecting,
+      committing,
+      pendingResult,
+      selection,
+      cropInteractionActive,
+      resizeInteractionActive,
+    }, { allowPendingResult })) return;
     orthogonalTransformInFlightRef.current = true;
     setOrthogonalTransformingMode(normalizedMode);
     setAiError(null);
@@ -586,7 +595,7 @@ export default function Editor() {
       return;
     }
     if (pending?.kind === 'ORTHOGONAL_TRANSFORM') {
-      void applyOrthogonalTransform(pending.context?.mode, pending.context);
+      void applyOrthogonalTransform(pending.context?.mode, pending.context, { allowPendingResult: true });
       return;
     }
     applyEdit(true, { skipDriftCheck: true }); // bypass cache so a retry produces a fresh generation
