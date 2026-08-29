@@ -172,6 +172,7 @@ test('managed Garment creation owns canonical bytes and fails closed across user
   const deliveryResponse = await fetch(`${origin}${created.views[0].delivery_url}`, { headers: { authorization: 'Bearer owner-token' } });
   assert.equal(deliveryResponse.status, 200);
   assert.equal(deliveryResponse.headers.get('content-type'), 'image/png');
+  assert.equal(deliveryResponse.headers.get('cache-control'), 'no-store');
   assert.equal(deliveryResponse.headers.get('etag'), `"sha256-${created.views[0].content_sha256}"`);
   const delivered = new Uint8Array(await deliveryResponse.arrayBuffer());
   assert.deepEqual([...delivered.slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
