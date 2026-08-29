@@ -1,0 +1,32 @@
+name: Editor stale FINAL recovery
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  editor-stale-final-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove stale FINAL conflict recovery
+        run: node --test tests/editor-final-source-conflict-recovery.test.mjs
+      - name: Preserve canonical Editor contracts
+        run: npm run test:canonical-product-vertical
+      - name: Build and typecheck browser boundary
+        run: |
+          npm run build
+          npm run typecheck

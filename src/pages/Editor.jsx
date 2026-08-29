@@ -58,6 +58,7 @@ import { SelectionApplicationService } from '@/application/selection';
 import { createSelectionSegmentation } from '@/application/createSelectionSegmentation';
 import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPort';
 import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
+import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
@@ -474,9 +475,9 @@ export default function Editor() {
   };
 
   const acceptResult = async () => {
+    const pending = pendingResult;
     setCommitting(true);
     try {
-      const pending = pendingResult;
       const { result, instruction: used } = pending;
       if (!result.finalArtifactId) throw new Error('Canonical FINAL artifact identity is unavailable');
       await pushEdit(result.finalArtifactId, used);
@@ -501,6 +502,15 @@ export default function Editor() {
             run: () => workspaceHistory.recordEdit(workspaceManager.activeId(), { success: true, durationMs: result.generation_time_ms || 0 }),
           },
         ],
+      });
+    } catch (e) {
+      if (!isFinalSourceConflict(e)) throw e;
+      await recoverFinalSourceConflict({
+        reloadCanonicalProject: reload,
+        disarmRetry: () => setLastAction(null),
+        clearPendingResult: () => setPendingResult(null),
+        disposePendingPreview: () => disposePendingPreview(pending),
+        showMessage: setAiError,
       });
     } finally {
       setCommitting(false);
