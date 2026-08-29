@@ -2,18 +2,33 @@ import type { Pool, PoolClient } from 'pg';
 import type { GarmentOwnerScope } from './postgresGarmentStore.ts';
 
 export const GARMENT_CATEGORIES = Object.freeze([
-  'UNSPECIFIED', 'TOP', 'BOTTOM', 'DRESS', 'OUTERWEAR', 'FOOTWEAR', 'ACCESSORY', 'OTHER',
+  'tshirts','shirts','jackets','hoodies','sweaters',
+  'pants','shorts','jeans','skirts','dresses',
+  'shoes','boots','sneakers','sandals',
+  'hats','glasses','scarves','bags','belts','jewelry','gloves','socks','other',
 ] as const);
-export const GARMENT_SEASONS = Object.freeze(['SPRING', 'SUMMER', 'AUTUMN', 'WINTER'] as const);
+export const GARMENT_SEASONS = Object.freeze(['all_season','spring','summer','autumn','winter'] as const);
 export type GarmentCategory = typeof GARMENT_CATEGORIES[number];
 export type GarmentSeason = typeof GARMENT_SEASONS[number];
+export type GarmentCategoryGroup = 'tops' | 'bottoms' | 'dresses' | 'footwear' | 'accessories' | 'other';
+
+const CATEGORY_GROUPS: Readonly<Record<GarmentCategory, GarmentCategoryGroup>> = Object.freeze({
+  tshirts: 'tops', shirts: 'tops', jackets: 'tops', hoodies: 'tops', sweaters: 'tops',
+  pants: 'bottoms', shorts: 'bottoms', jeans: 'bottoms', skirts: 'bottoms',
+  dresses: 'dresses',
+  shoes: 'footwear', boots: 'footwear', sneakers: 'footwear', sandals: 'footwear',
+  hats: 'accessories', glasses: 'accessories', scarves: 'accessories', bags: 'accessories', belts: 'accessories',
+  jewelry: 'accessories', gloves: 'accessories', socks: 'accessories',
+  other: 'other',
+});
 
 export type ManagedGarmentWardrobe = Readonly<{
   garmentId: string;
   name: string;
   category: GarmentCategory;
-  seasons: readonly GarmentSeason[];
-  materials: readonly string[];
+  categoryGroup: GarmentCategoryGroup;
+  season: GarmentSeason;
+  material: string;
   tags: readonly string[];
   favorite: boolean;
   status: 'ACTIVE' | 'ARCHIVED';
@@ -24,16 +39,19 @@ export type ManagedGarmentWardrobe = Readonly<{
 export type GarmentWardrobePatch = Readonly<{
   name?: unknown;
   category?: unknown;
-  seasons?: unknown;
-  materials?: unknown;
+  season?: unknown;
+  material?: unknown;
   tags?: unknown;
   favorite?: unknown;
 }>;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PATCH_KEYS = new Set(['name', 'category', 'seasons', 'materials', 'tags', 'favorite']);
-const MAX_MATERIALS = 12;
+const PATCH_KEYS = new Set(['name', 'category', 'season', 'material', 'tags', 'favorite']);
 const MAX_TAGS = 20;
+
+export function garmentCategoryGroup(category: GarmentCategory): GarmentCategoryGroup {
+  return CATEGORY_GROUPS[category];
+}
 
 export class PostgresGarmentWardrobeStore {
   constructor(private readonly pool: Pool) {}
@@ -72,8 +90,9 @@ export class PostgresGarmentWardrobeStore {
         ...current,
         name: patch.name ?? current.name,
         category: patch.category ?? current.category,
-        seasons: patch.seasons ?? current.seasons,
-        materials: patch.materials ?? current.materials,
+        categoryGroup: garmentCategoryGroup(patch.category ?? current.category),
+        season: patch.season ?? current.season,
+        material: patch.material ?? current.material,
         tags: patch.tags ?? current.tags,
         favorite: patch.favorite ?? current.favorite,
       });
@@ -83,15 +102,13 @@ export class PostgresGarmentWardrobeStore {
       }
 
       const updated = await client.query(`UPDATE canonical_garments
-        SET name=$4, category=$5, favorite=$6, revision=revision+1, updated_at=CURRENT_TIMESTAMP
-        WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND revision=$7
+        SET name=$4, category=$5, season=$6, material=$7, favorite=$8, revision=revision+1, updated_at=CURRENT_TIMESTAMP
+        WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND revision=$9
         RETURNING revision`,
-      [garmentId, scope.tenantId, scope.userId, next.name, next.category, next.favorite, expectedRevision]);
+      [garmentId, scope.tenantId, scope.userId, next.name, next.category, next.season, next.material, next.favorite, expectedRevision]);
       if (updated.rowCount !== 1 || Number(updated.rows[0]?.revision) !== expectedRevision + 1) throw revisionConflict();
 
-      if (patch.seasons) await replaceValues(client, 'canonical_garment_seasons', 'season', scope, garmentId, patch.seasons);
-      if (patch.materials) await replaceValues(client, 'canonical_garment_materials', 'material', scope, garmentId, patch.materials);
-      if (patch.tags) await replaceValues(client, 'canonical_garment_tags', 'tag', scope, garmentId, patch.tags);
+      if (patch.tags) await replaceTags(client, scope, garmentId, patch.tags);
 
       const snapshot = await selectMetadata(client, scope, garmentId);
       if (!snapshot || snapshot.revision !== expectedRevision + 1) {
@@ -177,11 +194,7 @@ export class PostgresGarmentWardrobeStore {
 }
 
 const WARDROBE_SELECT = `SELECT
-  g.garment_id,g.name,g.category,g.favorite,g.status,g.revision,g.updated_at,
-  COALESCE((SELECT jsonb_agg(s.season ORDER BY s.season) FROM canonical_garment_seasons s
-    WHERE s.garment_id=g.garment_id AND s.tenant_id=g.tenant_id AND s.user_id=g.user_id), '[]'::jsonb) AS seasons,
-  COALESCE((SELECT jsonb_agg(m.material ORDER BY m.material) FROM canonical_garment_materials m
-    WHERE m.garment_id=g.garment_id AND m.tenant_id=g.tenant_id AND m.user_id=g.user_id), '[]'::jsonb) AS materials,
+  g.garment_id,g.name,g.category,g.season,g.material,g.favorite,g.status,g.revision,g.updated_at,
   COALESCE((SELECT jsonb_agg(t.tag ORDER BY t.tag) FROM canonical_garment_tags t
     WHERE t.garment_id=g.garment_id AND t.tenant_id=g.tenant_id AND t.user_id=g.user_id), '[]'::jsonb) AS tags
   FROM canonical_garments g`;
@@ -201,18 +214,16 @@ async function selectMetadata(client: PoolClient, scope: GarmentOwnerScope, garm
   return result.rows[0] ? fromRow(result.rows[0]) : undefined;
 }
 
-async function replaceValues(
+async function replaceTags(
   client: PoolClient,
-  table: 'canonical_garment_seasons' | 'canonical_garment_materials' | 'canonical_garment_tags',
-  column: 'season' | 'material' | 'tag',
   scope: GarmentOwnerScope,
   garmentId: string,
   values: readonly string[],
 ): Promise<void> {
-  await client.query(`DELETE FROM ${table} WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3`,
+  await client.query(`DELETE FROM canonical_garment_tags WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3`,
   [garmentId, scope.tenantId, scope.userId]);
   for (const value of values) {
-    await client.query(`INSERT INTO ${table} (garment_id,tenant_id,user_id,${column}) VALUES ($1,$2,$3,$4)`,
+    await client.query(`INSERT INTO canonical_garment_tags (garment_id,tenant_id,user_id,tag) VALUES ($1,$2,$3,$4)`,
     [garmentId, scope.tenantId, scope.userId, value]);
   }
 }
@@ -220,8 +231,8 @@ async function replaceValues(
 function normalizePatch(value: unknown): Readonly<{
   name?: string;
   category?: GarmentCategory;
-  seasons?: readonly GarmentSeason[];
-  materials?: readonly string[];
+  season?: GarmentSeason;
+  material?: string;
   tags?: readonly string[];
   favorite?: boolean;
 }> {
@@ -234,9 +245,9 @@ function normalizePatch(value: unknown): Readonly<{
   return Object.freeze({
     ...(Object.hasOwn(record, 'name') ? { name: normalizeName(record.name) } : {}),
     ...(Object.hasOwn(record, 'category') ? { category: normalizeCategory(record.category) } : {}),
-    ...(Object.hasOwn(record, 'seasons') ? { seasons: normalizeSeasons(record.seasons) } : {}),
-    ...(Object.hasOwn(record, 'materials') ? { materials: normalizeTokenArray(record.materials, 'material', MAX_MATERIALS, 50) } : {}),
-    ...(Object.hasOwn(record, 'tags') ? { tags: normalizeTokenArray(record.tags, 'tag', MAX_TAGS, 40) } : {}),
+    ...(Object.hasOwn(record, 'season') ? { season: normalizeSeason(record.season) } : {}),
+    ...(Object.hasOwn(record, 'material') ? { material: normalizeMaterial(record.material) } : {}),
+    ...(Object.hasOwn(record, 'tags') ? { tags: normalizeTags(record.tags) } : {}),
     ...(Object.hasOwn(record, 'favorite') ? { favorite: normalizeFavorite(record.favorite) } : {}),
   });
 }
@@ -251,40 +262,44 @@ function normalizeName(value: unknown): string {
 }
 
 function normalizeCategory(value: unknown): GarmentCategory {
-  const category = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  const category = typeof value === 'string' ? value.normalize('NFKC').trim().toLowerCase() : '';
   if (!(GARMENT_CATEGORIES as readonly string[]).includes(category)) {
     throw httpError(400, 'invalid_garment_category', 'Garment category is unsupported');
   }
   return category as GarmentCategory;
 }
 
-function normalizeSeasons(value: unknown): readonly GarmentSeason[] {
-  if (!Array.isArray(value)) throw httpError(400, 'invalid_garment_seasons', 'Garment seasons must be an array');
-  const set = new Set<GarmentSeason>();
-  for (const candidate of value) {
-    const season = typeof candidate === 'string' ? candidate.trim().toUpperCase() : '';
-    if (!(GARMENT_SEASONS as readonly string[]).includes(season)) {
-      throw httpError(400, 'invalid_garment_seasons', 'Garment seasons contain an unsupported value');
-    }
-    set.add(season as GarmentSeason);
+function normalizeSeason(value: unknown): GarmentSeason {
+  const season = typeof value === 'string' ? value.normalize('NFKC').trim().toLowerCase() : '';
+  if (!(GARMENT_SEASONS as readonly string[]).includes(season)) {
+    throw httpError(400, 'invalid_garment_season', 'Garment season is unsupported');
   }
-  return Object.freeze(GARMENT_SEASONS.filter(season => set.has(season)));
+  return season as GarmentSeason;
 }
 
-function normalizeTokenArray(value: unknown, field: string, maxCount: number, maxLength: number): readonly string[] {
-  if (!Array.isArray(value) || value.length > maxCount) {
-    throw httpError(400, `invalid_garment_${field}s`, `Garment ${field}s must be an array with at most ${maxCount} values`);
+function normalizeMaterial(value: unknown): string {
+  if (typeof value !== 'string') throw httpError(400, 'invalid_garment_material', 'Garment material must be a string');
+  const material = value.normalize('NFKC').trim().toLowerCase();
+  if (material.length > 50 || /[\u0000-\u001f\u007f]/u.test(material)) {
+    throw httpError(400, 'invalid_garment_material', 'Garment material must contain at most 50 printable characters');
+  }
+  return material;
+}
+
+function normalizeTags(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.length > MAX_TAGS) {
+    throw httpError(400, 'invalid_garment_tags', `Garment tags must be an array with at most ${MAX_TAGS} values`);
   }
   const set = new Set<string>();
   for (const candidate of value) {
-    if (typeof candidate !== 'string') throw httpError(400, `invalid_garment_${field}s`, `Every garment ${field} must be a string`);
+    if (typeof candidate !== 'string') throw httpError(400, 'invalid_garment_tags', 'Every garment tag must be a string');
     const normalized = candidate.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase();
-    if (!normalized || normalized.length > maxLength || /[\u0000-\u001f\u007f]/u.test(normalized)) {
-      throw httpError(400, `invalid_garment_${field}s`, `Garment ${field} values must contain 1 to ${maxLength} printable characters`);
+    if (!normalized || normalized.length > 40 || /[\u0000-\u001f\u007f]/u.test(normalized)) {
+      throw httpError(400, 'invalid_garment_tags', 'Garment tag values must contain 1 to 40 printable characters');
     }
     set.add(normalized);
   }
-  if (set.size > maxCount) throw httpError(400, `invalid_garment_${field}s`, `Too many distinct garment ${field} values`);
+  if (set.size > MAX_TAGS) throw httpError(400, 'invalid_garment_tags', 'Too many distinct garment tag values');
   return Object.freeze([...set].sort());
 }
 
@@ -294,8 +309,10 @@ function normalizeFavorite(value: unknown): boolean {
 }
 
 function fromRow(row: any): ManagedGarmentWardrobe {
-  const status = storedStatus(row.status);
   const category = storedCategory(row.category);
+  const season = storedSeason(row.season);
+  const material = storedMaterial(row.material);
+  const status = storedStatus(row.status);
   const favorite = row.favorite;
   const revision = Number(row.revision);
   if (typeof favorite !== 'boolean') throw new Error('Stored Garment favorite is invalid');
@@ -304,8 +321,9 @@ function fromRow(row: any): ManagedGarmentWardrobe {
     garmentId: String(row.garment_id),
     name: String(row.name),
     category,
-    seasons: Object.freeze((Array.isArray(row.seasons) ? row.seasons : []).map(normalizeStoredSeason)),
-    materials: Object.freeze((Array.isArray(row.materials) ? row.materials : []).map(String)),
+    categoryGroup: garmentCategoryGroup(category),
+    season,
+    material,
     tags: Object.freeze((Array.isArray(row.tags) ? row.tags : []).map(String)),
     favorite,
     status,
@@ -319,23 +337,29 @@ function storedCategory(value: unknown): GarmentCategory {
   if (!(GARMENT_CATEGORIES as readonly string[]).includes(category)) throw new Error('Stored Garment category is unsupported');
   return category as GarmentCategory;
 }
-function storedStatus(value: unknown): 'ACTIVE' | 'ARCHIVED' {
-  if (value !== 'ACTIVE' && value !== 'ARCHIVED') throw new Error('Stored Garment status is unsupported');
-  return value;
-}
-function normalizeStoredSeason(value: unknown): GarmentSeason {
+function storedSeason(value: unknown): GarmentSeason {
   const season = String(value);
   if (!(GARMENT_SEASONS as readonly string[]).includes(season)) throw new Error('Stored Garment season is unsupported');
   return season as GarmentSeason;
+}
+function storedMaterial(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 50 || value !== value.trim() || value !== value.toLowerCase() || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw new Error('Stored Garment material is invalid');
+  }
+  return value;
+}
+function storedStatus(value: unknown): 'ACTIVE' | 'ARCHIVED' {
+  if (value !== 'ACTIVE' && value !== 'ARCHIVED') throw new Error('Stored Garment status is unsupported');
+  return value;
 }
 
 function metadataEqual(left: ManagedGarmentWardrobe, right: ManagedGarmentWardrobe): boolean {
   return left.name === right.name
     && left.category === right.category
+    && left.season === right.season
+    && left.material === right.material
     && left.favorite === right.favorite
     && left.status === right.status
-    && arrayEqual(left.seasons, right.seasons)
-    && arrayEqual(left.materials, right.materials)
     && arrayEqual(left.tags, right.tags);
 }
 function arrayEqual(left: readonly unknown[], right: readonly unknown[]): boolean {

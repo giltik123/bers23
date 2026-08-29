@@ -55,7 +55,7 @@ function headers(revision?: number): HeadersInit {
 
 async function json(response: Response): Promise<any> { return response.json(); }
 
-test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garment revision', async t => {
+test('F2a owns legacy-compatible typed wardrobe metadata and lifecycle on the same canonical Garment revision', async t => {
   const pool = new Pool({ connectionString: databaseUrl, max: 6 });
   await migrateGarmentSchema(pool);
   await pool.query('TRUNCATE canonical_garment_views,canonical_garments CASCADE');
@@ -80,8 +80,15 @@ test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garme
   assert.equal(response.status, 200);
   let body = await json(response);
   assert.equal(response.headers.get('x-garment-revision'), '1');
-  assert.deepEqual({ category: body.category, seasons: body.seasons, materials: body.materials, tags: body.tags, favorite: body.favorite }, {
-    category: 'UNSPECIFIED', seasons: [], materials: [], tags: [], favorite: false,
+  assert.deepEqual({
+    category: body.category,
+    categoryGroup: body.category_group,
+    season: body.season,
+    material: body.material,
+    tags: body.tags,
+    favorite: body.favorite,
+  }, {
+    category: 'other', categoryGroup: 'other', season: 'all_season', material: '', tags: [], favorite: false,
   });
 
   response = await fetch(`${server.baseUrl}/api/core/wardrobe/garments/${initial.id}`, {
@@ -89,9 +96,9 @@ test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garme
     headers: { ...headers(1), 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: '  Navy   Wool Coat ',
-      category: 'outerwear',
-      seasons: ['winter', 'AUTUMN', 'winter'],
-      materials: [' Wool ', 'wool', ' Recycled   Polyester '],
+      category: 'JACKETS',
+      season: 'WINTER',
+      material: ' Wool ',
       tags: [' Office ', 'navy', 'office'],
       favorite: true,
     }),
@@ -101,9 +108,10 @@ test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garme
   assert.equal(body.revision, 2);
   assert.equal(response.headers.get('x-garment-revision'), '2');
   assert.equal(body.name, 'Navy Wool Coat');
-  assert.equal(body.category, 'OUTERWEAR');
-  assert.deepEqual(body.seasons, ['AUTUMN', 'WINTER']);
-  assert.deepEqual(body.materials, ['recycled polyester', 'wool']);
+  assert.equal(body.category, 'jackets');
+  assert.equal(body.category_group, 'tops');
+  assert.equal(body.season, 'winter');
+  assert.equal(body.material, 'wool');
   assert.deepEqual(body.tags, ['navy', 'office']);
   assert.equal(body.favorite, true);
 
@@ -118,7 +126,7 @@ test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garme
   response = await fetch(`${server.baseUrl}/api/core/wardrobe/garments/${initial.id}`, {
     method: 'PATCH',
     headers: { ...headers(2), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ seasons: ['AUTUMN', 'WINTER'], materials: ['recycled polyester', 'wool'], tags: ['navy', 'office'], favorite: true, name: 'Navy Wool Coat', category: 'OUTERWEAR' }),
+    body: JSON.stringify({ tags: ['navy', 'office'], favorite: true, name: 'Navy Wool Coat', category: 'jackets', season: 'winter', material: 'wool' }),
   });
   assert.equal(response.status, 200);
   assert.equal((await json(response)).revision, 2, 'normalized no-op patch must not create a new revision');
@@ -170,6 +178,14 @@ test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garme
     (error: unknown) => (error as any)?.code === '23514',
   );
   await assert.rejects(
+    () => pool.query(`UPDATE canonical_garments SET season='monsoon' WHERE garment_id=$1`, [initial.id]),
+    (error: unknown) => (error as any)?.code === '23514',
+  );
+  await assert.rejects(
+    () => pool.query(`UPDATE canonical_garments SET material=' Wool ' WHERE garment_id=$1`, [initial.id]),
+    (error: unknown) => (error as any)?.code === '23514',
+  );
+  await assert.rejects(
     () => pool.query(`INSERT INTO canonical_garment_tags (garment_id,tenant_id,user_id,tag) VALUES ($1,$2,$3,'forged')`,
     [initial.id, owner.tenantId, other.userId]),
     (error: unknown) => (error as any)?.code === '23503',
@@ -215,9 +231,15 @@ test('F2a schema readiness rejects scalar, CHECK, PK and FK drift and migration 
     await checkGarmentSchema(pool);
     const categoryCheck = await pool.query(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garments') AND conname='canonical_garments_category_check'`);
-    assert.match(String(categoryCheck.rows[0]?.definition), /UNSPECIFIED/);
-    assert.match(String(categoryCheck.rows[0]?.definition), /OUTERWEAR/);
+    assert.match(String(categoryCheck.rows[0]?.definition), /tshirts/);
+    assert.match(String(categoryCheck.rows[0]?.definition), /jackets/);
     assert.doesNotMatch(String(categoryCheck.rows[0]?.definition), /category IS NOT NULL/);
+
+    await pool.query('ALTER TABLE canonical_garments DROP CONSTRAINT canonical_garments_season_check');
+    await pool.query(`ALTER TABLE canonical_garments ADD CONSTRAINT canonical_garments_season_check CHECK (season IS NOT NULL)`);
+    await assert.rejects(() => checkGarmentSchema(pool), /wardrobe schema is incomplete/);
+    await migrateGarmentSchema(pool);
+    await checkGarmentSchema(pool);
 
     await pool.query('ALTER TABLE canonical_garment_tags DROP CONSTRAINT canonical_garment_tags_pkey');
     await pool.query('ALTER TABLE canonical_garment_tags ADD CONSTRAINT canonical_garment_tags_pkey PRIMARY KEY (tenant_id,user_id,garment_id,tag)');

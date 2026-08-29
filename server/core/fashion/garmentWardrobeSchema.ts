@@ -5,7 +5,7 @@ import type { Pool } from 'pg';
 const MIGRATION = '023_managed_garment_wardrobe_metadata.sql';
 
 type ColumnContract = Readonly<{
-  table: 'canonical_garments' | 'canonical_garment_seasons' | 'canonical_garment_materials' | 'canonical_garment_tags';
+  table: 'canonical_garments' | 'canonical_garment_tags';
   name: string;
   udtName: string;
   nullable: boolean;
@@ -13,21 +13,21 @@ type ColumnContract = Readonly<{
 }>;
 
 const REQUIRED_COLUMNS: readonly ColumnContract[] = Object.freeze([
-  { table: 'canonical_garments', name: 'category', udtName: 'text', nullable: false, expectedDefault: "'UNSPECIFIED'::text" },
+  { table: 'canonical_garments', name: 'category', udtName: 'text', nullable: false, expectedDefault: "'other'::text" },
+  { table: 'canonical_garments', name: 'season', udtName: 'text', nullable: false, expectedDefault: "'all_season'::text" },
+  { table: 'canonical_garments', name: 'material', udtName: 'text', nullable: false, expectedDefault: "''::text" },
   { table: 'canonical_garments', name: 'favorite', udtName: 'bool', nullable: false, expectedDefault: 'false' },
-  { table: 'canonical_garment_seasons', name: 'garment_id', udtName: 'uuid', nullable: false },
-  { table: 'canonical_garment_seasons', name: 'tenant_id', udtName: 'text', nullable: false },
-  { table: 'canonical_garment_seasons', name: 'user_id', udtName: 'text', nullable: false },
-  { table: 'canonical_garment_seasons', name: 'season', udtName: 'text', nullable: false },
-  { table: 'canonical_garment_materials', name: 'garment_id', udtName: 'uuid', nullable: false },
-  { table: 'canonical_garment_materials', name: 'tenant_id', udtName: 'text', nullable: false },
-  { table: 'canonical_garment_materials', name: 'user_id', udtName: 'text', nullable: false },
-  { table: 'canonical_garment_materials', name: 'material', udtName: 'text', nullable: false },
   { table: 'canonical_garment_tags', name: 'garment_id', udtName: 'uuid', nullable: false },
   { table: 'canonical_garment_tags', name: 'tenant_id', udtName: 'text', nullable: false },
   { table: 'canonical_garment_tags', name: 'user_id', udtName: 'text', nullable: false },
   { table: 'canonical_garment_tags', name: 'tag', udtName: 'text', nullable: false },
 ]);
+
+const CATEGORY_VALUES = Object.freeze([
+  'tshirts','shirts','jackets','hoodies','sweaters','pants','shorts','jeans','skirts','dresses',
+  'shoes','boots','sneakers','sandals','hats','glasses','scarves','bags','belts','jewelry','gloves','socks','other',
+] as const);
+const SEASON_VALUES = Object.freeze(['all_season','spring','summer','autumn','winter'] as const);
 
 async function migration(): Promise<string> {
   try { return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8'); }
@@ -37,38 +37,16 @@ async function migration(): Promise<string> {
 async function schemaState(pool: Pool) {
   const structural = await pool.query(`SELECT
     to_regclass('canonical_garments')::text AS garments,
-    to_regclass('canonical_garment_seasons')::text AS seasons,
-    to_regclass('canonical_garment_materials')::text AS materials,
     to_regclass('canonical_garment_tags')::text AS tags,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garments')
-        AND conname='canonical_garments_category_check'
-        AND contype='c' AND convalidated
-        AND pg_get_constraintdef(oid) LIKE '%UNSPECIFIED%'
-        AND pg_get_constraintdef(oid) LIKE '%TOP%'
-        AND pg_get_constraintdef(oid) LIKE '%BOTTOM%'
-        AND pg_get_constraintdef(oid) LIKE '%DRESS%'
-        AND pg_get_constraintdef(oid) LIKE '%OUTERWEAR%'
-        AND pg_get_constraintdef(oid) LIKE '%FOOTWEAR%'
-        AND pg_get_constraintdef(oid) LIKE '%ACCESSORY%'
-        AND pg_get_constraintdef(oid) LIKE '%OTHER%'
-        AND pg_get_constraintdef(oid) NOT LIKE '% OR %'
-    ) AS category_check,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garment_seasons')
-        AND conname='canonical_garment_seasons_pkey'
-        AND contype='p' AND convalidated
-        AND pg_get_constraintdef(oid)='PRIMARY KEY (garment_id, tenant_id, user_id, season)'
-    ) AS seasons_pk,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garment_materials')
-        AND conname='canonical_garment_materials_pkey'
-        AND contype='p' AND convalidated
-        AND pg_get_constraintdef(oid)='PRIMARY KEY (garment_id, tenant_id, user_id, material)'
-    ) AS materials_pk,
+    (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garments') AND conname='canonical_garments_category_check'
+        AND contype='c' AND convalidated) AS category_check_definition,
+    (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garments') AND conname='canonical_garments_season_check'
+        AND contype='c' AND convalidated) AS season_check_definition,
+    (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garments') AND conname='canonical_garments_material_check'
+        AND contype='c' AND convalidated) AS material_check_definition,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_tags')
@@ -76,28 +54,6 @@ async function schemaState(pool: Pool) {
         AND contype='p' AND convalidated
         AND pg_get_constraintdef(oid)='PRIMARY KEY (garment_id, tenant_id, user_id, tag)'
     ) AS tags_pk,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garment_seasons')
-        AND conname='canonical_garment_seasons_value_check'
-        AND contype='c' AND convalidated
-        AND pg_get_constraintdef(oid) LIKE '%SPRING%'
-        AND pg_get_constraintdef(oid) LIKE '%SUMMER%'
-        AND pg_get_constraintdef(oid) LIKE '%AUTUMN%'
-        AND pg_get_constraintdef(oid) LIKE '%WINTER%'
-        AND pg_get_constraintdef(oid) NOT LIKE '% OR %'
-    ) AS seasons_check,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garment_materials')
-        AND conname='canonical_garment_materials_value_check'
-        AND contype='c' AND convalidated
-        AND pg_get_constraintdef(oid) LIKE '%char_length(material)%'
-        AND pg_get_constraintdef(oid) LIKE '%50%'
-        AND pg_get_constraintdef(oid) LIKE '%btrim(material)%'
-        AND pg_get_constraintdef(oid) LIKE '%lower(material)%'
-        AND pg_get_constraintdef(oid) LIKE '%cntrl%'
-    ) AS materials_check,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_tags')
@@ -111,22 +67,6 @@ async function schemaState(pool: Pool) {
     ) AS tags_check,
     EXISTS (
       SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garment_seasons')
-        AND conname='canonical_garment_seasons_owner_fkey'
-        AND contype='f' AND convalidated AND confdeltype='c'
-        AND confrelid=to_regclass('canonical_garments')
-        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%ON DELETE CASCADE%'
-    ) AS seasons_owner_fk,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garment_materials')
-        AND conname='canonical_garment_materials_owner_fkey'
-        AND contype='f' AND convalidated AND confdeltype='c'
-        AND confrelid=to_regclass('canonical_garments')
-        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%ON DELETE CASCADE%'
-    ) AS materials_owner_fk,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_tags')
         AND conname='canonical_garment_tags_owner_fkey'
         AND contype='f' AND convalidated AND confdeltype='c'
@@ -136,7 +76,7 @@ async function schemaState(pool: Pool) {
   const columns = await pool.query(`SELECT table_name,column_name,udt_name,is_nullable,column_default
     FROM information_schema.columns
     WHERE table_schema=current_schema()
-      AND table_name IN ('canonical_garments','canonical_garment_seasons','canonical_garment_materials','canonical_garment_tags')`);
+      AND table_name IN ('canonical_garments','canonical_garment_tags')`);
   return Object.freeze({ ...(structural.rows[0] ?? {}), columns: columns.rows });
 }
 
@@ -151,14 +91,32 @@ function columnsReady(rows: readonly any[]): boolean {
   });
 }
 
+function enumCheckReady(definition: unknown, values: readonly string[]): boolean {
+  const value = String(definition ?? '');
+  if (!value.startsWith('CHECK (') || value.includes(' OR ')) return false;
+  const quoted = [...value.matchAll(/'([^']+)'::text/g)].map(match => match[1]);
+  return quoted.length === values.length
+    && values.every(expected => quoted.includes(expected))
+    && quoted.every(actual => values.includes(actual));
+}
+
+function materialCheckReady(definition: unknown): boolean {
+  const value = String(definition ?? '');
+  return value.includes('char_length(material)')
+    && value.includes('<= 50')
+    && value.includes('btrim(material)')
+    && value.includes('lower(material)')
+    && value.includes('cntrl');
+}
+
 function schemaReady(state: any): boolean {
   return Boolean(
-    state?.garments && state?.seasons && state?.materials && state?.tags
+    state?.garments && state?.tags
     && columnsReady(Array.isArray(state?.columns) ? state.columns : [])
-    && state?.category_check
-    && state?.seasons_pk && state?.materials_pk && state?.tags_pk
-    && state?.seasons_check && state?.materials_check && state?.tags_check
-    && state?.seasons_owner_fk && state?.materials_owner_fk && state?.tags_owner_fk
+    && enumCheckReady(state?.category_check_definition, CATEGORY_VALUES)
+    && enumCheckReady(state?.season_check_definition, SEASON_VALUES)
+    && materialCheckReady(state?.material_check_definition)
+    && state?.tags_pk && state?.tags_check && state?.tags_owner_fk
   );
 }
 
