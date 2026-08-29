@@ -69,6 +69,8 @@ jobs:
           EOF
           cp server/core/fashion/migrations/022_managed_garments_and_initial_views.sql .test-cache/managed-garment/migrations/
       - name: Prove stable identity, canonical bytes, delivery expiry and ownership isolation
-        run: node --test .test-cache/managed-garment/managed-garment-postgres.test.mjs .test-cache/managed-garment/managed-garment-schema-validation-postgres.test.mjs
+        run: node --test .test-cache/managed-garment/managed-garment-postgres.test.mjs
+      - name: Prove schema readiness rejects and repairs NOT VALID ownership foreign keys
+        run: node --test .test-cache/managed-garment/managed-garment-schema-validation-postgres.test.mjs
       - name: Preserve zero-object Fashion lockdown until browser client wiring lands
         run: node --test tests/editor-zero-object-navigation.test.mjs
