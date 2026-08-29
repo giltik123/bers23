@@ -131,7 +131,7 @@ async function schemaState(pool: Pool) {
       WHERE conrelid=to_regclass('canonical_outfit_entries')
         AND conname='canonical_outfit_entries_outfit_position_unique' AND contype='u' AND convalidated
         AND condeferrable AND condeferred
-        AND pg_get_constraintdef(oid) LIKE 'UNIQUE (outfit_id, "position")%'
+        AND replace(pg_get_constraintdef(oid), '"', '') LIKE 'UNIQUE (outfit_id, position)%'
     ) AS outfit_position_unique,
     EXISTS (
       SELECT 1 FROM pg_constraint
@@ -196,6 +196,7 @@ function canonicalCheck(value: unknown): string {
   return String(value ?? '')
     .toLowerCase()
     .replace(/::text/g, '')
+    .replace(/"/g, '')
     .replace(/\s+/g, '')
     .replace(/[()]/g, '');
 }
@@ -207,7 +208,7 @@ function checkReady(actual: unknown, expected: string): boolean {
 function enumCheckReady(definition: unknown, column: string, values: readonly string[]): boolean {
   const raw = String(definition ?? '');
   if (!raw.startsWith('CHECK (') || /\b(?:NOT|OR|AND)\b/i.test(raw)) return false;
-  const normalized = raw.toLowerCase().replace(/\s+/g, '');
+  const normalized = raw.toLowerCase().replace(/"/g, '').replace(/\s+/g, '');
   if (!normalized.includes(`${column.toLowerCase()}=any(array[`)) return false;
   const operators = normalized.match(/<>|!=|<=|>=|=|<|>/g) ?? [];
   if (operators.length !== 1 || operators[0] !== '=') return false;
