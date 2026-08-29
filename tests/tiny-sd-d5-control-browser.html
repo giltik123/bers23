@@ -1,0 +1,176 @@
+<!doctype html><meta charset="utf-8"><link rel="icon" href="data:,"/><title>Tiny-SD D5 control semantics</title>
+<script type="module">
+import { AutoTokenizer, env } from '@huggingface/transformers';
+import {
+  D5_CONTROL_AUTHORITY,
+  D5_DPM_PARITY_LIMIT,
+  D5_TRANSFORMERS_JS_VERSION,
+} from '../scripts/tiny-sd-d5-control-constants.mjs';
+import { TinySdDpmSolverMultistep, dpmParityMetrics } from '../scripts/tiny-sd-d5-dpm-solver.mjs';
+
+env.allowRemoteModels = false;
+env.allowLocalModels = true;
+env.localModelPath = '/__tiny_sd_d5/models/';
+env.useBrowserCache = false;
+
+const requireCondition = (condition, message) => {
+  if (!condition) throw new Error(message);
+};
+const numbers = value => Array.from(value?.data ?? value ?? [], item => Number(item));
+const arraysEqual = (expected, actual) => expected.length === actual.length && expected.every((value, index) => value === actual[index]);
+const normalizeConfig = raw => ({
+  ...raw,
+  lambda_min_clipped: raw.lambda_min_clipped === '-Infinity' ? Number.NEGATIVE_INFINITY : raw.lambda_min_clipped,
+});
+
+const runSchedulerProof = reference => {
+  const config = normalizeConfig(reference.schedulerConfig);
+  const scheduleReports = {};
+  for (const [count, expected] of Object.entries(reference.scheduler.schedules)) {
+    const scheduler = new TinySdDpmSolverMultistep(config);
+    const timesteps = scheduler.setTimesteps(Number(count));
+    requireCondition(arraysEqual(expected.timesteps, timesteps), `browser DPM timestep drift at ${count} steps`);
+    const alpha = timesteps.map(value => scheduler.alphaT[value]);
+    const sigma = timesteps.map(value => scheduler.sigmaT[value]);
+    const lambda = timesteps.map(value => scheduler.lambdaT[value]);
+    const metrics = {
+      alpha: dpmParityMetrics(expected.alphaAtTimesteps, alpha),
+      sigma: dpmParityMetrics(expected.sigmaAtTimesteps, sigma),
+      lambda: dpmParityMetrics(expected.lambdaAtTimesteps, lambda),
+    };
+    for (const [name, metric] of Object.entries(metrics)) {
+      requireCondition(metric.maxAbs <= D5_DPM_PARITY_LIMIT.maxAbs, `browser DPM ${count}/${name} maxAbs ${metric.maxAbs}`);
+      requireCondition(metric.rmse <= D5_DPM_PARITY_LIMIT.rmse, `browser DPM ${count}/${name} RMSE ${metric.rmse}`);
+    }
+    scheduleReports[count] = { timesteps, ...metrics };
+  }
+
+  const chainScheduler = new TinySdDpmSolverMultistep(config);
+  chainScheduler.setTimesteps(reference.scheduler.chain.stepCount);
+  let sample = Float32Array.from(reference.scheduler.chain.initialSample);
+  const chain = [];
+  for (const step of reference.scheduler.chain.steps) {
+    const modelOutput = Float32Array.from(reference.scheduler.chain.modelOutputs[step.index]);
+    const scaled = chainScheduler.scaleModelInput(sample);
+    requireCondition(arraysEqual(Array.from(sample), Array.from(scaled)), 'browser DPM scale_model_input is not identity');
+    const result = chainScheduler.step(modelOutput, step.timestep, sample);
+    requireCondition(result.orderUsed === step.expectedOrderUsed, `browser DPM order drift at step ${step.index}`);
+    const parity = dpmParityMetrics(step.prevSample, result.prevSample);
+    requireCondition(parity.maxAbs <= D5_DPM_PARITY_LIMIT.maxAbs, `browser DPM chain maxAbs ${parity.maxAbs} at step ${step.index}`);
+    requireCondition(parity.rmse <= D5_DPM_PARITY_LIMIT.rmse, `browser DPM chain RMSE ${parity.rmse} at step ${step.index}`);
+    chain.push({ index: step.index, timestep: step.timestep, orderUsed: result.orderUsed, prevTimestep: result.prevTimestep, parity });
+    sample = result.prevSample;
+  }
+
+  const reset = new TinySdDpmSolverMultistep(config);
+  reset.setTimesteps(reference.scheduler.chain.stepCount);
+  let resetSample = Float32Array.from(reference.scheduler.chain.initialSample);
+  for (const step of reference.scheduler.chain.steps) {
+    resetSample = reset.step(Float32Array.from(reference.scheduler.chain.modelOutputs[step.index]), step.timestep, resetSample).prevSample;
+  }
+  const resetParity = dpmParityMetrics(sample, resetSample);
+  requireCondition(resetParity.maxAbs === 0 && resetParity.rmse === 0, 'browser DPM reset is not exactly deterministic');
+
+  const all = [
+    ...Object.values(scheduleReports).flatMap(item => [item.alpha, item.sigma, item.lambda]),
+    ...chain.map(item => item.parity),
+  ];
+  return {
+    scheduleReports,
+    chain,
+    resetParity,
+    observed: {
+      maxAbs: Math.max(...all.map(item => item.maxAbs)),
+      rmse: Math.max(...all.map(item => item.rmse)),
+    },
+    parityLimit: D5_DPM_PARITY_LIMIT,
+  };
+};
+
+// Transformers.js 3.8.1 generically truncates the already post-processed token array. For CLIP,
+// that can discard EOS on over-length prompts. The historical Python CLIPTokenizer contract is
+// proved independently in the reference: raw BPE content is right-truncated to 75 tokens, then
+// BOS/EOS are added and the remaining positions are right-padded with PAD (which equals EOS here).
+const encodeHistoricalClip = async (tokenizer, expected, historicalPostProcessing) => {
+  requireCondition(historicalPostProcessing.policy === 'BOS_PLUS_FIRST_75_CONTENT_PLUS_EOS_THEN_RIGHT_PAD', 'historical CLIP post-processing policy drift');
+  requireCondition(historicalPostProcessing.contentLimit === 75, 'historical CLIP content limit drift');
+  requireCondition(historicalPostProcessing.specialTokenSlots === 2, 'historical CLIP special-token slots drift');
+  requireCondition(historicalPostProcessing.paddingSide === 'right' && historicalPostProcessing.truncationSide === 'right', 'historical CLIP side policy drift');
+  requireCondition(historicalPostProcessing.provedAgainstHistoricalTokenizer === true, 'historical CLIP post-processing is not independently proved');
+
+  const raw = await tokenizer(expected.prompt, {
+    add_special_tokens: false,
+    padding: false,
+    truncation: false,
+    return_tensor: false,
+  });
+  const rawContentIds = numbers(raw.input_ids);
+  requireCondition(arraysEqual(expected.rawContentIds, rawContentIds), `${expected.prompt.slice(0, 24)} raw CLIP BPE mismatch`);
+
+  const retained = rawContentIds.slice(0, historicalPostProcessing.contentLimit);
+  const core = [expected.bosTokenId, ...retained, expected.eosTokenId];
+  requireCondition(core.length <= 77, 'historical CLIP core exceeded model length');
+  const inputIds = [...core, ...new Array(77 - core.length).fill(expected.padTokenId)];
+  const attentionMask = [...new Array(core.length).fill(1), ...new Array(77 - core.length).fill(0)];
+  return { rawContentIds, retainedContentTokenCount: retained.length, inputIds, attentionMask };
+};
+
+globalThis.runTinySdD5ControlBrowser = async ({ reference, preparation }) => {
+  requireCondition(reference.authority === D5_CONTROL_AUTHORITY, 'D5 reference authority drift');
+  requireCondition(preparation.authority === D5_CONTROL_AUTHORITY, 'D5 tokenizer preparation authority drift');
+  requireCondition(reference.runtimeAuthorityGranted === false && reference.productionApproval === false, 'D5 reference unexpectedly grants authority');
+  requireCondition(preparation.runtimeAuthorityGranted === false && preparation.productionApproval === false, 'D5 tokenizer preparation unexpectedly grants authority');
+  requireCondition(preparation.fastVsHistoricalReferenceExact === true, 'derived tokenizer.json lacks Python fast-vs-historical proof');
+  requireCondition(env.allowRemoteModels === false, 'Transformers.js remote model access must be disabled');
+  requireCondition(env.allowLocalModels === true, 'Transformers.js local model access must be enabled');
+  requireCondition(env.localModelPath === '/__tiny_sd_d5/models/', 'Transformers.js local model path drift');
+  requireCondition(String(env.version) === D5_TRANSFORMERS_JS_VERSION, `Transformers.js version drift: ${env.version}`);
+
+  const tokenizer = await AutoTokenizer.from_pretrained('tiny-sd-tokenizer', { local_files_only: true });
+  const tokenizerCases = {};
+  for (const [name, expected] of Object.entries(reference.tokenizer.cases)) {
+    const encoded = await encodeHistoricalClip(tokenizer, expected, reference.tokenizer.historicalPostProcessing);
+    const inputIds = encoded.inputIds;
+    const attentionMask = encoded.attentionMask;
+    requireCondition(inputIds.length === 77, `${name} browser token length ${inputIds.length}`);
+    requireCondition(attentionMask.length === 77, `${name} browser attention length ${attentionMask.length}`);
+    requireCondition(arraysEqual(expected.inputIds, inputIds), `${name} browser CLIP input_ids mismatch`);
+    requireCondition(arraysEqual(expected.attentionMask, attentionMask), `${name} browser CLIP attention_mask mismatch`);
+    requireCondition(inputIds[0] === expected.bosTokenId, `${name} BOS mismatch`);
+    requireCondition(inputIds.at(-1) === expected.eosTokenId || inputIds.at(-1) === expected.padTokenId, `${name} EOS/PAD tail mismatch`);
+    tokenizerCases[name] = {
+      exactRawContentIds: true,
+      exactInputIds: true,
+      exactAttentionMask: true,
+      rawContentTokenCount: encoded.rawContentIds.length,
+      retainedContentTokenCount: encoded.retainedContentTokenCount,
+      tokenCount: inputIds.length,
+      nonPadTokenCount: attentionMask.reduce((sum, value) => sum + value, 0),
+      firstTokenId: inputIds[0],
+      lastTokenId: inputIds.at(-1),
+    };
+  }
+
+  return {
+    schemaVersion: 1,
+    status: 'CANDIDATE',
+    stage: 'D5_BROWSER_CONTROL_SEMANTICS',
+    authority: D5_CONTROL_AUTHORITY,
+    transformersJsVersion: String(env.version),
+    tokenizerLoader: 'AutoTokenizer',
+    tokenizerCompatibilityPolicy: 'RAW_TRANSFORMERS_JS_BPE_PLUS_HISTORICAL_CLIP_POST_PROCESSING',
+    tokenizerRemoteModelsAllowed: env.allowRemoteModels,
+    tokenizerLocalModelsAllowed: env.allowLocalModels,
+    tokenizerLocalModelPath: env.localModelPath,
+    tokenizerCases,
+    scheduler: runSchedulerProof(reference),
+    browserAttempted: true,
+    runtimeAuthorityGranted: false,
+    productionApproval: false,
+    editorAuthorityGranted: false,
+    cloudFallbackAllowed: false,
+    realDeviceApproval: false,
+    userAgent: navigator.userAgent,
+  };
+};
+</script>

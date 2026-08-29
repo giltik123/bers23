@@ -1,0 +1,396 @@
+name: Sprint 6.42D5 Tiny-SD short pipeline composition
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+  TINY_SD_MANIFEST: src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json
+  D5_AUTHORITY: COMPOSITION_ONLY_NOT_QUALITY_ADMISSION
+  TRANSFORMERS_JS_VERSION: '3.8.1'
+  ORT_NODE_VERSION: '1.27.0'
+
+jobs:
+  short-pipeline-measurement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Use Python 3.11 for trust reproduction
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Static fail-closed D5 pipeline policy
+        run: |
+          set -euo pipefail
+          npm ci
+          node --test tests/tiny-sd-d5-control-policy.test.mjs tests/tiny-sd-d5-pipeline-policy.test.mjs
+          node --check scripts/tiny-sd-d5-pipeline-constants.mjs
+          node --check scripts/test-tiny-sd-d5-pipeline-node.mjs
+          node --check scripts/test-tiny-sd-d5-pipeline-browser.mjs
+          python -m py_compile \
+            scripts/probe-tiny-sd-d5-control.py \
+            scripts/probe-tiny-sd-d5-pipeline-control.py \
+            scripts/prepare-tiny-sd-d5-browser-tokenizer.py \
+            scripts/prepare-tiny-sd-d3-wasm-quantized.py \
+            scripts/tiny_sd_d2_common.py \
+            scripts/probe-tiny-sd-reference.py \
+            scripts/probe-tiny-sd-component-onnx.py
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' '*.npz' '*.f32' '*.png' | wc -l)" -eq 0
+          if git grep -n -I -E -- '^-----BEGIN (ED25519 |EC |RSA |OPENSSH )?PRIVATE KEY-----$'; then
+            echo 'Private key material is tracked by Git' >&2
+            exit 1
+          fi
+
+      - name: Install pinned Hugging Face transport client
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          PY
+
+      - name: Reproduce accepted D1 Tiny-SD snapshot
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline"
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          expected = [
+              'model_index.json',
+              'scheduler/scheduler_config.json',
+              'text_encoder/config.json',
+              'text_encoder/pytorch_model.bin',
+              'tokenizer/merges.txt',
+              'tokenizer/special_tokens_map.json',
+              'tokenizer/tokenizer_config.json',
+              'tokenizer/vocab.json',
+              'unet/config.json',
+              'unet/diffusion_pytorch_model.bin',
+              'vae/config.json',
+              'vae/diffusion_pytorch_model.bin',
+          ]
+          snapshot_download(
+              repo_id='segmind/tiny-sd',
+              revision=os.environ['UPSTREAM_REVISION'],
+              local_dir=os.path.join(os.environ['RUNNER_TEMP'], 'tiny-sd-d5-pipeline-snapshot'),
+              allow_patterns=expected,
+          )
+          PY
+          python scripts/inspect-tiny-sd-snapshot.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d5-pipeline-snapshot" \
+            --revision "${UPSTREAM_REVISION}" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d1-snapshot.json"
+
+      - name: Install accepted D1 restricted bridge environment
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check safetensors==0.8.0
+          python - <<'PY'
+          import numpy, safetensors, torch
+          assert numpy.__version__ == '1.26.4'
+          assert torch.__version__.startswith('2.6.0')
+          assert safetensors.__version__ == '0.8.0'
+          PY
+
+      - name: Reproduce exact D1 tensor-only bridge
+        run: |
+          set -euo pipefail
+          python scripts/bridge-tiny-sd-safetensors.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d5-pipeline-snapshot" \
+            --inventory "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d1-snapshot.json" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --out-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-bridge" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d1-bridge.json"
+
+      - name: Use Python 3.10 for historical D2 and D5 control reference
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install exact historical reference environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference-venv"
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference-venv/bin/python"
+          "${REF_PY}" -m pip install --disable-pip-version-check --upgrade 'pip<25'
+          "${REF_PY}" -m pip install --disable-pip-version-check numpy==1.24.4 huggingface_hub==0.16.4 safetensors==0.3.1 ftfy==6.1.1
+          "${REF_PY}" -m pip install --disable-pip-version-check torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+          "${REF_PY}" -m pip install --disable-pip-version-check diffusers==0.19.0 transformers==4.30.2
+          "${REF_PY}" - <<'PY'
+          import diffusers, huggingface_hub, numpy, safetensors, torch, transformers
+          assert numpy.__version__ == '1.24.4'
+          assert torch.__version__ == '2.0.1+cpu'
+          assert diffusers.__version__ == '0.19.0'
+          assert transformers.__version__ == '4.30.2'
+          assert huggingface_hub.__version__ == '0.16.4'
+          assert safetensors.__version__ == '0.3.1'
+          PY
+
+      - name: Re-establish D2 historical component semantics
+        run: |
+          set -euo pipefail
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference-venv/bin/python"
+          "${REF_PY}" scripts/probe-tiny-sd-reference.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d5-pipeline-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference-out "${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference.npz" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d2-reference.json"
+
+      - name: Produce pinned D5 tokenizer and DPM-Solver control reference
+        run: |
+          set -euo pipefail
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference-venv/bin/python"
+          "${REF_PY}" scripts/probe-tiny-sd-d5-control.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d5-pipeline-snapshot" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-control-reference.json"
+
+      - name: Record historical DPM pipeline runtime control
+        run: |
+          set -euo pipefail
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference-venv/bin/python"
+          "${REF_PY}" scripts/probe-tiny-sd-d5-pipeline-control.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d5-pipeline-snapshot" \
+            --control-reference "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-control-reference.json" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-pipeline-control.json"
+
+      - name: Prepare browser tokenizer from exact pinned CLIP assets
+        run: |
+          set -euo pipefail
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference-venv/bin/python"
+          "${REF_PY}" scripts/prepare-tiny-sd-d5-browser-tokenizer.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d5-pipeline-snapshot" \
+            --reference "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-control-reference.json" \
+            --output-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-tokenizer" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-browser-tokenizer.json"
+          test -s "${RUNNER_TEMP}/tiny-sd-d5-pipeline-tokenizer/tokenizer.json"
+
+      - name: Use Python 3.11 for D2 exporter and D3 selected pack
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact D2 exporter and D3 compact environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d5-pipeline-export-venv"
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d5-pipeline-export-venv/bin/python"
+          "${EXP_PY}" -m pip install --disable-pip-version-check --upgrade pip
+          "${EXP_PY}" -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          "${EXP_PY}" -m pip install --disable-pip-version-check \
+            numpy==2.4.6 safetensors==0.8.0 \
+            diffusers==0.39.0 transformers==4.57.6 \
+            onnx==1.22.0 onnxscript==0.7.1 onnxruntime==1.27.0
+          "${EXP_PY}" - <<'PY'
+          import diffusers, numpy, onnx, onnxruntime, onnxscript, safetensors, torch, transformers
+          assert torch.__version__.startswith('2.13.0')
+          assert numpy.__version__ == '2.4.6'
+          assert diffusers.__version__ == '0.39.0'
+          assert transformers.__version__ == '4.57.6'
+          assert safetensors.__version__ == '0.8.0'
+          assert onnx.__version__ == '1.22.0'
+          assert onnxscript.__version__ == '0.7.1'
+          assert onnxruntime.__version__ == '1.27.0'
+          PY
+
+      - name: Reproduce accepted D2 FP32 ONNX components
+        run: |
+          set -euo pipefail
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d5-pipeline-export-venv/bin/python"
+          mkdir -p "${RUNNER_TEMP}/tiny-sd-d5-pipeline-fp32"
+          "${EXP_PY}" scripts/probe-tiny-sd-component-onnx.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d5-pipeline-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference "${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference.npz" \
+            --reference-report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d2-reference.json" \
+            --onnx-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-fp32" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d2-components.json"
+          "${EXP_PY}" - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42d5-pipeline/d2-components.json', encoding='utf-8'))
+          assert report['passCount'] == 3 and report['allComponentsPass'] is True and report['blockedComponents'] == {}
+          assert all(value['result'] == 'PASS' and value['ortParityPassed'] is True for value in report['components'].values())
+          PY
+
+      - name: Reproduce accepted D3 selected browser representation
+        run: |
+          set -euo pipefail
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d5-pipeline-export-venv/bin/python"
+          "${EXP_PY}" scripts/prepare-tiny-sd-d3-wasm-quantized.py \
+            --fp32-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-fp32" \
+            --d2-report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d2-components.json" \
+            --output-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-selected" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-d3-fixtures" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d3-selected.json"
+          "${EXP_PY}" - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42d5-pipeline/d3-selected.json', encoding='utf-8'))
+          expected = {'text_encoder', 'unet', 'vae_decoder'}
+          assert set(report['components']) == expected
+          for name, value in report['components'].items():
+              assert value['result'] == 'WASM_COMPACT_NATIVE_PASS', (name, value['result'])
+              assert value['transform']['scheme'] == 'EXACT_FP16_STORAGE_FP32_COMPUTE'
+              assert value['nativeOrtParity']['passed'] is True
+              assert value['candidate']['graph']['domains'] == ['ai.onnx']
+              assert value['candidate']['graph']['functionCount'] == 0
+          PY
+
+      - name: Install CI-only native ORT and browser tokenizer runtimes
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --onnxruntime-node-install=skip \
+            "onnxruntime-node@${ORT_NODE_VERSION}" \
+            "@huggingface/transformers@${TRANSFORMERS_JS_VERSION}"
+          node --input-type=commonjs - <<'JS'
+          const ort = require('onnxruntime-node/package.json');
+          if (ort.version !== process.env.ORT_NODE_VERSION) throw new Error(`onnxruntime-node drift: ${ort.version}`);
+          JS
+          node --input-type=module - <<'JS'
+          import { env } from '@huggingface/transformers';
+          if (String(env.version) !== process.env.TRANSFORMERS_JS_VERSION) throw new Error(`Transformers.js drift: ${env.version}`);
+          JS
+          git diff --exit-code -- package.json package-lock.json
+
+      - name: Build deterministic CPU ORT selected-model composition reference
+        run: |
+          set -euo pipefail
+          node scripts/test-tiny-sd-d5-pipeline-node.mjs \
+            --model-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-selected" \
+            --quant-report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d3-selected.json" \
+            --control-reference "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-control-reference.json" \
+            --pipeline-control "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-pipeline-control.json" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-native-fixtures" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-native-pipeline.json"
+
+      - name: Prove system Google Chrome is installed
+        run: |
+          set -euo pipefail
+          google-chrome --version
+
+      - name: Measure real Chrome WASM selected-model composition
+        run: |
+          set -euo pipefail
+          node scripts/test-tiny-sd-d5-pipeline-browser.mjs \
+            --model-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-selected" \
+            --tokenizer-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-tokenizer" \
+            --quant-report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d3-selected.json" \
+            --control-reference "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-control-reference.json" \
+            --native-reference "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-native-pipeline.json" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-native-fixtures" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d5-browser-pipeline.json"
+
+      - name: Validate measurement classification without granting composition authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, math, os
+          native = json.load(open('.test-cache/6.42d5-pipeline/d5-native-pipeline.json', encoding='utf-8'))
+          browser = json.load(open('.test-cache/6.42d5-pipeline/d5-browser-pipeline.json', encoding='utf-8'))
+          assert os.environ['D5_AUTHORITY'] == 'COMPOSITION_ONLY_NOT_QUALITY_ADMISSION'
+          assert native['authority'] == browser['authority'] == os.environ['D5_AUTHORITY']
+          assert native['deterministicRerunExact'] is True
+          assert native['stepCount'] == browser['stepCount'] == 3
+          assert set(native['schedulerOrders']) == set(browser['schedulerOrders']) == {1, 2}
+          assert browser['result'] == 'COMPOSED_PARITY_MEASURED_NOT_ADMITTED'
+          assert browser['composedParityPolicy'] == 'MEASURE_THEN_PIN_NARROW_LIMITS'
+          assert browser['composedParityAdmission'] is False
+          assert browser['componentIsolationAuthority'] == 'EXACT_HEAD_D3_WORKFLOW_SEPARATE_FROM_D5_COMPOSITION'
+          assert browser['provider'] == 'wasm' and browser['executionProviders'] == ['wasm']
+          assert browser['providerFallbackAllowed'] is False
+          assert browser['wasmRuntime']['numThreads'] == 1 and browser['wasmRuntime']['proxy'] is False
+          assert browser['networkDiagnostics']['externalHttpRequests'] == []
+          assert browser['runtimeAuthorityGranted'] is False and browser['productionApproval'] is False
+          assert browser['editorAuthorityGranted'] is False and browser['cloudFallbackAllowed'] is False
+          assert browser['realDeviceApproval'] is False and browser['imageQualityAdmission'] is False
+          final = browser['compositionStageParity']['finalDecoded']
+          assert all(math.isfinite(float(final[key])) for key in ('maxAbs', 'rmse', 'referenceMaxAbs', 'referenceRms'))
+          print('TINY-SD D5 PIPELINE MEASUREMENT: PASS (NOT ADMITTED)', final['normalized'])
+          PY
+
+      - name: Destroy D5 model/reference/tokenizer bytes before JSON upload
+        run: |
+          set -euo pipefail
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-fp32" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-selected" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-d3-fixtures" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-native-fixtures" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-tokenizer" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference.npz" \
+            .test-cache/tiny-sd-d5-pipeline-dist
+          test "$(find .test-cache/6.42d5-pipeline -type f \( -name '*.onnx' -o -name '*.ort' -o -name '*.bin' -o -name '*.safetensors' -o -name '*.npz' -o -name '*.pt' -o -name '*.pth' -o -name '*.ckpt' -o -name '*.f32' -o -name '*.png' \) | wc -l)" -eq 0
+
+      - name: Upload JSON-only D5 pipeline evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-sd-d5-pipeline-measurement-evidence
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            .test-cache/6.42d5-pipeline/d1-snapshot.json
+            .test-cache/6.42d5-pipeline/d1-bridge.json
+            .test-cache/6.42d5-pipeline/d2-reference.json
+            .test-cache/6.42d5-pipeline/d2-components.json
+            .test-cache/6.42d5-pipeline/d3-selected.json
+            .test-cache/6.42d5-pipeline/d5-control-reference.json
+            .test-cache/6.42d5-pipeline/d5-pipeline-control.json
+            .test-cache/6.42d5-pipeline/d5-browser-tokenizer.json
+            .test-cache/6.42d5-pipeline/d5-native-pipeline.json
+            .test-cache/6.42d5-pipeline/d5-browser-pipeline.json
+
+      - name: Summarize D5 pipeline measurement
+        run: |
+          python - <<'PY'
+          import json, os
+          native = json.load(open('.test-cache/6.42d5-pipeline/d5-native-pipeline.json', encoding='utf-8'))
+          browser = json.load(open('.test-cache/6.42d5-pipeline/d5-browser-pipeline.json', encoding='utf-8'))
+          final = browser['compositionStageParity']['finalDecoded']
+          image = browser['compositionStageParity']['finalImage01']
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write('## Tiny-SD D5 short composition measurement\n\n')
+              summary.write(f"Native deterministic rerun: **{native['deterministicRerunExact']}**.  \n")
+              summary.write(f"Steps/orders: **{browser['timesteps']} / {browser['schedulerOrders']}**.  \n")
+              summary.write(f"Final decoded normalized max/RMSE: **{final['normalized']['maxAbsOverReferenceMaxAbs']:.8g} / {final['normalized']['rmseOverReferenceRms']:.8g}**.  \n")
+              summary.write(f"Postprocessed image normalized max/RMSE: **{image['normalized']['maxAbsOverReferenceMaxAbs']:.8g} / {image['normalized']['rmseOverReferenceRms']:.8g}**.  \n")
+              summary.write('Classification: **COMPOSED_PARITY_MEASURED_NOT_ADMITTED**. Thresholds must be pinned from evidence in a separate exact-head commit.  \n')
+              summary.write('Authority: **COMPOSITION_ONLY_NOT_QUALITY_ADMISSION; no runtime/Editor/cloud/real-device/image-quality approval.**\n')
+          PY
+
+      - name: Failure cleanup
+        if: failure() || cancelled()
+        run: |
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-fp32" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-selected" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-d3-fixtures" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-native-fixtures" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-tokenizer" \
+            "${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference.npz" \
+            .test-cache/tiny-sd-d5-pipeline-dist
