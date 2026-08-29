@@ -1,0 +1,79 @@
+name: Fashion F2b managed garment Collection authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  managed-garment-collections-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: managed_wardrobe_f2b_test
+          POSTGRES_USER: managed_wardrobe_f2b_test
+          POSTGRES_PASSWORD: managed_wardrobe_f2b_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U managed_wardrobe_f2b_test -d managed_wardrobe_f2b_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://managed_wardrobe_f2b_test:managed_wardrobe_f2b_test@127.0.0.1:5432/managed_wardrobe_f2b_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before dependency or database work
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core server
+        run: npm run server:typecheck
+      - name: Build production Core and prove Fashion migrations 022 through 024 are packaged
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/022_managed_garments_and_initial_views.sql
+          test -f dist-server/migrations/023_managed_garment_wardrobe_metadata.sql
+          test -f dist-server/migrations/024_managed_garment_collections.sql
+      - name: Bundle F2b, F2a and F1b PostgreSQL acceptance
+        run: |
+          mkdir -p .test-cache/managed-wardrobe-f2b/migrations
+          node --input-type=module - <<'EOF'
+          import { build } from 'esbuild';
+          const common = {
+            bundle: true,
+            platform: 'node',
+            format: 'esm',
+            target: 'node24',
+            external: ['pg', 'sharp', 'node:*'],
+          };
+          for (const [entry, output] of [
+            ['tests/managed-garment-collections-postgres.test.ts', 'managed-garment-collections-postgres.test.mjs'],
+            ['tests/managed-wardrobe-metadata-postgres.test.ts', 'managed-wardrobe-metadata-postgres.test.mjs'],
+            ['tests/managed-garment-multiview-postgres.test.ts', 'managed-garment-multiview-postgres.test.mjs'],
+          ]) {
+            await build({ ...common, entryPoints: [entry], outfile: `.test-cache/managed-wardrobe-f2b/${output}` });
+          }
+          EOF
+          cp server/core/fashion/migrations/022_managed_garments_and_initial_views.sql .test-cache/managed-wardrobe-f2b/migrations/
+          cp server/core/fashion/migrations/023_managed_garment_wardrobe_metadata.sql .test-cache/managed-wardrobe-f2b/migrations/
+          cp server/core/fashion/migrations/024_managed_garment_collections.sql .test-cache/managed-wardrobe-f2b/migrations/
+      - name: Prove Collection revisions, owner-bound membership, atomic move/copy and drift repair
+        run: node --test --test-concurrency=1 .test-cache/managed-wardrobe-f2b/managed-garment-collections-postgres.test.mjs
+      - name: Preserve F2a Wardrobe metadata and Garment lifecycle authority
+        run: node --test --test-concurrency=1 .test-cache/managed-wardrobe-f2b/managed-wardrobe-metadata-postgres.test.mjs
+      - name: Preserve F1b multi-view authority on Collection schema
+        run: node --test --test-concurrency=1 .test-cache/managed-wardrobe-f2b/managed-garment-multiview-postgres.test.mjs
+      - name: Preserve zero-object Fashion navigation lockdown
+        run: node --test tests/editor-zero-object-navigation.test.mjs
