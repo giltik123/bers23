@@ -47,6 +47,30 @@ CREATE TABLE IF NOT EXISTS canonical_garment_views (
     ON DELETE RESTRICT
 );
 
+DO $$
+DECLARE
+  view_owner_constraint TEXT;
+BEGIN
+  SELECT conname INTO view_owner_constraint
+  FROM pg_constraint
+  WHERE conrelid=to_regclass('canonical_garment_views')
+    AND contype='f'
+    AND confrelid=to_regclass('canonical_garments')
+    AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%'
+  ORDER BY oid
+  LIMIT 1;
+
+  IF view_owner_constraint IS NULL THEN
+    ALTER TABLE canonical_garment_views
+      ADD CONSTRAINT canonical_garment_views_owner_fkey
+      FOREIGN KEY (garment_id, tenant_id, user_id)
+      REFERENCES canonical_garments (garment_id, tenant_id, user_id)
+      ON DELETE RESTRICT;
+  ELSE
+    EXECUTE format('ALTER TABLE canonical_garment_views VALIDATE CONSTRAINT %I', view_owner_constraint);
+  END IF;
+END $$;
+
 ALTER TABLE canonical_garments
   ALTER COLUMN primary_view_id SET NOT NULL;
 

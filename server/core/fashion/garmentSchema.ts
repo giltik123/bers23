@@ -82,13 +82,14 @@ async function schemaState(pool: Pool) {
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_views') AND contype='f'
         AND confrelid=to_regclass('canonical_garments')
+        AND convalidated
         AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%'
     ) AS view_owner_fk,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garments') AND contype='f'
         AND confrelid=to_regclass('canonical_garment_views')
-        AND condeferrable AND condeferred
+        AND convalidated AND condeferrable AND condeferred
         AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (primary_view_id, garment_id, tenant_id, user_id) REFERENCES canonical_garment_views(view_id, garment_id, tenant_id, user_id)%'
     ) AS primary_view_owner_fk`);
   const columns = await pool.query(`SELECT table_name,column_name,udt_name,is_nullable,character_maximum_length,column_default
