@@ -40,5 +40,20 @@ jobs:
       - run: npm ci
       - name: Typecheck canonical Project authority
         run: npm run server:typecheck
+      - name: Bundle Project source-lineage PostgreSQL acceptance
+        run: |
+          mkdir -p .test-cache/project-source-lineage
+          node --input-type=module - <<'EOF'
+          import { build } from 'esbuild';
+          await build({
+            entryPoints: ['tests/project-accept-source-lineage-postgres.test.ts'],
+            bundle: true,
+            platform: 'node',
+            format: 'esm',
+            target: 'node24',
+            outfile: '.test-cache/project-source-lineage/project-accept-source-lineage-postgres.test.mjs',
+            external: ['pg', 'sharp', 'node:*'],
+          });
+          EOF
       - name: Prove stale source-bound FINAL rejection and accepted replay
-        run: node --experimental-strip-types --test tests/project-accept-source-lineage-postgres.test.ts
+        run: node --test .test-cache/project-source-lineage/project-accept-source-lineage-postgres.test.mjs
