@@ -82,10 +82,12 @@ export class PostgresGarmentWardrobeStore {
         return current;
       }
 
-      await client.query(`UPDATE canonical_garments
+      const updated = await client.query(`UPDATE canonical_garments
         SET name=$4, category=$5, favorite=$6, revision=revision+1, updated_at=CURRENT_TIMESTAMP
-        WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND revision=$7`,
+        WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND revision=$7
+        RETURNING revision`,
       [garmentId, scope.tenantId, scope.userId, next.name, next.category, next.favorite, expectedRevision]);
+      if (updated.rowCount !== 1 || Number(updated.rows[0]?.revision) !== expectedRevision + 1) throw revisionConflict();
 
       if (patch.seasons) await replaceValues(client, 'canonical_garment_seasons', 'season', scope, garmentId, patch.seasons);
       if (patch.materials) await replaceValues(client, 'canonical_garment_materials', 'material', scope, garmentId, patch.materials);
@@ -113,6 +115,30 @@ export class PostgresGarmentWardrobeStore {
     return this.setStatus(scope, garmentId, expectedRevision, 'ACTIVE');
   }
 
+  async delete(scope: GarmentOwnerScope, garmentId: string, expectedRevision: number): Promise<number> {
+    validateMutationIdentity(garmentId, expectedRevision);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const current = await lockedMetadata(client, scope, garmentId);
+      if (!current) throw notFound();
+      if (current.revision !== expectedRevision) throw revisionConflict();
+      const updated = await client.query(`UPDATE canonical_garments
+        SET status='ARCHIVED', revision=revision+1, updated_at=CURRENT_TIMESTAMP, deleted_at=CURRENT_TIMESTAMP
+        WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND revision=$4
+        RETURNING revision`, [garmentId, scope.tenantId, scope.userId, expectedRevision]);
+      const revision = Number(updated.rows[0]?.revision);
+      if (updated.rowCount !== 1 || revision !== expectedRevision + 1) throw revisionConflict();
+      await client.query('COMMIT');
+      return revision;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async setStatus(
     scope: GarmentOwnerScope,
     garmentId: string,
@@ -134,7 +160,7 @@ export class PostgresGarmentWardrobeStore {
         SET status=$4, revision=revision+1, updated_at=CURRENT_TIMESTAMP
         WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND revision=$5
         RETURNING revision`, [garmentId, scope.tenantId, scope.userId, status, expectedRevision]);
-      if (updated.rowCount !== 1) throw revisionConflict();
+      if (updated.rowCount !== 1 || Number(updated.rows[0]?.revision) !== expectedRevision + 1) throw revisionConflict();
       const snapshot = await selectMetadata(client, scope, garmentId);
       if (!snapshot || snapshot.revision !== expectedRevision + 1 || snapshot.status !== status) {
         throw new Error('Managed Garment lifecycle mutation did not produce its expected state');
@@ -268,20 +294,35 @@ function normalizeFavorite(value: unknown): boolean {
 }
 
 function fromRow(row: any): ManagedGarmentWardrobe {
+  const status = storedStatus(row.status);
+  const category = storedCategory(row.category);
+  const favorite = row.favorite;
+  const revision = Number(row.revision);
+  if (typeof favorite !== 'boolean') throw new Error('Stored Garment favorite is invalid');
+  if (!Number.isSafeInteger(revision) || revision < 1) throw new Error('Stored Garment revision is invalid');
   return Object.freeze({
     garmentId: String(row.garment_id),
     name: String(row.name),
-    category: normalizeCategory(row.category),
+    category,
     seasons: Object.freeze((Array.isArray(row.seasons) ? row.seasons : []).map(normalizeStoredSeason)),
     materials: Object.freeze((Array.isArray(row.materials) ? row.materials : []).map(String)),
     tags: Object.freeze((Array.isArray(row.tags) ? row.tags : []).map(String)),
-    favorite: row.favorite === true,
-    status: row.status === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE',
-    revision: Number(row.revision),
+    favorite,
+    status,
+    revision,
     updatedAt: new Date(row.updated_at).toISOString(),
   });
 }
 
+function storedCategory(value: unknown): GarmentCategory {
+  const category = String(value);
+  if (!(GARMENT_CATEGORIES as readonly string[]).includes(category)) throw new Error('Stored Garment category is unsupported');
+  return category as GarmentCategory;
+}
+function storedStatus(value: unknown): 'ACTIVE' | 'ARCHIVED' {
+  if (value !== 'ACTIVE' && value !== 'ARCHIVED') throw new Error('Stored Garment status is unsupported');
+  return value;
+}
 function normalizeStoredSeason(value: unknown): GarmentSeason {
   const season = String(value);
   if (!(GARMENT_SEASONS as readonly string[]).includes(season)) throw new Error('Stored Garment season is unsupported');
