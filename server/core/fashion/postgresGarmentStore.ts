@@ -86,10 +86,11 @@ export class PostgresGarmentStore {
       throw httpError(400, 'invalid_garment_revision', 'Expected garment revision is invalid');
     }
 
-    const preflight = await this.pool.query(`SELECT revision FROM canonical_garments
+    const preflight = await this.pool.query(`SELECT revision,status FROM canonical_garments
       WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL`,
     [garmentId, scope.tenantId, scope.userId]);
     if (!preflight.rows[0]) throw httpError(404, 'garment_not_found', 'Garment not found');
+    if (String(preflight.rows[0].status) !== 'ACTIVE') throw garmentNotActive();
     if (Number(preflight.rows[0].revision) !== expectedRevision) throw revisionConflict();
 
     const normalized = await normalizeGarmentImage(input, limits);
@@ -97,10 +98,11 @@ export class PostgresGarmentStore {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const locked = await client.query(`SELECT revision FROM canonical_garments
+      const locked = await client.query(`SELECT revision,status FROM canonical_garments
         WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL
         FOR UPDATE`, [garmentId, scope.tenantId, scope.userId]);
       if (!locked.rows[0]) throw httpError(404, 'garment_not_found', 'Garment not found');
+      if (String(locked.rows[0].status) !== 'ACTIVE') throw garmentNotActive();
       if (Number(locked.rows[0].revision) !== expectedRevision) throw revisionConflict();
 
       const ordinalResult = await client.query(`SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal
@@ -115,7 +117,7 @@ export class PostgresGarmentStore {
       await insertManagedView(client, scope, garmentId, viewId, ordinal, normalized);
       const updated = await client.query(`UPDATE canonical_garments
         SET revision=revision+1, updated_at=CURRENT_TIMESTAMP
-        WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND revision=$4
+        WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND status='ACTIVE' AND revision=$4
         RETURNING revision`, [garmentId, scope.tenantId, scope.userId, expectedRevision]);
       if (updated.rowCount !== 1) throw revisionConflict();
       await client.query('COMMIT');
@@ -290,6 +292,9 @@ function fromGarmentRow(row: any): ManagedGarment {
   });
 }
 
+function garmentNotActive(): Error & { status: number; code: string } {
+  return httpError(409, 'garment_not_active', 'Archived garments cannot accept additional views');
+}
 function revisionConflict(): Error & { status: number; code: string } {
   return httpError(412, 'garment_revision_conflict', 'Garment revision changed; reload the aggregate before appending another view');
 }

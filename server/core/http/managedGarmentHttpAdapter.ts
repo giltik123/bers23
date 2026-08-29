@@ -7,6 +7,8 @@ import { GARMENT_VIEW_KINDS, PostgresGarmentStore, type GarmentViewKind, type Ma
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/garments';
+const GARMENT_REVISION_HEADER = 'X-Garment-Revision';
+const EXPECTED_GARMENT_REVISION_HEADER = 'X-Expected-Garment-Revision';
 
 type GarmentAuth = Readonly<{
   verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
@@ -115,7 +117,7 @@ function sendGarment(
   principal: AuthenticatedPrincipal,
   now: number,
 ): void {
-  response.setHeader('ETag', garmentEtag(garment.revision));
+  response.setHeader(GARMENT_REVISION_HEADER, String(garment.revision));
   send(response, status, dto(garment, delivery, principal, now));
 }
 
@@ -193,22 +195,19 @@ function requireImageMediaType(request: IncomingMessage): 'image/png' | 'image/j
 }
 
 function requireExpectedRevision(request: IncomingMessage): number {
-  const raw = header(request, 'if-match');
+  const raw = header(request, EXPECTED_GARMENT_REVISION_HEADER);
   if (!raw) {
-    throw httpError(428, 'garment_revision_precondition_required', 'If-Match with the current garment revision is required');
+    throw httpError(428, 'garment_revision_precondition_required', `${EXPECTED_GARMENT_REVISION_HEADER} with the current garment revision is required`);
   }
-  const match = /^"garment-revision-([1-9][0-9]*)"$/.exec(raw.trim());
-  if (!match) {
-    throw httpError(400, 'invalid_garment_revision_precondition', 'If-Match must be a single managed garment revision ETag');
+  if (!/^[1-9][0-9]*$/.test(raw.trim())) {
+    throw httpError(400, 'invalid_garment_revision_precondition', `${EXPECTED_GARMENT_REVISION_HEADER} must contain one positive integer revision`);
   }
-  const revision = Number(match[1]);
+  const revision = Number(raw.trim());
   if (!Number.isSafeInteger(revision)) {
-    throw httpError(400, 'invalid_garment_revision_precondition', 'If-Match garment revision is outside the supported range');
+    throw httpError(400, 'invalid_garment_revision_precondition', 'Expected garment revision is outside the supported range');
   }
   return revision;
 }
-
-function garmentEtag(revision: number): string { return `"garment-revision-${revision}"`; }
 
 function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {
   const origin = header(request, 'origin');
@@ -217,8 +216,8 @@ function applyCors(request: IncomingMessage, response: ServerResponse, config: C
   response.setHeader('Access-Control-Allow-Origin', origin);
   response.setHeader('Access-Control-Allow-Credentials', 'true');
   response.setHeader('Vary', 'Origin');
-  response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}, If-Match`);
-  response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}, ETag`);
+  response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}, ${EXPECTED_GARMENT_REVISION_HEADER}`);
+  response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}, ${GARMENT_REVISION_HEADER}, ETag`);
   response.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
 }
 
