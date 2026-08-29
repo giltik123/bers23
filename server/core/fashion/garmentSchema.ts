@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
+import { checkGarmentCollectionSchema, migrateGarmentCollectionSchema } from './garmentCollectionSchema.ts';
 import { checkGarmentWardrobeSchema, migrateGarmentWardrobeSchema } from './garmentWardrobeSchema.ts';
 
 const MIGRATION = '022_managed_garments_and_initial_views.sql';
@@ -136,6 +137,7 @@ async function checkBaseGarmentSchema(pool: Pool): Promise<void> {
 export async function checkGarmentSchema(pool: Pool): Promise<void> {
   await checkBaseGarmentSchema(pool);
   await checkGarmentWardrobeSchema(pool);
+  await checkGarmentCollectionSchema(pool);
 }
 
 export async function migrateGarmentSchema(pool: Pool): Promise<void> {
@@ -143,5 +145,6 @@ export async function migrateGarmentSchema(pool: Pool): Promise<void> {
   if (!schemaReady(state)) await pool.query(await migration());
   await checkBaseGarmentSchema(pool);
   await migrateGarmentWardrobeSchema(pool);
+  await migrateGarmentCollectionSchema(pool);
   await checkGarmentSchema(pool);
 }
