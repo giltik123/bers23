@@ -149,7 +149,7 @@ export function validateHostedWebGpuNegativeControl(value) {
   });
 }
 
-export function assessTinySdD6RealDeviceEvidence(value, {
+export async function assessTinySdD6RealDeviceEvidence(value, {
   expectedTestedCommitSha,
   trustVerifier,
   now = Date.now(),
@@ -177,7 +177,7 @@ export function assessTinySdD6RealDeviceEvidence(value, {
   }
 
   validateTime(evidence, now, blockers);
-  validateAttestation(evidence.attestation, trustVerifier, canonicalPayload, blockers);
+  await validateAttestation(evidence.attestation, trustVerifier, canonicalPayload, blockers);
   validateDevice(evidence.device, blockers);
   validateComponents(evidence.components, blockers);
   validateControl(evidence.control, blockers);
@@ -215,7 +215,7 @@ function validateTime(value, now, blockers) {
   if (now - value.capturedAt > D6_MAX_EVIDENCE_AGE_MS || value.expiresAt < now) blockers.add('STALE_EVIDENCE');
 }
 
-function validateAttestation(attestation, trustVerifier, canonicalPayload, blockers) {
+async function validateAttestation(attestation, trustVerifier, canonicalPayload, blockers) {
   if (!isRecord(attestation) || !httpsUrl(attestation.evidenceUrl) || !httpsUrl(attestation.signatureUrl)) {
     blockers.add('INVALID_ATTESTATION');
   }
@@ -225,7 +225,7 @@ function validateAttestation(attestation, trustVerifier, canonicalPayload, block
   }
 
   try {
-    const result = trustVerifier(Object.freeze({
+    const result = await trustVerifier(Object.freeze({
       canonicalPayload,
       attestation: isRecord(attestation) ? Object.freeze({ ...attestation }) : attestation,
     }));
@@ -246,7 +246,7 @@ function validateDevice(device, blockers) {
   if (device.provider !== 'webgpu') blockers.add('UNSUPPORTED_PROVIDER');
   if (device.executionProviders?.length !== 1 || device.executionProviders?.[0] !== 'webgpu' || device.providerFallbackAllowed !== false) blockers.add('PROVIDER_FALLBACK_OR_DRIFT');
   if (device.softwareAdapter !== false || device.adapterKind !== 'PHYSICAL') blockers.add('SOFTWARE_OR_UNKNOWN_ADAPTER');
-  if (!nonEmpty(device.vendor) || !nonEmpty(device.architecture) || /swiftshader|software/i.test(`${device.vendor} ${device.architecture} ${device.description ?? ''}`)) blockers.add('SOFTWARE_OR_UNKNOWN_ADAPTER');
+  if (!nonEmpty(device.vendor) || !nonEmpty(device.architecture) || /swiftshader|software|llvmpipe|lavapipe/i.test(`${device.vendor} ${device.architecture} ${device.description ?? ''}`)) blockers.add('SOFTWARE_OR_UNKNOWN_ADAPTER');
   if (!nonEmpty(device.browserVersion)) blockers.add('INCOMPLETE_RUNTIME_IDENTITY');
   if (device.runtimeName !== 'onnxruntime-web' || device.runtimeVersion !== D6_ORT_WEB_VERSION) blockers.add('RUNTIME_IDENTITY_DRIFT');
   if (!Array.isArray(device.features)) blockers.add('REQUIRED_FEATURE_MISSING');
