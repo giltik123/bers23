@@ -65,7 +65,7 @@ const CATEGORY_ROLES: Readonly<Record<GarmentCategory, readonly OutfitLayerRole[
   shoes: roles('FOOTWEAR'), boots: roles('FOOTWEAR'), sneakers: roles('FOOTWEAR'), sandals: roles('FOOTWEAR'),
   hats: roles('ACCESSORY'), glasses: roles('ACCESSORY'), scarves: roles('ACCESSORY'), bags: roles('ACCESSORY'),
   belts: roles('ACCESSORY'), jewelry: roles('ACCESSORY'), gloves: roles('ACCESSORY'), socks: roles('ACCESSORY'),
-  other: roles('ACCESSORY'),
+  other: roles(),
 });
 
 export function allowedOutfitLayerRoles(category: GarmentCategory): readonly OutfitLayerRole[] {
@@ -73,7 +73,11 @@ export function allowedOutfitLayerRoles(category: GarmentCategory): readonly Out
 }
 
 export function defaultOutfitLayerRole(category: GarmentCategory): OutfitLayerRole {
-  return CATEGORY_ROLES[category][0];
+  const role = CATEGORY_ROLES[category][0];
+  if (!role) {
+    throw httpError(409, 'outfit_layer_role_incompatible', `Garment category ${category} has no admitted Outfit layer role`);
+  }
+  return role;
 }
 
 export class PostgresOutfitStore {
