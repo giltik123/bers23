@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS canonical_garment_views (
   content_type TEXT NOT NULL DEFAULT 'image/png'
     CHECK (content_type = 'image/png'),
   content_sha256 CHAR(64) NOT NULL CHECK (content_sha256 ~ '^[0-9a-f]{64}$'),
+  storage_backend TEXT NOT NULL DEFAULT 'POSTGRES_BYTEA_V1'
+    CHECK (storage_backend = 'POSTGRES_BYTEA_V1'),
   image_bytes BYTEA NOT NULL CHECK (octet_length(image_bytes) > 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   revoked_at TIMESTAMPTZ,
