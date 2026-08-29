@@ -4,22 +4,30 @@ import type { Pool } from 'pg';
 
 const MIGRATION = '023_managed_garment_wardrobe_metadata.sql';
 
-const REQUIRED_COLUMNS = Object.freeze([
-  ['canonical_garments', 'category', 'text', false, true],
-  ['canonical_garments', 'favorite', 'bool', false, true],
-  ['canonical_garment_seasons', 'garment_id', 'uuid', false, false],
-  ['canonical_garment_seasons', 'tenant_id', 'text', false, false],
-  ['canonical_garment_seasons', 'user_id', 'text', false, false],
-  ['canonical_garment_seasons', 'season', 'text', false, false],
-  ['canonical_garment_materials', 'garment_id', 'uuid', false, false],
-  ['canonical_garment_materials', 'tenant_id', 'text', false, false],
-  ['canonical_garment_materials', 'user_id', 'text', false, false],
-  ['canonical_garment_materials', 'material', 'text', false, false],
-  ['canonical_garment_tags', 'garment_id', 'uuid', false, false],
-  ['canonical_garment_tags', 'tenant_id', 'text', false, false],
-  ['canonical_garment_tags', 'user_id', 'text', false, false],
-  ['canonical_garment_tags', 'tag', 'text', false, false],
-] as const);
+type ColumnContract = Readonly<{
+  table: 'canonical_garments' | 'canonical_garment_seasons' | 'canonical_garment_materials' | 'canonical_garment_tags';
+  name: string;
+  udtName: string;
+  nullable: boolean;
+  expectedDefault?: string;
+}>;
+
+const REQUIRED_COLUMNS: readonly ColumnContract[] = Object.freeze([
+  { table: 'canonical_garments', name: 'category', udtName: 'text', nullable: false, expectedDefault: "'UNSPECIFIED'::text" },
+  { table: 'canonical_garments', name: 'favorite', udtName: 'bool', nullable: false, expectedDefault: 'false' },
+  { table: 'canonical_garment_seasons', name: 'garment_id', udtName: 'uuid', nullable: false },
+  { table: 'canonical_garment_seasons', name: 'tenant_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_seasons', name: 'user_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_seasons', name: 'season', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_materials', name: 'garment_id', udtName: 'uuid', nullable: false },
+  { table: 'canonical_garment_materials', name: 'tenant_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_materials', name: 'user_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_materials', name: 'material', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_tags', name: 'garment_id', udtName: 'uuid', nullable: false },
+  { table: 'canonical_garment_tags', name: 'tenant_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_tags', name: 'user_id', udtName: 'text', nullable: false },
+  { table: 'canonical_garment_tags', name: 'tag', udtName: 'text', nullable: false },
+]);
 
 async function migration(): Promise<string> {
   try { return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8'); }
@@ -37,6 +45,15 @@ async function schemaState(pool: Pool) {
       WHERE conrelid=to_regclass('canonical_garments')
         AND conname='canonical_garments_category_check'
         AND contype='c' AND convalidated
+        AND pg_get_constraintdef(oid) LIKE '%UNSPECIFIED%'
+        AND pg_get_constraintdef(oid) LIKE '%TOP%'
+        AND pg_get_constraintdef(oid) LIKE '%BOTTOM%'
+        AND pg_get_constraintdef(oid) LIKE '%DRESS%'
+        AND pg_get_constraintdef(oid) LIKE '%OUTERWEAR%'
+        AND pg_get_constraintdef(oid) LIKE '%FOOTWEAR%'
+        AND pg_get_constraintdef(oid) LIKE '%ACCESSORY%'
+        AND pg_get_constraintdef(oid) LIKE '%OTHER%'
+        AND pg_get_constraintdef(oid) NOT LIKE '% OR %'
     ) AS category_check,
     EXISTS (
       SELECT 1 FROM pg_constraint
@@ -64,42 +81,57 @@ async function schemaState(pool: Pool) {
       WHERE conrelid=to_regclass('canonical_garment_seasons')
         AND conname='canonical_garment_seasons_value_check'
         AND contype='c' AND convalidated
+        AND pg_get_constraintdef(oid) LIKE '%SPRING%'
+        AND pg_get_constraintdef(oid) LIKE '%SUMMER%'
+        AND pg_get_constraintdef(oid) LIKE '%AUTUMN%'
+        AND pg_get_constraintdef(oid) LIKE '%WINTER%'
+        AND pg_get_constraintdef(oid) NOT LIKE '% OR %'
     ) AS seasons_check,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_materials')
         AND conname='canonical_garment_materials_value_check'
         AND contype='c' AND convalidated
+        AND pg_get_constraintdef(oid) LIKE '%char_length(material)%'
+        AND pg_get_constraintdef(oid) LIKE '%50%'
+        AND pg_get_constraintdef(oid) LIKE '%btrim(material)%'
+        AND pg_get_constraintdef(oid) LIKE '%lower(material)%'
+        AND pg_get_constraintdef(oid) LIKE '%cntrl%'
     ) AS materials_check,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_tags')
         AND conname='canonical_garment_tags_value_check'
         AND contype='c' AND convalidated
+        AND pg_get_constraintdef(oid) LIKE '%char_length(tag)%'
+        AND pg_get_constraintdef(oid) LIKE '%40%'
+        AND pg_get_constraintdef(oid) LIKE '%btrim(tag)%'
+        AND pg_get_constraintdef(oid) LIKE '%lower(tag)%'
+        AND pg_get_constraintdef(oid) LIKE '%cntrl%'
     ) AS tags_check,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_seasons')
         AND conname='canonical_garment_seasons_owner_fkey'
-        AND contype='f' AND convalidated
+        AND contype='f' AND convalidated AND confdeltype='c'
         AND confrelid=to_regclass('canonical_garments')
-        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%'
+        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%ON DELETE CASCADE%'
     ) AS seasons_owner_fk,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_materials')
         AND conname='canonical_garment_materials_owner_fkey'
-        AND contype='f' AND convalidated
+        AND contype='f' AND convalidated AND confdeltype='c'
         AND confrelid=to_regclass('canonical_garments')
-        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%'
+        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%ON DELETE CASCADE%'
     ) AS materials_owner_fk,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_tags')
         AND conname='canonical_garment_tags_owner_fkey'
-        AND contype='f' AND convalidated
+        AND contype='f' AND convalidated AND confdeltype='c'
         AND confrelid=to_regclass('canonical_garments')
-        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%'
+        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%ON DELETE CASCADE%'
     ) AS tags_owner_fk`);
   const columns = await pool.query(`SELECT table_name,column_name,udt_name,is_nullable,column_default
     FROM information_schema.columns
@@ -110,11 +142,11 @@ async function schemaState(pool: Pool) {
 
 function columnsReady(rows: readonly any[]): boolean {
   const columns = new Map(rows.map(row => [`${String(row.table_name)}.${String(row.column_name)}`, row]));
-  return REQUIRED_COLUMNS.every(([table, name, udtName, nullable, requiresDefault]) => {
-    const row = columns.get(`${table}.${name}`);
-    if (!row || String(row.udt_name) !== udtName) return false;
-    if ((String(row.is_nullable) === 'YES') !== nullable) return false;
-    if (requiresDefault && (row.column_default === null || row.column_default === undefined || String(row.column_default).trim() === '')) return false;
+  return REQUIRED_COLUMNS.every(expected => {
+    const row = columns.get(`${expected.table}.${expected.name}`);
+    if (!row || String(row.udt_name) !== expected.udtName) return false;
+    if ((String(row.is_nullable) === 'YES') !== expected.nullable) return false;
+    if (expected.expectedDefault !== undefined && String(row.column_default ?? '') !== expected.expectedDefault) return false;
     return true;
   });
 }
