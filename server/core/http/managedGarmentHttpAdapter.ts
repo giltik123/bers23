@@ -1,11 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
+import { assessManagedGarmentCapture } from '../fashion/garmentCaptureAssessment.ts';
 import { GarmentDeliveryAuthority } from '../fashion/garmentDeliveryAuthority.ts';
 import { GARMENT_VIEW_KINDS, PostgresGarmentStore, type GarmentViewKind, type ManagedGarment } from '../fashion/postgresGarmentStore.ts';
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/garments';
+const GARMENT_REVISION_HEADER = 'X-Garment-Revision';
+const EXPECTED_GARMENT_REVISION_HEADER = 'X-Expected-Garment-Revision';
 
 type GarmentAuth = Readonly<{
   verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
@@ -41,25 +44,33 @@ export function createManagedGarmentHttpAdapter(input: AdapterInput) {
       }
 
       if (url.pathname === PREFIX && request.method === 'POST') {
-        const contentType = mediaType(request);
-        if (contentType !== 'image/png' && contentType !== 'image/jpeg' && contentType !== 'image/webp') {
-          throw httpError(415, 'unsupported_media_type', 'Supported garment images are PNG, JPEG and WebP');
-        }
+        const contentType = requireImageMediaType(request);
         const name = (url.searchParams.get('name') ?? '').trim();
-        const rawKind = (url.searchParams.get('view') ?? 'UNSPECIFIED').trim().toUpperCase();
-        if (!(GARMENT_VIEW_KINDS as readonly string[]).includes(rawKind)) throw httpError(400, 'invalid_garment_view_kind', 'Garment view kind is unsupported');
+        const viewKind = requireViewKind(url.searchParams.get('view'));
         const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
         const garment = await input.garments.createWithInitialView(principal, {
           name,
-          viewKind: rawKind as GarmentViewKind,
+          viewKind,
           sourceContentType: contentType,
           bytes,
-        }, {
-          maxUploadBytes: input.config.imageUploadLimitBytes,
-          maxDimension: input.config.imageMaxDimension,
-          maxPixels: input.config.imageMaxPixels,
-        });
-        send(response, 201, dto(garment, input.delivery, principal, now())); return true;
+        }, imageLimits(input.config));
+        sendGarment(response, 201, garment, input.delivery, principal, now()); return true;
+      }
+
+      const viewCollectionMatch = url.pathname.match(/^\/api\/core\/garments\/([^/]+)\/views$/);
+      if (viewCollectionMatch && request.method === 'POST') {
+        const expectedRevision = requireExpectedRevision(request);
+        const contentType = requireImageMediaType(request);
+        const viewKind = requireViewKind(url.searchParams.get('view'));
+        const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
+        const garment = await input.garments.appendView(
+          principal,
+          decodePathSegment(viewCollectionMatch[1]),
+          expectedRevision,
+          { viewKind, sourceContentType: contentType, bytes },
+          imageLimits(input.config),
+        );
+        sendGarment(response, 201, garment, input.delivery, principal, now()); return true;
       }
 
       const deliveryMatch = url.pathname.match(/^\/api\/core\/garments\/delivery\/([^/]+)$/);
@@ -81,7 +92,7 @@ export function createManagedGarmentHttpAdapter(input: AdapterInput) {
       if (garmentMatch && request.method === 'GET') {
         const garment = await input.garments.get(principal, decodePathSegment(garmentMatch[1]));
         if (!garment) throw httpError(404, 'garment_not_found', 'Garment not found');
-        send(response, 200, dto(garment, input.delivery, principal, now())); return true;
+        sendGarment(response, 200, garment, input.delivery, principal, now()); return true;
       }
 
       throw httpError(404, 'not_found', 'Route not found');
@@ -98,8 +109,21 @@ export function createManagedGarmentHttpAdapter(input: AdapterInput) {
   };
 }
 
+function sendGarment(
+  response: ServerResponse,
+  status: number,
+  garment: ManagedGarment,
+  delivery: GarmentDeliveryAuthority,
+  principal: AuthenticatedPrincipal,
+  now: number,
+): void {
+  response.setHeader(GARMENT_REVISION_HEADER, String(garment.revision));
+  send(response, status, dto(garment, delivery, principal, now));
+}
+
 function dto(garment: ManagedGarment, delivery: GarmentDeliveryAuthority, principal: AuthenticatedPrincipal, now: number) {
   const expiresAt = now + 5 * 60_000;
+  const assessment = assessManagedGarmentCapture(garment);
   return Object.freeze({
     id: garment.id,
     name: garment.name,
@@ -107,6 +131,26 @@ function dto(garment: ManagedGarment, delivery: GarmentDeliveryAuthority, princi
     status: garment.status,
     revision: garment.revision,
     primary_view_id: garment.primaryViewId,
+    capture_assessment: Object.freeze({
+      cardinal_complete: assessment.cardinalComplete,
+      cardinal_coverage_score: assessment.cardinalCoverageScore,
+      present_cardinal_view_kinds: assessment.presentCardinalViewKinds,
+      missing_cardinal_view_kinds: assessment.missingCardinalViewKinds,
+      detail_view_count: assessment.detailViewCount,
+      unspecified_view_count: assessment.unspecifiedViewCount,
+      technical_resolution: Object.freeze({
+        status: assessment.technicalResolution.status,
+        minimum_best_cardinal_short_edge_px: assessment.technicalResolution.minimumBestCardinalShortEdgePx,
+        threshold_short_edge_px: assessment.technicalResolution.thresholdShortEdgePx,
+        low_resolution_cardinal_view_kinds: assessment.technicalResolution.lowResolutionCardinalViewKinds,
+        low_resolution_view_ids: assessment.technicalResolution.lowResolutionViewIds,
+      }),
+      semantic_quality: assessment.semanticQuality,
+      next_capture_requests: assessment.nextCaptureRequests.map((request) => Object.freeze({
+        view_kind: request.viewKind,
+        reason: request.reason,
+      })),
+    }),
     views: garment.views.map((view) => Object.freeze({
       id: view.id,
       ordinal: view.ordinal,
@@ -126,6 +170,45 @@ function dto(garment: ManagedGarment, delivery: GarmentDeliveryAuthority, princi
   });
 }
 
+function imageLimits(config: CoreServerConfig) {
+  return {
+    maxUploadBytes: config.imageUploadLimitBytes,
+    maxDimension: config.imageMaxDimension,
+    maxPixels: config.imageMaxPixels,
+  };
+}
+
+function requireViewKind(raw: string | null): GarmentViewKind {
+  const value = (raw ?? 'UNSPECIFIED').trim().toUpperCase();
+  if (!(GARMENT_VIEW_KINDS as readonly string[]).includes(value)) {
+    throw httpError(400, 'invalid_garment_view_kind', 'Garment view kind is unsupported');
+  }
+  return value as GarmentViewKind;
+}
+
+function requireImageMediaType(request: IncomingMessage): 'image/png' | 'image/jpeg' | 'image/webp' {
+  const contentType = mediaType(request);
+  if (contentType !== 'image/png' && contentType !== 'image/jpeg' && contentType !== 'image/webp') {
+    throw httpError(415, 'unsupported_media_type', 'Supported garment images are PNG, JPEG and WebP');
+  }
+  return contentType;
+}
+
+function requireExpectedRevision(request: IncomingMessage): number {
+  const raw = header(request, EXPECTED_GARMENT_REVISION_HEADER);
+  if (!raw) {
+    throw httpError(428, 'garment_revision_precondition_required', `${EXPECTED_GARMENT_REVISION_HEADER} with the current garment revision is required`);
+  }
+  if (!/^[1-9][0-9]*$/.test(raw.trim())) {
+    throw httpError(400, 'invalid_garment_revision_precondition', `${EXPECTED_GARMENT_REVISION_HEADER} must contain one positive integer revision`);
+  }
+  const revision = Number(raw.trim());
+  if (!Number.isSafeInteger(revision)) {
+    throw httpError(400, 'invalid_garment_revision_precondition', 'Expected garment revision is outside the supported range');
+  }
+  return revision;
+}
+
 function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {
   const origin = header(request, 'origin');
   if (!origin) return;
@@ -133,8 +216,8 @@ function applyCors(request: IncomingMessage, response: ServerResponse, config: C
   response.setHeader('Access-Control-Allow-Origin', origin);
   response.setHeader('Access-Control-Allow-Credentials', 'true');
   response.setHeader('Vary', 'Origin');
-  response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}`);
-  response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}, ETag`);
+  response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}, ${EXPECTED_GARMENT_REVISION_HEADER}`);
+  response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}, ${GARMENT_REVISION_HEADER}, ETag`);
   response.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
 }
 
@@ -142,10 +225,34 @@ function decodePathSegment(value: string): string {
   try { return decodeURIComponent(value); }
   catch { throw httpError(400, 'invalid_path_encoding', 'Path segment is malformed'); }
 }
-function mediaType(request: IncomingMessage): 'image/png' | 'image/jpeg' | 'image/webp' | string {
+function mediaType(request: IncomingMessage): string {
   return String(request.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase();
 }
-function header(request: IncomingMessage, name: string): string | undefined { const value = request.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value; }
-async function readBytes(request: IncomingMessage, limit: number): Promise<Uint8Array> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of request) { const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += value.byteLength; if (size > limit) throw httpError(413, 'body_too_large', 'Request body exceeds the configured limit'); chunks.push(value); } return new Uint8Array(Buffer.concat(chunks)); }
-function send(response: ServerResponse, status: number, body: unknown): void { response.statusCode = status; response.setHeader('Cache-Control', 'no-store'); if (body === undefined) { response.end(); return; } const bytes = Buffer.from(JSON.stringify(body)); response.setHeader('Content-Type', 'application/json'); response.setHeader('Content-Length', bytes.byteLength); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(bytes); }
-function httpError(status: number, code: string, message: string): Error & { status: number; code: string } { return Object.assign(new Error(message), { status, code }); }
+function header(request: IncomingMessage, name: string): string | undefined {
+  const value = request.headers[name.toLowerCase()];
+  return Array.isArray(value) ? value[0] : value;
+}
+async function readBytes(request: IncomingMessage, limit: number): Promise<Uint8Array> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += value.byteLength;
+    if (size > limit) throw httpError(413, 'body_too_large', 'Request body exceeds the configured limit');
+    chunks.push(value);
+  }
+  return new Uint8Array(Buffer.concat(chunks));
+}
+function send(response: ServerResponse, status: number, body: unknown): void {
+  response.statusCode = status;
+  response.setHeader('Cache-Control', 'no-store');
+  if (body === undefined) { response.end(); return; }
+  const bytes = Buffer.from(JSON.stringify(body));
+  response.setHeader('Content-Type', 'application/json');
+  response.setHeader('Content-Length', bytes.byteLength);
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.end(bytes);
+}
+function httpError(status: number, code: string, message: string): Error & { status: number; code: string } {
+  return Object.assign(new Error(message), { status, code });
+}

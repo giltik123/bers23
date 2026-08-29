@@ -1,0 +1,74 @@
+name: Fashion F1b managed garment multi-view authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  managed-garment-multiview-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: managed_garment_f1b_test
+          POSTGRES_USER: managed_garment_f1b_test
+          POSTGRES_PASSWORD: managed_garment_f1b_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U managed_garment_f1b_test -d managed_garment_f1b_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://managed_garment_f1b_test:managed_garment_f1b_test@127.0.0.1:5432/managed_garment_f1b_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before dependency or database work
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core server
+        run: npm run server:typecheck
+      - name: Build production Core
+        run: npm run server:build
+      - name: Bundle F1b PostgreSQL acceptance
+        run: |
+          mkdir -p .test-cache/managed-garment-f1b/migrations
+          node --input-type=module - <<'EOF'
+          import { build } from 'esbuild';
+          const common = {
+            bundle: true,
+            platform: 'node',
+            format: 'esm',
+            target: 'node24',
+            external: ['pg', 'sharp', 'node:*'],
+          };
+          await build({
+            ...common,
+            entryPoints: ['tests/managed-garment-multiview-postgres.test.ts'],
+            outfile: '.test-cache/managed-garment-f1b/managed-garment-multiview-postgres.test.mjs',
+          });
+          await build({
+            ...common,
+            entryPoints: ['tests/managed-garment-capture-contract-postgres.test.ts'],
+            outfile: '.test-cache/managed-garment-f1b/managed-garment-capture-contract-postgres.test.mjs',
+          });
+          EOF
+          cp server/core/fashion/migrations/022_managed_garments_and_initial_views.sql .test-cache/managed-garment-f1b/migrations/
+      - name: Prove same-garment view append, revision serialization and truthful capture assessment
+        run: node --test .test-cache/managed-garment-f1b/managed-garment-multiview-postgres.test.mjs
+      - name: Prove UNSPECIFIED is initial-only and empty cardinal evidence is not overclaimed
+        run: node --test .test-cache/managed-garment-f1b/managed-garment-capture-contract-postgres.test.mjs
+      - name: Preserve F1a authority regression
+        run: node --test tests/editor-zero-object-navigation.test.mjs
