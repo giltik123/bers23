@@ -30,7 +30,7 @@ export class PostgresGarmentCollectionStore {
   ): Promise<ManagedGarmentCollection> {
     const name = normalizeName(input.name);
     const description = normalizeDescription(input.description ?? '');
-    const collectionId = this.nextId();
+    const collectionId = requireCollectionId(this.nextId());
     const result = await this.pool.query(`INSERT INTO canonical_garment_collections
       (collection_id,tenant_id,user_id,name,description,revision)
       VALUES ($1,$2,$3,$4,$5,1)
@@ -49,10 +49,11 @@ export class PostgresGarmentCollectionStore {
   }
 
   async get(scope: GarmentOwnerScope, collectionId: string): Promise<ManagedGarmentCollection | undefined> {
-    if (!isUuid(collectionId)) return undefined;
+    const canonicalCollectionId = normalizeUuid(collectionId);
+    if (!canonicalCollectionId) return undefined;
     const result = await this.pool.query(`${COLLECTION_SELECT}
       WHERE c.collection_id=$1 AND c.tenant_id=$2 AND c.user_id=$3 AND c.deleted_at IS NULL`,
-    [collectionId, scope.tenantId, scope.userId]);
+    [canonicalCollectionId, scope.tenantId, scope.userId]);
     return result.rows[0] ? fromRow(result.rows[0]) : undefined;
   }
 
@@ -62,12 +63,12 @@ export class PostgresGarmentCollectionStore {
     expectedRevision: number,
     rawPatch: unknown,
   ): Promise<ManagedGarmentCollection> {
-    validateCollectionMutation(collectionId, expectedRevision);
+    const canonicalCollectionId = requireCollectionMutation(collectionId, expectedRevision);
     const patch = normalizePatch(rawPatch);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const current = await lockedCollection(client, scope, collectionId);
+      const current = await lockedCollection(client, scope, canonicalCollectionId);
       if (!current) throw collectionNotFound();
       if (current.revision !== expectedRevision) throw collectionRevisionConflict();
       const nextName = patch.name ?? current.name;
@@ -76,11 +77,11 @@ export class PostgresGarmentCollectionStore {
         await client.query('COMMIT');
         return current;
       }
-      await bumpCollection(client, scope, collectionId, expectedRevision, {
+      await bumpCollection(client, scope, canonicalCollectionId, expectedRevision, {
         name: nextName,
         description: nextDescription,
       });
-      const snapshot = await selectCollection(client, scope, collectionId);
+      const snapshot = await selectCollection(client, scope, canonicalCollectionId);
       if (!snapshot || snapshot.revision !== expectedRevision + 1) {
         throw new Error('Managed Garment Collection metadata mutation did not produce its expected revision');
       }
@@ -95,17 +96,17 @@ export class PostgresGarmentCollectionStore {
   }
 
   async delete(scope: GarmentOwnerScope, collectionId: string, expectedRevision: number): Promise<number> {
-    validateCollectionMutation(collectionId, expectedRevision);
+    const canonicalCollectionId = requireCollectionMutation(collectionId, expectedRevision);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const current = await lockedCollection(client, scope, collectionId);
+      const current = await lockedCollection(client, scope, canonicalCollectionId);
       if (!current) throw collectionNotFound();
       if (current.revision !== expectedRevision) throw collectionRevisionConflict();
       const updated = await client.query(`UPDATE canonical_garment_collections
         SET revision=revision+1,updated_at=CURRENT_TIMESTAMP,deleted_at=CURRENT_TIMESTAMP
         WHERE collection_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND revision=$4
-        RETURNING revision`, [collectionId, scope.tenantId, scope.userId, expectedRevision]);
+        RETURNING revision`, [canonicalCollectionId, scope.tenantId, scope.userId, expectedRevision]);
       const revision = Number(updated.rows[0]?.revision);
       if (updated.rowCount !== 1 || revision !== expectedRevision + 1) throw collectionRevisionConflict();
       await client.query('COMMIT');
@@ -124,25 +125,25 @@ export class PostgresGarmentCollectionStore {
     expectedRevision: number,
     garmentId: string,
   ): Promise<ManagedGarmentCollection> {
-    validateCollectionMutation(collectionId, expectedRevision);
-    validateGarmentId(garmentId);
+    const canonicalCollectionId = requireCollectionMutation(collectionId, expectedRevision);
+    const canonicalGarmentId = requireGarmentId(garmentId);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const current = await lockedCollection(client, scope, collectionId);
+      const current = await lockedCollection(client, scope, canonicalCollectionId);
       if (!current) throw collectionNotFound();
       if (current.revision !== expectedRevision) throw collectionRevisionConflict();
-      await lockAvailableGarment(client, scope, garmentId);
-      if (await membershipExists(client, scope, collectionId, garmentId)) {
+      await lockAvailableGarment(client, scope, canonicalGarmentId);
+      if (await membershipExists(client, scope, canonicalCollectionId, canonicalGarmentId)) {
         await client.query('COMMIT');
         return current;
       }
       await client.query(`INSERT INTO canonical_garment_collection_members
         (collection_id,garment_id,tenant_id,user_id) VALUES ($1,$2,$3,$4)`,
-      [collectionId, garmentId, scope.tenantId, scope.userId]);
-      await bumpCollection(client, scope, collectionId, expectedRevision);
-      const snapshot = await selectCollection(client, scope, collectionId);
-      if (!snapshot || snapshot.revision !== expectedRevision + 1 || !snapshot.garmentIds.includes(garmentId)) {
+      [canonicalCollectionId, canonicalGarmentId, scope.tenantId, scope.userId]);
+      await bumpCollection(client, scope, canonicalCollectionId, expectedRevision);
+      const snapshot = await selectCollection(client, scope, canonicalCollectionId);
+      if (!snapshot || snapshot.revision !== expectedRevision + 1 || !snapshot.garmentIds.includes(canonicalGarmentId)) {
         throw new Error('Managed Garment Collection add did not produce its expected membership');
       }
       await client.query('COMMIT');
@@ -161,24 +162,24 @@ export class PostgresGarmentCollectionStore {
     expectedRevision: number,
     garmentId: string,
   ): Promise<ManagedGarmentCollection> {
-    validateCollectionMutation(collectionId, expectedRevision);
-    validateGarmentId(garmentId);
+    const canonicalCollectionId = requireCollectionMutation(collectionId, expectedRevision);
+    const canonicalGarmentId = requireGarmentId(garmentId);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const current = await lockedCollection(client, scope, collectionId);
+      const current = await lockedCollection(client, scope, canonicalCollectionId);
       if (!current) throw collectionNotFound();
       if (current.revision !== expectedRevision) throw collectionRevisionConflict();
       const removed = await client.query(`DELETE FROM canonical_garment_collection_members
         WHERE collection_id=$1 AND garment_id=$2 AND tenant_id=$3 AND user_id=$4
-        RETURNING garment_id`, [collectionId, garmentId, scope.tenantId, scope.userId]);
+        RETURNING garment_id`, [canonicalCollectionId, canonicalGarmentId, scope.tenantId, scope.userId]);
       if (removed.rowCount === 0) {
         await client.query('COMMIT');
         return current;
       }
-      await bumpCollection(client, scope, collectionId, expectedRevision);
-      const snapshot = await selectCollection(client, scope, collectionId);
-      if (!snapshot || snapshot.revision !== expectedRevision + 1 || snapshot.garmentIds.includes(garmentId)) {
+      await bumpCollection(client, scope, canonicalCollectionId, expectedRevision);
+      const snapshot = await selectCollection(client, scope, canonicalCollectionId);
+      if (!snapshot || snapshot.revision !== expectedRevision + 1 || snapshot.garmentIds.includes(canonicalGarmentId)) {
         throw new Error('Managed Garment Collection remove did not produce its expected membership');
       }
       await client.query('COMMIT');
@@ -201,56 +202,51 @@ export class PostgresGarmentCollectionStore {
       expectedTargetRevision: number;
     }>,
   ): Promise<ManagedGarmentCollectionMove> {
-    validateCollectionMutation(input.sourceCollectionId, input.expectedSourceRevision);
-    validateCollectionMutation(input.targetCollectionId, input.expectedTargetRevision);
-    validateGarmentId(input.garmentId);
-    if (input.sourceCollectionId === input.targetCollectionId) {
+    const sourceCollectionId = requireCollectionMutation(input.sourceCollectionId, input.expectedSourceRevision);
+    const targetCollectionId = requireCollectionMutation(input.targetCollectionId, input.expectedTargetRevision);
+    const garmentId = requireGarmentId(input.garmentId);
+    if (sourceCollectionId === targetCollectionId) {
       throw httpError(400, 'collection_move_same_target', 'Source and target collections must be different');
     }
 
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const locked = await lockCollectionPair(
-        client,
-        scope,
-        input.sourceCollectionId,
-        input.targetCollectionId,
-      );
+      const locked = await lockCollectionPair(client, scope, sourceCollectionId, targetCollectionId);
       if (locked.size !== 2) throw collectionNotFound();
-      const sourceRevision = locked.get(input.sourceCollectionId);
-      const targetRevision = locked.get(input.targetCollectionId);
+      const sourceRevision = locked.get(sourceCollectionId);
+      const targetRevision = locked.get(targetCollectionId);
       if (sourceRevision !== input.expectedSourceRevision || targetRevision !== input.expectedTargetRevision) {
         throw collectionRevisionConflict();
       }
 
-      await lockAvailableGarment(client, scope, input.garmentId);
-      const inSource = await membershipExists(client, scope, input.sourceCollectionId, input.garmentId);
+      await lockAvailableGarment(client, scope, garmentId);
+      const inSource = await membershipExists(client, scope, sourceCollectionId, garmentId);
       if (!inSource) throw httpError(409, 'garment_not_in_source_collection', 'Garment is not a member of the source collection');
-      const inTarget = await membershipExists(client, scope, input.targetCollectionId, input.garmentId);
+      const inTarget = await membershipExists(client, scope, targetCollectionId, garmentId);
 
       const removed = await client.query(`DELETE FROM canonical_garment_collection_members
         WHERE collection_id=$1 AND garment_id=$2 AND tenant_id=$3 AND user_id=$4
         RETURNING garment_id`,
-      [input.sourceCollectionId, input.garmentId, scope.tenantId, scope.userId]);
+      [sourceCollectionId, garmentId, scope.tenantId, scope.userId]);
       if (removed.rowCount !== 1) throw new Error('Managed Garment Collection move lost its locked source membership');
 
       if (!inTarget) {
         await client.query(`INSERT INTO canonical_garment_collection_members
           (collection_id,garment_id,tenant_id,user_id) VALUES ($1,$2,$3,$4)`,
-        [input.targetCollectionId, input.garmentId, scope.tenantId, scope.userId]);
+        [targetCollectionId, garmentId, scope.tenantId, scope.userId]);
       }
 
-      await bumpCollection(client, scope, input.sourceCollectionId, input.expectedSourceRevision);
-      if (!inTarget) await bumpCollection(client, scope, input.targetCollectionId, input.expectedTargetRevision);
+      await bumpCollection(client, scope, sourceCollectionId, input.expectedSourceRevision);
+      if (!inTarget) await bumpCollection(client, scope, targetCollectionId, input.expectedTargetRevision);
 
-      const source = await selectCollection(client, scope, input.sourceCollectionId);
-      const target = await selectCollection(client, scope, input.targetCollectionId);
+      const source = await selectCollection(client, scope, sourceCollectionId);
+      const target = await selectCollection(client, scope, targetCollectionId);
       if (!source || !target
         || source.revision !== input.expectedSourceRevision + 1
-        || source.garmentIds.includes(input.garmentId)
+        || source.garmentIds.includes(garmentId)
         || target.revision !== input.expectedTargetRevision + (inTarget ? 0 : 1)
-        || !target.garmentIds.includes(input.garmentId)) {
+        || !target.garmentIds.includes(garmentId)) {
         throw new Error('Managed Garment Collection move did not produce its expected atomic snapshots');
       }
       await client.query('COMMIT');
@@ -264,14 +260,14 @@ export class PostgresGarmentCollectionStore {
   }
 }
 
+// Membership is durable Collection state. A soft-deleted Garment remains as a
+// historical member until the Collection itself removes it, so Collection
+// snapshots never change behind the Collection revision contract.
 const COLLECTION_SELECT = `SELECT
   c.collection_id,c.name,c.description,c.revision,c.created_at,c.updated_at,
   COALESCE((SELECT jsonb_agg(m.garment_id ORDER BY m.created_at,m.garment_id)
     FROM canonical_garment_collection_members m
-    JOIN canonical_garments g
-      ON g.garment_id=m.garment_id AND g.tenant_id=m.tenant_id AND g.user_id=m.user_id
-    WHERE m.collection_id=c.collection_id AND m.tenant_id=c.tenant_id AND m.user_id=c.user_id
-      AND g.deleted_at IS NULL), '[]'::jsonb) AS garment_ids
+    WHERE m.collection_id=c.collection_id AND m.tenant_id=c.tenant_id AND m.user_id=c.user_id), '[]'::jsonb) AS garment_ids
   FROM canonical_garment_collections c`;
 
 async function lockedCollection(
@@ -296,7 +292,7 @@ async function lockCollectionPair(
     WHERE collection_id = ANY($1::uuid[]) AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL
     ORDER BY collection_id FOR UPDATE`,
   [[sourceCollectionId, targetCollectionId], scope.tenantId, scope.userId]);
-  return new Map(result.rows.map(row => [String(row.collection_id), Number(row.revision)]));
+  return new Map(result.rows.map(row => [String(row.collection_id).toLowerCase(), Number(row.revision)]));
 }
 
 async function lockAvailableGarment(client: PoolClient, scope: GarmentOwnerScope, garmentId: string): Promise<void> {
@@ -368,7 +364,7 @@ function normalizePatch(value: unknown): Readonly<{ name?: string; description?:
 function normalizeName(value: unknown): string {
   if (typeof value !== 'string') throw httpError(400, 'invalid_collection_name', 'Collection name must be a string');
   const name = value.normalize('NFKC').trim().replace(/\s+/gu, ' ');
-  if (!name || name.length > 100 || /[\u0000-\u001f\u007f]/u.test(name)) {
+  if (!name || codePointLength(name) > 100 || /[\u0000-\u001f\u007f]/u.test(name)) {
     throw httpError(400, 'invalid_collection_name', 'Collection name must contain 1 to 100 printable characters');
   }
   return name;
@@ -376,19 +372,23 @@ function normalizeName(value: unknown): string {
 function normalizeDescription(value: unknown): string {
   if (typeof value !== 'string') throw httpError(400, 'invalid_collection_description', 'Collection description must be a string');
   const description = value.normalize('NFKC').trim().replace(/\s+/gu, ' ');
-  if (description.length > 500 || /[\u0000-\u001f\u007f]/u.test(description)) {
+  if (codePointLength(description) > 500 || /[\u0000-\u001f\u007f]/u.test(description)) {
     throw httpError(400, 'invalid_collection_description', 'Collection description must contain at most 500 printable characters');
   }
   return description;
 }
 
+function codePointLength(value: string): number { return Array.from(value).length; }
+
 function fromRow(row: any): ManagedGarmentCollection {
   const revision = Number(row.revision);
   if (!Number.isSafeInteger(revision) || revision < 1) throw new Error('Stored Garment Collection revision is invalid');
-  const garmentIds = Array.isArray(row.garment_ids) ? row.garment_ids.map(String) : [];
+  const garmentIds = Array.isArray(row.garment_ids) ? row.garment_ids.map((value: unknown) => String(value).toLowerCase()) : [];
   if (garmentIds.some(id => !isUuid(id))) throw new Error('Stored Garment Collection membership contains an invalid Garment ID');
+  const id = normalizeUuid(row.collection_id);
+  if (!id) throw new Error('Stored Garment Collection ID is invalid');
   return Object.freeze({
-    id: String(row.collection_id),
+    id,
     name: String(row.name),
     description: String(row.description),
     revision,
@@ -398,16 +398,28 @@ function fromRow(row: any): ManagedGarmentCollection {
   });
 }
 
-function validateCollectionMutation(collectionId: string, expectedRevision: number): void {
-  if (!isUuid(collectionId)) throw collectionNotFound();
+function requireCollectionMutation(collectionId: string, expectedRevision: number): string {
+  const canonicalCollectionId = normalizeUuid(collectionId);
+  if (!canonicalCollectionId) throw collectionNotFound();
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
     throw httpError(400, 'invalid_collection_revision', 'Expected collection revision is invalid');
   }
+  return canonicalCollectionId;
 }
-function validateGarmentId(garmentId: string): void {
-  if (!isUuid(garmentId)) throw garmentNotFound();
+function requireCollectionId(collectionId: string): string {
+  const canonicalCollectionId = normalizeUuid(collectionId);
+  if (!canonicalCollectionId) throw collectionNotFound();
+  return canonicalCollectionId;
 }
-function isUuid(value: unknown): value is string { return typeof value === 'string' && UUID_PATTERN.test(value); }
+function requireGarmentId(garmentId: string): string {
+  const canonicalGarmentId = normalizeUuid(garmentId);
+  if (!canonicalGarmentId) throw garmentNotFound();
+  return canonicalGarmentId;
+}
+function normalizeUuid(value: unknown): string | undefined {
+  return typeof value === 'string' && UUID_PATTERN.test(value) ? value.toLowerCase() : undefined;
+}
+function isUuid(value: unknown): value is string { return normalizeUuid(value) !== undefined; }
 function collectionNotFound(): Error & { status: number; code: string } {
   return httpError(404, 'collection_not_found', 'Collection not found');
 }

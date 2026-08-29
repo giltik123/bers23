@@ -62,6 +62,7 @@ jobs:
             ['tests/managed-garment-collections-postgres.test.ts', 'managed-garment-collections-postgres.test.mjs'],
             ['tests/managed-garment-collection-schema-composability-postgres.test.ts', 'managed-garment-collection-schema-composability-postgres.test.mjs'],
             ['tests/managed-garment-collection-check-boundaries-postgres.test.ts', 'managed-garment-collection-check-boundaries-postgres.test.mjs'],
+            ['tests/managed-garment-collection-hardening-postgres.test.ts', 'managed-garment-collection-hardening-postgres.test.mjs'],
             ['tests/managed-wardrobe-metadata-postgres.test.ts', 'managed-wardrobe-metadata-postgres.test.mjs'],
             ['tests/managed-garment-multiview-postgres.test.ts', 'managed-garment-multiview-postgres.test.mjs'],
           ]) {
@@ -77,6 +78,8 @@ jobs:
         run: node --test --test-concurrency=1 .test-cache/managed-wardrobe-f2b/managed-garment-collection-schema-composability-postgres.test.mjs
       - name: Prove permissive numeric CHECK lookalikes fail closed and repair to exact bounds
         run: node --test --test-concurrency=1 .test-cache/managed-wardrobe-f2b/managed-garment-collection-check-boundaries-postgres.test.mjs
+      - name: Prove transactional schema repair, UUID normalization, Unicode bounds and tombstone-stable membership
+        run: node --test --test-concurrency=1 .test-cache/managed-wardrobe-f2b/managed-garment-collection-hardening-postgres.test.mjs
       - name: Preserve F2a Wardrobe metadata and Garment lifecycle authority
         run: node --test --test-concurrency=1 .test-cache/managed-wardrobe-f2b/managed-wardrobe-metadata-postgres.test.mjs
       - name: Preserve F1b multi-view authority on Collection schema

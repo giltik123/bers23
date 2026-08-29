@@ -11,9 +11,8 @@ type ColumnContract = Readonly<{
   nullable: boolean;
   expectedDefault?: string;
   requiresDefault?: boolean;
+  forbidsDefault?: boolean;
 }>;
-
-type NumericPredicate = readonly [expression: string, operator: '>=' | '<=', value: number];
 
 const REQUIRED_COLUMNS: readonly ColumnContract[] = Object.freeze([
   { table: 'canonical_garment_collections', name: 'collection_id', udtName: 'uuid', nullable: false },
@@ -24,13 +23,17 @@ const REQUIRED_COLUMNS: readonly ColumnContract[] = Object.freeze([
   { table: 'canonical_garment_collections', name: 'revision', udtName: 'int8', nullable: false, expectedDefault: '1' },
   { table: 'canonical_garment_collections', name: 'created_at', udtName: 'timestamptz', nullable: false, requiresDefault: true },
   { table: 'canonical_garment_collections', name: 'updated_at', udtName: 'timestamptz', nullable: false, requiresDefault: true },
-  { table: 'canonical_garment_collections', name: 'deleted_at', udtName: 'timestamptz', nullable: true },
+  { table: 'canonical_garment_collections', name: 'deleted_at', udtName: 'timestamptz', nullable: true, forbidsDefault: true },
   { table: 'canonical_garment_collection_members', name: 'collection_id', udtName: 'uuid', nullable: false },
   { table: 'canonical_garment_collection_members', name: 'garment_id', udtName: 'uuid', nullable: false },
   { table: 'canonical_garment_collection_members', name: 'tenant_id', udtName: 'text', nullable: false },
   { table: 'canonical_garment_collection_members', name: 'user_id', udtName: 'text', nullable: false },
   { table: 'canonical_garment_collection_members', name: 'created_at', udtName: 'timestamptz', nullable: false, requiresDefault: true },
 ]);
+
+const NAME_CHECK = "CHECK (char_length(name) >= 1 AND char_length(name) <= 100 AND name = btrim(name) AND name !~ '[[:cntrl:]]')";
+const DESCRIPTION_CHECK = "CHECK (char_length(description) <= 500 AND description !~ '[[:cntrl:]]')";
+const REVISION_CHECK = 'CHECK (revision >= 1)';
 
 async function migration(): Promise<string> {
   try { return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8'); }
@@ -41,9 +44,6 @@ async function schemaState(pool: Pool) {
   const structural = await pool.query(`SELECT
     to_regclass('canonical_garment_collections')::text AS collections,
     to_regclass('canonical_garment_collection_members')::text AS members,
-    to_regclass('canonical_garment_collections_owner_updated_idx')::text AS owner_updated_idx,
-    to_regclass('canonical_garment_collection_members_owner_idx')::text AS members_owner_idx,
-    to_regclass('canonical_garment_collection_members_garment_idx')::text AS members_garment_idx,
     (SELECT pg_get_constraintdef(oid) FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_collections')
         AND conname='canonical_garment_collections_name_check' AND contype='c' AND convalidated) AS name_check_definition,
@@ -86,7 +86,19 @@ async function schemaState(pool: Pool) {
         AND contype='f' AND convalidated AND confdeltype='c'
         AND confrelid=to_regclass('canonical_garments')
         AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%ON DELETE CASCADE%'
-    ) AS garment_owner_fk`);
+    ) AS garment_owner_fk,
+    (SELECT json_build_object(
+      'valid',i.indisvalid,'ready',i.indisready,'unique',i.indisunique,'primary',i.indisprimary,
+      'keys',ARRAY(SELECT pg_get_indexdef(i.indexrelid,n,true) FROM generate_series(1,i.indnkeyatts) n ORDER BY n))
+      FROM pg_index i WHERE i.indexrelid=to_regclass('canonical_garment_collections_owner_updated_idx')) AS owner_updated_index,
+    (SELECT json_build_object(
+      'valid',i.indisvalid,'ready',i.indisready,'unique',i.indisunique,'primary',i.indisprimary,
+      'keys',ARRAY(SELECT pg_get_indexdef(i.indexrelid,n,true) FROM generate_series(1,i.indnkeyatts) n ORDER BY n))
+      FROM pg_index i WHERE i.indexrelid=to_regclass('canonical_garment_collection_members_owner_idx')) AS members_owner_index,
+    (SELECT json_build_object(
+      'valid',i.indisvalid,'ready',i.indisready,'unique',i.indisunique,'primary',i.indisprimary,
+      'keys',ARRAY(SELECT pg_get_indexdef(i.indexrelid,n,true) FROM generate_series(1,i.indnkeyatts) n ORDER BY n))
+      FROM pg_index i WHERE i.indexrelid=to_regclass('canonical_garment_collection_members_garment_idx')) AS members_garment_index`);
   const columns = await pool.query(`SELECT table_name,column_name,udt_name,is_nullable,column_default
     FROM information_schema.columns
     WHERE table_schema=current_schema()
@@ -100,31 +112,32 @@ function columnsReady(rows: readonly any[]): boolean {
     const row = columns.get(`${expected.table}.${expected.name}`);
     if (!row || String(row.udt_name) !== expected.udtName) return false;
     if ((String(row.is_nullable) === 'YES') !== expected.nullable) return false;
-    if (expected.expectedDefault !== undefined && String(row.column_default ?? '') !== expected.expectedDefault) return false;
-    if (expected.requiresDefault && !String(row.column_default ?? '').trim()) return false;
+    const actualDefault = String(row.column_default ?? '');
+    if (expected.expectedDefault !== undefined && actualDefault !== expected.expectedDefault) return false;
+    if (expected.requiresDefault && !actualDefault.trim()) return false;
+    if (expected.forbidsDefault && actualDefault.trim()) return false;
     return true;
   });
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function canonicalCheck(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/::text/g, '')
+    .replace(/\s+/g, '')
+    .replace(/[()]/g, '');
 }
 
-function hasNumericPredicate(definition: string, [expression, operator, expected]: NumericPredicate): boolean {
-  const pattern = new RegExp(`${escapeRegex(expression)}\\s*${escapeRegex(operator)}\\s*${expected}(?![0-9A-Za-z_.])`);
-  return pattern.test(definition);
+function checkReady(actual: unknown, expected: string): boolean {
+  return canonicalCheck(actual) === canonicalCheck(expected);
 }
 
-function conjunctiveCheck(
-  definition: unknown,
-  requiredFragments: readonly string[],
-  numericPredicates: readonly NumericPredicate[] = [],
-): boolean {
-  const value = String(definition ?? '');
-  return value.startsWith('CHECK (')
-    && !value.includes(' OR ')
-    && requiredFragments.every(fragment => value.includes(fragment))
-    && numericPredicates.every(predicate => hasNumericPredicate(value, predicate));
+function indexReady(value: unknown, expectedKeys: readonly string[]): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const index = value as Record<string, unknown>;
+  if (index.valid !== true || index.ready !== true || index.unique === true || index.primary === true) return false;
+  const keys = Array.isArray(index.keys) ? index.keys.map(String) : [];
+  return keys.length === expectedKeys.length && keys.every((key, indexPosition) => key === expectedKeys[indexPosition]);
 }
 
 function schemaReady(state: any): boolean {
@@ -132,19 +145,13 @@ function schemaReady(state: any): boolean {
     state?.collections && state?.members
     && columnsReady(Array.isArray(state?.columns) ? state.columns : [])
     && state?.collection_pk && state?.collection_owner_unique && state?.member_pk
-    && conjunctiveCheck(
-      state?.name_check_definition,
-      ['char_length(name)', 'btrim(name)', 'cntrl'],
-      [['char_length(name)', '>=', 1], ['char_length(name)', '<=', 100]],
-    )
-    && conjunctiveCheck(
-      state?.description_check_definition,
-      ['char_length(description)', 'cntrl'],
-      [['char_length(description)', '<=', 500]],
-    )
-    && conjunctiveCheck(state?.revision_check_definition, ['revision'], [['revision', '>=', 1]])
+    && checkReady(state?.name_check_definition, NAME_CHECK)
+    && checkReady(state?.description_check_definition, DESCRIPTION_CHECK)
+    && checkReady(state?.revision_check_definition, REVISION_CHECK)
     && state?.collection_owner_fk && state?.garment_owner_fk
-    && state?.owner_updated_idx && state?.members_owner_idx && state?.members_garment_idx
+    && indexReady(state?.owner_updated_index, ['tenant_id', 'user_id', 'updated_at DESC', 'collection_id'])
+    && indexReady(state?.members_owner_index, ['tenant_id', 'user_id', 'collection_id', 'created_at', 'garment_id'])
+    && indexReady(state?.members_garment_index, ['tenant_id', 'user_id', 'garment_id', 'collection_id'])
   );
 }
 
@@ -158,11 +165,15 @@ export async function checkGarmentCollectionSchema(pool: Pool): Promise<void> {
 export async function migrateGarmentCollectionSchema(pool: Pool): Promise<void> {
   const state = await schemaState(pool);
   if (!schemaReady(state)) {
-    await pool.query(`ALTER TABLE IF EXISTS canonical_garment_collections
-      DROP CONSTRAINT IF EXISTS canonical_garment_collections_name_check,
-      DROP CONSTRAINT IF EXISTS canonical_garment_collections_description_check,
-      DROP CONSTRAINT IF EXISTS canonical_garment_collections_revision_check`);
-    await pool.query(await migration());
+    const client = await pool.connect();
+    try {
+      await client.query(await migration());
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   await checkGarmentCollectionSchema(pool);
 }
