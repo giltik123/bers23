@@ -36,13 +36,21 @@ export class PostgresProjectStore {
    * Project width/height describe the current canvas, not immutable ORIGINAL geometry.
    * Accepting a canonical FINAL may therefore change dimensions (for example x4 SR).
    * History navigation below always restores dimensions from the target artifact.
+   *
+   * Source-lineaged FINALs additionally carry their durable input image identity.
+   * Because this method runs behind mutate()'s project-row FOR UPDATE lock,
+   * checking that lineage here serializes Accept against undo/redo/version
+   * navigation across tabs and processes. A FINAL computed from an old cursor
+   * must never be attached to a newer Project cursor merely because a browser
+   * still holds the result capability.
    */
   async acceptFinal(scope: AuthenticatedScope,id:string,storageId:string,instruction?:string){
     return this.mutate(scope,id,async(client,project)=>{
-      const artifact=(await client.query(`SELECT storage_id,width,height,execution_id,operation_id FROM canonical_image_artifacts WHERE storage_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4 AND role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL`,[storageId,scope.tenantId,scope.userId,id])).rows[0];
+      const artifact=(await client.query(`SELECT storage_id,width,height,execution_id,operation_id,source_image_storage_id FROM canonical_image_artifacts WHERE storage_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4 AND role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL`,[storageId,scope.tenantId,scope.userId,id])).rows[0];
       if(!artifact)throw Object.assign(new Error('FINAL artifact is invalid or unavailable'),{status:400,code:'invalid_final_artifact'});
       const existing=(await client.query(`SELECT history_id FROM canonical_project_history WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND image_storage_id=$4 AND kind='ACCEPTED_FINAL'`,[id,scope.tenantId,scope.userId,storageId])).rows[0];
       if(existing)return;
+      if(artifact.source_image_storage_id && artifact.source_image_storage_id!==project.current_image_storage_id)throw Object.assign(new Error('FINAL artifact was produced from a stale Project source'),{status:409,code:'final_source_conflict'});
       const cursor=(await client.query(`SELECT ordinal FROM canonical_project_history WHERE history_id=$1 AND project_id=$2 AND tenant_id=$3 AND user_id=$4`,[project.history_cursor_id,id,scope.tenantId,scope.userId])).rows[0];
       await client.query(`UPDATE canonical_project_history SET retired_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND retired_at IS NULL AND ordinal>$4`,[id,scope.tenantId,scope.userId,cursor.ordinal]);
       const historyId=randomUUID();
