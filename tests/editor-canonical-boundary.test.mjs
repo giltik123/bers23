@@ -76,11 +76,11 @@ test('Crop, Resize and Selection interactions are mutually exclusive and reset o
   assert.match(editor, /busy=\{editorBusy \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| cropInteractionActive\}/);
   assert.match(selectionToolbar, /disabled=\{startDisabled\} onClick=\{onStart\}/);
 });
-test('Pending canonical results outrank empty-object CTA and geometry tools lock keyboard/history edit surfaces', async () => {
+test('Pending canonical results outrank Editor navigation and geometry tools lock keyboard/history edit surfaces', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const pendingIndex = editor.indexOf('{pendingResult ? (');
-  const emptyIndex = editor.indexOf(') : objects.length === 0 ? (');
-  assert.ok(pendingIndex >= 0 && emptyIndex > pendingIndex, 'pending ResultCompare must render before empty-object detection CTA');
+  const navigationIndex = editor.indexOf('<AdaptiveNavigation items={EDITOR_TABS}');
+  assert.ok(pendingIndex >= 0 && navigationIndex > pendingIndex, 'pending ResultCompare must render before normal Editor navigation');
   assert.match(editor, /if \(editorBusy \|\| detecting \|\| cropInteractionActive \|\| resizeInteractionActive \|\| pendingResult\) return/);
   assert.match(editor, /disabled=\{editorBusy \|\| detecting \|\| cropInteractionActive \|\| resizeInteractionActive \|\| Boolean\(pendingResult\)\}/);
   assert.match(editor, /\) : cropInteractionActive \? \(/);
@@ -215,7 +215,7 @@ test('Editor removes dead recipe-chain execution wiring and uses planner advisor
   assert.match(editor, /type: 'segmentation'[\s\S]*jobManager\.submit|jobManager\.submit\([\s\S]*type: 'segmentation'/);
 });
 
-test('zero-object projects expose canonical whole-image Prompt while detection stays optional and race-locked', async () => {
+test('zero-object projects expose canonical whole-image Prompt and shared navigation while detection stays optional and race-locked', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const bar = await readFile('src/components/editor/InstructionBar.jsx', 'utf8');
   const resolver = await readFile('src/lib/planner/objectResolver.js', 'utf8');
@@ -223,7 +223,10 @@ test('zero-object projects expose canonical whole-image Prompt while detection s
   assert.match(editor, /\{objects\.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && \(/);
   assert.match(editor, /Object detection is optional\. You can edit the whole image now or detect\/select an object first\./);
   assert.match(editor, /<Button onClick=\{detect\} disabled=\{detecting \|\| editorBusy \|\| committing\}/);
-  assert.match(editor, /\) : objects\.length === 0 \? \([\s\S]*?<InstructionBar[\s\S]*?allowWholeImage[\s\S]*?applying=\{editorBusy \|\| detecting \|\| committing\}/);
+  assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\} onChange=\{setEditTab\} \/>/);
+  assert.match(editor, /allowWholeImage=\{objects\.length === 0\}/);
+  assert.match(editor, /applying=\{editorBusy \|\| detecting \|\| committing\}/);
+  assert.doesNotMatch(editor, /\) : objects\.length === 0 \? \(/);
   assert.match(editor, /selectedObjectIds: objects\.filter\(\(object\) => object\.selected\)\.map\(\(object\) => object\.id\)/);
   assert.match(editor, /maskArtifactIds: objects\.filter\(\(object\) => object\.selected && object\.mask_artifact_id\)\.map\(\(object\) => object\.mask_artifact_id\)/);
 
