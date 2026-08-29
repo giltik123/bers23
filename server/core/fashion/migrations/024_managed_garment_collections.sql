@@ -67,7 +67,13 @@ ALTER TABLE canonical_garment_collection_members
 
 ALTER TABLE canonical_garment_collection_members
   DROP CONSTRAINT IF EXISTS canonical_garment_collection_members_collection_owner_fkey,
-  DROP CONSTRAINT IF EXISTS canonical_garment_collection_members_garment_owner_fkey;
+  DROP CONSTRAINT IF EXISTS canonical_garment_collection_members_garment_owner_fkey,
+  DROP CONSTRAINT IF EXISTS canonical_garment_collection_members_pkey;
+ALTER TABLE canonical_garment_collections
+  DROP CONSTRAINT IF EXISTS canonical_garment_collections_name_check,
+  DROP CONSTRAINT IF EXISTS canonical_garment_collections_description_check,
+  DROP CONSTRAINT IF EXISTS canonical_garment_collections_revision_check,
+  DROP CONSTRAINT IF EXISTS canonical_garment_collections_owner_unique;
 
 DO $$
 DECLARE
@@ -75,15 +81,15 @@ DECLARE
 BEGIN
   FOR constraint_name IN
     SELECT conname FROM pg_constraint
-    WHERE conrelid=to_regclass('canonical_garment_collection_members') AND contype IN ('p','u','c')
+    WHERE conrelid=to_regclass('canonical_garment_collections') AND contype='p'
   LOOP
-    EXECUTE format('ALTER TABLE canonical_garment_collection_members DROP CONSTRAINT %I', constraint_name);
+    EXECUTE format('ALTER TABLE canonical_garment_collections DROP CONSTRAINT %I', constraint_name);
   END LOOP;
   FOR constraint_name IN
     SELECT conname FROM pg_constraint
-    WHERE conrelid=to_regclass('canonical_garment_collections') AND contype IN ('p','u','c')
+    WHERE conrelid=to_regclass('canonical_garment_collection_members') AND contype='p'
   LOOP
-    EXECUTE format('ALTER TABLE canonical_garment_collections DROP CONSTRAINT %I', constraint_name);
+    EXECUTE format('ALTER TABLE canonical_garment_collection_members DROP CONSTRAINT %I', constraint_name);
   END LOOP;
 END $$;
 
