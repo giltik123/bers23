@@ -92,14 +92,12 @@ export class PostgresGarmentStore {
     try {
       await client.query('BEGIN');
       await client.query(`INSERT INTO canonical_garments
-        (garment_id,tenant_id,user_id,name,representation_tier,status,revision)
-        VALUES ($1,$2,$3,$4,'BASIC','ACTIVE',1)`, [garmentId, scope.tenantId, scope.userId, name]);
+        (garment_id,tenant_id,user_id,name,representation_tier,status,revision,primary_view_id)
+        VALUES ($1,$2,$3,$4,'BASIC','ACTIVE',1,$5)`, [garmentId, scope.tenantId, scope.userId, name, viewId]);
       await client.query(`INSERT INTO canonical_garment_views
         (view_id,garment_id,tenant_id,user_id,ordinal,view_kind,source_content_type,width,height,encoding,content_type,content_sha256,storage_backend,image_bytes)
         VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,'POSTGRES_BYTEA_V1',$10)`,
       [viewId, garmentId, scope.tenantId, scope.userId, viewKind, sourceContentType, width, height, contentSha256, png]);
-      await client.query(`UPDATE canonical_garments SET primary_view_id=$2,updated_at=CURRENT_TIMESTAMP
-        WHERE garment_id=$1 AND tenant_id=$3 AND user_id=$4`, [garmentId, viewId, scope.tenantId, scope.userId]);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
