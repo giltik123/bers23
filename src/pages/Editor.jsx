@@ -123,9 +123,6 @@ export default function Editor() {
   const [editTab, setEditTab] = useState('prompt');
   const [activeRecipe, setActiveRecipe] = useState(null);
   const [lastAction, setLastAction] = useState(null);
-  // Always-fresh pushEdit for multi-step agent runs (avoids stale closures across commits).
-  const pushEditRef = useRef();
-  pushEditRef.current = pushEdit;
   const pendingResultRef = useRef(null);
   pendingResultRef.current = pendingResult;
   const [segMeta, setSegMeta] = useState(null);
@@ -789,7 +786,7 @@ export default function Editor() {
       ) : cropInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
       ) : resizeInteractionActive ? (
-        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel them before starting another edit.</p>
+        <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Set the exact resize dimensions above, then apply or cancel it before starting another edit.</p>
       ) : (
         <>
           {objects.length > 0 && (
@@ -809,28 +806,11 @@ export default function Editor() {
           {editTab === 'creative' ? (
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
-            <OutfitPanel
-              project={project}
-              objects={objects}
-              onCommit={async (result, outfit) => {
-                await pushEditRef.current(result.image_url, `Try-On: ${outfit.name}`, result.historyEntry);
-                sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
-                workspaceHistory.recordEdit(workspaceManager.activeId(), { success: true, durationMs: result.generation_time_ms || 0 });
-              }}
-            />
+            <OutfitPanel />
           ) : editTab === 'fashion' ? (
             <FashionPanel />
           ) : editTab === 'agent' ? (
-            <AgentPanel
-              project={project}
-              objects={objects}
-              disabled={editorBusy}
-              onCommit={async (result, task) => {
-                await pushEditRef.current(result.image_url, `Agent: ${task.label}`, result.historyEntry);
-                sceneMemory.recordAcceptedEdit(project).catch((error) => console.error('[Editor] Failed to update scene memory', error));
-              }}
-              onRollback={(url, label) => url && pushEditRef.current(url, label, { type: 'rollback', creditsUsed: 0 })}
-            />
+            <AgentPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'recipes' ? (
             <RecipePanel
               objects={objects}
