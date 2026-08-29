@@ -42,6 +42,15 @@ async function schemaState(pool: Pool) {
     to_regclass('canonical_garment_collections_owner_updated_idx')::text AS owner_updated_idx,
     to_regclass('canonical_garment_collection_members_owner_idx')::text AS members_owner_idx,
     to_regclass('canonical_garment_collection_members_garment_idx')::text AS members_garment_idx,
+    (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garment_collections')
+        AND conname='canonical_garment_collections_name_check' AND contype='c' AND convalidated) AS name_check_definition,
+    (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garment_collections')
+        AND conname='canonical_garment_collections_description_check' AND contype='c' AND convalidated) AS description_check_definition,
+    (SELECT pg_get_constraintdef(oid) FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garment_collections')
+        AND conname='canonical_garment_collections_revision_check' AND contype='c' AND convalidated) AS revision_check_definition,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_collections')
@@ -60,29 +69,6 @@ async function schemaState(pool: Pool) {
         AND conname='canonical_garment_collection_members_pkey' AND contype='p' AND convalidated
         AND pg_get_constraintdef(oid)='PRIMARY KEY (collection_id, garment_id)'
     ) AS member_pk,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garment_collections')
-        AND conname='canonical_garment_collections_name_check' AND contype='c' AND convalidated
-        AND pg_get_constraintdef(oid) LIKE '%char_length(name)%'
-        AND pg_get_constraintdef(oid) LIKE '%100%'
-        AND pg_get_constraintdef(oid) LIKE '%btrim(name)%'
-        AND pg_get_constraintdef(oid) LIKE '%cntrl%'
-    ) AS name_check,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garment_collections')
-        AND conname='canonical_garment_collections_description_check' AND contype='c' AND convalidated
-        AND pg_get_constraintdef(oid) LIKE '%char_length(description)%'
-        AND pg_get_constraintdef(oid) LIKE '%500%'
-        AND pg_get_constraintdef(oid) LIKE '%cntrl%'
-    ) AS description_check,
-    EXISTS (
-      SELECT 1 FROM pg_constraint
-      WHERE conrelid=to_regclass('canonical_garment_collections')
-        AND conname='canonical_garment_collections_revision_check' AND contype='c' AND convalidated
-        AND pg_get_constraintdef(oid) LIKE '%revision >= 1%'
-    ) AS revision_check,
     EXISTS (
       SELECT 1 FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_collection_members')
@@ -118,12 +104,21 @@ function columnsReady(rows: readonly any[]): boolean {
   });
 }
 
+function conjunctiveCheck(definition: unknown, requiredFragments: readonly string[]): boolean {
+  const value = String(definition ?? '');
+  return value.startsWith('CHECK (')
+    && !value.includes(' OR ')
+    && requiredFragments.every(fragment => value.includes(fragment));
+}
+
 function schemaReady(state: any): boolean {
   return Boolean(
     state?.collections && state?.members
     && columnsReady(Array.isArray(state?.columns) ? state.columns : [])
     && state?.collection_pk && state?.collection_owner_unique && state?.member_pk
-    && state?.name_check && state?.description_check && state?.revision_check
+    && conjunctiveCheck(state?.name_check_definition, ['char_length(name)', '>= 1', '<= 100', 'btrim(name)', 'cntrl'])
+    && conjunctiveCheck(state?.description_check_definition, ['char_length(description)', '<= 500', 'cntrl'])
+    && conjunctiveCheck(state?.revision_check_definition, ['revision >= 1'])
     && state?.collection_owner_fk && state?.garment_owner_fk
     && state?.owner_updated_idx && state?.members_owner_idx && state?.members_garment_idx
   );
