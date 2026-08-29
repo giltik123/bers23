@@ -52,13 +52,23 @@ export class PostgresGarmentStore {
 
     let normalized: { data: Buffer; info: { width: number; height: number } };
     try {
-      normalized = await sharp(input.bytes, { failOn: 'error', limitInputPixels: limits.maxPixels })
+      const decoder = sharp(input.bytes, { failOn: 'error', limitInputPixels: limits.maxPixels });
+      const metadata = await decoder.metadata();
+      const decodedContentType = decodedImageContentType(metadata.format);
+      if (decodedContentType !== sourceContentType) {
+        throw httpError(415, 'garment_image_media_type_mismatch', 'Garment Content-Type does not match the decoded image format');
+      }
+      if ((metadata.pages ?? 1) !== 1) {
+        throw httpError(400, 'animated_garment_image_unsupported', 'Animated or multi-page garment images are not supported');
+      }
+      normalized = await decoder
         .rotate()
         .toColourspace('srgb')
         .ensureAlpha()
         .raw()
         .toBuffer({ resolveWithObject: true });
-    } catch {
+    } catch (error) {
+      if (isHttpError(error)) throw error;
       throw httpError(400, 'invalid_garment_image', 'Garment image is malformed or unsafe');
     }
 
@@ -197,9 +207,20 @@ function normalizeSourceContentType(value: unknown): 'image/png' | 'image/jpeg' 
   throw httpError(415, 'unsupported_media_type', 'Supported garment images are PNG, JPEG and WebP');
 }
 
+function decodedImageContentType(format: unknown): 'image/png' | 'image/jpeg' | 'image/webp' {
+  if (format === 'png') return 'image/png';
+  if (format === 'jpeg') return 'image/jpeg';
+  if (format === 'webp') return 'image/webp';
+  throw httpError(415, 'unsupported_media_type', 'Decoded garment image format is unsupported');
+}
+
 function normalizeStorageBackend(value: unknown): 'POSTGRES_BYTEA_V1' {
   if (value === 'POSTGRES_BYTEA_V1') return value;
   throw new Error('Managed garment storage provenance is unsupported');
+}
+
+function isHttpError(value: unknown): value is Error & { status: number; code: string } {
+  return Boolean(value && typeof value === 'object' && Number.isInteger((value as any).status) && typeof (value as any).code === 'string');
 }
 
 function httpError(status: number, code: string, message: string): Error & { status: number; code: string } {
