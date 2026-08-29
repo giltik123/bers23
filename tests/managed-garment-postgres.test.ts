@@ -4,7 +4,7 @@ import test from 'node:test';
 import { Pool } from 'pg';
 import sharp from 'sharp';
 import { GarmentDeliveryAuthority } from '../server/core/fashion/garmentDeliveryAuthority.ts';
-import { migrateGarmentSchema } from '../server/core/fashion/garmentSchema.ts';
+import { checkGarmentSchema, migrateGarmentSchema } from '../server/core/fashion/garmentSchema.ts';
 import { PostgresGarmentStore } from '../server/core/fashion/postgresGarmentStore.ts';
 import { createManagedGarmentHttpAdapter } from '../server/core/http/managedGarmentHttpAdapter.ts';
 
@@ -49,6 +49,14 @@ test('managed Garment creation owns canonical bytes and fails closed across user
     await pool.query('TRUNCATE canonical_garment_views,canonical_garments CASCADE').catch(() => undefined);
     await pool.end();
   });
+
+  await assert.rejects(
+    () => pool.query(`INSERT INTO canonical_garments
+      (garment_id,tenant_id,user_id,name,representation_tier,status,revision)
+      VALUES ('00000000-0000-4000-8000-000000000001',$1,$2,'Missing primary','BASIC','ACTIVE',1)`, [owner.tenantId, owner.userId]),
+    (error: any) => error?.code === '23502',
+  );
+  assert.equal(Number((await pool.query('SELECT count(*)::int AS count FROM canonical_garments')).rows[0].count), 0, 'a Garment without a primary view must never be commit-valid');
 
   const store = new PostgresGarmentStore(pool);
   const first = await store.createWithInitialView(owner, {
@@ -110,6 +118,7 @@ test('managed Garment creation owns canonical bytes and fails closed across user
   assert.equal((await store.list(owner)).length, 1, 'failed ingestion must not create a partial Garment row');
 
   let now = 10_000;
+  let accepting = true;
   const delivery = new GarmentDeliveryAuthority('managed-garment-http-delivery-secret', () => now);
   const auth = Object.freeze({
     verify: (authorization: string | undefined) => {
@@ -127,7 +136,7 @@ test('managed Garment creation owns canonical bytes and fails closed across user
     imageMaxDimension: limits.maxDimension,
     imageMaxPixels: limits.maxPixels,
   }) as any;
-  const httpAdapter = createManagedGarmentHttpAdapter({ garments: store, delivery, auth, config, now: () => now });
+  const httpAdapter = createManagedGarmentHttpAdapter({ garments: store, delivery, auth, config, accepting: () => accepting, now: () => now });
   const server = createServer((request, response) => {
     void httpAdapter(request, response).then(handled => {
       if (!handled && !response.writableEnded) { response.statusCode = 404; response.end(); }
@@ -162,6 +171,14 @@ test('managed Garment creation owns canonical bytes and fails closed across user
   const otherItemResponse = await fetch(`${origin}/api/core/garments/${encodeURIComponent(created.id)}`, { headers: { authorization: 'Bearer other-token' } });
   assert.equal(otherItemResponse.status, 404);
   assert.equal((await otherItemResponse.json() as any).error, 'garment_not_found');
+
+  const malformedIdResponse = await fetch(`${origin}/api/core/garments/%E0%A4%A`, { headers: { authorization: 'Bearer owner-token' } });
+  assert.equal(malformedIdResponse.status, 400);
+  assert.equal((await malformedIdResponse.json() as any).error, 'invalid_path_encoding');
+
+  const malformedDeliveryResponse = await fetch(`${origin}/api/core/garments/delivery/%E0%A4%A`, { headers: { authorization: 'Bearer owner-token' } });
+  assert.equal(malformedDeliveryResponse.status, 400);
+  assert.equal((await malformedDeliveryResponse.json() as any).error, 'invalid_path_encoding');
 
   const listResponse = await fetch(`${origin}/api/core/garments`, { headers: { authorization: 'Bearer owner-token' } });
   assert.equal(listResponse.status, 200);
@@ -200,10 +217,30 @@ test('managed Garment creation owns canonical bytes and fails closed across user
   assert.equal((await mismatchedMedia.json() as any).error, 'garment_image_media_type_mismatch');
   assert.equal((await store.list(owner)).length, beforeDenied, 'media-type mismatch must not create a partial Garment');
 
+  accepting = false;
+  const beforeShutdown = (await store.list(owner)).length;
+  const shutdownResponse = await fetch(`${origin}/api/core/garments?name=Shutdown&view=FRONT`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer owner-token', 'content-type': 'image/jpeg', origin: 'http://client.test' },
+    body: httpImage,
+  });
+  assert.equal(shutdownResponse.status, 503);
+  assert.equal((await shutdownResponse.json() as any).error, 'shutting_down');
+  assert.equal((await store.list(owner)).length, beforeShutdown, 'shutdown admission must reject before decode or PostgreSQL mutation');
+  accepting = true;
+
   now += 5 * 60_000;
   const expiredDelivery = await fetch(`${origin}${created.views[0].delivery_url}`, { headers: { authorization: 'Bearer owner-token' } });
   assert.equal(expiredDelivery.status, 404);
   assert.equal((await expiredDelivery.json() as any).error, 'garment_view_not_found');
+
+  await pool.query('ALTER TABLE canonical_garments DROP CONSTRAINT canonical_garments_primary_view_owner_fkey');
+  await assert.rejects(
+    () => checkGarmentSchema(pool),
+    /ownership constraints are incomplete/,
+  );
+  await migrateGarmentSchema(pool);
+  await checkGarmentSchema(pool);
 });
 
 test('garment delivery capabilities are owner-bound and expire without changing durable garment/view identity', () => {
