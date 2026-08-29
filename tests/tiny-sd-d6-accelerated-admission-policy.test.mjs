@@ -291,6 +291,37 @@ test('assessment snapshots untrusted evidence before signature and semantic vali
   assert.equal(softwareAdapterReads, 1, 'untrusted getter must be read only once into the immutable assessment snapshot');
 });
 
+test('canonical snapshot rejects sparse control timesteps before attestation', async () => {
+  const evidence = validDeviceEvidence();
+  evidence.control.timesteps = new Array(evidence.control.stepCount);
+  let verifierCalled = false;
+
+  const result = await assessTinySdD6RealDeviceEvidence(evidence, {
+    expectedTestedCommitSha: TESTED_COMMIT_SHA,
+    trustVerifier: () => {
+      verifierCalled = true;
+      return { verified: true };
+    },
+    now,
+  });
+
+  assert.equal(result.eligible, false);
+  assert.deepEqual(result.blockers, ['INVALID_CANONICAL_PAYLOAD']);
+  assert.equal(verifierCalled, false);
+});
+
+test('canonical snapshot does not invoke an input-controlled array map method', async () => {
+  const evidence = validDeviceEvidence();
+  evidence.control.timesteps.map = () => {
+    throw new Error('input-controlled map must not be called');
+  };
+
+  const result = await assessTrusted(evidence);
+
+  assert.equal(result.eligible, true);
+  assert.deepEqual(result.blockers, []);
+});
+
 test('software adapter spoofing and missing shader-f16 fail closed', async () => {
   const evidence = validDeviceEvidence();
   evidence.device.softwareAdapter = true;
@@ -315,6 +346,18 @@ test('known Mesa software renderers cannot masquerade as physical adapters', asy
     assert.equal(result.eligible, false);
     assert.ok(result.blockers.includes('SOFTWARE_OR_UNKNOWN_ADAPTER'));
   }
+});
+
+test('a software renderer identifier in only the adapter device field fails closed', async () => {
+  const evidence = validDeviceEvidence();
+  evidence.device.device = 'llvmpipe';
+  evidence.device.softwareAdapter = false;
+  evidence.device.adapterKind = 'PHYSICAL';
+
+  const result = await assessTrusted(evidence);
+
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('SOFTWARE_OR_UNKNOWN_ADAPTER'));
 });
 
 test('provider fallback, cloud usage and authority escalation fail closed', async () => {
