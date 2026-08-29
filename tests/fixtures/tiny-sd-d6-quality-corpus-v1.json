@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "tiny-sd-d6-quality-v1",
+  "authority": "QUALITY_PROTOCOL_ONLY_NOT_APPROVAL",
+  "promptEncoding": "UTF-8",
+  "requiredSeeds": [64205, 64206],
+  "humanReviewPolicy": {
+    "requiredDecision": "PASS",
+    "failureCategories": [
+      "PROMPT_NON_ADHERENCE",
+      "SEVERE_ANATOMY_OR_OBJECT_CORRUPTION",
+      "COMPOSITION_FAILURE",
+      "COLOR_OR_STYLE_FAILURE",
+      "INSTABILITY_ACROSS_SEEDS",
+      "BLANK_OR_NON_FINITE_OUTPUT"
+    ]
+  },
+  "prompts": [
+    {
+      "promptId": "portrait-natural-light",
+      "category": "people",
+      "language": "en",
+      "prompt": "A natural-light portrait photograph of an adult person wearing a blue jacket, neutral background, realistic skin and eyes",
+      "reviewFocus": ["adult human anatomy", "face coherence", "blue jacket", "neutral background", "natural lighting"]
+    },
+    {
+      "promptId": "full-body-street",
+      "category": "people-composition",
+      "language": "en",
+      "prompt": "A full-body photograph of an adult person standing on a quiet city street, entire body visible from head to shoes, realistic proportions",
+      "reviewFocus": ["full body visible", "limb integrity", "head-to-shoes framing", "street context"]
+    },
+    {
+      "promptId": "single-object-product",
+      "category": "object",
+      "language": "en",
+      "prompt": "A studio product photograph of one red ceramic teapot centered on a plain white background, soft shadow",
+      "reviewFocus": ["exactly one teapot", "red ceramic", "centered composition", "plain white background"]
+    },
+    {
+      "promptId": "three-apples-count",
+      "category": "object-counting",
+      "language": "en",
+      "prompt": "Exactly three yellow apples arranged on a white plate on a wooden table, realistic food photography",
+      "reviewFocus": ["exactly three apples", "yellow apples", "white plate", "wooden table"]
+    },
+    {
+      "promptId": "left-right-relation",
+      "category": "spatial-relationship",
+      "language": "en",
+      "prompt": "A red coffee mug on the left of a closed blue book, both objects fully visible on a light wooden desk",
+      "reviewFocus": ["red mug", "mug left of book", "closed blue book", "both fully visible"]
+    },
+    {
+      "promptId": "indoor-living-room",
+      "category": "indoor-scene",
+      "language": "en",
+      "prompt": "A cozy modern living room with a green sofa, one floor lamp, a small wooden coffee table, warm evening light",
+      "reviewFocus": ["green sofa", "one floor lamp", "small wooden coffee table", "warm evening light"]
+    },
+    {
+      "promptId": "outdoor-mountain-lake",
+      "category": "outdoor-scene",
+      "language": "en",
+      "prompt": "A clear mountain lake reflecting snow-covered peaks at sunrise, pine trees along the shore, realistic landscape photography",
+      "reviewFocus": ["lake reflection", "snow-covered peaks", "sunrise", "pine shoreline"]
+    },
+    {
+      "promptId": "foreground-background-depth",
+      "category": "composition-depth",
+      "language": "en",
+      "prompt": "A small orange bicycle in the foreground with a stone bridge clearly visible in the background, strong sense of depth, daylight photograph",
+      "reviewFocus": ["orange bicycle foreground", "stone bridge background", "depth separation", "daylight"]
+    },
+    {
+      "promptId": "color-style-watercolor",
+      "category": "color-style",
+      "language": "en",
+      "prompt": "A watercolor illustration of a purple sailboat on a turquoise sea under a pale pink sky, visible watercolor paper texture",
+      "reviewFocus": ["purple sailboat", "turquoise sea", "pale pink sky", "watercolor appearance"]
+    },
+    {
+      "promptId": "night-lighting",
+      "category": "lighting",
+      "language": "en",
+      "prompt": "A rainy city alley at night illuminated by warm orange street lamps and cool blue reflections on wet pavement, cinematic photograph",
+      "reviewFocus": ["night scene", "rain or wet pavement", "warm orange lamps", "cool blue reflections"]
+    },
+    {
+      "promptId": "nonascii-russian",
+      "category": "non-ascii-prompt",
+      "language": "ru",
+      "prompt": "Красный деревянный дом у спокойного озера, вокруг зелёные сосны, ясный летний день, реалистичная фотография",
+      "reviewFocus": ["red wooden house", "calm lake", "green pine trees", "clear summer daylight"]
+    },
+    {
+      "promptId": "nonascii-japanese",
+      "category": "non-ascii-prompt",
+      "language": "ja",
+      "prompt": "白い陶器の花瓶に三本の赤い花、木のテーブル、柔らかな自然光、写実的な写真",
+      "reviewFocus": ["white ceramic vase", "three red flowers", "wooden table", "soft natural light"]
+    }
+  ]
+}
