@@ -140,25 +140,34 @@ function indexReady(value: unknown, expectedKeys: readonly string[]): boolean {
   return keys.length === expectedKeys.length && keys.every((key, indexPosition) => key === expectedKeys[indexPosition]);
 }
 
+function schemaFailures(state: any): readonly string[] {
+  const failures: string[] = [];
+  if (!state?.collections) failures.push('collections_table');
+  if (!state?.members) failures.push('members_table');
+  if (!columnsReady(Array.isArray(state?.columns) ? state.columns : [])) failures.push('columns');
+  if (!state?.collection_pk) failures.push('collection_pk');
+  if (!state?.collection_owner_unique) failures.push('collection_owner_unique');
+  if (!state?.member_pk) failures.push('member_pk');
+  if (!checkReady(state?.name_check_definition, NAME_CHECK)) failures.push('name_check');
+  if (!checkReady(state?.description_check_definition, DESCRIPTION_CHECK)) failures.push('description_check');
+  if (!checkReady(state?.revision_check_definition, REVISION_CHECK)) failures.push('revision_check');
+  if (!state?.collection_owner_fk) failures.push('collection_owner_fk');
+  if (!state?.garment_owner_fk) failures.push('garment_owner_fk');
+  if (!indexReady(state?.owner_updated_index, ['tenant_id', 'user_id', 'updated_at DESC', 'collection_id'])) failures.push('owner_updated_index');
+  if (!indexReady(state?.members_owner_index, ['tenant_id', 'user_id', 'collection_id', 'created_at', 'garment_id'])) failures.push('members_owner_index');
+  if (!indexReady(state?.members_garment_index, ['tenant_id', 'user_id', 'garment_id', 'collection_id'])) failures.push('members_garment_index');
+  return Object.freeze(failures);
+}
+
 function schemaReady(state: any): boolean {
-  return Boolean(
-    state?.collections && state?.members
-    && columnsReady(Array.isArray(state?.columns) ? state.columns : [])
-    && state?.collection_pk && state?.collection_owner_unique && state?.member_pk
-    && checkReady(state?.name_check_definition, NAME_CHECK)
-    && checkReady(state?.description_check_definition, DESCRIPTION_CHECK)
-    && checkReady(state?.revision_check_definition, REVISION_CHECK)
-    && state?.collection_owner_fk && state?.garment_owner_fk
-    && indexReady(state?.owner_updated_index, ['tenant_id', 'user_id', 'updated_at DESC', 'collection_id'])
-    && indexReady(state?.members_owner_index, ['tenant_id', 'user_id', 'collection_id', 'created_at', 'garment_id'])
-    && indexReady(state?.members_garment_index, ['tenant_id', 'user_id', 'garment_id', 'collection_id'])
-  );
+  return schemaFailures(state).length === 0;
 }
 
 export async function checkGarmentCollectionSchema(pool: Pool): Promise<void> {
   const state = await schemaState(pool);
-  if (!schemaReady(state)) {
-    throw new Error('canonical managed Garment Collection schema is incomplete; apply migration 024');
+  const failures = schemaFailures(state);
+  if (failures.length > 0) {
+    throw new Error(`canonical managed Garment Collection schema is incomplete; apply migration 024 [${failures.join(',')}]`);
   }
 }
 
