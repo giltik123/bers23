@@ -78,6 +78,14 @@ export function createManagedWardrobeHttpAdapter(input: AdapterInput) {
         return true;
       }
 
+      if (garmentMatch && request.method === 'DELETE') {
+        const expectedRevision = requireExpectedRevision(request);
+        const revision = await input.wardrobe.delete(principal, decodePathSegment(garmentMatch[1]), expectedRevision);
+        response.setHeader(GARMENT_REVISION_HEADER, String(revision));
+        send(response, 204, undefined);
+        return true;
+      }
+
       throw httpError(404, 'not_found', 'Route not found');
     } catch (cause) {
       const error = cause as Error & { status?: number; code?: string };
@@ -154,7 +162,7 @@ function applyCors(request: IncomingMessage, response: ServerResponse, config: C
   response.setHeader('Vary', 'Origin');
   response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}, ${EXPECTED_GARMENT_REVISION_HEADER}`);
   response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}, ${GARMENT_REVISION_HEADER}`);
-  response.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, PATCH, POST, DELETE, OPTIONS');
 }
 
 function decodePathSegment(value: string): string {
