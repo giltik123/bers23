@@ -23,7 +23,7 @@ test('Editor navigation is capability-based rather than gated by detected object
   assert.doesNotMatch(modes, /objects\.length === 0 \? \([\s\S]*<AdaptiveNavigation/,
     'zero-object projects must not be routed around the main navigation');
   assert.match(modes, /editTab === 'fashion'[\s\S]*<FashionPanel \/>/);
-  assert.match(modes, /editTab === 'outfits'[\s\S]*<OutfitPanel/);
+  assert.match(modes, /editTab === 'outfits'[\s\S]*<OutfitPanel \/>/);
 });
 
 test('zero-object Prompt remains a canonical whole-image edit without inventing Object or MASK identity', async () => {
@@ -36,16 +36,28 @@ test('zero-object Prompt remains a canonical whole-image edit without inventing 
   assert.doesNotMatch(modes, /objects\.length === 0[\s\S]{0,300}(randomUUID|mask_artifact_id|selected:\s*true)/);
 });
 
-test('zero-object navigation does not enable gated Agent or Virtual Try-On execution', async () => {
-  const [fashion, outfits, agent, tryOn] = await Promise.all([
+test('reachable Fashion and Outfits are truthful fail-closed surfaces until narrow canonical authorities exist', async () => {
+  const [editor, fashion, outfits, agent, tryOn] = await Promise.all([
+    readFile(EDITOR, 'utf8'),
     readFile(FASHION, 'utf8'),
     readFile(OUTFITS, 'utf8'),
     readFile(AGENT, 'utf8'),
     readFile(TRY_ON, 'utf8'),
   ]);
 
-  assert.match(fashion, /wardrobe management only\. No AI editing, no provider calls\./);
-  assert.match(outfits, /builds and validates outfits only\. No AI editing here/);
+  assert.match(fashion, /Canonical Wardrobe authority is not enabled yet\./);
+  assert.match(fashion, /Legacy generic Garment and GarmentCollection entity CRUD is disabled\./);
+  assert.match(outfits, /Canonical Outfit authority is not enabled yet\./);
+  assert.match(outfits, /Legacy generic Outfit entity CRUD is disabled\./);
+
+  for (const [name, source] of [['Fashion', fashion], ['Outfits', outfits]]) {
+    for (const forbidden of ['coreClient', 'wardrobeManager', 'garmentManager', 'garmentCollections', 'outfitManager']) {
+      assert.equal(source.includes(forbidden), false, `${name} must not mount ${forbidden}`);
+    }
+  }
+
+  assert.doesNotMatch(editor, /<OutfitPanel[\s\S]{0,500}onCommit=/);
+  assert.doesNotMatch(editor, /<AgentPanel[\s\S]{0,500}(onCommit|onRollback)=/);
   assert.match(agent, /Canonical Agent execution is not enabled yet\./);
   assert.match(tryOn, /Canonical Try-On execution is not enabled yet\./);
   assert.match(tryOn, /legacy browser FASHN execution path is disabled/);
