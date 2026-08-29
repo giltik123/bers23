@@ -1,36 +1,22 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { commitAcceptedResult } from '../src/application/editor/commitAcceptedResult.js';
+import { finalizeAcceptedResult } from '../src/application/editor/finalizeAcceptedResult.js';
 
-test('canonical Accept failure preserves the pending result and does not start optional side effects', async () => {
-  let cleanupCount = 0;
-  let sideEffectCount = 0;
-  const failure = Object.assign(new Error('stale source'), { code: 'final_source_conflict' });
-
-  await assert.rejects(
-    () => commitAcceptedResult({
-      commitCanonical: async () => { throw failure; },
-      cleanupAcceptedResult: () => { cleanupCount += 1; },
-      sideEffects: [{ label: 'notification', run: () => { sideEffectCount += 1; } }],
-    }),
-    (error) => error === failure,
-  );
-
-  assert.equal(cleanupCount, 0);
-  assert.equal(sideEffectCount, 0);
+test('Editor keeps canonical Accept explicit and finalizes browser state only after it succeeds', async () => {
+  const editor = await readFile('src/pages/Editor.jsx', 'utf8');
+  const acceptIndex = editor.indexOf('await pushEdit(result.finalArtifactId, used);');
+  const finalizeIndex = editor.indexOf('finalizeAcceptedResult({', acceptIndex);
+  assert.ok(acceptIndex >= 0, 'canonical Project Accept must remain an explicit awaited boundary');
+  assert.ok(finalizeIndex > acceptIndex, 'accepted-result browser finalization must run only after canonical Accept succeeds');
 });
 
-test('rejected notification cannot turn one successful canonical Accept into a failed or repeatable UI commit', async () => {
-  const order = [];
+test('rejected notification cannot turn a successful canonical Accept into a failed or repeatable UI commit', async () => {
+  const order = ['canonical-accept'];
   const reported = [];
-  let canonicalAccepts = 0;
   let cleanupCount = 0;
 
-  await commitAcceptedResult({
-    commitCanonical: async () => {
-      canonicalAccepts += 1;
-      order.push('canonical-accept');
-    },
+  finalizeAcceptedResult({
     cleanupAcceptedResult: () => {
       cleanupCount += 1;
       order.push('cleanup');
@@ -53,7 +39,6 @@ test('rejected notification cannot turn one successful canonical Accept into a f
 
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(canonicalAccepts, 1, 'canonical Project Accept must happen exactly once');
   assert.equal(cleanupCount, 1, 'accepted pending UI must be cleared exactly once');
   assert.deepEqual(order.slice(0, 2), ['canonical-accept', 'cleanup'], 'cleanup must precede every optional side effect');
   assert.deepEqual(order.slice(2), ['notification', 'workspace-history']);
@@ -63,12 +48,11 @@ test('rejected notification cannot turn one successful canonical Accept into a f
   }]);
 });
 
-test('a synchronous optional side-effect failure does not block later accepted-edit side effects', async () => {
+test('synchronous optional side-effect failures do not block later accepted-edit side effects', () => {
   const ran = [];
   const reported = [];
 
-  await commitAcceptedResult({
-    commitCanonical: async () => { ran.push('accept'); },
+  finalizeAcceptedResult({
     cleanupAcceptedResult: () => { ran.push('cleanup'); },
     sideEffects: [
       {
@@ -86,6 +70,23 @@ test('a synchronous optional side-effect failure does not block later accepted-e
     reportSideEffectError: (label, error) => reported.push({ label, message: error.message }),
   });
 
-  assert.deepEqual(ran, ['accept', 'cleanup', 'scene-memory', 'workspace-history']);
+  assert.deepEqual(ran, ['cleanup', 'scene-memory', 'workspace-history']);
   assert.deepEqual(reported, [{ label: 'Failed to update scene memory', message: 'scene compatibility failure' }]);
+});
+
+test('cleanup failure is reported but cannot convert an already-successful canonical Accept into a rejected promise', () => {
+  const ran = [];
+  const reported = [];
+
+  assert.doesNotThrow(() => finalizeAcceptedResult({
+    cleanupAcceptedResult: () => {
+      ran.push('cleanup');
+      throw new Error('preview cleanup failure');
+    },
+    sideEffects: [{ label: 'notification', run: () => { ran.push('notification'); } }],
+    reportSideEffectError: (label, error) => reported.push({ label, message: error.message }),
+  }));
+
+  assert.deepEqual(ran, ['cleanup', 'notification']);
+  assert.deepEqual(reported, [{ label: 'Failed to finalize accepted-result UI state', message: 'preview cleanup failure' }]);
 });
