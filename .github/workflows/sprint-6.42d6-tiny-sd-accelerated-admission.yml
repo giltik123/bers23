@@ -1,0 +1,92 @@
+name: Sprint 6.42D6 Tiny-SD accelerated admission contract
+
+on:
+  pull_request:
+    branches:
+      - main
+      - sprint-6.42d5-tiny-sd-pipeline-composition
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  accelerated-admission-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert exact tested commit
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "${ACTUAL_SHA}" = "${EXPECTED_SHA}" || {
+            echo "D6 exact-head checkout mismatch: expected ${EXPECTED_SHA}, got ${ACTUAL_SHA}" >&2
+            exit 1
+          }
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      - name: Run fail-closed D6 admission policy
+        run: |
+          set -euo pipefail
+          node --check scripts/tiny-sd-d6-accelerated-admission.mjs
+          node --check scripts/capture-tiny-sd-d6-webgpu-device.mjs
+          node --test tests/tiny-sd-d6-accelerated-admission-policy.test.mjs tests/tiny-sd-d6-device-capture-policy.test.mjs tests/tiny-sd-d6-quality-corpus-policy.test.mjs
+
+      - name: Preserve production WASM-only browser authority
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const source = fs.readFileSync('src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts', 'utf8');
+          if (!source.includes("from 'onnxruntime-web/wasm'")) {
+            throw new Error('production BrowserOnnxSessionFactory no longer imports the reviewed WASM runtime');
+          }
+          if (!source.includes("options.executionProviders.some(provider => provider !== 'wasm')")) {
+            throw new Error('production BrowserOnnxSessionFactory no longer fails closed on non-WASM providers');
+          }
+          if (!source.includes("executionProviders: ['wasm']")) {
+            throw new Error('production BrowserOnnxSessionFactory no longer pins WASM execution');
+          }
+          if (/from\s+['\"]onnxruntime-web\/webgpu['\"]/.test(source) || source.includes("executionProviders: ['webgpu']")) {
+            throw new Error('D6 research must not add WebGPU authority to the production browser factory');
+          }
+          NODE
+
+      - name: Preserve hosted WebGPU negative-control boundary
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const source = fs.readFileSync('scripts/test-tiny-sd-d3-browser-webgpu.mjs', 'utf8');
+          const required = [
+            "precisionTier: 'FP16_INTERNAL_FP32_INT64_IO'",
+            "providerFallbackAllowed: false",
+            "hostedSoftwareFeasibilityOnly: true",
+            "realDeviceEvidence: false",
+            "missingRequiredFeatures",
+            "shader-f16",
+            "--use-angle=swiftshader",
+          ];
+          for (const marker of required) {
+            if (!source.includes(marker)) throw new Error(`D3 hosted WebGPU negative-control marker drift: ${marker}`);
+          }
+          NODE
+
+      - name: Preserve repository model-byte boundary
+        run: |
+          set -euo pipefail
+          node scripts/check-model-weight-tracking.mjs
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.safetensors' '*.onnx' '*.ort' '*.npz' '*.f32' '*.png.bin' | wc -l)" -eq 0
