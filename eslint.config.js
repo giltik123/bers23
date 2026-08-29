@@ -21,10 +21,6 @@ export default [
       "no-restricted-syntax": [
         "error",
         {
-          selector: "CallExpression[callee.object.object.object.name='base44'][callee.object.object.property.name='entities'][callee.object.property.name=/^(CreditsWallet|CreditTransaction|UserSubscription|SubscriptionUsage)$/][callee.property.name=/^(create|update|delete|bulkCreate)$/]",
-          message: "Privileged entities are server-owned. Add a narrow command to the owning server service instead of a browser mutation.",
-        },
-        {
           selector: "CallExpression[callee.object.object.object.name='coreClient'][callee.object.object.property.name='entities'][callee.object.property.name=/^(CreditsWallet|CreditTransaction|UserSubscription|SubscriptionUsage)$/][callee.property.name=/^(create|update|delete|bulkCreate)$/]",
           message: "Privileged entities are server-owned. Browser coreClient entity mutation is forbidden; use the owning server authority.",
         },
