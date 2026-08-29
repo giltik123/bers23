@@ -23,7 +23,7 @@ async function capture<T>(promise: Promise<T>): Promise<Captured<T>> {
   catch (error) { return Object.freeze({ ok: false, error }); }
 }
 
-async function waitForBlockedProjectLocks(observer: PoolClient, minimum: number): Promise<void> {
+async function waitForActiveProjectLockQueries(observer: PoolClient, minimum: number): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     const result = await observer.query(`
@@ -32,14 +32,14 @@ async function waitForBlockedProjectLocks(observer: PoolClient, minimum: number)
       WHERE datname=current_database()
         AND application_name=$1
         AND pid<>pg_backend_pid()
-        AND wait_event_type='Lock'
+        AND state='active'
         AND query LIKE '%canonical_projects%'
         AND query LIKE '%FOR UPDATE%'
     `, [APPLICATION_NAME]);
     if (Number(result.rows[0]?.count ?? 0) >= minimum) return;
     await new Promise(resolve => setTimeout(resolve, 25));
   }
-  throw new Error(`Timed out waiting for ${minimum} blocked canonical Project row-lock waiter(s)`);
+  throw new Error(`Timed out waiting for ${minimum} active canonical Project row-lock query(s)`);
 }
 
 test('Project Accept serializes against cursor changes and rejects a FINAL produced from a stale durable source', async t => {
@@ -96,9 +96,12 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
   assert.equal((await projects.get(auth, projectId)).current_image_storage_id, staleCandidate.storageId, 'the same FINAL is valid again only when the canonical cursor exactly matches its durable source');
 
   // Real PostgreSQL serialization proof: queue navigation first and Accept second
-  // behind one manually-held Project row lock. When the blocker commits, navigation
-  // must acquire the row first, move the cursor, and the queued Accept must then
-  // observe that new cursor under its own FOR UPDATE lock and fail closed.
+  // behind one manually-held Project row lock. pg_stat_activity is used only as a
+  // barrier proving both FOR UPDATE statements have actually been issued; we do
+  // not assume PostgreSQL reports every waiter with the same wait_event subtype.
+  // Once the blocker commits, the outcome assertions below remain authoritative:
+  // navigation must move the cursor first and the queued Accept must then reject
+  // the now-stale source without appending history.
   const concurrentCreated = await projects.create(auth, 'Concurrent source-bound Project', await png(2, 1, sourcePixels), { maxDimension: 64, maxPixels: 4096 });
   const concurrentProjectId = String(concurrentCreated.project_id);
   const concurrentOriginalStorageId = String(concurrentCreated.original_image_storage_id);
@@ -130,10 +133,10 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
     await blocker.query(`SELECT project_id FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 FOR UPDATE`, [concurrentProjectId, auth.tenantId, auth.userId]);
 
     navigateOutcomePromise = capture(projects.navigate(auth, concurrentProjectId, 'original'));
-    await waitForBlockedProjectLocks(blocker, 1);
+    await waitForActiveProjectLockQueries(blocker, 1);
 
     acceptOutcomePromise = capture(projects.acceptFinal(auth, concurrentProjectId, queuedCandidate.storageId, 'Queued stale Accept'));
-    await waitForBlockedProjectLocks(blocker, 2);
+    await waitForActiveProjectLockQueries(blocker, 2);
 
     await blocker.query('COMMIT');
     blocker.release();
