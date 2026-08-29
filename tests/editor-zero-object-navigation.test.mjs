@@ -5,6 +5,7 @@ import test from 'node:test';
 const EDITOR = 'src/pages/Editor.jsx';
 const FASHION = 'src/components/editor/fashion/FashionPanel.jsx';
 const OUTFITS = 'src/components/editor/outfits/OutfitPanel.jsx';
+const CREATIVE = 'src/components/editor/creative/CreativeStudioPanel.jsx';
 const AGENT = 'src/components/editor/agent/AgentPanel.jsx';
 const TRY_ON = 'src/components/editor/outfits/TryOnPanel.jsx';
 
@@ -24,6 +25,7 @@ test('Editor navigation is capability-based rather than gated by detected object
     'zero-object projects must not be routed around the main navigation');
   assert.match(modes, /editTab === 'fashion'[\s\S]*<FashionPanel \/>/);
   assert.match(modes, /editTab === 'outfits'[\s\S]*<OutfitPanel \/>/);
+  assert.match(modes, /editTab === 'creative'[\s\S]*<CreativeStudioPanel/);
 });
 
 test('zero-object Prompt remains a canonical whole-image edit without inventing Object or MASK identity', async () => {
@@ -36,11 +38,12 @@ test('zero-object Prompt remains a canonical whole-image edit without inventing 
   assert.doesNotMatch(modes, /objects\.length === 0[\s\S]{0,300}(randomUUID|mask_artifact_id|selected:\s*true)/);
 });
 
-test('reachable Fashion and Outfits are truthful fail-closed surfaces until narrow canonical authorities exist', async () => {
-  const [editor, fashion, outfits, agent, tryOn] = await Promise.all([
+test('reachable Fashion, Outfits and Creative avoid legacy generic entity authority', async () => {
+  const [editor, fashion, outfits, creative, agent, tryOn] = await Promise.all([
     readFile(EDITOR, 'utf8'),
     readFile(FASHION, 'utf8'),
     readFile(OUTFITS, 'utf8'),
+    readFile(CREATIVE, 'utf8'),
     readFile(AGENT, 'utf8'),
     readFile(TRY_ON, 'utf8'),
   ]);
@@ -49,12 +52,17 @@ test('reachable Fashion and Outfits are truthful fail-closed surfaces until narr
   assert.match(fashion, /Legacy generic Garment and GarmentCollection entity CRUD is disabled\./);
   assert.match(outfits, /Canonical Outfit authority is not enabled yet\./);
   assert.match(outfits, /Legacy generic Outfit entity CRUD is disabled\./);
+  assert.match(creative, /Outfit-aware recommendations are unavailable until canonical Outfit authority is enabled\./);
 
   for (const [name, source] of [['Fashion', fashion], ['Outfits', outfits]]) {
     for (const forbidden of ['coreClient', 'wardrobeManager', 'garmentManager', 'garmentCollections', 'outfitManager']) {
       assert.equal(source.includes(forbidden), false, `${name} must not mount ${forbidden}`);
     }
   }
+  for (const forbidden of ['coreClient', 'outfitManager']) {
+    assert.equal(creative.includes(forbidden), false, `Creative Studio must not mount ${forbidden}`);
+  }
+  assert.match(creative, /outfits: \[\]/, 'Creative Studio must explicitly run without legacy Outfit data');
 
   assert.doesNotMatch(editor, /<OutfitPanel[\s\S]{0,500}onCommit=/);
   assert.doesNotMatch(editor, /<AgentPanel[\s\S]{0,500}(onCommit|onRollback)=/);
