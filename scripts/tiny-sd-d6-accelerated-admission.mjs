@@ -86,8 +86,9 @@ function canonicalJsonValue(value) {
   if (isRecord(value)) {
     return Object.fromEntries(
       Object.keys(value).sort().map(key => {
-        if (value[key] === undefined) throw new TypeError(`D6 evidence contains undefined at ${key}`);
-        return [key, canonicalJsonValue(value[key])];
+        const member = value[key];
+        if (member === undefined) throw new TypeError(`D6 evidence contains undefined at ${key}`);
+        return [key, canonicalJsonValue(member)];
       }),
     );
   }
@@ -154,30 +155,38 @@ export function assessTinySdD6RealDeviceEvidence(value, {
   now = Date.now(),
 } = {}) {
   const blockers = new Set();
-  if (!isRecord(value) || value.schemaVersion !== D6_SCHEMA_VERSION) return assessment(['INVALID_SCHEMA']);
+  if (!isRecord(value)) return assessment(['INVALID_SCHEMA']);
 
-  if (value.authority !== D6_AUTHORITY) blockers.add('WRONG_AUTHORITY');
-  validateRootBindings(value, expectedTestedCommitSha, blockers);
-  if (value.precisionTier !== D6_WEBGPU_PRECISION) blockers.add('WRONG_PRECISION_TIER');
+  let evidence;
+  try {
+    evidence = canonicalJsonValue(value);
+  } catch {
+    return assessment(['INVALID_CANONICAL_PAYLOAD']);
+  }
+  if (!isRecord(evidence) || evidence.schemaVersion !== D6_SCHEMA_VERSION) return assessment(['INVALID_SCHEMA']);
+
+  if (evidence.authority !== D6_AUTHORITY) blockers.add('WRONG_AUTHORITY');
+  validateRootBindings(evidence, expectedTestedCommitSha, blockers);
+  if (evidence.precisionTier !== D6_WEBGPU_PRECISION) blockers.add('WRONG_PRECISION_TIER');
 
   let canonicalPayload = null;
   try {
-    canonicalPayload = canonicalizeTinySdD6EvidencePayload(value);
+    canonicalPayload = canonicalizeTinySdD6EvidencePayload(evidence);
   } catch {
     blockers.add('INVALID_CANONICAL_PAYLOAD');
   }
 
-  validateTime(value, now, blockers);
-  validateAttestation(value.attestation, trustVerifier, canonicalPayload, blockers);
-  validateDevice(value.device, blockers);
-  validateComponents(value.components, blockers);
-  validateControl(value.control, blockers);
-  validateBenchmark(value.benchmark, blockers);
-  validateParity(value.parity, blockers);
-  validateQuality(value.quality, value.capturedAt, now, blockers);
-  validateBindings(value, blockers);
-  validateLocalExecution(value.localExecution, blockers);
-  validateAuthorityDenials(value, blockers);
+  validateTime(evidence, now, blockers);
+  validateAttestation(evidence.attestation, trustVerifier, canonicalPayload, blockers);
+  validateDevice(evidence.device, blockers);
+  validateComponents(evidence.components, blockers);
+  validateControl(evidence.control, blockers);
+  validateBenchmark(evidence.benchmark, blockers);
+  validateParity(evidence.parity, blockers);
+  validateQuality(evidence.quality, evidence.capturedAt, now, blockers);
+  validateBindings(evidence, blockers);
+  validateLocalExecution(evidence.localExecution, blockers);
+  validateAuthorityDenials(evidence, blockers);
 
   return assessment([...blockers]);
 }
