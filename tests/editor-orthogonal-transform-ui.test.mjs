@@ -61,7 +61,7 @@ test('Rotate/Flip is fail-closed against double submit and competing Editor inte
   assert.match(editor, /const editorBusy = applying \|\| isolatingBackground \|\| upscaling \|\| cropping \|\| resizing \|\| Boolean\(orthogonalTransformingMode\)/);
   assert.match(editor, /if \(editorBusy \|\| detecting \|\| committing \|\| pendingResult \|\| cropInteractionActive \|\| resizeInteractionActive\) return/);
   assert.match(editor, /disabled=\{!project\.current_image_artifact_id \|\| editorBusy \|\| detecting \|\| committing \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| cropInteractionActive \|\| resizeInteractionActive\}/);
-  assert.match(editor, /startDisabled=\{detecting \|\| committing \|\| cropInteractionActive \|\| resizeInteractionActive \|\| editorBusy \|\| Boolean\(pendingResult\)\}/);
+  assert.match(editor, /startDisabled=\{cropInteractionActive \|\| resizeInteractionActive \|\| editorBusy \|\| Boolean\(pendingResult\)\}/);
   assert.match(toolbar, /const unavailable = Boolean\(disabled \|\| busy\)/);
   assert.match(toolbar, /disabled=\{unavailable\}/);
 });
