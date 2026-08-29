@@ -678,7 +678,7 @@ function fromRow(row: any): ManagedOutfit {
         ? 'ROLE_REVIEW_REQUIRED'
         : 'READY';
     return Object.freeze({ entryId, garmentId, position, layerRole, ...(category ? { garmentCategory: category } : {}), referenceReadiness });
-  }).sort((left: ManagedOutfitEntry, right: ManagedOutfitEntry) => left.position - right.position || left.entryId.localeCompare(right.entryId))));
+  }).sort((left: ManagedOutfitEntry, right: ManagedOutfitEntry) => left.position - right.position || left.entryId.localeCompare(right.entryId)));
   assertDensePositions(entries);
   const referenceReadiness: OutfitReferenceReadiness = entries.length === 0
     ? 'EMPTY'
