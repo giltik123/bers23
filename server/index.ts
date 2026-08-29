@@ -29,7 +29,8 @@ export async function startCoreServer() {
   const localCompositeAdapter = createLocalCompositeContinuationHttpAdapter({ continuation: production.localExecution.composite, outputs: localCompositeOutputs, auth: production.auth, config });
   const server = createServer((request, response) => {
     applyCoreSecurityHeaders(response, config);
-    if ((request.url ?? '').startsWith('/api/core/garments')) return void managedGarmentAdapter(request, response);
+    const path = new URL(request.url ?? '/', 'http://core.invalid').pathname;
+    if (path === '/api/core/garments' || path.startsWith('/api/core/garments/')) return void managedGarmentAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/orthogonal-transform/')) return void orthogonalTransformAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/')) return void localExecutionAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/composite-continuations/')) return void localCompositeAdapter(request, response);
