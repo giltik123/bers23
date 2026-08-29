@@ -174,6 +174,20 @@ test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garme
     [initial.id, owner.tenantId, other.userId]),
     (error: unknown) => (error as any)?.code === '23503',
   );
+
+  response = await fetch(`${server.baseUrl}/api/core/wardrobe/garments/${initial.id}`, { method: 'DELETE', headers: headers() });
+  assert.equal(response.status, 428, 'delete requires the shared Garment revision precondition');
+  response = await fetch(`${server.baseUrl}/api/core/wardrobe/garments/${initial.id}`, { method: 'DELETE', headers: headers(6) });
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('x-garment-revision'), '7');
+  assert.equal(await wardrobe.get(owner, initial.id), undefined, 'deleted Garment must disappear from Wardrobe authority');
+  assert.equal(await garments.get(owner, initial.id), undefined, 'F1 aggregate reads must observe the same tombstone');
+  assert.equal(await garments.loadView(owner, initial.id, initial.primaryViewId), undefined, 'existing view capability resolution must fail after Garment deletion');
+
+  response = await fetch(`${server.baseUrl}/api/core/wardrobe/garments/${initial.id}`, { headers: headers() });
+  assert.equal(response.status, 404);
+  response = await fetch(`${server.baseUrl}/api/core/wardrobe/garments/${initial.id}`, { method: 'DELETE', headers: headers(7) });
+  assert.equal(response.status, 404, 'terminal deletion must not disclose a tombstoned revision');
 });
 
 test('F2a schema readiness rejects scalar, CHECK, PK and FK drift and migration repairs canonical semantics', async () => {
@@ -198,17 +212,21 @@ test('F2a schema readiness rejects scalar, CHECK, PK and FK drift and migration 
     await pool.query(`ALTER TABLE canonical_garments ADD CONSTRAINT canonical_garments_category_check CHECK (category IS NOT NULL)`);
     await assert.rejects(() => checkGarmentSchema(pool), /wardrobe schema is incomplete/);
     await migrateGarmentSchema(pool);
-    await assert.rejects(
-      () => pool.query(`UPDATE canonical_garments SET category='FORGED' WHERE false`),
-      () => false,
-    ).catch(() => undefined);
     await checkGarmentSchema(pool);
+    const categoryCheck = await pool.query(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garments') AND conname='canonical_garments_category_check'`);
+    assert.match(String(categoryCheck.rows[0]?.definition), /UNSPECIFIED/);
+    assert.match(String(categoryCheck.rows[0]?.definition), /OUTERWEAR/);
+    assert.doesNotMatch(String(categoryCheck.rows[0]?.definition), /category IS NOT NULL/);
 
     await pool.query('ALTER TABLE canonical_garment_tags DROP CONSTRAINT canonical_garment_tags_pkey');
     await pool.query('ALTER TABLE canonical_garment_tags ADD CONSTRAINT canonical_garment_tags_pkey PRIMARY KEY (tenant_id,user_id,garment_id,tag)');
     await assert.rejects(() => checkGarmentSchema(pool), /wardrobe schema is incomplete/);
     await migrateGarmentSchema(pool);
     await checkGarmentSchema(pool);
+    const tagPk = await pool.query(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garment_tags') AND conname='canonical_garment_tags_pkey'`);
+    assert.equal(tagPk.rows[0]?.definition, 'PRIMARY KEY (garment_id, tenant_id, user_id, tag)');
 
     await pool.query('ALTER TABLE canonical_garment_tags DROP CONSTRAINT canonical_garment_tags_owner_fkey');
     await pool.query(`ALTER TABLE canonical_garment_tags ADD CONSTRAINT canonical_garment_tags_owner_fkey
