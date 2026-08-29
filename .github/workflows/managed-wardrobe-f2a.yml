@@ -43,8 +43,8 @@ jobs:
       - name: Build production Core and prove migrations 022/023 are packaged
         run: |
           npm run server:build
-          test -f dist/core-server/core/fashion/migrations/022_managed_garments_and_initial_views.sql
-          test -f dist/core-server/core/fashion/migrations/023_managed_garment_wardrobe_metadata.sql
+          test -f dist-server/migrations/022_managed_garments_and_initial_views.sql
+          test -f dist-server/migrations/023_managed_garment_wardrobe_metadata.sql
       - name: Bundle F2a and F1b PostgreSQL acceptance
         run: |
           mkdir -p .test-cache/managed-wardrobe-f2a/migrations
