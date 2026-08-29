@@ -134,12 +134,12 @@ test('F2b schema repair is transactional and verifies defaults, operators, PK id
         FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS k(attnum,ord)
         JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum
         WHERE k.ord <= i.indnkeyatts ORDER BY k.ord
-      ) AS columns,
+      )::text[] AS columns,
       ARRAY(
         SELECT o.option
         FROM unnest(i.indoption::smallint[]) WITH ORDINALITY AS o(option,ord)
         WHERE o.ord <= i.indnkeyatts ORDER BY o.ord
-      ) AS options
+      )::integer[] AS options
       FROM pg_index i
       JOIN pg_class ic ON ic.oid=i.indexrelid
       JOIN pg_am am ON am.oid=ic.relam
