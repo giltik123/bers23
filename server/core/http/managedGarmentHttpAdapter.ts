@@ -114,6 +114,7 @@ function dto(garment: ManagedGarment, delivery: GarmentDeliveryAuthority, princi
       encoding: view.encoding,
       content_type: view.contentType,
       content_sha256: view.contentSha256,
+      storage_provenance: view.storageBackend,
       delivery_url: `${PREFIX}/delivery/${encodeURIComponent(delivery.issue(principal, garment.id, view.id, expiresAt))}`,
       delivery_expires_at: new Date(expiresAt).toISOString(),
       created_at: view.createdAt,
