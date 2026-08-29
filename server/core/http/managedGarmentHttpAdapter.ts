@@ -68,7 +68,7 @@ export function createManagedGarmentHttpAdapter(input: AdapterInput) {
         response.statusCode = 200;
         response.setHeader('Content-Type', view.contentType);
         response.setHeader('Content-Length', view.bytes.byteLength);
-        response.setHeader('Cache-Control', 'private, max-age=300');
+        response.setHeader('Cache-Control', 'no-store');
         response.setHeader('ETag', `"sha256-${view.contentSha256}"`);
         response.setHeader('X-Content-Type-Options', 'nosniff');
         if (request.method === 'HEAD') response.end(); else response.end(Buffer.from(view.bytes));
