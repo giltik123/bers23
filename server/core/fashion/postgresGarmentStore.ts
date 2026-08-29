@@ -100,6 +100,7 @@ export class PostgresGarmentStore {
     const normalized = await normalizeGarmentImage({ ...input, viewKind: appendViewKind }, limits);
     const viewId = this.nextId();
     const client = await this.pool.connect();
+    let committedSnapshot: ManagedGarment | undefined;
     try {
       await client.query('BEGIN');
       const locked = await client.query(`SELECT revision,status FROM canonical_garments
@@ -124,6 +125,12 @@ export class PostgresGarmentStore {
         WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND status='ACTIVE' AND revision=$4
         RETURNING revision`, [garmentId, scope.tenantId, scope.userId, expectedRevision]);
       if (updated.rowCount !== 1) throw revisionConflict();
+
+      const snapshot = await client.query(`${GARMENT_SELECT}
+        WHERE g.garment_id=$1 AND g.tenant_id=$2 AND g.user_id=$3 AND g.deleted_at IS NULL`,
+      [garmentId, scope.tenantId, scope.userId]);
+      if (!snapshot.rows[0]) throw new Error('Managed garment view append could not read its transactional aggregate snapshot');
+      committedSnapshot = fromGarmentRow(snapshot.rows[0]);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -132,9 +139,8 @@ export class PostgresGarmentStore {
       client.release();
     }
 
-    const updated = await this.get(scope, garmentId);
-    if (!updated) throw new Error('Managed garment view append committed but aggregate could not be reloaded');
-    return updated;
+    if (!committedSnapshot) throw new Error('Managed garment view append committed without an aggregate snapshot');
+    return committedSnapshot;
   }
 
   async list(scope: GarmentOwnerScope): Promise<readonly ManagedGarment[]> {
