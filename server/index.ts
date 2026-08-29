@@ -31,7 +31,7 @@ export async function startCoreServer() {
   const server = createServer((request, response) => {
     applyCoreSecurityHeaders(response, config);
     const target = parseCoreRequestTarget(request.url);
-    if (!target.ok) { sendInvalidRequestTarget(response, target); return; }
+    if (target.ok === false) { sendInvalidRequestTarget(response, target); return; }
     const path = target.path;
     if (path === '/api/core/garments' || path.startsWith('/api/core/garments/')) return void managedGarmentAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/orthogonal-transform/')) return void orthogonalTransformAdapter(request, response);
