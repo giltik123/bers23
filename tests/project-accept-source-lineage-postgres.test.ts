@@ -12,9 +12,15 @@ if (!databaseUrl) throw new Error('DATABASE_URL is required for Project source-l
 
 const auth = Object.freeze({ tenantId: 'project-source-tenant', userId: 'project-source-user' });
 const APPLICATION_NAME = 'bers-project-source-lineage';
+type Captured<T> = Readonly<{ ok: true; value: T }> | Readonly<{ ok: false; error: unknown }>;
 
 async function png(width: number, height: number, rgba: Uint8ClampedArray): Promise<Uint8Array> {
   return new Uint8Array(await sharp(rgba, { raw: { width, height, channels: 4 } }).png({ compressionLevel: 9 }).toBuffer());
+}
+
+async function capture<T>(promise: Promise<T>): Promise<Captured<T>> {
+  try { return Object.freeze({ ok: true, value: await promise }); }
+  catch (error) { return Object.freeze({ ok: false, error }); }
 }
 
 async function waitForBlockedProjectLocks(observer: PoolClient, minimum: number): Promise<void> {
@@ -117,27 +123,32 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
 
   const blocker = await pool.connect();
   let blockerReleased = false;
+  let navigateOutcomePromise: Promise<Captured<unknown>> | undefined;
+  let acceptOutcomePromise: Promise<Captured<unknown>> | undefined;
   try {
     await blocker.query('BEGIN');
     await blocker.query(`SELECT project_id FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 FOR UPDATE`, [concurrentProjectId, auth.tenantId, auth.userId]);
 
-    const navigatePromise = projects.navigate(auth, concurrentProjectId, 'original');
+    navigateOutcomePromise = capture(projects.navigate(auth, concurrentProjectId, 'original'));
     await waitForBlockedProjectLocks(blocker, 1);
 
-    const acceptPromise = projects.acceptFinal(auth, concurrentProjectId, queuedCandidate.storageId, 'Queued stale Accept');
+    acceptOutcomePromise = capture(projects.acceptFinal(auth, concurrentProjectId, queuedCandidate.storageId, 'Queued stale Accept'));
     await waitForBlockedProjectLocks(blocker, 2);
 
     await blocker.query('COMMIT');
     blocker.release();
     blockerReleased = true;
 
-    await navigatePromise;
+    const navigateOutcome = await navigateOutcomePromise;
+    assert.equal(navigateOutcome.ok, true, 'navigation queued first must complete successfully');
     assert.equal((await projects.get(auth, concurrentProjectId)).current_image_storage_id, concurrentOriginalStorageId, 'queued navigation must win the row-lock order established before Accept');
-    await assert.rejects(
-      acceptPromise,
-      (error: any) => error?.status === 409 && error?.code === 'final_source_conflict',
-      'queued Accept must re-read the Project after acquiring its row lock and reject the now-stale FINAL',
-    );
+
+    const acceptOutcome = await acceptOutcomePromise;
+    assert.equal(acceptOutcome.ok, false, 'queued stale Accept must be rejected');
+    if (acceptOutcome.ok) throw new Error('Queued stale Accept unexpectedly succeeded');
+    const acceptError = acceptOutcome.error as { status?: number; code?: string };
+    assert.equal(acceptError?.status, 409);
+    assert.equal(acceptError?.code, 'final_source_conflict');
     assert.equal((await projects.get(auth, concurrentProjectId)).current_image_storage_id, concurrentOriginalStorageId, 'rejected concurrent Accept must not overwrite the navigation result');
     assert.equal(Number((await pool.query("SELECT count(*)::int AS count FROM canonical_project_history WHERE project_id=$1 AND image_storage_id=$2 AND kind='ACCEPTED_FINAL'", [concurrentProjectId, queuedCandidate.storageId])).rows[0].count), 0, 'rejected concurrent Accept must not create history');
   } finally {
@@ -145,5 +156,9 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
       await blocker.query('ROLLBACK').catch(() => undefined);
       blocker.release();
     }
+    await Promise.all([
+      navigateOutcomePromise ?? Promise.resolve(Object.freeze({ ok: true, value: undefined })),
+      acceptOutcomePromise ?? Promise.resolve(Object.freeze({ ok: true, value: undefined })),
+    ]);
   }
 });
