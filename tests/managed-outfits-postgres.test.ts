@@ -66,6 +66,7 @@ test('canonical Outfit aggregate preserves ordered references, one revision and 
     const pants = await createGarment('Blue pants', 'pants');
     const shirt = await createGarment('Oxford shirt', 'shirts');
     const deletedCandidate = await createGarment('Deleted spare shoes', 'shoes');
+    const unclassified = await createGarment('Unclassified garment', 'other');
 
     let outfit = await outfits.create(owner, {
       name: '  City   capsule  ',
@@ -93,6 +94,24 @@ test('canonical Outfit aggregate preserves ordered references, one revision and 
     assert.equal(outfit.revision, 4);
     assert.deepEqual(outfit.entries.map(entry => entry.layerRole), ['BASE_TOP','OUTER_TOP','BOTTOM']);
     assert.deepEqual(outfit.entries.map(entry => entry.position), [0,1,2]);
+
+    await expectCode(
+      outfits.addEntry(owner, outfit.id, 4, { garmentId: unclassified.garment.id }),
+      'outfit_layer_role_incompatible',
+      409,
+    );
+    await expectCode(
+      outfits.addEntry(owner, outfit.id, 4, { garmentId: unclassified.garment.id, layerRole: 'ACCESSORY' }),
+      'outfit_layer_role_incompatible',
+      409,
+    );
+    const preUnknownReplace = outfit.entries.find(entry => entry.garmentId === jacket.garment.id)!;
+    await expectCode(
+      outfits.replaceEntry(owner, outfit.id, 4, preUnknownReplace.entryId, { garmentId: unclassified.garment.id }),
+      'outfit_layer_role_incompatible',
+      409,
+    );
+    assert.equal((await outfits.get(owner, outfit.id))?.revision, 4);
 
     await expectCode(outfits.addEntry(owner, outfit.id, 4, { garmentId: tee.garment.id }), 'outfit_duplicate_garment', 409);
     assert.equal((await outfits.get(owner, outfit.id))?.revision, 4);
@@ -134,7 +153,7 @@ test('canonical Outfit aggregate preserves ordered references, one revision and 
 
     const teeEntry = outfit.entries.find(entry => entry.garmentId === tee.garment.id)!;
     const teeCurrent = (await wardrobe.get(owner, tee.garment.id))!;
-    await wardrobe.updateMetadata(owner, tee.garment.id, teeCurrent.revision, { category: 'jackets' });
+    let teeMetadata = await wardrobe.updateMetadata(owner, tee.garment.id, teeCurrent.revision, { category: 'jackets' });
     const unchangedAfterCategoryDrift = (await outfits.get(owner, outfit.id))!;
     assert.equal(unchangedAfterCategoryDrift.revision, outfit.revision);
     assert.equal(
@@ -143,6 +162,19 @@ test('canonical Outfit aggregate preserves ordered references, one revision and 
     );
     outfit = await outfits.setEntryRole(owner, outfit.id, outfit.revision, teeEntry.entryId, 'OUTER_TOP');
     assert.equal(outfit.entries.find(entry => entry.entryId === teeEntry.entryId)?.referenceReadiness, 'READY');
+
+    teeMetadata = await wardrobe.updateMetadata(owner, tee.garment.id, teeMetadata.revision, { category: 'other' });
+    const unclassifiedDrift = (await outfits.get(owner, outfit.id))!;
+    assert.equal(unclassifiedDrift.revision, outfit.revision);
+    assert.equal(unclassifiedDrift.entries.find(entry => entry.entryId === teeEntry.entryId)?.referenceReadiness, 'ROLE_REVIEW_REQUIRED');
+    await expectCode(
+      outfits.setEntryRole(owner, outfit.id, outfit.revision, teeEntry.entryId, 'ACCESSORY'),
+      'outfit_layer_role_incompatible',
+      409,
+    );
+    assert.equal((await outfits.get(owner, outfit.id))?.revision, outfit.revision);
+    teeMetadata = await wardrobe.updateMetadata(owner, tee.garment.id, teeMetadata.revision, { category: 'jackets' });
+    assert.equal((await outfits.get(owner, outfit.id))?.entries.find(entry => entry.entryId === teeEntry.entryId)?.referenceReadiness, 'READY');
 
     const pantsEntry = outfit.entries.find(entry => entry.garmentId === pants.garment.id)!;
     const pantsCurrent = (await wardrobe.get(owner, pants.garment.id))!;
