@@ -189,7 +189,8 @@ export default function Editor() {
   };
 
   const startCrop = () => {
-    if (orthogonalTransformInFlightRef.current || selection || pendingResult || editorBusy || resizeInteractionActive || !project?.current_image_artifact_id) return;
+    if (orthogonalTransformInFlightRef.current) return;
+    if (selection || pendingResult || editorBusy || resizeInteractionActive || !project?.current_image_artifact_id) return;
     const rect = defaultCropRect(project.width, project.height);
     setAiError(null);
     cropAnchorRef.current = null;
@@ -249,7 +250,8 @@ export default function Editor() {
   };
 
   const startResize = () => {
-    if (orthogonalTransformInFlightRef.current || selection || pendingResult || editorBusy || cropInteractionActive || !project?.current_image_artifact_id) return;
+    if (orthogonalTransformInFlightRef.current) return;
+    if (selection || pendingResult || editorBusy || cropInteractionActive || !project?.current_image_artifact_id) return;
     if (!Number.isSafeInteger(project.width) || !Number.isSafeInteger(project.height) || project.width < 1 || project.height < 1) {
       setAiError('Resize requires valid canonical image dimensions.');
       return;
