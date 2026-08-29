@@ -16,6 +16,7 @@ type AdapterInput = Readonly<{
   delivery: GarmentDeliveryAuthority;
   auth: GarmentAuth;
   config: CoreServerConfig;
+  accepting: () => boolean;
   now?: () => number;
 }>;
 
@@ -30,6 +31,7 @@ export function createManagedGarmentHttpAdapter(input: AdapterInput) {
     try {
       applyCors(request, response, input.config);
       if (request.method === 'OPTIONS') { send(response, 204, undefined); return true; }
+      if (!input.accepting()) throw httpError(503, 'shutting_down', 'Server is shutting down');
       if (request.method !== 'GET' && request.method !== 'HEAD') assertBrowserMutationAllowed(request, input.config);
       const principal = await input.auth.verify(requestAuthorization(request, input.config));
 
@@ -62,7 +64,7 @@ export function createManagedGarmentHttpAdapter(input: AdapterInput) {
 
       const deliveryMatch = url.pathname.match(/^\/api\/core\/garments\/delivery\/([^/]+)$/);
       if (deliveryMatch && (request.method === 'GET' || request.method === 'HEAD')) {
-        const claim = input.delivery.resolve(decodeURIComponent(deliveryMatch[1]), principal);
+        const claim = input.delivery.resolve(decodePathSegment(deliveryMatch[1]), principal);
         const view = await input.garments.loadView(principal, claim.garmentId, claim.viewId);
         if (!view) throw httpError(404, 'garment_view_not_found', 'Garment view is unavailable');
         response.statusCode = 200;
@@ -77,7 +79,7 @@ export function createManagedGarmentHttpAdapter(input: AdapterInput) {
 
       const garmentMatch = url.pathname.match(/^\/api\/core\/garments\/([^/]+)$/);
       if (garmentMatch && request.method === 'GET') {
-        const garment = await input.garments.get(principal, decodeURIComponent(garmentMatch[1]));
+        const garment = await input.garments.get(principal, decodePathSegment(garmentMatch[1]));
         if (!garment) throw httpError(404, 'garment_not_found', 'Garment not found');
         send(response, 200, dto(garment, input.delivery, principal, now())); return true;
       }
@@ -136,6 +138,10 @@ function applyCors(request: IncomingMessage, response: ServerResponse, config: C
   response.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
 }
 
+function decodePathSegment(value: string): string {
+  try { return decodeURIComponent(value); }
+  catch { throw httpError(400, 'invalid_path_encoding', 'Path segment is malformed'); }
+}
 function mediaType(request: IncomingMessage): 'image/png' | 'image/jpeg' | 'image/webp' | string {
   return String(request.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase();
 }
