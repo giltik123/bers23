@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Pool, type PoolClient } from 'pg';
+import { Pool } from 'pg';
 import sharp from 'sharp';
 import { PostgresImageArtifactStore } from '../server/core/artifacts/postgresImageArtifactStore.ts';
 import { migrateFinalImageLineageSchema } from '../server/core/artifacts/finalImageLineageSchema.ts';
@@ -11,7 +11,6 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for Project source-lineage acceptance');
 
 const auth = Object.freeze({ tenantId: 'project-source-tenant', userId: 'project-source-user' });
-const APPLICATION_NAME = 'bers-project-source-lineage';
 type Captured<T> = Readonly<{ ok: true; value: T }> | Readonly<{ ok: false; error: unknown }>;
 
 async function png(width: number, height: number, rgba: Uint8ClampedArray): Promise<Uint8Array> {
@@ -23,27 +22,42 @@ async function capture<T>(promise: Promise<T>): Promise<Captured<T>> {
   catch (error) { return Object.freeze({ ok: false, error }); }
 }
 
-async function waitForActiveProjectLockQueries(observer: PoolClient, minimum: number): Promise<void> {
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    const result = await observer.query(`
-      SELECT count(*)::int AS count
-      FROM pg_stat_activity
-      WHERE datname=current_database()
-        AND application_name=$1
-        AND pid<>pg_backend_pid()
-        AND state='active'
-        AND query LIKE '%canonical_projects%'
-        AND query LIKE '%FOR UPDATE%'
-    `, [APPLICATION_NAME]);
-    if (Number(result.rows[0]?.count ?? 0) >= minimum) return;
-    await new Promise(resolve => setTimeout(resolve, 25));
+class ProjectLockIssuanceBarrier {
+  private issued = 0;
+
+  mark(query: unknown) {
+    if (typeof query === 'string' && query.includes('canonical_projects') && query.includes('FOR UPDATE')) this.issued += 1;
   }
-  throw new Error(`Timed out waiting for ${minimum} active canonical Project row-lock query(s)`);
+
+  async waitFor(minimum: number): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (this.issued >= minimum) return;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    throw new Error(`Timed out waiting for ${minimum} canonical Project row-lock query issuance(s); observed ${this.issued}`);
+  }
+}
+
+function observeProjectRowLockIssuance(pool: Pool, barrier: ProjectLockIssuanceBarrier): Pool {
+  return {
+    query: (...args: any[]) => (pool.query as any)(...args),
+    connect: async () => {
+      const client = await pool.connect();
+      return {
+        query: (...args: any[]) => {
+          const query = typeof args[0] === 'string' ? args[0] : args[0]?.text;
+          barrier.mark(query);
+          return (client.query as any)(...args);
+        },
+        release: client.release.bind(client),
+      } as any;
+    },
+  } as unknown as Pool;
 }
 
 test('Project Accept serializes against cursor changes and rejects a FINAL produced from a stale durable source', async t => {
-  const pool = new Pool({ connectionString: databaseUrl, max: 6, application_name: APPLICATION_NAME });
+  const pool = new Pool({ connectionString: databaseUrl, max: 6 });
   await migrateFinalImageLineageSchema(pool);
   await migrateProjectSchema(pool);
   await pool.query('TRUNCATE canonical_projects,canonical_project_history,canonical_project_versions,canonical_image_artifacts,canonical_mask_artifacts RESTART IDENTITY CASCADE');
@@ -95,13 +109,13 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
   await projects.acceptFinal(auth, projectId, staleCandidate.storageId, 'Accept after explicitly returning to its durable source');
   assert.equal((await projects.get(auth, projectId)).current_image_storage_id, staleCandidate.storageId, 'the same FINAL is valid again only when the canonical cursor exactly matches its durable source');
 
-  // Real PostgreSQL serialization proof: queue navigation first and Accept second
-  // behind one manually-held Project row lock. pg_stat_activity is used only as a
-  // barrier proving both FOR UPDATE statements have actually been issued; we do
-  // not assume PostgreSQL reports every waiter with the same wait_event subtype.
-  // Once the blocker commits, the outcome assertions below remain authoritative:
-  // navigation must move the cursor first and the queued Accept must then reject
-  // the now-stale source without appending history.
+  // Real PostgreSQL serialization proof. A test-only Pool wrapper observes the
+  // exact FOR UPDATE statements emitted by PostgresProjectStore; it does not
+  // emulate locking. One real transaction holds the Project row lock. We then
+  // issue navigation first and Accept second and wait until both service calls
+  // have actually emitted their row-lock SELECTs before releasing the blocker.
+  // The database still owns serialization and the outcome assertions below are
+  // authoritative: navigation must win and the now-stale Accept must fail closed.
   const concurrentCreated = await projects.create(auth, 'Concurrent source-bound Project', await png(2, 1, sourcePixels), { maxDimension: 64, maxPixels: 4096 });
   const concurrentProjectId = String(concurrentCreated.project_id);
   const concurrentOriginalStorageId = String(concurrentCreated.original_image_storage_id);
@@ -124,6 +138,8 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
     Object.freeze({ sourceImageStorageId: concurrentFirst.storageId, producerOperation: 'ORTHOGONAL_TRANSFORM' as const }),
   );
 
+  const barrier = new ProjectLockIssuanceBarrier();
+  const concurrentProjects = new PostgresProjectStore(observeProjectRowLockIssuance(pool, barrier));
   const blocker = await pool.connect();
   let blockerReleased = false;
   let navigateOutcomePromise: Promise<Captured<unknown>> | undefined;
@@ -132,11 +148,11 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
     await blocker.query('BEGIN');
     await blocker.query(`SELECT project_id FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 FOR UPDATE`, [concurrentProjectId, auth.tenantId, auth.userId]);
 
-    navigateOutcomePromise = capture(projects.navigate(auth, concurrentProjectId, 'original'));
-    await waitForActiveProjectLockQueries(blocker, 1);
+    navigateOutcomePromise = capture(concurrentProjects.navigate(auth, concurrentProjectId, 'original'));
+    await barrier.waitFor(1);
 
-    acceptOutcomePromise = capture(projects.acceptFinal(auth, concurrentProjectId, queuedCandidate.storageId, 'Queued stale Accept'));
-    await waitForActiveProjectLockQueries(blocker, 2);
+    acceptOutcomePromise = capture(concurrentProjects.acceptFinal(auth, concurrentProjectId, queuedCandidate.storageId, 'Queued stale Accept'));
+    await barrier.waitFor(2);
 
     await blocker.query('COMMIT');
     blocker.release();
