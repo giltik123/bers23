@@ -23,16 +23,11 @@ async function jpeg(width = 640, height = 640): Promise<Uint8Array> {
 }
 
 function config() {
-  return {
-    allowedWebOrigins: ['https://editor.example.test'],
-    browserSessionCookieName: 'bers_session',
-    browserCsrfCookieName: 'bers_csrf',
-    browserCsrfHeaderName: 'x-bers-csrf',
-  } as any;
+  return { allowedWebOrigins: ['https://editor.example.test'] } as any;
 }
 
 async function httpServer(wardrobe: PostgresGarmentWardrobeStore) {
-  let principal = owner;
+  let principal: { tenantId: string; userId: string } = owner;
   const adapter = createManagedWardrobeHttpAdapter({
     wardrobe,
     auth: { verify: async () => principal as any },
@@ -46,7 +41,7 @@ async function httpServer(wardrobe: PostgresGarmentWardrobeStore) {
   if (!address || typeof address === 'string') throw new Error('Wardrobe test server address is unavailable');
   return Object.freeze({
     baseUrl: `http://127.0.0.1:${address.port}`,
-    setPrincipal(value: typeof owner) { principal = value; },
+    setPrincipal(value: { tenantId: string; userId: string }) { principal = value; },
     close: () => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
   });
 }
@@ -114,8 +109,9 @@ test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garme
 
   const sharedRevision = await garments.get(owner, initial.id);
   assert.equal(sharedRevision?.revision, 2, 'F1 image authority must observe the same Garment revision changed by Wardrobe metadata');
+  const staleCaptureBytes = await jpeg();
   await assert.rejects(
-    () => garments.appendView(owner, initial.id, 1, { viewKind: 'BACK', sourceContentType: 'image/jpeg', bytes: await jpeg() }, limits),
+    () => garments.appendView(owner, initial.id, 1, { viewKind: 'BACK', sourceContentType: 'image/jpeg', bytes: staleCaptureBytes }, limits),
     (error: unknown) => (error as any)?.status === 412,
   );
 
@@ -144,8 +140,9 @@ test('F2a owns typed wardrobe metadata and lifecycle on the same canonical Garme
   body = await json(response);
   assert.equal(body.status, 'ARCHIVED');
   assert.equal(body.revision, 4);
+  const archivedCaptureBytes = await jpeg();
   await assert.rejects(
-    () => garments.appendView(owner, initial.id, 4, { viewKind: 'BACK', sourceContentType: 'image/jpeg', bytes: await jpeg() }, limits),
+    () => garments.appendView(owner, initial.id, 4, { viewKind: 'BACK', sourceContentType: 'image/jpeg', bytes: archivedCaptureBytes }, limits),
     (error: unknown) => (error as any)?.status === 409 && (error as any)?.code === 'garment_not_active',
   );
 
