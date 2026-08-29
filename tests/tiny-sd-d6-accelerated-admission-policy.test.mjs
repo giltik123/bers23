@@ -260,6 +260,33 @@ test('canonical payload excludes only attestation and is stable across object ke
   assert.match(canonical, new RegExp(TESTED_COMMIT_SHA));
 });
 
+test('assessment snapshots untrusted evidence before signature and semantic validation', () => {
+  const signedEvidence = validDeviceEvidence();
+  signedEvidence.device.softwareAdapter = true;
+  const signedPayload = canonicalizeTinySdD6EvidencePayload(signedEvidence);
+
+  const evidence = validDeviceEvidence();
+  let softwareAdapterReads = 0;
+  Object.defineProperty(evidence.device, 'softwareAdapter', {
+    enumerable: true,
+    configurable: true,
+    get() {
+      softwareAdapterReads += 1;
+      return softwareAdapterReads <= 2;
+    },
+  });
+
+  const result = assessTinySdD6RealDeviceEvidence(evidence, {
+    expectedTestedCommitSha: TESTED_COMMIT_SHA,
+    trustVerifier: ({ canonicalPayload }) => ({ verified: canonicalPayload === signedPayload }),
+    now,
+  });
+
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('SOFTWARE_OR_UNKNOWN_ADAPTER'));
+  assert.equal(softwareAdapterReads, 1, 'untrusted getter must be read only once into the immutable assessment snapshot');
+});
+
 test('software adapter spoofing and missing shader-f16 fail closed', () => {
   const evidence = validDeviceEvidence();
   evidence.device.softwareAdapter = true;
