@@ -65,6 +65,7 @@ test('canonical Outfit aggregate preserves ordered references, one revision and 
     const jacket = await createGarment('Black jacket', 'jackets');
     const pants = await createGarment('Blue pants', 'pants');
     const shirt = await createGarment('Oxford shirt', 'shirts');
+    const deletedCandidate = await createGarment('Deleted spare shoes', 'shoes');
 
     let outfit = await outfits.create(owner, {
       name: '  City   capsule  ',
@@ -146,6 +147,9 @@ test('canonical Outfit aggregate preserves ordered references, one revision and 
     const pantsEntry = outfit.entries.find(entry => entry.garmentId === pants.garment.id)!;
     const pantsCurrent = (await wardrobe.get(owner, pants.garment.id))!;
     await wardrobe.delete(owner, pants.garment.id, pantsCurrent.revision);
+    const deletedCandidateCurrent = (await wardrobe.get(owner, deletedCandidate.garment.id))!;
+    await wardrobe.delete(owner, deletedCandidate.garment.id, deletedCandidateCurrent.revision);
+
     const tombstoned = (await outfits.get(owner, outfit.id))!;
     assert.equal(tombstoned.revision, outfit.revision);
     assert.equal(tombstoned.entries.find(entry => entry.entryId === pantsEntry.entryId)?.garmentId, pants.garment.id);
@@ -154,10 +158,16 @@ test('canonical Outfit aggregate preserves ordered references, one revision and 
 
     await expectCode(outfits.duplicate(owner, outfit.id, 'Blocked copy'), 'garment_not_found', 404);
     await expectCode(
-      outfits.replaceEntry(owner, outfit.id, outfit.revision, teeEntry.entryId, { garmentId: pants.garment.id }),
+      outfits.addEntry(owner, outfit.id, outfit.revision, { garmentId: deletedCandidate.garment.id }),
       'garment_not_found',
       404,
     );
+    await expectCode(
+      outfits.replaceEntry(owner, outfit.id, outfit.revision, teeEntry.entryId, { garmentId: deletedCandidate.garment.id }),
+      'garment_not_found',
+      404,
+    );
+    assert.equal((await outfits.get(owner, outfit.id))?.revision, outfit.revision);
 
     outfit = await outfits.removeEntry(owner, outfit.id, outfit.revision, pantsEntry.entryId);
     assert.equal(outfit.entries.some(entry => entry.entryId === pantsEntry.entryId), false);
