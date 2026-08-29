@@ -93,7 +93,11 @@ export class PostgresGarmentStore {
     if (String(preflight.rows[0].status) !== 'ACTIVE') throw garmentNotActive();
     if (Number(preflight.rows[0].revision) !== expectedRevision) throw revisionConflict();
 
-    const normalized = await normalizeGarmentImage(input, limits);
+    const appendViewKind = normalizeViewKind(input.viewKind);
+    if (appendViewKind === 'UNSPECIFIED') {
+      throw httpError(400, 'unspecified_garment_view_append', 'Additional garment views must identify FRONT, BACK, LEFT, RIGHT or DETAIL');
+    }
+    const normalized = await normalizeGarmentImage({ ...input, viewKind: appendViewKind }, limits);
     const viewId = this.nextId();
     const client = await this.pool.connect();
     try {
