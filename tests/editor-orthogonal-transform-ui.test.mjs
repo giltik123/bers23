@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { isOrthogonalTransformStartBlocked } from '../src/application/editor/orthogonalTransformStartPolicy.js';
 
 const EDITOR = 'src/pages/Editor.jsx';
 const TOOLBAR = 'src/components/editor/OrthogonalTransformToolbar.jsx';
@@ -25,7 +26,7 @@ test('Editor Rotate/Flip remains Core-authorized preview followed by explicit ca
   assert.match(editor, /finalArtifactId: result\.canonicalArtifactId/);
   assert.match(editor, /await pushEdit\(result\.finalArtifactId, used\);/);
   assert.match(editor, /isFinalSourceConflict\(e\)/, 'Rotate/Flip must inherit common stale-source recovery on Accept');
-  assert.doesNotMatch(editor, /applyOrthogonalTransform[\s\S]{0,2400}(persistFinal|issueStoredFinal|acceptFinal|notificationCenter)/);
+  assert.doesNotMatch(editor, /applyOrthogonalTransform[\s\S]{0,2600}(persistFinal|issueStoredFinal|acceptFinal|notificationCenter)/);
 
   assert.match(adapter, /prepareOrthogonalTransform:[\s\S]*activeTicketId = prepared\.ticket\.ticketId/);
   assert.match(adapter, /loadImage:[\s\S]*loadDelivered\(\)/);
@@ -60,8 +61,40 @@ test('Rotate/Flip is fail-closed against double submit and competing Editor inte
   assert.match(editor, /orthogonalTransformInFlightRef\.current = false/);
   assert.match(editor, /const editorBusy = applying \|\| isolatingBackground \|\| upscaling \|\| cropping \|\| resizing \|\| Boolean\(orthogonalTransformingMode\)/);
   assert.match(editor, /disabled=\{!project\.current_image_artifact_id \|\| editorBusy \|\| detecting \|\| committing \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| cropInteractionActive \|\| resizeInteractionActive\}/);
+  assert.match(editor, /isOrthogonalTransformStartBlocked\(/);
   assert.match(editor, /kind === 'ORTHOGONAL_TRANSFORM'/);
-  assert.match(editor, /applyOrthogonalTransform\(pending\.context\?\.mode, pending\.context\)/);
+  assert.match(editor, /applyOrthogonalTransform\(pending\.context\?\.mode, pending\.context, \{ allowPendingResult: true \}\)/);
+  assert.equal((editor.match(/allowPendingResult: true/g) || []).length, 1, 'only ResultCompare Retry may bypass the stale pending-result closure');
+});
+
+test('Rotate/Flip Retry bypasses only the stale pending-result closure', () => {
+  const pendingOnly = {
+    editorBusy: false,
+    detecting: false,
+    committing: false,
+    pendingResult: { kind: 'ORTHOGONAL_TRANSFORM' },
+    selection: null,
+    cropInteractionActive: false,
+    resizeInteractionActive: false,
+  };
+
+  assert.equal(isOrthogonalTransformStartBlocked(pendingOnly), true);
+  assert.equal(isOrthogonalTransformStartBlocked(pendingOnly, { allowPendingResult: true }), false);
+
+  for (const locked of [
+    { editorBusy: true },
+    { detecting: true },
+    { committing: true },
+    { selection: { id: 'mask' } },
+    { cropInteractionActive: true },
+    { resizeInteractionActive: true },
+  ]) {
+    assert.equal(
+      isOrthogonalTransformStartBlocked({ ...pendingOnly, ...locked }, { allowPendingResult: true }),
+      true,
+      `Retry must remain blocked by ${Object.keys(locked)[0]}`,
+    );
+  }
 });
 
 test('Rotate/Flip captures source lineage context before preview and never claims cloud/credits', async () => {
