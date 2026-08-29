@@ -51,6 +51,11 @@ test('Project Accept serializes against cursor changes and rejects a FINAL produ
 
   await projects.acceptFinal(auth, projectId, first.storageId, 'Accept first source-bound FINAL');
   assert.equal((await projects.get(auth, projectId)).current_image_storage_id, first.storageId);
+  assert.equal(Number((await pool.query("SELECT count(*)::int AS count FROM canonical_project_history WHERE project_id=$1 AND kind='ACCEPTED_FINAL' AND retired_at IS NULL", [projectId])).rows[0].count), 1);
+
+  await projects.acceptFinal(auth, projectId, first.storageId, 'Idempotent replay of already accepted FINAL');
+  assert.equal((await projects.get(auth, projectId)).current_image_storage_id, first.storageId, 'accepted FINAL replay must remain a no-op even though its durable source is now behind the cursor');
+  assert.equal(Number((await pool.query("SELECT count(*)::int AS count FROM canonical_project_history WHERE project_id=$1 AND kind='ACCEPTED_FINAL' AND retired_at IS NULL", [projectId])).rows[0].count), 1, 'accepted FINAL replay must not append duplicate history');
 
   await assert.rejects(
     () => projects.acceptFinal(auth, projectId, staleCandidate.storageId, 'Must reject stale FINAL'),
