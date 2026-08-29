@@ -65,64 +65,181 @@ ALTER TABLE canonical_garment_collection_members
   ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,
   ALTER COLUMN created_at SET NOT NULL;
 
-ALTER TABLE canonical_garment_collection_members
-  DROP CONSTRAINT IF EXISTS canonical_garment_collection_members_collection_owner_fkey,
-  DROP CONSTRAINT IF EXISTS canonical_garment_collection_members_garment_owner_fkey,
-  DROP CONSTRAINT IF EXISTS canonical_garment_collection_members_pkey;
-ALTER TABLE canonical_garment_collections
-  DROP CONSTRAINT IF EXISTS canonical_garment_collections_name_check,
-  DROP CONSTRAINT IF EXISTS canonical_garment_collections_description_check,
-  DROP CONSTRAINT IF EXISTS canonical_garment_collections_revision_check,
-  DROP CONSTRAINT IF EXISTS canonical_garment_collections_owner_unique;
-
 DO $$
 DECLARE
   constraint_name TEXT;
 BEGIN
-  FOR constraint_name IN
-    SELECT conname FROM pg_constraint
-    WHERE conrelid=to_regclass('canonical_garment_collections') AND contype='p'
-  LOOP
-    EXECUTE format('ALTER TABLE canonical_garment_collections DROP CONSTRAINT %I', constraint_name);
-  END LOOP;
-  FOR constraint_name IN
-    SELECT conname FROM pg_constraint
-    WHERE conrelid=to_regclass('canonical_garment_collection_members') AND contype='p'
-  LOOP
-    EXECUTE format('ALTER TABLE canonical_garment_collection_members DROP CONSTRAINT %I', constraint_name);
-  END LOOP;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections')
+      AND conname='canonical_garment_collections_pkey' AND contype='p'
+      AND pg_get_constraintdef(oid)='PRIMARY KEY (collection_id)'
+  ) THEN
+    FOR constraint_name IN
+      SELECT conname FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garment_collections') AND contype='p'
+    LOOP
+      EXECUTE format('ALTER TABLE canonical_garment_collections DROP CONSTRAINT %I', constraint_name);
+    END LOOP;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collection_members')
+      AND conname='canonical_garment_collection_members_pkey' AND contype='p'
+      AND pg_get_constraintdef(oid)='PRIMARY KEY (collection_id, garment_id)'
+  ) THEN
+    FOR constraint_name IN
+      SELECT conname FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garment_collection_members') AND contype='p'
+    LOOP
+      EXECUTE format('ALTER TABLE canonical_garment_collection_members DROP CONSTRAINT %I', constraint_name);
+    END LOOP;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections')
+      AND conname='canonical_garment_collections_owner_unique'
+      AND NOT (contype='u' AND pg_get_constraintdef(oid)='UNIQUE (collection_id, tenant_id, user_id)')
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collections DROP CONSTRAINT canonical_garment_collections_owner_unique';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections')
+      AND conname='canonical_garment_collections_name_check'
+      AND NOT (
+        contype='c'
+        AND pg_get_constraintdef(oid) LIKE '%char_length(name)%'
+        AND pg_get_constraintdef(oid) LIKE '%>= 1%'
+        AND pg_get_constraintdef(oid) LIKE '%<= 100%'
+        AND pg_get_constraintdef(oid) LIKE '%btrim(name)%'
+        AND pg_get_constraintdef(oid) LIKE '%cntrl%'
+        AND pg_get_constraintdef(oid) NOT LIKE '% OR %'
+      )
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collections DROP CONSTRAINT canonical_garment_collections_name_check';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections')
+      AND conname='canonical_garment_collections_description_check'
+      AND NOT (
+        contype='c'
+        AND pg_get_constraintdef(oid) LIKE '%char_length(description)%'
+        AND pg_get_constraintdef(oid) LIKE '%<= 500%'
+        AND pg_get_constraintdef(oid) LIKE '%cntrl%'
+        AND pg_get_constraintdef(oid) NOT LIKE '% OR %'
+      )
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collections DROP CONSTRAINT canonical_garment_collections_description_check';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections')
+      AND conname='canonical_garment_collections_revision_check'
+      AND NOT (contype='c' AND pg_get_constraintdef(oid) LIKE '%revision >= 1%' AND pg_get_constraintdef(oid) NOT LIKE '% OR %')
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collections DROP CONSTRAINT canonical_garment_collections_revision_check';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collection_members')
+      AND conname='canonical_garment_collection_members_collection_owner_fkey'
+      AND NOT (
+        contype='f' AND confdeltype='c' AND confrelid=to_regclass('canonical_garment_collections')
+        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (collection_id, tenant_id, user_id) REFERENCES canonical_garment_collections(collection_id, tenant_id, user_id)%ON DELETE CASCADE%'
+      )
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collection_members DROP CONSTRAINT canonical_garment_collection_members_collection_owner_fkey';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collection_members')
+      AND conname='canonical_garment_collection_members_garment_owner_fkey'
+      AND NOT (
+        contype='f' AND confdeltype='c' AND confrelid=to_regclass('canonical_garments')
+        AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id)%ON DELETE CASCADE%'
+      )
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collection_members DROP CONSTRAINT canonical_garment_collection_members_garment_owner_fkey';
+  END IF;
 END $$;
 
-ALTER TABLE canonical_garment_collections
-  ADD CONSTRAINT canonical_garment_collections_pkey
-    PRIMARY KEY (collection_id),
-  ADD CONSTRAINT canonical_garment_collections_owner_unique
-    UNIQUE (collection_id, tenant_id, user_id),
-  ADD CONSTRAINT canonical_garment_collections_name_check
-    CHECK (
-      char_length(name) BETWEEN 1 AND 100
-      AND name = btrim(name)
-      AND name !~ '[[:cntrl:]]'
-    ) NOT VALID,
-  ADD CONSTRAINT canonical_garment_collections_description_check
-    CHECK (
-      char_length(description) <= 500
-      AND description !~ '[[:cntrl:]]'
-    ) NOT VALID,
-  ADD CONSTRAINT canonical_garment_collections_revision_check
-    CHECK (revision >= 1) NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections')
+      AND conname='canonical_garment_collections_pkey' AND contype='p'
+      AND pg_get_constraintdef(oid)='PRIMARY KEY (collection_id)'
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collections ADD CONSTRAINT canonical_garment_collections_pkey PRIMARY KEY (collection_id)';
+  END IF;
 
-ALTER TABLE canonical_garment_collection_members
-  ADD CONSTRAINT canonical_garment_collection_members_pkey
-    PRIMARY KEY (collection_id, garment_id),
-  ADD CONSTRAINT canonical_garment_collection_members_collection_owner_fkey
-    FOREIGN KEY (collection_id, tenant_id, user_id)
-    REFERENCES canonical_garment_collections (collection_id, tenant_id, user_id)
-    ON DELETE CASCADE NOT VALID,
-  ADD CONSTRAINT canonical_garment_collection_members_garment_owner_fkey
-    FOREIGN KEY (garment_id, tenant_id, user_id)
-    REFERENCES canonical_garments (garment_id, tenant_id, user_id)
-    ON DELETE CASCADE NOT VALID;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections')
+      AND conname='canonical_garment_collections_owner_unique' AND contype='u'
+      AND pg_get_constraintdef(oid)='UNIQUE (collection_id, tenant_id, user_id)'
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collections ADD CONSTRAINT canonical_garment_collections_owner_unique UNIQUE (collection_id, tenant_id, user_id)';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collection_members')
+      AND conname='canonical_garment_collection_members_pkey' AND contype='p'
+      AND pg_get_constraintdef(oid)='PRIMARY KEY (collection_id, garment_id)'
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collection_members ADD CONSTRAINT canonical_garment_collection_members_pkey PRIMARY KEY (collection_id, garment_id)';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections') AND conname='canonical_garment_collections_name_check'
+  ) THEN
+    EXECUTE $ddl$ALTER TABLE canonical_garment_collections ADD CONSTRAINT canonical_garment_collections_name_check CHECK (
+      char_length(name) BETWEEN 1 AND 100 AND name = btrim(name) AND name !~ '[[:cntrl:]]'
+    ) NOT VALID$ddl$;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections') AND conname='canonical_garment_collections_description_check'
+  ) THEN
+    EXECUTE $ddl$ALTER TABLE canonical_garment_collections ADD CONSTRAINT canonical_garment_collections_description_check CHECK (
+      char_length(description) <= 500 AND description !~ '[[:cntrl:]]'
+    ) NOT VALID$ddl$;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collections') AND conname='canonical_garment_collections_revision_check'
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collections ADD CONSTRAINT canonical_garment_collections_revision_check CHECK (revision >= 1) NOT VALID';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collection_members') AND conname='canonical_garment_collection_members_collection_owner_fkey'
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collection_members ADD CONSTRAINT canonical_garment_collection_members_collection_owner_fkey FOREIGN KEY (collection_id, tenant_id, user_id) REFERENCES canonical_garment_collections (collection_id, tenant_id, user_id) ON DELETE CASCADE NOT VALID';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid=to_regclass('canonical_garment_collection_members') AND conname='canonical_garment_collection_members_garment_owner_fkey'
+  ) THEN
+    EXECUTE 'ALTER TABLE canonical_garment_collection_members ADD CONSTRAINT canonical_garment_collection_members_garment_owner_fkey FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments (garment_id, tenant_id, user_id) ON DELETE CASCADE NOT VALID';
+  END IF;
+END $$;
 
 ALTER TABLE canonical_garment_collections
   VALIDATE CONSTRAINT canonical_garment_collections_name_check,
