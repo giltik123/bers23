@@ -103,7 +103,11 @@ test('managed Garment creation owns canonical bytes and fails closed across user
     () => store.createWithInitialView(owner, { name: 'Broken', viewKind: 'FRONT', sourceContentType: 'image/png', bytes: new Uint8Array([1, 2, 3]) }, limits),
     (error: any) => error?.status === 400 && error?.code === 'invalid_garment_image',
   );
-  assert.equal((await store.list(owner)).length, 1, 'failed decode must not create a partial Garment row');
+  await assert.rejects(
+    () => store.createWithInitialView(owner, { name: 'Mismatched media', viewKind: 'FRONT', sourceContentType: 'image/png', bytes: jpegBytes }, limits),
+    (error: any) => error?.status === 415 && error?.code === 'garment_image_media_type_mismatch',
+  );
+  assert.equal((await store.list(owner)).length, 1, 'failed ingestion must not create a partial Garment row');
 
   let now = 10_000;
   const delivery = new GarmentDeliveryAuthority('managed-garment-http-delivery-secret', () => now);
@@ -139,6 +143,7 @@ test('managed Garment creation owns canonical bytes and fails closed across user
     body: httpImage,
   });
   assert.equal(createResponse.status, 201);
+  assert.equal(createResponse.headers.get('cache-control'), 'no-store');
   const created = await createResponse.json() as any;
   assert.equal(created.name, 'HTTP coat');
   assert.equal(created.representation_tier, 'BASIC');
@@ -185,6 +190,15 @@ test('managed Garment creation owns canonical bytes and fails closed across user
   assert.equal((await deniedOrigin.json() as any).error, 'origin_denied');
   assert.equal((await store.list(owner)).length, beforeDenied, 'denied Origin must not create a partial Garment');
 
+  const mismatchedMedia = await fetch(`${origin}/api/core/garments?name=Mismatch&view=FRONT`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer owner-token', 'content-type': 'image/png', origin: 'http://client.test' },
+    body: httpImage,
+  });
+  assert.equal(mismatchedMedia.status, 415);
+  assert.equal((await mismatchedMedia.json() as any).error, 'garment_image_media_type_mismatch');
+  assert.equal((await store.list(owner)).length, beforeDenied, 'media-type mismatch must not create a partial Garment');
+
   now += 5 * 60_000;
   const expiredDelivery = await fetch(`${origin}${created.views[0].delivery_url}`, { headers: { authorization: 'Bearer owner-token' } });
   assert.equal(expiredDelivery.status, 404);
@@ -206,3 +220,5 @@ test('garment delivery capabilities are owner-bound and expire without changing 
   now = 2_000;
   assert.throws(() => authority.resolve(token, owner), (error: any) => error?.status === 404 && error?.code === 'garment_view_not_found');
 });
+
+const jpegBytes = await jpeg(2, 2);
