@@ -18,6 +18,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert exact tested commit
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "${ACTUAL_SHA}" = "${EXPECTED_SHA}" || {
+            echo "D6 exact-head checkout mismatch: expected ${EXPECTED_SHA}, got ${ACTUAL_SHA}" >&2
+            exit 1
+          }
 
       - name: Use Node.js 24
         uses: actions/setup-node@v4
