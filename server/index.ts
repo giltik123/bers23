@@ -6,6 +6,7 @@ import { createOrthogonalTransformHttpAdapter } from './core/http/orthogonalTran
 import { createLocalCompositeContinuationHttpAdapter } from './core/http/localCompositeContinuationHttpAdapter.ts';
 import { createManagedGarmentHttpAdapter } from './core/http/managedGarmentHttpAdapter.ts';
 import { createManagedWardrobeHttpAdapter } from './core/http/managedWardrobeHttpAdapter.ts';
+import { createManagedGarmentCollectionHttpAdapter } from './core/http/managedGarmentCollectionHttpAdapter.ts';
 import { parseCoreRequestTarget } from './core/http/requestTarget.ts';
 import { LocalCompositeOutputUploadService } from './core/workflow/LocalCompositeOutputUploadService.ts';
 import { createCanonicalNodeHttpAdapter } from './core/http/canonicalNodeHttpAdapter.ts';
@@ -13,6 +14,7 @@ import { applyCoreSecurityHeaders } from './core/http/securityHeaders.ts';
 import { checkGarmentSchema, migrateGarmentSchema } from './core/fashion/garmentSchema.ts';
 import { PostgresGarmentStore } from './core/fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from './core/fashion/postgresGarmentWardrobeStore.ts';
+import { PostgresGarmentCollectionStore } from './core/fashion/postgresGarmentCollectionStore.ts';
 import { GarmentDeliveryAuthority } from './core/fashion/garmentDeliveryAuthority.ts';
 
 export async function startCoreServer() {
@@ -25,9 +27,11 @@ export async function startCoreServer() {
   const adapter = createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
   const garments = new PostgresGarmentStore(production.transactions.pool);
   const wardrobe = new PostgresGarmentWardrobeStore(production.transactions.pool);
+  const collections = new PostgresGarmentCollectionStore(production.transactions.pool);
   const garmentDelivery = new GarmentDeliveryAuthority(config.artifactSigningSecret);
   const managedGarmentAdapter = createManagedGarmentHttpAdapter({ garments, delivery: garmentDelivery, auth: production.auth, config, accepting: () => accepting });
   const managedWardrobeAdapter = createManagedWardrobeHttpAdapter({ wardrobe, auth: production.auth, config, accepting: () => accepting });
+  const managedCollectionAdapter = createManagedGarmentCollectionHttpAdapter({ collections, auth: production.auth, config, accepting: () => accepting });
   const orthogonalTransformAdapter = createOrthogonalTransformHttpAdapter({ service: production.localExecution.orthogonalTransform, inputDelivery: production.localExecution.orthogonalTransformInputDelivery, auth: production.auth, config });
   const localExecutionAdapter = createLocalExecutionHttpAdapter({ service: production.localExecution.segmentation, deterministicImages: production.localExecution.deterministicImages, crop: production.localExecution.crop, resize: production.localExecution.resize, superResolution: production.localExecution.superResolution, inputDelivery: production.localExecution.inputDelivery, auth: production.auth, config });
   const localCompositeOutputs = new LocalCompositeOutputUploadService({ continuation: production.localExecution.composite, uploads: production.localExecution.uploads });
@@ -37,6 +41,7 @@ export async function startCoreServer() {
     const target = parseCoreRequestTarget(request.url);
     if (target.ok === false) { sendInvalidRequestTarget(response, target); return; }
     const path = target.path;
+    if (path === '/api/core/wardrobe/collections' || path.startsWith('/api/core/wardrobe/collections/')) return void managedCollectionAdapter(request, response);
     if (path === '/api/core/wardrobe/garments' || path.startsWith('/api/core/wardrobe/garments/')) return void managedWardrobeAdapter(request, response);
     if (path === '/api/core/garments' || path.startsWith('/api/core/garments/')) return void managedGarmentAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/orthogonal-transform/')) return void orthogonalTransformAdapter(request, response);
