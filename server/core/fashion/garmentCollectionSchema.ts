@@ -13,6 +13,8 @@ type ColumnContract = Readonly<{
   requiresDefault?: boolean;
 }>;
 
+type NumericPredicate = readonly [expression: string, operator: '>=' | '<=', value: number];
+
 const REQUIRED_COLUMNS: readonly ColumnContract[] = Object.freeze([
   { table: 'canonical_garment_collections', name: 'collection_id', udtName: 'uuid', nullable: false },
   { table: 'canonical_garment_collections', name: 'tenant_id', udtName: 'text', nullable: false },
@@ -104,11 +106,25 @@ function columnsReady(rows: readonly any[]): boolean {
   });
 }
 
-function conjunctiveCheck(definition: unknown, requiredFragments: readonly string[]): boolean {
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasNumericPredicate(definition: string, [expression, operator, expected]: NumericPredicate): boolean {
+  const pattern = new RegExp(`${escapeRegex(expression)}\\s*${escapeRegex(operator)}\\s*${expected}(?![0-9A-Za-z_.])`);
+  return pattern.test(definition);
+}
+
+function conjunctiveCheck(
+  definition: unknown,
+  requiredFragments: readonly string[],
+  numericPredicates: readonly NumericPredicate[] = [],
+): boolean {
   const value = String(definition ?? '');
   return value.startsWith('CHECK (')
     && !value.includes(' OR ')
-    && requiredFragments.every(fragment => value.includes(fragment));
+    && requiredFragments.every(fragment => value.includes(fragment))
+    && numericPredicates.every(predicate => hasNumericPredicate(value, predicate));
 }
 
 function schemaReady(state: any): boolean {
@@ -116,9 +132,17 @@ function schemaReady(state: any): boolean {
     state?.collections && state?.members
     && columnsReady(Array.isArray(state?.columns) ? state.columns : [])
     && state?.collection_pk && state?.collection_owner_unique && state?.member_pk
-    && conjunctiveCheck(state?.name_check_definition, ['char_length(name)', '>= 1', '<= 100', 'btrim(name)', 'cntrl'])
-    && conjunctiveCheck(state?.description_check_definition, ['char_length(description)', '<= 500', 'cntrl'])
-    && conjunctiveCheck(state?.revision_check_definition, ['revision >= 1'])
+    && conjunctiveCheck(
+      state?.name_check_definition,
+      ['char_length(name)', 'btrim(name)', 'cntrl'],
+      [['char_length(name)', '>=', 1], ['char_length(name)', '<=', 100]],
+    )
+    && conjunctiveCheck(
+      state?.description_check_definition,
+      ['char_length(description)', 'cntrl'],
+      [['char_length(description)', '<=', 500]],
+    )
+    && conjunctiveCheck(state?.revision_check_definition, ['revision'], [['revision', '>=', 1]])
     && state?.collection_owner_fk && state?.garment_owner_fk
     && state?.owner_updated_idx && state?.members_owner_idx && state?.members_garment_idx
   );
@@ -133,6 +157,12 @@ export async function checkGarmentCollectionSchema(pool: Pool): Promise<void> {
 
 export async function migrateGarmentCollectionSchema(pool: Pool): Promise<void> {
   const state = await schemaState(pool);
-  if (!schemaReady(state)) await pool.query(await migration());
+  if (!schemaReady(state)) {
+    await pool.query(`ALTER TABLE IF EXISTS canonical_garment_collections
+      DROP CONSTRAINT IF EXISTS canonical_garment_collections_name_check,
+      DROP CONSTRAINT IF EXISTS canonical_garment_collections_description_check,
+      DROP CONSTRAINT IF EXISTS canonical_garment_collections_revision_check`);
+    await pool.query(await migration());
+  }
   await checkGarmentCollectionSchema(pool);
 }
