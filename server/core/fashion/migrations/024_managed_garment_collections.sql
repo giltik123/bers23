@@ -222,34 +222,76 @@ ALTER TABLE canonical_garment_collection_members
   VALIDATE CONSTRAINT canonical_garment_collection_members_collection_owner_fkey,
   VALIDATE CONSTRAINT canonical_garment_collection_members_garment_owner_fkey;
 
+-- Index repair is catalog-semantic rather than text-format based. For btree,
+-- indoption bit 1 means DESC and bit 2 means NULLS FIRST. The canonical
+-- updated_at DESC key therefore carries option 3; ordinary ASC keys carry 0.
 DO $$
 BEGIN
   IF to_regclass('canonical_garment_collections_owner_updated_idx') IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class ic ON ic.oid=i.indexrelid
+    JOIN pg_am am ON am.oid=ic.relam
     WHERE i.indexrelid=to_regclass('canonical_garment_collections_owner_updated_idx')
       AND i.indisvalid AND i.indisready AND NOT i.indisunique AND NOT i.indisprimary
-      AND ARRAY(SELECT pg_get_indexdef(i.indexrelid,n,true) FROM generate_series(1,i.indnkeyatts) n ORDER BY n)
-        = ARRAY['tenant_id','user_id','updated_at DESC','collection_id']::text[]
+      AND am.amname='btree' AND i.indpred IS NULL AND i.indexprs IS NULL
+      AND ARRAY(
+        SELECT a.attname
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum
+        WHERE k.ord <= i.indnkeyatts ORDER BY k.ord
+      ) = ARRAY['tenant_id','user_id','updated_at','collection_id']::name[]
+      AND ARRAY(
+        SELECT o.option
+        FROM unnest(i.indoption::smallint[]) WITH ORDINALITY AS o(option,ord)
+        WHERE o.ord <= i.indnkeyatts ORDER BY o.ord
+      ) = ARRAY[0,0,3,0]::smallint[]
   ) THEN
     EXECUTE 'DROP INDEX canonical_garment_collections_owner_updated_idx';
   END IF;
 
   IF to_regclass('canonical_garment_collection_members_owner_idx') IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class ic ON ic.oid=i.indexrelid
+    JOIN pg_am am ON am.oid=ic.relam
     WHERE i.indexrelid=to_regclass('canonical_garment_collection_members_owner_idx')
       AND i.indisvalid AND i.indisready AND NOT i.indisunique AND NOT i.indisprimary
-      AND ARRAY(SELECT pg_get_indexdef(i.indexrelid,n,true) FROM generate_series(1,i.indnkeyatts) n ORDER BY n)
-        = ARRAY['tenant_id','user_id','collection_id','created_at','garment_id']::text[]
+      AND am.amname='btree' AND i.indpred IS NULL AND i.indexprs IS NULL
+      AND ARRAY(
+        SELECT a.attname
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum
+        WHERE k.ord <= i.indnkeyatts ORDER BY k.ord
+      ) = ARRAY['tenant_id','user_id','collection_id','created_at','garment_id']::name[]
+      AND ARRAY(
+        SELECT o.option
+        FROM unnest(i.indoption::smallint[]) WITH ORDINALITY AS o(option,ord)
+        WHERE o.ord <= i.indnkeyatts ORDER BY o.ord
+      ) = ARRAY[0,0,0,0,0]::smallint[]
   ) THEN
     EXECUTE 'DROP INDEX canonical_garment_collection_members_owner_idx';
   END IF;
 
   IF to_regclass('canonical_garment_collection_members_garment_idx') IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM pg_index i
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class ic ON ic.oid=i.indexrelid
+    JOIN pg_am am ON am.oid=ic.relam
     WHERE i.indexrelid=to_regclass('canonical_garment_collection_members_garment_idx')
       AND i.indisvalid AND i.indisready AND NOT i.indisunique AND NOT i.indisprimary
-      AND ARRAY(SELECT pg_get_indexdef(i.indexrelid,n,true) FROM generate_series(1,i.indnkeyatts) n ORDER BY n)
-        = ARRAY['tenant_id','user_id','garment_id','collection_id']::text[]
+      AND am.amname='btree' AND i.indpred IS NULL AND i.indexprs IS NULL
+      AND ARRAY(
+        SELECT a.attname
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum
+        WHERE k.ord <= i.indnkeyatts ORDER BY k.ord
+      ) = ARRAY['tenant_id','user_id','garment_id','collection_id']::name[]
+      AND ARRAY(
+        SELECT o.option
+        FROM unnest(i.indoption::smallint[]) WITH ORDINALITY AS o(option,ord)
+        WHERE o.ord <= i.indnkeyatts ORDER BY o.ord
+      ) = ARRAY[0,0,0,0]::smallint[]
   ) THEN
     EXECUTE 'DROP INDEX canonical_garment_collection_members_garment_idx';
   END IF;

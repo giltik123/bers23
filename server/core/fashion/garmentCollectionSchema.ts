@@ -14,6 +14,11 @@ type ColumnContract = Readonly<{
   forbidsDefault?: boolean;
 }>;
 
+type IndexContract = Readonly<{
+  columns: readonly string[];
+  options: readonly number[];
+}>;
+
 const REQUIRED_COLUMNS: readonly ColumnContract[] = Object.freeze([
   { table: 'canonical_garment_collections', name: 'collection_id', udtName: 'uuid', nullable: false },
   { table: 'canonical_garment_collections', name: 'tenant_id', udtName: 'text', nullable: false },
@@ -34,6 +39,20 @@ const REQUIRED_COLUMNS: readonly ColumnContract[] = Object.freeze([
 const NAME_CHECK = "CHECK (char_length(name) >= 1 AND char_length(name) <= 100 AND name = btrim(name) AND name !~ '[[:cntrl:]]')";
 const DESCRIPTION_CHECK = "CHECK (char_length(description) <= 500 AND description !~ '[[:cntrl:]]')";
 const REVISION_CHECK = 'CHECK (revision >= 1)';
+
+const OWNER_UPDATED_INDEX: IndexContract = Object.freeze({
+  columns: Object.freeze(['tenant_id', 'user_id', 'updated_at', 'collection_id']),
+  // PostgreSQL btree indoption: DESC=1, NULLS_FIRST=2. DESC defaults to NULLS FIRST.
+  options: Object.freeze([0, 0, 3, 0]),
+});
+const MEMBERS_OWNER_INDEX: IndexContract = Object.freeze({
+  columns: Object.freeze(['tenant_id', 'user_id', 'collection_id', 'created_at', 'garment_id']),
+  options: Object.freeze([0, 0, 0, 0, 0]),
+});
+const MEMBERS_GARMENT_INDEX: IndexContract = Object.freeze({
+  columns: Object.freeze(['tenant_id', 'user_id', 'garment_id', 'collection_id']),
+  options: Object.freeze([0, 0, 0, 0]),
+});
 
 async function migration(): Promise<string> {
   try { return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8'); }
@@ -89,16 +108,52 @@ async function schemaState(pool: Pool) {
     ) AS garment_owner_fk,
     (SELECT json_build_object(
       'valid',i.indisvalid,'ready',i.indisready,'unique',i.indisunique,'primary',i.indisprimary,
-      'keys',ARRAY(SELECT pg_get_indexdef(i.indexrelid,n,true) FROM generate_series(1,i.indnkeyatts) n ORDER BY n))
-      FROM pg_index i WHERE i.indexrelid=to_regclass('canonical_garment_collections_owner_updated_idx')) AS owner_updated_index,
+      'method',am.amname,'partial',i.indpred IS NOT NULL,'expressions',i.indexprs IS NOT NULL,
+      'columns',ARRAY(
+        SELECT a.attname
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum
+        WHERE k.ord <= i.indnkeyatts ORDER BY k.ord),
+      'options',ARRAY(
+        SELECT o.option
+        FROM unnest(i.indoption::smallint[]) WITH ORDINALITY AS o(option,ord)
+        WHERE o.ord <= i.indnkeyatts ORDER BY o.ord))
+      FROM pg_index i
+      JOIN pg_class ic ON ic.oid=i.indexrelid
+      JOIN pg_am am ON am.oid=ic.relam
+      WHERE i.indexrelid=to_regclass('canonical_garment_collections_owner_updated_idx')) AS owner_updated_index,
     (SELECT json_build_object(
       'valid',i.indisvalid,'ready',i.indisready,'unique',i.indisunique,'primary',i.indisprimary,
-      'keys',ARRAY(SELECT pg_get_indexdef(i.indexrelid,n,true) FROM generate_series(1,i.indnkeyatts) n ORDER BY n))
-      FROM pg_index i WHERE i.indexrelid=to_regclass('canonical_garment_collection_members_owner_idx')) AS members_owner_index,
+      'method',am.amname,'partial',i.indpred IS NOT NULL,'expressions',i.indexprs IS NOT NULL,
+      'columns',ARRAY(
+        SELECT a.attname
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum
+        WHERE k.ord <= i.indnkeyatts ORDER BY k.ord),
+      'options',ARRAY(
+        SELECT o.option
+        FROM unnest(i.indoption::smallint[]) WITH ORDINALITY AS o(option,ord)
+        WHERE o.ord <= i.indnkeyatts ORDER BY o.ord))
+      FROM pg_index i
+      JOIN pg_class ic ON ic.oid=i.indexrelid
+      JOIN pg_am am ON am.oid=ic.relam
+      WHERE i.indexrelid=to_regclass('canonical_garment_collection_members_owner_idx')) AS members_owner_index,
     (SELECT json_build_object(
       'valid',i.indisvalid,'ready',i.indisready,'unique',i.indisunique,'primary',i.indisprimary,
-      'keys',ARRAY(SELECT pg_get_indexdef(i.indexrelid,n,true) FROM generate_series(1,i.indnkeyatts) n ORDER BY n))
-      FROM pg_index i WHERE i.indexrelid=to_regclass('canonical_garment_collection_members_garment_idx')) AS members_garment_index`);
+      'method',am.amname,'partial',i.indpred IS NOT NULL,'expressions',i.indexprs IS NOT NULL,
+      'columns',ARRAY(
+        SELECT a.attname
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum
+        WHERE k.ord <= i.indnkeyatts ORDER BY k.ord),
+      'options',ARRAY(
+        SELECT o.option
+        FROM unnest(i.indoption::smallint[]) WITH ORDINALITY AS o(option,ord)
+        WHERE o.ord <= i.indnkeyatts ORDER BY o.ord))
+      FROM pg_index i
+      JOIN pg_class ic ON ic.oid=i.indexrelid
+      JOIN pg_am am ON am.oid=ic.relam
+      WHERE i.indexrelid=to_regclass('canonical_garment_collection_members_garment_idx')) AS members_garment_index`);
   const columns = await pool.query(`SELECT table_name,column_name,udt_name,is_nullable,column_default
     FROM information_schema.columns
     WHERE table_schema=current_schema()
@@ -132,12 +187,18 @@ function checkReady(actual: unknown, expected: string): boolean {
   return canonicalCheck(actual) === canonicalCheck(expected);
 }
 
-function indexReady(value: unknown, expectedKeys: readonly string[]): boolean {
+function exactArray<T>(actual: readonly T[], expected: readonly T[]): boolean {
+  return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+}
+
+function indexReady(value: unknown, expected: IndexContract): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const index = value as Record<string, unknown>;
   if (index.valid !== true || index.ready !== true || index.unique === true || index.primary === true) return false;
-  const keys = Array.isArray(index.keys) ? index.keys.map(String) : [];
-  return keys.length === expectedKeys.length && keys.every((key, indexPosition) => key === expectedKeys[indexPosition]);
+  if (index.method !== 'btree' || index.partial === true || index.expressions === true) return false;
+  const columns = Array.isArray(index.columns) ? index.columns.map(String) : [];
+  const options = Array.isArray(index.options) ? index.options.map(Number) : [];
+  return exactArray(columns, expected.columns) && exactArray(options, expected.options);
 }
 
 function schemaFailures(state: any): readonly string[] {
@@ -153,9 +214,9 @@ function schemaFailures(state: any): readonly string[] {
   if (!checkReady(state?.revision_check_definition, REVISION_CHECK)) failures.push('revision_check');
   if (!state?.collection_owner_fk) failures.push('collection_owner_fk');
   if (!state?.garment_owner_fk) failures.push('garment_owner_fk');
-  if (!indexReady(state?.owner_updated_index, ['tenant_id', 'user_id', 'updated_at DESC', 'collection_id'])) failures.push('owner_updated_index');
-  if (!indexReady(state?.members_owner_index, ['tenant_id', 'user_id', 'collection_id', 'created_at', 'garment_id'])) failures.push('members_owner_index');
-  if (!indexReady(state?.members_garment_index, ['tenant_id', 'user_id', 'garment_id', 'collection_id'])) failures.push('members_garment_index');
+  if (!indexReady(state?.owner_updated_index, OWNER_UPDATED_INDEX)) failures.push('owner_updated_index');
+  if (!indexReady(state?.members_owner_index, MEMBERS_OWNER_INDEX)) failures.push('members_owner_index');
+  if (!indexReady(state?.members_garment_index, MEMBERS_GARMENT_INDEX)) failures.push('members_garment_index');
   return Object.freeze(failures);
 }
 

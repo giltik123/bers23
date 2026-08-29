@@ -127,14 +127,30 @@ test('F2b schema repair is transactional and verifies defaults, operators, PK id
     await pool.query('CREATE INDEX canonical_garment_collections_owner_updated_idx ON canonical_garment_collections (collection_id)');
     await assert.rejects(() => checkGarmentSchema(pool), /Collection schema is incomplete/);
     await migrateGarmentSchema(pool);
-    const indexKeys = await pool.query(`SELECT ARRAY(
-      SELECT pg_get_indexdef(i.indexrelid,n,true)
-      FROM generate_series(1,i.indnkeyatts) n ORDER BY n
-    ) AS keys, i.indisvalid, i.indisready
-      FROM pg_index i WHERE i.indexrelid=to_regclass('canonical_garment_collections_owner_updated_idx')`);
-    assert.deepEqual(indexKeys.rows[0]?.keys, ['tenant_id', 'user_id', 'updated_at DESC', 'collection_id']);
-    assert.equal(indexKeys.rows[0]?.indisvalid, true);
-    assert.equal(indexKeys.rows[0]?.indisready, true);
+    const indexState = await pool.query(`SELECT
+      am.amname AS method,i.indisvalid,i.indisready,i.indpred IS NOT NULL AS partial,i.indexprs IS NOT NULL AS expressions,
+      ARRAY(
+        SELECT a.attname
+        FROM unnest(i.indkey::smallint[]) WITH ORDINALITY AS k(attnum,ord)
+        JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=k.attnum
+        WHERE k.ord <= i.indnkeyatts ORDER BY k.ord
+      ) AS columns,
+      ARRAY(
+        SELECT o.option
+        FROM unnest(i.indoption::smallint[]) WITH ORDINALITY AS o(option,ord)
+        WHERE o.ord <= i.indnkeyatts ORDER BY o.ord
+      ) AS options
+      FROM pg_index i
+      JOIN pg_class ic ON ic.oid=i.indexrelid
+      JOIN pg_am am ON am.oid=ic.relam
+      WHERE i.indexrelid=to_regclass('canonical_garment_collections_owner_updated_idx')`);
+    assert.equal(indexState.rows[0]?.method, 'btree');
+    assert.deepEqual(indexState.rows[0]?.columns, ['tenant_id', 'user_id', 'updated_at', 'collection_id']);
+    assert.deepEqual(indexState.rows[0]?.options?.map(Number), [0, 0, 3, 0]);
+    assert.equal(indexState.rows[0]?.indisvalid, true);
+    assert.equal(indexState.rows[0]?.indisready, true);
+    assert.equal(indexState.rows[0]?.partial, false);
+    assert.equal(indexState.rows[0]?.expressions, false);
 
     await pool.query('ALTER TABLE canonical_garment_collections DROP CONSTRAINT canonical_garment_collections_name_check');
     await pool.query(`ALTER TABLE canonical_garment_collections
