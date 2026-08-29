@@ -55,5 +55,6 @@ jobs:
             external: ['pg', 'sharp', 'node:*'],
           });
           EOF
+          cp -R server/core/artifacts/migrations .test-cache/project-source-lineage/migrations
       - name: Prove stale source-bound FINAL rejection and accepted replay
         run: node --test .test-cache/project-source-lineage/project-accept-source-lineage-postgres.test.mjs
