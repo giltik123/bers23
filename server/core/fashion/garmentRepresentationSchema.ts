@@ -70,7 +70,7 @@ const FKS = Object.freeze({
 } as const);
 const TRIGGERS = Object.freeze({
   canonical_garment_representations_immutable_guard: ['canonical_garment_representation_immutable_guard','e8e002603a8287f3510dd2867b2b47cb',false,31],
-  canonical_garment_representations_revocation_guard: ['canonical_garment_representation_revocation_guard','df38ff06a1ab32600802a472ce232055',false,19],
+  canonical_garment_representations_revocation_guard: ['canonical_garment_representation_revocation_guard','211bb5dfa04f421fa970dc2663809fbf',false,19],
   canonical_garment_representation_sources_immutable_guard: ['canonical_garment_representation_source_immutable_guard','012bdec735ac7064f4eec0965ab9d330',false,31],
   canonical_garment_representations_source_set_check: ['canonical_assert_garment_representation_sources','71ef7b462acdc5812c5e56a582d19673',true,21],
   canonical_garment_representation_sources_source_set_check: ['canonical_assert_garment_representation_sources','71ef7b462acdc5812c5e56a582d19673',true,21],
