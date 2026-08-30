@@ -12,11 +12,11 @@ import {
   GARMENT_MESH_WARP_MAX_DIMENSION,
   GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
   GARMENT_MESH_WARP_OPERATION,
-  GARMENT_MESH_WARP_STEP_ID,
   GARMENT_MESH_WARP_TOOL_ID,
   GARMENT_MESH_WARP_TOOL_VERSION,
   garmentMeshWarpRgba8,
 } from '../../../src/platform/creative/deterministic/GarmentMeshWarp.ts';
+import { GARMENT_MESH_WARP_STEP_ID } from '../../../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
 import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import type { ArtifactAuthority, StoredProjectImageEvidence } from '../artifacts/artifactAuthority.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
@@ -81,23 +81,28 @@ export type LocalGarmentMeshWarpServiceDependencies = Readonly<{
   now?: () => number;
 }>;
 
-type ResolvedPrepareEvidence = Readonly<{
+type WarpBinding = Readonly<{
+  garmentId: string;
+  viewId: string;
+  representationId: string;
+  anchorSetId: string;
+  projectImageStorageId: string;
+  projectImageSha256: string;
+  viewSha256: string;
+  representationSha256: string;
+  anchorPayloadSha256: string;
+  destinationMeshSha256: string;
+}>;
+
+type PlatformExecutionEvidence = Readonly<{
   project: StoredProjectImageEvidence;
+  binding: WarpBinding;
+}>;
+
+type ResolvedPrepareEvidence = PlatformExecutionEvidence & Readonly<{
   view: Awaited<ReturnType<ManagedInputAuthority['bindView']>>;
   representation: Awaited<ReturnType<ManagedInputAuthority['bindParametricRepresentation']>>;
   mesh: GarmentDestinationMesh;
-  binding: Readonly<{
-    garmentId: string;
-    viewId: string;
-    representationId: string;
-    anchorSetId: string;
-    projectImageStorageId: string;
-    projectImageSha256: string;
-    viewSha256: string;
-    representationSha256: string;
-    anchorPayloadSha256: string;
-    destinationMeshSha256: string;
-  }>;
 }>;
 
 /**
@@ -247,7 +252,6 @@ export class LocalGarmentMeshWarpExecutionService {
         artifact: admittedArtifact,
         latencyMs: result.metrics.latencyMs,
         memoryMb: result.metrics.memoryBytes === undefined ? undefined : result.metrics.memoryBytes / (1024 * 1024),
-        gpuMs: result.metrics.vramBytes === undefined ? undefined : 0,
       });
       if (outcome.status !== 'SUCCESS' || !outcome.verification.valid) {
         throw warpError(422, 'local_execution_verification_failed', 'Canonical garment mesh-warp execution did not pass workflow verification');
@@ -374,7 +378,7 @@ export class LocalGarmentMeshWarpExecutionService {
     executionId: string,
     scope: AuthenticatedScope & { projectId: string },
     command: LocalGarmentMeshWarpPrepareCommand,
-    evidence: ResolvedPrepareEvidence,
+    evidence: PlatformExecutionEvidence,
   ): void {
     const source = projectLineageArtifact(scope, command.sourceArtifactId, evidence.project);
     this.#platform.createExecution({
@@ -416,34 +420,7 @@ export class LocalGarmentMeshWarpExecutionService {
       anchorSetId: parameters.anchorSetId,
       clientRequestId,
     });
-    const evidence: ResolvedPrepareEvidence = Object.freeze({
-      project,
-      view: managed.view,
-      representation: managed.representation,
-      mesh: Object.freeze({
-        schemaId: 'BERS_GARMENT_DESTINATION_MESH_Q16_V1',
-        coordinateSpace: 'PROJECT_IMAGE_NORMALIZED_Q16',
-        sourcePointsQ16: delivered.sourcePointsQ16,
-        destinationPointsQ16: delivered.destinationPointsQ16,
-        triangles: delivered.triangles,
-        frameAnchors: Object.freeze(['leftShoulder', 'rightShoulder', 'leftHip', 'rightHip']) as never,
-        provenance: Object.freeze({
-          anchorSetId: parameters.anchorSetId,
-          projectId: ticket.scope.projectId,
-          projectImageStorageId: delivered.projectImageStorageId,
-          projectImageSha256: delivered.projectImageSha256,
-          projectImageWidth: delivered.outputWidth,
-          projectImageHeight: delivered.outputHeight,
-          anchorPayloadSha256: parameters.anchorPayloadSha256,
-          garmentId: parameters.garmentId,
-          representationId: parameters.representationId,
-          representationContentSha256: parameters.representationSha256,
-          garmentCategory: 'tops_tshirt',
-        }),
-        meshSha256: delivered.destinationMeshSha256,
-      }) as GarmentDestinationMesh,
-      binding: bindingFromParameters(parameters),
-    });
+    const evidence: PlatformExecutionEvidence = Object.freeze({ project, binding: bindingFromParameters(parameters) });
     this.createPlatformExecution(ticket.requestId, ticket.scope, command, evidence);
     const plan = await this.#platform.plan(ticket.requestId);
     assertReadyPlan(plan.status, plan.operations);
@@ -630,7 +607,7 @@ function projectLineageArtifact(scope: AuthenticatedScope & { projectId: string 
   });
 }
 
-function bindingFromParameters(p: GarmentMeshWarpTicketParameters): ResolvedPrepareEvidence['binding'] {
+function bindingFromParameters(p: GarmentMeshWarpTicketParameters): WarpBinding {
   return Object.freeze({
     garmentId: p.garmentId,
     viewId: p.viewId,
