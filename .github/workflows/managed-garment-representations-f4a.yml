@@ -1,0 +1,95 @@
+name: Fashion F4a Garment representation authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  managed-garment-representations-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: managed_garment_representations_f4a_test
+          POSTGRES_USER: managed_garment_representations_f4a_test
+          POSTGRES_PASSWORD: managed_garment_representations_f4a_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U managed_garment_representations_f4a_test -d managed_garment_representations_f4a_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://managed_garment_representations_f4a_test:managed_garment_representations_f4a_test@127.0.0.1:5432/managed_garment_representations_f4a_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before dependency or database work
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core server
+        run: npm run server:typecheck
+      - name: Build production Core and prove Fashion migrations 022 through 026 are packaged
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/022_managed_garments_and_initial_views.sql
+          test -f dist-server/migrations/023_managed_garment_wardrobe_metadata.sql
+          test -f dist-server/migrations/024_managed_garment_collections.sql
+          test -f dist-server/migrations/025_managed_outfits.sql
+          test -f dist-server/migrations/026_managed_garment_representations.sql
+      - name: Bundle F4a and predecessor PostgreSQL acceptance
+        run: |
+          mkdir -p .test-cache/managed-garment-representations-f4a/migrations
+          node --input-type=module - <<'NODE'
+          import { build } from 'esbuild';
+          const common = {
+            bundle: true,
+            platform: 'node',
+            format: 'esm',
+            target: 'node24',
+            external: ['pg', 'sharp', 'node:*'],
+          };
+          for (const [entry, output] of [
+            ['tests/managed-outfits-postgres.test.ts', 'managed-outfits-postgres.test.mjs'],
+            ['tests/managed-outfit-schema-hardening-postgres.test.ts', 'managed-outfit-schema-hardening-postgres.test.mjs'],
+            ['tests/managed-garment-collections-postgres.test.ts', 'managed-garment-collections-postgres.test.mjs'],
+            ['tests/managed-wardrobe-metadata-postgres.test.ts', 'managed-wardrobe-metadata-postgres.test.mjs'],
+            ['tests/managed-garment-multiview-postgres.test.ts', 'managed-garment-multiview-postgres.test.mjs'],
+            ['tests/managed-garment-representations-postgres.test.ts', 'managed-garment-representations-postgres.test.mjs'],
+            ['tests/managed-garment-representation-schema-hardening-postgres.test.ts', 'managed-garment-representation-schema-hardening-postgres.test.mjs'],
+          ]) {
+            await build({ ...common, entryPoints: [entry], outfile: `.test-cache/managed-garment-representations-f4a/${output}` });
+          }
+          NODE
+          cp server/core/fashion/migrations/022_managed_garments_and_initial_views.sql .test-cache/managed-garment-representations-f4a/migrations/
+          cp server/core/fashion/migrations/023_managed_garment_wardrobe_metadata.sql .test-cache/managed-garment-representations-f4a/migrations/
+          cp server/core/fashion/migrations/024_managed_garment_collections.sql .test-cache/managed-garment-representations-f4a/migrations/
+          cp server/core/fashion/migrations/025_managed_outfits.sql .test-cache/managed-garment-representations-f4a/migrations/
+          cp server/core/fashion/migrations/026_managed_garment_representations.sql .test-cache/managed-garment-representations-f4a/migrations/
+      - name: Preserve F3a ordered Outfit aggregate and role/tombstone semantics
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-outfits-postgres.test.mjs
+      - name: Preserve F3a schema hardening and migration rollback
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-outfit-schema-hardening-postgres.test.mjs
+      - name: Preserve F2b Collection authority
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-garment-collections-postgres.test.mjs
+      - name: Preserve F2a Wardrobe lifecycle and classification authority
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-wardrobe-metadata-postgres.test.mjs
+      - name: Preserve F1b immutable managed multi-view authority
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-garment-multiview-postgres.test.mjs
+      - name: Prove F4a immutable evidence-backed representation admission and revocation
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-garment-representations-postgres.test.mjs
+      - name: Prove F4a fail-closed schema repair and rollback
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-garment-representation-schema-hardening-postgres.test.mjs
+      - name: Preserve zero-object Fashion navigation lockdown
+        run: node --test tests/editor-zero-object-navigation.test.mjs
