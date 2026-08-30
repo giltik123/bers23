@@ -45,14 +45,27 @@ jobs:
         run: |
           npm run db:migrate:transactions
           npm run db:check:transactions
-      - name: Bundle PostgreSQL F4b.4 execution vertical
+      - name: Bundle PostgreSQL F4b.4 execution and closed-composition verticals
         run: |
-          mkdir -p .test-cache/fashion-f4b4-service-postgres
-          npx esbuild tests/garment-mesh-warp-service-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-service-postgres/service.mjs --external:node:* --external:pg --external:sharp
+          runtime=.test-cache/fashion-f4b4-service-postgres
+          mkdir -p "$runtime/migrations"
+          mapfile -t migration_files < <(find server -type f -path '*/migrations/*.sql' -print | sort)
+          test "${#migration_files[@]}" -gt 0
+          duplicates="$(printf '%s\n' "${migration_files[@]}" | xargs -n1 basename | sort | uniq -d)"
+          if [[ -n "$duplicates" ]]; then
+            echo "::error::Cannot stage bundled schema migrations because migration basenames collide:"
+            printf '%s\n' "$duplicates"
+            exit 1
+          fi
+          for source in "${migration_files[@]}"; do
+            cp "$source" "$runtime/migrations/$(basename "$source")"
+          done
+          npx esbuild tests/garment-mesh-warp-service-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/service.mjs" --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-production-composition-closed.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/composition-closed.mjs" --external:node:* --external:pg --external:sharp
       - name: Prove durable ticket, quarantine, Core recompute and immutable Fashion layer
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-service-postgres/service.mjs
       - name: Prove production Core is composed but policy remains fail-closed without side effects
-        run: node --experimental-strip-types --test --test-concurrency=1 tests/garment-mesh-warp-production-composition-closed.test.ts
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-service-postgres/composition-closed.mjs
       - name: Keep production policy closed until final admission flip
         run: |
           grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
