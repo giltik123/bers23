@@ -16,7 +16,7 @@ import { LocalGarmentMeshWarpExecutionService, type LocalGarmentMeshWarpResource
 import type { PostgresLocalExecutionUploadStore } from '../localExecution/PostgresLocalExecutionUploadStore.ts';
 
 export type ProductionGarmentMeshWarpCompositionInput = Readonly<{
-  nodeEnv: 'development' | 'test' | 'production';
+  nodeEnv: string;
   pool: Pool;
   canonical: CreativeExecutionPlatformRuntimeDependencies;
   artifacts: ArtifactAuthority;
@@ -63,7 +63,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
   return Object.freeze({ execution, inputDelivery, managedInputs, garments, wardrobe, representations, bodyAnchors, layers });
 }
 
-async function ensureFashionWarpSchemas(pool: Pool, nodeEnv: ProductionGarmentMeshWarpCompositionInput['nodeEnv']): Promise<void> {
+async function ensureFashionWarpSchemas(pool: Pool, nodeEnv: string): Promise<void> {
   if (nodeEnv === 'test') {
     await migrateGarmentSchema(pool);
     await migrateProjectBodyAnchorSchema(pool);
