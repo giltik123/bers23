@@ -3,6 +3,7 @@ import {
   GARMENT_MESH_WARP_MAX_DIMENSION,
   GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
   GARMENT_MESH_WARP_MAX_POINTS,
+  GARMENT_MESH_WARP_MAX_RASTER_WORK,
   GARMENT_MESH_WARP_MAX_TRIANGLES,
 } from './GarmentMeshWarpIdentity.js';
 
@@ -14,6 +15,7 @@ export {
   GARMENT_MESH_WARP_FIXED_POINT_BITS,
   GARMENT_MESH_WARP_MAX_DIMENSION,
   GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
+  GARMENT_MESH_WARP_MAX_RASTER_WORK,
   GARMENT_MESH_WARP_MAX_POINTS,
   GARMENT_MESH_WARP_MAX_TRIANGLES,
   GARMENT_MESH_WARP_PRODUCTION_ADMISSION,
@@ -95,6 +97,9 @@ export function normalizeGarmentMeshWarpSpec(value: GarmentMeshWarpSpec): Normal
  * - source/destination mesh coordinates are normalized Q16 values in [0,1];
  * - destination triangles rasterize in declared order; the first triangle owns
  *   a shared/overlapping output pixel, making edge ownership explicit;
+ * - aggregate triangle bounding-box raster work is preflight-bounded before
+ *   allocating output bytes, preventing hostile overlapping topology from
+ *   multiplying a bounded image into unbounded CPU work;
  * - triangle inclusion and barycentric interpolation use safe-integer edge math;
  * - source sampling uses Q16 bilinear interpolation in premultiplied-alpha space;
  * - if weighted alpha is zero, hidden RGB is straight-alpha bilinear instead;
@@ -121,12 +126,13 @@ export function garmentMeshWarpRgba8(
     isFullFrameIdentityMesh(normalized)
   ) return new Uint8ClampedArray(sourceRgba);
 
+  assertRasterWorkWithinLimit(normalized);
   const outputPixels = normalized.outputWidth * normalized.outputHeight;
   const output = new Uint8ClampedArray(outputPixels * 4);
   const claimed = new Uint8Array(outputPixels);
 
   for (const triangle of normalized.triangles) {
-    let i0 = triangle[0]; let i1 = triangle[1]; let i2 = triangle[2];
+    const i0 = triangle[0]; const i1 = triangle[1]; const i2 = triangle[2];
     let d0 = normalized.destinationPointsQ16[i0];
     let d1 = normalized.destinationPointsQ16[i1];
     let d2 = normalized.destinationPointsQ16[i2];
@@ -135,7 +141,6 @@ export function garmentMeshWarpRgba8(
     let s2 = normalized.sourcePointsQ16[i2];
     let area = orient(d0, d1, d2);
     if (area < 0) {
-      [i1, i2] = [i2, i1];
       [d1, d2] = [d2, d1];
       [s1, s2] = [s2, s1];
       area = -area;
@@ -218,6 +223,27 @@ function trianglePixelBounds(
   });
 }
 
+function assertRasterWorkWithinLimit(spec: NormalizedWarp): void {
+  let work = 0;
+  for (const triangle of spec.triangles) {
+    const bounds = trianglePixelBounds(
+      spec.destinationPointsQ16[triangle[0]],
+      spec.destinationPointsQ16[triangle[1]],
+      spec.destinationPointsQ16[triangle[2]],
+      spec.outputWidth,
+      spec.outputHeight,
+    );
+    const width = bounds.maxX - bounds.minX + 1;
+    const height = bounds.maxY - bounds.minY + 1;
+    const triangleWork = width * height;
+    if (!Number.isSafeInteger(triangleWork) || triangleWork < 1) throw new Error('Garment mesh warp raster work estimate is invalid');
+    work += triangleWork;
+    if (!Number.isSafeInteger(work) || work > GARMENT_MESH_WARP_MAX_RASTER_WORK) {
+      throw new Error(`Garment mesh warp raster work exceeds ${GARMENT_MESH_WARP_MAX_RASTER_WORK} pixel-triangle checks`);
+    }
+  }
+}
+
 function floorNormalizedQ16ToPixel(value: number, size: number): number {
   if (size === 1) return 0;
   return Math.floor((value * (size - 1)) / FIXED_ONE);
@@ -286,7 +312,7 @@ function roundHalfUpDiv(numerator: number, denominator: number): number {
   if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator) || numerator < 0 || denominator < 1) throw new Error('Garment mesh warp rounding operands are invalid');
   const doubled = numerator * 2;
   const divisor = denominator * 2;
-  if (!Number.isSafeInteger(doubled) || !Number.isSafeInteger(divisor)) throw new Error('Garment mesh warp rounding exceeded safe integer range');
+  if (!Number.isSafeInteger(doubled) || !Number.isSafeInteger(divisor) || !Number.isSafeInteger(doubled + denominator)) throw new Error('Garment mesh warp rounding exceeded safe integer range');
   return Math.floor((doubled + denominator) / divisor);
 }
 
