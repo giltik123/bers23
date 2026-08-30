@@ -22,7 +22,7 @@ const KEYS = Object.freeze(new Map([
 const FKS = Object.freeze(new Map([
   ['canonical_fashion_garment_warp_layers_garment_fkey','FOREIGN KEY (garment_id, tenant_id, user_id) REFERENCES canonical_garments(garment_id, tenant_id, user_id) ON DELETE RESTRICT'],
   ['canonical_fashion_garment_warp_layers_view_evidence_fkey','FOREIGN KEY (view_id, garment_id, tenant_id, user_id, view_content_sha256) REFERENCES canonical_garment_views(view_id, garment_id, tenant_id, user_id, content_sha256) ON DELETE RESTRICT'],
-  ['canonical_fashion_garment_warp_layers_representation_evidence_fkey','FOREIGN KEY (representation_id, garment_id, tenant_id, user_id, representation_content_sha256) REFERENCES canonical_garment_representations(representation_id, garment_id, tenant_id, user_id, content_sha256) ON DELETE RESTRICT'],
+  ['canonical_fashion_garment_warp_layers_rep_evidence_fkey','FOREIGN KEY (representation_id, garment_id, tenant_id, user_id, representation_content_sha256) REFERENCES canonical_garment_representations(representation_id, garment_id, tenant_id, user_id, content_sha256) ON DELETE RESTRICT'],
   ['canonical_fashion_garment_warp_layers_anchor_evidence_fkey','FOREIGN KEY (anchor_set_id, project_id, tenant_id, user_id, anchor_payload_sha256) REFERENCES canonical_project_body_anchor_sets(anchor_set_id, project_id, tenant_id, user_id, anchor_payload_sha256) ON DELETE RESTRICT'],
   ['canonical_fashion_garment_warp_layers_project_image_fkey','FOREIGN KEY (project_image_storage_id) REFERENCES canonical_image_artifacts(storage_id) ON DELETE RESTRICT'],
 ]));
