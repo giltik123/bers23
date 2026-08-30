@@ -1,0 +1,86 @@
+name: Fashion F4b.2 managed Garment local-execution input authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  managed-garment-local-input-authority:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_f4b2_managed_input_test
+          POSTGRES_USER: fashion_f4b2_managed_input_test
+          POSTGRES_PASSWORD: fashion_f4b2_managed_input_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fashion_f4b2_managed_input_test -d fashion_f4b2_managed_input_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_f4b2_managed_input_test:fashion_f4b2_managed_input_test@127.0.0.1:5432/fashion_f4b2_managed_input_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before dependency or database work
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Build production Core without adding a Fashion local-execution migration
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/027_garment_representation_revocation_lifecycle.sql
+          test ! -f server/core/artifacts/migrations/017_fashion_managed_inputs.sql
+      - name: Bundle F4b.2 contract and static authority boundaries
+        run: |
+          mkdir -p .test-cache/fashion-managed-input-f4b2
+          npx esbuild \
+            tests/managed-garment-local-execution-input-contract.test.ts \
+            tests/managed-garment-local-execution-boundary.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/fashion-managed-input-f4b2 \
+            --external:node:*
+      - name: Prove backward-compatible v2 schema and Project/Garment authority separation
+        run: node --test .test-cache/fashion-managed-input-f4b2/*.js
+      - name: Apply and verify existing canonical local-execution schema
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Preserve durable v2 local-execution replay authority
+        run: node --experimental-strip-types --test server/core/localExecution/PostgresLocalExecutionLedgerV2.integration.test.mjs
+      - name: Bundle PostgreSQL managed Garment binding acceptance
+        run: |
+          npx esbuild tests/managed-garment-local-execution-input-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-managed-input-f4b2/managed-garment-local-execution-input-postgres.test.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove owner scope restart replay revocation deletion hash format and provenance rejection
+        run: node --test --test-concurrency=1 .test-cache/fashion-managed-input-f4b2/managed-garment-local-execution-input-postgres.test.mjs
+      - name: Prove F4b.2 grants no warp execution provider Billing or Try-On authority
+        run: |
+          ! grep -R -E 'garment-mesh-warp|GARMENT_MESH_WARP' \
+            server/core/localExecution/productionLocalExecutorPolicy.ts \
+            server/core/providers/productionExecutionCapabilities.ts \
+            server/core/providers/productionExecutionRoute.ts \
+            server/core/providers/productionTargetSelection.ts \
+            src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -E 'managedInputs|GARMENT_VIEW|GARMENT_REPRESENTATION' \
+            server/core/localExecution/LocalExecutionInputAdmission.ts \
+            server/core/localExecution/LocalExecutionInputDeliveryService.ts

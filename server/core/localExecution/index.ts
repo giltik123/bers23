@@ -12,4 +12,5 @@ export * from './LocalOrthogonalTransformExecutionService.ts';
 export * from './OrthogonalTransformInputDeliveryService.ts';
 export * from './LocalSuperResolutionExecutionService.ts';
 export * from './LocalExecutionInputDeliveryService.ts';
+export * from './ManagedGarmentLocalExecutionInputAuthority.ts';
 export * from './localExecutionLedgerSchema.ts';
