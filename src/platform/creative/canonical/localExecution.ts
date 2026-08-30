@@ -14,12 +14,66 @@ export type LocalExecutionExecutorBinding = LocalExecutionModelExecutorBinding |
 export type LocalExecutionParameters = Readonly<Record<string, unknown>>;
 export type LocalExecutionRuntime = RuntimeKind | 'BROWSER_JS';
 
+/** Canonical Project Artifact input. This v1/v2 surface remains Project-only. */
 export type LocalExecutionInputBinding = Readonly<{
   artifactId: string;
   kind: string;
   role?: CreativeArtifactRole;
   sha256?: string;
 }>;
+
+/** Server-owned managed Garment image input. Never aliases a Project Artifact ID. */
+export type LocalExecutionManagedGarmentViewInputBinding = Readonly<{
+  authority: 'MANAGED_GARMENT';
+  kind: 'GARMENT_VIEW';
+  garmentId: string;
+  viewId: string;
+  contentSha256: string;
+  contentType: 'image/png';
+  encoding: 'PNG_RGBA8_LOSSLESS';
+  width: number;
+  height: number;
+}>;
+
+export type LocalExecutionManagedGarmentParametricRepresentationInputBinding = Readonly<{
+  authority: 'MANAGED_GARMENT';
+  kind: 'GARMENT_REPRESENTATION';
+  garmentId: string;
+  representationId: string;
+  tier: 'PARAMETRIC';
+  format: 'BERS_PARAMETRIC_V1';
+  contentType: 'application/vnd.bers.garment-parametric+json';
+  contentSha256: string;
+  basisViewId: string;
+  generatorId: string;
+  generatorVersion: string;
+  validatorId: string;
+  validatorVersion: string;
+}>;
+
+export type LocalExecutionManagedGarmentFull3dRepresentationInputBinding = Readonly<{
+  authority: 'MANAGED_GARMENT';
+  kind: 'GARMENT_REPRESENTATION';
+  garmentId: string;
+  representationId: string;
+  tier: 'FULL_3D';
+  format: 'GLB_2_0';
+  contentType: 'model/gltf-binary';
+  contentSha256: string;
+  basisViewId: string;
+  generatorId: string;
+  generatorVersion: string;
+  validatorId: string;
+  validatorVersion: string;
+}>;
+
+export type LocalExecutionManagedGarmentRepresentationInputBinding =
+  | LocalExecutionManagedGarmentParametricRepresentationInputBinding
+  | LocalExecutionManagedGarmentFull3dRepresentationInputBinding;
+
+export type LocalExecutionManagedGarmentInputBinding =
+  | LocalExecutionManagedGarmentViewInputBinding
+  | LocalExecutionManagedGarmentRepresentationInputBinding;
 
 export type LocalExecutionExpectedOutput = Readonly<{
   kind: string;
@@ -45,8 +99,14 @@ type LocalExecutionTicketIssueBase = Readonly<{
 /** Existing model-only v1 issuance contract. */
 export type LocalExecutionTicketIssueRequest = LocalExecutionTicketIssueBase;
 
-/** Explicit v2 issuance contract for model OR deterministic-tool executors. */
-export type LocalExecutionTicketIssueRequestV2 = LocalExecutionTicketIssueBase & Readonly<{ ticketVersion: typeof LOCAL_EXECUTION_TICKET_V2_VERSION }>;
+/**
+ * Explicit v2 issuance contract for model OR deterministic-tool executors.
+ * `managedInputs` is a separate authority namespace; `inputs` remains Project Artifact-only.
+ */
+export type LocalExecutionTicketIssueRequestV2 = LocalExecutionTicketIssueBase & Readonly<{
+  ticketVersion: typeof LOCAL_EXECUTION_TICKET_V2_VERSION;
+  managedInputs?: readonly LocalExecutionManagedGarmentInputBinding[];
+}>;
 
 export interface LocalExecutionTicketIssuerPort {
   issue(input: LocalExecutionTicketIssueRequest): LocalExecutionTicket | Promise<LocalExecutionTicket>;
@@ -89,7 +149,7 @@ export type LocalExecutionTicket = Readonly<{
   }>;
 }>;
 
-/** V2 keeps the same canonical authority envelope but generalizes executor identity. */
+/** V2 keeps Project inputs intact and adds an optional, explicitly separate managed authority namespace. */
 export type LocalExecutionTicketV2 = Readonly<{
   ticketId: string;
   version: typeof LOCAL_EXECUTION_TICKET_V2_VERSION;
@@ -106,6 +166,7 @@ export type LocalExecutionTicketV2 = Readonly<{
   }>;
   scope: Scope;
   inputs: readonly LocalExecutionInputBinding[];
+  managedInputs?: readonly LocalExecutionManagedGarmentInputBinding[];
   expectedOutputs: readonly LocalExecutionExpectedOutput[];
   allowedExecutors: readonly LocalExecutionExecutorBinding[];
   policy: LocalExecutionPolicy;
