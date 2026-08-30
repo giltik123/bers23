@@ -41,7 +41,7 @@ CREATE TABLE canonical_fashion_garment_warp_layers (
     REFERENCES canonical_garments (garment_id,tenant_id,user_id) ON DELETE RESTRICT,
   CONSTRAINT canonical_fashion_garment_warp_layers_view_evidence_fkey FOREIGN KEY (view_id,garment_id,tenant_id,user_id,view_content_sha256)
     REFERENCES canonical_garment_views (view_id,garment_id,tenant_id,user_id,content_sha256) ON DELETE RESTRICT,
-  CONSTRAINT canonical_fashion_garment_warp_layers_representation_evidence_fkey FOREIGN KEY (representation_id,garment_id,tenant_id,user_id,representation_content_sha256)
+  CONSTRAINT canonical_fashion_garment_warp_layers_rep_evidence_fkey FOREIGN KEY (representation_id,garment_id,tenant_id,user_id,representation_content_sha256)
     REFERENCES canonical_garment_representations (representation_id,garment_id,tenant_id,user_id,content_sha256) ON DELETE RESTRICT,
   CONSTRAINT canonical_fashion_garment_warp_layers_anchor_evidence_fkey FOREIGN KEY (anchor_set_id,project_id,tenant_id,user_id,anchor_payload_sha256)
     REFERENCES canonical_project_body_anchor_sets (anchor_set_id,project_id,tenant_id,user_id,anchor_payload_sha256) ON DELETE RESTRICT,
