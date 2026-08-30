@@ -19,6 +19,7 @@ import type { LocalExecutionFinalization, LocalExecutionClaimInput } from './Loc
 import { localExecutionResultReplayDigest } from './localExecutionReplayDigest.ts';
 
 const SHA256 = /^[a-f0-9]{64}$/i;
+const MANAGED_SHA256 = /^[a-f0-9]{64}$/;
 const LOWER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_MANAGED_INPUTS = 16;
 const MODEL_RUNTIMES = new Set(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']);
@@ -27,6 +28,7 @@ const ACCELERATORS = new Set(['webgpu', 'wasm', 'cuda', 'dml', 'coreml', 'cpu', 
 const POLICIES = new Set(['LOCAL_SELECTED', 'LOCAL_ONLY']);
 const FORBIDDEN_RESULT_KEYS = new Set([
   'artifactId','canonicalArtifactId','canonicalResultArtifactId','tenantId','projectId','userId',
+  'managedInputs','garmentId','viewId','representationId',
   'credits','billing','billingStatus','transactionStatus','provider','providerId','verification','verificationPassed','serverVerification',
 ]);
 
@@ -178,7 +180,7 @@ function assertTicket(ticket: AnyLocalExecutionTicket): void {
 
 function assertManagedInput(input: LocalExecutionManagedGarmentInputBinding): void {
   if (!input || typeof input !== 'object' || Array.isArray(input) || input.authority !== 'MANAGED_GARMENT') throw new Error('Invalid managed Garment input authority');
-  if (!LOWER_UUID.test(input.garmentId) || !SHA256.test(input.contentSha256)) throw new Error('Invalid managed Garment input identity');
+  if (!LOWER_UUID.test(input.garmentId) || !MANAGED_SHA256.test(input.contentSha256)) throw new Error('Invalid managed Garment input identity');
   if (input.kind === 'GARMENT_VIEW') {
     assertExactKeys(input, ['authority','kind','garmentId','viewId','contentSha256','contentType','encoding','width','height']);
     if (!LOWER_UUID.test(input.viewId) || input.contentType !== 'image/png' || input.encoding !== 'PNG_RGBA8_LOSSLESS') throw new Error('Invalid managed Garment view binding');
