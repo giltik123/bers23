@@ -6,8 +6,7 @@ import { SignedArtifactAuthority } from '../server/core/artifacts/signedArtifact
 
 const scope = Object.freeze({ tenantId: 'tenant-evidence', userId: 'user-evidence', projectId: 'project-evidence' });
 const bytes = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
-
-function authority(row: Readonly<Record<string, unknown>> | undefined = Object.freeze({
+const defaultRow = Object.freeze({
   storageId: 'storage-original',
   projectId: scope.projectId,
   role: 'ORIGINAL',
@@ -17,7 +16,11 @@ function authority(row: Readonly<Record<string, unknown>> | undefined = Object.f
   encoding: 'PNG_RGBA8_LOSSLESS',
   contentType: 'image/png',
   bytes,
-})) {
+});
+
+type EvidenceRow = Readonly<Record<string, unknown>>;
+
+function authority(row: EvidenceRow | undefined) {
   const external = new SignedArtifactAuthority('stored-image-evidence-secret', ['example.invalid'], () => 1_000);
   const images = Object.freeze({ loadSource: async () => row });
   const masks = Object.freeze({ load: async () => undefined });
@@ -28,7 +31,7 @@ function authority(row: Readonly<Record<string, unknown>> | undefined = Object.f
 }
 
 test('ArtifactAuthority resolves exact stored ORIGINAL evidence including SHA over canonical bytes', async () => {
-  const { external, value } = authority();
+  const { external, value } = authority(defaultRow);
   const artifactId = external.issueStoredOriginal('storage-original', scope);
   const evidence = await value.resolveStoredImageEvidence(scope, artifactId);
   assert.deepEqual(evidence, {
