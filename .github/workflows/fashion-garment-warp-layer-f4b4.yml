@@ -1,0 +1,58 @@
+name: Fashion F4b.4 immutable garment warp-layer authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  garment-warp-layer:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_f4b4_warp_test
+          POSTGRES_USER: fashion_f4b4_warp_test
+          POSTGRES_PASSWORD: fashion_f4b4_warp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fashion_f4b4_warp_test -d fashion_f4b4_warp_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_f4b4_warp_test:fashion_f4b4_warp_test@127.0.0.1:5432/fashion_f4b4_warp_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build production Core
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/028_project_body_anchor_sets.sql
+          test -f dist-server/migrations/029_fashion_garment_warp_layers.sql
+      - name: Apply canonical predecessor schemas
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Bundle PostgreSQL intermediate-layer proof
+        run: |
+          mkdir -p .test-cache/fashion-f4b4-layer
+          npx esbuild tests/fashion-garment-warp-layer-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-layer/test.mjs --external:node:* --external:pg --external:sharp
+      - name: Prove exact evidence replay immutability and non-FINAL boundary
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-layer/test.mjs
+      - name: Prove pixel execution is still NOT_ADMITTED at this intermediate checkpoint
+        run: |
+          grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
+          ! grep -R -E 'garment-mesh-warp|GARMENT_MESH_WARP' server/core/localExecution/productionLocalExecutorPolicy.ts server/core/providers/productionExecutionCapabilities.ts server/core/providers/productionExecutionRoute.ts server/core/providers/productionTargetSelection.ts src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
