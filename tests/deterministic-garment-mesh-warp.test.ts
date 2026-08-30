@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   GARMENT_MESH_WARP_FIXED_POINT_ONE,
   GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
+  GARMENT_MESH_WARP_MAX_RASTER_WORK,
   GARMENT_MESH_WARP_PRODUCTION_ADMISSION,
   garmentMeshWarpRgba8,
   normalizeGarmentMeshWarpSpec,
@@ -114,6 +115,27 @@ test('bilinear garment sampling uses premultiplied alpha and preserves hidden RG
     outputHeight: 2,
   });
   assert.deepEqual([...output.slice(0, 4)], [75, 80, 85, 0]);
+});
+
+test('aggregate triangle bounding-box work is rejected before hostile overlap can multiply CPU cost', () => {
+  const trianglePoints = Object.freeze([
+    Object.freeze([0, 0] as const),
+    Object.freeze([ONE, 0] as const),
+    Object.freeze([0, ONE] as const),
+  ]);
+  const repeated = Object.freeze(Array.from({ length: 9 }, () => Object.freeze([0, 1, 2] as const)));
+  const spec = {
+    sourcePointsQ16: trianglePoints,
+    destinationPointsQ16: trianglePoints,
+    triangles: repeated,
+    outputWidth: 4096,
+    outputHeight: 2048,
+  } as const;
+  assert.equal(4096 * 2048, GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS);
+  assert.throws(
+    () => garmentMeshWarpRgba8(new Uint8ClampedArray([1, 2, 3, 255]), 1, 1, spec),
+    new RegExp(`raster work exceeds ${GARMENT_MESH_WARP_MAX_RASTER_WORK}`),
+  );
 });
 
 test('garment mesh warp rejects malformed topology geometry dimensions and source bytes', () => {
