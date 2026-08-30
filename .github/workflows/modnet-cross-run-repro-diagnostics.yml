@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
     paths:
       - "scripts/fingerprint-onnx-repro.py"
+      - "scripts/compare-onnx-repro-reports.py"
       - ".github/workflows/modnet-cross-run-repro-diagnostics.yml"
       - "scripts/build-modnet-portrait-matting-release.py"
       - "src/platform/creative/local-ai/models/portrait-matting.manifest.json"
@@ -15,10 +16,15 @@ permissions:
 
 jobs:
   fingerprint:
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [a, b, c]
     runs-on: ubuntu-24.04
     env:
       MODNET_CHECKPOINT_SHA256: 7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8
       MODNET_CHECKPOINT_SIZE: 26255603
+      MODNET_DIAGNOSTIC_REPLICA: ${{ matrix.replica }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,6 +63,7 @@ jobs:
           test -n "$cpu_model"
           printf 'MODNET_DIAGNOSTIC_CANDIDATE_SHA=%s\n' "$candidate_sha" >> "$GITHUB_ENV"
           printf 'MODNET_DIAGNOSTIC_CPU_MODEL=%s\n' "$cpu_model" >> "$GITHUB_ENV"
+          echo "MODNET_DIAGNOSTIC_REPLICA=${MODNET_DIAGNOSTIC_REPLICA}"
           echo "RUNNER_ARCH=${RUNNER_ARCH}"
           echo "MODNET_DIAGNOSTIC_CANDIDATE_SHA=${candidate_sha}"
           echo "MODNET_DIAGNOSTIC_CPU_MODEL=${cpu_model}"
@@ -95,7 +102,7 @@ jobs:
           python scripts/fingerprint-onnx-repro.py \
             .test-cache/modnet-cross-run/first.onnx \
             .test-cache/modnet-cross-run/second.onnx \
-            --output .test-cache/modnet-cross-run/fingerprint.json | tee .test-cache/modnet-cross-run/fingerprint.log
+            --output .test-cache/modnet-cross-run/fingerprint.json > .test-cache/modnet-cross-run/fingerprint.log
           python - <<'PY'
           import json, os
           from pathlib import Path
@@ -106,6 +113,7 @@ jobs:
               raise SystemExit('within-run MODNet export lost byte reproducibility')
           sample=report['samples'][0]
           fields={
+              'replica': os.environ['MODNET_DIAGNOSTIC_REPLICA'],
               'candidate': os.environ['MODNET_DIAGNOSTIC_CANDIDATE_SHA'],
               'arch': os.environ.get('RUNNER_ARCH','unknown'),
               'cpu': os.environ['MODNET_DIAGNOSTIC_CPU_MODEL'].replace('|','/'),
@@ -119,17 +127,33 @@ jobs:
           line='MODNET_REPRO_FINGERPRINT|'+'|'.join(f'{key}={value}' for key,value in fields.items())
           print(line)
           Path('.test-cache/modnet-cross-run/fingerprint-summary.txt').write_text(line+'\n',encoding='utf-8')
+          Path('.test-cache/modnet-cross-run/runner-metadata.json').write_text(json.dumps({
+              'replica': fields['replica'],
+              'candidate': fields['candidate'],
+              'arch': fields['arch'],
+              'cpu': fields['cpu'],
+          }, sort_keys=True)+'\n', encoding='utf-8')
           PY
-      - name: Publish diagnostic summary
+      - name: Upload fingerprint metadata only
+        uses: actions/upload-artifact@v4
+        with:
+          name: modnet-repro-fingerprint-${{ matrix.replica }}
+          path: |
+            .test-cache/modnet-cross-run/fingerprint.json
+            .test-cache/modnet-cross-run/fingerprint-summary.txt
+            .test-cache/modnet-cross-run/runner-metadata.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Publish runner diagnostic summary
         if: always()
         run: |
           {
-            echo '## MODNet cross-run diagnostic'
+            echo '## MODNet hosted-runner diagnostic'
             echo
+            echo "- Replica: \`${MODNET_DIAGNOSTIC_REPLICA}\`"
             echo '- Authority: `DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY`'
             echo '- No manifest/pin/release identity mutation is performed.'
-            echo '- The model is not uploaded as a workflow artifact.'
-            echo '- Compare `MODNET_REPRO_FINGERPRINT` lines across independent hosted runs; Azure region remains visible in the hosted-runner provisioning log.'
+            echo '- ONNX model bytes are never uploaded as a workflow artifact.'
             if test -f .test-cache/modnet-cross-run/fingerprint-summary.txt; then
               echo
               echo '```text'
@@ -138,5 +162,77 @@ jobs:
             else
               echo
               echo 'Fingerprint summary unavailable because an earlier diagnostic step failed.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  compare-hosted-runners:
+    needs: fingerprint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact diagnostic candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Download fingerprint metadata
+        uses: actions/download-artifact@v4
+        with:
+          pattern: modnet-repro-fingerprint-*
+          path: .test-cache/modnet-cross-run/reports
+      - name: Compare independent hosted runners
+        run: |
+          set -euo pipefail
+          mapfile -t reports < <(find .test-cache/modnet-cross-run/reports -type f -name fingerprint.json -print | sort)
+          test "${#reports[@]}" -eq 3
+          python scripts/compare-onnx-repro-reports.py \
+            "${reports[@]}" \
+            --output .test-cache/modnet-cross-run/cross-run-comparison.json \
+            > .test-cache/modnet-cross-run/cross-run-comparison.log
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report=json.load(open('.test-cache/modnet-cross-run/cross-run-comparison.json',encoding='utf-8'))
+          comparison=report['comparison']
+          raws=','.join(sample['rawSha256'] for sample in report['samples'])
+          line=(
+              'MODNET_CROSS_RUN_CLASSIFICATION|'
+              f"classification={comparison['classification']}|"
+              f"raw={raws}|"
+              f"initializerDriftCount={report['initializerDrift']['changedCount']}"
+          )
+          print(line)
+          Path('.test-cache/modnet-cross-run/cross-run-summary.txt').write_text(line+'\n',encoding='utf-8')
+          PY
+      - name: Publish cross-run classification
+        if: always()
+        run: |
+          {
+            echo '## MODNet cross-run classification'
+            echo
+            echo '- Authority: `DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY`'
+            echo '- Three independent hosted jobs are compared after each proves two-export byte identity.'
+            echo '- Only fingerprint metadata crosses job boundaries; ONNX model bytes are never uploaded.'
+            echo '- Cross-run divergence is evidence, not permission to repin or promote.'
+            if test -f .test-cache/modnet-cross-run/cross-run-summary.txt; then
+              echo
+              echo '```text'
+              cat .test-cache/modnet-cross-run/cross-run-summary.txt
+              echo '```'
+              echo
+              echo '<details><summary>Full metadata-only comparison</summary>'
+              echo
+              echo '```json'
+              cat .test-cache/modnet-cross-run/cross-run-comparison.json
+              echo '```'
+              echo '</details>'
+            else
+              echo
+              echo 'Cross-run comparison unavailable because an earlier diagnostic step failed.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
