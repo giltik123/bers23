@@ -1,0 +1,76 @@
+name: Fashion F4a.1 strict GLB execution admission
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  strict-glb-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: managed_garment_glb_f4a1_test
+          POSTGRES_USER: managed_garment_glb_f4a1_test
+          POSTGRES_PASSWORD: managed_garment_glb_f4a1_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U managed_garment_glb_f4a1_test -d managed_garment_glb_f4a1_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://managed_garment_glb_f4a1_test:managed_garment_glb_f4a1_test@127.0.0.1:5432/managed_garment_glb_f4a1_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core server
+        run: npm run server:typecheck
+      - name: Build production Core and prove Fashion representation migrations are packaged
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/026_managed_garment_representations.sql
+          test -f dist-server/migrations/027_garment_representation_revocation_lifecycle.sql
+      - name: Bundle F4a baseline and F4a.1 strict GLB PostgreSQL acceptance
+        run: |
+          mkdir -p .test-cache/managed-garment-glb-f4a1/migrations
+          node --input-type=module - <<'NODE'
+          import { build } from 'esbuild';
+          const common = {
+            bundle: true,
+            platform: 'node',
+            format: 'esm',
+            target: 'node24',
+            external: ['pg', 'sharp', 'node:*'],
+          };
+          for (const [entry, output] of [
+            ['tests/managed-garment-representations-postgres.test.ts', 'managed-garment-representations-postgres.test.mjs'],
+            ['tests/managed-garment-glb-execution-subset-postgres.test.ts', 'managed-garment-glb-execution-subset-postgres.test.mjs'],
+          ]) {
+            await build({ ...common, entryPoints: [entry], outfile: `.test-cache/managed-garment-glb-f4a1/${output}` });
+          }
+          NODE
+          cp server/core/fashion/migrations/022_managed_garments_and_initial_views.sql .test-cache/managed-garment-glb-f4a1/migrations/
+          cp server/core/fashion/migrations/023_managed_garment_wardrobe_metadata.sql .test-cache/managed-garment-glb-f4a1/migrations/
+          cp server/core/fashion/migrations/024_managed_garment_collections.sql .test-cache/managed-garment-glb-f4a1/migrations/
+          cp server/core/fashion/migrations/025_managed_outfits.sql .test-cache/managed-garment-glb-f4a1/migrations/
+          cp server/core/fashion/migrations/026_managed_garment_representations.sql .test-cache/managed-garment-glb-f4a1/migrations/
+          cp server/core/fashion/migrations/027_garment_representation_revocation_lifecycle.sql .test-cache/managed-garment-glb-f4a1/migrations/
+      - name: Preserve F4a representation authority and revocation semantics
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-glb-f4a1/managed-garment-representations-postgres.test.mjs
+      - name: Prove F4a.1 strict GLB indices and default-scene execution subset
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-glb-f4a1/managed-garment-glb-execution-subset-postgres.test.mjs
