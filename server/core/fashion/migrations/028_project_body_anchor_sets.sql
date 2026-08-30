@@ -1,22 +1,34 @@
 BEGIN;
 
 CREATE TABLE canonical_project_body_anchor_sets (
-  anchor_set_id uuid PRIMARY KEY,
+  anchor_set_id uuid NOT NULL,
   tenant_id text NOT NULL,
   user_id text NOT NULL,
-  project_id uuid NOT NULL REFERENCES canonical_projects(project_id) ON DELETE RESTRICT,
-  project_image_storage_id uuid NOT NULL REFERENCES canonical_image_artifacts(storage_id) ON DELETE RESTRICT,
-  project_image_sha256 character(64) NOT NULL CHECK (project_image_sha256 ~ '^[0-9a-f]{64}$'),
-  project_image_width integer NOT NULL CHECK (project_image_width > 0),
-  project_image_height integer NOT NULL CHECK (project_image_height > 0),
-  schema_id text NOT NULL CHECK (schema_id = 'BERS_BODY_ANCHORS_V1'),
-  coordinate_space text NOT NULL CHECK (coordinate_space = 'PROJECT_IMAGE_NORMALIZED'),
-  anchor_payload jsonb NOT NULL CHECK (jsonb_typeof(anchor_payload) = 'object'),
-  anchor_payload_sha256 character(64) NOT NULL CHECK (anchor_payload_sha256 ~ '^[0-9a-f]{64}$'),
-  producer_id text NOT NULL CHECK (char_length(producer_id) BETWEEN 1 AND 100 AND producer_id = btrim(producer_id) AND producer_id !~ '[[:cntrl:]]'),
-  producer_version text NOT NULL CHECK (char_length(producer_version) BETWEEN 1 AND 100 AND producer_version = btrim(producer_version) AND producer_version !~ '[[:cntrl:]]'),
+  project_id uuid NOT NULL,
+  project_image_storage_id uuid NOT NULL,
+  project_image_sha256 character(64) NOT NULL,
+  project_image_width integer NOT NULL,
+  project_image_height integer NOT NULL,
+  schema_id text NOT NULL,
+  coordinate_space text NOT NULL,
+  anchor_payload jsonb NOT NULL,
+  anchor_payload_sha256 character(64) NOT NULL,
+  producer_id text NOT NULL,
+  producer_version text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT canonical_project_body_anchor_sets_owner_unique UNIQUE (anchor_set_id, project_id, tenant_id, user_id)
+  CONSTRAINT canonical_project_body_anchor_sets_pkey PRIMARY KEY (anchor_set_id),
+  CONSTRAINT canonical_project_body_anchor_sets_owner_unique UNIQUE (anchor_set_id, project_id, tenant_id, user_id),
+  CONSTRAINT canonical_project_body_anchor_sets_project_fk FOREIGN KEY (project_id) REFERENCES canonical_projects(project_id) ON DELETE RESTRICT,
+  CONSTRAINT canonical_project_body_anchor_sets_image_fk FOREIGN KEY (project_image_storage_id) REFERENCES canonical_image_artifacts(storage_id) ON DELETE RESTRICT,
+  CONSTRAINT canonical_project_body_anchor_sets_image_sha256_check CHECK (project_image_sha256 ~ '^[0-9a-f]{64}$'),
+  CONSTRAINT canonical_project_body_anchor_sets_image_width_check CHECK (project_image_width > 0),
+  CONSTRAINT canonical_project_body_anchor_sets_image_height_check CHECK (project_image_height > 0),
+  CONSTRAINT canonical_project_body_anchor_sets_schema_id_check CHECK (schema_id = 'BERS_BODY_ANCHORS_V1'),
+  CONSTRAINT canonical_project_body_anchor_sets_coordinate_space_check CHECK (coordinate_space = 'PROJECT_IMAGE_NORMALIZED'),
+  CONSTRAINT canonical_project_body_anchor_sets_payload_object_check CHECK (jsonb_typeof(anchor_payload) = 'object'),
+  CONSTRAINT canonical_project_body_anchor_sets_payload_sha256_check CHECK (anchor_payload_sha256 ~ '^[0-9a-f]{64}$'),
+  CONSTRAINT canonical_project_body_anchor_sets_producer_id_check CHECK (char_length(producer_id) BETWEEN 1 AND 100 AND producer_id = btrim(producer_id) AND producer_id !~ '[[:cntrl:]]'),
+  CONSTRAINT canonical_project_body_anchor_sets_producer_version_check CHECK (char_length(producer_version) BETWEEN 1 AND 100 AND producer_version = btrim(producer_version) AND producer_version !~ '[[:cntrl:]]')
 );
 
 CREATE INDEX canonical_project_body_anchor_sets_owner_project_idx

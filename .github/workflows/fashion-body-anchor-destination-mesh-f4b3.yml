@@ -57,8 +57,12 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-body-anchor-f4b3/fashion-body-anchor-destination-mesh-postgres.test.mjs \
             --external:node:* --external:pg --external:sharp
-      - name: Prove exact Project evidence immutable anchors deterministic Q16 mesh and stale rejection
-        run: node --test --test-concurrency=1 .test-cache/fashion-body-anchor-f4b3/fashion-body-anchor-destination-mesh-postgres.test.mjs
+          npx esbuild tests/fashion-body-anchor-schema-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-body-anchor-f4b3/fashion-body-anchor-schema-postgres.test.mjs \
+            --external:node:* --external:pg
+      - name: Prove exact Project evidence immutable anchors deterministic Q16 mesh and fail-closed schema readiness
+        run: node --test --test-concurrency=1 .test-cache/fashion-body-anchor-f4b3/*.test.mjs
       - name: Prove F4b.3 grants no pixel execution provider Billing or Try-On authority
         run: |
           ! grep -R -E 'garment-mesh-warp|GARMENT_MESH_WARP' \
