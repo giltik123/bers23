@@ -5,8 +5,9 @@ import type { CreativeOperationInstance } from '../operations/contracts';
 import { MAX_SUPER_RESOLUTION_OUTPUT_PIXELS, SUPER_RESOLUTION_SCALE } from '../super-resolution/SuperResolutionContract';
 import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS, RESIZE_OPERATION } from '../deterministic/ResizeIdentity.js';
 import { ORTHOGONAL_TRANSFORM_MODES, ORTHOGONAL_TRANSFORM_OPERATION } from '../deterministic/OrthogonalTransformIdentity.js';
+import { GARMENT_MESH_WARP_OPERATION } from '../deterministic/GarmentMeshWarpIdentity.js';
 import type { CreativeArtifact, CreativeDecision, CreativeExecutionPlan, CreativeOperation, CreativePipeline, CreativePlan, CreativeRequest, ProductionOutcome, VerificationResult } from './contracts';
-import type { LocalExecutionInputBinding, LocalExecutionTicket, LocalExecutionTicketV2 } from './localExecution';
+import type { LocalExecutionInputBinding, LocalExecutionManagedGarmentInputBinding, LocalExecutionTicket, LocalExecutionTicketV2 } from './localExecution';
 import type { CreativeExecutionPlatformRuntimeDependencies } from './providerSelection';
 import { validateCreativePlan, validateExecutionTargets } from './planning/planValidation';
 
@@ -27,6 +28,15 @@ type RecordState = {
   paused: boolean;
   cancelled: boolean;
 };
+
+export type PrepareLocalExecutionV2Options = Readonly<{
+  /**
+   * Core-owned bindings for non-Project authorities. The platform never derives
+   * these from request metadata. Absence preserves the exact legacy v2 ticket
+   * shape; an explicitly empty array is invalid rather than normalized away.
+   */
+  managedInputsByStep?: Readonly<Record<string, readonly LocalExecutionManagedGarmentInputBinding[]>>;
+}>;
 
 /**
  * The sole recommended production entry point for Creative execution.
@@ -167,12 +177,16 @@ export class CreativeExecutionPlatform {
   }
 
   /** Explicit v2 preparation for executor-union tickets; never silently upgrades a v1 caller. */
-  async prepareLocalExecutionV2(id: string): Promise<readonly LocalExecutionTicketV2[]> {
+  async prepareLocalExecutionV2(id: string, options: PrepareLocalExecutionV2Options = {}): Promise<readonly LocalExecutionTicketV2[]> {
     const record = this.require(id);
     if (record.cancelled) throw new Error('Execution is cancelled');
     if (!record.execution || !record.workflow || !record.operation) await this.compile(id);
-    if (record.localTicketsV2) return record.localTicketsV2;
     const onDevice = record.execution!.operations.filter(operation => operation.executionRoute === 'ON_DEVICE');
+    validateManagedInputOptions(onDevice, options.managedInputsByStep);
+    if (record.localTicketsV2) {
+      assertManagedInputReplay(record.localTicketsV2, options.managedInputsByStep);
+      return record.localTicketsV2;
+    }
     if (!onDevice.length) return Object.freeze([]);
     const issuer = this.dependencies.localExecutionV2;
     if (!issuer) throw new Error('ON_DEVICE v2 execution requires Core v2 local ticket authority');
@@ -182,6 +196,7 @@ export class CreativeExecutionPlatform {
       if (!capability) throw new Error(`ON_DEVICE operation ${operation.id} has no capability binding`);
       const inputs = localInputs(record.request, operation);
       if (!inputs.length) throw new Error(`ON_DEVICE operation ${operation.id} has no canonical input artifact`);
+      const managedInputs = options.managedInputsByStep?.[operation.id];
       return await issuer.issue({
         ticketVersion: '2',
         requestId: record.request.id,
@@ -190,6 +205,7 @@ export class CreativeExecutionPlatform {
         operation: { id: operation.id, version: '1', type: operation.type, capability, parameters: operation.input },
         scope: record.request.scope,
         inputs,
+        ...(managedInputs === undefined ? {} : { managedInputs: Object.freeze(managedInputs.map(binding => Object.freeze({ ...binding }))) }),
         expectedOutputs: expectedLocalOutputs(record.request, operation),
         policy: record.plan?.planningConstraints?.executionPolicy === 'LOCAL_ONLY' ? 'LOCAL_ONLY' : 'LOCAL_SELECTED',
         idempotencyKey: `${String(record.request.metadata?.idempotencyKey ?? id)}:${operation.id}:local-v2`,
@@ -327,6 +343,9 @@ function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOpera
     const swapsAxes = mode === 'ROTATE_90_CW' || mode === 'ROTATE_270_CW';
     return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: swapsAxes ? Number(height) : Number(width), height: swapsAxes ? Number(width) : Number(height) }]);
   }
+  if (operation.type === GARMENT_MESH_WARP_OPERATION) {
+    return Object.freeze([{ kind: 'image', role: 'WORKING' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(width), height: Number(height) }]);
+  }
   if (operation.type === 'SUPER_RESOLUTION') {
     const outputWidth = Number(width) * SUPER_RESOLUTION_SCALE;
     const outputHeight = Number(height) * SUPER_RESOLUTION_SCALE;
@@ -335,6 +354,35 @@ function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOpera
     return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: outputWidth, height: outputHeight }]);
   }
   throw new Error(`No ON_DEVICE output contract for ${operation.type}`);
+}
+
+function validateManagedInputOptions(operations: readonly CreativeOperation[], managedInputsByStep: PrepareLocalExecutionV2Options['managedInputsByStep']): void {
+  if (managedInputsByStep === undefined) return;
+  const known = new Set(operations.map(operation => operation.id));
+  for (const [stepId, bindings] of Object.entries(managedInputsByStep)) {
+    if (!known.has(stepId)) throw new Error(`Managed local-execution inputs reference unknown ON_DEVICE step ${stepId}`);
+    if (!Array.isArray(bindings) || bindings.length < 1) throw new Error(`Managed local-execution inputs for ${stepId} must be non-empty when present`);
+  }
+}
+
+function assertManagedInputReplay(tickets: readonly LocalExecutionTicketV2[], managedInputsByStep: PrepareLocalExecutionV2Options['managedInputsByStep']): void {
+  for (const ticket of tickets) {
+    const requested = managedInputsByStep?.[ticket.stepId];
+    if (canonicalJson(ticket.managedInputs) !== canonicalJson(requested)) throw new Error(`Managed local-execution input replay mismatch for ${ticket.stepId}`);
+  }
+  const ticketSteps = new Set(tickets.map(ticket => ticket.stepId));
+  for (const stepId of Object.keys(managedInputsByStep ?? {})) {
+    if (!ticketSteps.has(stepId)) throw new Error(`Managed local-execution input replay references unknown ticket step ${stepId}`);
+  }
+}
+
+function canonicalJson(value: unknown): string { return JSON.stringify(canonicalValue(value)); }
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, child]) => [key, canonicalValue(child)]));
 }
 
 function sameScope(a: CreativeArtifact['scope'], b: CreativeRequest['scope']): boolean { return a.tenantId === b.tenantId && a.projectId === b.projectId && a.userId === b.userId; }
