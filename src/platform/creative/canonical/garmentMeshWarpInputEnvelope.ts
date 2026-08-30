@@ -4,23 +4,27 @@ const MAGIC = new TextEncoder().encode('BERSGMW1');
 const HEADER_BYTES = MAGIC.byteLength + 4;
 const MAX_METADATA_BYTES = 512 * 1024;
 const SHA = /^[a-f0-9]{64}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const KEYS = Object.freeze([
-  'anchorSetId','basisViewHeight','basisViewWidth','destinationMeshSha256','destinationPointsQ16','garmentId','outputHeight','outputWidth',
-  'projectId','projectImageSha256','projectImageStorageId','representationId','sourcePointsQ16','ticketId','triangles','viewId',
+  'anchorPayloadSha256','anchorSetId','basisViewHeight','basisViewWidth','destinationMeshSha256','destinationPointsQ16','garmentId','outputHeight','outputWidth',
+  'projectId','projectImageSha256','projectImageStorageId','representationId','representationSha256','sourceArtifactId','sourcePointsQ16','ticketId','triangles','viewId','viewSha256',
 ] as const);
 
 export type GarmentMeshWarpInputEnvelopeMetadata = Readonly<{
   ticketId: string;
   projectId: string;
+  sourceArtifactId: string;
   projectImageStorageId: string;
   projectImageSha256: string;
   outputWidth: number;
   outputHeight: number;
   garmentId: string;
   viewId: string;
+  viewSha256: string;
   representationId: string;
+  representationSha256: string;
   anchorSetId: string;
+  anchorPayloadSha256: string;
   basisViewWidth: number;
   basisViewHeight: number;
   destinationMeshSha256: string;
@@ -68,18 +72,27 @@ function normalizeMetadata(value: unknown): GarmentMeshWarpInputEnvelopeMetadata
   if (keys.length !== KEYS.length || KEYS.some((key, index) => keys[index] !== key)) throw new Error('Garment mesh-warp envelope metadata schema is invalid');
   const ticketId = text(record.ticketId, 'ticketId');
   const projectId = uuid(record.projectId, 'projectId');
+  const sourceArtifactId = text(record.sourceArtifactId, 'sourceArtifactId');
   const projectImageStorageId = uuid(record.projectImageStorageId, 'projectImageStorageId');
   const projectImageSha256 = sha(record.projectImageSha256, 'projectImageSha256');
   const outputWidth = positive(record.outputWidth, 'outputWidth'); const outputHeight = positive(record.outputHeight, 'outputHeight');
   const garmentId = uuid(record.garmentId, 'garmentId'); const viewId = uuid(record.viewId, 'viewId');
-  const representationId = uuid(record.representationId, 'representationId'); const anchorSetId = uuid(record.anchorSetId, 'anchorSetId');
+  const viewSha256 = sha(record.viewSha256, 'viewSha256');
+  const representationId = uuid(record.representationId, 'representationId');
+  const representationSha256 = sha(record.representationSha256, 'representationSha256');
+  const anchorSetId = uuid(record.anchorSetId, 'anchorSetId');
+  const anchorPayloadSha256 = sha(record.anchorPayloadSha256, 'anchorPayloadSha256');
   const basisViewWidth = positive(record.basisViewWidth, 'basisViewWidth'); const basisViewHeight = positive(record.basisViewHeight, 'basisViewHeight');
   const destinationMeshSha256 = sha(record.destinationMeshSha256, 'destinationMeshSha256');
   const sourcePointsQ16 = points(record.sourcePointsQ16, 'sourcePointsQ16');
   const destinationPointsQ16 = points(record.destinationPointsQ16, 'destinationPointsQ16');
   if (sourcePointsQ16.length !== destinationPointsQ16.length) throw new Error('Garment mesh-warp envelope point counts differ');
   const triangles = triangleList(record.triangles, sourcePointsQ16.length);
-  return deepFreeze({ ticketId, projectId, projectImageStorageId, projectImageSha256, outputWidth, outputHeight, garmentId, viewId, representationId, anchorSetId, basisViewWidth, basisViewHeight, destinationMeshSha256, sourcePointsQ16, destinationPointsQ16, triangles });
+  return deepFreeze({
+    ticketId, projectId, sourceArtifactId, projectImageStorageId, projectImageSha256, outputWidth, outputHeight,
+    garmentId, viewId, viewSha256, representationId, representationSha256, anchorSetId, anchorPayloadSha256,
+    basisViewWidth, basisViewHeight, destinationMeshSha256, sourcePointsQ16, destinationPointsQ16, triangles,
+  });
 }
 function points(value: unknown, name: string): readonly GarmentMeshPointQ16[] {
   if (!Array.isArray(value) || value.length < 3 || value.length > 4096) throw new Error(`${name} is invalid`);
