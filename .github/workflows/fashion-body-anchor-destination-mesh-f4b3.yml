@@ -1,0 +1,73 @@
+name: Fashion F4b.3 server-owned body anchors and destination mesh
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  body-anchor-destination-mesh:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_f4b3_body_anchor_test
+          POSTGRES_USER: fashion_f4b3_body_anchor_test
+          POSTGRES_PASSWORD: fashion_f4b3_body_anchor_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fashion_f4b3_body_anchor_test -d fashion_f4b3_body_anchor_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_f4b3_body_anchor_test:fashion_f4b3_body_anchor_test@127.0.0.1:5432/fashion_f4b3_body_anchor_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before dependency or database work
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Build production Core and package migration 028
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/028_project_body_anchor_sets.sql
+      - name: Apply and verify predecessor canonical schemas
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Bundle F4b.3 deterministic geometry and PostgreSQL acceptance
+        run: |
+          mkdir -p .test-cache/fashion-body-anchor-f4b3
+          npx esbuild tests/fashion-body-anchor-destination-mesh-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-body-anchor-f4b3/fashion-body-anchor-destination-mesh-postgres.test.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove exact Project evidence immutable anchors deterministic Q16 mesh and stale rejection
+        run: node --test --test-concurrency=1 .test-cache/fashion-body-anchor-f4b3/fashion-body-anchor-destination-mesh-postgres.test.mjs
+      - name: Prove F4b.3 grants no pixel execution provider Billing or Try-On authority
+        run: |
+          ! grep -R -E 'garment-mesh-warp|GARMENT_MESH_WARP' \
+            server/core/localExecution/productionLocalExecutorPolicy.ts \
+            server/core/providers/productionExecutionCapabilities.ts \
+            server/core/providers/productionExecutionRoute.ts \
+            server/core/providers/productionTargetSelection.ts \
+            src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -R -E 'FAL_KEY|creditsUsed|Billing|provider' \
+            server/core/fashion/bodyAnchorGeometry.ts \
+            server/core/fashion/postgresProjectBodyAnchorStore.ts
