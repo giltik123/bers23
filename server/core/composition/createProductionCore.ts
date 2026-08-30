@@ -29,7 +29,9 @@ import { productionExecutionRoute } from '../providers/productionExecutionRoute.
 import { productionTargetSelection } from '../providers/productionTargetSelection.ts';
 import { productionExecutionCapabilities } from '../providers/productionExecutionCapabilities.ts';
 import { productionWorkflowVerifier } from '../providers/productionWorkflowVerifier.ts';
+import { productionFashionWorkflowVerifier } from '../providers/productionFashionWorkflowVerifier.ts';
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
+import { createProductionGarmentMeshWarp } from './createProductionGarmentMeshWarp.ts';
 import { checkProjectSchema } from '../projects/projectSchema.ts';
 import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from '../workflow/workflowContinuationSchema.ts';
@@ -102,12 +104,22 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       capabilityAdmission: productionExecutionCapabilities,
       securityGate: { authorize: (request: { budget?: { credits?: number } }) => request.budget?.credits !== undefined && request.budget.credits <= config.hardBudgetCredits },
       recovery: { decide: () => 'MARK_UNKNOWN' as const },
-      verifier: productionWorkflowVerifier,
+      verifier: productionFashionWorkflowVerifier,
       localExecution,
       localExecutionV2: localExecution,
       now,
       id: randomUUID,
     };
+    const garmentMeshWarp = await createProductionGarmentMeshWarp({
+      nodeEnv: config.nodeEnv,
+      pool: transactions.pool,
+      canonical,
+      artifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels, maxUploadBytes: config.imageUploadLimitBytes }),
+      now,
+    });
     const ownsArtifacts = (scope: Parameters<ArtifactAuthority['owns']>[0], ids: readonly string[]) => artifacts.owns(scope, ids);
     const hydrateArtifacts = (scope: Parameters<CanonicalArtifactHydrator['hydrate']>[0], original: string, masks: readonly string[]) => hydrator.hydrate(scope, original, masks);
     const core = createCreativeCore({
@@ -247,7 +259,30 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       sessionIdleTtlMs: config.authSessionIdleTtlMs,
       allowStatelessTestTokens: config.nodeEnv === 'test',
     });
-    return Object.freeze({ core, artifacts, projects: new PostgresProjectStore(transactions.pool), auth, localExecution: Object.freeze({ tickets: localExecution, admission: localExecutionAdmission, uploads: localUploads, segmentation: localSegmentation, deterministicImages: localDeterministicImages, crop: localCrop, resize: localResize, orthogonalTransform: localOrthogonalTransform, orthogonalTransformInputDelivery, superResolution: localSuperResolution, inputDelivery: localInputDelivery, composite: localComposite }), transactions, close: () => transactions.close() });
+    return Object.freeze({
+      core,
+      artifacts,
+      projects: new PostgresProjectStore(transactions.pool),
+      auth,
+      localExecution: Object.freeze({
+        tickets: localExecution,
+        admission: localExecutionAdmission,
+        uploads: localUploads,
+        segmentation: localSegmentation,
+        deterministicImages: localDeterministicImages,
+        crop: localCrop,
+        resize: localResize,
+        orthogonalTransform: localOrthogonalTransform,
+        orthogonalTransformInputDelivery,
+        garmentMeshWarp: garmentMeshWarp.execution,
+        garmentMeshWarpInputDelivery: garmentMeshWarp.inputDelivery,
+        superResolution: localSuperResolution,
+        inputDelivery: localInputDelivery,
+        composite: localComposite,
+      }),
+      transactions,
+      close: () => transactions.close(),
+    });
   } catch (error) { await transactions.close(); throw error; }
 }
 
