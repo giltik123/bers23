@@ -69,12 +69,12 @@ const FKS = Object.freeze({
   canonical_garment_representation_sources_view_evidence_fkey: ['canonical_garment_views','r','FOREIGN KEY (view_id, garment_id, tenant_id, user_id, source_content_sha256) REFERENCES canonical_garment_views(view_id, garment_id, tenant_id, user_id, content_sha256)%ON DELETE RESTRICT%'],
 } as const);
 const TRIGGERS = Object.freeze({
-  canonical_garment_representations_immutable_guard: ['canonical_garment_representation_immutable_guard','14621331405e951de137b8b63ab6ae83',false,31],
-  canonical_garment_representation_sources_immutable_guard: ['canonical_garment_representation_source_immutable_guard','b63b5db873f933ce083d757f3e8bace6',false,31],
-  canonical_garment_representations_source_set_check: ['canonical_assert_garment_representation_sources','de3d4780d8bff7f25c9efa4d94932f8c',true,21],
-  canonical_garment_representation_sources_source_set_check: ['canonical_assert_garment_representation_sources','de3d4780d8bff7f25c9efa4d94932f8c',true,21],
-  canonical_garments_representation_summary_check: ['canonical_assert_garment_representation_summary','ec3728bdc04feed85b207c5d549d8890',true,21],
-  canonical_garment_representations_summary_check: ['canonical_assert_garment_representation_summary','ec3728bdc04feed85b207c5d549d8890',true,21],
+  canonical_garment_representations_immutable_guard: ['canonical_garment_representation_immutable_guard','e8e002603a8287f3510dd2867b2b47cb',false,31],
+  canonical_garment_representation_sources_immutable_guard: ['canonical_garment_representation_source_immutable_guard','012bdec735ac7064f4eec0965ab9d330',false,31],
+  canonical_garment_representations_source_set_check: ['canonical_assert_garment_representation_sources','71ef7b462acdc5812c5e56a582d19673',true,21],
+  canonical_garment_representation_sources_source_set_check: ['canonical_assert_garment_representation_sources','71ef7b462acdc5812c5e56a582d19673',true,21],
+  canonical_garments_representation_summary_check: ['canonical_assert_garment_representation_summary','91307bfd39927aa825a2ce0007f6cb2b',true,21],
+  canonical_garment_representations_summary_check: ['canonical_assert_garment_representation_summary','91307bfd39927aa825a2ce0007f6cb2b',true,21],
 } as const);
 const INDEXES: Readonly<Record<string,IndexContract>> = Object.freeze({
   canonical_garment_representations_owner_garment_idx: { columns: ['tenant_id','user_id','garment_id','admission_state','tier','admitted_at','representation_id'], options: [0,0,0,0,0,3,0] },
