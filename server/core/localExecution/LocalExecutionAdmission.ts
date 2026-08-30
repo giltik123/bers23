@@ -204,7 +204,7 @@ function immutableTicket(ticket: AnyLocalExecutionTicket): AnyLocalExecutionTick
     cost: Object.freeze({ paidCloudCredits: 0 as const, providerCalls: 0 as const }),
   };
   if (ticket.version === '1') return Object.freeze({ ...common, version: '1' as const, allowedModels: Object.freeze(ticket.allowedModels.map(model => Object.freeze({ ...model }))) }) as LocalExecutionTicket;
-  const { managedInputs: _rawManagedInputs, ...v2Common } = common;
+  const { managedInputs: _rawManagedInputs, ...v2Common } = common as typeof common & { managedInputs?: readonly LocalExecutionManagedGarmentInputBinding[] };
   return Object.freeze({
     ...v2Common,
     version: '2' as const,
