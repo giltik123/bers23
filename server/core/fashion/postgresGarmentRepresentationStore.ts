@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { GarmentOwnerScope } from './postgresGarmentStore.ts';
+import { validateGlbExecutionSubset } from './glbExecutionSubsetValidator.ts';
 
 export const GARMENT_REPRESENTATION_TIERS = Object.freeze(['PARAMETRIC', 'FULL_3D'] as const);
 export type GarmentRepresentationTier = (typeof GARMENT_REPRESENTATION_TIERS)[number];
@@ -11,7 +12,7 @@ export const MAX_GARMENT_REPRESENTATION_BYTES = 64 * 1024 * 1024;
 export const PARAMETRIC_VALIDATOR_ID = 'bers.parametric-topology-validator';
 export const PARAMETRIC_VALIDATOR_VERSION = '1';
 export const GLB_VALIDATOR_ID = 'bers.glb-structural-validator';
-export const GLB_VALIDATOR_VERSION = '1';
+export const GLB_VALIDATOR_VERSION = '2';
 
 export type GarmentRepresentationSource = Readonly<{
   position: number;
@@ -397,6 +398,7 @@ function validateGlb2(bytes: Uint8Array): void {
     }
   }
   if (positionPrimitiveCount < 1) throw invalidGlb('GLB has no admitted mesh primitive');
+  validateGlbExecutionSubset(bytes, invalidGlb);
 }
 
 function normalizeSourceViewIds(value: readonly unknown[]): readonly string[] {
