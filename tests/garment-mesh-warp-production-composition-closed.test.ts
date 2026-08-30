@@ -12,7 +12,6 @@ import { PostgresGarmentStore } from '../server/core/fashion/postgresGarmentStor
 import { PostgresGarmentWardrobeStore } from '../server/core/fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresProjectBodyAnchorStore } from '../server/core/fashion/postgresProjectBodyAnchorStore.ts';
 import { migrateProjectSchema } from '../server/core/projects/projectSchema.ts';
-import { migrateTransactionSchema } from '../server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for F4b.4 closed production composition proof');
@@ -51,7 +50,9 @@ function anchors() {
 
 test('production Core composes F4b.4 stores/services but closed policy publishes no ticket, layer, cloud call or Billing side effect', async t => {
   const pool = new Pool({ connectionString: databaseUrl, max: 8, application_name: 'bers-f4b4-production-closed' });
-  await migrateTransactionSchema(pool);
+  // The workflow applies/checks the transaction migration from its canonical source
+  // before this esbuild-bundled test. Re-running that file-backed migrator from the
+  // bundle would incorrectly resolve migrations relative to .test-cache.
   await migrateMaskArtifactSchema(pool);
   await migrateImageArtifactSchema(pool);
   await migrateProjectSchema(pool);
