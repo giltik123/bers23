@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 import { checkGarmentCollectionSchema, migrateGarmentCollectionSchema } from './garmentCollectionSchema.ts';
 import { checkGarmentWardrobeSchema, migrateGarmentWardrobeSchema } from './garmentWardrobeSchema.ts';
 import { checkOutfitSchema, migrateOutfitSchema } from './outfitSchema.ts';
+import { checkGarmentRepresentationSchema, migrateGarmentRepresentationSchema } from './garmentRepresentationSchema.ts';
 
 const MIGRATION = '022_managed_garments_and_initial_views.sql';
 
@@ -140,6 +141,7 @@ export async function checkGarmentSchema(pool: Pool): Promise<void> {
   await checkGarmentWardrobeSchema(pool);
   await checkGarmentCollectionSchema(pool);
   await checkOutfitSchema(pool);
+  await checkGarmentRepresentationSchema(pool);
 }
 
 export async function migrateGarmentSchema(pool: Pool): Promise<void> {
@@ -149,5 +151,6 @@ export async function migrateGarmentSchema(pool: Pool): Promise<void> {
   await migrateGarmentWardrobeSchema(pool);
   await migrateGarmentCollectionSchema(pool);
   await migrateOutfitSchema(pool);
+  await migrateGarmentRepresentationSchema(pool);
   await checkGarmentSchema(pool);
 }
