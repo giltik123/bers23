@@ -137,7 +137,7 @@ export function deriveDestinationGarmentMesh(input: Readonly<{
   }
 
   const provenance = deepFreeze({ ...input.provenance, garmentCategory: input.garmentCategory });
-  const hashDocument = deepFreeze({
+  const hashDocument: Omit<GarmentDestinationMesh, 'meshSha256'> = deepFreeze({
     schemaId: GARMENT_DESTINATION_MESH_SCHEMA_ID,
     coordinateSpace: GARMENT_DESTINATION_MESH_COORDINATE_SPACE,
     sourcePointsQ16,
