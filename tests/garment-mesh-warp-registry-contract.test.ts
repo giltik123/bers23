@@ -28,7 +28,7 @@ test('garment mesh warp registry keeps Project lineage and managed Garment autho
   assert.deepEqual(definition.lineage, { parentInputs: ['projectSource'], managedParents: ['basisView', 'representation'], finalRole: 'WORKING', producerOperation: GARMENT_MESH_WARP_OPERATION });
 });
 
-test('garment mesh warp registry binds exact managed identities and deterministic pixel law without granting production authority', () => {
+test('garment mesh warp registry binds exact managed identities and deterministic pixel law under explicit F4b.4 production admission', () => {
   const definition = requireDeterministicToolByCapability(GARMENT_MESH_WARP_CAPABILITY);
   assert.equal(requireDeterministicToolByExecutor(definition.executor), definition);
   assert.deepEqual(definition.parameters.managedIdBindings, [
@@ -45,5 +45,5 @@ test('garment mesh warp registry binds exact managed identities and deterministi
   assert.deepEqual(definition.parameters.relationships, ['REPRESENTATION_BASIS_VIEW_EQUALS_PIXEL_SOURCE_VIEW']);
   assert.equal(definition.pixelContract.overlapOwnership, 'DECLARED_TRIANGLE_ORDER_FIRST_OWNER');
   assert.equal(definition.pixelContract.uncoveredPixels, 'TRANSPARENT_BLACK');
-  assert.equal(GARMENT_MESH_WARP_PRODUCTION_ADMISSION, 'NOT_ADMITTED');
+  assert.equal(GARMENT_MESH_WARP_PRODUCTION_ADMISSION, 'ADMITTED');
 });
