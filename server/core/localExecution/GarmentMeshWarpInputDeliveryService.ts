@@ -21,14 +21,18 @@ import {
 export type GarmentMeshWarpDeliveredInput = Readonly<{
   ticketId: string;
   projectId: string;
+  sourceArtifactId: string;
   projectImageStorageId: string;
   projectImageSha256: string;
   outputWidth: number;
   outputHeight: number;
   garmentId: string;
   viewId: string;
+  viewSha256: string;
   representationId: string;
+  representationSha256: string;
   anchorSetId: string;
+  anchorPayloadSha256: string;
   basisViewWidth: number;
   basisViewHeight: number;
   basisViewRgba: Uint8Array;
@@ -100,14 +104,18 @@ export class GarmentMeshWarpInputDeliveryService {
     return Object.freeze({
       ticketId: ticket.ticketId,
       projectId: ticket.scope.projectId,
+      sourceArtifactId: parameters.sourceArtifactId,
       projectImageStorageId: projectEvidence.storageId,
       projectImageSha256: projectEvidence.sha256,
       outputWidth: Number(output.width),
       outputHeight: Number(output.height),
       garmentId: parameters.garmentId,
       viewId: parameters.viewId,
+      viewSha256: parameters.viewSha256,
       representationId: parameters.representationId,
+      representationSha256: parameters.representationSha256,
       anchorSetId: parameters.anchorSetId,
+      anchorPayloadSha256: parameters.anchorPayloadSha256,
       basisViewWidth: decoded.width,
       basisViewHeight: decoded.height,
       basisViewRgba: Uint8Array.from(decoded.rgba),
