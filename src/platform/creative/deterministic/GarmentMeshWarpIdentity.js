@@ -19,6 +19,9 @@ export const GARMENT_MESH_WARP_FIXED_POINT_BITS = 16;
 export const GARMENT_MESH_WARP_MAX_DIMENSION = 4096;
 /** @type {8388608} */
 export const GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS = 8_388_608;
+/** Maximum aggregate destination-triangle bounding-box pixel checks per execution. */
+/** @type {33554432} */
+export const GARMENT_MESH_WARP_MAX_RASTER_WORK = 33_554_432;
 /** @type {4096} */
 export const GARMENT_MESH_WARP_MAX_POINTS = 4096;
 /** @type {8192} */
