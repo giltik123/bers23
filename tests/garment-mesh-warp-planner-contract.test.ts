@@ -34,11 +34,11 @@ const binding = Object.freeze({
   representationId: 'c3333333-3333-4333-8333-333333333333',
   anchorSetId: 'd4444444-4444-4444-8444-444444444444',
   projectImageStorageId: 'e5555555-5555-4555-8555-555555555555',
-  projectImageSha256: '1'.repeat(64),
-  viewSha256: '2'.repeat(64),
-  representationSha256: '3'.repeat(64),
-  anchorPayloadSha256: '4'.repeat(64),
-  destinationMeshSha256: '5'.repeat(64),
+  projectImageSha256: 'e'.repeat(64),
+  viewSha256: 'a'.repeat(64),
+  representationSha256: 'b'.repeat(64),
+  anchorPayloadSha256: 'c'.repeat(64),
+  destinationMeshSha256: 'd'.repeat(64),
 });
 
 function request(id: string, garmentMeshWarpBinding: unknown = binding, sourceArtifactId: string = source.id): CreativeRequest {
