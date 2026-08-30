@@ -52,7 +52,14 @@ jobs:
       - name: Capture hosted runner fingerprint
         run: |
           set -euo pipefail
+          candidate_sha="$(git rev-parse HEAD)"
+          cpu_model="$(lscpu | awk -F: '/^Model name:/ {sub(/^[[:space:]]+/, "", $2); print $2; exit}')"
+          test -n "$cpu_model"
+          printf 'MODNET_DIAGNOSTIC_CANDIDATE_SHA=%s\n' "$candidate_sha" >> "$GITHUB_ENV"
+          printf 'MODNET_DIAGNOSTIC_CPU_MODEL=%s\n' "$cpu_model" >> "$GITHUB_ENV"
           echo "RUNNER_ARCH=${RUNNER_ARCH}"
+          echo "MODNET_DIAGNOSTIC_CANDIDATE_SHA=${candidate_sha}"
+          echo "MODNET_DIAGNOSTIC_CPU_MODEL=${cpu_model}"
           uname -a
           lscpu
           python - <<'PY'
@@ -90,14 +97,28 @@ jobs:
             .test-cache/modnet-cross-run/second.onnx \
             --output .test-cache/modnet-cross-run/fingerprint.json | tee .test-cache/modnet-cross-run/fingerprint.log
           python - <<'PY'
-          import json
+          import json, os
+          from pathlib import Path
+
           report=json.load(open('.test-cache/modnet-cross-run/fingerprint.json',encoding='utf-8'))
-          if report['comparison']['classification'] != 'BYTE_IDENTICAL':
+          classification=report['comparison']['classification']
+          if classification != 'BYTE_IDENTICAL':
               raise SystemExit('within-run MODNet export lost byte reproducibility')
-          print('MODNET_CROSS_RUN_DIAGNOSTIC_SHA=' + report['samples'][0]['rawSha256'])
-          print('MODNET_CROSS_RUN_GRAPH_SHA=' + report['samples'][0]['graphSemanticSha256'])
-          print('MODNET_CROSS_RUN_INITIALIZER_SHA=' + report['samples'][0]['initializerSemanticSetSha256'])
-          print('MODNET_CROSS_RUN_PROTO_SHA=' + report['samples'][0]['deterministicProtoSha256'])
+          sample=report['samples'][0]
+          fields={
+              'candidate': os.environ['MODNET_DIAGNOSTIC_CANDIDATE_SHA'],
+              'arch': os.environ.get('RUNNER_ARCH','unknown'),
+              'cpu': os.environ['MODNET_DIAGNOSTIC_CPU_MODEL'].replace('|','/'),
+              'raw': sample['rawSha256'],
+              'proto': sample['deterministicProtoSha256'],
+              'graph': sample['graphSemanticSha256'],
+              'initializers': sample['initializerSemanticSetSha256'],
+              'initializerCount': str(sample['initializerCount']),
+              'classification': classification,
+          }
+          line='MODNET_REPRO_FINGERPRINT|'+'|'.join(f'{key}={value}' for key,value in fields.items())
+          print(line)
+          Path('.test-cache/modnet-cross-run/fingerprint-summary.txt').write_text(line+'\n',encoding='utf-8')
           PY
       - name: Publish diagnostic summary
         if: always()
@@ -105,12 +126,17 @@ jobs:
           {
             echo '## MODNet cross-run diagnostic'
             echo
-            echo '- Authority: DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY'
+            echo '- Authority: `DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY`'
             echo '- No manifest/pin/release identity mutation is performed.'
-            echo '- Compare the emitted raw / graph / initializer / deterministic-protobuf hashes across independent hosted runs.'
-            if test -f .test-cache/modnet-cross-run/fingerprint.json; then
-              echo '```json'
-              cat .test-cache/modnet-cross-run/fingerprint.json
+            echo '- The model is not uploaded as a workflow artifact.'
+            echo '- Compare `MODNET_REPRO_FINGERPRINT` lines across independent hosted runs; Azure region remains visible in the hosted-runner provisioning log.'
+            if test -f .test-cache/modnet-cross-run/fingerprint-summary.txt; then
+              echo
+              echo '```text'
+              cat .test-cache/modnet-cross-run/fingerprint-summary.txt
               echo '```'
+            else
+              echo
+              echo 'Fingerprint summary unavailable because an earlier diagnostic step failed.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
