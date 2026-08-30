@@ -7,6 +7,7 @@ import type {
   LocalExecutionAdmissionReason,
   LocalExecutionExecutorBinding,
   LocalExecutionExpectedOutput,
+  LocalExecutionManagedGarmentInputBinding,
   LocalExecutionOutputEvidence,
   LocalExecutionResult,
   LocalExecutionResultV2,
@@ -18,6 +19,8 @@ import type { LocalExecutionFinalization, LocalExecutionClaimInput } from './Loc
 import { localExecutionResultReplayDigest } from './localExecutionReplayDigest.ts';
 
 const SHA256 = /^[a-f0-9]{64}$/i;
+const LOWER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const MAX_MANAGED_INPUTS = 16;
 const MODEL_RUNTIMES = new Set(['ONNX_RUNTIME', 'WEBGPU', 'WASM', 'NNAPI', 'DIRECTML', 'CUDA', 'METAL', 'VULKAN']);
 const V2_RUNTIMES = new Set([...MODEL_RUNTIMES, 'BROWSER_JS']);
 const ACCELERATORS = new Set(['webgpu', 'wasm', 'cuda', 'dml', 'coreml', 'cpu', 'nnapi', 'UNKNOWN']);
@@ -155,8 +158,15 @@ function assertTicket(ticket: AnyLocalExecutionTicket): void {
   if (!Number.isFinite(ticket.issuedAt) || !Number.isFinite(ticket.expiresAt) || ticket.expiresAt <= ticket.issuedAt) throw new Error('Invalid local execution ticket lifetime');
   if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw new Error('Local execution ticket cannot authorize cloud cost');
   if (ticket.version === '1') {
+    if ('managedInputs' in ticket) throw new Error('Local execution v1 ticket cannot carry managed inputs');
     if (!ticket.allowedModels.length || ticket.allowedModels.some(model => !model.modelId || !model.version)) throw new Error('Local execution v1 ticket requires approved model bindings');
-  } else if (!ticket.allowedExecutors.length || ticket.allowedExecutors.some(executor => !validExecutor(executor))) throw new Error('Local execution v2 ticket requires approved executor bindings');
+  } else {
+    if (!ticket.allowedExecutors.length || ticket.allowedExecutors.some(executor => !validExecutor(executor))) throw new Error('Local execution v2 ticket requires approved executor bindings');
+    if (ticket.managedInputs !== undefined) {
+      if (!Array.isArray(ticket.managedInputs) || ticket.managedInputs.length < 1 || ticket.managedInputs.length > MAX_MANAGED_INPUTS) throw new Error('Local execution v2 managed inputs must contain 1 to 16 bindings when present');
+      for (const input of ticket.managedInputs) assertManagedInput(input);
+    }
+  }
   if (ticket.operation.parameters !== undefined && (!ticket.operation.parameters || typeof ticket.operation.parameters !== 'object' || Array.isArray(ticket.operation.parameters))) throw new Error('Invalid local execution operation parameters');
   for (const input of ticket.inputs) if (input.sha256 !== undefined && !SHA256.test(input.sha256)) throw new Error('Invalid input artifact SHA-256');
   for (const expected of ticket.expectedOutputs) {
@@ -164,6 +174,24 @@ function assertTicket(ticket: AnyLocalExecutionTicket): void {
     if (expected.width !== undefined && (!Number.isInteger(expected.width) || expected.width < 1)) throw new Error('Invalid expected local output width');
     if (expected.height !== undefined && (!Number.isInteger(expected.height) || expected.height < 1)) throw new Error('Invalid expected local output height');
   }
+}
+
+function assertManagedInput(input: LocalExecutionManagedGarmentInputBinding): void {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || input.authority !== 'MANAGED_GARMENT') throw new Error('Invalid managed Garment input authority');
+  if (!LOWER_UUID.test(input.garmentId) || !SHA256.test(input.contentSha256)) throw new Error('Invalid managed Garment input identity');
+  if (input.kind === 'GARMENT_VIEW') {
+    assertExactKeys(input, ['authority','kind','garmentId','viewId','contentSha256','contentType','encoding','width','height']);
+    if (!LOWER_UUID.test(input.viewId) || input.contentType !== 'image/png' || input.encoding !== 'PNG_RGBA8_LOSSLESS') throw new Error('Invalid managed Garment view binding');
+    if (!Number.isSafeInteger(input.width) || input.width < 1 || !Number.isSafeInteger(input.height) || input.height < 1) throw new Error('Invalid managed Garment view dimensions');
+    return;
+  }
+  if (input.kind !== 'GARMENT_REPRESENTATION') throw new Error('Unsupported managed Garment input kind');
+  assertExactKeys(input, ['authority','kind','garmentId','representationId','tier','format','contentType','contentSha256','basisViewId','generatorId','generatorVersion','validatorId','validatorVersion']);
+  if (!LOWER_UUID.test(input.representationId) || !LOWER_UUID.test(input.basisViewId)) throw new Error('Invalid managed Garment representation identity');
+  if (!printableProvenance(input.generatorId) || !printableProvenance(input.generatorVersion) || !printableProvenance(input.validatorId) || !printableProvenance(input.validatorVersion)) throw new Error('Invalid managed Garment representation provenance');
+  const parametric = input.tier === 'PARAMETRIC' && input.format === 'BERS_PARAMETRIC_V1' && input.contentType === 'application/vnd.bers.garment-parametric+json';
+  const full3d = input.tier === 'FULL_3D' && input.format === 'GLB_2_0' && input.contentType === 'model/gltf-binary';
+  if (!parametric && !full3d) throw new Error('Invalid managed Garment representation tier/format contract');
 }
 
 function immutableTicket(ticket: AnyLocalExecutionTicket): AnyLocalExecutionTicket {
@@ -176,7 +204,13 @@ function immutableTicket(ticket: AnyLocalExecutionTicket): AnyLocalExecutionTick
     cost: Object.freeze({ paidCloudCredits: 0 as const, providerCalls: 0 as const }),
   };
   if (ticket.version === '1') return Object.freeze({ ...common, version: '1' as const, allowedModels: Object.freeze(ticket.allowedModels.map(model => Object.freeze({ ...model }))) }) as LocalExecutionTicket;
-  return Object.freeze({ ...common, version: '2' as const, allowedExecutors: Object.freeze(ticket.allowedExecutors.map(executor => Object.freeze({ ...executor }))) }) as LocalExecutionTicketV2;
+  const { managedInputs: _rawManagedInputs, ...v2Common } = common;
+  return Object.freeze({
+    ...v2Common,
+    version: '2' as const,
+    ...(ticket.managedInputs === undefined ? {} : { managedInputs: Object.freeze(ticket.managedInputs.map(input => Object.freeze({ ...input }))) }),
+    allowedExecutors: Object.freeze(ticket.allowedExecutors.map(executor => Object.freeze({ ...executor }))),
+  }) as LocalExecutionTicketV2;
 }
 
 function sameTicketBinding(a: AnyLocalExecutionTicket, b: AnyLocalExecutionTicket): boolean {
@@ -185,7 +219,7 @@ function sameTicketBinding(a: AnyLocalExecutionTicket, b: AnyLocalExecutionTicke
     canonicalJson(a.operation) === canonicalJson(b.operation) && a.policy === b.policy && canonicalJson(a.inputs) === canonicalJson(b.inputs) && canonicalJson(a.expectedOutputs) === canonicalJson(b.expectedOutputs);
   if (!common) return false;
   if (a.version === '1' && b.version === '1') return canonicalJson(a.allowedModels) === canonicalJson(b.allowedModels);
-  if (a.version === '2' && b.version === '2') return canonicalJson(a.allowedExecutors) === canonicalJson(b.allowedExecutors);
+  if (a.version === '2' && b.version === '2') return canonicalJson(a.managedInputs) === canonicalJson(b.managedInputs) && canonicalJson(a.allowedExecutors) === canonicalJson(b.allowedExecutors);
   return false;
 }
 
@@ -197,11 +231,11 @@ function requireDecisionV1(decision: AnyLocalExecutionAdmissionDecision): LocalE
 function requireDecisionV2(decision: AnyLocalExecutionAdmissionDecision): LocalExecutionAdmissionDecisionV2 { if (decision.allowed && decision.ticket.version !== '2') throw new Error('Local execution admission version conflict: expected v2'); return decision as LocalExecutionAdmissionDecisionV2; }
 function scopedIdempotencyKey(scope: Scope, idempotencyKey: string): string { return canonicalJson([scope.tenantId, scope.userId, scope.projectId, idempotencyKey]) ?? ''; }
 function canonicalJson(value: unknown): string | undefined { return JSON.stringify(canonicalValue(value)); }
-function canonicalValue(value: unknown): unknown { if (Array.isArray(value)) return value.map(canonicalValue); if (!value || typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a],[b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)])); }
+function canonicalValue(value: unknown): unknown { if (Array.isArray(value)) return value.map(canonicalValue); if (!value || typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a],[b]) => a.localeCompare(b)).map(([key, child]) => [key,canonicalValue(child)])); }
 function immutableResultV1(result: LocalExecutionResult): LocalExecutionResult { return Object.freeze({ ...result, model: Object.freeze({ ...result.model }), outputs: Object.freeze(result.outputs.map(output => Object.freeze({ ...output }))), metrics: Object.freeze({ ...result.metrics }), benchmarkEvidence: result.benchmarkEvidence ? Object.freeze({ ...result.benchmarkEvidence }) : undefined }); }
 function immutableResultV2(result: LocalExecutionResultV2): LocalExecutionResultV2 { return Object.freeze({ ...result, executor: Object.freeze({ ...result.executor }), outputs: Object.freeze(result.outputs.map(output => Object.freeze({ ...output }))), metrics: Object.freeze({ ...result.metrics }), benchmarkEvidence: result.benchmarkEvidence ? Object.freeze({ ...result.benchmarkEvidence }) : undefined }); }
 function sameScope(a: Scope, b: Scope): boolean { return a.tenantId === b.tenantId && a.projectId === b.projectId && a.userId === b.userId; }
-function denied(reasonCode: Exclude<LocalExecutionAdmissionReason, 'ADMITTED'>): Readonly<{ allowed: false; reasonCode: Exclude<LocalExecutionAdmissionReason, 'ADMITTED'> }> { return Object.freeze({ allowed: false, reasonCode }); }
+function denied(reasonCode: Exclude<LocalExecutionAdmissionReason,'ADMITTED'>): Readonly<{allowed:false;reasonCode:Exclude<LocalExecutionAdmissionReason,'ADMITTED'>}>{return Object.freeze({allowed:false,reasonCode});}
 function containsForbiddenAuthority(value: unknown, seen = new Set<object>()): boolean { if (!value || typeof value !== 'object') return false; if (seen.has(value)) return false; seen.add(value); if (Array.isArray(value)) return value.some(item => containsForbiddenAuthority(item, seen)); for (const [key, child] of Object.entries(value as Record<string, unknown>)) { if (FORBIDDEN_RESULT_KEYS.has(key)) return true; if (containsForbiddenAuthority(child, seen)) return true; } return false; }
 function isLocalExecutionResultV1(value: unknown): value is LocalExecutionResult { if (!commonResultShape(value)) return false; const result=value as Partial<LocalExecutionResult>; return result.ticketVersion==='1' && !!result.model && nonEmptyString(result.model.modelId) && nonEmptyString(result.model.version) && nonEmptyString(result.runtime) && MODEL_RUNTIMES.has(result.runtime) && validMetricsAndOutputs(result); }
 function isLocalExecutionResultV2(value: unknown): value is LocalExecutionResultV2 { if (!commonResultShape(value)) return false; const result=value as Partial<LocalExecutionResultV2>; return result.ticketVersion==='2' && !!result.executor && validExecutor(result.executor) && nonEmptyString(result.runtime) && V2_RUNTIMES.has(result.runtime) && validMetricsAndOutputs(result); }
@@ -212,6 +246,8 @@ function sameExecutor(a: LocalExecutionExecutorBinding, b: LocalExecutionExecuto
 function sameResultIdentity(ticket: AnyLocalExecutionTicket, result: AnyLocalExecutionResult): boolean { return result.ticketId===ticket.ticketId&&result.ticketVersion===ticket.version&&result.requestId===ticket.requestId&&result.workflowId===ticket.workflowId&&result.stepId===ticket.stepId&&result.nonce===ticket.nonce; }
 function isOutputEvidence(value: unknown): value is LocalExecutionOutputEvidence { if(!value||typeof value!=='object'||Array.isArray(value))return false; const o=value as Partial<LocalExecutionOutputEvidence>; return nonEmptyString(o.uploadId)&&nonEmptyString(o.kind)&&nonEmptyString(o.mimeType)&&nonEmptyString(o.sha256)&&SHA256.test(o.sha256)&&Number.isInteger(o.sizeBytes)&&Number(o.sizeBytes)>0&&(o.width===undefined||(Number.isInteger(o.width)&&Number(o.width)>0))&&(o.height===undefined||(Number.isInteger(o.height)&&Number(o.height)>0)); }
 function outputsMatch(expected: readonly LocalExecutionExpectedOutput[], actual: readonly LocalExecutionOutputEvidence[]): boolean { const expectedCount=expected.reduce((sum,item)=>sum+item.count,0); if(actual.length!==expectedCount)return false; const remaining=actual.slice(); for(const contract of expected){for(let i=0;i<contract.count;i++){const index=remaining.findIndex(output=>output.kind===contract.kind&&output.role===contract.role&&(!contract.mimeTypes?.length||contract.mimeTypes.includes(output.mimeType))&&(contract.width===undefined||contract.width===output.width)&&(contract.height===undefined||contract.height===output.height)); if(index<0)return false; remaining.splice(index,1);}} return remaining.length===0; }
+function assertExactKeys(value: object, expected: readonly string[]): void { const actual=Object.keys(value).sort(); const wanted=[...expected].sort(); if(actual.length!==wanted.length||actual.some((key,index)=>key!==wanted[index])) throw new Error('Managed Garment input contains unknown or missing fields'); }
+function printableProvenance(value: unknown): value is string { return typeof value==='string' && value.length>=1 && value.length<=100 && !/[\u0000-\u001f\u007f]/u.test(value); }
 function deepFreeze<T>(value:T):T { if(!value||typeof value!=='object'||Object.isFrozen(value))return value; Object.freeze(value); for(const child of Object.values(value as Record<string,unknown>))deepFreeze(child); return value; }
 function nonEmptyString(value: unknown): value is string { return typeof value === 'string' && value.length > 0; }
 function finiteNonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
