@@ -6,6 +6,7 @@ import { SignedArtifactAuthority } from './signedArtifactAuthority.ts';
 
 export type StoredProjectImageEvidence = Readonly<{
   artifactId: string;
+  projectId: string;
   storageId: string;
   role: 'ORIGINAL' | 'COMPOSITE';
   lifecycle: 'IMMUTABLE' | 'FINAL';
@@ -59,6 +60,7 @@ export class ArtifactAuthority {
     if (!stored) throw new Error('Canonical stored Project IMAGE is unavailable');
     if (
       stored.storageId !== storageId
+      || stored.projectId !== scope.projectId
       || stored.role !== expectedRole
       || stored.lifecycle !== expectedLifecycle
       || stored.encoding !== 'PNG_RGBA8_LOSSLESS'
@@ -71,6 +73,7 @@ export class ArtifactAuthority {
     ) throw new Error('Canonical stored Project IMAGE evidence is outside the admitted contract');
     return Object.freeze({
       artifactId,
+      projectId: scope.projectId,
       storageId,
       role: expectedRole,
       lifecycle: expectedLifecycle,
