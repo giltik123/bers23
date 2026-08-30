@@ -61,6 +61,25 @@ export class LocalExecutionTicketAuthority implements LocalExecutionTicketIssuer
     const allowedExecutors = this.dependencies.executorsByCapability?.[input.operation.capability];
     if (!allowedExecutors?.length) throw new LocalExecutionExecutorUnavailableError(input.operation.capability);
     const issuedAt = this.dependencies.now();
-    return this.ledger.issueV2({ ticketId:this.dependencies.id(), version:'2', issuer:'CORE', requestId:input.requestId, workflowId:input.workflowId, stepId:input.stepId, operation:input.operation, scope:input.scope, inputs:input.inputs, expectedOutputs:input.expectedOutputs, allowedExecutors, policy:input.policy, idempotencyKey:input.idempotencyKey, nonce:this.dependencies.nonce(), issuedAt, expiresAt:issuedAt+this.dependencies.ttlMs, cost:{paidCloudCredits:0,providerCalls:0} });
+    return this.ledger.issueV2({
+      ticketId: this.dependencies.id(),
+      version: '2',
+      issuer: 'CORE',
+      requestId: input.requestId,
+      workflowId: input.workflowId,
+      stepId: input.stepId,
+      operation: input.operation,
+      scope: input.scope,
+      inputs: input.inputs,
+      ...(input.managedInputs === undefined ? {} : { managedInputs: input.managedInputs }),
+      expectedOutputs: input.expectedOutputs,
+      allowedExecutors,
+      policy: input.policy,
+      idempotencyKey: input.idempotencyKey,
+      nonce: this.dependencies.nonce(),
+      issuedAt,
+      expiresAt: issuedAt + this.dependencies.ttlMs,
+      cost: { paidCloudCredits: 0, providerCalls: 0 },
+    });
   }
 }
