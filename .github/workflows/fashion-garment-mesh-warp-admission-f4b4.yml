@@ -21,12 +21,12 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Typecheck and build before widening production authority
+      - name: Typecheck and build admitted production authority
         run: |
           npm run typecheck
           npm run server:typecheck
           npm run server:build
-      - name: Bundle managed-input, planner, Core-recompute, verifier, browser and transport contracts
+      - name: Bundle managed-input, policy, Core-recompute, verifier, browser and transport contracts
         run: |
           mkdir -p .test-cache/fashion-f4b4-admission
           npx esbuild tests/local-execution-managed-input-platform.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/platform.mjs --external:node:* --external:pg --external:sharp
@@ -39,11 +39,12 @@ jobs:
           npx esbuild tests/garment-mesh-warp-workflow-verifier.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/verifier.mjs --external:node:* --external:pg --external:sharp
           npx esbuild tests/garment-mesh-warp-browser-executor.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/browser.mjs --external:node:* --external:pg --external:sharp
           npx esbuild tests/garment-mesh-warp-http-adapter.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/http.mjs --external:node:* --external:pg --external:sharp
+          npx esbuild tests/deterministic-garment-mesh-warp-admission-boundary.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/production-policy.mjs --external:node:* --external:pg --external:sharp
       - name: Prove Project and managed Garment ticket namespaces stay distinct
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/platform.mjs
-      - name: Prove registry describes managed authority without admitting production execution
+      - name: Prove registry describes managed authority separately from Project inputs
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/registry.mjs
-      - name: Prove canonical planner requires a closed server-owned warp binding
+      - name: Prove planner and production policy admit only the exact LOCAL_ONLY warp tuple
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/planner.mjs
       - name: Prove exact server-only ticket contract fails closed on authority drift
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/ticket.mjs
@@ -59,10 +60,14 @@ jobs:
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/browser.mjs
       - name: Prove HTTP boundary accepts intent only and delivers one purpose-bound envelope
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/http.mjs
-      - name: Keep production admission closed until production composition is proven
+      - name: Prove admission remains Fashion-only and Try-On stays unwired
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/production-policy.mjs
+      - name: Assert exact production admission surface
         run: |
-          grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
-          ! grep -q 'GARMENT_MESH_WARP_CAPABILITY' server/core/localExecution/productionLocalExecutorPolicy.ts
-          ! grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionCapabilities.ts
-          ! grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionRoute.ts
-          ! grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionTargetSelection.ts
+          grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
+          grep -q 'GARMENT_MESH_WARP_CAPABILITY' server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionCapabilities.ts
+          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionRoute.ts
+          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionTargetSelection.ts
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+          ! grep -Eq 'garment-mesh-warp|GARMENT_MESH_WARP' src/lib/tryon/tryonEngine.js

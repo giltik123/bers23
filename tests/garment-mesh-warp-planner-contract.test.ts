@@ -7,6 +7,7 @@ import {
   type CreativeRequest,
 } from '../src/platform/creative/canonical/index.ts';
 import {
+  GARMENT_MESH_WARP_CAPABILITY,
   GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
   GARMENT_MESH_WARP_MAX_RASTER_WORK,
   GARMENT_MESH_WARP_OPERATION,
@@ -15,6 +16,11 @@ import {
   GARMENT_MESH_WARP_TOOL_ID,
   GARMENT_MESH_WARP_TOOL_VERSION,
 } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
+import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
+import { productionExecutionCapabilities } from '../server/core/providers/productionExecutionCapabilities.ts';
+import { productionExecutionRoute } from '../server/core/providers/productionExecutionRoute.ts';
+import { productionTargetSelection } from '../server/core/providers/productionTargetSelection.ts';
 
 const scope = Object.freeze({ tenantId: 'tenant-planner-warp', userId: 'user-planner-warp', projectId: 'project-planner-warp' });
 const source: CreativeArtifact = Object.freeze({
@@ -90,6 +96,29 @@ test('canonical planner emits one zero-cloud garment warp operation from a close
     maxRasterWork: GARMENT_MESH_WARP_MAX_RASTER_WORK,
   });
   assert.equal(result.provenance.reasons.includes('GARMENT_MESH_WARP_LOCAL_DETERMINISTIC_V1'), true);
+});
+
+test('production policy admits only the exact garment warp LOCAL_ONLY tuple and registered executor', async () => {
+  const input = request('planner-warp-production-policy');
+  const result = await plan(input);
+  assert.equal(result.status, 'READY');
+  const operation = result.operations[0];
+  assert.equal(productionExecutionRoute.select(operation, input), 'ON_DEVICE');
+  assert.equal(productionTargetSelection.select(operation, input), 'LOCAL');
+  assert.deepEqual(
+    productionExecutionCapabilities.admit({ request: input, operation: { ...operation, executionRoute: 'ON_DEVICE' }, route: 'ON_DEVICE', target: 'LOCAL' }),
+    { allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: GARMENT_MESH_WARP_CAPABILITY },
+  );
+  assert.deepEqual(productionLocalExecutorsByCapability[GARMENT_MESH_WARP_CAPABILITY], [GARMENT_MESH_WARP_TOOL_DEFINITION.executor]);
+
+  const forgedRequest: CreativeRequest = Object.freeze({
+    ...input,
+    metadata: Object.freeze({ ...input.metadata, operationIntent: 'RESIZE' }),
+  });
+  assert.equal(
+    productionExecutionCapabilities.admit({ request: forgedRequest, operation: { ...operation, executionRoute: 'ON_DEVICE' }, route: 'ON_DEVICE', target: 'LOCAL' }).allowed,
+    false,
+  );
 });
 
 test('canonical planner fails closed on non-canonical, open-ended or mismatched garment warp evidence', async () => {

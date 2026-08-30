@@ -45,7 +45,7 @@ jobs:
         run: |
           npm run db:migrate:transactions
           npm run db:check:transactions
-      - name: Bundle PostgreSQL F4b.4 execution and closed-composition verticals
+      - name: Bundle PostgreSQL F4b.4 service and production-admission verticals
         run: |
           runtime=.test-cache/fashion-f4b4-service-postgres
           artifact_runtime=.test-cache/artifacts/migrations
@@ -64,15 +64,17 @@ jobs:
             cp "$source" "$artifact_runtime/$name"
           done
           npx esbuild tests/garment-mesh-warp-service-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/service.mjs" --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-production-composition-closed.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/composition-closed.mjs" --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-production-composition-closed.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/production-admission.mjs" --external:node:* --external:pg --external:sharp
       - name: Prove durable ticket, quarantine, Core recompute and immutable Fashion layer
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-service-postgres/service.mjs
-      - name: Prove production Core is composed but policy remains fail-closed without side effects
-        run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-service-postgres/composition-closed.mjs
-      - name: Keep production policy closed until final admission flip
+      - name: Prove actual production Core admits LOCAL_ONLY warp with zero cloud and no Project FINAL mutation
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-service-postgres/production-admission.mjs
+      - name: Assert production admission remains Fashion-only
         run: |
-          grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
-          ! grep -q 'GARMENT_MESH_WARP_CAPABILITY' server/core/localExecution/productionLocalExecutorPolicy.ts
-          ! grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionCapabilities.ts
-          ! grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionRoute.ts
-          ! grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionTargetSelection.ts
+          grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
+          grep -q 'GARMENT_MESH_WARP_CAPABILITY' server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionCapabilities.ts
+          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionRoute.ts
+          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionTargetSelection.ts
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+          ! grep -Eq 'garment-mesh-warp|GARMENT_MESH_WARP' src/lib/tryon/tryonEngine.js
