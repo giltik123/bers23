@@ -9,6 +9,7 @@ const bytes = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 function authority(row: Readonly<Record<string, unknown>> | undefined = Object.freeze({
   storageId: 'storage-original',
+  projectId: scope.projectId,
   role: 'ORIGINAL',
   lifecycle: 'IMMUTABLE',
   width: 40,
@@ -32,6 +33,7 @@ test('ArtifactAuthority resolves exact stored ORIGINAL evidence including SHA ov
   const evidence = await value.resolveStoredImageEvidence(scope, artifactId);
   assert.deepEqual(evidence, {
     artifactId,
+    projectId: scope.projectId,
     storageId: 'storage-original',
     role: 'ORIGINAL',
     lifecycle: 'IMMUTABLE',
@@ -41,33 +43,27 @@ test('ArtifactAuthority resolves exact stored ORIGINAL evidence including SHA ov
   });
 });
 
-test('ArtifactAuthority resolves exact stored FINAL evidence but does not accept external URL references', async () => {
+test('ArtifactAuthority resolves exact stored FINAL evidence but does not accept unrelated signed references', async () => {
   const finalRow = Object.freeze({
-    storageId: 'storage-final', role: 'COMPOSITE', lifecycle: 'FINAL', width: 40, height: 60,
+    storageId: 'storage-final', projectId: scope.projectId, role: 'COMPOSITE', lifecycle: 'FINAL', width: 40, height: 60,
     encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes,
   });
   const { external, value } = authority(finalRow);
   const finalId = external.issueStoredFinal('storage-final', scope);
   assert.equal((await value.resolveStoredImageEvidence(scope, finalId)).storageId, 'storage-final');
-
-  const externalId = (() => {
-    // The public authority intentionally has no issue helper for a generic URL in
-    // this test. A syntactically unrelated signed reference must not be treated as
-    // durable Project storage evidence.
-    return external.issueStoredMask('storage-mask', scope);
-  })();
-  await assert.rejects(() => value.resolveStoredImageEvidence(scope, externalId), /not trusted/i);
+  await assert.rejects(() => value.resolveStoredImageEvidence(scope, external.issueStoredMask('storage-mask', scope)), /not trusted/i);
 });
 
-test('ArtifactAuthority fails closed when stored evidence is missing or its role/lifecycle/encoding drifts', async () => {
+test('ArtifactAuthority fails closed when stored evidence is missing or its scope/role/lifecycle/encoding drifts', async () => {
   const missing = authority(undefined);
   await assert.rejects(() => missing.value.resolveStoredImageEvidence(scope, missing.external.issueStoredOriginal('storage-original', scope)), /unavailable/i);
 
   for (const [name, row] of [
-    ['role', { storageId: 'storage-original', role: 'COMPOSITE', lifecycle: 'IMMUTABLE', width: 40, height: 60, encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes }],
-    ['lifecycle', { storageId: 'storage-original', role: 'ORIGINAL', lifecycle: 'FINAL', width: 40, height: 60, encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes }],
-    ['encoding', { storageId: 'storage-original', role: 'ORIGINAL', lifecycle: 'IMMUTABLE', width: 40, height: 60, encoding: 'JPEG', contentType: 'image/jpeg', bytes }],
-    ['dimensions', { storageId: 'storage-original', role: 'ORIGINAL', lifecycle: 'IMMUTABLE', width: 0, height: 60, encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes }],
+    ['project', { storageId: 'storage-original', projectId: 'other-project', role: 'ORIGINAL', lifecycle: 'IMMUTABLE', width: 40, height: 60, encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes }],
+    ['role', { storageId: 'storage-original', projectId: scope.projectId, role: 'COMPOSITE', lifecycle: 'IMMUTABLE', width: 40, height: 60, encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes }],
+    ['lifecycle', { storageId: 'storage-original', projectId: scope.projectId, role: 'ORIGINAL', lifecycle: 'FINAL', width: 40, height: 60, encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes }],
+    ['encoding', { storageId: 'storage-original', projectId: scope.projectId, role: 'ORIGINAL', lifecycle: 'IMMUTABLE', width: 40, height: 60, encoding: 'JPEG', contentType: 'image/jpeg', bytes }],
+    ['dimensions', { storageId: 'storage-original', projectId: scope.projectId, role: 'ORIGINAL', lifecycle: 'IMMUTABLE', width: 0, height: 60, encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes }],
   ] as const) {
     const candidate = authority(Object.freeze(row));
     await assert.rejects(
