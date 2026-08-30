@@ -48,7 +48,8 @@ jobs:
       - name: Bundle PostgreSQL F4b.4 execution and closed-composition verticals
         run: |
           runtime=.test-cache/fashion-f4b4-service-postgres
-          mkdir -p "$runtime/migrations"
+          artifact_runtime=.test-cache/artifacts/migrations
+          mkdir -p "$runtime/migrations" "$artifact_runtime"
           mapfile -t migration_files < <(find server -type f -path '*/migrations/*.sql' -print | sort)
           test "${#migration_files[@]}" -gt 0
           duplicates="$(printf '%s\n' "${migration_files[@]}" | xargs -n1 basename | sort | uniq -d)"
@@ -58,7 +59,9 @@ jobs:
             exit 1
           fi
           for source in "${migration_files[@]}"; do
-            cp "$source" "$runtime/migrations/$(basename "$source")"
+            name="$(basename "$source")"
+            cp "$source" "$runtime/migrations/$name"
+            cp "$source" "$artifact_runtime/$name"
           done
           npx esbuild tests/garment-mesh-warp-service-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/service.mjs" --external:node:* --external:pg --external:sharp
           npx esbuild tests/garment-mesh-warp-production-composition-closed.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/composition-closed.mjs" --external:node:* --external:pg --external:sharp
