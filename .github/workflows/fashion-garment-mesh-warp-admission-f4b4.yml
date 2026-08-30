@@ -26,7 +26,7 @@ jobs:
           npm run typecheck
           npm run server:typecheck
           npm run server:build
-      - name: Bundle managed-input, registry, planner, ticket, Project-evidence, delivery and Core-recompute contracts
+      - name: Bundle managed-input, registry, planner, ticket, Project-evidence, delivery, Core-recompute and verifier contracts
         run: |
           mkdir -p .test-cache/fashion-f4b4-admission
           npx esbuild tests/local-execution-managed-input-platform.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/platform.mjs --external:node:* --external:pg --external:sharp
@@ -36,6 +36,7 @@ jobs:
           npx esbuild tests/artifact-authority-stored-image-evidence.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/project-evidence.mjs --external:node:* --external:pg --external:sharp
           npx esbuild tests/garment-mesh-warp-input-delivery.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/delivery.mjs --external:node:* --external:pg --external:sharp
           npx esbuild tests/garment-mesh-warp-execution-service.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/service.mjs --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-workflow-verifier.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/verifier.mjs --external:node:* --external:pg --external:sharp
       - name: Prove Project and managed Garment ticket namespaces stay distinct
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/platform.mjs
       - name: Prove registry describes managed authority without admitting production execution
@@ -50,6 +51,8 @@ jobs:
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/delivery.mjs
       - name: Prove Core byte-exact recomputation, intermediate persistence and replay
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/service.mjs
+      - name: Prove verifier accepts only byte-exact Fashion WORKING intermediates
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/verifier.mjs
       - name: Keep production pixel admission closed until PostgreSQL vertical proof lands
         run: |
           grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
