@@ -49,6 +49,22 @@ function ticket(token: string, managedInputs?: readonly LocalExecutionManagedGar
   });
 }
 
+function validResult(stored: LocalExecutionTicketV2): Record<string, unknown> {
+  return {
+    ticketId: stored.ticketId,
+    ticketVersion: '2',
+    requestId: stored.requestId,
+    workflowId: stored.workflowId,
+    stepId: stored.stepId,
+    nonce: stored.nonce,
+    executor: { kind: 'DETERMINISTIC_TOOL', toolId: 'f4b2-contract', version: '1' },
+    runtime: 'BROWSER_JS',
+    accelerator: 'cpu',
+    outputs: [{ uploadId: `${stored.ticketId}-upload`, kind: 'image', role: 'COMPOSITE', sha256: 'f'.repeat(64), sizeBytes: 64, mimeType: 'image/png' }],
+    metrics: { latencyMs: 1 },
+  };
+}
+
 test('F4b.2 preserves old v2 ticket shape when managedInputs is absent', () => {
   const registry = new LocalExecutionAdmissionRegistry();
   const stored = registry.issueV2(ticket('legacy'));
@@ -96,7 +112,7 @@ test('F4b.2 freezes managedInputs and includes them in idempotent authority reco
   })), /idempotency key already bound/i);
 });
 
-test('F4b.2 rejects empty, open-ended and inconsistent managed Garment bindings', () => {
+test('F4b.2 rejects empty, open-ended and non-canonical managed Garment bindings', () => {
   const registry = new LocalExecutionAdmissionRegistry();
   assert.throws(() => registry.issueV2(ticket('empty', [])), /1 to 16/);
   assert.throws(() => registry.issueV2(ticket('unknown', [Object.freeze({ ...viewBinding, unexpected: true }) as any])), /unknown or missing fields/);
@@ -105,7 +121,28 @@ test('F4b.2 rejects empty, open-ended and inconsistent managed Garment bindings'
     tier: 'FULL_3D',
     format: 'BERS_PARAMETRIC_V1',
   }) as any])), /tier\/format/);
-  assert.throws(() => registry.issueV2(ticket('uppercase', [Object.freeze({ ...viewBinding, garmentId: viewBinding.garmentId.toUpperCase() }) as any])), /identity/);
+  assert.throws(() => registry.issueV2(ticket('uppercase-id', [Object.freeze({ ...viewBinding, garmentId: viewBinding.garmentId.toUpperCase() }) as any])), /identity/);
+  assert.throws(() => registry.issueV2(ticket('uppercase-hash', [Object.freeze({ ...viewBinding, contentSha256: viewBinding.contentSha256.toUpperCase() }) as any])), /identity/);
+});
+
+test('F4b.2 rejects client result attempts to assert managed Garment authority', () => {
+  for (const forbidden of [
+    { managedInputs: [viewBinding] },
+    { garmentId: viewBinding.garmentId },
+    { viewId: viewBinding.viewId },
+    { representationId: representationBinding.representationId },
+  ]) {
+    const registry = new LocalExecutionAdmissionRegistry();
+    const stored = registry.issueV2(ticket(`forbidden-${Object.keys(forbidden)[0]}`, [viewBinding, representationBinding]));
+    const decision = registry.claimV2({
+      ticketId: stored.ticketId,
+      callerScope: scope,
+      now: 2_000,
+      result: { ...validResult(stored), ...forbidden },
+    });
+    assert.equal(decision.allowed, false);
+    if (!decision.allowed) assert.equal(decision.reasonCode, 'FORBIDDEN_CLIENT_AUTHORITY');
+  }
 });
 
 test('F4b.2 ticket authority copies managedInputs only for v2 and never synthesizes them for legacy v2 calls', async () => {
