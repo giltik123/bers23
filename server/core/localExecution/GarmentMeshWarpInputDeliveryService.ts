@@ -94,7 +94,10 @@ export class GarmentMeshWarpInputDeliveryService {
     if (view.binding.kind !== 'GARMENT_VIEW') throw garmentMeshWarpContractError('managed_garment_input_authority_mismatch', 'First revalidated garment mesh-warp input is not the basis view');
     const decoded = await decodeCanonicalView(view.bytes, view.binding.width, view.binding.height);
 
-    return deepFreeze({
+    // Freeze the authority envelope, but intentionally do not Object.freeze a
+    // typed-array view. A fresh copy prevents mutation from aliasing Core-owned
+    // storage while remaining valid JavaScript across runtimes.
+    return Object.freeze({
       ticketId: ticket.ticketId,
       projectId: ticket.scope.projectId,
       projectImageStorageId: projectEvidence.storageId,
@@ -140,7 +143,8 @@ function assertProjectEvidence(
 ): void {
   const source = ticket.inputs[0];
   if (
-    evidence.artifactId !== p.sourceArtifactId
+    evidence.projectId !== ticket.scope.projectId
+    || evidence.artifactId !== p.sourceArtifactId
     || source.artifactId !== p.sourceArtifactId
     || source.sha256 !== evidence.sha256
     || evidence.storageId !== p.projectImageStorageId
@@ -171,7 +175,7 @@ export function assertMeshMatchesTicket(
   if (
     mesh.meshSha256 !== p.destinationMeshSha256
     || provenance.anchorSetId !== p.anchorSetId
-    || provenance.projectId !== projectProjectId(mesh)
+    || provenance.projectId !== project.projectId
     || provenance.projectImageStorageId !== p.projectImageStorageId
     || provenance.projectImageStorageId !== project.storageId
     || provenance.projectImageSha256 !== p.projectImageSha256
@@ -186,8 +190,6 @@ export function assertMeshMatchesTicket(
     || provenance.representationContentSha256 !== p.representationSha256
   ) throw garmentMeshWarpContractError('garment_mesh_warp_geometry_authority_mismatch', 'Server-derived garment destination mesh no longer matches the immutable ticket');
 }
-
-function projectProjectId(mesh: GarmentDestinationMesh): string { return mesh.provenance.projectId; }
 
 async function decodeCanonicalView(bytes: Uint8Array, expectedWidth: number, expectedHeight: number): Promise<Readonly<{ width: number; height: number; rgba: Uint8Array }>> {
   try {
@@ -206,11 +208,4 @@ function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)]));
-}
-function deepFreeze<T>(value: T): T {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
-  }
-  return value;
 }
