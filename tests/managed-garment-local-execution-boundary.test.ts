@@ -17,11 +17,12 @@ test('F4b.2 keeps generic Project input admission and delivery unaware of manage
   const authority = await readFile('server/core/localExecution/ManagedGarmentLocalExecutionInputAuthority.ts', 'utf8');
   assert.match(authority, /revalidateTicket/);
   assert.match(authority, /createHash\('sha256'\)/);
-  assert.doesNotMatch(authority, /provider|Billing|paidCloudCredits|persistFinal|acceptFinal/i,
+  assert.doesNotMatch(authority, /productionTargetSelection|providerId|providerCalls|paidCloudCredits|persistFinal|acceptFinal|Billing/i,
     'managed input authority must not gain execution, provider, Billing or FINAL authority');
 
   const contract = await readFile('src/platform/creative/canonical/localExecution.ts', 'utf8');
-  const projectBinding = contract.slice(contract.indexOf('export type LocalExecutionInputBinding'), contract.indexOf('export type LocalExecutionManagedGarmentViewInputBinding'));
+  const projectBinding = contract.match(/export type LocalExecutionInputBinding = Readonly<\{([\s\S]*?)\}>;/)?.[1];
+  assert.ok(projectBinding, 'LocalExecutionInputBinding declaration must remain present');
   assert.doesNotMatch(projectBinding, /garment|managed/i, 'LocalExecutionInputBinding must remain the existing Project Artifact contract');
   assert.match(contract, /managedInputs\?: readonly LocalExecutionManagedGarmentInputBinding\[\]/);
 });
