@@ -51,6 +51,26 @@ jobs:
           npx esbuild tests/fashion-garment-warp-layer-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-layer/test.mjs --external:node:* --external:pg --external:sharp
       - name: Prove exact evidence replay immutability and non-FINAL boundary
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-layer/test.mjs
+      - name: Dump exact PostgreSQL catalog on proof failure
+        if: failure()
+        run: |
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+          try {
+            for (const [name, sql] of Object.entries({
+              columns: `SELECT column_name,udt_name,is_nullable,character_maximum_length,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='canonical_fashion_garment_warp_layers' ORDER BY ordinal_position`,
+              constraints: `SELECT c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c WHERE c.conrelid IN (to_regclass('canonical_fashion_garment_warp_layers'),to_regclass('canonical_garment_representations'),to_regclass('canonical_project_body_anchor_sets')) ORDER BY c.conname`,
+              indexes: `SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename='canonical_fashion_garment_warp_layers' ORDER BY indexname`,
+              triggers: `SELECT t.tgname,t.tgtype,t.tgenabled,p.proname,pg_get_triggerdef(t.oid) AS definition FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid=to_regclass('canonical_fashion_garment_warp_layers') AND NOT t.tgisinternal ORDER BY t.tgname`,
+            })) {
+              const result = await pool.query(sql);
+              console.log(`F4B4_CATALOG_${name.toUpperCase()}=${JSON.stringify(result.rows)}`);
+            }
+          } finally {
+            await pool.end();
+          }
+          NODE
       - name: Prove pixel execution is still NOT_ADMITTED at this intermediate checkpoint
         run: |
           grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
