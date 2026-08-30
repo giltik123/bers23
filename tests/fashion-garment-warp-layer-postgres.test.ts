@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { Pool } from 'pg';
 import sharp from 'sharp';
+import { migrateFinalImageLineageSchema } from '../server/core/artifacts/finalImageLineageSchema.ts';
 import { PostgresProjectStore } from '../server/core/projects/postgresProjectStore.ts';
+import { migrateProjectSchema } from '../server/core/projects/projectSchema.ts';
 import { PostgresGarmentStore } from '../server/core/fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from '../server/core/fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresGarmentRepresentationStore } from '../server/core/fashion/postgresGarmentRepresentationStore.ts';
@@ -25,6 +27,10 @@ function rgba(width:number,height:number,seed:number){const out=new Uint8Array(w
 test('F4b.4 immutable warp layer is exact-evidence bound, replay-safe and never a Project FINAL',async()=>{
   const pool=new Pool({connectionString:databaseUrl,max:5,application_name:'bers-f4b4-warp-layer'});
   try{
+    // Exercise the non-FINAL boundary against the same current Project/FINAL lineage schema used
+    // by production Accept. A partial predecessor schema could make the rejection pass for the
+    // wrong reason (for example, a missing lineage column) and is therefore not valid evidence.
+    await migrateFinalImageLineageSchema(pool);await migrateProjectSchema(pool);
     await migrateGarmentSchema(pool);await migrateProjectBodyAnchorSchema(pool);await migrateGarmentWarpLayerSchema(pool);await checkGarmentWarpLayerSchema(pool);
     const projects=new PostgresProjectStore(pool),garments=new PostgresGarmentStore(pool),wardrobe=new PostgresGarmentWardrobeStore(pool),representations=new PostgresGarmentRepresentationStore(pool);
     const project=await projects.create(owner,'F4b.4 person',await image(1),projectLimits);const projectId=String(project.project_id).toLowerCase();
