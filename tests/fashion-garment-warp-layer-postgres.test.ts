@@ -51,10 +51,12 @@ test('F4b.4 immutable warp layer is exact-evidence bound, replay-safe and never 
     const replacementStorageId=randomUUID().toLowerCase();const replacement=await image(9);
     await pool.query(`INSERT INTO canonical_image_artifacts(storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes) VALUES($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9)`,[replacementStorageId,owner.tenantId,owner.userId,projectId,randomUUID(),'F4B4_STALE_FIXTURE',anchor.projectImageWidth,anchor.projectImageHeight,Buffer.from(replacement)]);
     await pool.query(`UPDATE canonical_projects SET current_image_storage_id=$2 WHERE project_id=$1`,[projectId,replacementStorageId]);
+    assert.deepEqual(await layerStore.persist(owner,input),first,'historical exact replay stays idempotent after Project source changes');
     await assert.rejects(layerStore.persist(owner,{...input,executionId:'stale-project'}),/stale|canonical Fashion contract|violates check constraint/i);
     await pool.query(`UPDATE canonical_projects SET current_image_storage_id=$2 WHERE project_id=$1`,[projectId,anchor.projectImageStorageId]);
 
     const latest=(await garments.get(owner,garment.id))!;await representations.revoke(owner,garment.id,admitted.representation.id,latest.revision);
+    assert.deepEqual(await layerStore.persist(owner,input),first,'historical exact replay stays idempotent after representation revocation');
     await assert.rejects(layerStore.persist(owner,{...input,executionId:'revoked-representation'}),/stale|canonical Fashion contract|violates check constraint/i);
 
     await pool.query('ALTER TABLE canonical_fashion_garment_warp_layers DROP CONSTRAINT canonical_fashion_garment_warp_layers_tool_check');

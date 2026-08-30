@@ -20,7 +20,16 @@ export class PostgresGarmentWarpLayerStore {
   constructor(private readonly pool: Pool, private readonly nextId: () => string = randomUUID) {}
 
   async persist(scope: GarmentOwnerScope,input: PersistGarmentWarpLayerInput): Promise<GarmentWarpLayer> {
-    const n=normalizeInput(input); const layerId=normalizeUuid(this.nextId(),'generated layerId'); const contentSha256=sha256(n.rgba);
+    const n=normalizeInput(input); const contentSha256=sha256(n.rgba);
+
+    // Exact historical replay is resolved before a new INSERT attempt. This is
+    // intentional: later Garment/view/representation revocation must block new
+    // admissions, but cannot retroactively make an already-admitted immutable
+    // intermediate undiscoverable or non-idempotent.
+    const existing=await this.loadByExecution(scope,n.projectId,n.executionId);
+    if(existing){assertExactReplay(existing,n,contentSha256);return existing;}
+
+    const layerId=normalizeUuid(this.nextId(),'generated layerId');
     await this.pool.query(`INSERT INTO canonical_fashion_garment_warp_layers
       (layer_id,tenant_id,user_id,project_id,execution_id,ticket_id,project_image_storage_id,project_image_sha256,garment_id,view_id,view_content_sha256,
        representation_id,representation_content_sha256,anchor_set_id,anchor_payload_sha256,destination_mesh_sha256,tool_id,tool_version,width,height,encoding,content_sha256,rgba_bytes)
@@ -59,7 +68,8 @@ function fromRow(row:any):GarmentWarpLayer{
   if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1||width>GARMENT_MESH_WARP_MAX_DIMENSION||height>GARMENT_MESH_WARP_MAX_DIMENSION||!Number.isSafeInteger(pixels)||pixels>GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS||rgba.byteLength!==pixels*4||contentSha256!==hashes[5]||row.encoding!=='RGBA8_RAW_V1'||row.tool_id!==GARMENT_MESH_WARP_TOOL_ID||row.tool_version!==GARMENT_MESH_WARP_TOOL_VERSION)throw new Error('Stored Fashion garment warp layer integrity mismatch');
   return Object.freeze({id:ids[0],projectId:ids[1],executionId:normalizeText(row.execution_id,'stored executionId'),ticketId:normalizeText(row.ticket_id,'stored ticketId'),projectImageStorageId:ids[2],projectImageSha256:hashes[0],garmentId:ids[3],viewId:ids[4],viewContentSha256:hashes[1],representationId:ids[5],representationContentSha256:hashes[2],anchorSetId:ids[6],anchorPayloadSha256:hashes[3],destinationMeshSha256:hashes[4],width,height,contentSha256,rgba,createdAt:new Date(row.created_at).toISOString()});
 }
-function assertExactReplay(s:GarmentWarpLayer,i:PersistGarmentWarpLayerInput,hash:string):void{const same=s.projectId===i.projectId&&s.executionId===i.executionId&&s.ticketId===i.ticketId&&s.projectImageStorageId===i.projectImageStorageId&&s.projectImageSha256===i.projectImageSha256&&s.garmentId===i.garmentId&&s.viewId===i.viewId&&s.viewContentSha256===i.viewContentSha256&&s.representationId===i.representationId&&s.representationContentSha256===i.representationContentSha256&&s.anchorSetId===i.anchorSetId&&s.anchorPayloadSha256===i.anchorPayloadSha256&&s.destinationMeshSha256===i.destinationMeshSha256&&s.width===i.width&&s.height===i.height&&s.contentSha256===hash&&s.rgba.byteLength===i.rgba.byteLength&&sha256(s.rgba)===sha256(i.rgba);if(!same)throw new Error('Canonical garment warp execution is already bound to a different intermediate layer or lineage');}
+function assertExactReplay(s:GarmentWarpLayer,i:PersistGarmentWarpLayerInput,hash:string):void{const same=s.projectId===i.projectId&&s.executionId===i.executionId&&s.ticketId===i.ticketId&&s.projectImageStorageId===i.projectImageStorageId&&s.projectImageSha256===i.projectImageSha256&&s.garmentId===i.garmentId&&s.viewId===i.viewId&&s.viewContentSha256===i.viewContentSha256&&s.representationId===i.representationId&&s.representationContentSha256===i.representationContentSha256&&s.anchorSetId===i.anchorSetId&&s.anchorPayloadSha256===i.anchorPayloadSha256&&s.destinationMeshSha256===i.destinationMeshSha256&&s.width===i.width&&s.height===i.height&&s.contentSha256===hash&&bytesEqual(s.rgba,i.rgba);if(!same)throw new Error('Canonical garment warp execution is already bound to a different intermediate layer or lineage');}
+function bytesEqual(a:Uint8Array,b:Uint8Array):boolean{if(a.byteLength!==b.byteLength)return false;for(let i=0;i<a.byteLength;i+=1)if(a[i]!==b[i])return false;return true;}
 function normalizeUuid(value:unknown,label:string):string{const normalized=typeof value==='string'?value.toLowerCase():'';if(!UUID.test(normalized))throw new Error(`${label} must be a UUID`);return normalized;}
 function normalizeText(value:unknown,label:string):string{const normalized=typeof value==='string'?value.normalize('NFKC').trim():'';if(!normalized||[...normalized].length>200||/[\u0000-\u001f\u007f]/u.test(normalized))throw new Error(`${label} is invalid`);return normalized;}
 function sha256(bytes:Uint8Array):string{return createHash('sha256').update(bytes).digest('hex');}

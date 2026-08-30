@@ -2,7 +2,7 @@ name: Fashion F4b.4 immutable garment warp-layer authority
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "fashion-body-anchor-destination-mesh-f4b3" ]
   workflow_dispatch:
 
 jobs:
