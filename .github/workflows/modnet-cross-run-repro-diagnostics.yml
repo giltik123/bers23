@@ -1,0 +1,116 @@
+name: MODNet cross-run ONNX reproducibility diagnostics
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "scripts/fingerprint-onnx-repro.py"
+      - ".github/workflows/modnet-cross-run-repro-diagnostics.yml"
+      - "scripts/build-modnet-portrait-matting-release.py"
+      - "src/platform/creative/local-ai/models/portrait-matting.manifest.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fingerprint:
+    runs-on: ubuntu-24.04
+    env:
+      MODNET_CHECKPOINT_SHA256: 7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8
+      MODNET_CHECKPOINT_SIZE: 26255603
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact diagnostic candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pinned diagnostic environment
+        run: |
+          python -m pip install --disable-pip-version-check gdown==5.2.0
+          python -m pip install --disable-pip-version-check torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check numpy==1.26.4 onnx==1.15.0 onnxruntime==1.16.3
+      - name: Acquire exact MODNet source and checkpoint
+        run: |
+          set -euo pipefail
+          git clone https://github.com/ZHKKKe/MODNet "${RUNNER_TEMP}/MODNet"
+          git -C "${RUNNER_TEMP}/MODNet" checkout --detach 28165a451e4610c9d77cfdf925a94610bb2810fb
+          test "$(git -C "${RUNNER_TEMP}/MODNet" rev-parse HEAD)" = 28165a451e4610c9d77cfdf925a94610bb2810fb
+          mkdir -p "${RUNNER_TEMP}/modnet-checkpoints"
+          gdown --folder 'https://drive.google.com/drive/folders/1umYmlCulvIFNaqPjwod1SayFmSRHziyR?usp=sharing' -O "${RUNNER_TEMP}/modnet-checkpoints"
+          mapfile -t checkpoints < <(find "${RUNNER_TEMP}/modnet-checkpoints" -type f -name 'modnet_photographic_portrait_matting.ckpt' -print)
+          test "${#checkpoints[@]}" -eq 1
+          checkpoint="${checkpoints[0]}"
+          test "$(stat -c%s "${checkpoint}")" = "${MODNET_CHECKPOINT_SIZE}"
+          test "$(sha256sum "${checkpoint}" | cut -d' ' -f1)" = "${MODNET_CHECKPOINT_SHA256}"
+          printf '%s\n' "${checkpoint}" > "${RUNNER_TEMP}/modnet-checkpoint-path"
+      - name: Capture hosted runner fingerprint
+        run: |
+          set -euo pipefail
+          echo "RUNNER_ARCH=${RUNNER_ARCH}"
+          uname -a
+          lscpu
+          python - <<'PY'
+          import platform, sys
+          import numpy, onnx, onnxruntime, torch
+          print({
+            'python': sys.version,
+            'platform': platform.platform(),
+            'machine': platform.machine(),
+            'processor': platform.processor(),
+            'torch': torch.__version__,
+            'numpy': numpy.__version__,
+            'onnx': onnx.__version__,
+            'onnxruntime': onnxruntime.__version__,
+          })
+          PY
+      - name: Export two independent same-run samples
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/modnet-cross-run
+          checkpoint="$(cat "${RUNNER_TEMP}/modnet-checkpoint-path")"
+          for sample in first second; do
+            PYTHONHASHSEED=0 python scripts/build-modnet-portrait-matting-release.py \
+              --single-export \
+              --source "${RUNNER_TEMP}/MODNet" \
+              --checkpoint "${checkpoint}" \
+              --manifest src/platform/creative/local-ai/models/portrait-matting.manifest.json \
+              --output ".test-cache/modnet-cross-run/${sample}.onnx"
+          done
+      - name: Fingerprint graph and every initializer
+        run: |
+          set -euo pipefail
+          python scripts/fingerprint-onnx-repro.py \
+            .test-cache/modnet-cross-run/first.onnx \
+            .test-cache/modnet-cross-run/second.onnx \
+            --output .test-cache/modnet-cross-run/fingerprint.json | tee .test-cache/modnet-cross-run/fingerprint.log
+          python - <<'PY'
+          import json
+          report=json.load(open('.test-cache/modnet-cross-run/fingerprint.json',encoding='utf-8'))
+          if report['comparison']['classification'] != 'BYTE_IDENTICAL':
+              raise SystemExit('within-run MODNet export lost byte reproducibility')
+          print('MODNET_CROSS_RUN_DIAGNOSTIC_SHA=' + report['samples'][0]['rawSha256'])
+          print('MODNET_CROSS_RUN_GRAPH_SHA=' + report['samples'][0]['graphSemanticSha256'])
+          print('MODNET_CROSS_RUN_INITIALIZER_SHA=' + report['samples'][0]['initializerSemanticSetSha256'])
+          print('MODNET_CROSS_RUN_PROTO_SHA=' + report['samples'][0]['deterministicProtoSha256'])
+          PY
+      - name: Publish diagnostic summary
+        if: always()
+        run: |
+          {
+            echo '## MODNet cross-run diagnostic'
+            echo
+            echo '- Authority: DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY'
+            echo '- No manifest/pin/release identity mutation is performed.'
+            echo '- Compare the emitted raw / graph / initializer / deterministic-protobuf hashes across independent hosted runs.'
+            if test -f .test-cache/modnet-cross-run/fingerprint.json; then
+              echo '```json'
+              cat .test-cache/modnet-cross-run/fingerprint.json
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
