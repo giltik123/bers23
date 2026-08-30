@@ -5,6 +5,7 @@ import { checkGarmentSchema, migrateGarmentSchema } from '../fashion/garmentSche
 import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../fashion/bodyAnchorSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../fashion/garmentWarpLayerSchema.ts';
 import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
+import { PostgresGarmentWardrobeStore } from '../fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresGarmentRepresentationStore } from '../fashion/postgresGarmentRepresentationStore.ts';
 import { PostgresProjectBodyAnchorStore } from '../fashion/postgresProjectBodyAnchorStore.ts';
 import { PostgresGarmentWarpLayerStore } from '../fashion/postgresGarmentWarpLayerStore.ts';
@@ -35,10 +36,11 @@ export type ProductionGarmentMeshWarpCompositionInput = Readonly<{
 export async function createProductionGarmentMeshWarp(input: ProductionGarmentMeshWarpCompositionInput) {
   await ensureFashionWarpSchemas(input.pool, input.nodeEnv);
   const garments = new PostgresGarmentStore(input.pool);
+  const wardrobe = new PostgresGarmentWardrobeStore(input.pool);
   const representations = new PostgresGarmentRepresentationStore(input.pool);
-  const bodyAnchors = new PostgresProjectBodyAnchorStore(input.pool);
-  const layers = new PostgresGarmentWarpLayerStore(input.pool);
   const managedInputs = new ManagedGarmentLocalExecutionInputAuthority({ garments, representations });
+  const bodyAnchors = new PostgresProjectBodyAnchorStore(input.pool, { wardrobe, representations, managedInputs });
+  const layers = new PostgresGarmentWarpLayerStore(input.pool);
   const inputDelivery = new GarmentMeshWarpInputDeliveryService({
     admission: input.admission,
     managedInputs,
@@ -58,7 +60,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     limits: input.limits,
     now: input.now,
   });
-  return Object.freeze({ execution, inputDelivery, managedInputs, garments, representations, bodyAnchors, layers });
+  return Object.freeze({ execution, inputDelivery, managedInputs, garments, wardrobe, representations, bodyAnchors, layers });
 }
 
 async function ensureFashionWarpSchemas(pool: Pool, nodeEnv: ProductionGarmentMeshWarpCompositionInput['nodeEnv']): Promise<void> {
