@@ -69,6 +69,11 @@ test('production Core composes F4b.4 stores/services but closed policy publishes
   assert.ok(production.localExecution.garmentMeshWarp, 'production Core must compose the F4b.4 execution service');
   assert.ok(production.localExecution.garmentMeshWarpInputDelivery, 'production Core must compose purpose-bound input delivery');
 
+  // The preceding PostgreSQL service proof deliberately leaves durable evidence behind.
+  // Reset the full F4b.4/local namespace only after createProductionCore has migrated all
+  // tables, so this proof starts from a demonstrably empty authority state of its own.
+  await pool.query('TRUNCATE canonical_fashion_garment_warp_layers,canonical_project_body_anchor_sets,canonical_garment_representations,canonical_garment_views,canonical_garments,local_execution_uploads,local_execution_tickets,canonical_projects,canonical_project_history,canonical_project_versions,canonical_image_artifacts,canonical_mask_artifacts,transaction_journal,reservation_journal_sequences,credit_reservations,credit_wallets RESTART IDENTITY CASCADE');
+
   const project = await production.projects.create(owner, 'F4b.4 closed person', await image(96, 128, 1), projectLimits);
   const projectId = String(project.project_id).toLowerCase();
   const scope = Object.freeze({ ...owner, projectId });
