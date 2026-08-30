@@ -81,11 +81,9 @@ test('browser garment warp fails before candidate upload when purpose-bound enve
   await assert.rejects(()=>h.executor.run(runInput),/envelope does not match/i);assert.equal(h.calls.upload,undefined);assert.equal(h.calls.submit,undefined);
 });
 
-test('browser garment warp fails before candidate upload when Core ticket tries to bind another Project source',async()=>{
-  const h=harness();
-  const core=(h.executor as any).core;
-  void core;
-  const bad=ticket() as any;bad.inputs=Object.freeze([Object.freeze({...bad.inputs[0],artifactId:'different-source'})]);
+test('browser garment warp fails before loading inputs when Core ticket tries to bind another Project source',async()=>{
+  const base=ticket();
+  const bad=Object.freeze({...base,inputs:Object.freeze([Object.freeze({...base.inputs[0],artifactId:'different-source'})])}) as LocalExecutionTicketV2;
   const calls:any={};
   const executor=new CoreAuthorizedGarmentMeshWarp(projectId,Object.freeze({
     prepareGarmentMeshWarp:async(payload:any)=>{calls.prepare=payload;return{executionId:bad.requestId,ticket:bad};},
