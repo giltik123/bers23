@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
 
-const MIGRATION = '026_managed_garment_representations.sql';
+const MIGRATIONS = Object.freeze(['026_managed_garment_representations.sql', '027_garment_representation_revocation_lifecycle.sql'] as const);
 type ColumnContract = Readonly<{ table: string; name: string; udt: string; nullable: boolean; defaultKind: 'none'|'timestamp'|'exact'; expectedDefault?: string; maxLength?: number }>;
 type IndexContract = Readonly<{ columns: readonly string[]; options: readonly number[] }>;
 
@@ -70,6 +70,7 @@ const FKS = Object.freeze({
 } as const);
 const TRIGGERS = Object.freeze({
   canonical_garment_representations_immutable_guard: ['canonical_garment_representation_immutable_guard','e8e002603a8287f3510dd2867b2b47cb',false,31],
+  canonical_garment_representations_revocation_guard: ['canonical_garment_representation_revocation_guard','df38ff06a1ab32600802a472ce232055',false,19],
   canonical_garment_representation_sources_immutable_guard: ['canonical_garment_representation_source_immutable_guard','012bdec735ac7064f4eec0965ab9d330',false,31],
   canonical_garment_representations_source_set_check: ['canonical_assert_garment_representation_sources','71ef7b462acdc5812c5e56a582d19673',true,21],
   canonical_garment_representation_sources_source_set_check: ['canonical_assert_garment_representation_sources','71ef7b462acdc5812c5e56a582d19673',true,21],
@@ -82,9 +83,9 @@ const INDEXES: Readonly<Record<string,IndexContract>> = Object.freeze({
   canonical_garment_representation_sources_view_idx: { columns: ['tenant_id','user_id','view_id','representation_id'], options: [0,0,0,0] },
 });
 
-async function migration(): Promise<string> {
-  try { return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8'); }
-  catch { return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', MIGRATION), 'utf8'); }
+async function migration(name: (typeof MIGRATIONS)[number]): Promise<string> {
+  try { return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8'); }
+  catch { return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', name), 'utf8'); }
 }
 const canon = (v: unknown) => String(v ?? '').toLowerCase().replace(/::(?:text|bigint|integer)/g,'').replace(/"/g,'').replace(/\s+/g,'').replace(/[()]/g,'');
 const exact = (a: unknown,b: string) => canon(a)===canon(b);
@@ -130,4 +131,4 @@ function same(a: readonly unknown[]|undefined,b: readonly unknown[]):boolean{ret
 function like(value:string,pattern:string):boolean{const parts=pattern.split('%');let at=0;for(const part of parts){if(!part)continue;const next=value.indexOf(part,at);if(next<0)return false;at=next+part.length}return true}
 
 export async function checkGarmentRepresentationSchema(pool: Pool): Promise<void> { const f=await failures(pool); if(f.length) throw new Error(`canonical Garment representation schema is not ready: ${f.join(', ')}`); }
-export async function migrateGarmentRepresentationSchema(pool: Pool): Promise<void> { try{await checkGarmentRepresentationSchema(pool);return}catch{} await pool.query(await migration()); await checkGarmentRepresentationSchema(pool); }
+export async function migrateGarmentRepresentationSchema(pool: Pool): Promise<void> { try{await checkGarmentRepresentationSchema(pool);return}catch{} for(const name of MIGRATIONS) await pool.query(await migration(name)); await checkGarmentRepresentationSchema(pool); }

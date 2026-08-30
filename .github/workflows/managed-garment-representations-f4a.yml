@@ -40,7 +40,7 @@ jobs:
       - run: npm ci
       - name: Typecheck Core server
         run: npm run server:typecheck
-      - name: Build production Core and prove Fashion migrations 022 through 026 are packaged
+      - name: Build production Core and prove Fashion migrations 022 through 027 are packaged
         run: |
           npm run server:build
           test -f dist-server/migrations/022_managed_garments_and_initial_views.sql
@@ -48,6 +48,7 @@ jobs:
           test -f dist-server/migrations/024_managed_garment_collections.sql
           test -f dist-server/migrations/025_managed_outfits.sql
           test -f dist-server/migrations/026_managed_garment_representations.sql
+          test -f dist-server/migrations/027_garment_representation_revocation_lifecycle.sql
       - name: Bundle F4a and predecessor PostgreSQL acceptance
         run: |
           mkdir -p .test-cache/managed-garment-representations-f4a/migrations
@@ -68,6 +69,7 @@ jobs:
             ['tests/managed-garment-multiview-postgres.test.ts', 'managed-garment-multiview-postgres.test.mjs'],
             ['tests/managed-garment-representations-postgres.test.ts', 'managed-garment-representations-postgres.test.mjs'],
             ['tests/managed-garment-representation-schema-hardening-postgres.test.ts', 'managed-garment-representation-schema-hardening-postgres.test.mjs'],
+            ['tests/managed-garment-representation-lifecycle-postgres.test.ts', 'managed-garment-representation-lifecycle-postgres.test.mjs'],
           ]) {
             await build({ ...common, entryPoints: [entry], outfile: `.test-cache/managed-garment-representations-f4a/${output}` });
           }
@@ -77,6 +79,7 @@ jobs:
           cp server/core/fashion/migrations/024_managed_garment_collections.sql .test-cache/managed-garment-representations-f4a/migrations/
           cp server/core/fashion/migrations/025_managed_outfits.sql .test-cache/managed-garment-representations-f4a/migrations/
           cp server/core/fashion/migrations/026_managed_garment_representations.sql .test-cache/managed-garment-representations-f4a/migrations/
+          cp server/core/fashion/migrations/027_garment_representation_revocation_lifecycle.sql .test-cache/managed-garment-representations-f4a/migrations/
       - name: Preserve F3a ordered Outfit aggregate and role/tombstone semantics
         run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-outfits-postgres.test.mjs
       - name: Preserve F3a schema hardening and migration rollback
@@ -91,5 +94,7 @@ jobs:
         run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-garment-representations-postgres.test.mjs
       - name: Prove F4a fail-closed schema repair and rollback
         run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-garment-representation-schema-hardening-postgres.test.mjs
+      - name: Prove F4a database-owned one-way revocation lifecycle evidence
+        run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-garment-representation-lifecycle-postgres.test.mjs
       - name: Preserve zero-object Fashion navigation lockdown
         run: node --test tests/editor-zero-object-navigation.test.mjs
