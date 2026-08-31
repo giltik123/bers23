@@ -6,6 +6,7 @@ on:
     paths:
       - "scripts/fingerprint-onnx-repro.py"
       - "scripts/compare-onnx-repro-reports.py"
+      - "scripts/validate-modnet-diagnostic-export.py"
       - ".github/workflows/modnet-cross-run-repro-diagnostics.yml"
       - "scripts/build-modnet-portrait-matting-release.py"
       - "src/platform/creative/local-ai/models/portrait-matting.manifest.json"
@@ -99,6 +100,16 @@ jobs:
               --manifest src/platform/creative/local-ai/models/portrait-matting.manifest.json \
               --output ".test-cache/modnet-cross-run/${sample}.onnx"
           done
+      - name: Validate folding-off candidate against production structure and parity gates
+        run: |
+          set -euo pipefail
+          checkpoint="$(cat "${RUNNER_TEMP}/modnet-checkpoint-path")"
+          python scripts/validate-modnet-diagnostic-export.py \
+            --source "${RUNNER_TEMP}/MODNet" \
+            --checkpoint "${checkpoint}" \
+            --manifest src/platform/creative/local-ai/models/portrait-matting.manifest.json \
+            --onnx .test-cache/modnet-cross-run/first.onnx \
+            --report .test-cache/modnet-cross-run/parity.json
       - name: Fingerprint graph and every initializer
         run: |
           set -euo pipefail
@@ -115,6 +126,15 @@ jobs:
           if classification != 'BYTE_IDENTICAL':
               raise SystemExit('within-run MODNet export lost byte reproducibility')
           sample=report['samples'][0]
+          parity=json.load(open('.test-cache/modnet-cross-run/parity.json',encoding='utf-8'))
+          if parity.get('authority') != 'DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY':
+              raise SystemExit('unexpected MODNet diagnostic parity authority')
+          if parity.get('productionDeviceApproval') is not False:
+              raise SystemExit('diagnostic parity must not grant production approval')
+          if parity['artifact']['sha256'] != sample['rawSha256'] or parity['artifact']['size'] != sample['size']:
+              raise SystemExit('MODNet parity evidence is not bound to fingerprinted bytes')
+          if float(parity['maxAbsError']) > float(parity['parityAtol']):
+              raise SystemExit('MODNet diagnostic parity exceeded release-builder tolerance')
           fields={
               'replica': os.environ['MODNET_DIAGNOSTIC_REPLICA'],
               'candidate': os.environ['MODNET_DIAGNOSTIC_CANDIDATE_SHA'],
@@ -127,6 +147,8 @@ jobs:
               'graph': sample['graphSemanticSha256'],
               'initializers': sample['initializerSemanticSetSha256'],
               'initializerCount': str(sample['initializerCount']),
+              'maxAbsError': format(float(parity['maxAbsError']), '.12g'),
+              'parityAtol': format(float(parity['parityAtol']), '.12g'),
               'classification': classification,
           }
           line='MODNET_REPRO_FINGERPRINT|'+'|'.join(f'{key}={value}' for key,value in fields.items())
@@ -140,7 +162,7 @@ jobs:
               'cpu': fields['cpu'],
           }, sort_keys=True)+'\n', encoding='utf-8')
           PY
-      - name: Upload fingerprint metadata only
+      - name: Upload fingerprint and parity metadata only
         uses: actions/upload-artifact@v4
         with:
           name: modnet-repro-fingerprint-${{ matrix.replica }}
@@ -148,6 +170,7 @@ jobs:
             .test-cache/modnet-cross-run/fingerprint.json
             .test-cache/modnet-cross-run/fingerprint-summary.txt
             .test-cache/modnet-cross-run/runner-metadata.json
+            .test-cache/modnet-cross-run/parity.json
           if-no-files-found: error
           retention-days: 1
       - name: Publish runner diagnostic summary
@@ -159,6 +182,7 @@ jobs:
             echo "- Replica: \`${MODNET_DIAGNOSTIC_REPLICA}\`"
             echo '- Export experiment: `CONSTANT_FOLDING_OFF`'
             echo '- Authority: `DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY`'
+            echo '- Production structural and PyTorch→ORT parity gates are reused against the exact fingerprinted candidate bytes.'
             echo '- Default release export behavior and pinned manifest identity remain unchanged.'
             echo '- No manifest/pin/release identity mutation is performed.'
             echo '- ONNX model bytes are never uploaded as a workflow artifact.'
@@ -192,13 +216,15 @@ jobs:
         with:
           pattern: modnet-repro-fingerprint-*
           path: .test-cache/modnet-cross-run/reports
-      - name: Compare independent hosted runners
+      - name: Compare independent hosted runners and bind parity evidence
         run: |
           set -euo pipefail
           mapfile -t reports < <(find .test-cache/modnet-cross-run/reports -type f -name fingerprint.json -print | sort)
           test "${#reports[@]}" -eq 3
           mapfile -t metadata < <(find .test-cache/modnet-cross-run/reports -type f -name runner-metadata.json -print | sort)
           test "${#metadata[@]}" -eq 3
+          mapfile -t parity_reports < <(find .test-cache/modnet-cross-run/reports -type f -name parity.json -print | sort)
+          test "${#parity_reports[@]}" -eq 3
           python - "${metadata[@]}" <<'PY'
           import json, sys
           for path in sys.argv[1:]:
@@ -210,20 +236,44 @@ jobs:
             "${reports[@]}" \
             --output .test-cache/modnet-cross-run/cross-run-comparison.json \
             > .test-cache/modnet-cross-run/cross-run-comparison.log
-          python - <<'PY'
-          import json
+          python - "${parity_reports[@]}" <<'PY'
+          import json, sys
           from pathlib import Path
+
+          parity_reports=[json.load(open(path,encoding='utf-8')) for path in sys.argv[1:]]
+          for report in parity_reports:
+              if report.get('authority') != 'DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY':
+                  raise SystemExit('unexpected MODNet parity report authority')
+              if report.get('productionDeviceApproval') is not False:
+                  raise SystemExit('diagnostic parity report granted production approval')
+              if float(report['maxAbsError']) > float(report['parityAtol']):
+                  raise SystemExit('MODNet diagnostic parity exceeded release-builder tolerance')
+          parity_shas={report['artifact']['sha256'] for report in parity_reports}
+          parity_sizes={int(report['artifact']['size']) for report in parity_reports}
+          if len(parity_shas) != 1 or len(parity_sizes) != 1:
+              raise SystemExit('MODNet parity reports do not bind one cross-host candidate identity')
 
           report=json.load(open('.test-cache/modnet-cross-run/cross-run-comparison.json',encoding='utf-8'))
           comparison=report['comparison']
+          compared_shas={sample['rawSha256'] for sample in report['samples']}
+          compared_sizes={int(sample['size']) for sample in report['samples']}
+          if compared_shas != parity_shas or compared_sizes != parity_sizes:
+              raise SystemExit('MODNet cross-run fingerprints and parity evidence refer to different bytes')
+          if comparison['classification'] != 'BYTE_IDENTICAL':
+              raise SystemExit('folding-off MODNet candidate is not byte-identical across hosted runners')
+          if report['initializerDrift']['changedCount'] != 0:
+              raise SystemExit('folding-off MODNet candidate still has initializer drift')
           raws=','.join(sample['rawSha256'] for sample in report['samples'])
           sizes=','.join(str(sample['size']) for sample in report['samples'])
+          max_abs=max(float(item['maxAbsError']) for item in parity_reports)
+          atol=min(float(item['parityAtol']) for item in parity_reports)
           line=(
               'MODNET_CROSS_RUN_CLASSIFICATION|folding=OFF|'
               f"classification={comparison['classification']}|"
               f"size={sizes}|"
               f"raw={raws}|"
-              f"initializerDriftCount={report['initializerDrift']['changedCount']}"
+              f"initializerDriftCount={report['initializerDrift']['changedCount']}|"
+              f"maxAbsError={max_abs:.12g}|parityAtol={atol:.12g}"
           )
           print(line)
           Path('.test-cache/modnet-cross-run/cross-run-summary.txt').write_text(line+'\n',encoding='utf-8')
@@ -236,10 +286,11 @@ jobs:
             echo
             echo '- Export experiment: `CONSTANT_FOLDING_OFF`'
             echo '- Authority: `DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY`'
-            echo '- Three independent hosted jobs are compared after each proves two-export byte identity.'
+            echo '- Three independent hosted jobs are compared after each proves two-export byte identity and production-equivalent structure/parity.'
+            echo '- Cross-run fingerprints and parity reports must bind the exact same candidate SHA and size.'
             echo '- Default release exporter and pinned manifest identity are not changed by this experiment.'
-            echo '- Only fingerprint metadata crosses job boundaries; ONNX model bytes are never uploaded.'
-            echo '- Cross-run agreement is evidence for a candidate strategy, not permission to repin or promote.'
+            echo '- Only fingerprint/parity metadata crosses job boundaries; ONNX model bytes are never uploaded.'
+            echo '- Cross-run agreement plus parity is evidence for a candidate exporter strategy, not production promotion.'
             if test -f .test-cache/modnet-cross-run/cross-run-summary.txt; then
               echo
               echo '```text'
