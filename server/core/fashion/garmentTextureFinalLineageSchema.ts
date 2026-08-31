@@ -9,6 +9,8 @@ const IMAGE_TABLE = 'canonical_image_artifacts';
 const LAYER_TABLE = 'canonical_fashion_garment_warp_layers';
 const INSERT_TRIGGER = 'canonical_image_artifacts_fashion_texture_insert_guard';
 const IMMUTABLE_TRIGGER = 'canonical_image_artifacts_fashion_texture_immut_guard';
+const BEFORE_INSERT_ROW_TGTYPE = 7;
+const BEFORE_UPDATE_ROW_TGTYPE = 19;
 
 const canon = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').replace(/"/g, '').trim();
 
@@ -110,9 +112,13 @@ export async function checkGarmentTextureFinalLineageSchema(pool: Pool): Promise
   const immutable: any = triggerMap.get(IMMUTABLE_TRIGGER);
   if (
     triggerMap.size !== 2
-    || insert?.tgenabled !== 'O' || insert?.proname !== 'canonical_assert_fashion_texture_final_insert'
-    || immutable?.tgenabled !== 'O' || immutable?.proname !== 'canonical_fashion_texture_final_lineage_immutable_guard'
-  ) throw new Error('canonical Fashion texture FINAL lineage triggers are incomplete or disabled');
+    || Number(insert?.tgtype) !== BEFORE_INSERT_ROW_TGTYPE
+    || insert?.tgenabled !== 'O'
+    || insert?.proname !== 'canonical_assert_fashion_texture_final_insert'
+    || Number(immutable?.tgtype) !== BEFORE_UPDATE_ROW_TGTYPE
+    || immutable?.tgenabled !== 'O'
+    || immutable?.proname !== 'canonical_fashion_texture_final_lineage_immutable_guard'
+  ) throw new Error('canonical Fashion texture FINAL lineage triggers are incomplete, drifted or disabled');
 }
 
 export async function migrateGarmentTextureFinalLineageSchema(pool: Pool): Promise<void> {
