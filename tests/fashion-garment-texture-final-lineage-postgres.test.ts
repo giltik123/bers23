@@ -37,6 +37,7 @@ if (!databaseUrl) throw new Error('DATABASE_URL is required for F4b.5b.1 Fashion
 const owner = Object.freeze({ tenantId: 'f4b5b1-tenant-a', userId: 'f4b5b1-user-a' });
 const garmentLimits = Object.freeze({ maxUploadBytes: 2 * 1024 * 1024, maxDimension: 600, maxPixels: 400_000 });
 const projectLimits = Object.freeze({ maxDimension: 1200, maxPixels: 1_500_000 });
+const IMMUTABLE_TRIGGER = 'canonical_image_artifacts_fashion_texture_immut_guard';
 
 async function image(seed: number): Promise<Uint8Array> {
   return new Uint8Array(await sharp({
@@ -227,22 +228,22 @@ test('F4b.5b.1 canonical Fashion FINAL lineage is exact, replay-safe and Artifac
     const originalDocument = storedRow.rows[0].producer_parameters;
     const originalSha = storedRow.rows[0].producer_parameters_sha256;
 
-    await pool.query('ALTER TABLE canonical_image_artifacts DISABLE TRIGGER canonical_image_artifacts_fashion_texture_lineage_immutable_guard');
+    await pool.query(`ALTER TABLE canonical_image_artifacts DISABLE TRIGGER ${IMMUTABLE_TRIGGER}`);
     await pool.query(`UPDATE canonical_image_artifacts SET producer_parameters_sha256=$2 WHERE storage_id=$1`, [first.storageId, '2'.repeat(64)]);
-    await pool.query('ALTER TABLE canonical_image_artifacts ENABLE TRIGGER canonical_image_artifacts_fashion_texture_lineage_immutable_guard');
+    await pool.query(`ALTER TABLE canonical_image_artifacts ENABLE TRIGGER ${IMMUTABLE_TRIGGER}`);
     await assert.rejects(images.load(first.storageId, scope), /producer-parameter SHA-256 mismatch/i);
-    await pool.query('ALTER TABLE canonical_image_artifacts DISABLE TRIGGER canonical_image_artifacts_fashion_texture_lineage_immutable_guard');
+    await pool.query(`ALTER TABLE canonical_image_artifacts DISABLE TRIGGER ${IMMUTABLE_TRIGGER}`);
     await pool.query(`UPDATE canonical_image_artifacts SET producer_parameters_sha256=$2 WHERE storage_id=$1`, [first.storageId, originalSha]);
-    await pool.query('ALTER TABLE canonical_image_artifacts ENABLE TRIGGER canonical_image_artifacts_fashion_texture_lineage_immutable_guard');
+    await pool.query(`ALTER TABLE canonical_image_artifacts ENABLE TRIGGER ${IMMUTABLE_TRIGGER}`);
 
     await pool.query('ALTER TABLE canonical_image_artifacts DROP CONSTRAINT canonical_image_artifacts_fashion_parameters_check');
-    await pool.query('ALTER TABLE canonical_image_artifacts DISABLE TRIGGER canonical_image_artifacts_fashion_texture_lineage_immutable_guard');
+    await pool.query(`ALTER TABLE canonical_image_artifacts DISABLE TRIGGER ${IMMUTABLE_TRIGGER}`);
     await pool.query(`UPDATE canonical_image_artifacts SET producer_parameters=producer_parameters || '{"unexpected":true}'::jsonb WHERE storage_id=$1`, [first.storageId]);
-    await pool.query('ALTER TABLE canonical_image_artifacts ENABLE TRIGGER canonical_image_artifacts_fashion_texture_lineage_immutable_guard');
+    await pool.query(`ALTER TABLE canonical_image_artifacts ENABLE TRIGGER ${IMMUTABLE_TRIGGER}`);
     await assert.rejects(images.load(first.storageId, scope), /unknown or missing fields/i);
-    await pool.query('ALTER TABLE canonical_image_artifacts DISABLE TRIGGER canonical_image_artifacts_fashion_texture_lineage_immutable_guard');
+    await pool.query(`ALTER TABLE canonical_image_artifacts DISABLE TRIGGER ${IMMUTABLE_TRIGGER}`);
     await pool.query(`UPDATE canonical_image_artifacts SET producer_parameters=$2 WHERE storage_id=$1`, [first.storageId, originalDocument]);
-    await pool.query('ALTER TABLE canonical_image_artifacts ENABLE TRIGGER canonical_image_artifacts_fashion_texture_lineage_immutable_guard');
+    await pool.query(`ALTER TABLE canonical_image_artifacts ENABLE TRIGGER ${IMMUTABLE_TRIGGER}`);
     await migrateGarmentTextureFinalLineageSchema(pool);
     await checkGarmentTextureFinalLineageSchema(pool);
 
