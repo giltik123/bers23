@@ -18,6 +18,7 @@ import {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const POSITIVE_BIGINT_PATTERN = /^[1-9][0-9]*$/;
 
 export type ManagedProjectBodyAnchorSet = Readonly<{
   id: string;
@@ -32,6 +33,7 @@ export type ManagedProjectBodyAnchorSet = Readonly<{
   payloadSha256: string;
   producerId: string;
   producerVersion: string;
+  acquisitionSequence: string;
   createdAt: string;
 }>;
 
@@ -39,6 +41,13 @@ export type CreateProjectBodyAnchorSetInput = Readonly<{
   payload: unknown;
   producerId: unknown;
   producerVersion: unknown;
+}>;
+
+export type ProjectBodyAnchorExpectedImage = Readonly<{
+  storageId: string;
+  sha256: string;
+  width: number;
+  height: number;
 }>;
 
 type RepresentationReader = Pick<PostgresGarmentRepresentationStore, 'loadPayload'>;
@@ -51,12 +60,7 @@ export type ProjectBodyAnchorStoreDependencies = Readonly<{
   managedInputs: ManagedInputAuthority;
 }>;
 
-type CurrentProjectImage = Readonly<{
-  storageId: string;
-  sha256: string;
-  width: number;
-  height: number;
-}>;
+type CurrentProjectImage = ProjectBodyAnchorExpectedImage;
 
 export class PostgresProjectBodyAnchorStore {
   private readonly dependencies: ProjectBodyAnchorStoreDependencies;
@@ -84,6 +88,25 @@ export class PostgresProjectBodyAnchorStore {
     projectIdValue: string,
     input: CreateProjectBodyAnchorSetInput,
   ): Promise<ManagedProjectBodyAnchorSet> {
+    return this.createInternal(scope, projectIdValue, input, undefined);
+  }
+
+  async createForExpectedImage(
+    scope: GarmentOwnerScope,
+    projectIdValue: string,
+    expectedImageValue: ProjectBodyAnchorExpectedImage,
+    input: CreateProjectBodyAnchorSetInput,
+  ): Promise<ManagedProjectBodyAnchorSet> {
+    const expectedImage = normalizeExpectedImage(expectedImageValue);
+    return this.createInternal(scope, projectIdValue, input, expectedImage);
+  }
+
+  private async createInternal(
+    scope: GarmentOwnerScope,
+    projectIdValue: string,
+    input: CreateProjectBodyAnchorSetInput,
+    expectedImage: ProjectBodyAnchorExpectedImage | undefined,
+  ): Promise<ManagedProjectBodyAnchorSet> {
     const projectId = normalizeUuid(projectIdValue, 'body_anchor_project_not_found', 404);
     const payload = normalizeBodyAnchorPayload(input?.payload);
     const payloadSha256 = bodyAnchorPayloadSha256(payload);
@@ -95,6 +118,7 @@ export class PostgresProjectBodyAnchorStore {
       await client.query('BEGIN');
       const image = await loadCurrentProjectImage(client, scope, projectId, true);
       if (!image) throw anchorError(404, 'body_anchor_project_not_found', 'Project not found');
+      if (expectedImage) assertExpectedImageMatches(expectedImage, image);
       await client.query(`INSERT INTO canonical_project_body_anchor_sets
         (anchor_set_id,tenant_id,user_id,project_id,project_image_storage_id,project_image_sha256,project_image_width,project_image_height,
          schema_id,coordinate_space,anchor_payload,anchor_payload_sha256,producer_id,producer_version)
@@ -210,6 +234,8 @@ function fromRow(row: any): ManagedProjectBodyAnchorSet {
   }
   const projectImageSha256 = String(row.project_image_sha256);
   if (!SHA256_PATTERN.test(projectImageSha256)) throw anchorError(409, 'body_anchor_integrity_mismatch', 'Stored Project image SHA-256 is invalid');
+  const acquisitionSequence = String(row.acquisition_sequence);
+  if (!POSITIVE_BIGINT_PATTERN.test(acquisitionSequence)) throw anchorError(409, 'body_anchor_integrity_mismatch', 'Stored body anchor acquisition sequence is invalid');
   return Object.freeze({
     id: String(row.anchor_set_id).toLowerCase(),
     projectId: String(row.project_id).toLowerCase(),
@@ -223,6 +249,7 @@ function fromRow(row: any): ManagedProjectBodyAnchorSet {
     payloadSha256,
     producerId: String(row.producer_id),
     producerVersion: String(row.producer_version),
+    acquisitionSequence,
     createdAt: new Date(row.created_at).toISOString(),
   });
 }
@@ -259,6 +286,15 @@ async function loadCurrentProjectImage(
   return Object.freeze({ storageId: String(row.storage_id).toLowerCase(), sha256: sha256(bytes), width, height });
 }
 
+function assertExpectedImageMatches(expected: ProjectBodyAnchorExpectedImage, current: CurrentProjectImage): void {
+  if (
+    expected.storageId !== current.storageId
+    || expected.sha256 !== current.sha256
+    || expected.width !== current.width
+    || expected.height !== current.height
+  ) throw anchorError(409, 'body_anchor_expected_project_image_stale', 'Expected Project image is no longer current; no body anchors were persisted');
+}
+
 function assertCurrentImageMatches(anchorSet: ManagedProjectBodyAnchorSet, currentImage: CurrentProjectImage | undefined): void {
   if (
     !currentImage
@@ -283,6 +319,18 @@ function parseParametricTopology(bytes: Uint8Array): Readonly<{ points: readonly
     throw anchorError(409, 'body_anchor_garment_representation_integrity_mismatch', 'PARAMETRIC representation is outside BERS_PARAMETRIC_V1');
   }
   return Object.freeze({ points: record.points, triangles: record.triangles });
+}
+
+function normalizeExpectedImage(value: ProjectBodyAnchorExpectedImage): ProjectBodyAnchorExpectedImage {
+  if (!value || typeof value !== 'object') throw anchorError(400, 'invalid_body_anchor_expected_image', 'Expected Project image evidence is required');
+  const storageId = normalizeUuid(value.storageId, 'invalid_body_anchor_expected_image', 400);
+  const sha = typeof value.sha256 === 'string' ? value.sha256.toLowerCase() : '';
+  if (!SHA256_PATTERN.test(sha)) throw anchorError(400, 'invalid_body_anchor_expected_image', 'Expected Project image SHA-256 is invalid');
+  const width = Number(value.width); const height = Number(value.height);
+  if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) {
+    throw anchorError(400, 'invalid_body_anchor_expected_image', 'Expected Project image geometry is invalid');
+  }
+  return Object.freeze({ storageId, sha256: sha, width, height });
 }
 
 function normalizeProvenance(value: unknown, field: string): string {
