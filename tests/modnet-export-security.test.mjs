@@ -4,6 +4,8 @@ import test from 'node:test';
 
 const inspector = await readFile(new URL('../scripts/inspect-modnet-checkpoint.py', import.meta.url), 'utf8');
 const exporter = await readFile(new URL('../scripts/build-modnet-portrait-matting-release.py', import.meta.url), 'utf8');
+const validator = await readFile(new URL('../scripts/validate-modnet-diagnostic-export.py', import.meta.url), 'utf8');
+const crossHostWorkflow = await readFile(new URL('../.github/workflows/modnet-cross-run-repro-diagnostics.yml', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/local-ai/models/portrait-matting.manifest.json', import.meta.url), 'utf8'));
 const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8';
 const ONNX_SHA = '223bdc36ba84f9728ab4a94a7985128161514019d8388c3e827402c15072c654';
@@ -54,6 +56,25 @@ test('MODNet export reproducibility is proven across independent fixed-hash-seed
   assert.match(exporter, /"independentExportProcesses": 2/);
   assert.match(exporter, /"exportPythonHashSeed": EXPORT_PYTHON_HASH_SEED/);
   assert.match(exporter, /"constantFolding": "DISABLED"/);
+});
+
+test('final cross-host evidence is exact-head bound and hidden metadata upload is explicit', () => {
+  assert.match(crossHostWorkflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(crossHostWorkflow, /EXPECTED_CANDIDATE_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(crossHostWorkflow, /'candidate': os\.environ\['EXPECTED_CANDIDATE_SHA'\]/);
+  assert.doesNotMatch(crossHostWorkflow, /'candidate': os\.environ\['GITHUB_SHA'\]/);
+  assert.match(crossHostWorkflow, /item\['candidate'\] != expected_candidate_sha/);
+  assert.match(crossHostWorkflow, /include-hidden-files: true/);
+});
+
+test('MODNet validation fails closed on non-finite model and parity evidence', () => {
+  assert.match(validator, /not np\.isfinite\(expected\)\.all\(\)/);
+  assert.match(validator, /not np\.isfinite\(actual\)\.all\(\)/);
+  assert.match(validator, /not np\.isfinite\(absolute_error\)\.all\(\)/);
+  assert.match(validator, /not np\.isfinite\(max_abs\)/);
+  assert.match(validator, /not all\(np\.isfinite\(value\) for value in parity_errors\)/);
+  assert.match(crossHostWorkflow, /math\.isfinite\(float\(report\['maxAbsError'\]\)\)/);
+  assert.match(crossHostWorkflow, /math\.isfinite\(float\(report\['upstreamReferenceMaxAbsError'\]\)\)/);
 });
 
 test('candidate.2 records stable cross-host no-folding evidence without granting production authority', () => {
