@@ -73,7 +73,17 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     limits,
     now: input.now,
   });
-  return Object.freeze({ execution, inputDelivery, managedInputs, garments, wardrobe, representations, bodyAnchors, layers });
+  return Object.freeze({
+    execution,
+    inputDelivery,
+    managedInputs,
+    genericManagedInputs,
+    garments,
+    wardrobe,
+    representations,
+    bodyAnchors,
+    layers,
+  });
 }
 
 async function ensureFashionWarpSchemas(pool: Pool, nodeEnv: string): Promise<void> {
