@@ -7,6 +7,8 @@ import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from './ga
 const MIGRATION = '030_fashion_garment_texture_final_lineage.sql';
 const IMAGE_TABLE = 'canonical_image_artifacts';
 const LAYER_TABLE = 'canonical_fashion_garment_warp_layers';
+const INSERT_TRIGGER = 'canonical_image_artifacts_fashion_texture_insert_guard';
+const IMMUTABLE_TRIGGER = 'canonical_image_artifacts_fashion_texture_immut_guard';
 
 const canon = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').replace(/"/g, '').trim();
 
@@ -102,10 +104,10 @@ export async function checkGarmentTextureFinalLineageSchema(pool: Pool): Promise
   const triggers = await pool.query(`SELECT t.tgname,t.tgtype,t.tgenabled,p.proname
     FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
     WHERE t.tgrelid=to_regclass($1) AND NOT t.tgisinternal
-      AND t.tgname IN ('canonical_image_artifacts_fashion_texture_insert_guard','canonical_image_artifacts_fashion_texture_lineage_immutable_guard')`, [IMAGE_TABLE]);
+      AND t.tgname = ANY($2::text[])`, [IMAGE_TABLE, [INSERT_TRIGGER, IMMUTABLE_TRIGGER]]);
   const triggerMap = new Map(triggers.rows.map((row: any) => [String(row.tgname), row]));
-  const insert: any = triggerMap.get('canonical_image_artifacts_fashion_texture_insert_guard');
-  const immutable: any = triggerMap.get('canonical_image_artifacts_fashion_texture_lineage_immutable_guard');
+  const insert: any = triggerMap.get(INSERT_TRIGGER);
+  const immutable: any = triggerMap.get(IMMUTABLE_TRIGGER);
   if (
     triggerMap.size !== 2
     || insert?.tgenabled !== 'O' || insert?.proname !== 'canonical_assert_fashion_texture_final_insert'
