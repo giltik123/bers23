@@ -6,6 +6,7 @@ import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Cr
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { GARMENT_MESH_WARP_CAPABILITY } from '../../../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
+import { GARMENT_TEXTURE_COMPOSITE_CAPABILITY } from '../../../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
 import { requireDeterministicToolByCapability } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { REAL_ESRGAN_LOCAL_CAPABILITY, isExecutableRealEsrganRelease } from './productionLocalModelPolicy.ts';
 
@@ -19,6 +20,8 @@ const orthogonalTransformTool = requireDeterministicToolByCapability(ORTHOGONAL_
 const orthogonalTransformExecutors = Object.freeze([orthogonalTransformTool.executor]);
 const garmentMeshWarpTool = requireDeterministicToolByCapability(GARMENT_MESH_WARP_CAPABILITY);
 const garmentMeshWarpExecutors = Object.freeze([garmentMeshWarpTool.executor]);
+const garmentTextureCompositeTool = requireDeterministicToolByCapability(GARMENT_TEXTURE_COMPOSITE_CAPABILITY);
+const garmentTextureCompositeExecutors = Object.freeze([garmentTextureCompositeTool.executor]);
 
 const realEsrganExecutors: readonly LocalExecutionExecutorBinding[] = isExecutableRealEsrganRelease(upscaleManifest)
   ? Object.freeze([Object.freeze({
@@ -41,5 +44,6 @@ export const productionLocalExecutorsByCapability: Readonly<Record<string, reado
   [RESIZE_CAPABILITY]: resizeExecutors,
   [ORTHOGONAL_TRANSFORM_CAPABILITY]: orthogonalTransformExecutors,
   [GARMENT_MESH_WARP_CAPABILITY]: garmentMeshWarpExecutors,
+  [GARMENT_TEXTURE_COMPOSITE_CAPABILITY]: garmentTextureCompositeExecutors,
   [REAL_ESRGAN_LOCAL_CAPABILITY]: realEsrganExecutors,
 });
