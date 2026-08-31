@@ -67,7 +67,11 @@ test('final cross-host evidence is exact-head bound and hidden metadata upload i
   assert.match(crossHostWorkflow, /include-hidden-files: true/);
 });
 
-test('MODNet validation fails closed on non-finite model and parity evidence', () => {
+test('MODNet release and validation parity fail closed on non-finite evidence', () => {
+  assert.match(exporter, /not np\.isfinite\(expected\)\.all\(\)/);
+  assert.match(exporter, /not np\.isfinite\(actual\)\.all\(\)/);
+  assert.match(exporter, /not np\.isfinite\(absolute_error\)\.all\(\)/);
+  assert.match(exporter, /not np\.isfinite\(max_abs\) or not np\.isfinite\(min_output\) or not np\.isfinite\(max_output\)/);
   assert.match(validator, /not np\.isfinite\(expected\)\.all\(\)/);
   assert.match(validator, /not np\.isfinite\(actual\)\.all\(\)/);
   assert.match(validator, /not np\.isfinite\(absolute_error\)\.all\(\)/);
