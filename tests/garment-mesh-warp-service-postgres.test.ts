@@ -199,6 +199,19 @@ test('F4b.4 PostgreSQL vertical admits only Core-recomputed Fashion intermediate
     const candidatePng = new Uint8Array(await sharp(expected, { raw: { width: delivered.outputWidth, height: delivered.outputHeight, channels: 4 } }).png().toBuffer());
     const upload = await service.uploadImage({ ticketId: prepared.ticket.ticketId, projectId, bytes: candidatePng }, owner);
     const result = resultFor(prepared.ticket, upload);
+
+    // Acceptance requires more than restart replay: the exact F4b.4 ticket must also
+    // have a single durable claimant under a real PostgreSQL race. Both claims run
+    // concurrently through the production ledger/pool; one owns PROCESSING and the
+    // other must fail closed as IN_PROGRESS. Release restores the normal service path.
+    const concurrentClaims = await Promise.all([
+      admission.claimV2({ ticketId: prepared.ticket.ticketId, result, callerScope: prepared.ticket.scope, now }),
+      admission.claimV2({ ticketId: prepared.ticket.ticketId, result, callerScope: prepared.ticket.scope, now }),
+    ]);
+    const concurrentOutcomes = concurrentClaims.map(claim => claim.allowed ? 'ALLOWED' : claim.reasonCode).sort();
+    assert.deepEqual(concurrentOutcomes, ['ALLOWED', 'IN_PROGRESS']);
+    await admission.release(prepared.ticket.ticketId);
+
     const submitted = await service.submit({ ticketId: prepared.ticket.ticketId, projectId, result }, owner);
     assert.equal(submitted.status, 'SUCCESS');
     assert.ok(submitted.layerId);
