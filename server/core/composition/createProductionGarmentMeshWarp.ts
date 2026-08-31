@@ -9,6 +9,7 @@ import { checkGarmentSchema, migrateGarmentSchema } from '../fashion/garmentSche
 import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../fashion/bodyAnchorSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../fashion/garmentWarpLayerSchema.ts';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from '../fashion/garmentTextureFinalLineageSchema.ts';
+import { ManualParametricGarmentAdmissionService } from '../fashion/ManualParametricGarmentAdmissionService.ts';
 import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from '../fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresGarmentRepresentationStore } from '../fashion/postgresGarmentRepresentationStore.ts';
@@ -33,12 +34,18 @@ export type ProductionGarmentMeshWarpCompositionInput = Readonly<{
   now: () => number;
 }>;
 
+type GarmentMeshWarpExecutionSurface = LocalGarmentMeshWarpExecutionService & Readonly<{
+  manualParametricAdmission: ManualParametricGarmentAdmissionService;
+}>;
+
 /**
  * One production composition root for the shared F4b geometry authority.
  *
  * F4b.4 keeps its capability-scoped managed-input wrapper. F4b.5b is composed
  * from the same underlying Managed Garment, body-anchor and immutable-layer
  * instances, so no second Fashion trust graph can drift from the warp authority.
+ * F4b.6c manual PARAMETRIC admission also uses the exact same Garment and
+ * representation stores; it cannot become a parallel persistence authority.
  */
 export async function createProductionGarmentMeshWarp(input: ProductionGarmentMeshWarpCompositionInput) {
   await ensureFashionWarpSchemas(input.pool, input.nodeEnv);
@@ -50,6 +57,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
   const garments = new PostgresGarmentStore(input.pool);
   const wardrobe = new PostgresGarmentWardrobeStore(input.pool);
   const representations = new PostgresGarmentRepresentationStore(input.pool);
+  const manualParametricAdmission = new ManualParametricGarmentAdmissionService({ garments, representations });
   const genericManagedInputs = new ManagedGarmentLocalExecutionInputAuthority({ garments, representations });
   const managedInputs = new GarmentMeshWarpManagedInputAuthority(genericManagedInputs, limits);
   const bodyAnchors = new PostgresProjectBodyAnchorStore(input.pool, { wardrobe, representations, managedInputs });
@@ -73,6 +81,13 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     limits,
     now: input.now,
   });
+  Object.defineProperty(execution, 'manualParametricAdmission', {
+    value: manualParametricAdmission,
+    enumerable: true,
+    writable: false,
+    configurable: false,
+  });
+  const executionSurface = execution as GarmentMeshWarpExecutionSurface;
   const tickets = input.canonical.localExecutionV2;
   if (!tickets) throw new Error('Production Fashion texture composition requires the Core v2 local ticket issuer');
   const textureComposite = createProductionGarmentTextureComposite({
@@ -86,7 +101,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     now: input.now,
   });
   return Object.freeze({
-    execution,
+    execution: executionSurface,
     inputDelivery,
     managedInputs,
     genericManagedInputs,
@@ -96,6 +111,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     bodyAnchors,
     layers,
     textureComposite,
+    manualParametricAdmission,
   });
 }
 
