@@ -46,8 +46,8 @@ test('MODNet candidate.2 pins the no-folding cross-host reproducible ONNX while 
     independentExportsPerRunner: 2,
     classification: 'BYTE_IDENTICAL',
     initializerDriftChangedCount: 0,
-    evidenceRunId: 33344102365,
   });
+  assert.equal('evidenceRunId' in manifest.bersExport.crossHostReproducibility, false, 'mutable CI run identities belong in PR/issue evidence, never the model manifest');
   assert.equal(manifest.productionApprovalEvidence, null);
 
   if (manifest.artifactState === 'EXPORT_PINNED_RELEASE_REQUIRED') {
