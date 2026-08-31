@@ -62,7 +62,7 @@ export function assertProductionTextureTuple(input: GarmentTextureCompositeProdu
     outputArtifacts: Object.freeze(['garment-texture-composite:final']),
     cost: Object.freeze({ credits: 0, aiCalls: 0 }),
   });
-  const route = productionExecutionRoute.select(operation, request);
+  const route = productionExecutionRoute.select(operation);
   const target = productionTargetSelection.select(operation, request);
   if (route !== 'ON_DEVICE' || target !== 'LOCAL') {
     throw policyError('garment_texture_composite_route_denied', 'Garment texture-composite must resolve to ON_DEVICE and LOCAL');
