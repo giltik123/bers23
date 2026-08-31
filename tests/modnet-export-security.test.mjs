@@ -56,7 +56,7 @@ test('MODNet export reproducibility is proven across independent fixed-hash-seed
   assert.match(exporter, /"constantFolding": "DISABLED"/);
 });
 
-test('candidate.2 records the cross-host no-folding evidence without granting production authority', () => {
+test('candidate.2 records stable cross-host no-folding evidence without granting production authority', () => {
   assert.equal(manifest.version, '1.0.0-candidate.2');
   assert.equal(manifest.status, 'CANDIDATE');
   assert.ok(['EXPORT_PINNED_RELEASE_REQUIRED', 'SIGNED_RELEASE'].includes(manifest.artifactState));
@@ -77,8 +77,8 @@ test('candidate.2 records the cross-host no-folding evidence without granting pr
     independentExportsPerRunner: 2,
     classification: 'BYTE_IDENTICAL',
     initializerDriftChangedCount: 0,
-    evidenceRunId: 33344102365,
   });
+  assert.equal('evidenceRunId' in manifest.bersExport.crossHostReproducibility, false);
   assert.equal(manifest.productionApprovalEvidence, null);
   if (manifest.artifactState === 'EXPORT_PINNED_RELEASE_REQUIRED') {
     assert.equal(manifest.artifacts.model.url, null);
