@@ -34,6 +34,10 @@ export type ProductionGarmentMeshWarpCompositionInput = Readonly<{
   now: () => number;
 }>;
 
+type GarmentMeshWarpExecutionSurface = LocalGarmentMeshWarpExecutionService & Readonly<{
+  readiness: FashionTryOnReadinessService;
+}>;
+
 /**
  * One production composition root for the shared F4b geometry authority.
  *
@@ -83,6 +87,13 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     limits,
     now: input.now,
   });
+  Object.defineProperty(execution, 'readiness', {
+    value: tryOnReadiness,
+    enumerable: true,
+    writable: false,
+    configurable: false,
+  });
+  const executionSurface = execution as GarmentMeshWarpExecutionSurface;
   const tickets = input.canonical.localExecutionV2;
   if (!tickets) throw new Error('Production Fashion texture composition requires the Core v2 local ticket issuer');
   const textureComposite = createProductionGarmentTextureComposite({
@@ -96,7 +107,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     now: input.now,
   });
   return Object.freeze({
-    execution,
+    execution: executionSurface,
     inputDelivery,
     managedInputs,
     genericManagedInputs,
