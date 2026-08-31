@@ -39,16 +39,32 @@ export class PostgresLocalExecutionUploadStore {
     const uploadId = this.nextId();
     const sha256 = createHash('sha256').update(input.bytes).digest('hex');
     await this.pool.query('DELETE FROM local_execution_uploads WHERE expires_at <= $1', [new Date(input.now)]);
+    const replaceableWorkingImage = input.kind === 'image' && input.role === 'WORKING';
+    const conflictClause = replaceableWorkingImage
+      ? `DO UPDATE SET
+          upload_id=EXCLUDED.upload_id,
+          mime_type=EXCLUDED.mime_type,
+          width=EXCLUDED.width,
+          height=EXCLUDED.height,
+          size_bytes=EXCLUDED.size_bytes,
+          sha256=EXCLUDED.sha256,
+          payload=EXCLUDED.payload,
+          expires_at=EXCLUDED.expires_at
+        WHERE local_execution_uploads.consumed_at IS NULL
+          AND local_execution_uploads.tenant_id=EXCLUDED.tenant_id
+          AND local_execution_uploads.user_id=EXCLUDED.user_id
+          AND local_execution_uploads.project_id=EXCLUDED.project_id`
+      : 'DO UPDATE SET ticket_id=EXCLUDED.ticket_id';
     const result = await this.pool.query(`INSERT INTO local_execution_uploads
       (upload_id,ticket_id,tenant_id,user_id,project_id,kind,artifact_role,mime_type,width,height,size_bytes,sha256,payload,expires_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-      ON CONFLICT (ticket_id,kind,artifact_role) DO UPDATE SET ticket_id=EXCLUDED.ticket_id
+      ON CONFLICT (ticket_id,kind,artifact_role) ${conflictClause}
       RETURNING upload_id,ticket_id,tenant_id,user_id,project_id,kind,artifact_role,mime_type,width,height,size_bytes,sha256,payload,expires_at,consumed_at`, [
       uploadId, input.ticketId, input.scope.tenantId, input.scope.userId, input.scope.projectId, input.kind, input.role,
       input.mimeType, input.width ?? null, input.height ?? null, input.bytes.byteLength, sha256, Buffer.from(input.bytes), new Date(input.expiresAt),
     ]);
     const row = result.rows[0];
-    if (!row) throw new Error('Local execution upload persistence failed');
+    if (!row) throw new Error('Local execution output has already been consumed or cannot be replaced in this scope');
     if (row.consumed_at !== null) throw new Error('Local execution output has already been consumed');
     const storedBytes = new Uint8Array(row.payload);
     const same = row.ticket_id === input.ticketId && row.tenant_id === input.scope.tenantId && row.user_id === input.scope.userId && row.project_id === input.scope.projectId &&

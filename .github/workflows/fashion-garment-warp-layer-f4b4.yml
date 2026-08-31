@@ -71,8 +71,10 @@ jobs:
             await pool.end();
           }
           NODE
-      - name: Prove pixel execution is still NOT_ADMITTED at this intermediate checkpoint
+      - name: Prove immutable layer authority stays separate from admitted pixel execution
         run: |
-          grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
-          ! grep -R -E 'garment-mesh-warp|GARMENT_MESH_WARP' server/core/localExecution/productionLocalExecutorPolicy.ts server/core/providers/productionExecutionCapabilities.ts server/core/providers/productionExecutionRoute.ts server/core/providers/productionTargetSelection.ts src/platform/creative/deterministic/DeterministicToolRegistry.ts
-          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          npx esbuild tests/deterministic-garment-mesh-warp-admission-boundary.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b4-layer/admission-boundary.test.mjs \
+            --external:node:*
+          node --test .test-cache/fashion-f4b4-layer/admission-boundary.test.mjs

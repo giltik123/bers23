@@ -8,6 +8,8 @@ import { checkAuthSchema, migrateAuthSchema } from '../../../core/auth/authSchem
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../../../core/artifacts/localExecutionUploadSchema.ts';
 import { checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../../../core/localExecution/localExecutionLedgerSchema.ts';
 import { checkGarmentSchema, migrateGarmentSchema } from '../../../core/fashion/garmentSchema.ts';
+import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../../../core/fashion/bodyAnchorSchema.ts';
+import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../../../core/fashion/garmentWarpLayerSchema.ts';
 
 const command = process.argv[2];
 const databaseUrl = process.env.DATABASE_URL;
@@ -27,6 +29,8 @@ try {
     await migrateLocalExecutionUploadSchema(pool);
     await migrateLocalExecutionLedgerSchema(pool);
     await migrateGarmentSchema(pool);
+    await migrateProjectBodyAnchorSchema(pool);
+    await migrateGarmentWarpLayerSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', version: result.version, status: result.status }));
   } else if (command === 'check') {
     await checkTransactionSchema(pool);
@@ -37,6 +41,8 @@ try {
     await checkLocalExecutionUploadSchema(pool);
     await checkLocalExecutionLedgerSchema(pool);
     await checkGarmentSchema(pool);
+    await checkProjectBodyAnchorSchema(pool);
+    await checkGarmentWarpLayerSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', status: 'ready' }));
   } else {
     throw new Error('expected migrate or check command');

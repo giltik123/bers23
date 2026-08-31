@@ -22,8 +22,8 @@ const fullFrameTriangles = Object.freeze([
   Object.freeze([0, 2, 3] as const),
 ]);
 
-test('F4b.1 garment mesh warp identity is explicitly non-admitted', () => {
-  assert.equal(GARMENT_MESH_WARP_PRODUCTION_ADMISSION, 'NOT_ADMITTED');
+test('F4b.4 garment mesh warp identity is explicitly production-admitted', () => {
+  assert.equal(GARMENT_MESH_WARP_PRODUCTION_ADMISSION, 'ADMITTED');
 });
 
 test('F4a normalized PARAMETRIC points quantize deterministically to Q16', () => {

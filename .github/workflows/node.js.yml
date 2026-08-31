@@ -195,18 +195,24 @@ jobs:
           node --experimental-strip-types --input-type=module <<'NODE'
           import { Pool } from 'pg';
           import { migrateFinalImageLineageSchema, checkFinalImageLineageSchema } from './server/core/artifacts/finalImageLineageSchema.ts';
+          import { migrateProjectBodyAnchorSchema, checkProjectBodyAnchorSchema } from './server/core/fashion/bodyAnchorSchema.ts';
           import { migrateGarmentSchema, checkGarmentSchema } from './server/core/fashion/garmentSchema.ts';
+          import { migrateGarmentWarpLayerSchema, checkGarmentWarpLayerSchema } from './server/core/fashion/garmentWarpLayerSchema.ts';
           import { migrateWorkflowContinuationSchema, checkWorkflowContinuationSchema } from './server/core/workflow/workflowContinuationSchema.ts';
-          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-production-image-smoke-c5b-migrations' });
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-production-image-smoke-f4b4-migrations' });
           try {
             await migrateWorkflowContinuationSchema(pool);
             await migrateFinalImageLineageSchema(pool);
             await migrateGarmentSchema(pool);
+            await migrateProjectBodyAnchorSchema(pool);
+            await migrateGarmentWarpLayerSchema(pool);
             await checkWorkflowContinuationSchema(pool);
             await checkFinalImageLineageSchema(pool);
             await checkGarmentSchema(pool);
+            await checkProjectBodyAnchorSchema(pool);
+            await checkGarmentWarpLayerSchema(pool);
           } finally { await pool.end(); }
-          console.log('Production smoke canonical C5B + Fashion F1a schema: ready');
+          console.log('Production smoke canonical C5B + Fashion F4b.4 required schemas: ready');
           NODE
       - name: Build production image
         run: docker build --tag bers-core:${{ env.CANDIDATE_SHA }} .
@@ -230,6 +236,8 @@ jobs:
           test "$expected" = "$actual"
           printf '%s\n' "$actual" | grep -qx '011_auth_abuse_session_controls.sql'
           printf '%s\n' "$actual" | grep -qx '022_managed_garments_and_initial_views.sql'
+          printf '%s\n' "$actual" | grep -qx '028_project_body_anchor_sets.sql'
+          printf '%s\n' "$actual" | grep -qx '029_fashion_garment_warp_layers.sql'
       - name: Assert production image contents
         run: |
           docker run --rm --entrypoint sh bers-core:${{ env.CANDIDATE_SHA }} -c '
