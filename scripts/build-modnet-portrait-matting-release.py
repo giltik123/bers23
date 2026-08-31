@@ -187,17 +187,28 @@ def parity(model: torch.nn.Module, onnx_path: Path) -> list[dict[str, Any]]:
         actual = session.run(["output"], {"input": values})[0]
         if expected.shape != (1, 1, height, width) or actual.shape != expected.shape:
             raise RuntimeError(f"MODNet output shape mismatch for {height}x{width}")
-        max_abs = float(np.max(np.abs(expected - actual)))
+        if not np.isfinite(expected).all():
+            raise RuntimeError("MODNet PyTorch reference emitted non-finite output")
+        if not np.isfinite(actual).all():
+            raise RuntimeError("MODNet ONNX Runtime candidate emitted non-finite output")
+        absolute_error = np.abs(expected - actual)
+        if not np.isfinite(absolute_error).all():
+            raise RuntimeError("MODNet PyTorch/ORT parity error became non-finite")
+        max_abs = float(np.max(absolute_error))
+        min_output = float(actual.min())
+        max_output = float(actual.max())
+        if not np.isfinite(max_abs) or not np.isfinite(min_output) or not np.isfinite(max_output):
+            raise RuntimeError("MODNet PyTorch/ORT parity summary contains non-finite value")
         if max_abs > PARITY_ATOL:
             raise RuntimeError(f"MODNet PyTorch/ORT parity failed: {max_abs} > {PARITY_ATOL}")
-        if float(actual.min()) < -1e-6 or float(actual.max()) > 1.0 + 1e-6:
+        if min_output < -1e-6 or max_output > 1.0 + 1e-6:
             raise RuntimeError("MODNet sigmoid output escaped [0,1]")
         evidence.append({
             "height": height,
             "width": width,
             "maxAbsError": max_abs,
-            "minOutput": float(actual.min()),
-            "maxOutput": float(actual.max()),
+            "minOutput": min_output,
+            "maxOutput": max_output,
         })
     return evidence
 
