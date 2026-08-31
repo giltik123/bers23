@@ -5,6 +5,7 @@ import { createLocalExecutionHttpAdapter } from './core/http/localExecutionHttpA
 import { createOrthogonalTransformHttpAdapter } from './core/http/orthogonalTransformHttpAdapter.ts';
 import { createGarmentMeshWarpHttpAdapter } from './core/http/garmentMeshWarpHttpAdapter.ts';
 import { createGarmentTextureCompositeHttpAdapter } from './core/http/garmentTextureCompositeHttpAdapter.ts';
+import { createManualParametricGarmentAdmissionHttpAdapter } from './core/http/manualParametricGarmentAdmissionHttpAdapter.ts';
 import { createLocalCompositeContinuationHttpAdapter } from './core/http/localCompositeContinuationHttpAdapter.ts';
 import { createManagedGarmentHttpAdapter } from './core/http/managedGarmentHttpAdapter.ts';
 import { createManagedWardrobeHttpAdapter } from './core/http/managedWardrobeHttpAdapter.ts';
@@ -38,6 +39,7 @@ export async function startCoreServer() {
   const managedWardrobeAdapter = createManagedWardrobeHttpAdapter({ wardrobe, auth: production.auth, config, accepting: () => accepting });
   const managedCollectionAdapter = createManagedGarmentCollectionHttpAdapter({ collections, auth: production.auth, config, accepting: () => accepting });
   const managedOutfitAdapter = createManagedOutfitHttpAdapter({ outfits, auth: production.auth, config, accepting: () => accepting });
+  const manualParametricAdmissionAdapter = createManualParametricGarmentAdmissionHttpAdapter({ admission: production.localExecution.garmentMeshWarp.manualParametricAdmission, auth: production.auth, config, accepting: () => accepting });
   const orthogonalTransformAdapter = createOrthogonalTransformHttpAdapter({ service: production.localExecution.orthogonalTransform, inputDelivery: production.localExecution.orthogonalTransformInputDelivery, auth: production.auth, config });
   const garmentMeshWarpAdapter = createGarmentMeshWarpHttpAdapter({ service: production.localExecution.garmentMeshWarp, inputDelivery: production.localExecution.garmentMeshWarpInputDelivery, auth: production.auth, config });
   const garmentTextureCompositeAdapter = createGarmentTextureCompositeHttpAdapter({ service: production.localExecution.garmentTextureComposite, inputDelivery: production.localExecution.garmentTextureCompositeInputDelivery, auth: production.auth, config });
@@ -49,6 +51,7 @@ export async function startCoreServer() {
     const target = parseCoreRequestTarget(request.url);
     if (target.ok === false) { sendInvalidRequestTarget(response, target); return; }
     const path = target.path;
+    if (/^\/api\/core\/fashion\/garments\/[^/]+\/parametric-representation$/.test(path)) return void manualParametricAdmissionAdapter(request, response);
     if (path === '/api/core/wardrobe/outfits' || path.startsWith('/api/core/wardrobe/outfits/')) return void managedOutfitAdapter(request, response);
     if (path === '/api/core/wardrobe/collections' || path.startsWith('/api/core/wardrobe/collections/')) return void managedCollectionAdapter(request, response);
     if (path === '/api/core/wardrobe/garments' || path.startsWith('/api/core/wardrobe/garments/')) return void managedWardrobeAdapter(request, response);
