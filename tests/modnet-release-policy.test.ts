@@ -14,8 +14,9 @@ import { productionLocalExecutorsByCapability } from '../server/core/localExecut
 const MODEL_ID = 'modnet-photographic-portrait-matting';
 const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8';
 
-test('MODNet pins authoritative checkpoint and reproducible ONNX while remaining a non-executable continuous-alpha CANDIDATE', () => {
+test('MODNet candidate.2 pins the no-folding cross-host reproducible ONNX while remaining non-executable', () => {
   assert.equal(manifest.modelId, MODEL_ID);
+  assert.equal(manifest.version, '1.0.0-candidate.2');
   assert.equal(manifest.status, 'CANDIDATE');
   assert.ok(manifest.artifactState === 'EXPORT_PINNED_RELEASE_REQUIRED' || manifest.artifactState === 'SIGNED_RELEASE');
   assert.equal(manifest.upstream.revision, '28165a451e4610c9d77cfdf925a94610bb2810fb');
@@ -36,9 +37,17 @@ test('MODNet pins authoritative checkpoint and reproducible ONNX while remaining
   assert.equal(manifest.tensorContract.output.threshold, null);
   assert.deepEqual(manifest.tensorContract.output.range, [0, 1]);
   assert.equal(manifest.bersExport.state, 'PINNED');
+  assert.equal(manifest.bersExport.constantFolding, false);
   assert.equal(manifest.bersExport.onnxSize, MODNET_ONNX_SIZE);
   assert.equal(manifest.bersExport.onnxSha256, MODNET_ONNX_SHA256);
   assert.equal(manifest.bersExport.opset, 17);
+  assert.deepEqual(manifest.bersExport.crossHostReproducibility, {
+    independentHostedRunners: 3,
+    independentExportsPerRunner: 2,
+    classification: 'BYTE_IDENTICAL',
+    initializerDriftChangedCount: 0,
+  });
+  assert.equal('evidenceRunId' in manifest.bersExport.crossHostReproducibility, false, 'mutable CI run identities belong in PR/issue evidence, never the model manifest');
   assert.equal(manifest.productionApprovalEvidence, null);
 
   if (manifest.artifactState === 'EXPORT_PINNED_RELEASE_REQUIRED') {
@@ -73,7 +82,7 @@ test('MODNet is advisory MATTING discovery only and is absent from executable ca
   }
 });
 
-test('only the exact pinned checkpoint and BERS ONNX bytes can satisfy the future signed release envelope', () => {
+test('future executable envelope is bound to candidate.2 bytes and the no-folding export strategy', () => {
   const approved = structuredClone(manifest) as any;
   approved.status = 'PRODUCTION_APPROVED';
   approved.artifactState = 'SIGNED_RELEASE';
@@ -88,9 +97,11 @@ test('only the exact pinned checkpoint and BERS ONNX bytes can satisfy the futur
   assert.equal(isExecutableModNetRelease(approved), true, 'complete future envelope is structurally executable only after separate approval evidence');
 
   const mutations = [
+    (value: any) => { value.version = '1.0.0-candidate.1'; },
     (value: any) => { value.upstream.revision = '0'.repeat(40); },
     (value: any) => { value.upstream.checkpoint.sha256 = 'b'.repeat(64); },
     (value: any) => { value.upstream.checkpoint.size += 1; },
+    (value: any) => { value.bersExport.constantFolding = true; },
     (value: any) => { value.bersExport.onnxSha256 = 'c'.repeat(64); },
     (value: any) => { value.bersExport.onnxSize += 1; },
     (value: any) => { value.artifacts.model.sha256 = 'd'.repeat(64); },

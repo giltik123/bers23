@@ -6,7 +6,8 @@ const inspector = await readFile(new URL('../scripts/inspect-modnet-checkpoint.p
 const exporter = await readFile(new URL('../scripts/build-modnet-portrait-matting-release.py', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../src/platform/creative/local-ai/models/portrait-matting.manifest.json', import.meta.url), 'utf8'));
 const CHECKPOINT_SHA = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8';
-const ONNX_SHA = '18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919';
+const ONNX_SHA = '223bdc36ba84f9728ab4a94a7985128161514019d8388c3e827402c15072c654';
+const ONNX_SIZE = 26236047;
 
 test('checkpoint inspector verifies pinned digest before weights-only state_dict deserialization', () => {
   const digestCheck = inspector.indexOf('if sha256 != args.expected_sha256');
@@ -28,7 +29,11 @@ test('reproducible exporter verifies checkpoint before weights-only load and byt
   assert.ok(shaCheck < deserialize);
   assert.match(exporter, /weights_only=True/);
   assert.doesNotMatch(exporter, /weights_only=False/);
+  assert.match(exporter, /MODEL_VERSION = "1\.0\.0-candidate\.2"/);
   assert.match(exporter, /OPSET = 17/);
+  assert.match(exporter, /CONSTANT_FOLDING = False/);
+  assert.match(exporter, /do_constant_folding=CONSTANT_FOLDING/);
+  assert.doesNotMatch(exporter, /--disable-constant-folding/);
   assert.match(exporter, /PARITY_SHAPES = \(\(128, 160\), \(256, 320\), \(512, 512\)\)/);
   assert.match(exporter, /onnx\.checker\.check_model\(model, full_check=True\)/);
   assert.match(exporter, /MODNet ONNX size mismatch/);
@@ -48,23 +53,38 @@ test('MODNet export reproducibility is proven across independent fixed-hash-seed
   assert.match(exporter, /"crossProcessReproducible": True/);
   assert.match(exporter, /"independentExportProcesses": 2/);
   assert.match(exporter, /"exportPythonHashSeed": EXPORT_PYTHON_HASH_SEED/);
+  assert.match(exporter, /"constantFolding": "DISABLED"/);
 });
 
-test('pinned checkpoint and export remain CANDIDATE-only before and after signed-pack publication', () => {
+test('candidate.2 records stable cross-host no-folding evidence without granting production authority', () => {
+  assert.equal(manifest.version, '1.0.0-candidate.2');
   assert.equal(manifest.status, 'CANDIDATE');
   assert.ok(['EXPORT_PINNED_RELEASE_REQUIRED', 'SIGNED_RELEASE'].includes(manifest.artifactState));
   assert.equal(manifest.upstream.checkpoint.identityState, 'PINNED');
   assert.equal(manifest.upstream.checkpoint.size, 26255603);
   assert.equal(manifest.upstream.checkpoint.sha256, CHECKPOINT_SHA);
   assert.equal(manifest.bersExport.state, 'PINNED');
-  assert.equal(manifest.bersExport.onnxSize, 25961178);
+  assert.equal(manifest.bersExport.constantFolding, false);
+  assert.equal(manifest.bersExport.onnxSize, ONNX_SIZE);
   assert.equal(manifest.bersExport.onnxSha256, ONNX_SHA);
+  assert.deepEqual(manifest.bersExport.referenceParity.maxAbsErrorByShape, {
+    '128x160': 0,
+    '256x320': 0,
+    '512x512': 0,
+  });
+  assert.deepEqual(manifest.bersExport.crossHostReproducibility, {
+    independentHostedRunners: 3,
+    independentExportsPerRunner: 2,
+    classification: 'BYTE_IDENTICAL',
+    initializerDriftChangedCount: 0,
+  });
+  assert.equal('evidenceRunId' in manifest.bersExport.crossHostReproducibility, false);
   assert.equal(manifest.productionApprovalEvidence, null);
   if (manifest.artifactState === 'EXPORT_PINNED_RELEASE_REQUIRED') {
     assert.equal(manifest.artifacts.model.url, null);
     assert.equal(manifest.verificationKeyId, null);
   } else {
-    assert.equal(manifest.artifacts.model.size, 25961178);
+    assert.equal(manifest.artifacts.model.size, ONNX_SIZE);
     assert.equal(manifest.artifacts.model.sha256, ONNX_SHA);
     assert.equal(typeof manifest.artifacts.model.url, 'string');
     assert.equal(typeof manifest.artifacts.model.signatureUrl, 'string');

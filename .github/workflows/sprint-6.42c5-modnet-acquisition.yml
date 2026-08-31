@@ -9,12 +9,13 @@ permissions:
   contents: read
 
 env:
+  MODNET_VERSION: 1.0.0-candidate.2
   MODNET_CHECKPOINT_SHA256: 7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8
   MODNET_CHECKPOINT_SIZE: '26255603'
   MODNET_REFERENCE_ONNX_SHA256: 07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9
   MODNET_REFERENCE_ONNX_SIZE: '25888640'
-  MODNET_ONNX_SHA256: 18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919
-  MODNET_ONNX_SIZE: '25961178'
+  MODNET_ONNX_SHA256: 223bdc36ba84f9728ab4a94a7985128161514019d8388c3e827402c15072c654
+  MODNET_ONNX_SIZE: '26236047'
 
 jobs:
   authoritative-checkpoint:
@@ -111,6 +112,20 @@ jobs:
             --report .test-cache/6.42c5/modnet-bers-export.json
           test "$(stat -c%s .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx)" = "${MODNET_ONNX_SIZE}"
           test "$(sha256sum .test-cache/6.42c5/modnet-photographic-portrait-matting.onnx | cut -d' ' -f1)" = "${MODNET_ONNX_SHA256}"
+          python - <<'PY'
+          import json, os
+          manifest = json.load(open('src/platform/creative/local-ai/models/portrait-matting.manifest.json', encoding='utf-8'))
+          report = json.load(open('.test-cache/6.42c5/modnet-bers-export.json', encoding='utf-8'))
+          assert manifest['version'] == os.environ['MODNET_VERSION']
+          assert manifest['status'] == 'CANDIDATE'
+          assert manifest['bersExport']['constantFolding'] is False
+          assert manifest['bersExport']['onnxSize'] == int(os.environ['MODNET_ONNX_SIZE'])
+          assert manifest['bersExport']['onnxSha256'] == os.environ['MODNET_ONNX_SHA256']
+          assert report['version'] == os.environ['MODNET_VERSION']
+          assert report['artifact']['constantFolding'] is False
+          assert report['artifact']['crossProcessReproducible'] is True
+          assert report['environment']['constantFolding'] == 'DISABLED'
+          PY
       - name: Cross-check BERS export against official upstream ONNX reference
         run: |
           set -euo pipefail
@@ -196,11 +211,12 @@ jobs:
             echo '## MODNet authoritative candidate evidence'
             echo
             echo '- Status: CANDIDATE'
+            echo "- Version: \`${MODNET_VERSION}\`"
             echo '- Source revision: `28165a451e4610c9d77cfdf925a94610bb2810fb`'
             echo '- Source license: Apache-2.0'
             echo '- Pinned checkpoint size / SHA-256 verified before deserialization: PASS'
             echo '- Strict pinned-architecture state_dict load: PASS'
-            echo '- BERS CPU ONNX exact pinned reproduction + ONNX checker + PyTorch/ORT parity: PASS'
+            echo '- BERS CPU ONNX exact pinned reproduction with constant folding disabled + ONNX checker + PyTorch/ORT parity: PASS'
             echo '- Official upstream ONNX pinned as independent reference only; cross-parity: PASS'
             echo '- Protected signed-CANDIDATE release authority guards: PASS'
             echo '- Candidate remains absent from production executable catalogs'
