@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { CreativeRequest } from '../src/platform/creative/canonical/contracts.ts';
 import type {
   LocalExecutionResultV2,
   LocalExecutionTicketIssueRequestV2,
@@ -8,13 +9,19 @@ import type {
 import {
   GARMENT_TEXTURE_COMPOSITE_CAPABILITY,
   GARMENT_TEXTURE_COMPOSITE_OPERATION,
+  GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION,
   GARMENT_TEXTURE_COMPOSITE_STEP_ID,
   GARMENT_TEXTURE_COMPOSITE_TOOL_ID,
   GARMENT_TEXTURE_COMPOSITE_TOOL_VERSION,
 } from '../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
+import { GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { LocalGarmentTextureCompositeExecutionService } from '../server/core/localExecution/LocalGarmentTextureCompositeExecutionService.ts';
+import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 import { verifyGarmentTextureCompositeFinalArtifact } from '../server/core/providers/garmentTextureCompositeWorkflowVerifier.ts';
-import { assertProductionTextureTuple } from '../server/core/providers/productionGarmentTextureCompositePolicy.ts';
+import { productionExecutionCapabilities } from '../server/core/providers/productionExecutionCapabilities.ts';
+import { productionExecutionRoute } from '../server/core/providers/productionExecutionRoute.ts';
+import { productionGarmentTextureCompositePolicy, assertProductionTextureTuple } from '../server/core/providers/productionGarmentTextureCompositePolicy.ts';
+import { productionTargetSelection } from '../server/core/providers/productionTargetSelection.ts';
 
 const scope = Object.freeze({
   tenantId: 'tenant-texture-production',
@@ -164,7 +171,7 @@ function issuedTicket(request: LocalExecutionTicketIssueRequestV2): LocalExecuti
 
 function createService(options: Readonly<{
   durable?: LocalExecutionTicketV2;
-  authorize?: () => void;
+  useProductionPolicy?: boolean;
 }> = {}) {
   let issueCount = 0;
   let policyCount = 0;
@@ -181,9 +188,9 @@ function createService(options: Readonly<{
     evidence: { resolve: async () => evidence() } as any,
     submission: { uploadImage: async () => { throw new Error('not used'); }, submit: async () => { throw new Error('not used'); } } as any,
     policy: {
-      authorize: () => {
+      authorize: async (input) => {
         policyCount += 1;
-        options.authorize?.();
+        if (options.useProductionPolicy) await productionGarmentTextureCompositePolicy.authorize(input);
       },
     },
     now: () => 2_000,
@@ -201,22 +208,71 @@ const command = Object.freeze({
   clientRequestId: 'texture-production-1',
 });
 
-test('dormant production policy fails closed before any ticket issuer can be trusted', () => {
-  const operation = Object.freeze({
+function productionOperation() {
+  return Object.freeze({
     id: GARMENT_TEXTURE_COMPOSITE_STEP_ID,
-    version: GARMENT_TEXTURE_COMPOSITE_TOOL_VERSION,
     type: GARMENT_TEXTURE_COMPOSITE_OPERATION,
-    capability: GARMENT_TEXTURE_COMPOSITE_CAPABILITY,
-    parameters: Object.freeze({}),
+    requiredArtifacts: Object.freeze([command.sourceArtifactId]),
+    produces: Object.freeze(['image']),
+    input: Object.freeze({}),
+    outputArtifacts: Object.freeze(['garment-texture-composite:final']),
+    cost: Object.freeze({ credits: 0, aiCalls: 0 }),
   });
-  assert.throws(
-    () => assertProductionTextureTuple({ scope, sourceArtifactId: command.sourceArtifactId, operation }),
-    (error: any) => error?.code === 'garment_texture_composite_not_admitted' && error?.status === 422,
+}
+
+function productionRequest(): CreativeRequest {
+  return Object.freeze({
+    id: 'texture-production-policy-request',
+    intent: GARMENT_TEXTURE_COMPOSITE_OPERATION,
+    scope,
+    budget: Object.freeze({ credits: 0, aiCalls: 0, retries: 0 }),
+    metadata: Object.freeze({ operationIntent: GARMENT_TEXTURE_COMPOSITE_OPERATION }),
+  });
+}
+
+test('production admission binds exact registry executor to ON_DEVICE + LOCAL with no provider path', () => {
+  assert.equal(GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION, 'ADMITTED');
+  assert.equal(GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION.capability, GARMENT_TEXTURE_COMPOSITE_CAPABILITY);
+  assert.deepEqual(GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION.executor, {
+    kind: 'DETERMINISTIC_TOOL',
+    toolId: GARMENT_TEXTURE_COMPOSITE_TOOL_ID,
+    version: GARMENT_TEXTURE_COMPOSITE_TOOL_VERSION,
+  });
+  assert.equal(GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION.output.role, 'COMPOSITE');
+  assert.equal(GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION.lineage.producerOperation, GARMENT_TEXTURE_COMPOSITE_OPERATION);
+  assert.equal(GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION.verification.comparison, 'BYTE_EXACT_CORE_RECOMPUTE');
+  assert.deepEqual(productionLocalExecutorsByCapability[GARMENT_TEXTURE_COMPOSITE_CAPABILITY], [GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION.executor]);
+
+  const operation = productionOperation();
+  const request = productionRequest();
+  const route = productionExecutionRoute.select(operation, request);
+  const target = productionTargetSelection.select(operation, request);
+  assert.equal(route, 'ON_DEVICE');
+  assert.equal(target, 'LOCAL');
+  assert.deepEqual(
+    productionExecutionCapabilities.admit({ request, operation: { ...operation, executionRoute: route }, route, target }),
+    { allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: GARMENT_TEXTURE_COMPOSITE_CAPABILITY },
   );
+  assert.equal(
+    productionExecutionCapabilities.admit({ request, operation: { ...operation, executionRoute: route, providerId: 'fal' }, route, target }).allowed,
+    false,
+    'LOCAL deterministic Fashion operation must reject provider authority',
+  );
+  assert.doesNotThrow(() => assertProductionTextureTuple({
+    scope,
+    sourceArtifactId: command.sourceArtifactId,
+    operation: Object.freeze({
+      id: GARMENT_TEXTURE_COMPOSITE_STEP_ID,
+      version: GARMENT_TEXTURE_COMPOSITE_TOOL_VERSION,
+      type: GARMENT_TEXTURE_COMPOSITE_OPERATION,
+      capability: GARMENT_TEXTURE_COMPOSITE_CAPABILITY,
+      parameters: Object.freeze({}),
+    }),
+  }));
 });
 
-test('Core prepare derives a closed zero-cloud v2 ticket only from re-resolved Fashion evidence', async () => {
-  const harness = createService();
+test('Core prepare passes the real production tuple then issues a closed zero-cloud v2 ticket from re-resolved Fashion evidence', async () => {
+  const harness = createService({ useProductionPolicy: true });
   const prepared = await harness.service.prepare(command, { tenantId: scope.tenantId, userId: scope.userId });
   assert.equal(harness.policyCount(), 1);
   assert.equal(harness.issueCount(), 1);
@@ -246,9 +302,9 @@ test('Core prepare derives a closed zero-cloud v2 ticket only from re-resolved F
 });
 
 test('durable idempotency replay rejects producer-parameter drift before issuing another ticket', async () => {
-  const first = createService();
+  const first = createService({ useProductionPolicy: true });
   const prepared = await first.service.prepare(command, { tenantId: scope.tenantId, userId: scope.userId });
-  const replay = createService({ durable: prepared.ticket });
+  const replay = createService({ durable: prepared.ticket, useProductionPolicy: true });
   await assert.rejects(
     () => replay.service.prepare({
       ...command,
@@ -260,7 +316,7 @@ test('durable idempotency replay rejects producer-parameter drift before issuing
 });
 
 test('strict FINAL verifier accepts exact Core metadata and rejects Fashion lineage forgery', async () => {
-  const harness = createService();
+  const harness = createService({ useProductionPolicy: true });
   const { ticket } = await harness.service.prepare(command, { tenantId: scope.tenantId, userId: scope.userId });
   const parameters = ticket.operation.parameters as Record<string, any>;
   const result: LocalExecutionResultV2 = Object.freeze({

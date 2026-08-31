@@ -77,14 +77,13 @@ jobs:
             --external:node:* --external:pg --external:sharp
       - name: Prove claim race, immutable rejected COMPOSITE, fresh-ticket correction, exact FINAL lineage and restart replay
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-service-postgres/service.mjs
-      - name: Assert admission is still closed after PostgreSQL proof
+      - name: Assert admitted production path remains local-only and Try-On stays unwired
         run: |
-          grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
-          ! grep -R -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' \
-            server/core/localExecution/productionLocalExecutorPolicy.ts \
-            server/core/providers/productionExecutionCapabilities.ts \
-            server/core/providers/productionExecutionRoute.ts \
-            server/core/providers/productionTargetSelection.ts \
-            src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
+          grep -q "GARMENT_TEXTURE_COMPOSITE_CAPABILITY" server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_CAPABILITY" server/core/providers/productionExecutionCapabilities.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionExecutionRoute.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionTargetSelection.ts
+          ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' server/core/providers/productionProviderSelection.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
           ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' src/lib/tryon/tryonEngine.js

@@ -32,7 +32,7 @@ jobs:
           npm run typecheck
           npm run server:typecheck
           npm run server:build
-      - name: Bundle transitive evidence, delivery, browser, submission, dormant production admission and HTTP acceptance
+      - name: Bundle evidence, delivery, browser, submission, production admission and HTTP acceptance
         run: |
           mkdir -p .test-cache/fashion-f4b5b-authority
           npx esbuild tests/garment-texture-composite-evidence-authority.test.ts \
@@ -67,20 +67,22 @@ jobs:
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/browser.mjs
       - name: Prove Core recompute, verification-before-persist, claim release and replay
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/submission.mjs
-      - name: Prove dormant production prepare is closed, zero-cloud and lineage-exact
+      - name: Prove production prepare is registry-bound, LOCAL_ONLY, zero-cloud and lineage-exact
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/production-admission.mjs
       - name: Prove capability-specific HTTP transport is authority-minimal and fail-closed
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/http.mjs
-      - name: Prove browser dependency direction and production authority remain closed
+      - name: Prove production admission is exact while provider and Try-On authority remain closed
         run: |
-          grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
-          ! grep -q "server/core" src/platform/creative/canonical/garmentTextureCompositeInputEnvelope.ts
-          ! grep -q "node:crypto" src/platform/creative/deterministic/GarmentTextureCompositeParameters.ts
-          ! grep -R -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' \
-            server/core/localExecution/productionLocalExecutorPolicy.ts \
-            server/core/providers/productionExecutionCapabilities.ts \
-            server/core/providers/productionExecutionRoute.ts \
-            server/core/providers/productionTargetSelection.ts \
-            src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
+          grep -q "GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION" src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_CAPABILITY" server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_CAPABILITY" server/core/providers/productionExecutionCapabilities.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionExecutionRoute.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionTargetSelection.ts
+          grep -q "garmentTextureComposite: garmentMeshWarp.textureComposite.execution" server/core/composition/createProductionCore.ts
+          grep -q "local-execution/garment-texture-composite" server/index.ts
+          grep -q "prepareGarmentTextureComposite" src/api/coreClient.js
+          ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' server/core/providers/productionProviderSelection.ts
+          ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' server/core/providers/falWorkflowRuntime.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
           ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' src/lib/tryon/tryonEngine.js
