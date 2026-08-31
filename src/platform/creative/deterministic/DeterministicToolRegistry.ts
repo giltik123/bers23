@@ -41,6 +41,7 @@ import {
   GARMENT_MESH_WARP_TOOL_ID,
   GARMENT_MESH_WARP_TOOL_VERSION,
 } from './GarmentMeshWarpIdentity.js';
+import { GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION_DATA } from './GarmentTextureCompositeRegistryDefinition.js';
 
 export type DeterministicToolInputContract = Readonly<{
   name: string;
@@ -111,12 +112,12 @@ export type DeterministicToolDefinition = Readonly<{
     format: 'RGBA8';
     colorSpace: 'srgb';
     orientation: 1;
-    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION';
-    alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP';
-    interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH';
+    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
+    alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP' | 'TEXTURE_PRESERVE_WARP_FEATHER_SOURCE_OVER';
+    interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH' | 'BILINEAR_NORMALIZED_Q16_TEXTURE_AND_MESH';
     rounding?: 'INTEGER_EXACT' | 'ROUND_HALF_UP';
     border?: 'REJECT_OUT_OF_BOUNDS' | 'CLAMP_TO_EDGE';
-    transparentRgb?: 'STRAIGHT_BILINEAR_WHEN_WEIGHTED_ALPHA_ZERO';
+    transparentRgb?: 'STRAIGHT_BILINEAR_WHEN_WEIGHTED_ALPHA_ZERO' | 'PRESERVE_BASE_RGB_ON_TRANSPARENT_TEXTURE_SAMPLE_AND_ZERO_FINAL_WHEN_ALPHA_ZERO';
     uncoveredPixels?: 'TRANSPARENT_BLACK';
     overlapOwnership?: 'DECLARED_TRIANGLE_ORDER_FIRST_OWNER';
   }>;
@@ -125,7 +126,7 @@ export type DeterministicToolDefinition = Readonly<{
     dimensions: 'CORE_IMAGE_MAX_DIMENSION';
     pixels: 'CORE_IMAGE_MAX_PIXELS';
     uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES';
-    hardOutputPixels?: 'RESIZE_V1_MAX_OUTPUT_PIXELS' | 'GARMENT_MESH_WARP_V1_MAX_OUTPUT_PIXELS';
+    hardOutputPixels?: 'RESIZE_V1_MAX_OUTPUT_PIXELS' | 'GARMENT_MESH_WARP_V1_MAX_OUTPUT_PIXELS' | 'GARMENT_TEXTURE_COMPOSITE_V1_MAX_OUTPUT_PIXELS';
     maxRasterWork?: 'GARMENT_MESH_WARP_V1_MAX_RASTER_WORK';
   }>;
   lineage: Readonly<{
@@ -364,6 +365,8 @@ const garmentMeshWarpDefinition: DeterministicToolDefinition = deepFreeze({
   lineage: { parentInputs: ['projectSource'], managedParents: ['basisView', 'representation'], finalRole: 'WORKING', producerOperation: GARMENT_MESH_WARP_OPERATION },
 });
 
+const garmentTextureCompositeDefinition: DeterministicToolDefinition = deepFreeze(GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION_DATA);
+
 /**
  * Data-only deterministic tool catalog. It describes reviewed tool contracts;
  * it is not capability admission and contains no executable callback or fallback.
@@ -375,6 +378,7 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
   resizeDefinition,
   orthogonalTransformDefinition,
   garmentMeshWarpDefinition,
+  garmentTextureCompositeDefinition,
 ]);
 
 export const BACKGROUND_ISOLATION_TOOL_DEFINITION = backgroundIsolationDefinition;
@@ -382,6 +386,7 @@ export const CROP_TOOL_DEFINITION = cropDefinition;
 export const RESIZE_TOOL_DEFINITION = resizeDefinition;
 export const ORTHOGONAL_TRANSFORM_TOOL_DEFINITION = orthogonalTransformDefinition;
 export const GARMENT_MESH_WARP_TOOL_DEFINITION = garmentMeshWarpDefinition;
+export const GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION = garmentTextureCompositeDefinition;
 
 export function findDeterministicToolByCapability(capability: string): DeterministicToolDefinition | undefined {
   return DETERMINISTIC_TOOL_REGISTRY.find(definition => definition.capability === capability);
