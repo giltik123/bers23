@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { garmentMeshWarpRgba8 } from '../src/platform/creative/deterministic/GarmentMeshWarp.ts';
 import {
   GARMENT_TEXTURE_COMPOSITE_ALPHA_POLICY,
   GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY,
+  GARMENT_TEXTURE_COMPOSITE_FEATHER_DISTANCE_POLICY,
   GARMENT_TEXTURE_COMPOSITE_FIXED_POINT_ONE,
   GARMENT_TEXTURE_COMPOSITE_MAX_FEATHER_RADIUS,
   GARMENT_TEXTURE_COMPOSITE_MAX_PIXELS,
   GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION,
+  GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_OUTPUT_RGB_POLICY,
+  GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_SAMPLE_RGB_POLICY,
   GARMENT_TEXTURE_COMPOSITE_WRAP_MODE,
   compositeSourceOverSrgbRgba8,
   garmentEdgeFeatherRgba8,
@@ -32,10 +36,34 @@ const identitySpec = Object.freeze({
   colorSpacePolicy: GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY,
 });
 
-test('F4b.5a garment texture composite identity remains explicitly NOT_ADMITTED', () => {
+const fullFrameWarp3x3 = Object.freeze({
+  sourcePointsQ16: Object.freeze([
+    Object.freeze([0, 0] as const),
+    Object.freeze([ONE, 0] as const),
+    Object.freeze([0, ONE] as const),
+    Object.freeze([ONE, ONE] as const),
+  ]),
+  destinationPointsQ16: Object.freeze([
+    Object.freeze([0, 0] as const),
+    Object.freeze([ONE, 0] as const),
+    Object.freeze([0, ONE] as const),
+    Object.freeze([ONE, ONE] as const),
+  ]),
+  triangles: Object.freeze([
+    Object.freeze([0, 1, 2] as const),
+    Object.freeze([1, 3, 2] as const),
+  ]),
+  outputWidth: 3,
+  outputHeight: 3,
+});
+
+test('F4b.5a identity and pixel policies remain explicit and NOT_ADMITTED', () => {
   assert.equal(GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION, 'NOT_ADMITTED');
   assert.equal(GARMENT_TEXTURE_COMPOSITE_WRAP_MODE, 'CLAMP');
   assert.equal(GARMENT_TEXTURE_COMPOSITE_ALPHA_POLICY, 'PRESERVE_BASE_ALPHA');
+  assert.equal(GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_SAMPLE_RGB_POLICY, 'PRESERVE_BASE_RGB');
+  assert.equal(GARMENT_TEXTURE_COMPOSITE_FEATHER_DISTANCE_POLICY, 'MANHATTAN_4_NEIGHBOR_HALF_PIXEL_LINEAR');
+  assert.equal(GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_OUTPUT_RGB_POLICY, 'ZERO_RGB_WHEN_OUTPUT_ALPHA_ZERO');
   assert.equal(GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY, 'SRGB_GAMMA_ENCODED_RGBA8');
 });
 
@@ -50,7 +78,7 @@ test('identity texture transform is byte exact and never aliases source bytes', 
   assert.equal(source[0], 1);
 });
 
-test('Q16 texture mapping uses premultiplied bilinear sampling while preserving garment alpha', () => {
+test('Q16 texture mapping uses premultiplied bilinear sampling while preserving source-view alpha', () => {
   const source = new Uint8ClampedArray([
     0, 0, 0, 255,
     200, 0, 0, 64,
@@ -66,7 +94,7 @@ test('Q16 texture mapping uses premultiplied bilinear sampling while preserving 
   ]);
 });
 
-test('CLAMP is explicit and transformed hidden RGB cannot change base alpha geometry', () => {
+test('CLAMP and transparent transformed samples cannot surface hidden RGB through preserved base alpha', () => {
   const source = new Uint8ClampedArray([
     10, 0, 0, 255,
     20, 0, 0, 128,
@@ -77,13 +105,13 @@ test('CLAMP is explicit and transformed hidden RGB cannot change base alpha geom
     offsetXQ16: ONE,
   });
   assert.deepEqual([...output], [
-    30, 0, 0, 255,
-    30, 0, 0, 128,
+    10, 0, 0, 255,
+    20, 0, 0, 128,
     30, 0, 0, 0,
   ]);
 });
 
-test('bounded Manhattan feather has exact radius-1 and radius-2 reference vectors', () => {
+test('bounded half-pixel Manhattan feather has exact radius-1 and radius-2 vectors', () => {
   const opaque3 = new Uint8ClampedArray(Array.from({ length: 9 }, () => [7, 8, 9, 255]).flat());
   const r1 = garmentEdgeFeatherRgba8(opaque3, 3, 3, 1);
   assert.deepEqual(
@@ -97,16 +125,16 @@ test('bounded Manhattan feather has exact radius-1 and radius-2 reference vector
   assert.deepEqual(
     Array.from({ length: 25 }, (_, index) => r2[index * 4 + 3]),
     [
-      85, 85, 85, 85, 85,
-      85, 170, 170, 170, 85,
-      85, 170, 255, 170, 85,
-      85, 170, 170, 170, 85,
-      85, 85, 85, 85, 85,
+      64, 64, 64, 64, 64,
+      64, 191, 191, 191, 64,
+      64, 191, 255, 191, 64,
+      64, 191, 191, 191, 64,
+      64, 64, 64, 64, 64,
     ],
   );
 });
 
-test('zero-radius feather is byte exact and zero-alpha holes define the inward edge', () => {
+test('zero-radius feather is byte exact and zero-alpha holes define inward edges without changing RGB', () => {
   const source = new Uint8ClampedArray([
     100, 101, 102, 255, 110, 111, 112, 255, 120, 121, 122, 255,
     130, 131, 132, 255, 140, 141, 142, 0,   150, 151, 152, 255,
@@ -117,9 +145,10 @@ test('zero-radius feather is byte exact and zero-alpha holes define the inward e
   assert.equal(feathered[4 * 4 + 3], 0);
   assert.equal(feathered[1 * 4 + 3], 128);
   assert.deepEqual([...feathered.slice(4 * 4, 4 * 4 + 3)], [140, 141, 142]);
+  assert.deepEqual([...feathered.slice(1 * 4, 1 * 4 + 3)], [110, 111, 112]);
 });
 
-test('gamma-encoded sRGB source-over uses deterministic integer premultiply/unpremultiply', () => {
+test('gamma-encoded sRGB source-over uses deterministic integer premultiply/unpremultiply and zero transparent RGB', () => {
   const destination = new Uint8ClampedArray([0, 0, 255, 255]);
   const source = new Uint8ClampedArray([255, 0, 0, 128]);
   assert.deepEqual([...compositeSourceOverSrgbRgba8(destination, source, 1, 1)], [128, 0, 127, 255]);
@@ -130,25 +159,70 @@ test('gamma-encoded sRGB source-over uses deterministic integer premultiply/unpr
   assert.deepEqual([...compositeSourceOverSrgbRgba8(hidden, hidden, 1, 1)], [0, 0, 0, 0]);
 });
 
-test('composed F4b.5a preview/Core law is byte-identical across repeated execution', () => {
+test('composed law texture-maps the exact Garment source view before the existing topology warp', () => {
   const project = new Uint8ClampedArray(Array.from({ length: 9 }, () => [10, 20, 30, 255]).flat());
-  const garment = new Uint8ClampedArray(Array.from({ length: 9 }, (_, index) => [200 - index, 40 + index, 20, 255]).flat());
-  const spec = {
-    textureTransform: {
+  const garmentSource = new Uint8ClampedArray([
+    200, 40, 20, 255,
+    100, 80, 40, 255,
+    50, 120, 80, 128,
+    220, 30, 10, 64,
+  ]);
+  const expectedWarp = garmentMeshWarpRgba8(garmentSource, 2, 2, fullFrameWarp3x3);
+  const expected = compositeSourceOverSrgbRgba8(project, expectedWarp, 3, 3);
+  const actual = garmentTextureCompositeRgba8(
+    project,
+    3,
+    3,
+    garmentSource,
+    2,
+    2,
+    fullFrameWarp3x3,
+    identitySpec,
+  );
+  assert.deepEqual([...actual], [...expected]);
+});
+
+test('non-identity topology-bound composition is byte-identical across repeated execution', () => {
+  const project = new Uint8ClampedArray(Array.from({ length: 9 }, () => [10, 20, 30, 255]).flat());
+  const garmentSource = new Uint8ClampedArray([
+    200, 40, 20, 255,
+    100, 80, 40, 255,
+    50, 120, 80, 128,
+    220, 30, 10, 64,
+  ]);
+  const spec = Object.freeze({
+    textureTransform: Object.freeze({
       ...identityTransform,
       scaleXQ16: ONE / 2,
       scaleYQ16: ONE / 2,
       offsetXQ16: ONE / 4,
       offsetYQ16: ONE / 4,
-    },
+    }),
     featherRadius: 1,
     colorSpacePolicy: GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY,
-  } as const;
-  const first = garmentTextureCompositeRgba8(project, garment, 3, 3, spec);
-  const second = garmentTextureCompositeRgba8(project, garment, 3, 3, spec);
+  });
+  const first = garmentTextureCompositeRgba8(project, 3, 3, garmentSource, 2, 2, fullFrameWarp3x3, spec);
+  const second = garmentTextureCompositeRgba8(project, 3, 3, garmentSource, 2, 2, fullFrameWarp3x3, spec);
   assert.deepEqual([...first], [...second]);
   assert.notDeepEqual([...first], [...project]);
-  assert.deepEqual([...first.slice(16, 20)], [196, 44, 20, 255]);
+});
+
+test('composed law rejects a topology warp whose output geometry is not the canonical Project geometry', () => {
+  const project = new Uint8ClampedArray(3 * 3 * 4);
+  const garmentSource = new Uint8ClampedArray(2 * 2 * 4);
+  assert.throws(
+    () => garmentTextureCompositeRgba8(
+      project,
+      3,
+      3,
+      garmentSource,
+      2,
+      2,
+      { ...fullFrameWarp3x3, outputWidth: 2 },
+      identitySpec,
+    ),
+    /warp output must match the canonical Project geometry/,
+  );
 });
 
 test('F4b.5a fails closed on unsupported policies hostile transforms radii dimensions and bytes', () => {
@@ -172,6 +246,7 @@ test('F4b.5a fails closed on unsupported policies hostile transforms radii dimen
   );
   assert.equal(4096 * 2048, GARMENT_TEXTURE_COMPOSITE_MAX_PIXELS);
   assert.throws(() => garmentTextureMapRgba8(new Uint8ClampedArray(4), 4096, 4096, identityTransform), new RegExp(String(GARMENT_TEXTURE_COMPOSITE_MAX_PIXELS)));
+  assert.throws(() => garmentTextureMapRgba8(new DataView(new ArrayBuffer(4)) as any, 1, 1, identityTransform), /Uint8 RGBA bytes/);
   assert.throws(() => garmentEdgeFeatherRgba8(new Uint8ClampedArray(15), 2, 2, 1), /RGBA length/);
   assert.throws(() => compositeSourceOverSrgbRgba8(new Uint8ClampedArray(16), new Uint8ClampedArray(12), 2, 2), /RGBA length/);
 });

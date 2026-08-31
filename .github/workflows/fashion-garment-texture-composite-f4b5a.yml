@@ -34,10 +34,14 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outdir=.test-cache/fashion-garment-texture-composite-f4b5a \
             --external:node:*
-      - name: Prove Q16 texture mapping feather source-over vectors and hostile bounds
+      - name: Prove source-view texture topology warp feather source-over vectors and hostile bounds
         run: node --test .test-cache/fashion-garment-texture-composite-f4b5a/*.js
-      - name: Prove F4b.5a grants no production execution or Try-On authority
+      - name: Prove topology reuse and no production execution or Try-On authority
         run: |
+          grep -q "garmentMeshWarpRgba8" src/platform/creative/deterministic/GarmentTextureComposite.ts
+          grep -q "PRESERVE_BASE_RGB" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
+          grep -q "MANHATTAN_4_NEIGHBOR_HALF_PIXEL_LINEAR" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
+          grep -q "ZERO_RGB_WHEN_OUTPUT_ALPHA_ZERO" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
           ! grep -R -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' \
             server/core/localExecution/productionLocalExecutorPolicy.ts \
             server/core/providers/productionExecutionCapabilities.ts \

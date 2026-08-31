@@ -1,6 +1,8 @@
+import { garmentMeshWarpRgba8, type GarmentMeshWarpSpec } from './GarmentMeshWarp.js';
 import {
   GARMENT_TEXTURE_COMPOSITE_ALPHA_POLICY,
   GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY,
+  GARMENT_TEXTURE_COMPOSITE_FEATHER_DISTANCE_POLICY,
   GARMENT_TEXTURE_COMPOSITE_FIXED_POINT_BITS,
   GARMENT_TEXTURE_COMPOSITE_MAX_DIMENSION,
   GARMENT_TEXTURE_COMPOSITE_MAX_FEATHER_RADIUS,
@@ -8,6 +10,8 @@ import {
   GARMENT_TEXTURE_COMPOSITE_MAX_PIXELS,
   GARMENT_TEXTURE_COMPOSITE_MAX_SCALE_Q16,
   GARMENT_TEXTURE_COMPOSITE_MIN_SCALE_Q16,
+  GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_OUTPUT_RGB_POLICY,
+  GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_SAMPLE_RGB_POLICY,
   GARMENT_TEXTURE_COMPOSITE_WRAP_MODE,
 } from './GarmentTextureCompositeIdentity.js';
 
@@ -27,6 +31,9 @@ export {
   GARMENT_TEXTURE_COMPOSITE_MAX_OFFSET_ABS_Q16,
   GARMENT_TEXTURE_COMPOSITE_WRAP_MODE,
   GARMENT_TEXTURE_COMPOSITE_ALPHA_POLICY,
+  GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_SAMPLE_RGB_POLICY,
+  GARMENT_TEXTURE_COMPOSITE_FEATHER_DISTANCE_POLICY,
+  GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_OUTPUT_RGB_POLICY,
   GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY,
   GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION,
 } from './GarmentTextureCompositeIdentity.js';
@@ -90,15 +97,20 @@ export function normalizeGarmentTextureCompositeSpec(value: GarmentTextureCompos
 }
 
 /**
- * F4b.5a deterministic texture-coordinate transform.
+ * F4b.5a deterministic source-view texture-coordinate transform.
  *
  * V1 law:
- * - coordinates are normalized Q16;
- * - scale is positive and bounded; offsets are bounded signed Q16;
- * - transformed coordinates are CLAMPed to [0,1] (no implicit repeat/wrap);
- * - RGB uses fixed-point bilinear sampling in premultiplied-alpha space with
- *   straight hidden-RGB interpolation when weighted sampled alpha is zero;
- * - garment geometry is preserved by copying the original pixel alpha exactly.
+ * - coordinates are normalized Q16 and anchored at source-view top-left;
+ * - positive scale and signed offset are bounded and applied before CLAMP;
+ * - no implicit repeat/wrap exists in v1;
+ * - transformed RGB uses fixed-point bilinear sampling in premultiplied-alpha
+ *   space, with straight hidden-RGB interpolation only when sampled alpha is
+ *   exactly zero;
+ * - the source-view alpha byte at the untransformed pixel is copied exactly so
+ *   the admitted Garment silhouette/topology authority is not moved by a
+ *   texture-only transform;
+ * - if the transformed sample is fully transparent while the base pixel is
+ *   visible, base RGB is preserved so hidden texture RGB cannot become visible.
  */
 export function garmentTextureMapRgba8(
   source: Uint8Array | Uint8ClampedArray,
@@ -123,8 +135,14 @@ export function garmentTextureMapRgba8(
       const offset = (y * width + x) * 4;
       const baseXQ16 = pixelIndexToNormalizedQ16(x, width);
       const sampleXQ16 = clampQ16(roundHalfUpDiv(baseXQ16 * normalized.scaleXQ16, FIXED_ONE) + normalized.offsetXQ16);
-      sampleNormalizedBilinearRgba8(source, width, height, sampleXQ16, sampleYQ16, output, offset);
-      output[offset + 3] = source[offset + 3];
+      const sampledAlphaNumerator = sampleNormalizedBilinearRgba8(source, width, height, sampleXQ16, sampleYQ16, output, offset);
+      const baseAlpha = source[offset + 3];
+      if (sampledAlphaNumerator === 0 && baseAlpha > 0) {
+        output[offset] = source[offset];
+        output[offset + 1] = source[offset + 1];
+        output[offset + 2] = source[offset + 2];
+      }
+      output[offset + 3] = baseAlpha;
     }
   }
   return output;
@@ -133,10 +151,15 @@ export function garmentTextureMapRgba8(
 /**
  * Deterministic bounded inward feather.
  *
- * V1 law uses Manhattan distance from every non-zero-alpha pixel to the nearest
- * zero-alpha pixel or image exterior. Radius 0 is identity. For radius R > 0,
- * alpha is multiplied by round-half-up(255 * min(distance, R+1)/(R+1)); RGB is
- * unchanged. A two-pass capped distance transform keeps work O(pixel count).
+ * Distance is exact 4-neighbour Manhattan distance from a non-zero-alpha pixel
+ * center to the nearest zero-alpha pixel center or image exterior, capped at
+ * radius+1. The exterior/zero-alpha boundary lies half a pixel from the first
+ * visible center. For 1 <= distance <= radius, coverage is therefore
+ * round-half-up(255 * (2*distance-1) / (2*radius)); distance > radius is full
+ * coverage. Radius 0 is identity. RGB bytes are preserved exactly.
+ *
+ * The two-pass capped distance transform is O(pixel count), independent of the
+ * radius, so a bounded image cannot amplify into radius-squared hostile work.
  */
 export function garmentEdgeFeatherRgba8(
   source: Uint8Array | Uint8ClampedArray,
@@ -182,19 +205,22 @@ export function garmentEdgeFeatherRgba8(
     const sourceAlpha = source[index * 4 + 3];
     if (sourceAlpha === 0) continue;
     const distance = distances[index];
-    const multiplier = distance >= maxDistance ? 255 : roundHalfUpDiv(255 * distance, maxDistance);
+    const multiplier = distance > radius
+      ? 255
+      : roundHalfUpDiv((2 * distance - 1) * 255, 2 * radius);
     output[index * 4 + 3] = roundHalfUpDiv(sourceAlpha * multiplier, 255);
   }
   return output;
 }
 
 /**
- * Deterministic source-over composite in gamma-encoded sRGB RGBA8.
+ * Deterministic Porter-Duff source-over in the declared gamma-encoded sRGB
+ * RGBA8 byte domain. Alpha is linear coverage. No color conversion or browser
+ * Canvas implementation is consulted.
  *
- * The policy intentionally does not claim linear-light compositing. Both inputs
- * are interpreted as straight RGBA8 in the named gamma-encoded sRGB policy;
- * source-over arithmetic is performed through exact integer premultiplied terms,
- * then unpremultiplied with round-half-up. Fully transparent output has RGB=0.
+ * Inputs are straight RGBA8. Integer premultiplied terms are accumulated before
+ * one deterministic round-half-up unpremultiply. If output alpha is zero, RGB
+ * is explicitly zeroed because hidden RGB has no authority in a FINAL pixel.
  */
 export function compositeSourceOverSrgbRgba8(
   destination: Uint8Array | Uint8ClampedArray,
@@ -212,6 +238,7 @@ export function compositeSourceOverSrgbRgba8(
     const destinationAlpha = destination[offset + 3];
     const inverseSourceAlpha = 255 - sourceAlpha;
     const alphaNumerator = sourceAlpha * 255 + destinationAlpha * inverseSourceAlpha;
+    if (!Number.isSafeInteger(alphaNumerator)) throw new Error('Garment composite alpha accumulator exceeded safe integer range');
     output[offset + 3] = roundHalfUpDiv(alphaNumerator, 255);
     if (alphaNumerator === 0) {
       output[offset] = 0;
@@ -230,23 +257,48 @@ export function compositeSourceOverSrgbRgba8(
   return output;
 }
 
-/** Pure composed F4b.5a preview/Core pixel law; this function grants no authority. */
+/**
+ * Pure composed F4b.5a preview/Core pixel law; this function grants no authority.
+ *
+ * Crucially, texture mapping happens on the exact managed Garment source view
+ * before the already-proven F4b.1 topology warp. This keeps the texture contract
+ * tied to exact source bytes and admitted topology instead of remapping arbitrary
+ * full-frame F4b.4 pixels in Project coordinate space.
+ */
 export function garmentTextureCompositeRgba8(
   projectRgba: Uint8Array | Uint8ClampedArray,
-  garmentLayerRgba: Uint8Array | Uint8ClampedArray,
-  width: number,
-  height: number,
+  projectWidth: number,
+  projectHeight: number,
+  garmentSourceRgba: Uint8Array | Uint8ClampedArray,
+  garmentSourceWidth: number,
+  garmentSourceHeight: number,
+  warpSpec: GarmentMeshWarpSpec,
   spec: GarmentTextureCompositeSpec,
 ): Uint8ClampedArray {
-  assertRgbaImage(projectRgba, width, height, 'Garment composite Project source');
-  assertRgbaImage(garmentLayerRgba, width, height, 'Garment composite layer');
+  assertRgbaImage(projectRgba, projectWidth, projectHeight, 'Garment composite Project source');
+  assertRgbaImage(garmentSourceRgba, garmentSourceWidth, garmentSourceHeight, 'Garment composite source view');
   const normalized = normalizeGarmentTextureCompositeSpec(spec);
-  const textured = garmentTextureMapRgba8(garmentLayerRgba, width, height, normalized.textureTransform);
-  const feathered = garmentEdgeFeatherRgba8(textured, width, height, normalized.featherRadius);
-  return compositeSourceOverSrgbRgba8(projectRgba, feathered, width, height);
+  if (warpSpec.outputWidth !== projectWidth || warpSpec.outputHeight !== projectHeight) {
+    throw new Error('Garment texture composite warp output must match the canonical Project geometry');
+  }
+  const texturedSource = garmentTextureMapRgba8(
+    garmentSourceRgba,
+    garmentSourceWidth,
+    garmentSourceHeight,
+    normalized.textureTransform,
+  );
+  const warped = garmentMeshWarpRgba8(
+    texturedSource,
+    garmentSourceWidth,
+    garmentSourceHeight,
+    warpSpec,
+  );
+  const feathered = garmentEdgeFeatherRgba8(warped, projectWidth, projectHeight, normalized.featherRadius);
+  return compositeSourceOverSrgbRgba8(projectRgba, feathered, projectWidth, projectHeight);
 }
 
 function assertRgbaImage(source: Uint8Array | Uint8ClampedArray, width: number, height: number, label: string): number {
+  if (!(source instanceof Uint8Array) && !(source instanceof Uint8ClampedArray)) throw new Error(`${label} must be Uint8 RGBA bytes`);
   assertDimension(width, `${label} width`);
   assertDimension(height, `${label} height`);
   const pixels = width * height;
@@ -299,7 +351,10 @@ function sampleNormalizedBilinearRgba8(
   yQ16: number,
   output: Uint8ClampedArray,
   outputOffset: number,
-): void {
+): number {
+  if (!Number.isSafeInteger(xQ16) || !Number.isSafeInteger(yQ16) || xQ16 < 0 || xQ16 > FIXED_ONE || yQ16 < 0 || yQ16 > FIXED_ONE) {
+    throw new Error('Garment texture sample escaped normalized Q16 bounds');
+  }
   const xFixed = xQ16 * (width - 1);
   const yFixed = yQ16 * (height - 1);
   if (!Number.isSafeInteger(xFixed) || !Number.isSafeInteger(yFixed)) throw new Error('Garment texture source coordinate exceeded safe integer range');
@@ -327,11 +382,13 @@ function sampleNormalizedBilinearRgba8(
     }
     let premultiplied = 0;
     for (let index = 0; index < 4; index += 1) {
-      premultiplied += source[offsets[index] + channel] * source[offsets[index] + 3] * weights[index];
+      const alpha = source[offsets[index] + 3];
+      premultiplied += source[offsets[index] + channel] * alpha * weights[index];
     }
     if (!Number.isSafeInteger(premultiplied)) throw new Error('Garment texture premultiplied accumulator exceeded safe integer range');
     output[outputOffset + channel] = roundHalfUpDiv(premultiplied, alphaNumerator);
   }
+  return alphaNumerator;
 }
 
 function weightedChannel(
@@ -352,7 +409,7 @@ function roundHalfUpDiv(numerator: number, denominator: number): number {
   }
   const doubled = numerator * 2;
   const divisor = denominator * 2;
-  if (!Number.isSafeInteger(doubled) || !Number.isSafeInteger(divisor) || !Number.isSafeInteger(doubled + denominator)) {
+  if (!Number.isSafeInteger(doubled) || !Number.isSafeInteger(divisor)) {
     throw new Error('Garment texture/composite rounding exceeded safe integer range');
   }
   return Math.floor((doubled + denominator) / divisor);
