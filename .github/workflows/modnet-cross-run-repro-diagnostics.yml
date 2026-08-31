@@ -25,6 +25,7 @@ jobs:
       MODNET_CHECKPOINT_SHA256: 7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8
       MODNET_CHECKPOINT_SIZE: 26255603
       MODNET_DIAGNOSTIC_REPLICA: ${{ matrix.replica }}
+      MODNET_DIAGNOSTIC_CONSTANT_FOLDING: OFF
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,6 +65,7 @@ jobs:
           printf 'MODNET_DIAGNOSTIC_CANDIDATE_SHA=%s\n' "$candidate_sha" >> "$GITHUB_ENV"
           printf 'MODNET_DIAGNOSTIC_CPU_MODEL=%s\n' "$cpu_model" >> "$GITHUB_ENV"
           echo "MODNET_DIAGNOSTIC_REPLICA=${MODNET_DIAGNOSTIC_REPLICA}"
+          echo "MODNET_DIAGNOSTIC_CONSTANT_FOLDING=${MODNET_DIAGNOSTIC_CONSTANT_FOLDING}"
           echo "RUNNER_ARCH=${RUNNER_ARCH}"
           echo "MODNET_DIAGNOSTIC_CANDIDATE_SHA=${candidate_sha}"
           echo "MODNET_DIAGNOSTIC_CPU_MODEL=${cpu_model}"
@@ -83,7 +85,7 @@ jobs:
             'onnxruntime': onnxruntime.__version__,
           })
           PY
-      - name: Export two independent same-run samples
+      - name: Export two independent same-run samples with constant folding disabled
         run: |
           set -euo pipefail
           mkdir -p .test-cache/modnet-cross-run
@@ -91,6 +93,7 @@ jobs:
           for sample in first second; do
             PYTHONHASHSEED=0 python scripts/build-modnet-portrait-matting-release.py \
               --single-export \
+              --disable-constant-folding \
               --source "${RUNNER_TEMP}/MODNet" \
               --checkpoint "${checkpoint}" \
               --manifest src/platform/creative/local-ai/models/portrait-matting.manifest.json \
@@ -115,8 +118,10 @@ jobs:
           fields={
               'replica': os.environ['MODNET_DIAGNOSTIC_REPLICA'],
               'candidate': os.environ['MODNET_DIAGNOSTIC_CANDIDATE_SHA'],
+              'folding': os.environ['MODNET_DIAGNOSTIC_CONSTANT_FOLDING'],
               'arch': os.environ.get('RUNNER_ARCH','unknown'),
               'cpu': os.environ['MODNET_DIAGNOSTIC_CPU_MODEL'].replace('|','/'),
+              'size': str(sample['size']),
               'raw': sample['rawSha256'],
               'proto': sample['deterministicProtoSha256'],
               'graph': sample['graphSemanticSha256'],
@@ -130,6 +135,7 @@ jobs:
           Path('.test-cache/modnet-cross-run/runner-metadata.json').write_text(json.dumps({
               'replica': fields['replica'],
               'candidate': fields['candidate'],
+              'folding': fields['folding'],
               'arch': fields['arch'],
               'cpu': fields['cpu'],
           }, sort_keys=True)+'\n', encoding='utf-8')
@@ -151,7 +157,9 @@ jobs:
             echo '## MODNet hosted-runner diagnostic'
             echo
             echo "- Replica: \`${MODNET_DIAGNOSTIC_REPLICA}\`"
+            echo '- Export experiment: `CONSTANT_FOLDING_OFF`'
             echo '- Authority: `DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY`'
+            echo '- Default release export behavior and pinned manifest identity remain unchanged.'
             echo '- No manifest/pin/release identity mutation is performed.'
             echo '- ONNX model bytes are never uploaded as a workflow artifact.'
             if test -f .test-cache/modnet-cross-run/fingerprint-summary.txt; then
@@ -189,6 +197,15 @@ jobs:
           set -euo pipefail
           mapfile -t reports < <(find .test-cache/modnet-cross-run/reports -type f -name fingerprint.json -print | sort)
           test "${#reports[@]}" -eq 3
+          mapfile -t metadata < <(find .test-cache/modnet-cross-run/reports -type f -name runner-metadata.json -print | sort)
+          test "${#metadata[@]}" -eq 3
+          python - "${metadata[@]}" <<'PY'
+          import json, sys
+          for path in sys.argv[1:]:
+              report=json.load(open(path,encoding='utf-8'))
+              if report.get('folding') != 'OFF':
+                  raise SystemExit(f'unexpected MODNet diagnostic folding mode in {path}')
+          PY
           python scripts/compare-onnx-repro-reports.py \
             "${reports[@]}" \
             --output .test-cache/modnet-cross-run/cross-run-comparison.json \
@@ -200,9 +217,11 @@ jobs:
           report=json.load(open('.test-cache/modnet-cross-run/cross-run-comparison.json',encoding='utf-8'))
           comparison=report['comparison']
           raws=','.join(sample['rawSha256'] for sample in report['samples'])
+          sizes=','.join(str(sample['size']) for sample in report['samples'])
           line=(
-              'MODNET_CROSS_RUN_CLASSIFICATION|'
+              'MODNET_CROSS_RUN_CLASSIFICATION|folding=OFF|'
               f"classification={comparison['classification']}|"
+              f"size={sizes}|"
               f"raw={raws}|"
               f"initializerDriftCount={report['initializerDrift']['changedCount']}"
           )
@@ -215,10 +234,12 @@ jobs:
           {
             echo '## MODNet cross-run classification'
             echo
+            echo '- Export experiment: `CONSTANT_FOLDING_OFF`'
             echo '- Authority: `DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY`'
             echo '- Three independent hosted jobs are compared after each proves two-export byte identity.'
+            echo '- Default release exporter and pinned manifest identity are not changed by this experiment.'
             echo '- Only fingerprint metadata crosses job boundaries; ONNX model bytes are never uploaded.'
-            echo '- Cross-run divergence is evidence, not permission to repin or promote.'
+            echo '- Cross-run agreement is evidence for a candidate strategy, not permission to repin or promote.'
             if test -f .test-cache/modnet-cross-run/cross-run-summary.txt; then
               echo
               echo '```text'
