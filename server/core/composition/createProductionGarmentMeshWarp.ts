@@ -8,6 +8,7 @@ import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import { checkGarmentSchema, migrateGarmentSchema } from '../fashion/garmentSchema.ts';
 import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../fashion/bodyAnchorSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../fashion/garmentWarpLayerSchema.ts';
+import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from '../fashion/garmentTextureFinalLineageSchema.ts';
 import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from '../fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresGarmentRepresentationStore } from '../fashion/postgresGarmentRepresentationStore.ts';
@@ -35,8 +36,9 @@ export type ProductionGarmentMeshWarpCompositionInput = Readonly<{
  * One production composition root for F4b.4 authority.
  *
  * The factory is intentionally policy-neutral: it does not add the capability to
- * production route/target/executor allowlists and cannot flip the admission bit.
- * It only assembles already-reviewed stores/services after exact schema readiness.
+ * production route/target/executor allowlists and cannot flip an admission bit.
+ * F4b.5b.1 only extends durable schema readiness after the already-admitted warp
+ * layer; it still does not wire garment-texture-composite execution.
  */
 export async function createProductionGarmentMeshWarp(input: ProductionGarmentMeshWarpCompositionInput) {
   await ensureFashionWarpSchemas(input.pool, input.nodeEnv);
@@ -79,9 +81,11 @@ async function ensureFashionWarpSchemas(pool: Pool, nodeEnv: string): Promise<vo
     await migrateGarmentSchema(pool);
     await migrateProjectBodyAnchorSchema(pool);
     await migrateGarmentWarpLayerSchema(pool);
+    await migrateGarmentTextureFinalLineageSchema(pool);
     return;
   }
   await checkGarmentSchema(pool);
   await checkProjectBodyAnchorSchema(pool);
   await checkGarmentWarpLayerSchema(pool);
+  await checkGarmentTextureFinalLineageSchema(pool);
 }
