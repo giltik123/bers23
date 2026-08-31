@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "modelId": "modnet-photographic-portrait-matting",
-  "version": "1.0.0-candidate.1",
+  "version": "1.0.0-candidate.2",
   "status": "CANDIDATE",
   "semanticCapabilities": [
     "portrait-matting",
@@ -71,6 +71,7 @@
     "device": "CPU",
     "quantization": "NONE",
     "simplification": "NONE",
+    "constantFolding": false,
     "parityRequired": true,
     "environment": {
       "python": "3.11",
@@ -79,15 +80,22 @@
       "onnx": "1.15.0",
       "onnxruntime": "1.16.3"
     },
-    "onnxSize": 25961178,
-    "onnxSha256": "18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919",
+    "onnxSize": 26236047,
+    "onnxSha256": "223bdc36ba84f9728ab4a94a7985128161514019d8388c3e827402c15072c654",
     "referenceParity": {
       "tolerance": 0.0001,
       "maxAbsErrorByShape": {
-        "128x160": 0.000002562999725341797,
-        "256x320": 0.000006943941116333008,
-        "512x512": 0.000015974044799804688
+        "128x160": 0.0,
+        "256x320": 0.0,
+        "512x512": 0.0
       }
+    },
+    "crossHostReproducibility": {
+      "independentHostedRunners": 3,
+      "independentExportsPerRunner": 2,
+      "classification": "BYTE_IDENTICAL",
+      "initializerDriftChangedCount": 0,
+      "evidenceRunId": 33344102365
     }
   },
   "artifactState": "EXPORT_PINNED_RELEASE_REQUIRED",
