@@ -125,19 +125,18 @@ function normalizeInput(value: unknown): readonly PointQ16[] {
 }
 
 function assertSimplePolygon(points: readonly PointQ16[]): void {
-  const area2 = signedArea2(points);
-  if (area2 === 0) throw contourError('manual_parametric_zero_area', 'Manual PARAMETRIC contour has zero area');
   for (let first = 0; first < points.length; first += 1) {
     const firstNext = (first + 1) % points.length;
     for (let second = first + 1; second < points.length; second += 1) {
       const secondNext = (second + 1) % points.length;
       if (first === second || firstNext === second || secondNext === first) continue;
-      if (first === 0 && secondNext === 0) continue;
       if (segmentsIntersect(points[first], points[firstNext], points[second], points[secondNext])) {
         throw contourError('manual_parametric_self_intersection', 'Manual PARAMETRIC contour must be a simple polygon');
       }
     }
   }
+  const area2 = signedArea2(points);
+  if (area2 === 0) throw contourError('manual_parametric_zero_area', 'Manual PARAMETRIC contour has zero area');
 }
 
 function canonicalizePolygon(points: readonly PointQ16[]): readonly PointQ16[] {
