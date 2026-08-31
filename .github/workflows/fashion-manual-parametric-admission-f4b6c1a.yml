@@ -1,0 +1,52 @@
+name: Fashion F4b.6c.1a manual PARAMETRIC admission authority
+
+on:
+  push:
+    branches: [ "fashion-manual-parametric-admission-f4b6c1a-staging" ]
+  pull_request:
+    branches: [ "main", "fashion-manual-parametric-contour-f4b6c1-kernel" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manual-parametric-admission:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core admission authority
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle manual PARAMETRIC admission tests
+        run: |
+          mkdir -p .test-cache/fashion-f4b6c1a
+          npx esbuild tests/fashion-manual-parametric-admission-f4b6c1a.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b6c1a/admission.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove server-owned primary-view provenance, exact replay and stale-revision safety
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b6c1a/admission.mjs
+      - name: Prove existing representation store remains sole persistence authority
+        run: |
+          grep -q "PostgresGarmentRepresentationStore" server/core/fashion/ManualParametricGarmentAdmissionService.ts
+          grep -q "representations.admit" server/core/fashion/ManualParametricGarmentAdmissionService.ts
+          grep -q "sourceViewIds: Object.freeze(\[garment.primaryViewId\])" server/core/fashion/ManualParametricGarmentAdmissionService.ts
+          grep -q "MANUAL_PARAMETRIC_CONTOUR_PRODUCER_ID" server/core/fashion/ManualParametricGarmentAdmissionService.ts
+          grep -q "bytesEqual" server/core/fashion/ManualParametricGarmentAdmissionService.ts
+          ! grep -E "from ['\"].*(providers|billing)|from ['\"].*(fal|fashn)|fetch\(" server/core/fashion/ManualParametricGarmentAdmissionService.ts
+          ! grep -E "sourceViewIds|generatorId|generatorVersion|representationId|contentSha256" server/core/fashion/ManualParametricGarmentAdmissionService.ts | grep -q "ManualParametricGarmentAdmissionCommand"
