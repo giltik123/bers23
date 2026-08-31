@@ -1,0 +1,52 @@
+name: Fashion F4b.6b.2 server-owned garment-warp orchestration
+
+on:
+  pull_request:
+    branches:
+      - main
+      - fashion-tryon-orchestration-contract-f4b6b1
+  workflow_dispatch:
+
+jobs:
+  warp-orchestration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core coordinator
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle orchestration contract and warp coordinator tests
+        run: |
+          mkdir -p .test-cache/fashion-tryon-warp-orchestration
+          npx esbuild tests/fashion-tryon-orchestration-contract-f4b6b1.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-warp-orchestration/contract.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-tryon-warp-orchestration-f4b6b2.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-warp-orchestration/warp.test.mjs \
+            --external:node:*
+      - name: Prove server-owned readiness evidence drives F4b.4 prepare
+        run: node --test .test-cache/fashion-tryon-warp-orchestration/*.test.mjs
+      - name: Prove coordinator owns no browser evidence persistence provider or Project authority
+        run: |
+          grep -q "dependencies.readiness.resolve" server/core/fashion/FashionTryOnWarpOrchestrationService.ts
+          grep -q "representationId: resolution.representationId" server/core/fashion/FashionTryOnWarpOrchestrationService.ts
+          grep -q "anchorSetId: resolution.anchorSetId" server/core/fashion/FashionTryOnWarpOrchestrationService.ts
+          ! grep -E "from 'pg'|/http/|providers|Billing|FAL_KEY|FASHN|tryonEngine|persistFinal|acceptFinal" \
+            server/core/fashion/FashionTryOnWarpOrchestrationService.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
