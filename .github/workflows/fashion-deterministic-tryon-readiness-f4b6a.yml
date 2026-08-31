@@ -27,7 +27,7 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Typecheck browser and Core readiness foundation
+      - name: Typecheck browser and Core readiness production surface
         run: |
           npm run typecheck
           npm run server:typecheck
@@ -47,14 +47,20 @@ jobs:
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b6a/readiness.mjs
       - name: Prove readiness HTTP exposes intent status only and never internal evidence authority
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b6a/http.mjs
-      - name: Prove readiness reuses the production Fashion trust graph without opening Try-On provider authority
+      - name: Prove one production Fashion readiness graph and exact browser transport
         run: |
           grep -q "FashionTryOnReadinessService" server/core/composition/createProductionGarmentMeshWarp.ts
           grep -q "tryOnReadiness" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "Object.defineProperty(execution, 'readiness'" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "writable: false" server/core/composition/createProductionGarmentMeshWarp.ts
           grep -q "resolveStoredImageEvidence" server/core/fashion/FashionTryOnReadinessService.ts
           grep -q "deriveDestinationMesh" server/core/fashion/FashionTryOnReadinessService.ts
           grep -q "input.readiness.check" server/core/http/fashionTryOnReadinessHttpAdapter.ts
           ! grep -q "input.readiness.resolve" server/core/http/fashionTryOnReadinessHttpAdapter.ts
+          grep -q "createFashionTryOnReadinessHttpAdapter" server/index.ts
+          grep -q "production.localExecution.garmentMeshWarp.readiness" server/index.ts
+          grep -q "path === '/api/core/fashion/try-on/readiness'" server/index.ts
+          grep -q "checkTryOnReadiness: (payload) => request('/fashion/try-on/readiness', json('POST', payload))" src/api/coreClient.js
           ! grep -E "from ['\"].*(providers|billing)|from ['\"].*(fal|fashn)" server/core/fashion/FashionTryOnReadinessService.ts server/core/http/fashionTryOnReadinessHttpAdapter.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
-          ! grep -q "FashionTryOnReadinessService" src/lib/tryon/tryonEngine.js
+          ! grep -q "checkTryOnReadiness" src/lib/tryon/tryonEngine.js
