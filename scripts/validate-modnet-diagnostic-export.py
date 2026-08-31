@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Validate an unpinned MODNet diagnostic ONNX candidate without granting release authority.
+"""Validate MODNet ONNX bytes against the pinned source/checkpoint and reference contracts.
 
-This helper deliberately reuses the release builder's source/checkpoint verification, ONNX structural
-validation and PyTorch/ORT parity functions, then applies the same pinned upstream-reference parity
-contract as C5 acceptance. It never mutates the manifest, never signs or publishes, and never treats
-the candidate as production-approved.
+This helper reuses the release builder's source/checkpoint verification, ONNX structural validation
+and PyTorch/ORT parity functions, then applies the same pinned upstream-reference parity contract as
+C5 acceptance. It never mutates the manifest, never signs or publishes, and never grants production
+approval. The report states whether the validated bytes match the manifest's current pinned identity.
 """
 from __future__ import annotations
 
@@ -17,6 +17,9 @@ from types import ModuleType
 import numpy as np
 import onnx
 import onnxruntime as ort
+
+
+VALIDATION_AUTHORITY = "VALIDATION_ONLY_NO_RELEASE_AUTHORITY"
 
 
 def load_builder() -> ModuleType:
@@ -98,16 +101,24 @@ def main() -> None:
     reference_parity = upstream_reference_parity(builder, manifest, args.reference_onnx, args.onnx)
     reference_max_abs = max(float(item["maxAbsError"]) for item in reference_parity)
 
+    artifact_size = args.onnx.stat().st_size
+    artifact_sha = builder.sha256(args.onnx)
+    export_identity = manifest["bersExport"]
+    matches_pinned_identity = (
+        artifact_size == export_identity.get("onnxSize")
+        and artifact_sha == export_identity.get("onnxSha256")
+    )
+
     report = {
         "schemaVersion": 1,
-        "authority": "DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY",
+        "authority": VALIDATION_AUTHORITY,
         "modelId": builder.MODEL_ID,
         "version": builder.MODEL_VERSION,
         "sourceRevision": builder.UPSTREAM_REVISION,
         "artifact": {
-            "size": args.onnx.stat().st_size,
-            "sha256": builder.sha256(args.onnx),
-            "matchesPinnedIdentity": False,
+            "size": artifact_size,
+            "sha256": artifact_sha,
+            "matchesPinnedIdentity": matches_pinned_identity,
         },
         "upstreamReference": {
             "size": args.reference_onnx.stat().st_size,
@@ -125,13 +136,14 @@ def main() -> None:
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(
-        "MODNET_DIAGNOSTIC_PARITY|"
-        f"sha256={report['artifact']['sha256']}|"
-        f"size={report['artifact']['size']}|"
+        "MODNET_VALIDATION_PARITY|"
+        f"sha256={artifact_sha}|"
+        f"size={artifact_size}|"
+        f"matchesPinnedIdentity={'true' if matches_pinned_identity else 'false'}|"
         f"maxAbsError={max_abs:.12g}|"
         f"upstreamMaxAbsError={reference_max_abs:.12g}|"
         f"atol={builder.PARITY_ATOL}|"
-        "authority=DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY"
+        f"authority={VALIDATION_AUTHORITY}"
     )
 
 
