@@ -1,0 +1,44 @@
+name: Fashion F4b.6b.1 deterministic Try-On orchestration contract
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  orchestration-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core orchestration contract
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle pure orchestration reference tests
+        run: |
+          mkdir -p .test-cache/fashion-tryon-orchestration-contract
+          npx esbuild tests/fashion-tryon-orchestration-contract-f4b6b1.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-orchestration-contract/contract.test.mjs \
+            --external:node:*
+      - name: Prove exact intent phase IDs and closed composite defaults
+        run: node --test .test-cache/fashion-tryon-orchestration-contract/contract.test.mjs
+      - name: Prove pure contract grants no persistence HTTP provider Billing or execution authority
+        run: |
+          ! grep -E "from 'pg'|/http/|providers|Billing|FAL_KEY|FASHN|tryonEngine|LocalGarment|Postgres" server/core/fashion/FashionTryOnOrchestrationContract.ts
+          grep -q "forbidden_client_authority" server/core/fashion/FashionTryOnOrchestrationContract.ts
+          grep -q "FASHION_TRYON_DEFAULT_FEATHER_RADIUS_V1 = 2" server/core/fashion/FashionTryOnOrchestrationContract.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
