@@ -1,5 +1,16 @@
 BEGIN;
 
+-- Drift repair can need ALTER COLUMN TYPE even when the current type is already
+-- correct. PostgreSQL refuses that operation while a trigger directly depends
+-- on the column. Remove only this migration's Fashion guards inside the same
+-- transaction; any failure rolls the drops back, and both guards are recreated
+-- before COMMIT so no externally visible committed state is left unguarded.
+DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_texture_insert_guard ON canonical_image_artifacts;
+DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_texture_immut_guard ON canonical_image_artifacts;
+-- Compatibility cleanup for the actual 63-byte PostgreSQL truncation produced
+-- by an earlier draft migration. Never create or depend on this name again.
+DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_texture_lineage_immutable_gua ON canonical_image_artifacts;
+
 ALTER TABLE canonical_image_artifacts
   ADD COLUMN IF NOT EXISTS garment_warp_layer_id uuid,
   ADD COLUMN IF NOT EXISTS garment_warp_layer_sha256 character(64),
@@ -222,13 +233,10 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_texture_insert_guard ON canonical_image_artifacts;
 CREATE TRIGGER canonical_image_artifacts_fashion_texture_insert_guard
   BEFORE INSERT ON canonical_image_artifacts
   FOR EACH ROW EXECUTE FUNCTION canonical_assert_fashion_texture_final_insert();
 
-DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_texture_lineage_immutable_guard ON canonical_image_artifacts;
-DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_texture_immut_guard ON canonical_image_artifacts;
 CREATE TRIGGER canonical_image_artifacts_fashion_texture_immut_guard
   BEFORE UPDATE OF producer_operation,source_image_storage_id,mask_storage_id,garment_warp_layer_id,garment_warp_layer_sha256,producer_parameters,producer_parameters_sha256
   ON canonical_image_artifacts
