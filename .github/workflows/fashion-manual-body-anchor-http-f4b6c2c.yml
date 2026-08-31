@@ -24,7 +24,7 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Typecheck browser and Core acquisition contract
+      - name: Typecheck browser and Core production acquisition transport
         run: |
           npm run typecheck
           npm run server:typecheck
@@ -39,7 +39,7 @@ jobs:
             --external:node:*
       - name: Prove server-resolved source fixed provenance redaction and CSRF boundary
         run: node --test .test-cache/fashion-manual-body-anchor-http/http.test.mjs
-      - name: Prove staged acquisition has no parallel persistence provider or execution authority
+      - name: Prove one production body-anchor graph and no provider or Try-On execution authority
         run: |
           grep -q "resolveStoredImageEvidence" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
           grep -q "createForExpectedImage" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
@@ -49,5 +49,12 @@ jobs:
           ! grep -E "from 'pg'|providers|Billing|FAL_KEY|FASHN|tryonEngine" \
             server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts \
             server/core/http/manualProjectBodyAnchorHttpAdapter.ts
-          ! grep -q "manualProjectBodyAnchorHttpAdapter" server/index.ts
+          grep -q "new ManualProjectBodyAnchorAcquisitionService" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "bodyAnchors," server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "Object.defineProperty(execution, 'manualBodyAnchorAcquisition'" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "writable: false" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "production.localExecution.garmentMeshWarp.manualBodyAnchorAcquisition" server/index.ts
+          grep -q "manualBodyAnchorAdapter" server/index.ts
+          grep -q "body-anchors" server/index.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -q "manualBodyAnchorAcquisition" src/lib/tryon/tryonEngine.js
