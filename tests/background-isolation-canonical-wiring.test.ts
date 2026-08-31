@@ -6,7 +6,8 @@ import { BACKGROUND_ISOLATION_CAPABILITY, BACKGROUND_ISOLATION_TOOL_ID, BACKGROU
 import { CROP_CAPABILITY } from '../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_CAPABILITY } from '../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../src/platform/creative/deterministic/OrthogonalTransform.ts';
-import { BACKGROUND_ISOLATION_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { GARMENT_MESH_WARP_CAPABILITY } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
+import { BACKGROUND_ISOLATION_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, GARMENT_MESH_WARP_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { LocalExecutionAdmissionRegistry } from '../server/core/localExecution/LocalExecutionAdmission.ts';
 import { LocalExecutionTicketAuthority } from '../server/core/localExecution/LocalExecutionTicketAuthority.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
@@ -37,7 +38,7 @@ function request(): CreativeRequest {
 }
 
 test('C2 deterministic registry remains data-only while each production capability is explicitly admitted', () => {
-  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 4, 'Background Isolation, Crop, Resize and Orthogonal Transform are the reviewed deterministic tools');
+  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 5, 'Background Isolation, Crop, Resize, Orthogonal Transform and Garment Mesh Warp are the reviewed deterministic tools');
   const definition = requireDeterministicToolByCapability(BACKGROUND_ISOLATION_CAPABILITY);
   assert.equal(definition, BACKGROUND_ISOLATION_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor(definition.executor), definition);
@@ -60,12 +61,16 @@ test('C2 deterministic registry remains data-only while each production capabili
   assert.equal(requireDeterministicToolByCapability(CROP_CAPABILITY), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(RESIZE_CAPABILITY), RESIZE_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(ORTHOGONAL_TRANSFORM_CAPABILITY), ORTHOGONAL_TRANSFORM_TOOL_DEFINITION);
+  assert.equal(requireDeterministicToolByCapability(GARMENT_MESH_WARP_CAPABILITY), GARMENT_MESH_WARP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor(RESIZE_TOOL_DEFINITION.executor), RESIZE_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor(ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.executor), ORTHOGONAL_TRANSFORM_TOOL_DEFINITION);
+  assert.equal(requireDeterministicToolByExecutor(GARMENT_MESH_WARP_TOOL_DEFINITION.executor), GARMENT_MESH_WARP_TOOL_DEFINITION);
   assert.equal(containsFunction(RESIZE_TOOL_DEFINITION), false);
   assert.equal(containsFunction(ORTHOGONAL_TRANSFORM_TOOL_DEFINITION), false);
+  assert.equal(containsFunction(GARMENT_MESH_WARP_TOOL_DEFINITION), false);
   assert.equal(isDeepFrozen(RESIZE_TOOL_DEFINITION), true);
   assert.equal(isDeepFrozen(ORTHOGONAL_TRANSFORM_TOOL_DEFINITION), true);
+  assert.equal(isDeepFrozen(GARMENT_MESH_WARP_TOOL_DEFINITION), true);
   assert.throws(() => requireDeterministicToolByCapability('local:tool:rotate:v1'), /not registered/);
 
   const deterministicCapabilities = Object.entries(productionLocalExecutorsByCapability)
@@ -77,6 +82,7 @@ test('C2 deterministic registry remains data-only while each production capabili
     CROP_CAPABILITY,
     RESIZE_CAPABILITY,
     ORTHOGONAL_TRANSFORM_CAPABILITY,
+    GARMENT_MESH_WARP_CAPABILITY,
     LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation,
   ].sort(), 'registry presence alone must not create any capability beyond explicit server policy keys');
   assert.deepEqual(productionLocalExecutorsByCapability[BACKGROUND_ISOLATION_CAPABILITY], [definition.executor]);
@@ -84,6 +90,7 @@ test('C2 deterministic registry remains data-only while each production capabili
   assert.deepEqual(productionLocalExecutorsByCapability[CROP_CAPABILITY], [CROP_TOOL_DEFINITION.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[RESIZE_CAPABILITY], [RESIZE_TOOL_DEFINITION.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[ORTHOGONAL_TRANSFORM_CAPABILITY], [ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.executor]);
+  assert.deepEqual(productionLocalExecutorsByCapability[GARMENT_MESH_WARP_CAPABILITY], [GARMENT_MESH_WARP_TOOL_DEFINITION.executor]);
 });
 
 test('C2 planner and production policy bind background isolation to LOCAL ON_DEVICE deterministic v2 executor', async () => {

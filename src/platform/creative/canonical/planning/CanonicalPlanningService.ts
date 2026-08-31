@@ -16,12 +16,36 @@ import {
   ORTHOGONAL_TRANSFORM_TOOL_ID,
   ORTHOGONAL_TRANSFORM_TOOL_VERSION,
 } from '../../deterministic/OrthogonalTransformIdentity.js';
+import {
+  GARMENT_MESH_WARP_FIXED_POINT_BITS,
+  GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
+  GARMENT_MESH_WARP_MAX_RASTER_WORK,
+  GARMENT_MESH_WARP_OPERATION,
+  GARMENT_MESH_WARP_SCHEMA,
+  GARMENT_MESH_WARP_STEP_ID,
+  GARMENT_MESH_WARP_TOOL_ID,
+  GARMENT_MESH_WARP_TOOL_VERSION,
+} from '../../deterministic/GarmentMeshWarpIdentity.js';
 
 export const CANONICAL_PLANNER_VERSION = '6.42C3.1';
 type Options = Readonly<{ plannerVersion?: string; minimumIntentConfidence?: number; minimumTargetConfidence?: number; maximumPreservationRisk?: number; compositeExecutionEnabled?: boolean; localCompositeContinuationEnabled?: boolean; telemetry?: PlanningTelemetryPort }>;
 type PlannerCropRect = Readonly<{ x: number; y: number; width: number; height: number }>;
 type PlannerResizeDimensions = Readonly<{ width: number; height: number }>;
 type PlannerOrthogonalTransformMode = 'FLIP_HORIZONTAL' | 'FLIP_VERTICAL' | 'ROTATE_90_CW' | 'ROTATE_180' | 'ROTATE_270_CW';
+type PlannerGarmentMeshWarpBinding = Readonly<{
+  garmentId: string;
+  viewId: string;
+  representationId: string;
+  anchorSetId: string;
+  projectImageStorageId: string;
+  projectImageSha256: string;
+  viewSha256: string;
+  representationSha256: string;
+  anchorPayloadSha256: string;
+  destinationMeshSha256: string;
+}>;
+const CANONICAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const CANONICAL_SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
 /** Deterministic advisory planner. Canonical Core revalidates every proposal. */
 export class CanonicalPlanningService implements CanonicalPlanningPort {
@@ -38,6 +62,7 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const crop = request.metadata?.operationIntent === 'CROP';
     const resize = request.metadata?.operationIntent === RESIZE_OPERATION;
     const orthogonalTransform = request.metadata?.operationIntent === ORTHOGONAL_TRANSFORM_OPERATION;
+    const garmentMeshWarp = request.metadata?.operationIntent === GARMENT_MESH_WARP_OPERATION;
     const superResolution = request.metadata?.operationIntent === 'SUPER_RESOLUTION';
     const localComposite = request.metadata?.operationIntent === 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE';
     const composite = request.metadata?.operationIntent === 'COMPOSITE_REPLACE_RELIGHT';
@@ -46,6 +71,7 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const requestedCropSourceId = crop && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedResizeSourceId = resize && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedOrthogonalSourceId = orthogonalTransform && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+    const requestedGarmentWarpSourceId = garmentMeshWarp && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedSuperResolutionSourceId = superResolution && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const localCompositeOriginalUnavailable = localComposite && !artifacts.some(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
     const compositeOriginalUnavailable = composite && !artifacts.some(artifact => artifact.kind === 'image' && artifact.role === 'ORIGINAL');
@@ -58,31 +84,35 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const resizeDimensionsInvalid = resize && !readPlannerResizeDimensions(request.metadata?.resizeDimensions);
     const orthogonalSourceUnavailable = orthogonalTransform && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedOrthogonalSourceId || artifact.id === requestedOrthogonalSourceId));
     const orthogonalModeInvalid = orthogonalTransform && !readPlannerOrthogonalTransformMode(request.metadata?.orthogonalTransformMode);
+    const garmentWarpSourceUnavailable = garmentMeshWarp && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedGarmentWarpSourceId || artifact.id === requestedGarmentWarpSourceId));
+    const garmentWarpBindingInvalid = garmentMeshWarp && !readPlannerGarmentMeshWarpBinding(request.metadata?.garmentMeshWarpBinding);
     const superResolutionSourceUnavailable = superResolution && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedSuperResolutionSourceId || artifact.id === requestedSuperResolutionSourceId));
-    const strategies = orthogonalTransform
-      ? [orthogonalTransformOperations(artifacts, constraints, request)]
-      : resize
-        ? [resizeOperations(artifacts, constraints, request)]
-        : crop
-          ? [cropOperations(artifacts, constraints, request)]
-          : superResolution
-            ? [superResolutionOperations(artifacts, constraints, request)]
-            : backgroundIsolation
-              ? [backgroundIsolationOperations(artifacts, constraints, request)]
-              : interactiveSegmentation
-                ? [interactiveSegmentationOperations(artifacts, constraints, request)]
-                : localComposite
-                  ? [localCompositeOperations(artifacts, constraints, request)]
-                  : composite
-                    ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)]
-                    : [simpleOperations(request, artifacts, constraints)];
+    const strategies = garmentMeshWarp
+      ? [garmentMeshWarpOperations(artifacts, constraints, request)]
+      : orthogonalTransform
+        ? [orthogonalTransformOperations(artifacts, constraints, request)]
+        : resize
+          ? [resizeOperations(artifacts, constraints, request)]
+          : crop
+            ? [cropOperations(artifacts, constraints, request)]
+            : superResolution
+              ? [superResolutionOperations(artifacts, constraints, request)]
+              : backgroundIsolation
+                ? [backgroundIsolationOperations(artifacts, constraints, request)]
+                : interactiveSegmentation
+                  ? [interactiveSegmentationOperations(artifacts, constraints, request)]
+                  : localComposite
+                    ? [localCompositeOperations(artifacts, constraints, request)]
+                    : composite
+                      ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)]
+                      : [simpleOperations(request, artifacts, constraints)];
     const rawCandidates = strategies.map((operations, index) => candidate(
       localComposite ? 'local-continuation' : index === 0 ? 'local-efficient' : 'cloud-quality',
       operations,
       localComposite ? 'LOCAL' : index === 0 ? 'LOCAL' : 'CLOUD',
       localComposite ? 0 : composite ? (index === 0 ? 1 : 5) : 0,
-      localComposite ? 180 : composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : crop ? 5 : resize ? 25 : orthogonalTransform ? 5 : superResolution ? 900 : 0,
-      localComposite ? 1 : composite ? (index === 0 ? .76 : .94) : backgroundIsolation || crop || resize || orthogonalTransform ? 1 : superResolution ? .9 : .9,
+      localComposite ? 180 : composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : crop ? 5 : resize ? 25 : orthogonalTransform ? 5 : garmentMeshWarp ? 20 : superResolution ? 900 : 0,
+      localComposite ? 1 : composite ? (index === 0 ? .76 : .94) : backgroundIsolation || crop || resize || orthogonalTransform || garmentMeshWarp ? 1 : superResolution ? .9 : .9,
       uncertainty.aggregateConfidence,
     ));
     const ranked = rankAndFilter(rawCandidates, constraints);
@@ -105,17 +135,19 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     if (resizeDimensionsInvalid) confirmationReasons.push('INVALID_RESIZE_DIMENSIONS');
     if (orthogonalSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
     if (orthogonalModeInvalid) confirmationReasons.push('INVALID_ORTHOGONAL_TRANSFORM_MODE');
+    if (garmentWarpSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
+    if (garmentWarpBindingInvalid) confirmationReasons.push('INVALID_GARMENT_MESH_WARP_BINDING');
     if (superResolutionSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
     if (localCompositeOriginalUnavailable) confirmationReasons.push('CANONICAL_ORIGINAL_REQUIRED');
     if (compositeOriginalUnavailable) confirmationReasons.push('CANONICAL_ORIGINAL_REQUIRED');
     if (localCompositeExecutionUnavailable) confirmationReasons.push('LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED');
     if (compositeExecutionUnavailable) confirmationReasons.push('COMPOSITE_EXECUTION_NOT_WIRED');
-    const hardBlocked = segmentationInputUnavailable || isolationSourceUnavailable || isolationMaskUnavailable || cropSourceUnavailable || cropRectInvalid || resizeSourceUnavailable || resizeDimensionsInvalid || orthogonalSourceUnavailable || orthogonalModeInvalid || superResolutionSourceUnavailable || localCompositeExecutionUnavailable || localCompositeOriginalUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK');
+    const hardBlocked = segmentationInputUnavailable || isolationSourceUnavailable || isolationMaskUnavailable || cropSourceUnavailable || cropRectInvalid || resizeSourceUnavailable || resizeDimensionsInvalid || orthogonalSourceUnavailable || orthogonalModeInvalid || garmentWarpSourceUnavailable || garmentWarpBindingInvalid || superResolutionSourceUnavailable || localCompositeExecutionUnavailable || localCompositeOriginalUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK');
     const status: CreativePlanStatus = hardBlocked ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
     const operations = immutable(status === 'BLOCKED' ? [] : selected?.operations ?? []);
     const rejected = immutable(candidates.filter(item => item.status === 'REJECTED').map(({ id, reasonCodes }) => ({ id, reasonCodes })));
-    const planReason = orthogonalTransform ? 'ORTHOGONAL_TRANSFORM_LOCAL_DETERMINISTIC_V1' : resize ? 'RESIZE_LOCAL_DETERMINISTIC_V1' : crop ? 'CROP_LOCAL_DETERMINISTIC_V1' : superResolution ? 'SUPER_RESOLUTION_LOCAL_MODEL_V1' : backgroundIsolation ? 'BACKGROUND_ISOLATION_LOCAL_DETERMINISTIC_V1' : interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : localComposite ? 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
-    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(isolationSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(isolationMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(cropSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(cropRectInvalid ? ['INVALID_CROP_RECT'] : []), ...(resizeSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(resizeDimensionsInvalid ? ['INVALID_RESIZE_DIMENSIONS'] : []), ...(orthogonalSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(orthogonalModeInvalid ? ['INVALID_ORTHOGONAL_TRANSFORM_MODE'] : []), ...(superResolutionSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(localCompositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(localCompositeExecutionUnavailable ? ['LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
+    const planReason = garmentMeshWarp ? 'GARMENT_MESH_WARP_LOCAL_DETERMINISTIC_V1' : orthogonalTransform ? 'ORTHOGONAL_TRANSFORM_LOCAL_DETERMINISTIC_V1' : resize ? 'RESIZE_LOCAL_DETERMINISTIC_V1' : crop ? 'CROP_LOCAL_DETERMINISTIC_V1' : superResolution ? 'SUPER_RESOLUTION_LOCAL_MODEL_V1' : backgroundIsolation ? 'BACKGROUND_ISOLATION_LOCAL_DETERMINISTIC_V1' : interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : localComposite ? 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
+    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(isolationSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(isolationMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(cropSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(cropRectInvalid ? ['INVALID_CROP_RECT'] : []), ...(resizeSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(resizeDimensionsInvalid ? ['INVALID_RESIZE_DIMENSIONS'] : []), ...(orthogonalSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(orthogonalModeInvalid ? ['INVALID_ORTHOGONAL_TRANSFORM_MODE'] : []), ...(garmentWarpSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(garmentWarpBindingInvalid ? ['INVALID_GARMENT_MESH_WARP_BINDING'] : []), ...(superResolutionSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(localCompositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(localCompositeExecutionUnavailable ? ['LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
     provenance = immutable({ ...provenance, replay: buildReplay(this.#options.plannerVersion, plannerConfig, { provenance, selectedCandidateId: selected?.id }) });
     const result = immutable({ requestId: request.id, operations, status, planningConstraints: constraints, candidates, selectedCandidateId: selected?.id, uncertainty, confirmationReasons: immutable(confirmationReasons), proposalId: `${this.#options.plannerVersion}:${request.id}`, plannerVersion: this.#options.plannerVersion, goal: decision.goal, assumptions: [], constraints: [...decision.constraints], provenance, explanation: buildExplanation(this.#options.plannerVersion, plannerConfig, selected, candidates, constraints, uncertainty, confirmationReasons) });
     void emitPlanTelemetry(this.#options.telemetry, result);
@@ -227,6 +259,37 @@ function orthogonalTransformOperations(artifacts: readonly CreativePlanArtifactS
   }]);
 }
 
+function garmentMeshWarpOperations(artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints, request: CreativeRequest): readonly CreativeOperation[] {
+  const requestedSourceId = typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+  const source = artifacts.find(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedSourceId || artifact.id === requestedSourceId));
+  const binding = readPlannerGarmentMeshWarpBinding(request.metadata?.garmentMeshWarpBinding);
+  if (!source || !binding) return immutable([]);
+  return immutable([{
+    id: GARMENT_MESH_WARP_STEP_ID,
+    type: GARMENT_MESH_WARP_OPERATION,
+    requiredArtifacts: [source.id],
+    produces: ['image'],
+    outputArtifacts: ['garment-mesh-warp:working'],
+    verification: verificationFor(GARMENT_MESH_WARP_STEP_ID, GARMENT_MESH_WARP_OPERATION, constraints, 'image'),
+    input: Object.freeze({
+      sourceArtifactId: source.id,
+      ...binding,
+      deterministicTool: `${GARMENT_MESH_WARP_TOOL_ID}@${GARMENT_MESH_WARP_TOOL_VERSION}`,
+      meshSchema: GARMENT_MESH_WARP_SCHEMA,
+      sourceCoordinateSpace: 'PRIMARY_VIEW_NORMALIZED_Q16',
+      destinationCoordinateSpace: 'PROJECT_IMAGE_NORMALIZED_Q16',
+      fixedPointBits: GARMENT_MESH_WARP_FIXED_POINT_BITS,
+      rasterization: 'DECLARED_TRIANGLE_ORDER_FIRST_OWNER',
+      interpolation: 'BILINEAR_NORMALIZED_Q16_MESH',
+      rounding: 'ROUND_HALF_UP',
+      alphaPolicy: 'PREMULTIPLIED_ALPHA_WITH_STRAIGHT_RGB_WHEN_WEIGHTED_ALPHA_ZERO',
+      uncoveredPixels: 'TRANSPARENT_BLACK',
+      maxOutputPixels: GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
+      maxRasterWork: GARMENT_MESH_WARP_MAX_RASTER_WORK,
+    }),
+  }]);
+}
+
 function superResolutionOperations(artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints, request: CreativeRequest): readonly CreativeOperation[] {
   const requestedSourceId = typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
   const source = artifacts.find(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedSourceId || artifact.id === requestedSourceId));
@@ -322,6 +385,27 @@ function readUncertainty(request: CreativeRequest): CreativePlanUncertainty { co
 function readPlannerCropRect(value: unknown): PlannerCropRect | undefined { const source = object(value); const x = source.x; const y = source.y; const width = source.width; const height = source.height; if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || Number(x) < 0 || Number(y) < 0 || Number(width) < 1 || Number(height) < 1) return undefined; return immutable({ x: Number(x), y: Number(y), width: Number(width), height: Number(height) }); }
 function readPlannerResizeDimensions(value: unknown): PlannerResizeDimensions | undefined { const source = object(value); const width = source.width; const height = source.height; if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || Number(width) < 1 || Number(height) < 1 || Number(width) > RESIZE_MAX_DIMENSION || Number(height) > RESIZE_MAX_DIMENSION) return undefined; const pixels = Number(width) * Number(height); if (!Number.isSafeInteger(pixels) || pixels > RESIZE_MAX_OUTPUT_PIXELS) return undefined; return immutable({ width: Number(width), height: Number(height) }); }
 function readPlannerOrthogonalTransformMode(value: unknown): PlannerOrthogonalTransformMode | undefined { return typeof value === 'string' && (ORTHOGONAL_TRANSFORM_MODES as readonly string[]).includes(value) ? value as PlannerOrthogonalTransformMode : undefined; }
+function readPlannerGarmentMeshWarpBinding(value: unknown): PlannerGarmentMeshWarpBinding | undefined {
+  const source = object(value);
+  const keys = ['anchorPayloadSha256', 'anchorSetId', 'destinationMeshSha256', 'garmentId', 'projectImageSha256', 'projectImageStorageId', 'representationId', 'representationSha256', 'viewId', 'viewSha256'];
+  if (Object.keys(source).sort().join('|') !== keys.join('|')) return undefined;
+  const uuidKeys = ['garmentId', 'viewId', 'representationId', 'anchorSetId', 'projectImageStorageId'] as const;
+  const shaKeys = ['projectImageSha256', 'viewSha256', 'representationSha256', 'anchorPayloadSha256', 'destinationMeshSha256'] as const;
+  if (uuidKeys.some(key => typeof source[key] !== 'string' || !CANONICAL_UUID_PATTERN.test(String(source[key])))) return undefined;
+  if (shaKeys.some(key => typeof source[key] !== 'string' || !CANONICAL_SHA256_PATTERN.test(String(source[key])))) return undefined;
+  return immutable({
+    garmentId: String(source.garmentId),
+    viewId: String(source.viewId),
+    representationId: String(source.representationId),
+    anchorSetId: String(source.anchorSetId),
+    projectImageStorageId: String(source.projectImageStorageId),
+    projectImageSha256: String(source.projectImageSha256),
+    viewSha256: String(source.viewSha256),
+    representationSha256: String(source.representationSha256),
+    anchorPayloadSha256: String(source.anchorPayloadSha256),
+    destinationMeshSha256: String(source.destinationMeshSha256),
+  });
+}
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function strings(value: unknown): string[] { return Array.isArray(value) ? value.filter(item => typeof item === 'string') : []; }
 function numberValue(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined; }

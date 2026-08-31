@@ -30,6 +30,17 @@ import {
   ORTHOGONAL_TRANSFORM_TOOL_ID,
   ORTHOGONAL_TRANSFORM_TOOL_VERSION,
 } from './OrthogonalTransformIdentity.js';
+import {
+  GARMENT_MESH_WARP_CAPABILITY,
+  GARMENT_MESH_WARP_FIXED_POINT_BITS,
+  GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
+  GARMENT_MESH_WARP_MAX_RASTER_WORK,
+  GARMENT_MESH_WARP_OPERATION,
+  GARMENT_MESH_WARP_SCHEMA,
+  GARMENT_MESH_WARP_STEP_ID,
+  GARMENT_MESH_WARP_TOOL_ID,
+  GARMENT_MESH_WARP_TOOL_VERSION,
+} from './GarmentMeshWarpIdentity.js';
 
 export type DeterministicToolInputContract = Readonly<{
   name: string;
@@ -39,12 +50,29 @@ export type DeterministicToolInputContract = Readonly<{
   geometry: 'SOURCE' | 'MATCH_SOURCE';
 }>;
 
+/**
+ * Non-Project deterministic input authority. These bindings are intentionally
+ * separate from `inputs`: a managed Garment view/representation can never be
+ * laundered into the Project Artifact namespace merely because a tool consumes it.
+ */
+export type DeterministicToolManagedInputContract = Readonly<{
+  name: string;
+  authority: 'MANAGED_GARMENT';
+  kind: 'GARMENT_VIEW' | 'GARMENT_REPRESENTATION';
+  sha256: 'REQUIRED';
+  use: 'PIXEL_SOURCE' | 'GEOMETRY_AUTHORITY';
+  contentType: 'image/png' | 'application/vnd.bers.garment-parametric+json';
+  encoding?: 'PNG_RGBA8_LOSSLESS';
+  tier?: 'PARAMETRIC';
+  format?: 'BERS_PARAMETRIC_V1';
+}>;
+
 export type DeterministicToolOutputContract = Readonly<{
   kind: string;
   role: CreativeArtifactRole;
   count: 1;
   mimeTypes: readonly string[];
-  geometry: 'MATCH_SOURCE' | 'CROP_RECT' | 'TARGET_DIMENSIONS' | 'ORTHOGONAL_MODE';
+  geometry: 'MATCH_SOURCE' | 'CROP_RECT' | 'TARGET_DIMENSIONS' | 'ORTHOGONAL_MODE' | 'PROJECT_SOURCE_DIMENSIONS';
 }>;
 
 export type DeterministicToolIntegerBound = Readonly<{
@@ -55,10 +83,11 @@ export type DeterministicToolIntegerBound = Readonly<{
 
 export type DeterministicToolParameterContract = Readonly<{
   artifactIdBindings: readonly Readonly<{ parameter: string; input: string }>[];
+  managedIdBindings?: readonly Readonly<{ parameter: string; input: string; field: 'garmentId' | 'viewId' | 'representationId' | 'basisViewId' }>[];
   exact: Readonly<Record<string, string | number | boolean>>;
   integerBounds?: readonly DeterministicToolIntegerBound[];
   enumValues?: readonly Readonly<{ parameter: string; values: readonly string[] }>[];
-  relationships?: readonly ('X_PLUS_WIDTH_LE_SOURCE_WIDTH' | 'Y_PLUS_HEIGHT_LE_SOURCE_HEIGHT' | 'TARGET_PIXELS_LE_RESIZE_MAX_OUTPUT_PIXELS')[];
+  relationships?: readonly ('X_PLUS_WIDTH_LE_SOURCE_WIDTH' | 'Y_PLUS_HEIGHT_LE_SOURCE_HEIGHT' | 'TARGET_PIXELS_LE_RESIZE_MAX_OUTPUT_PIXELS' | 'REPRESENTATION_BASIS_VIEW_EQUALS_PIXEL_SOURCE_VIEW')[];
 }>;
 
 export type DeterministicToolDefinition = Readonly<{
@@ -66,6 +95,7 @@ export type DeterministicToolDefinition = Readonly<{
   operation: Readonly<{ id: string; type: string; version: string }>;
   executor: LocalExecutionToolExecutorBinding;
   inputs: readonly DeterministicToolInputContract[];
+  managedInputs?: readonly DeterministicToolManagedInputContract[];
   output: DeterministicToolOutputContract;
   parameters: DeterministicToolParameterContract;
   browser: Readonly<{
@@ -83,20 +113,24 @@ export type DeterministicToolDefinition = Readonly<{
     orientation: 1;
     rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION';
     alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP';
-    interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER';
+    interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH';
     rounding?: 'INTEGER_EXACT' | 'ROUND_HALF_UP';
     border?: 'REJECT_OUT_OF_BOUNDS' | 'CLAMP_TO_EDGE';
     transparentRgb?: 'STRAIGHT_BILINEAR_WHEN_WEIGHTED_ALPHA_ZERO';
+    uncoveredPixels?: 'TRANSPARENT_BLACK';
+    overlapOwnership?: 'DECLARED_TRIANGLE_ORDER_FIRST_OWNER';
   }>;
   resourcePolicy: Readonly<{
     enforcement: 'CORE_CONFIG_AND_TICKET';
     dimensions: 'CORE_IMAGE_MAX_DIMENSION';
     pixels: 'CORE_IMAGE_MAX_PIXELS';
     uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES';
-    hardOutputPixels?: 'RESIZE_V1_MAX_OUTPUT_PIXELS';
+    hardOutputPixels?: 'RESIZE_V1_MAX_OUTPUT_PIXELS' | 'GARMENT_MESH_WARP_V1_MAX_OUTPUT_PIXELS';
+    maxRasterWork?: 'GARMENT_MESH_WARP_V1_MAX_RASTER_WORK';
   }>;
   lineage: Readonly<{
     parentInputs: readonly string[];
+    managedParents?: readonly string[];
     finalRole: CreativeArtifactRole;
     producerOperation: string;
   }>;
@@ -269,8 +303,69 @@ const orthogonalTransformDefinition: DeterministicToolDefinition = deepFreeze({
   lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: ORTHOGONAL_TRANSFORM_OPERATION },
 });
 
+const garmentMeshWarpDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: GARMENT_MESH_WARP_CAPABILITY,
+  operation: { id: GARMENT_MESH_WARP_STEP_ID, type: GARMENT_MESH_WARP_OPERATION, version: GARMENT_MESH_WARP_TOOL_VERSION },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: GARMENT_MESH_WARP_TOOL_ID, version: GARMENT_MESH_WARP_TOOL_VERSION },
+  inputs: [
+    { name: 'projectSource', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+  ],
+  managedInputs: [
+    { name: 'basisView', authority: 'MANAGED_GARMENT', kind: 'GARMENT_VIEW', sha256: 'REQUIRED', use: 'PIXEL_SOURCE', contentType: 'image/png', encoding: 'PNG_RGBA8_LOSSLESS' },
+    { name: 'representation', authority: 'MANAGED_GARMENT', kind: 'GARMENT_REPRESENTATION', sha256: 'REQUIRED', use: 'GEOMETRY_AUTHORITY', contentType: 'application/vnd.bers.garment-parametric+json', tier: 'PARAMETRIC', format: 'BERS_PARAMETRIC_V1' },
+  ],
+  output: { kind: 'image', role: 'WORKING', count: 1, mimeTypes: ['image/png'], geometry: 'PROJECT_SOURCE_DIMENSIONS' },
+  parameters: {
+    artifactIdBindings: [{ parameter: 'sourceArtifactId', input: 'projectSource' }],
+    managedIdBindings: [
+      { parameter: 'garmentId', input: 'basisView', field: 'garmentId' },
+      { parameter: 'viewId', input: 'basisView', field: 'viewId' },
+      { parameter: 'representationId', input: 'representation', field: 'representationId' },
+      { parameter: 'viewId', input: 'representation', field: 'basisViewId' },
+    ],
+    exact: {
+      deterministicTool: `${GARMENT_MESH_WARP_TOOL_ID}@${GARMENT_MESH_WARP_TOOL_VERSION}`,
+      meshSchema: GARMENT_MESH_WARP_SCHEMA,
+      sourceCoordinateSpace: 'PRIMARY_VIEW_NORMALIZED_Q16',
+      destinationCoordinateSpace: 'PROJECT_IMAGE_NORMALIZED_Q16',
+      fixedPointBits: GARMENT_MESH_WARP_FIXED_POINT_BITS,
+      rasterization: 'DECLARED_TRIANGLE_ORDER_FIRST_OWNER',
+      interpolation: 'BILINEAR_NORMALIZED_Q16_MESH',
+      rounding: 'ROUND_HALF_UP',
+      alphaPolicy: 'PREMULTIPLIED_ALPHA_WITH_STRAIGHT_RGB_WHEN_WEIGHTED_ALPHA_ZERO',
+      uncoveredPixels: 'TRANSPARENT_BLACK',
+      maxOutputPixels: GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
+      maxRasterWork: GARMENT_MESH_WARP_MAX_RASTER_WORK,
+    },
+    relationships: ['REPRESENTATION_BASIS_VIEW_EQUALS_PIXEL_SOURCE_VIEW'],
+  },
+  browser: { executorId: 'garment-mesh-warp-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'garment-mesh-warp-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY',
+    alpha: 'BILINEAR_ALPHA_ROUND_HALF_UP',
+    interpolation: 'BILINEAR_NORMALIZED_Q16_MESH',
+    rounding: 'ROUND_HALF_UP',
+    transparentRgb: 'STRAIGHT_BILINEAR_WHEN_WEIGHTED_ALPHA_ZERO',
+    uncoveredPixels: 'TRANSPARENT_BLACK',
+    overlapOwnership: 'DECLARED_TRIANGLE_ORDER_FIRST_OWNER',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+    hardOutputPixels: 'GARMENT_MESH_WARP_V1_MAX_OUTPUT_PIXELS',
+    maxRasterWork: 'GARMENT_MESH_WARP_V1_MAX_RASTER_WORK',
+  },
+  lineage: { parentInputs: ['projectSource'], managedParents: ['basisView', 'representation'], finalRole: 'WORKING', producerOperation: GARMENT_MESH_WARP_OPERATION },
+});
+
 /**
- * Data-only deterministic tool catalog. It describes already-reviewed tool contracts;
+ * Data-only deterministic tool catalog. It describes reviewed tool contracts;
  * it is not capability admission and contains no executable callback or fallback.
  * Production admission remains an explicit server policy.
  */
@@ -279,12 +374,14 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
   cropDefinition,
   resizeDefinition,
   orthogonalTransformDefinition,
+  garmentMeshWarpDefinition,
 ]);
 
 export const BACKGROUND_ISOLATION_TOOL_DEFINITION = backgroundIsolationDefinition;
 export const CROP_TOOL_DEFINITION = cropDefinition;
 export const RESIZE_TOOL_DEFINITION = resizeDefinition;
 export const ORTHOGONAL_TRANSFORM_TOOL_DEFINITION = orthogonalTransformDefinition;
+export const GARMENT_MESH_WARP_TOOL_DEFINITION = garmentMeshWarpDefinition;
 
 export function findDeterministicToolByCapability(capability: string): DeterministicToolDefinition | undefined {
   return DETERMINISTIC_TOOL_REGISTRY.find(definition => definition.capability === capability);
