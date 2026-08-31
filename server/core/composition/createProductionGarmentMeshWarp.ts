@@ -9,6 +9,7 @@ import { checkGarmentSchema, migrateGarmentSchema } from '../fashion/garmentSche
 import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../fashion/bodyAnchorSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../fashion/garmentWarpLayerSchema.ts';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from '../fashion/garmentTextureFinalLineageSchema.ts';
+import { ManualProjectBodyAnchorAcquisitionService } from '../fashion/ManualProjectBodyAnchorAcquisitionService.ts';
 import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from '../fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresGarmentRepresentationStore } from '../fashion/postgresGarmentRepresentationStore.ts';
@@ -33,12 +34,19 @@ export type ProductionGarmentMeshWarpCompositionInput = Readonly<{
   now: () => number;
 }>;
 
+type GarmentMeshWarpExecutionSurface = LocalGarmentMeshWarpExecutionService & Readonly<{
+  manualBodyAnchorAcquisition: ManualProjectBodyAnchorAcquisitionService;
+}>;
+
 /**
  * One production composition root for the shared F4b geometry authority.
  *
  * F4b.4 keeps its capability-scoped managed-input wrapper. F4b.5b is composed
  * from the same underlying Managed Garment, body-anchor and immutable-layer
  * instances, so no second Fashion trust graph can drift from the warp authority.
+ * F4b.6c manual body-anchor acquisition is composed from this exact body-anchor
+ * store instance and the existing canonical ArtifactAuthority; it cannot become
+ * a second pose persistence graph.
  */
 export async function createProductionGarmentMeshWarp(input: ProductionGarmentMeshWarpCompositionInput) {
   await ensureFashionWarpSchemas(input.pool, input.nodeEnv);
@@ -53,6 +61,10 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
   const genericManagedInputs = new ManagedGarmentLocalExecutionInputAuthority({ garments, representations });
   const managedInputs = new GarmentMeshWarpManagedInputAuthority(genericManagedInputs, limits);
   const bodyAnchors = new PostgresProjectBodyAnchorStore(input.pool, { wardrobe, representations, managedInputs });
+  const manualBodyAnchorAcquisition = new ManualProjectBodyAnchorAcquisitionService({
+    artifacts: input.artifacts,
+    bodyAnchors,
+  });
   const layers = new PostgresGarmentWarpLayerStore(input.pool);
   const inputDelivery = new GarmentMeshWarpInputDeliveryService({
     admission: input.admission,
@@ -73,6 +85,13 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     limits,
     now: input.now,
   });
+  Object.defineProperty(execution, 'manualBodyAnchorAcquisition', {
+    value: manualBodyAnchorAcquisition,
+    enumerable: true,
+    writable: false,
+    configurable: false,
+  });
+  const executionSurface = execution as GarmentMeshWarpExecutionSurface;
   const tickets = input.canonical.localExecutionV2;
   if (!tickets) throw new Error('Production Fashion texture composition requires the Core v2 local ticket issuer');
   const textureComposite = createProductionGarmentTextureComposite({
@@ -86,7 +105,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     now: input.now,
   });
   return Object.freeze({
-    execution,
+    execution: executionSurface,
     inputDelivery,
     managedInputs,
     genericManagedInputs,
@@ -96,6 +115,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     bodyAnchors,
     layers,
     textureComposite,
+    manualBodyAnchorAcquisition,
   });
 }
 
