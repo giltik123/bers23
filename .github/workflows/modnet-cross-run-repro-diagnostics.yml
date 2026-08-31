@@ -124,19 +124,23 @@ jobs:
             --onnx .test-cache/modnet-final-repro/first.onnx \
             --report .test-cache/modnet-final-repro/parity.json
           python - <<'PY'
-          import json, os
+          import json, math, os
           report = json.load(open('.test-cache/modnet-final-repro/parity.json', encoding='utf-8'))
           assert report['version'] == os.environ['MODNET_VERSION']
           assert report['artifact']['size'] == int(os.environ['MODNET_ONNX_SIZE'])
           assert report['artifact']['sha256'] == os.environ['MODNET_ONNX_SHA256']
           assert report['upstreamReference']['size'] == int(os.environ['MODNET_REFERENCE_ONNX_SIZE'])
           assert report['upstreamReference']['sha256'] == os.environ['MODNET_REFERENCE_ONNX_SHA256']
+          assert math.isfinite(float(report['maxAbsError']))
+          assert math.isfinite(float(report['upstreamReferenceMaxAbsError']))
           assert float(report['maxAbsError']) <= float(report['parityAtol'])
           assert float(report['upstreamReferenceMaxAbsError']) <= float(report['parityAtol'])
           assert report['productionDeviceApproval'] is False
           PY
 
       - name: Fingerprint both same-run exports
+        env:
+          EXPECTED_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           python scripts/fingerprint-onnx-repro.py \
@@ -157,7 +161,7 @@ jobs:
               raise SystemExit('final MODNet fingerprint SHA does not match pin')
           metadata = {
               'replica': os.environ['MODNET_REPLICA'],
-              'candidate': os.environ['GITHUB_SHA'],
+              'candidate': os.environ['EXPECTED_CANDIDATE_SHA'],
               'arch': os.environ.get('RUNNER_ARCH', 'unknown'),
               'cpu': os.environ['MODNET_CPU_MODEL'],
               'version': os.environ['MODNET_VERSION'],
@@ -168,7 +172,7 @@ jobs:
               json.dumps(metadata, sort_keys=True) + '\n', encoding='utf-8')
           print(
               'MODNET_FINAL_REPRO|'
-              f"replica={metadata['replica']}|arch={metadata['arch']}|cpu={metadata['cpu'].replace('|','/')}|"
+              f"replica={metadata['replica']}|candidate={metadata['candidate']}|arch={metadata['arch']}|cpu={metadata['cpu'].replace('|','/')}|"
               f"version={metadata['version']}|size={metadata['size']}|sha256={metadata['sha256']}|"
               f"graph={sample['graphSemanticSha256']}|initializers={sample['initializerSemanticSetSha256']}|"
               f"initializerCount={sample['initializerCount']}|classification=BYTE_IDENTICAL"
@@ -183,6 +187,7 @@ jobs:
             .test-cache/modnet-final-repro/fingerprint.json
             .test-cache/modnet-final-repro/parity.json
             .test-cache/modnet-final-repro/runner-metadata.json
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
 
@@ -208,6 +213,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -219,6 +230,8 @@ jobs:
           path: .test-cache/modnet-final-repro/reports
 
       - name: Compare independent hosted runners
+        env:
+          EXPECTED_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           mapfile -t fingerprints < <(find .test-cache/modnet-final-repro/reports -type f -name fingerprint.json -print | sort)
@@ -232,7 +245,7 @@ jobs:
             --output .test-cache/modnet-final-repro/cross-run-comparison.json \
             > .test-cache/modnet-final-repro/cross-run-comparison.log
           python - "${parity_reports[@]}" "${metadata[@]}" <<'PY'
-          import json, os, sys
+          import json, math, os, sys
           paths = sys.argv[1:]
           parity_paths = paths[:3]
           metadata_paths = paths[3:]
@@ -244,6 +257,7 @@ jobs:
           expected_size = int(os.environ['MODNET_ONNX_SIZE'])
           expected_version = os.environ['MODNET_VERSION']
           expected_reference_sha = os.environ['MODNET_REFERENCE_ONNX_SHA256']
+          expected_candidate_sha = os.environ['EXPECTED_CANDIDATE_SHA']
 
           if comparison['comparison']['classification'] != 'BYTE_IDENTICAL':
               raise SystemExit('final MODNet exporter is not byte-identical across hosted runners')
@@ -261,6 +275,10 @@ jobs:
                   raise SystemExit('parity report is not bound to candidate.2 bytes')
               if report['upstreamReference']['sha256'] != expected_reference_sha:
                   raise SystemExit('upstream reference identity drift')
+              if not math.isfinite(float(report['maxAbsError'])):
+                  raise SystemExit('PyTorch/ORT parity error is non-finite')
+              if not math.isfinite(float(report['upstreamReferenceMaxAbsError'])):
+                  raise SystemExit('official upstream parity error is non-finite')
               if float(report['maxAbsError']) > float(report['parityAtol']):
                   raise SystemExit('PyTorch/ORT parity exceeded tolerance')
               if float(report['upstreamReferenceMaxAbsError']) > float(report['parityAtol']):
@@ -269,12 +287,14 @@ jobs:
                   raise SystemExit('reproducibility evidence granted production approval')
 
           for item in metadata:
+              if item['candidate'] != expected_candidate_sha:
+                  raise SystemExit('runner metadata is not bound to the exact checked-out candidate head')
               if item['version'] != expected_version or item['sha256'] != expected_sha or int(item['size']) != expected_size:
                   raise SystemExit('runner metadata identity drift')
 
           print(
               'MODNET_FINAL_CROSS_HOST|'
-              f"version={expected_version}|size={expected_size}|sha256={expected_sha}|"
+              f"candidate={expected_candidate_sha}|version={expected_version}|size={expected_size}|sha256={expected_sha}|"
               f"reports={len(comparison['samples'])}|initializerDrift=0|classification=BYTE_IDENTICAL"
           )
           PY
