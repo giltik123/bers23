@@ -9,6 +9,7 @@ import { checkGarmentSchema, migrateGarmentSchema } from '../fashion/garmentSche
 import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../fashion/bodyAnchorSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../fashion/garmentWarpLayerSchema.ts';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from '../fashion/garmentTextureFinalLineageSchema.ts';
+import { FashionTryOnReadinessService } from '../fashion/FashionTryOnReadinessService.ts';
 import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from '../fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresGarmentRepresentationStore } from '../fashion/postgresGarmentRepresentationStore.ts';
@@ -39,6 +40,8 @@ export type ProductionGarmentMeshWarpCompositionInput = Readonly<{
  * F4b.4 keeps its capability-scoped managed-input wrapper. F4b.5b is composed
  * from the same underlying Managed Garment, body-anchor and immutable-layer
  * instances, so no second Fashion trust graph can drift from the warp authority.
+ * F4b.6 readiness is read-only over those same instances and cannot grant any
+ * execution, FINAL, Project, provider or Billing authority by itself.
  */
 export async function createProductionGarmentMeshWarp(input: ProductionGarmentMeshWarpCompositionInput) {
   await ensureFashionWarpSchemas(input.pool, input.nodeEnv);
@@ -54,6 +57,13 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
   const managedInputs = new GarmentMeshWarpManagedInputAuthority(genericManagedInputs, limits);
   const bodyAnchors = new PostgresProjectBodyAnchorStore(input.pool, { wardrobe, representations, managedInputs });
   const layers = new PostgresGarmentWarpLayerStore(input.pool);
+  const tryOnReadiness = new FashionTryOnReadinessService({
+    pool: input.pool,
+    artifacts: input.artifacts,
+    wardrobe,
+    representations,
+    bodyAnchors,
+  });
   const inputDelivery = new GarmentMeshWarpInputDeliveryService({
     admission: input.admission,
     managedInputs,
@@ -96,6 +106,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     bodyAnchors,
     layers,
     textureComposite,
+    tryOnReadiness,
   });
 }
 
