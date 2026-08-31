@@ -1,0 +1,52 @@
+name: Fashion F4b.6a deterministic Try-On readiness
+
+on:
+  push:
+    branches: [ "fashion-deterministic-tryon-readiness-f4b6a-staging" ]
+  pull_request:
+    branches: [ "main", "fashion-production-texture-composite-f4b5b2" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-tryon-readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core readiness foundation
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle F4b.6a readiness contract
+        run: |
+          mkdir -p .test-cache/fashion-f4b6a
+          npx esbuild tests/fashion-tryon-readiness-f4b6a.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b6a/readiness.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove server-owned evidence selection and fail-closed readiness
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b6a/readiness.mjs
+      - name: Prove readiness reuses the production Fashion trust graph without opening Try-On provider authority
+        run: |
+          grep -q "FashionTryOnReadinessService" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "tryOnReadiness" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "resolveStoredImageEvidence" server/core/fashion/FashionTryOnReadinessService.ts
+          grep -q "deriveDestinationMesh" server/core/fashion/FashionTryOnReadinessService.ts
+          ! grep -E "from ['\"].*(providers|billing)|from ['\"].*(fal|fashn)" server/core/fashion/FashionTryOnReadinessService.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -q "FashionTryOnReadinessService" src/lib/tryon/tryonEngine.js
