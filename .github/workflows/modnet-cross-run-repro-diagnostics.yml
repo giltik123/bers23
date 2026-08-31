@@ -1,109 +1,117 @@
-name: MODNet cross-run ONNX reproducibility diagnostics
+name: MODNet final exporter cross-run reproducibility
 
 on:
   pull_request:
     branches: [ "main" ]
     paths:
+      - "scripts/build-modnet-portrait-matting-release.py"
       - "scripts/fingerprint-onnx-repro.py"
       - "scripts/compare-onnx-repro-reports.py"
       - "scripts/validate-modnet-diagnostic-export.py"
-      - ".github/workflows/modnet-cross-run-repro-diagnostics.yml"
-      - "scripts/build-modnet-portrait-matting-release.py"
       - "src/platform/creative/local-ai/models/portrait-matting.manifest.json"
+      - "src/platform/creative/local-ai/models/ModNetRelease.ts"
+      - ".github/workflows/modnet-cross-run-repro-diagnostics.yml"
+      - ".github/workflows/sprint-6.42c5-modnet-acquisition.yml"
+      - ".github/workflows/modnet-release.yml"
+      - "tests/modnet-export-security.test.mjs"
+      - "tests/modnet-release-workflow.test.mjs"
+      - "tests/modnet-release-policy.test.ts"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  MODNET_VERSION: 1.0.0-candidate.2
+  MODNET_CHECKPOINT_SHA256: 7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8
+  MODNET_CHECKPOINT_SIZE: '26255603'
+  MODNET_REFERENCE_ONNX_SHA256: 07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9
+  MODNET_REFERENCE_ONNX_SIZE: '25888640'
+  MODNET_ONNX_SHA256: 223bdc36ba84f9728ab4a94a7985128161514019d8388c3e827402c15072c654
+  MODNET_ONNX_SIZE: '26236047'
+
 jobs:
-  fingerprint:
+  reproduce:
     strategy:
       fail-fast: false
       matrix:
         replica: [a, b, c]
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
     env:
-      MODNET_CHECKPOINT_SHA256: 7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8
-      MODNET_CHECKPOINT_SIZE: 26255603
-      MODNET_DIAGNOSTIC_REPLICA: ${{ matrix.replica }}
-      MODNET_DIAGNOSTIC_CONSTANT_FOLDING: OFF
+      MODNET_REPLICA: ${{ matrix.replica }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Assert exact diagnostic candidate SHA
+          fetch-depth: 0
+
+      - name: Assert exact candidate SHA
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+        run: test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - name: Install pinned diagnostic environment
+          python-version: '3.11'
+
+      - name: Install pinned export environment
         run: |
+          set -euo pipefail
           python -m pip install --disable-pip-version-check gdown==5.2.0
           python -m pip install --disable-pip-version-check torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --disable-pip-version-check numpy==1.26.4 onnx==1.15.0 onnxruntime==1.16.3
-      - name: Acquire exact MODNet source, checkpoint and upstream reference
+
+      - name: Acquire exact source, checkpoint and official reference
         run: |
           set -euo pipefail
           git clone https://github.com/ZHKKKe/MODNet "${RUNNER_TEMP}/MODNet"
           git -C "${RUNNER_TEMP}/MODNet" checkout --detach 28165a451e4610c9d77cfdf925a94610bb2810fb
           test "$(git -C "${RUNNER_TEMP}/MODNet" rev-parse HEAD)" = 28165a451e4610c9d77cfdf925a94610bb2810fb
-          mkdir -p "${RUNNER_TEMP}/modnet-checkpoints"
-          gdown --folder 'https://drive.google.com/drive/folders/1umYmlCulvIFNaqPjwod1SayFmSRHziyR?usp=sharing' -O "${RUNNER_TEMP}/modnet-checkpoints"
-          mapfile -t checkpoints < <(find "${RUNNER_TEMP}/modnet-checkpoints" -type f -name 'modnet_photographic_portrait_matting.ckpt' -print)
-          mapfile -t references < <(find "${RUNNER_TEMP}/modnet-checkpoints" -type f -name 'modnet_photographic_portrait_matting.onnx' -print)
+          mkdir -p "${RUNNER_TEMP}/modnet-models"
+          gdown --folder 'https://drive.google.com/drive/folders/1umYmlCulvIFNaqPjwod1SayFmSRHziyR?usp=sharing' -O "${RUNNER_TEMP}/modnet-models"
+          mapfile -t checkpoints < <(find "${RUNNER_TEMP}/modnet-models" -type f -name 'modnet_photographic_portrait_matting.ckpt' -print)
+          mapfile -t references < <(find "${RUNNER_TEMP}/modnet-models" -type f -name 'modnet_photographic_portrait_matting.onnx' -print)
           test "${#checkpoints[@]}" -eq 1
           test "${#references[@]}" -eq 1
           checkpoint="${checkpoints[0]}"
+          reference="${references[0]}"
           test "$(stat -c%s "${checkpoint}")" = "${MODNET_CHECKPOINT_SIZE}"
           test "$(sha256sum "${checkpoint}" | cut -d' ' -f1)" = "${MODNET_CHECKPOINT_SHA256}"
+          test "$(stat -c%s "${reference}")" = "${MODNET_REFERENCE_ONNX_SIZE}"
+          test "$(sha256sum "${reference}" | cut -d' ' -f1)" = "${MODNET_REFERENCE_ONNX_SHA256}"
           printf '%s\n' "${checkpoint}" > "${RUNNER_TEMP}/modnet-checkpoint-path"
-          printf '%s\n' "${references[0]}" > "${RUNNER_TEMP}/modnet-reference-onnx-path"
-      - name: Capture hosted runner fingerprint
+          printf '%s\n' "${reference}" > "${RUNNER_TEMP}/modnet-reference-onnx-path"
+
+      - name: Capture hosted runner identity
         run: |
           set -euo pipefail
-          candidate_sha="$(git rev-parse HEAD)"
           cpu_model="$(lscpu | awk -F: '/^Model name:/ {sub(/^[[:space:]]+/, "", $2); print $2; exit}')"
-          test -n "$cpu_model"
-          printf 'MODNET_DIAGNOSTIC_CANDIDATE_SHA=%s\n' "$candidate_sha" >> "$GITHUB_ENV"
-          printf 'MODNET_DIAGNOSTIC_CPU_MODEL=%s\n' "$cpu_model" >> "$GITHUB_ENV"
-          echo "MODNET_DIAGNOSTIC_REPLICA=${MODNET_DIAGNOSTIC_REPLICA}"
-          echo "MODNET_DIAGNOSTIC_CONSTANT_FOLDING=${MODNET_DIAGNOSTIC_CONSTANT_FOLDING}"
+          test -n "${cpu_model}"
+          printf 'MODNET_CPU_MODEL=%s\n' "${cpu_model}" >> "${GITHUB_ENV}"
+          echo "MODNET_REPLICA=${MODNET_REPLICA}"
           echo "RUNNER_ARCH=${RUNNER_ARCH}"
-          echo "MODNET_DIAGNOSTIC_CANDIDATE_SHA=${candidate_sha}"
-          echo "MODNET_DIAGNOSTIC_CPU_MODEL=${cpu_model}"
+          echo "MODNET_CPU_MODEL=${cpu_model}"
           uname -a
           lscpu
-          python - <<'PY'
-          import platform, sys
-          import numpy, onnx, onnxruntime, torch
-          print({
-            'python': sys.version,
-            'platform': platform.platform(),
-            'machine': platform.machine(),
-            'processor': platform.processor(),
-            'torch': torch.__version__,
-            'numpy': numpy.__version__,
-            'onnx': onnx.__version__,
-            'onnxruntime': onnxruntime.__version__,
-          })
-          PY
-      - name: Export two independent same-run samples with constant folding disabled
+
+      - name: Export two independent samples through the final default exporter
         run: |
           set -euo pipefail
-          mkdir -p .test-cache/modnet-cross-run
+          mkdir -p .test-cache/modnet-final-repro
           checkpoint="$(cat "${RUNNER_TEMP}/modnet-checkpoint-path")"
           for sample in first second; do
             PYTHONHASHSEED=0 python scripts/build-modnet-portrait-matting-release.py \
               --single-export \
-              --disable-constant-folding \
               --source "${RUNNER_TEMP}/MODNet" \
               --checkpoint "${checkpoint}" \
               --manifest src/platform/creative/local-ai/models/portrait-matting.manifest.json \
-              --output ".test-cache/modnet-cross-run/${sample}.onnx"
+              --output ".test-cache/modnet-final-repro/${sample}.onnx"
+            test "$(stat -c%s ".test-cache/modnet-final-repro/${sample}.onnx")" = "${MODNET_ONNX_SIZE}"
+            test "$(sha256sum ".test-cache/modnet-final-repro/${sample}.onnx" | cut -d' ' -f1)" = "${MODNET_ONNX_SHA256}"
           done
-      - name: Validate folding-off candidate against production structure and parity gates
+
+      - name: Validate exact candidate against production structure and parity gates
         run: |
           set -euo pipefail
           checkpoint="$(cat "${RUNNER_TEMP}/modnet-checkpoint-path")"
@@ -113,212 +121,176 @@ jobs:
             --checkpoint "${checkpoint}" \
             --manifest src/platform/creative/local-ai/models/portrait-matting.manifest.json \
             --reference-onnx "${reference}" \
-            --onnx .test-cache/modnet-cross-run/first.onnx \
-            --report .test-cache/modnet-cross-run/parity.json
-      - name: Fingerprint graph and every initializer
+            --onnx .test-cache/modnet-final-repro/first.onnx \
+            --report .test-cache/modnet-final-repro/parity.json
+          python - <<'PY'
+          import json, os
+          report = json.load(open('.test-cache/modnet-final-repro/parity.json', encoding='utf-8'))
+          assert report['version'] == os.environ['MODNET_VERSION']
+          assert report['artifact']['size'] == int(os.environ['MODNET_ONNX_SIZE'])
+          assert report['artifact']['sha256'] == os.environ['MODNET_ONNX_SHA256']
+          assert report['upstreamReference']['size'] == int(os.environ['MODNET_REFERENCE_ONNX_SIZE'])
+          assert report['upstreamReference']['sha256'] == os.environ['MODNET_REFERENCE_ONNX_SHA256']
+          assert float(report['maxAbsError']) <= float(report['parityAtol'])
+          assert float(report['upstreamReferenceMaxAbsError']) <= float(report['parityAtol'])
+          assert report['productionDeviceApproval'] is False
+          PY
+
+      - name: Fingerprint both same-run exports
         run: |
           set -euo pipefail
           python scripts/fingerprint-onnx-repro.py \
-            .test-cache/modnet-cross-run/first.onnx \
-            .test-cache/modnet-cross-run/second.onnx \
-            --output .test-cache/modnet-cross-run/fingerprint.json > .test-cache/modnet-cross-run/fingerprint.log
+            .test-cache/modnet-final-repro/first.onnx \
+            .test-cache/modnet-final-repro/second.onnx \
+            --output .test-cache/modnet-final-repro/fingerprint.json \
+            > .test-cache/modnet-final-repro/fingerprint.log
           python - <<'PY'
           import json, os
           from pathlib import Path
-
-          report=json.load(open('.test-cache/modnet-cross-run/fingerprint.json',encoding='utf-8'))
-          classification=report['comparison']['classification']
-          if classification != 'BYTE_IDENTICAL':
-              raise SystemExit('within-run MODNet export lost byte reproducibility')
-          sample=report['samples'][0]
-          parity=json.load(open('.test-cache/modnet-cross-run/parity.json',encoding='utf-8'))
-          if parity.get('authority') != 'DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY':
-              raise SystemExit('unexpected MODNet diagnostic parity authority')
-          if parity.get('productionDeviceApproval') is not False:
-              raise SystemExit('diagnostic parity must not grant production approval')
-          if parity['artifact']['sha256'] != sample['rawSha256'] or parity['artifact']['size'] != sample['size']:
-              raise SystemExit('MODNet parity evidence is not bound to fingerprinted bytes')
-          if float(parity['maxAbsError']) > float(parity['parityAtol']):
-              raise SystemExit('MODNet diagnostic PyTorch/ORT parity exceeded release-builder tolerance')
-          if float(parity['upstreamReferenceMaxAbsError']) > float(parity['parityAtol']):
-              raise SystemExit('MODNet diagnostic upstream-reference parity exceeded C5 tolerance')
-          fields={
-              'replica': os.environ['MODNET_DIAGNOSTIC_REPLICA'],
-              'candidate': os.environ['MODNET_DIAGNOSTIC_CANDIDATE_SHA'],
-              'folding': os.environ['MODNET_DIAGNOSTIC_CONSTANT_FOLDING'],
-              'arch': os.environ.get('RUNNER_ARCH','unknown'),
-              'cpu': os.environ['MODNET_DIAGNOSTIC_CPU_MODEL'].replace('|','/'),
-              'size': str(sample['size']),
-              'raw': sample['rawSha256'],
-              'proto': sample['deterministicProtoSha256'],
-              'graph': sample['graphSemanticSha256'],
-              'initializers': sample['initializerSemanticSetSha256'],
-              'initializerCount': str(sample['initializerCount']),
-              'maxAbsError': format(float(parity['maxAbsError']), '.12g'),
-              'upstreamMaxAbsError': format(float(parity['upstreamReferenceMaxAbsError']), '.12g'),
-              'parityAtol': format(float(parity['parityAtol']), '.12g'),
-              'classification': classification,
+          report = json.load(open('.test-cache/modnet-final-repro/fingerprint.json', encoding='utf-8'))
+          if report['comparison']['classification'] != 'BYTE_IDENTICAL':
+              raise SystemExit('final MODNet exporter lost same-run byte identity')
+          sample = report['samples'][0]
+          if sample['size'] != int(os.environ['MODNET_ONNX_SIZE']):
+              raise SystemExit('final MODNet fingerprint size does not match pin')
+          if sample['rawSha256'] != os.environ['MODNET_ONNX_SHA256']:
+              raise SystemExit('final MODNet fingerprint SHA does not match pin')
+          metadata = {
+              'replica': os.environ['MODNET_REPLICA'],
+              'candidate': os.environ['GITHUB_SHA'],
+              'arch': os.environ.get('RUNNER_ARCH', 'unknown'),
+              'cpu': os.environ['MODNET_CPU_MODEL'],
+              'version': os.environ['MODNET_VERSION'],
+              'size': sample['size'],
+              'sha256': sample['rawSha256'],
           }
-          line='MODNET_REPRO_FINGERPRINT|'+'|'.join(f'{key}={value}' for key,value in fields.items())
-          print(line)
-          Path('.test-cache/modnet-cross-run/fingerprint-summary.txt').write_text(line+'\n',encoding='utf-8')
-          Path('.test-cache/modnet-cross-run/runner-metadata.json').write_text(json.dumps({
-              'replica': fields['replica'],
-              'candidate': fields['candidate'],
-              'folding': fields['folding'],
-              'arch': fields['arch'],
-              'cpu': fields['cpu'],
-          }, sort_keys=True)+'\n', encoding='utf-8')
+          Path('.test-cache/modnet-final-repro/runner-metadata.json').write_text(
+              json.dumps(metadata, sort_keys=True) + '\n', encoding='utf-8')
+          print(
+              'MODNET_FINAL_REPRO|'
+              f"replica={metadata['replica']}|arch={metadata['arch']}|cpu={metadata['cpu'].replace('|','/')}|"
+              f"version={metadata['version']}|size={metadata['size']}|sha256={metadata['sha256']}|"
+              f"graph={sample['graphSemanticSha256']}|initializers={sample['initializerSemanticSetSha256']}|"
+              f"initializerCount={sample['initializerCount']}|classification=BYTE_IDENTICAL"
+          )
           PY
-      - name: Upload fingerprint and parity metadata only
+
+      - name: Upload metadata only
         uses: actions/upload-artifact@v4
         with:
-          name: modnet-repro-fingerprint-${{ matrix.replica }}
+          name: modnet-final-repro-${{ matrix.replica }}
           path: |
-            .test-cache/modnet-cross-run/fingerprint.json
-            .test-cache/modnet-cross-run/fingerprint-summary.txt
-            .test-cache/modnet-cross-run/runner-metadata.json
-            .test-cache/modnet-cross-run/parity.json
+            .test-cache/modnet-final-repro/fingerprint.json
+            .test-cache/modnet-final-repro/parity.json
+            .test-cache/modnet-final-repro/runner-metadata.json
           if-no-files-found: error
           retention-days: 1
-      - name: Publish runner diagnostic summary
+
+      - name: Publish replica summary
         if: always()
         run: |
           {
-            echo '## MODNet hosted-runner diagnostic'
+            echo '## MODNet final exporter replica'
             echo
-            echo "- Replica: \`${MODNET_DIAGNOSTIC_REPLICA}\`"
-            echo '- Export experiment: `CONSTANT_FOLDING_OFF`'
-            echo '- Authority: `DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY`'
-            echo '- Production structural, PyTorch→ORT, and pinned upstream-reference parity gates are applied to the exact fingerprinted candidate bytes.'
-            echo '- Default release export behavior and pinned manifest identity remain unchanged.'
-            echo '- No manifest/pin/release identity mutation is performed.'
-            echo '- ONNX model bytes are never uploaded as a workflow artifact.'
-            if test -f .test-cache/modnet-cross-run/fingerprint-summary.txt; then
-              echo
-              echo '```text'
-              cat .test-cache/modnet-cross-run/fingerprint-summary.txt
-              echo '```'
-            else
-              echo
-              echo 'Fingerprint summary unavailable because an earlier diagnostic step failed.'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "- Replica: \`${MODNET_REPLICA}\`"
+            echo "- Candidate version: \`${MODNET_VERSION}\`"
+            echo '- Export path: production/default single-export path, constant folding disabled by code contract'
+            echo '- Two independent same-run exports: required'
+            echo '- Pinned byte identity + structural + PyTorch/ORT + official upstream parity: required'
+            echo '- Uploaded artifacts: metadata only; ONNX bytes are never uploaded'
+            echo '- Authority: CANDIDATE reproducibility evidence only; no production approval'
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   compare-hosted-runners:
-    needs: fingerprint
+    needs: reproduce
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Assert exact diagnostic candidate SHA
-        env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - name: Download fingerprint metadata
+          python-version: '3.11'
+
+      - name: Download replica metadata
         uses: actions/download-artifact@v4
         with:
-          pattern: modnet-repro-fingerprint-*
-          path: .test-cache/modnet-cross-run/reports
-      - name: Compare independent hosted runners and bind parity evidence
+          pattern: modnet-final-repro-*
+          path: .test-cache/modnet-final-repro/reports
+
+      - name: Compare independent hosted runners
         run: |
           set -euo pipefail
-          mapfile -t reports < <(find .test-cache/modnet-cross-run/reports -type f -name fingerprint.json -print | sort)
-          test "${#reports[@]}" -eq 3
-          mapfile -t metadata < <(find .test-cache/modnet-cross-run/reports -type f -name runner-metadata.json -print | sort)
-          test "${#metadata[@]}" -eq 3
-          mapfile -t parity_reports < <(find .test-cache/modnet-cross-run/reports -type f -name parity.json -print | sort)
+          mapfile -t fingerprints < <(find .test-cache/modnet-final-repro/reports -type f -name fingerprint.json -print | sort)
+          mapfile -t parity_reports < <(find .test-cache/modnet-final-repro/reports -type f -name parity.json -print | sort)
+          mapfile -t metadata < <(find .test-cache/modnet-final-repro/reports -type f -name runner-metadata.json -print | sort)
+          test "${#fingerprints[@]}" -eq 3
           test "${#parity_reports[@]}" -eq 3
-          python - "${metadata[@]}" <<'PY'
-          import json, sys
-          for path in sys.argv[1:]:
-              report=json.load(open(path,encoding='utf-8'))
-              if report.get('folding') != 'OFF':
-                  raise SystemExit(f'unexpected MODNet diagnostic folding mode in {path}')
-          PY
+          test "${#metadata[@]}" -eq 3
           python scripts/compare-onnx-repro-reports.py \
-            "${reports[@]}" \
-            --output .test-cache/modnet-cross-run/cross-run-comparison.json \
-            > .test-cache/modnet-cross-run/cross-run-comparison.log
-          python - "${parity_reports[@]}" <<'PY'
-          import json, sys
-          from pathlib import Path
+            "${fingerprints[@]}" \
+            --output .test-cache/modnet-final-repro/cross-run-comparison.json \
+            > .test-cache/modnet-final-repro/cross-run-comparison.log
+          python - "${parity_reports[@]}" "${metadata[@]}" <<'PY'
+          import json, os, sys
+          paths = sys.argv[1:]
+          parity_paths = paths[:3]
+          metadata_paths = paths[3:]
+          parity = [json.load(open(path, encoding='utf-8')) for path in parity_paths]
+          metadata = [json.load(open(path, encoding='utf-8')) for path in metadata_paths]
+          comparison = json.load(open('.test-cache/modnet-final-repro/cross-run-comparison.json', encoding='utf-8'))
 
-          parity_reports=[json.load(open(path,encoding='utf-8')) for path in sys.argv[1:]]
-          for report in parity_reports:
-              if report.get('authority') != 'DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY':
-                  raise SystemExit('unexpected MODNet parity report authority')
-              if report.get('productionDeviceApproval') is not False:
-                  raise SystemExit('diagnostic parity report granted production approval')
+          expected_sha = os.environ['MODNET_ONNX_SHA256']
+          expected_size = int(os.environ['MODNET_ONNX_SIZE'])
+          expected_version = os.environ['MODNET_VERSION']
+          expected_reference_sha = os.environ['MODNET_REFERENCE_ONNX_SHA256']
+
+          if comparison['comparison']['classification'] != 'BYTE_IDENTICAL':
+              raise SystemExit('final MODNet exporter is not byte-identical across hosted runners')
+          if comparison['initializerDrift']['changedCount'] != 0:
+              raise SystemExit('final MODNet exporter still has initializer drift')
+          if {item['rawSha256'] for item in comparison['samples']} != {expected_sha}:
+              raise SystemExit('cross-host fingerprint does not match candidate.2 pinned SHA')
+          if {int(item['size']) for item in comparison['samples']} != {expected_size}:
+              raise SystemExit('cross-host fingerprint does not match candidate.2 pinned size')
+
+          for report in parity:
+              if report['version'] != expected_version:
+                  raise SystemExit('parity report version drift')
+              if report['artifact']['sha256'] != expected_sha or int(report['artifact']['size']) != expected_size:
+                  raise SystemExit('parity report is not bound to candidate.2 bytes')
+              if report['upstreamReference']['sha256'] != expected_reference_sha:
+                  raise SystemExit('upstream reference identity drift')
               if float(report['maxAbsError']) > float(report['parityAtol']):
-                  raise SystemExit('MODNet diagnostic PyTorch/ORT parity exceeded release-builder tolerance')
+                  raise SystemExit('PyTorch/ORT parity exceeded tolerance')
               if float(report['upstreamReferenceMaxAbsError']) > float(report['parityAtol']):
-                  raise SystemExit('MODNet diagnostic upstream-reference parity exceeded C5 tolerance')
-          parity_shas={report['artifact']['sha256'] for report in parity_reports}
-          parity_sizes={int(report['artifact']['size']) for report in parity_reports}
-          reference_shas={report['upstreamReference']['sha256'] for report in parity_reports}
-          if len(parity_shas) != 1 or len(parity_sizes) != 1:
-              raise SystemExit('MODNet parity reports do not bind one cross-host candidate identity')
-          if len(reference_shas) != 1:
-              raise SystemExit('MODNet parity reports do not bind one upstream reference identity')
+                  raise SystemExit('official upstream parity exceeded tolerance')
+              if report['productionDeviceApproval'] is not False:
+                  raise SystemExit('reproducibility evidence granted production approval')
 
-          report=json.load(open('.test-cache/modnet-cross-run/cross-run-comparison.json',encoding='utf-8'))
-          comparison=report['comparison']
-          compared_shas={sample['rawSha256'] for sample in report['samples']}
-          compared_sizes={int(sample['size']) for sample in report['samples']}
-          if compared_shas != parity_shas or compared_sizes != parity_sizes:
-              raise SystemExit('MODNet cross-run fingerprints and parity evidence refer to different bytes')
-          if comparison['classification'] != 'BYTE_IDENTICAL':
-              raise SystemExit('folding-off MODNet candidate is not byte-identical across hosted runners')
-          if report['initializerDrift']['changedCount'] != 0:
-              raise SystemExit('folding-off MODNet candidate still has initializer drift')
-          raws=','.join(sample['rawSha256'] for sample in report['samples'])
-          sizes=','.join(str(sample['size']) for sample in report['samples'])
-          max_abs=max(float(item['maxAbsError']) for item in parity_reports)
-          upstream_max_abs=max(float(item['upstreamReferenceMaxAbsError']) for item in parity_reports)
-          atol=min(float(item['parityAtol']) for item in parity_reports)
-          line=(
-              'MODNET_CROSS_RUN_CLASSIFICATION|folding=OFF|'
-              f"classification={comparison['classification']}|"
-              f"size={sizes}|"
-              f"raw={raws}|"
-              f"initializerDriftCount={report['initializerDrift']['changedCount']}|"
-              f"maxAbsError={max_abs:.12g}|upstreamMaxAbsError={upstream_max_abs:.12g}|parityAtol={atol:.12g}"
+          for item in metadata:
+              if item['version'] != expected_version or item['sha256'] != expected_sha or int(item['size']) != expected_size:
+                  raise SystemExit('runner metadata identity drift')
+
+          print(
+              'MODNET_FINAL_CROSS_HOST|'
+              f"version={expected_version}|size={expected_size}|sha256={expected_sha}|"
+              f"reports={len(comparison['samples'])}|initializerDrift=0|classification=BYTE_IDENTICAL"
           )
-          print(line)
-          Path('.test-cache/modnet-cross-run/cross-run-summary.txt').write_text(line+'\n',encoding='utf-8')
           PY
-      - name: Publish cross-run classification
-        if: always()
+
+      - name: Publish cross-host summary
         run: |
           {
-            echo '## MODNet cross-run classification'
+            echo '## MODNet final exporter cross-host proof'
             echo
-            echo '- Export experiment: `CONSTANT_FOLDING_OFF`'
-            echo '- Authority: `DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY`'
-            echo '- Three independent hosted jobs are compared after each proves two-export byte identity plus production-equivalent structure, PyTorch/ORT parity and pinned upstream-reference parity.'
-            echo '- Cross-run fingerprints and parity reports must bind the exact same candidate SHA and size.'
-            echo '- Default release exporter and pinned manifest identity are not changed by this experiment.'
-            echo '- Only fingerprint/parity metadata crosses job boundaries; ONNX model bytes are never uploaded.'
-            echo '- Cross-run agreement plus both parity gates is evidence for a candidate exporter strategy, not production promotion.'
-            if test -f .test-cache/modnet-cross-run/cross-run-summary.txt; then
-              echo
-              echo '```text'
-              cat .test-cache/modnet-cross-run/cross-run-summary.txt
-              echo '```'
-              echo
-              echo '<details><summary>Full metadata-only comparison</summary>'
-              echo
-              echo '```json'
-              cat .test-cache/modnet-cross-run/cross-run-comparison.json
-              echo '```'
-              echo '</details>'
-            else
-              echo
-              echo 'Cross-run comparison unavailable because an earlier diagnostic step failed.'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "- Version: \`${MODNET_VERSION}\`"
+            echo "- Pinned size: \`${MODNET_ONNX_SIZE}\`"
+            echo "- Pinned SHA-256: \`${MODNET_ONNX_SHA256}\`"
+            echo '- Hosted replicas: 3'
+            echo '- Independent exports per replica: 2'
+            echo '- Cross-host classification: BYTE_IDENTICAL'
+            echo '- Initializer drift: 0'
+            echo '- Structural, PyTorch/ORT and official upstream-reference parity: PASS on every replica'
+            echo '- No ONNX bytes uploaded; no signing or production approval authority'
+          } >> "${GITHUB_STEP_SUMMARY}"
