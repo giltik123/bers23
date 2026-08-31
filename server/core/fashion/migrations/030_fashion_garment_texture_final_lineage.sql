@@ -49,8 +49,8 @@ ALTER TABLE canonical_image_artifacts
     producer_parameters IS NULL
     OR CASE
       WHEN jsonb_typeof(producer_parameters) = 'object' THEN
-        jsonb_object_length(producer_parameters) = 4
-        AND producer_parameters ?& ARRAY['schema','textureTransform','featherRadius','colorSpacePolicy']
+        producer_parameters ?& ARRAY['schema','textureTransform','featherRadius','colorSpacePolicy']
+        AND producer_parameters - ARRAY['schema','textureTransform','featherRadius','colorSpacePolicy'] = '{}'::jsonb
         AND producer_parameters->>'schema' = 'BERS_GARMENT_TEXTURE_COMPOSITE_Q16_V1'
         AND producer_parameters->>'colorSpacePolicy' = 'SRGB_GAMMA_ENCODED_RGBA8'
         AND CASE
@@ -61,8 +61,8 @@ ALTER TABLE canonical_image_artifacts
         END
         AND CASE
           WHEN jsonb_typeof(producer_parameters->'textureTransform') = 'object' THEN
-            jsonb_object_length(producer_parameters->'textureTransform') = 6
-            AND (producer_parameters->'textureTransform') ?& ARRAY['scaleXQ16','scaleYQ16','offsetXQ16','offsetYQ16','wrapMode','alphaPolicy']
+            (producer_parameters->'textureTransform') ?& ARRAY['scaleXQ16','scaleYQ16','offsetXQ16','offsetYQ16','wrapMode','alphaPolicy']
+            AND (producer_parameters->'textureTransform') - ARRAY['scaleXQ16','scaleYQ16','offsetXQ16','offsetYQ16','wrapMode','alphaPolicy'] = '{}'::jsonb
             AND producer_parameters#>>'{textureTransform,wrapMode}' = 'CLAMP'
             AND producer_parameters#>>'{textureTransform,alphaPolicy}' = 'PRESERVE_BASE_ALPHA'
             AND CASE
