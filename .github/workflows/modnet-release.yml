@@ -7,18 +7,18 @@ permissions:
   contents: write
 
 concurrency:
-  group: modnet-photographic-portrait-matting-v1.0.0-candidate.1-release
+  group: modnet-photographic-portrait-matting-v1.0.0-candidate.2-release
   cancel-in-progress: false
 
 env:
   MODEL_ID: modnet-photographic-portrait-matting
-  VERSION: 1.0.0-candidate.1
-  RELEASE_TAG: modnet-photographic-portrait-matting-v1.0.0-candidate.1
+  VERSION: 1.0.0-candidate.2
+  RELEASE_TAG: modnet-photographic-portrait-matting-v1.0.0-candidate.2
   UPSTREAM_REVISION: 28165a451e4610c9d77cfdf925a94610bb2810fb
   CHECKPOINT_SHA256: 7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8
   CHECKPOINT_SIZE: '26255603'
-  ONNX_SHA256: 18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919
-  ONNX_SIZE: '25961178'
+  ONNX_SHA256: 223bdc36ba84f9728ab4a94a7985128161514019d8388c3e827402c15072c654
+  ONNX_SIZE: '26236047'
   VERIFICATION_KEY_ID: bers-portrait-matting-release-2026-08
   PACK_DIR: ${{ github.workspace }}/.release-pack
 
@@ -89,6 +89,16 @@ jobs:
             --report "${PACK_DIR}/build-report.json"
           test "$(stat -c%s "${PACK_DIR}/modnet-photographic-portrait-matting.onnx")" = "${ONNX_SIZE}"
           test "$(sha256sum "${PACK_DIR}/modnet-photographic-portrait-matting.onnx" | cut -d' ' -f1)" = "${ONNX_SHA256}"
+          python - <<'PY'
+          import json, os
+          report = json.load(open(os.path.join(os.environ['PACK_DIR'], 'build-report.json'), encoding='utf-8'))
+          assert report['version'] == os.environ['VERSION']
+          assert report['artifact']['size'] == int(os.environ['ONNX_SIZE'])
+          assert report['artifact']['sha256'] == os.environ['ONNX_SHA256']
+          assert report['artifact']['constantFolding'] is False
+          assert report['artifact']['crossProcessReproducible'] is True
+          assert report['environment']['constantFolding'] == 'DISABLED'
+          PY
 
       - name: Derive public key, sign artifact and reject one-byte tamper
         env:
@@ -127,7 +137,10 @@ jobs:
           import json, os, sys
           manifest = json.load(open(sys.argv[1], encoding='utf-8'))
           assert manifest['status'] == 'CANDIDATE'
+          assert manifest['version'] == os.environ['VERSION']
           assert manifest['upstream']['checkpoint']['sha256'] == os.environ['CHECKPOINT_SHA256']
+          assert manifest['bersExport']['constantFolding'] is False
+          assert manifest['bersExport']['onnxSize'] == int(os.environ['ONNX_SIZE'])
           assert manifest['bersExport']['onnxSha256'] == os.environ['ONNX_SHA256']
           base = f"https://github.com/giltik123/bers23/releases/download/{os.environ['RELEASE_TAG']}"
           manifest['artifactState'] = 'SIGNED_RELEASE'
@@ -242,9 +255,11 @@ jobs:
             echo '## MODNet portrait-matting CANDIDATE release'
             echo
             echo '- Status: CANDIDATE (not production approved)'
+            echo "- Version: \`${VERSION}\`"
             echo "- Upstream revision: \`${UPSTREAM_REVISION}\`"
             echo "- Checkpoint SHA-256: \`${CHECKPOINT_SHA256}\`"
             echo "- Reproduced ONNX SHA-256: \`${ONNX_SHA256}\`"
+            echo '- Constant folding: DISABLED'
             echo '- Checkpoint verified before deserialization: PASS'
             echo '- Reproducible ONNX + PyTorch/ORT parity: PASS'
             echo '- Detached model/manifest signatures: PASS; one-byte tamper rejected'
