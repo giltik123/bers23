@@ -26,6 +26,8 @@ import {
  * pixel/lineage law can be inspected without granting production capability.
  * This module is plain JavaScript on purpose: the shared registry is consumed
  * both through compiled bundles and through Node direct-source acceptance paths.
+ *
+ * @type {import('./DeterministicToolRegistry.ts').DeterministicToolDefinition}
  */
 export const GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION_DATA = Object.freeze({
   capability: GARMENT_TEXTURE_COMPOSITE_CAPABILITY,
