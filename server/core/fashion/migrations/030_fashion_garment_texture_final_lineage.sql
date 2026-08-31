@@ -163,7 +163,7 @@ CREATE INDEX canonical_image_artifacts_garment_warp_layer_idx
 CREATE OR REPLACE FUNCTION canonical_assert_fashion_texture_final_insert()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF NEW.producer_operation <> 'GARMENT_TEXTURE_COMPOSITE' THEN
+  IF NEW.producer_operation IS DISTINCT FROM 'GARMENT_TEXTURE_COMPOSITE' THEN
     RETURN NEW;
   END IF;
 
