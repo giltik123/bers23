@@ -276,6 +276,8 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
         orthogonalTransformInputDelivery,
         garmentMeshWarp: garmentMeshWarp.execution,
         garmentMeshWarpInputDelivery: garmentMeshWarp.inputDelivery,
+        garmentTextureComposite: garmentMeshWarp.textureComposite.execution,
+        garmentTextureCompositeInputDelivery: garmentMeshWarp.textureComposite.inputDelivery,
         superResolution: localSuperResolution,
         inputDelivery: localInputDelivery,
         composite: localComposite,
