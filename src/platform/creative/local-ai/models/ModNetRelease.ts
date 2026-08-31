@@ -1,13 +1,13 @@
 import manifest from './portrait-matting.manifest.json' with { type: 'json' };
 
 export const MODNET_MODEL_ID = 'modnet-photographic-portrait-matting' as const;
-export const MODNET_VERSION = '1.0.0-candidate.1' as const;
+export const MODNET_VERSION = '1.0.0-candidate.2' as const;
 export const MODNET_UPSTREAM_REVISION = '28165a451e4610c9d77cfdf925a94610bb2810fb' as const;
 export const MODNET_CHECKPOINT_NAME = 'modnet_photographic_portrait_matting.ckpt' as const;
 export const MODNET_CHECKPOINT_SIZE = 26_255_603 as const;
 export const MODNET_CHECKPOINT_SHA256 = '7c22235f0925deba15d4d63e53afcb654c47055bbcd98f56e393ab2584007ed8' as const;
-export const MODNET_ONNX_SIZE = 25_961_178 as const;
-export const MODNET_ONNX_SHA256 = '18d30ce06d8344549e09b02d14e7c1a8d5136c6ecd4c181d05bcd04abb884919' as const;
+export const MODNET_ONNX_SIZE = 26_236_047 as const;
+export const MODNET_ONNX_SHA256 = '223bdc36ba84f9728ab4a94a7985128161514019d8388c3e827402c15072c654' as const;
 
 /**
  * Release-envelope predicate only. It cannot authorize install, READY fleet state or Core execution.
@@ -31,6 +31,7 @@ export function isExecutableModNetRelease(value: unknown): boolean {
 
   const bersExport = objectRecord(release.bersExport);
   if (!bersExport || bersExport.state !== 'PINNED') return false;
+  if (bersExport.constantFolding !== false) return false;
   if (bersExport.onnxSize !== MODNET_ONNX_SIZE || bersExport.onnxSha256 !== MODNET_ONNX_SHA256) return false;
 
   const artifacts = objectRecord(release.artifacts);
