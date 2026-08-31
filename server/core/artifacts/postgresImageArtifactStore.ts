@@ -109,11 +109,20 @@ export class PostgresImageArtifactStore {
     const bytes = await sharp(image.data, { raw: { width: image.width, height: image.height, channels: 4 } }).png({ compressionLevel: 9 }).toBuffer();
     const storageId = this.nextId();
     const normalizedLineage = lineage ? normalizeLineage(lineage) : undefined;
-    const result = normalizedLineage
+
+    // Keep generic deterministic FINAL persistence composable with the accepted
+    // artifact-only migrations. Fashion migration 030 is intentionally later
+    // than immutable warp-layer migration 029, so requiring Fashion columns for
+    // CROP/RESIZE/etc. would make every generic Project authority depend on the
+    // Fashion schema. Two exact static INSERT shapes avoid both dynamic SQL and
+    // that backwards dependency: only GARMENT_TEXTURE_COMPOSITE can reference
+    // Fashion-specific columns, and therefore it still fails closed if 030 was
+    // not applied.
+    const result = normalizedLineage?.producerOperation === 'GARMENT_TEXTURE_COMPOSITE'
       ? await this.pool.query(`INSERT INTO canonical_image_artifacts
           (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes,
            source_image_storage_id,mask_storage_id,producer_operation,garment_warp_layer_id,garment_warp_layer_sha256,producer_parameters,producer_parameters_sha256)
-          VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,$10,$11,$12,$13,$14,$15,$16)
+          VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,$10,NULL,$11,$12,$13,$14,$15)
           ON CONFLICT (tenant_id,user_id,project_id,execution_id)
           WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
           DO UPDATE SET execution_id=EXCLUDED.execution_id
@@ -121,20 +130,34 @@ export class PostgresImageArtifactStore {
             storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId,
             image.width, image.height, bytes,
             normalizedLineage.sourceImageStorageId,
-            normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' ? normalizedLineage.maskStorageId : null,
             normalizedLineage.producerOperation,
-            normalizedLineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? normalizedLineage.garmentWarpLayerId : null,
-            normalizedLineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? normalizedLineage.garmentWarpLayerSha256 : null,
-            normalizedLineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? normalizedLineage.producerParameters : null,
-            normalizedLineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? normalizedLineage.producerParametersSha256 : null,
+            normalizedLineage.garmentWarpLayerId,
+            normalizedLineage.garmentWarpLayerSha256,
+            normalizedLineage.producerParameters,
+            normalizedLineage.producerParametersSha256,
           ])
-      : await this.pool.query(`INSERT INTO canonical_image_artifacts
-          (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes)
-          VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9)
-          ON CONFLICT (tenant_id,user_id,project_id,execution_id)
-          WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
-          DO UPDATE SET execution_id=EXCLUDED.execution_id
-          RETURNING *`, [storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId, image.width, image.height, bytes]);
+      : normalizedLineage
+        ? await this.pool.query(`INSERT INTO canonical_image_artifacts
+            (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes,
+             source_image_storage_id,mask_storage_id,producer_operation)
+            VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,$10,$11,$12)
+            ON CONFLICT (tenant_id,user_id,project_id,execution_id)
+            WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
+            DO UPDATE SET execution_id=EXCLUDED.execution_id
+            RETURNING *`, [
+              storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId,
+              image.width, image.height, bytes,
+              normalizedLineage.sourceImageStorageId,
+              normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' ? normalizedLineage.maskStorageId : null,
+              normalizedLineage.producerOperation,
+            ])
+        : await this.pool.query(`INSERT INTO canonical_image_artifacts
+            (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes)
+            VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9)
+            ON CONFLICT (tenant_id,user_id,project_id,execution_id)
+            WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
+            DO UPDATE SET execution_id=EXCLUDED.execution_id
+            RETURNING *`, [storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId, image.width, image.height, bytes]);
     const row = result.rows[0];
     if (!row) throw new Error('Canonical FINAL persistence failed');
     if (normalizedLineage) assertExactLineagedReplay(row, scope, executionId, operationId, image.width, image.height, bytes, normalizedLineage);
