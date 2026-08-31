@@ -32,7 +32,7 @@ jobs:
           npm run typecheck
           npm run server:typecheck
           npm run server:build
-      - name: Bundle transitive evidence, delivery, browser and submission acceptance
+      - name: Bundle transitive evidence, delivery, browser, submission and dormant production admission acceptance
         run: |
           mkdir -p .test-cache/fashion-f4b5b-authority
           npx esbuild tests/garment-texture-composite-evidence-authority.test.ts \
@@ -51,6 +51,10 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-f4b5b-authority/submission.mjs \
             --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-texture-composite-production-admission.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b5b-authority/production-admission.mjs \
+            --external:node:* --external:pg --external:sharp
       - name: Prove immutable F4b.4 evidence is transitively revalidated before continuation
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/evidence.mjs
       - name: Prove BERSGTC1 envelope and delivery fail closed on scope, expiry and lineage drift
@@ -59,6 +63,8 @@ jobs:
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/browser.mjs
       - name: Prove Core recompute, verification-before-persist, claim release and replay
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/submission.mjs
+      - name: Prove dormant production prepare is closed, zero-cloud and lineage-exact
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/production-admission.mjs
       - name: Prove browser dependency direction and production authority remain closed
         run: |
           grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
