@@ -1,0 +1,53 @@
+name: Fashion F4b.6c.2c manual body-anchor acquisition transport
+
+on:
+  pull_request:
+    branches:
+      - main
+      - fashion-body-anchor-sequence-f4b6c2a
+  workflow_dispatch:
+
+jobs:
+  manual-body-anchor-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core acquisition contract
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/031_project_body_anchor_acquisition_sequence.sql
+      - name: Bundle service HTTP and persistence-foundation tests
+        run: |
+          mkdir -p .test-cache/fashion-manual-body-anchor-http
+          npx esbuild tests/fashion-manual-body-anchor-http-f4b6c2c.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-body-anchor-http/http.test.mjs \
+            --external:node:*
+      - name: Prove server-resolved source fixed provenance redaction and CSRF boundary
+        run: node --test .test-cache/fashion-manual-body-anchor-http/http.test.mjs
+      - name: Prove staged acquisition has no parallel persistence provider or execution authority
+        run: |
+          grep -q "resolveStoredImageEvidence" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
+          grep -q "createForExpectedImage" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
+          grep -q "MANUAL_BODY_ANCHOR_PRODUCER_ID = 'bers.manual-body-anchors'" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
+          grep -q "assertBrowserMutationAllowed" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -q "forbidden_client_authority" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          ! grep -E "from 'pg'|providers|Billing|FAL_KEY|FASHN|tryonEngine" \
+            server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts \
+            server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          ! grep -q "manualProjectBodyAnchorHttpAdapter" server/index.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
