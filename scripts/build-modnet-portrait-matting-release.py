@@ -111,7 +111,7 @@ def load_model(source: Path, checkpoint: Path, manifest: dict[str, Any]) -> torc
     return wrapped.module
 
 
-def export_once(model: torch.nn.Module, path: Path) -> None:
+def export_once(model: torch.nn.Module, path: Path, *, do_constant_folding: bool) -> None:
     torch.manual_seed(6425)
     dummy = torch.linspace(-1.0, 1.0, steps=1 * 3 * 128 * 160, dtype=torch.float32).reshape(1, 3, 128, 160)
     with torch.inference_mode():
@@ -121,7 +121,7 @@ def export_once(model: torch.nn.Module, path: Path) -> None:
             path,
             export_params=True,
             opset_version=OPSET,
-            do_constant_folding=True,
+            do_constant_folding=do_constant_folding,
             input_names=["input"],
             output_names=["output"],
             dynamic_axes={
@@ -217,6 +217,11 @@ def require_pinned_export_identity(manifest: dict[str, Any], path: Path) -> tupl
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--single-export", action="store_true")
+    parser.add_argument(
+        "--disable-constant-folding",
+        action="store_true",
+        help="Diagnostic-only single-export mode: disable torch.onnx constant folding without changing the default release export strategy.",
+    )
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -233,9 +238,11 @@ def single_export(args: argparse.Namespace) -> None:
     manifest = load_manifest(args.manifest)
     model = load_model(args.source, args.checkpoint, manifest)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    export_once(model, args.output)
+    do_constant_folding = not args.disable_constant_folding
+    export_once(model, args.output, do_constant_folding=do_constant_folding)
     print(
         f"MODNET CHILD EXPORT: seed={EXPORT_PYTHON_HASH_SEED} "
+        f"constantFolding={'ON' if do_constant_folding else 'OFF'} "
         f"size={args.output.stat().st_size} sha256={sha256(args.output)}"
     )
 
@@ -245,6 +252,8 @@ def main() -> None:
     if args.single_export:
         single_export(args)
         return
+    if args.disable_constant_folding:
+        raise RuntimeError("--disable-constant-folding is diagnostic-only and requires --single-export")
     if args.report is None:
         raise RuntimeError("--report is required for the parent MODNet build")
     if git(args.source, "rev-parse", "HEAD") != UPSTREAM_REVISION:
