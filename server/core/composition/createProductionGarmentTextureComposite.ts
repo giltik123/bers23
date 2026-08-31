@@ -5,11 +5,11 @@ import type { PostgresGarmentWarpLayerStore } from '../fashion/postgresGarmentWa
 import type { PostgresProjectBodyAnchorStore } from '../fashion/postgresProjectBodyAnchorStore.ts';
 import { GarmentTextureCompositeInputDeliveryService } from '../localExecution/GarmentTextureCompositeInputDeliveryService.ts';
 import { LocalGarmentTextureCompositeExecutionService } from '../localExecution/LocalGarmentTextureCompositeExecutionService.ts';
-import type { LocalExecutionTicketAuthority } from '../localExecution/LocalExecutionTicketAuthority.ts';
 import type { LocalExecutionLedgerV2 } from '../localExecution/LocalExecutionLedger.ts';
 import type { ManagedGarmentLocalExecutionInputAuthority } from '../localExecution/ManagedGarmentLocalExecutionInputAuthority.ts';
 import type { PostgresLocalExecutionUploadStore } from '../localExecution/PostgresLocalExecutionUploadStore.ts';
 import { GarmentTextureCompositeSubmissionAuthority } from '../localExecution/GarmentTextureCompositeSubmissionAuthority.ts';
+import type { LocalExecutionTicketV2IssuerPort } from '../../../src/platform/creative/canonical/localExecution.ts';
 import { verifyGarmentTextureCompositeFinalArtifact } from '../providers/garmentTextureCompositeWorkflowVerifier.ts';
 import { productionGarmentTextureCompositePolicy } from '../providers/productionGarmentTextureCompositePolicy.ts';
 
@@ -22,7 +22,7 @@ export type ProductionGarmentTextureCompositeSharedFashionAuthority = Readonly<{
 export type ProductionGarmentTextureCompositeCompositionInput = Readonly<{
   artifacts: ArtifactAuthority;
   fashion: ProductionGarmentTextureCompositeSharedFashionAuthority;
-  tickets: LocalExecutionTicketAuthority;
+  tickets: LocalExecutionTicketV2IssuerPort;
   admission: LocalExecutionLedgerV2;
   uploads: PostgresLocalExecutionUploadStore;
   maxUploadBytes: number;
@@ -31,14 +31,12 @@ export type ProductionGarmentTextureCompositeCompositionInput = Readonly<{
 }>;
 
 /**
- * Dormant production composition root for deterministic F4b.5b texture composition.
+ * Production composition root for deterministic F4b.5b texture composition.
  *
  * The root reuses the exact F4b.4 Project/Garment/body-anchor/layer authorities;
- * it never constructs a second Fashion store graph. Construction alone grants no
- * production execution authority: the injected production policy remains guarded
- * by GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION and the independent production
- * route/target/capability tables. HTTP registration is intentionally outside this
- * factory so a partially wired composition still cannot become browser reachable.
+ * it never constructs a second Fashion store graph. Construction alone is still
+ * insufficient for browser reachability: server registration and the independent
+ * production route/target/capability/executor gates remain separate boundaries.
  */
 export function createProductionGarmentTextureComposite(input: ProductionGarmentTextureCompositeCompositionInput) {
   const evidence = new GarmentTextureCompositeEvidenceAuthority({

@@ -20,6 +20,7 @@ import { GarmentMeshWarpManagedInputAuthority } from '../localExecution/GarmentM
 import { GarmentMeshWarpInputDeliveryService } from '../localExecution/GarmentMeshWarpInputDeliveryService.ts';
 import { LocalGarmentMeshWarpExecutionService, type LocalGarmentMeshWarpResourceLimits } from '../localExecution/LocalGarmentMeshWarpExecutionService.ts';
 import type { PostgresLocalExecutionUploadStore } from '../localExecution/PostgresLocalExecutionUploadStore.ts';
+import { createProductionGarmentTextureComposite } from './createProductionGarmentTextureComposite.ts';
 
 export type ProductionGarmentMeshWarpCompositionInput = Readonly<{
   nodeEnv: string;
@@ -33,12 +34,11 @@ export type ProductionGarmentMeshWarpCompositionInput = Readonly<{
 }>;
 
 /**
- * One production composition root for F4b.4 authority.
+ * One production composition root for the shared F4b geometry authority.
  *
- * The factory is intentionally policy-neutral: it does not add the capability to
- * production route/target/executor allowlists and cannot flip an admission bit.
- * F4b.5b.1 only extends durable schema readiness after the already-admitted warp
- * layer; it still does not wire garment-texture-composite execution.
+ * F4b.4 keeps its capability-scoped managed-input wrapper. F4b.5b is composed
+ * from the same underlying Managed Garment, body-anchor and immutable-layer
+ * instances, so no second Fashion trust graph can drift from the warp authority.
  */
 export async function createProductionGarmentMeshWarp(input: ProductionGarmentMeshWarpCompositionInput) {
   await ensureFashionWarpSchemas(input.pool, input.nodeEnv);
@@ -73,6 +73,18 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     limits,
     now: input.now,
   });
+  const tickets = input.canonical.localExecutionV2;
+  if (!tickets) throw new Error('Production Fashion texture composition requires the Core v2 local ticket issuer');
+  const textureComposite = createProductionGarmentTextureComposite({
+    artifacts: input.artifacts,
+    fashion: Object.freeze({ genericManagedInputs, bodyAnchors, layers }),
+    tickets,
+    admission: input.admission,
+    uploads: input.uploads,
+    maxUploadBytes: input.limits.maxUploadBytes,
+    issueFinalId: (storageId, scope) => input.artifacts.external.issueStoredFinal(storageId, scope),
+    now: input.now,
+  });
   return Object.freeze({
     execution,
     inputDelivery,
@@ -83,6 +95,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     representations,
     bodyAnchors,
     layers,
+    textureComposite,
   });
 }
 
