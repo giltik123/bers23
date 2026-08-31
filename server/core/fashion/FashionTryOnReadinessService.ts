@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { StoredProjectImageEvidence } from '../artifacts/artifactAuthority.ts';
+import type { ArtifactAuthority, StoredProjectImageEvidence } from '../artifacts/artifactAuthority.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import type { GarmentDestinationMesh } from './bodyAnchorGeometry.ts';
 import {
@@ -12,7 +12,6 @@ import type {
   PostgresGarmentRepresentationStore,
 } from './postgresGarmentRepresentationStore.ts';
 import type { PostgresProjectBodyAnchorStore } from './postgresProjectBodyAnchorStore.ts';
-import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SUPPORTED_GROUPS = new Set<GarmentCategoryGroup>(['tops', 'bottoms', 'dresses', 'footwear']);
@@ -31,6 +30,7 @@ export const FASHION_TRYON_READINESS_STATUSES = Object.freeze([
 ] as const);
 
 export type FashionTryOnReadinessStatus = (typeof FASHION_TRYON_READINESS_STATUSES)[number];
+export type FashionTryOnReadinessFailureStatus = Exclude<FashionTryOnReadinessStatus, 'READY'>;
 export type SupportedFashionGarmentGroup = Extract<GarmentCategoryGroup, 'tops' | 'bottoms' | 'dresses' | 'footwear'>;
 
 export type FashionTryOnReadinessCommand = Readonly<{
@@ -39,13 +39,23 @@ export type FashionTryOnReadinessCommand = Readonly<{
   garmentId: string;
 }>;
 
-export type FashionTryOnReadiness = Readonly<{
-  status: FashionTryOnReadinessStatus;
+export type FashionTryOnReadinessFailure = Readonly<{
+  status: FashionTryOnReadinessFailureStatus;
   projectId: string;
   sourceArtifactId: string;
   garmentId: string;
   categoryGroup?: GarmentCategoryGroup;
 }>;
+
+export type FashionTryOnReadiness =
+  | Readonly<{
+      status: 'READY';
+      projectId: string;
+      sourceArtifactId: string;
+      garmentId: string;
+      categoryGroup: SupportedFashionGarmentGroup;
+    }>
+  | FashionTryOnReadinessFailure;
 
 export type ResolvedFashionTryOnEvidence = Readonly<{
   status: 'READY';
@@ -59,7 +69,7 @@ export type ResolvedFashionTryOnEvidence = Readonly<{
   destinationMesh: GarmentDestinationMesh;
 }>;
 
-export type FashionTryOnReadinessResolution = ResolvedFashionTryOnEvidence | FashionTryOnReadiness;
+export type FashionTryOnReadinessResolution = ResolvedFashionTryOnEvidence | FashionTryOnReadinessFailure;
 
 type ArtifactReader = Pick<ArtifactAuthority, 'resolveStoredImageEvidence'>;
 type WardrobeReader = Pick<PostgresGarmentWardrobeStore, 'get'>;
@@ -92,12 +102,13 @@ export class FashionTryOnReadinessService {
 
   async check(command: FashionTryOnReadinessCommand, auth: AuthenticatedScope): Promise<FashionTryOnReadiness> {
     const resolution = await this.resolve(command, auth);
+    if (resolution.status !== 'READY') return resolution;
     return Object.freeze({
-      status: resolution.status,
+      status: 'READY',
       projectId: resolution.projectId,
       sourceArtifactId: resolution.sourceArtifactId,
       garmentId: resolution.garmentId,
-      ...('categoryGroup' in resolution && resolution.categoryGroup ? { categoryGroup: resolution.categoryGroup } : {}),
+      categoryGroup: resolution.categoryGroup,
     });
   }
 
@@ -201,7 +212,7 @@ async function loadAnchorCandidates(
   })));
 }
 
-function mapEvidenceFailure(error: unknown): FashionTryOnReadinessStatus {
+function mapEvidenceFailure(error: unknown): FashionTryOnReadinessFailureStatus {
   const code = typeof error === 'object' && error !== null && typeof (error as { code?: unknown }).code === 'string'
     ? (error as { code: string }).code
     : '';
@@ -217,9 +228,9 @@ function mapEvidenceFailure(error: unknown): FashionTryOnReadinessStatus {
 
 function failure(
   command: FashionTryOnReadinessCommand,
-  status: Exclude<FashionTryOnReadinessStatus, 'READY'>,
+  status: FashionTryOnReadinessFailureStatus,
   categoryGroup?: GarmentCategoryGroup,
-): FashionTryOnReadiness {
+): FashionTryOnReadinessFailure {
   return Object.freeze({
     status,
     projectId: command.projectId,
