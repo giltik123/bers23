@@ -24,7 +24,7 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Typecheck browser and Core transport contract
+      - name: Typecheck browser and Core production transport
         run: |
           npm run typecheck
           npm run server:typecheck
@@ -46,11 +46,18 @@ jobs:
             --external:node:*
       - name: Prove contour admission replay redaction and browser mutation protections
         run: node --test --test-concurrency=1 .test-cache/fashion-manual-parametric-http/*.test.mjs
-      - name: Prove staged HTTP has no evidence provider or production execution authority
+      - name: Prove one production representation graph and no provider or Try-On execution authority
         run: |
           grep -q "input.admission.admit" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           grep -q "assertBrowserMutationAllowed" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           grep -q "forbidden_client_authority" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           ! grep -E "Postgres|providers|Billing|FAL_KEY|FASHN|tryonEngine" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
-          ! grep -q "manualParametricGarmentAdmissionHttpAdapter" server/index.ts
+          grep -q "ManualParametricGarmentAdmissionService" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "new ManualParametricGarmentAdmissionService({ garments, representations })" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "Object.defineProperty(execution, 'manualParametricAdmission'" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "writable: false" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "production.localExecution.garmentMeshWarp.manualParametricAdmission" server/index.ts
+          grep -q "manualParametricAdmissionAdapter" server/index.ts
+          grep -q "parametric-representation" server/index.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -q "manualParametricAdmission" src/lib/tryon/tryonEngine.js
