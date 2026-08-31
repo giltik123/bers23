@@ -15,6 +15,10 @@ export type StoredProjectImageEvidence = Readonly<{
   sha256: string;
 }>;
 
+export type ResolvedStoredProjectImage = StoredProjectImageEvidence & Readonly<{
+  bytes: Uint8Array;
+}>;
+
 /** One authorization boundary for signed external originals and durable stored masks. */
 export class ArtifactAuthority {
   readonly external: SignedArtifactAuthority; readonly masks: PostgresMaskArtifactStore; readonly images: PostgresImageArtifactStore;
@@ -33,15 +37,17 @@ export class ArtifactAuthority {
   }
 
   /**
-   * Resolve one durable Project IMAGE identity from its opaque signed ID.
-   * External URL references are deliberately rejected: F4b body-anchor and warp
-   * lineage must be bound to canonical stored ORIGINAL/FINAL bytes, not a remote
-   * object whose durable storage identity Core cannot prove.
+   * Resolve one durable Project IMAGE and return the exact canonical PNG bytes.
+   *
+   * External URL references are deliberately rejected. F4b geometry and texture
+   * recomputation must consume the same stored ORIGINAL/FINAL bytes whose signed
+   * Artifact ID was authorized by Core. A fresh byte copy prevents callers from
+   * aliasing the persistence store while preserving one signed-ID authority.
    */
-  async resolveStoredImageEvidence(
+  async resolveStoredImage(
     scope: AuthenticatedScope & { projectId: string },
     artifactId: string,
-  ): Promise<StoredProjectImageEvidence> {
+  ): Promise<ResolvedStoredProjectImage> {
     let storageId: string;
     let expectedRole: StoredProjectImageEvidence['role'];
     let expectedLifecycle: StoredProjectImageEvidence['lifecycle'];
@@ -71,6 +77,7 @@ export class ArtifactAuthority {
       || stored.height < 1
       || stored.bytes.byteLength < 1
     ) throw new Error('Canonical stored Project IMAGE evidence is outside the admitted contract');
+    const bytes = Uint8Array.from(stored.bytes);
     return Object.freeze({
       artifactId,
       projectId: scope.projectId,
@@ -79,7 +86,26 @@ export class ArtifactAuthority {
       lifecycle: expectedLifecycle,
       width: stored.width,
       height: stored.height,
-      sha256: createHash('sha256').update(stored.bytes).digest('hex'),
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      bytes,
+    });
+  }
+
+  /** Metadata-only compatibility view over the exact same stored-image authority. */
+  async resolveStoredImageEvidence(
+    scope: AuthenticatedScope & { projectId: string },
+    artifactId: string,
+  ): Promise<StoredProjectImageEvidence> {
+    const resolved = await this.resolveStoredImage(scope, artifactId);
+    return Object.freeze({
+      artifactId: resolved.artifactId,
+      projectId: resolved.projectId,
+      storageId: resolved.storageId,
+      role: resolved.role,
+      lifecycle: resolved.lifecycle,
+      width: resolved.width,
+      height: resolved.height,
+      sha256: resolved.sha256,
     });
   }
 }

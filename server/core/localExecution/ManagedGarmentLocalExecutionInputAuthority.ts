@@ -31,12 +31,28 @@ export type RevalidatedManagedGarmentInput = Readonly<{
   bytes: Uint8Array;
 }>;
 
+export type ResolvedManagedGarmentViewInput = Readonly<{
+  binding: LocalExecutionManagedGarmentViewInputBinding;
+  bytes: Uint8Array;
+}>;
+
+export type ResolvedManagedGarmentParametricRepresentationInput = Readonly<{
+  binding: LocalExecutionManagedGarmentParametricRepresentationInputBinding;
+  bytes: Uint8Array;
+}>;
+
 /**
  * Core-only bridge between durable local-execution tickets and managed Garment evidence.
  *
  * It does not read Project Artifacts, issue execution capabilities, choose providers, or
  * persist FINAL output. Bindings are minted from current server-owned Garment stores and
  * every consumption reloads the same identity and recomputes SHA-256 from canonical bytes.
+ *
+ * F4b.5b also needs the exact managed bytes before a ticket can be issued so Core can
+ * verify an immutable Fashion continuation. `resolveView` and
+ * `resolveParametricRepresentation` intentionally expose that same audited authority
+ * rather than creating a second Garment reader/hash implementation. Both return fresh
+ * byte copies; callers cannot mutate store-owned buffers through this API.
  */
 export class ManagedGarmentLocalExecutionInputAuthority {
   constructor(private readonly dependencies: ManagedGarmentLocalExecutionInputAuthorityDependencies) {}
@@ -47,6 +63,15 @@ export class ManagedGarmentLocalExecutionInputAuthority {
     viewIdValue: string,
   ): Promise<LocalExecutionManagedGarmentViewInputBinding> {
     return (await this.requireView(scope, garmentIdValue, viewIdValue)).binding;
+  }
+
+  async resolveView(
+    scope: GarmentOwnerScope,
+    garmentIdValue: string,
+    viewIdValue: string,
+  ): Promise<ResolvedManagedGarmentViewInput> {
+    const resolved = await this.requireView(scope, garmentIdValue, viewIdValue);
+    return Object.freeze({ binding: resolved.binding, bytes: Uint8Array.from(resolved.bytes) });
   }
 
   async bindRepresentation(
@@ -62,11 +87,22 @@ export class ManagedGarmentLocalExecutionInputAuthority {
     garmentIdValue: string,
     representationIdValue: string,
   ): Promise<LocalExecutionManagedGarmentParametricRepresentationInputBinding> {
+    return (await this.resolveParametricRepresentation(scope, garmentIdValue, representationIdValue)).binding;
+  }
+
+  async resolveParametricRepresentation(
+    scope: GarmentOwnerScope,
+    garmentIdValue: string,
+    representationIdValue: string,
+  ): Promise<ResolvedManagedGarmentParametricRepresentationInput> {
     const resolved = await this.requireRepresentation(scope, garmentIdValue, representationIdValue);
     if (resolved.binding.tier !== 'PARAMETRIC') {
       throw managedError('managed_garment_input_representation_not_parametric', 'F4b deterministic garment geometry requires a PARAMETRIC representation');
     }
-    return resolved.binding;
+    return Object.freeze({
+      binding: resolved.binding,
+      bytes: Uint8Array.from(resolved.bytes),
+    });
   }
 
   async revalidateTicket(ticket: LocalExecutionTicketV2): Promise<readonly RevalidatedManagedGarmentInput[]> {

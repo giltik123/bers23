@@ -1,0 +1,74 @@
+name: Fashion F4b.5b production texture-composite authority
+
+on:
+  push:
+    branches: [ "fashion-production-texture-composite-f4b5b2" ]
+  pull_request:
+    branches: [ "main", "fashion-garment-texture-final-lineage-f4b5b1-clean" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  texture-composite-authority-foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core authority substrate
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle transitive evidence, delivery, browser and submission acceptance
+        run: |
+          mkdir -p .test-cache/fashion-f4b5b-authority
+          npx esbuild tests/garment-texture-composite-evidence-authority.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b5b-authority/evidence.mjs \
+            --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-texture-composite-input-delivery.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b5b-authority/delivery.mjs \
+            --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-texture-composite-browser-executor.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b5b-authority/browser.mjs \
+            --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-texture-composite-submission-authority.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b5b-authority/submission.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove immutable F4b.4 evidence is transitively revalidated before continuation
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/evidence.mjs
+      - name: Prove BERSGTC1 envelope and delivery fail closed on scope, expiry and lineage drift
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/delivery.mjs
+      - name: Prove browser executes only Core ticket and purpose-bound envelope
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/browser.mjs
+      - name: Prove Core recompute, verification-before-persist, claim release and replay
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/submission.mjs
+      - name: Prove browser dependency direction and production authority remain closed
+        run: |
+          grep -q "PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
+          ! grep -q "server/core" src/platform/creative/canonical/garmentTextureCompositeInputEnvelope.ts
+          ! grep -q "node:crypto" src/platform/creative/deterministic/GarmentTextureCompositeParameters.ts
+          ! grep -R -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' \
+            server/core/localExecution/productionLocalExecutorPolicy.ts \
+            server/core/providers/productionExecutionCapabilities.ts \
+            server/core/providers/productionExecutionRoute.ts \
+            server/core/providers/productionTargetSelection.ts \
+            src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' src/lib/tryon/tryonEngine.js
