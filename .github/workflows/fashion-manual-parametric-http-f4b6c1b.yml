@@ -1,0 +1,56 @@
+name: Fashion F4b.6c.1b manual PARAMETRIC HTTP admission transport
+
+on:
+  pull_request:
+    branches:
+      - main
+      - fashion-manual-parametric-admission-f4b6c1a-staging
+  workflow_dispatch:
+
+jobs:
+  manual-parametric-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core transport contract
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle deterministic producer admission service and HTTP transport tests
+        run: |
+          mkdir -p .test-cache/fashion-manual-parametric-http
+          npx esbuild tests/fashion-manual-parametric-contour-f4b6c1.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-parametric-http/contour.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-manual-parametric-admission-f4b6c1a.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-parametric-http/admission.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-manual-parametric-http-f4b6c1b.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-parametric-http/http.test.mjs \
+            --external:node:*
+      - name: Prove contour admission replay redaction and browser mutation protections
+        run: node --test --test-concurrency=1 .test-cache/fashion-manual-parametric-http/*.test.mjs
+      - name: Prove staged HTTP has no evidence provider or production execution authority
+        run: |
+          grep -q "input.admission.admit" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          grep -q "assertBrowserMutationAllowed" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          grep -q "forbidden_client_authority" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          ! grep -E "Postgres|providers|Billing|FAL_KEY|FASHN|tryonEngine" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          ! grep -q "manualParametricGarmentAdmissionHttpAdapter" server/index.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
