@@ -2,8 +2,9 @@
 """Validate an unpinned MODNet diagnostic ONNX candidate without granting release authority.
 
 This helper deliberately reuses the release builder's source/checkpoint verification, ONNX structural
-validation and PyTorch/ORT parity functions. It never mutates the manifest, never signs or publishes,
-and never treats the candidate as production-approved.
+validation and PyTorch/ORT parity functions, then applies the same pinned upstream-reference parity
+contract as C5 acceptance. It never mutates the manifest, never signs or publishes, and never treats
+the candidate as production-approved.
 """
 from __future__ import annotations
 
@@ -12,6 +13,10 @@ import importlib.util
 import json
 from pathlib import Path
 from types import ModuleType
+
+import numpy as np
+import onnx
+import onnxruntime as ort
 
 
 def load_builder() -> ModuleType:
@@ -29,9 +34,52 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--reference-onnx", type=Path, required=True)
     parser.add_argument("--onnx", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     return parser.parse_args()
+
+
+def upstream_reference_parity(
+    builder: ModuleType,
+    manifest: dict,
+    reference_path: Path,
+    candidate_path: Path,
+) -> list[dict[str, float | int]]:
+    identity = manifest.get("upstream", {}).get("onnx", {}).get("authoritativeReference", {})
+    expected_size = identity.get("size")
+    expected_sha = identity.get("sha256")
+    expected_opset = identity.get("opset")
+    if reference_path.stat().st_size != expected_size:
+        raise RuntimeError("Official MODNet ONNX reference size drift")
+    if builder.sha256(reference_path) != expected_sha:
+        raise RuntimeError("Official MODNet ONNX reference SHA-256 drift")
+
+    reference_model = onnx.load(reference_path, load_external_data=False)
+    onnx.checker.check_model(reference_model, full_check=True)
+    inputs = [value.name for value in reference_model.graph.input]
+    outputs = [value.name for value in reference_model.graph.output]
+    if inputs != ["input"] or outputs != ["output"]:
+        raise RuntimeError(f"Unexpected official MODNet ONNX I/O: {inputs!r} -> {outputs!r}")
+    default_opsets = [int(item.version) for item in reference_model.opset_import if item.domain in ("", "ai.onnx")]
+    if default_opsets != [expected_opset]:
+        raise RuntimeError(f"Unexpected official MODNet reference opset: {default_opsets!r}")
+
+    reference_session = ort.InferenceSession(str(reference_path), providers=["CPUExecutionProvider"])
+    candidate_session = ort.InferenceSession(str(candidate_path), providers=["CPUExecutionProvider"])
+    rng = np.random.default_rng(6425)
+    evidence: list[dict[str, float | int]] = []
+    for height, width in builder.PARITY_SHAPES:
+        values = rng.uniform(-1.0, 1.0, size=(1, 3, height, width)).astype(np.float32)
+        expected = reference_session.run(["output"], {"input": values})[0]
+        actual = candidate_session.run(["output"], {"input": values})[0]
+        if expected.shape != actual.shape:
+            raise RuntimeError(f"Upstream/BERS output shape mismatch: {expected.shape} != {actual.shape}")
+        max_abs = float(np.max(np.abs(expected - actual)))
+        if max_abs > builder.PARITY_ATOL:
+            raise RuntimeError(f"Upstream/BERS output parity failed: {max_abs} > {builder.PARITY_ATOL}")
+        evidence.append({"height": height, "width": width, "maxAbsError": max_abs})
+    return evidence
 
 
 def main() -> None:
@@ -47,6 +95,8 @@ def main() -> None:
     model = builder.load_model(args.source, args.checkpoint, manifest)
     parity = builder.parity(model, args.onnx)
     max_abs = max(float(item["maxAbsError"]) for item in parity)
+    reference_parity = upstream_reference_parity(builder, manifest, args.reference_onnx, args.onnx)
+    reference_max_abs = max(float(item["maxAbsError"]) for item in reference_parity)
 
     report = {
         "schemaVersion": 1,
@@ -59,9 +109,16 @@ def main() -> None:
             "sha256": builder.sha256(args.onnx),
             "matchesPinnedIdentity": False,
         },
+        "upstreamReference": {
+            "size": args.reference_onnx.stat().st_size,
+            "sha256": builder.sha256(args.reference_onnx),
+            "role": "UPSTREAM_REFERENCE_NOT_BERS_RELEASE_AUTHORITY",
+        },
         "graph": graph,
         "parity": parity,
         "maxAbsError": max_abs,
+        "upstreamReferenceParity": reference_parity,
+        "upstreamReferenceMaxAbsError": reference_max_abs,
         "parityAtol": builder.PARITY_ATOL,
         "productionDeviceApproval": False,
     }
@@ -72,6 +129,7 @@ def main() -> None:
         f"sha256={report['artifact']['sha256']}|"
         f"size={report['artifact']['size']}|"
         f"maxAbsError={max_abs:.12g}|"
+        f"upstreamMaxAbsError={reference_max_abs:.12g}|"
         f"atol={builder.PARITY_ATOL}|"
         "authority=DIAGNOSTIC_ONLY_NO_RELEASE_AUTHORITY"
     )
