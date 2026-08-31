@@ -1,0 +1,89 @@
+name: Fashion F4b.5b PostgreSQL texture-composite vertical
+
+on:
+  push:
+    branches: [ "fashion-production-texture-composite-f4b5b2" ]
+  pull_request:
+    branches: [ "main", "fashion-garment-texture-final-lineage-f4b5b1-clean" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  texture-composite-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_f4b5b_service_test
+          POSTGRES_USER: fashion_f4b5b_service_test
+          POSTGRES_PASSWORD: fashion_f4b5b_service_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fashion_f4b5b_service_test -d fashion_f4b5b_service_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_f4b5b_service_test:fashion_f4b5b_service_test@127.0.0.1:5432/fashion_f4b5b_service_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build Core before PostgreSQL proof
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+          test -f server/core/fashion/migrations/029_fashion_garment_warp_layers.sql
+          test -f server/core/fashion/migrations/030_fashion_garment_texture_final_lineage.sql
+      - name: Apply canonical transaction predecessor schema
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Bundle exact PostgreSQL F4b.5b submission vertical
+        run: |
+          runtime=.test-cache/fashion-f4b5b-service-postgres
+          artifact_runtime=.test-cache/artifacts/migrations
+          mkdir -p "$runtime/migrations" "$artifact_runtime"
+          mapfile -t migration_files < <(find server -type f -path '*/migrations/*.sql' -print | sort)
+          test "${#migration_files[@]}" -gt 0
+          duplicates="$(printf '%s\n' "${migration_files[@]}" | xargs -n1 basename | sort | uniq -d)"
+          if [[ -n "$duplicates" ]]; then
+            echo "::error::Cannot stage bundled schema migrations because migration basenames collide:"
+            printf '%s\n' "$duplicates"
+            exit 1
+          fi
+          for source in "${migration_files[@]}"; do
+            name="$(basename "$source")"
+            cp "$source" "$runtime/migrations/$name"
+            cp "$source" "$artifact_runtime/$name"
+          done
+          test -f "$runtime/migrations/029_fashion_garment_warp_layers.sql"
+          test -f "$runtime/migrations/030_fashion_garment_texture_final_lineage.sql"
+          npx esbuild tests/garment-texture-composite-service-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile="$runtime/service.mjs" \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove claim race, immutable rejected COMPOSITE, fresh-ticket correction, exact FINAL lineage and restart replay
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-service-postgres/service.mjs
+      - name: Assert admitted production path remains local-only and Try-On stays unwired
+        run: |
+          grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
+          grep -q "GARMENT_TEXTURE_COMPOSITE_CAPABILITY" server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_CAPABILITY" server/core/providers/productionExecutionCapabilities.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionExecutionRoute.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionTargetSelection.ts
+          ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' server/core/providers/productionProviderSelection.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' src/lib/tryon/tryonEngine.js

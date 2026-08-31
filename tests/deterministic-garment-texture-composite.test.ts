@@ -57,8 +57,8 @@ const fullFrameWarp3x3 = Object.freeze({
   outputHeight: 3,
 });
 
-test('F4b.5a identity and pixel policies remain explicit and NOT_ADMITTED', () => {
-  assert.equal(GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION, 'NOT_ADMITTED');
+test('F4b.5a identity and pixel policies remain explicit after F4b.5b gated admission', () => {
+  assert.equal(GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION, 'ADMITTED');
   assert.equal(GARMENT_TEXTURE_COMPOSITE_WRAP_MODE, 'CLAMP');
   assert.equal(GARMENT_TEXTURE_COMPOSITE_ALPHA_POLICY, 'PRESERVE_BASE_ALPHA');
   assert.equal(GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_SAMPLE_RGB_POLICY, 'PRESERVE_BASE_RGB');

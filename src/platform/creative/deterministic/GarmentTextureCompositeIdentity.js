@@ -1,10 +1,10 @@
 /**
  * Browser/Node-safe immutable identity for the F4b.5 deterministic garment
- * texture/edge/composite substrate.
+ * texture/edge/composite authority.
  *
- * F4b.5a establishes reviewed shared pixel math only. Production execution is
- * deliberately NOT_ADMITTED until the later Core ticket/recompute/persistence
- * slice binds exact Project + Fashion evidence.
+ * F4b.5b production admission is explicit and remains constrained to the exact
+ * deterministic Core-ticket/recompute/persistence vertical. This marker grants
+ * no provider, Billing, cloud fallback or Try-On authority by itself.
  */
 /** @type {'garment-texture-composite'} */
 export const GARMENT_TEXTURE_COMPOSITE_TOOL_ID = 'garment-texture-composite';
@@ -45,4 +45,4 @@ export const GARMENT_TEXTURE_COMPOSITE_TRANSPARENT_OUTPUT_RGB_POLICY = 'ZERO_RGB
 /** @type {'SRGB_GAMMA_ENCODED_RGBA8'} */
 export const GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY = 'SRGB_GAMMA_ENCODED_RGBA8';
 /** @type {'NOT_ADMITTED' | 'ADMITTED'} */
-export const GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION = 'NOT_ADMITTED';
+export const GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION = 'ADMITTED';

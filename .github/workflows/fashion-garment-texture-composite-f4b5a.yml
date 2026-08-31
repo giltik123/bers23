@@ -36,17 +36,18 @@ jobs:
             --external:node:*
       - name: Prove source-view texture topology warp feather source-over vectors and hostile bounds
         run: node --test .test-cache/fashion-garment-texture-composite-f4b5a/*.js
-      - name: Prove topology reuse and no production execution or Try-On authority
+      - name: Prove topology reuse kernel purity gated admission and Try-On isolation
         run: |
           grep -q "garmentMeshWarpRgba8" src/platform/creative/deterministic/GarmentTextureComposite.ts
           grep -q "PRESERVE_BASE_RGB" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
           grep -q "MANHATTAN_4_NEIGHBOR_HALF_PIXEL_LINEAR" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
           grep -q "ZERO_RGB_WHEN_OUTPUT_ALPHA_ZERO" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
-          ! grep -R -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' \
-            server/core/localExecution/productionLocalExecutorPolicy.ts \
-            server/core/providers/productionExecutionCapabilities.ts \
-            server/core/providers/productionExecutionRoute.ts \
-            server/core/providers/productionTargetSelection.ts \
-            src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
+          ! grep -q "server/core" src/platform/creative/deterministic/GarmentTextureComposite.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_CAPABILITY" server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionExecutionCapabilities.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionExecutionRoute.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionTargetSelection.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION" src/platform/creative/deterministic/DeterministicToolRegistry.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
           ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' src/lib/tryon/tryonEngine.js

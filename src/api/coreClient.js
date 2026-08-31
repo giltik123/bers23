@@ -182,6 +182,13 @@ export const coreClient = Object.freeze({
     },
     uploadGarmentMeshWarpImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/garment-mesh-warp/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
     submitGarmentMeshWarp: ({ ticketId, projectId, result }) => request(`/local-execution/garment-mesh-warp/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareGarmentTextureComposite: (payload) => request('/local-execution/garment-texture-composite/prepare', json('POST', payload)),
+    loadGarmentTextureCompositeInput: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/garment-texture-composite/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      return Uint8Array.from(delivered.bytes);
+    },
+    uploadGarmentTextureCompositeImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/garment-texture-composite/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitGarmentTextureComposite: ({ ticketId, projectId, result }) => request(`/local-execution/garment-texture-composite/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
     prepareSuperResolution: (payload) => request('/local-execution/super-resolution/prepare', json('POST', payload)),
     loadSuperResolutionInput: async ({ ticketId, projectId }) => {
       const delivered = await requestBytes(`/local-execution/super-resolution/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
