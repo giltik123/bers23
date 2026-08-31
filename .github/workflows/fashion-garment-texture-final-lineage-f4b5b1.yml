@@ -49,19 +49,18 @@ jobs:
           mkdir -p .test-cache/fashion-f4b5b1-lineage
           npx esbuild tests/fashion-garment-texture-final-lineage-postgres.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
-            --outfile=.test-cache/fashion-f4b5b1-lineage/test.mjs \
+            --outfile=.test-cache/fashion-garment-texture-final-lineage-postgres.test.mjs \
             --external:node:* --external:pg --external:sharp
       - name: Prove exact layer SHA producer parameters replay tamper rejection and Artifact parentage
-        run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b1-lineage/test.mjs
-      - name: Prove F4b.5b.1 grants no execution Try-On provider or Billing authority
+        run: node --test --test-concurrency=1 .test-cache/fashion-garment-texture-final-lineage-postgres.test.mjs
+      - name: Prove lineage layer remains authority-neutral after F4b.5b admission
         run: |
-          grep -q "GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
-          ! grep -R -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' \
-            server/core/localExecution/productionLocalExecutorPolicy.ts \
-            server/core/providers/productionExecutionCapabilities.ts \
-            server/core/providers/productionExecutionRoute.ts \
-            server/core/providers/productionTargetSelection.ts \
-            src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
+          ! grep -R -E 'productionLocalExecutorPolicy|productionExecutionCapabilities|productionExecutionRoute|productionTargetSelection|tryonEngine|Billing|billing' \
+            server/core/fashion/garmentTextureFinalLineage.ts \
+            server/core/fashion/garmentTextureFinalLineageSchema.ts \
+            server/core/fashion/migrations/030_fashion_garment_texture_final_lineage.sql \
+            server/core/artifacts/durableArtifactLineageResolver.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
           ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' src/lib/tryon/tryonEngine.js
       - name: Dump exact lineage catalog on proof failure
