@@ -104,6 +104,9 @@ export const coreClient = Object.freeze({
     result: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/result`),
     cancel: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
   },
+  fashion: {
+    checkTryOnReadiness: (payload) => request('/fashion/try-on/readiness', json('POST', payload)),
+  },
   localExecution: {
     prepareSegmentation: (payload) => request('/local-execution/segment/prepare', json('POST', payload)),
     uploadMask: ({ ticketId, projectId, width, height, alpha }) => request(`/local-execution/${encodeURIComponent(ticketId)}/mask-upload?${new URLSearchParams({ projectId, width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
