@@ -90,11 +90,32 @@ export class DurableArtifactLineageResolver {
 
   private async imageParents(scope: Scope, stored: StoredImage): Promise<readonly string[]> {
     if (stored.role === 'ORIGINAL') {
-      if (stored.sourceImageStorageId || stored.maskStorageId || stored.producerOperation) throw resolverError('durable_lineage_invalid', 'Immutable ORIGINAL cannot carry derived-image lineage');
+      if (
+        stored.sourceImageStorageId || stored.maskStorageId || stored.producerOperation
+        || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256 || stored.producerParameters || stored.producerParametersSha256
+      ) throw resolverError('durable_lineage_invalid', 'Immutable ORIGINAL cannot carry derived-image lineage');
       return Object.freeze([]);
     }
-    if (!stored.sourceImageStorageId && !stored.maskStorageId && !stored.producerOperation) return Object.freeze([]);
-    if (stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId) throw resolverError('durable_lineage_invalid', 'Derived FINAL lineage is incomplete or unsupported');
+    if (
+      !stored.sourceImageStorageId && !stored.maskStorageId && !stored.producerOperation
+      && !stored.garmentWarpLayerId && !stored.garmentWarpLayerSha256 && !stored.producerParameters && !stored.producerParametersSha256
+    ) return Object.freeze([]);
+
+    if (stored.producerOperation === 'GARMENT_TEXTURE_COMPOSITE') {
+      if (
+        !stored.sourceImageStorageId || stored.maskStorageId || !stored.garmentWarpLayerId
+        || !stored.garmentWarpLayerSha256 || !stored.producerParameters || !stored.producerParametersSha256
+      ) throw resolverError('durable_lineage_invalid', 'Fashion texture FINAL lineage is incomplete');
+      const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
+      if (!source) throw resolverError('durable_lineage_unavailable', 'Fashion texture FINAL Project source IMAGE is unavailable');
+      // The immutable Fashion warp layer is execution evidence, not a Project Artifact.
+      // Expose only the canonical Project source through Artifact parentage.
+      return Object.freeze([issueStoredImageId(this.signed, source, scope)]);
+    }
+
+    if (stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId) {
+      throw resolverError('durable_lineage_invalid', 'Derived FINAL lineage is incomplete or unsupported');
+    }
     const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
     const mask = await this.masks.load(stored.maskStorageId, scope);
     if (!source || !mask) throw resolverError('durable_lineage_unavailable', 'Derived FINAL parent row is unavailable');
@@ -125,7 +146,9 @@ async function decodeMaskAlpha(png: Uint8Array, width: number, height: number): 
 function sha256(bytes: Uint8Array): string { return createHash('sha256').update(bytes).digest('hex'); }
 function requireId(value: string): string { const id = value?.trim(); if (!id) throw resolverError('invalid_artifact_id', 'Artifact identity is required'); return id; }
 function requireScope(value: Scope): Scope {
-  const tenantId = value?.tenantId?.trim(); const userId = value?.userId?.trim(); const projectId = value?.projectId?.trim();
+  const tenantId = value?.tenantId?.trim();
+  const userId = value?.userId?.trim();
+  const projectId = value?.projectId?.trim();
   if (!tenantId || !userId || !projectId) throw resolverError('invalid_artifact_scope', 'tenantId, userId and projectId are required');
   return Object.freeze({ tenantId, userId, projectId });
 }

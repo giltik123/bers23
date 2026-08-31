@@ -1,0 +1,86 @@
+name: Fashion F4b.5b.1 canonical texture FINAL lineage
+
+on:
+  pull_request:
+    branches: [ "main", "fashion-garment-texture-composite-kernels-f4b5a" ]
+  workflow_dispatch:
+
+jobs:
+  canonical-fashion-final-lineage:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_f4b5b1_lineage_test
+          POSTGRES_USER: fashion_f4b5b1_lineage_test
+          POSTGRES_PASSWORD: fashion_f4b5b1_lineage_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fashion_f4b5b1_lineage_test -d fashion_f4b5b1_lineage_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_f4b5b1_lineage_test:fashion_f4b5b1_lineage_test@127.0.0.1:5432/fashion_f4b5b1_lineage_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before dependency or database work
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and production Core
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/029_fashion_garment_warp_layers.sql
+          test -f dist-server/migrations/030_fashion_garment_texture_final_lineage.sql
+      - name: Prove aggregate production migration order includes FINAL lineage 018-021 then Fashion 029-030
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Bundle real PostgreSQL Fashion FINAL lineage proof
+        run: |
+          mkdir -p .test-cache/fashion-f4b5b1-lineage
+          npx esbuild tests/fashion-garment-texture-final-lineage-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b5b1-lineage/test.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove exact layer SHA producer parameters replay tamper rejection and Artifact parentage
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b1-lineage/test.mjs
+      - name: Prove F4b.5b.1 grants no execution Try-On provider or Billing authority
+        run: |
+          grep -q "GARMENT_TEXTURE_COMPOSITE_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
+          ! grep -R -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' \
+            server/core/localExecution/productionLocalExecutorPolicy.ts \
+            server/core/providers/productionExecutionCapabilities.ts \
+            server/core/providers/productionExecutionRoute.ts \
+            server/core/providers/productionTargetSelection.ts \
+            src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' src/lib/tryon/tryonEngine.js
+      - name: Dump exact lineage catalog on proof failure
+        if: failure()
+        run: |
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+          try {
+            for (const [name, sql] of Object.entries({
+              columns: `SELECT column_name,udt_name,is_nullable,character_maximum_length,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='canonical_image_artifacts' AND column_name IN ('source_image_storage_id','mask_storage_id','producer_operation','garment_warp_layer_id','garment_warp_layer_sha256','producer_parameters','producer_parameters_sha256') ORDER BY ordinal_position`,
+              constraints: `SELECT c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c WHERE c.conrelid IN (to_regclass('canonical_image_artifacts'),to_regclass('canonical_fashion_garment_warp_layers')) ORDER BY c.conname`,
+              indexes: `SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename IN ('canonical_image_artifacts','canonical_fashion_garment_warp_layers') ORDER BY tablename,indexname`,
+              triggers: `SELECT t.tgname,t.tgtype,t.tgenabled,p.proname,pg_get_triggerdef(t.oid) AS definition FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid=to_regclass('canonical_image_artifacts') AND NOT t.tgisinternal ORDER BY t.tgname`,
+            })) {
+              const result = await pool.query(sql);
+              console.log(`F4B5B1_CATALOG_${name.toUpperCase()}=${JSON.stringify(result.rows)}`);
+            }
+          } finally {
+            await pool.end();
+          }
+          NODE
