@@ -78,7 +78,16 @@ def upstream_reference_parity(
         actual = candidate_session.run(["output"], {"input": values})[0]
         if expected.shape != actual.shape:
             raise RuntimeError(f"Upstream/BERS output shape mismatch: {expected.shape} != {actual.shape}")
-        max_abs = float(np.max(np.abs(expected - actual)))
+        if not np.isfinite(expected).all():
+            raise RuntimeError("Official MODNet reference emitted non-finite output")
+        if not np.isfinite(actual).all():
+            raise RuntimeError("BERS MODNet candidate emitted non-finite output")
+        absolute_error = np.abs(expected - actual)
+        if not np.isfinite(absolute_error).all():
+            raise RuntimeError("Upstream/BERS parity error became non-finite")
+        max_abs = float(np.max(absolute_error))
+        if not np.isfinite(max_abs):
+            raise RuntimeError("Upstream/BERS maximum parity error is non-finite")
         if max_abs > builder.PARITY_ATOL:
             raise RuntimeError(f"Upstream/BERS output parity failed: {max_abs} > {builder.PARITY_ATOL}")
         evidence.append({"height": height, "width": width, "maxAbsError": max_abs})
@@ -97,9 +106,15 @@ def main() -> None:
     graph = builder.validate_graph(args.onnx)
     model = builder.load_model(args.source, args.checkpoint, manifest)
     parity = builder.parity(model, args.onnx)
-    max_abs = max(float(item["maxAbsError"]) for item in parity)
+    parity_errors = [float(item["maxAbsError"]) for item in parity]
+    if not all(np.isfinite(value) for value in parity_errors):
+        raise RuntimeError("MODNet PyTorch/ORT parity evidence contains non-finite error")
+    max_abs = max(parity_errors)
     reference_parity = upstream_reference_parity(builder, manifest, args.reference_onnx, args.onnx)
-    reference_max_abs = max(float(item["maxAbsError"]) for item in reference_parity)
+    reference_errors = [float(item["maxAbsError"]) for item in reference_parity]
+    if not all(np.isfinite(value) for value in reference_errors):
+        raise RuntimeError("MODNet upstream-reference parity evidence contains non-finite error")
+    reference_max_abs = max(reference_errors)
 
     artifact_size = args.onnx.stat().st_size
     artifact_sha = builder.sha256(args.onnx)
