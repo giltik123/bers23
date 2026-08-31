@@ -1,0 +1,48 @@
+name: Fashion F4b.5a deterministic garment texture composite kernels
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deterministic-garment-texture-composite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before dependency work
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Bundle deterministic garment texture composite acceptance
+        run: |
+          mkdir -p .test-cache/fashion-garment-texture-composite-f4b5a
+          npx esbuild \
+            tests/deterministic-garment-texture-composite.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/fashion-garment-texture-composite-f4b5a \
+            --external:node:*
+      - name: Prove Q16 texture mapping feather source-over vectors and hostile bounds
+        run: node --test .test-cache/fashion-garment-texture-composite-f4b5a/*.js
+      - name: Prove F4b.5a grants no production execution or Try-On authority
+        run: |
+          ! grep -R -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' \
+            server/core/localExecution/productionLocalExecutorPolicy.ts \
+            server/core/providers/productionExecutionCapabilities.ts \
+            server/core/providers/productionExecutionRoute.ts \
+            server/core/providers/productionTargetSelection.ts \
+            src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' src/lib/tryon/tryonEngine.js
