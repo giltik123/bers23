@@ -87,7 +87,7 @@ test('F5a.1 empty garment warp support and malformed geometry fail closed', () =
 test('F5a.1 candidate may change supported RGB while parent alpha is immutable globally', () => {
   const width = 7;
   const height = 7;
-  const support = deriveGarmentAppearanceRefinementSupport(warp(width, height, [[3, 3]]), width, height);
+  const warpRgba = warp(width, height, [[3, 3]]);
   const parent = Uint8ClampedArray.from({ length: width * height * 4 }, (_, index) => index % 251);
   const parentBefore = Uint8ClampedArray.from(parent);
 
@@ -95,7 +95,7 @@ test('F5a.1 candidate may change supported RGB while parent alpha is immutable g
   const insideOffset = (3 * width + 3) * 4;
   inside[insideOffset] ^= 0xff;
   inside[insideOffset + 1] ^= 0xff;
-  const accepted = verifyGarmentAppearanceRefinementCandidate(parent, inside, support.mask, width, height);
+  const accepted = verifyGarmentAppearanceRefinementCandidate(parent, inside, warpRgba, width, height);
   assert.equal(accepted.changedPixels, 1);
   assert.deepEqual(parent, parentBefore, 'verification must not mutate deterministic parent bytes');
 
@@ -103,7 +103,7 @@ test('F5a.1 candidate may change supported RGB while parent alpha is immutable g
     const candidate = Uint8ClampedArray.from(parent);
     candidate[pixel * 4 + 3] ^= 0xff;
     assert.throws(
-      () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, support.mask, width, height),
+      () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, warpRgba, width, height),
       /globally protected parent alpha/i,
       'parent alpha must remain immutable both inside and outside support',
     );
@@ -113,37 +113,52 @@ test('F5a.1 candidate may change supported RGB while parent alpha is immutable g
 test('F5a.1 protected outside-support RGB is byte-exact in every color channel', () => {
   const width = 7;
   const height = 7;
-  const support = deriveGarmentAppearanceRefinementSupport(warp(width, height, [[3, 3]]), width, height);
+  const warpRgba = warp(width, height, [[3, 3]]);
   const parent = Uint8ClampedArray.from({ length: width * height * 4 }, (_, index) => index % 251);
   for (let channel = 0; channel < 3; channel += 1) {
     const candidate = Uint8ClampedArray.from(parent);
     candidate[channel] ^= 0xff;
     assert.throws(
-      () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, support.mask, width, height),
+      () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, warpRgba, width, height),
       /protected RGB outside deterministic support/i,
       `outside-support RGB channel ${channel} must remain immutable`,
     );
   }
 });
 
-test('F5a.1 candidate verifier rejects mask and geometry substitution', () => {
-  const width = 5;
-  const height = 5;
+test('F5a.1 verifier re-derives support from immutable warp and ignores any separately delivered mask', () => {
+  const width = 7;
+  const height = 7;
+  const warpRgba = warp(width, height, [[3, 3]]);
+  const delivered = deriveGarmentAppearanceRefinementSupport(warpRgba, width, height);
+  delivered.mask.fill(255); // Simulate a corrupted/over-broad delivered model mask.
+
   const parent = new Uint8ClampedArray(width * height * 4);
   const candidate = Uint8ClampedArray.from(parent);
-  const mask = new Uint8Array(width * height);
-  mask.fill(255);
-  mask[0] = 1;
+  candidate[0] = 255; // Pixel (0,0) is outside the true radius-2 support.
   assert.throws(
-    () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, mask, width, height),
-    /only 0 or 255/i,
+    () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, warpRgba, width, height),
+    /protected RGB outside deterministic support/i,
+    'verification authority must be the F4 warp, never the delivered support mask',
   );
+});
+
+test('F5a.1 candidate verifier rejects warp and geometry substitution', () => {
+  const width = 5;
+  const height = 5;
+  const warpRgba = warp(width, height, [[2, 2]]);
+  const parent = new Uint8ClampedArray(width * height * 4);
+  const candidate = Uint8ClampedArray.from(parent);
   assert.throws(
-    () => verifyGarmentAppearanceRefinementCandidate(parent, candidate.subarray(0, candidate.length - 4), new Uint8Array(width * height), width, height),
+    () => verifyGarmentAppearanceRefinementCandidate(parent, candidate.subarray(0, candidate.length - 4), warpRgba, width, height),
     /byte length/i,
   );
   assert.throws(
-    () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, new Uint8Array(width * height - 1), width, height),
-    /support mask byte length/i,
+    () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, warpRgba.subarray(0, warpRgba.length - 4), width, height),
+    /byte length/i,
+  );
+  assert.throws(
+    () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, new Uint8ClampedArray(width * height * 4), width, height),
+    /non-empty deterministic warp alpha support/i,
   );
 });
