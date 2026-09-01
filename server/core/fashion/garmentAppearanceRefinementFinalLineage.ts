@@ -2,6 +2,12 @@ import { GARMENT_APPEARANCE_REFINEMENT_PROFILE } from '../../../src/platform/cre
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const REQUIRED_KEYS = Object.freeze([
+  'refinementParentSha256',
+  'refinementParentStorageId',
+  'refinementProfile',
+  'refinementSupportSha256',
+] as const);
 
 export type GarmentAppearanceRefinementFinalLineageV1 = Readonly<{
   refinementParentStorageId: string;
@@ -20,7 +26,13 @@ export type GarmentAppearanceRefinementFinalLineageV1 = Readonly<{
 export function normalizeGarmentAppearanceRefinementFinalLineage(
   value: GarmentAppearanceRefinementFinalLineageV1,
 ): GarmentAppearanceRefinementFinalLineageV1 {
-  if (!value || typeof value !== 'object') throw new Error('Canonical Fashion refinement FINAL lineage is required');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Canonical Fashion refinement FINAL lineage is required');
+  }
+  const keys = Object.keys(value).sort();
+  if (keys.length !== REQUIRED_KEYS.length || keys.some((key, index) => key !== REQUIRED_KEYS[index])) {
+    throw new Error('Canonical Fashion refinement FINAL lineage has unknown or missing fields');
+  }
   const refinementParentStorageId = canonicalUuid(value.refinementParentStorageId, 'Canonical Fashion refinement parent storage id');
   const refinementParentSha256 = canonicalSha256(value.refinementParentSha256, 'Canonical Fashion refinement parent SHA-256');
   const refinementSupportSha256 = canonicalSha256(value.refinementSupportSha256, 'Canonical Fashion refinement support SHA-256');
