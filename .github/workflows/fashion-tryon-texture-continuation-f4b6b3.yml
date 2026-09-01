@@ -1,0 +1,55 @@
+name: Fashion F4b.6b.3 server-owned texture continuation
+
+on:
+  pull_request:
+    branches:
+      - fashion-tryon-warp-orchestration-f4b6b2-staging
+      - main
+  workflow_dispatch:
+
+jobs:
+  texture-continuation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core continuation contract
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle orchestration contract warp prepare and texture continuation tests
+        run: |
+          mkdir -p .test-cache/fashion-tryon-texture-continuation
+          npx esbuild tests/fashion-tryon-orchestration-contract-f4b6b1.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-texture-continuation/contract.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-tryon-warp-orchestration-f4b6b2.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-texture-continuation/warp.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-tryon-texture-continuation-f4b6b3.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-texture-continuation/texture.test.mjs \
+            --external:node:*
+      - name: Prove server-owned immutable-layer reconstruction and continuation
+        run: node --test --test-concurrency=1 .test-cache/fashion-tryon-texture-continuation/*.test.mjs
+      - name: Prove no client layer authority mutable orchestration state or provider path
+        run: |
+          grep -q "garmentMeshWarpExecutionId" server/core/fashion/FashionTryOnTextureContinuationService.ts
+          grep -q "loadByExecution" server/core/fashion/FashionTryOnTextureContinuationService.ts
+          grep -q "fashion_tryon_warp_lineage_mismatch" server/core/fashion/FashionTryOnTextureContinuationService.ts
+          ! grep -E "from 'pg'|INSERT|UPDATE|DELETE|providers|Billing|FAL_KEY|FASHN" server/core/fashion/FashionTryOnTextureContinuationService.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
