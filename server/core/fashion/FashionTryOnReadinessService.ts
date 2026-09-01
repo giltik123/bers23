@@ -84,7 +84,7 @@ export type FashionTryOnReadinessDependencies = Readonly<{
   bodyAnchors: BodyAnchorAuthority;
 }>;
 
-type AnchorCandidate = Readonly<{ id: string; createdAt: string }>;
+type AnchorCandidate = Readonly<{ id: string; acquisitionSequence: string }>;
 
 /**
  * Server-owned F4b.6 readiness resolver.
@@ -150,7 +150,7 @@ export class FashionTryOnReadinessService {
 
     const anchors = await loadAnchorCandidates(this.dependencies.pool, scope, normalized.projectId, source);
     if (anchors.length === 0) return failure(normalized, 'BODY_ANCHORS_REQUIRED', categoryGroup);
-    if (anchors.length > 1 && anchors[0].createdAt === anchors[1].createdAt) {
+    if (anchors.length > 1 && anchors[0].acquisitionSequence === anchors[1].acquisitionSequence) {
       return failure(normalized, 'BODY_ANCHORS_AMBIGUOUS', categoryGroup);
     }
     const anchor = anchors[0];
@@ -198,17 +198,17 @@ async function loadAnchorCandidates(
   source: StoredProjectImageEvidence,
 ): Promise<readonly AnchorCandidate[]> {
   const result = await pool.query(
-    `SELECT anchor_set_id, created_at::text AS created_at_text
+    `SELECT anchor_set_id, acquisition_sequence::text AS acquisition_sequence
      FROM canonical_project_body_anchor_sets
      WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3
        AND project_image_storage_id=$4 AND project_image_sha256=$5
        AND project_image_width=$6 AND project_image_height=$7
-     ORDER BY created_at DESC, anchor_set_id`,
+     ORDER BY acquisition_sequence DESC, anchor_set_id`,
     [projectId, scope.tenantId, scope.userId, source.storageId, source.sha256, source.width, source.height],
   );
   return Object.freeze(result.rows.map(row => Object.freeze({
     id: String(row.anchor_set_id).toLowerCase(),
-    createdAt: String(row.created_at_text),
+    acquisitionSequence: String(row.acquisition_sequence),
   })));
 }
 
