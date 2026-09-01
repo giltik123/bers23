@@ -15,10 +15,7 @@ export type DurableResolvedArtifact = Readonly<{
   height: number;
 }>;
 
-/**
- * Reconstructs canonical integrity + lineage from durable storage authority only.
- * It deliberately rejects external URL artifacts and does not infer missing parentage.
- */
+/** Reconstruct canonical integrity + lineage from durable storage authority only. */
 export class DurableArtifactLineageResolver {
   private readonly signed: SignedArtifactAuthority;
   private readonly images: PostgresImageArtifactStore;
@@ -56,15 +53,7 @@ export class DurableArtifactLineageResolver {
     const stored = await this.images.loadSource(storageId, scope);
     if (!stored || stored.role !== expectedRole) throw resolverError('durable_artifact_unavailable', 'Signed IMAGE identity has no matching durable canonical row');
     const parents = await this.imageParents(scope, stored);
-    return Object.freeze({
-      artifactId,
-      kind: 'image',
-      role: stored.role,
-      sha256: sha256(stored.bytes),
-      parentArtifactIds: parents,
-      width: stored.width,
-      height: stored.height,
-    });
+    return Object.freeze({ artifactId, kind: 'image', role: stored.role, sha256: sha256(stored.bytes), parentArtifactIds: parents, width: stored.width, height: stored.height });
   }
 
   private async resolveMask(scope: Scope, artifactId: string): Promise<DurableResolvedArtifact | undefined> {
@@ -77,30 +66,28 @@ export class DurableArtifactLineageResolver {
     if (!source) throw resolverError('durable_lineage_unavailable', 'Canonical MASK source IMAGE is unavailable');
     const sourceArtifactId = issueStoredImageId(this.signed, source, scope);
     const alpha = await decodeMaskAlpha(stored.png, stored.width, stored.height);
-    return Object.freeze({
-      artifactId,
-      kind: 'mask',
-      role: 'MASK',
-      sha256: sha256(alpha),
-      parentArtifactIds: Object.freeze([sourceArtifactId]),
-      width: stored.width,
-      height: stored.height,
-    });
+    return Object.freeze({ artifactId, kind: 'mask', role: 'MASK', sha256: sha256(alpha), parentArtifactIds: Object.freeze([sourceArtifactId]), width: stored.width, height: stored.height });
   }
 
   private async imageParents(scope: Scope, stored: StoredImage): Promise<readonly string[]> {
+    const hasRefinement = Boolean(
+      stored.refinementParentStorageId || stored.refinementParentSha256 || stored.refinementProfile || stored.refinementSupportSha256
+      || stored.refinementProducerParameters || stored.refinementProducerParametersSha256
+    );
+
     if (stored.role === 'ORIGINAL') {
       if (
         stored.sourceImageStorageId || stored.maskStorageId || stored.producerOperation
         || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256 || stored.producerParameters || stored.producerParametersSha256
-        || stored.refinementParentStorageId || stored.refinementParentSha256 || stored.refinementProfile || stored.refinementSupportSha256
+        || hasRefinement
       ) throw resolverError('durable_lineage_invalid', 'Immutable ORIGINAL cannot carry derived-image lineage');
       return Object.freeze([]);
     }
+
     if (
       !stored.sourceImageStorageId && !stored.maskStorageId && !stored.producerOperation
       && !stored.garmentWarpLayerId && !stored.garmentWarpLayerSha256 && !stored.producerParameters && !stored.producerParametersSha256
-      && !stored.refinementParentStorageId && !stored.refinementParentSha256 && !stored.refinementProfile && !stored.refinementSupportSha256
+      && !hasRefinement
     ) return Object.freeze([]);
 
     if (stored.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT') {
@@ -108,53 +95,41 @@ export class DurableArtifactLineageResolver {
         stored.sourceImageStorageId || stored.maskStorageId || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256
         || stored.producerParameters || stored.producerParametersSha256
         || !stored.refinementParentStorageId || !stored.refinementParentSha256 || !stored.refinementProfile || !stored.refinementSupportSha256
+        || !stored.refinementProducerParameters || !stored.refinementProducerParametersSha256
       ) throw resolverError('durable_lineage_invalid', 'Fashion refinement FINAL lineage is incomplete or mixed with F4 lineage');
       const parent = await this.images.loadSource(stored.refinementParentStorageId, scope);
-      if (
-        !parent
-        || parent.role !== 'COMPOSITE'
-        || parent.lifecycle !== 'FINAL'
-        || parent.producerOperation !== 'GARMENT_TEXTURE_COMPOSITE'
-      ) throw resolverError('durable_lineage_unavailable', 'Fashion refinement deterministic F4 parent FINAL is unavailable or invalid');
+      if (!parent || parent.role !== 'COMPOSITE' || parent.lifecycle !== 'FINAL' || parent.producerOperation !== 'GARMENT_TEXTURE_COMPOSITE') {
+        throw resolverError('durable_lineage_unavailable', 'Fashion refinement deterministic F4 parent FINAL is unavailable or invalid');
+      }
       if (parent.width !== stored.width || parent.height !== stored.height) {
         throw resolverError('durable_lineage_invalid', 'Fashion refinement parent geometry differs from the child FINAL');
       }
       if (sha256(parent.bytes) !== stored.refinementParentSha256) {
         throw resolverError('durable_lineage_invalid', 'Fashion refinement parent SHA-256 does not match durable lineage');
       }
-      // F5 is a refinement of the already-authoritative deterministic F4 FINAL.
-      // Keep that FINAL as the only direct Artifact parent; Project source and
-      // immutable warp evidence remain transitive lineage of the F4 parent.
+      // F5 direct Artifact parent is the canonical deterministic F4 FINAL only.
+      // Project source and immutable warp evidence remain transitive ancestry.
       return Object.freeze([issueStoredImageId(this.signed, parent, scope)]);
     }
 
     if (stored.producerOperation === 'GARMENT_TEXTURE_COMPOSITE') {
       if (
         !stored.sourceImageStorageId || stored.maskStorageId || !stored.garmentWarpLayerId
-        || !stored.garmentWarpLayerSha256 || !stored.producerParameters || !stored.producerParametersSha256
-        || stored.refinementParentStorageId || stored.refinementParentSha256 || stored.refinementProfile || stored.refinementSupportSha256
+        || !stored.garmentWarpLayerSha256 || !stored.producerParameters || !stored.producerParametersSha256 || hasRefinement
       ) throw resolverError('durable_lineage_invalid', 'Fashion texture FINAL lineage is incomplete');
       const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
       if (!source) throw resolverError('durable_lineage_unavailable', 'Fashion texture FINAL Project source IMAGE is unavailable');
-      // The immutable Fashion warp layer is execution evidence, not a Project Artifact.
-      // Expose only the canonical Project source through Artifact parentage.
       return Object.freeze([issueStoredImageId(this.signed, source, scope)]);
     }
 
-    if (
-      stored.refinementParentStorageId || stored.refinementParentSha256 || stored.refinementProfile || stored.refinementSupportSha256
-      || stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId
-    ) {
+    if (hasRefinement || stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId) {
       throw resolverError('durable_lineage_invalid', 'Derived FINAL lineage is incomplete or unsupported');
     }
     const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
     const mask = await this.masks.load(stored.maskStorageId, scope);
     if (!source || !mask) throw resolverError('durable_lineage_unavailable', 'Derived FINAL parent row is unavailable');
     if (mask.sourceImageStorageId !== source.storageId) throw resolverError('durable_lineage_invalid', 'Derived FINAL MASK is not lineaged to its source IMAGE');
-    return Object.freeze([
-      issueStoredImageId(this.signed, source, scope),
-      this.signed.issueStoredMask(mask.storageId, scope),
-    ]);
+    return Object.freeze([issueStoredImageId(this.signed, source, scope), this.signed.issueStoredMask(mask.storageId, scope)]);
   }
 }
 
