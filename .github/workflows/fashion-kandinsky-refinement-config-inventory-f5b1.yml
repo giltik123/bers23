@@ -1,0 +1,37 @@
+name: Fashion F5b.1 Kandinsky config inventory
+
+on:
+  pull_request:
+    branches:
+      - fashion-f5b1-kandinsky-trust-root
+  workflow_dispatch:
+
+jobs:
+  config-inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Inventory exact small config and tokenizer bytes
+        run: |
+          node scripts/inventory-kandinsky-refinement-configs.mjs | tee kandinsky-config-inventory.json
+          node -e "const e=require('./kandinsky-config-inventory.json'); if(e.authorityGranted!==false||e.modelBytesDownloaded!==0||e.decoder.files.length!==4||e.offlinePrior.files.length!==10) process.exit(1)"
+      - name: Prove inventory grants no runtime authority
+        run: |
+          test "$(git ls-files '*.safetensors' '*.bin' | wc -l)" -eq 0
+          grep -q '"requiredConfigIdentity": "UNPINNED"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"runtimeAuthorityGranted": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kandinsky-f5b1-config-inventory-${{ github.event.pull_request.head.sha || github.sha }}
+          path: kandinsky-config-inventory.json
+          if-no-files-found: error
+          retention-days: 7
