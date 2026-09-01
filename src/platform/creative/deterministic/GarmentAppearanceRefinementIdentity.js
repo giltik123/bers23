@@ -1,9 +1,8 @@
 /**
- * Browser/Node-safe immutable identity for the F5a.1 refinement-support law.
+ * Browser/Node-safe immutable identity for the F5 refinement-support law.
  *
- * This contract grants no model/runtime/provider/Billing/FINAL/Try-On authority.
- * It only defines the deterministic region in which a later separately admitted
- * refinement runtime may propose RGB changes.
+ * These constants grant no model/runtime/provider/Billing/FINAL/Try-On authority.
+ * They define deterministic support and closed producer-lineage identities only.
  */
 /** @type {'1'} */
 export const GARMENT_APPEARANCE_REFINEMENT_CONTRACT_VERSION = '1';
@@ -11,6 +10,8 @@ export const GARMENT_APPEARANCE_REFINEMENT_CONTRACT_VERSION = '1';
 export const GARMENT_APPEARANCE_REFINEMENT_OPERATION = 'GARMENT_APPEARANCE_REFINEMENT';
 /** @type {'BERS_GARMENT_APPEARANCE_REFINEMENT_SUPPORT_V1'} */
 export const GARMENT_APPEARANCE_REFINEMENT_SUPPORT_SCHEMA = 'BERS_GARMENT_APPEARANCE_REFINEMENT_SUPPORT_V1';
+/** @type {'BERS_GARMENT_APPEARANCE_REFINEMENT_PRODUCER_V1'} */
+export const GARMENT_APPEARANCE_REFINEMENT_PRODUCER_SCHEMA = 'BERS_GARMENT_APPEARANCE_REFINEMENT_PRODUCER_V1';
 /** @type {'REFINE_REALISM_V1'} */
 export const GARMENT_APPEARANCE_REFINEMENT_PROFILE = 'REFINE_REALISM_V1';
 /** @type {'GARMENT_WARP_ALPHA_NONZERO'} */
