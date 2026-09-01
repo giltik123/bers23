@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - main
-      - fashion-body-anchor-sequence-f4b6c2a
+      - fashion-readiness-anchor-sequence-f4b6c2b-clean
   workflow_dispatch:
 
 jobs:
@@ -30,6 +30,7 @@ jobs:
           npm run server:typecheck
           npm run server:build
           test -f dist-server/migrations/031_project_body_anchor_acquisition_sequence.sql
+          test -f dist-server/migrations/032_project_body_anchor_sequence_consumer_cutover.sql
       - name: Bundle service HTTP and persistence-foundation tests
         run: |
           mkdir -p .test-cache/fashion-manual-body-anchor-http
@@ -54,10 +55,12 @@ jobs:
             server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -q "new ManualProjectBodyAnchorAcquisitionService" server/core/composition/createProductionGarmentMeshWarp.ts
           grep -q "bodyAnchors," server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "Object.defineProperty(execution, 'readiness'" server/core/composition/createProductionGarmentMeshWarp.ts
           grep -q "Object.defineProperty(execution, 'manualBodyAnchorAcquisition'" server/core/composition/createProductionGarmentMeshWarp.ts
           grep -q "writable: false" server/core/composition/createProductionGarmentMeshWarp.ts
           grep -q "production.localExecution.garmentMeshWarp.manualBodyAnchorAcquisition" server/index.ts
           grep -q "manualBodyAnchorAdapter" server/index.ts
+          grep -q "fashionTryOnReadinessAdapter" server/index.ts
           grep -q "body-anchors" server/index.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
           ! grep -q "manualBodyAnchorAcquisition" src/lib/tryon/tryonEngine.js
