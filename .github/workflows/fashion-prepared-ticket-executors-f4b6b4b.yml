@@ -1,0 +1,62 @@
+name: Fashion F4b.6b.4b prepared-ticket browser executors
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  prepared-ticket-executors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Bundle accepted and prepared executor vectors
+        run: |
+          mkdir -p .test-cache/fashion-prepared-ticket-executors-f4b6b4b
+          npx esbuild \
+            tests/garment-mesh-warp-browser-executor.test.ts \
+            tests/garment-texture-composite-browser-executor.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/fashion-prepared-ticket-executors-f4b6b4b \
+            --external:node:*
+      - name: Prove legacy parity and prepared-ticket execution
+        run: node --test .test-cache/fashion-prepared-ticket-executors-f4b6b4b/*.js
+      - name: Prove prepared input has no browser evidence authority
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const cases = [
+            ['src/application/local-execution/CoreAuthorizedGarmentMeshWarp.ts', 'GarmentMeshWarpPreparedRunInput', ['representationId','anchorSetId','layerId','contentSha256','producerParameters']],
+            ['src/application/local-execution/CoreAuthorizedGarmentTextureComposite.ts', 'GarmentTextureCompositePreparedRunInput', ['representationId','anchorSetId','garmentWarpLayerId','garmentWarpLayerSha256','textureTransform','featherRadius','producerParameters','artifactId']],
+          ];
+          for (const [path, typeName, forbidden] of cases) {
+            const source = readFileSync(path, 'utf8');
+            const match = source.match(new RegExp(`export type ${typeName} = Readonly<\\{([\\s\\S]*?)\\}>;`));
+            if (!match) throw new Error(`missing prepared input type ${typeName}`);
+            for (const field of forbidden) if (new RegExp(`\\b${field}\\b`).test(match[1])) throw new Error(`${typeName} exposes forbidden ${field}`);
+          }
+          NODE
+      - name: Prove local-only Fashion boundary remains closed
+        run: |
+          grep -q 'runPrepared' src/application/local-execution/CoreAuthorizedGarmentMeshWarp.ts
+          grep -q 'runPrepared' src/application/local-execution/CoreAuthorizedGarmentTextureComposite.ts
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+          ! grep -E -i 'fashn|fal\.ai|billing|paidCloudCredits:[[:space:]]*[1-9]|providerCalls:[[:space:]]*[1-9]' \
+            src/application/local-execution/CoreAuthorizedGarmentMeshWarp.ts \
+            src/application/local-execution/CoreAuthorizedGarmentTextureComposite.ts
