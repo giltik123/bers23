@@ -3,6 +3,7 @@ import { createHmac } from 'node:crypto';
 import { createServer } from 'node:http';
 import test from 'node:test';
 import type { CoreServerConfig } from '../server/core/config.ts';
+import { bodyAnchorPayloadSha256 } from '../server/core/fashion/bodyAnchorGeometry.ts';
 import {
   MANUAL_BODY_ANCHOR_PRODUCER_ID,
   MANUAL_BODY_ANCHOR_PRODUCER_VERSION,
@@ -27,6 +28,7 @@ const payload = Object.freeze({
     rightHip: Object.freeze([0.72, 0.75] as const),
   }),
 });
+const payloadSha256 = bodyAnchorPayloadSha256(payload);
 const config = {
   nodeEnv: 'test',
   allowedWebOrigins: Object.freeze(['http://app.test']),
@@ -46,7 +48,7 @@ const storedAnchor = Object.freeze({
   schemaId: 'BERS_BODY_ANCHORS_V1',
   coordinateSpace: 'PROJECT_IMAGE_NORMALIZED',
   payload,
-  payloadSha256: 'b'.repeat(64),
+  payloadSha256,
   producerId: MANUAL_BODY_ANCHOR_PRODUCER_ID,
   producerVersion: MANUAL_BODY_ANCHOR_PRODUCER_VERSION,
   acquisitionSequence: '42',
@@ -54,22 +56,26 @@ const storedAnchor = Object.freeze({
   internalSecret: 'must-not-leak',
 });
 
-test('F4b.6c.2c service resolves exact signed Project evidence and fixes producer provenance server-side', async () => {
+function resolvedSource() {
+  return Object.freeze({
+    artifactId: sourceArtifactId,
+    projectId,
+    storageId,
+    role: 'COMPOSITE',
+    lifecycle: 'FINAL',
+    width: 640,
+    height: 960,
+    sha256: sourceSha256,
+  }) as any;
+}
+
+test('F4b.6c.2c service resolves exact signed Project evidence fixes provenance and rebinds the returned immutable row', async () => {
   const calls: any = { resolve: [], create: [] };
   const service = new ManualProjectBodyAnchorAcquisitionService({
     artifacts: {
       resolveStoredImageEvidence: async (scope: any, artifactId: string) => {
         calls.resolve.push({ scope, artifactId });
-        return Object.freeze({
-          artifactId,
-          projectId,
-          storageId,
-          role: 'COMPOSITE',
-          lifecycle: 'FINAL',
-          width: 640,
-          height: 960,
-          sha256: sourceSha256,
-        }) as any;
+        return resolvedSource();
       },
     },
     bodyAnchors: {
@@ -88,6 +94,32 @@ test('F4b.6c.2c service resolves exact signed Project evidence and fixes produce
     expectedImage: { storageId, sha256: sourceSha256, width: 640, height: 960 },
     input: { payload, producerId: MANUAL_BODY_ANCHOR_PRODUCER_ID, producerVersion: MANUAL_BODY_ANCHOR_PRODUCER_VERSION },
   }]);
+});
+
+test('F4b.6c.2c service rejects returned rows that escape exact source payload or server provenance authority', async () => {
+  const mismatches = [
+    { projectImageStorageId: '44444444-4444-4444-8444-444444444444' },
+    { projectImageSha256: 'c'.repeat(64) },
+    { projectImageWidth: 641 },
+    { projectImageHeight: 961 },
+    { schemaId: 'OTHER_SCHEMA' },
+    { coordinateSpace: 'OTHER_SPACE' },
+    { producerId: 'browser.claim' },
+    { producerVersion: '999' },
+    { acquisitionSequence: '0' },
+    { payloadSha256: 'd'.repeat(64) },
+    { payload: Object.freeze({ ...payload, anchors: Object.freeze({ ...payload.anchors, leftShoulder: Object.freeze([0.21, 0.15] as const) }) }) },
+  ];
+  for (const override of mismatches) {
+    const service = new ManualProjectBodyAnchorAcquisitionService({
+      artifacts: { resolveStoredImageEvidence: async () => resolvedSource() },
+      bodyAnchors: { createForExpectedImage: async () => Object.freeze({ ...storedAnchor, ...override }) as any },
+    });
+    await assert.rejects(
+      service.acquire(auth as any, { projectId, sourceArtifactId, payload }),
+      (cause: any) => cause?.status === 409 && cause?.code === 'body_anchor_acquisition_authority_mismatch',
+    );
+  }
 });
 
 test('F4b.6c.2c service propagates stale expected-image rejection instead of rebinding', async () => {
@@ -161,18 +193,20 @@ function csrfFor(sessionToken: string): string {
     .digest('base64url');
 }
 
-test('F4b.6c.2c HTTP returns only public immutable anchor identity and sequence', async () => {
+test('F4b.6c.2c HTTP returns only public acquisition state and never exposes anchor evidence identity', async () => {
   await withHttpServer(acquisitionResult, async (base, calls) => {
     const response = await fetch(`${base}/api/core/fashion/projects/${projectId}/body-anchors`, {
       method: 'POST', headers: { ...bearerHeaders, 'Content-Type': 'application/json' }, body: body(),
     });
     assert.equal(response.status, 201);
     assert.equal(response.headers.get('cache-control'), 'no-store');
-    assert.deepEqual(await response.json(), {
+    const publicBody = await response.json() as any;
+    assert.deepEqual(publicBody, {
       projectId,
       sourceArtifactId,
-      anchorSet: { id: anchorSetId, acquisitionSequence: '42', schemaId: 'BERS_BODY_ANCHORS_V1', coordinateSpace: 'PROJECT_IMAGE_NORMALIZED' },
+      anchorSet: { acquisitionSequence: '42', schemaId: 'BERS_BODY_ANCHORS_V1', coordinateSpace: 'PROJECT_IMAGE_NORMALIZED' },
     });
+    assert.equal(Object.hasOwn(publicBody.anchorSet, 'id'), false);
     assert.equal(calls.acquires.length, 1);
     assert.deepEqual(calls.acquires[0], { principal: auth, command: { projectId, sourceArtifactId, payload } });
   });
