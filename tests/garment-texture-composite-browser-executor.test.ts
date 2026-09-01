@@ -87,10 +87,35 @@ test('browser executes only the Core ticketed BERSGTC1 payload and receives cano
   assert.deepEqual(fixture.counts(), { loads: 1, uploads: 1, submits: 1 });
 });
 
+test('prepared browser texture composite never calls legacy prepare and redacts FINAL artifact authority', async () => {
+  const fixture = core();
+  const executor = new CoreAuthorizedGarmentTextureComposite(scope.projectId, Object.freeze({
+    ...fixture.client,
+    prepareGarmentTextureComposite: async () => { throw new Error('legacy prepare must not be called'); },
+  }) as any, () => 5);
+  const result = await executor.runPrepared({ ticket: ticket(), sourceArtifactId });
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(result.target, 'LOCAL');
+  assert.equal(result.runtime, 'BROWSER_JS');
+  assert.equal('artifactId' in result, false);
+  assert.equal(result.preview.width, 2); assert.equal(result.preview.height, 2); assert.equal(result.preview.data.byteLength, 16);
+  assert.deepEqual(fixture.counts(), { loads: 1, uploads: 1, submits: 1 });
+});
+
 test('browser rejects cloud-cost authority before purpose-bound input delivery', async () => {
   const fixture = core({ currentTicket: ticket({ cost: Object.freeze({ paidCloudCredits: 1, providerCalls: 0 }) }) });
   const executor = new CoreAuthorizedGarmentTextureComposite(scope.projectId, fixture.client as any, () => 1);
   await assert.rejects(() => executor.run({ requestId: 'browser-request', sourceArtifactId, garmentWarpLayerId: layerId, garmentWarpLayerSha256: layerSha, textureTransform: transform, featherRadius: 0 }), /forbidden cloud cost/i);
+  assert.deepEqual(fixture.counts(), { loads: 0, uploads: 0, submits: 0 });
+});
+
+test('prepared browser texture composite rejects cloud-cost ticket before input delivery without legacy prepare', async () => {
+  const fixture = core();
+  const executor = new CoreAuthorizedGarmentTextureComposite(scope.projectId, Object.freeze({
+    ...fixture.client,
+    prepareGarmentTextureComposite: async () => { throw new Error('legacy prepare must not be called'); },
+  }) as any, () => 1);
+  await assert.rejects(() => executor.runPrepared({ ticket: ticket({ cost: Object.freeze({ paidCloudCredits: 1, providerCalls: 0 }) }), sourceArtifactId }), /forbidden cloud cost/i);
   assert.deepEqual(fixture.counts(), { loads: 0, uploads: 0, submits: 0 });
 });
 
