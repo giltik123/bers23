@@ -88,7 +88,7 @@ function textureParameters() {
   });
 }
 
-test('F5a.3 persists exact dual-bound refinement FINAL, replays exactly and resolves only deterministic F4 as immediate parent', async () => {
+test('F5a.3 persists exact dual-bound refinement FINAL, replays across Accept and resolves only deterministic F4 as immediate parent', async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 8, application_name: 'bers-f5a3-refinement-persistence' });
   try {
     await migrateFinalImageLineageSchema(pool);
@@ -199,7 +199,7 @@ test('F5a.3 persists exact dual-bound refinement FINAL, replays exactly and reso
       { width: anchor.projectImageWidth, height: anchor.projectImageHeight, data: candidate },
       refinementLineage,
     );
-    assert.equal(replay.storageId, refined.storageId, 'exact F5 replay must reuse one canonical FINAL');
+    assert.equal(replay.storageId, refined.storageId, 'exact F5 replay must reuse one canonical FINAL before Accept');
 
     const divergent = Uint8ClampedArray.from(candidate);
     divergent[0] ^= 0xff;
@@ -231,13 +231,54 @@ test('F5a.3 persists exact dual-bound refinement FINAL, replays exactly and reso
       : signed.issueStoredFinal(source.storageId, scope);
     assert.deepEqual(resolvedF4.parentArtifactIds, [sourceArtifactId], 'Project source remains transitive through deterministic F4 parent');
 
+    // Review gate: a refinement that became invalid after persistence must not be
+    // accepted. Project Accept holds the Project row lock and invokes the same
+    // Artifact/Fashion lineage validation before moving the source cursor.
     const originalParentBytes = Buffer.from(deterministic.bytes);
     await pool.query(`UPDATE canonical_image_artifacts SET image_bytes=$2 WHERE storage_id=$1`, [deterministic.storageId, Buffer.from(await png(9))]);
     await assert.rejects(images.load(refined.storageId, scope), /deterministic parent evidence is unavailable or inconsistent/i);
     await assert.rejects(resolver.resolve(scope, f5ArtifactId), /deterministic parent evidence is unavailable or inconsistent/i);
+    await assert.rejects(
+      projects.acceptFinal(owner, projectId, refined.storageId, 'Must reject invalid F5 lineage'),
+      (error: any) => error?.status === 409 && error?.code === 'invalid_final_lineage',
+    );
+    const afterRejectedAccept = await projects.get(owner, projectId);
+    assert.equal(afterRejectedAccept?.current_image_storage_id, anchor.projectImageStorageId, 'rejected F5 Accept must not move Project cursor');
+
     await pool.query(`UPDATE canonical_image_artifacts SET image_bytes=$2 WHERE storage_id=$1`, [deterministic.storageId, originalParentBytes]);
     const recovered = await images.load(refined.storageId, scope);
     assert.equal(recovered?.storageId, refined.storageId, 'restored exact parent bytes recover historical F5 readability');
+
+    await projects.acceptFinal(owner, projectId, refined.storageId, 'Accept valid F5 refinement');
+    const acceptedProject = await projects.get(owner, projectId);
+    assert.equal(acceptedProject?.current_image_storage_id, refined.storageId, 'valid F5 Accept must advance Project cursor exactly once');
+
+    // Critical restart/recovery law: after Accept the Project source cursor now
+    // points at the refined FINAL, but the same durable F5 execution must replay
+    // exactly without attempting a new INSERT/current-source trigger.
+    const replayAfterAccept = await new PostgresImageArtifactStore(pool).persistFinal(
+      scope,
+      'f5a3-refinement-execution',
+      'garment-appearance-refinement',
+      { width: anchor.projectImageWidth, height: anchor.projectImageHeight, data: candidate },
+      refinementLineage,
+    );
+    assert.equal(replayAfterAccept.storageId, refined.storageId, 'exact F5 replay must survive Project Accept source transition');
+    assert.deepEqual(replayAfterAccept.bytes, refined.bytes, 'post-Accept exact replay must preserve canonical PNG bytes');
+
+    await assert.rejects(
+      images.persistFinal(scope, 'f5a3-refinement-execution', 'garment-appearance-refinement', {
+        width: anchor.projectImageWidth, height: anchor.projectImageHeight, data: divergent,
+      }, refinementLineage),
+      /already bound to a different FINAL or parent lineage/i,
+      'post-Accept divergent replay must remain fail-closed',
+    );
+
+    // Repeating Accept for an already accepted history entry remains an idempotent
+    // no-op and does not create duplicate history or require a new execution.
+    await projects.acceptFinal(owner, projectId, refined.storageId, 'Idempotent repeat');
+    const finalState = await projects.state(owner, projectId);
+    assert.equal(finalState.history.filter((entry: any) => entry.image_storage_id === refined.storageId && entry.kind === 'ACCEPTED_FINAL').length, 1);
   } finally {
     await pool.end();
   }
