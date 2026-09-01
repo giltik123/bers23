@@ -1,0 +1,73 @@
+name: Fashion F5a.2 dual-bound canonical refinement FINAL lineage
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  refinement-lineage:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_f5a2_lineage_test
+          POSTGRES_USER: fashion_f5a2_lineage_test
+          POSTGRES_PASSWORD: fashion_f5a2_lineage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fashion_f5a2_lineage_test -d fashion_f5a2_lineage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_f5a2_lineage_test:fashion_f5a2_lineage_test@127.0.0.1:5432/fashion_f5a2_lineage_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck build and package F5 lineage migration
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/030_fashion_garment_texture_final_lineage.sql
+          test -f dist-server/migrations/032_fashion_garment_refinement_final_lineage.sql
+          test ! -f dist-server/migrations/033_fashion_garment_refinement_extension_repair.sql
+      - name: Prove aggregate production migrate and check
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Bundle dual-bound PostgreSQL proof
+        run: |
+          mkdir -p .test-cache/fashion-f5a2-lineage
+          npx esbuild tests/fashion-garment-refinement-final-lineage-schema-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a2-lineage/schema.test.mjs \
+            --external:node:* --external:pg
+      - name: Prove dual-bound minimal-child schema
+        run: node --test --test-concurrency=1 .test-cache/fashion-f5a2-lineage/schema.test.mjs
+      - name: Prove F5 authority remains closed
+        run: |
+          grep -q "refinement_parent_image_storage_id" server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql
+          grep -q "parent_image.source_image_storage_id = NEW.source_image_storage_id" server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql
+          grep -q "sha256(parent_image.image_bytes)" server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql
+          grep -q "garment_warp_layer_id IS NULL" server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          if grep -E "from ['\"].*(providers|billing|fashn|onnx|diffusion|transformers)" \
+            server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts; then
+            echo "F5a.2 schema imported execution/provider authority" >&2
+            exit 1
+          fi
