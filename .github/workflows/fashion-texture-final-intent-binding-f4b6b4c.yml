@@ -1,0 +1,51 @@
+name: Fashion F4b.6b.4c texture FINAL stable-intent binding
+
+on:
+  pull_request:
+    branches:
+      - main
+      - fashion-texture-final-recovery-f4b6b4a-staging
+  workflow_dispatch:
+
+jobs:
+  texture-final-intent-binding:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core recovery authority
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle durable recovery stable-intent and accepted submission vectors
+        run: |
+          mkdir -p .test-cache/fashion-texture-final-intent-binding
+          npx esbuild \
+            tests/fashion-texture-final-recovery-f4b6b4a.test.ts \
+            tests/fashion-texture-final-intent-binding-f4b6b4c.test.ts \
+            tests/garment-texture-composite-submission-authority.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/fashion-texture-final-intent-binding \
+            --external:node:* --external:sharp --external:pg
+      - name: Prove stable-intent recovery preserves accepted byte-exact commit law
+        run: node --test --test-concurrency=1 .test-cache/fashion-texture-final-intent-binding/*.js
+      - name: Prove product recovery has stable-intent binding and no new authority
+        run: |
+          grep -q "recoverForIntent" server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          grep -q "garment_texture_final_recovery_intent_mismatch" server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          grep -q "parameters.sourceArtifactId === expected.sourceArtifactId" server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          grep -q "parameters.garmentId === expected.garmentId" server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          ! grep -E "INSERT|UPDATE|DELETE|providers|Billing|FAL_KEY|FASHN" server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
