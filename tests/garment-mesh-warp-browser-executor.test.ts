@@ -76,11 +76,12 @@ test('browser garment warp sends intent only, executes Core envelope and returns
   assert.equal(h.calls.submit.result.outputs[0].role,'WORKING');assert.equal('managedInputs' in h.calls.submit.result,false);assert.equal('garmentId' in h.calls.submit.result,false);
 });
 
-test('prepared browser garment warp never calls legacy prepare and redacts immutable layer authority',async()=>{
+test('prepared browser garment warp never calls legacy prepare and tolerates redacted submit layer evidence',async()=>{
   const h=harness();
   const executor=new CoreAuthorizedGarmentMeshWarp(projectId,Object.freeze({
     ...h.core,
     prepareGarmentMeshWarp:async()=>{throw new Error('legacy prepare must not be called');},
+    submitGarmentMeshWarp:async(payload:any)=>{h.calls.submit=payload;return Object.freeze({executionId:h.preparedTicket.requestId,status:'SUCCESS',verification:Object.freeze({valid:true})});},
   }),()=>11);
   const result=await executor.runPrepared({ticket:h.preparedTicket,sourceArtifactId,garmentId});
   assert.equal(result.status,'SUCCESS');
