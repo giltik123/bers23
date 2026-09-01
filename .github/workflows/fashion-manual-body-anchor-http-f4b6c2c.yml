@@ -43,9 +43,12 @@ jobs:
         run: |
           grep -q "resolveStoredImageEvidence" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
           grep -q "createForExpectedImage" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
+          grep -q "assertPersistedAuthority" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
+          grep -q "bodyAnchorPayloadSha256" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
           grep -q "MANUAL_BODY_ANCHOR_PRODUCER_ID = 'bers.manual-body-anchors'" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
           grep -q "assertBrowserMutationAllowed" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -q "forbidden_client_authority" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          ! grep -q "id: anchorSet.id" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           ! grep -E "from 'pg'|providers|Billing|FAL_KEY|FASHN|tryonEngine" \
             server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts \
             server/core/http/manualProjectBodyAnchorHttpAdapter.ts
