@@ -1,10 +1,15 @@
 import { GARMENT_APPEARANCE_REFINEMENT_PROFILE } from '../../../src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js';
+import {
+  normalizeGarmentAppearanceRefinementLineageParameters,
+  type GarmentAppearanceRefinementProducerParametersV1,
+} from './garmentAppearanceRefinementLineage.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const REQUIRED_KEYS = Object.freeze([
   'refinementParentSha256',
   'refinementParentStorageId',
+  'refinementProducerParameters',
   'refinementProfile',
   'refinementSupportSha256',
 ] as const);
@@ -14,18 +19,16 @@ export type GarmentAppearanceRefinementFinalLineageV1 = Readonly<{
   refinementParentSha256: string;
   refinementProfile: typeof GARMENT_APPEARANCE_REFINEMENT_PROFILE;
   refinementSupportSha256: string;
+  refinementProducerParameters: GarmentAppearanceRefinementProducerParametersV1;
 }>;
 
-/**
- * Closed server-owned durable lineage document for an F5 refinement FINAL.
- *
- * This contract normalizes already-resolved Core evidence only. It grants no
- * execution/model/provider authority and intentionally contains no prompt,
- * provider, model, mask or free-form generation parameters.
- */
+export type NormalizedGarmentAppearanceRefinementFinalLineageV1 = GarmentAppearanceRefinementFinalLineageV1 & Readonly<{
+  refinementProducerParametersSha256: string;
+}>;
+
 export function normalizeGarmentAppearanceRefinementFinalLineage(
   value: GarmentAppearanceRefinementFinalLineageV1,
-): GarmentAppearanceRefinementFinalLineageV1 {
+): NormalizedGarmentAppearanceRefinementFinalLineageV1 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Canonical Fashion refinement FINAL lineage is required');
   }
@@ -39,11 +42,17 @@ export function normalizeGarmentAppearanceRefinementFinalLineage(
   if (value.refinementProfile !== GARMENT_APPEARANCE_REFINEMENT_PROFILE) {
     throw new Error(`Canonical Fashion refinement profile must be ${GARMENT_APPEARANCE_REFINEMENT_PROFILE}`);
   }
+  const producer = normalizeGarmentAppearanceRefinementLineageParameters(value.refinementProducerParameters);
+  if (producer.document.profile !== value.refinementProfile) {
+    throw new Error('Canonical Fashion refinement producer profile does not match FINAL lineage profile');
+  }
   return Object.freeze({
     refinementParentStorageId,
     refinementParentSha256,
     refinementProfile: GARMENT_APPEARANCE_REFINEMENT_PROFILE,
     refinementSupportSha256,
+    refinementProducerParameters: producer.document,
+    refinementProducerParametersSha256: producer.sha256,
   });
 }
 
