@@ -1,0 +1,58 @@
+name: Fashion F5a.3 refinement persistence foundation
+
+on:
+  pull_request:
+    branches:
+      - fashion-f5a2-refinement-final-lineage-clean-v2
+      - main
+  workflow_dispatch:
+
+jobs:
+  refinement-persistence-foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core boundaries
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle closed F5a.3 lineage vectors
+        run: |
+          mkdir -p .test-cache/fashion-f5a3-refinement-persistence
+          npx esbuild tests/garment-appearance-refinement-final-lineage-f5a3.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a3-refinement-persistence/lineage.test.mjs \
+            --external:node:*
+      - name: Prove closed dual-bound lineage normalization
+        run: node --test .test-cache/fashion-f5a3-refinement-persistence/lineage.test.mjs
+      - name: Prove F5 execution authority remains closed
+        run: |
+          grep -q "refinementParentImageStorageId" server/core/fashion/garmentAppearanceRefinementFinalLineage.ts
+          grep -q "refinementParentImageSha256" server/core/fashion/garmentAppearanceRefinementFinalLineage.ts
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          if grep -E "from ['\"].*(providers|billing|fashn|tiny|onnx|diffusion|transformers)" server/core/fashion/garmentAppearanceRefinementFinalLineage.ts; then
+            echo "F5a.3 lineage normalizer imported runtime/provider authority" >&2
+            exit 1
+          fi
+          if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/deterministic/DeterministicToolRegistry.ts; then
+            echo "F5a.3 must not register execution authority" >&2
+            exit 1
+          fi
+          if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/canonical/planning/CanonicalPlanningService.ts; then
+            echo "F5a.3 must not add planner admission" >&2
+            exit 1
+          fi
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
