@@ -17,9 +17,11 @@ matrix = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(matrix)
 baseline = matrix.baseline
 
-SELECTED_SCHEME = "EXACT_FP16_STORAGE_FP32_COMPUTE"
-SELECTED_STRATEGY = "exact_fp16_storage"
 SELECTION_RULE = "PINNED_ACCEPTED_SCHEME_REPRODUCTION_NO_RESELECTION"
+SELECTION_POLICY_SOURCE = (
+    "prepare-tiny-sd-d3-wasm-strategy-matrix.py::"
+    "ACCEPTED_SELECTED_STRATEGY_BY_COMPONENT"
+)
 
 
 def _selected_component(
@@ -29,13 +31,18 @@ def _selected_component(
     fixture_dir: Path,
     d2_record: dict[str, Any],
 ) -> dict[str, Any]:
+    selected_strategy, selected_transform = matrix.accepted_strategy_definition(component)
+    selected_scheme = matrix.ACCEPTED_SELECTED_SCHEME_BY_COMPONENT.get(component)
+    if selected_scheme is None:
+        raise RuntimeError(f"accepted D3 scheme policy missing component: {component}")
+
     fixture = baseline.browser_fixture(component, source, fixture_dir, d2_record)
     candidate = matrix._candidate_record(
         component,
         source,
         target,
         d2_record,
-        matrix.exact_fp16_storage_fp32_compute,
+        selected_transform,
     )
     if candidate.get("result") != "PASS":
         raise RuntimeError(
@@ -45,8 +52,11 @@ def _selected_component(
     transform = candidate.get("transform") or {}
     artifact = candidate.get("artifact") or {}
     parity = candidate.get("nativeOrtParity") or {}
-    if transform.get("scheme") != SELECTED_SCHEME:
-        raise RuntimeError(f"{component} selected D3 scheme drift: {transform.get('scheme')!r}")
+    if transform.get("scheme") != selected_scheme:
+        raise RuntimeError(
+            f"{component} selected D3 scheme drift: expected {selected_scheme!r}, "
+            f"observed {transform.get('scheme')!r}"
+        )
     if transform.get("valueRoundtripExactByConstruction") is not True:
         raise RuntimeError(f"{component} selected D3 transform lost exact-roundtrip construction")
     if transform.get("storagePrecisionIsNotComputePrecision") is not True:
@@ -70,7 +80,10 @@ def _selected_component(
         "candidate": artifact,
         "nativeOrtParity": parity,
         "transform": transform,
-        "selectedStrategy": SELECTED_STRATEGY,
+        "selectedStrategy": selected_strategy,
+        "acceptedSelectedStrategy": matrix.ACCEPTED_SELECTED_STRATEGY_BY_COMPONENT[component],
+        "acceptedSelectedScheme": selected_scheme,
+        "acceptedSelectionPolicyMatched": True,
         "browserFixture": fixture,
         "compactSizePassed": True,
         "releaseIdentityPinned": False,
@@ -96,6 +109,10 @@ def main() -> int:
     fp32_dir = args.fp32_dir.resolve(strict=True)
     d2_report = json.loads(args.d2_report.resolve(strict=True).read_text(encoding="utf-8"))
     baseline.require_d2_report(d2_report, fp32_dir)
+    if set(matrix.ACCEPTED_SELECTED_STRATEGY_BY_COMPONENT) != set(matrix.COMPONENTS):
+        raise RuntimeError("accepted D3 strategy policy component set drift")
+    if set(matrix.ACCEPTED_SELECTED_SCHEME_BY_COMPONENT) != set(matrix.COMPONENTS):
+        raise RuntimeError("accepted D3 scheme policy component set drift")
 
     output_dir = args.output_dir.resolve()
     fixture_dir = args.fixture_dir.resolve()
@@ -122,6 +139,10 @@ def main() -> int:
 
     source_bytes = sum(int(value["source"]["size"]) for value in components.values())
     selected_bytes = sum(int(value["candidate"]["size"]) for value in components.values())
+    strategies = dict(matrix.ACCEPTED_SELECTED_STRATEGY_BY_COMPONENT)
+    schemes = dict(matrix.ACCEPTED_SELECTED_SCHEME_BY_COMPONENT)
+    strategy_values = set(strategies.values())
+    scheme_values = set(schemes.values())
     report = {
         "schemaVersion": 1,
         "status": "CANDIDATE",
@@ -132,9 +153,13 @@ def main() -> int:
             "numpy": matrix.np.__version__,
         },
         "strategy": "ACCEPTED_D3_SELECTED_REPRESENTATION_REPRODUCTION",
-        "selectionStrategy": SELECTED_STRATEGY,
+        "selectionStrategy": next(iter(strategy_values)) if len(strategy_values) == 1 else "PER_COMPONENT_POLICY",
+        "selectionStrategies": strategies,
         "selectionRule": SELECTION_RULE,
-        "acceptedScheme": SELECTED_SCHEME,
+        "selectionPolicySource": SELECTION_POLICY_SOURCE,
+        "acceptedScheme": next(iter(scheme_values)) if len(scheme_values) == 1 else "PER_COMPONENT_POLICY",
+        "acceptedSchemes": schemes,
+        "acceptedSelectionPolicyMatched": True,
         "reselectionPerformed": False,
         "fullStrategyMatrixExecuted": False,
         "fullInt8UniversalPackClaimed": False,
@@ -158,7 +183,7 @@ def main() -> int:
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(
         "TINY-SD D3 SELECTED WASM REPRODUCTION: "
-        f"native_pass={report['nativePassCount']}/3 scheme={SELECTED_SCHEME} "
+        f"native_pass={report['nativePassCount']}/3 strategies={strategies} "
         f"selected_bytes={selected_bytes}"
     )
     return 0
