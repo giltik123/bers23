@@ -27,6 +27,8 @@ jobs:
           npm run server:typecheck
       - name: Prove pinned source-weight trust stays non-executable
         run: node --test tests/kandinsky-refinement-feasibility-policy.test.mjs
+      - name: Rebind pinned source weights to exact upstream LFS metadata
+        run: node scripts/verify-kandinsky-refinement-source-trust.mjs
       - name: Prove no weight files or runtime admission entered the repository
         run: |
           test "$(git ls-files '*.safetensors' '*.bin' | wc -l)" -eq 0
