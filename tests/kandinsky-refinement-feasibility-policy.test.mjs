@@ -31,7 +31,7 @@ test('F5b.1 pins exact safe source weights but grants no runtime authority', () 
   assert.equal(manifest.licenseReview.productionApprovalGranted, false);
 });
 
-test('F5b.1 decoder safetensors trust root is exact and still config-unproven', () => {
+test('F5b.1 decoder safetensors trust root is exact and config evidence remains non-authoritative', () => {
   assert.equal(manifest.decoder.repository, 'kandinsky-community/kandinsky-2-2-decoder-inpaint');
   assert.equal(manifest.decoder.revision, 'aad71de4002729023f7ecb6899dfad5246c02b44');
   assert.equal(manifest.decoder.pipelineClass, 'KandinskyV22InpaintPipeline');
@@ -51,6 +51,7 @@ test('F5b.1 decoder safetensors trust root is exact and still config-unproven', 
     },
   ]);
   assert.equal(manifest.decoder.requiredConfigIdentity, 'UNPINNED');
+  assert.equal(manifest.decoder.configInventoryEvidence, 'docs/fashion-f5b1-config-inventory.md');
   assert.equal(manifest.decoder.fp16Package, null);
   assert.equal(manifest.decoder.nativeRuntimeEvidence, null);
 });
@@ -64,6 +65,7 @@ test('F5b.1 prior is offline-only pinned safetensors evidence', () => {
   assertSafeWeights(manifest.offlinePrior.safeWeights);
   assert.equal(manifest.offlinePrior.safeWeights.reduce((sum, file) => sum + file.size, 0), manifest.offlinePrior.safeWeightBytes);
   assert.equal(manifest.offlinePrior.requiredConfigIdentity, 'UNPINNED');
+  assert.equal(manifest.offlinePrior.configInventoryEvidence, 'docs/fashion-f5b1-config-inventory.md');
 });
 
 test('F5b.1 closed conditioning and local runtime remain explicitly unproven', () => {
