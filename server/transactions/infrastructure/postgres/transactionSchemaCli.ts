@@ -12,25 +12,21 @@ import { checkGarmentSchema, migrateGarmentSchema } from '../../../core/fashion/
 import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../../../core/fashion/bodyAnchorSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../../../core/fashion/garmentWarpLayerSchema.ts';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from '../../../core/fashion/garmentTextureFinalLineageSchema.ts';
+import {
+  checkGarmentAppearanceRefinementFinalLineageSchema,
+  migrateGarmentAppearanceRefinementFinalLineageSchema,
+} from '../../../core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts';
 
 const command = process.argv[2];
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required');
 
-const pool = new Pool({
-  connectionString: databaseUrl,
-  max: 1,
-  application_name: `bers-transaction-schema-${command ?? 'unknown'}`,
-});
+const pool = new Pool({ connectionString: databaseUrl, max: 1, application_name: `bers-transaction-schema-${command ?? 'unknown'}` });
 try {
   if (command === 'migrate') {
     const result = await migrateTransactionSchema(pool);
-    // 014_canonical_mask_lineage references canonical_image_artifacts, so the image base
-    // schema must exist before the MASK migrator upgrades 002 with lineage constraints.
     await migrateImageArtifactSchema(pool);
     await migrateMaskArtifactSchema(pool);
-    // FINAL lineage 018-021 is a base Artifact contract and must be present before
-    // Fashion 030 additively extends its closed producer shape.
     await migrateFinalImageLineageSchema(pool);
     await migrateProjectSchema(pool);
     await migrateAuthSchema(pool);
@@ -40,6 +36,7 @@ try {
     await migrateProjectBodyAnchorSchema(pool);
     await migrateGarmentWarpLayerSchema(pool);
     await migrateGarmentTextureFinalLineageSchema(pool);
+    await migrateGarmentAppearanceRefinementFinalLineageSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', version: result.version, status: result.status }));
   } else if (command === 'check') {
     await checkTransactionSchema(pool);
@@ -54,6 +51,7 @@ try {
     await checkProjectBodyAnchorSchema(pool);
     await checkGarmentWarpLayerSchema(pool);
     await checkGarmentTextureFinalLineageSchema(pool);
+    await checkGarmentAppearanceRefinementFinalLineageSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', status: 'ready' }));
   } else {
     throw new Error('expected migrate or check command');
