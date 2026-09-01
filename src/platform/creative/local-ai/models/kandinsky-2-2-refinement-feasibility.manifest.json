@@ -1,0 +1,86 @@
+{
+  "modelId": "kandinsky-2-2-decoder-inpaint-refinement",
+  "version": "0.1.0-feasibility.1",
+  "status": "CANDIDATE",
+  "artifactState": "SOURCE_WEIGHT_TRUST_PINNED_CONFIG_AND_RUNTIME_UNPROVEN",
+  "semanticOperation": "GARMENT_APPEARANCE_REFINEMENT",
+  "refinementProfile": "REFINE_REALISM_V1",
+  "productionExecutable": false,
+  "runtimeAuthorityGranted": false,
+  "productionApprovalEvidence": null,
+  "licenseReview": {
+    "state": "UPSTREAM_METADATA_RECORDED_PRODUCT_REVIEW_REQUIRED",
+    "identifier": "apache-2.0",
+    "productionApprovalGranted": false
+  },
+  "decoder": {
+    "repository": "kandinsky-community/kandinsky-2-2-decoder-inpaint",
+    "revision": "aad71de4002729023f7ecb6899dfad5246c02b44",
+    "pipelineClass": "KandinskyV22InpaintPipeline",
+    "license": "apache-2.0",
+    "safeWeightBytes": 5283759068,
+    "safeWeights": [
+      {
+        "path": "unet/diffusion_pytorch_model.safetensors",
+        "size": 5012378704,
+        "sha256": "098b846d2378b4b44a33e0bd47f89f2886b72a10200cbf9e96d5fae3c471543f"
+      },
+      {
+        "path": "movq/diffusion_pytorch_model.safetensors",
+        "size": 271380364,
+        "sha256": "43a5860fea195a7116f2471396c5cc9535fade9b63c4857d8a192ffd924b7002"
+      }
+    ],
+    "requiredConfigIdentity": "UNPINNED",
+    "fp16Package": null,
+    "nativeRuntimeEvidence": null,
+    "browserRuntimeEvidence": null
+  },
+  "offlinePrior": {
+    "purpose": "BUILD_RESEARCH_ONLY_CONDITIONING_GENERATION",
+    "repository": "kandinsky-community/kandinsky-2-2-prior",
+    "revision": "40cd65123bb828e5641b118b77b38be1aee69891",
+    "license": "apache-2.0",
+    "safeWeightBytes": 10573556608,
+    "safeWeights": [
+      {
+        "path": "image_encoder/model.safetensors",
+        "size": 3689912664,
+        "sha256": "657723e09f46a7c3957df651601029f66b1748afb12b419816330f16ed45d64d"
+      },
+      {
+        "path": "prior/diffusion_pytorch_model.safetensors",
+        "size": 4104940968,
+        "sha256": "ab139b2df9e40ed0b1eda8dc6270a139a796c5fa3af76cd6b0573f620dca6dde"
+      },
+      {
+        "path": "text_encoder/model.safetensors",
+        "size": 2778702976,
+        "sha256": "6eaafeea664d7ab87df17274d6114dfdf092c587c7cd56c13cf84aacdebc0332"
+      }
+    ],
+    "requiredConfigIdentity": "UNPINNED",
+    "runtimeDependencyAllowed": false
+  },
+  "securityPolicy": {
+    "pickleWeightsAllowed": false,
+    "safetensorsRequired": true,
+    "hashBeforeUseRequired": true,
+    "repositoryWeightsPublishedByBERS": false
+  },
+  "conditioning": {
+    "state": "UNPROVEN",
+    "runtimePromptAllowed": false,
+    "runtimeNegativePromptAllowed": false,
+    "runtimePriorAllowed": false,
+    "bundle": null,
+    "decoderOnlyParity": null
+  },
+  "feasibility": {
+    "primaryRuntimeTier": "NATIVE_LOCAL",
+    "browserDefaultCandidate": false,
+    "realImageQualityEvidence": false,
+    "materialImprovementOverDeterministicF4": null,
+    "decision": "UNPROVEN"
+  }
+}
