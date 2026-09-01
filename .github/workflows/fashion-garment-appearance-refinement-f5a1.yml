@@ -38,9 +38,11 @@ jobs:
       - name: Prove contract-only F5 boundary remains closed
         run: |
           grep -q "GARMENT_APPEARANCE_REFINEMENT_DILATION_RADIUS_PX = 2" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_ALPHA_POLICY = 'PRESERVE_PARENT_ALPHA_GLOBAL'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
           grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
           grep -q "BYTE_EXACT_PARENT_RGBA8_OUTSIDE_SUPPORT" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
           grep -q "warpRgba\[pixel \* 4 + 3\] !== 0" src/platform/creative/deterministic/GarmentAppearanceRefinementSupport.ts
+          grep -q "changed globally protected parent alpha" src/platform/creative/deterministic/GarmentAppearanceRefinementSupport.ts
           if grep -E "from ['\"].*(providers|billing|fashn|tiny|onnx|diffusion|transformers)" \
             src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js \
             src/platform/creative/deterministic/GarmentAppearanceRefinementSupport.ts; then
