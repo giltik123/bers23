@@ -1,5 +1,11 @@
 import type { ArtifactAuthority, StoredProjectImageEvidence } from '../artifacts/artifactAuthority.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
+import {
+  BODY_ANCHOR_COORDINATE_SPACE,
+  BODY_ANCHOR_SCHEMA_ID,
+  bodyAnchorPayloadSha256,
+  normalizeBodyAnchorPayload,
+} from './bodyAnchorGeometry.ts';
 import type {
   ManagedProjectBodyAnchorSet,
   PostgresProjectBodyAnchorStore,
@@ -9,6 +15,7 @@ export const MANUAL_BODY_ANCHOR_PRODUCER_ID = 'bers.manual-body-anchors';
 export const MANUAL_BODY_ANCHOR_PRODUCER_VERSION = '1';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const POSITIVE_BIGINT_PATTERN = /^[1-9][0-9]*$/;
 const MAX_SOURCE_ARTIFACT_ID_LENGTH = 4096;
 
 type ArtifactReader = Pick<ArtifactAuthority, 'resolveStoredImageEvidence'>;
@@ -54,6 +61,8 @@ export class ManualProjectBodyAnchorAcquisitionService {
     const owner = Object.freeze({ tenantId: auth.tenantId, userId: auth.userId });
     const source = await this.dependencies.artifacts.resolveStoredImageEvidence(projectScope, normalized.sourceArtifactId);
     assertResolvedProjectImage(source, normalized.projectId);
+    const payload = normalizeBodyAnchorPayload(normalized.payload);
+    const expectedPayloadSha256 = bodyAnchorPayloadSha256(payload);
 
     const anchorSet = await this.dependencies.bodyAnchors.createForExpectedImage(
       owner,
@@ -65,20 +74,45 @@ export class ManualProjectBodyAnchorAcquisitionService {
         height: source.height,
       }),
       Object.freeze({
-        payload: normalized.payload,
+        payload,
         producerId: MANUAL_BODY_ANCHOR_PRODUCER_ID,
         producerVersion: MANUAL_BODY_ANCHOR_PRODUCER_VERSION,
       }),
     );
 
-    if (anchorSet.projectId !== normalized.projectId) {
-      throw acquisitionError(409, 'body_anchor_acquisition_authority_mismatch', 'Persisted body-anchor evidence escaped the requested Project');
-    }
+    assertPersistedAuthority(anchorSet, source, normalized.projectId, expectedPayloadSha256);
     return Object.freeze({
       projectId: normalized.projectId,
       sourceArtifactId: normalized.sourceArtifactId,
       anchorSet,
     });
+  }
+}
+
+function assertPersistedAuthority(
+  anchorSet: ManagedProjectBodyAnchorSet,
+  source: StoredProjectImageEvidence,
+  projectId: string,
+  expectedPayloadSha256: string,
+): void {
+  const matches = anchorSet.projectId === projectId
+    && anchorSet.projectImageStorageId === source.storageId
+    && anchorSet.projectImageSha256 === source.sha256
+    && anchorSet.projectImageWidth === source.width
+    && anchorSet.projectImageHeight === source.height
+    && anchorSet.schemaId === BODY_ANCHOR_SCHEMA_ID
+    && anchorSet.coordinateSpace === BODY_ANCHOR_COORDINATE_SPACE
+    && anchorSet.producerId === MANUAL_BODY_ANCHOR_PRODUCER_ID
+    && anchorSet.producerVersion === MANUAL_BODY_ANCHOR_PRODUCER_VERSION
+    && POSITIVE_BIGINT_PATTERN.test(anchorSet.acquisitionSequence)
+    && anchorSet.payloadSha256 === expectedPayloadSha256
+    && bodyAnchorPayloadSha256(anchorSet.payload) === expectedPayloadSha256;
+  if (!matches) {
+    throw acquisitionError(
+      409,
+      'body_anchor_acquisition_authority_mismatch',
+      'Persisted body-anchor evidence does not match the exact resolved Project source, payload and server-owned provenance',
+    );
   }
 }
 
