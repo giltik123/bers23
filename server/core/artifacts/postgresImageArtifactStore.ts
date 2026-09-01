@@ -1,8 +1,12 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import type { Pool } from 'pg';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
+import {
+  normalizeGarmentAppearanceRefinementFinalLineage,
+  type GarmentAppearanceRefinementFinalLineageV1,
+} from '../fashion/garmentAppearanceRefinementFinalLineage.ts';
 import {
   normalizeGarmentTextureFinalLineageParameters,
   type GarmentTextureCompositeProducerParametersV1,
@@ -41,12 +45,17 @@ export type GarmentTextureCompositeFinalImageLineage = Readonly<{
   producerParameters: GarmentTextureCompositeProducerParametersV1;
 }>;
 
+export type GarmentAppearanceRefinementFinalImageLineage = GarmentAppearanceRefinementFinalLineageV1 & Readonly<{
+  producerOperation: 'GARMENT_APPEARANCE_REFINEMENT';
+}>;
+
 export type FinalImageLineage =
   | BackgroundIsolationFinalImageLineage
   | CropFinalImageLineage
   | ResizeFinalImageLineage
   | OrthogonalTransformFinalImageLineage
-  | GarmentTextureCompositeFinalImageLineage;
+  | GarmentTextureCompositeFinalImageLineage
+  | GarmentAppearanceRefinementFinalImageLineage;
 
 type NormalizedGarmentTextureCompositeFinalImageLineage = GarmentTextureCompositeFinalImageLineage & Readonly<{
   producerParametersSha256: string;
@@ -57,7 +66,8 @@ type NormalizedFinalImageLineage =
   | CropFinalImageLineage
   | ResizeFinalImageLineage
   | OrthogonalTransformFinalImageLineage
-  | NormalizedGarmentTextureCompositeFinalImageLineage;
+  | NormalizedGarmentTextureCompositeFinalImageLineage
+  | GarmentAppearanceRefinementFinalImageLineage;
 
 export type StoredFinalImage = Readonly<{
   storageId: string;
@@ -75,11 +85,15 @@ export type StoredFinalImage = Readonly<{
   bytes: Uint8Array;
   sourceImageStorageId?: string;
   maskStorageId?: string;
-  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'GARMENT_TEXTURE_COMPOSITE';
+  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'GARMENT_TEXTURE_COMPOSITE' | 'GARMENT_APPEARANCE_REFINEMENT';
   garmentWarpLayerId?: string;
   garmentWarpLayerSha256?: string;
   producerParameters?: GarmentTextureCompositeProducerParametersV1;
   producerParametersSha256?: string;
+  refinementParentStorageId?: string;
+  refinementParentSha256?: string;
+  refinementProfile?: GarmentAppearanceRefinementFinalLineageV1['refinementProfile'];
+  refinementSupportSha256?: string;
 }>;
 export type StoredImage = Omit<StoredFinalImage, 'executionId'|'operationId'|'role'|'lifecycle'> & {
   executionId?: string;
@@ -111,36 +125,32 @@ export class PostgresImageArtifactStore {
     const normalizedLineage = lineage ? normalizeLineage(lineage) : undefined;
 
     // Keep generic deterministic FINAL persistence composable with the accepted
-    // artifact-only migrations. Fashion migration 030 is intentionally later
-    // than immutable warp-layer migration 029, so requiring Fashion columns for
-    // CROP/RESIZE/etc. would make every generic Project authority depend on the
-    // Fashion schema. Two exact static INSERT shapes avoid both dynamic SQL and
-    // that backwards dependency: only GARMENT_TEXTURE_COMPOSITE can reference
-    // Fashion-specific columns, and therefore it still fails closed if 030 was
-    // not applied.
-    const result = normalizedLineage?.producerOperation === 'GARMENT_TEXTURE_COMPOSITE'
+    // artifact-only migrations. Fashion migration 030 owns only the F4 texture
+    // columns and migration 032 owns only the F5 refinement columns. Static SQL
+    // shapes ensure generic FINALs do not depend on either Fashion extension,
+    // F4 texture FINALs require only 030, and F5 refinement FINALs require 032.
+    const result = normalizedLineage?.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT'
       ? await this.pool.query(`INSERT INTO canonical_image_artifacts
           (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes,
-           source_image_storage_id,mask_storage_id,producer_operation,garment_warp_layer_id,garment_warp_layer_sha256,producer_parameters,producer_parameters_sha256)
-          VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,$10,NULL,$11,$12,$13,$14,$15)
+           producer_operation,refinement_parent_storage_id,refinement_parent_sha256,refinement_profile,refinement_support_sha256)
+          VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,$10,$11,$12,$13,$14)
           ON CONFLICT (tenant_id,user_id,project_id,execution_id)
           WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
           DO UPDATE SET execution_id=EXCLUDED.execution_id
           RETURNING *`, [
             storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId,
             image.width, image.height, bytes,
-            normalizedLineage.sourceImageStorageId,
             normalizedLineage.producerOperation,
-            normalizedLineage.garmentWarpLayerId,
-            normalizedLineage.garmentWarpLayerSha256,
-            normalizedLineage.producerParameters,
-            normalizedLineage.producerParametersSha256,
+            normalizedLineage.refinementParentStorageId,
+            normalizedLineage.refinementParentSha256,
+            normalizedLineage.refinementProfile,
+            normalizedLineage.refinementSupportSha256,
           ])
-      : normalizedLineage
+      : normalizedLineage?.producerOperation === 'GARMENT_TEXTURE_COMPOSITE'
         ? await this.pool.query(`INSERT INTO canonical_image_artifacts
             (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes,
-             source_image_storage_id,mask_storage_id,producer_operation)
-            VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,$10,$11,$12)
+             source_image_storage_id,mask_storage_id,producer_operation,garment_warp_layer_id,garment_warp_layer_sha256,producer_parameters,producer_parameters_sha256)
+            VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,$10,NULL,$11,$12,$13,$14,$15)
             ON CONFLICT (tenant_id,user_id,project_id,execution_id)
             WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
             DO UPDATE SET execution_id=EXCLUDED.execution_id
@@ -148,16 +158,34 @@ export class PostgresImageArtifactStore {
               storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId,
               image.width, image.height, bytes,
               normalizedLineage.sourceImageStorageId,
-              normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' ? normalizedLineage.maskStorageId : null,
               normalizedLineage.producerOperation,
+              normalizedLineage.garmentWarpLayerId,
+              normalizedLineage.garmentWarpLayerSha256,
+              normalizedLineage.producerParameters,
+              normalizedLineage.producerParametersSha256,
             ])
-        : await this.pool.query(`INSERT INTO canonical_image_artifacts
-            (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes)
-            VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9)
-            ON CONFLICT (tenant_id,user_id,project_id,execution_id)
-            WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
-            DO UPDATE SET execution_id=EXCLUDED.execution_id
-            RETURNING *`, [storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId, image.width, image.height, bytes]);
+        : normalizedLineage
+          ? await this.pool.query(`INSERT INTO canonical_image_artifacts
+              (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes,
+               source_image_storage_id,mask_storage_id,producer_operation)
+              VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9,$10,$11,$12)
+              ON CONFLICT (tenant_id,user_id,project_id,execution_id)
+              WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
+              DO UPDATE SET execution_id=EXCLUDED.execution_id
+              RETURNING *`, [
+                storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId,
+                image.width, image.height, bytes,
+                normalizedLineage.sourceImageStorageId,
+                normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' ? normalizedLineage.maskStorageId : null,
+                normalizedLineage.producerOperation,
+              ])
+          : await this.pool.query(`INSERT INTO canonical_image_artifacts
+              (storage_id,tenant_id,user_id,project_id,execution_id,operation_id,role,lifecycle,width,height,encoding,content_type,image_bytes)
+              VALUES ($1,$2,$3,$4,$5,$6,'COMPOSITE','FINAL',$7,$8,'PNG_RGBA8_LOSSLESS','image/png',$9)
+              ON CONFLICT (tenant_id,user_id,project_id,execution_id)
+              WHERE role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL
+              DO UPDATE SET execution_id=EXCLUDED.execution_id
+              RETURNING *`, [storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId, image.width, image.height, bytes]);
     const row = result.rows[0];
     if (!row) throw new Error('Canonical FINAL persistence failed');
     if (normalizedLineage) assertExactLineagedReplay(row, scope, executionId, operationId, image.width, image.height, bytes, normalizedLineage);
@@ -212,6 +240,28 @@ export class PostgresImageArtifactStore {
   }
 
   private async assertStoredFashionLineage(row: any, scope: AuthenticatedScope & { projectId: string }): Promise<void> {
+    if (row.producer_operation === 'GARMENT_APPEARANCE_REFINEMENT') {
+      const lineage = lineageFieldsFromRow(row);
+      if (
+        lineage.producerOperation !== 'GARMENT_APPEARANCE_REFINEMENT'
+        || !lineage.refinementParentStorageId
+        || !lineage.refinementParentSha256
+        || !lineage.refinementProfile
+        || !lineage.refinementSupportSha256
+      ) throw new Error('Canonical Fashion refinement FINAL durable lineage is incomplete');
+      const parent = await this.loadSource(lineage.refinementParentStorageId, scope);
+      if (
+        !parent
+        || parent.role !== 'COMPOSITE'
+        || parent.lifecycle !== 'FINAL'
+        || parent.producerOperation !== 'GARMENT_TEXTURE_COMPOSITE'
+        || parent.width !== Number(row.width)
+        || parent.height !== Number(row.height)
+        || sha256(parent.bytes) !== lineage.refinementParentSha256
+      ) throw new Error('Canonical Fashion refinement FINAL deterministic parent is unavailable or inconsistent');
+      return;
+    }
+
     if (row.producer_operation !== 'GARMENT_TEXTURE_COMPOSITE') return;
     const lineage = lineageFieldsFromRow(row);
     if (
@@ -255,6 +305,21 @@ export class PostgresImageArtifactStore {
 }
 
 function normalizeLineage(value: FinalImageLineage): NormalizedFinalImageLineage {
+  if (value.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT') {
+    const keys = Object.keys(value).sort();
+    const expectedKeys = ['producerOperation','refinementParentSha256','refinementParentStorageId','refinementProfile','refinementSupportSha256'].sort();
+    if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index])) {
+      throw new Error('Canonical Fashion refinement FINAL lineage has unknown or missing fields');
+    }
+    const normalized = normalizeGarmentAppearanceRefinementFinalLineage({
+      refinementParentStorageId: value.refinementParentStorageId,
+      refinementParentSha256: value.refinementParentSha256,
+      refinementProfile: value.refinementProfile,
+      refinementSupportSha256: value.refinementSupportSha256,
+    });
+    return Object.freeze({ producerOperation: 'GARMENT_APPEARANCE_REFINEMENT' as const, ...normalized });
+  }
+
   const sourceImageStorageId = value?.sourceImageStorageId?.trim();
   if (!sourceImageStorageId) throw new Error('Canonical FINAL source lineage is incomplete');
   if (value.producerOperation === 'BACKGROUND_ISOLATION') {
@@ -303,10 +368,15 @@ function assertExactLineagedReplay(
   lineage: NormalizedFinalImageLineage,
 ): void {
   const storedBytes = Buffer.from(row.image_bytes ?? []);
+  const expectedSourceStorageId = lineage.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT' ? null : lineage.sourceImageStorageId;
   const expectedMaskStorageId = lineage.producerOperation === 'BACKGROUND_ISOLATION' ? lineage.maskStorageId : null;
   const expectedLayerId = lineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? lineage.garmentWarpLayerId : null;
   const expectedLayerSha = lineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? lineage.garmentWarpLayerSha256 : null;
   const expectedParametersSha = lineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? lineage.producerParametersSha256 : null;
+  const expectedRefinementParentId = lineage.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT' ? lineage.refinementParentStorageId : null;
+  const expectedRefinementParentSha = lineage.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT' ? lineage.refinementParentSha256 : null;
+  const expectedRefinementProfile = lineage.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT' ? lineage.refinementProfile : null;
+  const expectedRefinementSupportSha = lineage.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT' ? lineage.refinementSupportSha256 : null;
   const storedParameters = row.producer_parameters == null ? null : normalizeGarmentTextureFinalLineageParameters(row.producer_parameters);
   const same = row.tenant_id === scope.tenantId
     && row.user_id === scope.userId
@@ -320,12 +390,16 @@ function assertExactLineagedReplay(
     && row.encoding === 'PNG_RGBA8_LOSSLESS'
     && row.content_type === 'image/png'
     && storedBytes.equals(bytes)
-    && row.source_image_storage_id === lineage.sourceImageStorageId
+    && (row.source_image_storage_id ?? null) === expectedSourceStorageId
     && (row.mask_storage_id ?? null) === expectedMaskStorageId
     && row.producer_operation === lineage.producerOperation
     && (row.garment_warp_layer_id ?? null) === expectedLayerId
     && (row.garment_warp_layer_sha256 ?? null) === expectedLayerSha
     && (row.producer_parameters_sha256 ?? null) === expectedParametersSha
+    && (row.refinement_parent_storage_id ?? null) === expectedRefinementParentId
+    && (row.refinement_parent_sha256 ?? null) === expectedRefinementParentSha
+    && (row.refinement_profile ?? null) === expectedRefinementProfile
+    && (row.refinement_support_sha256 ?? null) === expectedRefinementSupportSha
     && (
       lineage.producerOperation !== 'GARMENT_TEXTURE_COMPOSITE'
       || (
@@ -358,6 +432,7 @@ function fromFinalRow(row: any): StoredFinalImage {
 function lineageFieldsFromRow(row: any): Pick<
   StoredFinalImage,
   'sourceImageStorageId' | 'maskStorageId' | 'producerOperation' | 'garmentWarpLayerId' | 'garmentWarpLayerSha256' | 'producerParameters' | 'producerParametersSha256'
+  | 'refinementParentStorageId' | 'refinementParentSha256' | 'refinementProfile' | 'refinementSupportSha256'
 > {
   const producerOperation = row.producer_operation ?? undefined;
   const sourceImageStorageId = row.source_image_storage_id ?? undefined;
@@ -366,12 +441,35 @@ function lineageFieldsFromRow(row: any): Pick<
   const garmentWarpLayerSha256 = row.garment_warp_layer_sha256 ?? undefined;
   const producerParametersSha256 = row.producer_parameters_sha256 ?? undefined;
   const producerParametersRaw = row.producer_parameters ?? undefined;
+  const refinementParentStorageId = row.refinement_parent_storage_id ?? undefined;
+  const refinementParentSha256 = row.refinement_parent_sha256 ?? undefined;
+  const refinementProfile = row.refinement_profile ?? undefined;
+  const refinementSupportSha256 = row.refinement_support_sha256 ?? undefined;
 
   if (!producerOperation) {
-    if (sourceImageStorageId || maskStorageId || garmentWarpLayerId || garmentWarpLayerSha256 || producerParametersRaw || producerParametersSha256) {
-      throw new Error('Canonical unlineaged IMAGE carries unexpected lineage fields');
-    }
+    if (
+      sourceImageStorageId || maskStorageId || garmentWarpLayerId || garmentWarpLayerSha256 || producerParametersRaw || producerParametersSha256
+      || refinementParentStorageId || refinementParentSha256 || refinementProfile || refinementSupportSha256
+    ) throw new Error('Canonical unlineaged IMAGE carries unexpected lineage fields');
     return {};
+  }
+
+  if (producerOperation === 'GARMENT_APPEARANCE_REFINEMENT') {
+    if (
+      sourceImageStorageId || maskStorageId || garmentWarpLayerId || garmentWarpLayerSha256 || producerParametersRaw || producerParametersSha256
+      || !refinementParentStorageId || !refinementParentSha256 || !refinementProfile || !refinementSupportSha256
+    ) throw new Error('Canonical Fashion refinement FINAL durable lineage is incomplete');
+    const normalized = normalizeGarmentAppearanceRefinementFinalLineage({
+      refinementParentStorageId,
+      refinementParentSha256,
+      refinementProfile,
+      refinementSupportSha256,
+    } as GarmentAppearanceRefinementFinalLineageV1);
+    return { producerOperation, ...normalized };
+  }
+
+  if (refinementParentStorageId || refinementParentSha256 || refinementProfile || refinementSupportSha256) {
+    throw new Error('Non-refinement canonical FINAL carries F5-specific lineage fields');
   }
 
   if (producerOperation === 'GARMENT_TEXTURE_COMPOSITE') {
@@ -406,6 +504,10 @@ function lineageFieldsFromRow(row: any): Pick<
     return { sourceImageStorageId, producerOperation };
   }
   throw new Error('Canonical FINAL producer operation is unsupported');
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
 }
 
 function canonicalSha256(value: unknown, label: string): string {
