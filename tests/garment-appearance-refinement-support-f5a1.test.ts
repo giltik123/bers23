@@ -7,6 +7,7 @@ import {
   GARMENT_APPEARANCE_REFINEMENT_OUTSIDE_SUPPORT_POLICY,
   GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION,
   GARMENT_APPEARANCE_REFINEMENT_PROFILE,
+  composeGarmentAppearanceRefinementCandidate,
   deriveGarmentAppearanceRefinementSupport,
   verifyGarmentAppearanceRefinementCandidate,
 } from '../src/platform/creative/deterministic/GarmentAppearanceRefinementSupport.ts';
@@ -84,6 +85,42 @@ test('F5a.1 empty garment warp support and malformed geometry fail closed', () =
   assert.throws(() => deriveGarmentAppearanceRefinementSupport(new Uint8Array(4), 0, 1), /positive safe integer/i);
 });
 
+test('F5a.1 canonical compositor clips arbitrary model output to Core-derived RGB support', () => {
+  const width = 7;
+  const height = 7;
+  const warpRgba = warp(width, height, [[3, 3]]);
+  const support = deriveGarmentAppearanceRefinementSupport(warpRgba, width, height);
+  const parent = new Uint8ClampedArray(width * height * 4);
+  for (let pixel = 0; pixel < width * height; pixel += 1) parent[pixel * 4 + 3] = 77;
+  const model = new Uint8ClampedArray(width * height * 4);
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const offset = pixel * 4;
+    model[offset] = 101;
+    model[offset + 1] = 102;
+    model[offset + 2] = 103;
+    model[offset + 3] = 250;
+  }
+  const parentBefore = Uint8ClampedArray.from(parent);
+  const modelBefore = Uint8ClampedArray.from(model);
+
+  const composed = composeGarmentAppearanceRefinementCandidate(parent, model, warpRgba, width, height);
+  let supportedPixels = 0;
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const offset = pixel * 4;
+    assert.equal(composed[offset + 3], 77, 'canonical candidate must preserve parent alpha globally');
+    if (support.mask[pixel] === 255) {
+      supportedPixels += 1;
+      assert.deepEqual(Array.from(composed.subarray(offset, offset + 3)), [101, 102, 103]);
+    } else {
+      assert.deepEqual(Array.from(composed.subarray(offset, offset + 4)), [0, 0, 0, 77]);
+    }
+  }
+  assert.equal(supportedPixels, 25);
+  assert.deepEqual(parent, parentBefore, 'compositor must not mutate deterministic parent');
+  assert.deepEqual(model, modelBefore, 'compositor must not mutate raw model output');
+  assert.equal(verifyGarmentAppearanceRefinementCandidate(parent, composed, warpRgba, width, height).changedPixels, 25);
+});
+
 test('F5a.1 candidate may change supported RGB while parent alpha is immutable globally', () => {
   const width = 7;
   const height = 7;
@@ -143,7 +180,7 @@ test('F5a.1 verifier re-derives support from immutable warp and ignores any sepa
   );
 });
 
-test('F5a.1 candidate verifier rejects warp and geometry substitution', () => {
+test('F5a.1 candidate verifier and compositor reject warp and geometry substitution', () => {
   const width = 5;
   const height = 5;
   const warpRgba = warp(width, height, [[2, 2]]);
@@ -155,6 +192,10 @@ test('F5a.1 candidate verifier rejects warp and geometry substitution', () => {
   );
   assert.throws(
     () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, warpRgba.subarray(0, warpRgba.length - 4), width, height),
+    /byte length/i,
+  );
+  assert.throws(
+    () => composeGarmentAppearanceRefinementCandidate(parent, candidate.subarray(0, candidate.length - 4), warpRgba, width, height),
     /byte length/i,
   );
   assert.throws(
