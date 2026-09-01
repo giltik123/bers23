@@ -26,6 +26,21 @@ EXPECTED_ONNX = "1.22.0"
 EXPECTED_ORT = "1.27.0"
 COMPONENTS = tuple(baseline.COMPONENT_FILES)
 
+# D3 research still computes the real minimum-size winner from every passing candidate.
+# This checked-in policy is the explicit acceptance boundary consumed by downstream D4/D5.
+# A changed winner must fail closed here and receive an evidence-backed policy update instead
+# of allowing downstream jobs to silently reproduce a stale representation.
+ACCEPTED_SELECTED_STRATEGY_BY_COMPONENT = {
+    "text_encoder": "exact_fp16_storage",
+    "unet": "exact_fp16_storage",
+    "vae_decoder": "exact_fp16_storage",
+}
+ACCEPTED_SELECTED_SCHEME_BY_COMPONENT = {
+    "text_encoder": "EXACT_FP16_STORAGE_FP32_COMPUTE",
+    "unet": "EXACT_FP16_STORAGE_FP32_COMPUTE",
+    "vae_decoder": "EXACT_FP16_STORAGE_FP32_COMPUTE",
+}
+
 
 def _attribute_int(node: onnx.NodeProto, name: str, default: int = 0) -> int:
     for attribute in node.attribute:
@@ -393,6 +408,17 @@ def _strategy_definitions(component: str):
     ]
 
 
+def accepted_strategy_definition(component: str) -> tuple[str, Callable[[Path, Path], dict[str, Any]]]:
+    expected_name = ACCEPTED_SELECTED_STRATEGY_BY_COMPONENT.get(component)
+    expected_scheme = ACCEPTED_SELECTED_SCHEME_BY_COMPONENT.get(component)
+    if expected_name is None or expected_scheme is None:
+        raise RuntimeError(f"accepted D3 selection policy missing component: {component}")
+    matches = [(name, transform) for name, transform in _strategy_definitions(component) if name == expected_name]
+    if len(matches) != 1:
+        raise RuntimeError(f"accepted D3 strategy is not uniquely registered for {component}: {expected_name}")
+    return matches[0]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--fp32-dir", type=Path, required=True)
@@ -416,6 +442,10 @@ def main() -> int:
         raise RuntimeError("baseline evidence unexpectedly grants authority")
     if set(baseline_report.get("components") or {}) != set(COMPONENTS):
         raise RuntimeError("baseline component set drift")
+    if set(ACCEPTED_SELECTED_STRATEGY_BY_COMPONENT) != set(COMPONENTS):
+        raise RuntimeError("accepted D3 strategy policy component set drift")
+    if set(ACCEPTED_SELECTED_SCHEME_BY_COMPONENT) != set(COMPONENTS):
+        raise RuntimeError("accepted D3 scheme policy component set drift")
 
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -423,6 +453,7 @@ def main() -> int:
     scratch.mkdir(parents=True, exist_ok=True)
 
     components: dict[str, Any] = {}
+    policy_mismatches: dict[str, Any] = {}
     for component in COMPONENTS:
         filename = baseline.COMPONENT_FILES[component]
         source = fp32_dir / filename
@@ -451,8 +482,18 @@ def main() -> int:
         selected_name = None
         selected_record = None
         selected_path = output_dir / filename
+        expected_selected_name = ACCEPTED_SELECTED_STRATEGY_BY_COMPONENT[component]
+        expected_selected_scheme = ACCEPTED_SELECTED_SCHEME_BY_COMPONENT[component]
         if passing:
             _, selected_name, candidate_path, selected_record = min(passing, key=lambda item: (item[0], item[1]))
+            selected_scheme = (selected_record.get("transform") or {}).get("scheme")
+            if selected_name != expected_selected_name or selected_scheme != expected_selected_scheme:
+                policy_mismatches[component] = {
+                    "expectedStrategy": expected_selected_name,
+                    "observedStrategy": selected_name,
+                    "expectedScheme": expected_selected_scheme,
+                    "observedScheme": selected_scheme,
+                }
             shutil.copyfile(candidate_path, selected_path)
             for _, _, path, _ in passing:
                 if path.exists():
@@ -472,6 +513,9 @@ def main() -> int:
             "nativeOrtParity": selected_record["nativeOrtParity"] if selected_record else None,
             "transform": selected_record["transform"] if selected_record else None,
             "selectedStrategy": selected_name,
+            "acceptedSelectedStrategy": expected_selected_name,
+            "acceptedSelectedScheme": expected_selected_scheme,
+            "acceptedSelectionPolicyMatched": selected_record is not None and component not in policy_mismatches,
             "bestObservedByNormalizedRmse": best_observed,
             "strategies": strategies,
             "browserFixture": baseline_component["browserFixture"],
@@ -483,6 +527,7 @@ def main() -> int:
     shutil.rmtree(scratch, ignore_errors=True)
     native_pass_count = sum(value["result"] == "WASM_COMPACT_NATIVE_PASS" for value in components.values())
     selected_bytes = sum((value.get("candidate") or {}).get("size", 0) for value in components.values())
+    accepted_selection_policy_matched = native_pass_count == len(COMPONENTS) and not policy_mismatches
     report = {
         "schemaVersion": 1,
         "status": "CANDIDATE",
@@ -491,6 +536,11 @@ def main() -> int:
         "baselineEvidenceSha256": __import__("hashlib").sha256(baseline_report_bytes).hexdigest(),
         "strategyOrderIsNotAuthority": True,
         "selectionRule": "MIN_SIZE_AMONG_ORIGINAL_D3_NATIVE_PARITY_PASSING_CANDIDATES",
+        "acceptedSelectionPolicy": dict(ACCEPTED_SELECTED_STRATEGY_BY_COMPONENT),
+        "acceptedSchemePolicy": dict(ACCEPTED_SELECTED_SCHEME_BY_COMPONENT),
+        "acceptedSelectionPolicyMatched": accepted_selection_policy_matched,
+        "selectionPolicyMismatches": policy_mismatches,
+        "selectionPolicyUpdateRequiredOnWinnerChange": True,
         "fullInt8UniversalPackClaimed": False,
         "browserWasmStillRequired": True,
         "calibrationIsProductionQualityAuthority": False,
@@ -514,6 +564,11 @@ def main() -> int:
     print(f"TINY-SD D3 WASM STRATEGY MATRIX: pass={native_pass_count}/3 blocked={report['blockedComponents']}")
     for component, value in components.items():
         print(component, "selected=", value["selectedStrategy"], "best=", value["bestObservedByNormalizedRmse"])
+    if not accepted_selection_policy_matched:
+        raise RuntimeError(
+            "D3 minimum-size winner diverged from accepted per-component selection policy; "
+            f"explicit accepted-selection policy update required: {policy_mismatches or report['blockedComponents']}"
+        )
     return 0
 
 
