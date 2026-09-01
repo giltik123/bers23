@@ -42,18 +42,17 @@ test('D1.2 config byte verifier rejects exact size and SHA drift', () => {
   assert.throws(() => assertPinnedConfigBytes({ ...pinned, sha256: '0'.repeat(64) }, bytes), /SHA-256 drift/i);
 });
 
-test('D1.2 bounded response rejects declared oversize before reading body', async () => {
-  let pulls = 0;
-  const body = new ReadableStream({
-    pull(controller) {
-      pulls += 1;
-      controller.enqueue(new Uint8Array([1]));
-      controller.close();
+test('D1.2 bounded response rejects declared oversize before accessing body', async () => {
+  let bodyAccesses = 0;
+  const response = {
+    headers: new Headers({ 'content-length': String(MAX_CONFIG_FILE_BYTES + 1) }),
+    get body() {
+      bodyAccesses += 1;
+      throw new Error('body must not be accessed for declared oversize');
     },
-  });
-  const response = new Response(body, { headers: { 'content-length': String(MAX_CONFIG_FILE_BYTES + 1) } });
+  };
   await assert.rejects(() => readBoundedConfigResponse(response, 'declared-oversize'), /exceeds bounded size before read/i);
-  assert.equal(pulls, 0, 'declared oversize must fail before consuming response bytes');
+  assert.equal(bodyAccesses, 0, 'declared oversize must fail before touching response.body');
 });
 
 test('D1.2 bounded response aborts streaming oversize and accepts bounded exact bytes', async () => {
