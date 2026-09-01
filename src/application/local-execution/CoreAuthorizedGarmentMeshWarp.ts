@@ -61,6 +61,17 @@ export type GarmentMeshWarpPreparedRunResult = Readonly<{
   latencyMs: number;
 }>;
 
+type TicketExecutionResult = Readonly<{
+  target: 'LOCAL';
+  runtime: 'BROWSER_JS';
+  accelerator: 'cpu';
+  status: 'SUCCESS';
+  layerId?: string;
+  contentSha256?: string;
+  preview: PixelImage;
+  latencyMs: number;
+}>;
+
 /**
  * Browser-side F4b.4 executor. Core owns all managed Garment evidence and mesh
  * derivation; the browser only executes the exact ticketed kernel over one
@@ -88,7 +99,17 @@ export class CoreAuthorizedGarmentMeshWarp {
       anchorSetId: input.anchorSetId,
       clientRequestId: input.requestId,
     });
-    return this.executeTicket(prepared.ticket, input);
+    const result = await this.executeTicket(prepared.ticket, input);
+    if (!result.layerId || !result.contentSha256 || !SHA.test(result.contentSha256)) throw new Error('Core rejected deterministic garment mesh warp');
+    return Object.freeze({
+      target: result.target,
+      runtime: result.runtime,
+      accelerator: result.accelerator,
+      layerId: result.layerId,
+      contentSha256: result.contentSha256,
+      preview: result.preview,
+      latencyMs: result.latencyMs,
+    });
   }
 
   /**
@@ -104,13 +125,13 @@ export class CoreAuthorizedGarmentMeshWarp {
       target: result.target,
       runtime: result.runtime,
       accelerator: result.accelerator,
-      status: 'SUCCESS',
+      status: result.status,
       preview: result.preview,
       latencyMs: result.latencyMs,
     });
   }
 
-  private async executeTicket(ticketInput: LocalExecutionTicketV2, input: GarmentMeshWarpRunInput): Promise<GarmentMeshWarpRunResult> {
+  private async executeTicket(ticketInput: LocalExecutionTicketV2, input: GarmentMeshWarpRunInput): Promise<TicketExecutionResult> {
     const ticket = validateTicket(ticketInput, this.projectId, input);
     const envelope = decodeGarmentMeshWarpInputEnvelope(await this.core.loadGarmentMeshWarpInput({ ticketId: ticket.ticketId, projectId: this.projectId }));
     validateEnvelope(ticket, envelope.metadata, input);
@@ -159,19 +180,15 @@ export class CoreAuthorizedGarmentMeshWarp {
       }),
     });
     const finalized = await this.core.submitGarmentMeshWarp({ ticketId: ticket.ticketId, projectId: this.projectId, result });
-    if (
-      finalized.status !== 'SUCCESS'
-      || finalized.verification?.valid === false
-      || !finalized.layerId
-      || !finalized.contentSha256
-      || !SHA.test(finalized.contentSha256)
-    ) throw new Error('Core rejected deterministic garment mesh warp');
+    if (finalized.status !== 'SUCCESS' || finalized.verification?.valid === false) throw new Error('Core rejected deterministic garment mesh warp');
+    if (finalized.contentSha256 !== undefined && !SHA.test(finalized.contentSha256)) throw new Error('Core returned invalid garment mesh-warp layer evidence');
     return Object.freeze({
       target: 'LOCAL',
       runtime: TOOL.browser.runtime,
       accelerator: TOOL.browser.accelerator,
-      layerId: finalized.layerId,
-      contentSha256: finalized.contentSha256,
+      status: 'SUCCESS',
+      ...(finalized.layerId ? { layerId: finalized.layerId } : {}),
+      ...(finalized.contentSha256 ? { contentSha256: finalized.contentSha256 } : {}),
       preview,
       latencyMs,
     });
