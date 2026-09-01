@@ -75,6 +75,16 @@ export type GarmentTextureCompositePreparedRunResult = Readonly<{
   latencyMs: number;
 }>;
 
+type TicketExecutionResult = Readonly<{
+  target: 'LOCAL';
+  runtime: 'BROWSER_JS';
+  accelerator: 'cpu';
+  status: 'SUCCESS';
+  artifactId?: string;
+  preview: PixelImage;
+  latencyMs: number;
+}>;
+
 /**
  * Browser-side F4b.5b executor.
  *
@@ -110,7 +120,9 @@ export class CoreAuthorizedGarmentTextureComposite {
       featherRadius: expectedParameters.document.featherRadius,
       clientRequestId: input.requestId,
     });
-    return this.executeTicket(prepared.ticket, input, expectedParameters.canonicalJson);
+    const result = await this.executeTicket(prepared.ticket, input, expectedParameters.canonicalJson);
+    if (!result.artifactId) throw new Error('Core rejected deterministic garment texture composite');
+    return Object.freeze({ target: result.target, runtime: result.runtime, accelerator: result.accelerator, artifactId: result.artifactId, preview: result.preview, latencyMs: result.latencyMs });
   }
 
   /**
@@ -132,7 +144,7 @@ export class CoreAuthorizedGarmentTextureComposite {
       target: result.target,
       runtime: result.runtime,
       accelerator: result.accelerator,
-      status: 'SUCCESS',
+      status: result.status,
       preview: result.preview,
       latencyMs: result.latencyMs,
     });
@@ -142,7 +154,7 @@ export class CoreAuthorizedGarmentTextureComposite {
     ticketInput: LocalExecutionTicketV2,
     input: GarmentTextureCompositeRunInput,
     expectedProducerJson: string,
-  ): Promise<GarmentTextureCompositeRunResult> {
+  ): Promise<TicketExecutionResult> {
     const ticket = validateTicket(ticketInput, this.projectId, input, expectedProducerJson);
     const envelope = decodeGarmentTextureCompositeInputEnvelope(
       await this.core.loadGarmentTextureCompositeInput({ ticketId: ticket.ticketId, projectId: this.projectId }),
@@ -203,10 +215,16 @@ export class CoreAuthorizedGarmentTextureComposite {
       }),
     });
     const finalized = await this.core.submitGarmentTextureComposite({ ticketId: ticket.ticketId, projectId: this.projectId, result });
-    if (finalized.status !== 'SUCCESS' || finalized.verification?.valid === false || !finalized.artifactId) {
-      throw new Error('Core rejected deterministic garment texture composite');
-    }
-    return Object.freeze({ target: 'LOCAL', runtime: 'BROWSER_JS', accelerator: 'cpu', artifactId: finalized.artifactId, preview, latencyMs });
+    if (finalized.status !== 'SUCCESS' || finalized.verification?.valid === false) throw new Error('Core rejected deterministic garment texture composite');
+    return Object.freeze({
+      target: 'LOCAL',
+      runtime: 'BROWSER_JS',
+      accelerator: 'cpu',
+      status: 'SUCCESS',
+      ...(finalized.artifactId ? { artifactId: finalized.artifactId } : {}),
+      preview,
+      latencyMs,
+    });
   }
 }
 
@@ -295,6 +313,7 @@ function validateTicket(
     || p.maxDimension !== GARMENT_TEXTURE_COMPOSITE_MAX_DIMENSION
     || p.maxOutputPixels !== GARMENT_TEXTURE_COMPOSITE_MAX_PIXELS
     || !SHA.test(String(p.producerParametersSha256 ?? ''))
+    || normalized.sha256 !== p.producerParametersSha256
     || normalized.canonicalJson !== expectedProducerJson
   ) throw new Error('Garment texture-composite ticket lineage does not match requested intent');
   return ticket;
@@ -340,6 +359,7 @@ function validateEnvelope(
     || metadata.garmentSourceWidth !== view.width
     || metadata.garmentSourceHeight !== view.height
     || metadata.producerParametersSha256 !== p.producerParametersSha256
+    || normalized.sha256 !== metadata.producerParametersSha256
     || normalized.canonicalJson !== expectedProducerJson
   ) throw new Error('Garment texture-composite input envelope does not match the immutable Core ticket');
 }
