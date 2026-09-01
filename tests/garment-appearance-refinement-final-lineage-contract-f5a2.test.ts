@@ -7,13 +7,17 @@ const parent = 'abcdefab-cdef-4abc-8def-abcdefabcdef';
 const parentSha = 'a'.repeat(64);
 const supportSha = 'b'.repeat(64);
 
-test('F5a.2 normalizes only the closed deterministic-parent lineage document', () => {
-  const result = normalizeGarmentAppearanceRefinementFinalLineage({
+function exactLineage() {
+  return {
     refinementParentStorageId: parent,
     refinementParentSha256: parentSha,
     refinementProfile: GARMENT_APPEARANCE_REFINEMENT_PROFILE,
     refinementSupportSha256: supportSha,
-  });
+  } as const;
+}
+
+test('F5a.2 normalizes only the closed deterministic-parent lineage document', () => {
+  const result = normalizeGarmentAppearanceRefinementFinalLineage(exactLineage());
   assert.deepEqual(result, {
     refinementParentStorageId: parent,
     refinementParentSha256: parentSha,
@@ -23,32 +27,29 @@ test('F5a.2 normalizes only the closed deterministic-parent lineage document', (
   assert.equal(Object.isFrozen(result), true);
 });
 
-test('F5a.2 rejects noncanonical parent/support evidence and unknown profiles', () => {
+test('F5a.2 rejects noncanonical evidence, unknown profiles and extra generation authority', () => {
   assert.throws(() => normalizeGarmentAppearanceRefinementFinalLineage({
+    ...exactLineage(),
     refinementParentStorageId: parent.toUpperCase(),
-    refinementParentSha256: parentSha,
-    refinementProfile: GARMENT_APPEARANCE_REFINEMENT_PROFILE,
-    refinementSupportSha256: supportSha,
   }), /canonical lowercase UUID/i);
 
   assert.throws(() => normalizeGarmentAppearanceRefinementFinalLineage({
-    refinementParentStorageId: parent,
+    ...exactLineage(),
     refinementParentSha256: parentSha.toUpperCase(),
-    refinementProfile: GARMENT_APPEARANCE_REFINEMENT_PROFILE,
-    refinementSupportSha256: supportSha,
   }), /canonical lowercase SHA-256/i);
 
   assert.throws(() => normalizeGarmentAppearanceRefinementFinalLineage({
-    refinementParentStorageId: parent,
-    refinementParentSha256: parentSha,
+    ...exactLineage(),
     refinementProfile: 'REFINE_OTHER' as typeof GARMENT_APPEARANCE_REFINEMENT_PROFILE,
-    refinementSupportSha256: supportSha,
   }), /profile must be REFINE_REALISM_V1/i);
 
   assert.throws(() => normalizeGarmentAppearanceRefinementFinalLineage({
-    refinementParentStorageId: parent,
-    refinementParentSha256: parentSha,
-    refinementProfile: GARMENT_APPEARANCE_REFINEMENT_PROFILE,
+    ...exactLineage(),
     refinementSupportSha256: '0'.repeat(63),
   }), /canonical lowercase SHA-256/i);
+
+  assert.throws(() => normalizeGarmentAppearanceRefinementFinalLineage({
+    ...exactLineage(),
+    prompt: 'change garment',
+  } as any), /unknown or missing fields/i);
 });
