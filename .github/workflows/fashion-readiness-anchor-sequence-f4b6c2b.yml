@@ -40,17 +40,40 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Typecheck build and package both rollout migrations
+      - name: Typecheck build and package expansion migration only
         run: |
           npm run typecheck
           npm run server:typecheck
           npm run server:build
           test -f dist-server/migrations/031_project_body_anchor_acquisition_sequence.sql
-          test -f dist-server/migrations/032_project_body_anchor_sequence_consumer_cutover.sql
-      - name: Prove aggregate production schema reaches final sequence-only authority
+          test ! -e dist-server/migrations/032_project_body_anchor_sequence_consumer_cutover.sql
+      - name: Prove aggregate production migration preserves rolling overlap
         run: |
           npm run db:migrate:transactions
           npm run db:check:transactions
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import pg from 'pg';
+          const { Pool } = pg;
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+          try {
+            const result = await pool.query(`SELECT i.indexname,x.indisvalid,x.indisready
+              FROM pg_indexes i
+              JOIN pg_namespace n ON n.nspname=i.schemaname
+              JOIN pg_class c ON c.relnamespace=n.oid AND c.relname=i.indexname
+              JOIN pg_index x ON x.indexrelid=c.oid
+              WHERE i.schemaname=current_schema()
+                AND i.tablename='canonical_project_body_anchor_sets'
+                AND i.indexname IN ('canonical_project_body_anchor_sets_owner_project_idx','canonical_project_body_anchor_sets_owner_project_sequence_idx')
+              ORDER BY i.indexname`);
+            assert.deepEqual(result.rows.map(row => ({ name: row.indexname, valid: row.indisvalid, ready: row.indisready })), [
+              { name: 'canonical_project_body_anchor_sets_owner_project_idx', valid: true, ready: true },
+              { name: 'canonical_project_body_anchor_sets_owner_project_sequence_idx', valid: true, ready: true },
+            ]);
+          } finally {
+            await pool.end();
+          }
+          NODE
       - name: Bundle readiness and body-anchor schema acceptance
         run: |
           mkdir -p .test-cache/fashion-readiness-anchor-sequence
@@ -62,15 +85,26 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-readiness-anchor-sequence/schema.test.mjs \
             --external:node:* --external:pg
-      - name: Prove sequence selection and fail-closed 031 to 032 cutover
+      - name: Prove sequence selection and fail-closed rolling overlap
         run: node --test --test-concurrency=1 .test-cache/fashion-readiness-anchor-sequence/*.test.mjs
-      - name: Prove timestamp authority is removed and no execution authority opened
+      - name: Prove timestamp authority is removed without destructive contract migration
         run: |
           grep -q "acquisition_sequence::text AS acquisition_sequence" server/core/fashion/FashionTryOnReadinessService.ts
           grep -q "ORDER BY acquisition_sequence DESC, anchor_set_id" server/core/fashion/FashionTryOnReadinessService.ts
-          ! grep -q "ORDER BY created_at" server/core/fashion/FashionTryOnReadinessService.ts
-          grep -q "032_project_body_anchor_sequence_consumer_cutover.sql" server/core/fashion/bodyAnchorSchema.ts
-          grep -q "legacyIndex !== undefined" server/core/fashion/bodyAnchorSchema.ts
-          grep -q "DROP INDEX IF EXISTS canonical_project_body_anchor_sets_owner_project_idx" server/core/fashion/migrations/032_project_body_anchor_sequence_consumer_cutover.sql
-          ! grep -E "providers|Billing|FAL_KEY|FASHN|tryonEngine" server/core/fashion/FashionTryOnReadinessService.ts
+          if grep -q "ORDER BY created_at" server/core/fashion/FashionTryOnReadinessService.ts; then
+            echo "timestamp ordering authority remains in readiness consumer" >&2
+            exit 1
+          fi
+          grep -q "indisvalid" server/core/fashion/bodyAnchorSchema.ts
+          grep -q "indisready" server/core/fashion/bodyAnchorSchema.ts
+          grep -q "healthyIndex" server/core/fashion/bodyAnchorSchema.ts
+          if grep -q "032_project_body_anchor_sequence_consumer_cutover.sql" server/core/fashion/bodyAnchorSchema.ts; then
+            echo "consumer release must not auto-run destructive index cleanup" >&2
+            exit 1
+          fi
+          test ! -e server/core/fashion/migrations/032_project_body_anchor_sequence_consumer_cutover.sql
+          if grep -E "from ['\"].*(providers|billing)|from ['\"].*(fal|fashn)" server/core/fashion/FashionTryOnReadinessService.ts; then
+            echo "readiness consumer imports forbidden provider/Billing authority" >&2
+            exit 1
+          fi
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
