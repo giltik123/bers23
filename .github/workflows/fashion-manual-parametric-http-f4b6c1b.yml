@@ -51,6 +51,7 @@ jobs:
           grep -q "input.admission.admit" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           grep -q "assertBrowserMutationAllowed" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           grep -q "forbidden_client_authority" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          ! grep -q "id: representation.id" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           ! grep -E "Postgres|providers|Billing|FAL_KEY|FASHN|tryonEngine" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           grep -q "ManualParametricGarmentAdmissionService" server/core/composition/createProductionGarmentMeshWarp.ts
           grep -q "new ManualParametricGarmentAdmissionService({ garments, representations })" server/core/composition/createProductionGarmentMeshWarp.ts
