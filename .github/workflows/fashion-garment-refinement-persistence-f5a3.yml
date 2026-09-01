@@ -56,7 +56,7 @@ jobs:
           npx esbuild tests/fashion-garment-refinement-persistence-postgres.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-f5a3-refinement-persistence/persistence.test.mjs \
-            --external:node:* --external:pg
+            --external:node:* --external:pg --external:sharp
       - name: Prove closed dual-bound normalization persistence replay and immediate-parent DAG
         run: node --test --test-concurrency=1 .test-cache/fashion-f5a3-refinement-persistence/*.test.mjs
       - name: Prove F5 execution authority remains closed
