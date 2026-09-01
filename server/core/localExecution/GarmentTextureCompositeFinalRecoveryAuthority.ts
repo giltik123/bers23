@@ -12,7 +12,7 @@ import {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CLIENT_REQUEST = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
-const MAX_SOURCE_ARTIFACT_ID_LENGTH = 4096;
+const MAX_SOURCE_ARTIFACT_ID_LENGTH = 512;
 
 type RecoveryLedger = Pick<LocalExecutionLedgerV2, 'getByIdempotencyKeyV2' | 'getFinalization'>;
 type FinalReader = Pick<PostgresImageArtifactStore, 'loadFinalByExecution'>;
