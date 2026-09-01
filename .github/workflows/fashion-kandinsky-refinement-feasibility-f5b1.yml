@@ -26,7 +26,7 @@ jobs:
           npm run typecheck
           npm run server:typecheck
       - name: Prove pinned source/config trust stays non-executable
-        run: node --test tests/kandinsky-refinement-feasibility-policy.test.mjs
+        run: node --test tests/kandinsky-refinement-feasibility-policy.test.mjs tests/kandinsky-config-trust.test.mjs
       - name: Rebind pinned weights and exact small configs to upstream bytes
         run: node scripts/verify-kandinsky-refinement-source-trust.mjs
       - name: Prove no model bytes or runtime admission entered the repository
@@ -34,9 +34,10 @@ jobs:
           test "$(git ls-files '*.safetensors' '*.bin' | wc -l)" -eq 0
           grep -q '/raw/' scripts/verify-kandinsky-refinement-source-trust.mjs
           grep -q 'MAX_SOURCE_POINTER_BYTES = 4096' scripts/kandinsky-source-trust-pointer.mjs
-          grep -q 'MAX_CONFIG_FILE_BYTES = 5 \* 1024 \* 1024' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'MAX_CONFIG_FILE_BYTES = 5 \* 1024 \* 1024' scripts/kandinsky-config-trust.mjs
+          grep -q 'readBoundedConfigResponse' scripts/verify-kandinsky-refinement-source-trust.mjs
           grep -q 'downloadedModelBytes: 0' scripts/verify-kandinsky-refinement-source-trust.mjs
-          grep -q 'createHash' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'createHash' scripts/kandinsky-config-trust.mjs
           ! grep -q 'lfs?.sha256' scripts/verify-kandinsky-refinement-source-trust.mjs
           ! grep -q 'xet_hash' scripts/verify-kandinsky-refinement-source-trust.mjs
           grep -q 'SOURCE_WEIGHT_AND_CONFIG_TRUST_PINNED_CONDITIONING_AND_RUNTIME_UNPROVEN' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
