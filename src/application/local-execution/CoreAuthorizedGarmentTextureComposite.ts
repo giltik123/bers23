@@ -313,7 +313,6 @@ function validateTicket(
     || p.maxDimension !== GARMENT_TEXTURE_COMPOSITE_MAX_DIMENSION
     || p.maxOutputPixels !== GARMENT_TEXTURE_COMPOSITE_MAX_PIXELS
     || !SHA.test(String(p.producerParametersSha256 ?? ''))
-    || normalized.sha256 !== p.producerParametersSha256
     || normalized.canonicalJson !== expectedProducerJson
   ) throw new Error('Garment texture-composite ticket lineage does not match requested intent');
   return ticket;
@@ -359,7 +358,6 @@ function validateEnvelope(
     || metadata.garmentSourceWidth !== view.width
     || metadata.garmentSourceHeight !== view.height
     || metadata.producerParametersSha256 !== p.producerParametersSha256
-    || normalized.sha256 !== metadata.producerParametersSha256
     || normalized.canonicalJson !== expectedProducerJson
   ) throw new Error('Garment texture-composite input envelope does not match the immutable Core ticket');
 }
