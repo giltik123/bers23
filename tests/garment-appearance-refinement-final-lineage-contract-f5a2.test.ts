@@ -3,7 +3,7 @@ import test from 'node:test';
 import { GARMENT_APPEARANCE_REFINEMENT_PROFILE } from '../src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js';
 import { normalizeGarmentAppearanceRefinementFinalLineage } from '../server/core/fashion/garmentAppearanceRefinementFinalLineage.ts';
 
-const parent = '11111111-1111-4111-8111-111111111111';
+const parent = 'abcdefab-cdef-4abc-8def-abcdefabcdef';
 const parentSha = 'a'.repeat(64);
 const supportSha = 'b'.repeat(64);
 
