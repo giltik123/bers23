@@ -5,6 +5,7 @@ import { migrateFinalImageLineageSchema } from '../artifacts/finalImageLineageSc
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from './garmentWarpLayerSchema.ts';
 
 const MIGRATION = '030_fashion_garment_texture_final_lineage.sql';
+const EXTENSION_REPAIR_MIGRATION = '033_fashion_garment_refinement_extension_repair.sql';
 const IMAGE_TABLE = 'canonical_image_artifacts';
 const LAYER_TABLE = 'canonical_fashion_garment_warp_layers';
 const INSERT_TRIGGER = 'canonical_image_artifacts_fashion_texture_insert_guard';
@@ -128,17 +129,25 @@ export async function migrateGarmentTextureFinalLineageSchema(pool: Pool): Promi
     await checkGarmentTextureFinalLineageSchema(pool);
     return;
   } catch {
-    // Apply the exact idempotent Fashion extension below.
+    // Repair below. Once any F5 extension column exists, historical migration 030
+    // is no longer safe because its shared lineage-shape constraint predates F5.
   }
-  await pool.query(await readMigration());
+
+  const refinementExtension = await pool.query(`SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name=$1
+      AND column_name IN ('refinement_profile','refinement_contract_version')
+    LIMIT 1`, [IMAGE_TABLE]);
+  const repairMigration = refinementExtension.rowCount ? EXTENSION_REPAIR_MIGRATION : MIGRATION;
+  await pool.query(await readMigration(repairMigration));
   await checkGarmentTextureFinalLineageSchema(pool);
 }
 
-async function readMigration(): Promise<string> {
+async function readMigration(name: string): Promise<string> {
   try {
-    return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8');
+    return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8');
   } catch (error) {
     if (process.env.NODE_ENV === 'production') throw error;
-    return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', MIGRATION), 'utf8');
+    return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', name), 'utf8');
   }
 }
