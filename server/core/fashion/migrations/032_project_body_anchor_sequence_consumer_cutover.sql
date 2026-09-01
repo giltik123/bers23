@@ -1,5 +1,3 @@
-BEGIN;
-
 DO $$
 DECLARE
   sequence_index_definition text;
@@ -16,9 +14,7 @@ BEGIN
      OR sequence_index_definition LIKE '% WHERE %' THEN
     RAISE EXCEPTION 'canonical Project body-anchor acquisition-sequence index is missing or drifted; migration 032 refuses legacy-index removal';
   END IF;
+
+  EXECUTE 'DROP INDEX IF EXISTS canonical_project_body_anchor_sets_owner_project_idx';
 END
 $$;
-
-DROP INDEX IF EXISTS canonical_project_body_anchor_sets_owner_project_idx;
-
-COMMIT;
