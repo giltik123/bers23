@@ -57,11 +57,15 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-f5a2-refinement-lineage/f5.test.mjs \
             --external:node:* --external:pg --external:sharp
+          npx esbuild tests/fashion-garment-refinement-final-lineage-schema-drift-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a2-refinement-lineage/drift.test.mjs \
+            --external:node:* --external:pg
           npx esbuild tests/fashion-garment-texture-final-lineage-postgres.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-f5a2-refinement-lineage/f4-regression.test.mjs \
             --external:node:* --external:pg --external:sharp
-      - name: Prove transitive F4 parent binding and F4 regression
+      - name: Prove transitive F4 parent binding schema drift rejection and F4 regression
         run: node --test --test-concurrency=1 .test-cache/fashion-f5a2-refinement-lineage/*.test.mjs
       - name: Prove lineage-only F5 boundary remains closed
         run: |
@@ -69,6 +73,7 @@ jobs:
           grep -q "parent_image.producer_operation = 'GARMENT_TEXTURE_COMPOSITE'" server/core/fashion/migrations/033_fashion_garment_refinement_final_lineage.sql
           grep -q "p.current_image_storage_id = parent_image.source_image_storage_id" server/core/fashion/migrations/033_fashion_garment_refinement_final_lineage.sql
           grep -q "parent_image.garment_warp_layer_id = NEW.garment_warp_layer_id" server/core/fashion/migrations/033_fashion_garment_refinement_final_lineage.sql
+          grep -q "F5_SHAPE_PATTERN" server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts
           grep -q "migrateGarmentAppearanceRefinementFinalLineageSchema" server/transactions/infrastructure/postgres/transactionSchemaCli.ts
           if grep -E "from ['\"].*(providers|billing|fashn|tiny|onnx|diffusion|transformers)" \
             server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts; then
