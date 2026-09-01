@@ -9,8 +9,8 @@ import {
   normalizeGarmentAppearanceRefinementFinalLineage,
 } from '../server/core/fashion/garmentAppearanceRefinementFinalLineage.ts';
 
-const SOURCE = '11111111-1111-4111-8111-111111111111';
-const PARENT = '22222222-2222-4222-8222-222222222222';
+const SOURCE = 'aaaaaaaa-1111-4111-8111-111111111111';
+const PARENT = 'bbbbbbbb-2222-4222-8222-222222222222';
 const SHA = 'a'.repeat(64);
 
 function valid() {
