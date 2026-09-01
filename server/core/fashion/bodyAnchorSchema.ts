@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 
 const BASE_MIGRATION = '028_project_body_anchor_sets.sql';
 const SEQUENCE_MIGRATION = '031_project_body_anchor_acquisition_sequence.sql';
+const SEQUENCE_CONSUMER_MIGRATION = '032_project_body_anchor_sequence_consumer_cutover.sql';
 const TABLE = 'canonical_project_body_anchor_sets';
 const EXPECTED_COLUMNS = Object.freeze([
   ['anchor_set_id', 'uuid', false],
@@ -110,12 +111,11 @@ async function ready(pool: Pool): Promise<boolean> {
     WHERE schemaname=current_schema() AND tablename=$1
       AND indexname IN ('canonical_project_body_anchor_sets_owner_project_idx','canonical_project_body_anchor_sets_owner_project_sequence_idx')`, [TABLE]);
   const indexByName = new Map(indexes.rows.map(candidate => [String(candidate.indexname), normalizeSql(String(candidate.indexdef))]));
-  const legacyIndex = indexByName.get('canonical_project_body_anchor_sets_owner_project_idx') ?? '';
+  const legacyIndex = indexByName.get('canonical_project_body_anchor_sets_owner_project_idx');
   const sequenceIndex = indexByName.get('canonical_project_body_anchor_sets_owner_project_sequence_idx') ?? '';
   if (
-    indexByName.size !== 2
-    || !legacyIndex.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, created_at DESC, anchor_set_id)')
-    || /\bWHERE\b/.test(legacyIndex)
+    legacyIndex !== undefined
+    || indexByName.size !== 1
     || !sequenceIndex.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, acquisition_sequence DESC, anchor_set_id)')
     || /\bWHERE\b/.test(sequenceIndex)
   ) return false;
@@ -143,7 +143,7 @@ function hasOneToHundredBound(definition: string): boolean {
 }
 
 export async function checkProjectBodyAnchorSchema(pool: Pool): Promise<void> {
-  if (!await ready(pool)) throw new Error('canonical Project body anchor schema is incomplete or drifted; apply migrations 028 and 031');
+  if (!await ready(pool)) throw new Error('canonical Project body anchor schema is incomplete or drifted; apply migrations 028, 031 and 032');
 }
 
 export async function migrateProjectBodyAnchorSchema(pool: Pool): Promise<void> {
@@ -152,5 +152,7 @@ export async function migrateProjectBodyAnchorSchema(pool: Pool): Promise<void> 
   const sequenceColumn = await pool.query(`SELECT 1 FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name=$1 AND column_name='acquisition_sequence'`, [TABLE]);
   if (sequenceColumn.rowCount !== 1) await pool.query(await migration(SEQUENCE_MIGRATION));
+  const legacyIndex = await pool.query(`SELECT to_regclass('canonical_project_body_anchor_sets_owner_project_idx')::text AS relation`);
+  if (legacyIndex.rows[0]?.relation) await pool.query(await migration(SEQUENCE_CONSUMER_MIGRATION));
   await checkProjectBodyAnchorSchema(pool);
 }

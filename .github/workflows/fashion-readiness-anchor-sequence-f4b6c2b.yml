@@ -1,0 +1,76 @@
+name: Fashion F4b.6c.2b readiness body-anchor acquisition sequence
+
+on:
+  pull_request:
+    branches:
+      - main
+      - fashion-body-anchor-sequence-f4b6c2a-clean
+  workflow_dispatch:
+
+jobs:
+  readiness-anchor-sequence:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_f4b6c2b_readiness_test
+          POSTGRES_USER: fashion_f4b6c2b_readiness_test
+          POSTGRES_PASSWORD: fashion_f4b6c2b_readiness_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fashion_f4b6c2b_readiness_test -d fashion_f4b6c2b_readiness_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_f4b6c2b_readiness_test:fashion_f4b6c2b_readiness_test@127.0.0.1:5432/fashion_f4b6c2b_readiness_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck build and package both rollout migrations
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/031_project_body_anchor_acquisition_sequence.sql
+          test -f dist-server/migrations/032_project_body_anchor_sequence_consumer_cutover.sql
+      - name: Prove aggregate production schema reaches final sequence-only authority
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Bundle readiness and body-anchor schema acceptance
+        run: |
+          mkdir -p .test-cache/fashion-readiness-anchor-sequence
+          npx esbuild tests/fashion-tryon-readiness-f4b6a.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-readiness-anchor-sequence/readiness.test.mjs \
+            --external:node:* --external:pg
+          npx esbuild tests/fashion-body-anchor-schema-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-readiness-anchor-sequence/schema.test.mjs \
+            --external:node:* --external:pg
+      - name: Prove sequence selection and fail-closed 031 to 032 cutover
+        run: node --test --test-concurrency=1 .test-cache/fashion-readiness-anchor-sequence/*.test.mjs
+      - name: Prove timestamp authority is removed and no execution authority opened
+        run: |
+          grep -q "acquisition_sequence::text AS acquisition_sequence" server/core/fashion/FashionTryOnReadinessService.ts
+          grep -q "ORDER BY acquisition_sequence DESC, anchor_set_id" server/core/fashion/FashionTryOnReadinessService.ts
+          ! grep -q "ORDER BY created_at" server/core/fashion/FashionTryOnReadinessService.ts
+          grep -q "032_project_body_anchor_sequence_consumer_cutover.sql" server/core/fashion/bodyAnchorSchema.ts
+          grep -q "legacyIndex !== undefined" server/core/fashion/bodyAnchorSchema.ts
+          grep -q "DROP INDEX IF EXISTS canonical_project_body_anchor_sets_owner_project_idx" server/core/fashion/migrations/032_project_body_anchor_sequence_consumer_cutover.sql
+          ! grep -E "providers|Billing|FAL_KEY|FASHN|tryonEngine" server/core/fashion/FashionTryOnReadinessService.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
