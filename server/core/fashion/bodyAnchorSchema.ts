@@ -106,12 +106,18 @@ async function ready(pool: Pool): Promise<boolean> {
     if ((name.endsWith('_producer_id_check') || name.endsWith('_producer_version_check')) && !hasOneToHundredBound(definition)) return false;
   }
 
-  const index = await pool.query(`SELECT indexdef FROM pg_indexes
-    WHERE schemaname=current_schema() AND tablename=$1 AND indexname='canonical_project_body_anchor_sets_owner_project_idx'`, [TABLE]);
-  const indexDefinition = normalizeSql(String(index.rows[0]?.indexdef ?? ''));
+  const indexes = await pool.query(`SELECT indexname,indexdef FROM pg_indexes
+    WHERE schemaname=current_schema() AND tablename=$1
+      AND indexname IN ('canonical_project_body_anchor_sets_owner_project_idx','canonical_project_body_anchor_sets_owner_project_sequence_idx')`, [TABLE]);
+  const indexByName = new Map(indexes.rows.map(candidate => [String(candidate.indexname), normalizeSql(String(candidate.indexdef))]));
+  const legacyIndex = indexByName.get('canonical_project_body_anchor_sets_owner_project_idx') ?? '';
+  const sequenceIndex = indexByName.get('canonical_project_body_anchor_sets_owner_project_sequence_idx') ?? '';
   if (
-    !indexDefinition.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, acquisition_sequence DESC, anchor_set_id)')
-    || /\bWHERE\b/.test(indexDefinition)
+    indexByName.size !== 2
+    || !legacyIndex.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, created_at DESC, anchor_set_id)')
+    || /\bWHERE\b/.test(legacyIndex)
+    || !sequenceIndex.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, acquisition_sequence DESC, anchor_set_id)')
+    || /\bWHERE\b/.test(sequenceIndex)
   ) return false;
 
   const triggers = await pool.query(`SELECT t.tgname,t.tgtype,t.tgenabled,p.proname
