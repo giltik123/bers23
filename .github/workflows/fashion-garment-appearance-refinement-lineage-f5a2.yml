@@ -46,9 +46,13 @@ jobs:
           npm run server:typecheck
           npm run server:build
           test -f dist-server/migrations/032_fashion_garment_appearance_refinement_final_lineage.sql
-      - name: Bundle F5 and F4 lineage acceptance
+      - name: Bundle F5 and F4 lineage acceptance with exact migration assets
         run: |
-          mkdir -p .test-cache/fashion-f5a2-refinement-lineage
+          mkdir -p .test-cache/fashion-f5a2-refinement-lineage/migrations
+          find server/core -type f -path '*/migrations/*.sql' -exec cp {} .test-cache/fashion-f5a2-refinement-lineage/migrations/ \;
+          test -f .test-cache/fashion-f5a2-refinement-lineage/migrations/003_canonical_final_image_artifacts.sql
+          test -f .test-cache/fashion-f5a2-refinement-lineage/migrations/030_fashion_garment_texture_final_lineage.sql
+          test -f .test-cache/fashion-f5a2-refinement-lineage/migrations/032_fashion_garment_appearance_refinement_final_lineage.sql
           npx esbuild tests/garment-appearance-refinement-final-lineage-contract-f5a2.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-f5a2-refinement-lineage/contract.test.mjs \
@@ -75,6 +79,8 @@ jobs:
         run: |
           grep -q "032_fashion_garment_appearance_refinement_final_lineage.sql" server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts
           grep -q "migrateGarmentAppearanceRefinementFinalLineageSchema" server/transactions/infrastructure/postgres/transactionSchemaCli.ts
+          grep -q "refinement_producer_parameters" server/core/artifacts/postgresImageArtifactStore.ts
+          grep -q "e12f9db090851cb15d70ea747b6945df832d57510d1d6c48a779594a46ed758d" server/core/fashion/migrations/032_fashion_garment_appearance_refinement_final_lineage.sql
           grep -q "producerOperation === 'GARMENT_APPEARANCE_REFINEMENT'" server/core/artifacts/durableArtifactLineageResolver.ts
           grep -q "issueStoredImageId(this.signed, parent, scope)" server/core/artifacts/durableArtifactLineageResolver.ts
           grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
