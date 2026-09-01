@@ -103,7 +103,7 @@ function csrfFor(sessionToken: string): string {
     .digest('base64url');
 }
 
-test('F4b.6c.1b HTTP accepts revision plus contour only and returns a second redacted projection', async () => {
+test('F4b.6c.1b HTTP accepts revision plus contour only and returns a second projection without representation evidence identity', async () => {
   await withServer(admittedResult, async (base, calls) => {
     const response = await fetch(`${base}/api/core/fashion/garments/${garmentId}/parametric-representation`, {
       method: 'POST',
@@ -117,9 +117,10 @@ test('F4b.6c.1b HTTP accepts revision plus contour only and returns a second red
       garmentId,
       garmentRevision: 8,
       representationTier: 'PARAMETRIC',
-      representation: { id: representationId, tier: 'PARAMETRIC', format: 'BERS_PARAMETRIC_V1', admissionState: 'ADMITTED' },
+      representation: { tier: 'PARAMETRIC', format: 'BERS_PARAMETRIC_V1', admissionState: 'ADMITTED' },
       replayed: false,
     });
+    assert.equal('id' in body.representation, false);
     assert.equal('contentSha256' in body.representation, false);
     assert.equal('basisViewId' in body.representation, false);
     assert.equal('generatorId' in body.representation, false);
@@ -139,7 +140,9 @@ test('F4b.6c.1b HTTP exact replay is 200 and browser evidence/provenance claims 
       method: 'POST', headers: { ...bearerHeaders, 'Content-Type': 'application/json' }, body: requestBody(),
     });
     assert.equal(replay.status, 200);
-    assert.equal((await replay.json() as any).replayed, true);
+    const replayBody = await replay.json() as any;
+    assert.equal(replayBody.replayed, true);
+    assert.equal('id' in replayBody.representation, false);
 
     for (const forbidden of [
       { representationId },
