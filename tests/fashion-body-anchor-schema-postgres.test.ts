@@ -8,7 +8,7 @@ if (!databaseUrl) throw new Error('DATABASE_URL is required for F4b.3 body-ancho
 
 const schemaError = /body anchor schema is incomplete or drifted/i;
 
-test('F4b.3/F4b.6c final readiness schema rejects legacy timestamp index sequence drift weakened CHECK unique and trigger semantics', async () => {
+test('F4b.3/F4b.6c final readiness schema safely cuts over 031 to 032 and rejects drift', async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 2, application_name: 'bers-f4b3-body-anchor-schema' });
   try {
     await migrateProjectBodyAnchorSchema(pool);
@@ -19,6 +19,29 @@ test('F4b.3/F4b.6c final readiness schema rejects legacy timestamp index sequenc
         AND indexname IN ('canonical_project_body_anchor_sets_owner_project_idx','canonical_project_body_anchor_sets_owner_project_sequence_idx')
       ORDER BY indexname`);
     assert.deepEqual(indexes.rows.map(row => String(row.indexname)), ['canonical_project_body_anchor_sets_owner_project_sequence_idx']);
+
+    // Recreate the exact 031 two-index transition state, then corrupt the sequence
+    // index. Migration 032 must fail before dropping the still-usable legacy index.
+    await pool.query(`CREATE INDEX canonical_project_body_anchor_sets_owner_project_idx
+      ON canonical_project_body_anchor_sets (tenant_id,user_id,project_id,project_image_storage_id,created_at DESC,anchor_set_id)`);
+    await pool.query('DROP INDEX canonical_project_body_anchor_sets_owner_project_sequence_idx');
+    await pool.query(`CREATE INDEX canonical_project_body_anchor_sets_owner_project_sequence_idx
+      ON canonical_project_body_anchor_sets (tenant_id,user_id,project_id,anchor_set_id)`);
+    await assert.rejects(
+      migrateProjectBodyAnchorSchema(pool),
+      /migration 032 refuses legacy-index removal/i,
+      '032 must not remove the legacy index while sequence lookup is drifted',
+    );
+    const legacyAfterRefusal = await pool.query(`SELECT to_regclass('canonical_project_body_anchor_sets_owner_project_idx')::text AS relation`);
+    assert.equal(legacyAfterRefusal.rows[0]?.relation, 'canonical_project_body_anchor_sets_owner_project_idx');
+
+    await pool.query('DROP INDEX canonical_project_body_anchor_sets_owner_project_sequence_idx');
+    await pool.query(`CREATE INDEX canonical_project_body_anchor_sets_owner_project_sequence_idx
+      ON canonical_project_body_anchor_sets (tenant_id,user_id,project_id,project_image_storage_id,acquisition_sequence DESC,anchor_set_id)`);
+    await migrateProjectBodyAnchorSchema(pool);
+    await checkProjectBodyAnchorSchema(pool);
+    const legacyAfterRepair = await pool.query(`SELECT to_regclass('canonical_project_body_anchor_sets_owner_project_idx')::text AS relation`);
+    assert.equal(legacyAfterRepair.rows[0]?.relation, null);
 
     await pool.query(`CREATE INDEX canonical_project_body_anchor_sets_owner_project_idx
       ON canonical_project_body_anchor_sets (tenant_id,user_id,project_id,project_image_storage_id,created_at DESC,anchor_set_id)`);
