@@ -38,18 +38,14 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
   if (!parentFk || parentFk.contype !== 'f' || !parentFk.convalidated
     || !parentFkDef.includes('FOREIGN KEY (refinement_parent_image_storage_id)')
     || !parentFkDef.includes('REFERENCES canonical_image_artifacts(storage_id)')
-    || !parentFkDef.includes('ON DELETE RESTRICT')) {
-    throw new Error('canonical Fashion refinement direct-parent FK is incomplete or drifted');
-  }
+    || !parentFkDef.includes('ON DELETE RESTRICT')) throw new Error('canonical Fashion refinement direct-parent FK is incomplete or drifted');
 
   const identity: any = byConstraint.get('canonical_image_artifacts_refinement_identity_check');
   const identityDef = canon(identity?.definition);
   if (!identity || identity.contype !== 'c' || !identity.convalidated
     || !identityDef.includes("refinement_parent_image_sha256 ~ '^[0-9a-f]{64}$'::text")
     || !identityDef.includes("refinement_profile = 'REFINE_REALISM_V1'::text")
-    || !identityDef.includes("refinement_contract_version = '1'::text")) {
-    throw new Error('canonical Fashion refinement identity/hash policy is incomplete or drifted');
-  }
+    || !identityDef.includes("refinement_contract_version = '1'::text")) throw new Error('canonical Fashion refinement identity/hash policy is incomplete or drifted');
 
   const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
   const shapeDef = canon(shape?.definition);
@@ -65,17 +61,13 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
     || !shapeDef.includes('refinement_parent_image_storage_id IS NOT NULL')
     || !shapeDef.includes('refinement_parent_image_sha256 IS NOT NULL')
     || !shapeDef.includes('garment_warp_layer_id IS NULL')
-    || !shapeDef.includes('producer_parameters IS NULL')) {
-    throw new Error('canonical Fashion refinement dual-binding shape policy is incomplete or drifted');
-  }
+    || !shapeDef.includes('producer_parameters IS NULL')) throw new Error('canonical Fashion refinement dual-binding shape policy is incomplete or drifted');
 
   const index = await pool.query(`SELECT indexdef FROM pg_indexes
     WHERE schemaname=current_schema() AND tablename=$1 AND indexname='canonical_image_artifacts_refinement_parent_idx'`, [IMAGE_TABLE]);
   const indexDef = canon(index.rows[0]?.indexdef);
   if (!indexDef.includes('USING btree (refinement_parent_image_storage_id)')
-    || !indexDef.includes("producer_operation = 'GARMENT_APPEARANCE_REFINEMENT'::text")) {
-    throw new Error('canonical Fashion refinement direct-parent index is incomplete or drifted');
-  }
+    || !indexDef.includes("producer_operation = 'GARMENT_APPEARANCE_REFINEMENT'::text")) throw new Error('canonical Fashion refinement direct-parent index is incomplete or drifted');
 
   const triggers = await pool.query(`SELECT t.tgname,t.tgtype,t.tgenabled,p.proname
     FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
@@ -93,8 +85,16 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
 }
 
 export async function migrateGarmentAppearanceRefinementFinalLineageSchema(pool: Pool): Promise<void> {
+  const extension = await pool.query(`SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name=$1 AND column_name='refinement_parent_image_storage_id'`, [IMAGE_TABLE]);
+  if (extension.rowCount) {
+    try { await checkGarmentAppearanceRefinementFinalLineageSchema(pool); return; } catch { /* extension-safe repair below */ }
+    await pool.query(await readMigration());
+    await checkGarmentAppearanceRefinementFinalLineageSchema(pool);
+    return;
+  }
   await migrateGarmentTextureFinalLineageSchema(pool);
-  try { await checkGarmentAppearanceRefinementFinalLineageSchema(pool); return; } catch { /* repair below */ }
+  try { await checkGarmentAppearanceRefinementFinalLineageSchema(pool); return; } catch { /* fresh extension below */ }
   await pool.query(await readMigration());
   await checkGarmentAppearanceRefinementFinalLineageSchema(pool);
 }
