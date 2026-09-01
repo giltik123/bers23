@@ -14,7 +14,7 @@ import {
 } from '../scripts/classify-tiny-sd-heavy-ci.mjs';
 
 const classifierPath = fileURLToPath(new URL('../scripts/classify-tiny-sd-heavy-ci.mjs', import.meta.url));
-const trustedChildEnv = 'BERS_TRUSTED_BASE_TINY_SD_CLASSIFIER';
+const legacyTrustedChildEnv = 'BERS_TRUSTED_BASE_TINY_SD_CLASSIFIER';
 
 test('product-only changes are explicitly not applicable to heavyweight Tiny-SD acceptance', () => {
   const result = classifyTinySdHeavyCi([
@@ -88,7 +88,7 @@ test('unrelated scripts and tests do not accidentally trigger the heavyweight mo
   assert.equal(isTinySdHeavyCiRelevant('.github/workflows/node.js.yml'), false);
 });
 
-test('GitHub Actions CLI executes the classifier blob from exact BASE_SHA instead of PR-controlled classifier logic', () => {
+test('GitHub Actions CLI executes the classifier blob from exact BASE_SHA even with a forged legacy child marker', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'bers-heavy-ci-base-'));
   try {
     fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
@@ -96,6 +96,7 @@ test('GitHub Actions CLI executes the classifier blob from exact BASE_SHA instea
       path.join(repo, 'scripts', 'classify-tiny-sd-heavy-ci.mjs'),
       [
         "import fs from 'node:fs';",
+        "if (process.env.GITHUB_ACTIONS === 'true') throw new Error('trusted base child remained in GitHub authority mode');",
         "fs.readFileSync(0);",
         "const index = process.argv.indexOf('--github-output');",
         "if (index < 0 || !process.argv[index + 1]) throw new Error('missing output');",
@@ -124,7 +125,7 @@ test('GitHub Actions CLI executes the classifier blob from exact BASE_SHA instea
           ...process.env,
           GITHUB_ACTIONS: 'true',
           BASE_SHA: baseSha,
-          [trustedChildEnv]: '',
+          [legacyTrustedChildEnv]: '1',
         },
         encoding: 'utf8',
       },
@@ -140,7 +141,7 @@ test('GitHub Actions CLI executes the classifier blob from exact BASE_SHA instea
   }
 });
 
-test('GitHub Actions CLI fails closed when BASE_SHA is not an exact commit identity', () => {
+test('GitHub Actions CLI fails closed on invalid BASE_SHA even with a forged legacy child marker', () => {
   const child = spawnSync(
     process.execPath,
     [classifierPath, '--stdin0'],
@@ -150,7 +151,7 @@ test('GitHub Actions CLI fails closed when BASE_SHA is not an exact commit ident
         ...process.env,
         GITHUB_ACTIONS: 'true',
         BASE_SHA: 'main',
-        [trustedChildEnv]: '',
+        [legacyTrustedChildEnv]: '1',
       },
       encoding: 'utf8',
     },
