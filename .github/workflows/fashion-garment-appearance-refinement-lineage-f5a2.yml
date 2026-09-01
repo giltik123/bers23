@@ -1,4 +1,4 @@
-name: Fashion F5a.2 canonical refinement FINAL lineage contract
+name: Fashion F5a.2 canonical refinement FINAL lineage
 
 on:
   pull_request:
@@ -8,8 +8,24 @@ on:
   workflow_dispatch:
 
 jobs:
-  refinement-final-lineage-contract:
+  refinement-final-lineage:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_f5a2_lineage_test
+          POSTGRES_USER: fashion_f5a2_lineage_test
+          POSTGRES_PASSWORD: fashion_f5a2_lineage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fashion_f5a2_lineage_test -d fashion_f5a2_lineage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_f5a2_lineage_test:fashion_f5a2_lineage_test@127.0.0.1:5432/fashion_f5a2_lineage_test
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,33 +40,52 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Typecheck and build contract substrate
+      - name: Typecheck build and package migration 032
         run: |
           npm run typecheck
           npm run server:typecheck
           npm run server:build
           test -f dist-server/migrations/032_fashion_garment_appearance_refinement_final_lineage.sql
-      - name: Bundle closed lineage contract vectors
+      - name: Bundle F5 and F4 lineage acceptance
         run: |
           mkdir -p .test-cache/fashion-f5a2-refinement-lineage
           npx esbuild tests/garment-appearance-refinement-final-lineage-contract-f5a2.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-f5a2-refinement-lineage/contract.test.mjs \
             --external:node:* --external:pg --external:sharp
-      - name: Prove closed refinement lineage contract
-        run: node --test .test-cache/fashion-f5a2-refinement-lineage/contract.test.mjs
-      - name: Prove no F5 execution admission opened
+          npx esbuild tests/fashion-garment-appearance-refinement-final-lineage-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a2-refinement-lineage/refinement-postgres.test.mjs \
+            --external:node:* --external:pg --external:sharp
+          npx esbuild tests/fashion-garment-texture-final-lineage-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a2-refinement-lineage/f4-regression.test.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove closed contract and real F4 to F5 PostgreSQL vertical
+        run: |
+          node --test .test-cache/fashion-f5a2-refinement-lineage/contract.test.mjs
+          node --test --test-concurrency=1 .test-cache/fashion-f5a2-refinement-lineage/refinement-postgres.test.mjs
+      - name: Prove accepted F4 lineage remains valid after additive F5 schema
+        run: node --test --test-concurrency=1 .test-cache/fashion-f5a2-refinement-lineage/f4-regression.test.mjs
+      - name: Prove aggregate production migration and readiness include F5 lineage
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Prove direct deterministic parent and no F5 execution admission
         run: |
           grep -q "032_fashion_garment_appearance_refinement_final_lineage.sql" server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts
+          grep -q "migrateGarmentAppearanceRefinementFinalLineageSchema" server/transactions/infrastructure/postgres/transactionSchemaCli.ts
+          grep -q "producerOperation === 'GARMENT_APPEARANCE_REFINEMENT'" server/core/artifacts/durableArtifactLineageResolver.ts
+          grep -q "issueStoredImageId(this.signed, parent, scope)" server/core/artifacts/durableArtifactLineageResolver.ts
           grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
           if grep -R -E "productionLocalExecutorPolicy|productionExecutionCapabilities|productionExecutionRoute|productionTargetSelection|tryonEngine|from ['\"].*(providers|billing|fashn)" \
             server/core/fashion/garmentAppearanceRefinementFinalLineage.ts \
             server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts; then
-            echo "F5a.2 lineage substrate opened execution/provider authority" >&2
+            echo "F5a.2 lineage foundation opened execution/provider authority" >&2
             exit 1
           fi
           if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/deterministic/DeterministicToolRegistry.ts; then
-            echo "F5a.2 must not register a deterministic execution tool" >&2
+            echo "F5a.2 must not register an execution tool" >&2
             exit 1
           fi
           if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/canonical/planning/CanonicalPlanningService.ts; then
