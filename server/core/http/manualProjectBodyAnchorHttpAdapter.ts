@@ -83,7 +83,6 @@ function publicResult(value: ManualProjectBodyAnchorAcquisitionResult) {
     projectId: value.projectId,
     sourceArtifactId: value.sourceArtifactId,
     anchorSet: Object.freeze({
-      id: anchorSet.id,
       acquisitionSequence: anchorSet.acquisitionSequence,
       schemaId: anchorSet.schemaId,
       coordinateSpace: anchorSet.coordinateSpace,
