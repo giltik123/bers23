@@ -11,6 +11,9 @@ const BEFORE_INSERT_ROW_TGTYPE = 7;
 const BEFORE_UPDATE_ROW_TGTYPE = 19;
 const canon = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').replace(/"/g, '').trim();
 
+const F5_SHAPE_PATTERN = /producer_operation = 'GARMENT_APPEARANCE_REFINEMENT'::text.*source_image_storage_id IS NOT NULL.*mask_storage_id IS NULL.*garment_warp_layer_id IS NOT NULL.*garment_warp_layer_sha256 IS NOT NULL.*producer_parameters IS NULL.*producer_parameters_sha256 IS NULL.*refinement_profile = 'REFINE_REALISM_V1'::text.*refinement_contract_version = '1'::text/;
+const F4_REFINEMENT_ISOLATION_PATTERN = /producer_operation = 'GARMENT_TEXTURE_COMPOSITE'::text.*producer_parameters IS NOT NULL.*producer_parameters_sha256 IS NOT NULL.*refinement_profile IS NULL.*refinement_contract_version IS NULL/;
+
 export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: Pool): Promise<void> {
   await checkGarmentTextureFinalLineageSchema(pool);
 
@@ -44,20 +47,11 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
   for (const producer of ['BACKGROUND_ISOLATION','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE','GARMENT_APPEARANCE_REFINEMENT']) {
     if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion refinement migration 033');
   }
-  for (const required of [
-    'refinement_profile',
-    'refinement_contract_version',
-    'REFINE_REALISM_V1',
-    'garment_warp_layer_id IS NOT NULL',
-    'garment_warp_layer_sha256 IS NOT NULL',
-    'producer_parameters IS NULL',
-    'producer_parameters_sha256 IS NULL',
-  ]) {
-    if (!shapeDef.includes(required)) throw new Error('canonical Fashion refinement FINAL lineage shape policy is incomplete or drifted');
-  }
-  if (!shape || shape.contype !== 'c' || !shape.convalidated) {
-    throw new Error('canonical Fashion refinement FINAL lineage shape constraint is incomplete or drifted');
-  }
+  if (
+    !shape || shape.contype !== 'c' || !shape.convalidated
+    || !F5_SHAPE_PATTERN.test(shapeDef)
+    || !F4_REFINEMENT_ISOLATION_PATTERN.test(shapeDef)
+  ) throw new Error('canonical Fashion refinement FINAL lineage shape policy is incomplete or drifted');
 
   const index = await pool.query(`SELECT indexdef FROM pg_indexes
     WHERE schemaname=current_schema() AND tablename=$1 AND indexname='canonical_image_artifacts_refinement_parent_idx'`, [IMAGE_TABLE]);
