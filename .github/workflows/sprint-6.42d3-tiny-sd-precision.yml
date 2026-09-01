@@ -29,10 +29,7 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Prove Tiny-SD relevance classifier contract
-        run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs
-
-      - name: Classify heavyweight Tiny-SD relevance
+      - name: Classify heavyweight Tiny-SD relevance from trusted base
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -47,10 +44,19 @@ jobs:
             exit 0
           fi
           test "${EVENT_NAME}" = "pull_request"
-          test -n "${BASE_SHA}"
-          test -n "${HEAD_SHA}"
+          [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          TRUSTED_CLASSIFIER="${RUNNER_TEMP}/tiny-sd-heavy-ci-base-classifier.mjs"
+          trap 'rm -f "${TRUSTED_CLASSIFIER}"' EXIT
+          git show "${BASE_SHA}:scripts/classify-tiny-sd-heavy-ci.mjs" > "${TRUSTED_CLASSIFIER}"
+          test -s "${TRUSTED_CLASSIFIER}"
+          test "$(wc -c < "${TRUSTED_CLASSIFIER}")" -le 1048576
           git diff --name-only --no-renames -z "${BASE_SHA}" "${HEAD_SHA}" \
-            | node scripts/classify-tiny-sd-heavy-ci.mjs --stdin0 --github-output "${GITHUB_OUTPUT}"
+            | GITHUB_ACTIONS=false node "${TRUSTED_CLASSIFIER}" --stdin0 --github-output "${GITHUB_OUTPUT}"
+          echo "trusted_base_classifier_sha=${BASE_SHA}"
+
+      - name: Prove Tiny-SD relevance classifier contract
+        run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs tests/tiny-sd-heavy-ci-workflow-trust.test.mjs
 
   heavy_fp16_webgpu_feasibility:
     name: fp16-webgpu-feasibility-heavy
