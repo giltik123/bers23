@@ -32,6 +32,7 @@ import {
   GARMENT_TEXTURE_COMPOSITE_WRAP_MODE,
 } from '../src/platform/creative/deterministic/GarmentTextureComposite.ts';
 import { GARMENT_APPEARANCE_REFINEMENT_PROFILE } from '../src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js';
+import { GARMENT_APPEARANCE_REFINEMENT_PRODUCER_PARAMETERS_V1 } from '../src/platform/creative/deterministic/GarmentAppearanceRefinementParameters.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required for F5a.2 Fashion refinement FINAL lineage acceptance');
@@ -39,11 +40,11 @@ if (!databaseUrl) throw new Error('DATABASE_URL is required for F5a.2 Fashion re
 const owner = Object.freeze({ tenantId: 'f5a2-tenant-a', userId: 'f5a2-user-a' });
 const garmentLimits = Object.freeze({ maxUploadBytes: 2 * 1024 * 1024, maxDimension: 600, maxPixels: 400_000 });
 const projectLimits = Object.freeze({ maxDimension: 1200, maxPixels: 1_500_000 });
+const PRODUCER_SHA256 = 'e12f9db090851cb15d70ea747b6945df832d57510d1d6c48a779594a46ed758d';
+const REFINEMENT_IMMUTABLE_TRIGGER = 'canonical_image_artifacts_fashion_refinement_immut_guard';
 
 async function image(seed: number): Promise<Uint8Array> {
-  return new Uint8Array(await sharp({
-    create: { width: 120, height: 160, channels: 4, background: { r: 30 + seed, g: 70 + seed, b: 120 + seed, alpha: 1 } },
-  }).png().toBuffer());
+  return new Uint8Array(await sharp({ create: { width: 120, height: 160, channels: 4, background: { r: 30 + seed, g: 70 + seed, b: 120 + seed, alpha: 1 } } }).png().toBuffer());
 }
 function parametric() {
   return Object.freeze({
@@ -86,9 +87,10 @@ function producerParameters() {
     colorSpacePolicy: GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY,
   });
 }
-function sha256(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
+function refinementProducerParameters(): any {
+  return JSON.parse(JSON.stringify(GARMENT_APPEARANCE_REFINEMENT_PRODUCER_PARAMETERS_V1.document));
 }
+function sha256(bytes: Uint8Array): string { return createHash('sha256').update(bytes).digest('hex'); }
 
 test('F5a.2 canonical refinement FINAL has exact deterministic F4 parentage and replay-safe lineage', async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 6, application_name: 'bers-f5a2-refinement-lineage' });
@@ -112,26 +114,15 @@ test('F5a.2 canonical refinement FINAL has exact deterministic F4 parentage and 
     const scope = Object.freeze({ ...owner, projectId });
 
     let garment = await garments.createWithInitialView(owner, {
-      name: 'F5a.2 shirt',
-      viewKind: 'FRONT',
-      sourceContentType: 'image/png',
-      bytes: await image(2),
+      name: 'F5a.2 shirt', viewKind: 'FRONT', sourceContentType: 'image/png', bytes: await image(2),
     }, garmentLimits);
     await wardrobe.updateMetadata(owner, garment.id, garment.revision, { category: 'tshirts' });
     garment = (await garments.get(owner, garment.id))!;
     const admitted = await representations.admit(owner, garment.id, garment.revision, {
-      tier: 'PARAMETRIC',
-      generatorId: 'local.mesh-fit',
-      generatorVersion: '1.0.0',
-      sourceViewIds: [garment.primaryViewId],
-      payload: parametric(),
+      tier: 'PARAMETRIC', generatorId: 'local.mesh-fit', generatorVersion: '1.0.0', sourceViewIds: [garment.primaryViewId], payload: parametric(),
     });
     const anchorStore = new PostgresProjectBodyAnchorStore(pool);
-    const anchor = await anchorStore.create(owner, projectId, {
-      payload: anchors(),
-      producerId: 'local.pose-anchor',
-      producerVersion: '1.0.0',
-    });
+    const anchor = await anchorStore.create(owner, projectId, { payload: anchors(), producerId: 'local.pose-anchor', producerVersion: '1.0.0' });
     const mesh = await anchorStore.deriveDestinationMesh(owner, projectId, anchor.id, garment.id, admitted.representation.id);
     const basis = garment.views.find(view => view.id === admitted.representation.basisViewId);
     assert.ok(basis);
@@ -169,7 +160,6 @@ test('F5a.2 canonical refinement FINAL has exact deterministic F4 parentage and 
       data: new Uint8ClampedArray(rgba(anchor.projectImageWidth, anchor.projectImageHeight, 11)),
     }, f4Lineage);
 
-    // Prove migration 032 is a real additive upgrade over an already persisted F4 FINAL.
     await migrateGarmentAppearanceRefinementFinalLineageSchema(pool);
     await checkGarmentAppearanceRefinementFinalLineageSchema(pool);
 
@@ -180,12 +170,11 @@ test('F5a.2 canonical refinement FINAL has exact deterministic F4 parentage and 
       refinementParentSha256: sha256(f4.bytes),
       refinementProfile: GARMENT_APPEARANCE_REFINEMENT_PROFILE,
       refinementSupportSha256: supportSha,
+      refinementProducerParameters: refinementProducerParameters(),
     });
     const refinementPixels = new Uint8ClampedArray(rgba(f4.width, f4.height, 17));
     const first = await images.persistFinal(scope, 'f5a2-refinement-execution', 'garment-appearance-refinement', {
-      width: f4.width,
-      height: f4.height,
-      data: refinementPixels,
+      width: f4.width, height: f4.height, data: refinementPixels,
     }, refinementLineage);
     assert.equal(first.producerOperation, 'GARMENT_APPEARANCE_REFINEMENT');
     assert.equal(first.sourceImageStorageId, undefined);
@@ -194,6 +183,8 @@ test('F5a.2 canonical refinement FINAL has exact deterministic F4 parentage and 
     assert.equal(first.refinementParentSha256, sha256(f4.bytes));
     assert.equal(first.refinementProfile, 'REFINE_REALISM_V1');
     assert.equal(first.refinementSupportSha256, supportSha);
+    assert.deepEqual(first.refinementProducerParameters, GARMENT_APPEARANCE_REFINEMENT_PRODUCER_PARAMETERS_V1.document);
+    assert.equal(first.refinementProducerParametersSha256, PRODUCER_SHA256);
 
     const replay = await new PostgresImageArtifactStore(pool).persistFinal(
       scope,
@@ -203,6 +194,7 @@ test('F5a.2 canonical refinement FINAL has exact deterministic F4 parentage and 
       refinementLineage,
     );
     assert.equal(replay.storageId, first.storageId, 'exact F5 replay must reuse the same canonical FINAL');
+    assert.equal(replay.refinementProducerParametersSha256, PRODUCER_SHA256);
 
     const signed = new SignedArtifactAuthority('f5a2-artifact-secret', []);
     const resolver = new DurableArtifactLineageResolver({ signed, images, masks });
@@ -217,27 +209,28 @@ test('F5a.2 canonical refinement FINAL has exact deterministic F4 parentage and 
       /parent|hash|violates|constraint/i,
     );
 
+    const widenedProducer = refinementProducerParameters();
+    widenedProducer.support.dilationRadiusPx = 3;
+    await assert.rejects(
+      images.persistFinal(scope, 'f5a2-open-producer', 'garment-appearance-refinement', {
+        width: f4.width, height: f4.height, data: refinementPixels,
+      }, { ...refinementLineage, refinementProducerParameters: widenedProducer }),
+      /dilationRadiusPx/i,
+    );
+
     const generic = await images.persistFinal(scope, 'f5a2-generic-parent', 'generic-final', {
-      width: f4.width,
-      height: f4.height,
-      data: new Uint8ClampedArray(rgba(f4.width, f4.height, 19)),
+      width: f4.width, height: f4.height, data: new Uint8ClampedArray(rgba(f4.width, f4.height, 19)),
     });
     await assert.rejects(
       images.persistFinal(scope, 'f5a2-generic-parent-refinement', 'garment-appearance-refinement', {
         width: f4.width, height: f4.height, data: refinementPixels,
-      }, {
-        ...refinementLineage,
-        refinementParentStorageId: generic.storageId,
-        refinementParentSha256: sha256(generic.bytes),
-      }),
+      }, { ...refinementLineage, refinementParentStorageId: generic.storageId, refinementParentSha256: sha256(generic.bytes) }),
       /parent|deterministic Fashion FINAL|violates|constraint/i,
     );
 
     await assert.rejects(
       images.persistFinal(scope, 'f5a2-wrong-geometry', 'garment-appearance-refinement', {
-        width: f4.width + 1,
-        height: f4.height,
-        data: new Uint8ClampedArray(rgba(f4.width + 1, f4.height, 23)),
+        width: f4.width + 1, height: f4.height, data: new Uint8ClampedArray(rgba(f4.width + 1, f4.height, 23)),
       }, refinementLineage),
       /parent|geometry|violates|constraint/i,
     );
@@ -255,9 +248,35 @@ test('F5a.2 canonical refinement FINAL has exact deterministic F4 parentage and 
       pool.query(`UPDATE canonical_image_artifacts SET refinement_support_sha256=$2 WHERE storage_id=$1`, [first.storageId, 'c'.repeat(64)]),
       /refinement FINAL lineage is immutable/i,
     );
+    await assert.rejects(
+      pool.query(`UPDATE canonical_image_artifacts SET refinement_producer_parameters_sha256=$2 WHERE storage_id=$1`, [first.storageId, 'c'.repeat(64)]),
+      /refinement FINAL lineage is immutable/i,
+    );
 
-    // The schema checker must detect a disabled lineage guard, and the idempotent
-    // migration must repair only its own triggers without damaging persisted rows.
+    // Even with the immutable trigger deliberately disabled, the exact producer
+    // CHECK must reject a semantically different SHA/document binding.
+    await pool.query(`ALTER TABLE canonical_image_artifacts DISABLE TRIGGER ${REFINEMENT_IMMUTABLE_TRIGGER}`);
+    await assert.rejects(
+      pool.query(`UPDATE canonical_image_artifacts SET refinement_producer_parameters_sha256=$2 WHERE storage_id=$1`, [first.storageId, 'c'.repeat(64)]),
+      /refinement_parameters_check|check constraint/i,
+    );
+    await pool.query(`ALTER TABLE canonical_image_artifacts ENABLE TRIGGER ${REFINEMENT_IMMUTABLE_TRIGGER}`);
+
+    // Store-time revalidation must notice deterministic-parent byte tampering.
+    const parentBytes = Buffer.from(f4.bytes);
+    await pool.query(`UPDATE canonical_image_artifacts SET image_bytes=$2 WHERE storage_id=$1`, [f4.storageId, Buffer.from([1, 2, 3, 4])]);
+    await assert.rejects(images.load(first.storageId, scope), /deterministic parent is unavailable or inconsistent/i);
+    await pool.query(`UPDATE canonical_image_artifacts SET image_bytes=$2 WHERE storage_id=$1`, [f4.storageId, parentBytes]);
+    assert.ok(await images.load(first.storageId, scope));
+
+    // Generic FINAL persistence remains composable after F5 migration 032.
+    const crop = await images.persistFinal(scope, 'f5a2-crop-regression', 'crop', {
+      width: f4.width, height: f4.height, data: refinementPixels,
+    }, { sourceImageStorageId: anchor.projectImageStorageId, producerOperation: 'CROP' });
+    assert.equal(crop.producerOperation, 'CROP');
+    assert.equal(crop.refinementParentStorageId, undefined);
+
+    // Schema checker must detect a disabled lineage guard and migration must repair it.
     await pool.query('ALTER TABLE canonical_image_artifacts DISABLE TRIGGER canonical_image_artifacts_fashion_refinement_insert_guard');
     await assert.rejects(checkGarmentAppearanceRefinementFinalLineageSchema(pool), /triggers are incomplete|drifted|disabled/i);
     await migrateGarmentAppearanceRefinementFinalLineageSchema(pool);
