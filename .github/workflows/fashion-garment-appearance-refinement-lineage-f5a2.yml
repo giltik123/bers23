@@ -40,12 +40,13 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Typecheck build and package migration 032
+      - name: Typecheck build and package lineage/repair migrations
         run: |
           npm run typecheck
           npm run server:typecheck
           npm run server:build
           test -f dist-server/migrations/032_fashion_garment_appearance_refinement_final_lineage.sql
+          test -f dist-server/migrations/033_fashion_garment_texture_repair_under_refinement.sql
       - name: Bundle F5 and F4 lineage acceptance with exact migration assets
         run: |
           mkdir -p .test-cache/fashion-f5a2-refinement-lineage/migrations
@@ -53,6 +54,7 @@ jobs:
           test -f .test-cache/fashion-f5a2-refinement-lineage/migrations/003_canonical_final_image_artifacts.sql
           test -f .test-cache/fashion-f5a2-refinement-lineage/migrations/030_fashion_garment_texture_final_lineage.sql
           test -f .test-cache/fashion-f5a2-refinement-lineage/migrations/032_fashion_garment_appearance_refinement_final_lineage.sql
+          test -f .test-cache/fashion-f5a2-refinement-lineage/migrations/033_fashion_garment_texture_repair_under_refinement.sql
           npx esbuild tests/garment-appearance-refinement-final-lineage-contract-f5a2.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-f5a2-refinement-lineage/contract.test.mjs \
@@ -69,7 +71,7 @@ jobs:
         run: |
           node --test .test-cache/fashion-f5a2-refinement-lineage/contract.test.mjs
           node --test --test-concurrency=1 .test-cache/fashion-f5a2-refinement-lineage/refinement-postgres.test.mjs
-      - name: Prove accepted F4 lineage remains valid after additive F5 schema
+      - name: Prove accepted F4 lineage and drift repair remain valid after additive F5 schema
         run: node --test --test-concurrency=1 .test-cache/fashion-f5a2-refinement-lineage/f4-regression.test.mjs
       - name: Prove aggregate production migration and readiness include F5 lineage
         run: |
@@ -78,6 +80,7 @@ jobs:
       - name: Prove direct deterministic parent and no F5 execution admission
         run: |
           grep -q "032_fashion_garment_appearance_refinement_final_lineage.sql" server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts
+          grep -q "033_fashion_garment_texture_repair_under_refinement.sql" server/core/fashion/garmentTextureFinalLineageSchema.ts
           grep -q "migrateGarmentAppearanceRefinementFinalLineageSchema" server/transactions/infrastructure/postgres/transactionSchemaCli.ts
           grep -q "refinement_producer_parameters" server/core/artifacts/postgresImageArtifactStore.ts
           grep -q "e12f9db090851cb15d70ea747b6945df832d57510d1d6c48a779594a46ed758d" server/core/fashion/migrations/032_fashion_garment_appearance_refinement_final_lineage.sql
