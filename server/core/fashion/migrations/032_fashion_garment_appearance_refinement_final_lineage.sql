@@ -10,7 +10,9 @@ ALTER TABLE canonical_image_artifacts
   ADD COLUMN IF NOT EXISTS refinement_parent_storage_id uuid,
   ADD COLUMN IF NOT EXISTS refinement_parent_sha256 character(64),
   ADD COLUMN IF NOT EXISTS refinement_profile text,
-  ADD COLUMN IF NOT EXISTS refinement_support_sha256 character(64);
+  ADD COLUMN IF NOT EXISTS refinement_support_sha256 character(64),
+  ADD COLUMN IF NOT EXISTS refinement_producer_parameters jsonb,
+  ADD COLUMN IF NOT EXISTS refinement_producer_parameters_sha256 character(64);
 
 ALTER TABLE canonical_image_artifacts
   ALTER COLUMN refinement_parent_storage_id TYPE uuid USING refinement_parent_storage_id::uuid,
@@ -24,7 +26,13 @@ ALTER TABLE canonical_image_artifacts
   ALTER COLUMN refinement_profile DROP DEFAULT,
   ALTER COLUMN refinement_support_sha256 TYPE character(64) USING refinement_support_sha256::character(64),
   ALTER COLUMN refinement_support_sha256 DROP NOT NULL,
-  ALTER COLUMN refinement_support_sha256 DROP DEFAULT;
+  ALTER COLUMN refinement_support_sha256 DROP DEFAULT,
+  ALTER COLUMN refinement_producer_parameters TYPE jsonb USING refinement_producer_parameters::jsonb,
+  ALTER COLUMN refinement_producer_parameters DROP NOT NULL,
+  ALTER COLUMN refinement_producer_parameters DROP DEFAULT,
+  ALTER COLUMN refinement_producer_parameters_sha256 TYPE character(64) USING refinement_producer_parameters_sha256::character(64),
+  ALTER COLUMN refinement_producer_parameters_sha256 DROP NOT NULL,
+  ALTER COLUMN refinement_producer_parameters_sha256 DROP DEFAULT;
 
 ALTER TABLE canonical_image_artifacts
   DROP CONSTRAINT IF EXISTS canonical_image_artifacts_refinement_parent_fkey;
@@ -39,8 +47,8 @@ ALTER TABLE canonical_image_artifacts
 ALTER TABLE canonical_image_artifacts
   ADD CONSTRAINT canonical_image_artifacts_refinement_hashes_check CHECK (
     (refinement_parent_sha256 IS NULL OR refinement_parent_sha256 ~ '^[0-9a-f]{64}$')
-    AND
-    (refinement_support_sha256 IS NULL OR refinement_support_sha256 ~ '^[0-9a-f]{64}$')
+    AND (refinement_support_sha256 IS NULL OR refinement_support_sha256 ~ '^[0-9a-f]{64}$')
+    AND (refinement_producer_parameters_sha256 IS NULL OR refinement_producer_parameters_sha256 ~ '^[0-9a-f]{64}$')
   );
 
 ALTER TABLE canonical_image_artifacts
@@ -48,6 +56,20 @@ ALTER TABLE canonical_image_artifacts
 ALTER TABLE canonical_image_artifacts
   ADD CONSTRAINT canonical_image_artifacts_refinement_profile_check CHECK (
     refinement_profile IS NULL OR refinement_profile = 'REFINE_REALISM_V1'
+  );
+
+ALTER TABLE canonical_image_artifacts
+  DROP CONSTRAINT IF EXISTS canonical_image_artifacts_refinement_parameters_check;
+ALTER TABLE canonical_image_artifacts
+  ADD CONSTRAINT canonical_image_artifacts_refinement_parameters_check CHECK (
+    (
+      refinement_producer_parameters IS NULL
+      AND refinement_producer_parameters_sha256 IS NULL
+    )
+    OR (
+      refinement_producer_parameters = '{"schema":"BERS_GARMENT_APPEARANCE_REFINEMENT_PRODUCER_V1","profile":"REFINE_REALISM_V1","support":{"supportSource":"GARMENT_WARP_ALPHA_NONZERO","dilationPolicy":"CHEBYSHEV_SQUARE_CLIPPED","dilationRadiusPx":2,"maskPolicy":"BINARY_R8_0_OR_255","outsideSupportPolicy":"BYTE_EXACT_PARENT_RGBA8_OUTSIDE_SUPPORT","alphaPolicy":"PRESERVE_PARENT_ALPHA_GLOBAL"}}'::jsonb
+      AND refinement_producer_parameters_sha256 = 'e12f9db090851cb15d70ea747b6945df832d57510d1d6c48a779594a46ed758d'
+    )
   );
 
 ALTER TABLE canonical_image_artifacts
@@ -66,6 +88,8 @@ ALTER TABLE canonical_image_artifacts
       AND refinement_parent_sha256 IS NULL
       AND refinement_profile IS NULL
       AND refinement_support_sha256 IS NULL
+      AND refinement_producer_parameters IS NULL
+      AND refinement_producer_parameters_sha256 IS NULL
     )
     OR (
       producer_operation = 'BACKGROUND_ISOLATION'
@@ -79,6 +103,8 @@ ALTER TABLE canonical_image_artifacts
       AND refinement_parent_sha256 IS NULL
       AND refinement_profile IS NULL
       AND refinement_support_sha256 IS NULL
+      AND refinement_producer_parameters IS NULL
+      AND refinement_producer_parameters_sha256 IS NULL
     )
     OR (
       producer_operation IN ('CROP','RESIZE','ORTHOGONAL_TRANSFORM')
@@ -92,6 +118,8 @@ ALTER TABLE canonical_image_artifacts
       AND refinement_parent_sha256 IS NULL
       AND refinement_profile IS NULL
       AND refinement_support_sha256 IS NULL
+      AND refinement_producer_parameters IS NULL
+      AND refinement_producer_parameters_sha256 IS NULL
     )
     OR (
       producer_operation = 'GARMENT_TEXTURE_COMPOSITE'
@@ -105,6 +133,8 @@ ALTER TABLE canonical_image_artifacts
       AND refinement_parent_sha256 IS NULL
       AND refinement_profile IS NULL
       AND refinement_support_sha256 IS NULL
+      AND refinement_producer_parameters IS NULL
+      AND refinement_producer_parameters_sha256 IS NULL
     )
     OR (
       producer_operation = 'GARMENT_APPEARANCE_REFINEMENT'
@@ -118,6 +148,8 @@ ALTER TABLE canonical_image_artifacts
       AND refinement_parent_sha256 IS NOT NULL
       AND refinement_profile = 'REFINE_REALISM_V1'
       AND refinement_support_sha256 IS NOT NULL
+      AND refinement_producer_parameters IS NOT NULL
+      AND refinement_producer_parameters_sha256 IS NOT NULL
     )
   );
 
@@ -194,7 +226,9 @@ BEGIN
      OR OLD.refinement_parent_storage_id IS DISTINCT FROM NEW.refinement_parent_storage_id
      OR OLD.refinement_parent_sha256 IS DISTINCT FROM NEW.refinement_parent_sha256
      OR OLD.refinement_profile IS DISTINCT FROM NEW.refinement_profile
-     OR OLD.refinement_support_sha256 IS DISTINCT FROM NEW.refinement_support_sha256 THEN
+     OR OLD.refinement_support_sha256 IS DISTINCT FROM NEW.refinement_support_sha256
+     OR OLD.refinement_producer_parameters IS DISTINCT FROM NEW.refinement_producer_parameters
+     OR OLD.refinement_producer_parameters_sha256 IS DISTINCT FROM NEW.refinement_producer_parameters_sha256 THEN
     RAISE EXCEPTION 'canonical Fashion refinement FINAL lineage is immutable' USING ERRCODE='55000';
   END IF;
   RETURN NEW;
@@ -206,7 +240,7 @@ CREATE TRIGGER canonical_image_artifacts_fashion_refinement_insert_guard
   FOR EACH ROW EXECUTE FUNCTION canonical_assert_fashion_refinement_final_insert();
 
 CREATE TRIGGER canonical_image_artifacts_fashion_refinement_immut_guard
-  BEFORE UPDATE OF producer_operation,refinement_parent_storage_id,refinement_parent_sha256,refinement_profile,refinement_support_sha256
+  BEFORE UPDATE OF producer_operation,refinement_parent_storage_id,refinement_parent_sha256,refinement_profile,refinement_support_sha256,refinement_producer_parameters,refinement_producer_parameters_sha256
   ON canonical_image_artifacts
   FOR EACH ROW EXECUTE FUNCTION canonical_fashion_refinement_final_lineage_immutable_guard();
 
