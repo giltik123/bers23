@@ -1,7 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
-import { migrateGarmentTextureFinalLineageSchema } from './garmentTextureFinalLineageSchema.ts';
+import {
+  checkGarmentTextureFinalLineageSchema,
+  migrateGarmentTextureFinalLineageSchema,
+} from './garmentTextureFinalLineageSchema.ts';
 
 const MIGRATION = '032_fashion_garment_appearance_refinement_final_lineage.sql';
 const IMAGE_TABLE = 'canonical_image_artifacts';
@@ -14,7 +17,7 @@ const PRODUCER_SHA256 = 'e12f9db090851cb15d70ea747b6945df832d57510d1d6c48a779594
 const canon = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').replace(/"/g, '').trim();
 
 export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: Pool): Promise<void> {
-  await migrateGarmentTextureFinalLineageSchema(pool);
+  await checkGarmentTextureFinalLineageSchema(pool);
 
   const columns = await pool.query(`SELECT column_name,udt_name,is_nullable,character_maximum_length,column_default
     FROM information_schema.columns
