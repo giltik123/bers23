@@ -8,7 +8,6 @@ export const RELEVANT_CLASSIFICATION = 'RELEVANT_HEAVY_ACCEPTANCE_REQUIRED';
 export const NOT_APPLICABLE_CLASSIFICATION = 'NOT_APPLICABLE_PRODUCT_ONLY_CHANGE';
 
 const CLASSIFIER_REPO_PATH = 'scripts/classify-tiny-sd-heavy-ci.mjs';
-const TRUSTED_BASE_CHILD_ENV = 'BERS_TRUSTED_BASE_TINY_SD_CLASSIFIER';
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/;
 const MAX_TRUSTED_CLASSIFIER_BYTES = 1024 * 1024;
 
@@ -135,7 +134,10 @@ function runTrustedBaseClassifier(argv, stdin) {
     const child = spawnSync(process.execPath, [trustedPath, ...argv], {
       cwd: process.cwd(),
       input: stdin,
-      env: { ...process.env, [TRUSTED_BASE_CHILD_ENV]: '1' },
+      // The child is the exact materialized base blob. Force it into its pure local
+      // classification path instead of using a writable recursion marker that PR code
+      // could forge through GITHUB_ENV.
+      env: { ...process.env, GITHUB_ACTIONS: 'false' },
       encoding: 'utf8',
       maxBuffer: 4 * 1024 * 1024,
     });
@@ -156,7 +158,7 @@ if (invokedAsCli) {
   try {
     const argv = process.argv.slice(2);
     const stdin = fs.readFileSync(0);
-    if (process.env.GITHUB_ACTIONS === 'true' && process.env[TRUSTED_BASE_CHILD_ENV] !== '1') {
+    if (process.env.GITHUB_ACTIONS === 'true') {
       runTrustedBaseClassifier(argv, stdin);
     } else {
       const { githubOutput } = parseCli(argv);
