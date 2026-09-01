@@ -86,9 +86,10 @@ export async function checkGarmentTextureFinalLineageSchema(pool: Pool): Promise
   }
 
   // Before later Fashion lineage extensions exist, migration 030 owns the global
-  // shape constraint and must verify it. Once F5 refinement columns are present,
-  // the latest F5 schema layer owns that cross-operation constraint; F4 remains
-  // responsible only for its own columns/FK/checks/index/triggers.
+  // shape constraint and must verify it. Once any F5 refinement column appears,
+  // the latest F5 schema layer owns that cross-operation constraint, including
+  // repair of a partially applied F5 migration; F4 continues to own only its
+  // columns/FK/checks/index/triggers.
   if (!refinementExtensionPresent) {
     const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
     const shapeDef = canon(shape?.definition);
@@ -150,11 +151,7 @@ async function hasRefinementLineageExtension(pool: Pool): Promise<boolean> {
     FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name=$1
       AND column_name IN ('refinement_parent_storage_id','refinement_parent_sha256','refinement_profile','refinement_support_sha256','refinement_producer_parameters','refinement_producer_parameters_sha256')`, [IMAGE_TABLE]);
-  const count = Number(result.rows[0]?.count ?? 0);
-  if (count !== 0 && count !== 6) {
-    throw new Error('canonical Fashion refinement FINAL lineage extension is partially present; latest schema layer must repair it');
-  }
-  return count === 6;
+  return Number(result.rows[0]?.count ?? 0) > 0;
 }
 
 async function readMigration(name: string): Promise<string> {
