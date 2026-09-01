@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  GARMENT_APPEARANCE_REFINEMENT_ALPHA_POLICY,
   GARMENT_APPEARANCE_REFINEMENT_DILATION_POLICY,
   GARMENT_APPEARANCE_REFINEMENT_DILATION_RADIUS_PX,
   GARMENT_APPEARANCE_REFINEMENT_OUTSIDE_SUPPORT_POLICY,
@@ -39,6 +40,7 @@ test('F5a.1 identity is closed, conservative and not production-admitted', () =>
   assert.equal(GARMENT_APPEARANCE_REFINEMENT_DILATION_RADIUS_PX, 2);
   assert.equal(GARMENT_APPEARANCE_REFINEMENT_DILATION_POLICY, 'CHEBYSHEV_SQUARE_CLIPPED');
   assert.equal(GARMENT_APPEARANCE_REFINEMENT_OUTSIDE_SUPPORT_POLICY, 'BYTE_EXACT_PARENT_RGBA8_OUTSIDE_SUPPORT');
+  assert.equal(GARMENT_APPEARANCE_REFINEMENT_ALPHA_POLICY, 'PRESERVE_PARENT_ALPHA_GLOBAL');
   assert.equal(GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION, 'NOT_ADMITTED');
 });
 
@@ -52,6 +54,7 @@ test('F5a.1 isolated garment alpha expands by exact clipped 2px square radius', 
   assert.deepEqual(input, before, 'support derivation must not mutate accepted warp bytes');
   assert.equal(support.width, width);
   assert.equal(support.height, height);
+  assert.equal(support.alphaPolicy, 'PRESERVE_PARENT_ALPHA_GLOBAL');
   assert.ok([...support.mask].every(value => value === 0 || value === 255));
 });
 
@@ -81,7 +84,7 @@ test('F5a.1 empty garment warp support and malformed geometry fail closed', () =
   assert.throws(() => deriveGarmentAppearanceRefinementSupport(new Uint8Array(4), 0, 1), /positive safe integer/i);
 });
 
-test('F5a.1 candidate may change supported pixels but every protected RGBA channel is byte-exact', () => {
+test('F5a.1 candidate may change supported RGB while parent alpha is immutable globally', () => {
   const width = 7;
   const height = 7;
   const support = deriveGarmentAppearanceRefinementSupport(warp(width, height, [[3, 3]]), width, height);
@@ -91,19 +94,34 @@ test('F5a.1 candidate may change supported pixels but every protected RGBA chann
   const inside = Uint8ClampedArray.from(parent);
   const insideOffset = (3 * width + 3) * 4;
   inside[insideOffset] ^= 0xff;
-  inside[insideOffset + 3] ^= 0xff;
+  inside[insideOffset + 1] ^= 0xff;
   const accepted = verifyGarmentAppearanceRefinementCandidate(parent, inside, support.mask, width, height);
   assert.equal(accepted.changedPixels, 1);
   assert.deepEqual(parent, parentBefore, 'verification must not mutate deterministic parent bytes');
 
-  const outsideOffset = 0;
-  for (let channel = 0; channel < 4; channel += 1) {
+  for (const pixel of [3 * width + 3, 0]) {
     const candidate = Uint8ClampedArray.from(parent);
-    candidate[outsideOffset + channel] ^= 0xff;
+    candidate[pixel * 4 + 3] ^= 0xff;
     assert.throws(
       () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, support.mask, width, height),
-      /protected pixels outside deterministic support/i,
-      `outside-support channel ${channel} must remain immutable`,
+      /globally protected parent alpha/i,
+      'parent alpha must remain immutable both inside and outside support',
+    );
+  }
+});
+
+test('F5a.1 protected outside-support RGB is byte-exact in every color channel', () => {
+  const width = 7;
+  const height = 7;
+  const support = deriveGarmentAppearanceRefinementSupport(warp(width, height, [[3, 3]]), width, height);
+  const parent = Uint8ClampedArray.from({ length: width * height * 4 }, (_, index) => index % 251);
+  for (let channel = 0; channel < 3; channel += 1) {
+    const candidate = Uint8ClampedArray.from(parent);
+    candidate[channel] ^= 0xff;
+    assert.throws(
+      () => verifyGarmentAppearanceRefinementCandidate(parent, candidate, support.mask, width, height),
+      /protected RGB outside deterministic support/i,
+      `outside-support RGB channel ${channel} must remain immutable`,
     );
   }
 });
