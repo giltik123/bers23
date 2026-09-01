@@ -40,6 +40,7 @@ jobs:
           grep -q '"productionExecutable": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"runtimeAuthorityGranted": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"requiredConfigIdentity": "UNPINNED"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"configInventoryEvidence": "docs/fashion-f5b1-config-inventory.md"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"state": "UNPROVEN"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           if grep -R -E "kandinsky-2-2-decoder-inpaint-refinement" server/core/localExecution/productionLocalModelPolicy.ts server/core/localExecution/productionLocalExecutorPolicy.ts; then
             echo "F5b.1 candidate entered production execution catalogs" >&2; exit 1
