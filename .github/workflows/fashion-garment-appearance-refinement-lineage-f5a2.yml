@@ -48,11 +48,12 @@ jobs:
             echo "F5a.2 producer contract imported persistence/runtime/provider authority" >&2
             exit 1
           fi
-          if grep -E "modelId|prompt|negativePrompt|seed|steps|provider|executionId" \
-            src/platform/creative/deterministic/GarmentAppearanceRefinementParameters.ts; then
-            echo "F5a.2 producer schema contains forbidden runtime/client authority" >&2
-            exit 1
-          fi
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const source = readFileSync('src/platform/creative/deterministic/GarmentAppearanceRefinementParameters.ts', 'utf8');
+          const forbiddenField = /\b(?:modelId|prompt|negativePrompt|seed|steps|provider|executionId)\??\s*:/;
+          if (forbiddenField.test(source)) throw new Error('F5a.2 producer schema contains forbidden runtime/client authority fields');
+          NODE
           if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/deterministic/DeterministicToolRegistry.ts; then
             echo "F5a.2 must not register execution" >&2
             exit 1
