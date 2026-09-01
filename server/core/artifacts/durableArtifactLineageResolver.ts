@@ -93,18 +93,46 @@ export class DurableArtifactLineageResolver {
       if (
         stored.sourceImageStorageId || stored.maskStorageId || stored.producerOperation
         || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256 || stored.producerParameters || stored.producerParametersSha256
+        || stored.refinementParentStorageId || stored.refinementParentSha256 || stored.refinementProfile || stored.refinementSupportSha256
       ) throw resolverError('durable_lineage_invalid', 'Immutable ORIGINAL cannot carry derived-image lineage');
       return Object.freeze([]);
     }
     if (
       !stored.sourceImageStorageId && !stored.maskStorageId && !stored.producerOperation
       && !stored.garmentWarpLayerId && !stored.garmentWarpLayerSha256 && !stored.producerParameters && !stored.producerParametersSha256
+      && !stored.refinementParentStorageId && !stored.refinementParentSha256 && !stored.refinementProfile && !stored.refinementSupportSha256
     ) return Object.freeze([]);
+
+    if (stored.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT') {
+      if (
+        stored.sourceImageStorageId || stored.maskStorageId || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256
+        || stored.producerParameters || stored.producerParametersSha256
+        || !stored.refinementParentStorageId || !stored.refinementParentSha256 || !stored.refinementProfile || !stored.refinementSupportSha256
+      ) throw resolverError('durable_lineage_invalid', 'Fashion refinement FINAL lineage is incomplete or mixed with F4 lineage');
+      const parent = await this.images.loadSource(stored.refinementParentStorageId, scope);
+      if (
+        !parent
+        || parent.role !== 'COMPOSITE'
+        || parent.lifecycle !== 'FINAL'
+        || parent.producerOperation !== 'GARMENT_TEXTURE_COMPOSITE'
+      ) throw resolverError('durable_lineage_unavailable', 'Fashion refinement deterministic F4 parent FINAL is unavailable or invalid');
+      if (parent.width !== stored.width || parent.height !== stored.height) {
+        throw resolverError('durable_lineage_invalid', 'Fashion refinement parent geometry differs from the child FINAL');
+      }
+      if (sha256(parent.bytes) !== stored.refinementParentSha256) {
+        throw resolverError('durable_lineage_invalid', 'Fashion refinement parent SHA-256 does not match durable lineage');
+      }
+      // F5 is a refinement of the already-authoritative deterministic F4 FINAL.
+      // Keep that FINAL as the only direct Artifact parent; Project source and
+      // immutable warp evidence remain transitive lineage of the F4 parent.
+      return Object.freeze([issueStoredImageId(this.signed, parent, scope)]);
+    }
 
     if (stored.producerOperation === 'GARMENT_TEXTURE_COMPOSITE') {
       if (
         !stored.sourceImageStorageId || stored.maskStorageId || !stored.garmentWarpLayerId
         || !stored.garmentWarpLayerSha256 || !stored.producerParameters || !stored.producerParametersSha256
+        || stored.refinementParentStorageId || stored.refinementParentSha256 || stored.refinementProfile || stored.refinementSupportSha256
       ) throw resolverError('durable_lineage_invalid', 'Fashion texture FINAL lineage is incomplete');
       const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
       if (!source) throw resolverError('durable_lineage_unavailable', 'Fashion texture FINAL Project source IMAGE is unavailable');
@@ -113,7 +141,10 @@ export class DurableArtifactLineageResolver {
       return Object.freeze([issueStoredImageId(this.signed, source, scope)]);
     }
 
-    if (stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId) {
+    if (
+      stored.refinementParentStorageId || stored.refinementParentSha256 || stored.refinementProfile || stored.refinementSupportSha256
+      || stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId
+    ) {
       throw resolverError('durable_lineage_invalid', 'Derived FINAL lineage is incomplete or unsupported');
     }
     const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
