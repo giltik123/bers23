@@ -9,16 +9,20 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
 export type GarmentAppearanceRefinementFinalLineageV1 = Readonly<{
   sourceImageStorageId: string;
-  producerOperation: typeof GARMENT_APPEARANCE_REFINEMENT_OPERATION;
+  producerOperation: 'GARMENT_APPEARANCE_REFINEMENT';
   refinementParentImageStorageId: string;
   refinementParentImageSha256: string;
-  refinementProfile: typeof GARMENT_APPEARANCE_REFINEMENT_PROFILE;
-  refinementContractVersion: typeof GARMENT_APPEARANCE_REFINEMENT_CONTRACT_VERSION;
+  refinementProfile: 'REFINE_REALISM_V1';
+  refinementContractVersion: '1';
 }>;
 
 /**
  * Closed server-owned F5 FINAL lineage. This normalizer grants no execution,
  * model, provider, persistence or Project mutation authority by itself.
+ *
+ * Explicit literal types are intentional: the shared identity module is JS and
+ * some server TypeScript configurations widen imported JSDoc constants. Runtime
+ * equality still binds these literals to the one shared identity source below.
  */
 export function normalizeGarmentAppearanceRefinementFinalLineage(
   value: GarmentAppearanceRefinementFinalLineageV1,
@@ -47,11 +51,11 @@ export function normalizeGarmentAppearanceRefinementFinalLineage(
   }
   return Object.freeze({
     sourceImageStorageId,
-    producerOperation: GARMENT_APPEARANCE_REFINEMENT_OPERATION,
+    producerOperation: 'GARMENT_APPEARANCE_REFINEMENT',
     refinementParentImageStorageId,
     refinementParentImageSha256,
-    refinementProfile: GARMENT_APPEARANCE_REFINEMENT_PROFILE,
-    refinementContractVersion: GARMENT_APPEARANCE_REFINEMENT_CONTRACT_VERSION,
+    refinementProfile: 'REFINE_REALISM_V1',
+    refinementContractVersion: '1',
   });
 }
 
