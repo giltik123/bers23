@@ -90,6 +90,7 @@ jobs:
             scripts/probe-tiny-sd-d5-pipeline-control.py \
             scripts/prepare-tiny-sd-d5-browser-tokenizer.py \
             scripts/prepare-tiny-sd-d3-wasm-quantized.py \
+            scripts/reproduce-tiny-sd-d3-selected-wasm.py \
             scripts/tiny_sd_d2_common.py \
             scripts/probe-tiny-sd-reference.py \
             scripts/probe-tiny-sd-component-onnx.py
@@ -281,7 +282,7 @@ jobs:
         run: |
           set -euo pipefail
           EXP_PY="${RUNNER_TEMP}/tiny-sd-d5-pipeline-export-venv/bin/python"
-          "${EXP_PY}" scripts/prepare-tiny-sd-d3-wasm-quantized.py \
+          "${EXP_PY}" scripts/reproduce-tiny-sd-d3-selected-wasm.py \
             --fp32-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-fp32" \
             --d2-report "${GITHUB_WORKSPACE}/.test-cache/6.42d5-pipeline/d2-components.json" \
             --output-dir "${RUNNER_TEMP}/tiny-sd-d5-pipeline-selected" \
@@ -292,6 +293,9 @@ jobs:
           report = json.load(open('.test-cache/6.42d5-pipeline/d3-selected.json', encoding='utf-8'))
           expected = {'text_encoder', 'unet', 'vae_decoder'}
           assert set(report['components']) == expected
+          assert report['selectionRule'] == 'PINNED_ACCEPTED_SCHEME_REPRODUCTION_NO_RESELECTION'
+          assert report['reselectionPerformed'] is False
+          assert report['fullStrategyMatrixExecuted'] is False
           for name, value in report['components'].items():
               assert value['result'] == 'WASM_COMPACT_NATIVE_PASS', (name, value['result'])
               assert value['transform']['scheme'] == 'EXACT_FP16_STORAGE_FP32_COMPUTE'
