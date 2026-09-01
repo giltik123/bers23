@@ -52,11 +52,25 @@ export type GarmentTextureCompositeRunInput = Readonly<{
   featherRadius: number;
 }>;
 
+export type GarmentTextureCompositePreparedRunInput = Readonly<{
+  ticket: LocalExecutionTicketV2;
+  sourceArtifactId: string;
+}>;
+
 export type GarmentTextureCompositeRunResult = Readonly<{
   target: 'LOCAL';
   runtime: 'BROWSER_JS';
   accelerator: 'cpu';
   artifactId: string;
+  preview: PixelImage;
+  latencyMs: number;
+}>;
+
+export type GarmentTextureCompositePreparedRunResult = Readonly<{
+  target: 'LOCAL';
+  runtime: 'BROWSER_JS';
+  accelerator: 'cpu';
+  status: 'SUCCESS';
   preview: PixelImage;
   latencyMs: number;
 }>;
@@ -96,11 +110,44 @@ export class CoreAuthorizedGarmentTextureComposite {
       featherRadius: expectedParameters.document.featherRadius,
       clientRequestId: input.requestId,
     });
-    const ticket = validateTicket(prepared.ticket, this.projectId, input, expectedParameters.canonicalJson);
+    return this.executeTicket(prepared.ticket, input, expectedParameters.canonicalJson);
+  }
+
+  /**
+   * F4b.6 prepared-ticket path. Layer identity and producer parameters come only
+   * from the Core ticket. Product code supplies no continuation evidence and does
+   * not receive the committed FINAL artifact identity from this execution step.
+   */
+  async runPrepared(input: GarmentTextureCompositePreparedRunInput): Promise<GarmentTextureCompositePreparedRunResult> {
+    if (!input.ticket || !input.sourceArtifactId) throw new Error('Prepared garment texture-composite request is incomplete');
+    const derived = preparedIntent(input.ticket, input.sourceArtifactId);
+    const expectedParameters = normalizeGarmentTextureCompositeProducerParameters({
+      schema: GARMENT_TEXTURE_COMPOSITE_SCHEMA,
+      textureTransform: derived.textureTransform,
+      featherRadius: derived.featherRadius,
+      colorSpacePolicy: GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY,
+    });
+    const result = await this.executeTicket(input.ticket, derived, expectedParameters.canonicalJson);
+    return Object.freeze({
+      target: result.target,
+      runtime: result.runtime,
+      accelerator: result.accelerator,
+      status: 'SUCCESS',
+      preview: result.preview,
+      latencyMs: result.latencyMs,
+    });
+  }
+
+  private async executeTicket(
+    ticketInput: LocalExecutionTicketV2,
+    input: GarmentTextureCompositeRunInput,
+    expectedProducerJson: string,
+  ): Promise<GarmentTextureCompositeRunResult> {
+    const ticket = validateTicket(ticketInput, this.projectId, input, expectedProducerJson);
     const envelope = decodeGarmentTextureCompositeInputEnvelope(
       await this.core.loadGarmentTextureCompositeInput({ ticketId: ticket.ticketId, projectId: this.projectId }),
     );
-    validateEnvelope(ticket, envelope.metadata, input, expectedParameters.canonicalJson);
+    validateEnvelope(ticket, envelope.metadata, input, expectedProducerJson);
 
     const startedAt = this.clock();
     const p = envelope.metadata.producerParameters;
@@ -161,6 +208,22 @@ export class CoreAuthorizedGarmentTextureComposite {
     }
     return Object.freeze({ target: 'LOCAL', runtime: 'BROWSER_JS', accelerator: 'cpu', artifactId: finalized.artifactId, preview, latencyMs });
   }
+}
+
+function preparedIntent(ticket: LocalExecutionTicketV2, sourceArtifactId: string): GarmentTextureCompositeRunInput {
+  const p = parameters(ticket);
+  const layerId = typeof p.garmentWarpLayerId === 'string' ? p.garmentWarpLayerId : '';
+  const layerSha256 = typeof p.garmentWarpLayerSha256 === 'string' ? p.garmentWarpLayerSha256 : '';
+  if (!UUID.test(layerId) || !SHA.test(layerSha256) || !ticket.requestId) throw new Error('Prepared garment texture-composite ticket is missing server-owned evidence');
+  const normalized = normalizeGarmentTextureCompositeProducerParameters(p.producerParameters);
+  return Object.freeze({
+    requestId: ticket.requestId,
+    sourceArtifactId,
+    garmentWarpLayerId: layerId,
+    garmentWarpLayerSha256: layerSha256,
+    textureTransform: normalized.document.textureTransform,
+    featherRadius: normalized.document.featherRadius,
+  });
 }
 
 function assertRunInput(input: GarmentTextureCompositeRunInput): void {
