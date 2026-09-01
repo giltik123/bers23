@@ -3,6 +3,7 @@ import {
   GARMENT_TEXTURE_COMPOSITE_MAX_PIXELS,
 } from './GarmentTextureCompositeIdentity.js';
 import {
+  GARMENT_APPEARANCE_REFINEMENT_ALPHA_POLICY,
   GARMENT_APPEARANCE_REFINEMENT_DILATION_POLICY,
   GARMENT_APPEARANCE_REFINEMENT_DILATION_RADIUS_PX,
   GARMENT_APPEARANCE_REFINEMENT_MASK_POLICY,
@@ -22,6 +23,7 @@ export {
   GARMENT_APPEARANCE_REFINEMENT_DILATION_POLICY,
   GARMENT_APPEARANCE_REFINEMENT_MASK_POLICY,
   GARMENT_APPEARANCE_REFINEMENT_OUTSIDE_SUPPORT_POLICY,
+  GARMENT_APPEARANCE_REFINEMENT_ALPHA_POLICY,
   GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION,
 } from './GarmentAppearanceRefinementIdentity.js';
 
@@ -33,6 +35,7 @@ export type GarmentAppearanceRefinementSupport = Readonly<{
   dilationRadiusPx: typeof GARMENT_APPEARANCE_REFINEMENT_DILATION_RADIUS_PX;
   maskPolicy: typeof GARMENT_APPEARANCE_REFINEMENT_MASK_POLICY;
   outsideSupportPolicy: typeof GARMENT_APPEARANCE_REFINEMENT_OUTSIDE_SUPPORT_POLICY;
+  alphaPolicy: typeof GARMENT_APPEARANCE_REFINEMENT_ALPHA_POLICY;
   width: number;
   height: number;
   mask: Uint8Array;
@@ -103,6 +106,7 @@ export function deriveGarmentAppearanceRefinementSupport(
     dilationRadiusPx: GARMENT_APPEARANCE_REFINEMENT_DILATION_RADIUS_PX,
     maskPolicy: GARMENT_APPEARANCE_REFINEMENT_MASK_POLICY,
     outsideSupportPolicy: GARMENT_APPEARANCE_REFINEMENT_OUTSIDE_SUPPORT_POLICY,
+    alphaPolicy: GARMENT_APPEARANCE_REFINEMENT_ALPHA_POLICY,
     width,
     height,
     mask,
@@ -110,9 +114,10 @@ export function deriveGarmentAppearanceRefinementSupport(
 }
 
 /**
- * Hard F5 preservation gate. Every RGBA byte outside deterministic support must
- * remain byte-identical to the deterministic parent. Passing this helper only
- * proves spatial preservation; it never grants execution or FINAL authority.
+ * Hard F5 preservation gate. RGB may change only inside deterministic support;
+ * parent alpha is immutable globally, matching the accepted F4 base-alpha law.
+ * Passing this helper proves only spatial preservation and never grants execution
+ * or FINAL authority.
  */
 export function verifyGarmentAppearanceRefinementCandidate(
   parentRgba: Uint8Array | Uint8ClampedArray,
@@ -131,12 +136,15 @@ export function verifyGarmentAppearanceRefinementCandidate(
     const allowed = supportMask[pixel];
     if (allowed !== 0 && allowed !== 255) throw new Error('Garment appearance refinement support mask must contain only 0 or 255');
     const offset = pixel * 4;
-    let changed = false;
-    for (let channel = 0; channel < 4; channel += 1) {
-      if (parentRgba[offset + channel] !== candidateRgba[offset + channel]) changed = true;
+    if (parentRgba[offset + 3] !== candidateRgba[offset + 3]) {
+      throw new Error('Garment appearance refinement candidate changed globally protected parent alpha');
     }
-    if (!changed) continue;
-    if (allowed !== 255) throw new Error('Garment appearance refinement candidate changed protected pixels outside deterministic support');
+    let rgbChanged = false;
+    for (let channel = 0; channel < 3; channel += 1) {
+      if (parentRgba[offset + channel] !== candidateRgba[offset + channel]) rgbChanged = true;
+    }
+    if (!rgbChanged) continue;
+    if (allowed !== 255) throw new Error('Garment appearance refinement candidate changed protected RGB outside deterministic support');
     changedPixels += 1;
   }
 
