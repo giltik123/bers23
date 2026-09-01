@@ -9,6 +9,7 @@ const INSERT_TRIGGER = 'canonical_image_artifacts_fashion_refinement_insert_guar
 const IMMUTABLE_TRIGGER = 'canonical_image_artifacts_fashion_refinement_immut_guard';
 const BEFORE_INSERT_ROW_TGTYPE = 7;
 const BEFORE_UPDATE_ROW_TGTYPE = 19;
+const PRODUCER_SHA256 = 'e12f9db090851cb15d70ea747b6945df832d57510d1d6c48a779594a46ed758d';
 
 const canon = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').replace(/"/g, '').trim();
 
@@ -18,18 +19,22 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
   const columns = await pool.query(`SELECT column_name,udt_name,is_nullable,character_maximum_length,column_default
     FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name=$1
-      AND column_name IN ('refinement_parent_storage_id','refinement_parent_sha256','refinement_profile','refinement_support_sha256')`, [IMAGE_TABLE]);
+      AND column_name IN ('refinement_parent_storage_id','refinement_parent_sha256','refinement_profile','refinement_support_sha256','refinement_producer_parameters','refinement_producer_parameters_sha256')`, [IMAGE_TABLE]);
   const byName = new Map(columns.rows.map((row: any) => [String(row.column_name), row]));
   const parentId: any = byName.get('refinement_parent_storage_id');
   const parentSha: any = byName.get('refinement_parent_sha256');
   const profile: any = byName.get('refinement_profile');
   const supportSha: any = byName.get('refinement_support_sha256');
+  const producerParameters: any = byName.get('refinement_producer_parameters');
+  const producerParametersSha: any = byName.get('refinement_producer_parameters_sha256');
   if (
-    byName.size !== 4
+    byName.size !== 6
     || parentId?.udt_name !== 'uuid' || parentId?.is_nullable !== 'YES' || parentId?.column_default != null
     || parentSha?.udt_name !== 'bpchar' || parentSha?.is_nullable !== 'YES' || Number(parentSha?.character_maximum_length) !== 64 || parentSha?.column_default != null
     || profile?.udt_name !== 'text' || profile?.is_nullable !== 'YES' || profile?.column_default != null
     || supportSha?.udt_name !== 'bpchar' || supportSha?.is_nullable !== 'YES' || Number(supportSha?.character_maximum_length) !== 64 || supportSha?.column_default != null
+    || producerParameters?.udt_name !== 'jsonb' || producerParameters?.is_nullable !== 'YES' || producerParameters?.column_default != null
+    || producerParametersSha?.udt_name !== 'bpchar' || producerParametersSha?.is_nullable !== 'YES' || Number(producerParametersSha?.character_maximum_length) !== 64 || producerParametersSha?.column_default != null
   ) throw new Error('canonical Fashion refinement FINAL lineage columns are incomplete or drifted; apply migration 032');
 
   const constraints = await pool.query(`SELECT c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid) AS definition
@@ -51,6 +56,7 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
     !hashes || hashes.contype !== 'c' || !hashes.convalidated
     || !hashesDef.includes("refinement_parent_sha256 ~ '^[0-9a-f]{64}$'::text")
     || !hashesDef.includes("refinement_support_sha256 ~ '^[0-9a-f]{64}$'::text")
+    || !hashesDef.includes("refinement_producer_parameters_sha256 ~ '^[0-9a-f]{64}$'::text")
   ) throw new Error('canonical Fashion refinement FINAL hash policy is incomplete or drifted');
 
   const profileCheck: any = byConstraint.get('canonical_image_artifacts_refinement_profile_check');
@@ -60,12 +66,30 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
     || !profileDef.includes("refinement_profile = 'REFINE_REALISM_V1'::text")
   ) throw new Error('canonical Fashion refinement FINAL profile policy is incomplete or drifted');
 
+  const parametersCheck: any = byConstraint.get('canonical_image_artifacts_refinement_parameters_check');
+  const parametersDef = canon(parametersCheck?.definition);
+  for (const fragment of [
+    'BERS_GARMENT_APPEARANCE_REFINEMENT_PRODUCER_V1',
+    'REFINE_REALISM_V1',
+    'GARMENT_WARP_ALPHA_NONZERO',
+    'CHEBYSHEV_SQUARE_CLIPPED',
+    'BINARY_R8_0_OR_255',
+    'BYTE_EXACT_PARENT_RGBA8_OUTSIDE_SUPPORT',
+    'PRESERVE_PARENT_ALPHA_GLOBAL',
+    PRODUCER_SHA256,
+  ]) {
+    if (!parametersDef.includes(fragment)) throw new Error('canonical Fashion refinement FINAL producer-parameter policy is incomplete or drifted');
+  }
+  if (!parametersCheck || parametersCheck.contype !== 'c' || !parametersCheck.convalidated) {
+    throw new Error('canonical Fashion refinement FINAL producer-parameter policy is incomplete or drifted');
+  }
+
   const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
   const shapeDef = canon(shape?.definition);
   for (const producer of ['BACKGROUND_ISOLATION','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE','GARMENT_APPEARANCE_REFINEMENT']) {
     if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 032');
   }
-  for (const field of ['refinement_parent_storage_id','refinement_parent_sha256','refinement_profile','refinement_support_sha256']) {
+  for (const field of ['refinement_parent_storage_id','refinement_parent_sha256','refinement_profile','refinement_support_sha256','refinement_producer_parameters','refinement_producer_parameters_sha256']) {
     if (!shapeDef.includes(field)) throw new Error('canonical FINAL image lineage shape policy does not close F5-specific fields');
   }
   if (!shape || shape.contype !== 'c' || !shape.convalidated) {
