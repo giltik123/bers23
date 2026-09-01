@@ -3,7 +3,7 @@ name: Fashion F5a.2 canonical refinement FINAL lineage
 on:
   pull_request:
     branches:
-      - fashion-f5a1-refinement-support-contract
+      - fashion-f5a1-refinement-support-contract-clean
       - main
   workflow_dispatch:
 
