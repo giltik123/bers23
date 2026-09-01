@@ -114,27 +114,29 @@ export function deriveGarmentAppearanceRefinementSupport(
 }
 
 /**
- * Hard F5 preservation gate. RGB may change only inside deterministic support;
- * parent alpha is immutable globally, matching the accepted F4 base-alpha law.
- * Passing this helper proves only spatial preservation and never grants execution
- * or FINAL authority.
+ * Hard F5 preservation gate. The verification authority is the immutable F4
+ * garment-warp RGBA, never a caller/delivery/model-provided mask. This helper
+ * independently re-derives the exact support before evaluating candidate bytes.
+ *
+ * RGB may change only inside deterministic support; parent alpha is immutable
+ * globally. Passing this helper proves only spatial preservation and never grants
+ * execution or FINAL authority.
  */
 export function verifyGarmentAppearanceRefinementCandidate(
   parentRgba: Uint8Array | Uint8ClampedArray,
   candidateRgba: Uint8Array | Uint8ClampedArray,
-  supportMask: Uint8Array | Uint8ClampedArray,
+  warpRgba: Uint8Array | Uint8ClampedArray,
   width: number,
   height: number,
 ): GarmentAppearanceRefinementCandidateVerification {
   const pixels = assertGeometry(width, height);
   assertRgba(parentRgba, pixels, 'Deterministic parent RGBA');
   assertRgba(candidateRgba, pixels, 'Refinement candidate RGBA');
-  if (supportMask.byteLength !== pixels) throw new Error('Garment appearance refinement support mask byte length does not match geometry');
+  const support = deriveGarmentAppearanceRefinementSupport(warpRgba, width, height);
 
   let changedPixels = 0;
   for (let pixel = 0; pixel < pixels; pixel += 1) {
-    const allowed = supportMask[pixel];
-    if (allowed !== 0 && allowed !== 255) throw new Error('Garment appearance refinement support mask must contain only 0 or 255');
+    const allowed = support.mask[pixel];
     const offset = pixel * 4;
     if (parentRgba[offset + 3] !== candidateRgba[offset + 3]) {
       throw new Error('Garment appearance refinement candidate changed globally protected parent alpha');
