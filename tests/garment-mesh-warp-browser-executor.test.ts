@@ -62,7 +62,7 @@ function harness(inputEnvelope = envelope()) {
     submitGarmentMeshWarp: async (payload:any) => { calls.submit=payload; return Object.freeze({executionId:preparedTicket.requestId,status:'SUCCESS',layerId,contentSha256:outputSha,verification:Object.freeze({valid:true})}); },
   });
   let clock=10;
-  return Object.freeze({ executor:new CoreAuthorizedGarmentMeshWarp(projectId,core,()=>++clock),calls,preparedTicket });
+  return Object.freeze({ executor:new CoreAuthorizedGarmentMeshWarp(projectId,core,()=>++clock),calls,preparedTicket,core });
 }
 const runInput=Object.freeze({requestId:'browser-warp-request',sourceArtifactId,garmentId,representationId,anchorSetId});
 
@@ -76,9 +76,35 @@ test('browser garment warp sends intent only, executes Core envelope and returns
   assert.equal(h.calls.submit.result.outputs[0].role,'WORKING');assert.equal('managedInputs' in h.calls.submit.result,false);assert.equal('garmentId' in h.calls.submit.result,false);
 });
 
+test('prepared browser garment warp never calls legacy prepare and redacts immutable layer authority',async()=>{
+  const h=harness();
+  const executor=new CoreAuthorizedGarmentMeshWarp(projectId,Object.freeze({
+    ...h.core,
+    prepareGarmentMeshWarp:async()=>{throw new Error('legacy prepare must not be called');},
+  }),()=>11);
+  const result=await executor.runPrepared({ticket:h.preparedTicket,sourceArtifactId,garmentId});
+  assert.equal(result.status,'SUCCESS');
+  assert.equal(result.target,'LOCAL');
+  assert.equal('layerId' in result,false);assert.equal('contentSha256' in result,false);
+  assert.deepEqual([...result.preview.data],[...garmentMeshWarpRgba8(basisViewRgba,2,2,{sourcePointsQ16,destinationPointsQ16,triangles,outputWidth:2,outputHeight:2})]);
+  assert.equal(h.calls.prepare,undefined);assert.ok(h.calls.upload);assert.ok(h.calls.submit);
+});
+
 test('browser garment warp fails before candidate upload when purpose-bound envelope lineage differs from ticket',async()=>{
   const h=harness(envelope({viewSha256:'0'.repeat(64)}));
   await assert.rejects(()=>h.executor.run(runInput),/envelope does not match/i);assert.equal(h.calls.upload,undefined);assert.equal(h.calls.submit,undefined);
+});
+
+test('prepared browser garment warp rejects caller source drift before input delivery without legacy prepare',async()=>{
+  const h=harness();
+  let loaded=false;
+  const executor=new CoreAuthorizedGarmentMeshWarp(projectId,Object.freeze({
+    ...h.core,
+    prepareGarmentMeshWarp:async()=>{throw new Error('legacy prepare must not be called');},
+    loadGarmentMeshWarpInput:async()=>{loaded=true;return envelope();},
+  }));
+  await assert.rejects(()=>executor.runPrepared({ticket:h.preparedTicket,sourceArtifactId:'different-source',garmentId}),/Project input binding is invalid/i);
+  assert.equal(loaded,false);assert.equal(h.calls.prepare,undefined);assert.equal(h.calls.upload,undefined);assert.equal(h.calls.submit,undefined);
 });
 
 test('browser garment warp fails before loading inputs when Core ticket tries to bind another Project source',async()=>{
