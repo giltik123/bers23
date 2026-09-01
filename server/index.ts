@@ -6,6 +6,7 @@ import { createOrthogonalTransformHttpAdapter } from './core/http/orthogonalTran
 import { createGarmentMeshWarpHttpAdapter } from './core/http/garmentMeshWarpHttpAdapter.ts';
 import { createGarmentTextureCompositeHttpAdapter } from './core/http/garmentTextureCompositeHttpAdapter.ts';
 import { createFashionTryOnReadinessHttpAdapter } from './core/http/fashionTryOnReadinessHttpAdapter.ts';
+import { createManualProjectBodyAnchorHttpAdapter } from './core/http/manualProjectBodyAnchorHttpAdapter.ts';
 import { createLocalCompositeContinuationHttpAdapter } from './core/http/localCompositeContinuationHttpAdapter.ts';
 import { createManagedGarmentHttpAdapter } from './core/http/managedGarmentHttpAdapter.ts';
 import { createManagedWardrobeHttpAdapter } from './core/http/managedWardrobeHttpAdapter.ts';
@@ -39,6 +40,7 @@ export async function startCoreServer() {
   const managedWardrobeAdapter = createManagedWardrobeHttpAdapter({ wardrobe, auth: production.auth, config, accepting: () => accepting });
   const managedCollectionAdapter = createManagedGarmentCollectionHttpAdapter({ collections, auth: production.auth, config, accepting: () => accepting });
   const managedOutfitAdapter = createManagedOutfitHttpAdapter({ outfits, auth: production.auth, config, accepting: () => accepting });
+  const manualBodyAnchorAdapter = createManualProjectBodyAnchorHttpAdapter({ acquisition: production.localExecution.garmentMeshWarp.manualBodyAnchorAcquisition, auth: production.auth, config, accepting: () => accepting });
   const orthogonalTransformAdapter = createOrthogonalTransformHttpAdapter({ service: production.localExecution.orthogonalTransform, inputDelivery: production.localExecution.orthogonalTransformInputDelivery, auth: production.auth, config });
   const garmentMeshWarpAdapter = createGarmentMeshWarpHttpAdapter({ service: production.localExecution.garmentMeshWarp, inputDelivery: production.localExecution.garmentMeshWarpInputDelivery, auth: production.auth, config });
   const garmentTextureCompositeAdapter = createGarmentTextureCompositeHttpAdapter({ service: production.localExecution.garmentTextureComposite, inputDelivery: production.localExecution.garmentTextureCompositeInputDelivery, auth: production.auth, config });
@@ -51,6 +53,7 @@ export async function startCoreServer() {
     const target = parseCoreRequestTarget(request.url);
     if (target.ok === false) { sendInvalidRequestTarget(response, target); return; }
     const path = target.path;
+    if (/^\/api\/core\/fashion\/projects\/[^/]+\/body-anchors$/.test(path)) return void manualBodyAnchorAdapter(request, response);
     if (path === '/api/core/wardrobe/outfits' || path.startsWith('/api/core/wardrobe/outfits/')) return void managedOutfitAdapter(request, response);
     if (path === '/api/core/wardrobe/collections' || path.startsWith('/api/core/wardrobe/collections/')) return void managedCollectionAdapter(request, response);
     if (path === '/api/core/wardrobe/garments' || path.startsWith('/api/core/wardrobe/garments/')) return void managedWardrobeAdapter(request, response);
