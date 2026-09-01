@@ -36,6 +36,7 @@ test('Tiny-SD model, runtime, workflow, script, test and dependency changes requ
     '.github/workflows/sprint-6.42d4-ort-conversion-smoke.yml',
     '.github/workflows/sprint-6.42d4-secure-threading.yml',
     '.github/workflows/sprint-6.42d4-tiny-sd-ort-memory.yml',
+    '.github/workflows/sprint-6.42d5-tiny-sd-pipeline.yml',
     'scripts/check-model-weight-tracking.mjs',
     'package.json',
     'package-lock.json',
