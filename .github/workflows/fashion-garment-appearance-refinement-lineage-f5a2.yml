@@ -29,7 +29,7 @@ jobs:
           npm run typecheck
           npm run server:typecheck
           npm run server:build
-          test -f dist-server/migrations/033_fashion_garment_appearance_refinement_final_lineage.sql
+          test -f dist-server/migrations/032_fashion_garment_appearance_refinement_final_lineage.sql
       - name: Bundle closed lineage contract vectors
         run: |
           mkdir -p .test-cache/fashion-f5a2-refinement-lineage
@@ -41,7 +41,7 @@ jobs:
         run: node --test .test-cache/fashion-f5a2-refinement-lineage/contract.test.mjs
       - name: Prove no F5 execution admission opened
         run: |
-          grep -q "033_fashion_garment_appearance_refinement_final_lineage.sql" server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts
+          grep -q "032_fashion_garment_appearance_refinement_final_lineage.sql" server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts
           grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
           if grep -R -E "productionLocalExecutorPolicy|productionExecutionCapabilities|productionExecutionRoute|productionTargetSelection|tryonEngine|from ['\"].*(providers|billing|fashn)" \
             server/core/fashion/garmentAppearanceRefinementFinalLineage.ts \
