@@ -32,6 +32,7 @@
       }
     ],
     "requiredConfigIdentity": "UNPINNED",
+    "configInventoryEvidence": "docs/fashion-f5b1-config-inventory.md",
     "fp16Package": null,
     "nativeRuntimeEvidence": null,
     "browserRuntimeEvidence": null
@@ -60,6 +61,7 @@
       }
     ],
     "requiredConfigIdentity": "UNPINNED",
+    "configInventoryEvidence": "docs/fashion-f5b1-config-inventory.md",
     "runtimeDependencyAllowed": false
   },
   "securityPolicy": {
