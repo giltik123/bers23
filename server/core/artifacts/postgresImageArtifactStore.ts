@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import {
@@ -102,10 +102,10 @@ export type StoredImage = Omit<StoredFinalImage, 'executionId'|'operationId'|'ro
 
 /** Durable blob implementation behind the canonical artifact authority. */
 export class PostgresImageArtifactStore {
-  private readonly pool: Pool;
+  private readonly pool: Pool | PoolClient;
   private readonly nextId: () => string;
 
-  constructor(pool: Pool, nextId: () => string = randomUUID) {
+  constructor(pool: Pool | PoolClient, nextId: () => string = randomUUID) {
     this.pool = pool;
     this.nextId = nextId;
   }
@@ -119,8 +119,29 @@ export class PostgresImageArtifactStore {
   ): Promise<StoredFinalImage> {
     if (image.data.length !== image.width * image.height * 4) throw new Error('Malformed final COMPOSITE pixels');
     const bytes = await sharp(image.data, { raw: { width: image.width, height: image.height, channels: 4 } }).png({ compressionLevel: 9 }).toBuffer();
-    const storageId = this.nextId();
     const normalizedLineage = lineage ? normalizeLineage(lineage) : undefined;
+
+    // F5 persistence has an intentionally stronger replay path than its NEW-row
+    // insert trigger. Once a refinement FINAL was explicitly accepted, Project
+    // current_image_storage_id no longer equals its original source. A restart
+    // retry of the exact same execution must therefore verify and reuse the
+    // already committed durable row before any INSERT can reach the source-current
+    // trigger. Divergent bytes/lineage still fail exact binding, and only a truly
+    // absent F5 execution is allowed to attempt a new INSERT/current-source check.
+    if (normalizedLineage?.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT') {
+      const existing = (await this.pool.query(`SELECT * FROM canonical_image_artifacts
+        WHERE execution_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4
+          AND role='COMPOSITE' AND lifecycle='FINAL' AND revoked_at IS NULL AND deleted_at IS NULL`, [
+        executionId, scope.tenantId, scope.userId, scope.projectId,
+      ])).rows[0];
+      if (existing) {
+        assertExactLineagedReplay(existing, scope, executionId, operationId, image.width, image.height, bytes, normalizedLineage);
+        await this.assertStoredFashionLineage(existing, scope);
+        return fromFinalRow(existing);
+      }
+    }
+
+    const storageId = this.nextId();
 
     // Keep generic deterministic FINAL persistence composable with the accepted
     // artifact-only migrations. Fashion migrations are intentionally later than
