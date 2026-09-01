@@ -14,7 +14,10 @@ import { PostgresGarmentWarpLayerStore } from '../server/core/fashion/postgresGa
 import { migrateGarmentSchema } from '../server/core/fashion/garmentSchema.ts';
 import { migrateProjectBodyAnchorSchema } from '../server/core/fashion/bodyAnchorSchema.ts';
 import { migrateGarmentWarpLayerSchema } from '../server/core/fashion/garmentWarpLayerSchema.ts';
-import { migrateGarmentTextureFinalLineageSchema } from '../server/core/fashion/garmentTextureFinalLineageSchema.ts';
+import {
+  checkGarmentTextureFinalLineageSchema,
+  migrateGarmentTextureFinalLineageSchema,
+} from '../server/core/fashion/garmentTextureFinalLineageSchema.ts';
 import {
   checkGarmentAppearanceRefinementFinalLineageSchema,
   migrateGarmentAppearanceRefinementFinalLineageSchema,
@@ -197,6 +200,23 @@ test('F5a.2 refinement FINAL is transitively bound to deterministic F4 parent an
     assert.equal(refined.refinement_contract_version, '1');
     assert.equal(refined.producer_parameters, null);
     assert.equal(refined.producer_parameters_sha256, null);
+
+    // F4-owned drift after F5 rows exist must use extension-safe migration 033,
+    // not historical 030 whose shared lineage shape predates refinement rows.
+    await pool.query('ALTER TABLE canonical_image_artifacts DISABLE TRIGGER canonical_image_artifacts_fashion_texture_insert_guard');
+    await assert.rejects(checkGarmentTextureFinalLineageSchema(pool), /triggers are incomplete|disabled|drifted/i);
+    await migrateGarmentTextureFinalLineageSchema(pool);
+    await checkGarmentTextureFinalLineageSchema(pool);
+    await checkGarmentAppearanceRefinementFinalLineageSchema(pool);
+    const afterF4Repair = await pool.query(`SELECT source_image_storage_id,producer_operation,garment_warp_layer_id,
+      garment_warp_layer_sha256,refinement_profile,refinement_contract_version
+      FROM canonical_image_artifacts WHERE storage_id=$1`, [refined.storage_id]);
+    assert.equal(afterF4Repair.rows[0]?.source_image_storage_id, f4.storageId);
+    assert.equal(afterF4Repair.rows[0]?.producer_operation, 'GARMENT_APPEARANCE_REFINEMENT');
+    assert.equal(afterF4Repair.rows[0]?.garment_warp_layer_id, layer.id);
+    assert.equal(String(afterF4Repair.rows[0]?.garment_warp_layer_sha256).trim(), layer.contentSha256);
+    assert.equal(afterF4Repair.rows[0]?.refinement_profile, 'REFINE_REALISM_V1');
+    assert.equal(afterF4Repair.rows[0]?.refinement_contract_version, '1');
 
     await assert.rejects(
       insertRefinement(pool, anchor.projectImageStorageId, 'f5a2-non-f4-parent'),
