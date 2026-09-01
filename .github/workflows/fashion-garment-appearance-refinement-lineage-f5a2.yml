@@ -1,0 +1,59 @@
+name: Fashion F5a.2 canonical refinement FINAL lineage contract
+
+on:
+  pull_request:
+    branches:
+      - main
+      - fashion-f5a1-refinement-support-contract
+  workflow_dispatch:
+
+jobs:
+  refinement-final-lineage-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build contract substrate
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/033_fashion_garment_appearance_refinement_final_lineage.sql
+      - name: Bundle closed lineage contract vectors
+        run: |
+          mkdir -p .test-cache/fashion-f5a2-refinement-lineage
+          npx esbuild tests/garment-appearance-refinement-final-lineage-contract-f5a2.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a2-refinement-lineage/contract.test.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove closed refinement lineage contract
+        run: node --test .test-cache/fashion-f5a2-refinement-lineage/contract.test.mjs
+      - name: Prove no F5 execution admission opened
+        run: |
+          grep -q "033_fashion_garment_appearance_refinement_final_lineage.sql" server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          if grep -R -E "productionLocalExecutorPolicy|productionExecutionCapabilities|productionExecutionRoute|productionTargetSelection|tryonEngine|from ['\"].*(providers|billing|fashn)" \
+            server/core/fashion/garmentAppearanceRefinementFinalLineage.ts \
+            server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts; then
+            echo "F5a.2 lineage substrate opened execution/provider authority" >&2
+            exit 1
+          fi
+          if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/deterministic/DeterministicToolRegistry.ts; then
+            echo "F5a.2 must not register a deterministic execution tool" >&2
+            exit 1
+          fi
+          if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/canonical/planning/CanonicalPlanningService.ts; then
+            echo "F5a.2 must not add planner admission" >&2
+            exit 1
+          fi
