@@ -97,7 +97,6 @@ function publicAdmission(value: ManualParametricGarmentAdmissionResult, requeste
     garmentRevision: value.garmentRevision,
     representationTier: value.representationTier,
     representation: Object.freeze({
-      id: representation.id,
       tier: representation.tier,
       format: representation.format,
       admissionState: representation.admissionState,
