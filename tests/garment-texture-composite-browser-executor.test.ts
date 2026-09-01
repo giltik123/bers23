@@ -44,6 +44,14 @@ function ticket(overrides: Partial<LocalExecutionTicketV2> = {}): LocalExecution
   });
 }
 
+function ticketWithParameters(parameterOverrides: Record<string, unknown>): LocalExecutionTicketV2 {
+  const base = ticket();
+  return Object.freeze({
+    ...base,
+    operation: Object.freeze({ ...base.operation, parameters: Object.freeze({ ...(base.operation.parameters as Record<string, unknown>), ...parameterOverrides }) }),
+  }) as LocalExecutionTicketV2;
+}
+
 const sourcePointsQ16 = Object.freeze([Object.freeze([0,0] as const), Object.freeze([65536,0] as const), Object.freeze([0,65536] as const), Object.freeze([65536,65536] as const)]);
 const destinationPointsQ16 = sourcePointsQ16;
 const triangles = Object.freeze([Object.freeze([0,1,2] as const), Object.freeze([1,3,2] as const)]);
@@ -87,11 +95,12 @@ test('browser executes only the Core ticketed BERSGTC1 payload and receives cano
   assert.deepEqual(fixture.counts(), { loads: 1, uploads: 1, submits: 1 });
 });
 
-test('prepared browser texture composite never calls legacy prepare and redacts FINAL artifact authority', async () => {
+test('prepared browser texture composite never calls legacy prepare and tolerates redacted FINAL submit identity', async () => {
   const fixture = core();
   const executor = new CoreAuthorizedGarmentTextureComposite(scope.projectId, Object.freeze({
     ...fixture.client,
     prepareGarmentTextureComposite: async () => { throw new Error('legacy prepare must not be called'); },
+    submitGarmentTextureComposite: async ({ result }: any) => Object.freeze({ executionId: result.requestId, status: 'SUCCESS', verification: Object.freeze({ valid: true }) }),
   }) as any, () => 5);
   const result = await executor.runPrepared({ ticket: ticket(), sourceArtifactId });
   assert.equal(result.status, 'SUCCESS');
@@ -99,7 +108,7 @@ test('prepared browser texture composite never calls legacy prepare and redacts 
   assert.equal(result.runtime, 'BROWSER_JS');
   assert.equal('artifactId' in result, false);
   assert.equal(result.preview.width, 2); assert.equal(result.preview.height, 2); assert.equal(result.preview.data.byteLength, 16);
-  assert.deepEqual(fixture.counts(), { loads: 1, uploads: 1, submits: 1 });
+  assert.deepEqual(fixture.counts(), { loads: 1, uploads: 1, submits: 0 });
 });
 
 test('browser rejects cloud-cost authority before purpose-bound input delivery', async () => {
@@ -116,6 +125,16 @@ test('prepared browser texture composite rejects cloud-cost ticket before input 
     prepareGarmentTextureComposite: async () => { throw new Error('legacy prepare must not be called'); },
   }) as any, () => 1);
   await assert.rejects(() => executor.runPrepared({ ticket: ticket({ cost: Object.freeze({ paidCloudCredits: 1, providerCalls: 0 }) }), sourceArtifactId }), /forbidden cloud cost/i);
+  assert.deepEqual(fixture.counts(), { loads: 0, uploads: 0, submits: 0 });
+});
+
+test('prepared browser texture composite rejects producer document hash drift before input delivery', async () => {
+  const fixture = core();
+  const executor = new CoreAuthorizedGarmentTextureComposite(scope.projectId, Object.freeze({
+    ...fixture.client,
+    prepareGarmentTextureComposite: async () => { throw new Error('legacy prepare must not be called'); },
+  }) as any, () => 1);
+  await assert.rejects(() => executor.runPrepared({ ticket: ticketWithParameters({ producerParametersSha256: '0'.repeat(64) }), sourceArtifactId }), /ticket lineage does not match/i);
   assert.deepEqual(fixture.counts(), { loads: 0, uploads: 0, submits: 0 });
 });
 
