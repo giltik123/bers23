@@ -36,12 +36,27 @@ export type GarmentMeshWarpRunInput = Readonly<{
   anchorSetId: string;
 }>;
 
+export type GarmentMeshWarpPreparedRunInput = Readonly<{
+  ticket: LocalExecutionTicketV2;
+  sourceArtifactId: string;
+  garmentId: string;
+}>;
+
 export type GarmentMeshWarpRunResult = Readonly<{
   target: 'LOCAL';
   runtime: 'BROWSER_JS';
   accelerator: 'cpu';
   layerId: string;
   contentSha256: string;
+  preview: PixelImage;
+  latencyMs: number;
+}>;
+
+export type GarmentMeshWarpPreparedRunResult = Readonly<{
+  target: 'LOCAL';
+  runtime: 'BROWSER_JS';
+  accelerator: 'cpu';
+  status: 'SUCCESS';
   preview: PixelImage;
   latencyMs: number;
 }>;
@@ -73,7 +88,30 @@ export class CoreAuthorizedGarmentMeshWarp {
       anchorSetId: input.anchorSetId,
       clientRequestId: input.requestId,
     });
-    const ticket = validateTicket(prepared.ticket, this.projectId, input);
+    return this.executeTicket(prepared.ticket, input);
+  }
+
+  /**
+   * F4b.6 prepared-ticket path. The caller supplies only the Core ticket plus
+   * stable user intent. Representation and anchor identities are derived from
+   * the ticket itself and are never accepted as browser authority.
+   */
+  async runPrepared(input: GarmentMeshWarpPreparedRunInput): Promise<GarmentMeshWarpPreparedRunResult> {
+    if (!input.ticket || !input.sourceArtifactId || !input.garmentId) throw new Error('Prepared garment mesh-warp request is incomplete');
+    const derived = preparedIntent(input.ticket, input.sourceArtifactId, input.garmentId);
+    const result = await this.executeTicket(input.ticket, derived);
+    return Object.freeze({
+      target: result.target,
+      runtime: result.runtime,
+      accelerator: result.accelerator,
+      status: 'SUCCESS',
+      preview: result.preview,
+      latencyMs: result.latencyMs,
+    });
+  }
+
+  private async executeTicket(ticketInput: LocalExecutionTicketV2, input: GarmentMeshWarpRunInput): Promise<GarmentMeshWarpRunResult> {
+    const ticket = validateTicket(ticketInput, this.projectId, input);
     const envelope = decodeGarmentMeshWarpInputEnvelope(await this.core.loadGarmentMeshWarpInput({ ticketId: ticket.ticketId, projectId: this.projectId }));
     validateEnvelope(ticket, envelope.metadata, input);
 
@@ -138,6 +176,14 @@ export class CoreAuthorizedGarmentMeshWarp {
       latencyMs,
     });
   }
+}
+
+function preparedIntent(ticket: LocalExecutionTicketV2, sourceArtifactId: string, garmentId: string): GarmentMeshWarpRunInput {
+  const p = parameters(ticket);
+  const representationId = typeof p.representationId === 'string' ? p.representationId : '';
+  const anchorSetId = typeof p.anchorSetId === 'string' ? p.anchorSetId : '';
+  if (!representationId || !anchorSetId || !ticket.requestId) throw new Error('Prepared garment mesh-warp ticket is missing server-owned evidence');
+  return Object.freeze({ requestId: ticket.requestId, sourceArtifactId, garmentId, representationId, anchorSetId });
 }
 
 function validateTicket(ticket: LocalExecutionTicketV2, projectId: string, input: GarmentMeshWarpRunInput): LocalExecutionTicketV2 {
