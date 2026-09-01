@@ -114,6 +114,38 @@ export function deriveGarmentAppearanceRefinementSupport(
 }
 
 /**
+ * Build the canonical F5 candidate from an untrusted model proposal.
+ *
+ * Model RGB is copied only inside independently derived deterministic support.
+ * Every protected RGB byte and every alpha byte comes from the deterministic F4
+ * parent. Raw model output may therefore modify anything internally, but those
+ * changes cannot escape into the canonical candidate outside Core-owned support.
+ */
+export function composeGarmentAppearanceRefinementCandidate(
+  parentRgba: Uint8Array | Uint8ClampedArray,
+  modelCandidateRgba: Uint8Array | Uint8ClampedArray,
+  warpRgba: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+): Uint8ClampedArray {
+  const pixels = assertGeometry(width, height);
+  assertRgba(parentRgba, pixels, 'Deterministic parent RGBA');
+  assertRgba(modelCandidateRgba, pixels, 'Model refinement candidate RGBA');
+  const support = deriveGarmentAppearanceRefinementSupport(warpRgba, width, height);
+  const output = Uint8ClampedArray.from(parentRgba);
+
+  for (let pixel = 0; pixel < pixels; pixel += 1) {
+    if (support.mask[pixel] !== 255) continue;
+    const offset = pixel * 4;
+    output[offset] = modelCandidateRgba[offset];
+    output[offset + 1] = modelCandidateRgba[offset + 1];
+    output[offset + 2] = modelCandidateRgba[offset + 2];
+    // Alpha intentionally remains the exact parent byte.
+  }
+  return output;
+}
+
+/**
  * Hard F5 preservation gate. The verification authority is the immutable F4
  * garment-warp RGBA, never a caller/delivery/model-provided mask. This helper
  * independently re-derives the exact support before evaluating candidate bytes.
