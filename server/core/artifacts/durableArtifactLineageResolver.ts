@@ -93,18 +93,44 @@ export class DurableArtifactLineageResolver {
       if (
         stored.sourceImageStorageId || stored.maskStorageId || stored.producerOperation
         || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256 || stored.producerParameters || stored.producerParametersSha256
+        || stored.refinementParentImageStorageId || stored.refinementParentImageSha256 || stored.refinementProfile || stored.refinementContractVersion
       ) throw resolverError('durable_lineage_invalid', 'Immutable ORIGINAL cannot carry derived-image lineage');
       return Object.freeze([]);
     }
     if (
       !stored.sourceImageStorageId && !stored.maskStorageId && !stored.producerOperation
       && !stored.garmentWarpLayerId && !stored.garmentWarpLayerSha256 && !stored.producerParameters && !stored.producerParametersSha256
+      && !stored.refinementParentImageStorageId && !stored.refinementParentImageSha256 && !stored.refinementProfile && !stored.refinementContractVersion
     ) return Object.freeze([]);
+
+    if (stored.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT') {
+      if (
+        !stored.sourceImageStorageId || stored.maskStorageId
+        || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256 || stored.producerParameters || stored.producerParametersSha256
+        || !stored.refinementParentImageStorageId || !stored.refinementParentImageSha256
+        || stored.refinementProfile !== 'REFINE_REALISM_V1' || stored.refinementContractVersion !== '1'
+      ) throw resolverError('durable_lineage_invalid', 'Fashion refinement FINAL lineage is incomplete');
+      // PostgresImageArtifactStore.loadSource already revalidated that this exact
+      // parent is a live same-scope GARMENT_TEXTURE_COMPOSITE FINAL with matching
+      // Project-source cursor, geometry and SHA-256. Artifact parentage exposes
+      // only that deterministic F4 FINAL. The Project source is transitive and
+      // the immutable Fashion warp layer is execution evidence, not an Artifact.
+      const parent = await this.images.loadSource(stored.refinementParentImageStorageId, scope);
+      if (
+        !parent || parent.role !== 'COMPOSITE' || parent.lifecycle !== 'FINAL'
+        || parent.producerOperation !== 'GARMENT_TEXTURE_COMPOSITE'
+        || parent.sourceImageStorageId !== stored.sourceImageStorageId
+        || parent.width !== stored.width || parent.height !== stored.height
+        || sha256(parent.bytes) !== stored.refinementParentImageSha256
+      ) throw resolverError('durable_lineage_unavailable', 'Fashion refinement deterministic F4 parent is unavailable or inconsistent');
+      return Object.freeze([issueStoredImageId(this.signed, parent, scope)]);
+    }
 
     if (stored.producerOperation === 'GARMENT_TEXTURE_COMPOSITE') {
       if (
         !stored.sourceImageStorageId || stored.maskStorageId || !stored.garmentWarpLayerId
         || !stored.garmentWarpLayerSha256 || !stored.producerParameters || !stored.producerParametersSha256
+        || stored.refinementParentImageStorageId || stored.refinementParentImageSha256 || stored.refinementProfile || stored.refinementContractVersion
       ) throw resolverError('durable_lineage_invalid', 'Fashion texture FINAL lineage is incomplete');
       const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
       if (!source) throw resolverError('durable_lineage_unavailable', 'Fashion texture FINAL Project source IMAGE is unavailable');
@@ -113,6 +139,9 @@ export class DurableArtifactLineageResolver {
       return Object.freeze([issueStoredImageId(this.signed, source, scope)]);
     }
 
+    if (
+      stored.refinementParentImageStorageId || stored.refinementParentImageSha256 || stored.refinementProfile || stored.refinementContractVersion
+    ) throw resolverError('durable_lineage_invalid', 'Non-refinement canonical FINAL carries refinement-specific lineage');
     if (stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId) {
       throw resolverError('durable_lineage_invalid', 'Derived FINAL lineage is incomplete or unsupported');
     }
