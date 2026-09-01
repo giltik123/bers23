@@ -1,5 +1,11 @@
 BEGIN;
 
+-- Drift repair may need ALTER COLUMN TYPE after the F5 triggers already exist.
+-- Drop only this migration's triggers inside the same transaction so any repair
+-- failure rolls the drops back; both guards are recreated before COMMIT.
+DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_refinement_insert_guard ON canonical_image_artifacts;
+DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_refinement_immut_guard ON canonical_image_artifacts;
+
 ALTER TABLE canonical_image_artifacts
   ADD COLUMN IF NOT EXISTS refinement_parent_storage_id uuid,
   ADD COLUMN IF NOT EXISTS refinement_parent_sha256 character(64),
@@ -194,9 +200,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
-DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_refinement_insert_guard ON canonical_image_artifacts;
-DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_refinement_immut_guard ON canonical_image_artifacts;
 
 CREATE TRIGGER canonical_image_artifacts_fashion_refinement_insert_guard
   BEFORE INSERT ON canonical_image_artifacts
