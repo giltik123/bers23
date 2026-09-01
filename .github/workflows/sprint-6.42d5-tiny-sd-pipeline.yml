@@ -16,7 +16,49 @@ env:
   ORT_NODE_VERSION: '1.27.0'
 
 jobs:
-  short-pipeline-measurement:
+  classify_tiny_sd_relevance:
+    name: classify-tiny-sd-relevance
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.classify.outputs.relevant }}
+      classification: ${{ steps.classify.outputs.classification }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Prove Tiny-SD relevance classifier contract
+        run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs
+
+      - name: Classify heavyweight Tiny-SD relevance
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            printf '%s\n' \
+              'relevant=true' \
+              'classification=RELEVANT_HEAVY_ACCEPTANCE_REQUIRED' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          test "${EVENT_NAME}" = "pull_request"
+          test -n "${BASE_SHA}"
+          test -n "${HEAD_SHA}"
+          git diff --name-only --no-renames -z "${BASE_SHA}" "${HEAD_SHA}" \
+            | node scripts/classify-tiny-sd-heavy-ci.mjs --stdin0 --github-output "${GITHUB_OUTPUT}"
+
+  heavy_short_pipeline_measurement:
+    name: short-pipeline-measurement-heavy
+    needs: classify_tiny_sd_relevance
+    if: ${{ needs.classify_tiny_sd_relevance.outputs.relevant == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
@@ -394,3 +436,27 @@ jobs:
             "${RUNNER_TEMP}/tiny-sd-d5-pipeline-tokenizer" \
             "${RUNNER_TEMP}/tiny-sd-d5-pipeline-reference.npz" \
             .test-cache/tiny-sd-d5-pipeline-dist
+
+  short_pipeline_measurement_gate:
+    name: short-pipeline-measurement
+    needs: [classify_tiny_sd_relevance, heavy_short_pipeline_measurement]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require D5 heavy acceptance when relevant
+        env:
+          RELEVANT: ${{ needs.classify_tiny_sd_relevance.outputs.relevant }}
+          CLASSIFICATION: ${{ needs.classify_tiny_sd_relevance.outputs.classification }}
+          HEAVY_RESULT: ${{ needs.heavy_short_pipeline_measurement.result }}
+        run: |
+          set -euo pipefail
+          if [ "${RELEVANT}" = "true" ]; then
+            test "${CLASSIFICATION}" = "RELEVANT_HEAVY_ACCEPTANCE_REQUIRED"
+            test "${HEAVY_RESULT}" = "success"
+            echo "Tiny-SD D5 heavy acceptance: SUCCESS"
+            exit 0
+          fi
+          test "${RELEVANT}" = "false"
+          test "${CLASSIFICATION}" = "NOT_APPLICABLE_PRODUCT_ONLY_CHANGE"
+          test "${HEAVY_RESULT}" = "skipped"
+          echo "Tiny-SD D5: NOT_APPLICABLE_PRODUCT_ONLY_CHANGE"
