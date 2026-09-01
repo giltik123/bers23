@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import type { Pool } from 'pg';
 import { migrateGarmentTextureFinalLineageSchema } from './garmentTextureFinalLineageSchema.ts';
 
-const MIGRATION = '033_fashion_garment_appearance_refinement_final_lineage.sql';
+const MIGRATION = '032_fashion_garment_appearance_refinement_final_lineage.sql';
 const IMAGE_TABLE = 'canonical_image_artifacts';
 const INSERT_TRIGGER = 'canonical_image_artifacts_fashion_refinement_insert_guard';
 const IMMUTABLE_TRIGGER = 'canonical_image_artifacts_fashion_refinement_immut_guard';
@@ -30,7 +30,7 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
     || parentSha?.udt_name !== 'bpchar' || parentSha?.is_nullable !== 'YES' || Number(parentSha?.character_maximum_length) !== 64 || parentSha?.column_default != null
     || profile?.udt_name !== 'text' || profile?.is_nullable !== 'YES' || profile?.column_default != null
     || supportSha?.udt_name !== 'bpchar' || supportSha?.is_nullable !== 'YES' || Number(supportSha?.character_maximum_length) !== 64 || supportSha?.column_default != null
-  ) throw new Error('canonical Fashion refinement FINAL lineage columns are incomplete or drifted; apply migration 033');
+  ) throw new Error('canonical Fashion refinement FINAL lineage columns are incomplete or drifted; apply migration 032');
 
   const constraints = await pool.query(`SELECT c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid) AS definition
     FROM pg_constraint c WHERE c.conrelid=to_regclass($1)`, [IMAGE_TABLE]);
@@ -63,13 +63,13 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
   const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
   const shapeDef = canon(shape?.definition);
   for (const producer of ['BACKGROUND_ISOLATION','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE','GARMENT_APPEARANCE_REFINEMENT']) {
-    if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 033');
+    if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 032');
   }
   for (const field of ['refinement_parent_storage_id','refinement_parent_sha256','refinement_profile','refinement_support_sha256']) {
     if (!shapeDef.includes(field)) throw new Error('canonical FINAL image lineage shape policy does not close F5-specific fields');
   }
   if (!shape || shape.contype !== 'c' || !shape.convalidated) {
-    throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 033');
+    throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 032');
   }
 
   const index = await pool.query(`SELECT indexdef FROM pg_indexes
