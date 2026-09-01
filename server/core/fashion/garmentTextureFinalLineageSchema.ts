@@ -5,6 +5,7 @@ import { migrateFinalImageLineageSchema } from '../artifacts/finalImageLineageSc
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from './garmentWarpLayerSchema.ts';
 
 const MIGRATION = '030_fashion_garment_texture_final_lineage.sql';
+const EXTENSION_SAFE_REPAIR_MIGRATION = '033_fashion_garment_texture_repair_under_refinement.sql';
 const IMAGE_TABLE = 'canonical_image_artifacts';
 const LAYER_TABLE = 'canonical_fashion_garment_warp_layers';
 const INSERT_TRIGGER = 'canonical_image_artifacts_fashion_texture_insert_guard';
@@ -16,6 +17,7 @@ const canon = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').repla
 
 export async function checkGarmentTextureFinalLineageSchema(pool: Pool): Promise<void> {
   await checkGarmentWarpLayerSchema(pool);
+  const refinementExtensionPresent = await hasRefinementLineageExtension(pool);
   const columns = await pool.query(`SELECT column_name,udt_name,is_nullable,character_maximum_length,column_default
     FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name=$1
@@ -83,16 +85,22 @@ export async function checkGarmentTextureFinalLineageSchema(pool: Pool): Promise
     throw new Error('canonical Fashion texture FINAL producer-parameter policy is incomplete or drifted');
   }
 
-  const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
-  const shapeDef = canon(shape?.definition);
-  for (const producer of ['BACKGROUND_ISOLATION','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE']) {
-    if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 030');
-  }
-  for (const field of ['garment_warp_layer_id','garment_warp_layer_sha256','producer_parameters','producer_parameters_sha256']) {
-    if (!shapeDef.includes(field)) throw new Error('canonical FINAL image lineage shape policy does not close Fashion-specific fields');
-  }
-  if (!shape || shape.contype !== 'c' || !shape.convalidated) {
-    throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 030');
+  // Before later Fashion lineage extensions exist, migration 030 owns the global
+  // shape constraint and must verify it. Once F5 refinement columns are present,
+  // the latest F5 schema layer owns that cross-operation constraint; F4 remains
+  // responsible only for its own columns/FK/checks/index/triggers.
+  if (!refinementExtensionPresent) {
+    const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
+    const shapeDef = canon(shape?.definition);
+    for (const producer of ['BACKGROUND_ISOLATION','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE']) {
+      if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 030');
+    }
+    for (const field of ['garment_warp_layer_id','garment_warp_layer_sha256','producer_parameters','producer_parameters_sha256']) {
+      if (!shapeDef.includes(field)) throw new Error('canonical FINAL image lineage shape policy does not close Fashion-specific fields');
+    }
+    if (!shape || shape.contype !== 'c' || !shape.convalidated) {
+      throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 030');
+    }
   }
 
   const index = await pool.query(`SELECT indexdef FROM pg_indexes
@@ -128,17 +136,32 @@ export async function migrateGarmentTextureFinalLineageSchema(pool: Pool): Promi
     await checkGarmentTextureFinalLineageSchema(pool);
     return;
   } catch {
-    // Apply the exact idempotent Fashion extension below.
+    // Repair below using the schema layer that owns the currently visible shape.
   }
-  await pool.query(await readMigration());
+  const migration = await hasRefinementLineageExtension(pool)
+    ? EXTENSION_SAFE_REPAIR_MIGRATION
+    : MIGRATION;
+  await pool.query(await readMigration(migration));
   await checkGarmentTextureFinalLineageSchema(pool);
 }
 
-async function readMigration(): Promise<string> {
+async function hasRefinementLineageExtension(pool: Pool): Promise<boolean> {
+  const result = await pool.query(`SELECT COUNT(*)::int AS count
+    FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name=$1
+      AND column_name IN ('refinement_parent_storage_id','refinement_parent_sha256','refinement_profile','refinement_support_sha256','refinement_producer_parameters','refinement_producer_parameters_sha256')`, [IMAGE_TABLE]);
+  const count = Number(result.rows[0]?.count ?? 0);
+  if (count !== 0 && count !== 6) {
+    throw new Error('canonical Fashion refinement FINAL lineage extension is partially present; latest schema layer must repair it');
+  }
+  return count === 6;
+}
+
+async function readMigration(name: string): Promise<string> {
   try {
-    return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8');
+    return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8');
   } catch (error) {
     if (process.env.NODE_ENV === 'production') throw error;
-    return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', MIGRATION), 'utf8');
+    return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', name), 'utf8');
   }
 }
