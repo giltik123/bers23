@@ -1,0 +1,42 @@
+name: Fashion F5b.1 Kandinsky refinement source trust
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  source-trust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck production boundaries
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove pinned source-weight trust stays non-executable
+        run: node --test tests/kandinsky-refinement-feasibility-policy.test.mjs
+      - name: Prove no weight files or runtime admission entered the repository
+        run: |
+          test "$(git ls-files '*.safetensors' '*.bin' | wc -l)" -eq 0
+          grep -q 'SOURCE_WEIGHT_TRUST_PINNED_CONFIG_AND_RUNTIME_UNPROVEN' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"productionExecutable": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"runtimeAuthorityGranted": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"requiredConfigIdentity": "UNPINNED"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"state": "UNPROVEN"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          if grep -R -E "kandinsky-2-2-decoder-inpaint-refinement" server/core/localExecution/productionLocalModelPolicy.ts server/core/localExecution/productionLocalExecutorPolicy.ts; then
+            echo "F5b.1 candidate entered production execution catalogs" >&2; exit 1
+          fi
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
