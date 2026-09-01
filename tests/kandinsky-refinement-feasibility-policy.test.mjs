@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import manifest from '../src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json' with { type: 'json' };
+import { parseSourcePointer, MAX_SOURCE_POINTER_BYTES } from '../scripts/kandinsky-source-trust-pointer.mjs';
 import { productionLocalModelsByCapability } from '../server/core/localExecution/productionLocalModelPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
@@ -89,4 +90,22 @@ test('F5b.1 candidate is absent from every production model/executor catalog', (
   for (const executors of Object.values(productionLocalExecutorsByCapability)) {
     assert.equal(executors.some(executor => executor.kind === 'MODEL' && executor.modelId === manifest.modelId), false);
   }
+});
+
+test('F5b.1 source trust parser binds exact content SHA-256 and size, not Xet identity', () => {
+  const sha = manifest.decoder.safeWeights[0].sha256;
+  const size = manifest.decoder.safeWeights[0].size;
+  const pointer = [
+    'version https://git-lfs.github.com/spec/v1',
+    `oid sha256:${sha.toUpperCase()}`,
+    `size ${size}`,
+    'xet-hash 0123456789abcdef',
+    '',
+  ].join('\n');
+  assert.deepEqual(parseSourcePointer(pointer, 'fixture'), { sha256: sha, size });
+  assert.throws(() => parseSourcePointer(`version https://git-lfs.github.com/spec/v1\nsize ${size}\n`, 'fixture'), /exactly one oid/i);
+  assert.throws(() => parseSourcePointer(`version https://git-lfs.github.com/spec/v1\noid sha256:${sha}\noid sha256:${sha}\nsize ${size}\n`, 'fixture'), /exactly one oid/i);
+  assert.throws(() => parseSourcePointer(`version https://git-lfs.github.com/spec/v1\noid sha256:${sha}\nsize 0\n`, 'fixture'), /positive size/i);
+  assert.throws(() => parseSourcePointer('x'.repeat(MAX_SOURCE_POINTER_BYTES + 1), 'fixture'), /bounded pointer size/i);
+  assert.throws(() => parseSourcePointer('<html>not a pointer</html>', 'fixture'), /not a Git LFS pointer/i);
 });
