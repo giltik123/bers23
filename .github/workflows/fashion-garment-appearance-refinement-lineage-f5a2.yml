@@ -1,0 +1,61 @@
+name: Fashion F5a.2 closed refinement producer lineage
+
+on:
+  pull_request:
+    branches:
+      - main
+      - fashion-f5a1-refinement-support-contract
+  workflow_dispatch:
+
+jobs:
+  refinement-lineage-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core lineage contract
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Bundle closed producer and Core SHA reference vectors
+        run: |
+          mkdir -p .test-cache/fashion-f5a2-refinement-lineage
+          npx esbuild tests/garment-appearance-refinement-lineage-contract-f5a2.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a2-refinement-lineage/lineage.test.mjs \
+            --external:node:*
+      - name: Prove exact canonical producer document and Core hash
+        run: node --test .test-cache/fashion-f5a2-refinement-lineage/lineage.test.mjs
+      - name: Prove F5a.2 grants no runtime persistence provider or client authority
+        run: |
+          grep -q "BERS_GARMENT_APPEARANCE_REFINEMENT_PRODUCER_V1" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "assertExactKeys" src/platform/creative/deterministic/GarmentAppearanceRefinementParameters.ts
+          grep -q "createHash('sha256')" server/core/fashion/garmentAppearanceRefinementLineage.ts
+          if grep -E "from ['\"].*(pg|providers|billing|fashn|onnx|diffusion|transformers)" \
+            src/platform/creative/deterministic/GarmentAppearanceRefinementParameters.ts \
+            server/core/fashion/garmentAppearanceRefinementLineage.ts; then
+            echo "F5a.2 producer contract imported persistence/runtime/provider authority" >&2
+            exit 1
+          fi
+          if grep -E "modelId|prompt|negativePrompt|seed|steps|provider|executionId" \
+            src/platform/creative/deterministic/GarmentAppearanceRefinementParameters.ts; then
+            echo "F5a.2 producer schema contains forbidden runtime/client authority" >&2
+            exit 1
+          fi
+          if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/deterministic/DeterministicToolRegistry.ts; then
+            echo "F5a.2 must not register execution" >&2
+            exit 1
+          fi
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
