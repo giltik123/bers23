@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import type { Pool } from 'pg';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from './garmentTextureFinalLineageSchema.ts';
 
-const MIGRATION = '033_fashion_garment_refinement_final_lineage.sql';
+const MIGRATION = '032_fashion_garment_refinement_final_lineage.sql';
 const IMAGE_TABLE = 'canonical_image_artifacts';
 const INSERT_TRIGGER = 'canonical_image_artifacts_fashion_refinement_insert_guard';
 const IMMUTABLE_TRIGGER = 'canonical_image_artifacts_fashion_refinement_immut_guard';
@@ -28,7 +28,7 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
     byName.size !== 2
     || profile?.udt_name !== 'text' || profile?.is_nullable !== 'YES' || profile?.column_default != null
     || version?.udt_name !== 'text' || version?.is_nullable !== 'YES' || version?.column_default != null
-  ) throw new Error('canonical Fashion refinement FINAL lineage columns are incomplete or drifted; apply migration 033');
+  ) throw new Error('canonical Fashion refinement FINAL lineage columns are incomplete or drifted; apply migration 032');
 
   const constraints = await pool.query(`SELECT c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid) AS definition
     FROM pg_constraint c WHERE c.conrelid=to_regclass($1)`, [IMAGE_TABLE]);
@@ -45,7 +45,7 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
   const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
   const shapeDef = canon(shape?.definition);
   for (const producer of ['BACKGROUND_ISOLATION','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE','GARMENT_APPEARANCE_REFINEMENT']) {
-    if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion refinement migration 033');
+    if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion refinement migration 032');
   }
   if (
     !shape || shape.contype !== 'c' || !shape.convalidated
