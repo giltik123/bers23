@@ -25,23 +25,27 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Prove pinned source-weight trust stays non-executable
+      - name: Prove pinned source/config trust stays non-executable
         run: node --test tests/kandinsky-refinement-feasibility-policy.test.mjs
-      - name: Rebind pinned source weights to exact bounded upstream content pointers
+      - name: Rebind pinned weights and exact small configs to upstream bytes
         run: node scripts/verify-kandinsky-refinement-source-trust.mjs
-      - name: Prove no weight files or runtime admission entered the repository
+      - name: Prove no model bytes or runtime admission entered the repository
         run: |
           test "$(git ls-files '*.safetensors' '*.bin' | wc -l)" -eq 0
           grep -q '/raw/' scripts/verify-kandinsky-refinement-source-trust.mjs
           grep -q 'MAX_SOURCE_POINTER_BYTES = 4096' scripts/kandinsky-source-trust-pointer.mjs
+          grep -q 'MAX_CONFIG_FILE_BYTES = 5 \* 1024 \* 1024' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'downloadedModelBytes: 0' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'createHash' scripts/verify-kandinsky-refinement-source-trust.mjs
           ! grep -q 'lfs?.sha256' scripts/verify-kandinsky-refinement-source-trust.mjs
           ! grep -q 'xet_hash' scripts/verify-kandinsky-refinement-source-trust.mjs
-          grep -q 'SOURCE_WEIGHT_TRUST_PINNED_CONFIG_AND_RUNTIME_UNPROVEN' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q 'SOURCE_WEIGHT_AND_CONFIG_TRUST_PINNED_CONDITIONING_AND_RUNTIME_UNPROVEN' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"productionExecutable": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"runtimeAuthorityGranted": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
-          grep -q '"requiredConfigIdentity": "UNPINNED"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          test "$(grep -c '"'"'"state"'"'": "'"'"PINNED"'"'"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json)" -eq 2
           grep -q '"configInventoryEvidence": "docs/fashion-f5b1-config-inventory.md"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"state": "UNPROVEN"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"runtimeDependencyAllowed": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           if grep -R -E "kandinsky-2-2-decoder-inpaint-refinement" server/core/localExecution/productionLocalModelPolicy.ts server/core/localExecution/productionLocalExecutorPolicy.ts; then
             echo "F5b.1 candidate entered production execution catalogs" >&2; exit 1
           fi
