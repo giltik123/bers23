@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
 
-const MIGRATION = '028_project_body_anchor_sets.sql';
+const BASE_MIGRATION = '028_project_body_anchor_sets.sql';
+const SEQUENCE_MIGRATION = '031_project_body_anchor_acquisition_sequence.sql';
 const TABLE = 'canonical_project_body_anchor_sets';
 const EXPECTED_COLUMNS = Object.freeze([
   ['anchor_set_id', 'uuid', false],
@@ -20,6 +21,7 @@ const EXPECTED_COLUMNS = Object.freeze([
   ['producer_id', 'text', false],
   ['producer_version', 'text', false],
   ['created_at', 'timestamptz', false],
+  ['acquisition_sequence', 'int8', false],
 ] as const);
 
 const EXPECTED_CHECK_FRAGMENTS = Object.freeze(new Map<string, readonly string[]>([
@@ -34,9 +36,9 @@ const EXPECTED_CHECK_FRAGMENTS = Object.freeze(new Map<string, readonly string[]
   ['canonical_project_body_anchor_sets_producer_version_check', ['producer_version = btrim(producer_version)', "producer_version !~ '[[:cntrl:]]'::text"]],
 ]));
 
-async function migration(): Promise<string> {
-  try { return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8'); }
-  catch { return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', MIGRATION), 'utf8'); }
+async function migration(name: string): Promise<string> {
+  try { return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8'); }
+  catch { return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', name), 'utf8'); }
 }
 
 async function ready(pool: Pool): Promise<boolean> {
@@ -56,6 +58,12 @@ async function ready(pool: Pool): Promise<boolean> {
     ) AS owner_unique,
     EXISTS (
       SELECT 1 FROM pg_constraint
+      WHERE conname='canonical_project_body_anchor_sets_acquisition_sequence_unique'
+        AND conrelid=to_regclass($1) AND contype='u' AND convalidated
+        AND pg_get_constraintdef(oid)='UNIQUE (acquisition_sequence)'
+    ) AS sequence_unique,
+    EXISTS (
+      SELECT 1 FROM pg_constraint
       WHERE conname='canonical_project_body_anchor_sets_project_fk'
         AND conrelid=to_regclass($1) AND contype='f' AND confrelid=to_regclass('canonical_projects') AND convalidated
         AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (project_id) REFERENCES canonical_projects(project_id)%ON DELETE RESTRICT%'
@@ -67,9 +75,9 @@ async function ready(pool: Pool): Promise<boolean> {
         AND pg_get_constraintdef(oid) LIKE 'FOREIGN KEY (project_image_storage_id) REFERENCES canonical_image_artifacts(storage_id)%ON DELETE RESTRICT%'
     ) AS image_fk`, [TABLE]);
   const row = structural.rows[0];
-  if (!row?.relation || !row.primary_key || !row.owner_unique || !row.project_fk || !row.image_fk) return false;
+  if (!row?.relation || !row.primary_key || !row.owner_unique || !row.sequence_unique || !row.project_fk || !row.image_fk) return false;
 
-  const columns = await pool.query(`SELECT column_name,udt_name,is_nullable,character_maximum_length,column_default
+  const columns = await pool.query(`SELECT column_name,udt_name,is_nullable,character_maximum_length,column_default,is_identity,identity_generation
     FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name=$1`, [TABLE]);
   const byName = new Map(columns.rows.map(candidate => [String(candidate.column_name), candidate]));
@@ -80,8 +88,10 @@ async function ready(pool: Pool): Promise<boolean> {
     if ((name === 'project_image_sha256' || name === 'anchor_payload_sha256') && Number(candidate.character_maximum_length) !== 64) return false;
     const columnDefault = candidate.column_default == null ? null : normalizeSql(String(candidate.column_default));
     if (name === 'created_at') {
-      if (columnDefault !== 'CURRENT_TIMESTAMP') return false;
-    } else if (columnDefault !== null) {
+      if (columnDefault !== 'CURRENT_TIMESTAMP' || String(candidate.is_identity) !== 'NO') return false;
+    } else if (name === 'acquisition_sequence') {
+      if (columnDefault !== null || String(candidate.is_identity) !== 'YES' || String(candidate.identity_generation) !== 'ALWAYS') return false;
+    } else if (columnDefault !== null || String(candidate.is_identity) !== 'NO') {
       return false;
     }
   }
@@ -96,10 +106,19 @@ async function ready(pool: Pool): Promise<boolean> {
     if ((name.endsWith('_producer_id_check') || name.endsWith('_producer_version_check')) && !hasOneToHundredBound(definition)) return false;
   }
 
-  const index = await pool.query(`SELECT indexdef FROM pg_indexes
-    WHERE schemaname=current_schema() AND tablename=$1 AND indexname='canonical_project_body_anchor_sets_owner_project_idx'`, [TABLE]);
-  const indexDefinition = normalizeSql(String(index.rows[0]?.indexdef ?? ''));
-  if (!indexDefinition.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, created_at DESC, anchor_set_id)') || /\bWHERE\b/.test(indexDefinition)) return false;
+  const indexes = await pool.query(`SELECT indexname,indexdef FROM pg_indexes
+    WHERE schemaname=current_schema() AND tablename=$1
+      AND indexname IN ('canonical_project_body_anchor_sets_owner_project_idx','canonical_project_body_anchor_sets_owner_project_sequence_idx')`, [TABLE]);
+  const indexByName = new Map(indexes.rows.map(candidate => [String(candidate.indexname), normalizeSql(String(candidate.indexdef))]));
+  const legacyIndex = indexByName.get('canonical_project_body_anchor_sets_owner_project_idx') ?? '';
+  const sequenceIndex = indexByName.get('canonical_project_body_anchor_sets_owner_project_sequence_idx') ?? '';
+  if (
+    indexByName.size !== 2
+    || !legacyIndex.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, created_at DESC, anchor_set_id)')
+    || /\bWHERE\b/.test(legacyIndex)
+    || !sequenceIndex.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, acquisition_sequence DESC, anchor_set_id)')
+    || /\bWHERE\b/.test(sequenceIndex)
+  ) return false;
 
   const triggers = await pool.query(`SELECT t.tgname,t.tgtype,t.tgenabled,p.proname
     FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
@@ -124,11 +143,14 @@ function hasOneToHundredBound(definition: string): boolean {
 }
 
 export async function checkProjectBodyAnchorSchema(pool: Pool): Promise<void> {
-  if (!await ready(pool)) throw new Error('canonical Project body anchor schema is incomplete or drifted; apply migration 028');
+  if (!await ready(pool)) throw new Error('canonical Project body anchor schema is incomplete or drifted; apply migrations 028 and 031');
 }
 
 export async function migrateProjectBodyAnchorSchema(pool: Pool): Promise<void> {
   const relation = await pool.query(`SELECT to_regclass($1)::text AS relation`, [TABLE]);
-  if (!relation.rows[0]?.relation) await pool.query(await migration());
+  if (!relation.rows[0]?.relation) await pool.query(await migration(BASE_MIGRATION));
+  const sequenceColumn = await pool.query(`SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name=$1 AND column_name='acquisition_sequence'`, [TABLE]);
+  if (sequenceColumn.rowCount !== 1) await pool.query(await migration(SEQUENCE_MIGRATION));
   await checkProjectBodyAnchorSchema(pool);
 }

@@ -8,7 +8,7 @@ if (!databaseUrl) throw new Error('DATABASE_URL is required for F4b.3 body-ancho
 
 const schemaError = /body anchor schema is incomplete or drifted/i;
 
-test('F4b.3 readiness rejects weakened CHECK index and trigger semantics', async () => {
+test('F4b.3/F4b.6c readiness rejects weakened CHECK legacy/sequence indexes unique and trigger semantics', async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 2, application_name: 'bers-f4b3-body-anchor-schema' });
   try {
     await migrateProjectBodyAnchorSchema(pool);
@@ -24,10 +24,25 @@ test('F4b.3 readiness rejects weakened CHECK index and trigger semantics', async
     await pool.query('DROP INDEX canonical_project_body_anchor_sets_owner_project_idx');
     await pool.query(`CREATE INDEX canonical_project_body_anchor_sets_owner_project_idx
       ON canonical_project_body_anchor_sets (tenant_id,user_id,project_id,anchor_set_id)`);
-    await assert.rejects(checkProjectBodyAnchorSchema(pool), schemaError, 'same-name but incomplete owner index must fail readiness');
+    await assert.rejects(checkProjectBodyAnchorSchema(pool), schemaError, 'same-name but incomplete legacy readiness index must fail readiness');
     await pool.query('DROP INDEX canonical_project_body_anchor_sets_owner_project_idx');
     await pool.query(`CREATE INDEX canonical_project_body_anchor_sets_owner_project_idx
       ON canonical_project_body_anchor_sets (tenant_id,user_id,project_id,project_image_storage_id,created_at DESC,anchor_set_id)`);
+    await checkProjectBodyAnchorSchema(pool);
+
+    await pool.query('DROP INDEX canonical_project_body_anchor_sets_owner_project_sequence_idx');
+    await pool.query(`CREATE INDEX canonical_project_body_anchor_sets_owner_project_sequence_idx
+      ON canonical_project_body_anchor_sets (tenant_id,user_id,project_id,anchor_set_id)`);
+    await assert.rejects(checkProjectBodyAnchorSchema(pool), schemaError, 'same-name but incomplete acquisition-sequence index must fail readiness');
+    await pool.query('DROP INDEX canonical_project_body_anchor_sets_owner_project_sequence_idx');
+    await pool.query(`CREATE INDEX canonical_project_body_anchor_sets_owner_project_sequence_idx
+      ON canonical_project_body_anchor_sets (tenant_id,user_id,project_id,project_image_storage_id,acquisition_sequence DESC,anchor_set_id)`);
+    await checkProjectBodyAnchorSchema(pool);
+
+    await pool.query('ALTER TABLE canonical_project_body_anchor_sets DROP CONSTRAINT canonical_project_body_anchor_sets_acquisition_sequence_unique');
+    await assert.rejects(checkProjectBodyAnchorSchema(pool), schemaError, 'missing acquisition-sequence uniqueness must fail readiness');
+    await pool.query(`ALTER TABLE canonical_project_body_anchor_sets
+      ADD CONSTRAINT canonical_project_body_anchor_sets_acquisition_sequence_unique UNIQUE (acquisition_sequence)`);
     await checkProjectBodyAnchorSchema(pool);
 
     await pool.query('ALTER TABLE canonical_project_body_anchor_sets DISABLE TRIGGER canonical_project_body_anchor_sets_insert_guard');
