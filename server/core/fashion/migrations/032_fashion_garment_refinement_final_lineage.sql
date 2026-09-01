@@ -1,8 +1,5 @@
 BEGIN;
 
-DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_texture_insert_guard ON canonical_image_artifacts;
-DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_texture_immut_guard ON canonical_image_artifacts;
-DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_texture_lineage_immutable_gua ON canonical_image_artifacts;
 DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_refinement_insert_guard ON canonical_image_artifacts;
 DROP TRIGGER IF EXISTS canonical_image_artifacts_fashion_refinement_immut_guard ON canonical_image_artifacts;
 
