@@ -3,7 +3,7 @@
  *
  * This contract grants no model/runtime/provider/Billing/FINAL/Try-On authority.
  * It only defines the deterministic region in which a later separately admitted
- * refinement runtime may propose pixel changes.
+ * refinement runtime may propose RGB changes.
  */
 /** @type {'1'} */
 export const GARMENT_APPEARANCE_REFINEMENT_CONTRACT_VERSION = '1';
@@ -23,5 +23,7 @@ export const GARMENT_APPEARANCE_REFINEMENT_DILATION_POLICY = 'CHEBYSHEV_SQUARE_C
 export const GARMENT_APPEARANCE_REFINEMENT_MASK_POLICY = 'BINARY_R8_0_OR_255';
 /** @type {'BYTE_EXACT_PARENT_RGBA8_OUTSIDE_SUPPORT'} */
 export const GARMENT_APPEARANCE_REFINEMENT_OUTSIDE_SUPPORT_POLICY = 'BYTE_EXACT_PARENT_RGBA8_OUTSIDE_SUPPORT';
+/** @type {'PRESERVE_PARENT_ALPHA_GLOBAL'} */
+export const GARMENT_APPEARANCE_REFINEMENT_ALPHA_POLICY = 'PRESERVE_PARENT_ALPHA_GLOBAL';
 /** @type {'NOT_ADMITTED'} */
 export const GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED';
