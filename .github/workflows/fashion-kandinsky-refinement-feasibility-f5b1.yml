@@ -42,7 +42,7 @@ jobs:
           grep -q 'SOURCE_WEIGHT_AND_CONFIG_TRUST_PINNED_CONDITIONING_AND_RUNTIME_UNPROVEN' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"productionExecutable": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"runtimeAuthorityGranted": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
-          test "$(grep -c '"'"'"state"'"'": "'"'"PINNED"'"'"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json)" -eq 2
+          node -e "const fs=require('node:fs'); const m=JSON.parse(fs.readFileSync('src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json','utf8')); if(m.decoder.requiredConfigIdentity?.state!=='PINNED'||m.offlinePrior.requiredConfigIdentity?.state!=='PINNED') process.exit(1)"
           grep -q '"configInventoryEvidence": "docs/fashion-f5b1-config-inventory.md"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"state": "UNPROVEN"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
           grep -q '"runtimeDependencyAllowed": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
