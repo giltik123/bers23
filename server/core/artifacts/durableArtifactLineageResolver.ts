@@ -93,18 +93,42 @@ export class DurableArtifactLineageResolver {
       if (
         stored.sourceImageStorageId || stored.maskStorageId || stored.producerOperation
         || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256 || stored.producerParameters || stored.producerParametersSha256
+        || stored.refinementParentImageStorageId || stored.refinementParentImageSha256 || stored.refinementProfile || stored.refinementContractVersion
       ) throw resolverError('durable_lineage_invalid', 'Immutable ORIGINAL cannot carry derived-image lineage');
       return Object.freeze([]);
     }
     if (
       !stored.sourceImageStorageId && !stored.maskStorageId && !stored.producerOperation
       && !stored.garmentWarpLayerId && !stored.garmentWarpLayerSha256 && !stored.producerParameters && !stored.producerParametersSha256
+      && !stored.refinementParentImageStorageId && !stored.refinementParentImageSha256 && !stored.refinementProfile && !stored.refinementContractVersion
     ) return Object.freeze([]);
+
+    if (stored.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT') {
+      if (
+        !stored.sourceImageStorageId || stored.maskStorageId || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256
+        || stored.producerParameters || stored.producerParametersSha256
+        || !stored.refinementParentImageStorageId || !stored.refinementParentImageSha256
+        || !stored.refinementProfile || !stored.refinementContractVersion
+      ) throw resolverError('durable_lineage_invalid', 'Fashion refinement FINAL lineage is incomplete');
+      const parent = await this.images.loadSource(stored.refinementParentImageStorageId, scope);
+      if (
+        !parent || parent.role !== 'COMPOSITE' || parent.lifecycle !== 'FINAL'
+        || parent.producerOperation !== 'GARMENT_TEXTURE_COMPOSITE'
+        || parent.sourceImageStorageId !== stored.sourceImageStorageId
+        || parent.width !== stored.width || parent.height !== stored.height
+        || sha256(parent.bytes) !== stored.refinementParentImageSha256
+      ) throw resolverError('durable_lineage_unavailable', 'Fashion refinement deterministic F4 parent is unavailable or inconsistent');
+      // sourceImageStorageId remains the Project stale-source concurrency binding,
+      // but Artifact DAG parentage is intentionally not flattened. The exact
+      // deterministic F4 FINAL is the sole immediate image parent of F5.
+      return Object.freeze([issueStoredImageId(this.signed, parent, scope)]);
+    }
 
     if (stored.producerOperation === 'GARMENT_TEXTURE_COMPOSITE') {
       if (
         !stored.sourceImageStorageId || stored.maskStorageId || !stored.garmentWarpLayerId
         || !stored.garmentWarpLayerSha256 || !stored.producerParameters || !stored.producerParametersSha256
+        || stored.refinementParentImageStorageId || stored.refinementParentImageSha256 || stored.refinementProfile || stored.refinementContractVersion
       ) throw resolverError('durable_lineage_invalid', 'Fashion texture FINAL lineage is incomplete');
       const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
       if (!source) throw resolverError('durable_lineage_unavailable', 'Fashion texture FINAL Project source IMAGE is unavailable');
@@ -112,6 +136,10 @@ export class DurableArtifactLineageResolver {
       // Expose only the canonical Project source through Artifact parentage.
       return Object.freeze([issueStoredImageId(this.signed, source, scope)]);
     }
+
+    if (
+      stored.refinementParentImageStorageId || stored.refinementParentImageSha256 || stored.refinementProfile || stored.refinementContractVersion
+    ) throw resolverError('durable_lineage_invalid', 'Non-refinement FINAL carries F5-specific lineage');
 
     if (stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId) {
       throw resolverError('durable_lineage_invalid', 'Derived FINAL lineage is incomplete or unsupported');
