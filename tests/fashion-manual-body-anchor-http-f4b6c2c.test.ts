@@ -109,6 +109,7 @@ test('F4b.6c.2c service rejects returned rows that escape exact source payload o
     { acquisitionSequence: '0' },
     { payloadSha256: 'd'.repeat(64) },
     { payload: Object.freeze({ ...payload, anchors: Object.freeze({ ...payload.anchors, leftShoulder: Object.freeze([0.21, 0.15] as const) }) }) },
+    { payload: Object.freeze({ schemaVersion: 2, coordinateSpace: 'PROJECT_IMAGE_NORMALIZED', anchors: Object.freeze({}) }) },
   ];
   for (const override of mismatches) {
     const service = new ManualProjectBodyAnchorAcquisitionService({
