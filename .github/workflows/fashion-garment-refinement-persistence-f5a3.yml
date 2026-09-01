@@ -1,0 +1,88 @@
+name: Fashion F5a.3 refinement persistence foundation
+
+on:
+  pull_request:
+    branches:
+      - fashion-f5a2-refinement-final-lineage-clean-v2
+      - main
+  workflow_dispatch:
+
+jobs:
+  refinement-persistence-foundation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_f5a3_persistence_test
+          POSTGRES_USER: fashion_f5a3_persistence_test
+          POSTGRES_PASSWORD: fashion_f5a3_persistence_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fashion_f5a3_persistence_test -d fashion_f5a3_persistence_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_f5a3_persistence_test:fashion_f5a3_persistence_test@127.0.0.1:5432/fashion_f5a3_persistence_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core boundaries
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/032_fashion_garment_refinement_final_lineage.sql
+      - name: Bundle closed lineage and PostgreSQL persistence vectors
+        run: |
+          mkdir -p .test-cache/fashion-f5a3-refinement-persistence/migrations
+          npx esbuild tests/garment-appearance-refinement-final-lineage-f5a3.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a3-refinement-persistence/lineage.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-garment-refinement-persistence-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a3-refinement-persistence/persistence.test.mjs \
+            --external:node:* --external:pg --external:sharp
+          cp server/core/artifacts/migrations/*.sql .test-cache/fashion-f5a3-refinement-persistence/migrations/
+          cp server/core/projects/migrations/*.sql .test-cache/fashion-f5a3-refinement-persistence/migrations/
+          cp server/core/fashion/migrations/*.sql .test-cache/fashion-f5a3-refinement-persistence/migrations/
+      - name: Prove closed dual-bound normalization persistence replay and immediate-parent DAG
+        run: node --test --test-concurrency=1 .test-cache/fashion-f5a3-refinement-persistence/*.test.mjs
+      - name: Prove F5 execution authority remains closed
+        run: |
+          grep -q "normalizedLineage?.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT'" server/core/artifacts/postgresImageArtifactStore.ts
+          grep -q "refinement_parent_image_storage_id" server/core/artifacts/postgresImageArtifactStore.ts
+          grep -q "parentHash !== lineage.refinementParentImageSha256" server/core/artifacts/postgresImageArtifactStore.ts
+          grep -q "stored.producerOperation === 'GARMENT_APPEARANCE_REFINEMENT'" server/core/artifacts/durableArtifactLineageResolver.ts
+          grep -q "return Object.freeze(\[issueStoredImageId(this.signed, parent, scope)\])" server/core/artifacts/durableArtifactLineageResolver.ts
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          if grep -E "from ['\"].*(providers|billing|fashn|tiny|onnx|diffusion|transformers)" \
+            server/core/fashion/garmentAppearanceRefinementFinalLineage.ts \
+            server/core/artifacts/postgresImageArtifactStore.ts \
+            server/core/artifacts/durableArtifactLineageResolver.ts; then
+            echo "F5a.3 persistence/resolver imported runtime/provider authority" >&2
+            exit 1
+          fi
+          if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/deterministic/DeterministicToolRegistry.ts; then
+            echo "F5a.3 must not register execution authority" >&2
+            exit 1
+          fi
+          if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/canonical/planning/CanonicalPlanningService.ts; then
+            echo "F5a.3 must not add planner admission" >&2
+            exit 1
+          fi
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
