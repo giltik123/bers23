@@ -398,11 +398,13 @@ jobs:
     steps:
       - name: Require D4 ORT heavy acceptance when relevant
         env:
+          CLASSIFIER_RESULT: ${{ needs.classify_tiny_sd_relevance.result }}
           RELEVANT: ${{ needs.classify_tiny_sd_relevance.outputs.relevant }}
           CLASSIFICATION: ${{ needs.classify_tiny_sd_relevance.outputs.classification }}
           HEAVY_RESULT: ${{ needs.heavy_ort_memory_latency_feasibility.result }}
         run: |
           set -euo pipefail
+          test "${CLASSIFIER_RESULT}" = "success"
           if [ "${RELEVANT}" = "true" ]; then
             test "${CLASSIFICATION}" = "RELEVANT_HEAVY_ACCEPTANCE_REQUIRED"
             test "${HEAVY_RESULT}" = "success"
