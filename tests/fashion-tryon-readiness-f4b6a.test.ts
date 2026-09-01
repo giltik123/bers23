@@ -43,7 +43,7 @@ function createHarness(overrides: Readonly<{
   category?: string;
   garmentStatus?: 'ACTIVE' | 'ARCHIVED';
   representations?: readonly any[];
-  anchors?: readonly Readonly<{ anchor_set_id: string; created_at_text: string }>[];
+  anchors?: readonly Readonly<{ anchor_set_id: string; acquisition_sequence: string; created_at_text?: string }>[];
   deriveError?: unknown;
 }> = {}) {
   let deriveCalls = 0;
@@ -58,7 +58,7 @@ function createHarness(overrides: Readonly<{
     height: 384,
     sha256: SOURCE_SHA,
   });
-  const anchorRows = overrides.anchors ?? [Object.freeze({ anchor_set_id: ANCHOR_SET_ID, created_at_text: '2026-08-31 20:01:00+00' })];
+  const anchorRows = overrides.anchors ?? [Object.freeze({ anchor_set_id: ANCHOR_SET_ID, acquisition_sequence: '1' })];
   const pool = {
     async query(sql: string, params: readonly unknown[]) {
       (queries as any).push(Object.freeze({ sql, params: [...params] }));
@@ -122,7 +122,7 @@ function createHarness(overrides: Readonly<{
   };
 }
 
-test('F4b.6 readiness resolves server-owned representation and anchor evidence but public check does not expose their IDs', async () => {
+test('F4b.6 readiness resolves server-owned representation and sequence-selected anchor evidence but public check does not expose their IDs', async () => {
   const harness = createHarness();
   const resolution = await harness.service.resolve(COMMAND, AUTH as any);
   assert.equal(resolution.status, 'READY');
@@ -141,6 +141,9 @@ test('F4b.6 readiness resolves server-owned representation and anchor evidence b
 
   const anchorQuery = (harness.queries as any[]).find(value => value.sql.includes('canonical_project_body_anchor_sets'));
   assert.deepEqual(anchorQuery.params, [PROJECT_ID, 'tenant-a', 'user-a', SOURCE_STORAGE_ID, SOURCE_SHA, 256, 384]);
+  assert.match(anchorQuery.sql, /acquisition_sequence::text AS acquisition_sequence/);
+  assert.match(anchorQuery.sql, /ORDER BY acquisition_sequence DESC, anchor_set_id/);
+  assert.doesNotMatch(anchorQuery.sql, /created_at/);
 });
 
 test('F4b.6 readiness rejects a signed historical source before selecting execution evidence', async () => {
@@ -177,19 +180,46 @@ test('F4b.6 readiness does not pretend unsupported accessory geometry is executa
   assert.equal(harness.deriveCalls(), 0);
 });
 
-test('F4b.6 readiness reports missing and ambiguous current-source body anchors without exposing IDs', async () => {
+test('F4b.6 readiness uses DB-owned acquisition sequence instead of timestamp for current-source body anchors', async () => {
+  const harness = createHarness({
+    anchors: [
+      { anchor_set_id: ANCHOR_SET_ID, acquisition_sequence: '42', created_at_text: '2026-08-31 20:01:00+00' },
+      { anchor_set_id: '99999999-9999-4999-8999-999999999999', acquisition_sequence: '41', created_at_text: '2026-08-31 20:01:00+00' },
+    ],
+  });
+  const result = await harness.service.resolve(COMMAND, AUTH as any);
+  assert.equal(result.status, 'READY');
+  if (result.status !== 'READY') throw new Error('expected sequence-selected READY');
+  assert.equal(result.anchorSetId, ANCHOR_SET_ID);
+  assert.equal(harness.deriveCalls(), 1);
+});
+
+test('F4b.6 readiness reports missing anchors and fails closed on impossible duplicate newest acquisition sequence', async () => {
   const missing = createHarness({ anchors: [] });
   assert.equal((await missing.service.check(COMMAND, AUTH as any)).status, 'BODY_ANCHORS_REQUIRED');
   assert.equal(missing.deriveCalls(), 0);
 
   const ambiguous = createHarness({
     anchors: [
-      { anchor_set_id: ANCHOR_SET_ID, created_at_text: '2026-08-31 20:01:00+00' },
-      { anchor_set_id: '99999999-9999-4999-8999-999999999999', created_at_text: '2026-08-31 20:01:00+00' },
+      { anchor_set_id: ANCHOR_SET_ID, acquisition_sequence: '42' },
+      { anchor_set_id: '99999999-9999-4999-8999-999999999999', acquisition_sequence: '42' },
     ],
   });
   assert.equal((await ambiguous.service.check(COMMAND, AUTH as any)).status, 'BODY_ANCHORS_AMBIGUOUS');
   assert.equal(ambiguous.deriveCalls(), 0);
+});
+
+test('F4b.6 readiness never falls back to an older acquisition when newest body-anchor evidence fails revalidation', async () => {
+  const harness = createHarness({
+    anchors: [
+      { anchor_set_id: ANCHOR_SET_ID, acquisition_sequence: '42' },
+      { anchor_set_id: '99999999-9999-4999-8999-999999999999', acquisition_sequence: '41' },
+    ],
+    deriveError: Object.assign(new Error('tampered newest acquisition'), { code: 'body_anchor_integrity_mismatch' }),
+  });
+  const result = await harness.service.resolve(COMMAND, AUTH as any);
+  assert.equal(result.status, 'EVIDENCE_INVALID');
+  assert.equal(harness.deriveCalls(), 1);
 });
 
 test('F4b.6 readiness reuses body-anchor authority and maps evidence races fail-closed', async () => {

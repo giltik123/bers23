@@ -36,6 +36,11 @@ const EXPECTED_CHECK_FRAGMENTS = Object.freeze(new Map<string, readonly string[]
   ['canonical_project_body_anchor_sets_producer_version_check', ['producer_version = btrim(producer_version)', "producer_version !~ '[[:cntrl:]]'::text"]],
 ]));
 
+const LEGACY_INDEX = 'canonical_project_body_anchor_sets_owner_project_idx';
+const SEQUENCE_INDEX = 'canonical_project_body_anchor_sets_owner_project_sequence_idx';
+const LEGACY_INDEX_FRAGMENT = 'USING btree (tenant_id, user_id, project_id, project_image_storage_id, created_at DESC, anchor_set_id)';
+const SEQUENCE_INDEX_FRAGMENT = 'USING btree (tenant_id, user_id, project_id, project_image_storage_id, acquisition_sequence DESC, anchor_set_id)';
+
 async function migration(name: string): Promise<string> {
   try { return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8'); }
   catch { return readFile(resolve(process.cwd(), 'server/core/fashion/migrations', name), 'utf8'); }
@@ -106,18 +111,20 @@ async function ready(pool: Pool): Promise<boolean> {
     if ((name.endsWith('_producer_id_check') || name.endsWith('_producer_version_check')) && !hasOneToHundredBound(definition)) return false;
   }
 
-  const indexes = await pool.query(`SELECT indexname,indexdef FROM pg_indexes
-    WHERE schemaname=current_schema() AND tablename=$1
-      AND indexname IN ('canonical_project_body_anchor_sets_owner_project_idx','canonical_project_body_anchor_sets_owner_project_sequence_idx')`, [TABLE]);
-  const indexByName = new Map(indexes.rows.map(candidate => [String(candidate.indexname), normalizeSql(String(candidate.indexdef))]));
-  const legacyIndex = indexByName.get('canonical_project_body_anchor_sets_owner_project_idx') ?? '';
-  const sequenceIndex = indexByName.get('canonical_project_body_anchor_sets_owner_project_sequence_idx') ?? '';
+  const indexes = await pool.query(`SELECT i.indexname,i.indexdef,x.indisvalid,x.indisready
+    FROM pg_indexes i
+    JOIN pg_namespace n ON n.nspname=i.schemaname
+    JOIN pg_class c ON c.relnamespace=n.oid AND c.relname=i.indexname
+    JOIN pg_index x ON x.indexrelid=c.oid
+    WHERE i.schemaname=current_schema() AND i.tablename=$1
+      AND i.indexname IN ($2,$3)`, [TABLE, LEGACY_INDEX, SEQUENCE_INDEX]);
+  const indexByName = new Map(indexes.rows.map(candidate => [String(candidate.indexname), candidate]));
+  const legacyIndex = indexByName.get(LEGACY_INDEX);
+  const sequenceIndex = indexByName.get(SEQUENCE_INDEX);
   if (
-    indexByName.size !== 2
-    || !legacyIndex.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, created_at DESC, anchor_set_id)')
-    || /\bWHERE\b/.test(legacyIndex)
-    || !sequenceIndex.includes('USING btree (tenant_id, user_id, project_id, project_image_storage_id, acquisition_sequence DESC, anchor_set_id)')
-    || /\bWHERE\b/.test(sequenceIndex)
+    !healthyIndex(sequenceIndex, SEQUENCE_INDEX_FRAGMENT)
+    || (legacyIndex !== undefined && !healthyIndex(legacyIndex, LEGACY_INDEX_FRAGMENT))
+    || indexByName.size !== (legacyIndex === undefined ? 1 : 2)
   ) return false;
 
   const triggers = await pool.query(`SELECT t.tgname,t.tgtype,t.tgenabled,p.proname
@@ -141,9 +148,14 @@ function hasOneToHundredBound(definition: string): boolean {
   return definition.includes('BETWEEN 1 AND 100')
     || (definition.includes('>= 1') && definition.includes('<= 100'));
 }
+function healthyIndex(candidate: any, expectedFragment: string): boolean {
+  if (!candidate || candidate.indisvalid !== true || candidate.indisready !== true) return false;
+  const definition = normalizeSql(String(candidate.indexdef));
+  return definition.includes(expectedFragment) && !/\bWHERE\b/.test(definition);
+}
 
 export async function checkProjectBodyAnchorSchema(pool: Pool): Promise<void> {
-  if (!await ready(pool)) throw new Error('canonical Project body anchor schema is incomplete or drifted; apply migrations 028 and 031');
+  if (!await ready(pool)) throw new Error('canonical Project body anchor schema is incomplete or drifted; apply migrations 028 and 031; legacy index cleanup is a separate post-rollout contract step');
 }
 
 export async function migrateProjectBodyAnchorSchema(pool: Pool): Promise<void> {
