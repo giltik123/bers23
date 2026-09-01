@@ -95,6 +95,12 @@ function assertPersistedAuthority(
   projectId: string,
   expectedPayloadSha256: string,
 ): void {
+  let returnedPayloadSha256: string | undefined;
+  try {
+    returnedPayloadSha256 = bodyAnchorPayloadSha256(anchorSet.payload);
+  } catch {
+    returnedPayloadSha256 = undefined;
+  }
   const matches = anchorSet.projectId === projectId
     && anchorSet.projectImageStorageId === source.storageId
     && anchorSet.projectImageSha256 === source.sha256
@@ -106,7 +112,7 @@ function assertPersistedAuthority(
     && anchorSet.producerVersion === MANUAL_BODY_ANCHOR_PRODUCER_VERSION
     && POSITIVE_BIGINT_PATTERN.test(anchorSet.acquisitionSequence)
     && anchorSet.payloadSha256 === expectedPayloadSha256
-    && bodyAnchorPayloadSha256(anchorSet.payload) === expectedPayloadSha256;
+    && returnedPayloadSha256 === expectedPayloadSha256;
   if (!matches) {
     throw acquisitionError(
       409,
