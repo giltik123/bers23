@@ -97,10 +97,11 @@ test('browser executes only the Core ticketed BERSGTC1 payload and receives cano
 
 test('prepared browser texture composite never calls legacy prepare and tolerates redacted FINAL submit identity', async () => {
   const fixture = core();
+  let submitted = false;
   const executor = new CoreAuthorizedGarmentTextureComposite(scope.projectId, Object.freeze({
     ...fixture.client,
     prepareGarmentTextureComposite: async () => { throw new Error('legacy prepare must not be called'); },
-    submitGarmentTextureComposite: async ({ result }: any) => Object.freeze({ executionId: result.requestId, status: 'SUCCESS', verification: Object.freeze({ valid: true }) }),
+    submitGarmentTextureComposite: async ({ result }: any) => { submitted = true; return Object.freeze({ executionId: result.requestId, status: 'SUCCESS', verification: Object.freeze({ valid: true }) }); },
   }) as any, () => 5);
   const result = await executor.runPrepared({ ticket: ticket(), sourceArtifactId });
   assert.equal(result.status, 'SUCCESS');
@@ -108,6 +109,7 @@ test('prepared browser texture composite never calls legacy prepare and tolerate
   assert.equal(result.runtime, 'BROWSER_JS');
   assert.equal('artifactId' in result, false);
   assert.equal(result.preview.width, 2); assert.equal(result.preview.height, 2); assert.equal(result.preview.data.byteLength, 16);
+  assert.equal(submitted, true);
   assert.deepEqual(fixture.counts(), { loads: 1, uploads: 1, submits: 0 });
 });
 
@@ -128,14 +130,17 @@ test('prepared browser texture composite rejects cloud-cost ticket before input 
   assert.deepEqual(fixture.counts(), { loads: 0, uploads: 0, submits: 0 });
 });
 
-test('prepared browser texture composite rejects producer document hash drift before input delivery', async () => {
+test('prepared browser texture composite rejects Core ticket/envelope producer hash mismatch before upload', async () => {
   const fixture = core();
   const executor = new CoreAuthorizedGarmentTextureComposite(scope.projectId, Object.freeze({
     ...fixture.client,
     prepareGarmentTextureComposite: async () => { throw new Error('legacy prepare must not be called'); },
   }) as any, () => 1);
-  await assert.rejects(() => executor.runPrepared({ ticket: ticketWithParameters({ producerParametersSha256: '0'.repeat(64) }), sourceArtifactId }), /ticket lineage does not match/i);
-  assert.deepEqual(fixture.counts(), { loads: 0, uploads: 0, submits: 0 });
+  await assert.rejects(
+    () => executor.runPrepared({ ticket: ticketWithParameters({ producerParametersSha256: '0'.repeat(64) }), sourceArtifactId }),
+    /input envelope does not match/i,
+  );
+  assert.deepEqual(fixture.counts(), { loads: 1, uploads: 0, submits: 0 });
 });
 
 test('browser rejects purpose-bound envelope lineage drift before kernel upload', async () => {
