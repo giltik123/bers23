@@ -171,5 +171,6 @@ test('F4b.6b.4c validates stable intent before durable lookup', async () => {
   const h = harness();
   await assert.rejects(() => h.authority.recoverForIntent({ ...exactIntent, garmentId: 'not-a-uuid' }, scope), /garmentId/i);
   await assert.rejects(() => h.authority.recoverForIntent({ ...exactIntent, sourceArtifactId: 'bad\nsource' }, scope), /sourceArtifactId/i);
+  await assert.rejects(() => h.authority.recoverForIntent({ ...exactIntent, sourceArtifactId: 'x'.repeat(513) }, scope), /sourceArtifactId/i);
   assert.deepEqual(h.calls, { lookup: 0, finalization: 0, images: 0, issued: 0 });
 });
