@@ -1,0 +1,51 @@
+name: Fashion F4b.6c.1 deterministic PARAMETRIC contour kernel
+
+on:
+  push:
+    branches: [ "fashion-manual-parametric-contour-f4b6c1-kernel" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manual-parametric-contour:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contour producer
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle deterministic contour reference tests
+        run: |
+          mkdir -p .test-cache/fashion-f4b6c1
+          npx esbuild tests/fashion-manual-parametric-contour-f4b6c1.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b6c1/contour.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove canonical Q16 contour triangulation and hostile geometry rejection
+        run: node --test --test-concurrency=1 .test-cache/fashion-f4b6c1/contour.mjs
+      - name: Prove pure deterministic acquisition boundary
+        run: |
+          grep -q "MANUAL_PARAMETRIC_CONTOUR_PRODUCER_ID = 'bers.manual-parametric-contour'" server/core/fashion/manualParametricContour.ts
+          grep -q "GARMENT_MESH_WARP_FIXED_POINT_ONE" server/core/fashion/manualParametricContour.ts
+          grep -q "triangulateCanonicalPolygon" server/core/fashion/manualParametricContour.ts
+          grep -q "manual_parametric_self_intersection" server/core/fashion/manualParametricContour.ts
+          ! grep -E "from ['\"].*(providers|billing)|from ['\"].*(fal|fashn)|Postgres|fetch\(" server/core/fashion/manualParametricContour.ts
+          ! grep -q "tryonEngine" server/core/fashion/manualParametricContour.ts
