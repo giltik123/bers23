@@ -1,0 +1,58 @@
+name: Fashion F5a.1 deterministic refinement support contract
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  refinement-support-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core boundaries
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Bundle F5a.1 pure reference vectors
+        run: |
+          mkdir -p .test-cache/fashion-f5a1-refinement-support
+          npx esbuild tests/garment-appearance-refinement-support-f5a1.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f5a1-refinement-support/support.test.mjs \
+            --external:node:*
+      - name: Prove deterministic support and protected-pixel law
+        run: node --test .test-cache/fashion-f5a1-refinement-support/support.test.mjs
+      - name: Prove contract-only F5 boundary remains closed
+        run: |
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_DILATION_RADIUS_PX = 2" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "BYTE_EXACT_PARENT_RGBA8_OUTSIDE_SUPPORT" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "warpRgba\[pixel \* 4 + 3\] !== 0" src/platform/creative/deterministic/GarmentAppearanceRefinementSupport.ts
+          if grep -E "from ['\"].*(providers|billing|fashn|tiny|onnx|diffusion|transformers)" \
+            src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js \
+            src/platform/creative/deterministic/GarmentAppearanceRefinementSupport.ts; then
+            echo "F5a.1 contract imported runtime/provider authority" >&2
+            exit 1
+          fi
+          if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/deterministic/DeterministicToolRegistry.ts; then
+            echo "F5a.1 must not register an execution tool" >&2
+            exit 1
+          fi
+          if grep -q "GARMENT_APPEARANCE_REFINEMENT" src/platform/creative/canonical/planning/CanonicalPlanningService.ts; then
+            echo "F5a.1 must not add planner admission" >&2
+            exit 1
+          fi
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
