@@ -1,0 +1,31 @@
+name: Tiny-SD D3 candidate process-isolation policy
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py"
+      - "tests/tiny-sd-d3-candidate-isolation-policy.test.mjs"
+      - ".github/workflows/tiny-sd-d3-candidate-process-isolation-policy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-process-isolation-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove D3 candidate process-isolation contract
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py
+          node --test tests/tiny-sd-d3-policy.test.mjs tests/tiny-sd-d3-candidate-isolation-policy.test.mjs
+          git diff --check
