@@ -64,6 +64,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
   const tryOnReadiness = new FashionTryOnReadinessService({
     pool: input.pool,
     artifacts: input.artifacts,
+    garments,
     wardrobe,
     representations,
     bodyAnchors,
