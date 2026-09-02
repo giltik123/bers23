@@ -25,11 +25,11 @@ export async function checkLocalExecutionLedgerSchema(pool: Pool): Promise<void>
 export async function migrateLocalExecutionLedgerSchema(pool: Pool): Promise<void> {
   let state = await inspectLocalExecutionLedgerSchema(pool);
   if (!baseLedgerSchemaReady(state)) {
-    await pool.query(await readFile(new URL('../artifacts/migrations/013_local_execution_ticket_ledger.sql', import.meta.url), 'utf8'));
+    await pool.query(await readLedgerMigration('013_local_execution_ticket_ledger.sql'));
     state = await inspectLocalExecutionLedgerSchema(pool);
   }
   if (!state.resultReplayDigestColumn || !state.resultReplayDigestConstraint) {
-    await pool.query(await readFile(new URL('../artifacts/migrations/016_local_execution_result_replay_binding.sql', import.meta.url), 'utf8'));
+    await pool.query(await readLedgerMigration('016_local_execution_result_replay_binding.sql'));
   }
   await checkLocalExecutionLedgerSchema(pool);
 }
@@ -140,4 +140,19 @@ async function inspectLocalExecutionLedgerSchema(pool: Pool): Promise<LocalExecu
     maskTicketUnique: row.mask_ticket_unique === true,
     uploadArtifactRoleNotNull: row.upload_artifact_role_not_null === true,
   });
+}
+
+async function readLedgerMigration(name: '013_local_execution_ticket_ledger.sql' | '016_local_execution_result_replay_binding.sql'): Promise<string> {
+  try {
+    return await readFile(new URL(`../artifacts/migrations/${name}`, import.meta.url), 'utf8');
+  } catch (sourceLayoutError) {
+    try {
+      // `server:build` flattens every production migration beside the bundled
+      // migration CLI at dist-server/migrations. Keep one immutable pack rather
+      // than duplicating artifact migrations into synthetic runtime directories.
+      return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8');
+    } catch {
+      throw sourceLayoutError;
+    }
+  }
 }

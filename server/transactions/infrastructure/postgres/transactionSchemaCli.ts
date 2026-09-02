@@ -8,6 +8,7 @@ import { checkProjectSchema, migrateProjectSchema } from '../../../core/projects
 import { checkAuthSchema, migrateAuthSchema } from '../../../core/auth/authSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../../../core/artifacts/localExecutionUploadSchema.ts';
 import { checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../../../core/localExecution/localExecutionLedgerSchema.ts';
+import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from '../../../core/workflow/workflowContinuationSchema.ts';
 import { checkGarmentSchema, migrateGarmentSchema } from '../../../core/fashion/garmentSchema.ts';
 import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../../../core/fashion/bodyAnchorSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../../../core/fashion/garmentWarpLayerSchema.ts';
@@ -32,6 +33,7 @@ try {
     await migrateAuthSchema(pool);
     await migrateLocalExecutionUploadSchema(pool);
     await migrateLocalExecutionLedgerSchema(pool);
+    await migrateWorkflowContinuationSchema(pool);
     await migrateGarmentSchema(pool);
     await migrateProjectBodyAnchorSchema(pool);
     await migrateGarmentWarpLayerSchema(pool);
@@ -47,6 +49,7 @@ try {
     await checkAuthSchema(pool);
     await checkLocalExecutionUploadSchema(pool);
     await checkLocalExecutionLedgerSchema(pool);
+    await checkWorkflowContinuationSchema(pool);
     await checkGarmentSchema(pool);
     await checkProjectBodyAnchorSchema(pool);
     await checkGarmentWarpLayerSchema(pool);
