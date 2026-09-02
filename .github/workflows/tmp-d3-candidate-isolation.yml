@@ -1,0 +1,46 @@
+name: Temporary D3 candidate isolation patcher
+
+on:
+  push:
+    branches: [ "ci/tiny-sd-d3-candidate-process-isolation" ]
+    paths:
+      - ".github/workflows/tmp-d3-candidate-isolation.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Apply exact candidate isolation patch
+        run: |
+          set -euo pipefail
+          python3 scripts/tmp-d3-candidate-isolation.py
+          git diff --check
+          python3 -m py_compile scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py
+          node --test tests/tiny-sd-d3-policy.test.mjs tests/tiny-sd-d3-candidate-isolation-policy.test.mjs
+      - name: Prove D3 selection semantics remain intact
+        run: |
+          set -euo pipefail
+          grep -q 'MIN_SIZE_AMONG_ORIGINAL_D3_NATIVE_PARITY_PASSING_CANDIDATES' scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py
+          grep -q 'EXACT_FP16_STORAGE_FP32_COMPUTE' scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py
+          grep -q -- '--candidate-worker' scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py
+          grep -q '_run_candidate_isolated' scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py
+          grep -q 'tests/tiny-sd-d3-candidate-isolation-policy.test.mjs' .github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml
+      - name: Commit permanent files only
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py .github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "2"
+          git commit -m "Bound D3 candidate native memory by process"
+          git push origin HEAD:${{ github.ref_name }}
