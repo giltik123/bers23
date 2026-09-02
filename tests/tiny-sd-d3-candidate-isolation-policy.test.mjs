@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const matrix = fs.readFileSync('scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py', 'utf8');
 const d4Selected = fs.readFileSync('scripts/reproduce-tiny-sd-d3-selected-wasm.py', 'utf8');
-const workflow = fs.readFileSync('.github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml', 'utf8');
+const workflow = fs.readFileSync('.github/workflows/tiny-sd-d3-candidate-process-isolation-policy.yml', 'utf8');
 
 test('D3 bounds native candidate lifetime with one checked-in subprocess worker per strategy', () => {
   assert.match(matrix, /MAX_WORKER_RECORD_BYTES = 2 \* 1024 \* 1024/);
@@ -44,7 +44,9 @@ test('D4 selected-only reproduction remains independent from D3 research worker 
   assert.match(d4Selected, /PINNED_ACCEPTED_SCHEME_REPRODUCTION_NO_RESELECTION/);
 });
 
-test('D3 hosted workflow runs candidate-isolation policy before model work', () => {
+test('dedicated hosted policy workflow compiles and checks D3 candidate isolation without weakening heavy D3 execution', () => {
   assert.match(workflow, /tests\/tiny-sd-d3-candidate-isolation-policy\.test\.mjs/);
-  assert.match(workflow, /python -m py_compile[\s\S]*scripts\/prepare-tiny-sd-d3-wasm-strategy-matrix\.py/);
+  assert.match(workflow, /python -m py_compile scripts\/prepare-tiny-sd-d3-wasm-strategy-matrix\.py/);
+  assert.match(workflow, /permissions:\n  contents: read/);
+  assert.doesNotMatch(workflow, /contents: write|pull-requests: write|actions: write/);
 });
