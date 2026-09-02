@@ -11,6 +11,17 @@ def replace_one(path: str, old: str, new: str) -> None:
 
 
 replace_one(
+    'server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts',
+    "    || representation.format !== 'BERS_PARAMETRIC_V1'\n    || representation.admissionState !== 'ADMITTED'\n    || value.representationTier === 'BASIC'\n",
+    "    || representation.format !== 'BERS_PARAMETRIC_V1'\n    || representation.admissionState !== 'ADMITTED'\n",
+)
+replace_one(
+    'server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts',
+    "  if (!Number.isSafeInteger(record.expectedRevision) || Number(record.expectedRevision) < 1) {\n    throw httpError(400, 'invalid_garment_revision', 'Expected Garment revision is invalid');\n  }\n  return Object.freeze({ expectedRevision: Number(record.expectedRevision), contour: record.contour });",
+    "  const expectedRevision = record.expectedRevision;\n  if (typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {\n    throw httpError(400, 'invalid_garment_revision', 'Expected Garment revision is invalid');\n  }\n  return Object.freeze({ expectedRevision, contour: record.contour });",
+)
+
+replace_one(
     'server/core/composition/createProductionCore.ts',
     "      projects: new PostgresProjectStore(transactions.pool),\n      auth,\n      localExecution: Object.freeze({",
     "      projects: new PostgresProjectStore(transactions.pool),\n      auth,\n      fashion: Object.freeze({\n        manualParametricAdmission: garmentMeshWarp.manualParametricAdmission,\n      }),\n      localExecution: Object.freeze({",
