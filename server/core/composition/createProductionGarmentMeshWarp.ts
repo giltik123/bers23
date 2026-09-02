@@ -10,6 +10,9 @@ import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '..
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../fashion/garmentWarpLayerSchema.ts';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from '../fashion/garmentTextureFinalLineageSchema.ts';
 import { FashionTryOnReadinessService } from '../fashion/FashionTryOnReadinessService.ts';
+import { FashionTryOnWarpOrchestrationService } from '../fashion/FashionTryOnWarpOrchestrationService.ts';
+import { FashionTryOnTextureContinuationService } from '../fashion/FashionTryOnTextureContinuationService.ts';
+import { FashionTryOnFinalResultService } from '../fashion/FashionTryOnFinalResultService.ts';
 import { ManualParametricGarmentAdmissionService } from '../fashion/ManualParametricGarmentAdmissionService.ts';
 import { ManualProjectBodyAnchorAcquisitionService } from '../fashion/ManualProjectBodyAnchorAcquisitionService.ts';
 import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
@@ -21,6 +24,7 @@ import type { LocalExecutionLedgerV2 } from '../localExecution/LocalExecutionLed
 import { ManagedGarmentLocalExecutionInputAuthority } from '../localExecution/ManagedGarmentLocalExecutionInputAuthority.ts';
 import { GarmentMeshWarpManagedInputAuthority } from '../localExecution/GarmentMeshWarpManagedInputAuthority.ts';
 import { GarmentMeshWarpInputDeliveryService } from '../localExecution/GarmentMeshWarpInputDeliveryService.ts';
+import { GarmentTextureCompositeFinalRecoveryAuthority } from '../localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts';
 import { LocalGarmentMeshWarpExecutionService, type LocalGarmentMeshWarpResourceLimits } from '../localExecution/LocalGarmentMeshWarpExecutionService.ts';
 import type { PostgresLocalExecutionUploadStore } from '../localExecution/PostgresLocalExecutionUploadStore.ts';
 import { createProductionGarmentTextureComposite } from './createProductionGarmentTextureComposite.ts';
@@ -41,15 +45,18 @@ type GarmentMeshWarpExecutionSurface = LocalGarmentMeshWarpExecutionService & Re
 }>;
 
 /**
- * One production composition root for the shared F4b geometry authority.
+ * One production composition root for the shared F4b geometry and deterministic
+ * Try-On authority graph.
  *
  * F4b.4 keeps its capability-scoped managed-input wrapper. F4b.5b is composed
  * from the same underlying Managed Garment, body-anchor and immutable-layer
  * instances, so no second Fashion trust graph can drift from the warp authority.
- * F4b.6 readiness is read-only over those same instances and cannot grant any
- * execution, FINAL, Project, provider or Billing authority by itself.
- * Manual PARAMETRIC and body-anchor acquisition reuse the exact accepted stores
- * but remain distinct mutation/evidence services rather than execution capabilities.
+ * F4b.6 readiness/orchestration/result services are projections over those same
+ * singletons. They do not construct another store graph and do not add provider,
+ * Billing, cloud or Project mutation authority.
+ *
+ * Manual PARAMETRIC and body-anchor acquisition reuse the accepted stores but
+ * remain distinct mutation/evidence services rather than execution capabilities.
  */
 export async function createProductionGarmentMeshWarp(input: ProductionGarmentMeshWarpCompositionInput) {
   await ensureFashionWarpSchemas(input.pool, input.nodeEnv);
@@ -115,6 +122,32 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     issueFinalId: (storageId, scope) => input.artifacts.external.issueStoredFinal(storageId, scope),
     now: input.now,
   });
+
+  const finalRecovery = new GarmentTextureCompositeFinalRecoveryAuthority({
+    admission: input.admission,
+    images: input.artifacts.images,
+    issueFinalId: (storageId, scope) => input.artifacts.external.issueStoredFinal(storageId, scope),
+  });
+  const tryOnWarp = new FashionTryOnWarpOrchestrationService({
+    readiness: tryOnReadiness,
+    garmentWarp: execution,
+  });
+  const tryOnTexture = new FashionTryOnTextureContinuationService({
+    readiness: tryOnReadiness,
+    layers,
+    textureComposite: textureComposite.execution,
+  });
+  const tryOnResult = new FashionTryOnFinalResultService({
+    readiness: tryOnReadiness,
+    finalRecovery,
+  });
+  const tryOn = Object.freeze({
+    readiness: tryOnReadiness,
+    prepare: tryOnWarp,
+    continue: tryOnTexture,
+    result: tryOnResult,
+  });
+
   return Object.freeze({
     execution: executionSurface,
     inputDelivery,
@@ -127,6 +160,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     layers,
     textureComposite,
     tryOnReadiness,
+    tryOn,
     manualParametricAdmission,
     manualBodyAnchorAcquisition,
   });
