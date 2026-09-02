@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
+import {
+  CONDITIONING_CANDIDATE_IDS,
+  conditioningCandidateIdentity,
+} from './kandinsky-conditioning-candidate-registry.mjs';
 
+export { CONDITIONING_CANDIDATE_IDS };
 export const KANDINSKY_CONDITIONING_SCHEMA_VERSION = 1;
 export const KANDINSKY_CONDITIONING_STAGE = 'F5B1_D2_CONDITIONING_RESEARCH';
 export const KANDINSKY_D1_MANIFEST_PATH = 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json';
@@ -9,12 +14,6 @@ export const KANDINSKY_PRIOR_REPOSITORY = 'kandinsky-community/kandinsky-2-2-pri
 export const KANDINSKY_PRIOR_REVISION = '40cd65123bb828e5641b118b77b38be1aee69891';
 export const KANDINSKY_HISTORICAL_DIFFUSERS_REVISION = '746215670a61af1034c470d0b6555be9c60cb7b6';
 export const KANDINSKY_HISTORICAL_DIFFUSERS_VERSION = '0.18.0.dev0';
-
-export const CONDITIONING_CANDIDATE_IDS = Object.freeze([
-  'A_NEUTRAL_ZERO_NEGATIVE',
-  'B_REALISM_ZERO_NEGATIVE',
-  'C_PRESERVATION_EXPLICIT_NEGATIVE',
-]);
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const EXACT_KEYS = Object.freeze({
@@ -159,10 +158,10 @@ function assertDeterminism(value) {
 function assertConditioning(value) {
   assertPlainObject(value, 'conditioning');
   assertExactKeys(value, EXACT_KEYS.conditioning, 'conditioning');
-  if (!CONDITIONING_CANDIDATE_IDS.includes(value.candidateId)) throw new Error('conditioning.candidateId is not a closed D2 research identity');
+  const identity = conditioningCandidateIdentity(value.candidateId);
   assertSha(value.conditioningContractSha256, 'conditioning.conditioningContractSha256');
-  const expectedMode = value.candidateId === 'C_PRESERVATION_EXPLICIT_NEGATIVE' ? 'EXPLICIT_NEGATIVE_PRIOR' : 'HISTORICAL_ZERO_IMAGE';
-  assertEqual(value.negativeMode, expectedMode, 'conditioning.negativeMode');
+  assertEqual(value.conditioningContractSha256, identity.conditioningContractSha256, 'conditioning.conditioningContractSha256');
+  assertEqual(value.negativeMode, identity.negativeMode, 'conditioning.negativeMode');
 }
 
 function assertBundle(value) {

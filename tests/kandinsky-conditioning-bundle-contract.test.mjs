@@ -7,11 +7,13 @@ import {
   canonicalJsonBytes,
   sha256Bytes,
 } from '../scripts/kandinsky-conditioning-bundle-contract.mjs';
+import { conditioningCandidateIdentity } from '../scripts/kandinsky-conditioning-candidate-registry.mjs';
 
 const D1_PATH = 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json';
 const d1 = JSON.parse(fs.readFileSync(D1_PATH, 'utf8'));
 
 function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
+  const identity = conditioningCandidateIdentity(candidateId);
   return {
     schemaVersion: 1,
     stage: 'F5B1_D2_CONDITIONING_RESEARCH',
@@ -60,8 +62,8 @@ function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
     },
     conditioning: {
       candidateId,
-      conditioningContractSha256: 'c'.repeat(64),
-      negativeMode: candidateId === 'C_PRESERVATION_EXPLICIT_NEGATIVE' ? 'EXPLICIT_NEGATIVE_PRIOR' : 'HISTORICAL_ZERO_IMAGE',
+      conditioningContractSha256: identity.conditioningContractSha256,
+      negativeMode: identity.negativeMode,
     },
     bundle: {
       format: 'safetensors',
@@ -77,7 +79,7 @@ function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
   };
 }
 
-test('D2a accepts only the closed research manifest and all three negative-conditioning identities', () => {
+test('D2a accepts only the closed research manifest and all three shared conditioning identities', () => {
   for (const candidate of [
     'A_NEUTRAL_ZERO_NEGATIVE',
     'B_REALISM_ZERO_NEGATIVE',
@@ -140,7 +142,11 @@ test('D2a closes generator and latent policy so seed identity cannot be bypassed
   assert.throws(() => assertKandinskyConditioningManifest(latentDrift, d1), /determinism\.latentPolicy mismatch/);
 });
 
-test('D2a prevents zero-image and explicit-negative mechanisms from being relabeled', () => {
+test('D2a binds candidate to the exact shared prompt contract hash and negative mode', () => {
+  const wrongHash = validManifest('A_NEUTRAL_ZERO_NEGATIVE');
+  wrongHash.conditioning.conditioningContractSha256 = 'c'.repeat(64);
+  assert.throws(() => assertKandinskyConditioningManifest(wrongHash, d1), /conditioning\.conditioningContractSha256 mismatch/);
+
   const zeroAsExplicit = validManifest('A_NEUTRAL_ZERO_NEGATIVE');
   zeroAsExplicit.conditioning.negativeMode = 'EXPLICIT_NEGATIVE_PRIOR';
   assert.throws(() => assertKandinskyConditioningManifest(zeroAsExplicit, d1), /conditioning\.negativeMode mismatch/);

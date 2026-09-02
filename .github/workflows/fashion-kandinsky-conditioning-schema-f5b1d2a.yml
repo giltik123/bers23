@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
     paths:
       - ".github/workflows/fashion-kandinsky-conditioning-schema-f5b1d2a.yml"
+      - "scripts/kandinsky-conditioning-candidate-registry.mjs"
+      - "scripts/kandinsky-conditioning-prompt-contract.mjs"
       - "scripts/kandinsky-conditioning-bundle-contract.mjs"
       - "tests/kandinsky-conditioning-bundle-contract.test.mjs"
       - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
@@ -16,6 +18,8 @@ on:
     branches: [ "main" ]
     paths:
       - ".github/workflows/fashion-kandinsky-conditioning-schema-f5b1d2a.yml"
+      - "scripts/kandinsky-conditioning-candidate-registry.mjs"
+      - "scripts/kandinsky-conditioning-prompt-contract.mjs"
       - "scripts/kandinsky-conditioning-bundle-contract.mjs"
       - "tests/kandinsky-conditioning-bundle-contract.test.mjs"
       - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
@@ -46,7 +50,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
-      - name: Prove D2a conditioning schema and immutable identity
+      - name: Prove D2a conditioning schema, shared prompt identity and immutable bundle identity
         run: node --test tests/kandinsky-conditioning-bundle-contract.test.mjs
       - name: Prove D2a remains research-only and model-byte-free
         run: |
@@ -68,5 +72,6 @@ jobs:
             echo "D2a candidate entered production execution catalogs" >&2
             exit 1
           fi
+          grep -q "conditioningCandidateIdentity" scripts/kandinsky-conditioning-bundle-contract.mjs
           grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
