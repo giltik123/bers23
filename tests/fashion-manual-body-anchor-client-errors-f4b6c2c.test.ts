@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
+import { StoredProjectImageUnavailableError } from '../server/core/artifacts/artifactAuthority.ts';
+import { ArtifactReferenceDeniedError } from '../server/core/artifacts/signedArtifactAuthority.ts';
 import type { CoreServerConfig } from '../server/core/config.ts';
 import { ManualProjectBodyAnchorAcquisitionService } from '../server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts';
 import { createManualProjectBodyAnchorHttpAdapter } from '../server/core/http/manualProjectBodyAnchorHttpAdapter.ts';
@@ -92,13 +94,11 @@ test('F4b.6c.2c malformed anchor geometry is a 400 and is rejected before source
   assert.equal(creates, 0);
 });
 
-test('F4b.6c.2c invalid stale or wrong-scope signed source is a uniform 404 and never reaches persistence', async () => {
+test('F4b.6c.2c untrusted wrong-scope signed source is a uniform 404 and never reaches persistence', async () => {
   let creates = 0;
   const service = new ManualProjectBodyAnchorAcquisitionService({
     artifacts: {
-      resolveStoredImageEvidence: async () => {
-        throw new Error('signature, tenant, storage, or scope detail must not escape');
-      },
+      resolveStoredImageEvidence: async () => { throw new ArtifactReferenceDeniedError(); },
     },
     bodyAnchors: {
       createForExpectedImage: async () => {
@@ -119,8 +119,55 @@ test('F4b.6c.2c invalid stale or wrong-scope signed source is a uniform 404 and 
         message: 'Canonical Project source is unavailable for manual body-anchor acquisition',
       },
     );
-    assert.ok(!JSON.stringify(body).includes('signature'));
-    assert.ok(!JSON.stringify(body).includes('tenant'));
+    assert.ok(!JSON.stringify(body).includes('scope'));
+  });
+  assert.equal(creates, 0);
+});
+
+test('F4b.6c.2c trusted claim whose durable image is absent is the same non-oracular 404', async () => {
+  let creates = 0;
+  const service = new ManualProjectBodyAnchorAcquisitionService({
+    artifacts: {
+      resolveStoredImageEvidence: async () => { throw new StoredProjectImageUnavailableError(); },
+    },
+    bodyAnchors: {
+      createForExpectedImage: async () => {
+        creates += 1;
+        throw new Error('must not persist missing source');
+      },
+    },
+  });
+
+  await withServer(service, async base => {
+    const response = await post(base, validPayload);
+    assert.equal(response.status, 404);
+    const body = await response.json() as any;
+    assert.equal(body.error, 'body_anchor_source_unavailable');
+  });
+  assert.equal(creates, 0);
+});
+
+test('F4b.6c.2c unexpected Artifact storage failure remains a 500 and is not disguised as client unavailability', async () => {
+  let creates = 0;
+  const service = new ManualProjectBodyAnchorAcquisitionService({
+    artifacts: {
+      resolveStoredImageEvidence: async () => { throw new Error('postgres connection terminated unexpectedly'); },
+    },
+    bodyAnchors: {
+      createForExpectedImage: async () => {
+        creates += 1;
+        throw new Error('must not persist after infrastructure failure');
+      },
+    },
+  });
+
+  await withServer(service, async base => {
+    const response = await post(base, validPayload);
+    assert.equal(response.status, 500);
+    const body = await response.json() as any;
+    assert.equal(body.error, 'manual_body_anchor_failed');
+    assert.equal(body.message, 'Manual body-anchor acquisition failed');
+    assert.ok(!JSON.stringify(body).includes('postgres'));
   });
   assert.equal(creates, 0);
 });
