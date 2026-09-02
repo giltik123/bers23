@@ -19,12 +19,8 @@ import {
   GARMENT_MESH_WARP_TOOL_ID,
   GARMENT_MESH_WARP_TOOL_VERSION,
 } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
-import {
-  garmentMeshWarpRgba8,
-} from '../src/platform/creative/deterministic/GarmentMeshWarp.ts';
-import {
-  garmentTextureCompositeRgba8,
-} from '../src/platform/creative/deterministic/GarmentTextureComposite.ts';
+import { garmentMeshWarpRgba8 } from '../src/platform/creative/deterministic/GarmentMeshWarp.ts';
+import { garmentTextureCompositeRgba8 } from '../src/platform/creative/deterministic/GarmentTextureComposite.ts';
 import {
   GARMENT_TEXTURE_COMPOSITE_ALPHA_POLICY,
   GARMENT_TEXTURE_COMPOSITE_COLOR_SPACE_POLICY,
@@ -37,7 +33,6 @@ import {
 const projectId = '11111111-1111-4111-8111-111111111111';
 const meshTicketId = '22222222-2222-4222-8222-222222222222';
 const textureTicketId = '33333333-3333-4333-8333-333333333333';
-const uploadId = '44444444-4444-4444-8444-444444444444';
 const sourcePointsQ16 = Object.freeze([
   Object.freeze([0, 0] as const),
   Object.freeze([65_536, 0] as const),
@@ -162,7 +157,7 @@ test('F4b.6b.4b minimal binary envelopes contain kernel data but no reusable Fas
   ]) assert.equal(transportText.includes(forbidden), false, forbidden);
 });
 
-test('F4b.6b.4b prepared mesh executor is pixel-identical and submits only opaque upload identity plus latency', async () => {
+test('F4b.6b.4b prepared mesh executor is pixel-identical and submit carries only opaque ticket identity plus latency', async () => {
   const envelopeBytes = encodeFashionTryOnMeshExecutionEnvelope(meshEnvelope);
   const expected = garmentMeshWarpRgba8(basis, 2, 2, {
     sourcePointsQ16, destinationPointsQ16, triangles, outputWidth: 2, outputHeight: 2,
@@ -173,7 +168,7 @@ test('F4b.6b.4b prepared mesh executor is pixel-identical and submits only opaqu
     loadPreparedGarmentMeshWarpInput: async payload => { calls.loads.push(payload); return envelopeBytes; },
     uploadPreparedGarmentMeshWarpImage: async payload => {
       calls.uploads.push(payload);
-      return { uploadId, mimeType: 'image/png', width: 2, height: 2, sizeBytes: payload.bytes.byteLength };
+      return { status: 'STORED', mimeType: 'image/png', width: 2, height: 2, sizeBytes: payload.bytes.byteLength };
     },
     submitPreparedGarmentMeshWarp: async payload => { calls.submits.push(payload); return { status: 'SUCCESS' }; },
   }, () => { const value = clock; clock += 7; return value; }, () => 1_000);
@@ -183,13 +178,13 @@ test('F4b.6b.4b prepared mesh executor is pixel-identical and submits only opaqu
   assert.equal(result.latencyMs, 7);
   assert.deepEqual(calls.loads, [{ ticketId: meshTicketId, projectId }]);
   assert.equal(calls.uploads.length, 1);
-  assert.deepEqual(calls.submits, [{ ticketId: meshTicketId, projectId, uploadId, latencyMs: 7 }]);
-  for (const forbidden of ['nonce','stepId','workflowId','requestId','executor','representationId','anchorSetId','layerId']) {
+  assert.deepEqual(calls.submits, [{ ticketId: meshTicketId, projectId, latencyMs: 7 }]);
+  for (const forbidden of ['uploadId','nonce','stepId','workflowId','requestId','executor','representationId','anchorSetId','layerId']) {
     assert.equal(JSON.stringify(calls.submits).includes(forbidden), false, forbidden);
   }
 });
 
-test('F4b.6b.4b prepared texture executor is pixel-identical and never receives or returns layer or FINAL authority', async () => {
+test('F4b.6b.4b prepared texture executor is pixel-identical and never receives or returns layer FINAL or upload authority', async () => {
   const envelopeBytes = encodeFashionTryOnTextureExecutionEnvelope(textureEnvelope);
   const expected = garmentTextureCompositeRgba8(
     project, 2, 2, basis, 2, 2,
@@ -206,7 +201,7 @@ test('F4b.6b.4b prepared texture executor is pixel-identical and never receives 
     loadPreparedGarmentTextureCompositeInput: async payload => { calls.loads.push(payload); return envelopeBytes; },
     uploadPreparedGarmentTextureCompositeImage: async payload => {
       calls.uploads.push(payload);
-      return { uploadId, mimeType: 'image/png', width: 2, height: 2, sizeBytes: payload.bytes.byteLength };
+      return { status: 'STORED', mimeType: 'image/png', width: 2, height: 2, sizeBytes: payload.bytes.byteLength };
     },
     submitPreparedGarmentTextureComposite: async payload => { calls.submits.push(payload); return { status: 'SUCCESS' }; },
   }, () => { const value = clock; clock += 11; return value; }, () => 1_000);
@@ -215,9 +210,10 @@ test('F4b.6b.4b prepared texture executor is pixel-identical and never receives 
   assert.deepEqual(result.preview.data, expected);
   assert.equal(result.latencyMs, 11);
   assert.deepEqual(calls.loads, [{ ticketId: textureTicketId, projectId }]);
-  assert.deepEqual(calls.submits, [{ ticketId: textureTicketId, projectId, uploadId, latencyMs: 11 }]);
+  assert.deepEqual(calls.submits, [{ ticketId: textureTicketId, projectId, latencyMs: 11 }]);
   assert.equal('artifactId' in result, false);
   assert.equal('layerId' in result, false);
+  assert.equal(JSON.stringify(calls.submits).includes('uploadId'), false);
 });
 
 test('F4b.6b.4b grant phase expiry geometry and over-rich server projections fail before upload or submit', async () => {
