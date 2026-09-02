@@ -1,0 +1,77 @@
+name: Fashion F4b.6b.2 server-owned garment-warp orchestration
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warp-orchestration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core coordinator
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle orchestration contract and warp coordinator tests
+        run: |
+          mkdir -p .test-cache/fashion-tryon-warp-orchestration
+          npx esbuild tests/fashion-tryon-orchestration-contract-f4b6b1.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-warp-orchestration/contract.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-tryon-warp-orchestration-f4b6b2.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-warp-orchestration/warp.test.mjs \
+            --external:node:*
+      - name: Prove server-owned readiness evidence and opaque ticket projection
+        run: node --test .test-cache/fashion-tryon-warp-orchestration/*.test.mjs
+      - name: Prove coordinator owns no raw ticket browser evidence persistence provider or Project authority
+        run: |
+          set -euo pipefail
+          FILE=server/core/fashion/FashionTryOnWarpOrchestrationService.ts
+          grep -q "dependencies.readiness.resolve" "$FILE"
+          grep -q "representationId: resolution.representationId" "$FILE"
+          grep -q "anchorSetId: resolution.anchorSetId" "$FILE"
+          grep -q "ticketId: prepared.ticket.ticketId" "$FILE"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import ts from 'typescript';
+          const file = 'server/core/fashion/FashionTryOnWarpOrchestrationService.ts';
+          const source = fs.readFileSync(file, 'utf8');
+          const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+          const forbidden = [];
+          const visit = node => {
+            if (ts.isIdentifier(node) && node.text === 'LocalExecutionTicketV2') {
+              const pos = ast.getLineAndCharacterOfPosition(node.getStart(ast));
+              forbidden.push(`${pos.line + 1}:${pos.character + 1}`);
+            }
+            ts.forEachChild(node, visit);
+          };
+          visit(ast);
+          if (forbidden.length) {
+            throw new Error(`raw LocalExecutionTicketV2 authority referenced in code at ${forbidden.join(', ')}`);
+          }
+          NODE
+          ! grep -E "ticket:[[:space:]]*prepared\.ticket|ticket:[[:space:]]*LocalExecutionTicketV2" "$FILE"
+          ! grep -E "from 'pg'|/http/|providers|Billing|FAL_KEY|FASHN|tryonEngine|persistFinal|acceptFinal" "$FILE"
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          git diff --check
