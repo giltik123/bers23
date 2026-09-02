@@ -26,6 +26,8 @@ test('response CSP adds the HTTP-only clickjacking boundary and exact external C
   assert.deepEqual(requiredProductionFrontendHeaders('/api/core'), {
     'Content-Security-Policy': productionBrowserResponseCsp('/api/core'),
     'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
   });
 });
 
@@ -51,9 +53,11 @@ test('response CSP validator rejects meta-only, weakened, duplicate and drifted 
   );
 });
 
-test('Core connect source rejects insecure remote origins and credentials', () => {
+test('Core connect source rejects insecure, protocol-relative, credentialed and query-bearing endpoints', () => {
   assert.throws(() => productionBrowserMetaCsp('http://core.example.test/api/core'), /HTTPS outside localhost/u);
+  assert.throws(() => productionBrowserMetaCsp('//attacker.example/api/core'), /root-relative path or absolute URL/u);
   assert.throws(() => productionBrowserMetaCsp('https://user:secret@core.example.test/api/core'), /credentials/u);
+  assert.throws(() => productionBrowserMetaCsp('https://core.example.test/api/core?mode=unsafe'), /query or fragment/u);
   assert.match(productionBrowserMetaCsp('http://localhost:8080/api/core'), /http:\/\/localhost:8080/u);
 });
 
@@ -94,6 +98,8 @@ test('live verifier rejects meta-only CSP because frame-ancestors requires an HT
     response.statusCode = 200;
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('X-Frame-Options', 'DENY');
+    response.setHeader('Referrer-Policy', 'no-referrer');
     response.end(`<meta http-equiv="Content-Security-Policy" content="${productionBrowserMetaCsp('/api/core')}">`);
   }, async frontendUrl => {
     await assert.rejects(
@@ -103,17 +109,28 @@ test('live verifier rejects meta-only CSP because frame-ancestors requires an HT
   });
 });
 
-test('live verifier rejects missing frame-ancestors, missing nosniff, redirects and non-HTML roots', async () => {
+test('live verifier rejects weakened headers, redirects and non-HTML roots', async () => {
+  const all = goodHeaders();
   const cases = [
     {
-      headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': productionBrowserMetaCsp('/api/core'), 'X-Content-Type-Options': 'nosniff' },
+      headers: { ...all, 'Content-Security-Policy': productionBrowserMetaCsp('/api/core'), 'Content-Type': 'text/html' },
       status: 200,
       error: /frame-ancestors/u,
     },
     {
-      headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': productionBrowserResponseCsp('/api/core') },
+      headers: { ...all, 'X-Content-Type-Options': undefined, 'Content-Type': 'text/html' },
       status: 200,
-      error: /nosniff/u,
+      error: /X-Content-Type-Options/u,
+    },
+    {
+      headers: { ...all, 'X-Frame-Options': 'SAMEORIGIN', 'Content-Type': 'text/html' },
+      status: 200,
+      error: /X-Frame-Options/u,
+    },
+    {
+      headers: { ...all, 'Referrer-Policy': 'origin', 'Content-Type': 'text/html' },
+      status: 200,
+      error: /Referrer-Policy/u,
     },
     {
       headers: { Location: '/app' },
@@ -121,7 +138,7 @@ test('live verifier rejects missing frame-ancestors, missing nosniff, redirects 
       error: /direct 2xx/u,
     },
     {
-      headers: { ...goodHeaders(), 'Content-Type': 'application/json' },
+      headers: { ...all, 'Content-Type': 'application/json' },
       status: 200,
       error: /serve HTML/u,
     },
@@ -129,7 +146,9 @@ test('live verifier rejects missing frame-ancestors, missing nosniff, redirects 
   for (const candidate of cases) {
     await withFrontend((request, response) => {
       response.statusCode = candidate.status;
-      for (const [name, value] of Object.entries(candidate.headers)) response.setHeader(name, value);
+      for (const [name, value] of Object.entries(candidate.headers)) {
+        if (value !== undefined) response.setHeader(name, value);
+      }
       response.end(candidate.status === 302 ? '' : '<html>BERS</html>');
     }, async frontendUrl => {
       await assert.rejects(() => verifyFrontendSecurityHeaders({ frontendUrl }), candidate.error);
