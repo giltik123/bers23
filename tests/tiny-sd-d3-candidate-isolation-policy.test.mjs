@@ -44,9 +44,11 @@ test('D4 selected-only reproduction remains independent from D3 research worker 
   assert.match(d4Selected, /PINNED_ACCEPTED_SCHEME_REPRODUCTION_NO_RESELECTION/);
 });
 
-test('dedicated hosted policy workflow compiles and checks D3 candidate isolation without weakening heavy D3 execution', () => {
+test('dedicated hosted policy workflow is read-only and tests the exact PR head', () => {
   assert.match(workflow, /tests\/tiny-sd-d3-candidate-isolation-policy\.test\.mjs/);
   assert.match(workflow, /python -m py_compile scripts\/prepare-tiny-sd-d3-wasm-strategy-matrix\.py/);
   assert.match(workflow, /permissions:\n  contents: read/);
+  assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(workflow, /test "\$\(git rev-parse HEAD\)" = "\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}"/);
   assert.doesNotMatch(workflow, /contents: write|pull-requests: write|actions: write/);
 });
