@@ -7,11 +7,15 @@ on:
       - ".github/workflows/fashion-kandinsky-conditioning-builder-f5b1d2c.yml"
       - "scripts/kandinsky-conditioning-builder.py"
       - "scripts/_kandinsky-conditioning-builder-impl.py"
+      - "scripts/kandinsky-conditioning-compose-c.py"
       - "scripts/kandinsky-conditioning-finalize-manifest.mjs"
       - "tests/kandinsky-conditioning-builder-entry.test.py"
+      - "tests/kandinsky-conditioning-compose-c.test.py"
       - "tests/kandinsky-conditioning-finalizer.test.mjs"
+      - "tests/kandinsky-conditioning-finalizer-c.test.mjs"
       - "docs/fashion-f5b1-d2c-conditioning-builder.md"
       - "scripts/kandinsky-conditioning-bundle-contract.mjs"
+      - "scripts/kandinsky-conditioning-candidate-registry.mjs"
       - "scripts/kandinsky-conditioning-prompt-contract.mjs"
       - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
   workflow_dispatch:
@@ -36,19 +40,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Compile stdlib-only builder boundary
+      - name: Compile and prove stdlib-only builder/composition boundary
         run: |
-          python -m py_compile scripts/kandinsky-conditioning-builder.py scripts/_kandinsky-conditioning-builder-impl.py
-          python -m unittest tests/kandinsky-conditioning-builder-entry.test.py
+          python -m py_compile scripts/kandinsky-conditioning-builder.py scripts/_kandinsky-conditioning-builder-impl.py scripts/kandinsky-conditioning-compose-c.py
+          python -m unittest tests/kandinsky-conditioning-builder-entry.test.py tests/kandinsky-conditioning-compose-c.test.py
       - name: Prove D2c evidence finalization re-enters accepted D2a and D2b contracts
-        run: node --test tests/kandinsky-conditioning-finalizer.test.mjs
+        run: node --test tests/kandinsky-conditioning-finalizer.test.mjs tests/kandinsky-conditioning-finalizer-c.test.mjs
       - name: Prove expensive prior generation remains offline and absent from CI
         run: |
           set -euo pipefail
           ENTRY=scripts/kandinsky-conditioning-builder.py
           IMPL=scripts/_kandinsky-conditioning-builder-impl.py
+          COMPOSER=scripts/kandinsky-conditioning-compose-c.py
           grep -q 'actual != expected' "$ENTRY"
           grep -q 'entry.is_symlink' "$ENTRY"
+          grep -q 'candidate C requires --positive-source-manifest and --positive-source-bundle' "$ENTRY"
+          grep -q 'REUSE_POSITIVE_FROM_ACCEPTED_CANDIDATE' "$COMPOSER"
+          grep -q 'final C image_embeds are not byte-identical to B image_embeds' "$COMPOSER"
+          grep -q 'discardedRawImageEmbedsSha256' "$COMPOSER"
           grep -q 'hashBeforeUseRequired' "$IMPL"
           grep -q 'local_files_only=True' "$IMPL"
           grep -q 'use_safetensors=True' "$IMPL"
