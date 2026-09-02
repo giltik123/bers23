@@ -1,0 +1,82 @@
+name: Fashion F4b.6b.3 server-owned texture continuation
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  texture-continuation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core continuation contract
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle orchestration contract warp prepare and texture continuation tests
+        run: |
+          mkdir -p .test-cache/fashion-tryon-texture-continuation
+          npx esbuild tests/fashion-tryon-orchestration-contract-f4b6b1.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-texture-continuation/contract.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-tryon-warp-orchestration-f4b6b2.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-texture-continuation/warp.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-tryon-texture-continuation-f4b6b3.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-tryon-texture-continuation/texture.test.mjs \
+            --external:node:*
+      - name: Prove exact immutable-layer reconstruction lineage and opaque continuation result
+        run: node --test --test-concurrency=1 .test-cache/fashion-tryon-texture-continuation/*.test.mjs
+      - name: Prove no raw ticket client evidence mutable orchestration state or provider authority
+        run: |
+          set -euo pipefail
+          FILE=server/core/fashion/FashionTryOnTextureContinuationService.ts
+          grep -q "garmentMeshWarpExecutionId" "$FILE"
+          grep -q "loadByExecution" "$FILE"
+          grep -q "fashion_tryon_warp_lineage_mismatch" "$FILE"
+          grep -q "ticketId: prepared.ticket.ticketId" "$FILE"
+          grep -q "FASHION_TRYON_TEXTURE_COMPOSITE_DEFAULTS_V1" "$FILE"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import ts from 'typescript';
+          const file = 'server/core/fashion/FashionTryOnTextureContinuationService.ts';
+          const source = fs.readFileSync(file, 'utf8');
+          const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+          const forbidden = [];
+          const visit = node => {
+            if (ts.isIdentifier(node) && node.text === 'LocalExecutionTicketV2') {
+              const pos = ast.getLineAndCharacterOfPosition(node.getStart(ast));
+              forbidden.push(`${pos.line + 1}:${pos.character + 1}`);
+            }
+            ts.forEachChild(node, visit);
+          };
+          visit(ast);
+          if (forbidden.length) {
+            throw new Error(`raw LocalExecutionTicketV2 authority referenced in code at ${forbidden.join(', ')}`);
+          }
+          NODE
+          ! grep -E "ticket:[[:space:]]*prepared\.ticket|ticket:[[:space:]]*LocalExecutionTicketV2" "$FILE"
+          ! grep -E "from 'pg'|INSERT|UPDATE|DELETE|providers|Billing|FAL_KEY|FASHN|tryonEngine|persistFinal|acceptFinal" "$FILE"
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          git diff --check
