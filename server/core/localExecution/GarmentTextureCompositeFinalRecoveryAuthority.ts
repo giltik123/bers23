@@ -12,9 +12,15 @@ import {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CLIENT_REQUEST = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+const MAX_SOURCE_ARTIFACT_ID_LENGTH = 512;
 
 type RecoveryLedger = Pick<LocalExecutionLedgerV2, 'getByIdempotencyKeyV2' | 'getFinalization'>;
 type FinalReader = Pick<PostgresImageArtifactStore, 'loadFinalByExecution'>;
+
+type ExpectedStableIntent = Readonly<{
+  sourceArtifactId: string;
+  garmentId: string;
+}>;
 
 export type GarmentTextureCompositeFinalRecoveryDependencies = Readonly<{
   admission: RecoveryLedger;
@@ -37,6 +43,12 @@ export type GarmentTextureCompositeFinalRecoveryResult =
  * the existing durable ticket/finalization and canonical FINAL lineage before
  * issuing a signed artifact identifier.
  *
+ * `recoverForIntent(...)` is the purpose-bound F4b.6 surface. In addition to
+ * the exact phase identity it requires the stable sourceArtifactId + garmentId
+ * and proves that the durable texture ticket is bound to that same intent before
+ * reading finalization or canonical FINAL state. `recover(...)` remains only as
+ * the narrower internal compatibility/recovery primitive.
+ *
  * Pixel equality is intentionally not recomputed here: the only path that can
  * commit SUCCESS already requires byte-exact Core recomputation and canonical
  * verification before FINAL persistence. Recovery verifies durable evidence;
@@ -49,8 +61,40 @@ export class GarmentTextureCompositeFinalRecoveryAuthority {
     input: Readonly<{ projectId: unknown; clientRequestId: unknown }>,
     auth: AuthenticatedScope,
   ): Promise<GarmentTextureCompositeFinalRecoveryResult> {
-    const projectId = normalizeProjectId(input?.projectId);
-    const clientRequestId = normalizeClientRequestId(input?.clientRequestId);
+    return this.recoverNormalized(
+      normalizeProjectId(input?.projectId),
+      normalizeClientRequestId(input?.clientRequestId),
+      auth,
+    );
+  }
+
+  async recoverForIntent(
+    input: Readonly<{
+      projectId: unknown;
+      clientRequestId: unknown;
+      sourceArtifactId: unknown;
+      garmentId: unknown;
+    }>,
+    auth: AuthenticatedScope,
+  ): Promise<GarmentTextureCompositeFinalRecoveryResult> {
+    const expected = Object.freeze({
+      sourceArtifactId: normalizeSourceArtifactId(input?.sourceArtifactId),
+      garmentId: normalizeGarmentId(input?.garmentId),
+    });
+    return this.recoverNormalized(
+      normalizeProjectId(input?.projectId),
+      normalizeClientRequestId(input?.clientRequestId),
+      auth,
+      expected,
+    );
+  }
+
+  private async recoverNormalized(
+    projectId: string,
+    clientRequestId: string,
+    auth: AuthenticatedScope,
+    expectedIntent?: ExpectedStableIntent,
+  ): Promise<GarmentTextureCompositeFinalRecoveryResult> {
     const scope = Object.freeze({ ...auth, projectId });
     const idempotencyKey = garmentTextureCompositeTicketIdempotencyKey(clientRequestId);
     const expectedExecutionId = garmentTextureCompositeExecutionId(scope, clientRequestId);
@@ -59,6 +103,8 @@ export class GarmentTextureCompositeFinalRecoveryAuthority {
 
     assertGarmentTextureCompositeTicket(ticket);
     assertTicketIdentity(ticket, scope, idempotencyKey, expectedExecutionId);
+    if (expectedIntent) assertTicketMatchesStableIntent(ticket, expectedIntent);
+
     const finalization = await this.dependencies.admission.getFinalization(ticket.ticketId);
     if (!finalization || finalization.status === 'UNKNOWN') {
       return Object.freeze({ status: 'PENDING', executionId: expectedExecutionId });
@@ -95,6 +141,23 @@ function assertTicketIdentity(
   ) throw recoveryError(409, 'garment_texture_final_recovery_identity_mismatch', 'Durable texture-composite ticket identity does not match the requested phase');
 }
 
+function assertTicketMatchesStableIntent(
+  ticket: Awaited<ReturnType<RecoveryLedger['getByIdempotencyKeyV2']>> & {},
+  expected: ExpectedStableIntent,
+): void {
+  const parameters = garmentTextureCompositeParametersFromTicket(ticket);
+  if (
+    parameters.sourceArtifactId !== expected.sourceArtifactId
+    || parameters.garmentId !== expected.garmentId
+  ) {
+    throw recoveryError(
+      409,
+      'garment_texture_final_recovery_intent_mismatch',
+      'Durable texture-composite ticket does not match the expected Try-On source and garment intent',
+    );
+  }
+}
+
 function assertStoredFinalMatchesTicket(
   stored: StoredFinalImage,
   ticket: Awaited<ReturnType<RecoveryLedger['getByIdempotencyKeyV2']>> & {},
@@ -126,6 +189,24 @@ function assertStoredFinalMatchesTicket(
 function normalizeProjectId(value: unknown): string {
   const normalized = typeof value === 'string' ? value.toLowerCase() : '';
   if (!UUID.test(normalized)) throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', 'projectId must be a canonical UUID');
+  return normalized;
+}
+
+function normalizeGarmentId(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.toLowerCase() : '';
+  if (!UUID.test(normalized)) throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', 'garmentId must be a canonical UUID');
+  return normalized;
+}
+
+function normalizeSourceArtifactId(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (
+    !normalized
+    || normalized.length > MAX_SOURCE_ARTIFACT_ID_LENGTH
+    || /[\u0000-\u001f\u007f]/u.test(normalized)
+  ) {
+    throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', 'sourceArtifactId is outside the accepted identifier contract');
+  }
   return normalized;
 }
 
