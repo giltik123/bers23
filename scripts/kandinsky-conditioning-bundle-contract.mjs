@@ -8,6 +8,7 @@ export const KANDINSKY_D1_VERSION = '0.1.0-feasibility.3';
 export const KANDINSKY_PRIOR_REPOSITORY = 'kandinsky-community/kandinsky-2-2-prior';
 export const KANDINSKY_PRIOR_REVISION = '40cd65123bb828e5641b118b77b38be1aee69891';
 export const KANDINSKY_HISTORICAL_DIFFUSERS_REVISION = '746215670a61af1034c470d0b6555be9c60cb7b6';
+export const KANDINSKY_HISTORICAL_DIFFUSERS_VERSION = '0.18.0.dev0';
 
 export const CONDITIONING_CANDIDATE_IDS = Object.freeze([
   'A_NEUTRAL_ZERO_NEGATIVE',
@@ -20,9 +21,9 @@ const EXACT_KEYS = Object.freeze({
   root: ['schemaVersion', 'stage', 'status', 'productionExecutable', 'runtimeAuthorityGranted', 'priorRuntimeDependencyAllowed', 'sourceTrust', 'historicalPipeline', 'toolchain', 'determinism', 'conditioning', 'bundle'],
   sourceTrust: ['d1ManifestPath', 'd1ModelId', 'd1Version', 'priorRepository', 'priorRevision', 'priorSafeWeights', 'priorConfigFiles'],
   identityFile: ['path', 'size', 'sha256'],
-  historicalPipeline: ['diffusersRevision', 'pipelineClass', 'numImagesPerPrompt', 'numInferenceSteps', 'guidanceScale'],
-  toolchain: ['containerImageDigest', 'pythonVersion', 'torchVersion', 'transformersVersion', 'numpyVersion', 'safetensorsVersion', 'platformMachine'],
-  determinism: ['device', 'outputDtype', 'torchDeterministicAlgorithms', 'numThreads', 'numInteropThreads', 'ompNumThreads', 'mklNumThreads', 'seed'],
+  historicalPipeline: ['diffusersRevision', 'pipelineClass', 'numImagesPerPrompt', 'numInferenceSteps', 'guidanceScale', 'outputType'],
+  toolchain: ['containerImageDigest', 'pythonVersion', 'diffusersVersion', 'torchVersion', 'transformersVersion', 'numpyVersion', 'safetensorsVersion', 'platformMachine'],
+  determinism: ['device', 'outputDtype', 'torchDeterministicAlgorithms', 'numThreads', 'numInteropThreads', 'ompNumThreads', 'mklNumThreads', 'seed', 'generatorPolicy', 'latentPolicy'],
   conditioning: ['candidateId', 'conditioningContractSha256', 'negativeMode'],
   bundle: ['format', 'metadataPolicy', 'tensorOrder', 'tensors', 'size', 'sha256'],
   tensor: ['dtype', 'shape'],
@@ -129,14 +130,16 @@ function assertHistoricalPipeline(value) {
   assertEqual(value.numImagesPerPrompt, 1, 'historicalPipeline.numImagesPerPrompt');
   assertEqual(value.numInferenceSteps, 25, 'historicalPipeline.numInferenceSteps');
   assertEqual(value.guidanceScale, 4, 'historicalPipeline.guidanceScale');
+  assertEqual(value.outputType, 'pt', 'historicalPipeline.outputType');
 }
 
 function assertToolchain(value) {
   assertPlainObject(value, 'toolchain');
   assertExactKeys(value, EXACT_KEYS.toolchain, 'toolchain');
   if (typeof value.containerImageDigest !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value.containerImageDigest)) throw new Error('toolchain.containerImageDigest must be an exact sha256 digest');
-  for (const key of ['pythonVersion', 'torchVersion', 'transformersVersion', 'numpyVersion', 'safetensorsVersion', 'platformMachine']) assertNonEmptyString(value[key], `toolchain.${key}`);
-  for (const key of ['pythonVersion', 'torchVersion', 'transformersVersion', 'numpyVersion', 'safetensorsVersion']) {
+  for (const key of ['pythonVersion', 'diffusersVersion', 'torchVersion', 'transformersVersion', 'numpyVersion', 'safetensorsVersion', 'platformMachine']) assertNonEmptyString(value[key], `toolchain.${key}`);
+  assertEqual(value.diffusersVersion, KANDINSKY_HISTORICAL_DIFFUSERS_VERSION, 'toolchain.diffusersVersion');
+  for (const key of ['pythonVersion', 'diffusersVersion', 'torchVersion', 'transformersVersion', 'numpyVersion', 'safetensorsVersion']) {
     if (/[*<>=~^]|latest/i.test(value[key])) throw new Error(`toolchain.${key} must be an exact tested identity`);
   }
 }
@@ -149,6 +152,8 @@ function assertDeterminism(value) {
   assertEqual(value.torchDeterministicAlgorithms, true, 'determinism.torchDeterministicAlgorithms');
   for (const key of ['numThreads', 'numInteropThreads', 'ompNumThreads', 'mklNumThreads']) assertEqual(value[key], 1, `determinism.${key}`);
   if (!Number.isSafeInteger(value.seed) || value.seed < 0) throw new Error('determinism.seed must be a non-negative safe integer');
+  assertEqual(value.generatorPolicy, 'TORCH_CPU_GENERATOR_SINGLE_SEED', 'determinism.generatorPolicy');
+  assertEqual(value.latentPolicy, 'NO_EXTERNAL_LATENTS_PIPELINE_RANDN', 'determinism.latentPolicy');
 }
 
 function assertConditioning(value) {
@@ -175,6 +180,7 @@ function assertBundle(value) {
     assertEqual(tensor.dtype, 'F32', `bundle.tensors.${name}.dtype`);
     if (!Array.isArray(tensor.shape) || tensor.shape.length < 1 || tensor.shape.some((dimension) => !Number.isSafeInteger(dimension) || dimension < 1)) throw new Error(`bundle.tensors.${name}.shape must record actual positive dimensions`);
   }
+  if (!sameIntegerArray(value.tensors.image_embeds.shape, value.tensors.negative_image_embeds.shape)) throw new Error('bundle positive/negative embedding shapes must match for decoder concatenation');
   assertPositiveSafeInteger(value.size, 'bundle.size');
   assertSha(value.sha256, 'bundle.sha256');
 }
@@ -189,6 +195,10 @@ function rejectDynamicIdentityKeys(value, path) {
     if (DYNAMIC_IDENTITY_KEYS.has(key)) throw new Error(`${path}.${key} is forbidden from immutable conditioning identity`);
     rejectDynamicIdentityKeys(child, `${path}.${key}`);
   }
+}
+
+function sameIntegerArray(left, right) {
+  return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function sortRecursively(value) {
