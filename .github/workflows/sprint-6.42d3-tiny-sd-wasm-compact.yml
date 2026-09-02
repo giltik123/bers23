@@ -29,10 +29,7 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Prove Tiny-SD relevance classifier contract
-        run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs
-
-      - name: Classify heavyweight Tiny-SD relevance
+      - name: Classify heavyweight Tiny-SD relevance from trusted base
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -47,10 +44,19 @@ jobs:
             exit 0
           fi
           test "${EVENT_NAME}" = "pull_request"
-          test -n "${BASE_SHA}"
-          test -n "${HEAD_SHA}"
+          [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          TRUSTED_CLASSIFIER="${RUNNER_TEMP}/tiny-sd-heavy-ci-base-classifier.mjs"
+          trap 'rm -f "${TRUSTED_CLASSIFIER}"' EXIT
+          git show "${BASE_SHA}:scripts/classify-tiny-sd-heavy-ci.mjs" > "${TRUSTED_CLASSIFIER}"
+          test -s "${TRUSTED_CLASSIFIER}"
+          test "$(wc -c < "${TRUSTED_CLASSIFIER}")" -le 1048576
           git diff --name-only --no-renames -z "${BASE_SHA}" "${HEAD_SHA}" \
-            | node scripts/classify-tiny-sd-heavy-ci.mjs --stdin0 --github-output "${GITHUB_OUTPUT}"
+            | GITHUB_ACTIONS=false node "${TRUSTED_CLASSIFIER}" --stdin0 --github-output "${GITHUB_OUTPUT}"
+          echo "trusted_base_classifier_sha=${BASE_SHA}"
+
+      - name: Prove Tiny-SD relevance classifier contract
+        run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs tests/tiny-sd-heavy-ci-workflow-trust.test.mjs
 
   heavy_wasm_compact_feasibility:
     name: wasm-compact-feasibility-heavy
@@ -276,6 +282,7 @@ jobs:
           quant = json.load(open('.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-quantized.json', encoding='utf-8'))
           browser = json.load(open('.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-browser.json', encoding='utf-8'))
           expected = {'text_encoder', 'unet', 'vae_decoder'}
+          accepted = {name: 'exact_fp16_storage' for name in expected}
           allowed_native = {
               'WASM_COMPACT_NATIVE_PASS', 'WASM_COMPACT_SIZE_BLOCKED',
               'WASM_COMPACT_NUMERIC_RISK', 'WASM_COMPACT_TRANSFORM_BLOCKED',
@@ -289,6 +296,12 @@ jobs:
           assert quant['status'] == 'CANDIDATE'
           assert quant['stage'] == 'D3_WASM_COMPACT_PREPARATION'
           assert quant['strategy'] == 'COMPONENT_SPECIFIC_QUANTIZATION_FIRST_BASELINE'
+          assert quant['selectionStrategy'] == 'MULTI_STRATEGY_NATIVE_PARITY_SELECTION'
+          assert quant['selectionRule'] == 'MIN_SIZE_AMONG_ORIGINAL_D3_NATIVE_PARITY_PASSING_CANDIDATES'
+          assert quant['acceptedSelectionPolicy'] == accepted
+          assert quant['acceptedSelectionPolicyMatched'] is True
+          assert quant['selectionPolicyMismatches'] == {}
+          assert quant['selectionPolicyUpdateRequiredOnWinnerChange'] is True
           assert quant['textEncoderStrategy'] == 'DYNAMIC_U8_WEIGHT_MATMUL'
           assert quant['cnnStrategy'] == 'STATIC_QDQ_U8S8_CONV_MATMUL_GEMM'
           assert quant['fullInt8UniversalPackClaimed'] is False
@@ -300,6 +313,7 @@ jobs:
           assert quant['releaseIdentityPinned'] is False
           assert set(quant['components']) == expected
           assert all(value['result'] in allowed_native for value in quant['components'].values())
+          assert all(value['acceptedSelectionPolicyMatched'] is True for value in quant['components'].values())
           assert all(value['browserFixture']['reference']['authority'] == 'D2_ACCEPTED_FP32_CPU_ORT_OUTPUT' for value in quant['components'].values())
           for value in quant['components'].values():
               if value['result'] == 'WASM_COMPACT_NATIVE_PASS':
@@ -393,11 +407,13 @@ jobs:
     steps:
       - name: Require D3 WASM heavy acceptance when relevant
         env:
+          CLASSIFIER_RESULT: ${{ needs.classify_tiny_sd_relevance.result }}
           RELEVANT: ${{ needs.classify_tiny_sd_relevance.outputs.relevant }}
           CLASSIFICATION: ${{ needs.classify_tiny_sd_relevance.outputs.classification }}
           HEAVY_RESULT: ${{ needs.heavy_wasm_compact_feasibility.result }}
         run: |
           set -euo pipefail
+          test "${CLASSIFIER_RESULT}" = "success"
           if [ "${RELEVANT}" = "true" ]; then
             test "${CLASSIFICATION}" = "RELEVANT_HEAVY_ACCEPTANCE_REQUIRED"
             test "${HEAVY_RESULT}" = "success"

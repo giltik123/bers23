@@ -29,10 +29,7 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Prove Tiny-SD relevance classifier contract
-        run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs
-
-      - name: Classify heavyweight Tiny-SD relevance
+      - name: Classify heavyweight Tiny-SD relevance from trusted base
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -47,10 +44,19 @@ jobs:
             exit 0
           fi
           test "${EVENT_NAME}" = "pull_request"
-          test -n "${BASE_SHA}"
-          test -n "${HEAD_SHA}"
+          [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          TRUSTED_CLASSIFIER="${RUNNER_TEMP}/tiny-sd-heavy-ci-base-classifier.mjs"
+          trap 'rm -f "${TRUSTED_CLASSIFIER}"' EXIT
+          git show "${BASE_SHA}:scripts/classify-tiny-sd-heavy-ci.mjs" > "${TRUSTED_CLASSIFIER}"
+          test -s "${TRUSTED_CLASSIFIER}"
+          test "$(wc -c < "${TRUSTED_CLASSIFIER}")" -le 1048576
           git diff --name-only --no-renames -z "${BASE_SHA}" "${HEAD_SHA}" \
-            | node scripts/classify-tiny-sd-heavy-ci.mjs --stdin0 --github-output "${GITHUB_OUTPUT}"
+            | GITHUB_ACTIONS=false node "${TRUSTED_CLASSIFIER}" --stdin0 --github-output "${GITHUB_OUTPUT}"
+          echo "trusted_base_classifier_sha=${BASE_SHA}"
+
+      - name: Prove Tiny-SD relevance classifier contract
+        run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs tests/tiny-sd-heavy-ci-workflow-trust.test.mjs
 
   heavy_ort_memory_latency_feasibility:
     name: ort-memory-latency-feasibility-heavy
@@ -85,9 +91,11 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outdir=.test-cache/d4-owned --external:node:*
           node --test .test-cache/d4-owned/*.js
-          node --test tests/tiny-sd-d4-policy.test.mjs
+          node --test tests/tiny-sd-d4-policy.test.mjs tests/tiny-sd-d4-selected-reproduction-policy.test.mjs
           npm run typecheck
-          python -m py_compile scripts/prepare-tiny-sd-d4-ort.py
+          python -m py_compile \
+            scripts/prepare-tiny-sd-d4-ort.py \
+            scripts/reproduce-tiny-sd-d3-selected-wasm.py
           node --check scripts/test-tiny-sd-d4-browser-wasm.mjs
           npm run check:model-weight-tracking
           test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' '*.npz' '*.f32' | wc -l)" -eq 0
@@ -241,7 +249,7 @@ jobs:
         run: |
           set -euo pipefail
           EXP_PY="${RUNNER_TEMP}/tiny-sd-d4-export-venv/bin/python"
-          "${EXP_PY}" scripts/prepare-tiny-sd-d3-wasm-quantized.py \
+          "${EXP_PY}" scripts/reproduce-tiny-sd-d3-selected-wasm.py \
             --fp32-dir "${RUNNER_TEMP}/tiny-sd-d4-fp32" \
             --d2-report "${GITHUB_WORKSPACE}/.test-cache/6.42d4/tiny-sd-d4-d2-components.json" \
             --output-dir "${RUNNER_TEMP}/tiny-sd-d4-d3-onnx" \
@@ -250,8 +258,15 @@ jobs:
           "${EXP_PY}" - <<'PY'
           import json
           report = json.load(open('.test-cache/6.42d4/tiny-sd-d4-d3-selected.json', encoding='utf-8'))
+          expected = {'text_encoder', 'unet', 'vae_decoder'}
+          accepted = {name: 'exact_fp16_storage' for name in expected}
           assert report['nativePassCount'] == 3
           assert report['blockedComponents'] == {}
+          assert report['selectionRule'] == 'PINNED_ACCEPTED_SCHEME_REPRODUCTION_NO_RESELECTION'
+          assert report['selectionStrategies'] == accepted
+          assert report['acceptedSelectionPolicyMatched'] is True
+          assert report['reselectionPerformed'] is False and report['fullStrategyMatrixExecuted'] is False
+          assert all(value['acceptedSelectionPolicyMatched'] is True for value in report['components'].values())
           assert all(value['transform']['scheme'] == 'EXACT_FP16_STORAGE_FP32_COMPUTE' for value in report['components'].values())
           PY
 
@@ -383,11 +398,13 @@ jobs:
     steps:
       - name: Require D4 ORT heavy acceptance when relevant
         env:
+          CLASSIFIER_RESULT: ${{ needs.classify_tiny_sd_relevance.result }}
           RELEVANT: ${{ needs.classify_tiny_sd_relevance.outputs.relevant }}
           CLASSIFICATION: ${{ needs.classify_tiny_sd_relevance.outputs.classification }}
           HEAVY_RESULT: ${{ needs.heavy_ort_memory_latency_feasibility.result }}
         run: |
           set -euo pipefail
+          test "${CLASSIFIER_RESULT}" = "success"
           if [ "${RELEVANT}" = "true" ]; then
             test "${CLASSIFICATION}" = "RELEVANT_HEAVY_ACCEPTANCE_REQUIRED"
             test "${HEAVY_RESULT}" = "success"

@@ -12,6 +12,7 @@ const EXACT_RELEVANT_PATHS = new Set([
   '.github/workflows/sprint-6.42d4-ort-conversion-smoke.yml',
   '.github/workflows/sprint-6.42d4-secure-threading.yml',
   '.github/workflows/sprint-6.42d4-tiny-sd-ort-memory.yml',
+  '.github/workflows/sprint-6.42d5-tiny-sd-pipeline.yml',
   'package.json',
   'package-lock.json',
   'npm-shrinkwrap.json',
@@ -72,8 +73,7 @@ function parseCli(argv) {
   return { githubOutput };
 }
 
-function readNullDelimitedStdin() {
-  const input = fs.readFileSync(0);
+function readNullDelimitedInput(input) {
   if (input.length === 0) return [];
   return input
     .toString('utf8')
@@ -100,7 +100,7 @@ const invokedAsCli = process.argv[1] && fileURLToPath(import.meta.url) === proce
 if (invokedAsCli) {
   try {
     const { githubOutput } = parseCli(process.argv.slice(2));
-    const result = classifyTinySdHeavyCi(readNullDelimitedStdin());
+    const result = classifyTinySdHeavyCi(readNullDelimitedInput(fs.readFileSync(0)));
     writeGithubOutputs(githubOutput, result);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
