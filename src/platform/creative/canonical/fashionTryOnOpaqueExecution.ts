@@ -276,6 +276,7 @@ function normalizeRgba(value: Uint8Array, width: number, height: number, label: 
   return Uint8Array.from(value);
 }
 function deepFreeze<T>(value: T): T {
+  if (ArrayBuffer.isView(value)) return value;
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
