@@ -195,6 +195,34 @@ test('F4b.6c.1b preserves typed Core domain errors and masks unexpected internal
   });
 });
 
+test('F4b.6c.1b rejects malformed internal success projection instead of publishing inconsistent authority', async () => {
+  await withServer(Object.freeze({ ...overRichAdmission, garmentRevision: 0 }), async base => {
+    const response = await fetch(`${base}/api/core/fashion/garments/${garmentId}/parametric-representation`, {
+      method: 'POST', headers: { ...bearerHeaders, 'Content-Type': 'application/json' }, body: requestBody(),
+    });
+    assert.equal(response.status, 500);
+    const body = await response.json() as any;
+    assert.equal(body.error, 'internal_error');
+    assert.equal(body.message, 'Manual PARAMETRIC admission request failed');
+  });
+});
+
+test('F4b.6c.1b malformed raw request-target cannot escape the adapter into the server listener', async () => {
+  let admits = 0;
+  const adapter = createManualParametricGarmentAdmissionHttpAdapter({
+    admission: { admit: async () => { admits += 1; throw new Error('must not execute'); } } as any,
+    auth: { verify: async () => { throw new Error('must not authenticate'); } },
+    config,
+    accepting: () => true,
+  });
+  const handled = await adapter(
+    { url: 'http://[', method: 'POST', headers: {} } as any,
+    {} as any,
+  );
+  assert.equal(handled, false);
+  assert.equal(admits, 0);
+});
+
 test('F4b.6c.1b enforces revision method media origin path body-size and shutdown contracts', async () => {
   await withServer(overRichAdmission, async (base, calls) => {
     const badRevision = await fetch(`${base}/api/core/fashion/garments/${garmentId}/parametric-representation`, {
