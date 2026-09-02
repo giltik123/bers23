@@ -40,3 +40,5 @@ jobs:
           grep -q "X-Content-Type-Options" scripts/verify-frontend-security-headers.mjs
           grep -q "X-Frame-Options" scripts/verify-frontend-security-headers.mjs
           grep -q "Referrer-Policy" scripts/verify-frontend-security-headers.mjs
+          grep -q "Strict-Transport-Security" scripts/verify-frontend-security-headers.mjs
+          grep -q "31536000" scripts/verify-frontend-security-headers.mjs
