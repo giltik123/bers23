@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { ArtifactAuthority } from '../server/core/artifacts/artifactAuthority.ts';
-import { SignedArtifactAuthority } from '../server/core/artifacts/signedArtifactAuthority.ts';
+import {
+  ArtifactAuthority,
+  StoredProjectImageUnavailableError,
+} from '../server/core/artifacts/artifactAuthority.ts';
+import {
+  ArtifactReferenceDeniedError,
+  SignedArtifactAuthority,
+} from '../server/core/artifacts/signedArtifactAuthority.ts';
 
 const scope = Object.freeze({ tenantId: 'tenant-evidence', userId: 'user-evidence', projectId: 'project-evidence' });
 const bytes = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -46,7 +52,7 @@ test('ArtifactAuthority resolves exact stored ORIGINAL evidence including SHA ov
   });
 });
 
-test('ArtifactAuthority resolves exact stored FINAL evidence but does not accept unrelated signed references', async () => {
+test('ArtifactAuthority resolves exact stored FINAL evidence and emits typed denial for unrelated signed references', async () => {
   const finalRow = Object.freeze({
     storageId: 'storage-final', projectId: scope.projectId, role: 'COMPOSITE', lifecycle: 'FINAL', width: 40, height: 60,
     encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes,
@@ -54,13 +60,21 @@ test('ArtifactAuthority resolves exact stored FINAL evidence but does not accept
   const { external, value } = authority(finalRow);
   const finalId = external.issueStoredFinal('storage-final', scope);
   assert.equal((await value.resolveStoredImageEvidence(scope, finalId)).storageId, 'storage-final');
-  await assert.rejects(() => value.resolveStoredImageEvidence(scope, external.issueStoredMask('storage-mask', scope)), /not trusted/i);
+  await assert.rejects(
+    () => value.resolveStoredImageEvidence(scope, external.issueStoredMask('storage-mask', scope)),
+    error => error instanceof ArtifactReferenceDeniedError,
+  );
 });
 
-test('ArtifactAuthority fails closed when stored evidence is missing or its scope/role/lifecycle/encoding drifts', async () => {
+test('ArtifactAuthority emits typed unavailability for a trusted stored-image claim without a durable row', async () => {
   const missing = authority(undefined);
-  await assert.rejects(() => missing.value.resolveStoredImageEvidence(scope, missing.external.issueStoredOriginal('storage-original', scope)), /unavailable/i);
+  await assert.rejects(
+    () => missing.value.resolveStoredImageEvidence(scope, missing.external.issueStoredOriginal('storage-original', scope)),
+    error => error instanceof StoredProjectImageUnavailableError,
+  );
+});
 
+test('ArtifactAuthority fails closed when stored evidence scope role lifecycle encoding or geometry drifts', async () => {
   for (const [name, row] of [
     ['project', { storageId: 'storage-original', projectId: 'other-project', role: 'ORIGINAL', lifecycle: 'IMMUTABLE', width: 40, height: 60, encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes }],
     ['role', { storageId: 'storage-original', projectId: scope.projectId, role: 'COMPOSITE', lifecycle: 'IMMUTABLE', width: 40, height: 60, encoding: 'PNG_RGBA8_LOSSLESS', contentType: 'image/png', bytes }],
@@ -75,4 +89,20 @@ test('ArtifactAuthority fails closed when stored evidence is missing or its scop
       name,
     );
   }
+});
+
+test('ArtifactAuthority does not disguise image-store infrastructure faults as signed-reference denial or missing evidence', async () => {
+  const external = new SignedArtifactAuthority('stored-image-evidence-secret', ['example.invalid'], () => 1_000);
+  const images = Object.freeze({ loadSource: async () => { throw new Error('database socket closed'); } });
+  const masks = Object.freeze({ load: async () => undefined });
+  const value = new ArtifactAuthority(external, masks as never, images as never);
+  const artifactId = external.issueStoredOriginal('storage-original', scope);
+
+  await assert.rejects(
+    () => value.resolveStoredImageEvidence(scope, artifactId),
+    error => error instanceof Error
+      && !(error instanceof ArtifactReferenceDeniedError)
+      && !(error instanceof StoredProjectImageUnavailableError)
+      && error.message === 'database socket closed',
+  );
 });

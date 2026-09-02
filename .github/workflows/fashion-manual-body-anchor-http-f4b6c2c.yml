@@ -1,0 +1,83 @@
+name: Fashion F4b.6c.2c manual body-anchor acquisition transport
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manual-body-anchor-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build browser plus Core transport
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle body-anchor and Artifact authority regressions
+        run: |
+          mkdir -p .test-cache/fashion-manual-body-anchor-http-f4b6c2c
+          npx esbuild tests/fashion-manual-body-anchor-http-f4b6c2c.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-body-anchor-http-f4b6c2c/http.test.mjs \
+            --external:node:*
+          npx esbuild tests/fashion-manual-body-anchor-client-errors-f4b6c2c.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-body-anchor-http-f4b6c2c/client-errors.test.mjs \
+            --external:node:*
+          npx esbuild tests/artifact-authority-stored-image-evidence.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-body-anchor-http-f4b6c2c/artifact-errors.test.mjs \
+            --external:node:*
+      - name: Prove exact source binding redaction browser mutation protections and typed client error semantics
+        run: node --test .test-cache/fashion-manual-body-anchor-http-f4b6c2c/*.test.mjs
+      - name: Prove one shared Fashion authority graph and closed browser boundary
+        run: |
+          grep -q "new ManualProjectBodyAnchorAcquisitionService" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "artifacts: input.artifacts" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "bodyAnchors," server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "manualBodyAnchorAcquisition," server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "manualBodyAnchorAcquisition: garmentMeshWarp.manualBodyAnchorAcquisition" server/core/composition/createProductionCore.ts
+          grep -q "production.fashion.manualBodyAnchorAcquisition" server/index.ts
+          grep -q "createManualProjectBodyAnchorHttpAdapter" server/index.ts
+          grep -q "const MANUAL_BODY_ANCHOR_PATH = /" server/index.ts
+          grep -q "MANUAL_BODY_ANCHOR_PATH.test(path)" server/index.ts
+          grep -q "const BODY_KEYS = Object.freeze(\['payload', 'sourceArtifactId'\]" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -q "assertBrowserMutationAllowed" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -q "forbidden_client_authority" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -q "invalid_body_anchor_payload" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
+          grep -q "body_anchor_source_unavailable" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
+          grep -q "ArtifactReferenceDeniedError" server/core/artifacts/signedArtifactAuthority.ts
+          grep -q "StoredProjectImageUnavailableError" server/core/artifacts/artifactAuthority.ts
+          ! grep -q "acquisitionSequence" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          ! grep -q "projectImageStorageId" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          ! grep -q "projectImageSha256" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          ! grep -E "providers|Billing|FAL_KEY|FASHN|tryonEngine" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -q "acquireManualBodyAnchors: (projectId, payload) => request" src/api/coreClient.js
+          ! grep -q "acquisitionSequence" src/api/coreClient.js
+          ! grep -q "projectImageStorageId" src/api/coreClient.js
+          ! grep -q "projectImageSha256" src/api/coreClient.js
+          node <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync('server/core/composition/createProductionCore.ts', 'utf8');
+          const start = source.indexOf('localExecution: Object.freeze({');
+          const end = source.indexOf('\n      transactions,', start);
+          if (start < 0 || end < 0) throw new Error('localExecution production surface not found');
+          const localExecution = source.slice(start, end);
+          if (localExecution.includes('manualBodyAnchorAcquisition')) throw new Error('manual body-anchor acquisition escaped into localExecution authority');
+          NODE

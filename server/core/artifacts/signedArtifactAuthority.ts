@@ -8,6 +8,15 @@ export type StoredFinalDeliveryClaim = Readonly<{ v: 1; location: 'STORED_FINAL_
 export type StoredOriginalIdClaim = Readonly<{ v: 1; location: 'STORED_ORIGINAL_ID'; storageId: string; tenantId: string; userId: string; projectId: string; role: 'ORIGINAL'; lifecycle: 'IMMUTABLE' }>;
 export type StoredOriginalDeliveryClaim = Readonly<{ v: 1; location: 'STORED_ORIGINAL_DELIVERY'; storageId: string; tenantId: string; userId: string; projectId: string; role: 'ORIGINAL'; lifecycle: 'IMMUTABLE'; exp: number }>;
 
+/** Expected fail-closed denial for a malformed, stale, expired, or wrong-scope signed Artifact reference. */
+export class ArtifactReferenceDeniedError extends Error {
+  readonly code = 'ARTIFACT_REFERENCE_DENIED';
+  constructor() {
+    super('Artifact reference is not trusted for this scope');
+    this.name = 'ArtifactReferenceDeniedError';
+  }
+}
+
 /** Verifies opaque, server-signed artifact references before exposing a storage URL to a provider. */
 export class SignedArtifactAuthority {
   readonly #secret: string; readonly #trustedHosts: readonly string[]; readonly #now: () => number;
@@ -52,4 +61,4 @@ export class SignedArtifactAuthority {
 function durableScope(scope: AuthenticatedScope & { projectId: string }) {
   return { tenantId: scope.tenantId, userId: scope.userId, projectId: scope.projectId };
 }
-function denied() { return new Error('Artifact reference is not trusted for this scope'); }
+function denied() { return new ArtifactReferenceDeniedError(); }
