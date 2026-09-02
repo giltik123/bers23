@@ -11,6 +11,8 @@ const REPRESENTATION_ID = '33333333-3333-4333-8333-333333333333';
 const ANCHOR_SET_ID = '44444444-4444-4444-8444-444444444444';
 const SOURCE_ARTIFACT_ID = 'signed-current-project-image';
 const SOURCE_STORAGE_ID = '55555555-5555-4555-8555-555555555555';
+const PRIMARY_VIEW_ID = '66666666-6666-4666-8666-666666666666';
+const STALE_VIEW_ID = '77777777-7777-4777-8777-777777777777';
 const SOURCE_SHA = 'a'.repeat(64);
 const AUTH = Object.freeze({ tenantId: 'tenant-a', userId: 'user-a' });
 const COMMAND = Object.freeze({ projectId: PROJECT_ID, sourceArtifactId: SOURCE_ARTIFACT_ID, garmentId: GARMENT_ID });
@@ -25,7 +27,7 @@ function representation(overrides: Record<string, unknown> = {}) {
     contentSha256: 'b'.repeat(64),
     byteSize: 123,
     storageBackend: 'POSTGRES_BYTEA_V1',
-    basisViewId: '66666666-6666-4666-8666-666666666666',
+    basisViewId: PRIMARY_VIEW_ID,
     generatorId: 'test.generator',
     generatorVersion: '1',
     validatorId: 'bers.parametric-topology-validator',
@@ -42,6 +44,7 @@ function createHarness(overrides: Readonly<{
   currentStorageId?: string | null;
   category?: string;
   garmentStatus?: 'ACTIVE' | 'ARCHIVED';
+  primaryViewId?: string;
   representations?: readonly any[];
   anchors?: readonly Readonly<{ anchor_set_id: string; acquisition_sequence: string; created_at_text?: string }>[];
   deriveError?: unknown;
@@ -74,6 +77,15 @@ function createHarness(overrides: Readonly<{
     pool: pool as any,
     artifacts: {
       async resolveStoredImageEvidence() { return source; },
+    },
+    garments: {
+      async get() {
+        return Object.freeze({
+          id: GARMENT_ID,
+          status: overrides.garmentStatus ?? 'ACTIVE',
+          primaryViewId: overrides.primaryViewId ?? PRIMARY_VIEW_ID,
+        }) as any;
+      },
     },
     wardrobe: {
       async get() {
@@ -147,7 +159,7 @@ test('F4b.6 readiness resolves server-owned representation and sequence-selected
 });
 
 test('F4b.6 readiness rejects a signed historical source before selecting execution evidence', async () => {
-  const harness = createHarness({ currentStorageId: '77777777-7777-4777-8777-777777777777' });
+  const harness = createHarness({ currentStorageId: STALE_VIEW_ID });
   const result = await harness.service.resolve(COMMAND, AUTH as any);
   assert.equal(result.status, 'STALE_SOURCE');
   assert.equal(harness.deriveCalls(), 0);
@@ -155,6 +167,27 @@ test('F4b.6 readiness rejects a signed historical source before selecting execut
 
 test('F4b.6 readiness fails closed when no admitted PARAMETRIC representation exists', async () => {
   const harness = createHarness({ representations: [representation({ admissionState: 'REVOKED', revokedAt: '2026-08-31T20:02:00.000Z' })] });
+  const result = await harness.service.resolve(COMMAND, AUTH as any);
+  assert.equal(result.status, 'REPRESENTATION_REQUIRED');
+  assert.equal(harness.deriveCalls(), 0);
+});
+
+test('F4b.6 readiness ignores a newer historical-basis representation before current-primary ordering', async () => {
+  const harness = createHarness({
+    representations: [
+      representation({ id: '88888888-8888-4888-8888-888888888888', basisViewId: STALE_VIEW_ID, admittedAt: '2026-08-31T21:00:00.000Z' }),
+      representation(),
+    ],
+  });
+  const result = await harness.service.resolve(COMMAND, AUTH as any);
+  assert.equal(result.status, 'READY');
+  if (result.status !== 'READY') throw new Error('expected current-primary READY');
+  assert.equal(result.representationId, REPRESENTATION_ID);
+  assert.equal(harness.deriveCalls(), 1);
+});
+
+test('F4b.6 readiness treats historical-basis-only representation evidence as missing', async () => {
+  const harness = createHarness({ representations: [representation({ basisViewId: STALE_VIEW_ID })] });
   const result = await harness.service.resolve(COMMAND, AUTH as any);
   assert.equal(result.status, 'REPRESENTATION_REQUIRED');
   assert.equal(harness.deriveCalls(), 0);
