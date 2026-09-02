@@ -36,8 +36,12 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-manual-body-anchor-http-f4b6c2c/http.test.mjs \
             --external:node:*
-      - name: Prove exact source binding redaction and browser mutation protections
-        run: node --test .test-cache/fashion-manual-body-anchor-http-f4b6c2c/http.test.mjs
+          npx esbuild tests/fashion-manual-body-anchor-client-errors-f4b6c2c.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-body-anchor-http-f4b6c2c/client-errors.test.mjs \
+            --external:node:*
+      - name: Prove exact source binding redaction browser mutation protections and client error semantics
+        run: node --test .test-cache/fashion-manual-body-anchor-http-f4b6c2c/*.test.mjs
       - name: Prove one shared Fashion authority graph and closed browser boundary
         run: |
           grep -q "new ManualProjectBodyAnchorAcquisitionService" server/core/composition/createProductionGarmentMeshWarp.ts
@@ -52,6 +56,8 @@ jobs:
           grep -q "const BODY_KEYS = Object.freeze(\['payload', 'sourceArtifactId'\]" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -q "assertBrowserMutationAllowed" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -q "forbidden_client_authority" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -q "invalid_body_anchor_payload" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
+          grep -q "body_anchor_source_unavailable" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
           ! grep -q "acquisitionSequence" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           ! grep -q "projectImageStorageId" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           ! grep -q "projectImageSha256" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
