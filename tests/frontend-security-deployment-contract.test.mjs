@@ -93,6 +93,32 @@ test('live verifier accepts a direct HTML response only when HTTP security heade
   });
 });
 
+test('HTTPS deployment requires at least one year of HSTS while localhost HTTP does not fake it', async () => {
+  const fetcher = async (_url, _options) => new Response('<!doctype html><html>BERS</html>', {
+    status: 200,
+    headers: {
+      ...goodHeaders(),
+      'Content-Type': 'text/html; charset=utf-8',
+      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+    },
+  });
+  const accepted = await verifyFrontendSecurityHeaders({ frontendUrl: 'https://app.example.test/', fetcher });
+  assert.equal(accepted.status, 200);
+
+  const weakFetcher = async (_url, _options) => new Response('<html>BERS</html>', {
+    status: 200,
+    headers: {
+      ...goodHeaders(),
+      'Content-Type': 'text/html',
+      'Strict-Transport-Security': 'max-age=300',
+    },
+  });
+  await assert.rejects(
+    () => verifyFrontendSecurityHeaders({ frontendUrl: 'https://app.example.test/', fetcher: weakFetcher }),
+    /max-age must be at least 31536000/u,
+  );
+});
+
 test('live verifier rejects meta-only CSP because frame-ancestors requires an HTTP response header', async () => {
   await withFrontend((request, response) => {
     response.statusCode = 200;
