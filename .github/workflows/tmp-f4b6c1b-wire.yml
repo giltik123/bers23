@@ -36,8 +36,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add server/core/composition/createProductionCore.ts server/index.ts src/api/coreClient.js
+          git add server/core/composition/createProductionCore.ts server/index.ts src/api/coreClient.js server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           test -n "$(git diff --cached --name-only)"
-          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "3"
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "4"
           git commit -m "Wire manual PARAMETRIC transport through production Core"
           git push origin HEAD:${{ github.ref_name }}
