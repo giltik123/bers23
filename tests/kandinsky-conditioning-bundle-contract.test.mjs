@@ -34,10 +34,12 @@ function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
       numImagesPerPrompt: 1,
       numInferenceSteps: 25,
       guidanceScale: 4,
+      outputType: 'pt',
     },
     toolchain: {
       containerImageDigest: `sha256:${'d'.repeat(64)}`,
       pythonVersion: '3.11.9-fixture',
+      diffusersVersion: '0.18.0.dev0',
       torchVersion: '2.0.1+cpu-fixture',
       transformersVersion: '4.30.2-fixture',
       numpyVersion: '1.24.4-fixture',
@@ -53,6 +55,8 @@ function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
       ompNumThreads: 1,
       mklNumThreads: 1,
       seed: 20260706,
+      generatorPolicy: 'TORCH_CPU_GENERATOR_SINGLE_SEED',
+      latentPolicy: 'NO_EXTERNAL_LATENTS_PIPELINE_RANDN',
     },
     conditioning: {
       candidateId,
@@ -96,11 +100,17 @@ test('D2a binds exact D1 prior weight and executable config identities', () => {
 });
 
 test('D2a freezes the historical executable prior knobs instead of trusting the stale docstring default', () => {
-  for (const [field, value] of [['numImagesPerPrompt', 2], ['numInferenceSteps', 100], ['guidanceScale', 3.5]]) {
+  for (const [field, value] of [['numImagesPerPrompt', 2], ['numInferenceSteps', 100], ['guidanceScale', 3.5], ['outputType', 'np']]) {
     const manifest = validManifest();
     manifest.historicalPipeline[field] = value;
     assert.throws(() => assertKandinskyConditioningManifest(manifest, d1), new RegExp(`historicalPipeline\\.${field} mismatch`));
   }
+});
+
+test('D2a binds the installed Diffusers version to the pinned historical source identity', () => {
+  const manifest = validManifest();
+  manifest.toolchain.diffusersVersion = '0.19.0';
+  assert.throws(() => assertKandinskyConditioningManifest(manifest, d1), /toolchain\.diffusersVersion mismatch/);
 });
 
 test('D2a requires CPU FP32 single-thread deterministic build identity and exact toolchain versions', () => {
@@ -118,6 +128,16 @@ test('D2a requires CPU FP32 single-thread deterministic build identity and exact
     mutate(manifest);
     assert.throws(() => assertKandinskyConditioningManifest(manifest, d1));
   }
+});
+
+test('D2a closes generator and latent policy so seed identity cannot be bypassed by external latents', () => {
+  const generatorDrift = validManifest();
+  generatorDrift.determinism.generatorPolicy = 'GLOBAL_TORCH_RNG';
+  assert.throws(() => assertKandinskyConditioningManifest(generatorDrift, d1), /determinism\.generatorPolicy mismatch/);
+
+  const latentDrift = validManifest();
+  latentDrift.determinism.latentPolicy = 'EXTERNAL_LATENTS';
+  assert.throws(() => assertKandinskyConditioningManifest(latentDrift, d1), /determinism\.latentPolicy mismatch/);
 });
 
 test('D2a prevents zero-image and explicit-negative mechanisms from being relabeled', () => {
@@ -142,6 +162,10 @@ test('D2a closes tensor names order dtype shape and bundle identity', () => {
   const inferredShape = validManifest();
   inferredShape.bundle.tensors.negative_image_embeds.shape = [];
   assert.throws(() => assertKandinskyConditioningManifest(inferredShape, d1), /actual positive dimensions/);
+
+  const mismatchedShapes = validManifest();
+  mismatchedShapes.bundle.tensors.negative_image_embeds.shape = [2, 1280];
+  assert.throws(() => assertKandinskyConditioningManifest(mismatchedShapes, d1), /embedding shapes must match/);
 
   const uppercaseSha = validManifest();
   uppercaseSha.bundle.sha256 = 'B'.repeat(64);
