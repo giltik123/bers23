@@ -179,7 +179,7 @@ export class ManagedGarmentLocalExecutionInputAuthority {
     const representation = await this.dependencies.representations.get(scope, garmentId, representationId);
     if (!representation) throw unavailable();
     if (representation.admissionState !== 'ADMITTED') throw stateMismatch('Managed Garment representation is not admitted');
-    if (!garment.views.some(view => view.id.toLowerCase() === representation.basisViewId.toLowerCase())) {
+    if (representation.basisViewId.toLowerCase() !== garment.primaryViewId.toLowerCase()) {
       throw stateMismatch('Managed Garment representation basis view is no longer current');
     }
     const payload = await this.dependencies.representations.loadPayload(scope, garmentId, representationId);
