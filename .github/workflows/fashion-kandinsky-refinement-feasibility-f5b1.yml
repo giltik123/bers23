@@ -15,6 +15,12 @@ on:
       - "tests/kandinsky-refinement-feasibility-policy.test.mjs"
       - "docs/fashion-f5b1-config-inventory.md"
       - "docs/fashion-f5b1-config-assertion-plan.md"
+      - "server/core/localExecution/productionLocalModelPolicy.ts"
+      - "server/core/localExecution/productionLocalExecutorPolicy.ts"
+      - "src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js"
+      - "src/lib/tryon/tryonEngine.js"
+      - "**/*.safetensors"
+      - "**/*.bin"
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
