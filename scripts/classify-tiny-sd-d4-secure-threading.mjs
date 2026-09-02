@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
+import { productionBrowserMetaCsp } from '../config/frontendSecurityPolicy.mjs';
 
 const EXPECTED_ORT_WEB_VERSION = '1.27.0';
 const ORT_ENV_SOURCE = Object.freeze({
@@ -27,6 +28,8 @@ const packageJson = JSON.parse(await readFile(resolve('package.json'), 'utf8'));
 const installedPackageJson = JSON.parse(await readFile(resolve('node_modules/onnxruntime-web/package.json'), 'utf8'));
 const factory = await readFile(resolve('src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts'), 'utf8');
 const vite = await readFile(resolve('vite.config.js'), 'utf8');
+const cspPolicySource = await readFile(resolve('config/frontendSecurityPolicy.mjs'), 'utf8');
+const browserMetaCsp = productionBrowserMetaCsp('/api/core');
 
 assert.equal(packageJson.dependencies?.['onnxruntime-web'], EXPECTED_ORT_WEB_VERSION, 'package.json must pin onnxruntime-web exactly');
 assert.equal(installedPackageJson.version, EXPECTED_ORT_WEB_VERSION, 'installed onnxruntime-web version changed');
@@ -35,9 +38,15 @@ assert.match(factory, /BROWSER_WASM_PROXY = false/);
 assert.match(factory, /BROWSER_WASM_WORKER_POLICY = 'DISABLED_PENDING_SEPARATE_SECURITY_REVIEW'/);
 assert.doesNotMatch(factory, /new Worker\s*\(/);
 assert.doesNotMatch(factory, /trustedTypes\.createPolicy|createPolicy\s*\(/);
-assert.match(vite, /"worker-src 'self' blob:"/);
-assert.match(vite, /"require-trusted-types-for 'script'"/);
-assert.match(vite, /"trusted-types 'none'"/);
+
+// The browser CSP is now a shared deployment contract rather than Vite-local text.
+// Prove both the effective policy and that Vite consumes that exact source of truth.
+assert.match(browserMetaCsp, /(?:^|;)\s*worker-src 'self' blob:(?:;|$)/);
+assert.match(browserMetaCsp, /(?:^|;)\s*require-trusted-types-for 'script'(?:;|$)/);
+assert.match(browserMetaCsp, /(?:^|;)\s*trusted-types 'none'(?:;|$)/);
+assert.match(vite, /from '\.\/config\/frontendSecurityPolicy\.mjs'/);
+assert.match(vite, /productionBrowserMetaCsp\(env\.VITE_CORE_API_URL\)/);
+assert.doesNotMatch(vite, /worker-src\s+/);
 
 const sourceDigest = (source) => createHash('sha256').update(source).digest('hex');
 const report = {
@@ -65,7 +74,8 @@ const report = {
     proxy: false,
     workerPolicy: 'DISABLED_PENDING_SEPARATE_SECURITY_REVIEW',
     factorySourceSha256: sourceDigest(factory),
-    cspSourceSha256: sourceDigest(vite),
+    cspSourceSha256: sourceDigest(cspPolicySource),
+    viteIntegrationSourceSha256: sourceDigest(vite),
     csp: {
       workerSrc: "'self' blob:",
       requireTrustedTypesForScript: true,

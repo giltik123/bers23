@@ -1,0 +1,83 @@
+name: Security frontend deployment contract
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  frontend-deployment-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove frontend security policy and live-header verifier
+        run: node --test tests/frontend-security-deployment-contract.test.mjs tests/auth-client-contract.test.mjs
+      - name: Build production browser bundle
+        run: npm run build
+      - name: Prove built HTML contains exact meta CSP but no false frame-ancestors claim
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFile } from 'node:fs/promises';
+          import { productionBrowserMetaCsp } from './config/frontendSecurityPolicy.mjs';
+
+          const html = await readFile('dist/index.html', 'utf8');
+          assert.ok(html.trim(), 'dist/index.html must be non-empty');
+          const metaTags = html.match(/<meta\b[^>]*>/giu) ?? [];
+          const cspTag = metaTags.find(tag => /\bhttp-equiv\s*=\s*(["'])Content-Security-Policy\1/iu.test(tag));
+          assert.ok(cspTag, 'built HTML must contain a Content-Security-Policy meta element');
+          const content = /\bcontent\s*=\s*(["'])([\s\S]*?)\1/iu.exec(cspTag);
+          assert.ok(content, 'CSP meta element must have a quoted content attribute');
+          const decoded = content[2]
+            .replaceAll('&quot;', '"')
+            .replaceAll('&#39;', "'")
+            .replaceAll('&#x27;', "'")
+            .replaceAll('&lt;', '<')
+            .replaceAll('&gt;', '>')
+            .replaceAll('&amp;', '&');
+          assert.equal(decoded, productionBrowserMetaCsp('/api/core'));
+          assert.doesNotMatch(decoded, /frame-ancestors/iu);
+          console.log('Built frontend meta CSP: exact shared-policy match');
+          NODE
+      - name: Prove deployment contract remains HTTP-header owned
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFile } from 'node:fs/promises';
+          import {
+            productionBrowserMetaCsp,
+            productionBrowserResponseCsp,
+            requiredProductionFrontendHeaders,
+          } from './config/frontendSecurityPolicy.mjs';
+
+          const headers = requiredProductionFrontendHeaders('/api/core');
+          assert.deepEqual(Object.keys(headers).sort(), [
+            'Content-Security-Policy',
+            'Referrer-Policy',
+            'X-Content-Type-Options',
+            'X-Frame-Options',
+          ].sort());
+          assert.equal(headers['X-Content-Type-Options'], 'nosniff');
+          assert.equal(headers['X-Frame-Options'], 'DENY');
+          assert.equal(headers['Referrer-Policy'], 'no-referrer');
+          assert.equal(headers['Content-Security-Policy'], productionBrowserResponseCsp('/api/core'));
+          assert.match(headers['Content-Security-Policy'], /frame-ancestors 'none'/u);
+          assert.doesNotMatch(productionBrowserMetaCsp('/api/core'), /frame-ancestors/u);
+
+          const verifier = await readFile('scripts/verify-frontend-security-headers.mjs', 'utf8');
+          assert.match(verifier, /strict-transport-security/u);
+          assert.match(verifier, /MIN_PRODUCTION_HSTS_SECONDS\s*=\s*31_536_000/u);
+          console.log('Frontend HTTP-header ownership: shared contract + HSTS verifier bound');
+          NODE
