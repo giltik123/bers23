@@ -157,30 +157,31 @@ test('F4b.6b.4b minimal binary envelopes contain kernel data but no reusable Fas
   ]) assert.equal(transportText.includes(forbidden), false, forbidden);
 });
 
-test('F4b.6b.4b prepared mesh executor is pixel-identical and submit carries only opaque ticket identity plus latency', async () => {
+test('F4b.6b.4b prepared mesh executor is pixel-identical and sends one identifier-minimal candidate', async () => {
   const envelopeBytes = encodeFashionTryOnMeshExecutionEnvelope(meshEnvelope);
   const expected = garmentMeshWarpRgba8(basis, 2, 2, {
     sourcePointsQ16, destinationPointsQ16, triangles, outputWidth: 2, outputHeight: 2,
   });
-  const calls: any = { loads: [], uploads: [], submits: [] };
+  const calls: any = { loads: [], submits: [] };
   let clock = 100;
   const executor = new CorePreparedGarmentMeshWarp(projectId, {
     loadPreparedGarmentMeshWarpInput: async payload => { calls.loads.push(payload); return envelopeBytes; },
-    uploadPreparedGarmentMeshWarpImage: async payload => {
-      calls.uploads.push(payload);
-      return { status: 'STORED', mimeType: 'image/png', width: 2, height: 2, sizeBytes: payload.bytes.byteLength };
-    },
-    submitPreparedGarmentMeshWarp: async payload => { calls.submits.push(payload); return { status: 'SUCCESS' }; },
+    submitPreparedGarmentMeshWarpCandidate: async payload => { calls.submits.push(payload); return { status: 'SUCCESS' }; },
   }, () => { const value = clock; clock += 7; return value; }, () => 1_000);
 
   const result = await executor.run(meshGrant());
   assert.deepEqual(result.preview.data, expected);
   assert.equal(result.latencyMs, 7);
   assert.deepEqual(calls.loads, [{ ticketId: meshTicketId, projectId }]);
-  assert.equal(calls.uploads.length, 1);
-  assert.deepEqual(calls.submits, [{ ticketId: meshTicketId, projectId, latencyMs: 7 }]);
+  assert.equal(calls.submits.length, 1);
+  assert.equal(calls.submits[0].ticketId, meshTicketId);
+  assert.equal(calls.submits[0].projectId, projectId);
+  assert.equal(calls.submits[0].latencyMs, 7);
+  assert.ok(calls.submits[0].bytes instanceof Uint8Array);
+  assert.ok(calls.submits[0].bytes.byteLength > 0);
+  const metadataOnly = { ...calls.submits[0], bytes: '<png>' };
   for (const forbidden of ['uploadId','nonce','stepId','workflowId','requestId','executor','representationId','anchorSetId','layerId']) {
-    assert.equal(JSON.stringify(calls.submits).includes(forbidden), false, forbidden);
+    assert.equal(JSON.stringify(metadataOnly).includes(forbidden), false, forbidden);
   }
 });
 
@@ -195,39 +196,38 @@ test('F4b.6b.4b prepared texture executor is pixel-identical and never receives 
       colorSpacePolicy: producerParameters.colorSpacePolicy,
     },
   );
-  const calls: any = { loads: [], uploads: [], submits: [] };
+  const calls: any = { loads: [], submits: [] };
   let clock = 200;
   const executor = new CorePreparedGarmentTextureComposite(projectId, {
     loadPreparedGarmentTextureCompositeInput: async payload => { calls.loads.push(payload); return envelopeBytes; },
-    uploadPreparedGarmentTextureCompositeImage: async payload => {
-      calls.uploads.push(payload);
-      return { status: 'STORED', mimeType: 'image/png', width: 2, height: 2, sizeBytes: payload.bytes.byteLength };
-    },
-    submitPreparedGarmentTextureComposite: async payload => { calls.submits.push(payload); return { status: 'SUCCESS' }; },
+    submitPreparedGarmentTextureCompositeCandidate: async payload => { calls.submits.push(payload); return { status: 'SUCCESS' }; },
   }, () => { const value = clock; clock += 11; return value; }, () => 1_000);
 
   const result = await executor.run(textureGrant());
   assert.deepEqual(result.preview.data, expected);
   assert.equal(result.latencyMs, 11);
   assert.deepEqual(calls.loads, [{ ticketId: textureTicketId, projectId }]);
-  assert.deepEqual(calls.submits, [{ ticketId: textureTicketId, projectId, latencyMs: 11 }]);
+  assert.equal(calls.submits.length, 1);
+  assert.equal(calls.submits[0].ticketId, textureTicketId);
+  assert.equal(calls.submits[0].projectId, projectId);
+  assert.equal(calls.submits[0].latencyMs, 11);
+  assert.ok(calls.submits[0].bytes instanceof Uint8Array);
   assert.equal('artifactId' in result, false);
   assert.equal('layerId' in result, false);
-  assert.equal(JSON.stringify(calls.submits).includes('uploadId'), false);
+  assert.equal('uploadId' in calls.submits[0], false);
 });
 
-test('F4b.6b.4b grant phase expiry geometry and over-rich server projections fail before upload or submit', async () => {
+test('F4b.6b.4b grant phase expiry geometry and over-rich server projections fail before candidate submission', async () => {
   const meshBytes = encodeFashionTryOnMeshExecutionEnvelope(meshEnvelope);
-  const calls = { uploads: 0, submits: 0 };
+  const calls = { submits: 0 };
   const executor = new CorePreparedGarmentMeshWarp(projectId, {
     loadPreparedGarmentMeshWarpInput: async () => meshBytes,
-    uploadPreparedGarmentMeshWarpImage: async () => { calls.uploads += 1; return {}; },
-    submitPreparedGarmentMeshWarp: async () => { calls.submits += 1; return {}; },
+    submitPreparedGarmentMeshWarpCandidate: async () => { calls.submits += 1; return {}; },
   }, () => 1, () => 1_000);
 
   await assert.rejects(() => executor.run(textureGrant()), /phase is invalid/i);
   await assert.rejects(() => executor.run(meshGrant({ expiresAt: 1_000 })), /expired/i);
   await assert.rejects(() => executor.run(meshGrant({ outputWidth: 3 })), /payload geometry/i);
   await assert.rejects(() => executor.run({ ...meshGrant(), representationId: '55555555-5555-4555-8555-555555555555' }), /unknown or missing fields/i);
-  assert.deepEqual(calls, { uploads: 0, submits: 0 });
+  assert.equal(calls.submits, 0);
 });
