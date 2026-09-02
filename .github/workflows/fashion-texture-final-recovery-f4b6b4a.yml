@@ -1,0 +1,50 @@
+name: Fashion F4b.6b.4a committed texture FINAL recovery
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  texture-final-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core recovery authority
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle recovery and accepted submission authority tests
+        run: |
+          mkdir -p .test-cache/fashion-texture-final-recovery
+          npx esbuild tests/fashion-texture-final-recovery-f4b6b4a.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-texture-final-recovery/recovery.test.mjs \
+            --external:node:* --external:sharp --external:pg
+          npx esbuild tests/garment-texture-composite-submission-authority.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-texture-final-recovery/submission.test.mjs \
+            --external:node:* --external:sharp --external:pg
+      - name: Prove committed FINAL recovery and existing byte-exact submission law
+        run: node --test --test-concurrency=1 .test-cache/fashion-texture-final-recovery/*.test.mjs
+      - name: Prove read-only zero-provider recovery boundary
+        run: |
+          grep -q "getByIdempotencyKeyV2" server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          grep -q "loadFinalByExecution" server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          grep -q "assertGarmentTextureCompositeTicket" server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          ! grep -E "INSERT|UPDATE|DELETE|providers|Billing|FAL_KEY|FASHN" server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
