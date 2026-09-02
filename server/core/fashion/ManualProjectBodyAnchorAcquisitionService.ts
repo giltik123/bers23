@@ -3,6 +3,7 @@ import type { AuthenticatedScope } from '../application/creativeExecutionService
 import {
   BODY_ANCHOR_COORDINATE_SPACE,
   BODY_ANCHOR_SCHEMA_ID,
+  BodyAnchorGeometryError,
   bodyAnchorPayloadSha256,
   normalizeBodyAnchorPayload,
 } from './bodyAnchorGeometry.ts';
@@ -57,11 +58,29 @@ export class ManualProjectBodyAnchorAcquisitionService {
     command: ManualProjectBodyAnchorAcquisitionCommand,
   ): Promise<ManualProjectBodyAnchorAcquisitionResult> {
     const normalized = normalizeCommand(command);
+    let payload;
+    try {
+      payload = normalizeBodyAnchorPayload(normalized.payload);
+    } catch (error) {
+      if (error instanceof BodyAnchorGeometryError) {
+        throw acquisitionError(400, 'invalid_body_anchor_payload', error.message);
+      }
+      throw error;
+    }
+
     const projectScope = Object.freeze({ ...auth, projectId: normalized.projectId });
     const owner = Object.freeze({ tenantId: auth.tenantId, userId: auth.userId });
-    const source = await this.dependencies.artifacts.resolveStoredImageEvidence(projectScope, normalized.sourceArtifactId);
+    let source: StoredProjectImageEvidence;
+    try {
+      source = await this.dependencies.artifacts.resolveStoredImageEvidence(projectScope, normalized.sourceArtifactId);
+    } catch {
+      throw acquisitionError(
+        404,
+        'body_anchor_source_unavailable',
+        'Canonical Project source is unavailable for manual body-anchor acquisition',
+      );
+    }
     assertResolvedProjectImage(source, normalized.projectId);
-    const payload = normalizeBodyAnchorPayload(normalized.payload);
     const expectedPayloadSha256 = bodyAnchorPayloadSha256(payload);
 
     const anchorSet = await this.dependencies.bodyAnchors.createForExpectedImage(
