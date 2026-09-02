@@ -29,10 +29,9 @@ export async function verifyFrontendSecurityHeaders(input) {
   }
   assertProductionFrontendResponseCsp(csp, coreApiUrl);
 
-  const nosniff = response.headers.get('x-content-type-options');
-  if (nosniff?.trim().toLowerCase() !== 'nosniff') {
-    throw new Error('Frontend is missing X-Content-Type-Options: nosniff');
-  }
+  assertExactHeader(response.headers, 'x-content-type-options', 'nosniff');
+  assertExactHeader(response.headers, 'x-frame-options', 'DENY');
+  assertExactHeader(response.headers, 'referrer-policy', 'no-referrer');
 
   // Consume the body so a successful verification also proves the deployed root
   // is an actual retrievable HTML document, not a headers-only synthetic response.
@@ -45,6 +44,17 @@ export async function verifyFrontendSecurityHeaders(input) {
     status: response.status,
     requiredHeaders: requiredProductionFrontendHeaders(coreApiUrl),
   });
+}
+
+function assertExactHeader(headers, name, expected) {
+  const actual = headers.get(name);
+  if (actual?.trim().toLowerCase() !== expected.toLowerCase()) {
+    throw new Error(`Frontend is missing ${canonicalHeaderName(name)}: ${expected}`);
+  }
+}
+
+function canonicalHeaderName(name) {
+  return name.split('-').map(part => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part).join('-');
 }
 
 function normalizeFrontendUrl(value) {
