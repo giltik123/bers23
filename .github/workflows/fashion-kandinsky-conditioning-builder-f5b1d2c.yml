@@ -1,0 +1,66 @@
+name: Fashion F5b.1 D2c conditioning builder contract
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-kandinsky-conditioning-builder-f5b1d2c.yml"
+      - "scripts/kandinsky-conditioning-builder.py"
+      - "scripts/_kandinsky-conditioning-builder-impl.py"
+      - "scripts/kandinsky-conditioning-finalize-manifest.mjs"
+      - "tests/kandinsky-conditioning-builder-entry.test.py"
+      - "tests/kandinsky-conditioning-finalizer.test.mjs"
+      - "docs/fashion-f5b1-d2c-conditioning-builder.md"
+      - "scripts/kandinsky-conditioning-bundle-contract.mjs"
+      - "scripts/kandinsky-conditioning-prompt-contract.mjs"
+      - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  builder-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile stdlib-only builder boundary
+        run: |
+          python -m py_compile scripts/kandinsky-conditioning-builder.py scripts/_kandinsky-conditioning-builder-impl.py
+          python -m unittest tests/kandinsky-conditioning-builder-entry.test.py
+      - name: Prove D2c evidence finalization re-enters accepted D2a and D2b contracts
+        run: node --test tests/kandinsky-conditioning-finalizer.test.mjs
+      - name: Prove expensive prior generation remains offline and absent from CI
+        run: |
+          set -euo pipefail
+          ENTRY=scripts/kandinsky-conditioning-builder.py
+          IMPL=scripts/_kandinsky-conditioning-builder-impl.py
+          grep -q 'actual != expected' "$ENTRY"
+          grep -q 'entry.is_symlink' "$ENTRY"
+          grep -q 'hashBeforeUseRequired' "$IMPL"
+          grep -q 'local_files_only=True' "$IMPL"
+          grep -q 'use_safetensors=True' "$IMPL"
+          grep -q 'torch_dtype=torch.float32' "$IMPL"
+          grep -q 'torch.set_num_threads(1)' "$IMPL"
+          grep -q 'torch.set_num_interop_threads(1)' "$IMPL"
+          grep -q 'torch.use_deterministic_algorithms(True)' "$IMPL"
+          grep -q 'network access is forbidden' "$IMPL"
+          grep -q 'PRIOR_PIPELINE_GIT_BLOB_SHA1 = "3b9974a5dd70e8b775caa01efab6b637ff22d9e5"' "$IMPL"
+          grep -q 'conditioning prompt contract SHA-256 does not match' "$IMPL"
+          ! grep -R -E 'from .*_kandinsky-conditioning-builder-impl|_kandinsky-conditioning-builder-impl.py' src server tests --exclude='kandinsky-conditioning-builder-entry.test.py'
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          git diff --check
