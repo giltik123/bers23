@@ -1,0 +1,60 @@
+name: Fashion F4b.6c.1b manual PARAMETRIC HTTP admission transport
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manual-parametric-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build browser plus Core transport
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle transport regressions
+        run: |
+          mkdir -p .test-cache/fashion-manual-parametric-http-f4b6c1b
+          npx esbuild tests/fashion-manual-parametric-http-f4b6c1b.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-parametric-http-f4b6c1b/http.test.mjs \
+            --external:node:*
+      - name: Prove request authority response redaction and browser mutation protections
+        run: node --test .test-cache/fashion-manual-parametric-http-f4b6c1b/http.test.mjs
+      - name: Prove one production Fashion graph and no execution/provider authority
+        run: |
+          grep -q "new ManualParametricGarmentAdmissionService(representations)" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "manualParametricAdmission," server/core/composition/createProductionGarmentMeshWarp.ts
+          ! grep -q "Object.defineProperty(execution, 'manualParametricAdmission'" server/core/composition/createProductionGarmentMeshWarp.ts
+          grep -q "fashion: Object.freeze" server/core/composition/createProductionCore.ts
+          grep -q "manualParametricAdmission: garmentMeshWarp.manualParametricAdmission" server/core/composition/createProductionCore.ts
+          grep -q "production.fashion.manualParametricAdmission" server/index.ts
+          grep -q "createManualParametricGarmentAdmissionHttpAdapter" server/index.ts
+          grep -q "path.startsWith('/api/core/fashion/garments/')" server/index.ts
+          grep -q "input.admission.admit" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          grep -q "assertBrowserMutationAllowed" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          grep -q "forbidden_client_authority" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          ! grep -E "PostgresGarment(Store|RepresentationStore)|providers|Billing|FAL_KEY|FASHN|tryonEngine" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          ! grep -q "representationId:" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          ! grep -q "contentSha256:" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          ! grep -q "basisViewId:" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          grep -q "admitManualParametricRepresentation: (garmentId, payload) => request" src/api/coreClient.js
+          grep -q "checkTryOnReadiness: (payload) => request('/fashion/try-on/readiness'" src/api/coreClient.js
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
