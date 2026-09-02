@@ -74,19 +74,22 @@ export function requiredProductionFrontendHeaders(coreApiUrl = '/api/core') {
   return Object.freeze({
     'Content-Security-Policy': productionBrowserResponseCsp(coreApiUrl),
     'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
   });
 }
 
 function resolveCoreConnectSources(value) {
   const candidate = String(value || '/api/core').trim();
-  if (!candidate || candidate.startsWith('/')) return Object.freeze(["'self'"]);
+  if (!candidate) return Object.freeze(["'self'"]);
+  if (candidate.startsWith('/') && !candidate.startsWith('//')) return Object.freeze(["'self'"]);
   let url;
   try { url = new URL(candidate); }
-  catch { throw new Error('VITE_CORE_API_URL must be a valid relative path or absolute URL'); }
+  catch { throw new Error('VITE_CORE_API_URL must be a root-relative path or absolute URL'); }
   const localHttp = url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
   if (url.protocol !== 'https:' && !localHttp) throw new Error('VITE_CORE_API_URL must be relative or HTTPS outside localhost');
   if (url.username || url.password) throw new Error('VITE_CORE_API_URL must not contain credentials');
-  if (url.hash) throw new Error('VITE_CORE_API_URL must not contain a fragment');
+  if (url.search || url.hash) throw new Error('VITE_CORE_API_URL must not contain a query or fragment');
   return Object.freeze(["'self'", url.origin]);
 }
 
