@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import type { ArtifactAuthority, StoredProjectImageEvidence } from '../artifacts/artifactAuthority.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import type { GarmentDestinationMesh } from './bodyAnchorGeometry.ts';
+import type { PostgresGarmentStore } from './postgresGarmentStore.ts';
 import {
   garmentCategoryGroup,
   type GarmentCategoryGroup,
@@ -72,6 +73,7 @@ export type ResolvedFashionTryOnEvidence = Readonly<{
 export type FashionTryOnReadinessResolution = ResolvedFashionTryOnEvidence | FashionTryOnReadinessFailure;
 
 type ArtifactReader = Pick<ArtifactAuthority, 'resolveStoredImageEvidence'>;
+type GarmentReader = Pick<PostgresGarmentStore, 'get'>;
 type WardrobeReader = Pick<PostgresGarmentWardrobeStore, 'get'>;
 type RepresentationReader = Pick<PostgresGarmentRepresentationStore, 'list'>;
 type BodyAnchorAuthority = Pick<PostgresProjectBodyAnchorStore, 'deriveDestinationMesh'>;
@@ -79,6 +81,7 @@ type BodyAnchorAuthority = Pick<PostgresProjectBodyAnchorStore, 'deriveDestinati
 export type FashionTryOnReadinessDependencies = Readonly<{
   pool: Pool;
   artifacts: ArtifactReader;
+  garments: GarmentReader;
   wardrobe: WardrobeReader;
   representations: RepresentationReader;
   bodyAnchors: BodyAnchorAuthority;
@@ -136,12 +139,20 @@ export class FashionTryOnReadinessService {
     if (!currentStorageId) return failure(normalized, 'SOURCE_UNAVAILABLE');
     if (currentStorageId !== source.storageId) return failure(normalized, 'STALE_SOURCE');
 
-    const wardrobe = await this.dependencies.wardrobe.get(scope, normalized.garmentId);
-    if (!wardrobe || wardrobe.status !== 'ACTIVE') return failure(normalized, 'GARMENT_UNAVAILABLE');
+    const [garment, wardrobe] = await Promise.all([
+      this.dependencies.garments.get(scope, normalized.garmentId),
+      this.dependencies.wardrobe.get(scope, normalized.garmentId),
+    ]);
+    if (!garment || garment.status !== 'ACTIVE' || !wardrobe || wardrobe.status !== 'ACTIVE') {
+      return failure(normalized, 'GARMENT_UNAVAILABLE');
+    }
     const categoryGroup = garmentCategoryGroup(wardrobe.category);
     if (!SUPPORTED_GROUPS.has(categoryGroup)) return failure(normalized, 'GARMENT_UNSUPPORTED', categoryGroup);
 
-    const representations = selectRepresentations(await this.dependencies.representations.list(scope, normalized.garmentId));
+    const representations = selectRepresentations(
+      await this.dependencies.representations.list(scope, normalized.garmentId),
+      garment.primaryViewId,
+    );
     if (representations.length === 0) return failure(normalized, 'REPRESENTATION_REQUIRED', categoryGroup);
     if (representations.length > 1 && representations[0].admittedAt === representations[1].admittedAt) {
       return failure(normalized, 'REPRESENTATION_AMBIGUOUS', categoryGroup);
@@ -182,12 +193,17 @@ export class FashionTryOnReadinessService {
   }
 }
 
-function selectRepresentations(values: readonly ManagedGarmentRepresentation[]): readonly ManagedGarmentRepresentation[] {
+function selectRepresentations(
+  values: readonly ManagedGarmentRepresentation[],
+  primaryViewId: string,
+): readonly ManagedGarmentRepresentation[] {
+  const currentPrimary = primaryViewId.toLowerCase();
   return Object.freeze(values
     .filter(value => value.tier === 'PARAMETRIC'
       && value.format === 'BERS_PARAMETRIC_V1'
       && value.admissionState === 'ADMITTED'
-      && value.revokedAt === null)
+      && value.revokedAt === null
+      && value.basisViewId.toLowerCase() === currentPrimary)
     .sort((left, right) => right.admittedAt.localeCompare(left.admittedAt) || left.id.localeCompare(right.id)));
 }
 
