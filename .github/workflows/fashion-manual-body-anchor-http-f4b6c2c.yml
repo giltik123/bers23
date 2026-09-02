@@ -29,7 +29,7 @@ jobs:
           npm run typecheck
           npm run server:typecheck
           npm run server:build
-      - name: Bundle body-anchor transport regressions
+      - name: Bundle body-anchor and Artifact authority regressions
         run: |
           mkdir -p .test-cache/fashion-manual-body-anchor-http-f4b6c2c
           npx esbuild tests/fashion-manual-body-anchor-http-f4b6c2c.test.ts \
@@ -40,7 +40,11 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-manual-body-anchor-http-f4b6c2c/client-errors.test.mjs \
             --external:node:*
-      - name: Prove exact source binding redaction browser mutation protections and client error semantics
+          npx esbuild tests/artifact-authority-stored-image-evidence.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-manual-body-anchor-http-f4b6c2c/artifact-errors.test.mjs \
+            --external:node:*
+      - name: Prove exact source binding redaction browser mutation protections and typed client error semantics
         run: node --test .test-cache/fashion-manual-body-anchor-http-f4b6c2c/*.test.mjs
       - name: Prove one shared Fashion authority graph and closed browser boundary
         run: |
@@ -58,6 +62,8 @@ jobs:
           grep -q "forbidden_client_authority" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -q "invalid_body_anchor_payload" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
           grep -q "body_anchor_source_unavailable" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
+          grep -q "ArtifactReferenceDeniedError" server/core/artifacts/signedArtifactAuthority.ts
+          grep -q "StoredProjectImageUnavailableError" server/core/artifacts/artifactAuthority.ts
           ! grep -q "acquisitionSequence" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           ! grep -q "projectImageStorageId" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           ! grep -q "projectImageSha256" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
