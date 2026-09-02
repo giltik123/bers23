@@ -1,0 +1,183 @@
+name: Fashion F4b.6b.4b opaque prepared execution foundation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/fashion-opaque-prepared-execution-f4b6b4b.yml"
+      - "server/core/application/creativeExecutionService.ts"
+      - "server/core/artifacts/postgresImageArtifactStore.ts"
+      - "server/core/fashion/postgresGarmentWarpLayerStore.ts"
+      - "server/core/localExecution/FashionTryOnOpaqueCandidateSubmissionService.ts"
+      - "server/core/localExecution/FashionTryOnOpaqueInputProjectionService.ts"
+      - "server/core/localExecution/FashionTryOnOpaqueTerminalReplayGuard.ts"
+      - "server/core/localExecution/GarmentMeshWarpExecutionContract.ts"
+      - "server/core/localExecution/GarmentMeshWarpInputDeliveryService.ts"
+      - "server/core/localExecution/GarmentTextureCompositeExecutionContract.ts"
+      - "server/core/localExecution/GarmentTextureCompositeInputDeliveryService.ts"
+      - "server/core/localExecution/LocalExecutionLedger.ts"
+      - "server/core/localExecution/LocalGarmentMeshWarpExecutionService.ts"
+      - "server/core/localExecution/LocalGarmentTextureCompositeExecutionService.ts"
+      - "src/application/local-execution/CorePreparedFashionTryOn.ts"
+      - "src/platform/creative/canonical/fashionTryOnPreparedExecution.ts"
+      - "src/platform/creative/canonical/index.ts"
+      - "src/platform/creative/canonical/localExecution.ts"
+      - "src/platform/creative/deterministic/DeterministicPng.ts"
+      - "src/platform/creative/deterministic/DeterministicToolRegistry.ts"
+      - "src/platform/creative/deterministic/GarmentMeshWarp.ts"
+      - "src/platform/creative/deterministic/GarmentMeshWarpIdentity.ts"
+      - "src/platform/creative/deterministic/GarmentTextureComposite.ts"
+      - "src/platform/creative/deterministic/GarmentTextureCompositeIdentity.ts"
+      - "src/platform/creative/deterministic/GarmentTextureCompositeParameters.ts"
+      - "src/platform/creative/pipeline/ControlledLocalEdit.ts"
+      - "tests/fashion-opaque-candidate-submission-f4b6b4b.test.ts"
+      - "tests/fashion-opaque-terminal-replay-guard-f4b6b4b.test.ts"
+      - "tests/fashion-prepared-browser-executors-f4b6b4b.test.ts"
+      - "tests/fashion-prepared-execution-contract-f4b6b4b.test.ts"
+      - "src/lib/tryon/tryonEngine.js"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/fashion-opaque-prepared-execution-f4b6b4b.yml"
+      - "server/core/application/creativeExecutionService.ts"
+      - "server/core/artifacts/postgresImageArtifactStore.ts"
+      - "server/core/fashion/postgresGarmentWarpLayerStore.ts"
+      - "server/core/localExecution/FashionTryOnOpaqueCandidateSubmissionService.ts"
+      - "server/core/localExecution/FashionTryOnOpaqueInputProjectionService.ts"
+      - "server/core/localExecution/FashionTryOnOpaqueTerminalReplayGuard.ts"
+      - "server/core/localExecution/GarmentMeshWarpExecutionContract.ts"
+      - "server/core/localExecution/GarmentMeshWarpInputDeliveryService.ts"
+      - "server/core/localExecution/GarmentTextureCompositeExecutionContract.ts"
+      - "server/core/localExecution/GarmentTextureCompositeInputDeliveryService.ts"
+      - "server/core/localExecution/LocalExecutionLedger.ts"
+      - "server/core/localExecution/LocalGarmentMeshWarpExecutionService.ts"
+      - "server/core/localExecution/LocalGarmentTextureCompositeExecutionService.ts"
+      - "src/application/local-execution/CorePreparedFashionTryOn.ts"
+      - "src/platform/creative/canonical/fashionTryOnPreparedExecution.ts"
+      - "src/platform/creative/canonical/index.ts"
+      - "src/platform/creative/canonical/localExecution.ts"
+      - "src/platform/creative/deterministic/DeterministicPng.ts"
+      - "src/platform/creative/deterministic/DeterministicToolRegistry.ts"
+      - "src/platform/creative/deterministic/GarmentMeshWarp.ts"
+      - "src/platform/creative/deterministic/GarmentMeshWarpIdentity.ts"
+      - "src/platform/creative/deterministic/GarmentTextureComposite.ts"
+      - "src/platform/creative/deterministic/GarmentTextureCompositeIdentity.ts"
+      - "src/platform/creative/deterministic/GarmentTextureCompositeParameters.ts"
+      - "src/platform/creative/pipeline/ControlledLocalEdit.ts"
+      - "tests/fashion-opaque-candidate-submission-f4b6b4b.test.ts"
+      - "tests/fashion-opaque-terminal-replay-guard-f4b6b4b.test.ts"
+      - "tests/fashion-prepared-browser-executors-f4b6b4b.test.ts"
+      - "tests/fashion-prepared-execution-contract-f4b6b4b.test.ts"
+      - "src/lib/tryon/tryonEngine.js"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  opaque-prepared-foundation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck opaque prepared execution foundation
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle focused F4b.6b.4b proof chain
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/fashion-opaque-prepared
+          for spec in \
+            fashion-prepared-execution-contract-f4b6b4b \
+            fashion-prepared-browser-executors-f4b6b4b \
+            fashion-opaque-candidate-submission-f4b6b4b \
+            fashion-opaque-terminal-replay-guard-f4b6b4b
+          do
+            npx esbuild "tests/${spec}.test.ts" \
+              --bundle --platform=node --format=esm --target=node24 \
+              --outfile=".test-cache/fashion-opaque-prepared/${spec}.test.mjs" \
+              --external:node:* --external:sharp --external:pg
+          done
+      - name: Prove opaque descriptor, byte-exact kernels and validated terminal replay
+        run: node --test --test-concurrency=1 .test-cache/fashion-opaque-prepared/*.test.mjs
+      - name: Prove product boundary remains authority-minimal and unwired
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import ts from 'typescript';
+
+          const productFiles = [
+            'src/application/local-execution/CorePreparedFashionTryOn.ts',
+            'src/platform/creative/canonical/fashionTryOnPreparedExecution.ts',
+          ];
+          const forbiddenProductIdentifiers = new Set([
+            'LocalExecutionTicketV2',
+            'representationId',
+            'anchorSetId',
+            'viewId',
+            'garmentWarpLayerId',
+            'garmentWarpLayerSha256',
+            'projectImageStorageId',
+            'projectImageSha256',
+            'managedInputs',
+            'nonce',
+            'uploadId',
+            'artifactId',
+            'layerId',
+          ]);
+          const productionFiles = [
+            ...productFiles,
+            'server/core/localExecution/FashionTryOnOpaqueCandidateSubmissionService.ts',
+            'server/core/localExecution/FashionTryOnOpaqueInputProjectionService.ts',
+            'server/core/localExecution/FashionTryOnOpaqueTerminalReplayGuard.ts',
+          ];
+          const forbiddenImportFragments = ['provider', 'billing', 'fashn'];
+          const found = [];
+          for (const file of productionFiles) {
+            const source = fs.readFileSync(file, 'utf8');
+            const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+            const isProduct = productFiles.includes(file);
+            const visit = node => {
+              if (isProduct && ts.isIdentifier(node) && forbiddenProductIdentifiers.has(node.text)) {
+                const pos = ast.getLineAndCharacterOfPosition(node.getStart(ast));
+                found.push(`${file}:${node.text}@${pos.line + 1}:${pos.character + 1}`);
+              }
+              if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+                const specifier = node.moduleSpecifier.text.toLowerCase();
+                if (specifier === 'pg' || forbiddenImportFragments.some(fragment => specifier.includes(fragment))) {
+                  const pos = ast.getLineAndCharacterOfPosition(node.moduleSpecifier.getStart(ast));
+                  found.push(`${file}:import:${node.moduleSpecifier.text}@${pos.line + 1}:${pos.character + 1}`);
+                }
+              }
+              ts.forEachChild(node, visit);
+            };
+            visit(ast);
+          }
+          if (found.length) throw new Error(`opaque prepared boundary references forbidden authority: ${found.join(', ')}`);
+          NODE
+          if grep -R -E "CorePreparedGarment|FashionTryOnOpaque" src/lib/tryon; then
+            echo "F4b.6b.4b foundation must not activate product Try-On routing" >&2
+            exit 1
+          fi
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          git diff --check
