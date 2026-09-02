@@ -2,7 +2,11 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
 
-const MIGRATIONS = Object.freeze(['026_managed_garment_representations.sql', '027_garment_representation_revocation_lifecycle.sql'] as const);
+const MIGRATIONS = Object.freeze([
+  '026_managed_garment_representations.sql',
+  '027_garment_representation_revocation_lifecycle.sql',
+  '033_manual_parametric_basis_content_uniqueness.sql',
+] as const);
 type ColumnContract = Readonly<{ table: string; name: string; udt: string; nullable: boolean; defaultKind: 'none'|'timestamp'|'exact'; expectedDefault?: string; maxLength?: number }>;
 type IndexContract = Readonly<{ columns: readonly string[]; options: readonly number[] }>;
 
@@ -57,7 +61,7 @@ const CHECKS = Object.freeze({
 const KEYS = Object.freeze({
   canonical_garment_representations_pkey: 'PRIMARY KEY (representation_id)',
   canonical_garment_representations_owner_unique: 'UNIQUE (representation_id, garment_id, tenant_id, user_id)',
-  canonical_garment_representations_garment_content_unique: 'UNIQUE (garment_id, content_sha256)',
+  canonical_garment_representations_garment_content_unique: 'UNIQUE (garment_id, content_sha256, basis_view_id)',
   canonical_garment_representation_sources_pkey: 'PRIMARY KEY (representation_id, source_position)',
   canonical_garment_representation_sources_view_unique: 'UNIQUE (representation_id, view_id)',
   canonical_garment_views_representation_source_unique: 'UNIQUE (view_id, garment_id, tenant_id, user_id, content_sha256)',
@@ -89,7 +93,7 @@ async function migration(name: (typeof MIGRATIONS)[number]): Promise<string> {
 }
 const canon = (v: unknown) => String(v ?? '').toLowerCase().replace(/::(?:text|bigint|integer)/g,'').replace(/"/g,'').replace(/\s+/g,'').replace(/[()]/g,'');
 const exact = (a: unknown,b: string) => canon(a)===canon(b);
-function enumReady(def: unknown,column: string,values: readonly string[]): boolean {
+function enumReady(def: unknown,column:string,values:readonly string[]):boolean {
   const raw=String(def??''); if(!raw.startsWith('CHECK (')||/\b(?:NOT|OR|AND)\b/i.test(raw)) return false;
   const normalized=raw.toLowerCase().replace(/"/g,'').replace(/\s+/g,'');
   const ops=normalized.match(/<>|!=|<=|>=|=|<|>/g)??[];
