@@ -14,7 +14,13 @@ const rollbackNamePattern = /^\d{3}_[a-z0-9_]+\.down\.sql$/;
 
 await rm('dist-server', { recursive: true, force: true });
 await mkdir('dist-server/migrations', { recursive: true });
-await build({ entryPoints: ['server/index.ts'], outfile: 'dist-server/server.mjs', bundle: true, platform: 'node', format: 'esm', target: 'node22', packages: 'external', sourcemap: false });
+const sharedBuild = Object.freeze({ bundle: true, platform: 'node', format: 'esm', target: 'node22', packages: 'external', sourcemap: false });
+await build({ ...sharedBuild, entryPoints: ['server/index.ts'], outfile: 'dist-server/server.mjs' });
+await build({
+  ...sharedBuild,
+  entryPoints: ['server/transactions/infrastructure/postgres/transactionSchemaCli.ts'],
+  outfile: 'dist-server/migrate.mjs',
+});
 
 const migrations = [];
 for (const directory of migrationDirectories) {
