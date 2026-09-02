@@ -1,4 +1,9 @@
-import type { ArtifactAuthority, StoredProjectImageEvidence } from '../artifacts/artifactAuthority.ts';
+import {
+  StoredProjectImageUnavailableError,
+  type ArtifactAuthority,
+  type StoredProjectImageEvidence,
+} from '../artifacts/artifactAuthority.ts';
+import { ArtifactReferenceDeniedError } from '../artifacts/signedArtifactAuthority.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import {
   BODY_ANCHOR_COORDINATE_SPACE,
@@ -73,12 +78,15 @@ export class ManualProjectBodyAnchorAcquisitionService {
     let source: StoredProjectImageEvidence;
     try {
       source = await this.dependencies.artifacts.resolveStoredImageEvidence(projectScope, normalized.sourceArtifactId);
-    } catch {
-      throw acquisitionError(
-        404,
-        'body_anchor_source_unavailable',
-        'Canonical Project source is unavailable for manual body-anchor acquisition',
-      );
+    } catch (error) {
+      if (error instanceof ArtifactReferenceDeniedError || error instanceof StoredProjectImageUnavailableError) {
+        throw acquisitionError(
+          404,
+          'body_anchor_source_unavailable',
+          'Canonical Project source is unavailable for manual body-anchor acquisition',
+        );
+      }
+      throw error;
     }
     assertResolvedProjectImage(source, normalized.projectId);
     const expectedPayloadSha256 = bodyAnchorPayloadSha256(payload);
