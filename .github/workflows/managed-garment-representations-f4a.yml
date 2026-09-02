@@ -40,7 +40,7 @@ jobs:
       - run: npm ci
       - name: Typecheck Core server
         run: npm run server:typecheck
-      - name: Build production Core and prove Fashion migrations 022 through 027 are packaged
+      - name: Build production Core and prove required Fashion representation migrations are packaged
         run: |
           npm run server:build
           test -f dist-server/migrations/022_managed_garments_and_initial_views.sql
@@ -49,6 +49,7 @@ jobs:
           test -f dist-server/migrations/025_managed_outfits.sql
           test -f dist-server/migrations/026_managed_garment_representations.sql
           test -f dist-server/migrations/027_garment_representation_revocation_lifecycle.sql
+          test -f dist-server/migrations/033_manual_parametric_basis_identity.sql
       - name: Bundle F4a and predecessor PostgreSQL acceptance
         run: |
           mkdir -p .test-cache/managed-garment-representations-f4a/migrations
@@ -80,6 +81,7 @@ jobs:
           cp server/core/fashion/migrations/025_managed_outfits.sql .test-cache/managed-garment-representations-f4a/migrations/
           cp server/core/fashion/migrations/026_managed_garment_representations.sql .test-cache/managed-garment-representations-f4a/migrations/
           cp server/core/fashion/migrations/027_garment_representation_revocation_lifecycle.sql .test-cache/managed-garment-representations-f4a/migrations/
+          cp server/core/fashion/migrations/033_manual_parametric_basis_identity.sql .test-cache/managed-garment-representations-f4a/migrations/
       - name: Preserve F3a ordered Outfit aggregate and role/tombstone semantics
         run: node --test --test-concurrency=1 .test-cache/managed-garment-representations-f4a/managed-outfits-postgres.test.mjs
       - name: Preserve F3a schema hardening and migration rollback
