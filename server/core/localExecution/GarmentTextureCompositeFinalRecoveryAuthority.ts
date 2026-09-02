@@ -11,8 +11,20 @@ import {
 } from './GarmentTextureCompositeExecutionContract.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const SHA = /^[0-9a-f]{64}$/;
 const CLIENT_REQUEST = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const MAX_SOURCE_ARTIFACT_ID_LENGTH = 512;
+const RESOLVED_EVIDENCE_KEYS = Object.freeze([
+  'anchorPayloadSha256',
+  'anchorSetId',
+  'destinationMeshSha256',
+  'projectImageHeight',
+  'projectImageSha256',
+  'projectImageStorageId',
+  'projectImageWidth',
+  'representationContentSha256',
+  'representationId',
+] as const);
 
 type RecoveryLedger = Pick<LocalExecutionLedgerV2, 'getByIdempotencyKeyV2' | 'getFinalization'>;
 type FinalReader = Pick<PostgresImageArtifactStore, 'loadFinalByExecution'>;
@@ -36,16 +48,36 @@ export type GarmentTextureCompositeFinalRecoveryIntent = Readonly<{
   garmentId: unknown;
 }>;
 
+export type GarmentTextureCompositeResolvedEvidenceBinding = Readonly<{
+  projectImageStorageId: string;
+  projectImageSha256: string;
+  projectImageWidth: number;
+  projectImageHeight: number;
+  representationId: string;
+  representationContentSha256: string;
+  anchorSetId: string;
+  anchorPayloadSha256: string;
+  destinationMeshSha256: string;
+}>;
+
+export type GarmentTextureCompositeResolvedEvidenceRecoveryIntent = GarmentTextureCompositeFinalRecoveryIntent & Readonly<{
+  evidence: GarmentTextureCompositeResolvedEvidenceBinding;
+}>;
+
 /**
  * Read-only durable recovery for an already-admitted F4b.5b texture FINAL.
  *
  * This authority never accepts ticket, execution, storage or FINAL identifiers
- * from the caller. Low-level `recover` reconstructs those identities from the
- * authenticated Project scope and exact server-derived texture phase request ID.
+ * from a browser caller. Low-level `recover` reconstructs those identities from
+ * authenticated Project scope and the exact server-derived texture phase ID.
  *
- * F4b.6 product orchestration must use `recoverForIntent`: it additionally binds
- * the durable ticket back to stable sourceArtifactId + garmentId intent before
- * any finalization or FINAL lookup. Browser evidence IDs remain forbidden.
+ * Product orchestration may use `recoverForIntent` for stable source + garment
+ * binding, or the stronger `recoverForResolvedEvidence` after server-owned
+ * readiness resolution. The latter additionally proves that the durable ticket
+ * was prepared from the currently selected Project image, PARAMETRIC
+ * representation, body-anchor payload and derived destination mesh before any
+ * finalization or FINAL lookup. The evidence object is an internal server
+ * binding; browser evidence IDs remain forbidden by the product intent schema.
  *
  * Pixel equality is intentionally not recomputed here: the only path that can
  * commit SUCCESS already requires byte-exact Core recomputation and canonical
@@ -75,11 +107,30 @@ export class GarmentTextureCompositeFinalRecoveryAuthority {
     return this.recoverNormalized(projectId, clientRequestId, auth, Object.freeze({ sourceArtifactId, garmentId }));
   }
 
+  async recoverForResolvedEvidence(
+    input: GarmentTextureCompositeResolvedEvidenceRecoveryIntent,
+    auth: AuthenticatedScope,
+  ): Promise<GarmentTextureCompositeFinalRecoveryResult> {
+    const projectId = normalizeProjectId(input?.projectId);
+    const clientRequestId = normalizeClientRequestId(input?.clientRequestId);
+    const sourceArtifactId = normalizeSourceArtifactId(input?.sourceArtifactId);
+    const garmentId = normalizeGarmentId(input?.garmentId);
+    const evidence = normalizeResolvedEvidence(input?.evidence);
+    return this.recoverNormalized(
+      projectId,
+      clientRequestId,
+      auth,
+      Object.freeze({ sourceArtifactId, garmentId }),
+      evidence,
+    );
+  }
+
   private async recoverNormalized(
     projectId: string,
     clientRequestId: string,
     auth: AuthenticatedScope,
     expectedIntent?: Readonly<{ sourceArtifactId: string; garmentId: string }>,
+    expectedEvidence?: GarmentTextureCompositeResolvedEvidenceBinding,
   ): Promise<GarmentTextureCompositeFinalRecoveryResult> {
     const scope = Object.freeze({ ...auth, projectId });
     const idempotencyKey = garmentTextureCompositeTicketIdempotencyKey(clientRequestId);
@@ -90,6 +141,7 @@ export class GarmentTextureCompositeFinalRecoveryAuthority {
     assertGarmentTextureCompositeTicket(ticket);
     assertTicketIdentity(ticket, scope, idempotencyKey, expectedExecutionId);
     if (expectedIntent) assertTicketStableIntent(ticket, expectedIntent);
+    if (expectedEvidence) assertTicketResolvedEvidence(ticket, expectedEvidence);
 
     const finalization = await this.dependencies.admission.getFinalization(ticket.ticketId);
     if (!finalization || finalization.status === 'UNKNOWN') {
@@ -154,6 +206,36 @@ function assertTicketStableIntent(
   }
 }
 
+function assertTicketResolvedEvidence(
+  ticket: Awaited<ReturnType<RecoveryLedger['getByIdempotencyKeyV2']>> & {},
+  expected: GarmentTextureCompositeResolvedEvidenceBinding,
+): void {
+  const parameters = garmentTextureCompositeParametersFromTicket(ticket);
+  const output = garmentTextureCompositeOutputContract(ticket);
+  const projectInput = ticket.inputs[0];
+  const representation = ticket.managedInputs?.[1];
+  const same = parameters.projectImageStorageId === expected.projectImageStorageId
+    && parameters.projectImageSha256 === expected.projectImageSha256
+    && projectInput?.sha256 === expected.projectImageSha256
+    && Number(output.width) === expected.projectImageWidth
+    && Number(output.height) === expected.projectImageHeight
+    && parameters.representationId === expected.representationId
+    && parameters.representationSha256 === expected.representationContentSha256
+    && representation?.kind === 'GARMENT_REPRESENTATION'
+    && representation.representationId === expected.representationId
+    && representation.contentSha256 === expected.representationContentSha256
+    && parameters.anchorSetId === expected.anchorSetId
+    && parameters.anchorPayloadSha256 === expected.anchorPayloadSha256
+    && parameters.destinationMeshSha256 === expected.destinationMeshSha256;
+  if (!same) {
+    throw recoveryError(
+      409,
+      'garment_texture_final_recovery_evidence_mismatch',
+      'Durable texture-composite ticket does not match current server-resolved Try-On evidence',
+    );
+  }
+}
+
 function assertStoredFinalMatchesTicket(
   stored: StoredFinalImage,
   ticket: Awaited<ReturnType<RecoveryLedger['getByIdempotencyKeyV2']>> & {},
@@ -182,6 +264,28 @@ function assertStoredFinalMatchesTicket(
   }
 }
 
+function normalizeResolvedEvidence(value: unknown): GarmentTextureCompositeResolvedEvidenceBinding {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', 'resolved evidence binding must be an object');
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (keys.length !== RESOLVED_EVIDENCE_KEYS.length || keys.some((key, index) => key !== RESOLVED_EVIDENCE_KEYS[index])) {
+    throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', 'resolved evidence binding has unknown or missing fields');
+  }
+  return Object.freeze({
+    projectImageStorageId: normalizeEvidenceUuid(record.projectImageStorageId, 'projectImageStorageId'),
+    projectImageSha256: normalizeEvidenceSha(record.projectImageSha256, 'projectImageSha256'),
+    projectImageWidth: normalizeDimension(record.projectImageWidth, 'projectImageWidth'),
+    projectImageHeight: normalizeDimension(record.projectImageHeight, 'projectImageHeight'),
+    representationId: normalizeEvidenceUuid(record.representationId, 'representationId'),
+    representationContentSha256: normalizeEvidenceSha(record.representationContentSha256, 'representationContentSha256'),
+    anchorSetId: normalizeEvidenceUuid(record.anchorSetId, 'anchorSetId'),
+    anchorPayloadSha256: normalizeEvidenceSha(record.anchorPayloadSha256, 'anchorPayloadSha256'),
+    destinationMeshSha256: normalizeEvidenceSha(record.destinationMeshSha256, 'destinationMeshSha256'),
+  });
+}
+
 function normalizeProjectId(value: unknown): string {
   const normalized = typeof value === 'string' ? value.toLowerCase() : '';
   if (!UUID.test(normalized)) throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', 'projectId must be a canonical UUID');
@@ -198,11 +302,7 @@ function normalizeClientRequestId(value: unknown): string {
 
 function normalizeSourceArtifactId(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim() : '';
-  if (
-    !normalized
-    || normalized.length > MAX_SOURCE_ARTIFACT_ID_LENGTH
-    || /[\u0000-\u001f\u007f]/u.test(normalized)
-  ) {
+  if (!normalized || normalized.length > MAX_SOURCE_ARTIFACT_ID_LENGTH || /[\u0000-\u001f\u007f]/u.test(normalized)) {
     throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', 'sourceArtifactId is outside the accepted stable intent contract');
   }
   return normalized;
@@ -212,6 +312,27 @@ function normalizeGarmentId(value: unknown): string {
   const normalized = typeof value === 'string' ? value.toLowerCase() : '';
   if (!UUID.test(normalized)) throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', 'garmentId must be a canonical UUID');
   return normalized;
+}
+
+function normalizeEvidenceUuid(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !UUID.test(value)) {
+    throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', `${label} must be a canonical lowercase UUID`);
+  }
+  return value;
+}
+
+function normalizeEvidenceSha(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !SHA.test(value)) {
+    throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', `${label} must be canonical lowercase SHA-256`);
+  }
+  return value;
+}
+
+function normalizeDimension(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 1) {
+    throw recoveryError(400, 'invalid_garment_texture_final_recovery_request', `${label} must be a positive safe integer`);
+  }
+  return Number(value);
 }
 
 function recoveryError(status: number, code: string, message: string): Error & { status: number; code: string } {

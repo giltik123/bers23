@@ -11,12 +11,69 @@ const clientRequestId = 'tryon-final-result-1';
 const auth = Object.freeze({ tenantId: 'tenant-result', userId: 'user-result' });
 const intent = Object.freeze({ projectId, sourceArtifactId, garmentId, clientRequestId });
 const phaseIds = fashionTryOnPhaseRequestIds(clientRequestId);
-const ready = Object.freeze({
-  status: 'READY' as const,
-  projectId,
-  sourceArtifactId,
-  garmentId,
-  categoryGroup: 'tops' as const,
+const ids = Object.freeze({
+  storage: '33333333-3333-4333-8333-333333333333',
+  representation: '44444444-4444-4444-8444-444444444444',
+  anchor: '55555555-5555-4555-8555-555555555555',
+});
+const hashes = Object.freeze({ project: 'a'.repeat(64), representation: 'b'.repeat(64), anchor: 'c'.repeat(64), mesh: 'd'.repeat(64) });
+
+function ready(overrides: Readonly<{
+  storageId?: string;
+  projectSha256?: string;
+  representationId?: string;
+  representationSha256?: string;
+  anchorSetId?: string;
+  anchorPayloadSha256?: string;
+  meshSha256?: string;
+  width?: number;
+  height?: number;
+}> = {}) {
+  const storageId = overrides.storageId ?? ids.storage;
+  const projectSha256 = overrides.projectSha256 ?? hashes.project;
+  const representationId = overrides.representationId ?? ids.representation;
+  const representationSha256 = overrides.representationSha256 ?? hashes.representation;
+  const anchorSetId = overrides.anchorSetId ?? ids.anchor;
+  const anchorPayloadSha256 = overrides.anchorPayloadSha256 ?? hashes.anchor;
+  const meshSha256 = overrides.meshSha256 ?? hashes.mesh;
+  const width = overrides.width ?? 640;
+  const height = overrides.height ?? 960;
+  return Object.freeze({
+    status: 'READY' as const,
+    projectId,
+    sourceArtifactId,
+    garmentId,
+    categoryGroup: 'tops' as const,
+    source: Object.freeze({ storageId, sha256: projectSha256, width, height }),
+    representationId,
+    anchorSetId,
+    destinationMesh: Object.freeze({
+      meshSha256,
+      provenance: Object.freeze({
+        projectImageStorageId: storageId,
+        projectImageSha256: projectSha256,
+        projectImageWidth: width,
+        projectImageHeight: height,
+        representationId,
+        representationContentSha256: representationSha256,
+        anchorSetId,
+        anchorPayloadSha256,
+        garmentId,
+      }),
+    }),
+  });
+}
+
+const exactBinding = Object.freeze({
+  projectImageStorageId: ids.storage,
+  projectImageSha256: hashes.project,
+  projectImageWidth: 640,
+  projectImageHeight: 960,
+  representationId: ids.representation,
+  representationContentSha256: hashes.representation,
+  anchorSetId: ids.anchor,
+  anchorPayloadSha256: hashes.anchor,
+  destinationMeshSha256: hashes.mesh,
 });
 
 function harness(input: Readonly<{
@@ -26,18 +83,18 @@ function harness(input: Readonly<{
 }> = {}) {
   const calls = { readiness: [] as any[], recovery: [] as any[] };
   let readinessIndex = 0;
-  const readinessSequence = input.readinessSequence ?? [ready];
+  const readinessSequence = input.readinessSequence ?? [ready()];
   const service = new FashionTryOnFinalResultService({
     readiness: {
-      async check(command: any, principal: any) {
+      async resolve(command: any, principal: any) {
         calls.readiness.push({ command, principal });
-        const value = readinessSequence[Math.min(readinessIndex, readinessSequence.length - 1)] ?? ready;
+        const value = readinessSequence[Math.min(readinessIndex, readinessSequence.length - 1)] ?? ready();
         readinessIndex += 1;
         return value;
       },
     },
     finalRecovery: {
-      async recoverForIntent(command: any, principal: any) {
+      async recoverForResolvedEvidence(command: any, principal: any) {
         calls.recovery.push({ command, principal });
         if (input.recoveryError) throw input.recoveryError;
         return input.recovered ?? Object.freeze({
@@ -51,8 +108,9 @@ function harness(input: Readonly<{
   return { service, calls };
 }
 
-test('F4b.6b.4c derives exact texture phase and exposes only signed FINAL candidate after two current-readiness checks', async () => {
-  const h = harness({ readinessSequence: [ready, ready] });
+test('F4b.6b.4c exposes FINAL only after durable ticket binding and two identical server-resolved evidence snapshots', async () => {
+  const current = ready();
+  const h = harness({ readinessSequence: [current, current] });
   const result = await h.service.result(intent, auth as any);
   assert.deepEqual(result, {
     status: 'FINAL_READY',
@@ -73,23 +131,60 @@ test('F4b.6b.4c derives exact texture phase and exposes only signed FINAL candid
       clientRequestId: phaseIds.textureComposite,
       sourceArtifactId,
       garmentId,
+      evidence: exactBinding,
     },
     principal: auth,
   }]);
   const serialized = JSON.stringify(result);
   assert.equal(serialized.includes('internal-texture-execution'), false);
+  assert.equal(serialized.includes(ids.representation), false);
+  assert.equal(serialized.includes(ids.anchor), false);
   assert.equal('ticketId' in result, false);
   assert.equal('executionId' in result, false);
   assert.equal('storageId' in result, false);
 });
 
-test('F4b.6b.4c suppresses a recovered FINAL if Project or evidence becomes stale before exposure', async () => {
+test('F4b.6b.4c suppresses recovered FINAL if public readiness fails before exposure', async () => {
   const stale = Object.freeze({ status: 'STALE_SOURCE' as const, projectId, sourceArtifactId, garmentId });
-  const h = harness({ readinessSequence: [ready, stale] });
+  const h = harness({ readinessSequence: [ready(), stale] });
   const result = await h.service.result(intent, auth as any);
   assert.deepEqual(result, { status: 'PREREQUISITE', readiness: stale });
   assert.equal(h.calls.recovery.length, 1);
   assert.equal(h.calls.readiness.length, 2);
+  assert.equal(JSON.stringify(result).includes('signed-final-candidate'), false);
+});
+
+test('F4b.6b.4c maps any current evidence transition after recovery to TEXTURE_STALE without FINAL identity', async () => {
+  const variants = [
+    ready({ storageId: '66666666-6666-4666-8666-666666666666' }),
+    ready({ projectSha256: 'e'.repeat(64) }),
+    ready({ width: 641 }),
+    ready({ height: 961 }),
+    ready({ representationId: '77777777-7777-4777-8777-777777777777' }),
+    ready({ representationSha256: 'f'.repeat(64) }),
+    ready({ anchorSetId: '88888888-8888-4888-8888-888888888888' }),
+    ready({ anchorPayloadSha256: '1'.repeat(64) }),
+    ready({ meshSha256: '2'.repeat(64) }),
+  ];
+  for (const changed of variants) {
+    const h = harness({ readinessSequence: [ready(), changed] });
+    const result = await h.service.result(intent, auth as any);
+    assert.deepEqual(result, { status: 'TEXTURE_STALE', projectId, sourceArtifactId, garmentId });
+    assert.equal(JSON.stringify(result).includes('signed-final-candidate'), false);
+    assert.equal(h.calls.readiness.length, 2);
+  }
+});
+
+test('F4b.6b.4c maps a pre-existing durable ticket/evidence mismatch to TEXTURE_STALE before candidate exposure', async () => {
+  const mismatch = Object.assign(new Error('old representation binding'), {
+    status: 409,
+    code: 'garment_texture_final_recovery_evidence_mismatch',
+  });
+  const h = harness({ recoveryError: mismatch });
+  const result = await h.service.result(intent, auth as any);
+  assert.deepEqual(result, { status: 'TEXTURE_STALE', projectId, sourceArtifactId, garmentId });
+  assert.equal(h.calls.readiness.length, 1);
+  assert.equal(h.calls.recovery.length, 1);
   assert.equal(JSON.stringify(result).includes('signed-final-candidate'), false);
 });
 
@@ -143,7 +238,7 @@ test('F4b.6b.4c rejects browser evidence, execution, storage, FINAL and producer
   }
 });
 
-test('F4b.6b.4c propagates stable-intent recovery mismatch fail-closed and never substitutes a historical candidate', async () => {
+test('F4b.6b.4c propagates stable-intent mismatch and does not reinterpret it as evidence staleness', async () => {
   const mismatch = Object.assign(new Error('durable ticket belongs to another stable intent'), {
     status: 409,
     code: 'garment_texture_final_recovery_intent_mismatch',

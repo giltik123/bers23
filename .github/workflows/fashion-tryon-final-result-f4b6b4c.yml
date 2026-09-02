@@ -31,7 +31,7 @@ jobs:
           npm run typecheck
           npm run server:typecheck
           npm run server:build
-      - name: Bundle accepted orchestration, stable-intent recovery and product-result proof chain
+      - name: Bundle accepted orchestration, stable-intent, resolved-evidence recovery and product-result proof chain
         run: |
           set -euo pipefail
           mkdir -p .test-cache/fashion-tryon-final-result
@@ -41,6 +41,7 @@ jobs:
             fashion-tryon-texture-continuation-f4b6b3 \
             fashion-texture-final-recovery-f4b6b4a \
             fashion-texture-final-intent-binding-f4b6b4c \
+            fashion-texture-final-resolved-evidence-f4b6b4c \
             fashion-tryon-final-result-f4b6b4c
           do
             npx esbuild "tests/${spec}.test.ts" \
@@ -48,23 +49,28 @@ jobs:
               --outfile=".test-cache/fashion-tryon-final-result/${spec}.test.mjs" \
               --external:node:* --external:sharp --external:pg
           done
-      - name: Prove stable-intent FINAL recovery, race revalidation and closed result mapping
+      - name: Prove current-evidence FINAL binding, race revalidation and closed result mapping
         run: node --test --test-concurrency=1 .test-cache/fashion-tryon-final-result/*.test.mjs
-      - name: Prove product coordinator adds no browser evidence, execution, persistence or cloud authority
+      - name: Prove product coordinator accepts no browser evidence authority and binds recovered FINAL to server-resolved evidence
         run: |
           set -euo pipefail
           RESULT=server/core/fashion/FashionTryOnFinalResultService.ts
           RECOVERY=server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
-          grep -q "readiness.check" "$RESULT"
-          test "$(grep -c 'readiness.check' "$RESULT")" -ge 2
-          grep -q "recoverForIntent" "$RESULT"
+          grep -q "readiness.resolve" "$RESULT"
+          test "$(grep -c 'readiness.resolve' "$RESULT")" -ge 2
+          grep -q "recoverForResolvedEvidence" "$RESULT"
+          grep -q "currentEvidenceBinding" "$RESULT"
+          grep -q "sameCurrentEvidence" "$RESULT"
+          grep -q "TEXTURE_STALE" "$RESULT"
           grep -q "clientRequestId: phaseIds.textureComposite" "$RESULT"
           grep -q "sourceArtifactId: intent.sourceArtifactId" "$RESULT"
           grep -q "garmentId: intent.garmentId" "$RESULT"
           grep -q "assertTicketStableIntent" "$RECOVERY"
-          grep -q "parameters.sourceArtifactId === expected.sourceArtifactId" "$RECOVERY"
-          grep -q "parameters.garmentId === expected.garmentId" "$RECOVERY"
-          grep -q "garment_texture_final_recovery_intent_mismatch" "$RECOVERY"
+          grep -q "assertTicketResolvedEvidence" "$RECOVERY"
+          grep -q "parameters.representationId === expected.representationId" "$RECOVERY"
+          grep -q "parameters.anchorSetId === expected.anchorSetId" "$RECOVERY"
+          grep -q "parameters.destinationMeshSha256 === expected.destinationMeshSha256" "$RECOVERY"
+          grep -q "garment_texture_final_recovery_evidence_mismatch" "$RECOVERY"
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           import ts from 'typescript';
@@ -75,9 +81,7 @@ jobs:
             'LocalExecutionTicketV2',
             'garmentWarpLayerId',
             'garmentWarpLayerSha256',
-            'representationId',
-            'anchorSetId',
-            'storageId',
+            'ticketId',
             'Pool',
             'Billing',
             'persistFinal',
