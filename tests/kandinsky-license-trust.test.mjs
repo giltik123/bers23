@@ -28,6 +28,15 @@ test('D1 license evidence is a closed revision-metadata contract', () => {
 
 test('D1 license evidence accepts exactly one matching top-level model-card license field', () => {
   assert.deepEqual(assertPinnedLicenseBytes(evidence, readme, 'fixture'), { identifier: 'apache-2.0', path: 'README.md' });
+  for (const quoted of [
+    '---\nlicense: "apache-2.0"\n---\n',
+    "---\nlicense: 'apache-2.0'\n---\n",
+  ]) {
+    assert.deepEqual(
+      assertPinnedLicenseBytes(evidence, Buffer.from(quoted, 'utf8'), 'fixture'),
+      { identifier: 'apache-2.0', path: 'README.md' },
+    );
+  }
   assert.throws(
     () => assertPinnedLicenseBytes(evidence, Buffer.from('---\nlicense: mit\n---\n', 'utf8'), 'fixture'),
     /license drift/i,
@@ -44,6 +53,21 @@ test('D1 license evidence accepts exactly one matching top-level model-card lice
     () => assertPinnedLicenseBytes(evidence, Uint8Array.of(0xff, 0xfe, 0xfd), 'fixture'),
     /valid UTF-8/i,
   );
+});
+
+test('D1 license evidence rejects mismatched, unbalanced and embedded quote scalars', () => {
+  for (const malformed of [
+    "---\nlicense: 'apache-2.0\"\n---\n",
+    "---\nlicense: \"apache-2.0'\n---\n",
+    "---\nlicense: 'apache-2.0\n---\n",
+    '---\nlicense: apache-2.0"\n---\n',
+    "---\nlicense: 'apache'2.0'\n---\n",
+  ]) {
+    assert.throws(
+      () => assertPinnedLicenseBytes(evidence, Buffer.from(malformed, 'utf8'), 'fixture'),
+      /malformed license metadata/i,
+    );
+  }
 });
 
 test('D1 license evidence rejects declared and streaming oversize before semantic parsing', async () => {
