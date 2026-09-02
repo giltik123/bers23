@@ -65,6 +65,7 @@ async function withServer(
     admission: {
       admit: async (principal: any, command: any) => {
         calls.admits.push({ principal, command });
+        if (result instanceof Error) throw result;
         return result;
       },
     } as any,
@@ -163,6 +164,34 @@ test('F4b.6c.1b exact replay is 200 and every browser evidence/provenance claim 
       assert.equal((await response.json() as any).error, 'forbidden_client_authority');
     }
     assert.equal(calls.admits.length, 1, 'forbidden authority fields must never reach admission service');
+  });
+});
+
+test('F4b.6c.1b preserves typed Core domain errors and masks unexpected internal failures', async () => {
+  const conflict = Object.assign(new Error('Garment revision does not match current state'), {
+    status: 409,
+    code: 'garment_revision_conflict',
+  });
+  await withServer(conflict, async base => {
+    const response = await fetch(`${base}/api/core/fashion/garments/${garmentId}/parametric-representation`, {
+      method: 'POST', headers: { ...bearerHeaders, 'Content-Type': 'application/json' }, body: requestBody(),
+    });
+    assert.equal(response.status, 409);
+    const body = await response.json() as any;
+    assert.equal(body.error, 'garment_revision_conflict');
+    assert.equal(body.message, 'Garment revision does not match current state');
+    assert.equal(typeof body.correlationId, 'string');
+  });
+
+  await withServer(new Error('database connection contains secret detail'), async base => {
+    const response = await fetch(`${base}/api/core/fashion/garments/${garmentId}/parametric-representation`, {
+      method: 'POST', headers: { ...bearerHeaders, 'Content-Type': 'application/json' }, body: requestBody(),
+    });
+    assert.equal(response.status, 500);
+    const body = await response.json() as any;
+    assert.equal(body.error, 'internal_error');
+    assert.equal(body.message, 'Manual PARAMETRIC admission request failed');
+    assert.ok(!JSON.stringify(body).includes('database connection contains secret detail'));
   });
 });
 
