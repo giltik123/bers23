@@ -106,6 +106,7 @@ export const coreClient = Object.freeze({
   },
   fashion: {
     checkTryOnReadiness: (payload) => request('/fashion/try-on/readiness', json('POST', payload)),
+    admitManualParametricRepresentation: (garmentId, payload) => request(`/fashion/garments/${encodeURIComponent(garmentId)}/parametric-representation`, json('POST', payload)),
   },
   localExecution: {
     prepareSegmentation: (payload) => request('/local-execution/segment/prepare', json('POST', payload)),

@@ -10,6 +10,7 @@ import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '..
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../fashion/garmentWarpLayerSchema.ts';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from '../fashion/garmentTextureFinalLineageSchema.ts';
 import { FashionTryOnReadinessService } from '../fashion/FashionTryOnReadinessService.ts';
+import { ManualParametricGarmentAdmissionService } from '../fashion/ManualParametricGarmentAdmissionService.ts';
 import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from '../fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresGarmentRepresentationStore } from '../fashion/postgresGarmentRepresentationStore.ts';
@@ -46,6 +47,8 @@ type GarmentMeshWarpExecutionSurface = LocalGarmentMeshWarpExecutionService & Re
  * instances, so no second Fashion trust graph can drift from the warp authority.
  * F4b.6 readiness is read-only over those same instances and cannot grant any
  * execution, FINAL, Project, provider or Billing authority by itself.
+ * F4b.6c manual PARAMETRIC acquisition uses the exact same representation store
+ * but remains a distinct mutation service rather than an execution capability.
  */
 export async function createProductionGarmentMeshWarp(input: ProductionGarmentMeshWarpCompositionInput) {
   await ensureFashionWarpSchemas(input.pool, input.nodeEnv);
@@ -57,6 +60,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
   const garments = new PostgresGarmentStore(input.pool);
   const wardrobe = new PostgresGarmentWardrobeStore(input.pool);
   const representations = new PostgresGarmentRepresentationStore(input.pool);
+  const manualParametricAdmission = new ManualParametricGarmentAdmissionService(representations);
   const genericManagedInputs = new ManagedGarmentLocalExecutionInputAuthority({ garments, representations });
   const managedInputs = new GarmentMeshWarpManagedInputAuthority(genericManagedInputs, limits);
   const bodyAnchors = new PostgresProjectBodyAnchorStore(input.pool, { wardrobe, representations, managedInputs });
@@ -118,6 +122,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     layers,
     textureComposite,
     tryOnReadiness,
+    manualParametricAdmission,
   });
 }
 
