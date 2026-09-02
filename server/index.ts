@@ -23,6 +23,8 @@ import { PostgresGarmentCollectionStore } from './core/fashion/postgresGarmentCo
 import { PostgresOutfitStore } from './core/fashion/postgresOutfitStore.ts';
 import { GarmentDeliveryAuthority } from './core/fashion/garmentDeliveryAuthority.ts';
 
+const MANUAL_PARAMETRIC_PATH = /^\/api\/core\/fashion\/garments\/[^/]+\/parametric-representation$/;
+
 export async function startCoreServer() {
   const config = loadCoreServerConfig(); const production = await createProductionCore(config); let accepting = true;
   try {
@@ -58,7 +60,7 @@ export async function startCoreServer() {
     if (path === '/api/core/wardrobe/garments' || path.startsWith('/api/core/wardrobe/garments/')) return void managedWardrobeAdapter(request, response);
     if (path === '/api/core/garments' || path.startsWith('/api/core/garments/')) return void managedGarmentAdapter(request, response);
     if (path === '/api/core/fashion/try-on/readiness') return void fashionTryOnReadinessAdapter(request, response);
-    if (path.startsWith('/api/core/fashion/garments/') && path.endsWith('/parametric-representation')) return void manualParametricAdmissionAdapter(request, response);
+    if (MANUAL_PARAMETRIC_PATH.test(path)) return void manualParametricAdmissionAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/garment-texture-composite/')) return void garmentTextureCompositeAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/garment-mesh-warp/')) return void garmentMeshWarpAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/orthogonal-transform/')) return void orthogonalTransformAdapter(request, response);
