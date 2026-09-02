@@ -135,7 +135,7 @@ function assertPositiveSource(evidence, identity) {
   exactKeys(composition.negativeSource, ['candidateId','conditioningContractSha256','rawBundleSize','rawBundleSha256','discardedRawImageEmbedsSha256','negativeImageEmbedsSha256'], 'builder evidence negativeSource');
   const expectedManifestSha = sha256Bytes(sourceManifestBytes);
   if (composition.positiveSource.candidateId !== sourceCandidateId || composition.positiveSource.conditioningContractSha256 !== sourceIdentity.conditioningContractSha256 || composition.positiveSource.manifestSha256 !== expectedManifestSha || composition.positiveSource.bundleSize !== sourceBundleBytes.byteLength || composition.positiveSource.bundleSha256 !== sourceManifest.bundle.sha256) fail('builder evidence positive-source provenance mismatch');
-  for (const key of ['imageEmbedsSha256']) assertSha(composition.positiveSource[key], `builder evidence positiveSource.${key}`);
+  assertSha(composition.positiveSource.imageEmbedsSha256, 'builder evidence positiveSource.imageEmbedsSha256');
   if (composition.negativeSource.candidateId !== evidence.candidateId || composition.negativeSource.conditioningContractSha256 !== evidence.conditioningContractSha256) fail('builder evidence negative-source candidate mismatch');
   if (!Number.isSafeInteger(composition.negativeSource.rawBundleSize) || composition.negativeSource.rawBundleSize < 1) fail('builder evidence raw C bundle size is invalid');
   for (const key of ['rawBundleSha256','discardedRawImageEmbedsSha256','negativeImageEmbedsSha256']) assertSha(composition.negativeSource[key], `builder evidence negativeSource.${key}`);
@@ -175,9 +175,11 @@ function parseArgs(argv) {
   const values = {};
   if (argv.length % 2 !== 0) fail('finalizer arguments must be flag/value pairs');
   for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index]; const value = argv[index + 1];
-    if (!accepted.has(key) || !value || key in values) fail('finalizer arguments are invalid or duplicated');
-    values[key.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
+    const key = argv[index];
+    const value = argv[index + 1];
+    const normalized = typeof key === 'string' ? key.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()) : '';
+    if (!accepted.has(key) || !value || Object.hasOwn(values, normalized)) fail('finalizer arguments are invalid or duplicated');
+    values[normalized] = value;
   }
   for (const required of ['d1','prompt','evidence','output']) if (!values[required]) fail('all base finalizer arguments are required exactly once');
   const sourceCount = Number(Boolean(values.positiveSourceManifest)) + Number(Boolean(values.positiveSourceBundle));
