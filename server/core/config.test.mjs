@@ -14,6 +14,8 @@ test('loads server-only config and fails without required values', () => {
   assert.equal(config.port,8080);
   assert.equal(config.allowApiBearerAuth,false,'production bearer compatibility must be opt-in');
   assert.deepEqual(config.allowedWebOrigins,['https://app.example.test']);
+  assert.equal(config.trustedProxyHeaderMode,'NONE');
+  assert.deepEqual(config.trustedProxyCidrs,[]);
   for (const name of ['DATABASE_URL','FAL_KEY','JWT_SECRET','AUTH_CHALLENGE_SECRET','AUTH_DEFAULT_TENANT_ID','AUTH_PUBLIC_ORIGIN','RESEND_API_KEY','AUTH_EMAIL_FROM','GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET']) {
     const env = { ...valid }; delete env[name]; assert.throws(() => loadCoreServerConfig(env), new RegExp(name));
   }
@@ -31,3 +33,18 @@ test('credentialed CORS allowlist accepts only exact HTTP(S) origins and never w
   assert.deepEqual(loadCoreServerConfig({...valid,ALLOWED_WEB_ORIGINS:'https://app.example.test/,http://localhost:5173'}).allowedWebOrigins,['https://app.example.test','http://localhost:5173']);
 });
 test('legacy URLs fail closed without trusted hosts', () => assert.throws(() => loadCoreServerConfig({ ...valid, ALLOW_LEGACY_ASSET_URLS: 'true', TRUSTED_ASSET_HOSTS: '' }), /TRUSTED_ASSET_HOSTS/));
+
+test('trusted proxy forwarding is disabled by default and requires explicit XFF mode plus concrete CIDRs', () => {
+  const enabled = loadCoreServerConfig({
+    ...valid,
+    TRUSTED_PROXY_HEADER_MODE: 'X_FORWARDED_FOR',
+    TRUSTED_PROXY_CIDRS: '10.0.0.0/8, 2001:db8:1234::/48',
+  });
+  assert.equal(enabled.trustedProxyHeaderMode, 'X_FORWARDED_FOR');
+  assert.deepEqual(enabled.trustedProxyCidrs, ['10.0.0.0/8', '2001:db8:1234::/48']);
+
+  assert.throws(() => loadCoreServerConfig({ ...valid, TRUSTED_PROXY_CIDRS: '10.0.0.0/8' }), /TRUSTED_PROXY/);
+  assert.throws(() => loadCoreServerConfig({ ...valid, TRUSTED_PROXY_HEADER_MODE: 'X_FORWARDED_FOR' }), /TRUSTED_PROXY/);
+  assert.throws(() => loadCoreServerConfig({ ...valid, TRUSTED_PROXY_HEADER_MODE: 'FORWARDED', TRUSTED_PROXY_CIDRS: '10.0.0.0/8' }), /TRUSTED_PROXY_HEADER_MODE/);
+  assert.throws(() => loadCoreServerConfig({ ...valid, TRUSTED_PROXY_HEADER_MODE: 'X_FORWARDED_FOR', TRUSTED_PROXY_CIDRS: 'proxy.internal' }), /TRUSTED_PROXY/);
+});

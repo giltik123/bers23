@@ -4,6 +4,11 @@ import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { AuthRiskContext } from '../auth/canonicalAuthService.ts';
 import type { CreativeApplicationCore } from '../composition/createCreativeCore.ts';
 import type { CoreServerConfig } from '../config.ts';
+import {
+  compileTrustedProxyClientIpPolicy,
+  resolveTransportClientIp,
+  type CompiledTrustedProxyClientIpPolicy,
+} from '../network/trustedProxyClientIp.ts';
 import { modelArtifactRelay } from './modelArtifactRelay.ts';
 import {
   BROWSER_CSRF_HEADER,
@@ -48,6 +53,10 @@ export function nodeHttpAdapter(handler: (request: Request) => Promise<Response>
 /** Production Node transport with health, CORS, authentication and request limits. */
 export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicationCore; artifacts: ArtifactAuthority; projects: PostgresProjectStore; auth: HttpAuthAuthority; config: CoreServerConfig; ready: () => Promise<boolean>; accepting: () => boolean; now?: () => number }>) {
   const now = input.now ?? Date.now;
+  const trustedProxyPolicy = compileTrustedProxyClientIpPolicy({
+    headerMode: input.config.trustedProxyHeaderMode,
+    trustedCidrs: input.config.trustedProxyCidrs,
+  });
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || randomUUID(); response.setHeader('X-Correlation-Id', correlationId);
     try {
@@ -72,7 +81,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       if (browserAuthMutationPath(path, request.method)) assertBrowserAuthMutationOrigin(request, input.config);
       else assertBrowserMutationAllowed(request, input.config);
 
-      const risk = transportRiskContext(request);
+      const risk = transportRiskContext(request, trustedProxyPolicy);
       const currentAuthorization = () => requestAuthorization(request, input.config);
       const resultMatch = path.match(/^\/api\/core\/artifacts\/results\/([^/]+)$/);
       if (resultMatch && request.method === 'GET') {
@@ -194,7 +203,13 @@ function browserAuthMutationPath(path: string, method: string | undefined): bool
     || path === '/api/core/auth/password/login'
     || path === '/api/core/auth/logout';
 }
-function transportRiskContext(request: IncomingMessage): AuthRiskContext { return Object.freeze({ peerAddress: request.socket.remoteAddress }); }
+function transportRiskContext(request: IncomingMessage, policy: CompiledTrustedProxyClientIpPolicy): AuthRiskContext {
+  const resolved = resolveTransportClientIp({
+    remoteAddress: request.socket.remoteAddress,
+    xForwardedFor: header(request, 'x-forwarded-for'),
+  }, policy);
+  return Object.freeze({ peerAddress: resolved.clientAddress });
+}
 function header(request: IncomingMessage, name: string): string | undefined { const value = request.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value; }
 function mediaType(request: IncomingMessage): string { return (header(request, 'content-type') ?? '').split(';')[0].trim().toLowerCase(); }
 function string(value: unknown): string { return typeof value === 'string' ? value : ''; }
