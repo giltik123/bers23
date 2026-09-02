@@ -31,7 +31,7 @@ const TEXTURE_EXECUTOR = Object.freeze({
   version: GARMENT_TEXTURE_COMPOSITE_TOOL_VERSION,
 });
 
-type TicketReader = Pick<LocalExecutionLedgerV2, 'getV2'>;
+type TicketReader = Pick<LocalExecutionLedgerV2, 'getV2' | 'getFinalization'>;
 type MeshAuthority = Pick<LocalGarmentMeshWarpExecutionService, 'uploadImage' | 'submit'>;
 type TextureAuthority = Pick<LocalGarmentTextureCompositeExecutionService, 'uploadImage' | 'submit'>;
 
@@ -64,6 +64,14 @@ export type FashionTryOnOpaqueCandidateResult = Readonly<{
  * bytes, reconstructs the canonical deterministic result envelope itself, then
  * delegates to the existing byte-exact submit authority.
  *
+ * Durable terminal status is checked before upload so an ordinary retry after a
+ * committed execution is side-effect free. Because finalization may race that
+ * preflight, any upload/submit failure is followed by one terminal re-check; a
+ * concurrently committed SUCCESS/FAILED is returned idempotently, while a still
+ * non-terminal failure is preserved. The upload store's existing ticket/role
+ * uniqueness remains the quarantine authority and prevents duplicate persisted
+ * evidence.
+ *
  * The random ticketId is only a lookup handle, not authorization. No HMAC grant,
  * grant table or second result-admission path is introduced here.
  */
@@ -76,18 +84,27 @@ export class FashionTryOnOpaqueCandidateSubmissionService {
   ): Promise<FashionTryOnOpaqueCandidateResult> {
     const command = normalizeCandidate(input);
     const ticket = await this.requireMeshTicket(command.ticketId, command.projectId, auth);
-    const evidence = await this.dependencies.garmentWarp.uploadImage({
-      ticketId: ticket.ticketId,
-      projectId: ticket.scope.projectId,
-      bytes: command.bytes,
-    }, auth);
-    const result = meshResult(ticket, evidence, command.latencyMs);
-    const finalized = await this.dependencies.garmentWarp.submit({
-      ticketId: ticket.ticketId,
-      projectId: ticket.scope.projectId,
-      result,
-    }, auth);
-    return Object.freeze({ status: finalized.status });
+    const terminal = await this.terminalResult(ticket.ticketId);
+    if (terminal) return terminal;
+
+    try {
+      const evidence = await this.dependencies.garmentWarp.uploadImage({
+        ticketId: ticket.ticketId,
+        projectId: ticket.scope.projectId,
+        bytes: command.bytes,
+      }, auth);
+      const result = meshResult(ticket, evidence, command.latencyMs);
+      const finalized = await this.dependencies.garmentWarp.submit({
+        ticketId: ticket.ticketId,
+        projectId: ticket.scope.projectId,
+        result,
+      }, auth);
+      return Object.freeze({ status: finalized.status });
+    } catch (cause) {
+      const raced = await this.terminalResult(ticket.ticketId).catch(() => undefined);
+      if (raced) return raced;
+      throw cause;
+    }
   }
 
   async submitTextureCompositeCandidate(
@@ -96,18 +113,27 @@ export class FashionTryOnOpaqueCandidateSubmissionService {
   ): Promise<FashionTryOnOpaqueCandidateResult> {
     const command = normalizeCandidate(input);
     const ticket = await this.requireTextureTicket(command.ticketId, command.projectId, auth);
-    const evidence = await this.dependencies.textureComposite.uploadImage({
-      ticketId: ticket.ticketId,
-      projectId: ticket.scope.projectId,
-      bytes: command.bytes,
-    }, auth);
-    const result = textureResult(ticket, evidence, command.latencyMs);
-    const finalized = await this.dependencies.textureComposite.submit({
-      ticketId: ticket.ticketId,
-      projectId: ticket.scope.projectId,
-      result,
-    }, auth);
-    return Object.freeze({ status: finalized.status });
+    const terminal = await this.terminalResult(ticket.ticketId);
+    if (terminal) return terminal;
+
+    try {
+      const evidence = await this.dependencies.textureComposite.uploadImage({
+        ticketId: ticket.ticketId,
+        projectId: ticket.scope.projectId,
+        bytes: command.bytes,
+      }, auth);
+      const result = textureResult(ticket, evidence, command.latencyMs);
+      const finalized = await this.dependencies.textureComposite.submit({
+        ticketId: ticket.ticketId,
+        projectId: ticket.scope.projectId,
+        result,
+      }, auth);
+      return Object.freeze({ status: finalized.status });
+    } catch (cause) {
+      const raced = await this.terminalResult(ticket.ticketId).catch(() => undefined);
+      if (raced) return raced;
+      throw cause;
+    }
   }
 
   private async requireMeshTicket(ticketId: string, projectId: string, auth: AuthenticatedScope): Promise<LocalExecutionTicketV2> {
@@ -133,6 +159,12 @@ export class FashionTryOnOpaqueCandidateSubmissionService {
       throw candidateError(403, 'fashion_tryon_opaque_ticket_scope_mismatch', 'Fashion Try-On execution handle is outside the authenticated Project scope');
     }
     return ticket;
+  }
+
+  private async terminalResult(ticketId: string): Promise<FashionTryOnOpaqueCandidateResult | undefined> {
+    const finalization = await this.dependencies.admission.getFinalization(ticketId);
+    if (!finalization || finalization.status === 'UNKNOWN') return undefined;
+    return Object.freeze({ status: finalization.status });
   }
 }
 
