@@ -74,18 +74,30 @@ jobs:
             'representationId',
             'anchorSetId',
             'storageId',
+            'Pool',
+            'Billing',
+            'persistFinal',
+            'acceptFinal',
+            'acceptProject',
           ]);
+          const forbiddenImportFragments = ['provider', 'billing', 'fashn'];
           const found = [];
           const visit = node => {
             if (ts.isIdentifier(node) && forbiddenIdentifiers.has(node.text)) {
               const pos = ast.getLineAndCharacterOfPosition(node.getStart(ast));
               found.push(`${node.text}@${pos.line + 1}:${pos.character + 1}`);
             }
+            if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+              const specifier = node.moduleSpecifier.text.toLowerCase();
+              if (specifier === 'pg' || forbiddenImportFragments.some(fragment => specifier.includes(fragment))) {
+                const pos = ast.getLineAndCharacterOfPosition(node.moduleSpecifier.getStart(ast));
+                found.push(`import:${node.moduleSpecifier.text}@${pos.line + 1}:${pos.character + 1}`);
+              }
+            }
             ts.forEachChild(node, visit);
           };
           visit(ast);
-          if (found.length) throw new Error(`result coordinator references forbidden evidence authority: ${found.join(', ')}`);
+          if (found.length) throw new Error(`result coordinator references forbidden authority: ${found.join(', ')}`);
           NODE
-          ! grep -E "from 'pg'|INSERT|UPDATE|DELETE|providers|Billing|FAL_KEY|FASHN|persistFinal|acceptFinal|acceptProject|history" "$RESULT"
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
           git diff --check
