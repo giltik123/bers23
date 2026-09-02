@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import { PostgresMaskArtifactStore } from './postgresMaskArtifactStore.ts';
 import { PostgresImageArtifactStore } from './postgresImageArtifactStore.ts';
-import { SignedArtifactAuthority } from './signedArtifactAuthority.ts';
+import { ArtifactReferenceDeniedError, SignedArtifactAuthority } from './signedArtifactAuthority.ts';
 
 export type StoredProjectImageEvidence = Readonly<{
   artifactId: string;
@@ -18,6 +18,15 @@ export type StoredProjectImageEvidence = Readonly<{
 export type ResolvedStoredProjectImage = StoredProjectImageEvidence & Readonly<{
   bytes: Uint8Array;
 }>;
+
+/** Expected unavailability after a trusted stored-image claim resolved but no durable row exists. */
+export class StoredProjectImageUnavailableError extends Error {
+  readonly code = 'STORED_PROJECT_IMAGE_UNAVAILABLE';
+  constructor() {
+    super('Canonical stored Project IMAGE is unavailable');
+    this.name = 'StoredProjectImageUnavailableError';
+  }
+}
 
 /** One authorization boundary for signed external originals and durable stored masks. */
 export class ArtifactAuthority {
@@ -56,14 +65,15 @@ export class ArtifactAuthority {
       storageId = claim.storageId;
       expectedRole = 'ORIGINAL';
       expectedLifecycle = 'IMMUTABLE';
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ArtifactReferenceDeniedError)) throw error;
       const claim = this.external.resolveStoredFinalId(artifactId, scope);
       storageId = claim.storageId;
       expectedRole = 'COMPOSITE';
       expectedLifecycle = 'FINAL';
     }
     const stored = await this.images.loadSource(storageId, scope);
-    if (!stored) throw new Error('Canonical stored Project IMAGE is unavailable');
+    if (!stored) throw new StoredProjectImageUnavailableError();
     if (
       stored.storageId !== storageId
       || stored.projectId !== scope.projectId
