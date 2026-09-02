@@ -45,6 +45,7 @@ jobs:
           npm run server:build
           test -f dist-server/migrations/026_managed_garment_representations.sql
           test -f dist-server/migrations/027_garment_representation_revocation_lifecycle.sql
+          test -f dist-server/migrations/033_manual_parametric_basis_identity.sql
       - name: Bundle F4a baseline and F4a.1 strict GLB PostgreSQL acceptance
         run: |
           mkdir -p .test-cache/managed-garment-glb-f4a1/migrations
@@ -70,6 +71,7 @@ jobs:
           cp server/core/fashion/migrations/025_managed_outfits.sql .test-cache/managed-garment-glb-f4a1/migrations/
           cp server/core/fashion/migrations/026_managed_garment_representations.sql .test-cache/managed-garment-glb-f4a1/migrations/
           cp server/core/fashion/migrations/027_garment_representation_revocation_lifecycle.sql .test-cache/managed-garment-glb-f4a1/migrations/
+          cp server/core/fashion/migrations/033_manual_parametric_basis_identity.sql .test-cache/managed-garment-glb-f4a1/migrations/
       - name: Preserve F4a representation authority and revocation semantics
         run: node --test --test-concurrency=1 .test-cache/managed-garment-glb-f4a1/managed-garment-representations-postgres.test.mjs
       - name: Prove F4a.1 strict GLB indices and default-scene execution subset
