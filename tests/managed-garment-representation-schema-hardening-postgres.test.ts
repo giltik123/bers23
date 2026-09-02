@@ -83,6 +83,16 @@ test('F4a representation schema readiness detects and repairs canonical drift', 
     await migrateGarmentRepresentationSchema(pool);
     await checkGarmentRepresentationSchema(pool);
 
+    await pool.query(`ALTER TABLE canonical_garment_representations DROP CONSTRAINT canonical_garment_representations_garment_content_unique`);
+    await pool.query(`ALTER TABLE canonical_garment_representations
+      ADD CONSTRAINT canonical_garment_representations_garment_content_unique UNIQUE(garment_id,content_sha256)`);
+    await assert.rejects(checkGarmentRepresentationSchema(pool), /canonical_garment_representations_garment_content_unique/);
+    await migrateGarmentRepresentationSchema(pool);
+    await checkGarmentRepresentationSchema(pool);
+    const repairedKey = await pool.query(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conrelid=to_regclass('canonical_garment_representations') AND conname='canonical_garment_representations_garment_content_unique'`);
+    assert.equal(repairedKey.rows[0]?.definition, 'UNIQUE (garment_id, content_sha256, basis_view_id)');
+
     await pool.query(`DROP INDEX canonical_garment_representations_owner_garment_idx`);
     await pool.query(`CREATE INDEX canonical_garment_representations_owner_garment_idx ON canonical_garment_representations (garment_id,tenant_id,user_id)`);
     await assert.rejects(checkGarmentRepresentationSchema(pool), /canonical_garment_representations_owner_garment_idx/);
