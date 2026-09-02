@@ -11,6 +11,19 @@ const xff = (trustedCidrs = ['10.0.0.0/8']) => compileTrustedProxyClientIpPolicy
   trustedCidrs,
 });
 
+test('omitted programmatic policy preserves the historical NONE plus empty-CIDR default', () => {
+  for (const policy of [compileTrustedProxyClientIpPolicy(), compileTrustedProxyClientIpPolicy({})]) {
+    assert.equal(policy.headerMode, 'NONE');
+    assert.deepEqual(policy.trustedCidrs, []);
+    const resolved = resolveTransportClientIp({
+      remoteAddress: '203.0.113.10',
+      xForwardedFor: '198.51.100.7',
+    }, policy);
+    assert.equal(resolved.clientAddress, '203.0.113.10');
+    assert.equal(resolved.forwardedAccepted, false);
+  }
+});
+
 test('trusted proxy policy defaults to socket identity and never trusts forwarding headers implicitly', () => {
   const resolved = resolveTransportClientIp({
     remoteAddress: '203.0.113.10',
