@@ -1,5 +1,4 @@
 import {
-  FASHION_TRYON_EXECUTION_MIME,
   FASHION_TRYON_MESH_PHASE,
   FASHION_TRYON_TEXTURE_PHASE,
   decodeFashionTryOnMeshExecutionEnvelope,
@@ -13,20 +12,12 @@ import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministi
 import type { PixelImage } from '../../platform/creative/pipeline/ControlledLocalEdit';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const RECEIPT_KEYS = Object.freeze(['height','mimeType','sizeBytes','status','width']);
 const ACK_KEYS = Object.freeze(['status']);
 
-export type FashionTryOnPreparedUploadReceiptV1 = Readonly<{
-  status: 'STORED';
-  mimeType: typeof FASHION_TRYON_EXECUTION_MIME;
-  width: number;
-  height: number;
-  sizeBytes: number;
-}>;
-
-export type FashionTryOnPreparedSubmitV1 = Readonly<{
+export type FashionTryOnPreparedCandidateSubmissionV1 = Readonly<{
   ticketId: string;
   projectId: string;
+  bytes: Uint8Array;
   latencyMs: number;
 }>;
 
@@ -40,17 +31,15 @@ export type PreparedFashionTryOnExecutionResult = Readonly<{
 
 export type CorePreparedGarmentMeshWarpClient = Readonly<{
   loadPreparedGarmentMeshWarpInput(payload: Readonly<{ ticketId: string; projectId: string }>): Promise<Uint8Array>;
-  uploadPreparedGarmentMeshWarpImage(payload: Readonly<{ ticketId: string; projectId: string; bytes: Uint8Array }>): Promise<unknown>;
-  submitPreparedGarmentMeshWarp(payload: FashionTryOnPreparedSubmitV1): Promise<unknown>;
+  submitPreparedGarmentMeshWarpCandidate(payload: FashionTryOnPreparedCandidateSubmissionV1): Promise<unknown>;
 }>;
 
 export type CorePreparedGarmentTextureCompositeClient = Readonly<{
   loadPreparedGarmentTextureCompositeInput(payload: Readonly<{ ticketId: string; projectId: string }>): Promise<Uint8Array>;
-  uploadPreparedGarmentTextureCompositeImage(payload: Readonly<{ ticketId: string; projectId: string; bytes: Uint8Array }>): Promise<unknown>;
-  submitPreparedGarmentTextureComposite(payload: FashionTryOnPreparedSubmitV1): Promise<unknown>;
+  submitPreparedGarmentTextureCompositeCandidate(payload: FashionTryOnPreparedCandidateSubmissionV1): Promise<unknown>;
 }>;
 
-/** Product mesh executor: opaque grant in, pixels out. No prepare or evidence identity exists in this surface. */
+/** Product mesh executor: opaque grant in, one quarantined PNG candidate out. */
 export class CorePreparedGarmentMeshWarp {
   constructor(
     private readonly projectId: string,
@@ -81,22 +70,18 @@ export class CorePreparedGarmentMeshWarp {
     );
     const preview = pixelImage(envelope.outputWidth, envelope.outputHeight, rgba);
     const png = await encodeDeterministicRgbaPng(preview);
-    requireUploadReceipt(
-      await this.core.uploadPreparedGarmentMeshWarpImage({ ticketId: grant.ticketId, projectId: this.projectId, bytes: png }),
-      preview,
-      png.byteLength,
-    );
     const latencyMs = elapsed(this.clock(), startedAt);
-    requireSuccessAck(await this.core.submitPreparedGarmentMeshWarp({
+    requireSuccessAck(await this.core.submitPreparedGarmentMeshWarpCandidate({
       ticketId: grant.ticketId,
       projectId: this.projectId,
+      bytes: png,
       latencyMs,
     }));
     return Object.freeze({ target: 'LOCAL', runtime: 'BROWSER_JS', accelerator: 'cpu', preview, latencyMs });
   }
 }
 
-/** Product texture executor: opaque grant in, deterministic composite out; FINAL identity is recovered separately by Core orchestration. */
+/** Product texture executor: FINAL identity is recovered only through Core orchestration after this candidate is admitted. */
 export class CorePreparedGarmentTextureComposite {
   constructor(
     private readonly projectId: string,
@@ -136,15 +121,11 @@ export class CorePreparedGarmentTextureComposite {
     );
     const preview = pixelImage(envelope.outputWidth, envelope.outputHeight, rgba);
     const png = await encodeDeterministicRgbaPng(preview);
-    requireUploadReceipt(
-      await this.core.uploadPreparedGarmentTextureCompositeImage({ ticketId: grant.ticketId, projectId: this.projectId, bytes: png }),
-      preview,
-      png.byteLength,
-    );
     const latencyMs = elapsed(this.clock(), startedAt);
-    requireSuccessAck(await this.core.submitPreparedGarmentTextureComposite({
+    requireSuccessAck(await this.core.submitPreparedGarmentTextureCompositeCandidate({
       ticketId: grant.ticketId,
       projectId: this.projectId,
+      bytes: png,
       latencyMs,
     }));
     return Object.freeze({ target: 'LOCAL', runtime: 'BROWSER_JS', accelerator: 'cpu', preview, latencyMs });
@@ -160,23 +141,9 @@ function assertGrantGeometry(grant: FashionTryOnExecutionGrantV1, width: number,
 function pixelImage(width: number, height: number, rgba: Uint8ClampedArray): PixelImage {
   return Object.freeze({ width, height, data: rgba, format: 'RGBA8', orientation: 1, colorSpace: 'srgb' });
 }
-function requireUploadReceipt(value: unknown, preview: PixelImage, encodedSize: number): FashionTryOnPreparedUploadReceiptV1 {
-  const record = exactRecord(value, RECEIPT_KEYS, 'Fashion Try-On upload receipt');
-  if (record.status !== 'STORED') throw new Error('Fashion Try-On upload receipt status is invalid');
-  if (record.mimeType !== FASHION_TRYON_EXECUTION_MIME) throw new Error('Fashion Try-On upload receipt mimeType is invalid');
-  if (record.width !== preview.width || record.height !== preview.height) throw new Error('Fashion Try-On upload receipt geometry is invalid');
-  if (!Number.isSafeInteger(record.sizeBytes) || Number(record.sizeBytes) !== encodedSize) throw new Error('Fashion Try-On upload receipt size is invalid');
-  return Object.freeze({
-    status: 'STORED',
-    mimeType: FASHION_TRYON_EXECUTION_MIME,
-    width: preview.width,
-    height: preview.height,
-    sizeBytes: Number(record.sizeBytes),
-  });
-}
 function requireSuccessAck(value: unknown): void {
-  const record = exactRecord(value, ACK_KEYS, 'Fashion Try-On prepared submission acknowledgement');
-  if (record.status !== 'SUCCESS') throw new Error('Core rejected prepared Fashion Try-On execution');
+  const record = exactRecord(value, ACK_KEYS, 'Fashion Try-On prepared candidate acknowledgement');
+  if (record.status !== 'SUCCESS') throw new Error('Core rejected prepared Fashion Try-On candidate');
 }
 function exactRecord(value: unknown, expectedKeys: readonly string[], label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`);
