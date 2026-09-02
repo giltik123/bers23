@@ -22,7 +22,7 @@ export async function migrateWorkflowContinuationSchema(pool: Pool): Promise<voi
   await checkLocalExecutionLedgerSchema(pool);
   const state = await inspectWorkflowContinuationSchema(pool);
   if (state.table && state.scopeClientRequestUnique && state.outstandingTicketForeignKey && state.inputArtifactsJson && state.completedStepsJson && state.revision) return;
-  await pool.query(await readFile(new URL('../artifacts/migrations/015_workflow_continuations.sql', import.meta.url), 'utf8'));
+  await pool.query(await readWorkflowContinuationMigration());
   await checkWorkflowContinuationSchema(pool);
 }
 
@@ -98,4 +98,16 @@ async function inspectWorkflowContinuationSchema(pool: Pool): Promise<WorkflowCo
     completedStepsJson: row.completed_steps_json === true,
     revision: row.revision === true,
   });
+}
+
+async function readWorkflowContinuationMigration(): Promise<string> {
+  try {
+    return await readFile(new URL('../artifacts/migrations/015_workflow_continuations.sql', import.meta.url), 'utf8');
+  } catch (sourceLayoutError) {
+    try {
+      return await readFile(new URL('./migrations/015_workflow_continuations.sql', import.meta.url), 'utf8');
+    } catch {
+      throw sourceLayoutError;
+    }
+  }
 }
