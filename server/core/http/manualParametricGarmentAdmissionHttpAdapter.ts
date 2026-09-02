@@ -37,7 +37,15 @@ type AdmissionRequestBody = Readonly<{
  */
 export function createManualParametricGarmentAdmissionHttpAdapter(input: AdapterInput) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
-    const url = new URL(request.url ?? '/', 'http://core.invalid');
+    let url: URL;
+    try {
+      url = new URL(request.url ?? '/', 'http://core.invalid');
+    } catch {
+      // A malformed raw request-target must never escape the adapter into the
+      // server listener. It cannot be proven to belong to this route, so leave
+      // it unclaimed for the outer router's generic malformed/404 handling.
+      return false;
+    }
     const match = PATH_PATTERN.exec(url.pathname);
     if (!match) return false;
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || globalThis.crypto.randomUUID();
@@ -86,6 +94,10 @@ function publicResult(value: ManualParametricGarmentAdmissionResult, requestedGa
     || representation.tier !== 'PARAMETRIC'
     || representation.format !== 'BERS_PARAMETRIC_V1'
     || representation.admissionState !== 'ADMITTED'
+    || value.representationTier !== 'PARAMETRIC'
+    || !Number.isSafeInteger(value.garmentRevision)
+    || value.garmentRevision < 1
+    || typeof value.replayed !== 'boolean'
   ) {
     throw new Error('Manual PARAMETRIC admission returned evidence outside the public transport contract');
   }
