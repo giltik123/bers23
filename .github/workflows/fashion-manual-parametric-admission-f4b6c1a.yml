@@ -53,7 +53,11 @@ jobs:
           ! grep -Eq "representations\.(get|list|loadPayload|admit)\(" server/core/fashion/ManualParametricGarmentAdmissionService.ts
           grep -q "UNIQUE(garment_id,content_sha256,basis_view_id)" server/core/fashion/migrations/026_managed_garment_representations.sql
           grep -q "UNIQUE(garment_id,content_sha256,basis_view_id)" server/core/fashion/migrations/033_manual_parametric_basis_content_uniqueness.sql
-          grep -q "representation.basisViewId.toLowerCase() !== garment.primaryViewId.toLowerCase()" server/core/localExecution/ManagedGarmentLocalExecutionInputAuthority.ts
+          grep -q "expectedRevision > garment.revision" server/core/fashion/postgresGarmentRepresentationStore.ts
+          grep -q "resolveCurrentExecutionRepresentation" server/core/fashion/postgresGarmentRepresentationStore.ts
+          grep -q "representation.basisViewId !== garment.primaryViewId" server/core/fashion/postgresGarmentRepresentationStore.ts
+          grep -q "resolveCurrentExecutionRepresentation(scope, garmentId, representationId)" server/core/localExecution/ManagedGarmentLocalExecutionInputAuthority.ts
+          grep -q "current.status === 'BASIS_NOT_CURRENT'" server/core/localExecution/ManagedGarmentLocalExecutionInputAuthority.ts
           grep -q "value.basisViewId.toLowerCase() === currentPrimaryViewId" server/core/fashion/FashionTryOnReadinessService.ts
           ! grep -R -E "FASHN|Base44|apiKey|providerCredential" server/core/fashion/ManualParametricGarmentAdmissionService.ts tests/fashion-manual-parametric-admission-f4b6c1a-postgres.test.ts
       - name: Bundle exact-head manual PARAMETRIC acceptance
