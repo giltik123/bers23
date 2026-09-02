@@ -3,8 +3,8 @@ import { BlockList, isIP } from 'node:net';
 export type TrustedProxyHeaderMode = 'NONE' | 'X_FORWARDED_FOR';
 
 export type TrustedProxyClientIpPolicy = Readonly<{
-  headerMode: TrustedProxyHeaderMode;
-  trustedCidrs: readonly string[];
+  headerMode?: TrustedProxyHeaderMode;
+  trustedCidrs?: readonly string[];
 }>;
 
 export type TransportClientIpInput = Readonly<{
@@ -32,25 +32,32 @@ const MAX_X_FORWARDED_FOR_HOPS = 32;
 /**
  * Compile the deployment-owned immediate-proxy trust boundary once at startup.
  *
- * NONE is the safe default and requires an empty CIDR list. XFF is accepted only
- * when at least one concrete proxy subnet is explicitly trusted. Hostnames,
- * wildcards and implicit private-network trust are intentionally unsupported.
+ * Omitted policy fields preserve the historical safe default: NONE + no trusted
+ * CIDRs. This matters for internal programmatic Core compositions that predate
+ * the deployment settings. Production environment loading still validates and
+ * materializes both fields explicitly before the HTTP adapter is created.
+ *
+ * XFF is accepted only when at least one concrete proxy subnet is explicitly
+ * trusted. Hostnames, wildcards and implicit private-network trust are
+ * intentionally unsupported.
  */
 export function compileTrustedProxyClientIpPolicy(
-  policy: TrustedProxyClientIpPolicy,
+  policy: TrustedProxyClientIpPolicy = {},
 ): CompiledTrustedProxyClientIpPolicy {
-  if (!policy || typeof policy !== 'object') throw new Error('Trusted proxy policy is required');
-  if (policy.headerMode !== 'NONE' && policy.headerMode !== 'X_FORWARDED_FOR') {
+  if (!policy || typeof policy !== 'object') throw new Error('Trusted proxy policy is invalid');
+  const headerMode = policy.headerMode ?? 'NONE';
+  if (headerMode !== 'NONE' && headerMode !== 'X_FORWARDED_FOR') {
     throw new Error('Trusted proxy header mode is invalid');
   }
-  if (!Array.isArray(policy.trustedCidrs)) throw new Error('Trusted proxy CIDRs must be an array');
-  if (policy.trustedCidrs.length > MAX_TRUSTED_CIDRS) throw new Error(`Trusted proxy CIDRs exceed ${MAX_TRUSTED_CIDRS} entries`);
+  const rawCidrs = policy.trustedCidrs ?? Object.freeze([] as string[]);
+  if (!Array.isArray(rawCidrs)) throw new Error('Trusted proxy CIDRs must be an array');
+  if (rawCidrs.length > MAX_TRUSTED_CIDRS) throw new Error(`Trusted proxy CIDRs exceed ${MAX_TRUSTED_CIDRS} entries`);
 
-  const trustedCidrs = Object.freeze(policy.trustedCidrs.map((value, index) => normalizeCidr(value, index)));
-  if (policy.headerMode === 'NONE' && trustedCidrs.length !== 0) {
+  const trustedCidrs = Object.freeze(rawCidrs.map((value, index) => normalizeCidr(value, index)));
+  if (headerMode === 'NONE' && trustedCidrs.length !== 0) {
     throw new Error('Trusted proxy CIDRs require X_FORWARDED_FOR mode');
   }
-  if (policy.headerMode === 'X_FORWARDED_FOR' && trustedCidrs.length === 0) {
+  if (headerMode === 'X_FORWARDED_FOR' && trustedCidrs.length === 0) {
     throw new Error('X_FORWARDED_FOR mode requires at least one trusted proxy CIDR');
   }
 
@@ -60,7 +67,7 @@ export function compileTrustedProxyClientIpPolicy(
     const family = isIP(address);
     trusted.addSubnet(address, Number(rawPrefix), family === 4 ? 'ipv4' : 'ipv6');
   }
-  return Object.freeze({ headerMode: policy.headerMode, trustedCidrs, trusted });
+  return Object.freeze({ headerMode, trustedCidrs, trusted });
 }
 
 /**
