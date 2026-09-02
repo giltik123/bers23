@@ -11,6 +11,7 @@ const REPRESENTATION_ID = '33333333-3333-4333-8333-333333333333';
 const ANCHOR_SET_ID = '44444444-4444-4444-8444-444444444444';
 const SOURCE_ARTIFACT_ID = 'signed-current-project-image';
 const SOURCE_STORAGE_ID = '55555555-5555-4555-8555-555555555555';
+const PRIMARY_VIEW_ID = '66666666-6666-4666-8666-666666666666';
 const SOURCE_SHA = 'a'.repeat(64);
 const AUTH = Object.freeze({ tenantId: 'tenant-a', userId: 'user-a' });
 const COMMAND = Object.freeze({ projectId: PROJECT_ID, sourceArtifactId: SOURCE_ARTIFACT_ID, garmentId: GARMENT_ID });
@@ -25,7 +26,7 @@ function representation(overrides: Record<string, unknown> = {}) {
     contentSha256: 'b'.repeat(64),
     byteSize: 123,
     storageBackend: 'POSTGRES_BYTEA_V1',
-    basisViewId: '66666666-6666-4666-8666-666666666666',
+    basisViewId: PRIMARY_VIEW_ID,
     generatorId: 'test.generator',
     generatorVersion: '1',
     validatorId: 'bers.parametric-topology-validator',
@@ -40,6 +41,7 @@ function representation(overrides: Record<string, unknown> = {}) {
 
 function createHarness(overrides: Readonly<{
   currentStorageId?: string | null;
+  currentPrimaryViewId?: string | null;
   category?: string;
   garmentStatus?: 'ACTIVE' | 'ARCHIVED';
   representations?: readonly any[];
@@ -65,6 +67,10 @@ function createHarness(overrides: Readonly<{
       if (sql.includes('FROM canonical_projects')) {
         const value = overrides.currentStorageId === undefined ? SOURCE_STORAGE_ID : overrides.currentStorageId;
         return { rows: value ? [{ current_image_storage_id: value }] : [] };
+      }
+      if (sql.includes('FROM canonical_garments')) {
+        const value = overrides.currentPrimaryViewId === undefined ? PRIMARY_VIEW_ID : overrides.currentPrimaryViewId;
+        return { rows: value ? [{ primary_view_id: value }] : [] };
       }
       if (sql.includes('FROM canonical_project_body_anchor_sets')) return { rows: anchorRows };
       throw new Error(`Unexpected SQL in readiness test: ${sql}`);
@@ -139,6 +145,10 @@ test('F4b.6 readiness resolves server-owned representation and sequence-selected
   assert.equal(Object.hasOwn(publicReadiness, 'anchorSetId'), false);
   assert.equal(Object.hasOwn(publicReadiness, 'source'), false);
 
+  const garmentQuery = (harness.queries as any[]).find(value => value.sql.includes('FROM canonical_garments'));
+  assert.deepEqual(garmentQuery.params, [GARMENT_ID, 'tenant-a', 'user-a']);
+  assert.match(garmentQuery.sql, /primary_view_id/);
+
   const anchorQuery = (harness.queries as any[]).find(value => value.sql.includes('canonical_project_body_anchor_sets'));
   assert.deepEqual(anchorQuery.params, [PROJECT_ID, 'tenant-a', 'user-a', SOURCE_STORAGE_ID, SOURCE_SHA, 256, 384]);
   assert.match(anchorQuery.sql, /acquisition_sequence::text AS acquisition_sequence/);
@@ -157,6 +167,22 @@ test('F4b.6 readiness fails closed when no admitted PARAMETRIC representation ex
   const harness = createHarness({ representations: [representation({ admissionState: 'REVOKED', revokedAt: '2026-08-31T20:02:00.000Z' })] });
   const result = await harness.service.resolve(COMMAND, AUTH as any);
   assert.equal(result.status, 'REPRESENTATION_REQUIRED');
+  assert.equal(harness.deriveCalls(), 0);
+});
+
+test('F4b.6 readiness requires PARAMETRIC evidence bound to the current Garment primary view', async () => {
+  const harness = createHarness({
+    representations: [representation({ basisViewId: '77777777-7777-4777-8777-777777777777' })],
+  });
+  const result = await harness.service.resolve(COMMAND, AUTH as any);
+  assert.equal(result.status, 'REPRESENTATION_REQUIRED');
+  assert.equal(harness.deriveCalls(), 0);
+});
+
+test('F4b.6 readiness fails closed when current Garment primary authority is unavailable', async () => {
+  const harness = createHarness({ currentPrimaryViewId: null });
+  const result = await harness.service.resolve(COMMAND, AUTH as any);
+  assert.equal(result.status, 'GARMENT_UNAVAILABLE');
   assert.equal(harness.deriveCalls(), 0);
 });
 

@@ -162,7 +162,7 @@ ALTER TABLE canonical_garment_views
   DROP CONSTRAINT IF EXISTS canonical_garment_views_representation_source_unique;
 ALTER TABLE canonical_garment_representations
   ADD CONSTRAINT canonical_garment_representations_owner_unique UNIQUE(representation_id,garment_id,tenant_id,user_id),
-  ADD CONSTRAINT canonical_garment_representations_garment_content_unique UNIQUE(garment_id,content_sha256);
+  ADD CONSTRAINT canonical_garment_representations_garment_content_unique UNIQUE(garment_id,content_sha256,basis_view_id);
 ALTER TABLE canonical_garment_representation_sources
   ADD CONSTRAINT canonical_garment_representation_sources_view_unique UNIQUE(representation_id,view_id);
 ALTER TABLE canonical_garment_views

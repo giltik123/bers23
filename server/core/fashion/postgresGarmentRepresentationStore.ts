@@ -2,6 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { GarmentOwnerScope } from './postgresGarmentStore.ts';
 import { validateGlbExecutionSubset } from './glbExecutionSubsetValidator.ts';
+import {
+  MANUAL_PARAMETRIC_CONTOUR_PRODUCER_ID,
+  MANUAL_PARAMETRIC_CONTOUR_PRODUCER_VERSION,
+  produceManualParametricRepresentation,
+} from './manualParametricContour.ts';
 
 export const GARMENT_REPRESENTATION_TIERS = Object.freeze(['PARAMETRIC', 'FULL_3D'] as const);
 export type GarmentRepresentationTier = (typeof GARMENT_REPRESENTATION_TIERS)[number];
@@ -58,6 +63,28 @@ export type Full3dGarmentRepresentationInput = Readonly<{
 
 export type AdmitGarmentRepresentationInput = ParametricGarmentRepresentationInput | Full3dGarmentRepresentationInput;
 
+export type ManualParametricGarmentAdmissionResult = Readonly<{
+  garmentRevision: number;
+  representationTier: 'PARAMETRIC' | 'FULL_3D';
+  representation: ManagedGarmentRepresentation;
+  replayed: boolean;
+}>;
+
+export type ManagedGarmentExecutionRepresentationResolution =
+  | Readonly<{ status: 'UNAVAILABLE' }>
+  | Readonly<{ status: 'GARMENT_NOT_ACTIVE' }>
+  | Readonly<{ status: 'REPRESENTATION_NOT_ADMITTED' }>
+  | Readonly<{ status: 'BASIS_NOT_CURRENT' }>
+  | Readonly<{
+      status: 'READY';
+      representation: ManagedGarmentRepresentation;
+      payload: Readonly<{
+        bytes: Uint8Array;
+        contentType: ManagedGarmentRepresentation['contentType'];
+        contentSha256: string;
+      }>;
+    }>;
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PARAMETRIC_KEYS = Object.freeze(['schemaVersion', 'coordinateSpace', 'points', 'triangles', 'outline'] as const);
 const MAX_PARAMETRIC_POINTS = 4096;
@@ -68,6 +95,103 @@ const GLB_BIN_CHUNK = 0x004e4942;
 
 export class PostgresGarmentRepresentationStore {
   constructor(private readonly pool: Pool, private readonly nextId: () => string = randomUUID) {}
+
+  async admitManualParametricContour(
+    scope: GarmentOwnerScope,
+    garmentIdValue: string,
+    expectedRevision: number,
+    contour: unknown,
+  ): Promise<ManualParametricGarmentAdmissionResult> {
+    const garmentId = normalizeUuid(garmentIdValue, 'garment_not_found', 404);
+    validateExpectedRevision(expectedRevision);
+    const payload = produceManualParametricRepresentation(contour);
+    const bytes = canonicalizeParametricPayload(payload);
+    assertPayloadSize(bytes.byteLength);
+    const contentSha256 = sha256(bytes);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const garment = await lockGarment(client, scope, garmentId);
+      if (!garment) throw notFound();
+      if (garment.status !== 'ACTIVE') {
+        throw httpError(409, 'garment_representation_garment_not_active', 'Only active Garments can admit new advanced representations');
+      }
+      if (garment.category === 'other') {
+        throw httpError(409, 'garment_representation_category_requires_classification', 'Garment must be classified before an advanced representation can be admitted');
+      }
+      if (expectedRevision > garment.revision) throw revisionConflict();
+
+      const sources = await loadSourceViews(client, scope, garmentId, [garment.primaryViewId]);
+      const source = sources[0];
+      if (!source || source.viewId !== garment.primaryViewId) {
+        throw httpError(409, 'garment_representation_source_unavailable', 'Current primary Garment view is unavailable');
+      }
+
+      const replayRow = await loadManualReplayCandidate(client, scope, garmentId, contentSha256, garment.primaryViewId);
+      if (replayRow) {
+        const representation = assertExactManualReplay(replayRow, garment.primaryViewId, source.contentSha256, bytes);
+        if (garment.representationTier === 'BASIC') {
+          throw new Error('Exact admitted manual PARAMETRIC replay exists while Garment summary tier is BASIC');
+        }
+        const replay = Object.freeze({
+          garmentRevision: garment.revision,
+          representationTier: garment.representationTier,
+          representation,
+          replayed: true,
+        }) satisfies ManualParametricGarmentAdmissionResult;
+        await client.query('COMMIT');
+        return replay;
+      }
+
+      if (garment.revision !== expectedRevision) throw revisionConflict();
+      const representationId = this.nextId().toLowerCase();
+      if (!UUID_PATTERN.test(representationId)) throw new Error('Representation ID generator returned an invalid UUID');
+
+      try {
+        await client.query(`INSERT INTO canonical_garment_representations
+          (representation_id,garment_id,tenant_id,user_id,tier,format,content_type,content_sha256,byte_size,storage_backend,representation_bytes,basis_view_id,source_count,generator_id,generator_version,validator_id,validator_version,admission_state)
+          VALUES ($1,$2,$3,$4,'PARAMETRIC','BERS_PARAMETRIC_V1','application/vnd.bers.garment-parametric+json',$5,$6,'POSTGRES_BYTEA_V1',$7,$8,1,$9,$10,$11,$12,'ADMITTED')`,
+        [representationId, garmentId, scope.tenantId, scope.userId, contentSha256, bytes.byteLength, Buffer.from(bytes), garment.primaryViewId,
+          MANUAL_PARAMETRIC_CONTOUR_PRODUCER_ID, MANUAL_PARAMETRIC_CONTOUR_PRODUCER_VERSION, PARAMETRIC_VALIDATOR_ID, PARAMETRIC_VALIDATOR_VERSION]);
+      } catch (error) {
+        if (isConstraintViolation(error, 'canonical_garment_representations_garment_content_unique')) {
+          throw httpError(409, 'manual_parametric_existing_provenance_conflict', 'Manual PARAMETRIC content identity already exists for the current primary basis');
+        }
+        throw error;
+      }
+
+      await client.query(`INSERT INTO canonical_garment_representation_sources
+        (representation_id,garment_id,tenant_id,user_id,source_position,view_id,source_content_sha256)
+        VALUES ($1,$2,$3,$4,0,$5,$6)`,
+      [representationId, garmentId, scope.tenantId, scope.userId, garment.primaryViewId, source.contentSha256]);
+
+      const nextTier = await highestAdmittedTier(client, scope, garmentId);
+      if (nextTier === 'BASIC') throw new Error('Manual PARAMETRIC admission did not advance Garment representation summary');
+      const updated = await client.query(`UPDATE canonical_garments
+        SET representation_tier=$4,revision=revision+1,updated_at=CURRENT_TIMESTAMP
+        WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL AND revision=$5
+        RETURNING revision`, [garmentId, scope.tenantId, scope.userId, nextTier, garment.revision]);
+      const nextRevision = Number(updated.rows[0]?.revision);
+      if (updated.rowCount !== 1 || nextRevision !== garment.revision + 1) throw revisionConflict();
+
+      const insertedRow = await loadRepresentationRow(client, scope, garmentId, representationId);
+      if (!insertedRow) throw new Error('Manual PARAMETRIC admission transaction could not read its inserted representation');
+      const representation = assertExactManualReplay(insertedRow, garment.primaryViewId, source.contentSha256, bytes);
+      const admitted = Object.freeze({
+        garmentRevision: nextRevision,
+        representationTier: nextTier,
+        representation,
+        replayed: false,
+      }) satisfies ManualParametricGarmentAdmissionResult;
+      await client.query('COMMIT');
+      return admitted;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   async admit(
     scope: GarmentOwnerScope,
@@ -108,7 +232,7 @@ export class PostgresGarmentRepresentationStore {
           normalized.generatorId, normalized.generatorVersion, normalized.validatorId, normalized.validatorVersion]);
       } catch (error) {
         if (isConstraintViolation(error, 'canonical_garment_representations_garment_content_unique')) {
-          throw httpError(409, 'garment_representation_duplicate_content', 'This exact representation payload is already recorded for the Garment');
+          throw httpError(409, 'garment_representation_duplicate_content', 'This exact representation payload is already recorded for the Garment primary basis');
         }
         throw error;
       }
@@ -209,6 +333,56 @@ export class PostgresGarmentRepresentationStore {
     return result.rows[0] ? fromRepresentationRow(result.rows[0]) : undefined;
   }
 
+  async resolveCurrentExecutionRepresentation(
+    scope: GarmentOwnerScope,
+    garmentIdValue: string,
+    representationIdValue: string,
+  ): Promise<ManagedGarmentExecutionRepresentationResolution> {
+    if (!isUuid(garmentIdValue) || !isUuid(representationIdValue)) {
+      return Object.freeze({ status: 'UNAVAILABLE' });
+    }
+    const garmentId = garmentIdValue.toLowerCase();
+    const representationId = representationIdValue.toLowerCase();
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const garment = await lockGarment(client, scope, garmentId);
+      let resolution: ManagedGarmentExecutionRepresentationResolution = Object.freeze({ status: 'UNAVAILABLE' });
+      if (garment) {
+        if (garment.status !== 'ACTIVE') {
+          resolution = Object.freeze({ status: 'GARMENT_NOT_ACTIVE' });
+        } else {
+          const row = await loadRepresentationRow(client, scope, garmentId, representationId);
+          if (row) {
+            const representation = fromRepresentationRow(row);
+            if (representation.admissionState !== 'ADMITTED') {
+              resolution = Object.freeze({ status: 'REPRESENTATION_NOT_ADMITTED' });
+            } else if (representation.basisViewId !== garment.primaryViewId) {
+              resolution = Object.freeze({ status: 'BASIS_NOT_CURRENT' });
+            } else {
+              resolution = Object.freeze({
+                status: 'READY',
+                representation,
+                payload: Object.freeze({
+                  bytes: new Uint8Array(row.representation_bytes),
+                  contentType: normalizeStoredContentType(row.content_type),
+                  contentSha256: String(row.content_sha256),
+                }),
+              });
+            }
+          }
+        }
+      }
+      await client.query('COMMIT');
+      return resolution;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async loadPayload(
     scope: GarmentOwnerScope,
     garmentIdValue: string,
@@ -276,6 +450,69 @@ async function loadSourceViews(
     throw httpError(409, 'garment_representation_source_unavailable', 'Every representation source must be a current managed view of the same Garment');
   }
   return Object.freeze(viewIds.map((viewId, position) => Object.freeze({ position, viewId, contentSha256: byId.get(viewId)! })));
+}
+
+async function loadManualReplayCandidate(
+  client: PoolClient,
+  scope: GarmentOwnerScope,
+  garmentId: string,
+  contentSha256: string,
+  basisViewId: string,
+): Promise<any | undefined> {
+  const result = await client.query(`${REPRESENTATION_SELECT}
+    WHERE r.garment_id=$1 AND r.tenant_id=$2 AND r.user_id=$3 AND r.content_sha256=$4 AND r.basis_view_id=$5`,
+  [garmentId, scope.tenantId, scope.userId, contentSha256, basisViewId]);
+  if (result.rows.length > 1) throw new Error('View-bound Garment representation content uniqueness invariant failed');
+  return result.rows[0];
+}
+
+async function loadRepresentationRow(
+  client: PoolClient,
+  scope: GarmentOwnerScope,
+  garmentId: string,
+  representationId: string,
+): Promise<any | undefined> {
+  const result = await client.query(`${REPRESENTATION_SELECT}
+    WHERE r.representation_id=$1 AND r.garment_id=$2 AND r.tenant_id=$3 AND r.user_id=$4`,
+  [representationId, garmentId, scope.tenantId, scope.userId]);
+  return result.rows[0];
+}
+
+function assertExactManualReplay(
+  row: any,
+  primaryViewId: string,
+  primaryViewSha256: string,
+  canonicalBytes: Uint8Array,
+): ManagedGarmentRepresentation {
+  const storedBytes = new Uint8Array(row.representation_bytes);
+  if (!bytesEqual(storedBytes, canonicalBytes)) {
+    throw httpError(409, 'manual_parametric_content_hash_collision', 'Manual PARAMETRIC content hash matches different canonical bytes');
+  }
+  const representation = fromRepresentationRow(row);
+  const exact = representation.tier === 'PARAMETRIC'
+    && representation.format === 'BERS_PARAMETRIC_V1'
+    && representation.contentType === 'application/vnd.bers.garment-parametric+json'
+    && representation.admissionState === 'ADMITTED'
+    && representation.revokedAt === null
+    && representation.generatorId === MANUAL_PARAMETRIC_CONTOUR_PRODUCER_ID
+    && representation.generatorVersion === MANUAL_PARAMETRIC_CONTOUR_PRODUCER_VERSION
+    && representation.validatorId === PARAMETRIC_VALIDATOR_ID
+    && representation.validatorVersion === PARAMETRIC_VALIDATOR_VERSION
+    && representation.basisViewId === primaryViewId
+    && representation.sources.length === 1
+    && representation.sources[0].position === 0
+    && representation.sources[0].viewId === primaryViewId
+    && representation.sources[0].contentSha256 === primaryViewSha256;
+  if (!exact) {
+    throw httpError(409, 'manual_parametric_existing_provenance_conflict', 'Manual PARAMETRIC bytes exist with conflicting current-primary provenance');
+  }
+  return representation;
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) if (left[index] !== right[index]) return false;
+  return true;
 }
 
 async function highestAdmittedTier(client: PoolClient, scope: GarmentOwnerScope, garmentId: string): Promise<'BASIC' | 'PARAMETRIC' | 'FULL_3D'> {

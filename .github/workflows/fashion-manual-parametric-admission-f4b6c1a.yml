@@ -1,0 +1,96 @@
+name: Fashion F4b.6c.1a manual PARAMETRIC admission authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  manual-parametric-admission-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashion_manual_parametric_f4b6c1a_test
+          POSTGRES_USER: fashion_manual_parametric_f4b6c1a_test
+          POSTGRES_PASSWORD: fashion_manual_parametric_f4b6c1a_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fashion_manual_parametric_f4b6c1a_test -d fashion_manual_parametric_f4b6c1a_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fashion_manual_parametric_f4b6c1a_test:fashion_manual_parametric_f4b6c1a_test@127.0.0.1:5432/fashion_manual_parametric_f4b6c1a_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA before dependency or database work
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove Core types and production package
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/026_managed_garment_representations.sql
+          test -f dist-server/migrations/033_manual_parametric_basis_content_uniqueness.sql
+      - name: Prove narrow authority and current-primary source rules statically
+        run: |
+          grep -q "admitManualParametricContour" server/core/fashion/postgresGarmentRepresentationStore.ts
+          grep -q "FOR UPDATE" server/core/fashion/postgresGarmentRepresentationStore.ts
+          grep -q "command.garmentId" server/core/fashion/ManualParametricGarmentAdmissionService.ts
+          ! grep -Eq "representations\.(get|list|loadPayload|admit)\(" server/core/fashion/ManualParametricGarmentAdmissionService.ts
+          grep -q "UNIQUE(garment_id,content_sha256,basis_view_id)" server/core/fashion/migrations/026_managed_garment_representations.sql
+          grep -q "UNIQUE(garment_id,content_sha256,basis_view_id)" server/core/fashion/migrations/033_manual_parametric_basis_content_uniqueness.sql
+          grep -q "expectedRevision > garment.revision" server/core/fashion/postgresGarmentRepresentationStore.ts
+          grep -q "resolveCurrentExecutionRepresentation" server/core/fashion/postgresGarmentRepresentationStore.ts
+          grep -q "representation.basisViewId !== garment.primaryViewId" server/core/fashion/postgresGarmentRepresentationStore.ts
+          grep -q "resolveCurrentExecutionRepresentation(scope, garmentId, representationId)" server/core/localExecution/ManagedGarmentLocalExecutionInputAuthority.ts
+          grep -q "current.status === 'BASIS_NOT_CURRENT'" server/core/localExecution/ManagedGarmentLocalExecutionInputAuthority.ts
+          grep -q "value.basisViewId.toLowerCase() === currentPrimaryViewId" server/core/fashion/FashionTryOnReadinessService.ts
+          ! grep -R -E "FASHN|Base44|apiKey|providerCredential" server/core/fashion/ManualParametricGarmentAdmissionService.ts tests/fashion-manual-parametric-admission-f4b6c1a-postgres.test.ts
+      - name: Bundle exact-head manual PARAMETRIC acceptance
+        run: |
+          mkdir -p .test-cache/fashion-manual-parametric-f4b6c1a/migrations
+          node --input-type=module - <<'NODE'
+          import { build } from 'esbuild';
+          const common = {
+            bundle: true,
+            platform: 'node',
+            format: 'esm',
+            target: 'node24',
+            external: ['pg', 'sharp', 'node:*'],
+          };
+          await build({
+            ...common,
+            entryPoints: ['tests/fashion-manual-parametric-admission-f4b6c1a-postgres.test.ts'],
+            outfile: '.test-cache/fashion-manual-parametric-f4b6c1a/postgres.test.mjs',
+          });
+          await build({
+            ...common,
+            entryPoints: ['tests/fashion-manual-parametric-current-primary-f4b6c1a.test.ts'],
+            outfile: '.test-cache/fashion-manual-parametric-f4b6c1a/current-primary.test.mjs',
+          });
+          NODE
+          cp server/core/fashion/migrations/022_managed_garments_and_initial_views.sql .test-cache/fashion-manual-parametric-f4b6c1a/migrations/
+          cp server/core/fashion/migrations/023_managed_garment_wardrobe_metadata.sql .test-cache/fashion-manual-parametric-f4b6c1a/migrations/
+          cp server/core/fashion/migrations/024_managed_garment_collections.sql .test-cache/fashion-manual-parametric-f4b6c1a/migrations/
+          cp server/core/fashion/migrations/025_managed_outfits.sql .test-cache/fashion-manual-parametric-f4b6c1a/migrations/
+          cp server/core/fashion/migrations/026_managed_garment_representations.sql .test-cache/fashion-manual-parametric-f4b6c1a/migrations/
+          cp server/core/fashion/migrations/027_garment_representation_revocation_lifecycle.sql .test-cache/fashion-manual-parametric-f4b6c1a/migrations/
+          cp server/core/fashion/migrations/033_manual_parametric_basis_content_uniqueness.sql .test-cache/fashion-manual-parametric-f4b6c1a/migrations/
+      - name: Prove transaction-safe manual admission and two-session lock ordering
+        run: node --test --test-concurrency=1 .test-cache/fashion-manual-parametric-f4b6c1a/postgres.test.mjs
+      - name: Prove readiness filters historical representation basis before ordering
+        run: node --test .test-cache/fashion-manual-parametric-f4b6c1a/current-primary.test.mjs

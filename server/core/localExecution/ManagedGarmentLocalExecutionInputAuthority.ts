@@ -19,7 +19,7 @@ import type {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type GarmentReader = Pick<PostgresGarmentStore, 'get' | 'loadView'>;
-type RepresentationReader = Pick<PostgresGarmentRepresentationStore, 'get' | 'loadPayload'>;
+type RepresentationReader = Pick<PostgresGarmentRepresentationStore, 'resolveCurrentExecutionRepresentation'>;
 
 export type ManagedGarmentLocalExecutionInputAuthorityDependencies = Readonly<{
   garments: GarmentReader;
@@ -173,17 +173,12 @@ export class ManagedGarmentLocalExecutionInputAuthority {
   ): Promise<Readonly<{ binding: LocalExecutionManagedGarmentRepresentationInputBinding; bytes: Uint8Array }>> {
     const garmentId = normalizeUuid(garmentIdValue);
     const representationId = normalizeUuid(representationIdValue);
-    const garment = await this.dependencies.garments.get(scope, garmentId);
-    if (!garment) throw unavailable();
-    if (garment.status !== 'ACTIVE') throw stateMismatch('Managed Garment is not active');
-    const representation = await this.dependencies.representations.get(scope, garmentId, representationId);
-    if (!representation) throw unavailable();
-    if (representation.admissionState !== 'ADMITTED') throw stateMismatch('Managed Garment representation is not admitted');
-    if (!garment.views.some(view => view.id.toLowerCase() === representation.basisViewId.toLowerCase())) {
-      throw stateMismatch('Managed Garment representation basis view is no longer current');
-    }
-    const payload = await this.dependencies.representations.loadPayload(scope, garmentId, representationId);
-    if (!payload) throw unavailable();
+    const current = await this.dependencies.representations.resolveCurrentExecutionRepresentation(scope, garmentId, representationId);
+    if (current.status === 'UNAVAILABLE') throw unavailable();
+    if (current.status === 'GARMENT_NOT_ACTIVE') throw stateMismatch('Managed Garment is not active');
+    if (current.status === 'REPRESENTATION_NOT_ADMITTED') throw stateMismatch('Managed Garment representation is not admitted');
+    if (current.status === 'BASIS_NOT_CURRENT') throw stateMismatch('Managed Garment representation basis view is no longer current');
+    const { representation, payload } = current;
     const bytes = Uint8Array.from(payload.bytes);
     const digest = sha256(bytes);
     if (digest !== payload.contentSha256 || digest !== representation.contentSha256 || payload.contentType !== representation.contentType) {
