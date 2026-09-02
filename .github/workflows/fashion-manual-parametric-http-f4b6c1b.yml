@@ -47,7 +47,9 @@ jobs:
           grep -q "manualParametricAdmission: garmentMeshWarp.manualParametricAdmission" server/core/composition/createProductionCore.ts
           grep -q "production.fashion.manualParametricAdmission" server/index.ts
           grep -q "createManualParametricGarmentAdmissionHttpAdapter" server/index.ts
-          grep -q "path.startsWith('/api/core/fashion/garments/')" server/index.ts
+          grep -q "const MANUAL_PARAMETRIC_PATH = /" server/index.ts
+          grep -q "MANUAL_PARAMETRIC_PATH.test(path)" server/index.ts
+          ! grep -q "path.startsWith('/api/core/fashion/garments/') && path.endsWith('/parametric-representation')" server/index.ts
           grep -q "input.admission.admit" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           grep -q "assertBrowserMutationAllowed" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
           grep -q "forbidden_client_authority" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
