@@ -170,6 +170,12 @@ test('F4b.6c.1a admits current-primary manual geometry and exact retry replays u
     assert.equal(replay.representation.id, admitted.representation.id);
     assert.equal((await garments.get(owner, garment.id))!.revision, admitted.garmentRevision);
 
+    await expectCode(
+      service.admit(owner, { garmentId: garment.id, expectedRevision: admitted.garmentRevision + 1, contour }),
+      'garment_revision_conflict',
+    );
+    assert.equal((await garments.get(owner, garment.id))!.revision, admitted.garmentRevision);
+
     const key = await pool.query(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
       WHERE conrelid=to_regclass('canonical_garment_representations')
         AND conname='canonical_garment_representations_garment_content_unique'`);
@@ -312,6 +318,47 @@ test('F4b.6c.1a manual admission lock serializes a concurrently started future p
 
     const authority = new ManagedGarmentLocalExecutionInputAuthority({ garments, representations });
     await expectCode(authority.bindParametricRepresentation(owner, garment.id, admitted.representation.id), 'managed_garment_input_state_mismatch');
+  } finally {
+    mutation?.release();
+    await pool.end();
+  }
+});
+
+
+test('F4b.6c.1a managed representation resolution serializes with primary mutation before returning bytes', async () => {
+  const pool = new Pool({ connectionString: databaseUrl });
+  let mutation: PoolClient | undefined;
+  try {
+    await reset(pool);
+    const garments = new PostgresGarmentStore(pool);
+    const wardrobe = new PostgresGarmentWardrobeStore(pool);
+    const representations = new PostgresGarmentRepresentationStore(pool);
+    const service = new ManualParametricGarmentAdmissionService(representations);
+    let garment = await classifiedGarment(garments, wardrobe, 'execution race');
+    garment = await appendView(garments, garment.id, garment.revision, 67);
+    const originalPrimary = garment.primaryViewId;
+    const nextPrimary = garment.views.find(view => view.id !== originalPrimary)!.id;
+    const admitted = await service.admit(owner, { garmentId: garment.id, expectedRevision: garment.revision, contour });
+    assert.equal(admitted.representation.basisViewId, originalPrimary);
+
+    mutation = await pool.connect();
+    await mutation.query('BEGIN');
+    await switchPrimary(mutation, garment.id, nextPrimary);
+
+    const authority = new ManagedGarmentLocalExecutionInputAuthority({ garments, representations });
+    let settled = false;
+    const resolution = authority.bindParametricRepresentation(owner, garment.id, admitted.representation.id)
+      .finally(() => { settled = true; });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(settled, false, 'managed representation resolution must block behind the canonical Garment row lock');
+
+    await mutation.query('COMMIT');
+    mutation.release();
+    mutation = undefined;
+
+    await expectCode(resolution, 'managed_garment_input_state_mismatch');
+    const current = (await garments.get(owner, garment.id))!;
+    assert.equal(current.primaryViewId, nextPrimary);
   } finally {
     mutation?.release();
     await pool.end();

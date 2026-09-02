@@ -70,6 +70,21 @@ export type ManualParametricGarmentAdmissionResult = Readonly<{
   replayed: boolean;
 }>;
 
+export type ManagedGarmentExecutionRepresentationResolution =
+  | Readonly<{ status: 'UNAVAILABLE' }>
+  | Readonly<{ status: 'GARMENT_NOT_ACTIVE' }>
+  | Readonly<{ status: 'REPRESENTATION_NOT_ADMITTED' }>
+  | Readonly<{ status: 'BASIS_NOT_CURRENT' }>
+  | Readonly<{
+      status: 'READY';
+      representation: ManagedGarmentRepresentation;
+      payload: Readonly<{
+        bytes: Uint8Array;
+        contentType: ManagedGarmentRepresentation['contentType'];
+        contentSha256: string;
+      }>;
+    }>;
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PARAMETRIC_KEYS = Object.freeze(['schemaVersion', 'coordinateSpace', 'points', 'triangles', 'outline'] as const);
 const MAX_PARAMETRIC_POINTS = 4096;
@@ -104,6 +119,7 @@ export class PostgresGarmentRepresentationStore {
       if (garment.category === 'other') {
         throw httpError(409, 'garment_representation_category_requires_classification', 'Garment must be classified before an advanced representation can be admitted');
       }
+      if (expectedRevision > garment.revision) throw revisionConflict();
 
       const sources = await loadSourceViews(client, scope, garmentId, [garment.primaryViewId]);
       const source = sources[0];
@@ -315,6 +331,56 @@ export class PostgresGarmentRepresentationStore {
         AND EXISTS (SELECT 1 FROM canonical_garments g WHERE g.garment_id=r.garment_id AND g.tenant_id=r.tenant_id AND g.user_id=r.user_id AND g.deleted_at IS NULL)`,
     [representationIdValue.toLowerCase(), garmentIdValue.toLowerCase(), scope.tenantId, scope.userId]);
     return result.rows[0] ? fromRepresentationRow(result.rows[0]) : undefined;
+  }
+
+  async resolveCurrentExecutionRepresentation(
+    scope: GarmentOwnerScope,
+    garmentIdValue: string,
+    representationIdValue: string,
+  ): Promise<ManagedGarmentExecutionRepresentationResolution> {
+    if (!isUuid(garmentIdValue) || !isUuid(representationIdValue)) {
+      return Object.freeze({ status: 'UNAVAILABLE' });
+    }
+    const garmentId = garmentIdValue.toLowerCase();
+    const representationId = representationIdValue.toLowerCase();
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const garment = await lockGarment(client, scope, garmentId);
+      let resolution: ManagedGarmentExecutionRepresentationResolution = Object.freeze({ status: 'UNAVAILABLE' });
+      if (garment) {
+        if (garment.status !== 'ACTIVE') {
+          resolution = Object.freeze({ status: 'GARMENT_NOT_ACTIVE' });
+        } else {
+          const row = await loadRepresentationRow(client, scope, garmentId, representationId);
+          if (row) {
+            const representation = fromRepresentationRow(row);
+            if (representation.admissionState !== 'ADMITTED') {
+              resolution = Object.freeze({ status: 'REPRESENTATION_NOT_ADMITTED' });
+            } else if (representation.basisViewId !== garment.primaryViewId) {
+              resolution = Object.freeze({ status: 'BASIS_NOT_CURRENT' });
+            } else {
+              resolution = Object.freeze({
+                status: 'READY',
+                representation,
+                payload: Object.freeze({
+                  bytes: new Uint8Array(row.representation_bytes),
+                  contentType: normalizeStoredContentType(row.content_type),
+                  contentSha256: String(row.content_sha256),
+                }),
+              });
+            }
+          }
+        }
+      }
+      await client.query('COMMIT');
+      return resolution;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async loadPayload(
