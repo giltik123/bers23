@@ -46,6 +46,7 @@ jobs:
         run: |
           npm run server:build
           test -f dist-server/migrations/027_garment_representation_revocation_lifecycle.sql
+          test -f dist-server/migrations/033_manual_parametric_basis_identity.sql
           test ! -f server/core/artifacts/migrations/017_fashion_managed_inputs.sql
       - name: Bundle F4b.2 contract and static authority boundaries
         run: |
