@@ -10,27 +10,17 @@ permissions:
 
 jobs:
   patch-reviewed-findings:
-    if: "${{ github.event.head_commit.message == 'run-pr359-review-fix-v3' }}"
-    runs-on: ubuntu-latest
+    if: "${{ github.event.head_commit.message == 'run-pr359-review-fix-v4' }}"
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: fashion/manual-parametric-admission-f4b6c1a-ready
           fetch-depth: 0
-      - name: Extract and run the already-reviewed exact patch script
+      - name: Apply corrected exact source and PostgreSQL regression patch
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          from textwrap import dedent
-          text = Path('.github/workflows/tmp-pr359-review-fix.yml').read_text()
-          marker = "          python3 - <<'PY'\n"
-          if text.count(marker) != 1 or text.count("\n          PY\n") != 1:
-              raise SystemExit('temporary patch source markers are not unique')
-          body = text.split(marker, 1)[1].split("\n          PY\n", 1)[0]
-          Path('/tmp/pr359-review-fix.py').write_text(dedent(body) + '\n')
-          PY
-          python3 /tmp/pr359-review-fix.py
+          python3 scripts/tmp-pr359-review-fix.py
           git diff --check
       - name: Commit runtime and PostgreSQL regression fixes only
         shell: bash
