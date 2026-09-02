@@ -182,7 +182,7 @@ test('F4b.6b.4c any current evidence drift fails before finalization and FINAL l
 
 test('F4b.6b.4c resolved evidence input is a closed canonical server binding before durable lookup', async () => {
   const invalid = [
-    { ...exactEvidence, representationId: representationId.toUpperCase() },
+    { ...exactEvidence, representationId: 'abcdefab-cdef-4abc-8def-abcdefabcdef'.toUpperCase() },
     { ...exactEvidence, projectImageSha256: hashes.project.toUpperCase() },
     { ...exactEvidence, projectImageWidth: 0 },
     { ...exactEvidence, unexpected: 'client-evidence' },
