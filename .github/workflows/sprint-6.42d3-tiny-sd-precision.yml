@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
   TINY_SD_MANIFEST: src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json
