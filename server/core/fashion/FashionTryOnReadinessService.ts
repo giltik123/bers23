@@ -141,7 +141,21 @@ export class FashionTryOnReadinessService {
     const categoryGroup = garmentCategoryGroup(wardrobe.category);
     if (!SUPPORTED_GROUPS.has(categoryGroup)) return failure(normalized, 'GARMENT_UNSUPPORTED', categoryGroup);
 
-    const representations = selectRepresentations(await this.dependencies.representations.list(scope, normalized.garmentId));
+    const garmentAuthority = await this.dependencies.pool.query(
+      `SELECT primary_view_id
+       FROM canonical_garments
+       WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL`,
+      [normalized.garmentId, scope.tenantId, scope.userId],
+    );
+    const currentPrimaryViewId = garmentAuthority.rows[0]?.primary_view_id
+      ? String(garmentAuthority.rows[0].primary_view_id).toLowerCase()
+      : undefined;
+    if (!currentPrimaryViewId) return failure(normalized, 'GARMENT_UNAVAILABLE', categoryGroup);
+
+    const representations = selectRepresentations(
+      await this.dependencies.representations.list(scope, normalized.garmentId),
+      currentPrimaryViewId,
+    );
     if (representations.length === 0) return failure(normalized, 'REPRESENTATION_REQUIRED', categoryGroup);
     if (representations.length > 1 && representations[0].admittedAt === representations[1].admittedAt) {
       return failure(normalized, 'REPRESENTATION_AMBIGUOUS', categoryGroup);
@@ -182,12 +196,16 @@ export class FashionTryOnReadinessService {
   }
 }
 
-function selectRepresentations(values: readonly ManagedGarmentRepresentation[]): readonly ManagedGarmentRepresentation[] {
+function selectRepresentations(
+  values: readonly ManagedGarmentRepresentation[],
+  currentPrimaryViewId: string,
+): readonly ManagedGarmentRepresentation[] {
   return Object.freeze(values
     .filter(value => value.tier === 'PARAMETRIC'
       && value.format === 'BERS_PARAMETRIC_V1'
       && value.admissionState === 'ADMITTED'
-      && value.revokedAt === null)
+      && value.revokedAt === null
+      && value.basisViewId.toLowerCase() === currentPrimaryViewId)
     .sort((left, right) => right.admittedAt.localeCompare(left.admittedAt) || left.id.localeCompare(right.id)));
 }
 
