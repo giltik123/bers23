@@ -1,0 +1,106 @@
+name: Fashion F4b.6b.4c product FINAL result
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  product-final-result:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core result contract
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle accepted orchestration, stable-intent recovery and product-result proof chain
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/fashion-tryon-final-result
+          for spec in \
+            fashion-tryon-orchestration-contract-f4b6b1 \
+            fashion-tryon-warp-orchestration-f4b6b2 \
+            fashion-tryon-texture-continuation-f4b6b3 \
+            fashion-texture-final-recovery-f4b6b4a \
+            fashion-texture-final-intent-binding-f4b6b4c \
+            fashion-tryon-final-result-f4b6b4c
+          do
+            npx esbuild "tests/${spec}.test.ts" \
+              --bundle --platform=node --format=esm --target=node24 \
+              --outfile=".test-cache/fashion-tryon-final-result/${spec}.test.mjs" \
+              --external:node:* --external:sharp --external:pg
+          done
+      - name: Prove stable-intent FINAL recovery, race revalidation and closed result mapping
+        run: node --test --test-concurrency=1 .test-cache/fashion-tryon-final-result/*.test.mjs
+      - name: Prove product coordinator adds no browser evidence, execution, persistence or cloud authority
+        run: |
+          set -euo pipefail
+          RESULT=server/core/fashion/FashionTryOnFinalResultService.ts
+          RECOVERY=server/core/localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts
+          grep -q "readiness.check" "$RESULT"
+          test "$(grep -c 'readiness.check' "$RESULT")" -ge 2
+          grep -q "recoverForIntent" "$RESULT"
+          grep -q "clientRequestId: phaseIds.textureComposite" "$RESULT"
+          grep -q "sourceArtifactId: intent.sourceArtifactId" "$RESULT"
+          grep -q "garmentId: intent.garmentId" "$RESULT"
+          grep -q "parameters.sourceArtifactId !== expected.sourceArtifactId" "$RECOVERY"
+          grep -q "parameters.garmentId !== expected.garmentId" "$RECOVERY"
+          grep -q "garment_texture_final_recovery_intent_mismatch" "$RECOVERY"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import ts from 'typescript';
+          const file = 'server/core/fashion/FashionTryOnFinalResultService.ts';
+          const source = fs.readFileSync(file, 'utf8');
+          const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+          const forbiddenIdentifiers = new Set([
+            'LocalExecutionTicketV2',
+            'garmentWarpLayerId',
+            'garmentWarpLayerSha256',
+            'representationId',
+            'anchorSetId',
+            'storageId',
+            'Pool',
+            'Billing',
+            'persistFinal',
+            'acceptFinal',
+            'acceptProject',
+          ]);
+          const forbiddenImportFragments = ['provider', 'billing', 'fashn'];
+          const found = [];
+          const visit = node => {
+            if (ts.isIdentifier(node) && forbiddenIdentifiers.has(node.text)) {
+              const pos = ast.getLineAndCharacterOfPosition(node.getStart(ast));
+              found.push(`${node.text}@${pos.line + 1}:${pos.character + 1}`);
+            }
+            if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+              const specifier = node.moduleSpecifier.text.toLowerCase();
+              if (specifier === 'pg' || forbiddenImportFragments.some(fragment => specifier.includes(fragment))) {
+                const pos = ast.getLineAndCharacterOfPosition(node.moduleSpecifier.getStart(ast));
+                found.push(`import:${node.moduleSpecifier.text}@${pos.line + 1}:${pos.character + 1}`);
+              }
+            }
+            ts.forEachChild(node, visit);
+          };
+          visit(ast);
+          if (found.length) throw new Error(`result coordinator references forbidden authority: ${found.join(', ')}`);
+          NODE
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          git diff --check
