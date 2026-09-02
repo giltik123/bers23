@@ -27,9 +27,9 @@ export class ManualParametricGarmentAdmissionService {
   ): Promise<ManualParametricGarmentAdmissionResult> {
     return this.representations.admitManualParametricContour(
       scope,
-      command?.garmentId,
-      command?.expectedRevision,
-      command?.contour,
+      command.garmentId,
+      command.expectedRevision,
+      command.contour,
     );
   }
 }
