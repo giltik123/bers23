@@ -61,8 +61,9 @@ jobs:
           grep -q "clientRequestId: phaseIds.textureComposite" "$RESULT"
           grep -q "sourceArtifactId: intent.sourceArtifactId" "$RESULT"
           grep -q "garmentId: intent.garmentId" "$RESULT"
-          grep -q "parameters.sourceArtifactId !== expected.sourceArtifactId" "$RECOVERY"
-          grep -q "parameters.garmentId !== expected.garmentId" "$RECOVERY"
+          grep -q "assertTicketStableIntent" "$RECOVERY"
+          grep -q "parameters.sourceArtifactId === expected.sourceArtifactId" "$RECOVERY"
+          grep -q "parameters.garmentId === expected.garmentId" "$RECOVERY"
           grep -q "garment_texture_final_recovery_intent_mismatch" "$RECOVERY"
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
