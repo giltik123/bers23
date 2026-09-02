@@ -4,6 +4,8 @@ import {
   requiredProductionFrontendHeaders,
 } from '../config/frontendSecurityPolicy.mjs';
 
+const MIN_PRODUCTION_HSTS_SECONDS = 31_536_000;
+
 export async function verifyFrontendSecurityHeaders(input) {
   const frontendUrl = normalizeFrontendUrl(input?.frontendUrl);
   const coreApiUrl = input?.coreApiUrl || '/api/core';
@@ -32,6 +34,7 @@ export async function verifyFrontendSecurityHeaders(input) {
   assertExactHeader(response.headers, 'x-content-type-options', 'nosniff');
   assertExactHeader(response.headers, 'x-frame-options', 'DENY');
   assertExactHeader(response.headers, 'referrer-policy', 'no-referrer');
+  if (frontendUrl.protocol === 'https:') assertProductionHsts(response.headers.get('strict-transport-security'));
 
   // Consume the body so a successful verification also proves the deployed root
   // is an actual retrievable HTML document, not a headers-only synthetic response.
@@ -50,6 +53,17 @@ function assertExactHeader(headers, name, expected) {
   const actual = headers.get(name);
   if (actual?.trim().toLowerCase() !== expected.toLowerCase()) {
     throw new Error(`Frontend is missing ${canonicalHeaderName(name)}: ${expected}`);
+  }
+}
+
+function assertProductionHsts(value) {
+  if (typeof value !== 'string' || !value.trim()) throw new Error('HTTPS frontend is missing Strict-Transport-Security');
+  const directives = value.split(';').map(part => part.trim()).filter(Boolean);
+  const maxAge = directives.find(part => /^max-age=/iu.test(part));
+  const match = maxAge && /^max-age=(\d+)$/iu.exec(maxAge);
+  const seconds = match ? Number(match[1]) : Number.NaN;
+  if (!Number.isSafeInteger(seconds) || seconds < MIN_PRODUCTION_HSTS_SECONDS) {
+    throw new Error(`HTTPS frontend Strict-Transport-Security max-age must be at least ${MIN_PRODUCTION_HSTS_SECONDS}`);
   }
 }
 
