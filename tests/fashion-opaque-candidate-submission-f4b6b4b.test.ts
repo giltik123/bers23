@@ -182,18 +182,46 @@ function evidence(role: 'WORKING' | 'COMPOSITE') {
   });
 }
 
-function harness(ticket: LocalExecutionTicketV2) {
-  const calls = { lookups: [] as string[], meshUploads: [] as any[], meshSubmits: [] as any[], textureUploads: [] as any[], textureSubmits: [] as any[] };
+type Terminal = 'SUCCESS' | 'FAILED' | 'UNKNOWN' | undefined;
+type HarnessOptions = Readonly<{
+  finalizations?: readonly Terminal[];
+  meshUploadError?: Error;
+  textureUploadError?: Error;
+}>;
+
+function harness(ticket: LocalExecutionTicketV2, options: HarnessOptions = {}) {
+  const finalizations = [...(options.finalizations ?? [])];
+  const calls = {
+    lookups: [] as string[],
+    finalizations: [] as string[],
+    meshUploads: [] as any[],
+    meshSubmits: [] as any[],
+    textureUploads: [] as any[],
+    textureSubmits: [] as any[],
+  };
   const service = new FashionTryOnOpaqueCandidateSubmissionService({
     admission: {
       async getV2(ticketId: string) { calls.lookups.push(ticketId); return ticketId === ticket.ticketId ? ticket : undefined; },
+      async getFinalization(ticketId: string) {
+        calls.finalizations.push(ticketId);
+        const status = finalizations.shift();
+        return status === undefined ? undefined : Object.freeze({ status });
+      },
     },
     garmentWarp: {
-      async uploadImage(input: any, principal: any) { calls.meshUploads.push({ input, principal }); return evidence('WORKING'); },
+      async uploadImage(input: any, principal: any) {
+        calls.meshUploads.push({ input, principal });
+        if (options.meshUploadError) throw options.meshUploadError;
+        return evidence('WORKING');
+      },
       async submit(input: any, principal: any) { calls.meshSubmits.push({ input, principal }); return Object.freeze({ executionId: ticket.requestId, status: 'SUCCESS', layerId: layerId, contentSha256: hashes.layer, verification: Object.freeze({ valid: true, checks: Object.freeze([]), errors: Object.freeze([]) }) }); },
     },
     textureComposite: {
-      async uploadImage(input: any, principal: any) { calls.textureUploads.push({ input, principal }); return evidence('COMPOSITE'); },
+      async uploadImage(input: any, principal: any) {
+        calls.textureUploads.push({ input, principal });
+        if (options.textureUploadError) throw options.textureUploadError;
+        return evidence('COMPOSITE');
+      },
       async submit(input: any, principal: any) { calls.textureSubmits.push({ input, principal }); return Object.freeze({ executionId: ticket.requestId, status: 'SUCCESS', artifactId: 'signed-internal-final', verification: Object.freeze({ valid: true, checks: Object.freeze([]), errors: Object.freeze([]) }) }); },
     },
   } as any);
@@ -207,6 +235,7 @@ test('F4b.6b.4b mesh candidate reconstructs private result identity in Core and 
   const result = await h.service.submitGarmentWarpCandidate({ ticketId: meshTicketId, projectId, bytes, latencyMs: 12.5 }, auth);
   assert.deepEqual(result, { status: 'SUCCESS' });
   assert.deepEqual(h.calls.lookups, [meshTicketId]);
+  assert.deepEqual(h.calls.finalizations, [meshTicketId]);
   assert.equal(h.calls.meshUploads.length, 1);
   assert.notEqual(h.calls.meshUploads[0].input.bytes, bytes, 'Core must own a snapshot of browser candidate bytes');
   assert.deepEqual([...h.calls.meshUploads[0].input.bytes], [1, 2, 3]);
@@ -226,6 +255,7 @@ test('F4b.6b.4b texture candidate reconstructs private result identity in Core a
   const h = harness(ticket);
   const result = await h.service.submitTextureCompositeCandidate({ ticketId: textureTicketId, projectId, bytes: Uint8Array.from([9]), latencyMs: 7 }, auth);
   assert.deepEqual(result, { status: 'SUCCESS' });
+  assert.deepEqual(h.calls.finalizations, [textureTicketId]);
   const submitted = h.calls.textureSubmits[0].input.result;
   assert.equal(submitted.ticketId, textureTicketId);
   assert.equal(submitted.nonce, 'texture-server-nonce');
@@ -237,12 +267,46 @@ test('F4b.6b.4b texture candidate reconstructs private result identity in Core a
   assert.equal('executionId' in result, false);
 });
 
+test('F4b.6b.4b terminal retries return durable status before upload for both SUCCESS and FAILED', async () => {
+  for (const status of ['SUCCESS', 'FAILED'] as const) {
+    const h = harness(meshTicket(), { finalizations: [status] });
+    const result = await h.service.submitGarmentWarpCandidate({ ticketId: meshTicketId, projectId, bytes: Uint8Array.from([1]), latencyMs: 1 }, auth);
+    assert.deepEqual(result, { status });
+    assert.deepEqual(h.calls.finalizations, [meshTicketId]);
+    assert.equal(h.calls.meshUploads.length, 0);
+    assert.equal(h.calls.meshSubmits.length, 0);
+  }
+});
+
+test('F4b.6b.4b finalization race after preflight converts upload failure into terminal idempotent result', async () => {
+  const uploadError = new Error('Local execution output has already been consumed');
+  const h = harness(meshTicket(), { finalizations: [undefined, 'SUCCESS'], meshUploadError: uploadError });
+  const result = await h.service.submitGarmentWarpCandidate({ ticketId: meshTicketId, projectId, bytes: Uint8Array.from([1]), latencyMs: 1 }, auth);
+  assert.deepEqual(result, { status: 'SUCCESS' });
+  assert.deepEqual(h.calls.finalizations, [meshTicketId, meshTicketId]);
+  assert.equal(h.calls.meshUploads.length, 1);
+  assert.equal(h.calls.meshSubmits.length, 0);
+});
+
+test('F4b.6b.4b non-terminal upload failure is preserved after race re-check', async () => {
+  const uploadError = new Error('candidate decode failed');
+  const h = harness(textureTicket(), { finalizations: [undefined, 'UNKNOWN'], textureUploadError: uploadError });
+  await assert.rejects(
+    () => h.service.submitTextureCompositeCandidate({ ticketId: textureTicketId, projectId, bytes: Uint8Array.from([1]), latencyMs: 1 }, auth),
+    error => error === uploadError,
+  );
+  assert.deepEqual(h.calls.finalizations, [textureTicketId, textureTicketId]);
+  assert.equal(h.calls.textureUploads.length, 1);
+  assert.equal(h.calls.textureSubmits.length, 0);
+});
+
 test('F4b.6b.4b authenticated scope mismatch fails before upload or result admission', async () => {
   const h = harness(meshTicket());
   await assert.rejects(
     () => h.service.submitGarmentWarpCandidate({ ticketId: meshTicketId, projectId, bytes: Uint8Array.from([1]), latencyMs: 1 }, { ...auth, userId: 'other-user' }),
     (error: any) => error?.status === 403 && error?.code === 'fashion_tryon_opaque_ticket_scope_mismatch',
   );
+  assert.equal(h.calls.finalizations.length, 0);
   assert.equal(h.calls.meshUploads.length, 0);
   assert.equal(h.calls.meshSubmits.length, 0);
 });
@@ -253,6 +317,7 @@ test('F4b.6b.4b phase substitution fails closed before candidate upload', async 
     () => h.service.submitGarmentWarpCandidate({ ticketId: textureTicketId, projectId, bytes: Uint8Array.from([1]), latencyMs: 1 }, auth),
     /garment mesh-warp contract/i,
   );
+  assert.equal(h.calls.finalizations.length, 0);
   assert.equal(h.calls.meshUploads.length, 0);
   assert.equal(h.calls.meshSubmits.length, 0);
 });
@@ -270,4 +335,5 @@ test('F4b.6b.4b malformed browser candidate fields fail before durable ticket lo
     await assert.rejects(() => h.service.submitGarmentWarpCandidate(value, auth), (error: any) => error?.status === 400);
   }
   assert.equal(h.calls.lookups.length, 0);
+  assert.equal(h.calls.finalizations.length, 0);
 });
