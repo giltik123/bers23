@@ -49,6 +49,7 @@ export function parseCsp(value) {
     const [name, ...sources] = segment.split(/\s+/u);
     const key = name.toLowerCase();
     if (!/^[a-z][a-z0-9-]*$/u.test(key) || directives.has(key)) throw new Error(`Invalid or duplicate CSP directive: ${name}`);
+    if (new Set(sources).size !== sources.length) throw new Error(`Duplicate CSP source expression in directive: ${name}`);
     directives.set(key, Object.freeze(sources));
   }
   if (directives.size === 0) throw new Error('Content-Security-Policy header is empty');
@@ -98,5 +99,7 @@ function serializeCsp(directives) {
 }
 
 function sameTokens(actual, expected) {
-  return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+  if (actual.length !== expected.length) return false;
+  const values = new Set(actual);
+  return values.size === actual.length && expected.every(value => values.has(value));
 }
