@@ -1,0 +1,82 @@
+name: Fashion F5b.1 Kandinsky refinement source trust
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-kandinsky-refinement-feasibility-f5b1.yml"
+      - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
+      - "scripts/kandinsky-config-trust.mjs"
+      - "scripts/kandinsky-license-trust.mjs"
+      - "scripts/kandinsky-source-trust-pointer.mjs"
+      - "scripts/verify-kandinsky-refinement-source-trust.mjs"
+      - "tests/kandinsky-config-trust.test.mjs"
+      - "tests/kandinsky-license-trust.test.mjs"
+      - "tests/kandinsky-refinement-feasibility-policy.test.mjs"
+      - "docs/fashion-f5b1-config-inventory.md"
+      - "docs/fashion-f5b1-config-assertion-plan.md"
+      - "server/core/localExecution/productionLocalModelPolicy.ts"
+      - "server/core/localExecution/productionLocalExecutorPolicy.ts"
+      - "src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js"
+      - "src/lib/tryon/tryonEngine.js"
+      - "**/*.safetensors"
+      - "**/*.bin"
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-trust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck production boundaries
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove pinned source/config/license trust stays non-executable
+        run: node --test tests/kandinsky-refinement-feasibility-policy.test.mjs tests/kandinsky-config-trust.test.mjs tests/kandinsky-license-trust.test.mjs
+      - name: Rebind pinned weights, exact small configs and revision license metadata to upstream
+        run: node scripts/verify-kandinsky-refinement-source-trust.mjs
+      - name: Prove no model bytes or runtime admission entered the repository
+        run: |
+          test "$(git ls-files '*.safetensors' '*.bin' | wc -l)" -eq 0
+          grep -q '/raw/' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'MAX_SOURCE_POINTER_BYTES = 4096' scripts/kandinsky-source-trust-pointer.mjs
+          grep -q 'MAX_CONFIG_FILE_BYTES = 5 \* 1024 \* 1024' scripts/kandinsky-config-trust.mjs
+          grep -q 'MAX_LICENSE_EVIDENCE_BYTES = 256 \* 1024' scripts/kandinsky-license-trust.mjs
+          grep -q 'retryBoundedTrustRead' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'FETCH_PLUS_BOUNDED_BODY_READ_TRANSIENT_ONLY' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'AbortSignal.timeout' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'readBoundedConfigResponse' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'readBoundedLicenseResponse' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'downloadedModelBytes: 0' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'createHash' scripts/kandinsky-config-trust.mjs
+          ! grep -q 'lfs?.sha256' scripts/verify-kandinsky-refinement-source-trust.mjs
+          ! grep -q 'xet_hash' scripts/verify-kandinsky-refinement-source-trust.mjs
+          grep -q 'SOURCE_WEIGHT_CONFIG_AND_LICENSE_TRUST_PINNED_CONDITIONING_AND_RUNTIME_UNPROVEN' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"productionExecutable": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"runtimeAuthorityGranted": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          node -e "const fs=require('node:fs'); const m=JSON.parse(fs.readFileSync('src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json','utf8')); if(m.decoder.requiredConfigIdentity?.state!=='PINNED'||m.offlinePrior.requiredConfigIdentity?.state!=='PINNED'||m.decoder.licenseEvidence?.state!=='PINNED_REVISION_METADATA'||m.offlinePrior.licenseEvidence?.state!=='PINNED_REVISION_METADATA') process.exit(1)"
+          grep -q '"configInventoryEvidence": "docs/fashion-f5b1-config-inventory.md"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"state": "UNPROVEN"' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          grep -q '"runtimeDependencyAllowed": false' src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json
+          if grep -R -E "kandinsky-2-2-decoder-inpaint-refinement" server/core/localExecution/productionLocalModelPolicy.ts server/core/localExecution/productionLocalExecutorPolicy.ts; then
+            echo "F5b.1 candidate entered production execution catalogs" >&2; exit 1
+          fi
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
