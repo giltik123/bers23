@@ -1,8 +1,14 @@
+import {
+  compileTrustedProxyClientIpPolicy,
+  type TrustedProxyHeaderMode,
+} from './network/trustedProxyClientIp.ts';
+
 export type CoreServerConfig = Readonly<{
   nodeEnv: string; port: number; databaseUrl: string; provider: 'FAL'; falKey: string;
   falBaseUrl: string; jwtSecret: string; jwtIssuer: string; jwtAudience: string;
   authChallengeSecret: string; authDefaultTenantId: string; authPublicOrigin: string;
   authSessionAbsoluteTtlMs: number; authSessionIdleTtlMs: number;
+  trustedProxyHeaderMode: TrustedProxyHeaderMode; trustedProxyCidrs: readonly string[];
   resendApiKey: string; authEmailFrom: string; googleOauthClientId: string; googleOauthClientSecret: string;
   artifactSigningSecret: string; trustedAssetHosts: readonly string[]; allowLegacyAssetUrls: boolean;
   allowedWebOrigins: readonly string[]; allowApiBearerAuth?: boolean; hardBudgetCredits: number; creditsPerEdit: number;
@@ -32,13 +38,20 @@ export function loadCoreServerConfig(env: NodeJS.ProcessEnv = process.env): Core
   const authSessionAbsoluteTtlMs = integer('AUTH_SESSION_ABSOLUTE_TTL_MS', 8 * 60 * 60 * 1000, 60_000, 30 * 24 * 60 * 60 * 1000);
   const authSessionIdleTtlMs = integer('AUTH_SESSION_IDLE_TTL_MS', 30 * 60 * 1000, 60_000, 30 * 24 * 60 * 60 * 1000);
   if (authSessionIdleTtlMs > authSessionAbsoluteTtlMs) throw new Error('Invalid server environment: AUTH_SESSION_IDLE_TTL_MS');
+  const trustedProxyHeaderMode = exactTrustedProxyHeaderMode(env.TRUSTED_PROXY_HEADER_MODE);
+  const trustedProxyCidrs = Object.freeze(list('TRUSTED_PROXY_CIDRS'));
+  try {
+    compileTrustedProxyClientIpPolicy({ headerMode: trustedProxyHeaderMode, trustedCidrs: trustedProxyCidrs });
+  } catch {
+    throw new Error('Invalid server environment: TRUSTED_PROXY_HEADER_MODE / TRUSTED_PROXY_CIDRS');
+  }
   const nodeEnv = env.NODE_ENV ?? 'production';
   return Object.freeze({
     nodeEnv, port: integer('PORT', 8080, 1, 65535), databaseUrl: required('DATABASE_URL'), provider,
     falKey: required('FAL_KEY'), falBaseUrl: env.FAL_BASE_URL?.trim() || 'https://queue.fal.run', jwtSecret: required('JWT_SECRET'),
     jwtIssuer: required('JWT_ISSUER'), jwtAudience: required('JWT_AUDIENCE'),
     authChallengeSecret: required('AUTH_CHALLENGE_SECRET'), authDefaultTenantId, authPublicOrigin: parsedOrigin.origin,
-    authSessionAbsoluteTtlMs, authSessionIdleTtlMs,
+    authSessionAbsoluteTtlMs, authSessionIdleTtlMs, trustedProxyHeaderMode, trustedProxyCidrs,
     resendApiKey: required('RESEND_API_KEY'), authEmailFrom: required('AUTH_EMAIL_FROM'),
     googleOauthClientId: required('GOOGLE_OAUTH_CLIENT_ID'), googleOauthClientSecret: required('GOOGLE_OAUTH_CLIENT_SECRET'),
     artifactSigningSecret: required('ARTIFACT_SIGNING_SECRET'), trustedAssetHosts: Object.freeze(trustedAssetHosts), allowLegacyAssetUrls,
@@ -56,4 +69,12 @@ function exactWebOrigin(value: string): string {
     throw new Error('Invalid server environment: ALLOWED_WEB_ORIGINS');
   }
   return url.origin;
+}
+
+function exactTrustedProxyHeaderMode(value: string | undefined): TrustedProxyHeaderMode {
+  const normalized = (value ?? 'NONE').trim().toUpperCase();
+  if (normalized !== 'NONE' && normalized !== 'X_FORWARDED_FOR') {
+    throw new Error('Invalid server environment: TRUSTED_PROXY_HEADER_MODE');
+  }
+  return normalized;
 }

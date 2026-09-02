@@ -1,0 +1,45 @@
+name: Security trusted proxy client-IP boundary
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  trusted-proxy-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build Core
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Prove trusted proxy policy and real Node HTTP transport
+        run: |
+          node --experimental-strip-types --test \
+            server/core/network/trustedProxyClientIp.test.mjs \
+            server/core/http/trustedProxyNodeHttpAdapter.test.mjs \
+            server/core/config.test.mjs
+      - name: Prove closed deployment trust contract
+        run: |
+          grep -q "headerMode: input.config.trustedProxyHeaderMode" server/core/http/nodeHttpAdapter.ts
+          grep -q "resolveTransportClientIp" server/core/http/nodeHttpAdapter.ts
+          grep -q "request.socket.remoteAddress" server/core/http/nodeHttpAdapter.ts
+          grep -q "TRUSTED_PROXY_HEADER_MODE" server/core/config.ts
+          grep -q "TRUSTED_PROXY_CIDRS" server/core/config.ts
+          grep -q "X_FORWARDED_FOR" server/core/network/trustedProxyClientIp.ts
+          ! grep -q "trust proxy" server/core/http/nodeHttpAdapter.ts
+          ! grep -q "FORWARDED'" server/core/network/trustedProxyClientIp.ts
