@@ -1,0 +1,46 @@
+name: Temporary PR359 review fix runner
+
+on:
+  push:
+    branches:
+      - fashion/manual-parametric-admission-f4b6c1a-ready
+
+permissions:
+  contents: write
+
+jobs:
+  patch-reviewed-findings:
+    if: "${{ github.event.head_commit.message == 'run-pr359-review-fix-v2' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fashion/manual-parametric-admission-f4b6c1a-ready
+          fetch-depth: 0
+      - name: Extract and run the already-reviewed exact patch script
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+          text = Path('.github/workflows/tmp-pr359-review-fix.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          if text.count(marker) != 1 or text.count("\n          PY\n") != 1:
+              raise SystemExit('temporary patch source markers are not unique')
+          body = text.split(marker, 1)[1].split("\n          PY\n", 1)[0]
+          Path('/tmp/pr359-review-fix.py').write_text(dedent(body) + '\n')
+          PY
+          python3 /tmp/pr359-review-fix.py
+          git diff --check
+      - name: Commit exact reviewed fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/core/fashion/postgresGarmentRepresentationStore.ts \
+            server/core/localExecution/ManagedGarmentLocalExecutionInputAuthority.ts \
+            tests/fashion-manual-parametric-admission-f4b6c1a-postgres.test.ts \
+            .github/workflows/fashion-manual-parametric-admission-f4b6c1a.yml
+          git diff --cached --quiet && { echo 'expected reviewed source changes were not produced'; exit 1; }
+          git commit -m "fix: close PR359 review races"
+          git push origin HEAD:fashion/manual-parametric-admission-f4b6c1a-ready
