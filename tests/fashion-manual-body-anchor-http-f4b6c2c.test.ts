@@ -303,6 +303,7 @@ test('F4b.6c.2c HTTP enforces POST JSON origin OPTIONS body-size and session-bou
     });
     assert.equal(missingCsrf.status, 403);
     assert.equal((await missingCsrf.json() as any).error, 'csrf_denied');
+    assert.deepEqual(calls.auth, [bearerHeaders.Authorization]);
     assert.equal(calls.acquires.length, 0);
 
     const accepted = await fetch(`${base}/api/core/fashion/projects/${projectId}/body-anchors`, {
@@ -316,7 +317,7 @@ test('F4b.6c.2c HTTP enforces POST JSON origin OPTIONS body-size and session-bou
       body: body(),
     });
     assert.equal(accepted.status, 201);
-    assert.deepEqual(calls.auth, [`Bearer ${sessionToken}`]);
+    assert.deepEqual(calls.auth, [bearerHeaders.Authorization, `Bearer ${sessionToken}`]);
     assert.equal(calls.acquires.length, 1);
   });
 });
