@@ -2,13 +2,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  assertCanonicalManifestBytes,
   assertKandinskyConditioningManifest,
   canonicalJsonBytes,
   sha256Bytes,
 } from './kandinsky-conditioning-bundle-contract.mjs';
-import {
-  conditioningPromptContract,
-} from './kandinsky-conditioning-prompt-contract.mjs';
+import { conditioningCandidateIdentity } from './kandinsky-conditioning-candidate-registry.mjs';
+import { conditioningPromptContract } from './kandinsky-conditioning-prompt-contract.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const d1 = readJson(args.d1, 'D1 manifest');
@@ -16,12 +16,14 @@ const prompt = readJson(args.prompt, 'D2b prompt contract');
 const evidence = readJson(args.evidence, 'D2c builder evidence');
 
 const expectedPrompt = conditioningPromptContract(prompt.candidateId);
+const candidateIdentity = conditioningCandidateIdentity(prompt.candidateId);
 const promptBytes = canonicalJson(prompt);
 const expectedPromptBytes = canonicalJson(expectedPrompt.contract);
 if (!promptBytes.equals(expectedPromptBytes)) fail('D2c prompt contract bytes do not match the accepted D2b candidate');
 if (evidence.conditioningContractSha256 !== expectedPrompt.sha256) fail('D2c evidence is not bound to the accepted D2b prompt contract');
 
-assertEvidence(evidence, prompt.candidateId);
+assertEvidence(evidence, prompt.candidateId, candidateIdentity);
+assertPositiveSource(evidence, candidateIdentity);
 const manifest = Object.freeze({
   schemaVersion: 1,
   stage: 'F5B1_D2_CONDITIONING_RESEARCH',
@@ -92,8 +94,10 @@ fs.mkdirSync(path.dirname(args.output), { recursive: true });
 writeAtomic(args.output, output);
 process.stdout.write(`${JSON.stringify({ status: 'FINALIZED_RESEARCH_MANIFEST', candidateId: prompt.candidateId, manifestSha256: sha256Bytes(output), output: args.output })}\n`);
 
-function assertEvidence(value, candidateId) {
-  exactKeys(value, ['schemaVersion','stage','status','candidateId','conditioningContractSha256','sourceTrust','toolchain','determinism','bundle'], 'builder evidence');
+function assertEvidence(value, candidateId, identity) {
+  const baseKeys = ['schemaVersion','stage','status','candidateId','conditioningContractSha256','sourceTrust','toolchain','determinism','bundle'];
+  const expectedKeys = identity.positiveEmbeddingSourceCandidateId ? [...baseKeys, 'composition'] : baseKeys;
+  exactKeys(value, expectedKeys, 'builder evidence');
   if (value.schemaVersion !== 1 || value.stage !== 'F5B1_D2C_CONDITIONING_BUILD' || value.status !== 'BUILT_NOT_ADMITTED') fail('builder evidence stage/status mismatch');
   if (value.candidateId !== candidateId) fail('builder evidence candidate mismatch');
   if (!/^[0-9a-f]{64}$/.test(value.conditioningContractSha256)) fail('builder evidence conditioning SHA is invalid');
@@ -108,6 +112,33 @@ function assertEvidence(value, candidateId) {
   if (value.bundle.format !== 'safetensors' || value.bundle.metadataPolicy !== 'NONE') fail('builder evidence bundle format mismatch');
   if (JSON.stringify(value.bundle.tensorOrder) !== JSON.stringify(['image_embeds','negative_image_embeds'])) fail('builder evidence tensor order mismatch');
   if (!Number.isSafeInteger(value.bundle.size) || value.bundle.size < 1 || !/^[0-9a-f]{64}$/.test(value.bundle.sha256)) fail('builder evidence bundle identity is invalid');
+}
+
+function assertPositiveSource(evidence, identity) {
+  const sourceCandidateId = identity.positiveEmbeddingSourceCandidateId;
+  if (!sourceCandidateId) {
+    if (args.positiveSourceManifest || args.positiveSourceBundle) fail('positive-source files are forbidden for a self-generated positive candidate');
+    return;
+  }
+  if (!args.positiveSourceManifest || !args.positiveSourceBundle) fail('candidate requires positive-source manifest and bundle');
+  const sourceManifestBytes = fs.readFileSync(args.positiveSourceManifest);
+  const sourceManifest = assertCanonicalManifestBytes(sourceManifestBytes, d1);
+  const sourceIdentity = conditioningCandidateIdentity(sourceCandidateId);
+  if (sourceManifest.conditioning.candidateId !== sourceCandidateId || sourceManifest.conditioning.conditioningContractSha256 !== sourceIdentity.conditioningContractSha256) fail('positive-source manifest candidate identity mismatch');
+  const sourceBundleBytes = fs.readFileSync(args.positiveSourceBundle);
+  if (sourceManifest.bundle.size !== sourceBundleBytes.byteLength || sourceManifest.bundle.sha256 !== sha256Bytes(sourceBundleBytes)) fail('positive-source bundle identity does not match its accepted manifest');
+
+  const composition = evidence.composition;
+  exactKeys(composition, ['policy','positiveSource','negativeSource'], 'builder evidence composition');
+  if (composition.policy !== 'REUSE_POSITIVE_FROM_ACCEPTED_CANDIDATE') fail('builder evidence composition policy mismatch');
+  exactKeys(composition.positiveSource, ['candidateId','conditioningContractSha256','manifestSha256','bundleSize','bundleSha256','imageEmbedsSha256'], 'builder evidence positiveSource');
+  exactKeys(composition.negativeSource, ['candidateId','conditioningContractSha256','rawBundleSize','rawBundleSha256','discardedRawImageEmbedsSha256','negativeImageEmbedsSha256'], 'builder evidence negativeSource');
+  const expectedManifestSha = sha256Bytes(sourceManifestBytes);
+  if (composition.positiveSource.candidateId !== sourceCandidateId || composition.positiveSource.conditioningContractSha256 !== sourceIdentity.conditioningContractSha256 || composition.positiveSource.manifestSha256 !== expectedManifestSha || composition.positiveSource.bundleSize !== sourceBundleBytes.byteLength || composition.positiveSource.bundleSha256 !== sourceManifest.bundle.sha256) fail('builder evidence positive-source provenance mismatch');
+  for (const key of ['imageEmbedsSha256']) assertSha(composition.positiveSource[key], `builder evidence positiveSource.${key}`);
+  if (composition.negativeSource.candidateId !== evidence.candidateId || composition.negativeSource.conditioningContractSha256 !== evidence.conditioningContractSha256) fail('builder evidence negative-source candidate mismatch');
+  if (!Number.isSafeInteger(composition.negativeSource.rawBundleSize) || composition.negativeSource.rawBundleSize < 1) fail('builder evidence raw C bundle size is invalid');
+  for (const key of ['rawBundleSha256','discardedRawImageEmbedsSha256','negativeImageEmbedsSha256']) assertSha(composition.negativeSource[key], `builder evidence negativeSource.${key}`);
 }
 
 function copyIdentity(value) {
@@ -127,6 +158,9 @@ function exactKeys(value, keys, label) {
   const expected = [...keys].sort();
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) fail(`${label} keys are open or incomplete`);
 }
+function assertSha(value, label) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) fail(`${label} must be lowercase SHA-256`);
+}
 function readJson(file, label) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
   catch (error) { fail(`${label} is invalid JSON: ${error.message}`); }
@@ -137,13 +171,17 @@ function writeAtomic(file, bytes) {
   fs.renameSync(temp, file);
 }
 function parseArgs(argv) {
+  const accepted = new Set(['--d1','--prompt','--evidence','--output','--positive-source-manifest','--positive-source-bundle']);
   const values = {};
+  if (argv.length % 2 !== 0) fail('finalizer arguments must be flag/value pairs');
   for (let index = 0; index < argv.length; index += 2) {
     const key = argv[index]; const value = argv[index + 1];
-    if (!['--d1','--prompt','--evidence','--output'].includes(key) || !value) fail('usage: --d1 FILE --prompt FILE --evidence FILE --output FILE');
-    values[key.slice(2)] = value;
+    if (!accepted.has(key) || !value || key in values) fail('finalizer arguments are invalid or duplicated');
+    values[key.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
   }
-  if (Object.keys(values).length !== 4) fail('all finalizer arguments are required exactly once');
+  for (const required of ['d1','prompt','evidence','output']) if (!values[required]) fail('all base finalizer arguments are required exactly once');
+  const sourceCount = Number(Boolean(values.positiveSourceManifest)) + Number(Boolean(values.positiveSourceBundle));
+  if (sourceCount === 1) fail('positive-source manifest and bundle must be supplied together');
   return values;
 }
 function fail(message) { throw new Error(message); }
