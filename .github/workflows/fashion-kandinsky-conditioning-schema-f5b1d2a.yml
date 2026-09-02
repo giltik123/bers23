@@ -1,0 +1,72 @@
+name: Fashion F5b.1 D2a conditioning bundle schema
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-kandinsky-conditioning-schema-f5b1d2a.yml"
+      - "scripts/kandinsky-conditioning-bundle-contract.mjs"
+      - "tests/kandinsky-conditioning-bundle-contract.test.mjs"
+      - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
+      - "server/core/localExecution/productionLocalModelPolicy.ts"
+      - "server/core/localExecution/productionLocalExecutorPolicy.ts"
+      - "src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js"
+      - "src/lib/tryon/tryonEngine.js"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-kandinsky-conditioning-schema-f5b1d2a.yml"
+      - "scripts/kandinsky-conditioning-bundle-contract.mjs"
+      - "tests/kandinsky-conditioning-bundle-contract.test.mjs"
+      - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
+      - "server/core/localExecution/productionLocalModelPolicy.ts"
+      - "server/core/localExecution/productionLocalExecutorPolicy.ts"
+      - "src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js"
+      - "src/lib/tryon/tryonEngine.js"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conditioning-schema:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Prove D2a conditioning schema and immutable identity
+        run: node --test tests/kandinsky-conditioning-bundle-contract.test.mjs
+      - name: Prove D2a remains research-only and model-byte-free
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json';
+          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (manifest.status !== 'CANDIDATE') throw new Error('Kandinsky D1 must remain CANDIDATE');
+          if (manifest.productionExecutable !== false) throw new Error('D2a cannot grant production execution');
+          if (manifest.runtimeAuthorityGranted !== false) throw new Error('D2a cannot grant runtime authority');
+          if (manifest.offlinePrior?.runtimeDependencyAllowed !== false) throw new Error('D2a prior must remain build/research-only');
+          if (manifest.conditioning?.state !== 'UNPROVEN') throw new Error('D2a cannot claim authoritative conditioning bytes');
+          if (manifest.conditioning?.runtimePromptAllowed !== false || manifest.conditioning?.runtimeNegativePromptAllowed !== false || manifest.conditioning?.runtimePriorAllowed !== false) throw new Error('D2a cannot open runtime conditioning');
+          if (manifest.conditioning?.bundle !== null || manifest.conditioning?.decoderOnlyParity !== null) throw new Error('D2a cannot populate unproven bundle/parity evidence');
+          NODE
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+          if grep -R -E "kandinsky-2-2-decoder-inpaint-refinement" server/core/localExecution/productionLocalModelPolicy.ts server/core/localExecution/productionLocalExecutorPolicy.ts; then
+            echo "D2a candidate entered production execution catalogs" >&2
+            exit 1
+          fi
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
