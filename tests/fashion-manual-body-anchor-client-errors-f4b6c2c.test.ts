@@ -147,7 +147,7 @@ test('F4b.6c.2c trusted claim whose durable image is absent is the same non-orac
   assert.equal(creates, 0);
 });
 
-test('F4b.6c.2c unexpected Artifact storage failure remains a 500 and is not disguised as client unavailability', async () => {
+test('F4b.6c.2c unexpected Artifact storage failure remains a redacted 500 and is not disguised as client unavailability', async () => {
   let creates = 0;
   const service = new ManualProjectBodyAnchorAcquisitionService({
     artifacts: {
@@ -165,9 +165,17 @@ test('F4b.6c.2c unexpected Artifact storage failure remains a 500 and is not dis
     const response = await post(base, validPayload);
     assert.equal(response.status, 500);
     const body = await response.json() as any;
-    assert.equal(body.error, 'manual_body_anchor_failed');
-    assert.equal(body.message, 'Manual body-anchor acquisition failed');
+    assert.deepEqual(
+      { error: body.error, message: body.message },
+      {
+        error: 'internal_error',
+        message: 'Manual body-anchor acquisition request failed',
+      },
+    );
+    assert.equal(typeof body.correlationId, 'string');
+    assert.ok(body.correlationId.length > 0);
     assert.ok(!JSON.stringify(body).includes('postgres'));
+    assert.notEqual(body.error, 'body_anchor_source_unavailable');
   });
   assert.equal(creates, 0);
 });
