@@ -13,11 +13,11 @@ import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministi
 import type { PixelImage } from '../../platform/creative/pipeline/ControlledLocalEdit';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const RECEIPT_KEYS = Object.freeze(['height','mimeType','sizeBytes','uploadId','width']);
+const RECEIPT_KEYS = Object.freeze(['height','mimeType','sizeBytes','status','width']);
 const ACK_KEYS = Object.freeze(['status']);
 
 export type FashionTryOnPreparedUploadReceiptV1 = Readonly<{
-  uploadId: string;
+  status: 'STORED';
   mimeType: typeof FASHION_TRYON_EXECUTION_MIME;
   width: number;
   height: number;
@@ -27,7 +27,6 @@ export type FashionTryOnPreparedUploadReceiptV1 = Readonly<{
 export type FashionTryOnPreparedSubmitV1 = Readonly<{
   ticketId: string;
   projectId: string;
-  uploadId: string;
   latencyMs: number;
 }>;
 
@@ -82,7 +81,7 @@ export class CorePreparedGarmentMeshWarp {
     );
     const preview = pixelImage(envelope.outputWidth, envelope.outputHeight, rgba);
     const png = await encodeDeterministicRgbaPng(preview);
-    const receipt = requireUploadReceipt(
+    requireUploadReceipt(
       await this.core.uploadPreparedGarmentMeshWarpImage({ ticketId: grant.ticketId, projectId: this.projectId, bytes: png }),
       preview,
       png.byteLength,
@@ -91,7 +90,6 @@ export class CorePreparedGarmentMeshWarp {
     requireSuccessAck(await this.core.submitPreparedGarmentMeshWarp({
       ticketId: grant.ticketId,
       projectId: this.projectId,
-      uploadId: receipt.uploadId,
       latencyMs,
     }));
     return Object.freeze({ target: 'LOCAL', runtime: 'BROWSER_JS', accelerator: 'cpu', preview, latencyMs });
@@ -138,7 +136,7 @@ export class CorePreparedGarmentTextureComposite {
     );
     const preview = pixelImage(envelope.outputWidth, envelope.outputHeight, rgba);
     const png = await encodeDeterministicRgbaPng(preview);
-    const receipt = requireUploadReceipt(
+    requireUploadReceipt(
       await this.core.uploadPreparedGarmentTextureCompositeImage({ ticketId: grant.ticketId, projectId: this.projectId, bytes: png }),
       preview,
       png.byteLength,
@@ -147,7 +145,6 @@ export class CorePreparedGarmentTextureComposite {
     requireSuccessAck(await this.core.submitPreparedGarmentTextureComposite({
       ticketId: grant.ticketId,
       projectId: this.projectId,
-      uploadId: receipt.uploadId,
       latencyMs,
     }));
     return Object.freeze({ target: 'LOCAL', runtime: 'BROWSER_JS', accelerator: 'cpu', preview, latencyMs });
@@ -165,12 +162,12 @@ function pixelImage(width: number, height: number, rgba: Uint8ClampedArray): Pix
 }
 function requireUploadReceipt(value: unknown, preview: PixelImage, encodedSize: number): FashionTryOnPreparedUploadReceiptV1 {
   const record = exactRecord(value, RECEIPT_KEYS, 'Fashion Try-On upload receipt');
-  if (typeof record.uploadId !== 'string' || !UUID.test(record.uploadId)) throw new Error('Fashion Try-On upload receipt uploadId is invalid');
+  if (record.status !== 'STORED') throw new Error('Fashion Try-On upload receipt status is invalid');
   if (record.mimeType !== FASHION_TRYON_EXECUTION_MIME) throw new Error('Fashion Try-On upload receipt mimeType is invalid');
   if (record.width !== preview.width || record.height !== preview.height) throw new Error('Fashion Try-On upload receipt geometry is invalid');
   if (!Number.isSafeInteger(record.sizeBytes) || Number(record.sizeBytes) !== encodedSize) throw new Error('Fashion Try-On upload receipt size is invalid');
   return Object.freeze({
-    uploadId: record.uploadId,
+    status: 'STORED',
     mimeType: FASHION_TRYON_EXECUTION_MIME,
     width: preview.width,
     height: preview.height,
