@@ -1,0 +1,102 @@
+name: Fashion F5b.1 D2b conditioning prompt semantics
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-kandinsky-conditioning-prompts-f5b1d2b.yml"
+      - ".github/workflows/fashion-kandinsky-conditioning-schema-f5b1d2a.yml"
+      - "scripts/kandinsky-conditioning-candidate-registry.mjs"
+      - "scripts/kandinsky-conditioning-prompt-contract.mjs"
+      - "scripts/kandinsky-conditioning-bundle-contract.mjs"
+      - "tests/kandinsky-conditioning-prompt-contract.test.mjs"
+      - "tests/kandinsky-conditioning-bundle-contract.test.mjs"
+      - "docs/fashion-f5b1-d2b-conditioning-prompt-semantics.md"
+      - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
+      - "server/core/localExecution/productionLocalModelPolicy.ts"
+      - "server/core/localExecution/productionLocalExecutorPolicy.ts"
+      - "src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js"
+      - "src/lib/tryon/tryonEngine.js"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-kandinsky-conditioning-prompts-f5b1d2b.yml"
+      - ".github/workflows/fashion-kandinsky-conditioning-schema-f5b1d2a.yml"
+      - "scripts/kandinsky-conditioning-candidate-registry.mjs"
+      - "scripts/kandinsky-conditioning-prompt-contract.mjs"
+      - "scripts/kandinsky-conditioning-bundle-contract.mjs"
+      - "tests/kandinsky-conditioning-prompt-contract.test.mjs"
+      - "tests/kandinsky-conditioning-bundle-contract.test.mjs"
+      - "docs/fashion-f5b1-d2b-conditioning-prompt-semantics.md"
+      - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
+      - "server/core/localExecution/productionLocalModelPolicy.ts"
+      - "server/core/localExecution/productionLocalExecutorPolicy.ts"
+      - "src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js"
+      - "src/lib/tryon/tryonEngine.js"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prompt-semantics:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Prove shared D2a/D2b candidate identities and controlled A/B/C matrix
+        run: node --test tests/kandinsky-conditioning-prompt-contract.test.mjs tests/kandinsky-conditioning-bundle-contract.test.mjs
+      - name: Rebind historical prior and inpaint semantics to pinned Diffusers blobs
+        run: |
+          set -euo pipefail
+          REV=746215670a61af1034c470d0b6555be9c60cb7b6
+          PRIOR=.test-kandinsky-d2b-prior.py
+          INPAINT=.test-kandinsky-d2b-inpaint.py
+          curl -fsSL "https://raw.githubusercontent.com/huggingface/diffusers/${REV}/src/diffusers/pipelines/kandinsky2_2/pipeline_kandinsky2_2_prior.py" -o "$PRIOR"
+          curl -fsSL "https://raw.githubusercontent.com/huggingface/diffusers/${REV}/src/diffusers/pipelines/kandinsky2_2/pipeline_kandinsky2_2_inpainting.py" -o "$INPAINT"
+          test "$(git hash-object "$PRIOR")" = "3b9974a5dd70e8b775caa01efab6b637ff22d9e5"
+          test "$(git hash-object "$INPAINT")" = "151312979f815d6354b9d5207cba999fe26e43a7"
+          grep -Fq "zero_embeds = self.get_zero_embed" "$PRIOR"
+          grep -Fq "image_embeddings, zero_embeds = image_embeddings.chunk(2)" "$PRIOR"
+          grep -Fq "image_embeds = torch.cat([negative_image_embeds, image_embeds]" "$INPAINT"
+          grep -Fq "noise_pred_uncond + guidance_scale" "$INPAINT"
+      - name: Prove prompt and bundle contracts share one identity authority
+        run: |
+          set -euo pipefail
+          grep -q "conditioningCandidateIdentity" scripts/kandinsky-conditioning-bundle-contract.mjs
+          grep -q "conditioningContractSha256, identity.conditioningContractSha256" scripts/kandinsky-conditioning-bundle-contract.mjs
+          grep -q "positiveEmbeddingSourceCandidateId: 'B_REALISM_ZERO_NEGATIVE'" scripts/kandinsky-conditioning-prompt-contract.mjs
+          grep -q "C must reuse B image_embeds" scripts/kandinsky-conditioning-prompt-contract.mjs
+      - name: Prove D2b remains research-only and opens no runtime authority
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const manifest = JSON.parse(fs.readFileSync('src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json', 'utf8'));
+          if (manifest.status !== 'CANDIDATE') throw new Error('D2b cannot promote Kandinsky');
+          if (manifest.productionExecutable !== false || manifest.runtimeAuthorityGranted !== false) throw new Error('D2b cannot grant runtime authority');
+          if (manifest.offlinePrior?.runtimeDependencyAllowed !== false) throw new Error('D2b prior must remain build/research-only');
+          if (manifest.conditioning?.state !== 'UNPROVEN') throw new Error('D2b cannot claim conditioning tensors');
+          if (manifest.conditioning?.runtimePromptAllowed !== false || manifest.conditioning?.runtimeNegativePromptAllowed !== false || manifest.conditioning?.runtimePriorAllowed !== false) throw new Error('D2b cannot open runtime conditioning');
+          if (manifest.conditioning?.bundle !== null || manifest.conditioning?.decoderOnlyParity !== null) throw new Error('D2b cannot publish bundle/parity evidence');
+          NODE
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+          if grep -R -E "kandinsky-2-2-decoder-inpaint-refinement" server/core/localExecution/productionLocalModelPolicy.ts server/core/localExecution/productionLocalExecutorPolicy.ts; then
+            echo "D2b candidate entered production execution catalogs" >&2
+            exit 1
+          fi
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          git diff --check
