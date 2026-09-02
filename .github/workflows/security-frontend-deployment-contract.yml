@@ -1,0 +1,42 @@
+name: Security frontend deployment contract
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  frontend-deployment-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove frontend security policy and live-header verifier
+        run: node --test tests/frontend-security-deployment-contract.test.mjs tests/auth-client-contract.test.mjs
+      - name: Build production browser bundle
+        run: npm run build
+      - name: Prove built HTML contains meta CSP but no false frame-ancestors claim
+        run: |
+          test -s dist/index.html
+          grep -q 'http-equiv="Content-Security-Policy"' dist/index.html
+          grep -q "script-src 'self' 'wasm-unsafe-eval'" dist/index.html
+          grep -q "require-trusted-types-for 'script'" dist/index.html
+          ! grep -q 'frame-ancestors' dist/index.html
+      - name: Prove deployment contract remains HTTP-header owned
+        run: |
+          grep -q "frame-ancestors" config/frontendSecurityPolicy.mjs
+          grep -q "Content-Security-Policy response header" scripts/verify-frontend-security-headers.mjs
+          grep -q "X-Content-Type-Options" scripts/verify-frontend-security-headers.mjs
+          grep -q "X-Frame-Options" scripts/verify-frontend-security-headers.mjs
+          grep -q "Referrer-Policy" scripts/verify-frontend-security-headers.mjs
