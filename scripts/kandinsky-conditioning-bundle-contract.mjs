@@ -18,8 +18,8 @@ export const CONDITIONING_CANDIDATE_IDS = Object.freeze([
 const SHA256 = /^[0-9a-f]{64}$/;
 const EXACT_KEYS = Object.freeze({
   root: ['schemaVersion', 'stage', 'status', 'productionExecutable', 'runtimeAuthorityGranted', 'priorRuntimeDependencyAllowed', 'sourceTrust', 'historicalPipeline', 'toolchain', 'determinism', 'conditioning', 'bundle'],
-  sourceTrust: ['d1ManifestPath', 'd1ModelId', 'd1Version', 'priorRepository', 'priorRevision', 'priorSafeWeights'],
-  safeWeight: ['path', 'size', 'sha256'],
+  sourceTrust: ['d1ManifestPath', 'd1ModelId', 'd1Version', 'priorRepository', 'priorRevision', 'priorSafeWeights', 'priorConfigFiles'],
+  identityFile: ['path', 'size', 'sha256'],
   historicalPipeline: ['diffusersRevision', 'pipelineClass', 'numImagesPerPrompt', 'numInferenceSteps', 'guidanceScale'],
   toolchain: ['containerImageDigest', 'pythonVersion', 'torchVersion', 'transformersVersion', 'numpyVersion', 'safetensorsVersion', 'platformMachine'],
   determinism: ['device', 'outputDtype', 'torchDeterministicAlgorithms', 'numThreads', 'numInteropThreads', 'ompNumThreads', 'mklNumThreads', 'seed'],
@@ -94,24 +94,30 @@ function assertD1SourceTrust(value, d1Manifest) {
   assertEqual(d1Manifest.offlinePrior.repository, KANDINSKY_PRIOR_REPOSITORY, 'D1 prior repository');
   assertEqual(d1Manifest.offlinePrior.revision, KANDINSKY_PRIOR_REVISION, 'D1 prior revision');
   assertEqual(d1Manifest.offlinePrior.runtimeDependencyAllowed, false, 'D1 prior runtimeDependencyAllowed');
+  assertPlainObject(d1Manifest.offlinePrior.requiredConfigIdentity, 'D1 prior requiredConfigIdentity');
+  assertEqual(d1Manifest.offlinePrior.requiredConfigIdentity.state, 'PINNED', 'D1 prior config state');
 
-  const expectedWeights = d1Manifest.offlinePrior.safeWeights;
-  if (!Array.isArray(expectedWeights) || expectedWeights.length < 1) throw new Error('D1 prior safeWeights are missing');
-  if (!Array.isArray(value.priorSafeWeights) || value.priorSafeWeights.length !== expectedWeights.length) throw new Error('sourceTrust.priorSafeWeights cardinality mismatch');
+  assertIdentityList(value.priorSafeWeights, d1Manifest.offlinePrior.safeWeights, 'sourceTrust.priorSafeWeights');
+  assertIdentityList(value.priorConfigFiles, d1Manifest.offlinePrior.requiredConfigIdentity.files, 'sourceTrust.priorConfigFiles');
+}
+
+function assertIdentityList(actualList, expectedList, path) {
+  if (!Array.isArray(expectedList) || expectedList.length < 1) throw new Error(`${path} source identity is missing from D1`);
+  if (!Array.isArray(actualList) || actualList.length !== expectedList.length) throw new Error(`${path} cardinality mismatch`);
   const observedPaths = new Set();
-  for (let index = 0; index < expectedWeights.length; index += 1) {
-    const expected = expectedWeights[index];
-    const actual = value.priorSafeWeights[index];
-    assertPlainObject(actual, `sourceTrust.priorSafeWeights[${index}]`);
-    assertExactKeys(actual, EXACT_KEYS.safeWeight, `sourceTrust.priorSafeWeights[${index}]`);
-    assertNonEmptyString(actual.path, `sourceTrust.priorSafeWeights[${index}].path`);
-    if (observedPaths.has(actual.path)) throw new Error('sourceTrust.priorSafeWeights contains duplicate paths');
+  for (let index = 0; index < expectedList.length; index += 1) {
+    const expected = expectedList[index];
+    const actual = actualList[index];
+    assertPlainObject(actual, `${path}[${index}]`);
+    assertExactKeys(actual, EXACT_KEYS.identityFile, `${path}[${index}]`);
+    assertNonEmptyString(actual.path, `${path}[${index}].path`);
+    if (observedPaths.has(actual.path)) throw new Error(`${path} contains duplicate paths`);
     observedPaths.add(actual.path);
-    assertPositiveSafeInteger(actual.size, `sourceTrust.priorSafeWeights[${index}].size`);
-    assertSha(actual.sha256, `sourceTrust.priorSafeWeights[${index}].sha256`);
-    assertEqual(actual.path, expected.path, `sourceTrust.priorSafeWeights[${index}].path`);
-    assertEqual(actual.size, expected.size, `sourceTrust.priorSafeWeights[${index}].size`);
-    assertEqual(actual.sha256, expected.sha256, `sourceTrust.priorSafeWeights[${index}].sha256`);
+    assertPositiveSafeInteger(actual.size, `${path}[${index}].size`);
+    assertSha(actual.sha256, `${path}[${index}].sha256`);
+    assertEqual(actual.path, expected.path, `${path}[${index}].path`);
+    assertEqual(actual.size, expected.size, `${path}[${index}].size`);
+    assertEqual(actual.sha256, expected.sha256, `${path}[${index}].sha256`);
   }
 }
 
@@ -121,8 +127,8 @@ function assertHistoricalPipeline(value) {
   assertEqual(value.diffusersRevision, KANDINSKY_HISTORICAL_DIFFUSERS_REVISION, 'historicalPipeline.diffusersRevision');
   assertEqual(value.pipelineClass, 'KandinskyV22PriorPipeline', 'historicalPipeline.pipelineClass');
   assertEqual(value.numImagesPerPrompt, 1, 'historicalPipeline.numImagesPerPrompt');
-  assertPositiveSafeInteger(value.numInferenceSteps, 'historicalPipeline.numInferenceSteps');
-  assertFinitePositiveNumber(value.guidanceScale, 'historicalPipeline.guidanceScale');
+  assertEqual(value.numInferenceSteps, 25, 'historicalPipeline.numInferenceSteps');
+  assertEqual(value.guidanceScale, 4, 'historicalPipeline.guidanceScale');
 }
 
 function assertToolchain(value) {
@@ -207,9 +213,6 @@ function assertNonEmptyString(value, path) {
 }
 function assertPositiveSafeInteger(value, path) {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${path} must be a positive safe integer`);
-}
-function assertFinitePositiveNumber(value, path) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) throw new Error(`${path} must be a finite positive number`);
 }
 function assertSha(value, path) {
   if (typeof value !== 'string' || !SHA256.test(value)) throw new Error(`${path} must be lowercase SHA-256`);
