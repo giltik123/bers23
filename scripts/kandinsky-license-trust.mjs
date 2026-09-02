@@ -71,10 +71,27 @@ export function assertPinnedLicenseBytes(evidence, bytes, label = 'pinned licens
 
   const match = licenseLines[0].match(/^license\s*:\s*([^#\s][^#]*?)\s*(?:#.*)?$/);
   if (!match) throw new Error(`${label} contains malformed license metadata`);
-  const identifier = match[1].trim().replace(/^['"]|['"]$/g, '').toLowerCase();
+  const identifier = parseSimpleLicenseScalar(match[1].trim(), label).toLowerCase();
   if (!LICENSE_IDENTIFIER_PATTERN.test(identifier)) throw new Error(`${label} contains invalid license identifier`);
   if (identifier !== evidence.expectedIdentifier) {
     throw new Error(`${label} license drift: manifest=${evidence.expectedIdentifier} upstream=${identifier}`);
   }
   return Object.freeze({ identifier, path: evidence.path });
+}
+
+function parseSimpleLicenseScalar(raw, label) {
+  if (!raw) throw new Error(`${label} contains malformed license metadata`);
+  const first = raw[0];
+  const last = raw[raw.length - 1];
+  const firstQuoted = first === "'" || first === '"';
+  const lastQuoted = last === "'" || last === '"';
+  if (firstQuoted || lastQuoted) {
+    if (!firstQuoted || !lastQuoted || first !== last || raw.length < 3) {
+      throw new Error(`${label} contains malformed license metadata`);
+    }
+    const inner = raw.slice(1, -1);
+    if (!inner || inner.includes(first)) throw new Error(`${label} contains malformed license metadata`);
+    return inner;
+  }
+  return raw;
 }
