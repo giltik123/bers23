@@ -264,6 +264,9 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       artifacts,
       projects: new PostgresProjectStore(transactions.pool),
       auth,
+      fashion: Object.freeze({
+        manualParametricAdmission: garmentMeshWarp.manualParametricAdmission,
+      }),
       localExecution: Object.freeze({
         tickets: localExecution,
         admission: localExecutionAdmission,

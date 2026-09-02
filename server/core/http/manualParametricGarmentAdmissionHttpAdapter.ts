@@ -86,7 +86,6 @@ function publicResult(value: ManualParametricGarmentAdmissionResult, requestedGa
     || representation.tier !== 'PARAMETRIC'
     || representation.format !== 'BERS_PARAMETRIC_V1'
     || representation.admissionState !== 'ADMITTED'
-    || value.representationTier === 'BASIC'
   ) {
     throw new Error('Manual PARAMETRIC admission returned evidence outside the public transport contract');
   }
@@ -108,10 +107,11 @@ function exactBody(value: unknown): AdmissionRequestBody {
   if (actual.length !== expected.length || expected.some((key, index) => actual[index] !== key)) {
     throw httpError(400, 'forbidden_client_authority', 'Manual PARAMETRIC admission accepts revision and contour intent only');
   }
-  if (!Number.isSafeInteger(record.expectedRevision) || Number(record.expectedRevision) < 1) {
+  const expectedRevision = record.expectedRevision;
+  if (typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
     throw httpError(400, 'invalid_garment_revision', 'Expected Garment revision is invalid');
   }
-  return Object.freeze({ expectedRevision: Number(record.expectedRevision), contour: record.contour });
+  return Object.freeze({ expectedRevision, contour: record.contour });
 }
 
 function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {
