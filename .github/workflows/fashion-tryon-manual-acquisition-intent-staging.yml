@@ -35,10 +35,10 @@ jobs:
         run: node --test tests/canonical-tryon-manual-acquisition-boundary.test.mjs
       - name: Re-prove accepted manual acquisition browser transports
         run: |
-          grep -q "BODY_KEYS = Object.freeze(['contour', 'expectedRevision']" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
-          grep -q "BODY_KEYS = Object.freeze(['payload', 'sourceArtifactId']" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
-          grep -q "MANUAL_PARAMETRIC_CONTOUR_MAX_POINTS = 256" server/core/fashion/manualParametricContour.ts
-          grep -q "BODY_ANCHOR_SCHEMA_ID = 'BERS_BODY_ANCHORS_V1'" server/core/fashion/bodyAnchorGeometry.ts
+          grep -Fq "BODY_KEYS = Object.freeze(['contour', 'expectedRevision']" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          grep -Fq "BODY_KEYS = Object.freeze(['payload', 'sourceArtifactId']" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -Fq "MANUAL_PARAMETRIC_CONTOUR_MAX_POINTS = 256" server/core/fashion/manualParametricContour.ts
+          grep -Fq "BODY_ANCHOR_SCHEMA_ID = 'BERS_BODY_ANCHORS_V1'" server/core/fashion/bodyAnchorGeometry.ts
       - name: Build production frontend
         run: npm run build
       - name: Reject browser evidence or execution authority
