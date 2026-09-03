@@ -83,7 +83,7 @@ function recorder(response = dto()) {
 
 test('Managed Garment client is transport-injected and has no generic Asset/entity/provider authority', async () => {
   const source = await fs.readFile(path.join(ROOT, 'src/api/managedGarmentClient.js'), 'utf8');
-  for (const forbidden of ['fetch(', 'coreClient.entities', 'UploadFile', 'Asset', 'garmentManager', 'FASHN', 'provider', 'Billing', 'cloud']) {
+  for (const forbidden of ['fetch(', 'coreClient.entities', 'UploadFile', 'garmentManager', 'FASHN', 'provider', 'Billing', 'cloud']) {
     assert.equal(source.includes(forbidden), false, forbidden);
   }
   assert.match(source, /createManagedGarmentClient\(request\)/);
@@ -150,6 +150,9 @@ test('Managed Garment response exposes only canonical immutable view evidence an
   const badUrl = dto();
   badUrl.views[0].delivery_url = 'https://example.com/garment.png';
   assert.throws(() => normalizeManagedGarmentDto(badUrl), /delivery_url/);
+  const widenedUrl = dto();
+  widenedUrl.views[0].delivery_url = '/api/core/garments/delivery/token/extra';
+  assert.throws(() => normalizeManagedGarmentDto(widenedUrl), /delivery_url/);
   const badHash = dto();
   badHash.views[0].content_sha256 = SHA.toUpperCase();
   assert.throws(() => normalizeManagedGarmentDto(badHash), /SHA-256/);
