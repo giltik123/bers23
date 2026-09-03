@@ -1,0 +1,53 @@
+name: Fashion F1c Managed Garment browser client staging
+
+on:
+  push:
+    branches: [ "fashion-managed-garment-browser-client-f1c-staging" ]
+    paths:
+      - ".github/workflows/fashion-managed-garment-browser-client-f1c-staging.yml"
+      - "src/api/managedGarmentClient.js"
+      - "server/core/fashion/postgresGarmentStore.ts"
+      - "server/core/fashion/garmentCaptureAssessment.ts"
+      - "server/core/http/managedGarmentHttpAdapter.ts"
+      - "tests/managed-garment-browser-client.test.mjs"
+      - "tests/managed-garment-browser-server-contract.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  managed-garment-client:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Assert exact staging SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Syntax-check canonical Managed Garment adapter
+        run: node --check src/api/managedGarmentClient.js
+      - name: Prove binary transport, immutable view evidence, capture assessment and server contract
+        run: |
+          node --test tests/managed-garment-browser-client.test.mjs
+          node --test tests/managed-garment-browser-server-contract.test.mjs
+      - name: Reject generic upload, legacy and provider authority
+        run: |
+          set -euo pipefail
+          client=src/api/managedGarmentClient.js
+          ! grep -q 'fetch(' "$client"
+          ! grep -q 'coreClient.entities' "$client"
+          ! grep -q 'UploadFile' "$client"
+          ! grep -E -q 'garmentManager|FASHN|provider|Billing|cloud' "$client"
+          grep -q "POSTGRES_BYTEA_V1" "$client"
+          grep -q "PNG_RGBA8_LOSSLESS" "$client"
+          grep -q "SERVER_DELIVERY_PATH" "$client"
+          grep -q "assertCaptureAssessmentMatchesViews" "$client"
+      - name: Check committed staging whitespace
+        run: |
+          set -euo pipefail
+          base="$(git merge-base HEAD origin/main)"
+          git diff --check "${base}..HEAD"
