@@ -1,0 +1,79 @@
+name: Fashion F4b.6b.5 product Try-On transport cutover
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-tryon-product-cutover-f4b6b5.yml"
+      - ".github/workflows/fashion-garment-texture-composite-authority-f4b5b.yml"
+      - "server/index.ts"
+      - "server/core/composition/createProductionCore.ts"
+      - "server/core/composition/createProductionGarmentMeshWarp.ts"
+      - "server/core/fashion/FashionTryOnProductService.ts"
+      - "server/core/http/fashionTryOnProductHttpAdapter.ts"
+      - "server/core/http/fashionTryOnLegacyPrepareTombstoneHttpAdapter.ts"
+      - "src/api/coreClient.js"
+      - "tests/fashion-tryon-product-facade-f4b6b4d.test.ts"
+      - "tests/fashion-tryon-product-http-f4b6b4d.test.ts"
+      - "tests/fashion-tryon-legacy-cutover-f4b6b5.test.ts"
+      - "tests/fashion-tryon-product-cutover-policy.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  product-cutover:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core product cutover
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Bundle focused product transport proofs
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/fashion-f4b6b5
+          npx esbuild tests/fashion-tryon-product-facade-f4b6b4d.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b6b5/facade.mjs \
+            --external:node:* --external:pg --external:sharp
+          npx esbuild tests/fashion-tryon-product-http-f4b6b4d.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b6b5/http.mjs \
+            --external:node:* --external:pg --external:sharp
+          npx esbuild tests/fashion-tryon-legacy-cutover-f4b6b5.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-f4b6b5/tombstone.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove product facade and phase-specific HTTP boundary
+        run: |
+          node --test --test-concurrency=1 .test-cache/fashion-f4b6b5/facade.mjs
+          node --test --test-concurrency=1 .test-cache/fashion-f4b6b5/http.mjs
+      - name: Prove raw prepare migration behavior and static browser authority closure
+        run: |
+          node --test --test-concurrency=1 .test-cache/fashion-f4b6b5/tombstone.mjs
+          node --test tests/fashion-tryon-product-cutover-policy.test.mjs
+      - name: Reject accidental provider/UI authority during transport cutover
+        run: |
+          set -euo pipefail
+          ! grep -q "createGarmentMeshWarpHttpAdapter" server/index.ts
+          ! grep -q "createGarmentTextureCompositeHttpAdapter" server/index.ts
+          ! grep -q "prepareGarmentMeshWarp" src/api/coreClient.js
+          ! grep -q "prepareGarmentTextureComposite" src/api/coreClient.js
+          grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
+          ! grep -E 'fashion/try-on|FashionTryOnProduct' server/core/providers/productionProviderSelection.ts server/core/providers/falWorkflowRuntime.ts
+          git diff --check
