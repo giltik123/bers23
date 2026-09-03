@@ -1,0 +1,52 @@
+name: Fashion Kandinsky D2c schema-v2 staging
+
+on:
+  push:
+    branches:
+      - fashion-kandinsky-d2c-schema-v2-staging
+    paths:
+      - 'scripts/kandinsky-conditioning-bundle-contract.mjs'
+      - 'scripts/kandinsky-conditioning-finalize-manifest.mjs'
+      - 'scripts/_kandinsky-conditioning-builder-impl.py'
+      - 'tests/kandinsky-conditioning-bundle-contract.test.mjs'
+      - 'tests/kandinsky-conditioning-finalizer.test.mjs'
+      - 'tests/kandinsky-conditioning-builder-entry.test.py'
+      - '.github/workflows/fashion-kandinsky-d2c-schema-v2-staging.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  schema-v2-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Assert exact staging SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prove schema-v2 and finalization contracts
+        run: node --test tests/kandinsky-conditioning-bundle-contract.test.mjs tests/kandinsky-conditioning-finalizer.test.mjs
+      - name: Prove Python consumer stays syntactically aligned
+        run: |
+          python -m py_compile scripts/kandinsky-conditioning-builder.py scripts/_kandinsky-conditioning-builder-impl.py
+          python tests/kandinsky-conditioning-builder-entry.test.py
+      - name: Prove no heavy runtime or production authority entered staging
+        run: |
+          set -euo pipefail
+          grep -q 'KANDINSKY_CONDITIONING_SCHEMA_VERSION = 2' scripts/kandinsky-conditioning-bundle-contract.mjs
+          grep -q 'positiveEmbeddingSource' scripts/kandinsky-conditioning-finalize-manifest.mjs
+          grep -q 'CONDITIONING_MANIFEST_SCHEMA_VERSION = 2' scripts/_kandinsky-conditioning-builder-impl.py
+          grep -q 'positive source B manifest must be an independent positive embedding candidate' scripts/_kandinsky-conditioning-builder-impl.py
+          ! grep -R -E 'from_pretrained\(|hf_hub_download|snapshot_download|wget |curl ' .github/workflows/fashion-kandinsky-d2c-schema-v2-staging.yml tests/kandinsky-conditioning-bundle-contract.test.mjs tests/kandinsky-conditioning-finalizer.test.mjs
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check staging diff whitespace
+        run: git diff --check 7fed5c9cbd2f2da7191df70170751e4daa207b1c..HEAD
