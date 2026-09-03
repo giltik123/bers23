@@ -1,0 +1,39 @@
+name: Fashion Try-On Editor preview handoff staging
+
+on:
+  push:
+    branches:
+      - fashion-tryon-editor-preview-handoff-staging
+    paths:
+      - 'src/application/fashion/materializeCanonicalTryOnEditorPendingResult.js'
+      - 'tests/canonical-tryon-editor-preview-handoff.test.mjs'
+      - '.github/workflows/fashion-tryon-editor-preview-handoff-staging.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  editor-preview-handoff:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Assert exact staging SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Prove canonical Try-On Editor preview handoff
+        run: node --test tests/canonical-tryon-editor-preview-handoff.test.mjs
+      - name: Keep handoff free of parallel authority
+        run: |
+          set -euo pipefail
+          FILE=src/application/fashion/materializeCanonicalTryOnEditorPendingResult.js
+          grep -q "kind: 'FASHION_TRY_ON'" "$FILE"
+          grep -q 'finalArtifactId: artifactId' "$FILE"
+          ! grep -E -q 'ticketId|preparedExecution|representationId|anchorSetId|destinationMesh|pushEdit|persistFinal|coreClient|fetch\(|localStorage|sessionStorage|FASHN|billing' "$FILE"
+          ! grep -q 'clientRequestId' "$FILE"
+      - name: Check staging diff whitespace
+        run: git diff --check 3b13d282235e436d18d5c0efe13f1a902a335b1b..HEAD
