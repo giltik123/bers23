@@ -1,0 +1,47 @@
+name: Fashion Try-On recovery preview foundation staging
+
+on:
+  push:
+    branches:
+      - fashion-tryon-recovery-preview-foundation-staging
+    paths:
+      - 'server/core/fashion/FashionTryOnRecoveryPreviewService.ts'
+      - 'tests/fashion-tryon-recovery-preview-f4b6d1.test.ts'
+      - 'tests/fashion-tryon-recovery-preview-boundary.test.mjs'
+      - '.github/workflows/fashion-tryon-recovery-preview-foundation-staging.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-preview:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Assert exact staging SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prove recovery preview semantics
+        run: node --experimental-strip-types --test tests/fashion-tryon-recovery-preview-f4b6d1.test.ts
+      - name: Prove recovery preview authority boundary
+        run: node --test tests/fashion-tryon-recovery-preview-boundary.test.mjs
+      - name: Re-prove accepted stable-intent FINAL recovery
+        run: node --experimental-strip-types --test tests/fashion-tryon-final-result-f4b6b4c.test.ts
+      - name: Typecheck production Core
+        run: npm run server:typecheck
+      - name: Reject premature transport and UI activation
+        run: |
+          set -euo pipefail
+          ! grep -q 'FashionTryOnRecoveryPreviewService' server/index.ts
+          ! grep -q 'FashionTryOnRecoveryPreviewService' src/api/coreClient.js
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check committed diff whitespace
+        run: git diff --check a05f2845cba15f20efce3ce79bcce8e740ad36aa..${GITHUB_SHA}
