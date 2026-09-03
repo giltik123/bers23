@@ -147,6 +147,7 @@ function normalizeReadiness(value, intent) {
 
 function normalizePreview(value, intent) {
   requirePlainObject(value, 'Try-On preview result');
+  if (value.status === 'FINAL_READY') throw new Error('Try-On preview endpoint returned FINAL_READY without preview delivery');
   if (value.status !== 'PREVIEW_READY') return normalizeResult(value, intent, null);
   requireExactKeys(
     value,
