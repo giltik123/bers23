@@ -14,7 +14,8 @@ import { conditioningPromptContract } from '../scripts/kandinsky-conditioning-pr
 const root = path.resolve(import.meta.dirname, '..');
 const d1Path = path.join(root, 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json');
 const finalizer = path.join(root, 'scripts/kandinsky-conditioning-finalize-manifest.mjs');
-const d1 = JSON.parse(fs.readFileSync(d1Path, 'utf8'));
+const d1Bytes = fs.readFileSync(d1Path);
+const d1 = JSON.parse(d1Bytes.toString('utf8'));
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -55,6 +56,7 @@ function evidence(candidateId, contractSha, bundle, positiveEmbeddingSource = nu
     conditioningContractSha256: contractSha,
     positiveEmbeddingSource,
     sourceTrust: {
+      d1ManifestSha256: sha256(d1Bytes),
       d1ModelId: d1.modelId,
       d1Version: d1.version,
       priorRepository: d1.offlinePrior.repository,
@@ -220,6 +222,30 @@ test('F5b.1 D2c finalizer rejects evidence rebound to another contract or raw bu
     assert.notEqual(wrongBundleSha.result.status, 0);
     assert.match(wrongBundleSha.result.stderr, /bundle bytes mismatch/i);
   } finally { cleanup(rebound, wrongBundleSha); }
+});
+
+test('F5b.1 D2c finalizer rejects builder evidence from a different D1 byte identity', () => {
+  const altered = Buffer.from(JSON.stringify({ ...d1, releaseDecision: 'ALTERED_SAME_LABELS' }), 'utf8');
+  const rebound = runFinalizer('A_NEUTRAL_ZERO_NEGATIVE', {
+    mutateEvidence: value => ({
+      ...value,
+      sourceTrust: { ...value.sourceTrust, d1ManifestSha256: sha256(altered) },
+    }),
+  });
+  try {
+    assert.notEqual(rebound.result.status, 0);
+    assert.match(rebound.result.stderr, /not bound to the exact D1 manifest bytes/i);
+  } finally { cleanup(rebound); }
+});
+
+test('F5b.1 D2c finalizer rejects non-safe-integer seed evidence before manifest emission', () => {
+  const unsafe = runFinalizer('A_NEUTRAL_ZERO_NEGATIVE', {
+    mutateEvidence: value => ({ ...value, determinism: { ...value.determinism, seed: Number.MAX_SAFE_INTEGER + 1 } }),
+  });
+  try {
+    assert.notEqual(unsafe.result.status, 0);
+    assert.match(unsafe.result.stderr, /safe-integer contract/i);
+  } finally { cleanup(unsafe); }
 });
 
 test('F5b.1 D2c finalizer rejects open evidence and untested toolchain claims', () => {

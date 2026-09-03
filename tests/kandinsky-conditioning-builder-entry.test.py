@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import importlib.util
 import json
 import re
@@ -68,15 +69,20 @@ class KandinskyD2cBuilderEntryTests(unittest.TestCase):
             path.write_bytes(b'x' * entry['size'])
         manifest = root / 'd1.json'
         manifest.write_text(json.dumps({'offlinePrior': {'safeWeights': identities, 'requiredConfigIdentity': {'files': configs}}}), encoding='utf-8')
-        return prior, manifest
+        prompt = root / 'prompt.json'
+        prompt.write_text(json.dumps({'candidateId': 'A_NEUTRAL_ZERO_NEGATIVE'}), encoding='utf-8')
+        return prior, manifest, prompt
 
-    def invoke(self, prior: Path, manifest: Path):
+    def invoke(self, prior: Path, manifest: Path, prompt: Path, seed: str = '123456'):
         module = load_entry()
         observed = []
         module.runpy.run_path = lambda path, run_name: observed.append((path, run_name))
         old = sys.argv
         try:
-            sys.argv = [str(ENTRY), '--prior-root', str(prior), '--d1-manifest', str(manifest), '--output-dir', 'unused']
+            sys.argv = [
+                str(ENTRY), '--prior-root', str(prior), '--d1-manifest', str(manifest),
+                '--prompt-contract', str(prompt), '--output-dir', 'unused', '--seed', seed, '--verify-only',
+            ]
             module.main()
         finally:
             sys.argv = old
@@ -84,26 +90,26 @@ class KandinskyD2cBuilderEntryTests(unittest.TestCase):
 
     def test_exact_allowlist_reaches_internal_builder(self):
         with tempfile.TemporaryDirectory() as tmp:
-            prior, manifest = self.fixture(Path(tmp))
-            observed = self.invoke(prior, manifest)
+            prior, manifest, prompt = self.fixture(Path(tmp))
+            observed = self.invoke(prior, manifest, prompt)
             self.assertEqual(len(observed), 1)
             self.assertTrue(observed[0][0].endswith('_kandinsky-conditioning-builder-impl.py'))
             self.assertEqual(observed[0][1], '__main__')
 
     def test_extra_or_missing_file_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            prior, manifest = self.fixture(Path(tmp))
+            prior, manifest, prompt = self.fixture(Path(tmp))
             (prior / 'tokenizer' / 'unpinned.json').write_text('{}', encoding='utf-8')
             with self.assertRaisesRegex(RuntimeError, 'file set mismatch'):
-                self.invoke(prior, manifest)
+                self.invoke(prior, manifest, prompt)
             (prior / 'tokenizer' / 'unpinned.json').unlink()
             (prior / 'model_index.json').unlink()
             with self.assertRaisesRegex(RuntimeError, 'file set mismatch'):
-                self.invoke(prior, manifest)
+                self.invoke(prior, manifest, prompt)
 
     def test_symlink_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            prior, manifest = self.fixture(Path(tmp))
+            prior, manifest, prompt = self.fixture(Path(tmp))
             target = prior / 'model_index.json'
             target.unlink()
             external = Path(tmp) / 'outside.json'
@@ -113,7 +119,36 @@ class KandinskyD2cBuilderEntryTests(unittest.TestCase):
             except OSError:
                 self.skipTest('symlink unavailable in environment')
             with self.assertRaisesRegex(RuntimeError, 'symlink'):
-                self.invoke(prior, manifest)
+                self.invoke(prior, manifest, prompt)
+
+    def test_public_entry_rejects_seed_above_js_safe_integer_before_internal_builder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prior, manifest, prompt = self.fixture(Path(tmp))
+            with self.assertRaisesRegex(RuntimeError, 'safe-integer limit'):
+                self.invoke(prior, manifest, prompt, str(2**53))
+
+    def test_public_entry_seals_builder_evidence_to_exact_d1_bytes(self):
+        module = load_entry()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            evidence_path = root / 'A_NEUTRAL_ZERO_NEGATIVE.builder-evidence.json'
+            evidence_path.write_text(json.dumps({
+                'candidateId': 'A_NEUTRAL_ZERO_NEGATIVE',
+                'sourceTrust': {
+                    'd1ModelId': 'model',
+                    'd1Version': 'version',
+                    'priorRepository': 'repo',
+                    'priorRevision': 'revision',
+                    'priorPipelineGitBlobSha1': '1' * 40,
+                },
+            }), encoding='utf-8')
+            d1_sha = hashlib.sha256(b'exact-d1-bytes').hexdigest()
+            module.seal_builder_evidence(root, 'A_NEUTRAL_ZERO_NEGATIVE', d1_sha)
+            raw = evidence_path.read_bytes()
+            parsed = json.loads(raw)
+            self.assertEqual(parsed['sourceTrust']['d1ManifestSha256'], d1_sha)
+            self.assertTrue(raw.endswith(b'\n'))
+            self.assertEqual(raw, (json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8'))
 
 
 class KandinskyD2cCandidateBindingTests(unittest.TestCase):

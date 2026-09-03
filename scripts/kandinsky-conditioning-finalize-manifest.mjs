@@ -12,6 +12,7 @@ import { conditioningCandidateIdentity } from './kandinsky-conditioning-candidat
 import { conditioningPromptContract } from './kandinsky-conditioning-prompt-contract.mjs';
 
 const args = parseArgs(process.argv.slice(2));
+const d1ManifestBytes = readBytes(args.d1, 'D1 manifest');
 const d1 = readJson(args.d1, 'D1 manifest');
 const prompt = readJson(args.prompt, 'D2b prompt contract');
 const evidence = readJson(args.evidence, 'D2c builder evidence');
@@ -94,7 +95,10 @@ function assertEvidenceAndTargetBundle(value, candidateId, identity, bundleBytes
   if (value.candidateId !== candidateId) fail('builder evidence candidate mismatch');
   if (value.conditioningContractSha256 !== identity.conditioningContractSha256) fail('builder evidence conditioning SHA mismatch');
 
-  exactKeys(value.sourceTrust, ['d1ModelId','d1Version','priorRepository','priorRevision','priorPipelineGitBlobSha1'], 'builder evidence sourceTrust');
+  exactKeys(value.sourceTrust, ['d1ManifestSha256','d1ModelId','d1Version','priorRepository','priorRevision','priorPipelineGitBlobSha1'], 'builder evidence sourceTrust');
+  if (!/^[0-9a-f]{64}$/.test(value.sourceTrust.d1ManifestSha256) || value.sourceTrust.d1ManifestSha256 !== sha256(d1ManifestBytes)) {
+    fail('builder evidence is not bound to the exact D1 manifest bytes');
+  }
   if (value.sourceTrust.d1ModelId !== d1.modelId || value.sourceTrust.d1Version !== d1.version || value.sourceTrust.priorRepository !== d1.offlinePrior.repository || value.sourceTrust.priorRevision !== d1.offlinePrior.revision) {
     fail('builder evidence source trust mismatch');
   }
@@ -109,6 +113,7 @@ function assertEvidenceAndTargetBundle(value, candidateId, identity, bundleBytes
   exactKeys(value.determinism, ['device','outputDtype','torchDeterministicAlgorithms','numThreads','numInteropThreads','ompNumThreads','mklNumThreads','seed','generatorPolicy','latentPolicy','networkPolicy'], 'builder evidence determinism');
   if (value.determinism.device !== 'cpu' || value.determinism.outputDtype !== 'float32' || value.determinism.torchDeterministicAlgorithms !== true) fail('builder evidence deterministic device/dtype mismatch');
   for (const key of ['numThreads','numInteropThreads','ompNumThreads','mklNumThreads']) if (value.determinism[key] !== 1) fail(`builder evidence ${key} mismatch`);
+  if (!Number.isSafeInteger(value.determinism.seed) || value.determinism.seed < 0) fail('builder evidence seed exceeds the manifest safe-integer contract');
   if (value.determinism.generatorPolicy !== 'TORCH_CPU_GENERATOR_SINGLE_SEED' || value.determinism.latentPolicy !== 'NO_EXTERNAL_LATENTS_PIPELINE_RANDN') fail('builder evidence generator/latent policy mismatch');
   if (value.determinism.networkPolicy !== 'CONTAINER_NETWORK_NONE_PLUS_LIBRARY_OFFLINE_GUARD') fail('builder evidence network isolation mismatch');
 
