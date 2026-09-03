@@ -43,10 +43,10 @@ test('helper intentionally does not duplicate authoritative polygon or destinati
   assert.match(contour, /assertSimplePolygon/);
   assert.match(contour, /triangulateCanonicalPolygon/);
   assert.match(anchors, /deriveDestinationGarmentMesh/);
-  assert.doesNotMatch(
-    helper,
-    /assertSimplePolygon|triangulateCanonicalPolygon|deriveDestinationGarmentMesh|GARMENT_MESH_WARP_FIXED_POINT_ONE|quantizeNormalizedGarmentMeshPoints|meshSha256/,
-  );
+  for (const forbidden of [
+    'assertSimplePolygon', 'triangulateCanonicalPolygon', 'deriveDestinationGarmentMesh',
+    'meshSha256', 'Q16_SCALE', 'Q16_ONE', 'canonicalizeQ16', 'quantizeQ16',
+  ]) assert.equal(helper.includes(forbidden), false, `browser helper must not implement ${forbidden}`);
 });
 
 test('manual acquisition browser intent cannot carry server evidence authority', () => {
