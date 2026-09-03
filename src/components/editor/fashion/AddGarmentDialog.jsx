@@ -4,9 +4,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { GARMENT_CATEGORIES } from '@/lib/fashion/garmentCategories';
-import { SEASONS, MATERIALS } from '@/lib/fashion/garmentMetadata';
 
 const selectCls = 'w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm';
+const SEASONS = Object.freeze(['all_season', 'spring', 'summer', 'autumn', 'winter']);
 const VIEW_KINDS = Object.freeze([
   ['FRONT', 'Front'],
   ['BACK', 'Back'],
@@ -103,10 +103,7 @@ export default function AddGarmentDialog({ open, onClose, onCreate }) {
             <select aria-label="Season" value={form.season} onChange={set('season')} className={selectCls} disabled={saving}>
               {SEASONS.map((season) => <option key={season} value={season}>{season.replace('_', ' ')}</option>)}
             </select>
-            <select aria-label="Material" value={form.material} onChange={set('material')} className={selectCls} disabled={saving}>
-              <option value="">Material…</option>
-              {MATERIALS.map((material) => <option key={material} value={material}>{material}</option>)}
-            </select>
+            <Input aria-label="Material" placeholder="Material" value={form.material} onChange={set('material')} disabled={saving} maxLength={50} />
           </div>
           <Input placeholder="Tags (comma separated)" value={form.tags} onChange={set('tags')} disabled={saving} />
 
