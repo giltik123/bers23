@@ -1,5 +1,6 @@
 const PREFIX = '/garments';
 const SERVER_DELIVERY_PREFIX = '/api/core/garments/delivery/';
+const SERVER_DELIVERY_PATH = /^\/api\/core\/garments\/delivery\/[^/?#]+$/;
 const EXPECTED_REVISION_HEADER = 'X-Expected-Garment-Revision';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -240,8 +241,7 @@ function canonicalCardinalArray(value, label) {
 }
 
 function canonicalDeliveryUrl(value, label) {
-  if (typeof value !== 'string' || !value.startsWith(SERVER_DELIVERY_PREFIX) || value.length <= SERVER_DELIVERY_PREFIX.length
-    || value.includes('?') || value.includes('#') || value.includes('..')) {
+  if (typeof value !== 'string' || !value.startsWith(SERVER_DELIVERY_PREFIX) || !SERVER_DELIVERY_PATH.test(value)) {
     throw new TypeError(`${label} must be one narrow server-issued Managed Garment delivery path`);
   }
   return value;
