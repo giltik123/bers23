@@ -1,0 +1,52 @@
+name: Fashion canonical Collections UI staging
+
+on:
+  push:
+    branches:
+      - fashion-canonical-collections-ui-staging
+    paths:
+      - 'src/application/fashion/canonicalCollectionViewModel.js'
+      - 'src/components/editor/fashion/CanonicalCollectionsView.jsx'
+      - 'src/components/editor/fashion/FashionPanel.jsx'
+      - 'tests/canonical-collection-view-model.test.mjs'
+      - 'tests/fashion-canonical-collections-ui.test.mjs'
+      - '.github/workflows/fashion-canonical-collections-ui-staging.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-collections-ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Assert exact staging SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prove collection revision and atomic-move semantics
+        run: node --test tests/canonical-collection-view-model.test.mjs
+      - name: Prove canonical Collections UI authority boundary
+        run: node --test tests/fashion-canonical-collections-ui.test.mjs
+      - name: Build production frontend
+        run: npm run build
+      - name: Reject legacy collection authority
+        run: |
+          set -euo pipefail
+          FILES=(
+            src/application/fashion/canonicalCollectionViewModel.js
+            src/components/editor/fashion/CanonicalCollectionsView.jsx
+            src/components/editor/fashion/FashionPanel.jsx
+          )
+          ! grep -E -q 'garmentCollections|wardrobeManager|garmentManager|coreClient\.entities|Core\.UploadFile|original_image_url' "${FILES[@]}"
+          grep -q 'coreClient.fashion.collections' src/components/editor/fashion/CanonicalCollectionsView.jsx
+          grep -q 'collections.moveGarment' src/application/fashion/canonicalCollectionViewModel.js
+      - name: Check committed diff whitespace
+        run: git diff --check HEAD^..HEAD
