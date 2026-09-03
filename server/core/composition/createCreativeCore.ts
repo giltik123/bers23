@@ -32,7 +32,8 @@ export type CreativeCoreCompositionInput = Readonly<{
   canonical: Omit<CreativeExecutionPlatformRuntimeDependencies, 'billing'>;
   transactions: TransactionService;
   transactionStore: TransactionStore;
-  executionRuns: ExecutionRunRegistry;
+  /** Required by production in the promotion slice; optional here for isolated composition fixtures. */
+  executionRuns?: ExecutionRunRegistry;
   ownsArtifacts: CreativeExecutionServiceDependencies['ownsArtifacts'];
   hydrateArtifacts?: CreativeExecutionServiceDependencies['hydrateArtifacts'];
   persistFinal?: CreativeExecutionServiceDependencies['persistFinal'];

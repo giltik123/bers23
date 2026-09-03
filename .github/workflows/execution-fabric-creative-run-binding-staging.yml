@@ -1,0 +1,67 @@
+name: Execution Fabric Creative run binding staging
+
+on:
+  push:
+    branches:
+      - execution-fabric-creative-run-binding-staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  creative-run-binding:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck Core server
+        run: npm run server:typecheck
+      - name: Build production Core without claiming production binding
+        run: npm run server:build
+      - name: Bundle Creative binding and accepted product suites
+        run: |
+          mkdir -p .test-cache/creative-run-binding
+          node --input-type=module <<'EOF'
+          import { build } from 'esbuild';
+          for (const [entry, outfile] of [
+            ['tests/creative-execution-run-binding.test.ts', '.test-cache/creative-run-binding/creative-execution-run-binding.test.mjs'],
+            ['tests/canonical-product-vertical-slice.test.ts', '.test-cache/creative-run-binding/canonical-product-vertical-slice.test.mjs'],
+          ]) await build({
+            entryPoints: [entry],
+            bundle: true,
+            platform: 'node',
+            format: 'esm',
+            target: 'node24',
+            outfile,
+            external: ['node:*'],
+          });
+          EOF
+      - name: Prove durable Creative replay and lifecycle ordering
+        run: node --test .test-cache/creative-run-binding/creative-execution-run-binding.test.mjs
+      - name: Preserve accepted Creative provider Billing and scope semantics
+        run: node --test .test-cache/creative-run-binding/canonical-product-vertical-slice.test.mjs
+      - name: Prove staging boundary does not open Job Center Agent Automation or false durable cancel
+        run: |
+          set -euo pipefail
+          grep -q 'executionRuns.issue' server/core/application/creativeExecutionService.ts
+          grep -q 'creative_reconciliation_required' server/core/application/creativeExecutionService.ts
+          grep -q "outcome.status === 'UNKNOWN'" server/core/application/creativeExecutionService.ts
+          ! grep -q 'executionRuns.cancel' server/core/application/creativeExecutionService.ts
+          ! grep -E -q '/api/core/(jobs|agent|automation)|JobRecord|coreClient\.entities|FASHN|stripe' \
+            server/core/application/creativeExecutionService.ts \
+            server/core/composition/createCreativeCore.ts
+      - name: Check committed diff whitespace
+        run: git diff --check be81dfb1e59a1563bccdf26229b3a8709cc5b406..HEAD
