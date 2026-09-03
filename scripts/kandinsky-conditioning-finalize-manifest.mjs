@@ -14,6 +14,7 @@ const args = parseArgs(process.argv.slice(2));
 const d1 = readJson(args.d1, 'D1 manifest');
 const prompt = readJson(args.prompt, 'D2b prompt contract');
 const evidence = readJson(args.evidence, 'D2c builder evidence');
+const bundleBytes = fs.readFileSync(args.bundle);
 
 const expectedPrompt = conditioningPromptContract(prompt.candidateId);
 const candidateIdentity = conditioningCandidateIdentity(prompt.candidateId);
@@ -23,6 +24,7 @@ if (!promptBytes.equals(expectedPromptBytes)) fail('D2c prompt contract bytes do
 if (evidence.conditioningContractSha256 !== expectedPrompt.sha256) fail('D2c evidence is not bound to the accepted D2b prompt contract');
 
 assertEvidence(evidence, prompt.candidateId, candidateIdentity);
+assertBundleIdentity(evidence.bundle, bundleBytes, 'D2c final bundle');
 assertPositiveSource(evidence, candidateIdentity);
 const manifest = Object.freeze({
   schemaVersion: 1,
@@ -114,6 +116,10 @@ function assertEvidence(value, candidateId, identity) {
   if (!Number.isSafeInteger(value.bundle.size) || value.bundle.size < 1 || !/^[0-9a-f]{64}$/.test(value.bundle.sha256)) fail('builder evidence bundle identity is invalid');
 }
 
+function assertBundleIdentity(identity, bytes, label) {
+  if (identity.size !== bytes.byteLength || identity.sha256 !== sha256Bytes(bytes)) fail(`${label} bytes do not match builder evidence identity`);
+}
+
 function assertPositiveSource(evidence, identity) {
   const sourceCandidateId = identity.positiveEmbeddingSourceCandidateId;
   if (!sourceCandidateId) {
@@ -171,7 +177,7 @@ function writeAtomic(file, bytes) {
   fs.renameSync(temp, file);
 }
 function parseArgs(argv) {
-  const accepted = new Set(['--d1','--prompt','--evidence','--output','--positive-source-manifest','--positive-source-bundle']);
+  const accepted = new Set(['--d1','--prompt','--evidence','--bundle','--output','--positive-source-manifest','--positive-source-bundle']);
   const values = {};
   if (argv.length % 2 !== 0) fail('finalizer arguments must be flag/value pairs');
   for (let index = 0; index < argv.length; index += 2) {
@@ -181,7 +187,7 @@ function parseArgs(argv) {
     if (!accepted.has(key) || !value || Object.hasOwn(values, normalized)) fail('finalizer arguments are invalid or duplicated');
     values[normalized] = value;
   }
-  for (const required of ['d1','prompt','evidence','output']) if (!values[required]) fail('all base finalizer arguments are required exactly once');
+  for (const required of ['d1','prompt','evidence','bundle','output']) if (!values[required]) fail('all base finalizer arguments are required exactly once');
   const sourceCount = Number(Boolean(values.positiveSourceManifest)) + Number(Boolean(values.positiveSourceBundle));
   if (sourceCount === 1) fail('positive-source manifest and bundle must be supplied together');
   return values;
