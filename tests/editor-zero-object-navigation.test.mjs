@@ -38,7 +38,7 @@ test('zero-object Prompt remains a canonical whole-image edit without inventing 
   assert.doesNotMatch(modes, /objects\.length === 0[\s\S]{0,300}(randomUUID|mask_artifact_id|selected:\s*true)/);
 });
 
-test('reachable Fashion uses canonical garment/wardrobe authority while later verticals remain fail-closed', async () => {
+test('reachable Fashion and Outfit surfaces use narrow canonical authorities while later verticals remain fail-closed', async () => {
   const [editor, fashion, outfits, creative, agent, tryOn] = await Promise.all([
     readFile(EDITOR, 'utf8'),
     readFile(FASHION, 'utf8'),
@@ -56,17 +56,20 @@ test('reachable Fashion uses canonical garment/wardrobe authority while later ve
     assert.equal(fashion.includes(forbidden), false, `Fashion must not mount legacy authority ${forbidden}`);
   }
 
-  assert.match(outfits, /Canonical Outfit authority is not enabled yet\./);
-  assert.match(outfits, /Legacy generic Outfit entity CRUD is disabled\./);
-  for (const forbidden of ['coreClient', 'outfitManager']) {
-    assert.equal(outfits.includes(forbidden), false, `Outfits must not mount ${forbidden} before its canonical UI cutover`);
+  assert.match(outfits, /createCanonicalOutfitViewModel/);
+  assert.match(outfits, /coreClient\.fashion\.outfits/);
+  assert.match(outfits, /coreClient\.fashion\.wardrobe/);
+  assert.match(outfits, /server-owned/);
+  assert.match(outfits, /never retried automatically/);
+  for (const forbidden of ['outfitManager', 'coreClient.entities', 'FASHN', 'onCommit', 'onRollback']) {
+    assert.equal(outfits.includes(forbidden), false, `Outfits must not mount legacy or execution authority ${forbidden}`);
   }
 
-  assert.match(creative, /Outfit-aware recommendations are unavailable until canonical Outfit authority is enabled\./);
+  assert.match(creative, /Canonical Outfit authority is available, but Creative Studio integration is not wired yet\./);
   for (const forbidden of ['coreClient', 'outfitManager']) {
     assert.equal(creative.includes(forbidden), false, `Creative Studio must not mount ${forbidden}`);
   }
-  assert.match(creative, /outfits: \[\]/, 'Creative Studio must explicitly run without legacy Outfit data');
+  assert.match(creative, /outfits: \[\]/, 'Creative Studio must explicitly remain disconnected from canonical Outfit data');
 
   assert.doesNotMatch(editor, /<OutfitPanel[\s\S]{0,500}onCommit=/);
   assert.doesNotMatch(editor, /<AgentPanel[\s\S]{0,500}(onCommit|onRollback)=/);

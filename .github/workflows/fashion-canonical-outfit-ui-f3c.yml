@@ -1,0 +1,63 @@
+name: Fashion F3c Canonical Outfit UI
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/application/fashion/canonicalOutfitViewModel.js'
+      - 'src/components/editor/outfits/OutfitPanel.jsx'
+      - 'src/components/editor/creative/CreativeStudioPanel.jsx'
+      - 'tests/canonical-outfit-view-model.test.mjs'
+      - 'tests/fashion-canonical-outfit-ui.test.mjs'
+      - 'tests/editor-zero-object-navigation.test.mjs'
+      - '.github/workflows/fashion-canonical-outfit-ui-f3c.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-outfit-ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prove Outfit view-model semantics
+        run: node --test tests/canonical-outfit-view-model.test.mjs
+      - name: Re-prove accepted F3 browser and server contract
+        run: |
+          node --test tests/managed-outfit-browser-client.test.mjs
+          node --test tests/managed-outfit-browser-server-contract.test.mjs
+      - name: Prove canonical Outfit UI authority and zero-object navigation
+        run: |
+          node --test tests/fashion-canonical-outfit-ui.test.mjs
+          node --test tests/editor-zero-object-navigation.test.mjs
+      - name: Build production frontend
+        run: npm run build
+      - name: Reject legacy, execution and financial authority widening
+        run: |
+          set -euo pipefail
+          FILES=(
+            src/application/fashion/canonicalOutfitViewModel.js
+            src/components/editor/outfits/OutfitPanel.jsx
+          )
+          ! grep -E -q 'outfitManager|coreClient\.entities|FASHN|billing|credits|onCommit|onRollback|fetch\(' "${FILES[@]}"
+          grep -q 'coreClient.fashion.outfits' src/components/editor/outfits/OutfitPanel.jsx
+          grep -q 'coreClient.fashion.wardrobe' src/components/editor/outfits/OutfitPanel.jsx
+          grep -q 'outfits.reorderEntries' src/application/fashion/canonicalOutfitViewModel.js
+          grep -q 'outfits.updateMetadata' src/application/fashion/canonicalOutfitViewModel.js
+      - name: Keep Creative Studio disconnected from Outfit data
+        run: |
+          ! grep -E -q 'coreClient|outfitManager' src/components/editor/creative/CreativeStudioPanel.jsx
+          grep -q 'outfits: \[\]' src/components/editor/creative/CreativeStudioPanel.jsx
+      - name: Check committed diff whitespace
+        run: git diff --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
