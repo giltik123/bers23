@@ -23,29 +23,27 @@ jobs:
         with:
           node-version: 24.x
           cache: npm
-      - name: Regenerate only admitted transitive security patches
-        run: npm install --package-lock-only --ignore-scripts --no-save fflate@0.8.3 postcss-selector-parser@6.1.4
+      - name: Record current production advisory graph
+        run: npm audit --omit=dev --json > "$RUNNER_TEMP/audit-before.json" || true
+      - name: Apply npm-compatible production advisory remediation to lock only
+        run: npm audit fix --package-lock-only --omit=dev
       - name: Prove top-level manifest is unchanged
         run: git diff --exit-code -- package.json
-      - name: Prove exact remediated lock identities
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-          const expected = new Map([
-            ['node_modules/fflate', '0.8.3'],
-            ['node_modules/postcss-selector-parser', '6.1.4'],
-          ]);
-          for (const [path, version] of expected) {
-            if (lock.packages?.[path]?.version !== version) {
-              throw new Error(`${path} did not resolve to ${version}`);
-            }
-          }
-          NODE
       - name: Prove clean install from generated lock
         run: npm ci
       - name: Prove production audit is clear at enforced threshold
         run: npm audit --omit=dev --audit-level=moderate
+      - name: Prove known blocking transitive identities left vulnerable ranges
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const fflate = lock.packages?.['node_modules/fflate']?.version;
+          const selector = lock.packages?.['node_modules/postcss-selector-parser']?.version;
+          if (!fflate || /^0\.8\.[0-2]$/.test(fflate)) throw new Error(`fflate remains vulnerable: ${fflate}`);
+          if (selector && /^6\.1\.[0-2]$/.test(selector)) throw new Error(`postcss-selector-parser remains vulnerable: ${selector}`);
+          console.log(JSON.stringify({ fflate, postcssSelectorParser: selector }));
+          NODE
       - name: Commit generated lock only
         run: |
           set -euo pipefail
