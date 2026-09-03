@@ -38,7 +38,7 @@ test('zero-object Prompt remains a canonical whole-image edit without inventing 
   assert.doesNotMatch(modes, /objects\.length === 0[\s\S]{0,300}(randomUUID|mask_artifact_id|selected:\s*true)/);
 });
 
-test('reachable Fashion, Outfits and Creative avoid legacy generic entity authority', async () => {
+test('reachable Fashion uses canonical garment/wardrobe authority while later verticals remain fail-closed', async () => {
   const [editor, fashion, outfits, creative, agent, tryOn] = await Promise.all([
     readFile(EDITOR, 'utf8'),
     readFile(FASHION, 'utf8'),
@@ -48,17 +48,21 @@ test('reachable Fashion, Outfits and Creative avoid legacy generic entity author
     readFile(TRY_ON, 'utf8'),
   ]);
 
-  assert.match(fashion, /Canonical Wardrobe authority is not enabled yet\./);
-  assert.match(fashion, /Legacy generic Garment and GarmentCollection entity CRUD is disabled\./);
+  assert.match(fashion, /createCanonicalWardrobeViewModel/);
+  assert.match(fashion, /coreClient\.fashion\.garments/);
+  assert.match(fashion, /coreClient\.fashion\.wardrobe/);
+  assert.match(fashion, /AddGarmentDialog/);
+  for (const forbidden of ['wardrobeManager', 'garmentManager', 'garmentCollections', 'coreClient.entities', 'Core.UploadFile', '/assets']) {
+    assert.equal(fashion.includes(forbidden), false, `Fashion must not mount legacy authority ${forbidden}`);
+  }
+
   assert.match(outfits, /Canonical Outfit authority is not enabled yet\./);
   assert.match(outfits, /Legacy generic Outfit entity CRUD is disabled\./);
-  assert.match(creative, /Outfit-aware recommendations are unavailable until canonical Outfit authority is enabled\./);
-
-  for (const [name, source] of [['Fashion', fashion], ['Outfits', outfits]]) {
-    for (const forbidden of ['coreClient', 'wardrobeManager', 'garmentManager', 'garmentCollections', 'outfitManager']) {
-      assert.equal(source.includes(forbidden), false, `${name} must not mount ${forbidden}`);
-    }
+  for (const forbidden of ['coreClient', 'outfitManager']) {
+    assert.equal(outfits.includes(forbidden), false, `Outfits must not mount ${forbidden} before its canonical UI cutover`);
   }
+
+  assert.match(creative, /Outfit-aware recommendations are unavailable until canonical Outfit authority is enabled\./);
   for (const forbidden of ['coreClient', 'outfitManager']) {
     assert.equal(creative.includes(forbidden), false, `Creative Studio must not mount ${forbidden}`);
   }
