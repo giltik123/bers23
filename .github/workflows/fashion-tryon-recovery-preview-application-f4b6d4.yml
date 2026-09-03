@@ -1,0 +1,45 @@
+name: Fashion F4b.6d.4 Try-On recovery preview application
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/application/fashion/canonicalTryOnApplication.js'
+      - 'tests/canonical-tryon-application.test.mjs'
+      - 'tests/canonical-tryon-application-boundary.test.mjs'
+      - '.github/workflows/fashion-tryon-recovery-preview-application-f4b6d4.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-preview-application:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prove application recovery semantics
+        run: node --test tests/canonical-tryon-application.test.mjs tests/canonical-tryon-application-boundary.test.mjs
+      - name: Keep recovery read-only and UI authority closed
+        run: |
+          set -euo pipefail
+          grep -Fq 'core.getTryOnPreview(intent)' src/application/fashion/canonicalTryOnApplication.js
+          grep -Fq "value.status !== 'PREVIEW_READY'" src/application/fashion/canonicalTryOnApplication.js
+          grep -Fq 'PREVIEW_DELIVERY_URL' src/application/fashion/canonicalTryOnApplication.js
+          ! grep -E -q 'pushEdit|acceptFinal|persistFinal|FASHN|provider|billing|credits|localStorage' src/application/fashion/canonicalTryOnApplication.js
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+          grep -Fq 'Canonical Try-On execution is not enabled yet.' src/components/editor/outfits/TryOnPanel.jsx
+      - name: Build browser product
+        run: npm run build
+      - name: Check committed diff whitespace
+        run: git diff --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}

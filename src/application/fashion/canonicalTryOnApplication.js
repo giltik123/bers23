@@ -1,5 +1,6 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLIENT_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const PREVIEW_DELIVERY_URL = /^\/api\/core\/artifacts\/results\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const READINESS = new Set([
   'READY', 'SOURCE_UNAVAILABLE', 'STALE_SOURCE', 'GARMENT_UNAVAILABLE', 'GARMENT_UNSUPPORTED',
   'REPRESENTATION_REQUIRED', 'REPRESENTATION_AMBIGUOUS', 'BODY_ANCHORS_REQUIRED',
@@ -18,6 +19,7 @@ export function createCanonicalTryOnApplication({ core, executeWarp, executeText
   requireFunction(core?.prepareTryOn, 'prepareTryOn');
   requireFunction(core?.continueTryOn, 'continueTryOn');
   requireFunction(core?.getTryOnResult, 'getTryOnResult');
+  requireFunction(core?.getTryOnPreview, 'getTryOnPreview');
   requireFunction(executeWarp, 'executeWarp');
   requireFunction(executeTexture, 'executeTexture');
 
@@ -28,7 +30,7 @@ export function createCanonicalTryOnApplication({ core, executeWarp, executeText
 
   const recover = async (value) => {
     const intent = runIntent(value);
-    return normalizeResult(await core.getTryOnResult(intent), intent, null);
+    return normalizePreview(await core.getTryOnPreview(intent), intent);
   };
 
   const advance = async (intent, { allowTextureExecution }) => {
@@ -140,6 +142,31 @@ function normalizeReadiness(value, intent) {
   return Object.freeze({
     status: value.status,
     ...(value.categoryGroup !== undefined ? { categoryGroup: value.categoryGroup } : {}),
+  });
+}
+
+function normalizePreview(value, intent) {
+  requirePlainObject(value, 'Try-On preview result');
+  if (value.status === 'FINAL_READY') throw new Error('Try-On preview endpoint returned FINAL_READY without preview delivery');
+  if (value.status !== 'PREVIEW_READY') return normalizeResult(value, intent, null);
+  requireExactKeys(
+    value,
+    ['artifactId', 'garmentId', 'previewExpiresAt', 'previewUrl', 'projectId', 'sourceArtifactId', 'status'],
+    'Try-On PREVIEW_READY result',
+  );
+  assertStableEcho(value, intent);
+  if (typeof value.artifactId !== 'string' || !value.artifactId.trim()) throw new Error('Try-On FINAL artifact identity is missing');
+  if (typeof value.previewUrl !== 'string' || !PREVIEW_DELIVERY_URL.test(value.previewUrl)) {
+    throw new Error('Try-On recovery preview URL is outside the accepted delivery contract');
+  }
+  if (!Number.isSafeInteger(value.previewExpiresAt) || value.previewExpiresAt <= 0) {
+    throw new Error('Try-On recovery preview expiry is outside the accepted delivery contract');
+  }
+  return Object.freeze({
+    status: 'FINAL_READY',
+    artifactId: value.artifactId,
+    preview: value.previewUrl,
+    previewExpiresAt: value.previewExpiresAt,
   });
 }
 
