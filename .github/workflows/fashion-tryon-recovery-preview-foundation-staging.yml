@@ -33,8 +33,25 @@ jobs:
         run: node --experimental-strip-types --test tests/fashion-tryon-recovery-preview-f4b6d1.test.ts
       - name: Prove recovery preview authority boundary
         run: node --test tests/fashion-tryon-recovery-preview-boundary.test.mjs
-      - name: Re-prove accepted stable-intent FINAL recovery
-        run: node --experimental-strip-types --test tests/fashion-tryon-final-result-f4b6b4c.test.ts
+      - name: Re-prove accepted stable-intent FINAL recovery chain
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/fashion-tryon-recovery-preview
+          for spec in \
+            fashion-tryon-orchestration-contract-f4b6b1 \
+            fashion-tryon-warp-orchestration-f4b6b2 \
+            fashion-tryon-texture-continuation-f4b6b3 \
+            fashion-texture-final-recovery-f4b6b4a \
+            fashion-texture-final-intent-binding-f4b6b4c \
+            fashion-texture-final-resolved-evidence-f4b6b4c \
+            fashion-tryon-final-result-f4b6b4c
+          do
+            npx esbuild "tests/${spec}.test.ts" \
+              --bundle --platform=node --format=esm --target=node24 \
+              --outfile=".test-cache/fashion-tryon-recovery-preview/${spec}.test.mjs" \
+              --external:node:* --external:sharp --external:pg
+          done
+          node --test --test-concurrency=1 .test-cache/fashion-tryon-recovery-preview/*.test.mjs
       - name: Typecheck production Core
         run: npm run server:typecheck
       - name: Reject premature transport and UI activation
