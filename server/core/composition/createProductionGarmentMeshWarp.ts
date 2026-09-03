@@ -9,7 +9,11 @@ import { checkGarmentSchema, migrateGarmentSchema } from '../fashion/garmentSche
 import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../fashion/bodyAnchorSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../fashion/garmentWarpLayerSchema.ts';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from '../fashion/garmentTextureFinalLineageSchema.ts';
+import { FashionTryOnFinalResultService } from '../fashion/FashionTryOnFinalResultService.ts';
+import { FashionTryOnProductService } from '../fashion/FashionTryOnProductService.ts';
 import { FashionTryOnReadinessService } from '../fashion/FashionTryOnReadinessService.ts';
+import { FashionTryOnTextureContinuationService } from '../fashion/FashionTryOnTextureContinuationService.ts';
+import { FashionTryOnWarpOrchestrationService } from '../fashion/FashionTryOnWarpOrchestrationService.ts';
 import { ManualParametricGarmentAdmissionService } from '../fashion/ManualParametricGarmentAdmissionService.ts';
 import { ManualProjectBodyAnchorAcquisitionService } from '../fashion/ManualProjectBodyAnchorAcquisitionService.ts';
 import { PostgresGarmentStore } from '../fashion/postgresGarmentStore.ts';
@@ -21,6 +25,10 @@ import type { LocalExecutionLedgerV2 } from '../localExecution/LocalExecutionLed
 import { ManagedGarmentLocalExecutionInputAuthority } from '../localExecution/ManagedGarmentLocalExecutionInputAuthority.ts';
 import { GarmentMeshWarpManagedInputAuthority } from '../localExecution/GarmentMeshWarpManagedInputAuthority.ts';
 import { GarmentMeshWarpInputDeliveryService } from '../localExecution/GarmentMeshWarpInputDeliveryService.ts';
+import { GarmentTextureCompositeFinalRecoveryAuthority } from '../localExecution/GarmentTextureCompositeFinalRecoveryAuthority.ts';
+import { FashionTryOnOpaqueCandidateSubmissionService } from '../localExecution/FashionTryOnOpaqueCandidateSubmissionService.ts';
+import { FashionTryOnOpaqueInputProjectionService } from '../localExecution/FashionTryOnOpaqueInputProjectionService.ts';
+import { FashionTryOnOpaqueTerminalReplayGuard } from '../localExecution/FashionTryOnOpaqueTerminalReplayGuard.ts';
 import { LocalGarmentMeshWarpExecutionService, type LocalGarmentMeshWarpResourceLimits } from '../localExecution/LocalGarmentMeshWarpExecutionService.ts';
 import type { PostgresLocalExecutionUploadStore } from '../localExecution/PostgresLocalExecutionUploadStore.ts';
 import { createProductionGarmentTextureComposite } from './createProductionGarmentTextureComposite.ts';
@@ -41,15 +49,20 @@ type GarmentMeshWarpExecutionSurface = LocalGarmentMeshWarpExecutionService & Re
 }>;
 
 /**
- * One production composition root for the shared F4b geometry authority.
+ * One production composition root for the shared F4b deterministic Try-On graph.
  *
- * F4b.4 keeps its capability-scoped managed-input wrapper. F4b.5b is composed
- * from the same underlying Managed Garment, body-anchor and immutable-layer
- * instances, so no second Fashion trust graph can drift from the warp authority.
- * F4b.6 readiness is read-only over those same instances and cannot grant any
- * execution, FINAL, Project, provider or Billing authority by itself.
- * Manual PARAMETRIC and body-anchor acquisition reuse the exact accepted stores
- * but remain distinct mutation/evidence services rather than execution capabilities.
+ * Every product service below reuses the same Garment/representation/body-anchor,
+ * immutable warp-layer, artifact, ledger and upload authorities already accepted
+ * by F4b.4/F4b.5b. No duplicate store graph, ticket issuer, replay table or result
+ * admission path is constructed.
+ *
+ * Internal orchestration may retain executionId/ticketId for durable binding, but
+ * the product facade projects successful prepare/continue results immediately to
+ * the accepted non-authorizing PreparedExecutionDescriptor. Browser input and
+ * candidate traffic re-enters the accepted opaque projection/submission services.
+ *
+ * Construction alone does not activate Try-On UI or remove the legacy low-level
+ * HTTP routes; that atomic transport cutover remains a separate acceptance gate.
  */
 export async function createProductionGarmentMeshWarp(input: ProductionGarmentMeshWarpCompositionInput) {
   await ensureFashionWarpSchemas(input.pool, input.nodeEnv);
@@ -103,6 +116,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     configurable: false,
   });
   const executionSurface = execution as GarmentMeshWarpExecutionSurface;
+
   const tickets = input.canonical.localExecutionV2;
   if (!tickets) throw new Error('Production Fashion texture composition requires the Core v2 local ticket issuer');
   const textureComposite = createProductionGarmentTextureComposite({
@@ -115,6 +129,55 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     issueFinalId: (storageId, scope) => input.artifacts.external.issueStoredFinal(storageId, scope),
     now: input.now,
   });
+
+  const finalRecovery = new GarmentTextureCompositeFinalRecoveryAuthority({
+    admission: input.admission,
+    images: input.artifacts.images,
+    issueFinalId: (storageId, scope) => input.artifacts.external.issueStoredFinal(storageId, scope),
+  });
+  const tryOnWarp = new FashionTryOnWarpOrchestrationService({
+    readiness: tryOnReadiness,
+    garmentWarp: execution,
+  });
+  const tryOnTexture = new FashionTryOnTextureContinuationService({
+    readiness: tryOnReadiness,
+    layers,
+    textureComposite: textureComposite.execution,
+  });
+  const tryOnResult = new FashionTryOnFinalResultService({
+    readiness: tryOnReadiness,
+    finalRecovery,
+  });
+
+  const opaqueInputs = new FashionTryOnOpaqueInputProjectionService({
+    admission: input.admission,
+    garmentWarp: inputDelivery,
+    textureComposite: textureComposite.inputDelivery,
+    now: input.now,
+  });
+  const terminalReplay = new FashionTryOnOpaqueTerminalReplayGuard({
+    admission: input.admission,
+    layers,
+    finals: input.artifacts.images,
+  });
+  const opaqueCandidates = new FashionTryOnOpaqueCandidateSubmissionService({
+    admission: input.admission,
+    garmentWarp: execution,
+    textureComposite: textureComposite.execution,
+    terminalReplay,
+  });
+  const tryOnProduct = new FashionTryOnProductService({
+    warp: tryOnWarp,
+    texture: tryOnTexture,
+    inputs: opaqueInputs,
+    candidates: opaqueCandidates,
+    result: tryOnResult,
+  });
+  const tryOn = Object.freeze({
+    readiness: tryOnReadiness,
+    product: tryOnProduct,
+  });
+
   return Object.freeze({
     execution: executionSurface,
     inputDelivery,
@@ -127,6 +190,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     layers,
     textureComposite,
     tryOnReadiness,
+    tryOn,
     manualParametricAdmission,
     manualBodyAnchorAcquisition,
   });

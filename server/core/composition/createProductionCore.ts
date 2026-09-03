@@ -267,6 +267,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       fashion: Object.freeze({
         manualParametricAdmission: garmentMeshWarp.manualParametricAdmission,
         manualBodyAnchorAcquisition: garmentMeshWarp.manualBodyAnchorAcquisition,
+        tryOnProduct: garmentMeshWarp.tryOn.product,
       }),
       localExecution: Object.freeze({
         tickets: localExecution,
