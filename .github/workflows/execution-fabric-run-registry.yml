@@ -1,0 +1,109 @@
+name: Execution Fabric durable run registry
+
+on:
+  push:
+    branches:
+      - execution-fabric-run-registry-staging
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/core/execution/**'
+      - 'server/index.ts'
+      - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
+      - 'scripts/build-core-server.mjs'
+      - 'tests/execution-run-registry-postgres.test.ts'
+      - '.github/workflows/execution-fabric-run-registry.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  execution-run-registry-postgres:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: execution_run_registry_test
+          POSTGRES_USER: execution_run_registry_test
+          POSTGRES_PASSWORD: execution_run_registry_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U execution_run_registry_test -d execution_run_registry_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://execution_run_registry_test:execution_run_registry_test@127.0.0.1:5432/execution_run_registry_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck Core server
+        run: npm run server:typecheck
+      - name: Build production Core and package migration 034
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/034_execution_run_registry.sql
+      - name: Prove production schema CLI migration and check
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Bundle durable registry PostgreSQL acceptance
+        run: |
+          mkdir -p .test-cache/execution-run-registry/migrations
+          node --input-type=module - <<'EOF'
+          import { build } from 'esbuild';
+          await build({
+            entryPoints: ['tests/execution-run-registry-postgres.test.ts'],
+            bundle: true,
+            platform: 'node',
+            format: 'esm',
+            target: 'node24',
+            outfile: '.test-cache/execution-run-registry/execution-run-registry-postgres.test.mjs',
+            external: ['pg', 'sharp', 'node:*'],
+          });
+          EOF
+          cp server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql .test-cache/execution-run-registry/migrations/
+          cp server/core/projects/migrations/004_canonical_projects_and_originals.sql .test-cache/execution-run-registry/migrations/
+          cp server/core/projects/migrations/005_canonical_project_history_versions.sql .test-cache/execution-run-registry/migrations/
+          cp server/core/projects/migrations/006_project_history_acceptance_hardening.sql .test-cache/execution-run-registry/migrations/
+          cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/execution-run-registry/migrations/
+          cp server/core/execution/migrations/034_execution_run_registry.sql .test-cache/execution-run-registry/migrations/
+      - name: Prove durable run identity, scope, replay and lifecycle semantics
+        run: node --test --test-concurrency=1 .test-cache/execution-run-registry/execution-run-registry-postgres.test.mjs
+      - name: Prove foundation opens no Agent Automation browser provider or Billing authority
+        run: |
+          set -euo pipefail
+          FILES=(
+            server/core/execution/executionRunRegistry.ts
+            server/core/execution/PostgresExecutionRunRegistry.ts
+            server/core/execution/executionRunSchema.ts
+            server/core/execution/migrations/034_execution_run_registry.sql
+          )
+          ! grep -E -q 'coreClient|create.*HttpAdapter|/api/core/|providers|Billing|billing|FAL|fal_|stripe|JobRecord|coreClient\.entities' "${FILES[@]}"
+          ! grep -E -q "'AGENT'|'AUTOMATION'|\"AGENT\"|\"AUTOMATION\"" server/core/execution/executionRunRegistry.ts server/core/execution/migrations/034_execution_run_registry.sql
+          ! grep -q 'canonical_execution_runs' src/lib/jobs/jobStorage.js
+      - name: Check committed diff whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA:-}" ]; then
+            git diff --check "$BASE_SHA"..HEAD
+          else
+            git diff --check HEAD^..HEAD
+          fi
