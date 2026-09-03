@@ -6,6 +6,8 @@ BERS is being built as a **Creative Operating System**: durable creative Project
 
 Read [PROJECT_SOURCE_OF_TRUTH.md](PROJECT_SOURCE_OF_TRUTH.md) first for the current authority map, production boundaries, feature maturity, legacy/compatibility classification, and rules for future work.
 
+Read [BERS_V1_DEVELOPMENT_ROADMAP.md](BERS_V1_DEVELOPMENT_ROADMAP.md) for the canonical pre-release development program, sequencing, mandatory Agent/Automation/Job Center work, advanced generative research, MoE/DiT + FreeToken-derived validation, and the exact-SHA path to `BERS_V1_RC` / `BERS v1.0 RELEASE` on continuously improving `main`.
+
 ## Core runtime
 
 See [CORE_RUNTIME.md](CORE_RUNTIME.md) for the checked-in Node Core entrypoint, production composition, HTTP boundary, health/shutdown behavior, and deployment contract.
