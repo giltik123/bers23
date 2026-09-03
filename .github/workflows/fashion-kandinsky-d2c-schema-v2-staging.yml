@@ -10,6 +10,7 @@ on:
       - 'scripts/_kandinsky-conditioning-builder-impl.py'
       - 'tests/kandinsky-conditioning-bundle-contract.test.mjs'
       - 'tests/kandinsky-conditioning-finalizer.test.mjs'
+      - 'tests/kandinsky-conditioning-schema-v2-boundary.test.mjs'
       - 'tests/kandinsky-conditioning-builder-entry.test.py'
       - '.github/workflows/fashion-kandinsky-d2c-schema-v2-staging.yml'
 
@@ -33,7 +34,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Prove schema-v2 and finalization contracts
-        run: node --test tests/kandinsky-conditioning-bundle-contract.test.mjs tests/kandinsky-conditioning-finalizer.test.mjs
+        run: node --test tests/kandinsky-conditioning-bundle-contract.test.mjs tests/kandinsky-conditioning-finalizer.test.mjs tests/kandinsky-conditioning-schema-v2-boundary.test.mjs
       - name: Prove Python consumer stays syntactically aligned
         run: |
           python -m py_compile scripts/kandinsky-conditioning-builder.py scripts/_kandinsky-conditioning-builder-impl.py
@@ -45,7 +46,7 @@ jobs:
           grep -q 'positiveEmbeddingSource' scripts/kandinsky-conditioning-finalize-manifest.mjs
           grep -q 'CONDITIONING_MANIFEST_SCHEMA_VERSION = 2' scripts/_kandinsky-conditioning-builder-impl.py
           grep -q 'positive source B manifest must be an independent positive embedding candidate' scripts/_kandinsky-conditioning-builder-impl.py
-          ! grep -R -E 'from_pretrained\(|hf_hub_download|snapshot_download|wget |curl ' .github/workflows/fashion-kandinsky-d2c-schema-v2-staging.yml tests/kandinsky-conditioning-bundle-contract.test.mjs tests/kandinsky-conditioning-finalizer.test.mjs
+          ! grep -R -E 'from_pretrained\(|hf_hub_download|snapshot_download|wget |curl ' .github/workflows/fashion-kandinsky-d2c-schema-v2-staging.yml tests/kandinsky-conditioning-bundle-contract.test.mjs tests/kandinsky-conditioning-finalizer.test.mjs tests/kandinsky-conditioning-schema-v2-boundary.test.mjs
           grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
           grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
       - name: Check staging diff whitespace
