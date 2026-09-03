@@ -21,9 +21,22 @@ function browserArray(source, name) {
 function serverArray(source, name) {
   return quoted(matched(source, new RegExp(`export const ${name} = Object\\.freeze\\(\\[([\\s\\S]*?)\\]\\s*as const\\);`), `server ${name}`));
 }
-function exactKeys(source, label) {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return quoted(matched(source, new RegExp(`assertExactKeys\\(value, \\[([\\s\\S]*?)\\], '${escaped}'\\)`), `browser ${label} keys`));
+function exactKeyCalls(source) {
+  return [...source.matchAll(/assertExactKeys\(value,\s*\[([\s\S]*?)\],\s*([^\n;]+)\);/g)].map(match => Object.freeze({
+    fields: quoted(match[1]),
+    labelExpression: match[2].trim(),
+  }));
+}
+function exactKeysForLabel(source, label) {
+  const expression = `'${label}'`;
+  const calls = exactKeyCalls(source).filter(call => call.labelExpression === expression);
+  assert.equal(calls.length, 1, `Expected exactly one browser exact-key contract for ${label}`);
+  return calls[0].fields;
+}
+function exactKeysForExpression(source, expression, label) {
+  const calls = exactKeyCalls(source).filter(call => call.labelExpression === expression);
+  assert.equal(calls.length, 1, `Expected exactly one browser exact-key contract for ${label}`);
+  return calls[0].fields;
 }
 function topLevelDtoKeys(adapter) {
   const block = matched(adapter, /function dto\([\s\S]*?return Object\.freeze\(\{([\s\S]*?)\n  \}\);\n\}/, 'server Managed Garment DTO');
@@ -73,18 +86,17 @@ test('Managed Garment browser exact DTO surfaces remain bound to server DTO shap
     fs.readFile(path.join(ROOT, 'src/api/managedGarmentClient.js'), 'utf8'),
     fs.readFile(path.join(ROOT, 'server/core/http/managedGarmentHttpAdapter.ts'), 'utf8'),
   ]);
-  assert.deepEqual(sorted(exactKeys(client, 'Managed Garment response')), sorted(topLevelDtoKeys(adapter)));
+  assert.deepEqual(sorted(exactKeysForLabel(client, 'Managed Garment response')), sorted(topLevelDtoKeys(adapter)));
   assert.deepEqual(
-    sorted(exactKeys(client, 'capture_assessment')),
+    sorted(exactKeysForLabel(client, 'capture_assessment')),
     sorted(sectionKeys(adapter, 'capture_assessment: Object.freeze({', 'views: garment.views.map', 6)),
   );
   assert.deepEqual(
-    sorted(exactKeys(client, 'technical_resolution')),
+    sorted(exactKeysForLabel(client, 'technical_resolution')),
     sorted(sectionKeys(adapter, 'technical_resolution: Object.freeze({', 'semantic_quality:', 8)),
   );
-
-  const viewKeys = sectionKeys(adapter, 'views: garment.views.map((view) => Object.freeze({', '})),', 6);
-  const clientSource = await fs.readFile(path.join(ROOT, 'src/api/managedGarmentClient.js'), 'utf8');
-  const viewBlock = matched(clientSource, /assertExactKeys\(value, \[([\s\S]*?)\], label\);/, 'browser view keys');
-  assert.deepEqual(sorted(quoted(viewBlock)), sorted(viewKeys));
+  assert.deepEqual(
+    sorted(exactKeysForExpression(client, 'label', 'Managed Garment view')),
+    sorted(sectionKeys(adapter, 'views: garment.views.map((view) => Object.freeze({', '})),', 6)),
+  );
 });
