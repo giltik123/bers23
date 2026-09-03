@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const contract = fs.readFileSync(new URL('../scripts/kandinsky-conditioning-bundle-contract.mjs', import.meta.url), 'utf8');
 const finalizer = fs.readFileSync(new URL('../scripts/kandinsky-conditioning-finalize-manifest.mjs', import.meta.url), 'utf8');
+const entry = fs.readFileSync(new URL('../scripts/kandinsky-conditioning-builder.py', import.meta.url), 'utf8');
 const builder = fs.readFileSync(new URL('../scripts/_kandinsky-conditioning-builder-impl.py', import.meta.url), 'utf8');
 
 test('schema v2 makes B-to-C positive embedding provenance part of canonical conditioning identity', () => {
@@ -22,6 +23,15 @@ test('finalizer derives C provenance from reverified source bytes instead of cop
   assert.match(finalizer, /imageEmbedsSha256: sourceImage\.sha256/);
   assert.match(finalizer, /conditioning: Object\.freeze\([\s\S]*positiveEmbeddingSource/);
   assert.match(finalizer, /C image_embeds are not byte-identical to accepted B image_embeds/);
+});
+
+test('public Python entrypoint rejects untrusted B provenance before internal model execution', () => {
+  assert.match(entry, /prevalidate_positive_source\(/);
+  assert.match(entry, /positive source manifest is not bound to the exact D1 prior identity/);
+  assert.match(entry, /positive source manifest toolchain differs from current C build/);
+  assert.match(entry, /positive source manifest determinism\/seed differs from current C build/);
+  assert.match(entry, /positive source bundle bytes do not match canonical source manifest/);
+  assert.ok(entry.indexOf('prevalidate_positive_source(') < entry.indexOf('runpy.run_path('));
 });
 
 test('Python C builder consumes canonical schema-v2 B directly with no compatibility projection', () => {
