@@ -38,6 +38,8 @@ The finalizer independently proves this rule:
 - C `image_embeds` raw bytes must be byte-identical to B `image_embeds`;
 - builder evidence must bind the exact B manifest SHA, B bundle SHA/size, and reused image-tensor SHA.
 
+The canonical conditioning manifest uses **schema version 2** so that this causal dependency is not lost after finalization. A and B must carry `conditioning.positiveEmbeddingSource = null`. C must carry the exact verified B `{candidateId, conditioningContractSha256, manifestSha256, bundleSize, bundleSha256, imageEmbedsSha256}` inside the immutable canonical manifest itself. A sidecar-only provenance record was rejected because it would split the conditioning identity into two independently mutable authorities.
+
 A/B forbid positive-source arguments entirely. This keeps A→B as the positive-conditioning experiment and B→C as the negative-conditioning experiment.
 
 ## Why the prior directory must be an exact mirror
@@ -70,7 +72,7 @@ One successful generation is insufficient. Promotion from `UNPROVEN` conditionin
 - byte-identical safetensors bundle SHA-256 for the same candidate/seed/source bundle;
 - byte-identical canonical manifest SHA-256;
 - exact tensor dtype/shape and finite-value checks;
-- for C, identical recorded B source manifest/bundle/tensor identities on both builds;
+- for C, identical **schema-v2 embedded** B source manifest/bundle/tensor identities on both builds;
 - decoder-only parity against the historical full pipeline using the same conditioning tensors;
 - real-image review before any quality conclusion.
 
