@@ -1,0 +1,37 @@
+name: Fashion F3b Managed Outfit browser client staging
+
+on:
+  push:
+    branches: [ "fashion-managed-outfit-browser-client-f3b-staging" ]
+    paths:
+      - ".github/workflows/fashion-managed-outfit-browser-client-f3b-staging.yml"
+      - "src/api/managedOutfitClient.js"
+      - "tests/managed-outfit-browser-client.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  managed-outfit-client:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert exact staging SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Syntax-check canonical browser adapter
+        run: node --check src/api/managedOutfitClient.js
+      - name: Prove canonical Outfit transport, revisions and server taxonomy
+        run: node --test tests/managed-outfit-browser-client.test.mjs
+      - name: Reject legacy browser authority
+        run: |
+          set -euo pipefail
+          ! grep -q 'fetch(' src/api/managedOutfitClient.js
+          ! grep -q 'coreClient.entities' src/api/managedOutfitClient.js
+          ! grep -q 'outfitManager' src/api/managedOutfitClient.js
+          ! grep -E -q 'FASHN|provider|Billing|cloud' src/api/managedOutfitClient.js
+          grep -q 'X-Expected-Outfit-Revision' src/api/managedOutfitClient.js
+          git diff --check
