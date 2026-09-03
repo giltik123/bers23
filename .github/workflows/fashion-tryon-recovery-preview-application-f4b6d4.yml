@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq 'core.getTryOnPreview(intent)' src/application/fashion/canonicalTryOnApplication.js
-          grep -Fq "status: 'PREVIEW_READY'" src/application/fashion/canonicalTryOnApplication.js
+          grep -Fq "value.status !== 'PREVIEW_READY'" src/application/fashion/canonicalTryOnApplication.js
           grep -Fq 'PREVIEW_DELIVERY_URL' src/application/fashion/canonicalTryOnApplication.js
           ! grep -E -q 'pushEdit|acceptFinal|persistFinal|FASHN|provider|billing|credits|localStorage' src/application/fashion/canonicalTryOnApplication.js
           grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
