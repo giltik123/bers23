@@ -27,10 +27,10 @@ if (evidence.conditioningContractSha256 !== expectedPrompt.sha256) {
 }
 const candidateIdentity = conditioningCandidateIdentity(prompt.candidateId);
 const targetParsed = assertEvidenceAndTargetBundle(evidence, prompt.candidateId, candidateIdentity, targetBundleBytes);
-assertPositiveEmbeddingSource({ args, d1, evidence, targetParsed, candidateIdentity });
+const positiveEmbeddingSource = assertPositiveEmbeddingSource({ args, d1, evidence, targetParsed, candidateIdentity });
 
 const manifest = Object.freeze({
-  schemaVersion: 1,
+  schemaVersion: 2,
   stage: 'F5B1_D2_CONDITIONING_RESEARCH',
   status: 'RESEARCH_CANDIDATE',
   productionExecutable: false,
@@ -59,6 +59,7 @@ const manifest = Object.freeze({
     candidateId: prompt.candidateId,
     conditioningContractSha256: expectedPrompt.sha256,
     negativeMode: prompt.negativeMode,
+    positiveEmbeddingSource,
   }),
   bundle: Object.freeze({
     format: evidence.bundle.format,
@@ -141,7 +142,7 @@ function assertPositiveEmbeddingSource({ args, d1, evidence, targetParsed, candi
   if (expectedSourceCandidateId === null) {
     if (hasSourceManifest || hasSourceBundle) fail('A/B finalization forbids positive source inputs');
     if (evidence.positiveEmbeddingSource !== null) fail('A/B builder evidence must not claim a positive source');
-    return;
+    return null;
   }
   if (!hasSourceManifest || !hasSourceBundle) fail('C finalization requires B source manifest and bundle');
 
@@ -165,6 +166,15 @@ function assertPositiveEmbeddingSource({ args, d1, evidence, targetParsed, candi
   if (sourceEvidence.manifestSha256 !== sha256(sourceManifestBytes)) fail('builder evidence positive source manifest SHA mismatch');
   if (sourceEvidence.bundleSize !== sourceBundleBytes.length || sourceEvidence.bundleSha256 !== sha256(sourceBundleBytes)) fail('builder evidence positive source bundle identity mismatch');
   if (sourceEvidence.imageEmbedsSha256 !== sourceImage.sha256 || sourceEvidence.imageEmbedsSha256 !== targetImage.sha256) fail('builder evidence positive source image SHA mismatch');
+
+  return Object.freeze({
+    candidateId: sourceEvidence.candidateId,
+    conditioningContractSha256: sourceEvidence.conditioningContractSha256,
+    manifestSha256: sourceEvidence.manifestSha256,
+    bundleSize: sourceEvidence.bundleSize,
+    bundleSha256: sourceEvidence.bundleSha256,
+    imageEmbedsSha256: sourceEvidence.imageEmbedsSha256,
+  });
 }
 
 function manifestToolchainFromEvidence(toolchain) {
