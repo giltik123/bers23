@@ -56,7 +56,7 @@ export type FashionTryOnRecoveryPreviewResult =
  * The second result check intentionally happens after minting. If current
  * Project/Garment/body-anchor evidence changed during recovery, the fresh URL is
  * discarded and never crosses the product boundary. Project Accept/history,
- * execution, persistence and provider selection remain outside this service.
+ * execution, persistence and external-execution selection remain outside this service.
  */
 export class FashionTryOnRecoveryPreviewService {
   constructor(private readonly dependencies: FashionTryOnRecoveryPreviewDependencies) {}
