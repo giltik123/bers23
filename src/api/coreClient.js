@@ -1,4 +1,5 @@
 import '@/lib/app-params';
+import { createManagedGarmentClient } from './managedGarmentClient.js';
 import { createManagedGarmentCollectionClient } from './managedGarmentCollectionClient.js';
 import { createManagedOutfitClient } from './managedOutfitClient.js';
 import { createManagedWardrobeClient } from './managedWardrobeClient.js';
@@ -108,6 +109,7 @@ export const coreClient = Object.freeze({
     cancel: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
   },
   fashion: {
+    garments: createManagedGarmentClient(request),
     wardrobe: createManagedWardrobeClient(request),
     collections: createManagedGarmentCollectionClient(request),
     outfits: createManagedOutfitClient(request),

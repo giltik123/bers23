@@ -1,0 +1,61 @@
+name: Fashion F1c Managed Garment browser client
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-managed-garment-browser-client-f1c.yml"
+      - "src/api/coreClient.js"
+      - "src/api/managedGarmentClient.js"
+      - "server/core/fashion/postgresGarmentStore.ts"
+      - "server/core/fashion/garmentCaptureAssessment.ts"
+      - "server/core/http/managedGarmentHttpAdapter.ts"
+      - "tests/managed-garment-browser-client.test.mjs"
+      - "tests/managed-garment-browser-server-contract.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  managed-garment-client:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Syntax-check canonical Managed Garment adapter
+        run: node --check src/api/managedGarmentClient.js
+      - name: Prove binary transport, immutable view evidence, capture assessment and server contract
+        run: |
+          node --test tests/managed-garment-browser-client.test.mjs
+          node --test tests/managed-garment-browser-server-contract.test.mjs
+      - name: Reject generic upload, legacy and provider authority and prove Core integration
+        run: |
+          set -euo pipefail
+          ! grep -q 'fetch(' src/api/managedGarmentClient.js
+          ! grep -q 'coreClient.entities' src/api/managedGarmentClient.js
+          ! grep -q 'UploadFile' src/api/managedGarmentClient.js
+          ! grep -E -q "['\"]/assets([?'\"/]|$)" src/api/managedGarmentClient.js
+          ! grep -E -q 'FASHN|provider|Billing|cloud' src/api/managedGarmentClient.js
+          grep -q 'X-Expected-Garment-Revision' src/api/managedGarmentClient.js
+          grep -q "import { createManagedGarmentClient } from './managedGarmentClient.js';" src/api/coreClient.js
+          grep -q 'garments: createManagedGarmentClient(request)' src/api/coreClient.js
+      - name: Check committed candidate whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA}" ]; then
+            git diff --check "${BASE_SHA}..HEAD"
+          else
+            git diff --check "HEAD^..HEAD"
+          fi
