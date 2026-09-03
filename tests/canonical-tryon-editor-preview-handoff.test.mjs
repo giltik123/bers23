@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { materializeCanonicalTryOnEditorPendingResult } from '../src/application/fashion/materializeCanonicalTryOnEditorPendingResult.js';
 
@@ -108,4 +109,13 @@ test('handoff exposes no ticket, transport, provider-selection, billing or Proje
   for (const forbidden of ['ticketId', 'preparedExecution', 'representationId', 'anchorSetId', 'destinationMesh', 'billing', 'creditsUsed', 'pushEdit', 'persistFinal']) {
     assert.equal(serialized.includes(forbidden), false, `pending handoff must not expose ${forbidden}`);
   }
+});
+
+test('handoff is compatible with the accepted Editor preview ownership and ResultCompare display contracts', () => {
+  const editor = fs.readFileSync(new URL('../src/pages/Editor.jsx', import.meta.url), 'utf8');
+  const compare = fs.readFileSync(new URL('../src/components/editor/ResultCompare.jsx', import.meta.url), 'utf8');
+  assert.match(editor, /const url = pending\?\.result\?\.preview_url;/);
+  assert.match(editor, /url\.startsWith\('blob:'\)\) URL\.revokeObjectURL\(url\)/);
+  assert.match(compare, /result\.preview_url \|\| result\.image_url/);
+  assert.match(editor, /await pushEdit\(result\.finalArtifactId, used\);/);
 });
