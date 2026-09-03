@@ -1,0 +1,39 @@
+name: Fashion F5b.1 Kandinsky conditioning reproduction staging
+
+on:
+  push:
+    branches: [ "fashion-kandinsky-conditioning-reproduction-f5b1d2d-staging" ]
+    paths:
+      - ".github/workflows/fashion-kandinsky-conditioning-reproduction-staging.yml"
+      - "scripts/kandinsky-conditioning-reproduction-contract.mjs"
+      - "scripts/kandinsky-conditioning-reproduction-finalize.mjs"
+      - "scripts/kandinsky-conditioning-reproduction-verify.mjs"
+      - "scripts/kandinsky-conditioning-bundle-contract.mjs"
+      - "scripts/kandinsky-conditioning-candidate-registry.mjs"
+      - "tests/kandinsky-conditioning-reproduction-contract.test.mjs"
+      - "tests/kandinsky-conditioning-reproduction-finalizer.test.mjs"
+      - "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduction-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert exact staging SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Syntax-check producer and verifier
+        run: |
+          node --check scripts/kandinsky-conditioning-reproduction-contract.mjs
+          node --check scripts/kandinsky-conditioning-reproduction-finalize.mjs
+          node --check scripts/kandinsky-conditioning-reproduction-verify.mjs
+      - name: Prove closed reproduction schema and independent verifier
+        run: node --test tests/kandinsky-conditioning-reproduction-contract.test.mjs
+      - name: Prove two-build byte identity and B-to-C provenance binding
+        run: node --test tests/kandinsky-conditioning-reproduction-finalizer.test.mjs
