@@ -3,8 +3,8 @@ import { loadCoreServerConfig } from './core/config.ts';
 import { createProductionCore } from './core/composition/createProductionCore.ts';
 import { createLocalExecutionHttpAdapter } from './core/http/localExecutionHttpAdapter.ts';
 import { createOrthogonalTransformHttpAdapter } from './core/http/orthogonalTransformHttpAdapter.ts';
-import { createGarmentMeshWarpHttpAdapter } from './core/http/garmentMeshWarpHttpAdapter.ts';
-import { createGarmentTextureCompositeHttpAdapter } from './core/http/garmentTextureCompositeHttpAdapter.ts';
+import { createFashionTryOnProductHttpAdapter } from './core/http/fashionTryOnProductHttpAdapter.ts';
+import { createFashionTryOnLegacyPrepareTombstoneHttpAdapter } from './core/http/fashionTryOnLegacyPrepareTombstoneHttpAdapter.ts';
 import { createFashionTryOnReadinessHttpAdapter } from './core/http/fashionTryOnReadinessHttpAdapter.ts';
 import { createManualParametricGarmentAdmissionHttpAdapter } from './core/http/manualParametricGarmentAdmissionHttpAdapter.ts';
 import { createManualProjectBodyAnchorHttpAdapter } from './core/http/manualProjectBodyAnchorHttpAdapter.ts';
@@ -26,6 +26,10 @@ import { GarmentDeliveryAuthority } from './core/fashion/garmentDeliveryAuthorit
 
 const MANUAL_PARAMETRIC_PATH = /^\/api\/core\/fashion\/garments\/[^/]+\/parametric-representation$/;
 const MANUAL_BODY_ANCHOR_PATH = /^\/api\/core\/fashion\/projects\/[^/]+\/body-anchors$/;
+const LEGACY_FASHION_PREPARE_PATHS = new Set([
+  '/api/core/local-execution/garment-mesh-warp/prepare',
+  '/api/core/local-execution/garment-texture-composite/prepare',
+]);
 
 export async function startCoreServer() {
   const config = loadCoreServerConfig(); const production = await createProductionCore(config); let accepting = true;
@@ -45,8 +49,8 @@ export async function startCoreServer() {
   const managedCollectionAdapter = createManagedGarmentCollectionHttpAdapter({ collections, auth: production.auth, config, accepting: () => accepting });
   const managedOutfitAdapter = createManagedOutfitHttpAdapter({ outfits, auth: production.auth, config, accepting: () => accepting });
   const orthogonalTransformAdapter = createOrthogonalTransformHttpAdapter({ service: production.localExecution.orthogonalTransform, inputDelivery: production.localExecution.orthogonalTransformInputDelivery, auth: production.auth, config });
-  const garmentMeshWarpAdapter = createGarmentMeshWarpHttpAdapter({ service: production.localExecution.garmentMeshWarp, inputDelivery: production.localExecution.garmentMeshWarpInputDelivery, auth: production.auth, config });
-  const garmentTextureCompositeAdapter = createGarmentTextureCompositeHttpAdapter({ service: production.localExecution.garmentTextureComposite, inputDelivery: production.localExecution.garmentTextureCompositeInputDelivery, auth: production.auth, config });
+  const fashionTryOnProductAdapter = createFashionTryOnProductHttpAdapter({ product: production.fashion.tryOnProduct, auth: production.auth, config });
+  const legacyFashionPrepareTombstoneAdapter = createFashionTryOnLegacyPrepareTombstoneHttpAdapter();
   const fashionTryOnReadinessAdapter = createFashionTryOnReadinessHttpAdapter({ readiness: production.localExecution.garmentMeshWarp.readiness, auth: production.auth, config });
   const manualParametricAdmissionAdapter = createManualParametricGarmentAdmissionHttpAdapter({ admission: production.fashion.manualParametricAdmission, auth: production.auth, config, accepting: () => accepting });
   const manualBodyAnchorAcquisitionAdapter = createManualProjectBodyAnchorHttpAdapter({ acquisition: production.fashion.manualBodyAnchorAcquisition, auth: production.auth, config, accepting: () => accepting });
@@ -65,8 +69,8 @@ export async function startCoreServer() {
     if (path === '/api/core/fashion/try-on/readiness') return void fashionTryOnReadinessAdapter(request, response);
     if (MANUAL_PARAMETRIC_PATH.test(path)) return void manualParametricAdmissionAdapter(request, response);
     if (MANUAL_BODY_ANCHOR_PATH.test(path)) return void manualBodyAnchorAcquisitionAdapter(request, response);
-    if ((request.url ?? '').startsWith('/api/core/local-execution/garment-texture-composite/')) return void garmentTextureCompositeAdapter(request, response);
-    if ((request.url ?? '').startsWith('/api/core/local-execution/garment-mesh-warp/')) return void garmentMeshWarpAdapter(request, response);
+    if (path.startsWith('/api/core/fashion/try-on/')) return void fashionTryOnProductAdapter(request, response);
+    if (LEGACY_FASHION_PREPARE_PATHS.has(path)) return void legacyFashionPrepareTombstoneAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/orthogonal-transform/')) return void orthogonalTransformAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/')) return void localExecutionAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/composite-continuations/')) return void localCompositeAdapter(request, response);
