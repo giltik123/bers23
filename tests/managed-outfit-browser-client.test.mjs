@@ -9,6 +9,18 @@ const OUTFIT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const ENTRY_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const GARMENT_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
+function entry(overrides = {}) {
+  return {
+    entry_id: ENTRY_ID,
+    garment_id: GARMENT_ID,
+    position: 0,
+    layer_role: 'BASE_TOP',
+    garment_category: 'tshirts',
+    reference_readiness: 'READY',
+    ...overrides,
+  };
+}
+
 function dto(overrides = {}) {
   return {
     id: OUTFIT_ID,
@@ -20,14 +32,7 @@ function dto(overrides = {}) {
     status: 'ACTIVE',
     revision: 7,
     reference_readiness: 'REFERENCES_READY',
-    entries: [{
-      entry_id: ENTRY_ID,
-      garment_id: GARMENT_ID,
-      position: 0,
-      layer_role: 'BASE_TOP',
-      garment_category: 'tshirts',
-      reference_readiness: 'READY',
-    }],
+    entries: [entry()],
     created_at: '2026-09-03T00:00:00.000Z',
     updated_at: '2026-09-03T00:01:00.000Z',
     ...overrides,
@@ -97,7 +102,7 @@ test('Outfit create canonicalizes user intent to the same F3 name and taxonomy l
   });
 });
 
-test('Outfit mutations carry one canonical optimistic revision precondition', async () => {
+test('Outfit mutations carry one canonical optimistic revision precondition and reject empty serialized patches locally', async () => {
   const { calls, request } = recorder();
   const client = createManagedOutfitClient(request);
   await client.updateMetadata(OUTFIT_ID.toUpperCase(), 7, { style: 'Classic' });
@@ -106,6 +111,10 @@ test('Outfit mutations carry one canonical optimistic revision precondition', as
   assert.deepEqual(calls[0].options.headers, { 'X-Expected-Outfit-Revision': '7' });
   assert.deepEqual(JSON.parse(calls[0].options.body), { style: 'classic' });
 
+  const beforeInvalid = calls.length;
+  await assert.rejects(() => client.updateMetadata(OUTFIT_ID, 7, {}), /at least one field/);
+  await assert.rejects(() => client.updateMetadata(OUTFIT_ID, 7, { style: undefined }), /style/);
+  assert.equal(calls.length, beforeInvalid, 'invalid metadata patches must not reach Core transport');
   await assert.rejects(() => client.updateMetadata(OUTFIT_ID, 0, { style: 'classic' }), /expectedRevision/);
   await assert.rejects(() => client.updateMetadata(OUTFIT_ID, Number.MAX_SAFE_INTEGER + 1, { style: 'classic' }), /expectedRevision/);
 });
@@ -118,6 +127,7 @@ test('Outfit entry intent uses canonical garment UUID and exact server layer rol
   assert.deepEqual(JSON.parse(calls[0].options.body), { garment_id: GARMENT_ID, layer_role: 'OUTER_TOP' });
   assert.deepEqual(calls[0].options.headers, { 'X-Expected-Outfit-Revision': '7' });
   await assert.rejects(() => client.addEntry(OUTFIT_ID, 7, { garmentId: GARMENT_ID, layerRole: 'OUTER' }), /layerRole/);
+  await assert.rejects(() => client.addEntry(OUTFIT_ID, 7, { garmentId: GARMENT_ID, layerRole: undefined }), /layerRole/);
 });
 
 test('Outfit reorder permits the canonical empty permutation, caps 32, normalizes UUIDs and rejects duplicates', async () => {
@@ -131,18 +141,22 @@ test('Outfit reorder permits the canonical empty permutation, caps 32, normalize
   await assert.rejects(() => client.reorderEntries(OUTFIT_ID, 7, tooMany), /at most 32/);
 });
 
-test('Managed Outfit response validator accepts every canonical readiness family but rejects server drift', () => {
-  for (const reference_readiness of ['REFERENCES_READY','EMPTY','GARMENT_UNAVAILABLE','ROLE_REVIEW_REQUIRED']) {
-    const entries = reference_readiness === 'EMPTY' ? [] : dto().entries;
+test('Managed Outfit response validator accepts only semantically consistent aggregate readiness', () => {
+  const cases = [
+    ['REFERENCES_READY', [entry()]],
+    ['EMPTY', []],
+    ['GARMENT_UNAVAILABLE', [entry({ reference_readiness: 'GARMENT_UNAVAILABLE' })]],
+    ['ROLE_REVIEW_REQUIRED', [entry({ reference_readiness: 'ROLE_REVIEW_REQUIRED' })]],
+  ];
+  for (const [reference_readiness, entries] of cases) {
     assert.equal(normalizeManagedOutfitDto(dto({ reference_readiness, entries })).referenceReadiness, reference_readiness);
-  }
-  for (const reference_readiness of ['READY','GARMENT_UNAVAILABLE','ROLE_REVIEW_REQUIRED']) {
-    const value = dto();
-    value.entries[0].reference_readiness = reference_readiness;
-    assert.equal(normalizeManagedOutfitDto(value).entries[0].referenceReadiness, reference_readiness);
   }
 
   assert.throws(() => normalizeManagedOutfitDto(dto({ reference_readiness: 'READY' })), /reference_readiness/);
+  assert.throws(() => normalizeManagedOutfitDto(dto({ reference_readiness: 'EMPTY', entries: [entry()] })), /does not match canonical entries/);
+  assert.throws(() => normalizeManagedOutfitDto(dto({ reference_readiness: 'REFERENCES_READY', entries: [entry({ reference_readiness: 'GARMENT_UNAVAILABLE' })] })), /does not match canonical entries/);
+  assert.throws(() => normalizeManagedOutfitDto(dto({ reference_readiness: 'GARMENT_UNAVAILABLE', entries: [entry({ reference_readiness: 'ROLE_REVIEW_REQUIRED' })] })), /does not match canonical entries/);
+
   const badRole = dto();
   badRole.entries[0].layer_role = 'OUTER';
   assert.throws(() => normalizeManagedOutfitDto(badRole), /layer_role/);
@@ -163,6 +177,7 @@ test('Outfit taxonomy rejects browser-created values outside the server-owned cl
   ]) {
     await assert.rejects(() => client.create({ name: 'A', [field]: value }), new RegExp(field));
   }
+  await assert.rejects(() => client.create({ name: 'A', style: undefined }), /style/);
   await assert.rejects(() => client.create({ name: 'A', metadata: {} }), /forbidden fields/);
   await assert.rejects(() => client.create({ name: '\u0000bad' }), /printable/);
 });
