@@ -132,6 +132,7 @@ Historical PRs **#13, #28, #33, #35 and #38** are not merge candidates merely be
 | Document | Classification |
 | --- | --- |
 | `PROJECT_SOURCE_OF_TRUTH.md` | **CANONICAL overview** |
+| `BERS_V1_DEVELOPMENT_ROADMAP.md` | **Canonical pre-release development and release-sequencing program; does not override current production composition/tests** |
 | `POSTGRESQL_TRANSACTION_STORE.md` | Canonical financial/storage ADR for its domain |
 | `CREATIVE_EXECUTION_ARCHITECTURE.md` | Detailed Creative architecture/inventory; current production composition/tests take precedence where sprint-era inventory is stale |
 | `CORE_RUNTIME.md` | Current Node/Core deployment boundary |
