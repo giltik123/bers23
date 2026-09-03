@@ -30,13 +30,14 @@ const REQUIRED_CONSTRAINTS = Object.freeze([
   'canonical_execution_runs_parent_run_id_fkey',
   'canonical_execution_runs_capability_check',
   'canonical_execution_runs_authority_kind_check',
+  'canonical_execution_runs_authority_binding_check',
   'canonical_execution_runs_status_check',
   'canonical_execution_runs_revision_check',
   'canonical_execution_runs_idempotency_key_check',
   'canonical_execution_runs_authority_ref_check',
   'canonical_execution_runs_reason_check',
   'canonical_execution_runs_scope_idempotency_unique',
-  'canonical_execution_runs_scope_authority_unique',
+  'canonical_execution_runs_authority_unique',
   'canonical_execution_runs_time_shape_check',
   'canonical_execution_runs_reason_shape_check',
 ] as const);
@@ -74,24 +75,44 @@ function schemaReady(state: Awaited<ReturnType<typeof schemaState>>): boolean {
     const value = columns.get(name)?.column_default;
     if (value === null || value === undefined || String(value).trim() === '') return false;
   }
+
   const constraints = new Map(state.constraints.map(row => [String(row.conname), row]));
   if (!REQUIRED_CONSTRAINTS.every(name => {
     const row = constraints.get(name);
     return row && row.convalidated === true;
   })) return false;
-  const capability = String(constraints.get('canonical_execution_runs_capability_check')?.definition ?? '');
-  const authority = String(constraints.get('canonical_execution_runs_authority_kind_check')?.definition ?? '');
-  const status = String(constraints.get('canonical_execution_runs_status_check')?.definition ?? '');
+
+  if (compactDefinition(constraints.get('canonical_execution_runs_pkey')) !== 'PRIMARYKEY(run_id)') return false;
+  if (compactDefinition(constraints.get('canonical_execution_runs_scope_idempotency_unique')) !== 'UNIQUE(tenant_id,user_id,project_id,capability,idempotency_key)') return false;
+  if (compactDefinition(constraints.get('canonical_execution_runs_authority_unique')) !== 'UNIQUE(authority_kind,authority_ref)') return false;
+
+  const capability = definition(constraints.get('canonical_execution_runs_capability_check'));
+  const authority = definition(constraints.get('canonical_execution_runs_authority_kind_check'));
+  const binding = definition(constraints.get('canonical_execution_runs_authority_binding_check'));
+  const status = definition(constraints.get('canonical_execution_runs_status_check'));
+  if (!sameLiteralSet(capability, ['LOCAL_EXECUTION','CREATIVE_EXECUTION'])) return false;
+  if (!sameLiteralSet(authority, ['LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION'])) return false;
+  if (!sameLiteralSet(status, ['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED'])) return false;
+  if (!sameLiteralSet(binding, ['LOCAL_EXECUTION','LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION'])
+    || !binding.includes('capability') || !binding.includes('authority_kind')) return false;
+
   const projectFk = constraints.get('canonical_execution_runs_project_fkey');
   const parentFk = constraints.get('canonical_execution_runs_parent_run_id_fkey');
-  if (String(projectFk?.referenced_table) !== 'canonical_projects' || !String(projectFk?.definition ?? '').includes('ON DELETE RESTRICT')) return false;
-  if (String(parentFk?.referenced_table) !== TABLE || !String(parentFk?.definition ?? '').includes('ON DELETE RESTRICT')) return false;
-  if (!['LOCAL_EXECUTION','CREATIVE_EXECUTION'].every(value => capability.includes(value))) return false;
-  if (capability.includes('AGENT') || capability.includes('AUTOMATION')) return false;
-  if (!['LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION'].every(value => authority.includes(value))) return false;
-  if (!['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED'].every(value => status.includes(value))) return false;
+  if (String(projectFk?.referenced_table) !== 'canonical_projects'
+    || !compactDefinition(projectFk).includes('FOREIGNKEY(project_id)REFERENCEScanonical_projects(project_id)ONDELETERESTRICT')) return false;
+  if (String(parentFk?.referenced_table) !== TABLE
+    || !compactDefinition(parentFk).includes('FOREIGNKEY(parent_run_id)REFERENCEScanonical_execution_runs(run_id)ONDELETERESTRICT')) return false;
+
   return state.indexes.includes('canonical_execution_runs_scope_created_idx')
     && state.indexes.includes('canonical_execution_runs_parent_idx');
+}
+
+function definition(row: any): string { return String(row?.definition ?? ''); }
+function compactDefinition(row: any): string { return definition(row).replace(/\s+/g, ''); }
+function sameLiteralSet(value: string, expected: readonly string[]): boolean {
+  const literals = new Set<string>();
+  for (const match of value.matchAll(/'((?:''|[^'])*)'/g)) literals.add(match[1].replace(/''/g, "'"));
+  return literals.size === expected.length && expected.every(item => literals.has(item));
 }
 
 export async function checkExecutionRunSchema(pool: Pool): Promise<void> {

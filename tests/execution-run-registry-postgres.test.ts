@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { Pool } from 'pg';
 import sharp from 'sharp';
@@ -67,7 +68,7 @@ function creativeInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test('concurrent issue is idempotent and binds one authority to one durable run', async () => {
+test('concurrent issue is idempotent and one underlying authority cannot be rebound', async () => {
   const runs = await Promise.all(Array.from({ length: 8 }, () => registry.issue(localInput())));
   assert.equal(new Set(runs.map(run => run.runId)).size, 1);
   assert.equal(runs[0].status, 'QUEUED');
@@ -82,6 +83,29 @@ test('concurrent issue is idempotent and binds one authority to one durable run'
     () => registry.issue(localInput({ idempotencyKey: 'local:resize:request-2' })),
     (error: any) => error?.code === 'execution_run_authority_already_bound',
   );
+  await assert.rejects(
+    () => registry.issue(localInput({
+      scope: { ...owner, projectId: secondProjectId },
+      idempotencyKey: 'local:resize:other-project',
+    })),
+    (error: any) => error?.code === 'execution_run_authority_already_bound',
+  );
+});
+
+test('exact idempotent replay remains recoverable after its Project is deleted', async () => {
+  const issued = await registry.issue(localInput());
+  await pool.query('UPDATE canonical_projects SET deleted_at=CURRENT_TIMESTAMP WHERE project_id=$1', [projectId]);
+  try {
+    const replay = await registry.issue(localInput());
+    assert.equal(replay.runId, issued.runId);
+    assert.equal(replay.revision, issued.revision);
+    await assert.rejects(
+      () => registry.issue(localInput({ idempotencyKey: 'local:new-after-delete', authorityRef: 'ticket-new-after-delete' })),
+      (error: any) => error?.code === 'execution_run_project_unavailable',
+    );
+  } finally {
+    await pool.query('UPDATE canonical_projects SET deleted_at=NULL WHERE project_id=$1', [projectId]);
+  }
 });
 
 test('capability and authority kind cannot be mixed or pre-open Agent/Automation authority', async () => {
@@ -96,6 +120,13 @@ test('capability and authority kind cannot be mixed or pre-open Agent/Automation
   await assert.rejects(
     () => registry.issue({ ...localInput(), capability: 'AUTOMATION' as any }),
     /outside the accepted execution run enum/,
+  );
+
+  await assert.rejects(
+    () => pool.query(`INSERT INTO canonical_execution_runs
+      (run_id,tenant_id,user_id,project_id,capability,idempotency_key,authority_kind,authority_ref)
+      VALUES ($1,$2,$3,$4,'LOCAL_EXECUTION',$5,'CREATIVE_EXECUTION',$6)`,
+    [randomUUID(),owner.tenantId,owner.userId,projectId,'direct-mismatch','direct-mismatch-authority']),
   );
 });
 
@@ -159,11 +190,21 @@ test('list is scoped and parent linkage is allowed only inside one Project scope
   assert.equal((await registry.list({ ...owner, projectId: secondProjectId })).length, 0);
 });
 
-test('schema check fails closed if capability constraint is widened to Agent', async () => {
+test('schema check rejects arbitrary capability widening, not only known future capabilities', async () => {
   await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_capability_check');
-  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION','AGENT'))");
+  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION','OTHER_CAPABILITY'))");
   await assert.rejects(() => checkExecutionRunSchema(pool), /incomplete or permissive/);
   await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_capability_check');
   await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION'))");
+  await checkExecutionRunSchema(pool);
+});
+
+test('schema check rejects a scope-local authority uniqueness lookalike', async () => {
+  await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_authority_unique');
+  await pool.query(`ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_authority_unique
+    UNIQUE (tenant_id,user_id,project_id,authority_kind,authority_ref)`);
+  await assert.rejects(() => checkExecutionRunSchema(pool), /incomplete or permissive/);
+  await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_authority_unique');
+  await pool.query('ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_authority_unique UNIQUE (authority_kind,authority_ref)');
   await checkExecutionRunSchema(pool);
 });

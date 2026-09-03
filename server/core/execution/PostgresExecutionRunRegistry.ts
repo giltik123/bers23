@@ -30,15 +30,10 @@ export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
     try {
       await client.query('BEGIN');
       const lockKeys = [
+        `authority:${candidate.authorityKind}:${candidate.authorityRef}`,
         `idempotency:${candidate.scope.tenantId}:${candidate.scope.userId}:${candidate.scope.projectId}:${candidate.capability}:${candidate.idempotencyKey}`,
-        `authority:${candidate.scope.tenantId}:${candidate.scope.userId}:${candidate.scope.projectId}:${candidate.authorityKind}:${candidate.authorityRef}`,
       ].sort();
       for (const key of lockKeys) await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 917))', [key]);
-
-      const project = await client.query(`SELECT 1 FROM canonical_projects
-        WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL`,
-      [candidate.scope.projectId,candidate.scope.tenantId,candidate.scope.userId]);
-      if (project.rowCount !== 1) throw registryError('execution_run_project_unavailable', 'Execution run Project is unavailable in this scope');
 
       const existingByIdempotency = await client.query(`SELECT ${COLUMNS} FROM ${TABLE}
         WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND capability=$4 AND idempotency_key=$5`,
@@ -50,9 +45,14 @@ export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
         return stored;
       }
 
+      const project = await client.query(`SELECT 1 FROM canonical_projects
+        WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL`,
+      [candidate.scope.projectId,candidate.scope.tenantId,candidate.scope.userId]);
+      if (project.rowCount !== 1) throw registryError('execution_run_project_unavailable', 'Execution run Project is unavailable in this scope');
+
       const existingAuthority = await client.query(`SELECT ${COLUMNS} FROM ${TABLE}
-        WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND authority_kind=$4 AND authority_ref=$5`,
-      [candidate.scope.tenantId,candidate.scope.userId,candidate.scope.projectId,candidate.authorityKind,candidate.authorityRef]);
+        WHERE authority_kind=$1 AND authority_ref=$2`,
+      [candidate.authorityKind,candidate.authorityRef]);
       if (existingAuthority.rows[0]) throw registryError('execution_run_authority_already_bound', 'Execution authority is already bound to another run');
 
       if (candidate.parentRunId) {

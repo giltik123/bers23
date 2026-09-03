@@ -21,13 +21,17 @@ CREATE TABLE IF NOT EXISTS canonical_execution_runs (
   CONSTRAINT canonical_execution_runs_parent_run_id_fkey FOREIGN KEY (parent_run_id) REFERENCES canonical_execution_runs(run_id) ON DELETE RESTRICT,
   CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION')),
   CONSTRAINT canonical_execution_runs_authority_kind_check CHECK (authority_kind IN ('LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION')),
+  CONSTRAINT canonical_execution_runs_authority_binding_check CHECK (
+    (capability='LOCAL_EXECUTION' AND authority_kind='LOCAL_EXECUTION_TICKET')
+    OR (capability='CREATIVE_EXECUTION' AND authority_kind='CREATIVE_EXECUTION')
+  ),
   CONSTRAINT canonical_execution_runs_status_check CHECK (status IN ('QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED')),
   CONSTRAINT canonical_execution_runs_revision_check CHECK (revision >= 1),
   CONSTRAINT canonical_execution_runs_idempotency_key_check CHECK (char_length(idempotency_key) BETWEEN 1 AND 256 AND idempotency_key !~ '[[:cntrl:]]'),
   CONSTRAINT canonical_execution_runs_authority_ref_check CHECK (char_length(authority_ref) BETWEEN 1 AND 4096 AND authority_ref !~ '[[:cntrl:]]'),
   CONSTRAINT canonical_execution_runs_reason_check CHECK (status_reason_code IS NULL OR status_reason_code ~ '^[A-Z0-9_]{1,128}$'),
   CONSTRAINT canonical_execution_runs_scope_idempotency_unique UNIQUE (tenant_id,user_id,project_id,capability,idempotency_key),
-  CONSTRAINT canonical_execution_runs_scope_authority_unique UNIQUE (tenant_id,user_id,project_id,authority_kind,authority_ref),
+  CONSTRAINT canonical_execution_runs_authority_unique UNIQUE (authority_kind,authority_ref),
   CONSTRAINT canonical_execution_runs_time_shape_check CHECK (
     (status='QUEUED' AND started_at IS NULL AND finished_at IS NULL)
     OR (status='RUNNING' AND started_at IS NOT NULL AND finished_at IS NULL)
