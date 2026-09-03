@@ -1,0 +1,57 @@
+name: Fashion canonical Wardrobe and Collection browser clients staging
+
+on:
+  push:
+    branches: [ "fashion-wardrobe-collection-browser-clients-f2-staging" ]
+    paths:
+      - ".github/workflows/fashion-wardrobe-collection-browser-clients-staging.yml"
+      - "src/api/managedWardrobeClient.js"
+      - "src/api/managedGarmentCollectionClient.js"
+      - "server/core/fashion/postgresGarmentWardrobeStore.ts"
+      - "server/core/http/managedWardrobeHttpAdapter.ts"
+      - "server/core/http/managedGarmentCollectionHttpAdapter.ts"
+      - "tests/managed-wardrobe-browser-client.test.mjs"
+      - "tests/managed-garment-collection-browser-client.test.mjs"
+      - "tests/managed-fashion-browser-server-contract.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-fashion-clients:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Assert exact staging SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Syntax-check narrow browser adapters
+        run: |
+          node --check src/api/managedWardrobeClient.js
+          node --check src/api/managedGarmentCollectionClient.js
+      - name: Prove Wardrobe and Collection intent, revisions, atomic membership and server-contract alignment
+        run: |
+          node --test tests/managed-wardrobe-browser-client.test.mjs
+          node --test tests/managed-garment-collection-browser-client.test.mjs
+          node --test tests/managed-fashion-browser-server-contract.test.mjs
+      - name: Reject legacy and provider authority
+        run: |
+          set -euo pipefail
+          for file in src/api/managedWardrobeClient.js src/api/managedGarmentCollectionClient.js; do
+            ! grep -q 'fetch(' "$file"
+            ! grep -q 'coreClient.entities' "$file"
+            ! grep -E -q 'garmentManager|wardrobeManager|garmentCollections|FASHN|provider|Billing|cloud' "$file"
+          done
+          grep -q '/move/' src/api/managedGarmentCollectionClient.js
+          grep -q 'X-Expected-Source-Collection-Revision' src/api/managedGarmentCollectionClient.js
+          grep -q 'X-Expected-Target-Collection-Revision' src/api/managedGarmentCollectionClient.js
+      - name: Check committed staging whitespace
+        run: |
+          set -euo pipefail
+          base="$(git merge-base HEAD origin/main)"
+          git diff --check "${base}..HEAD"
