@@ -1,7 +1,17 @@
 const PREFIX = '/wardrobe/outfits';
 const EXPECTED_REVISION_HEADER = 'X-Expected-Outfit-Revision';
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const LAYER_ROLES = new Set(['BASE', 'INNER', 'MID', 'OUTER', 'LOWER', 'FOOTWEAR', 'ACCESSORY']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_ENTRIES = 32;
+const STYLES = new Set(['minimal','classic','elegant','streetwear','business','luxury','sport','vintage','casual','modern','creative','smart_casual']);
+const SEASONS = new Set(['all_season','spring','summer','autumn','winter']);
+const OCCASIONS = new Set(['casual','business','formal','wedding','party','travel','sport','outdoor','streetwear','luxury','home','beach','night_out']);
+const LAYER_ROLES = new Set(['BASE_TOP','MID_TOP','OUTER_TOP','FULL_BODY','BOTTOM','FOOTWEAR','ACCESSORY']);
+const GARMENT_CATEGORIES = new Set([
+  'tshirts','shirts','jackets','hoodies','sweaters','pants','shorts','jeans','skirts','dresses',
+  'shoes','boots','sneakers','sandals','hats','glasses','scarves','bags','belts','jewelry','gloves','socks','other',
+]);
+const ENTRY_READINESS = new Set(['READY','GARMENT_UNAVAILABLE','ROLE_REVIEW_REQUIRED']);
+const OUTFIT_READINESS = new Set(['REFERENCES_READY','EMPTY','GARMENT_UNAVAILABLE','ROLE_REVIEW_REQUIRED']);
 
 /**
  * Pure browser adapter for the accepted canonical Outfit aggregate.
@@ -23,7 +33,7 @@ export function createManagedOutfitClient(request) {
     )),
     duplicate: async (outfitId, name) => normalizeOutfit(await request(
       `${outfitPath(outfitId)}/duplicate`,
-      json('POST', Object.freeze({ name: requiredText(name, 'name', 120) })),
+      json('POST', Object.freeze({ name: canonicalName(name) })),
     )),
     archive: async (outfitId, expectedRevision) => normalizeOutfit(await request(
       `${outfitPath(outfitId)}/archive`,
@@ -71,11 +81,12 @@ function outfitPath(outfitId) {
 function createBody(input) {
   assertPlainObject(input, 'Outfit create');
   assertOnlyKeys(input, ['name', 'style', 'season', 'occasion', 'favorite'], 'Outfit create');
+  if (!Object.hasOwn(input, 'name')) throw new TypeError('Outfit create requires name');
   return Object.freeze({
-    name: requiredText(input.name, 'name', 120),
-    ...(input.style !== undefined ? { style: optionalText(input.style, 'style', 120) } : {}),
-    ...(input.season !== undefined ? { season: optionalText(input.season, 'season', 80) } : {}),
-    ...(input.occasion !== undefined ? { occasion: optionalText(input.occasion, 'occasion', 120) } : {}),
+    name: canonicalName(input.name),
+    ...(input.style !== undefined ? { style: canonicalLowerEnum(input.style, STYLES, 'style') } : {}),
+    ...(input.season !== undefined ? { season: canonicalLowerEnum(input.season, SEASONS, 'season') } : {}),
+    ...(input.occasion !== undefined ? { occasion: canonicalLowerEnum(input.occasion, OCCASIONS, 'occasion') } : {}),
     ...(input.favorite !== undefined ? { favorite: booleanValue(input.favorite, 'favorite') } : {}),
   });
 }
@@ -86,10 +97,10 @@ function metadataPatch(input) {
   assertOnlyKeys(input, allowed, 'Outfit metadata patch');
   if (Object.keys(input).length === 0) throw new TypeError('Outfit metadata patch must change at least one field');
   return Object.freeze({
-    ...(input.name !== undefined ? { name: requiredText(input.name, 'name', 120) } : {}),
-    ...(input.style !== undefined ? { style: optionalText(input.style, 'style', 120) } : {}),
-    ...(input.season !== undefined ? { season: optionalText(input.season, 'season', 80) } : {}),
-    ...(input.occasion !== undefined ? { occasion: optionalText(input.occasion, 'occasion', 120) } : {}),
+    ...(input.name !== undefined ? { name: canonicalName(input.name) } : {}),
+    ...(input.style !== undefined ? { style: canonicalLowerEnum(input.style, STYLES, 'style') } : {}),
+    ...(input.season !== undefined ? { season: canonicalLowerEnum(input.season, SEASONS, 'season') } : {}),
+    ...(input.occasion !== undefined ? { occasion: canonicalLowerEnum(input.occasion, OCCASIONS, 'occasion') } : {}),
     ...(input.favorite !== undefined ? { favorite: booleanValue(input.favorite, 'favorite') } : {}),
   });
 }
@@ -97,16 +108,16 @@ function metadataPatch(input) {
 function entryBody(input) {
   assertPlainObject(input, 'Outfit entry');
   assertOnlyKeys(input, ['garmentId', 'layerRole'], 'Outfit entry');
-  const garmentId = canonicalUuid(input.garmentId, 'garmentId');
+  if (!Object.hasOwn(input, 'garmentId')) throw new TypeError('Outfit entry requires garmentId');
   return Object.freeze({
-    garment_id: garmentId,
+    garment_id: canonicalUuidIntent(input.garmentId, 'garmentId'),
     ...(input.layerRole !== undefined ? { layer_role: canonicalLayerRole(input.layerRole) } : {}),
   });
 }
 
 function canonicalEntryOrder(value) {
-  if (!Array.isArray(value) || value.length === 0) throw new TypeError('entryIds must be a non-empty array');
-  const ids = value.map((id, index) => canonicalUuid(id, `entryIds[${index}]`));
+  if (!Array.isArray(value) || value.length > MAX_ENTRIES) throw new TypeError(`entryIds must contain at most ${MAX_ENTRIES} entries`);
+  const ids = value.map((id, index) => canonicalUuidIntent(id, `entryIds[${index}]`));
   if (new Set(ids).size !== ids.length) throw new TypeError('entryIds must not contain duplicates');
   return Object.freeze(ids);
 }
@@ -122,26 +133,24 @@ function normalizeOutfit(value) {
     'id', 'name', 'style', 'season', 'occasion', 'favorite', 'status', 'revision',
     'reference_readiness', 'entries', 'created_at', 'updated_at',
   ], 'Managed Outfit response');
-  const status = enumValue(value.status, ['ACTIVE', 'ARCHIVED'], 'status');
-  const readiness = enumValue(value.reference_readiness, ['READY', 'ROLE_REVIEW_REQUIRED', 'GARMENT_REFERENCE_MISSING'], 'reference_readiness');
   if (!Array.isArray(value.entries)) throw new TypeError('Managed Outfit entries must be an array');
+  if (value.entries.length > MAX_ENTRIES) throw new TypeError('Managed Outfit exceeds the canonical entry limit');
   const entries = value.entries.map((entry, index) => normalizeEntry(entry, index));
-  const positions = entries.map(entry => entry.position);
-  if (positions.some((position, index) => position !== index)) throw new TypeError('Managed Outfit entries must have contiguous canonical positions');
+  if (entries.some((entry, index) => entry.position !== index)) throw new TypeError('Managed Outfit entries must have contiguous canonical positions');
   if (new Set(entries.map(entry => entry.entryId)).size !== entries.length) throw new TypeError('Managed Outfit entry IDs must be unique');
   return Object.freeze({
-    id: canonicalUuid(value.id, 'id'),
-    name: requiredText(value.name, 'name', 120),
-    style: nullableText(value.style, 'style', 120),
-    season: nullableText(value.season, 'season', 80),
-    occasion: nullableText(value.occasion, 'occasion', 120),
+    id: canonicalUuidResponse(value.id, 'id'),
+    name: canonicalResponseName(value.name),
+    style: exactLowerEnum(value.style, STYLES, 'style'),
+    season: exactLowerEnum(value.season, SEASONS, 'season'),
+    occasion: exactLowerEnum(value.occasion, OCCASIONS, 'occasion'),
     favorite: booleanValue(value.favorite, 'favorite'),
-    status,
+    status: exactEnum(value.status, new Set(['ACTIVE','ARCHIVED']), 'status'),
     revision: positiveSafeInteger(value.revision, 'revision'),
-    referenceReadiness: readiness,
+    referenceReadiness: exactEnum(value.reference_readiness, OUTFIT_READINESS, 'reference_readiness'),
     entries: Object.freeze(entries),
-    createdAt: isoTimestamp(value.created_at, 'created_at'),
-    updatedAt: isoTimestamp(value.updated_at, 'updated_at'),
+    createdAt: canonicalTimestamp(value.created_at, 'created_at'),
+    updatedAt: canonicalTimestamp(value.updated_at, 'updated_at'),
   });
 }
 
@@ -153,12 +162,12 @@ function normalizeEntry(value, index) {
     if (!Object.hasOwn(value, required)) throw new TypeError(`Managed Outfit entry ${index} is missing ${required}`);
   }
   return Object.freeze({
-    entryId: canonicalUuid(value.entry_id, `entries[${index}].entry_id`),
-    garmentId: canonicalUuid(value.garment_id, `entries[${index}].garment_id`),
+    entryId: canonicalUuidResponse(value.entry_id, `entries[${index}].entry_id`),
+    garmentId: canonicalUuidResponse(value.garment_id, `entries[${index}].garment_id`),
     position: nonNegativeSafeInteger(value.position, `entries[${index}].position`),
-    layerRole: canonicalLayerRole(value.layer_role),
-    ...(value.garment_category !== undefined ? { garmentCategory: requiredText(value.garment_category, `entries[${index}].garment_category`, 80) } : {}),
-    referenceReadiness: enumValue(value.reference_readiness, ['READY', 'ROLE_REVIEW_REQUIRED', 'GARMENT_REFERENCE_MISSING'], `entries[${index}].reference_readiness`),
+    layerRole: exactEnum(value.layer_role, LAYER_ROLES, `entries[${index}].layer_role`),
+    ...(value.garment_category !== undefined ? { garmentCategory: exactLowerEnum(value.garment_category, GARMENT_CATEGORIES, `entries[${index}].garment_category`) } : {}),
+    referenceReadiness: exactEnum(value.reference_readiness, ENTRY_READINESS, `entries[${index}].reference_readiness`),
   });
 }
 
@@ -182,43 +191,61 @@ function mutationWithRevision(method, expectedRevision) {
 }
 
 function encodeId(value, label) {
-  return encodeURIComponent(canonicalUuid(value, label));
+  return encodeURIComponent(canonicalUuidIntent(value, label));
 }
 
-function canonicalUuid(value, label) {
-  if (typeof value !== 'string' || !UUID.test(value)) throw new TypeError(`${label} must be a canonical lowercase UUID`);
+function canonicalUuidIntent(value, label) {
+  if (typeof value !== 'string') throw new TypeError(`${label} must be a UUID string`);
+  const normalized = value.normalize('NFKC').trim().toLowerCase();
+  if (!UUID.test(normalized)) throw new TypeError(`${label} must be a UUID`);
+  return normalized;
+}
+
+function canonicalUuidResponse(value, label) {
+  if (typeof value !== 'string' || !UUID.test(value) || value !== value.toLowerCase()) throw new TypeError(`${label} must be a canonical lowercase UUID`);
   return value;
 }
 
 function canonicalLayerRole(value) {
-  if (typeof value !== 'string' || !LAYER_ROLES.has(value)) throw new TypeError('layerRole is outside the accepted Outfit role set');
-  return value;
-}
-
-function requiredText(value, label, maxLength) {
-  if (typeof value !== 'string') throw new TypeError(`${label} must be a string`);
-  const normalized = value.trim();
-  if (!normalized || [...normalized].length > maxLength) throw new TypeError(`${label} is outside the accepted length`);
+  if (typeof value !== 'string') throw new TypeError('layerRole must be a string');
+  const normalized = value.normalize('NFKC').trim().toUpperCase();
+  if (!LAYER_ROLES.has(normalized)) throw new TypeError('layerRole is outside the accepted Outfit role set');
   return normalized;
 }
 
-function optionalText(value, label, maxLength) {
-  if (value === null) return null;
-  return requiredText(value, label, maxLength);
+function canonicalName(value) {
+  if (typeof value !== 'string') throw new TypeError('name must be a string');
+  const normalized = value.normalize('NFKC').trim().replace(/\s+/gu, ' ');
+  if (!normalized || Array.from(normalized).length > 200 || /[\u0000-\u001f\u007f]/u.test(normalized)) {
+    throw new TypeError('name must contain 1 to 200 printable characters');
+  }
+  return normalized;
 }
 
-function nullableText(value, label, maxLength) {
-  if (value === null) return null;
-  return requiredText(value, label, maxLength);
+function canonicalResponseName(value) {
+  if (typeof value !== 'string' || canonicalName(value) !== value) throw new TypeError('Managed Outfit response name is not canonical');
+  return value;
+}
+
+function canonicalLowerEnum(value, allowed, label) {
+  if (typeof value !== 'string') throw new TypeError(`${label} must be a string`);
+  const normalized = value.normalize('NFKC').trim().toLowerCase();
+  if (!allowed.has(normalized)) throw new TypeError(`${label} is outside the accepted Outfit taxonomy`);
+  return normalized;
+}
+
+function exactLowerEnum(value, allowed, label) {
+  if (typeof value !== 'string' || value !== value.toLowerCase() || !allowed.has(value)) throw new TypeError(`${label} is not a canonical Outfit enum`);
+  return value;
+}
+
+function exactEnum(value, allowed, label) {
+  if (typeof value !== 'string' || !allowed.has(value)) throw new TypeError(`${label} is outside the accepted enum`);
+  return value;
 }
 
 function booleanValue(value, label) {
   if (typeof value !== 'boolean') throw new TypeError(`${label} must be boolean`);
-  return value;
-}
-
-function enumValue(value, allowed, label) {
-  if (typeof value !== 'string' || !allowed.includes(value)) throw new TypeError(`${label} is outside the accepted enum`);
   return value;
 }
 
@@ -232,8 +259,10 @@ function nonNegativeSafeInteger(value, label) {
   return value;
 }
 
-function isoTimestamp(value, label) {
-  if (typeof value !== 'string' || !value || !Number.isFinite(Date.parse(value))) throw new TypeError(`${label} must be an ISO timestamp`);
+function canonicalTimestamp(value, label) {
+  if (typeof value !== 'string') throw new TypeError(`${label} must be an ISO timestamp`);
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) throw new TypeError(`${label} must be a canonical ISO timestamp`);
   return value;
 }
 
