@@ -61,7 +61,16 @@ test('local FINAL materializes PixelImage once and returns only the existing Edi
   assert.equal(Object.hasOwn(pending.context, 'clientRequestId'), false, 'Retry must mint a fresh orchestration identity');
 });
 
-test('recovered FINAL preserves the short-lived Core delivery URL and never creates an owned blob URL', async () => {
+test('local FINAL requires the Editor composition boundary to inject the deterministic PNG encoder', async () => {
+  await assert.rejects(
+    () => materializeCanonicalTryOnEditorPendingResult(
+      base({ status: 'FINAL_READY', artifactId: 'canonical-final', preview: localPreview() }),
+    ),
+    /explicit deterministic PNG encoder/,
+  );
+});
+
+test('recovered FINAL preserves the short-lived Core delivery URL and never requires a codec or creates an owned blob URL', async () => {
   let encoded = 0;
   let created = 0;
   const pending = await materializeCanonicalTryOnEditorPendingResult(
@@ -75,6 +84,11 @@ test('recovered FINAL preserves the short-lived Core delivery URL and never crea
   assert.equal(created, 0);
   assert.equal(pending.result.preview_url, RECOVERY);
   assert.equal(Object.hasOwn(pending.result, 'previewExpiresAt'), false, 'delivery capability metadata must not become Editor durable state');
+
+  const withoutCodec = await materializeCanonicalTryOnEditorPendingResult(
+    base({ status: 'FINAL_READY', artifactId: 'canonical-final', preview: RECOVERY, previewExpiresAt: 1_900_000_000_000 }),
+  );
+  assert.equal(withoutCodec.result.preview_url, RECOVERY);
 });
 
 test('handoff fails closed on non-FINAL state, missing preview, foreign recovery URL and malformed PixelImage', async () => {
