@@ -18,6 +18,33 @@ export class CanonicalWardrobePartialCreateError extends Error {
   }
 }
 
+export class CanonicalWardrobeAppendOutcomeUncertainError extends Error {
+  constructor(garmentId, expectedRevision, recoveredItem, cause) {
+    super('Garment view submission could not be confirmed. The wardrobe was refreshed; inspect the latest capture state before retrying the upload.');
+    this.name = 'CanonicalWardrobeAppendOutcomeUncertainError';
+    this.code = 'GARMENT_VIEW_APPEND_OUTCOME_UNCERTAIN';
+    this.garmentId = garmentId;
+    this.expectedRevision = expectedRevision;
+    this.recoveredItem = recoveredItem;
+    this.retryable = false;
+    this.requiresInspection = true;
+    this.cause = cause;
+  }
+}
+
+export class CanonicalWardrobeAppendReloadError extends Error {
+  constructor(garmentId, expectedRevision, cause) {
+    super('Garment view was saved, but the coherent wardrobe snapshot could not be reloaded. Reload the wardrobe; do not append the same view again until the saved capture is visible.');
+    this.name = 'CanonicalWardrobeAppendReloadError';
+    this.code = 'GARMENT_VIEW_APPENDED_RELOAD_PENDING';
+    this.garmentId = garmentId;
+    this.expectedRevision = expectedRevision;
+    this.retryable = false;
+    this.requiresReload = true;
+    this.cause = cause;
+  }
+}
+
 export function createCanonicalWardrobeViewModel({ garments, wardrobe }) {
   if (!garments || typeof garments.list !== 'function' || typeof garments.get !== 'function' || typeof garments.create !== 'function') {
     throw new TypeError('Canonical wardrobe view model requires the Managed Garment client');
@@ -79,13 +106,24 @@ export function createCanonicalWardrobeViewModel({ garments, wardrobe }) {
     async appendView(item, input) {
       if (typeof garments.appendView !== 'function') throw new TypeError('Managed Garment client does not expose appendView');
       const current = canonicalItemIntent(item);
-      await garments.appendView({
-        garmentId: current.id,
-        expectedRevision: current.revision,
-        viewKind: requiredString(input?.viewKind, 'viewKind'),
-        image: input?.image,
-      });
-      return reloadOne(current.id);
+      const viewKind = requiredString(input?.viewKind, 'viewKind');
+      try {
+        await garments.appendView({
+          garmentId: current.id,
+          expectedRevision: current.revision,
+          viewKind,
+          image: input?.image,
+        });
+      } catch (cause) {
+        let recoveredItem;
+        try { recoveredItem = await reloadOne(current.id); } catch { /* preserve the append uncertainty */ }
+        throw new CanonicalWardrobeAppendOutcomeUncertainError(current.id, current.revision, recoveredItem, cause);
+      }
+      try {
+        return await reloadOne(current.id);
+      } catch (cause) {
+        throw new CanonicalWardrobeAppendReloadError(current.id, current.revision, cause);
+      }
     },
     async setFavorite(item, favorite) {
       const current = canonicalItemIntent(item);
