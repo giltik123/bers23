@@ -1,5 +1,3 @@
-import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng';
-
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CORE_PREVIEW_URL = /^\/api\/core\/artifacts\/results\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
@@ -11,11 +9,15 @@ const CORE_PREVIEW_URL = /^\/api\/core\/artifacts\/results\/[A-Za-z0-9_-]+\.[A-Z
  * Local PixelImage previews are materialized as owned blob URLs. Recovery
  * previews remain short-lived Core delivery URLs; they are never converted
  * into durable Project identity and Editor disposal will not revoke them.
+ *
+ * PNG encoding is injected by the Editor composition boundary. This helper
+ * deliberately owns no codec/runtime dependency and therefore cannot become a
+ * second local-execution authority.
  */
 export async function materializeCanonicalTryOnEditorPendingResult(
   { result, beforeUrl, garmentId, sourceArtifactId, garmentLabel },
   {
-    encodePng = encodeDeterministicRgbaPng,
+    encodePng,
     createObjectUrl = defaultCreateObjectUrl,
   } = {},
 ) {
@@ -36,6 +38,9 @@ export async function materializeCanonicalTryOnEditorPendingResult(
     previewUrl = result.preview;
   } else {
     const pixels = requirePixelImage(result.preview);
+    if (typeof encodePng !== 'function') {
+      throw new TypeError('Try-On local preview requires an explicit deterministic PNG encoder');
+    }
     const bytes = await encodePng(pixels);
     if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) throw new Error('Try-On local preview PNG encoder returned invalid bytes');
     previewUrl = nonEmptyString(createObjectUrl(bytes), 'Try-On local preview object URL');
