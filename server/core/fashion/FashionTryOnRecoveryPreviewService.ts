@@ -59,7 +59,11 @@ export type FashionTryOnRecoveryPreviewResult =
  * execution, persistence and external-execution selection remain outside this service.
  */
 export class FashionTryOnRecoveryPreviewService {
-  constructor(private readonly dependencies: FashionTryOnRecoveryPreviewDependencies) {}
+  private readonly dependencies: FashionTryOnRecoveryPreviewDependencies;
+
+  constructor(dependencies: FashionTryOnRecoveryPreviewDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async preview(
     input: FashionTryOnOrchestrationIntentV1 | unknown,
