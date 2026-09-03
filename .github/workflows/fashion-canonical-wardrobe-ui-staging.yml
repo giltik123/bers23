@@ -1,0 +1,47 @@
+name: Fashion canonical Wardrobe UI staging
+
+on:
+  push:
+    branches: [ "fashion-canonical-wardrobe-ui-staging" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-wardrobe-ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Assert exact staging SHA
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Syntax-check canonical wardrobe view model
+        run: node --check src/application/fashion/canonicalWardrobeViewModel.js
+      - name: Prove coherent F1/F2 snapshot and partial-create semantics
+        run: node --test tests/canonical-wardrobe-view-model.test.mjs
+      - name: Prove Fashion UI canonical authority and zero-object reachability
+        run: |
+          node --test tests/fashion-canonical-wardrobe-ui.test.mjs
+          node --test tests/editor-zero-object-navigation.test.mjs
+      - name: Build production frontend
+        run: npm run build
+      - name: Reject legacy Fashion authority
+        run: |
+          set -euo pipefail
+          ! grep -E -q 'garmentManager|wardrobeManager|garmentCollections|outfitManager|Core\.UploadFile|coreClient\.entities|original_image_url' src/components/editor/fashion/FashionPanel.jsx src/components/editor/fashion/AddGarmentDialog.jsx src/application/fashion/canonicalWardrobeViewModel.js
+          grep -q 'coreClient.fashion.garments' src/components/editor/fashion/FashionPanel.jsx
+          grep -q 'coreClient.fashion.wardrobe' src/components/editor/fashion/FashionPanel.jsx
+          grep -q 'GARMENT_CREATED_METADATA_PENDING' src/application/fashion/canonicalWardrobeViewModel.js
+      - name: Check staging diff whitespace
+        run: git diff --check c4b2ace55df95b640c50290e6bbfcd5af660994d..HEAD
