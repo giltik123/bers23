@@ -86,14 +86,16 @@ export default function FashionPanel() {
   const [busyId, setBusyId] = useState('');
 
   const reload = useCallback(async ({ quiet = false } = {}) => {
-    if (!quiet) setLoading(true);
-    setError('');
+    if (!quiet) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const next = await wardrobe.load();
       setItems(next);
       return next;
     } catch (cause) {
-      setError(cause?.message || 'Wardrobe could not be loaded.');
+      if (!quiet) setError(cause?.message || 'Wardrobe could not be loaded.');
       throw cause;
     } finally {
       if (!quiet) setLoading(false);
@@ -132,8 +134,9 @@ export default function FashionPanel() {
     try {
       replaceItem(await mutate(item));
     } catch (cause) {
-      setError(cause?.message || 'Wardrobe changed elsewhere. Reload and try again.');
-      try { await reload({ quiet: true }); } catch { /* keep the original action error visible */ }
+      const message = cause?.message || 'Wardrobe changed elsewhere. Reload and try again.';
+      try { await reload({ quiet: true }); } catch { /* preserve the original action failure */ }
+      setError(message);
     } finally {
       setBusyId('');
     }
