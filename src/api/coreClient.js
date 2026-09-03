@@ -1,4 +1,5 @@
 import '@/lib/app-params';
+import { createManagedOutfitClient } from './managedOutfitClient.js';
 
 const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
 const CSRF_HEADER = 'X-Bers-CSRF-Token';
@@ -105,6 +106,7 @@ export const coreClient = Object.freeze({
     cancel: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
   },
   fashion: {
+    outfits: createManagedOutfitClient(request),
     checkTryOnReadiness: (payload) => request('/fashion/try-on/readiness', json('POST', payload)),
     admitManualParametricRepresentation: (garmentId, payload) => request(`/fashion/garments/${encodeURIComponent(garmentId)}/parametric-representation`, json('POST', payload)),
     acquireManualBodyAnchors: (projectId, payload) => request(`/fashion/projects/${encodeURIComponent(projectId)}/body-anchors`, json('POST', payload)),

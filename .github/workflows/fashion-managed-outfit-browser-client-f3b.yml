@@ -1,0 +1,60 @@
+name: Fashion F3b Managed Outfit browser client
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-managed-outfit-browser-client-f3b.yml"
+      - "src/api/coreClient.js"
+      - "src/api/managedOutfitClient.js"
+      - "server/core/fashion/postgresOutfitStore.ts"
+      - "server/core/fashion/postgresGarmentWardrobeStore.ts"
+      - "server/core/http/managedOutfitHttpAdapter.ts"
+      - "tests/managed-outfit-browser-client.test.mjs"
+      - "tests/managed-outfit-browser-server-contract.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  managed-outfit-client:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Syntax-check canonical browser adapter
+        run: node --check src/api/managedOutfitClient.js
+      - name: Prove canonical Outfit transport, revisions and server taxonomy
+        run: |
+          node --test tests/managed-outfit-browser-client.test.mjs
+          node --test tests/managed-outfit-browser-server-contract.test.mjs
+      - name: Reject legacy browser authority and prove Core integration
+        run: |
+          set -euo pipefail
+          ! grep -q 'fetch(' src/api/managedOutfitClient.js
+          ! grep -q 'coreClient.entities' src/api/managedOutfitClient.js
+          ! grep -q 'outfitManager' src/api/managedOutfitClient.js
+          ! grep -E -q 'FASHN|provider|Billing|cloud' src/api/managedOutfitClient.js
+          grep -q 'X-Expected-Outfit-Revision' src/api/managedOutfitClient.js
+          grep -q "import { createManagedOutfitClient } from './managedOutfitClient.js';" src/api/coreClient.js
+          grep -q 'outfits: createManagedOutfitClient(request)' src/api/coreClient.js
+      - name: Check committed candidate whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA}" ]; then
+            git diff --check "${BASE_SHA}..HEAD"
+          else
+            git diff --check "HEAD^..HEAD"
+          fi
