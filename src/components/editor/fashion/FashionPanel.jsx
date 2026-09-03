@@ -8,6 +8,7 @@ import {
 } from '@/application/fashion/canonicalWardrobeViewModel';
 import { getCategory } from '@/lib/fashion/garmentCategories';
 import AddGarmentDialog from './AddGarmentDialog';
+import CanonicalCollectionsView from './CanonicalCollectionsView';
 
 function captureLabel(assessment) {
   if (assessment?.cardinalComplete && assessment?.technicalResolution?.status === 'ADEQUATE') return '4-view capture ready';
@@ -168,6 +169,8 @@ export default function FashionPanel() {
           {error}
         </div>
       )}
+
+      <CanonicalCollectionsView garments={items} />
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground" role="status">
