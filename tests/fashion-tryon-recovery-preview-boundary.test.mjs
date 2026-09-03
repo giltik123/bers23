@@ -24,11 +24,20 @@ test('preview delivery is minted from server-resolved FINAL evidence and reconfi
   assert.match(signedAuthority, /issueStoredFinalDelivery/);
 });
 
-test('preview foundation grants no Project mutation, provider, Billing, database or direct HTTP authority', () => {
+test('preview foundation grants no Project mutation, external execution, financial, database or direct HTTP authority', () => {
   for (const forbidden of [
-    'acceptFinal', 'pushEdit', 'history', 'provider', 'Billing', 'credits',
-    "from 'pg'", 'pool.query', 'fetch(', 'request(', 'localStorage',
-  ]) assert.equal(service.includes(forbidden), false, `preview foundation must not contain ${forbidden}`);
+    /\bacceptFinal\s*\(/,
+    /\bpushEdit\s*\(/,
+    /\bhistory\s*[.(:=]/,
+    /\bprovider\b/,
+    /\bBilling\b/,
+    /\bcredits\b/,
+    /from\s+['"]pg['"]/,
+    /\bpool\.query\b/,
+    /\bfetch\s*\(/,
+    /\brequest\s*\(/,
+    /\blocalStorage\b/,
+  ]) assert.doesNotMatch(service, forbidden);
 });
 
 test('preview response can expose stable FINAL identity and ephemeral URL but no storage/evidence internals', () => {
