@@ -119,6 +119,7 @@ export const coreClient = Object.freeze({
     prepareTryOn: (payload) => request('/fashion/try-on/prepare', json('POST', payload)),
     continueTryOn: (payload) => request('/fashion/try-on/continue', json('POST', payload)),
     getTryOnResult: (payload) => request('/fashion/try-on/result', json('POST', payload)),
+    getTryOnPreview: (payload) => request('/fashion/try-on/preview', json('POST', payload)),
     loadTryOnWarpInput: async ({ ticketId, projectId }) => {
       const delivered = await requestBytes(`/fashion/try-on/warp/${encodeURIComponent(ticketId)}/input?${new URLSearchParams({ projectId })}`);
       return Uint8Array.from(delivered.bytes);
