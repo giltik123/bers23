@@ -40,7 +40,7 @@ function exactKeysForExpression(source, expression, label) {
 }
 function topLevelDtoKeys(adapter) {
   const block = matched(adapter, /function dto\([\s\S]*?return Object\.freeze\(\{([\s\S]*?)\n  \}\);\n\}/, 'server Managed Garment DTO');
-  return [...block.matchAll(/^    ([a-z_]+):/gm)].map(match => match[1]);
+  return [...block.matchAll(/^    ([a-z0-9_]+):/gm)].map(match => match[1]);
 }
 function sectionKeys(adapter, start, end, indent) {
   const startIndex = adapter.indexOf(start);
@@ -48,7 +48,7 @@ function sectionKeys(adapter, start, end, indent) {
   const endIndex = adapter.indexOf(end, startIndex + start.length);
   assert.ok(endIndex > startIndex, `Missing server section end ${end}`);
   const block = adapter.slice(startIndex, endIndex);
-  const expression = new RegExp(`^${' '.repeat(indent)}([a-z_]+):`, 'gm');
+  const expression = new RegExp(`^${' '.repeat(indent)}([a-z0-9_]+):`, 'gm');
   return [...block.matchAll(expression)].map(match => match[1]);
 }
 
