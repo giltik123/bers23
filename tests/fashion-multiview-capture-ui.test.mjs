@@ -36,8 +36,23 @@ test('active multi-view path cannot revive generic upload or legacy Fashion auth
   }
 });
 
-test('ambiguous append recovery refreshes state and closes stale capture intent instead of auto-retrying', () => {
+test('uncertain or committed append recovery closes stale capture intent without auto-retrying', () => {
+  assert.match(model, /GARMENT_VIEW_APPEND_OUTCOME_UNCERTAIN/);
+  assert.match(model, /GARMENT_VIEW_APPENDED_RELOAD_PENDING/);
+  assert.match(panel, /CanonicalWardrobeAppendOutcomeUncertainError/);
+  assert.match(panel, /CanonicalWardrobeAppendReloadError/);
+  assert.match(panel, /cause\?\.recoveredItem/);
   assert.match(panel, /reload\(\{ quiet: true \}\)/);
   assert.match(panel, /setCaptureItem\(null\)/);
   assert.doesNotMatch(model, /for\s*\([^)]*\)[\s\S]{0,300}garments\.appendView/);
+});
+
+test('ordinary validation errors remain dialog-local instead of being mislabeled as uncertain persistence', () => {
+  const catchBody = panel.match(/catch \(cause\) \{([\s\S]*?)\n\s*\} finally \{\n\s*setBusyId\(''\);/);
+  assert.ok(catchBody, 'append catch must remain structurally inspectable');
+  assert.match(catchBody[1], /outcomeUncertain/);
+  assert.match(catchBody[1], /committedReloadPending/);
+  assert.match(catchBody[1], /if \(outcomeUncertain \|\| committedReloadPending\)/);
+  assert.doesNotMatch(catchBody[1], /setCaptureItem\(null\)[\s\S]*else/);
+  assert.match(dialog, /setError\(cause\?\.message/);
 });
