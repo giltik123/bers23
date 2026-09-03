@@ -5,6 +5,7 @@ on:
     branches:
       - fashion-kandinsky-d2c-schema-v2-staging
     paths:
+      - 'scripts/kandinsky-conditioning-builder.py'
       - 'scripts/kandinsky-conditioning-bundle-contract.mjs'
       - 'scripts/kandinsky-conditioning-finalize-manifest.mjs'
       - 'scripts/_kandinsky-conditioning-builder-impl.py'
@@ -44,6 +45,7 @@ jobs:
           set -euo pipefail
           grep -q 'KANDINSKY_CONDITIONING_SCHEMA_VERSION = 2' scripts/kandinsky-conditioning-bundle-contract.mjs
           grep -q 'positiveEmbeddingSource' scripts/kandinsky-conditioning-finalize-manifest.mjs
+          grep -q 'prevalidate_positive_source' scripts/kandinsky-conditioning-builder.py
           grep -q 'CONDITIONING_MANIFEST_SCHEMA_VERSION = 2' scripts/_kandinsky-conditioning-builder-impl.py
           grep -q 'positive source B manifest must be an independent positive embedding candidate' scripts/_kandinsky-conditioning-builder-impl.py
           ! grep -R -E 'from_pretrained\(|hf_hub_download|snapshot_download|wget |curl ' .github/workflows/fashion-kandinsky-d2c-schema-v2-staging.yml tests/kandinsky-conditioning-bundle-contract.test.mjs tests/kandinsky-conditioning-finalizer.test.mjs tests/kandinsky-conditioning-schema-v2-boundary.test.mjs
