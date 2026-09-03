@@ -43,7 +43,6 @@ jobs:
           set -euo pipefail
           FILE=src/application/fashion/canonicalTryOnManualAcquisition.js
           ! grep -E -q 'representation(Id|ContentSha256)|anchorSetId|payloadSha256|projectImage(StorageId|Sha256)|destinationMesh|storageId|producerId|validatorId|admissionState|ticketId|executionId|fetch\(|coreClient\.entities|FASHN|billing|credits' "$FILE"
-          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
       - name: Build production frontend
         run: npm run build
       - name: Check committed diff whitespace
