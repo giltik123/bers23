@@ -84,10 +84,10 @@ function createBody(input) {
   if (!Object.hasOwn(input, 'name')) throw new TypeError('Outfit create requires name');
   return Object.freeze({
     name: canonicalName(input.name),
-    ...(input.style !== undefined ? { style: canonicalLowerEnum(input.style, STYLES, 'style') } : {}),
-    ...(input.season !== undefined ? { season: canonicalLowerEnum(input.season, SEASONS, 'season') } : {}),
-    ...(input.occasion !== undefined ? { occasion: canonicalLowerEnum(input.occasion, OCCASIONS, 'occasion') } : {}),
-    ...(input.favorite !== undefined ? { favorite: booleanValue(input.favorite, 'favorite') } : {}),
+    ...(Object.hasOwn(input, 'style') ? { style: canonicalLowerEnum(input.style, STYLES, 'style') } : {}),
+    ...(Object.hasOwn(input, 'season') ? { season: canonicalLowerEnum(input.season, SEASONS, 'season') } : {}),
+    ...(Object.hasOwn(input, 'occasion') ? { occasion: canonicalLowerEnum(input.occasion, OCCASIONS, 'occasion') } : {}),
+    ...(Object.hasOwn(input, 'favorite') ? { favorite: booleanValue(input.favorite, 'favorite') } : {}),
   });
 }
 
@@ -95,14 +95,15 @@ function metadataPatch(input) {
   assertPlainObject(input, 'Outfit metadata patch');
   const allowed = ['name', 'style', 'season', 'occasion', 'favorite'];
   assertOnlyKeys(input, allowed, 'Outfit metadata patch');
-  if (Object.keys(input).length === 0) throw new TypeError('Outfit metadata patch must change at least one field');
-  return Object.freeze({
-    ...(input.name !== undefined ? { name: canonicalName(input.name) } : {}),
-    ...(input.style !== undefined ? { style: canonicalLowerEnum(input.style, STYLES, 'style') } : {}),
-    ...(input.season !== undefined ? { season: canonicalLowerEnum(input.season, SEASONS, 'season') } : {}),
-    ...(input.occasion !== undefined ? { occasion: canonicalLowerEnum(input.occasion, OCCASIONS, 'occasion') } : {}),
-    ...(input.favorite !== undefined ? { favorite: booleanValue(input.favorite, 'favorite') } : {}),
-  });
+  const patch = {
+    ...(Object.hasOwn(input, 'name') ? { name: canonicalName(input.name) } : {}),
+    ...(Object.hasOwn(input, 'style') ? { style: canonicalLowerEnum(input.style, STYLES, 'style') } : {}),
+    ...(Object.hasOwn(input, 'season') ? { season: canonicalLowerEnum(input.season, SEASONS, 'season') } : {}),
+    ...(Object.hasOwn(input, 'occasion') ? { occasion: canonicalLowerEnum(input.occasion, OCCASIONS, 'occasion') } : {}),
+    ...(Object.hasOwn(input, 'favorite') ? { favorite: booleanValue(input.favorite, 'favorite') } : {}),
+  };
+  if (Object.keys(patch).length === 0) throw new TypeError('Outfit metadata patch must change at least one field');
+  return Object.freeze(patch);
 }
 
 function entryBody(input) {
@@ -111,7 +112,7 @@ function entryBody(input) {
   if (!Object.hasOwn(input, 'garmentId')) throw new TypeError('Outfit entry requires garmentId');
   return Object.freeze({
     garment_id: canonicalUuidIntent(input.garmentId, 'garmentId'),
-    ...(input.layerRole !== undefined ? { layer_role: canonicalLayerRole(input.layerRole) } : {}),
+    ...(Object.hasOwn(input, 'layerRole') ? { layer_role: canonicalLayerRole(input.layerRole) } : {}),
   });
 }
 
@@ -138,6 +139,11 @@ function normalizeOutfit(value) {
   const entries = value.entries.map((entry, index) => normalizeEntry(entry, index));
   if (entries.some((entry, index) => entry.position !== index)) throw new TypeError('Managed Outfit entries must have contiguous canonical positions');
   if (new Set(entries.map(entry => entry.entryId)).size !== entries.length) throw new TypeError('Managed Outfit entry IDs must be unique');
+  const referenceReadiness = exactEnum(value.reference_readiness, OUTFIT_READINESS, 'reference_readiness');
+  const expectedReadiness = deriveOutfitReadiness(entries);
+  if (referenceReadiness !== expectedReadiness) {
+    throw new TypeError(`Managed Outfit aggregate readiness ${referenceReadiness} does not match canonical entries (${expectedReadiness})`);
+  }
   return Object.freeze({
     id: canonicalUuidResponse(value.id, 'id'),
     name: canonicalResponseName(value.name),
@@ -147,7 +153,7 @@ function normalizeOutfit(value) {
     favorite: booleanValue(value.favorite, 'favorite'),
     status: exactEnum(value.status, new Set(['ACTIVE','ARCHIVED']), 'status'),
     revision: positiveSafeInteger(value.revision, 'revision'),
-    referenceReadiness: exactEnum(value.reference_readiness, OUTFIT_READINESS, 'reference_readiness'),
+    referenceReadiness,
     entries: Object.freeze(entries),
     createdAt: canonicalTimestamp(value.created_at, 'created_at'),
     updatedAt: canonicalTimestamp(value.updated_at, 'updated_at'),
@@ -169,6 +175,13 @@ function normalizeEntry(value, index) {
     ...(value.garment_category !== undefined ? { garmentCategory: exactLowerEnum(value.garment_category, GARMENT_CATEGORIES, `entries[${index}].garment_category`) } : {}),
     referenceReadiness: exactEnum(value.reference_readiness, ENTRY_READINESS, `entries[${index}].reference_readiness`),
   });
+}
+
+function deriveOutfitReadiness(entries) {
+  if (entries.length === 0) return 'EMPTY';
+  if (entries.some(entry => entry.referenceReadiness === 'GARMENT_UNAVAILABLE')) return 'GARMENT_UNAVAILABLE';
+  if (entries.some(entry => entry.referenceReadiness === 'ROLE_REVIEW_REQUIRED')) return 'ROLE_REVIEW_REQUIRED';
+  return 'REFERENCES_READY';
 }
 
 function json(method, body) {
