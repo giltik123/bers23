@@ -34,7 +34,7 @@ test('readiness, preview and terminal states stay aligned with server-owned clos
     assert.ok(application.includes(`'${status}'`), `application result must retain ${status}`);
   }
   assert.ok(preview.includes("status: 'PREVIEW_READY'"));
-  assert.ok(application.includes("status: 'PREVIEW_READY'"));
+  assert.match(application, /value\.status !== 'PREVIEW_READY'/);
   assert.ok(product.includes("status: 'WARP_PREPARED'"));
   assert.ok(product.includes("status: 'TEXTURE_PREPARED'"));
   assert.ok(product.includes("'PREREQUISITE' | 'WARP_PENDING'"));
