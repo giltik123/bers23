@@ -18,6 +18,7 @@ import { LocalCompositeOutputUploadService } from './core/workflow/LocalComposit
 import { createCanonicalNodeHttpAdapter } from './core/http/canonicalNodeHttpAdapter.ts';
 import { applyCoreSecurityHeaders } from './core/http/securityHeaders.ts';
 import { checkGarmentSchema, migrateGarmentSchema } from './core/fashion/garmentSchema.ts';
+import { checkExecutionRunSchema, migrateExecutionRunSchema } from './core/execution/executionRunSchema.ts';
 import { PostgresGarmentStore } from './core/fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from './core/fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresGarmentCollectionStore } from './core/fashion/postgresGarmentCollectionStore.ts';
@@ -34,10 +35,15 @@ const LEGACY_FASHION_PREPARE_PATHS = new Set([
 export async function startCoreServer() {
   const config = loadCoreServerConfig(); const production = await createProductionCore(config); let accepting = true;
   try {
-    if (config.nodeEnv === 'test') await migrateGarmentSchema(production.transactions.pool);
-    else await checkGarmentSchema(production.transactions.pool);
+    if (config.nodeEnv === 'test') {
+      await migrateGarmentSchema(production.transactions.pool);
+      await migrateExecutionRunSchema(production.transactions.pool);
+    } else {
+      await checkGarmentSchema(production.transactions.pool);
+      await checkExecutionRunSchema(production.transactions.pool);
+    }
   } catch (error) { await production.close(); throw error; }
-  const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); await checkGarmentSchema(production.transactions.pool); return true; } catch { return false; } };
+  const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); await checkGarmentSchema(production.transactions.pool); await checkExecutionRunSchema(production.transactions.pool); return true; } catch { return false; } };
   const adapter = createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
   const garments = new PostgresGarmentStore(production.transactions.pool);
   const wardrobe = new PostgresGarmentWardrobeStore(production.transactions.pool);
