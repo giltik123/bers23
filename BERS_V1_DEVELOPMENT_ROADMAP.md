@@ -1,6 +1,6 @@
 # BERS v1 Development Roadmap
 
-**Status: CANONICAL PRE-RELEASE PROGRAM CANDIDATE**
+**Status: CANONICAL PRE-RELEASE PROGRAM**
 
 This document defines the development sequence from the current BERS architecture to the exact `BERS_V1_RC` and final `BERS v1.0 RELEASE` coordinates tracked by #365.
 
@@ -20,6 +20,8 @@ Primary tracking references:
 ## 1. Program decision
 
 BERS v1 is not only a Core/Editor/Fashion release.
+
+`main` is the **only long-lived development and release line**. BERS will not create a separate long-lived `release`, `rc`, `stable`, `v1` or equivalent branch. `BERS_V1_RC` and `BERS v1.0 RELEASE` are exact accepted SHAs on continuously improving `main`. Short-lived PR branches are review/CI mechanisms only; they carry no independent product or release authority and are discarded after convergence into `main`.
 
 The following workstreams are part of the **mandatory pre-release development program** and are not deferred to a post-v1 roadmap:
 
@@ -47,7 +49,8 @@ All work below obeys these rules:
 - image-producing work ends as a canonical candidate Artifact; Project mutation requires explicit Accept;
 - exact source lineage and stale-source protection remain mandatory;
 - exact-head acceptance belongs to the final commit under review;
-- one implementation line -> one focused branch -> one focused PR;
+- one implementation slice -> one short-lived review branch -> one focused PR -> convergence into `main`;
+- no long-lived parallel release/development line may compete with `main`;
 - no Base44 authority may be reintroduced.
 
 ## 3. Readiness classes used by this roadmap
@@ -212,14 +215,14 @@ Run these tracks in parallel with Stages B/C whenever they do not share implemen
 
 #### D5 — Tiny-SD
 
-- finish D6 accelerated real-device and practical image-quality admission;
+- finish Tiny-SD **Sprint 6.42D6 accelerated real-device/practical-quality admission tracked by #180**;
 - characterize cross-run ONNX reproducibility drift without weakening numeric gates;
 - do not promote a ~GB runtime merely because it executes;
 - record an explicit `ADVANCE`, `LIMITED_TIER`, or `REJECT_FOR_PRODUCT_DEFAULT` decision.
 
 #### D6 — Kandinsky constrained refinement
 
-- reproduce closed D2 conditioning bundles from clean pinned environments;
+- reproduce the **Kandinsky F5 D2 conditioning bundles tracked under #349** from clean pinned environments;
 - decoder-only parity;
 - actual package/RAM/VRAM/latency measurements;
 - real-image F5 comparison against deterministic F4 and Big-LaMa;
