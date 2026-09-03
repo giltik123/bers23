@@ -4,6 +4,7 @@ import type { TransactionStore } from '../../transactions/application/ports.ts';
 import { TransactionService } from '../../transactions/application/transactionService.ts';
 import { CreativeExecutionService, type CreativeExecutionServiceDependencies } from '../application/creativeExecutionService.ts';
 import { TransactionBillingAuthorityAdapter } from '../billing/TransactionBillingAuthorityAdapter.ts';
+import type { ExecutionRunRegistry } from '../execution/executionRunRegistry.ts';
 import { createCreativeExecuteHandler } from '../http/creativeExecuteHandler.ts';
 import { createCreativeLifecycleHandlers } from '../http/creativeLifecycleHandlers.ts';
 
@@ -31,6 +32,8 @@ export type CreativeCoreCompositionInput = Readonly<{
   canonical: Omit<CreativeExecutionPlatformRuntimeDependencies, 'billing'>;
   transactions: TransactionService;
   transactionStore: TransactionStore;
+  /** Required by production in the promotion slice; optional here for isolated composition fixtures. */
+  executionRuns?: ExecutionRunRegistry;
   ownsArtifacts: CreativeExecutionServiceDependencies['ownsArtifacts'];
   hydrateArtifacts?: CreativeExecutionServiceDependencies['hydrateArtifacts'];
   persistFinal?: CreativeExecutionServiceDependencies['persistFinal'];
@@ -51,6 +54,7 @@ function createCreativeApplicationCore(input: CreativeCoreCompositionInput) {
     hydrateArtifacts: input.hydrateArtifacts,
     persistFinal: input.persistFinal,
     mintFinalDelivery: input.mintFinalDelivery,
+    executionRuns: input.executionRuns,
     creditsPerEdit: input.creditsPerEdit,
     hardBudgetCredits: input.hardBudgetCredits,
   });

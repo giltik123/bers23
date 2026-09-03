@@ -1,0 +1,122 @@
+name: Execution Fabric Creative production run binding
+
+on:
+  push:
+    branches:
+      - execution-fabric-creative-production-binding-staging
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/core/application/creativeExecutionService.ts'
+      - 'server/core/composition/createCreativeCore.ts'
+      - 'server/core/composition/createProductionCore.ts'
+      - 'server/core/execution/**'
+      - 'tests/creative-execution-run-binding.test.ts'
+      - 'tests/creative-execution-run-restart-postgres.test.ts'
+      - 'tests/canonical-product-vertical-slice.test.ts'
+      - '.github/workflows/execution-fabric-creative-production-binding.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  creative-production-run-binding:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: creative_run_binding_test
+          POSTGRES_USER: creative_run_binding_test
+          POSTGRES_PASSWORD: creative_run_binding_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U creative_run_binding_test -d creative_run_binding_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://creative_run_binding_test:creative_run_binding_test@127.0.0.1:5432/creative_run_binding_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck Core server
+        run: npm run server:typecheck
+      - name: Build production Core and retain migration 034
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/034_execution_run_registry.sql
+      - name: Prove production database migration and readiness
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Bundle Creative durable binding acceptance
+        run: |
+          mkdir -p .test-cache/creative-production-binding
+          node --input-type=module <<'EOF'
+          import { build } from 'esbuild';
+          for (const [entry, outfile] of [
+            ['tests/creative-execution-run-binding.test.ts', '.test-cache/creative-production-binding/creative-execution-run-binding.test.mjs'],
+            ['tests/creative-execution-run-restart-postgres.test.ts', '.test-cache/creative-production-binding/creative-execution-run-restart-postgres.test.mjs'],
+            ['tests/canonical-product-vertical-slice.test.ts', '.test-cache/creative-production-binding/canonical-product-vertical-slice.test.mjs'],
+          ]) await build({
+            entryPoints: [entry],
+            bundle: true,
+            platform: 'node',
+            format: 'esm',
+            target: 'node24',
+            outfile,
+            external: ['pg', 'sharp', 'node:*'],
+          });
+          EOF
+      - name: Prove service lifecycle ordering and replay guard
+        run: node --test .test-cache/creative-production-binding/creative-execution-run-binding.test.mjs
+      - name: Prove PostgreSQL process-restart replay cannot redispatch spend or provider work
+        run: node --test --test-concurrency=1 .test-cache/creative-production-binding/creative-execution-run-restart-postgres.test.mjs
+      - name: Preserve accepted Creative provider Billing and scope semantics
+        run: node --test .test-cache/creative-production-binding/canonical-product-vertical-slice.test.mjs
+      - name: Prove production composition is fail-closed on durable registry readiness
+        run: |
+          set -euo pipefail
+          grep -q 'checkExecutionRunSchema(transactions.pool)' server/core/composition/createProductionCore.ts
+          grep -q 'migrateExecutionRunSchema(transactions.pool)' server/core/composition/createProductionCore.ts
+          grep -q 'new PostgresExecutionRunRegistry(transactions.pool)' server/core/composition/createProductionCore.ts
+          grep -q '^      executionRuns,$' server/core/composition/createProductionCore.ts
+          grep -q 'executionRuns: input.executionRuns' server/core/composition/createCreativeCore.ts
+          grep -q 'executionRuns.issue' server/core/application/creativeExecutionService.ts
+          grep -q 'creative_reconciliation_required' server/core/application/creativeExecutionService.ts
+          grep -q "outcome.status === 'UNKNOWN'" server/core/application/creativeExecutionService.ts
+          ! grep -q 'executionRuns.cancel' server/core/application/creativeExecutionService.ts
+      - name: Reject authority widening in Creative binding slice
+        run: |
+          set -euo pipefail
+          FILES=(
+            server/core/application/creativeExecutionService.ts
+            server/core/composition/createCreativeCore.ts
+            server/core/composition/createProductionCore.ts
+          )
+          ! grep -E -q '/api/core/(jobs|agent|automation)|JobRecord|coreClient\.entities|FASHN|stripe' "${FILES[@]}"
+      - name: Check committed diff whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA:-}" ]; then
+            git diff --check "$BASE_SHA"..HEAD
+          else
+            git diff --check HEAD^..HEAD
+          fi
