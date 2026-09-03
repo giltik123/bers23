@@ -55,7 +55,7 @@ type IntentBody = Readonly<Record<(typeof INTENT_KEYS)[number], string>>;
 export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductHttpAdapterInput) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const parsed = parseRequestUrl(request.url);
-    if (!parsed.ok) {
+    if (parsed.ok === false) {
       send(response, parsed.status, { error: parsed.code, message: parsed.message });
       return true;
     }
