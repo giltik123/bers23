@@ -54,6 +54,9 @@ jobs:
           FINALIZER=scripts/kandinsky-conditioning-finalize-manifest.mjs
           grep -q 'actual != expected' "$ENTRY"
           grep -q 'entry.is_symlink' "$ENTRY"
+          grep -q 'MAX_SAFE_INTEGER = 9_007_199_254_740_991' "$ENTRY"
+          grep -q 'bers-kandinsky-d2c-d1-' "$ENTRY"
+          grep -q 'd1ManifestSha256' "$ENTRY"
           grep -q 'hashBeforeUseRequired' "$IMPL"
           grep -q 'local_files_only=True' "$IMPL"
           grep -q 'use_safetensors=True' "$IMPL"
@@ -65,6 +68,8 @@ jobs:
           grep -q 'positiveEmbeddingSourceCandidateId' "$IMPL"
           grep -q 'C candidate requires both --positive-source-manifest and --positive-source-bundle' "$IMPL"
           grep -q 'C image_embeds are not byte-identical to accepted B image_embeds' "$FINALIZER"
+          grep -q 'not bound to the exact D1 manifest bytes' "$FINALIZER"
+          grep -q 'safe-integer contract' "$FINALIZER"
           grep -q "conditioningCandidateIdentity" "$FINALIZER"
           ! grep -R -E 'from .*_kandinsky-conditioning-builder-impl|_kandinsky-conditioning-builder-impl.py' src server tests --exclude='kandinsky-conditioning-builder-entry.test.py'
           test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0

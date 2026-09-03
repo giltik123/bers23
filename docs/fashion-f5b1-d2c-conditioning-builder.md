@@ -10,14 +10,17 @@ The authoritative build is deliberately offline and expensive:
 
 1. Materialize a **sealed prior mirror** containing exactly the D1 allowlist: every `offlinePrior.safeWeights` file plus every `offlinePrior.requiredConfigIdentity.files` file. No symlink and no extra file is accepted.
 2. Run inside a container pinned by immutable image digest with networking disabled at the container boundary.
-3. The public builder entrypoint re-checks exact file-set closure before invoking the internal implementation.
-4. The implementation streams SHA-256 over every required prior weight/config before model load.
-5. It enforces exact Python/package/platform identities from a `TESTED_EXACT` toolchain lock.
-6. It verifies the installed historical `KandinskyV22PriorPipeline` source by Git-blob SHA `3b9974a5dd70e8b775caa01efab6b637ff22d9e5` and Diffusers version `0.18.0.dev0`.
-7. Execution is CPU FP32, one intra-op thread, one inter-op thread, deterministic algorithms enabled, fixed CPU generator seed, no external latents.
-8. The builder consumes one accepted D2b prompt contract and verifies both the caller-provided expected SHA and the hard-bound accepted A/B/C contract SHA.
-9. Output is only `image_embeds` and `negative_image_embeds` in safetensors plus canonical builder evidence.
-10. A Node finalizer re-binds builder evidence to the D1 trust root and accepted D2a/D2b contracts, re-parses the actual safetensors bytes, and only then emits the canonical research manifest.
+3. The public builder entrypoint reads the D1 manifest bytes once, computes their SHA-256, validates the prior allowlist from those bytes, and creates a private immutable snapshot used by the internal builder. This removes a D1 read/hash TOCTOU between trust binding and model load.
+4. The public entrypoint also rejects seeds outside JavaScript's non-negative safe-integer range before any expensive prior execution.
+5. The internal implementation streams SHA-256 over every required prior weight/config before model load.
+6. It enforces exact Python/package/platform identities from a `TESTED_EXACT` toolchain lock.
+7. It verifies the installed historical `KandinskyV22PriorPipeline` source by Git-blob SHA `3b9974a5dd70e8b775caa01efab6b637ff22d9e5` and Diffusers version `0.18.0.dev0`.
+8. Execution is CPU FP32, one intra-op thread, one inter-op thread, deterministic algorithms enabled, fixed CPU generator seed, no external latents.
+9. The builder consumes one accepted D2b prompt contract and verifies both the caller-provided expected SHA and the hard-bound accepted A/B/C contract SHA.
+10. Output is only `image_embeds` and `negative_image_embeds` in safetensors plus canonical builder evidence. The public boundary seals that evidence to the exact D1 manifest byte SHA.
+11. A Node finalizer requires the same exact D1 byte SHA, re-binds builder evidence to the D1 trust root and accepted D2a/D2b contracts, rejects non-safe-integer seed evidence, re-parses the actual safetensors bytes, and only then emits the canonical research manifest.
+
+The internal implementation is deliberately not a supported public entrypoint. Direct internal evidence is provisional and cannot pass the finalizer because it lacks the public boundary's exact `d1ManifestSha256` seal. Repository policy tests also forbid product/server code from importing or invoking the internal implementation.
 
 ## B → C experimental isolation
 
@@ -63,6 +66,7 @@ Historical Diffusers revision `746215670a61af1034c470d0b6555be9c60cb7b6` declare
 One successful generation is insufficient. Promotion from `UNPROVEN` conditioning requires at least:
 
 - two clean builds from the same tested container digest and sealed prior mirror;
+- exact D1 manifest byte identity on both builds;
 - byte-identical safetensors bundle SHA-256 for the same candidate/seed/source bundle;
 - byte-identical canonical manifest SHA-256;
 - exact tensor dtype/shape and finite-value checks;
