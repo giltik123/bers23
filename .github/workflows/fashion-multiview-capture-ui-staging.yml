@@ -1,0 +1,59 @@
+name: Fashion multi-view capture UI staging
+
+on:
+  push:
+    branches:
+      - fashion-multiview-capture-ui-staging
+    paths:
+      - 'src/application/fashion/canonicalWardrobeViewModel.js'
+      - 'src/components/editor/fashion/GarmentCaptureDialog.jsx'
+      - 'src/components/editor/fashion/FashionPanel.jsx'
+      - 'tests/canonical-wardrobe-view-model.test.mjs'
+      - 'tests/canonical-wardrobe-multiview.test.mjs'
+      - 'tests/fashion-multiview-capture-ui.test.mjs'
+      - 'tests/editor-zero-object-navigation.test.mjs'
+      - '.github/workflows/fashion-multiview-capture-ui-staging.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  multiview-capture-ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Assert exact staging SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Preserve accepted Wardrobe view-model behavior
+        run: node --test tests/canonical-wardrobe-view-model.test.mjs
+      - name: Prove one-shot immutable append and read-only race recovery
+        run: node --test tests/canonical-wardrobe-multiview.test.mjs
+      - name: Prove guided capture UI authority boundary
+        run: |
+          node --test tests/fashion-multiview-capture-ui.test.mjs
+          node --test tests/editor-zero-object-navigation.test.mjs
+      - name: Build production frontend
+        run: npm run build
+      - name: Reject legacy upload and automatic append retry
+        run: |
+          set -euo pipefail
+          FILES=(
+            src/application/fashion/canonicalWardrobeViewModel.js
+            src/components/editor/fashion/GarmentCaptureDialog.jsx
+            src/components/editor/fashion/FashionPanel.jsx
+          )
+          ! grep -E -q 'Core\.UploadFile|coreClient\.entities|garmentManager|wardrobeManager|original_image_url|/assets' "${FILES[@]}"
+          grep -q 'garments.appendView' src/application/fashion/canonicalWardrobeViewModel.js
+          grep -q 'nextCaptureRequests' src/components/editor/fashion/GarmentCaptureDialog.jsx
+          ! grep -q "'UNSPECIFIED'" src/components/editor/fashion/GarmentCaptureDialog.jsx
+      - name: Check committed diff whitespace
+        run: git diff --check HEAD^..HEAD

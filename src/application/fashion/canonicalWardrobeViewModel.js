@@ -41,11 +41,22 @@ export function createCanonicalWardrobeViewModel({ garments, wardrobe }) {
   };
 
   const reloadOne = async (garmentId, expectedMetadata = undefined) => {
-    const [imageAggregate, metadataAggregate] = await Promise.all([
-      garments.get(garmentId),
-      expectedMetadata ? Promise.resolve(expectedMetadata) : wardrobe.get(garmentId),
-    ]);
-    return reconcilePair(imageAggregate, metadataAggregate);
+    let suppliedMetadata = expectedMetadata;
+    let mismatch;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const [imageAggregate, metadataAggregate] = await Promise.all([
+          garments.get(garmentId),
+          suppliedMetadata ? Promise.resolve(suppliedMetadata) : wardrobe.get(garmentId),
+        ]);
+        return reconcilePair(imageAggregate, metadataAggregate);
+      } catch (error) {
+        if (!(error instanceof CanonicalWardrobeSnapshotError) || attempt === 1) throw error;
+        mismatch = error;
+        suppliedMetadata = undefined;
+      }
+    }
+    throw mismatch;
   };
 
   return Object.freeze({
@@ -64,6 +75,17 @@ export function createCanonicalWardrobeViewModel({ garments, wardrobe }) {
         throw new CanonicalWardrobePartialCreateError(created.id, cause);
       }
       return reloadOne(created.id, metadata);
+    },
+    async appendView(item, input) {
+      if (typeof garments.appendView !== 'function') throw new TypeError('Managed Garment client does not expose appendView');
+      const current = canonicalItemIntent(item);
+      await garments.appendView({
+        garmentId: current.id,
+        expectedRevision: current.revision,
+        viewKind: requiredString(input?.viewKind, 'viewKind'),
+        image: input?.image,
+      });
+      return reloadOne(current.id);
     },
     async setFavorite(item, favorite) {
       const current = canonicalItemIntent(item);
