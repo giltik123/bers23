@@ -141,14 +141,16 @@ function cleanup(...runs) {
   for (const run of runs) fs.rmSync(run.tmp, { recursive: true, force: true });
 }
 
-test('F5b.1 D2c B finalizer emits canonical D2a manifest without opening runtime authority', () => {
+test('F5b.1 D2c B finalizer emits canonical schema-v2 manifest without opening runtime authority', () => {
   const run = runFinalizer('B_REALISM_ZERO_NEGATIVE');
   try {
     assert.equal(run.result.status, 0, run.result.stderr);
     const bytes = fs.readFileSync(run.outputPath);
     const parsed = assertCanonicalManifestBytes(bytes, d1);
+    assert.equal(parsed.schemaVersion, 2);
     assert.equal(parsed.conditioning.candidateId, 'B_REALISM_ZERO_NEGATIVE');
     assert.equal(parsed.conditioning.conditioningContractSha256, run.expected.sha256);
+    assert.equal(parsed.conditioning.positiveEmbeddingSource, null);
     assert.equal(parsed.productionExecutable, false);
     assert.equal(parsed.runtimeAuthorityGranted, false);
     assert.equal(parsed.priorRuntimeDependencyAllowed, false);
@@ -159,7 +161,7 @@ test('F5b.1 D2c B finalizer emits canonical D2a manifest without opening runtime
   } finally { cleanup(run); }
 });
 
-test('F5b.1 D2c C finalizer proves byte-identical reuse of accepted B image_embeds', () => {
+test('F5b.1 D2c C finalizer proves and persists byte-identical reuse of accepted B image_embeds', () => {
   const source = runFinalizer('B_REALISM_ZERO_NEGATIVE', { bundle: safetensors([11, 12], [13, 14]) });
   assert.equal(source.result.status, 0, source.result.stderr);
   const target = runFinalizer('C_PRESERVATION_EXPLICIT_NEGATIVE', {
@@ -171,6 +173,7 @@ test('F5b.1 D2c C finalizer proves byte-identical reuse of accepted B image_embe
     const parsed = assertCanonicalManifestBytes(fs.readFileSync(target.outputPath), d1);
     assert.equal(parsed.conditioning.candidateId, 'C_PRESERVATION_EXPLICIT_NEGATIVE');
     assert.equal(parsed.conditioning.negativeMode, 'EXPLICIT_NEGATIVE_PRIOR');
+    assert.deepEqual(parsed.conditioning.positiveEmbeddingSource, sourceEvidence(source));
   } finally { cleanup(target, source); }
 });
 
