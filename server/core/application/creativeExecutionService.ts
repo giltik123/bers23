@@ -105,11 +105,15 @@ export class CreativeExecutionService {
     }
 
     if (durableRun && this.dependencies.executionRuns) {
-      if (outcome.status === 'SUCCESS') await this.dependencies.executionRuns.succeed(scope, durableRun.runId);
-      else if (outcome.status === 'FAILED') await this.dependencies.executionRuns.fail(scope, durableRun.runId, 'CREATIVE_OUTCOME_FAILED');
-      // UNKNOWN deliberately remains RUNNING. Provider/Billing reconciliation is
-      // the owning authority for resolving it; declaring FAILED/CANCELLED here
-      // would create false terminal truth.
+      if (outcome.status === 'SUCCESS') {
+        await this.dependencies.executionRuns.succeed(scope, durableRun.runId);
+      } else if (outcome.status === 'FAILED') {
+        await this.dependencies.executionRuns.fail(scope, durableRun.runId, 'CREATIVE_OUTCOME_FAILED');
+      } else if (outcome.status === 'UNKNOWN') {
+        // Deliberately retain RUNNING. Provider/Billing reconciliation is the
+        // owning authority for resolving UNKNOWN; declaring FAILED/CANCELLED
+        // here would create false terminal truth.
+      }
     }
     this.#results.set(executionId, outcome);
     return outcome;
