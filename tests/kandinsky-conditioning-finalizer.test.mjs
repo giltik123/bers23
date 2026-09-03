@@ -15,7 +15,7 @@ const d1Path = path.join(root, 'src/platform/creative/local-ai/models/kandinsky-
 const finalizer = path.join(root, 'scripts/kandinsky-conditioning-finalize-manifest.mjs');
 const d1 = JSON.parse(fs.readFileSync(d1Path, 'utf8'));
 
-function evidence(candidateId, contractSha) {
+function evidence(candidateId, contractSha, bundleBytes) {
   return {
     schemaVersion: 1,
     stage: 'F5B1_D2C_CONDITIONING_BUILD',
@@ -62,22 +62,25 @@ function evidence(candidateId, contractSha) {
         image_embeds: { dtype: 'F32', shape: [1, 1280] },
         negative_image_embeds: { dtype: 'F32', shape: [1, 1280] },
       },
-      size: 10240,
-      sha256: 'a'.repeat(64),
+      size: bundleBytes.length,
+      sha256: sha256Bytes(bundleBytes),
     },
   };
 }
 
-function runFinalizer(candidateId, mutateEvidence = value => value) {
+function runFinalizer(candidateId, mutateEvidence = value => value, mutateBundle = value => value) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bers-kandinsky-d2c-'));
   const promptPath = path.join(tmp, 'prompt.json');
   const evidencePath = path.join(tmp, 'evidence.json');
+  const bundlePath = path.join(tmp, 'conditioning.safetensors');
   const outputPath = path.join(tmp, 'manifest.json');
   const expected = conditioningPromptContract(candidateId);
   fs.writeFileSync(promptPath, JSON.stringify(expected.contract), 'utf8');
-  const buildEvidence = mutateEvidence(evidence(candidateId, expected.sha256));
+  const originalBundle = Buffer.from('synthetic-conditioning-bundle', 'utf8');
+  const buildEvidence = mutateEvidence(evidence(candidateId, expected.sha256, originalBundle));
   fs.writeFileSync(evidencePath, JSON.stringify(buildEvidence), 'utf8');
-  const result = spawnSync(process.execPath, [finalizer, '--d1', d1Path, '--prompt', promptPath, '--evidence', evidencePath, '--output', outputPath], { encoding: 'utf8' });
+  fs.writeFileSync(bundlePath, mutateBundle(originalBundle));
+  const result = spawnSync(process.execPath, [finalizer, '--d1', d1Path, '--prompt', promptPath, '--evidence', evidencePath, '--bundle', bundlePath, '--output', outputPath], { encoding: 'utf8' });
   return { tmp, result, outputPath, expected };
 }
 
@@ -104,6 +107,14 @@ test('F5b.1 D2c finalizer rejects evidence rebound to a different conditioning c
   try {
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /not bound to the accepted D2b prompt contract/i);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('F5b.1 D2c finalizer rejects actual bundle bytes that drift from builder evidence', () => {
+  const { tmp, result } = runFinalizer('B_REALISM_ZERO_NEGATIVE', value => value, bytes => Buffer.concat([bytes, Buffer.from('drift')]));
+  try {
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /final bundle bytes do not match builder evidence identity/i);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
