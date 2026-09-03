@@ -97,7 +97,7 @@ export const coreClient = Object.freeze({
     loginViaEmailPassword: (email, password) => request('/auth/password/login', json('POST', { email, password })),
     logout: async (returnTo) => {
       await request('/auth/logout', { method: 'POST' });
-      if (returnTo && typeof window !== 'undefined') window.location.assign(`/login?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`);
+      if (returnTo && typeof window !== 'undefined') window.location.assign(`/login?return_to=${encodeURIComponent(returnTo ? safeReturnTo(returnTo) : '/')}`);
     },
     redirectToLogin: (returnTo) => window.location.assign(`/login?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`),
     loginWithProvider: (provider, returnTo = '/') => window.location.assign(`${API_ROOT}/auth/login/${encodeURIComponent(provider)}?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`),
@@ -119,6 +119,7 @@ export const coreClient = Object.freeze({
     prepareTryOn: (payload) => request('/fashion/try-on/prepare', json('POST', payload)),
     continueTryOn: (payload) => request('/fashion/try-on/continue', json('POST', payload)),
     getTryOnResult: (payload) => request('/fashion/try-on/result', json('POST', payload)),
+    getTryOnPreview: (payload) => request('/fashion/try-on/preview', json('POST', payload)),
     loadTryOnWarpInput: async ({ ticketId, projectId }) => {
       const delivered = await requestBytes(`/fashion/try-on/warp/${encodeURIComponent(ticketId)}/input?${new URLSearchParams({ projectId })}`);
       return Uint8Array.from(delivered.bytes);
@@ -159,7 +160,7 @@ export const coreClient = Object.freeze({
       const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
       const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
       const pixelCount = width * height;
-      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core Crop input byte length does not match its canonical geometry');
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core Crop input delivery byte length does not match its canonical geometry');
       return Object.freeze({
         width,
         height,
@@ -175,7 +176,7 @@ export const coreClient = Object.freeze({
       const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
       const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
       const pixelCount = width * height;
-      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core Resize input byte length does not match its canonical geometry');
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core Resize input delivery byte length does not match its canonical geometry');
       return Object.freeze({
         width,
         height,
@@ -191,7 +192,7 @@ export const coreClient = Object.freeze({
       const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
       const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
       const pixelCount = width * height;
-      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core orthogonal-transform input byte length does not match its canonical geometry');
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core orthogonal-transform input delivery byte length does not match its canonical geometry');
       return Object.freeze({
         width,
         height,
@@ -207,7 +208,7 @@ export const coreClient = Object.freeze({
       const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
       const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
       const pixelCount = width * height;
-      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core super-resolution input byte length does not match its geometry');
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core super-resolution input delivery byte length does not match its geometry');
       return Object.freeze({
         width,
         height,
