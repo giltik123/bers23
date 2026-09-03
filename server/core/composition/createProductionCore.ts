@@ -20,6 +20,8 @@ import { PostgresAuthSecurityStore } from '../auth/postgresAuthSecurityStore.ts'
 import { ResendEmailSender } from '../auth/resendEmailSender.ts';
 import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
+import { checkExecutionRunSchema, migrateExecutionRunSchema } from '../execution/executionRunSchema.ts';
+import { PostgresExecutionRunRegistry } from '../execution/PostgresExecutionRunRegistry.ts';
 import { LocalCropExecutionService, LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalOrthogonalTransformExecutionService, LocalResizeExecutionService, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, OrthogonalTransformInputDeliveryService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../localExecution/productionLocalExecutorPolicy.ts';
@@ -63,6 +65,8 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       await checkFinalImageLineageSchema(transactions.pool);
     }
     await checkProjectSchema(transactions.pool);
+    if (config.nodeEnv === 'test') await migrateExecutionRunSchema(transactions.pool);
+    else await checkExecutionRunSchema(transactions.pool);
     if (config.nodeEnv === 'test') {
       await migrateAuthSchema(transactions.pool);
       await migrateLocalExecutionUploadSchema(transactions.pool);
@@ -83,6 +87,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     const hydrator = new CanonicalArtifactHydrator(artifacts, fetcher);
     const decision = new CanonicalDecisionService();
     const planning = new CanonicalPlanningService();
+    const executionRuns = new PostgresExecutionRunRegistry(transactions.pool);
     const localExecutionAdmission = new PostgresLocalExecutionLedger(transactions.pool);
     const localExecution = new LocalExecutionTicketAuthority(localExecutionAdmission, {
       now,
@@ -125,6 +130,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     const core = createCreativeCore({
       transactions: transactions.transactions,
       transactionStore: transactions.store,
+      executionRuns,
       ownsArtifacts,
       hydrateArtifacts,
       persistFinal: async (scope, executionId, artifact) => {
