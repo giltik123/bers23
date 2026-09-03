@@ -11,6 +11,8 @@ const SOURCE = 'stored-final-source';
 const REQUEST = 'fashion-tryon:33333333-3333-4333-8333-333333333333';
 const INTENT = Object.freeze({ projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT, clientRequestId: REQUEST });
 const READY = Object.freeze({ status: 'READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT, categoryGroup: 'tops' });
+const PREVIEW_URL = '/api/core/artifacts/results/payload_token.signature_token';
+const PREVIEW_EXPIRES_AT = 1_900_000_000_000;
 
 function harness(overrides = {}) {
   const calls = [];
@@ -27,6 +29,13 @@ function harness(overrides = {}) {
     getTryOnResult: async (intent) => {
       calls.push(['result', intent]);
       return { status: 'FINAL_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT, artifactId: 'canonical-final' };
+    },
+    getTryOnPreview: async (intent) => {
+      calls.push(['preview', intent]);
+      return {
+        status: 'PREVIEW_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT,
+        artifactId: 'canonical-final', previewUrl: PREVIEW_URL, previewExpiresAt: PREVIEW_EXPIRES_AT,
+      };
     },
     ...overrides.core,
   };
@@ -79,14 +88,44 @@ test('resume never prepares or re-runs warp', async () => {
   assert.deepEqual(calls.map((entry) => entry[0]), ['continue', 'texture', 'result']);
 });
 
-test('recover is read-only and never advances or executes pixels', async () => {
+test('recover obtains a short-lived preview through stable intent and executes no pixels', async () => {
+  const { app, calls } = harness();
+  assert.deepEqual(await app.recover(INTENT), {
+    status: 'FINAL_READY', artifactId: 'canonical-final', preview: PREVIEW_URL, previewExpiresAt: PREVIEW_EXPIRES_AT,
+  });
+  assert.deepEqual(calls.map((entry) => entry[0]), ['preview']);
+});
+
+test('recover preserves non-terminal Core state without advancing execution', async () => {
   const { app, calls } = harness({
     core: {
-      getTryOnResult: async (intent) => { calls.push(['result', intent]); return { status: 'TEXTURE_PENDING', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT }; },
+      getTryOnPreview: async (intent) => { calls.push(['preview', intent]); return { status: 'TEXTURE_PENDING', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT }; },
     },
   });
   assert.deepEqual(await app.recover(INTENT), { status: 'TEXTURE_PENDING' });
-  assert.deepEqual(calls.map((entry) => entry[0]), ['result']);
+  assert.deepEqual(calls.map((entry) => entry[0]), ['preview']);
+});
+
+test('recovery preview rejects unstable echo, foreign or non-canonical delivery URL, and malformed expiry', async () => {
+  for (const response of [
+    { status: 'PREVIEW_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', artifactId: 'canonical-final', previewUrl: PREVIEW_URL, previewExpiresAt: PREVIEW_EXPIRES_AT },
+    { status: 'PREVIEW_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT, artifactId: 'canonical-final', previewUrl: 'https://example.test/forbidden', previewExpiresAt: PREVIEW_EXPIRES_AT },
+    { status: 'PREVIEW_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT, artifactId: 'canonical-final', previewUrl: '/api/core/artifacts/results/payload.signature/../../forbidden', previewExpiresAt: PREVIEW_EXPIRES_AT },
+    { status: 'PREVIEW_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT, artifactId: 'canonical-final', previewUrl: '/api/core/artifacts/results/payload.signature?x=1', previewExpiresAt: PREVIEW_EXPIRES_AT },
+    { status: 'PREVIEW_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT, artifactId: 'canonical-final', previewUrl: PREVIEW_URL, previewExpiresAt: Number.MAX_SAFE_INTEGER + 1 },
+  ]) {
+    const { app } = harness({ core: { getTryOnPreview: async () => response } });
+    await assert.rejects(() => app.recover(INTENT));
+  }
+});
+
+test('preview recovery refuses FINAL identity without a preview delivery capability', async () => {
+  const { app } = harness({
+    core: {
+      getTryOnPreview: async () => ({ status: 'FINAL_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT, artifactId: 'canonical-final' }),
+    },
+  });
+  await assert.rejects(() => app.recover(INTENT), /without preview delivery/);
 });
 
 test('stable intent mismatch and authority-shaped client fields fail closed', async () => {
@@ -101,10 +140,13 @@ test('stable intent mismatch and authority-shaped client fields fail closed', as
   assert.deepEqual(calls, []);
 });
 
-test('unknown Core fields are rejected rather than becoming browser state authority', async () => {
+test('unknown Core preview fields are rejected rather than becoming browser state authority', async () => {
   const { app } = harness({
     core: {
-      getTryOnResult: async () => ({ status: 'FINAL_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT, artifactId: 'canonical-final', storageId: 'forbidden' }),
+      getTryOnPreview: async () => ({
+        status: 'PREVIEW_READY', projectId: PROJECT, sourceArtifactId: SOURCE, garmentId: GARMENT,
+        artifactId: 'canonical-final', previewUrl: PREVIEW_URL, previewExpiresAt: PREVIEW_EXPIRES_AT, storageId: 'forbidden',
+      }),
     },
   });
   await assert.rejects(() => app.recover(INTENT), /unknown or missing fields/);
