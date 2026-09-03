@@ -24,10 +24,15 @@ test('F4b.6b.5 public server routing has exactly one Fashion execution facade an
 
 test('F4b.6b.5 browser client exposes only product phase methods for Fashion execution', () => {
   for (const method of [
-    'prepareTryOn', 'continueTryOn', 'getTryOnResult',
+    'prepareTryOn', 'continueTryOn', 'getTryOnResult', 'getTryOnPreview',
     'loadTryOnWarpInput', 'submitTryOnWarpCandidate',
     'loadTryOnTextureInput', 'submitTryOnTextureCandidate',
   ]) assert.match(coreClient, new RegExp(`\\b${method}\\b`), method);
+
+  assert.match(
+    coreClient,
+    /getTryOnPreview:\s*\(payload\)\s*=>\s*request\('\/fashion\/try-on\/preview',\s*json\('POST',\s*payload\)\)/,
+  );
 
   for (const forbidden of [
     'prepareGarmentMeshWarp', 'loadGarmentMeshWarpInput', 'uploadGarmentMeshWarpImage', 'submitGarmentMeshWarp',
