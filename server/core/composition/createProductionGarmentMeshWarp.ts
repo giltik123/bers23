@@ -12,6 +12,7 @@ import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineag
 import { FashionTryOnFinalResultService } from '../fashion/FashionTryOnFinalResultService.ts';
 import { FashionTryOnProductService } from '../fashion/FashionTryOnProductService.ts';
 import { FashionTryOnReadinessService } from '../fashion/FashionTryOnReadinessService.ts';
+import { FashionTryOnRecoveryPreviewService } from '../fashion/FashionTryOnRecoveryPreviewService.ts';
 import { FashionTryOnTextureContinuationService } from '../fashion/FashionTryOnTextureContinuationService.ts';
 import { FashionTryOnWarpOrchestrationService } from '../fashion/FashionTryOnWarpOrchestrationService.ts';
 import { ManualParametricGarmentAdmissionService } from '../fashion/ManualParametricGarmentAdmissionService.ts';
@@ -148,6 +149,17 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     readiness: tryOnReadiness,
     finalRecovery,
   });
+  const tryOnPreview = new FashionTryOnRecoveryPreviewService({
+    result: tryOnResult,
+    delivery: Object.freeze({
+      resolveFinalEvidence: (scope, artifactId) => input.artifacts.resolveStoredImageEvidence(scope, artifactId),
+      mintFinalDelivery: (scope, storageId, expiresAt) => {
+        const token = input.artifacts.external.issueStoredFinalDelivery(storageId, scope, expiresAt);
+        return `/api/core/artifacts/results/${encodeURIComponent(token)}`;
+      },
+    }),
+    now: input.now,
+  });
 
   const opaqueInputs = new FashionTryOnOpaqueInputProjectionService({
     admission: input.admission,
@@ -172,6 +184,7 @@ export async function createProductionGarmentMeshWarp(input: ProductionGarmentMe
     inputs: opaqueInputs,
     candidates: opaqueCandidates,
     result: tryOnResult,
+    preview: tryOnPreview,
   });
   const tryOn = Object.freeze({
     readiness: tryOnReadiness,
