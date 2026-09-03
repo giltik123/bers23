@@ -1,0 +1,42 @@
+name: Fashion F4b.6d.3 Try-On recovery preview browser binding
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/api/coreClient.js'
+      - 'tests/fashion-tryon-product-cutover-policy.test.mjs'
+      - '.github/workflows/fashion-tryon-recovery-preview-browser-binding-f4b6d3.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-preview-browser-binding:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prove product-only browser binding
+        run: node --test tests/fashion-tryon-product-cutover-policy.test.mjs
+      - name: Keep UI execution and cloud authority closed
+        run: |
+          set -euo pipefail
+          grep -Fq "getTryOnPreview: (payload) => request('/fashion/try-on/preview', json('POST', payload))" src/api/coreClient.js
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+          ! grep -E -q 'getTryOnPreview|previewUrl' src/application/fashion/canonicalTryOnApplication.js
+          ! grep -E -q 'FASHN|provider|billing|credits' src/application/fashion/canonicalTryOnApplication.js
+      - name: Build browser product
+        run: npm run build
+      - name: Check committed diff whitespace
+        run: git diff --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
