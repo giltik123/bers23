@@ -1,0 +1,72 @@
+name: Fashion canonical Wardrobe UI
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/canonicalWardrobeViewModel.js'
+      - 'src/components/editor/fashion/AddGarmentDialog.jsx'
+      - 'src/components/editor/fashion/FashionPanel.jsx'
+      - 'src/api/managedGarmentClient.js'
+      - 'src/api/managedWardrobeClient.js'
+      - 'src/lib/fashion/garmentCategories.js'
+      - 'tests/canonical-wardrobe-view-model.test.mjs'
+      - 'tests/fashion-canonical-wardrobe-ui.test.mjs'
+      - 'tests/fashion-canonical-wardrobe-ui-contract.test.mjs'
+      - 'tests/editor-zero-object-navigation.test.mjs'
+      - '.github/workflows/fashion-canonical-wardrobe-ui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-wardrobe-ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Syntax-check canonical wardrobe view model
+        run: node --check src/application/fashion/canonicalWardrobeViewModel.js
+      - name: Prove coherent F1/F2 snapshot and partial-create semantics
+        run: node --test tests/canonical-wardrobe-view-model.test.mjs
+      - name: Prove canonical Fashion UI and UI-to-client contract
+        run: |
+          node --test tests/fashion-canonical-wardrobe-ui.test.mjs
+          node --test tests/fashion-canonical-wardrobe-ui-contract.test.mjs
+          node --test tests/editor-zero-object-navigation.test.mjs
+      - name: Build production frontend
+        run: npm run build
+      - name: Reject legacy Fashion authority
+        run: |
+          set -euo pipefail
+          FILES=(
+            src/application/fashion/canonicalWardrobeViewModel.js
+            src/components/editor/fashion/AddGarmentDialog.jsx
+            src/components/editor/fashion/FashionPanel.jsx
+          )
+          ! grep -E -q 'garmentManager|wardrobeManager|garmentCollections|outfitManager|Core\.UploadFile|coreClient\.entities|original_image_url|garmentMetadata' "${FILES[@]}"
+          grep -q 'coreClient.fashion.garments' src/components/editor/fashion/FashionPanel.jsx
+          grep -q 'coreClient.fashion.wardrobe' src/components/editor/fashion/FashionPanel.jsx
+          grep -q 'GARMENT_CREATED_METADATA_PENDING' src/application/fashion/canonicalWardrobeViewModel.js
+      - name: Check committed diff whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA:-}" ]; then
+            git diff --check "$BASE_SHA"..HEAD
+          else
+            git diff --check HEAD^..HEAD
+          fi
