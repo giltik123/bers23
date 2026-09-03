@@ -55,6 +55,7 @@ type IntentBody = Readonly<Record<(typeof INTENT_KEYS)[number], string>>;
 export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductHttpAdapterInput) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', 'http://core.invalid');
+    if (url.pathname === `${ROOT}/readiness`) return false;
     if (!url.pathname.startsWith(`${ROOT}/`)) return false;
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || globalThis.crypto.randomUUID();
     response.setHeader('X-Correlation-Id', correlationId);
