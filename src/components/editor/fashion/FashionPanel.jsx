@@ -3,6 +3,8 @@ import { Archive, Camera, Heart, Images, Loader2, Plus, RefreshCw, RotateCcw, Sh
 import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
 import {
+  CanonicalWardrobeAppendOutcomeUncertainError,
+  CanonicalWardrobeAppendReloadError,
   CanonicalWardrobePartialCreateError,
   createCanonicalWardrobeViewModel,
 } from '@/application/fashion/canonicalWardrobeViewModel';
@@ -143,10 +145,18 @@ export default function FashionPanel() {
       replaceItem(next);
       return next;
     } catch (cause) {
-      const message = cause?.message || 'The garment view submission was not confirmed. Inspect the refreshed capture state before retrying.';
-      try { await reload({ quiet: true }); } catch { /* preserve the original append uncertainty */ }
-      setCaptureItem(null);
-      setError(message);
+      const outcomeUncertain = cause instanceof CanonicalWardrobeAppendOutcomeUncertainError
+        || cause?.code === 'GARMENT_VIEW_APPEND_OUTCOME_UNCERTAIN';
+      const committedReloadPending = cause instanceof CanonicalWardrobeAppendReloadError
+        || cause?.code === 'GARMENT_VIEW_APPENDED_RELOAD_PENDING';
+      if (outcomeUncertain || committedReloadPending) {
+        if (cause?.recoveredItem) replaceItem(cause.recoveredItem);
+        else {
+          try { await reload({ quiet: true }); } catch { /* preserve the append recovery status */ }
+        }
+        setCaptureItem(null);
+        setError(cause?.message || 'The garment view submission requires inspection before another upload.');
+      }
       throw cause;
     } finally {
       setBusyId('');
