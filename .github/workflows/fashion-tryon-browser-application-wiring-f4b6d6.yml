@@ -1,0 +1,46 @@
+name: Fashion F4b.6d.6 Try-On browser application wiring
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/application/fashion/createCanonicalTryOnBrowserApplication.js'
+      - 'tests/canonical-tryon-browser-application-wiring.test.mjs'
+      - '.github/workflows/fashion-tryon-browser-application-wiring-f4b6d6.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  browser-application-wiring:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prove canonical browser composition boundary
+        run: node --test tests/canonical-tryon-browser-application-wiring.test.mjs
+      - name: Typecheck product application wiring
+        run: npm run typecheck
+      - name: Build production frontend
+        run: npm run build
+      - name: Keep UI-facing wiring free of parallel authority
+        run: |
+          set -euo pipefail
+          FILE=src/application/fashion/createCanonicalTryOnBrowserApplication.js
+          grep -q 'createCanonicalTryOnApplication' "$FILE"
+          grep -q 'CorePreparedGarmentMeshWarp' "$FILE"
+          grep -q 'CorePreparedGarmentTextureComposite' "$FILE"
+          ! grep -E -q 'coreClient\.localExecution|coreClient\.entities|FASHN|provider|billing|credits|pushEdit|acceptFinal|persistFinal|representationId|anchorSetId|destinationMesh|fetch\(|localStorage|sessionStorage' "$FILE"
+          ! grep -E -q '/fashion/try-on/(warp|texture)/' "$FILE"
+      - name: Check committed diff whitespace
+        run: git diff --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
