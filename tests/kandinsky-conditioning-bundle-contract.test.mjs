@@ -12,10 +12,24 @@ import { conditioningCandidateIdentity } from '../scripts/kandinsky-conditioning
 const D1_PATH = 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json';
 const d1 = JSON.parse(fs.readFileSync(D1_PATH, 'utf8'));
 
+function positiveSource(candidateId) {
+  const identity = conditioningCandidateIdentity(candidateId);
+  if (identity.positiveEmbeddingSourceCandidateId === null) return null;
+  const sourceIdentity = conditioningCandidateIdentity(identity.positiveEmbeddingSourceCandidateId);
+  return {
+    candidateId: identity.positiveEmbeddingSourceCandidateId,
+    conditioningContractSha256: sourceIdentity.conditioningContractSha256,
+    manifestSha256: '1'.repeat(64),
+    bundleSize: 10320,
+    bundleSha256: '2'.repeat(64),
+    imageEmbedsSha256: '3'.repeat(64),
+  };
+}
+
 function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
   const identity = conditioningCandidateIdentity(candidateId);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     stage: 'F5B1_D2_CONDITIONING_RESEARCH',
     status: 'RESEARCH_CANDIDATE',
     productionExecutable: false,
@@ -64,6 +78,7 @@ function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
       candidateId,
       conditioningContractSha256: identity.conditioningContractSha256,
       negativeMode: identity.negativeMode,
+      positiveEmbeddingSource: positiveSource(candidateId),
     },
     bundle: {
       format: 'safetensors',
@@ -85,6 +100,33 @@ test('D2a accepts only the closed research manifest and all three shared conditi
     'B_REALISM_ZERO_NEGATIVE',
     'C_PRESERVATION_EXPLICIT_NEGATIVE',
   ]) assert.equal(assertKandinskyConditioningManifest(validManifest(candidate), d1).conditioning.candidateId, candidate);
+});
+
+test('D2a persists causal positive-source identity only for dependent C conditioning', () => {
+  for (const candidate of ['A_NEUTRAL_ZERO_NEGATIVE', 'B_REALISM_ZERO_NEGATIVE']) {
+    const manifest = validManifest(candidate);
+    assert.equal(manifest.conditioning.positiveEmbeddingSource, null);
+    manifest.conditioning.positiveEmbeddingSource = positiveSource('C_PRESERVATION_EXPLICIT_NEGATIVE');
+    assert.throws(() => assertKandinskyConditioningManifest(manifest, d1), /must be null/);
+  }
+
+  const dependent = validManifest('C_PRESERVATION_EXPLICIT_NEGATIVE');
+  assert.equal(dependent.conditioning.positiveEmbeddingSource.candidateId, 'B_REALISM_ZERO_NEGATIVE');
+  const missing = validManifest('C_PRESERVATION_EXPLICIT_NEGATIVE');
+  missing.conditioning.positiveEmbeddingSource = null;
+  assert.throws(() => assertKandinskyConditioningManifest(missing, d1), /must be a plain object/);
+
+  const wrongCandidate = validManifest('C_PRESERVATION_EXPLICIT_NEGATIVE');
+  wrongCandidate.conditioning.positiveEmbeddingSource.candidateId = 'A_NEUTRAL_ZERO_NEGATIVE';
+  assert.throws(() => assertKandinskyConditioningManifest(wrongCandidate, d1), /candidateId mismatch/);
+
+  const wrongContract = validManifest('C_PRESERVATION_EXPLICIT_NEGATIVE');
+  wrongContract.conditioning.positiveEmbeddingSource.conditioningContractSha256 = conditioningCandidateIdentity('A_NEUTRAL_ZERO_NEGATIVE').conditioningContractSha256;
+  assert.throws(() => assertKandinskyConditioningManifest(wrongContract, d1), /conditioningContractSha256 mismatch/);
+
+  const uppercase = validManifest('C_PRESERVATION_EXPLICIT_NEGATIVE');
+  uppercase.conditioning.positiveEmbeddingSource.bundleSha256 = 'A'.repeat(64);
+  assert.throws(() => assertKandinskyConditioningManifest(uppercase, d1), /lowercase SHA-256/);
 });
 
 test('D2a binds exact D1 prior weight and executable config identities', () => {
