@@ -165,3 +165,25 @@ test('F4b.6b.4d product HTTP fails closed on authority injection, query widening
     assert.equal(calls.length, 0);
   });
 });
+
+test('F4b.6b.4d malformed raw request target is contained as 400 instead of escaping the listener', async () => {
+  const calls: any[] = [];
+  const adapter = createFashionTryOnProductHttpAdapter({
+    product: product(calls) as any,
+    auth: { verify: async () => principal as any },
+    config,
+  });
+  let statusCode = 0;
+  let payload = '';
+  const response = {
+    setHeader() {},
+    end(value?: Buffer) { if (value) payload += value.toString('utf8'); },
+    get statusCode() { return statusCode; },
+    set statusCode(value: number) { statusCode = value; },
+  } as any;
+  const handled = await adapter({ url: 'http://[::1', method: 'GET', headers: {} } as any, response);
+  assert.equal(handled, true);
+  assert.equal(statusCode, 400);
+  assert.equal(JSON.parse(payload).error, 'invalid_request_target');
+  assert.equal(calls.length, 0);
+});

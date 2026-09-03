@@ -54,7 +54,12 @@ type IntentBody = Readonly<Record<(typeof INTENT_KEYS)[number], string>>;
  */
 export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductHttpAdapterInput) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
-    const url = new URL(request.url ?? '/', 'http://core.invalid');
+    const parsed = parseRequestUrl(request.url);
+    if (!parsed.ok) {
+      send(response, parsed.status, { error: parsed.code, message: parsed.message });
+      return true;
+    }
+    const url = parsed.url;
     if (url.pathname === `${ROOT}/readiness`) return false;
     if (!url.pathname.startsWith(`${ROOT}/`)) return false;
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || globalThis.crypto.randomUUID();
@@ -148,6 +153,13 @@ export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductH
       return true;
     }
   };
+}
+
+function parseRequestUrl(rawTarget: string | undefined):
+  | Readonly<{ ok: true; url: URL }>
+  | Readonly<{ ok: false; status: 400; code: 'invalid_request_target'; message: 'Request target is invalid' }> {
+  try { return Object.freeze({ ok: true as const, url: new URL(rawTarget ?? '/', 'http://core.invalid') }); }
+  catch { return Object.freeze({ ok: false as const, status: 400 as const, code: 'invalid_request_target' as const, message: 'Request target is invalid' as const }); }
 }
 
 function exactIntent(value: unknown): IntentBody {
