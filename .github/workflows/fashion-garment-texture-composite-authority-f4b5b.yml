@@ -69,9 +69,9 @@ jobs:
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/submission.mjs
       - name: Prove production prepare is registry-bound, LOCAL_ONLY, zero-cloud and lineage-exact
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/production-admission.mjs
-      - name: Prove capability-specific HTTP transport is authority-minimal and fail-closed
+      - name: Prove capability-specific HTTP transport remains internally testable after product cutover
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b5b-authority/http.mjs
-      - name: Prove production admission is exact while provider and Try-On authority remain closed
+      - name: Prove production admission remains exact while browser raw authority is closed
         run: |
           grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js
           grep -q "GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION" src/platform/creative/deterministic/DeterministicToolRegistry.ts
@@ -80,8 +80,12 @@ jobs:
           grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionExecutionRoute.ts
           grep -q "GARMENT_TEXTURE_COMPOSITE_OPERATION" server/core/providers/productionTargetSelection.ts
           grep -q "garmentTextureComposite: garmentMeshWarp.textureComposite.execution" server/core/composition/createProductionCore.ts
-          grep -q "local-execution/garment-texture-composite" server/index.ts
-          grep -q "prepareGarmentTextureComposite" src/api/coreClient.js
+          grep -q "tryOnProduct: garmentMeshWarp.tryOn.product" server/core/composition/createProductionCore.ts
+          grep -q "fashionTryOnProductAdapter" server/index.ts
+          grep -q "fashion_tryon_orchestration_required" server/core/http/fashionTryOnLegacyPrepareTombstoneHttpAdapter.ts
+          ! grep -q "createGarmentTextureCompositeHttpAdapter" server/index.ts
+          ! grep -q "prepareGarmentTextureComposite" src/api/coreClient.js
+          grep -q "submitTryOnTextureCandidate" src/api/coreClient.js
           ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' server/core/providers/productionProviderSelection.ts
           ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' server/core/providers/falWorkflowRuntime.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
