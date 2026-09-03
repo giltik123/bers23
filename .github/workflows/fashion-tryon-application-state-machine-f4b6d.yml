@@ -1,0 +1,52 @@
+name: Fashion F4b.6d Try-On application state machine
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/application/fashion/canonicalTryOnApplication.js'
+      - 'tests/canonical-tryon-application.test.mjs'
+      - 'tests/canonical-tryon-application-boundary.test.mjs'
+      - '.github/workflows/fashion-tryon-application-state-machine-f4b6d.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  application-state-machine:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prove deterministic Try-On application state machine
+        run: node --test tests/canonical-tryon-application.test.mjs
+      - name: Prove product/Core boundary alignment
+        run: node --test tests/canonical-tryon-application-boundary.test.mjs
+      - name: Build production frontend
+        run: npm run build
+      - name: Reject premature UI execution authority
+        run: |
+          set -euo pipefail
+          FILE=src/application/fashion/canonicalTryOnApplication.js
+          ! grep -E -q 'representationId|anchorSetId|garmentWarpLayer(Id|Sha256)|storageId|sha256|FASHN|provider|billing|credits|fetch\(|pushEdit|acceptFinal|persistFinal|onCommit|onRollback|localStorage' "$FILE"
+          grep -q 'core.prepareTryOn' "$FILE"
+          grep -q 'core.continueTryOn' "$FILE"
+          grep -q 'core.getTryOnResult' "$FILE"
+          grep -q 'executeWarp' "$FILE"
+          grep -q 'executeTexture' "$FILE"
+      - name: Keep Try-On UI lockdown intact in this foundation slice
+        run: |
+          grep -q 'Canonical Try-On execution is not enabled yet' src/components/editor/outfits/TryOnPanel.jsx
+          grep -q 'legacy browser FASHN execution path is disabled' src/components/editor/outfits/TryOnPanel.jsx
+      - name: Check committed diff whitespace
+        run: git diff --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
