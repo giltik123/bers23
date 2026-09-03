@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createCanonicalWardrobeViewModel } from '../src/application/fashion/canonicalWardrobeViewModel.js';
+import {
+  CanonicalWardrobeAppendOutcomeUncertainError,
+  CanonicalWardrobeAppendReloadError,
+  createCanonicalWardrobeViewModel,
+} from '../src/application/fashion/canonicalWardrobeViewModel.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const V1 = '22222222-2222-4222-8222-222222222222';
@@ -94,6 +98,80 @@ test('post-append snapshot race retries reads only and never repeats immutable a
 
   const result = await vm.appendView(item, { viewKind: 'BACK', image: Object.freeze({}) });
   assert.equal(result.revision, 3);
+  assert.equal(appendCalls, 1);
+  assert.equal(imageReads, 2);
+  assert.equal(metadataReads, 2);
+});
+
+test('unconfirmed append performs read-only recovery and never retries the immutable side effect', async () => {
+  let appendCalls = 0;
+  let imageReads = 0;
+  let metadataReads = 0;
+  const lostResponse = new Error('connection closed after upload');
+  const vm = createCanonicalWardrobeViewModel({
+    garments: {
+      list: async () => [],
+      create: async () => imageAggregate(1),
+      appendView: async () => { appendCalls += 1; throw lostResponse; },
+      get: async () => { imageReads += 1; return imageAggregate(2, 2); },
+    },
+    wardrobe: {
+      list: async () => [],
+      get: async () => { metadataReads += 1; return metadataAggregate(2); },
+      updateMetadata: async () => metadataAggregate(2),
+    },
+  });
+
+  await assert.rejects(
+    () => vm.appendView(item, { viewKind: 'BACK', image: Object.freeze({}) }),
+    (error) => {
+      assert.equal(error instanceof CanonicalWardrobeAppendOutcomeUncertainError, true);
+      assert.equal(error.code, 'GARMENT_VIEW_APPEND_OUTCOME_UNCERTAIN');
+      assert.equal(error.garmentId, ID);
+      assert.equal(error.expectedRevision, 1);
+      assert.equal(error.recoveredItem?.revision, 2);
+      assert.equal(error.recoveredItem?.viewCount, 2);
+      assert.equal(error.retryable, false);
+      assert.equal(error.requiresInspection, true);
+      assert.equal(error.cause, lostResponse);
+      return true;
+    },
+  );
+  assert.equal(appendCalls, 1);
+  assert.equal(imageReads, 1);
+  assert.equal(metadataReads, 1);
+});
+
+test('confirmed append with persistent snapshot mismatch reports saved-view reload pending and never re-appends', async () => {
+  let appendCalls = 0;
+  let imageReads = 0;
+  let metadataReads = 0;
+  const vm = createCanonicalWardrobeViewModel({
+    garments: {
+      list: async () => [],
+      create: async () => imageAggregate(1),
+      appendView: async () => { appendCalls += 1; return imageAggregate(2, 2); },
+      get: async () => { imageReads += 1; return imageAggregate(2, 2); },
+    },
+    wardrobe: {
+      list: async () => [],
+      get: async () => { metadataReads += 1; return metadataAggregate(3); },
+      updateMetadata: async () => metadataAggregate(3),
+    },
+  });
+
+  await assert.rejects(
+    () => vm.appendView(item, { viewKind: 'BACK', image: Object.freeze({}) }),
+    (error) => {
+      assert.equal(error instanceof CanonicalWardrobeAppendReloadError, true);
+      assert.equal(error.code, 'GARMENT_VIEW_APPENDED_RELOAD_PENDING');
+      assert.equal(error.garmentId, ID);
+      assert.equal(error.expectedRevision, 1);
+      assert.equal(error.retryable, false);
+      assert.equal(error.requiresReload, true);
+      return true;
+    },
+  );
   assert.equal(appendCalls, 1);
   assert.equal(imageReads, 2);
   assert.equal(metadataReads, 2);
