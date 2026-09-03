@@ -73,12 +73,18 @@ def main() -> None:
         extra = sorted(actual - expected)
         raise RuntimeError(f"sealed prior mirror file set mismatch; missing={missing}, extra={extra}")
 
-    sys.argv[0] = str(IMPL)
-    try:
-        runpy.run_path(str(IMPL), run_name="__main__")
-    except SystemExit as exc:
-        if exc.code not in (None, 0):
-            raise
+    with tempfile.TemporaryDirectory(prefix="bers-kandinsky-d2c-d1-") as snapshot_dir:
+        d1_snapshot = Path(snapshot_dir) / "d1.manifest.json"
+        write_exact_file(d1_snapshot, d1_bytes)
+        replace_arg_value("--d1-manifest", str(d1_snapshot))
+        sys.argv[0] = str(IMPL)
+        try:
+            runpy.run_path(str(IMPL), run_name="__main__")
+        except SystemExit as exc:
+            if exc.code not in (None, 0):
+                raise
+        finally:
+            replace_arg_value("--d1-manifest", str(d1_path))
 
     if not verify_only:
         seal_builder_evidence(Path(output_dir), candidate_id, d1_sha256)
@@ -113,6 +119,18 @@ def seal_builder_evidence(output_dir: Path, candidate_id: str, d1_manifest_sha25
     write_canonical_json_atomic(evidence_path, sealed)
 
 
+def write_exact_file(path: Path, payload: bytes) -> None:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+
+
 def write_canonical_json_atomic(path: Path, value: dict) -> None:
     payload = (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
@@ -134,6 +152,13 @@ def value_after(flag: str) -> str:
     if value.startswith("--"):
         raise RuntimeError(f"{flag} value is missing")
     return value
+
+
+def replace_arg_value(flag: str, replacement: str) -> None:
+    matches = [index for index, value in enumerate(sys.argv[1:], start=1) if value == flag]
+    if len(matches) != 1 or matches[0] + 1 >= len(sys.argv):
+        raise RuntimeError(f"exactly one {flag} argument is required")
+    sys.argv[matches[0] + 1] = replacement
 
 
 def safe_seed_after(flag: str) -> int:

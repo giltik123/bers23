@@ -76,7 +76,13 @@ class KandinskyD2cBuilderEntryTests(unittest.TestCase):
     def invoke(self, prior: Path, manifest: Path, prompt: Path, seed: str = '123456'):
         module = load_entry()
         observed = []
-        module.runpy.run_path = lambda path, run_name: observed.append((path, run_name))
+
+        def fake_run_path(path, run_name):
+            d1_index = sys.argv.index('--d1-manifest')
+            snapshot_path = Path(sys.argv[d1_index + 1])
+            observed.append((path, run_name, str(snapshot_path), snapshot_path.read_bytes()))
+
+        module.runpy.run_path = fake_run_path
         old = sys.argv
         try:
             sys.argv = [
@@ -88,13 +94,16 @@ class KandinskyD2cBuilderEntryTests(unittest.TestCase):
             sys.argv = old
         return observed
 
-    def test_exact_allowlist_reaches_internal_builder(self):
+    def test_exact_allowlist_reaches_internal_builder_through_exact_d1_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             prior, manifest, prompt = self.fixture(Path(tmp))
+            original_bytes = manifest.read_bytes()
             observed = self.invoke(prior, manifest, prompt)
             self.assertEqual(len(observed), 1)
             self.assertTrue(observed[0][0].endswith('_kandinsky-conditioning-builder-impl.py'))
             self.assertEqual(observed[0][1], '__main__')
+            self.assertNotEqual(Path(observed[0][2]), manifest.resolve())
+            self.assertEqual(observed[0][3], original_bytes)
 
     def test_extra_or_missing_file_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
