@@ -1,14 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Archive, Heart, Images, Loader2, Plus, RefreshCw, RotateCcw, Shirt } from 'lucide-react';
+import { Archive, Camera, Heart, Images, Loader2, Plus, RefreshCw, RotateCcw, Shirt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
 import {
+  CanonicalWardrobeAppendOutcomeUncertainError,
+  CanonicalWardrobeAppendReloadError,
   CanonicalWardrobePartialCreateError,
   createCanonicalWardrobeViewModel,
 } from '@/application/fashion/canonicalWardrobeViewModel';
 import { getCategory } from '@/lib/fashion/garmentCategories';
 import AddGarmentDialog from './AddGarmentDialog';
 import CanonicalCollectionsView from './CanonicalCollectionsView';
+import GarmentCaptureDialog from './GarmentCaptureDialog';
 
 function captureLabel(assessment) {
   if (assessment?.cardinalComplete && assessment?.technicalResolution?.status === 'ADEQUATE') return '4-view capture ready';
@@ -17,7 +20,7 @@ function captureLabel(assessment) {
   return 'Capture not assessed';
 }
 
-function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore }) {
+function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore, onCapture }) {
   const category = getCategory(item.category);
   return (
     <article className="rounded-xl border border-border/70 bg-card overflow-hidden" aria-busy={busy || undefined}>
@@ -57,7 +60,12 @@ function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore }) {
           <p className="text-[10px] text-muted-foreground truncate">{item.tags.map((tag) => `#${tag}`).join(' ')}</p>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-1">
+          {item.status === 'ACTIVE' && (
+            <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={busy} onClick={() => onCapture(item)}>
+              <Camera className="h-3.5 w-3.5 mr-1" /> Add view
+            </Button>
+          )}
           {item.status === 'ACTIVE' ? (
             <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={busy} onClick={() => onArchive(item)}>
               {busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Archive className="h-3.5 w-3.5 mr-1" />}
@@ -84,6 +92,7 @@ export default function FashionPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [addOpen, setAddOpen] = useState(false);
+  const [captureItem, setCaptureItem] = useState(null);
   const [busyId, setBusyId] = useState('');
 
   const reload = useCallback(async ({ quiet = false } = {}) => {
@@ -128,6 +137,32 @@ export default function FashionPanel() {
       throw cause;
     }
   }, [reload, wardrobe]);
+
+  const appendGarmentView = useCallback(async (item, intent) => {
+    setBusyId(item.id);
+    setError('');
+    try {
+      const next = await wardrobe.appendView(item, intent);
+      replaceItem(next);
+      return next;
+    } catch (cause) {
+      const outcomeUncertain = cause instanceof CanonicalWardrobeAppendOutcomeUncertainError
+        || cause?.code === 'GARMENT_VIEW_APPEND_OUTCOME_UNCERTAIN';
+      const committedReloadPending = cause instanceof CanonicalWardrobeAppendReloadError
+        || cause?.code === 'GARMENT_VIEW_APPENDED_RELOAD_PENDING';
+      if (outcomeUncertain || committedReloadPending) {
+        if (cause?.recoveredItem) replaceItem(cause.recoveredItem);
+        else {
+          try { await reload({ quiet: true }); } catch { /* preserve the append recovery status */ }
+        }
+        setCaptureItem(null);
+        setError(cause?.message || 'The garment view submission requires inspection before another upload.');
+      }
+      throw cause;
+    } finally {
+      setBusyId('');
+    }
+  }, [reload, replaceItem, wardrobe]);
 
   const runMutation = useCallback(async (item, mutate) => {
     setBusyId(item.id);
@@ -187,6 +222,7 @@ export default function FashionPanel() {
               key={item.id}
               item={item}
               busy={busyId === item.id}
+              onCapture={setCaptureItem}
               onFavorite={(current, favorite) => runMutation(current, (value) => wardrobe.setFavorite(value, favorite))}
               onArchive={(current) => runMutation(current, wardrobe.archive)}
               onRestore={(current) => runMutation(current, wardrobe.restore)}
@@ -196,6 +232,12 @@ export default function FashionPanel() {
       )}
 
       <AddGarmentDialog open={addOpen} onClose={() => setAddOpen(false)} onCreate={createGarment} />
+      <GarmentCaptureDialog
+        open={Boolean(captureItem)}
+        item={captureItem}
+        onClose={() => setCaptureItem(null)}
+        onAppend={appendGarmentView}
+      />
     </section>
   );
 }
