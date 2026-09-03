@@ -1,0 +1,61 @@
+name: Fashion F4b.6d.2 Try-On recovery preview transport
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/core/fashion/FashionTryOnProductService.ts'
+      - 'server/core/composition/createProductionGarmentMeshWarp.ts'
+      - 'server/core/http/fashionTryOnProductHttpAdapter.ts'
+      - 'tests/fashion-tryon-recovery-preview-transport-f4b6d2.test.ts'
+      - 'tests/fashion-tryon-recovery-preview-transport-boundary.test.mjs'
+      - '.github/workflows/fashion-tryon-recovery-preview-transport-f4b6d2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-preview-transport:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prove preview transport and existing product HTTP semantics
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/fashion-tryon-preview-transport
+          for spec in \
+            fashion-tryon-recovery-preview-transport-f4b6d2 \
+            fashion-tryon-product-http-f4b6b4d
+          do
+            npx esbuild "tests/${spec}.test.ts" \
+              --bundle --platform=node --format=esm --target=node24 \
+              --outfile=".test-cache/fashion-tryon-preview-transport/${spec}.test.mjs" \
+              --external:node:* --external:sharp --external:pg
+          done
+          node --test --test-concurrency=1 .test-cache/fashion-tryon-preview-transport/*.test.mjs
+      - name: Re-prove recovery preview service semantics
+        run: node --experimental-strip-types --test tests/fashion-tryon-recovery-preview-f4b6d1.test.ts
+      - name: Prove server transport authority boundary
+        run: node --test tests/fashion-tryon-recovery-preview-transport-boundary.test.mjs
+      - name: Typecheck production Core
+        run: npm run server:typecheck
+      - name: Keep browser binding and UI activation out of this slice
+        run: |
+          set -euo pipefail
+          ! grep -q '\bgetTryOnPreview\b' src/api/coreClient.js
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+          grep -q "url.pathname === \`\${ROOT}/preview\`" server/core/http/fashionTryOnProductHttpAdapter.ts
+          ! grep -E -q 'createFashionTryOnRecoveryPreviewHttpAdapter|fashionTryOnRecoveryPreviewAdapter' server/index.ts
+      - name: Check committed diff whitespace
+        run: git diff --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}

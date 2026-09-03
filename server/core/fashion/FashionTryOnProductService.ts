@@ -4,6 +4,7 @@ import type { FashionTryOnOpaqueCandidateCommand, FashionTryOnOpaqueCandidateRes
 import type { FashionTryOnOpaqueInputProjectionService, FashionTryOnPreparedLookup } from '../localExecution/FashionTryOnOpaqueInputProjectionService.ts';
 import type { FashionTryOnFinalResult, FashionTryOnFinalResultService } from './FashionTryOnFinalResultService.ts';
 import type { FashionTryOnOrchestrationIntentV1 } from './FashionTryOnOrchestrationContract.ts';
+import type { FashionTryOnRecoveryPreviewResult, FashionTryOnRecoveryPreviewService } from './FashionTryOnRecoveryPreviewService.ts';
 import type { FashionTryOnTextureContinuationService } from './FashionTryOnTextureContinuationService.ts';
 import type { FashionTryOnWarpOrchestrationService } from './FashionTryOnWarpOrchestrationService.ts';
 
@@ -20,6 +21,7 @@ type CandidateSubmission = Pick<FashionTryOnOpaqueCandidateSubmissionService,
   | 'submitTextureCompositeCandidate'
 >;
 type FinalResult = Pick<FashionTryOnFinalResultService, 'result'>;
+type RecoveryPreview = Pick<FashionTryOnRecoveryPreviewService, 'preview'>;
 
 export type FashionTryOnProductDependencies = Readonly<{
   warp: WarpOrchestrator;
@@ -27,6 +29,8 @@ export type FashionTryOnProductDependencies = Readonly<{
   inputs: InputProjection;
   candidates: CandidateSubmission;
   result: FinalResult;
+  /** Optional only for isolated pre-preview fixtures. Production composition must provide it. */
+  preview?: RecoveryPreview;
 }>;
 
 export type FashionTryOnProductPrepareResult =
@@ -63,9 +67,10 @@ export type FashionTryOnProductContinueResult =
  * lineage and LocalExecutionResultV2 never cross this product surface.
  *
  * Input/candidate methods do not create a second authority: they delegate to the
- * accepted opaque projector and candidate bridge. FINAL lookup delegates to the
- * accepted stable-intent result service. No Project Accept/history mutation,
- * provider, Billing or cloud fallback exists here.
+ * accepted opaque projector and candidate bridge. FINAL lookup and recovery
+ * preview delegate to the accepted stable-intent result/current-evidence chain.
+ * No Project Accept/history mutation, provider, Billing or cloud fallback exists
+ * here.
  */
 export class FashionTryOnProductService {
   constructor(private readonly dependencies: FashionTryOnProductDependencies) {}
@@ -129,5 +134,15 @@ export class FashionTryOnProductService {
 
   result(input: FashionTryOnOrchestrationIntentV1 | unknown, auth: AuthenticatedScope): Promise<FashionTryOnFinalResult> {
     return this.dependencies.result.result(input, auth);
+  }
+
+  preview(input: FashionTryOnOrchestrationIntentV1 | unknown, auth: AuthenticatedScope): Promise<FashionTryOnRecoveryPreviewResult> {
+    if (!this.dependencies.preview) {
+      return Promise.reject(Object.assign(new Error('Try-On recovery preview is not configured'), {
+        status: 500,
+        code: 'fashion_tryon_preview_not_configured',
+      }));
+    }
+    return this.dependencies.preview.preview(input, auth);
   }
 }

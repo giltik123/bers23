@@ -24,6 +24,7 @@ type ProductSurface = Pick<FashionTryOnProductService,
   | 'loadTextureCompositeInput'
   | 'submitTextureCompositeCandidate'
   | 'result'
+  | 'preview'
 >;
 
 type FashionTryOnProductAuth = Readonly<{
@@ -41,9 +42,9 @@ type IntentBody = Readonly<Record<(typeof INTENT_KEYS)[number], string>>;
 /**
  * Closed browser transport for the deterministic Try-On product facade.
  *
- * Stable intent is accepted only by prepare/continue/result. Execution routes
- * accept one opaque ticket handle plus authenticated projectId and never accept
- * representation/anchor/layer/storage/SHA or LocalExecutionResult metadata.
+ * Stable intent is accepted only by prepare/continue/result/preview. Execution
+ * routes accept one opaque ticket handle plus authenticated projectId and never
+ * accept representation/anchor/layer/storage/SHA or LocalExecutionResult metadata.
  *
  * The ticket handle is not authorization: every delegated Core service reloads
  * durable ticket scope and purpose. Phase-specific URLs add a transport-level
@@ -91,6 +92,13 @@ export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductH
       if (url.pathname === `${ROOT}/result` && request.method === 'POST') {
         requireJson(request);
         const result = await input.product.result(exactIntent(await readJson(request, input.config.bodyLimitBytes)), principal);
+        send(response, 200, result);
+        return true;
+      }
+
+      if (url.pathname === `${ROOT}/preview` && request.method === 'POST') {
+        requireJson(request);
+        const result = await input.product.preview(exactIntent(await readJson(request, input.config.bodyLimitBytes)), principal);
         send(response, 200, result);
         return true;
       }
