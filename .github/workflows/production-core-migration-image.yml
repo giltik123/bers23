@@ -48,7 +48,8 @@ jobs:
           test -f dist-server/migrations/001_transaction_store.sql
           test -f dist-server/migrations/015_workflow_continuations.sql
           test -f dist-server/migrations/033_manual_parametric_basis_content_uniqueness.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 33
+          test -f dist-server/migrations/034_execution_run_registry.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 34
           test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.down.sql' | wc -l)" -eq 0
       - name: Prove bundled migrator on a clean PostgreSQL database
         env:
@@ -63,8 +64,9 @@ jobs:
           import { Pool } from 'pg';
           const pool = new Pool({ connectionString: process.env.DATABASE_URL });
           try {
-            const result = await pool.query("SELECT to_regclass('workflow_continuations')::text AS continuation");
+            const result = await pool.query("SELECT to_regclass('workflow_continuations')::text AS continuation, to_regclass('canonical_execution_runs')::text AS execution_runs");
             if (result.rows[0]?.continuation !== 'workflow_continuations') throw new Error('migration 015 was not applied');
+            if (result.rows[0]?.execution_runs !== 'canonical_execution_runs') throw new Error('migration 034 was not applied');
           } finally { await pool.end(); }
           NODE
       - name: Create independent clean database for immutable-image proof

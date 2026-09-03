@@ -110,8 +110,8 @@ jobs:
           cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/project-history/migrations/007_project_history_source_lineage.sql
           cp server/core/auth/migrations/008_canonical_auth_identity_sessions.sql .test-cache/project-history/migrations/008_canonical_auth_identity_sessions.sql
           cp server/core/auth/migrations/009_auth_lifecycle_oauth.sql .test-cache/project-history/migrations/009_auth_lifecycle_oauth.sql
-          npx esbuild tests/project-history-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/project-history/project-history-postgres-vertical.test.mjs --external:pg --external:sharp --external:node:*
-          node --test .test-cache/project-history/project-history-postgres-vertical.test.mjs
+          npx esbuild tests/project-history-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/project-history/project-history-postgres.test.mjs --external:pg --external:sharp --external:node:*
+          node --test .test-cache/project-history/project-history-postgres.test.mjs
       - name: Run canonical Project history authority PostgreSQL guards
         run: |
           mkdir -p .test-cache/project-history-authority/migrations
@@ -227,6 +227,7 @@ jobs:
               server/core/projects/migrations \
               server/core/auth/migrations \
               server/core/fashion/migrations \
+              server/core/execution/migrations \
               -maxdepth 1 -type f -name '*.sql' ! -name '*.down.sql' -printf '%f\n' | sort
           )"
           actual="$(
@@ -238,6 +239,7 @@ jobs:
           printf '%s\n' "$actual" | grep -qx '022_managed_garments_and_initial_views.sql'
           printf '%s\n' "$actual" | grep -qx '028_project_body_anchor_sets.sql'
           printf '%s\n' "$actual" | grep -qx '029_fashion_garment_warp_layers.sql'
+          printf '%s\n' "$actual" | grep -qx '034_execution_run_registry.sql'
       - name: Assert production image contents
         run: |
           docker run --rm --entrypoint sh bers-core:${{ env.CANDIDATE_SHA }} -c '
