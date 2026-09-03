@@ -7,10 +7,11 @@ const coreClient = fs.readFileSync(new URL('../src/api/coreClient.js', import.me
 const readiness = fs.readFileSync(new URL('../server/core/fashion/FashionTryOnReadinessService.ts', import.meta.url), 'utf8');
 const product = fs.readFileSync(new URL('../server/core/fashion/FashionTryOnProductService.ts', import.meta.url), 'utf8');
 const result = fs.readFileSync(new URL('../server/core/fashion/FashionTryOnFinalResultService.ts', import.meta.url), 'utf8');
+const preview = fs.readFileSync(new URL('../server/core/fashion/FashionTryOnRecoveryPreviewService.ts', import.meta.url), 'utf8');
 const prepared = fs.readFileSync(new URL('../src/application/local-execution/CorePreparedFashionTryOn.ts', import.meta.url), 'utf8');
 
 test('application foundation is bound to existing product-only Core methods', () => {
-  for (const method of ['checkTryOnReadiness', 'prepareTryOn', 'continueTryOn', 'getTryOnResult']) {
+  for (const method of ['checkTryOnReadiness', 'prepareTryOn', 'continueTryOn', 'getTryOnResult', 'getTryOnPreview']) {
     assert.match(application, new RegExp(`core\\.${method}`));
     assert.match(coreClient, new RegExp(`\\b${method}\\b`));
   }
@@ -19,7 +20,7 @@ test('application foundation is bound to existing product-only Core methods', ()
   }
 });
 
-test('readiness and terminal states stay aligned with server-owned closed contracts', () => {
+test('readiness, preview and terminal states stay aligned with server-owned closed contracts', () => {
   for (const status of [
     'READY', 'SOURCE_UNAVAILABLE', 'STALE_SOURCE', 'GARMENT_UNAVAILABLE', 'GARMENT_UNSUPPORTED',
     'REPRESENTATION_REQUIRED', 'REPRESENTATION_AMBIGUOUS', 'BODY_ANCHORS_REQUIRED',
@@ -32,6 +33,8 @@ test('readiness and terminal states stay aligned with server-owned closed contra
     assert.ok(result.includes(`'${status}'`), `server result must retain ${status}`);
     assert.ok(application.includes(`'${status}'`), `application result must retain ${status}`);
   }
+  assert.ok(preview.includes("status: 'PREVIEW_READY'"));
+  assert.ok(application.includes("status: 'PREVIEW_READY'"));
   assert.ok(product.includes("status: 'WARP_PREPARED'"));
   assert.ok(product.includes("status: 'TEXTURE_PREPARED'"));
   assert.ok(product.includes("'PREREQUISITE' | 'WARP_PENDING'"));
@@ -56,11 +59,13 @@ test('application state never accepts browser evidence or financial/provider aut
   }
   assert.match(application, /requireExactKeys/);
   assert.match(application, /stable product intent/);
+  assert.match(application, /PREVIEW_DELIVERY_URL/);
 });
 
 test('resume and recover source cannot silently re-run earlier phases', () => {
   const resume = application.slice(application.indexOf('async resume(value)'), application.indexOf('/** Read-only recovery'));
   const recover = application.slice(application.indexOf('const recover = async'), application.indexOf('const advance = async'));
   assert.doesNotMatch(resume, /prepareTryOn|executeWarp/);
-  assert.doesNotMatch(recover, /prepareTryOn|continueTryOn|executeWarp|executeTexture/);
+  assert.doesNotMatch(recover, /prepareTryOn|continueTryOn|getTryOnResult|executeWarp|executeTexture/);
+  assert.match(recover, /getTryOnPreview/);
 });
