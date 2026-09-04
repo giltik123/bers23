@@ -1,0 +1,63 @@
+name: Fashion F4b.6d.10d2 product controls
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/canonicalTryOnProductUiState.js'
+      - 'src/components/editor/outfits/CanonicalTryOnProductControls.jsx'
+      - 'src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx'
+      - 'src/application/fashion/createCanonicalTryOnEditorHost.js'
+      - 'src/application/fashion/createCanonicalTryOnEditorController.js'
+      - 'tests/fashion-tryon-product-controls.test.mjs'
+      - 'tests/fashion-tryon-runner-panel.test.mjs'
+      - 'tests/fashion-tryon-editor-host.test.mjs'
+      - 'tests/fashion-tryon-editor-controller.test.mjs'
+      - '.github/workflows/fashion-tryon-product-controls-f4b6d10d2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  product-controls:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact frontend graph
+        run: npm ci
+      - name: Prove explicit product-control transitions, selection and host/controller lifecycle
+        run: |
+          node --test \
+            tests/fashion-tryon-product-controls.test.mjs \
+            tests/fashion-tryon-runner-panel.test.mjs \
+            tests/fashion-tryon-editor-host.test.mjs \
+            tests/fashion-tryon-editor-controller.test.mjs
+      - name: Typecheck and build production frontend graph
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Prove no automatic execution or legacy authority enters controls
+        run: |
+          set -euo pipefail
+          POLICY=src/application/fashion/canonicalTryOnProductUiState.js
+          CONTROLS=src/components/editor/outfits/CanonicalTryOnProductControls.jsx
+          RUNNER=src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx
+          grep -q "status === 'READINESS'" "$POLICY"
+          grep -q "readiness.status === 'READY'" "$POLICY"
+          grep -q 'canRun:' "$POLICY"
+          ! grep -q 'useEffect' "$CONTROLS"
+          ! grep -E 'onRetry|\bRetry\b' "$CONTROLS"
+          grep -q 'model.load()' "$RUNNER"
+          ! grep -E '\.(create|updateMetadata|archive|restore|addEntry|removeEntry|setEntryRole|reorderEntries)\(' "$RUNNER"
+          ! grep -E 'clientRequestId|ticketId|representationId|anchorSetId|storageId|contentSha256|destinationMesh|FASHN|Billing|tryonEngine' "$CONTROLS" "$RUNNER"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check stacked candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
