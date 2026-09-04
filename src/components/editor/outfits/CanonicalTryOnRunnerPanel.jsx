@@ -32,8 +32,11 @@ export default function CanonicalTryOnRunnerPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const hostActive = Boolean(state?.host?.active);
+  const lockedSelection = hostActive ? state?.selection : null;
+
   const load = useCallback(async () => {
-    if (state?.host?.active || busy) return;
+    if (hostActive || busy) return;
     setLoading(true);
     setError('');
     try {
@@ -47,20 +50,36 @@ export default function CanonicalTryOnRunnerPanel({
     } finally {
       setLoading(false);
     }
-  }, [busy, model, state?.host?.active]);
+  }, [busy, hostActive, model]);
 
   useEffect(() => { void load(); }, [model]); // deliberate read-only initial load; never runs Try-On
 
-  const selectedOutfit = outfits.find((outfit) => outfit.id === selectedOutfitId) || null;
-  const selectedEntry = selectedOutfit?.entries.find((entry) => entry.entryId === selectedEntryId) || null;
+  const selectedOutfit = lockedSelection?.outfit
+    || outfits.find((outfit) => outfit.id === selectedOutfitId)
+    || null;
+  const effectiveEntryId = lockedSelection?.entryId || selectedEntryId;
+  const selectedEntry = selectedOutfit?.entries.find((entry) => entry.entryId === effectiveEntryId) || null;
   const garmentById = useMemo(() => new Map(garments.map((garment) => [garment.garmentId, garment])), [garments]);
   const selectedGarment = selectedEntry ? garmentById.get(selectedEntry.garmentId) : null;
-  const selectionLocked = busy || loading || Boolean(state?.host?.active);
-  const matchingState = state?.entryId === selectedEntryId ? state : null;
-  const host = matchingState?.host || state?.host || IDLE_HOST;
-  const result = matchingState?.result || null;
+  const selectionLocked = busy || loading || hostActive;
+  const host = state?.host || IDLE_HOST;
+  const result = state?.result || null;
 
   const context = () => {
+    if (lockedSelection) {
+      if (!selectedOutfit || !selectedEntry) {
+        throw new Error('Canonical Try-On locked selection no longer resolves its Outfit entry.');
+      }
+      return Object.freeze({
+        selection: Object.freeze({
+          entryId: lockedSelection.entryId,
+          outfit: lockedSelection.outfit,
+          projectId: lockedSelection.projectId,
+          sourceArtifactId: lockedSelection.sourceArtifactId,
+        }),
+        beforeUrl: lockedSelection.beforeUrl,
+      });
+    }
     if (!selectedOutfit || !selectedEntry || !project?.id || !project?.current_image_artifact_id || !project?.current_image_url) {
       throw new Error('Canonical Try-On requires one Outfit entry and the current canonical Project image.');
     }
@@ -102,35 +121,43 @@ export default function CanonicalTryOnRunnerPanel({
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5">
-        <select
-          value={selectedOutfitId}
-          onChange={(event) => { setSelectedOutfitId(event.target.value); setSelectedEntryId(''); setError(''); }}
-          disabled={selectionLocked || disabled}
-          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-          aria-label="Outfit for deterministic Try-On"
-        >
-          <option value="">Choose Outfit…</option>
-          {outfits.map((outfit) => <option key={outfit.id} value={outfit.id}>{outfit.name}</option>)}
-        </select>
-        <select
-          value={selectedEntryId}
-          onChange={(event) => { setSelectedEntryId(event.target.value); setError(''); }}
-          disabled={selectionLocked || disabled || !selectedOutfit}
-          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-          aria-label="Garment entry for deterministic Try-On"
-        >
-          <option value="">Choose garment…</option>
-          {(selectedOutfit?.entries || []).map((entry) => {
-            const garment = garmentById.get(entry.garmentId);
-            return (
-              <option key={entry.entryId} value={entry.entryId} disabled={entry.referenceReadiness !== 'READY'}>
-                {garment?.name || entry.garmentId}{entry.referenceReadiness === 'READY' ? '' : ` · ${entry.referenceReadiness.toLowerCase()}`}
-              </option>
-            );
-          })}
-        </select>
-      </div>
+      {!hostActive && (
+        <div className="grid grid-cols-2 gap-1.5">
+          <select
+            value={selectedOutfitId}
+            onChange={(event) => { setSelectedOutfitId(event.target.value); setSelectedEntryId(''); setError(''); }}
+            disabled={selectionLocked || disabled}
+            className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+            aria-label="Outfit for deterministic Try-On"
+          >
+            <option value="">Choose Outfit…</option>
+            {outfits.map((outfit) => <option key={outfit.id} value={outfit.id}>{outfit.name}</option>)}
+          </select>
+          <select
+            value={selectedEntryId}
+            onChange={(event) => { setSelectedEntryId(event.target.value); setError(''); }}
+            disabled={selectionLocked || disabled || !selectedOutfit}
+            className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+            aria-label="Garment entry for deterministic Try-On"
+          >
+            <option value="">Choose garment…</option>
+            {(selectedOutfit?.entries || []).map((entry) => {
+              const garment = garmentById.get(entry.garmentId);
+              return (
+                <option key={entry.entryId} value={entry.entryId} disabled={entry.referenceReadiness !== 'READY'}>
+                  {garment?.name || entry.garmentId}{entry.referenceReadiness === 'READY' ? '' : ` · ${entry.referenceReadiness.toLowerCase()}`}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+      )}
+
+      {hostActive && selectedOutfit && selectedEntry && (
+        <p className="text-[11px] text-muted-foreground" role="status">
+          Locked selection: {selectedOutfit.name} · {selectedGarment?.name || selectedEntry.garmentId}
+        </p>
+      )}
 
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
 

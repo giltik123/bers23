@@ -1,0 +1,69 @@
+name: Fashion F4b.6d.10d3 Editor wiring
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx'
+      - 'src/components/editor/outfits/useCanonicalTryOnEditor.js'
+      - 'src/components/editor/outfits/CanonicalTryOnProductControls.jsx'
+      - 'src/application/fashion/createCanonicalTryOnEditorHost.js'
+      - 'src/application/fashion/createCanonicalTryOnEditorController.js'
+      - 'src/application/fashion/createCanonicalTryOnProductRuntime.js'
+      - 'src/application/fashion/createCanonicalTryOnProductSession.js'
+      - 'tests/fashion-tryon-editor-wiring.test.mjs'
+      - 'tests/fashion-tryon-product-controls.test.mjs'
+      - 'tests/fashion-tryon-editor-host.test.mjs'
+      - 'tests/fashion-tryon-editor-controller.test.mjs'
+      - 'tests/fashion-tryon-product-runtime-composition.test.mjs'
+      - 'tests/fashion-tryon-product-session.test.mjs'
+      - '.github/workflows/fashion-tryon-editor-wiring-f4b6d10d3.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  editor-wiring:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact frontend graph
+        run: npm ci
+      - name: Prove Editor wiring and lower canonical lifecycle
+        run: |
+          node --test \
+            tests/fashion-tryon-editor-wiring.test.mjs \
+            tests/fashion-tryon-product-controls.test.mjs \
+            tests/fashion-tryon-editor-host.test.mjs \
+            tests/fashion-tryon-editor-controller.test.mjs \
+            tests/fashion-tryon-product-runtime-composition.test.mjs \
+            tests/fashion-tryon-product-session.test.mjs
+      - name: Typecheck and build production frontend graph
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Prove ResultCompare owns Retry and legacy execution remains dead
+        run: |
+          set -euo pipefail
+          EDITOR=src/pages/Editor.jsx
+          HOOK=src/components/editor/outfits/useCanonicalTryOnEditor.js
+          RUNNER=src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx
+          grep -q "pending?.kind === 'FASHION_TRYON'" "$EDITOR"
+          grep -q 'void tryOn.retry()' "$EDITOR"
+          grep -q 'const operation = host\[name\](context)' "$HOOK"
+          grep -q 'host.requestDispose()' "$HOOK"
+          grep -q 'lockedSelection?.outfit' "$RUNNER"
+          ! grep -E 'clientRequestId|ticketId|representationId|anchorSetId|storageId|contentSha256|destinationMesh' "$HOOK"
+          ! grep -E 'createCanonicalTryOnProductRuntime|createCanonicalTryOnProductSession|createCanonicalTryOnEditorController|coreClient|tryonEngine' "$EDITOR"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check stacked candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
