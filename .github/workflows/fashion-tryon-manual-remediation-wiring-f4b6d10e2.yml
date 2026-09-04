@@ -1,0 +1,88 @@
+name: Fashion F4b.6d.10e2 manual remediation wiring
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx'
+      - 'src/components/editor/outfits/CanonicalTryOnManualRemediationPanel.jsx'
+      - 'src/components/editor/outfits/CanonicalTryOnContourEditor.jsx'
+      - 'src/components/editor/outfits/CanonicalTryOnBodyAnchorEditor.jsx'
+      - 'src/components/editor/outfits/useCanonicalTryOnEditor.js'
+      - 'src/application/fashion/canonicalTryOnManualRemediationPolicy.js'
+      - 'src/application/fashion/canonicalTryOnManualContourDraft.js'
+      - 'src/application/fashion/canonicalTryOnManualBodyAnchorDraft.js'
+      - 'src/application/fashion/createCanonicalTryOnManualPrerequisiteApplication.js'
+      - 'src/application/fashion/createCanonicalTryOnEditorHost.js'
+      - 'tests/fashion-tryon-manual-remediation-wiring.test.mjs'
+      - 'tests/fashion-tryon-manual-remediation-policy.test.mjs'
+      - 'tests/fashion-tryon-manual-contour-draft.test.mjs'
+      - 'tests/fashion-tryon-manual-body-anchor-draft.test.mjs'
+      - 'tests/fashion-tryon-manual-prerequisite-application.test.mjs'
+      - 'tests/fashion-tryon-editor-wiring.test.mjs'
+      - 'tests/fashion-tryon-editor-host.test.mjs'
+      - 'tests/fashion-tryon-editor-controller.test.mjs'
+      - 'tests/fashion-tryon-product-runtime-composition.test.mjs'
+      - 'tests/fashion-tryon-product-session.test.mjs'
+      - '.github/workflows/fashion-tryon-manual-remediation-wiring-f4b6d10e2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  manual-remediation-wiring:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact frontend graph
+        run: npm ci
+      - name: Prove manual remediation and lower canonical lifecycle
+        run: |
+          node --test \
+            tests/fashion-tryon-manual-remediation-wiring.test.mjs \
+            tests/fashion-tryon-manual-remediation-policy.test.mjs \
+            tests/fashion-tryon-manual-contour-draft.test.mjs \
+            tests/fashion-tryon-manual-body-anchor-draft.test.mjs \
+            tests/fashion-tryon-manual-prerequisite-application.test.mjs \
+            tests/fashion-tryon-editor-wiring.test.mjs \
+            tests/fashion-tryon-editor-host.test.mjs \
+            tests/fashion-tryon-editor-controller.test.mjs \
+            tests/fashion-tryon-product-runtime-composition.test.mjs \
+            tests/fashion-tryon-product-session.test.mjs
+      - name: Typecheck and build production frontend graph
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Prove explicit remediation, serialized authority and retained legacy tombstone
+        run: |
+          set -euo pipefail
+          EDITOR=src/pages/Editor.jsx
+          HOOK=src/components/editor/outfits/useCanonicalTryOnEditor.js
+          RUNNER=src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx
+          PANEL=src/components/editor/outfits/CanonicalTryOnManualRemediationPanel.jsx
+          grep -q 'operationRef = useRef(null)' "$HOOK"
+          grep -q "beginOperation('manual-contour-save')" "$HOOK"
+          grep -q "beginOperation('manual-body-anchor-save')" "$HOOK"
+          grep -q 'TRYON_MANUAL_CONTOUR_SAVED_RELOAD_PENDING' "$HOOK"
+          grep -q 'clearResult: invalidateReadiness' "$HOOK"
+          grep -q 'lockedSelection.sourceArtifactId' "$RUNNER"
+          grep -q 'lockedSelection.beforeUrl' "$RUNNER"
+          grep -q "mode === 'RECHECK_REQUIRED'" "$PANEL"
+          grep -q 'Check readiness again' "$PANEL"
+          grep -q 'onLoadManualGarmentSource={tryOn.loadManualGarmentSource}' "$EDITOR"
+          grep -q 'onSaveManualContour={tryOn.saveManualContour}' "$EDITOR"
+          grep -q 'onSaveManualBodyAnchors={tryOn.saveManualBodyAnchors}' "$EDITOR"
+          ! grep -E 'clientRequestId|ticketId|representationId|anchorSetId|storageId|contentSha256|destinationMesh|localStorage|sessionStorage|indexedDB' "$HOOK" "$RUNNER" "$PANEL"
+          ! grep -E 'createCanonicalTryOnProductRuntime|createCanonicalTryOnProductSession|createCanonicalTryOnEditorController|coreClient|tryonEngine|\.manual\b' "$EDITOR"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check stacked candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"

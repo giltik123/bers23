@@ -4,13 +4,14 @@ import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
 import { createCanonicalOutfitViewModel } from '@/application/fashion/canonicalOutfitViewModel';
 import CanonicalTryOnProductControls from './CanonicalTryOnProductControls';
+import CanonicalTryOnManualRemediationPanel from './CanonicalTryOnManualRemediationPanel';
 
 const IDLE_HOST = Object.freeze({ active: false, busy: false, disposed: false, hasInFlight: false, phase: 'IDLE' });
 
 /**
  * Read-only canonical Outfit/entry chooser for deterministic Try-On.
  * Outfit mutation remains in OutfitPanel; this surface only selects one stable
- * entry and emits explicit product actions to the Editor-owned host.
+ * entry and emits explicit product/manual actions to the Editor-owned host.
  */
 export default function CanonicalTryOnRunnerPanel({
   project,
@@ -18,6 +19,9 @@ export default function CanonicalTryOnRunnerPanel({
   busy = false,
   disabled = false,
   onAction,
+  onLoadManualGarmentSource,
+  onSaveManualContour,
+  onSaveManualBodyAnchors,
   onAbandon,
   onClose,
 }) {
@@ -95,12 +99,47 @@ export default function CanonicalTryOnRunnerPanel({
   };
 
   const action = (name) => {
-    if (typeof onAction !== 'function') return;
+    if (typeof onAction !== 'function') return undefined;
     try {
-      onAction(name, context());
+      return onAction(name, context());
     } catch (cause) {
       setError(cause?.message || 'Try-On selection is invalid.');
+      return undefined;
     }
+  };
+
+  const withManualContext = (callback, fallbackMessage) => {
+    try {
+      return callback(context());
+    } catch (cause) {
+      const message = cause?.message || fallbackMessage;
+      setError(message);
+      return Promise.reject(cause instanceof Error ? cause : new Error(message));
+    }
+  };
+
+  const loadManualGarmentSource = (garmentId) => {
+    if (typeof onLoadManualGarmentSource !== 'function') return Promise.reject(new Error('Manual contour source loading is unavailable.'));
+    return withManualContext(
+      (value) => onLoadManualGarmentSource(value, garmentId),
+      'Manual contour selection is invalid.',
+    );
+  };
+
+  const saveManualContour = (value) => {
+    if (typeof onSaveManualContour !== 'function') return Promise.reject(new Error('Manual contour saving is unavailable.'));
+    return withManualContext(
+      (current) => onSaveManualContour(current, value),
+      'Manual contour selection is invalid.',
+    );
+  };
+
+  const saveManualBodyAnchors = (value) => {
+    if (typeof onSaveManualBodyAnchors !== 'function') return Promise.reject(new Error('Manual body-anchor saving is unavailable.'));
+    return withManualContext(
+      (current) => onSaveManualBodyAnchors(current, value),
+      'Manual body-anchor selection is invalid.',
+    );
   };
 
   const close = () => {
@@ -174,6 +213,19 @@ export default function CanonicalTryOnRunnerPanel({
           onRecover={() => action('recover')}
           onAbandon={onAbandon}
           onClose={close}
+        />
+      )}
+
+      {hostActive && state?.selection && (
+        <CanonicalTryOnManualRemediationPanel
+          selection={state.selection}
+          result={result}
+          busy={busy}
+          disabled={disabled}
+          onLoadContourSource={loadManualGarmentSource}
+          onSaveContour={saveManualContour}
+          onSaveBodyAnchors={saveManualBodyAnchors}
+          onRecheck={() => action('inspect')}
         />
       )}
     </section>

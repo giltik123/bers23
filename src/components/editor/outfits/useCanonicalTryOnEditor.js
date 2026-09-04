@@ -15,6 +15,8 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
   finalCallbackRef.current = onFinalCandidate;
   const selectionRef = useRef(null);
   const hostRef = useRef(null);
+  const operationRef = useRef(null);
+  const disposeAfterOperationRef = useRef(false);
   const [state, setState] = useState(EMPTY_STATE);
   const [busy, setBusy] = useState(false);
 
@@ -41,6 +43,37 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
     return next;
   }, [createHost]);
 
+  const beginOperation = useCallback((name) => {
+    if (operationRef.current) {
+      throw new Error(`Canonical Try-On Editor ${name} cannot start while ${operationRef.current} is in progress`);
+    }
+    operationRef.current = name;
+    if (mountedRef.current) setBusy(true);
+  }, []);
+
+  const finishOperation = useCallback((host, { clearResult = false } = {}) => {
+    operationRef.current = null;
+    if (!mountedRef.current) {
+      if (disposeAfterOperationRef.current) {
+        disposeAfterOperationRef.current = false;
+        host.requestDispose();
+      }
+      return;
+    }
+    setBusy(false);
+    setState((previous) => Object.freeze({
+      ...previous,
+      selection: selectionRef.current,
+      ...(clearResult ? { result: null } : {}),
+      host: host.snapshot(),
+    }));
+  }, []);
+
+  const publishAdmission = useCallback((host, selection) => {
+    if (!mountedRef.current) return;
+    setState((previous) => Object.freeze({ ...previous, selection, host: host.snapshot() }));
+  }, []);
+
   const publish = useCallback((host, result) => {
     const snapshot = host.snapshot();
     if (!mountedRef.current) {
@@ -63,45 +96,94 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
   const dispatch = useCallback(async (name, context) => {
     if (!ACTIONS.has(name)) throw new Error('Unknown canonical Try-On Editor action');
     const selection = projectSelection(context);
-    selectionRef.current = selection;
     const host = currentHost();
-    setBusy(true);
+    beginOperation(name);
+    selectionRef.current = selection;
     try {
       // Host admission and controller construction happen synchronously before
       // the returned Promise yields. Publish that snapshot immediately so the
       // Outfit builder cannot remain interactive while readiness is pending.
       const operation = host[name](context);
-      if (mountedRef.current) {
-        setState((previous) => Object.freeze({ ...previous, selection, host: host.snapshot() }));
-      }
+      publishAdmission(host, selection);
       const result = await operation;
       publish(host, result);
       return result;
     } finally {
-      if (mountedRef.current) {
-        setBusy(false);
-        setState((previous) => Object.freeze({ ...previous, selection: selectionRef.current, host: host.snapshot() }));
-      }
+      finishOperation(host);
     }
-  }, [currentHost, publish]);
+  }, [beginOperation, currentHost, finishOperation, publish, publishAdmission]);
 
   const retry = useCallback(async () => {
     if (!selectionRef.current) throw new Error('Canonical Try-On Retry requires an active Editor selection');
     const host = currentHost();
-    setBusy(true);
+    beginOperation('retry');
     try {
       const result = await host.retry();
       publish(host, result);
       return result;
     } finally {
-      if (mountedRef.current) {
-        setBusy(false);
-        setState((previous) => Object.freeze({ ...previous, selection: selectionRef.current, host: host.snapshot() }));
-      }
+      finishOperation(host);
     }
-  }, [currentHost, publish]);
+  }, [beginOperation, currentHost, finishOperation, publish]);
+
+  const loadManualGarmentSource = useCallback(async (context, garmentId) => {
+    const selection = projectSelection(context);
+    const host = currentHost();
+    beginOperation('manual-source-load');
+    selectionRef.current = selection;
+    try {
+      const manual = host.manual(context);
+      publishAdmission(host, selection);
+      return await manual.loadGarmentSource(garmentId);
+    } finally {
+      finishOperation(host);
+    }
+  }, [beginOperation, currentHost, finishOperation, publishAdmission]);
+
+  const saveManualContour = useCallback(async (context, value) => {
+    const selection = projectSelection(context);
+    const host = currentHost();
+    beginOperation('manual-contour-save');
+    selectionRef.current = selection;
+    let invalidateReadiness = false;
+    try {
+      const manual = host.manual(context);
+      publishAdmission(host, selection);
+      const result = await manual.saveContour(value);
+      invalidateReadiness = true;
+      return result;
+    } catch (error) {
+      if (error?.code === 'TRYON_MANUAL_CONTOUR_SAVED_RELOAD_PENDING') {
+        // Core accepted the contour before the minimized source reload failed.
+        // The old readiness is invalid even though this error must propagate so
+        // the contour editor locks and requires reload/recheck rather than retry.
+        invalidateReadiness = true;
+      }
+      throw error;
+    } finally {
+      finishOperation(host, { clearResult: invalidateReadiness });
+    }
+  }, [beginOperation, currentHost, finishOperation, publishAdmission]);
+
+  const saveManualBodyAnchors = useCallback(async (context, value) => {
+    const selection = projectSelection(context);
+    const host = currentHost();
+    beginOperation('manual-body-anchor-save');
+    selectionRef.current = selection;
+    let invalidateReadiness = false;
+    try {
+      const manual = host.manual(context);
+      publishAdmission(host, selection);
+      const result = await manual.saveBodyAnchors(value);
+      invalidateReadiness = true;
+      return result;
+    } finally {
+      finishOperation(host, { clearResult: invalidateReadiness });
+    }
+  }, [beginOperation, currentHost, finishOperation, publishAdmission]);
 
   const abandon = useCallback(() => {
+    if (operationRef.current) throw new Error(`Canonical Try-On Editor abandon cannot run while ${operationRef.current} is in progress`);
     const host = currentHost();
     host.abandon();
     if (!mountedRef.current) return;
@@ -109,6 +191,7 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
   }, [currentHost]);
 
   const close = useCallback(() => {
+    if (operationRef.current) throw new Error(`Canonical Try-On Editor close cannot run while ${operationRef.current} is in progress`);
     const host = currentHost();
     host.release();
     selectionRef.current = null;
@@ -118,14 +201,29 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
 
   useEffect(() => {
     mountedRef.current = true;
+    disposeAfterOperationRef.current = false;
     const host = currentHost();
     return () => {
       mountedRef.current = false;
+      if (operationRef.current) {
+        disposeAfterOperationRef.current = true;
+        return;
+      }
       host.requestDispose();
     };
   }, [currentHost]);
 
-  return Object.freeze({ state, busy, dispatch, retry, abandon, close });
+  return Object.freeze({
+    state,
+    busy,
+    dispatch,
+    retry,
+    loadManualGarmentSource,
+    saveManualContour,
+    saveManualBodyAnchors,
+    abandon,
+    close,
+  });
 }
 
 function projectSelection(context) {
