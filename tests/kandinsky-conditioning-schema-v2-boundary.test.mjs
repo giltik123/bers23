@@ -16,6 +16,16 @@ test('schema v2 makes B-to-C positive embedding provenance part of canonical con
   assert.match(contract, /positiveEmbeddingSource must be null for an independent positive embedding candidate/);
 });
 
+test('schema v2 carries exact D1 manifest byte identity through immutable sourceTrust', () => {
+  assert.match(contract, /sourceTrust: \['d1ManifestPath', 'd1ManifestSha256'/);
+  assert.match(contract, /assertSha\(value\.d1ManifestSha256, 'sourceTrust\.d1ManifestSha256'\)/);
+  assert.match(finalizer, /const d1ManifestSha256 = sha256\(d1ManifestBytes\)/);
+  assert.match(finalizer, /sourceTrust: Object\.freeze\([\s\S]*d1ManifestSha256/);
+  assert.match(finalizer, /sourceManifest\.sourceTrust\.d1ManifestSha256 !== d1ManifestSha256/);
+  assert.match(entry, /d1_manifest_sha256=d1_sha256/);
+  assert.match(entry, /"d1ManifestSha256": d1_manifest_sha256/);
+});
+
 test('finalizer derives C provenance from reverified source bytes instead of copying builder evidence', () => {
   assert.match(finalizer, /const positiveEmbeddingSource = assertPositiveEmbeddingSource/);
   assert.match(finalizer, /sourceManifestSha256 = sha256\(sourceManifestBytes\)/);

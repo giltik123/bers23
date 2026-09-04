@@ -11,7 +11,8 @@ import {
 import { conditioningCandidateIdentity } from '../scripts/kandinsky-conditioning-candidate-registry.mjs';
 
 const D1_PATH = 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json';
-const d1 = JSON.parse(fs.readFileSync(D1_PATH, 'utf8'));
+const d1Bytes = fs.readFileSync(D1_PATH);
+const d1 = JSON.parse(d1Bytes.toString('utf8'));
 
 function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
   const identity = conditioningCandidateIdentity(candidateId);
@@ -26,6 +27,7 @@ function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
     priorRuntimeDependencyAllowed: false,
     sourceTrust: {
       d1ManifestPath: D1_PATH,
+      d1ManifestSha256: sha256Bytes(d1Bytes),
       d1ModelId: d1.modelId,
       d1Version: d1.version,
       priorRepository: d1.offlinePrior.repository,
@@ -118,6 +120,16 @@ test('D2a schema v2 makes positive embedding provenance part of immutable candid
   const cOpenSource = validManifest('C_PRESERVATION_EXPLICIT_NEGATIVE');
   cOpenSource.conditioning.positiveEmbeddingSource.runId = 'mutable-ci-id';
   assert.throws(() => assertKandinskyConditioningManifest(cOpenSource, d1), /closed schema|forbidden/);
+});
+
+test('D2a requires exact D1 manifest byte identity inside immutable sourceTrust', () => {
+  const missing = validManifest();
+  delete missing.sourceTrust.d1ManifestSha256;
+  assert.throws(() => assertKandinskyConditioningManifest(missing, d1), /closed schema/);
+
+  const malformed = validManifest();
+  malformed.sourceTrust.d1ManifestSha256 = 'A'.repeat(64);
+  assert.throws(() => assertKandinskyConditioningManifest(malformed, d1), /lowercase SHA-256/);
 });
 
 test('D2a binds exact D1 prior weight and executable config identities', () => {

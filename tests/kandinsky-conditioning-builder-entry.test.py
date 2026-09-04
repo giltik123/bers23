@@ -145,7 +145,8 @@ class KandinskyD2cBuilderEntryTests(unittest.TestCase):
         return observed
 
     def write_c_source_fixture(self, root: Path, d1_path: Path, toolchain_path: Path, seed: int = 123456):
-        d1 = json.loads(d1_path.read_text(encoding='utf-8'))
+        d1_bytes = d1_path.read_bytes()
+        d1 = json.loads(d1_bytes.decode('utf-8'))
         toolchain_lock = json.loads(toolchain_path.read_text(encoding='utf-8'))
         bundle_path = root / 'b.conditioning.safetensors'
         bundle_path.write_bytes(b'accepted-b-conditioning-bundle')
@@ -159,6 +160,7 @@ class KandinskyD2cBuilderEntryTests(unittest.TestCase):
             'priorRuntimeDependencyAllowed': False,
             'sourceTrust': {
                 'd1ManifestPath': D1_MANIFEST_PATH,
+                'd1ManifestSha256': hashlib.sha256(d1_bytes).hexdigest(),
                 'd1ModelId': d1['modelId'],
                 'd1Version': d1['version'],
                 'priorRepository': prior['repository'],
@@ -255,6 +257,12 @@ class KandinskyD2cBuilderEntryTests(unittest.TestCase):
             prior, d1, _prompt, toolchain = self.fixture(root)
             c_prompt, source_manifest_path, source_bundle, source_manifest = self.write_c_source_fixture(root, d1, toolchain)
             source_manifest['sourceTrust']['priorRevision'] = 'forged-revision'
+            source_manifest_path.write_bytes(canonical_json_bytes(source_manifest))
+            with self.assertRaisesRegex(RuntimeError, 'exact D1 prior identity'):
+                self.invoke(prior, d1, c_prompt, toolchain, positive_source_manifest=source_manifest_path, positive_source_bundle=source_bundle)
+
+            _c_prompt, source_manifest_path, source_bundle, source_manifest = self.write_c_source_fixture(root, d1, toolchain)
+            source_manifest['sourceTrust']['d1ManifestSha256'] = 'f' * 64
             source_manifest_path.write_bytes(canonical_json_bytes(source_manifest))
             with self.assertRaisesRegex(RuntimeError, 'exact D1 prior identity'):
                 self.invoke(prior, d1, c_prompt, toolchain, positive_source_manifest=source_manifest_path, positive_source_bundle=source_bundle)

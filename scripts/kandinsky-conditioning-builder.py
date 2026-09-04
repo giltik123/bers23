@@ -80,6 +80,7 @@ def main() -> None:
 
     prevalidate_positive_source(
         d1=d1,
+        d1_manifest_sha256=d1_sha256,
         prompt=prompt,
         toolchain_lock=toolchain_lock,
         seed=seed,
@@ -124,7 +125,9 @@ def main() -> None:
         seal_builder_evidence(Path(output_dir), candidate_id, d1_sha256)
 
 
-def prevalidate_positive_source(*, d1: dict, prompt: dict, toolchain_lock: dict, seed: int, manifest_arg: str | None, bundle_arg: str | None) -> None:
+def prevalidate_positive_source(*, d1: dict, d1_manifest_sha256: str, prompt: dict, toolchain_lock: dict, seed: int, manifest_arg: str | None, bundle_arg: str | None) -> None:
+    if not SHA256.fullmatch(d1_manifest_sha256):
+        raise RuntimeError("current D1 manifest SHA-256 is invalid")
     expected_source = prompt.get("positiveEmbeddingSourceCandidateId")
     if expected_source is None:
         if manifest_arg is not None or bundle_arg is not None:
@@ -162,6 +165,7 @@ def prevalidate_positive_source(*, d1: dict, prompt: dict, toolchain_lock: dict,
     prior = d1.get("offlinePrior") or {}
     expected_source_trust = {
         "d1ManifestPath": D1_MANIFEST_PATH,
+        "d1ManifestSha256": d1_manifest_sha256,
         "d1ModelId": d1.get("modelId"),
         "d1Version": d1.get("version"),
         "priorRepository": prior.get("repository"),

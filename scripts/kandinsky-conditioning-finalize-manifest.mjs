@@ -14,6 +14,7 @@ import { conditioningPromptContract } from './kandinsky-conditioning-prompt-cont
 
 const args = parseArgs(process.argv.slice(2));
 const d1ManifestBytes = readBytes(args.d1, 'D1 manifest');
+const d1ManifestSha256 = sha256(d1ManifestBytes);
 const d1 = readJson(args.d1, 'D1 manifest');
 const prompt = readJson(args.prompt, 'D2b prompt contract');
 const evidence = readJson(args.evidence, 'D2c builder evidence');
@@ -39,6 +40,7 @@ const manifest = Object.freeze({
   priorRuntimeDependencyAllowed: false,
   sourceTrust: Object.freeze({
     d1ManifestPath: 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json',
+    d1ManifestSha256,
     d1ModelId: d1.modelId,
     d1Version: d1.version,
     priorRepository: d1.offlinePrior.repository,
@@ -98,7 +100,7 @@ function assertEvidenceAndTargetBundle(value, candidateId, identity, bundleBytes
   if (value.conditioningContractSha256 !== identity.conditioningContractSha256) fail('builder evidence conditioning SHA mismatch');
 
   exactKeys(value.sourceTrust, ['d1ManifestSha256','d1ModelId','d1Version','priorRepository','priorRevision','priorPipelineGitBlobSha1'], 'builder evidence sourceTrust');
-  if (!/^[0-9a-f]{64}$/.test(value.sourceTrust.d1ManifestSha256) || value.sourceTrust.d1ManifestSha256 !== sha256(d1ManifestBytes)) {
+  if (!/^[0-9a-f]{64}$/.test(value.sourceTrust.d1ManifestSha256) || value.sourceTrust.d1ManifestSha256 !== d1ManifestSha256) {
     fail('builder evidence is not bound to the exact D1 manifest bytes');
   }
   if (value.sourceTrust.d1ModelId !== d1.modelId || value.sourceTrust.d1Version !== d1.version || value.sourceTrust.priorRepository !== d1.offlinePrior.repository || value.sourceTrust.priorRevision !== d1.offlinePrior.revision) {
@@ -149,6 +151,7 @@ function assertPositiveEmbeddingSource({ args, d1, evidence, targetParsed, candi
 
   const sourceManifestBytes = readBytes(args.positiveSourceManifest, 'positive source manifest');
   const sourceManifest = assertCanonicalManifestBytes(sourceManifestBytes, d1);
+  if (sourceManifest.sourceTrust.d1ManifestSha256 !== d1ManifestSha256) fail('positive source manifest is not bound to the exact current D1 manifest bytes');
   if (sourceManifest.conditioning.candidateId !== expectedSourceCandidateId) fail('positive source manifest candidate mismatch');
   const sourceIdentity = conditioningCandidateIdentity(expectedSourceCandidateId);
   if (sourceManifest.conditioning.conditioningContractSha256 !== sourceIdentity.conditioningContractSha256) fail('positive source manifest contract identity mismatch');

@@ -18,7 +18,7 @@ export const KANDINSKY_HISTORICAL_DIFFUSERS_VERSION = '0.18.0.dev0';
 const SHA256 = /^[0-9a-f]{64}$/;
 const EXACT_KEYS = Object.freeze({
   root: ['schemaVersion', 'stage', 'status', 'productionExecutable', 'runtimeAuthorityGranted', 'priorRuntimeDependencyAllowed', 'sourceTrust', 'historicalPipeline', 'toolchain', 'determinism', 'conditioning', 'bundle'],
-  sourceTrust: ['d1ManifestPath', 'd1ModelId', 'd1Version', 'priorRepository', 'priorRevision', 'priorSafeWeights', 'priorConfigFiles'],
+  sourceTrust: ['d1ManifestPath', 'd1ManifestSha256', 'd1ModelId', 'd1Version', 'priorRepository', 'priorRevision', 'priorSafeWeights', 'priorConfigFiles'],
   identityFile: ['path', 'size', 'sha256'],
   historicalPipeline: ['diffusersRevision', 'pipelineClass', 'numImagesPerPrompt', 'numInferenceSteps', 'guidanceScale', 'outputType'],
   toolchain: ['containerImageDigest', 'pythonVersion', 'diffusersVersion', 'torchVersion', 'transformersVersion', 'numpyVersion', 'safetensorsVersion', 'platformMachine'],
@@ -80,6 +80,7 @@ function assertD1SourceTrust(value, d1Manifest) {
   assertPlainObject(value, 'sourceTrust');
   assertExactKeys(value, EXACT_KEYS.sourceTrust, 'sourceTrust');
   assertEqual(value.d1ManifestPath, KANDINSKY_D1_MANIFEST_PATH, 'sourceTrust.d1ManifestPath');
+  assertSha(value.d1ManifestSha256, 'sourceTrust.d1ManifestSha256');
   assertEqual(value.d1ModelId, KANDINSKY_D1_MODEL_ID, 'sourceTrust.d1ModelId');
   assertEqual(value.d1Version, KANDINSKY_D1_VERSION, 'sourceTrust.d1Version');
   assertEqual(value.priorRepository, KANDINSKY_PRIOR_REPOSITORY, 'sourceTrust.priorRepository');
