@@ -1,8 +1,4 @@
-import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng';
 import { normalizeCanonicalTryOnReadinessSummary } from './canonicalTryOnReadinessContract.js';
-import { createCanonicalTryOnEditorController } from './createCanonicalTryOnEditorController.js';
-import { createCanonicalTryOnProductRuntime } from './createCanonicalTryOnProductRuntime.js';
-import { createTryOnEditorFinalHandoff } from './createTryOnEditorFinalHandoff.js';
 
 const ENTRY_ACTIONS = new Set(['inspect', 'run']);
 const CONTINUATION_ACTIONS = new Set(['resume', 'recover', 'retry']);
@@ -17,7 +13,7 @@ const CONTINUATION = new Set([
  * It is intentionally not React-specific: Editor can keep one instance in a
  * ref while ResultCompare temporarily unmounts the Outfit panel. The owner
  * publishes only safe UI snapshots and never exposes the controller, runtime,
- * session or request identity.
+ * session or request identity. Production composition is injected separately.
  */
 export function createCanonicalTryOnEditorUiOwner({
   getProject,
@@ -25,7 +21,7 @@ export function createCanonicalTryOnEditorUiOwner({
   disposePendingPreview,
   onStateChange = () => {},
   reportError = () => {},
-  createController = createProductionController,
+  createController,
 }) {
   requireFunction(getProject, 'getProject');
   requireFunction(publishPendingResult, 'publishPendingResult');
@@ -217,28 +213,6 @@ export function createCanonicalTryOnEditorUiOwner({
       if (disposed) return;
       invalidate({ close: true });
     },
-  });
-}
-
-function createProductionController({ selection, beforeUrl }) {
-  const handoff = createTryOnEditorFinalHandoff({
-    encodePreviewPng: encodeDeterministicRgbaPng,
-    createBlobUrl: async (bytes) => {
-      if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) {
-        throw new Error('Canonical Try-On Editor PNG bytes are unavailable');
-      }
-      if (typeof globalThis.Blob !== 'function'
-        || typeof globalThis.URL?.createObjectURL !== 'function') {
-        throw new Error('Canonical Try-On Editor blob URL capability is unavailable');
-      }
-      return globalThis.URL.createObjectURL(new globalThis.Blob([bytes], { type: 'image/png' }));
-    },
-  });
-  return createCanonicalTryOnEditorController({
-    selection,
-    beforeUrl,
-    createRuntime: createCanonicalTryOnProductRuntime,
-    handoff,
   });
 }
 
