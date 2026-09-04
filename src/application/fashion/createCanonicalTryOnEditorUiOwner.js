@@ -64,7 +64,9 @@ export function createCanonicalTryOnEditorUiOwner({
     });
   };
 
-  const emit = () => onStateChange(snapshot());
+  const emit = () => {
+    if (!disposed) onStateChange(snapshot());
+  };
 
   const invalidate = ({ close = false } = {}) => {
     const previous = controller;
@@ -90,17 +92,21 @@ export function createCanonicalTryOnEditorUiOwner({
     const outfit = payload.outfit;
     requirePlainObject(outfit, 'Canonical Try-On UI Outfit');
     if (!Array.isArray(outfit.entries)) throw new TypeError('Canonical Try-On UI Outfit entries must be an array');
+    if (!Number.isSafeInteger(outfit.revision) || outfit.revision < 1) {
+      throw new TypeError('Canonical Try-On UI Outfit revision must be a positive safe integer');
+    }
+    const outfitId = requireString(outfit.id, 'outfit id');
     const matches = outfit.entries.filter((entry) => entry?.entryId === payload.entryId);
     if (matches.length !== 1) throw new Error('Canonical Try-On UI selection must resolve one Outfit entry');
     const nextEntryId = requireString(matches[0].entryId, 'entryId');
     const nextGarmentId = requireString(matches[0].garmentId, 'garmentId');
-    const key = [
+    const key = JSON.stringify([
       project.id,
       project.sourceArtifactId,
-      requireString(outfit.id, 'outfit id'),
-      String(outfit.revision ?? ''),
+      outfitId,
+      outfit.revision,
       nextEntryId,
-    ].join(':');
+    ]);
 
     if (controller && selectionKey === key) return controller;
     if (controller) {
