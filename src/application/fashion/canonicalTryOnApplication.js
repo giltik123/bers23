@@ -1,11 +1,11 @@
+import {
+  normalizeCanonicalTryOnReadinessSummary,
+  requireCanonicalTryOnSupportedCategoryGroup,
+} from './canonicalTryOnReadinessContract.js';
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLIENT_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const PREVIEW_DELIVERY_URL = /^\/api\/core\/artifacts\/results\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
-const READINESS = new Set([
-  'READY', 'SOURCE_UNAVAILABLE', 'STALE_SOURCE', 'GARMENT_UNAVAILABLE', 'GARMENT_UNSUPPORTED',
-  'REPRESENTATION_REQUIRED', 'REPRESENTATION_AMBIGUOUS', 'BODY_ANCHORS_REQUIRED',
-  'BODY_ANCHORS_AMBIGUOUS', 'EVIDENCE_INVALID',
-]);
 
 /**
  * Pure product-application coordinator for deterministic Fashion Try-On.
@@ -76,6 +76,7 @@ export function createCanonicalTryOnApplication({ core, executeWarp, executeText
       );
       if (prepared.status !== 'WARP_PREPARED') throw new Error('Unexpected Try-On prepare status');
       assertStableEcho(prepared, intent);
+      requireCanonicalTryOnSupportedCategoryGroup(prepared.categoryGroup, 'Try-On WARP_PREPARED');
       await executeWarp(Object.freeze({ projectId: intent.projectId, preparedExecution: prepared.preparedExecution }));
       return advance(intent, { allowTextureExecution: true });
     },
@@ -134,15 +135,13 @@ function normalizeReadiness(value, intent) {
     ? ['garmentId', 'projectId', 'sourceArtifactId', 'status']
     : ['categoryGroup', 'garmentId', 'projectId', 'sourceArtifactId', 'status'];
   requireExactKeys(value, allowed, 'Try-On readiness response');
-  if (!READINESS.has(value.status)) throw new Error('Unknown Try-On readiness status');
   assertStableEcho(value, intent);
-  if (value.categoryGroup !== undefined && !['tops', 'bottoms', 'dresses', 'footwear', 'accessories', 'other'].includes(value.categoryGroup)) {
-    throw new Error('Unknown Try-On category group');
-  }
-  return Object.freeze({
-    status: value.status,
-    ...(value.categoryGroup !== undefined ? { categoryGroup: value.categoryGroup } : {}),
-  });
+  return normalizeCanonicalTryOnReadinessSummary(
+    value.categoryGroup === undefined
+      ? { status: value.status }
+      : { status: value.status, categoryGroup: value.categoryGroup },
+    'Try-On readiness',
+  );
 }
 
 function normalizePreview(value, intent) {
@@ -227,11 +226,13 @@ function requirePlainObject(value, label) {
   }
 }
 
+function sameKeys(actual, expected) {
+  const wanted = [...expected].sort();
+  return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
+}
+
 function requireExactKeys(value, expected, label) {
   requirePlainObject(value, label);
   const actual = Object.keys(value).sort();
-  const wanted = [...expected].sort();
-  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
-    throw new Error(`${label} has unknown or missing fields`);
-  }
+  if (!sameKeys(actual, expected)) throw new Error(`${label} has unknown or missing fields`);
 }

@@ -15,11 +15,13 @@ function outfit(overrides = {}) {
   };
 }
 
+const intent = () => ({ outfit: outfit(), entryId: ENTRY, projectId: PROJECT, sourceArtifactId: 'source' });
+
 test('selection delegates exactly one stable garment/source to canonical readiness only', async () => {
   const calls = [];
   const selection = createCanonicalTryOnReadinessSelection({
-    checkReadiness: async (intent) => {
-      calls.push(intent);
+    checkReadiness: async (value) => {
+      calls.push(value);
       return { status: 'READY', categoryGroup: 'tops' };
     },
   });
@@ -36,7 +38,7 @@ test('selection delegates exactly one stable garment/source to canonical readine
 });
 
 test('selection requires an ACTIVE Outfit and a canonically READY exact entry', async () => {
-  const selection = createCanonicalTryOnReadinessSelection({ checkReadiness: async () => ({ status: 'READY' }) });
+  const selection = createCanonicalTryOnReadinessSelection({ checkReadiness: async () => ({ status: 'READY', categoryGroup: 'tops' }) });
   await assert.rejects(() => selection.inspect({ outfit: outfit({ status: 'ARCHIVED' }), entryId: ENTRY, projectId: PROJECT, sourceArtifactId: 'source' }), /active canonical Outfit/);
   await assert.rejects(() => selection.inspect({ outfit: outfit({ entries: [{ entryId: ENTRY, garmentId: GARMENT, referenceReadiness: 'ROLE_REVIEW_REQUIRED' }] }), entryId: ENTRY, projectId: PROJECT, sourceArtifactId: 'source' }), /not canonically ready/);
   await assert.rejects(() => selection.inspect({ outfit: outfit(), entryId: 'eeeeeeee-5555-4555-8555-555555555555', projectId: PROJECT, sourceArtifactId: 'source' }), /exactly one canonical Outfit entry/);
@@ -45,29 +47,59 @@ test('selection requires an ACTIVE Outfit and a canonically READY exact entry', 
 
 test('selection rejects malformed Outfit-entry, Project and source identity before Core call', async () => {
   let calls = 0;
-  const selection = createCanonicalTryOnReadinessSelection({ checkReadiness: async () => { calls += 1; return { status: 'READY' }; } });
+  const selection = createCanonicalTryOnReadinessSelection({ checkReadiness: async () => { calls += 1; return { status: 'READY', categoryGroup: 'tops' }; } });
   await assert.rejects(() => selection.inspect({ outfit: outfit(), entryId: 'entry-1', projectId: PROJECT, sourceArtifactId: 'source' }), /entryId must be a UUID/);
   await assert.rejects(() => selection.inspect({ outfit: outfit(), entryId: ENTRY, projectId: 'bad', sourceArtifactId: 'source' }), /projectId must be a UUID/);
   await assert.rejects(() => selection.inspect({ outfit: outfit(), entryId: ENTRY, projectId: PROJECT, sourceArtifactId: 'x'.repeat(513) }), /outside the accepted Try-On contract/);
   assert.equal(calls, 0);
 });
 
-test('selection renders only the closed canonical readiness vocabulary', async () => {
+test('selection renders the closed canonical readiness vocabulary', async () => {
+  const ready = createCanonicalTryOnReadinessSelection({ checkReadiness: async () => ({ status: 'READY', categoryGroup: 'tops' }) });
+  assert.equal((await ready.inspect(intent())).status, 'READY');
+
   for (const status of [
-    'READY', 'SOURCE_UNAVAILABLE', 'STALE_SOURCE', 'GARMENT_UNAVAILABLE', 'GARMENT_UNSUPPORTED',
+    'SOURCE_UNAVAILABLE', 'STALE_SOURCE', 'GARMENT_UNAVAILABLE', 'GARMENT_UNSUPPORTED',
     'REPRESENTATION_REQUIRED', 'REPRESENTATION_AMBIGUOUS', 'BODY_ANCHORS_REQUIRED',
     'BODY_ANCHORS_AMBIGUOUS', 'EVIDENCE_INVALID',
   ]) {
     const selection = createCanonicalTryOnReadinessSelection({ checkReadiness: async () => ({ status }) });
-    assert.equal((await selection.inspect({ outfit: outfit(), entryId: ENTRY, projectId: PROJECT, sourceArtifactId: 'source' })).status, status);
+    assert.equal((await selection.inspect(intent())).status, status);
   }
   const invalid = createCanonicalTryOnReadinessSelection({ checkReadiness: async () => ({ status: 'FALLBACK_TO_CLOUD' }) });
-  await assert.rejects(() => invalid.inspect({ outfit: outfit(), entryId: ENTRY, projectId: PROJECT, sourceArtifactId: 'source' }), /Unknown Try-On readiness status/);
+  await assert.rejects(() => invalid.inspect(intent()), /Unknown Try-On readiness status/);
+});
+
+test('READY requires a server-supported deterministic category group', async () => {
+  for (const response of [
+    { status: 'READY' },
+    { status: 'READY', categoryGroup: 'accessories' },
+    { status: 'READY', categoryGroup: 'other' },
+  ]) {
+    const selection = createCanonicalTryOnReadinessSelection({ checkReadiness: async () => response });
+    await assert.rejects(() => selection.inspect(intent()), /READY requires a supported category group/);
+  }
+  for (const categoryGroup of ['tops', 'bottoms', 'dresses', 'footwear']) {
+    const selection = createCanonicalTryOnReadinessSelection({ checkReadiness: async () => ({ status: 'READY', categoryGroup }) });
+    assert.equal((await selection.inspect(intent())).categoryGroup, categoryGroup);
+  }
+});
+
+test('failure readiness may retain known unsupported group for actionable diagnostics', async () => {
+  const selection = createCanonicalTryOnReadinessSelection({
+    checkReadiness: async () => ({ status: 'GARMENT_UNSUPPORTED', categoryGroup: 'accessories' }),
+  });
+  assert.deepEqual(await selection.inspect(intent()), {
+    entryId: ENTRY,
+    garmentId: GARMENT,
+    status: 'GARMENT_UNSUPPORTED',
+    categoryGroup: 'accessories',
+  });
 });
 
 test('readiness response cannot smuggle execution or billing authority', async () => {
   const selection = createCanonicalTryOnReadinessSelection({
-    checkReadiness: async () => ({ status: 'READY', ticketId: 'forbidden' }),
+    checkReadiness: async () => ({ status: 'READY', categoryGroup: 'tops', ticketId: 'forbidden' }),
   });
-  await assert.rejects(() => selection.inspect({ outfit: outfit(), entryId: ENTRY, projectId: PROJECT, sourceArtifactId: 'source' }), /unknown or missing fields/);
+  await assert.rejects(() => selection.inspect(intent()), /unknown or missing fields/);
 });

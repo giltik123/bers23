@@ -1,0 +1,52 @@
+name: Fashion F4b.6d.8a supported READY contract
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/canonicalTryOnReadinessContract.js'
+      - 'src/application/fashion/createCanonicalTryOnReadinessSelection.js'
+      - 'src/application/fashion/canonicalTryOnApplication.js'
+      - 'tests/fashion-tryon-readiness-selection.test.mjs'
+      - 'tests/canonical-tryon-application.test.mjs'
+      - 'tests/fashion-tryon-readiness-supported-ready.test.mjs'
+      - '.github/workflows/fashion-tryon-readiness-supported-ready-f4b6d8a.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  supported-ready-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Prove readiness, application and regression contracts
+        run: |
+          node --test \
+            tests/fashion-tryon-readiness-supported-ready.test.mjs \
+            tests/fashion-tryon-readiness-selection.test.mjs \
+            tests/canonical-tryon-application.test.mjs
+      - name: Prove READY and prepared execution are fail-closed
+        run: |
+          set -euo pipefail
+          CONTRACT=src/application/fashion/canonicalTryOnReadinessContract.js
+          SELECTION=src/application/fashion/createCanonicalTryOnReadinessSelection.js
+          APPLICATION=src/application/fashion/canonicalTryOnApplication.js
+          grep -q "'tops', 'bottoms', 'dresses', 'footwear'" "$CONTRACT"
+          grep -q "value.status === 'READY'" "$CONTRACT"
+          grep -q 'READY requires a supported category group' "$CONTRACT"
+          grep -q 'requireCanonicalTryOnSupportedCategoryGroup' "$CONTRACT"
+          grep -q 'normalizeCanonicalTryOnReadinessSummary' "$SELECTION"
+          grep -q 'normalizeCanonicalTryOnReadinessSummary' "$APPLICATION"
+          grep -q "requireCanonicalTryOnSupportedCategoryGroup(prepared.categoryGroup, 'Try-On WARP_PREPARED')" "$APPLICATION"
+          ! grep -E 'FASHN|Billing|credits|localStorage|sessionStorage|indexedDB|outfitManager|pushEdit' "$CONTRACT" "$SELECTION"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
