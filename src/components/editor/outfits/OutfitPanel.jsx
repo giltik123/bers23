@@ -21,7 +21,11 @@ function label(value) {
   return String(value || '').replaceAll('_', ' ').toLowerCase();
 }
 
-export default function OutfitPanel() {
+export default function OutfitPanel({
+  disabled = false,
+  tryOnState = null,
+  onTryOnAction,
+}) {
   const model = useMemo(() => createCanonicalOutfitViewModel({
     outfits: coreClient.fashion.outfits,
     wardrobe: coreClient.fashion.wardrobe,
@@ -39,6 +43,7 @@ export default function OutfitPanel() {
   const [addRole, setAddRole] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [tryOnError, setTryOnError] = useState('');
 
   const applySnapshot = useCallback((snapshot) => {
     setOutfits(snapshot.outfits);
@@ -79,6 +84,8 @@ export default function OutfitPanel() {
   ), [garments, selectedGarmentIds]);
   const addGarment = garmentById.get(addGarmentId);
   const addAllowedRoles = allowedLayerRolesForCategory(addGarment?.category);
+  const mutationBlocked = Boolean(busy) || disabled || tryOnState?.hasInFlight === true;
+  const tryOnActionBlocked = Boolean(busy) || disabled || tryOnState?.busy === true;
 
   useEffect(() => {
     if (!availableGarments.some((item) => item.garmentId === addGarmentId)) {
@@ -106,7 +113,7 @@ export default function OutfitPanel() {
 
   const create = async (event) => {
     event.preventDefault();
-    if (!newName.trim() || busy) return;
+    if (!newName.trim() || mutationBlocked) return;
     setBusy('create');
     setError('');
     try {
@@ -123,7 +130,7 @@ export default function OutfitPanel() {
   };
 
   const mutateSelected = async (key, action) => {
-    if (!selected || busy) return false;
+    if (!selected || mutationBlocked) return false;
     setBusy(key);
     setError('');
     try {
@@ -146,13 +153,27 @@ export default function OutfitPanel() {
     occasion: editOccasion,
   }));
 
+  const invokeTryOn = async (action, outfit, entryId) => {
+    if (tryOnActionBlocked || typeof onTryOnAction !== 'function') return;
+    setTryOnError('');
+    try {
+      if (action === 'inspect' || action === 'run') {
+        await onTryOnAction(action, { outfit, entryId });
+      } else {
+        await onTryOnAction(action, { entryId });
+      }
+    } catch (cause) {
+      setTryOnError(cause?.message || 'Canonical Try-On action failed.');
+    }
+  };
+
   return (
     <section className="rounded-2xl border border-border p-3 space-y-3" aria-label="Canonical Outfit builder">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium flex items-center gap-1.5">
           <Layers className="w-3.5 h-3.5 text-primary" /> Outfits
         </p>
-        <Button variant="ghost" size="sm" className="h-8" onClick={reload} disabled={Boolean(busy)}>
+        <Button variant="ghost" size="sm" className="h-8" onClick={reload} disabled={mutationBlocked}>
           <RefreshCw className={`h-3.5 w-3.5 ${busy === 'load' ? 'animate-spin' : ''}`} />
           <span className="sr-only">Reload outfits</span>
         </Button>
@@ -168,14 +189,15 @@ export default function OutfitPanel() {
           onChange={(event) => setNewName(event.target.value)}
           placeholder="New outfit"
           maxLength={200}
-          disabled={Boolean(busy)}
+          disabled={mutationBlocked}
         />
-        <Button type="submit" size="sm" disabled={!newName.trim() || Boolean(busy)}>
+        <Button type="submit" size="sm" disabled={!newName.trim() || mutationBlocked}>
           <Plus className="h-3.5 w-3.5 mr-1" /> Create
         </Button>
       </form>
 
       {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+      {tryOnError && <p className="text-xs text-destructive" role="alert">{tryOnError}</p>}
       {wardrobeWarning && <p className="text-[11px] text-amber-700 dark:text-amber-300" role="status">{wardrobeWarning}</p>}
 
       {busy === 'load' && outfits.length === 0 ? (
@@ -194,7 +216,8 @@ export default function OutfitPanel() {
                 key={outfit.id}
                 type="button"
                 onClick={() => setSelectedId(outfit.id)}
-                className={`rounded-full border px-2 py-1 text-[11px] ${selectedId === outfit.id ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-accent'}`}
+                disabled={tryOnState?.hasInFlight === true}
+                className={`rounded-full border px-2 py-1 text-[11px] disabled:opacity-50 ${selectedId === outfit.id ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-accent'}`}
               >
                 {outfit.name} ({outfit.entries.length})
               </button>
@@ -214,17 +237,17 @@ export default function OutfitPanel() {
                     aria-label={selected.favorite ? `Remove ${selected.name} from favorites` : `Add ${selected.name} to favorites`}
                     aria-pressed={selected.favorite}
                     className="rounded-md p-1 hover:bg-accent disabled:opacity-50"
-                    disabled={Boolean(busy) || selected.status !== 'ACTIVE'}
+                    disabled={mutationBlocked || selected.status !== 'ACTIVE'}
                     onClick={() => mutateSelected('favorite', (outfit) => model.setFavorite(outfit, !outfit.favorite))}
                   >
                     <Heart className={`h-4 w-4 ${selected.favorite ? 'fill-current' : ''}`} />
                   </button>
                   {selected.status === 'ACTIVE' ? (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={Boolean(busy)} onClick={() => mutateSelected('archive', (outfit) => model.archive(outfit))}>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={mutationBlocked} onClick={() => mutateSelected('archive', (outfit) => model.archive(outfit))}>
                       <Archive className="h-3.5 w-3.5 mr-1" /> Archive
                     </Button>
                   ) : (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={Boolean(busy)} onClick={() => mutateSelected('restore', (outfit) => model.restore(outfit))}>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={mutationBlocked} onClick={() => mutateSelected('restore', (outfit) => model.restore(outfit))}>
                       <RotateCcw className="h-3.5 w-3.5 mr-1" /> Restore
                     </Button>
                   )}
@@ -232,19 +255,19 @@ export default function OutfitPanel() {
               </div>
 
               <div className="grid grid-cols-2 gap-1.5">
-                <Input value={editName} onChange={(event) => setEditName(event.target.value)} maxLength={200} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} aria-label="Outfit name" />
-                <select value={editStyle} onChange={(event) => setEditStyle(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit style">
+                <Input value={editName} onChange={(event) => setEditName(event.target.value)} maxLength={200} disabled={mutationBlocked || selected.status !== 'ACTIVE'} aria-label="Outfit name" />
+                <select value={editStyle} onChange={(event) => setEditStyle(event.target.value)} disabled={mutationBlocked || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit style">
                   {OUTFIT_STYLES.map((value) => <option key={value} value={value}>{label(value)}</option>)}
                 </select>
-                <select value={editSeason} onChange={(event) => setEditSeason(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit season">
+                <select value={editSeason} onChange={(event) => setEditSeason(event.target.value)} disabled={mutationBlocked || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit season">
                   {OUTFIT_SEASONS.map((value) => <option key={value} value={value}>{label(value)}</option>)}
                 </select>
-                <select value={editOccasion} onChange={(event) => setEditOccasion(event.target.value)} disabled={Boolean(busy) || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit occasion">
+                <select value={editOccasion} onChange={(event) => setEditOccasion(event.target.value)} disabled={mutationBlocked || selected.status !== 'ACTIVE'} className="h-9 rounded-md border border-input bg-transparent px-2 text-xs" aria-label="Outfit occasion">
                   {OUTFIT_OCCASIONS.map((value) => <option key={value} value={value}>{label(value)}</option>)}
                 </select>
               </div>
               <div className="flex justify-end">
-                <Button size="sm" variant="secondary" className="h-8" disabled={!metadataDirty || Boolean(busy) || selected.status !== 'ACTIVE'} onClick={saveMetadata}>
+                <Button size="sm" variant="secondary" className="h-8" disabled={!metadataDirty || mutationBlocked || selected.status !== 'ACTIVE'} onClick={saveMetadata}>
                   <Save className="h-3.5 w-3.5 mr-1" /> Save metadata
                 </Button>
               </div>
@@ -255,7 +278,7 @@ export default function OutfitPanel() {
                     value={addGarmentId}
                     onChange={(event) => setAddGarmentId(event.target.value)}
                     className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-                    disabled={Boolean(busy) || availableGarments.length === 0}
+                    disabled={mutationBlocked || availableGarments.length === 0}
                     aria-label="Garment to add"
                   >
                     <option value="">Add garment…</option>
@@ -269,7 +292,7 @@ export default function OutfitPanel() {
                     value={addRole}
                     onChange={(event) => setAddRole(event.target.value)}
                     className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-                    disabled={Boolean(busy) || !addGarmentId || addAllowedRoles.length === 0}
+                    disabled={mutationBlocked || !addGarmentId || addAllowedRoles.length === 0}
                     aria-label="Layer role for new garment"
                   >
                     <option value="">Auto role</option>
@@ -278,7 +301,7 @@ export default function OutfitPanel() {
                   <Button
                     size="sm"
                     className="h-8"
-                    disabled={!addGarmentId || addAllowedRoles.length === 0 || Boolean(busy)}
+                    disabled={!addGarmentId || addAllowedRoles.length === 0 || mutationBlocked}
                     onClick={() => mutateSelected(
                       `add:${addGarmentId}`,
                       (outfit) => model.addEntry(outfit, addGarmentId, addRole),
@@ -300,38 +323,81 @@ export default function OutfitPanel() {
                     const garment = garmentById.get(entry.garmentId);
                     const allowedRoles = allowedLayerRolesForEntry(entry, garment);
                     const currentRoleIsAllowed = allowedRoles.includes(entry.layerRole);
+                    const activeTryOn = tryOnState?.entryId === entry.entryId;
+                    const tryOnOutcome = activeTryOn ? tryOnState?.outcome : null;
+                    const readiness = tryOnOutcome?.readiness;
+                    const canTryOn = selected.status === 'ACTIVE'
+                      && entry.referenceReadiness === 'READY'
+                      && typeof onTryOnAction === 'function';
                     return (
-                      <div key={entry.entryId} className="grid grid-cols-[1fr_auto_auto] items-center gap-1.5 rounded-lg bg-background/70 px-2 py-1.5">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-medium truncate">{garment?.name || 'Unavailable garment reference'}</p>
-                          <p className="text-[9px] text-muted-foreground truncate">
-                            {entry.referenceReadiness === 'READY' ? garment?.category || entry.garmentCategory || entry.garmentId : label(entry.referenceReadiness)}
+                      <div key={entry.entryId} className="rounded-lg bg-background/70 px-2 py-1.5 space-y-1.5">
+                        <div className="grid grid-cols-[1fr_auto_auto] items-center gap-1.5">
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-medium truncate">{garment?.name || 'Unavailable garment reference'}</p>
+                            <p className="text-[9px] text-muted-foreground truncate">
+                              {entry.referenceReadiness === 'READY' ? garment?.category || entry.garmentCategory || entry.garmentId : label(entry.referenceReadiness)}
+                            </p>
+                          </div>
+                          <select
+                            value={entry.layerRole}
+                            onChange={(event) => mutateSelected(
+                              `role:${entry.entryId}`,
+                              (outfit) => model.setEntryRole(outfit, entry.entryId, event.target.value),
+                            )}
+                            className="h-7 rounded-md border border-input bg-transparent px-1 text-[10px]"
+                            disabled={mutationBlocked || selected.status !== 'ACTIVE' || allowedRoles.length === 0}
+                            aria-label={`Layer role for ${garment?.name || entry.garmentId}`}
+                          >
+                            {!currentRoleIsAllowed && <option value={entry.layerRole}>{label(entry.layerRole)} · review</option>}
+                            {allowedRoles.map((role) => <option key={role} value={role}>{label(role)}</option>)}
+                          </select>
+                          <div className="flex items-center">
+                            <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} up`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={mutationBlocked || selected.status !== 'ACTIVE' || index === 0} onClick={() => mutateSelected(`up:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, -1))}>
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} down`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={mutationBlocked || selected.status !== 'ACTIVE' || index === selected.entries.length - 1} onClick={() => mutateSelected(`down:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, 1))}>
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button" aria-label={`Remove ${garment?.name || entry.garmentId} from ${selected.name}`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={mutationBlocked || selected.status !== 'ACTIVE'} onClick={() => mutateSelected(`remove:${entry.entryId}`, (outfit) => model.removeEntry(outfit, entry.entryId))}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {canTryOn && (
+                          <div className="flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-1.5" aria-label={`Canonical Try-On controls for ${garment?.name || entry.garmentId}`}>
+                            {activeTryOn && (
+                              <span className="mr-auto text-[9px] text-muted-foreground" role="status">
+                                Try-On: {tryOnState?.busy ? 'working' : readiness ? label(readiness.status) : label(tryOnState?.phase)}
+                              </span>
+                            )}
+                            {!activeTryOn || (!tryOnState?.hasInFlight && !tryOnOutcome) ? (
+                              <Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" disabled={tryOnActionBlocked} onClick={() => invokeTryOn('inspect', selected, entry.entryId)}>
+                                Check Try-On
+                              </Button>
+                            ) : tryOnOutcome?.status === 'READINESS' && readiness?.status === 'READY' ? (
+                              <Button type="button" size="sm" className="h-7 text-[10px]" disabled={tryOnActionBlocked} onClick={() => invokeTryOn('run', selected, entry.entryId)}>
+                                Run Try-On
+                              </Button>
+                            ) : !tryOnState?.hasInFlight ? (
+                              <Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" disabled={tryOnActionBlocked} onClick={() => invokeTryOn('inspect', selected, entry.entryId)}>
+                                Recheck
+                              </Button>
+                            ) : (
+                              <>
+                                <Button type="button" size="sm" className="h-7 text-[10px]" disabled={tryOnActionBlocked} onClick={() => invokeTryOn('resume', selected, entry.entryId)}>Resume</Button>
+                                <Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" disabled={tryOnActionBlocked} onClick={() => invokeTryOn('recover', selected, entry.entryId)}>Recover</Button>
+                                <Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" disabled={tryOnActionBlocked} onClick={() => invokeTryOn('retry', selected, entry.entryId)}>Retry</Button>
+                                <Button type="button" variant="ghost" size="sm" className="h-7 text-[10px]" disabled={tryOnActionBlocked} onClick={() => invokeTryOn('abandon', selected, entry.entryId)}>Abandon</Button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {activeTryOn && readiness && readiness.status !== 'READY' && (
+                          <p className="text-[9px] text-amber-700 dark:text-amber-300" role="status">
+                            Canonical prerequisite required: {label(readiness.status)}.
                           </p>
-                        </div>
-                        <select
-                          value={entry.layerRole}
-                          onChange={(event) => mutateSelected(
-                            `role:${entry.entryId}`,
-                            (outfit) => model.setEntryRole(outfit, entry.entryId, event.target.value),
-                          )}
-                          className="h-7 rounded-md border border-input bg-transparent px-1 text-[10px]"
-                          disabled={Boolean(busy) || selected.status !== 'ACTIVE' || allowedRoles.length === 0}
-                          aria-label={`Layer role for ${garment?.name || entry.garmentId}`}
-                        >
-                          {!currentRoleIsAllowed && <option value={entry.layerRole}>{label(entry.layerRole)} · review</option>}
-                          {allowedRoles.map((role) => <option key={role} value={role}>{label(role)}</option>)}
-                        </select>
-                        <div className="flex items-center">
-                          <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} up`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE' || index === 0} onClick={() => mutateSelected(`up:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, -1))}>
-                            <ArrowUp className="h-3.5 w-3.5" />
-                          </button>
-                          <button type="button" aria-label={`Move ${garment?.name || entry.garmentId} down`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE' || index === selected.entries.length - 1} onClick={() => mutateSelected(`down:${entry.entryId}`, (outfit) => model.moveEntry(outfit, entry.entryId, 1))}>
-                            <ArrowDown className="h-3.5 w-3.5" />
-                          </button>
-                          <button type="button" aria-label={`Remove ${garment?.name || entry.garmentId} from ${selected.name}`} className="rounded-md p-1 hover:bg-accent disabled:opacity-40" disabled={Boolean(busy) || selected.status !== 'ACTIVE'} onClick={() => mutateSelected(`remove:${entry.entryId}`, (outfit) => model.removeEntry(outfit, entry.entryId))}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                        )}
                       </div>
                     );
                   })}
