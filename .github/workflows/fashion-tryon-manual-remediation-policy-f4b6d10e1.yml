@@ -1,0 +1,56 @@
+name: Fashion F4b.6d.10e1 manual remediation policy
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/canonicalTryOnManualRemediationPolicy.js'
+      - 'src/application/fashion/canonicalTryOnReadinessContract.js'
+      - 'src/application/fashion/canonicalTryOnManualAcquisition.js'
+      - 'src/application/fashion/createCanonicalTryOnManualPrerequisiteApplication.js'
+      - 'tests/fashion-tryon-manual-remediation-policy.test.mjs'
+      - 'tests/fashion-tryon-manual-prerequisite-application.test.mjs'
+      - 'tests/canonical-tryon-manual-acquisition-boundary.test.mjs'
+      - 'tests/fashion-tryon-editor-wiring.test.mjs'
+      - '.github/workflows/fashion-tryon-manual-remediation-policy-f4b6d10e1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  manual-remediation-policy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact frontend graph
+        run: npm ci
+      - name: Prove remediation, manual boundary and Editor wiring contracts
+        run: |
+          node --test \
+            tests/fashion-tryon-manual-remediation-policy.test.mjs \
+            tests/fashion-tryon-manual-prerequisite-application.test.mjs \
+            tests/canonical-tryon-manual-acquisition-boundary.test.mjs \
+            tests/fashion-tryon-editor-wiring.test.mjs
+      - name: Typecheck and build production frontend graph
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Prove manual save cannot synthesize readiness or execution
+        run: |
+          set -euo pipefail
+          FILE=src/application/fashion/canonicalTryOnManualRemediationPolicy.js
+          grep -q "mode: 'RECHECK_REQUIRED'" "$FILE"
+          grep -q 'requiresRecheckAfterSave: true' "$FILE"
+          grep -q 'Manual browser remediation is not authorized' "$FILE"
+          ! grep -E 'coreClient|fetch\(|clientRequestId|ticketId|representationId|anchorSetId|storageId|contentSha256|destinationMesh|pushEdit|finalizeAcceptedResult' "$FILE"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check stacked candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
