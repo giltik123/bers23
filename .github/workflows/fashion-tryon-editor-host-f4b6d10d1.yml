@@ -1,0 +1,59 @@
+name: Fashion F4b.6d.10d1 Editor host
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/createCanonicalTryOnEditorHost.js'
+      - 'src/application/fashion/createCanonicalTryOnEditorController.js'
+      - 'src/application/fashion/createCanonicalTryOnProductRuntime.js'
+      - 'src/application/fashion/createCanonicalTryOnProductSession.js'
+      - 'tests/fashion-tryon-editor-host.test.mjs'
+      - 'tests/fashion-tryon-editor-controller.test.mjs'
+      - 'tests/fashion-tryon-product-runtime-composition.test.mjs'
+      - 'tests/fashion-tryon-product-session.test.mjs'
+      - '.github/workflows/fashion-tryon-editor-host-f4b6d10d1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  editor-host:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact frontend graph
+        run: npm ci
+      - name: Prove host, controller and lower product lifecycle
+        run: |
+          node --test \
+            tests/fashion-tryon-editor-host.test.mjs \
+            tests/fashion-tryon-editor-controller.test.mjs \
+            tests/fashion-tryon-product-runtime-composition.test.mjs \
+            tests/fashion-tryon-product-session.test.mjs
+      - name: Typecheck and build production frontend graph
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Prove selection replacement, deferred cleanup and authority minimization
+        run: |
+          set -euo pipefail
+          HOST=src/application/fashion/createCanonicalTryOnEditorHost.js
+          grep -q 'snapshot.busy || snapshot.hasInFlight' "$HOST"
+          grep -q 'disposeRequested' "$HOST"
+          grep -q 'finishRequestedDispose' "$HOST"
+          grep -q 'requestDispose()' "$HOST"
+          grep -q 'outfitRevision' "$HOST"
+          grep -q 'controller.dispose()' "$HOST"
+          ! grep -E 'coreClient|fetch\(|pushEdit|finalizeAcceptedResult|localStorage|sessionStorage|indexedDB|FASHN|Billing|credits|ticketId|clientRequestId|representationId|anchorSetId|storageId|contentSha256|destinationMesh|outfitManager|TryOnPanel' "$HOST"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check stacked candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
