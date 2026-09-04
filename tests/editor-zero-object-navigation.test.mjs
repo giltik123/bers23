@@ -20,11 +20,11 @@ test('Editor navigation is capability-based rather than gated by detected object
   const editor = await readFile(EDITOR, 'utf8');
   const modes = editorModeBlock(editor);
 
-  assert.match(modes, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\} onChange=\{setEditTab\} \/>/);
+  assert.match(modes, /<AdaptiveNavigation[\s\S]*items=\{EDITOR_TABS\}[\s\S]*active=\{editTab\}[\s\S]*onChange=\{\(next\) => \{ if \(!tryOnLocked\) setEditTab\(next\); \}\}/);
   assert.doesNotMatch(modes, /objects\.length === 0 \? \([\s\S]*<AdaptiveNavigation/,
     'zero-object projects must not be routed around the main navigation');
   assert.match(modes, /editTab === 'fashion'[\s\S]*<FashionPanel \/>/);
-  assert.match(modes, /editTab === 'outfits'[\s\S]*<OutfitPanel \/>/);
+  assert.match(modes, /editTab === 'outfits'[\s\S]*<OutfitPanel[\s\S]*onTryOnAction=\{performTryOnAction\}/);
   assert.match(modes, /editTab === 'creative'[\s\S]*<CreativeStudioPanel/);
 });
 
@@ -38,7 +38,7 @@ test('zero-object Prompt remains a canonical whole-image edit without inventing 
   assert.doesNotMatch(modes, /objects\.length === 0[\s\S]{0,300}(randomUUID|mask_artifact_id|selected:\s*true)/);
 });
 
-test('reachable Fashion and Outfit surfaces use narrow canonical authorities while later verticals remain fail-closed', async () => {
+test('reachable Fashion and Outfit surfaces use narrow canonical authorities while legacy Try-On remains fail-closed', async () => {
   const [editor, fashion, outfits, creative, agent, tryOn] = await Promise.all([
     readFile(EDITOR, 'utf8'),
     readFile(FASHION, 'utf8'),
@@ -61,6 +61,7 @@ test('reachable Fashion and Outfit surfaces use narrow canonical authorities whi
   assert.match(outfits, /coreClient\.fashion\.wardrobe/);
   assert.match(outfits, /server-owned/);
   assert.match(outfits, /never retried automatically/);
+  assert.match(outfits, /onTryOnAction/);
   for (const forbidden of ['outfitManager', 'coreClient.entities', 'FASHN', 'onCommit', 'onRollback']) {
     assert.equal(outfits.includes(forbidden), false, `Outfits must not mount legacy or execution authority ${forbidden}`);
   }
@@ -82,7 +83,7 @@ test('Detect remains an optional separate action and does not own Fashion or Out
   const editor = await readFile(EDITOR, 'utf8');
 
   const detectIndex = editor.indexOf("objects.length === 0 && !pendingResult");
-  const navigationIndex = editor.indexOf('<AdaptiveNavigation items={EDITOR_TABS}');
+  const navigationIndex = editor.indexOf('<AdaptiveNavigation');
   assert.ok(detectIndex >= 0 && navigationIndex > detectIndex, 'optional Detect CTA should coexist with navigation');
   assert.match(editor, /\{objects\.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && \(/);
   assert.doesNotMatch(editor, /objects\.length > 0[\s\S]{0,250}<AdaptiveNavigation/);
