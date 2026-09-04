@@ -1,0 +1,39 @@
+name: Fashion F4b.6d.7 Try-On Editor FINAL handoff
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/createTryOnEditorFinalHandoff.js'
+      - 'tests/fashion-tryon-editor-final-handoff.test.mjs'
+      - '.github/workflows/fashion-tryon-editor-final-handoff-f4b6d7.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  editor-final-handoff:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Prove FINAL to pending-result handoff
+        run: node --test tests/fashion-tryon-editor-final-handoff.test.mjs
+      - name: Prove no execution Project mutation provider or billing authority entered handoff
+        run: |
+          set -euo pipefail
+          FILE=src/application/fashion/createTryOnEditorFinalHandoff.js
+          grep -q "kind: 'FASHION_TRYON'" "$FILE"
+          grep -q "credits_used: 0" "$FILE"
+          grep -q "Local deterministic" "$FILE"
+          ! grep -E 'clientRequestId|ticketId|representationId|anchorSetId|layerId|pushEdit|coreClient|fetch\(|FASHN|provider.*cloud|credits_used: [1-9]' "$FILE"
+          ! grep -R -E 'TRYON_EXECUTION_NOT_WIRED.*false|GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION.*ADMITTED' \
+            src/application/fashion/createTryOnEditorFinalHandoff.js tests/fashion-tryon-editor-final-handoff.test.mjs
+      - name: Check candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
