@@ -1,4 +1,5 @@
 import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng.js';
+import { normalizeCanonicalTryOnReadinessSummary } from './canonicalTryOnReadinessContract.js';
 import { createCanonicalTryOnEditorController } from './createCanonicalTryOnEditorController.js';
 import { createCanonicalTryOnProductRuntime } from './createCanonicalTryOnProductRuntime.js';
 import { createTryOnEditorFinalHandoff } from './createTryOnEditorFinalHandoff.js';
@@ -179,7 +180,7 @@ export function createCanonicalTryOnEditorUiOwner({
           throw error;
         }
       } else {
-        lastOutcome = safeOutcome(result);
+        lastOutcome = safeOutcome(result, entryId, garmentId);
       }
     } catch (error) {
       failed = error;
@@ -235,12 +236,36 @@ function createProductionController({ selection, beforeUrl }) {
   });
 }
 
-function safeOutcome(value) {
+function safeOutcome(value, expectedEntryId, expectedGarmentId) {
   requirePlainObject(value, 'Canonical Try-On UI outcome');
   if (value.status === 'READINESS' || value.status === 'BLOCKED') {
     requireExactKeys(value, ['readiness', 'status'], 'Canonical Try-On UI readiness outcome');
-    requirePlainObject(value.readiness, 'Canonical Try-On UI readiness projection');
-    return Object.freeze({ status: value.status, readiness: value.readiness });
+    const readiness = value.readiness;
+    requirePlainObject(readiness, 'Canonical Try-On UI readiness projection');
+    const allowed = readiness.categoryGroup === undefined
+      ? ['entryId', 'garmentId', 'status']
+      : ['categoryGroup', 'entryId', 'garmentId', 'status'];
+    requireExactKeys(readiness, allowed, 'Canonical Try-On UI readiness projection');
+    const projectedEntryId = requireString(readiness.entryId, 'readiness entryId');
+    const projectedGarmentId = requireString(readiness.garmentId, 'readiness garmentId');
+    if (projectedEntryId !== expectedEntryId || projectedGarmentId !== expectedGarmentId) {
+      throw new Error('Canonical Try-On UI readiness does not match the active selection');
+    }
+    const summary = normalizeCanonicalTryOnReadinessSummary(
+      Object.freeze({
+        status: readiness.status,
+        ...(readiness.categoryGroup === undefined ? {} : { categoryGroup: readiness.categoryGroup }),
+      }),
+      'Canonical Try-On UI readiness',
+    );
+    return Object.freeze({
+      status: value.status,
+      readiness: Object.freeze({
+        entryId: projectedEntryId,
+        garmentId: projectedGarmentId,
+        ...summary,
+      }),
+    });
   }
   if (!CONTINUATION.has(value.status)) throw new Error('Unknown canonical Try-On UI outcome');
   requireExactKeys(value, ['status'], 'Canonical Try-On UI continuation outcome');
