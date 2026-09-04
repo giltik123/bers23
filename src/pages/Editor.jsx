@@ -876,6 +876,9 @@ export default function Editor() {
                 busy={tryOn.busy}
                 disabled={tryOnBlockedByEditor}
                 onAction={runTryOnAction}
+                onLoadManualGarmentSource={tryOn.loadManualGarmentSource}
+                onSaveManualContour={tryOn.saveManualContour}
+                onSaveManualBodyAnchors={tryOn.saveManualBodyAnchors}
                 onAbandon={abandonTryOn}
                 onClose={closeTryOn}
               />
