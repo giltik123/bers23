@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useState, useMemo, useRef, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ScanSearch, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -63,6 +63,7 @@ import { createSelectionSegmentation } from '@/application/createSelectionSegmen
 import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPort';
 import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
+import { createCanonicalTryOnEditorUiOwner } from '@/application/fashion/createCanonicalTryOnEditorUiOwner';
 
 const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
@@ -125,6 +126,24 @@ export default function Editor() {
   const [lastAction, setLastAction] = useState(null);
   const pendingResultRef = useRef(null);
   pendingResultRef.current = pendingResult;
+  const projectRef = useRef(project);
+  projectRef.current = project;
+  const [, setTryOnRevision] = useState(0);
+  const tryOnOwnerRef = useRef(null);
+  if (!tryOnOwnerRef.current) {
+    tryOnOwnerRef.current = createCanonicalTryOnEditorUiOwner({
+      getProject: () => projectRef.current,
+      publishPendingResult: (pending) => {
+        setPendingResult((current) => {
+          disposePendingPreview(current);
+          return pending;
+        });
+      },
+      disposePendingPreview,
+      onStateChange: () => setTryOnRevision((current) => current + 1),
+      reportError: (cause) => setAiError(cause?.message || 'Canonical Try-On failed.'),
+    });
+  }
   const [segMeta, setSegMeta] = useState(null);
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -142,14 +161,40 @@ export default function Editor() {
   const cropAnchorRef = useRef(null);
   const orthogonalTransformInFlightRef = useRef(false);
   const platform = usePlatformProfile();
-  const editorBusy = applying || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
   const cropRect = exactCropRect(cropDraft, project?.width, project?.height);
   const cropInteractionActive = Boolean(cropDraft);
   const resizeTarget = exactResizeTarget(resizeDraft);
   const resizeInteractionActive = Boolean(resizeDraft);
+  const tryOnState = tryOnOwnerRef.current.state();
+  const tryOnLocked = tryOnState.busy || tryOnState.hasInFlight;
+  const editorBusy = applying || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode) || tryOnLocked;
+  const tryOnPanelDisabled = applying || isolatingBackground || upscaling || cropping || resizing
+    || Boolean(orthogonalTransformingMode) || detecting || committing || Boolean(selection)
+    || cropInteractionActive || resizeInteractionActive || tryOnState.busy;
 
-  useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
-  useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
+  useEffect(() => () => {
+    disposePendingPreview(pendingResultRef.current);
+    tryOnOwnerRef.current?.dispose();
+  }, []);
+  useEffect(() => {
+    tryOnOwnerRef.current?.reset();
+    setCropDraft(null);
+    cropAnchorRef.current = null;
+    setResizeDraft(null);
+    setResizeAspectLocked(true);
+  }, [project?.id, project?.current_image_artifact_id]);
+
+  const performTryOnAction = useCallback((action, payload) => {
+    if (tryOnPanelDisabled) {
+      return Promise.reject(new Error('Finish the current Editor operation before changing canonical Try-On state.'));
+    }
+    setLastAction(null);
+    return tryOnOwnerRef.current.action(action, payload);
+  }, [tryOnPanelDisabled]);
+
+  const resetTryOnOwner = useCallback(() => {
+    tryOnOwnerRef.current?.reset();
+  }, []);
 
   const startSelection = () => {
     if (orthogonalTransformInFlightRef.current || editorBusy || detecting || committing || pendingResult || cropInteractionActive || resizeInteractionActive) return;
@@ -311,8 +356,8 @@ export default function Editor() {
     const normalizedMode = typeof mode === 'string' && ORTHOGONAL_TRANSFORM_MODES.includes(mode) ? mode : null;
     const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
     const beforeUrl = retryContext?.beforeUrl || project?.current_image_url;
-    const label = normalizedMode ? ORTHOGONAL_TRANSFORM_LABELS[normalizedMode] : null;
-    if (!project?.id || !sourceArtifactId || !beforeUrl || !normalizedMode || !label) {
+    const transformLabel = normalizedMode ? ORTHOGONAL_TRANSFORM_LABELS[normalizedMode] : null;
+    if (!project?.id || !sourceArtifactId || !beforeUrl || !normalizedMode || !transformLabel) {
       setAiError('Rotate/Flip requires the current canonical image and one supported orthogonal transform mode.');
       return;
     }
@@ -345,7 +390,7 @@ export default function Editor() {
       };
       setPendingResult((current) => {
         disposePendingPreview(current);
-        return { kind: 'ORTHOGONAL_TRANSFORM', result: editorResult, instruction: label, beforeUrl, context: { sourceArtifactId, mode: normalizedMode, beforeUrl } };
+        return { kind: 'ORTHOGONAL_TRANSFORM', result: editorResult, instruction: transformLabel, beforeUrl, context: { sourceArtifactId, mode: normalizedMode, beforeUrl } };
       });
     } catch (e) {
       setAiError(e.message || 'Rotate/Flip failed');
@@ -362,7 +407,7 @@ export default function Editor() {
     if (!project) return;
     sceneMemory.ensure(project)
       .then((memory) => workspaceManager.autoDetect({ projectId: project.id, objects: project.objects || [], memory }))
-      .catch((error) => console.error('[Editor] Scene analysis failed', error));
+      .catch((cause) => console.error('[Editor] Scene analysis failed', cause));
   }, [project?.id, project?.original_image_url]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Workspace re-detection when the detected object list changes.
@@ -537,6 +582,7 @@ export default function Editor() {
       await pushEdit(result.finalArtifactId, used);
       finalizeAcceptedResult({
         cleanupAcceptedResult: () => {
+          if (pending?.kind === 'FASHION_TRYON') resetTryOnOwner();
           setPendingResult(null);
           disposePendingPreview(pending);
           setInstruction('');
@@ -559,6 +605,7 @@ export default function Editor() {
       });
     } catch (e) {
       if (!isFinalSourceConflict(e)) throw e;
+      if (pending?.kind === 'FASHION_TRYON') resetTryOnOwner();
       await recoverFinalSourceConflict({
         reloadCanonicalProject: reload,
         disarmRetry: () => setLastAction(null),
@@ -575,6 +622,10 @@ export default function Editor() {
     const pending = pendingResult;
     disposePendingPreview(pending);
     setPendingResult(null);
+    if (pending?.kind === 'FASHION_TRYON') {
+      void performTryOnAction('retry').catch(() => {});
+      return;
+    }
     if (pending?.kind === 'BACKGROUND_ISOLATION') {
       void isolateBackground(pending.context);
       return;
@@ -599,7 +650,9 @@ export default function Editor() {
   };
 
   const discardResult = () => {
-    disposePendingPreview(pendingResult);
+    const pending = pendingResult;
+    if (pending?.kind === 'FASHION_TRYON') resetTryOnOwner();
+    disposePendingPreview(pending);
     setPendingResult(null);
   };
 
@@ -742,14 +795,14 @@ export default function Editor() {
         onInvert={() => updateSelection((service) => service.invert())}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
-        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
+        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !tryOnLocked && !cropInteractionActive && !resizeInteractionActive}
         isolatingBackground={isolatingBackground}
         onIsolateBackground={() => isolateBackground()}
       />
 
       <PipelineStatusBar width={project.width} height={project.height} />
 
-      <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
+      <CreditsBar estimate={!pendingResult && !tryOnLocked && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
 
       <AdaptivePanel title="Scene Memory"><SceneMemoryPanel project={project} /></AdaptivePanel>
 
@@ -781,7 +834,7 @@ export default function Editor() {
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
-          busy={committing || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
+          busy={committing || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode) || tryOnState.busy}
         />
       ) : cropInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
@@ -801,12 +854,20 @@ export default function Editor() {
               />
             </>
           )}
-          <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={setEditTab} />
+          <AdaptiveNavigation
+            items={EDITOR_TABS}
+            active={editTab}
+            onChange={(next) => { if (!tryOnLocked) setEditTab(next); }}
+          />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
           {editTab === 'creative' ? (
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
-            <OutfitPanel />
+            <OutfitPanel
+              disabled={tryOnPanelDisabled}
+              tryOnState={tryOnState}
+              onTryOnAction={performTryOnAction}
+            />
           ) : editTab === 'fashion' ? (
             <FashionPanel />
           ) : editTab === 'agent' ? (
