@@ -7,6 +7,7 @@ on:
       - "scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py"
       - "tests/tiny-sd-d3-candidate-isolation-policy.test.mjs"
       - ".github/workflows/tiny-sd-d3-candidate-process-isolation-policy.yml"
+      - ".github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml"
   workflow_dispatch:
 
 permissions:
