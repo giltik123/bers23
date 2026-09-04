@@ -1,0 +1,43 @@
+name: Fashion F4b.6d.9a manual prerequisite application boundary
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/createCanonicalTryOnManualPrerequisiteApplication.js'
+      - 'tests/fashion-tryon-manual-prerequisite-application.test.mjs'
+      - 'src/application/fashion/canonicalTryOnManualAcquisition.js'
+      - 'src/api/managedGarmentClient.js'
+      - 'src/api/managedWardrobeClient.js'
+      - 'src/api/coreClient.js'
+      - 'tests/canonical-tryon-manual-acquisition-boundary.test.mjs'
+      - '.github/workflows/fashion-tryon-manual-prerequisite-application-f4b6d9a.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  manual-prerequisite-boundary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Prove minimized manual prerequisite application
+        run: node --test tests/fashion-tryon-manual-prerequisite-application.test.mjs tests/canonical-tryon-manual-acquisition-boundary.test.mjs
+      - name: Prove browser boundary cannot retain Core evidence authority
+        run: |
+          set -euo pipefail
+          FILE=src/application/fashion/createCanonicalTryOnManualPrerequisiteApplication.js
+          grep -q 'buildManualParametricAdmissionIntent' "$FILE"
+          grep -q 'buildManualBodyAnchorAcquisitionIntent' "$FILE"
+          grep -q "return Object.freeze({ status: 'SAVED' })" "$FILE"
+          grep -q "GARMENT_DELIVERY = /" "$FILE"
+          ! grep -E 'representationId|representationContentSha256|anchorSetId|payloadSha256|destinationMesh|projectImageStorageId|projectImageSha256|storageProvenance|contentSha256|ticketId|executionId|coreClient|fetch\(|FASHN|Billing|credits' "$FILE"
+      - name: Check candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
