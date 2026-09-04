@@ -1,0 +1,55 @@
+name: Fashion F4b.6d.10b product runtime
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/canonicalTryOnProductRuntimeComposition.js'
+      - 'src/application/fashion/createCanonicalTryOnProductRuntime.js'
+      - 'src/application/fashion/createCanonicalTryOnProductSession.js'
+      - 'src/application/fashion/createCanonicalTryOnBrowserApplication.js'
+      - 'src/application/fashion/createCanonicalTryOnReadinessSelection.js'
+      - 'src/application/fashion/createCanonicalTryOnManualPrerequisiteApplication.js'
+      - 'src/application/fashion/canonicalTryOnApplication.js'
+      - 'tests/fashion-tryon-product-runtime-composition.test.mjs'
+      - '.github/workflows/fashion-tryon-product-runtime-f4b6d10b.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  product-runtime:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact frontend graph
+        run: npm ci
+      - name: Prove safe product runtime composition
+        run: node --test tests/fashion-tryon-product-runtime-composition.test.mjs tests/fashion-tryon-product-session.test.mjs
+      - name: Typecheck and build canonical browser graph
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Prove accepted ancestry and no returned raw authority
+        run: |
+          set -euo pipefail
+          ROOT=src/application/fashion/createCanonicalTryOnProductRuntime.js
+          COMPOSE=src/application/fashion/canonicalTryOnProductRuntimeComposition.js
+          grep -q 'createCanonicalTryOnBrowserApplication' "$ROOT"
+          grep -q 'createCanonicalTryOnReadinessSelection' "$ROOT"
+          grep -q 'createCanonicalTryOnProductSession' "$ROOT"
+          grep -q 'createCanonicalTryOnManualPrerequisiteApplication' "$ROOT"
+          grep -q 'createFashionTryOnClientRequestId' "$ROOT"
+          grep -q 'return Object.freeze({ session, manual })' "$COMPOSE"
+          ! grep -E 'TryOnPanel|OutfitBuilderView|outfitManager|pushEdit|finalizeAcceptedResult|FASHN|Billing|credits|ticketId|representationId|anchorSetId|storageId|contentSha256|destinationMesh|localStorage|sessionStorage|indexedDB' "$ROOT" "$COMPOSE"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check stacked candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
