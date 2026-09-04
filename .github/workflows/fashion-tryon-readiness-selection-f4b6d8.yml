@@ -1,0 +1,37 @@
+name: Fashion F4b.6d.8 canonical one-garment readiness selection
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/createCanonicalTryOnReadinessSelection.js'
+      - 'tests/fashion-tryon-readiness-selection.test.mjs'
+      - '.github/workflows/fashion-tryon-readiness-selection-f4b6d8.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  readiness-selection:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Prove one-garment canonical readiness selection
+        run: node --test tests/fashion-tryon-readiness-selection.test.mjs
+      - name: Prove readiness boundary cannot become a second execution authority
+        run: |
+          set -euo pipefail
+          FILE=src/application/fashion/createCanonicalTryOnReadinessSelection.js
+          grep -q 'referenceReadiness !==' "$FILE"
+          grep -q 'checkReadiness' "$FILE"
+          grep -q 'selection must resolve exactly one canonical Outfit entry' "$FILE"
+          ! grep -E 'clientRequestId|prepareTryOn|continueTryOn|getTryOnResult|getTryOnPreview|ticketId|representationId|anchorSetId|layerId|coreClient|fetch\(|pushEdit|FASHN|Billing|credits' "$FILE"
+      - name: Check candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
