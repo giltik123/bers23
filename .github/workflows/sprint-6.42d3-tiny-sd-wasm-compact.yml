@@ -253,6 +253,34 @@ jobs:
           assert all(value['result'] == 'PASS' and value['ortParityPassed'] is True for value in report['components'].values())
           PY
 
+      - name: Release D1/D2 reproduction inputs before D3 candidate preparation
+        run: |
+          set -euo pipefail
+          echo 'Resource state before D3 lifecycle cleanup:'
+          df -h "${RUNNER_TEMP}"
+          du -sh \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
+            "${HOME}/.cache/pip" 2>/dev/null || true
+          free -h || true
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
+            "${HOME}/.cache/pip"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz"
+          test ! -e "${HOME}/.cache/pip"
+          sync
+          echo 'Resource state after D3 lifecycle cleanup:'
+          df -h "${RUNNER_TEMP}"
+          free -h || true
+
       - name: Prepare component-specific D3 WASM compact candidates
         run: |
           set -euo pipefail
