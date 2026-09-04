@@ -5,6 +5,7 @@ import test from 'node:test';
 const matrix = fs.readFileSync('scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py', 'utf8');
 const d4Selected = fs.readFileSync('scripts/reproduce-tiny-sd-d3-selected-wasm.py', 'utf8');
 const workflow = fs.readFileSync('.github/workflows/tiny-sd-d3-candidate-process-isolation-policy.yml', 'utf8');
+const d3Workflow = fs.readFileSync('.github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml', 'utf8');
 
 test('D3 bounds native candidate lifetime with one checked-in subprocess worker per strategy', () => {
   assert.match(matrix, /MAX_WORKER_RECORD_BYTES = 2 \* 1024 \* 1024/);
@@ -38,15 +39,44 @@ test('D3 candidate worker records fail closed and preserve the original selectio
   assert.match(matrix, /"vae_decoder": "EXACT_FP16_STORAGE_FP32_COMPUTE"/);
 });
 
+test('D3 releases only obsolete reproduction inputs after accepted D2 parity and before candidate preparation', () => {
+  const d2Step = d3Workflow.indexOf('- name: Reproduce D2 accepted FP32 component graphs and CPU parity');
+  const cleanupStep = d3Workflow.indexOf('- name: Release D1/D2 reproduction inputs before D3 candidate preparation');
+  const d3Step = d3Workflow.indexOf('- name: Prepare component-specific D3 WASM compact candidates');
+  assert.ok(d2Step >= 0 && cleanupStep > d2Step && d3Step > cleanupStep, 'resource cleanup must be bounded by accepted D2 parity and D3 candidate preparation');
+
+  const nextStep = d3Workflow.indexOf('\n      - name:', cleanupStep + 1);
+  assert.ok(nextStep > cleanupStep, 'resource cleanup step must have a bounded workflow body');
+  const cleanup = d3Workflow.slice(cleanupStep, nextStep);
+
+  assert.match(cleanup, /tiny-sd-d3-wasm-snapshot/);
+  assert.match(cleanup, /tiny-sd-d3-wasm-bridge/);
+  assert.match(cleanup, /tiny-sd-d3-wasm-reference-venv/);
+  assert.match(cleanup, /tiny-sd-d3-wasm-reference\.npz/);
+  assert.match(cleanup, /\$\{HOME\}\/\.cache\/pip/);
+  assert.match(cleanup, /test ! -e/);
+  assert.match(cleanup, /sync/);
+
+  assert.doesNotMatch(cleanup, /rm -rf[\s\S]*tiny-sd-d3-wasm-fp32/);
+  assert.doesNotMatch(cleanup, /rm -rf[\s\S]*tiny-sd-d3-wasm-export-venv/);
+  assert.doesNotMatch(cleanup, /rm -rf[\s\S]*tiny-sd-d3-wasm-quantized/);
+  assert.doesNotMatch(cleanup, /rm -rf[\s\S]*tiny-sd-d3-wasm-fixtures/);
+  assert.doesNotMatch(cleanup, /node_modules/);
+
+  assert.match(d3Workflow, /Run real Chrome WASM compact component feasibility/);
+  assert.match(d3Workflow, /Destroy Tiny-SD D3 WASM binary evidence before JSON upload/);
+});
+
 test('D4 selected-only reproduction remains independent from D3 research worker orchestration', () => {
   assert.match(d4Selected, /matrix\._candidate_record\(/);
   assert.doesNotMatch(d4Selected, /--candidate-worker|_run_candidate_isolated/);
   assert.match(d4Selected, /PINNED_ACCEPTED_SCHEME_REPRODUCTION_NO_RESELECTION/);
 });
 
-test('dedicated hosted policy workflow is read-only and tests the exact PR head', () => {
+test('dedicated hosted policy workflow is read-only, tests the exact PR head, and watches D3 lifecycle changes', () => {
   assert.match(workflow, /tests\/tiny-sd-d3-candidate-isolation-policy\.test\.mjs/);
   assert.match(workflow, /python -m py_compile scripts\/prepare-tiny-sd-d3-wasm-strategy-matrix\.py/);
+  assert.match(workflow, /\.github\/workflows\/sprint-6\.42d3-tiny-sd-wasm-compact\.yml/);
   assert.match(workflow, /permissions:\n  contents: read/);
   assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(workflow, /test "\$\(git rev-parse HEAD\)" = "\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}"/);
