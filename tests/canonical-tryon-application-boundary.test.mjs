@@ -5,6 +5,7 @@ import test from 'node:test';
 const application = fs.readFileSync(new URL('../src/application/fashion/canonicalTryOnApplication.js', import.meta.url), 'utf8');
 const coreClient = fs.readFileSync(new URL('../src/api/coreClient.js', import.meta.url), 'utf8');
 const readiness = fs.readFileSync(new URL('../server/core/fashion/FashionTryOnReadinessService.ts', import.meta.url), 'utf8');
+const readinessContract = fs.readFileSync(new URL('../src/application/fashion/canonicalTryOnReadinessContract.js', import.meta.url), 'utf8');
 const product = fs.readFileSync(new URL('../server/core/fashion/FashionTryOnProductService.ts', import.meta.url), 'utf8');
 const result = fs.readFileSync(new URL('../server/core/fashion/FashionTryOnFinalResultService.ts', import.meta.url), 'utf8');
 const preview = fs.readFileSync(new URL('../server/core/fashion/FashionTryOnRecoveryPreviewService.ts', import.meta.url), 'utf8');
@@ -27,8 +28,10 @@ test('readiness, preview and terminal states stay aligned with server-owned clos
     'BODY_ANCHORS_AMBIGUOUS', 'EVIDENCE_INVALID',
   ]) {
     assert.ok(readiness.includes(`'${status}'`), `server readiness must retain ${status}`);
-    assert.ok(application.includes(`'${status}'`), `application readiness must retain ${status}`);
+    assert.ok(readinessContract.includes(`'${status}'`), `shared application readiness contract must retain ${status}`);
   }
+  assert.match(application, /normalizeCanonicalTryOnReadinessSummary/);
+  assert.match(application, /requireCanonicalTryOnSupportedCategoryGroup\(prepared\.categoryGroup, 'Try-On WARP_PREPARED'\)/);
   for (const status of ['TEXTURE_NOT_PREPARED', 'TEXTURE_PENDING', 'TEXTURE_FAILED', 'TEXTURE_STALE', 'FINAL_READY']) {
     assert.ok(result.includes(`'${status}'`), `server result must retain ${status}`);
     assert.ok(application.includes(`'${status}'`), `application result must retain ${status}`);
