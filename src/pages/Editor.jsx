@@ -46,7 +46,9 @@ import WorkspaceToolbar from '@/components/editor/workspace/WorkspaceToolbar';
 import WorkspaceRecommendations from '@/components/editor/workspace/WorkspaceRecommendations';
 const FashionPanel = lazy(() => import('@/components/editor/fashion/FashionPanel'));
 const OutfitPanel = lazy(() => import('@/components/editor/outfits/OutfitPanel'));
+const CanonicalTryOnRunnerPanel = lazy(() => import('@/components/editor/outfits/CanonicalTryOnRunnerPanel'));
 const CreativeStudioPanel = lazy(() => import('@/components/editor/creative/CreativeStudioPanel'));
+import useCanonicalTryOnEditor from '@/components/editor/outfits/useCanonicalTryOnEditor';
 import AdaptiveLayout from '@/components/adaptive/AdaptiveLayout';
 import AdaptiveToolbar from '@/components/adaptive/AdaptiveToolbar';
 import AdaptivePanel from '@/components/adaptive/AdaptivePanels';
@@ -125,6 +127,14 @@ export default function Editor() {
   const [lastAction, setLastAction] = useState(null);
   const pendingResultRef = useRef(null);
   pendingResultRef.current = pendingResult;
+  const tryOn = useCanonicalTryOnEditor({
+    onFinalCandidate: (candidate) => {
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return candidate;
+      });
+    },
+  });
   const [segMeta, setSegMeta] = useState(null);
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -142,14 +152,53 @@ export default function Editor() {
   const cropAnchorRef = useRef(null);
   const orthogonalTransformInFlightRef = useRef(false);
   const platform = usePlatformProfile();
-  const editorBusy = applying || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
+  const localEditorBusy = applying || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
   const cropRect = exactCropRect(cropDraft, project?.width, project?.height);
   const cropInteractionActive = Boolean(cropDraft);
   const resizeTarget = exactResizeTarget(resizeDraft);
   const resizeInteractionActive = Boolean(resizeDraft);
+  const tryOnActive = tryOn.state.host.active || tryOn.busy || pendingResult?.kind === 'FASHION_TRYON';
+  const editorBusy = localEditorBusy || tryOnActive;
+  const tryOnBlockedByEditor = localEditorBusy
+    || detecting
+    || committing
+    || Boolean(selection)
+    || cropInteractionActive
+    || resizeInteractionActive
+    || Boolean(driftWarning)
+    || (Boolean(pendingResult) && pendingResult?.kind !== 'FASHION_TRYON');
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
   useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
+
+  const runTryOnAction = async (name, context) => {
+    if (tryOnBlockedByEditor || pendingResult) return;
+    setAiError(null);
+    setLastAction(null);
+    try {
+      await tryOn.dispatch(name, context);
+    } catch (cause) {
+      setAiError(cause?.message || 'Canonical deterministic Try-On failed.');
+    }
+  };
+
+  const abandonTryOn = () => {
+    try {
+      tryOn.abandon();
+      setAiError(null);
+    } catch (cause) {
+      setAiError(cause?.message || 'Try-On could not be abandoned.');
+    }
+  };
+
+  const closeTryOn = () => {
+    try {
+      tryOn.close();
+      setAiError(null);
+    } catch (cause) {
+      setAiError(cause?.message || 'Try-On selection could not be closed.');
+    }
+  };
 
   const startSelection = () => {
     if (orthogonalTransformInFlightRef.current || editorBusy || detecting || committing || pendingResult || cropInteractionActive || resizeInteractionActive) return;
@@ -539,6 +588,9 @@ export default function Editor() {
         cleanupAcceptedResult: () => {
           setPendingResult(null);
           disposePendingPreview(pending);
+          if (pending?.kind === 'FASHION_TRYON') {
+            try { tryOn.close(); } catch (cleanupError) { console.error('[Editor] Try-On host cleanup failed', cleanupError); }
+          }
           setInstruction('');
           setActiveRecipe(null);
         },
@@ -562,7 +614,12 @@ export default function Editor() {
       await recoverFinalSourceConflict({
         reloadCanonicalProject: reload,
         disarmRetry: () => setLastAction(null),
-        clearPendingResult: () => setPendingResult(null),
+        clearPendingResult: () => {
+          if (pending?.kind === 'FASHION_TRYON') {
+            try { tryOn.close(); } catch (cleanupError) { console.error('[Editor] Try-On source-conflict cleanup failed', cleanupError); }
+          }
+          setPendingResult(null);
+        },
         disposePendingPreview: () => disposePendingPreview(pending),
         showMessage: setAiError,
       });
@@ -575,6 +632,10 @@ export default function Editor() {
     const pending = pendingResult;
     disposePendingPreview(pending);
     setPendingResult(null);
+    if (pending?.kind === 'FASHION_TRYON') {
+      void tryOn.retry().catch((cause) => setAiError(cause?.message || 'Canonical deterministic Try-On retry failed.'));
+      return;
+    }
     if (pending?.kind === 'BACKGROUND_ISOLATION') {
       void isolateBackground(pending.context);
       return;
@@ -599,8 +660,10 @@ export default function Editor() {
   };
 
   const discardResult = () => {
-    disposePendingPreview(pendingResult);
+    const pending = pendingResult;
+    disposePendingPreview(pending);
     setPendingResult(null);
+    if (pending?.kind === 'FASHION_TRYON') closeTryOn();
   };
 
   const handleRename = async () => {
@@ -742,7 +805,7 @@ export default function Editor() {
         onInvert={() => updateSelection((service) => service.invert())}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
-        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
+        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
         isolatingBackground={isolatingBackground}
         onIsolateBackground={() => isolateBackground()}
       />
@@ -781,7 +844,7 @@ export default function Editor() {
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
-          busy={committing || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
+          busy={committing || tryOn.busy || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
         />
       ) : cropInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
@@ -801,12 +864,23 @@ export default function Editor() {
               />
             </>
           )}
-          <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={setEditTab} />
+          <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={(next) => { if (!tryOnActive) setEditTab(next); }} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
           {editTab === 'creative' ? (
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
-            <OutfitPanel />
+            <div className="space-y-3">
+              <CanonicalTryOnRunnerPanel
+                project={project}
+                state={tryOn.state}
+                busy={tryOn.busy}
+                disabled={tryOnBlockedByEditor}
+                onAction={runTryOnAction}
+                onAbandon={abandonTryOn}
+                onClose={closeTryOn}
+              />
+              {!tryOn.state.host.active && <OutfitPanel />}
+            </div>
           ) : editTab === 'fashion' ? (
             <FashionPanel />
           ) : editTab === 'agent' ? (
