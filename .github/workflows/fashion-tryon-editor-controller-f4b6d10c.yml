@@ -1,0 +1,63 @@
+name: Fashion F4b.6d.10c Editor controller
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/createCanonicalTryOnEditorController.js'
+      - 'src/application/fashion/createTryOnEditorFinalHandoff.js'
+      - 'src/application/fashion/createCanonicalTryOnProductRuntime.js'
+      - 'src/application/fashion/canonicalTryOnProductRuntimeComposition.js'
+      - 'src/application/fashion/createCanonicalTryOnProductSession.js'
+      - 'src/application/fashion/canonicalTryOnReadinessContract.js'
+      - 'tests/fashion-tryon-editor-controller.test.mjs'
+      - 'tests/fashion-tryon-editor-final-handoff.test.mjs'
+      - 'tests/fashion-tryon-product-runtime-composition.test.mjs'
+      - 'tests/fashion-tryon-product-session.test.mjs'
+      - 'tests/fashion-tryon-readiness-supported-ready.test.mjs'
+      - '.github/workflows/fashion-tryon-editor-controller-f4b6d10c.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  editor-controller:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact frontend graph
+        run: npm ci
+      - name: Prove controller and accepted lower-layer contracts
+        run: |
+          node --test \
+            tests/fashion-tryon-editor-controller.test.mjs \
+            tests/fashion-tryon-editor-final-handoff.test.mjs \
+            tests/fashion-tryon-product-runtime-composition.test.mjs \
+            tests/fashion-tryon-product-session.test.mjs \
+            tests/fashion-tryon-readiness-supported-ready.test.mjs
+      - name: Typecheck and build production frontend graph
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Prove ephemeral Editor ownership and retained authority boundaries
+        run: |
+          set -euo pipefail
+          FILE=src/application/fashion/createCanonicalTryOnEditorController.js
+          grep -q 'normalizeCanonicalTryOnReadinessSummary' "$FILE"
+          grep -q 'createRuntime(Object.freeze({ selection: stableSelection }))' "$FILE"
+          grep -q 'finalArtifactId !== expected.finalArtifactId' "$FILE"
+          grep -q 'session.completeFinal()' "$FILE"
+          grep -q "return invoke('retry', () => session.retry())" "$FILE"
+          grep -q "status: 'FINAL_CANDIDATE'" "$FILE"
+          ! grep -E 'coreClient|fetch\(|pushEdit|finalizeAcceptedResult|localStorage|sessionStorage|indexedDB|FASHN|Billing|outfitManager|TryOnPanel|representationId|anchorSetId|storageId|contentSha256|destinationMesh' "$FILE"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check stacked candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
