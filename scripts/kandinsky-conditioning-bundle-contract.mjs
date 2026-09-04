@@ -5,7 +5,7 @@ import {
 } from './kandinsky-conditioning-candidate-registry.mjs';
 
 export { CONDITIONING_CANDIDATE_IDS };
-export const KANDINSKY_CONDITIONING_SCHEMA_VERSION = 1;
+export const KANDINSKY_CONDITIONING_SCHEMA_VERSION = 2;
 export const KANDINSKY_CONDITIONING_STAGE = 'F5B1_D2_CONDITIONING_RESEARCH';
 export const KANDINSKY_D1_MANIFEST_PATH = 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json';
 export const KANDINSKY_D1_MODEL_ID = 'kandinsky-2-2-decoder-inpaint-refinement';
@@ -18,12 +18,13 @@ export const KANDINSKY_HISTORICAL_DIFFUSERS_VERSION = '0.18.0.dev0';
 const SHA256 = /^[0-9a-f]{64}$/;
 const EXACT_KEYS = Object.freeze({
   root: ['schemaVersion', 'stage', 'status', 'productionExecutable', 'runtimeAuthorityGranted', 'priorRuntimeDependencyAllowed', 'sourceTrust', 'historicalPipeline', 'toolchain', 'determinism', 'conditioning', 'bundle'],
-  sourceTrust: ['d1ManifestPath', 'd1ModelId', 'd1Version', 'priorRepository', 'priorRevision', 'priorSafeWeights', 'priorConfigFiles'],
+  sourceTrust: ['d1ManifestPath', 'd1ManifestSha256', 'd1ModelId', 'd1Version', 'priorRepository', 'priorRevision', 'priorSafeWeights', 'priorConfigFiles'],
   identityFile: ['path', 'size', 'sha256'],
   historicalPipeline: ['diffusersRevision', 'pipelineClass', 'numImagesPerPrompt', 'numInferenceSteps', 'guidanceScale', 'outputType'],
   toolchain: ['containerImageDigest', 'pythonVersion', 'diffusersVersion', 'torchVersion', 'transformersVersion', 'numpyVersion', 'safetensorsVersion', 'platformMachine'],
   determinism: ['device', 'outputDtype', 'torchDeterministicAlgorithms', 'numThreads', 'numInteropThreads', 'ompNumThreads', 'mklNumThreads', 'seed', 'generatorPolicy', 'latentPolicy'],
-  conditioning: ['candidateId', 'conditioningContractSha256', 'negativeMode'],
+  conditioning: ['candidateId', 'conditioningContractSha256', 'negativeMode', 'positiveEmbeddingSource'],
+  positiveEmbeddingSource: ['candidateId', 'conditioningContractSha256', 'manifestSha256', 'bundleSize', 'bundleSha256', 'imageEmbedsSha256'],
   bundle: ['format', 'metadataPolicy', 'tensorOrder', 'tensors', 'size', 'sha256'],
   tensor: ['dtype', 'shape'],
 });
@@ -79,6 +80,7 @@ function assertD1SourceTrust(value, d1Manifest) {
   assertPlainObject(value, 'sourceTrust');
   assertExactKeys(value, EXACT_KEYS.sourceTrust, 'sourceTrust');
   assertEqual(value.d1ManifestPath, KANDINSKY_D1_MANIFEST_PATH, 'sourceTrust.d1ManifestPath');
+  assertSha(value.d1ManifestSha256, 'sourceTrust.d1ManifestSha256');
   assertEqual(value.d1ModelId, KANDINSKY_D1_MODEL_ID, 'sourceTrust.d1ModelId');
   assertEqual(value.d1Version, KANDINSKY_D1_VERSION, 'sourceTrust.d1Version');
   assertEqual(value.priorRepository, KANDINSKY_PRIOR_REPOSITORY, 'sourceTrust.priorRepository');
@@ -162,6 +164,24 @@ function assertConditioning(value) {
   assertSha(value.conditioningContractSha256, 'conditioning.conditioningContractSha256');
   assertEqual(value.conditioningContractSha256, identity.conditioningContractSha256, 'conditioning.conditioningContractSha256');
   assertEqual(value.negativeMode, identity.negativeMode, 'conditioning.negativeMode');
+  assertPositiveEmbeddingSource(value.positiveEmbeddingSource, identity.positiveEmbeddingSourceCandidateId);
+}
+
+function assertPositiveEmbeddingSource(value, expectedCandidateId) {
+  if (expectedCandidateId === null) {
+    if (value !== null) throw new Error('conditioning.positiveEmbeddingSource must be null for an independent positive embedding candidate');
+    return;
+  }
+  assertPlainObject(value, 'conditioning.positiveEmbeddingSource');
+  assertExactKeys(value, EXACT_KEYS.positiveEmbeddingSource, 'conditioning.positiveEmbeddingSource');
+  const sourceIdentity = conditioningCandidateIdentity(expectedCandidateId);
+  assertEqual(value.candidateId, expectedCandidateId, 'conditioning.positiveEmbeddingSource.candidateId');
+  assertSha(value.conditioningContractSha256, 'conditioning.positiveEmbeddingSource.conditioningContractSha256');
+  assertEqual(value.conditioningContractSha256, sourceIdentity.conditioningContractSha256, 'conditioning.positiveEmbeddingSource.conditioningContractSha256');
+  assertSha(value.manifestSha256, 'conditioning.positiveEmbeddingSource.manifestSha256');
+  assertPositiveSafeInteger(value.bundleSize, 'conditioning.positiveEmbeddingSource.bundleSize');
+  assertSha(value.bundleSha256, 'conditioning.positiveEmbeddingSource.bundleSha256');
+  assertSha(value.imageEmbedsSha256, 'conditioning.positiveEmbeddingSource.imageEmbedsSha256');
 }
 
 function assertBundle(value) {

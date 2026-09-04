@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  KANDINSKY_CONDITIONING_SCHEMA_VERSION,
   assertCanonicalManifestBytes,
   assertKandinskyConditioningManifest,
   canonicalJsonBytes,
@@ -13,6 +14,7 @@ import { conditioningPromptContract } from './kandinsky-conditioning-prompt-cont
 
 const args = parseArgs(process.argv.slice(2));
 const d1ManifestBytes = readBytes(args.d1, 'D1 manifest');
+const d1ManifestSha256 = sha256(d1ManifestBytes);
 const d1 = readJson(args.d1, 'D1 manifest');
 const prompt = readJson(args.prompt, 'D2b prompt contract');
 const evidence = readJson(args.evidence, 'D2c builder evidence');
@@ -27,10 +29,10 @@ if (evidence.conditioningContractSha256 !== expectedPrompt.sha256) {
 }
 const candidateIdentity = conditioningCandidateIdentity(prompt.candidateId);
 const targetParsed = assertEvidenceAndTargetBundle(evidence, prompt.candidateId, candidateIdentity, targetBundleBytes);
-assertPositiveEmbeddingSource({ args, d1, evidence, targetParsed, candidateIdentity });
+const positiveEmbeddingSource = assertPositiveEmbeddingSource({ args, d1, evidence, targetParsed, candidateIdentity });
 
 const manifest = Object.freeze({
-  schemaVersion: 1,
+  schemaVersion: KANDINSKY_CONDITIONING_SCHEMA_VERSION,
   stage: 'F5B1_D2_CONDITIONING_RESEARCH',
   status: 'RESEARCH_CANDIDATE',
   productionExecutable: false,
@@ -38,6 +40,7 @@ const manifest = Object.freeze({
   priorRuntimeDependencyAllowed: false,
   sourceTrust: Object.freeze({
     d1ManifestPath: 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json',
+    d1ManifestSha256,
     d1ModelId: d1.modelId,
     d1Version: d1.version,
     priorRepository: d1.offlinePrior.repository,
@@ -59,6 +62,7 @@ const manifest = Object.freeze({
     candidateId: prompt.candidateId,
     conditioningContractSha256: expectedPrompt.sha256,
     negativeMode: prompt.negativeMode,
+    positiveEmbeddingSource,
   }),
   bundle: Object.freeze({
     format: evidence.bundle.format,
@@ -96,7 +100,7 @@ function assertEvidenceAndTargetBundle(value, candidateId, identity, bundleBytes
   if (value.conditioningContractSha256 !== identity.conditioningContractSha256) fail('builder evidence conditioning SHA mismatch');
 
   exactKeys(value.sourceTrust, ['d1ManifestSha256','d1ModelId','d1Version','priorRepository','priorRevision','priorPipelineGitBlobSha1'], 'builder evidence sourceTrust');
-  if (!/^[0-9a-f]{64}$/.test(value.sourceTrust.d1ManifestSha256) || value.sourceTrust.d1ManifestSha256 !== sha256(d1ManifestBytes)) {
+  if (!/^[0-9a-f]{64}$/.test(value.sourceTrust.d1ManifestSha256) || value.sourceTrust.d1ManifestSha256 !== d1ManifestSha256) {
     fail('builder evidence is not bound to the exact D1 manifest bytes');
   }
   if (value.sourceTrust.d1ModelId !== d1.modelId || value.sourceTrust.d1Version !== d1.version || value.sourceTrust.priorRepository !== d1.offlinePrior.repository || value.sourceTrust.priorRevision !== d1.offlinePrior.revision) {
@@ -141,12 +145,13 @@ function assertPositiveEmbeddingSource({ args, d1, evidence, targetParsed, candi
   if (expectedSourceCandidateId === null) {
     if (hasSourceManifest || hasSourceBundle) fail('A/B finalization forbids positive source inputs');
     if (evidence.positiveEmbeddingSource !== null) fail('A/B builder evidence must not claim a positive source');
-    return;
+    return null;
   }
   if (!hasSourceManifest || !hasSourceBundle) fail('C finalization requires B source manifest and bundle');
 
   const sourceManifestBytes = readBytes(args.positiveSourceManifest, 'positive source manifest');
   const sourceManifest = assertCanonicalManifestBytes(sourceManifestBytes, d1);
+  if (sourceManifest.sourceTrust.d1ManifestSha256 !== d1ManifestSha256) fail('positive source manifest is not bound to the exact current D1 manifest bytes');
   if (sourceManifest.conditioning.candidateId !== expectedSourceCandidateId) fail('positive source manifest candidate mismatch');
   const sourceIdentity = conditioningCandidateIdentity(expectedSourceCandidateId);
   if (sourceManifest.conditioning.conditioningContractSha256 !== sourceIdentity.conditioningContractSha256) fail('positive source manifest contract identity mismatch');
@@ -161,10 +166,21 @@ function assertPositiveEmbeddingSource({ args, d1, evidence, targetParsed, candi
 
   const sourceEvidence = evidence.positiveEmbeddingSource;
   exactKeys(sourceEvidence, ['candidateId','conditioningContractSha256','manifestSha256','bundleSize','bundleSha256','imageEmbedsSha256'], 'builder evidence positiveEmbeddingSource');
+  const sourceManifestSha256 = sha256(sourceManifestBytes);
+  const sourceBundleSha256 = sha256(sourceBundleBytes);
   if (sourceEvidence.candidateId !== expectedSourceCandidateId || sourceEvidence.conditioningContractSha256 !== sourceIdentity.conditioningContractSha256) fail('builder evidence positive source identity mismatch');
-  if (sourceEvidence.manifestSha256 !== sha256(sourceManifestBytes)) fail('builder evidence positive source manifest SHA mismatch');
-  if (sourceEvidence.bundleSize !== sourceBundleBytes.length || sourceEvidence.bundleSha256 !== sha256(sourceBundleBytes)) fail('builder evidence positive source bundle identity mismatch');
+  if (sourceEvidence.manifestSha256 !== sourceManifestSha256) fail('builder evidence positive source manifest SHA mismatch');
+  if (sourceEvidence.bundleSize !== sourceBundleBytes.length || sourceEvidence.bundleSha256 !== sourceBundleSha256) fail('builder evidence positive source bundle identity mismatch');
   if (sourceEvidence.imageEmbedsSha256 !== sourceImage.sha256 || sourceEvidence.imageEmbedsSha256 !== targetImage.sha256) fail('builder evidence positive source image SHA mismatch');
+
+  return Object.freeze({
+    candidateId: expectedSourceCandidateId,
+    conditioningContractSha256: sourceIdentity.conditioningContractSha256,
+    manifestSha256: sourceManifestSha256,
+    bundleSize: sourceBundleBytes.length,
+    bundleSha256: sourceBundleSha256,
+    imageEmbedsSha256: sourceImage.sha256,
+  });
 }
 
 function manifestToolchainFromEvidence(toolchain) {

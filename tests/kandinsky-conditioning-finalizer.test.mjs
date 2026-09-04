@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import {
   assertCanonicalManifestBytes,
+  canonicalJsonBytes,
   sha256Bytes,
 } from '../scripts/kandinsky-conditioning-bundle-contract.mjs';
 import { conditioningPromptContract } from '../scripts/kandinsky-conditioning-prompt-contract.mjs';
@@ -147,6 +148,7 @@ test('F5b.1 D2c B finalizer emits canonical D2a manifest without opening runtime
     assert.equal(run.result.status, 0, run.result.stderr);
     const bytes = fs.readFileSync(run.outputPath);
     const parsed = assertCanonicalManifestBytes(bytes, d1);
+    assert.equal(parsed.sourceTrust.d1ManifestSha256, sha256(d1Bytes));
     assert.equal(parsed.conditioning.candidateId, 'B_REALISM_ZERO_NEGATIVE');
     assert.equal(parsed.conditioning.conditioningContractSha256, run.expected.sha256);
     assert.equal(parsed.productionExecutable, false);
@@ -171,6 +173,22 @@ test('F5b.1 D2c C finalizer proves byte-identical reuse of accepted B image_embe
     const parsed = assertCanonicalManifestBytes(fs.readFileSync(target.outputPath), d1);
     assert.equal(parsed.conditioning.candidateId, 'C_PRESERVATION_EXPLICIT_NEGATIVE');
     assert.equal(parsed.conditioning.negativeMode, 'EXPLICIT_NEGATIVE_PRIOR');
+  } finally { cleanup(target, source); }
+});
+
+test('F5b.1 D2c C finalizer rejects B source rebound to different D1 manifest bytes', () => {
+  const source = runFinalizer('B_REALISM_ZERO_NEGATIVE', { bundle: safetensors([15, 16], [17, 18]) });
+  assert.equal(source.result.status, 0, source.result.stderr);
+  const forged = JSON.parse(fs.readFileSync(source.outputPath, 'utf8'));
+  forged.sourceTrust.d1ManifestSha256 = 'f'.repeat(64);
+  fs.writeFileSync(source.outputPath, canonicalJsonBytes(forged));
+  const target = runFinalizer('C_PRESERVATION_EXPLICIT_NEGATIVE', {
+    sourceRun: source,
+    bundle: safetensors([15, 16], [19, 20]),
+  });
+  try {
+    assert.notEqual(target.result.status, 0);
+    assert.match(target.result.stderr, /not bound to the exact current D1 manifest bytes/i);
   } finally { cleanup(target, source); }
 });
 

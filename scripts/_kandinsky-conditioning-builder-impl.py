@@ -32,6 +32,8 @@ DIFFUSERS_REVISION = "746215670a61af1034c470d0b6555be9c60cb7b6"
 PRIOR_PIPELINE_GIT_BLOB_SHA1 = "3b9974a5dd70e8b775caa01efab6b637ff22d9e5"
 EXPECTED_PIPELINE_CLASS = "KandinskyV22PriorPipeline"
 EXPECTED_INTENT = "GARMENT_APPEARANCE_REFINEMENT_RESEARCH_ONLY"
+CONDITIONING_MANIFEST_SCHEMA_VERSION = 2
+CONDITIONING_MANIFEST_STAGE = "F5B1_D2_CONDITIONING_RESEARCH"
 
 CANDIDATE_CONTRACT_SHA256 = {
     "A_NEUTRAL_ZERO_NEGATIVE": "85bea25dc00c2e23c4c2cf9e41a2a0531e93a19059d4dc3fa0c9208c766217e4",
@@ -366,16 +368,30 @@ def run_prior(pipeline: Any, torch: Any, contract: Mapping[str, Any], seed: int)
 
 
 def load_positive_source(torch: Any, manifest_path: Path, bundle_path: Path, expected_candidate_id: str) -> Mapping[str, Any]:
-    manifest = read_json(manifest_path, "positive source manifest")
-    if manifest.get("schemaVersion") != 1 or manifest.get("stage") != "F5B1_D2_CONDITIONING_RESEARCH" or manifest.get("status") != "RESEARCH_CANDIDATE":
+    manifest = read_canonical_json(manifest_path, "positive source manifest")
+    expected_root_keys = {
+        "schemaVersion", "stage", "status", "productionExecutable", "runtimeAuthorityGranted",
+        "priorRuntimeDependencyAllowed", "sourceTrust", "historicalPipeline", "toolchain", "determinism",
+        "conditioning", "bundle",
+    }
+    if set(manifest) != expected_root_keys:
+        fail("positive source manifest root schema is open or incomplete")
+    if manifest.get("schemaVersion") != CONDITIONING_MANIFEST_SCHEMA_VERSION or manifest.get("stage") != CONDITIONING_MANIFEST_STAGE or manifest.get("status") != "RESEARCH_CANDIDATE":
         fail("positive source manifest stage/status mismatch")
+    if manifest.get("productionExecutable") is not False or manifest.get("runtimeAuthorityGranted") is not False or manifest.get("priorRuntimeDependencyAllowed") is not False:
+        fail("positive source manifest escaped research-only authority")
+
     conditioning = require_mapping(manifest.get("conditioning"), "positive source conditioning")
+    if set(conditioning) != {"candidateId", "conditioningContractSha256", "negativeMode", "positiveEmbeddingSource"}:
+        fail("positive source conditioning schema is open or incomplete")
     if conditioning.get("candidateId") != expected_candidate_id:
         fail("positive source manifest candidate mismatch")
     if conditioning.get("conditioningContractSha256") != CANDIDATE_CONTRACT_SHA256[expected_candidate_id]:
         fail("positive source manifest contract SHA mismatch")
     if conditioning.get("negativeMode") != NEGATIVE_MODE_BY_CANDIDATE[expected_candidate_id]:
         fail("positive source manifest negative mode mismatch")
+    if conditioning.get("positiveEmbeddingSource") is not None:
+        fail("positive source B manifest must be an independent positive embedding candidate")
 
     bundle = require_mapping(manifest.get("bundle"), "positive source bundle identity")
     expected_size = bundle.get("size")
@@ -559,6 +575,19 @@ def read_json(path: Path, label: str) -> Mapping[str, Any]:
     except Exception as exc:
         fail(f"{label} is invalid JSON: {exc}")
     return require_mapping(value, label)
+
+
+def read_canonical_json(path: Path, label: str) -> Mapping[str, Any]:
+    try:
+        raw = path.read_bytes()
+        value = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        fail(f"{label} is invalid UTF-8/JSON: {exc}")
+    mapping = require_mapping(value, label)
+    canonical = (json.dumps(mapping, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    if raw != canonical:
+        fail(f"{label} bytes are not canonical JSON")
+    return mapping
 
 
 def write_canonical_json_atomic(path: Path, value: Mapping[str, Any]) -> None:
