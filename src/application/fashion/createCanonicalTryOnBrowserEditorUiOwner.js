@@ -1,6 +1,6 @@
 import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng.ts';
 import { createCanonicalTryOnEditorController } from './createCanonicalTryOnEditorController.js';
-import { createCanonicalTryOnEditorUiOwner } from './createCanonicalTryOnEditorUiOwner.js';
+import { createCanonicalTryOnEditorUiOwner } from './canonicalTryOnEditorUiOwner.js';
 import { createCanonicalTryOnProductRuntime } from './createCanonicalTryOnProductRuntime.js';
 import { createTryOnEditorFinalHandoff } from './createTryOnEditorFinalHandoff.js';
 
