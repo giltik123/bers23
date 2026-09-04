@@ -1,0 +1,50 @@
+name: Fashion F4b.6d.10a product session
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/createCanonicalTryOnProductSession.js'
+      - 'src/application/fashion/canonicalTryOnReadinessContract.js'
+      - 'src/application/fashion/createCanonicalTryOnReadinessSelection.js'
+      - 'src/application/fashion/canonicalTryOnApplication.js'
+      - 'tests/fashion-tryon-product-session.test.mjs'
+      - 'tests/fashion-tryon-readiness-supported-ready.test.mjs'
+      - '.github/workflows/fashion-tryon-product-session-f4b6d10a.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  product-session:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Prove request lifecycle and readiness defense in depth
+        run: |
+          node --test \
+            tests/fashion-tryon-product-session.test.mjs \
+            tests/fashion-tryon-readiness-supported-ready.test.mjs
+      - name: Prove serialized ephemeral authority boundary and retained global lockdown
+        run: |
+          set -euo pipefail
+          FILE=src/application/fashion/createCanonicalTryOnProductSession.js
+          grep -q 'normalizeCanonicalTryOnReadinessSummary' "$FILE"
+          grep -q 'usedRequestIds = new Set()' "$FILE"
+          grep -q 'let operation = null' "$FILE"
+          grep -q "return exclusive('resume', () => invokeInFlight('resume'))" "$FILE"
+          grep -q "return exclusive('recover', () => invokeInFlight('recover'))" "$FILE"
+          grep -q "phase === 'FINAL_READY'" "$FILE"
+          grep -q 'busy: Boolean(operation)' "$FILE"
+          grep -q 'clientRequestId' "$FILE"
+          ! grep -E 'localStorage|sessionStorage|indexedDB|fetch\(|coreClient|ticketId|representationId|anchorSetId|storageId|contentSha256|destinationMesh|FASHN|Billing|credits|pushEdit|finalizeAcceptedResult|outfitManager|TryOnPanel' "$FILE"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
