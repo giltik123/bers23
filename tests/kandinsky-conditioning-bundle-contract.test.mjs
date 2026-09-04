@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import {
+  KANDINSKY_CONDITIONING_SCHEMA_VERSION,
   assertCanonicalManifestBytes,
   assertKandinskyConditioningManifest,
   canonicalJsonBytes,
@@ -14,8 +15,10 @@ const d1 = JSON.parse(fs.readFileSync(D1_PATH, 'utf8'));
 
 function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
   const identity = conditioningCandidateIdentity(candidateId);
+  const sourceCandidateId = identity.positiveEmbeddingSourceCandidateId;
+  const sourceIdentity = sourceCandidateId === null ? null : conditioningCandidateIdentity(sourceCandidateId);
   return {
-    schemaVersion: 1,
+    schemaVersion: KANDINSKY_CONDITIONING_SCHEMA_VERSION,
     stage: 'F5B1_D2_CONDITIONING_RESEARCH',
     status: 'RESEARCH_CANDIDATE',
     productionExecutable: false,
@@ -64,6 +67,14 @@ function validManifest(candidateId = 'A_NEUTRAL_ZERO_NEGATIVE') {
       candidateId,
       conditioningContractSha256: identity.conditioningContractSha256,
       negativeMode: identity.negativeMode,
+      positiveEmbeddingSource: sourceCandidateId === null ? null : {
+        candidateId: sourceCandidateId,
+        conditioningContractSha256: sourceIdentity.conditioningContractSha256,
+        manifestSha256: '1'.repeat(64),
+        bundleSize: 10320,
+        bundleSha256: '2'.repeat(64),
+        imageEmbedsSha256: '3'.repeat(64),
+      },
     },
     bundle: {
       format: 'safetensors',
@@ -85,6 +96,28 @@ test('D2a accepts only the closed research manifest and all three shared conditi
     'B_REALISM_ZERO_NEGATIVE',
     'C_PRESERVATION_EXPLICIT_NEGATIVE',
   ]) assert.equal(assertKandinskyConditioningManifest(validManifest(candidate), d1).conditioning.candidateId, candidate);
+});
+
+test('D2a schema v2 makes positive embedding provenance part of immutable candidate identity', () => {
+  const aClaimsSource = validManifest('A_NEUTRAL_ZERO_NEGATIVE');
+  aClaimsSource.conditioning.positiveEmbeddingSource = {
+    candidateId: 'B_REALISM_ZERO_NEGATIVE',
+    conditioningContractSha256: conditioningCandidateIdentity('B_REALISM_ZERO_NEGATIVE').conditioningContractSha256,
+    manifestSha256: '1'.repeat(64), bundleSize: 1, bundleSha256: '2'.repeat(64), imageEmbedsSha256: '3'.repeat(64),
+  };
+  assert.throws(() => assertKandinskyConditioningManifest(aClaimsSource, d1), /positiveEmbeddingSource must be null/);
+
+  const cWithoutSource = validManifest('C_PRESERVATION_EXPLICIT_NEGATIVE');
+  cWithoutSource.conditioning.positiveEmbeddingSource = null;
+  assert.throws(() => assertKandinskyConditioningManifest(cWithoutSource, d1), /positiveEmbeddingSource must be a plain object/);
+
+  const cWrongSource = validManifest('C_PRESERVATION_EXPLICIT_NEGATIVE');
+  cWrongSource.conditioning.positiveEmbeddingSource.candidateId = 'A_NEUTRAL_ZERO_NEGATIVE';
+  assert.throws(() => assertKandinskyConditioningManifest(cWrongSource, d1), /positiveEmbeddingSource\.candidateId mismatch/);
+
+  const cOpenSource = validManifest('C_PRESERVATION_EXPLICIT_NEGATIVE');
+  cOpenSource.conditioning.positiveEmbeddingSource.runId = 'mutable-ci-id';
+  assert.throws(() => assertKandinskyConditioningManifest(cOpenSource, d1), /closed schema|forbidden/);
 });
 
 test('D2a binds exact D1 prior weight and executable config identities', () => {

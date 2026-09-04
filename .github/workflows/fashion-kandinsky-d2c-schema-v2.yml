@@ -1,0 +1,50 @@
+name: Fashion F5b.1 Kandinsky D2c schema-v2 provenance
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/_kandinsky-conditioning-builder-impl.py'
+      - 'scripts/kandinsky-conditioning-builder.py'
+      - 'scripts/kandinsky-conditioning-bundle-contract.mjs'
+      - 'scripts/kandinsky-conditioning-finalize-manifest.mjs'
+      - 'tests/kandinsky-conditioning-builder-entry.test.py'
+      - 'tests/kandinsky-conditioning-bundle-contract.test.mjs'
+      - 'tests/kandinsky-conditioning-schema-v2-boundary.test.mjs'
+      - '.github/workflows/fashion-kandinsky-d2c-schema-v2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  schema-v2-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prove schema-v2 and finalization contracts
+        run: node --test tests/kandinsky-conditioning-bundle-contract.test.mjs tests/kandinsky-conditioning-finalizer.test.mjs tests/kandinsky-conditioning-schema-v2-boundary.test.mjs
+      - name: Prove Python consumer and public preflight stay aligned
+        run: |
+          python -m py_compile scripts/kandinsky-conditioning-builder.py scripts/_kandinsky-conditioning-builder-impl.py
+          python tests/kandinsky-conditioning-builder-entry.test.py
+      - name: Prove no heavy runtime or production authority entered this slice
+        run: |
+          set -euo pipefail
+          grep -q 'KANDINSKY_CONDITIONING_SCHEMA_VERSION = 2' scripts/kandinsky-conditioning-bundle-contract.mjs
+          grep -q 'positiveEmbeddingSource' scripts/kandinsky-conditioning-finalize-manifest.mjs
+          grep -q 'prevalidate_positive_source' scripts/kandinsky-conditioning-builder.py
+          grep -q 'CONDITIONING_MANIFEST_SCHEMA_VERSION = 2' scripts/_kandinsky-conditioning-builder-impl.py
+          ! grep -R -E 'from_pretrained\(|hf_hub_download|snapshot_download|wget |curl ' .github/workflows/fashion-kandinsky-d2c-schema-v2.yml tests/kandinsky-conditioning-bundle-contract.test.mjs tests/kandinsky-conditioning-finalizer.test.mjs tests/kandinsky-conditioning-schema-v2-boundary.test.mjs
+          grep -q "GARMENT_APPEARANCE_REFINEMENT_PRODUCTION_ADMISSION = 'NOT_ADMITTED'" src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js
+      - name: Check candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
