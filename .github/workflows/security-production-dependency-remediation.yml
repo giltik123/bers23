@@ -1,0 +1,47 @@
+name: Security production dependency remediation
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'package-lock.json'
+      - '.github/workflows/security-production-dependency-remediation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  production-dependency-audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact committed dependency graph
+        run: npm ci
+      - name: Enforce production dependency audit threshold
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Prove known blocking transitive ranges are absent
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const fflate = lock.packages?.['node_modules/fflate']?.version;
+          const selector = lock.packages?.['node_modules/postcss-selector-parser']?.version;
+          if (!fflate || /^0\.8\.[0-2]$/.test(fflate)) throw new Error(`fflate remains vulnerable: ${fflate}`);
+          if (selector && /^6\.1\.[0-2]$/.test(selector)) throw new Error(`postcss-selector-parser remains vulnerable: ${selector}`);
+          console.log(JSON.stringify({ fflate, postcssSelectorParser: selector }));
+          NODE
+      - name: Typecheck production tree
+        run: npm run typecheck
+      - name: Build production frontend
+        run: npm run build
+      - name: Check committed diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
