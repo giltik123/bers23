@@ -1,3 +1,5 @@
+import { appendCanonicalTryOnSupportId } from './canonicalTryOnSupportDiagnostic.js';
+
 export const MANUAL_PARAMETRIC_SCHEMA_VERSION = 1;
 export const MANUAL_PARAMETRIC_COORDINATE_SPACE = 'PRIMARY_VIEW_NORMALIZED';
 export const MANUAL_PARAMETRIC_MAX_POINTS = 256;
@@ -111,9 +113,12 @@ export function manualAcquisitionErrorMessage(error) {
     body_anchor_destination_geometry_invalid: 'The selected body anchors would invert or collapse the garment. Reposition them.',
     body_anchor_category_unsupported: 'This garment category is not supported by deterministic Try-On.',
   };
-  if (code && messages[code]) return messages[code];
-  if (typeof error?.message === 'string' && error.message.trim()) return error.message.trim();
-  return code ? `Try-On acquisition failed (${code}).` : 'Try-On acquisition failed.';
+
+  let message;
+  if (code && messages[code]) message = messages[code];
+  else if (typeof error?.message === 'string' && error.message.trim()) message = error.message.trim();
+  else message = code ? `Try-On acquisition failed (${code}).` : 'Try-On acquisition failed.';
+  return appendCanonicalTryOnSupportId(message, error);
 }
 
 function normalizedPointList(value, min, max, label) {

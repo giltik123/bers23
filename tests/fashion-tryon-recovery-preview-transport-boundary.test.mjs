@@ -37,8 +37,9 @@ test('server reuses the one accepted Try-On product adapter instead of opening a
   assert.doesNotMatch(serverIndex, /createFashionTryOnRecoveryPreviewHttpAdapter|fashionTryOnRecoveryPreviewAdapter/);
 });
 
-test('server-only slice does not activate browser preview or Try-On execution UI', () => {
-  assert.doesNotMatch(coreClient, /\bgetTryOnPreview\b/);
+test('browser preview uses only the accepted product route while legacy execution remains tombstoned', () => {
+  assert.match(coreClient, /getTryOnPreview: \(payload\) => request\('\/fashion\/try-on\/preview', json\('POST', payload\)\)/);
+  assert.equal((coreClient.match(/\bgetTryOnPreview\b/g) || []).length, 1, 'browser client must expose exactly one Try-On preview method');
   assert.match(tryOnEngine, /TRYON_EXECUTION_NOT_WIRED/);
   for (const source of [product, preview, http]) {
     assert.doesNotMatch(source, /coreClient\.entities|FASHN|billing|credits|acceptFinal|pushEdit|localStorage/);

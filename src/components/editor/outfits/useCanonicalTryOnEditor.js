@@ -4,6 +4,7 @@ import { createCanonicalTryOnProductRuntime } from '@/application/fashion/create
 import { createCanonicalTryOnEditorController } from '@/application/fashion/createCanonicalTryOnEditorController';
 import { createCanonicalTryOnEditorHost } from '@/application/fashion/createCanonicalTryOnEditorHost';
 import { createTryOnEditorFinalHandoff } from '@/application/fashion/createTryOnEditorFinalHandoff';
+import { annotateCanonicalTryOnError } from '@/application/fashion/canonicalTryOnSupportDiagnostic';
 
 const IDLE_HOST = Object.freeze({ active: false, busy: false, disposed: false, hasInFlight: false, phase: 'IDLE' });
 const EMPTY_STATE = Object.freeze({ selection: null, result: null, host: IDLE_HOST });
@@ -105,7 +106,7 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
       // Outfit builder cannot remain interactive while readiness is pending.
       const operation = host[name](context);
       publishAdmission(host, selection);
-      const result = await operation;
+      const result = await withTryOnDiagnostic(() => operation);
       publish(host, result);
       return result;
     } finally {
@@ -118,7 +119,7 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
     const host = currentHost();
     beginOperation('retry');
     try {
-      const result = await host.retry();
+      const result = await withTryOnDiagnostic(() => host.retry());
       publish(host, result);
       return result;
     } finally {
@@ -134,7 +135,7 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
     try {
       const manual = host.manual(context);
       publishAdmission(host, selection);
-      return await manual.loadGarmentSource(garmentId);
+      return await withTryOnDiagnostic(() => manual.loadGarmentSource(garmentId));
     } finally {
       finishOperation(host);
     }
@@ -149,7 +150,7 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
     try {
       const manual = host.manual(context);
       publishAdmission(host, selection);
-      const result = await manual.saveContour(value);
+      const result = await withTryOnDiagnostic(() => manual.saveContour(value));
       invalidateReadiness = true;
       return result;
     } catch (error) {
@@ -174,7 +175,7 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
     try {
       const manual = host.manual(context);
       publishAdmission(host, selection);
-      const result = await manual.saveBodyAnchors(value);
+      const result = await withTryOnDiagnostic(() => manual.saveBodyAnchors(value));
       invalidateReadiness = true;
       return result;
     } finally {
@@ -224,6 +225,14 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
     abandon,
     close,
   });
+}
+
+async function withTryOnDiagnostic(operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    throw annotateCanonicalTryOnError(error);
+  }
 }
 
 function projectSelection(context) {

@@ -160,7 +160,7 @@ export default function CanonicalTryOnContourEditor({
     } catch (cause) {
       if (cause?.code === 'TRYON_MANUAL_CONTOUR_SAVED_RELOAD_PENDING') {
         setLocked(true);
-        setStatus('Contour was saved, but the refreshed Garment snapshot is unavailable. Reload before editing or submitting again.');
+        setStatus(manualAcquisitionErrorMessage(cause));
         if (typeof onReloadRequired === 'function') onReloadRequired();
       } else {
         setError(manualAcquisitionErrorMessage(cause));
