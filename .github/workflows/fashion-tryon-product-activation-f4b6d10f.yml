@@ -1,0 +1,159 @@
+name: Fashion F4b.6d.10f product activation acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/fashion/**'
+      - 'src/components/editor/outfits/**'
+      - 'src/pages/Editor.jsx'
+      - 'src/api/coreClient.js'
+      - 'src/lib/tryon/tryonEngine.js'
+      - 'src/application/local-execution/**'
+      - 'server/core/fashion/**'
+      - 'server/core/artifacts/**'
+      - 'server/core/http/fashionTryOn**'
+      - 'server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts'
+      - 'server/core/http/manualProjectBodyAnchorHttpAdapter.ts'
+      - 'server/core/localExecution/**'
+      - 'server/core/composition/createProductionGarmentMeshWarp.ts'
+      - 'tests/fashion-tryon-*.test.*'
+      - 'tests/fashion-texture-final-*.test.*'
+      - 'tests/fashion-manual-*.test.*'
+      - 'tests/canonical-tryon-*.test.mjs'
+      - 'tests/artifact-authority-stored-image-evidence.test.ts'
+      - '.github/workflows/fashion-tryon-product-activation-f4b6d10f.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  product-activation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact dependency graph
+        run: npm ci
+
+      - name: Prove closed product UI and application lifecycle
+        run: |
+          node --test \
+            tests/fashion-tryon-support-diagnostic.test.mjs \
+            tests/fashion-tryon-product-activation-acceptance.test.mjs \
+            tests/fashion-tryon-manual-remediation-wiring.test.mjs \
+            tests/fashion-tryon-manual-remediation-policy.test.mjs \
+            tests/fashion-tryon-manual-contour-draft.test.mjs \
+            tests/fashion-tryon-manual-body-anchor-draft.test.mjs \
+            tests/fashion-tryon-manual-prerequisite-application.test.mjs \
+            tests/canonical-tryon-manual-acquisition-boundary.test.mjs \
+            tests/fashion-tryon-readiness-selection.test.mjs \
+            tests/canonical-tryon-application.test.mjs \
+            tests/canonical-tryon-application-boundary.test.mjs \
+            tests/canonical-tryon-browser-application-wiring.test.mjs \
+            tests/fashion-tryon-product-session.test.mjs \
+            tests/fashion-tryon-product-runtime-composition.test.mjs \
+            tests/fashion-tryon-editor-controller.test.mjs \
+            tests/fashion-tryon-editor-host.test.mjs \
+            tests/fashion-tryon-product-controls.test.mjs \
+            tests/fashion-tryon-editor-final-handoff.test.mjs \
+            tests/fashion-tryon-editor-wiring.test.mjs \
+            tests/fashion-tryon-product-cutover-policy.test.mjs
+
+      - name: Typecheck and build browser plus production Core
+        run: |
+          npm run typecheck
+          npm run build
+          npm run server:typecheck
+          npm run server:build
+
+      - name: Bundle exact Core readiness orchestration transport and manual proofs
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/fashion-tryon-product-activation
+          for spec in \
+            fashion-tryon-readiness-f4b6a \
+            fashion-tryon-readiness-http-adapter \
+            fashion-tryon-orchestration-contract-f4b6b1 \
+            fashion-tryon-warp-orchestration-f4b6b2 \
+            fashion-tryon-texture-continuation-f4b6b3 \
+            fashion-texture-final-recovery-f4b6b4a \
+            fashion-texture-final-intent-binding-f4b6b4c \
+            fashion-texture-final-resolved-evidence-f4b6b4c \
+            fashion-tryon-final-result-f4b6b4c \
+            fashion-tryon-product-facade-f4b6b4d \
+            fashion-tryon-product-http-f4b6b4d \
+            fashion-tryon-legacy-cutover-f4b6b5 \
+            fashion-tryon-recovery-preview-transport-f4b6d2 \
+            fashion-manual-parametric-http-f4b6c1b \
+            fashion-manual-body-anchor-http-f4b6c2c \
+            fashion-manual-body-anchor-client-errors-f4b6c2c \
+            artifact-authority-stored-image-evidence
+          do
+            npx esbuild "tests/${spec}.test.ts" \
+              --bundle --platform=node --format=esm --target=node24 \
+              --outfile=".test-cache/fashion-tryon-product-activation/${spec}.test.mjs" \
+              --external:node:* --external:pg --external:sharp
+          done
+
+      - name: Prove production Core chain and recovery preview
+        run: |
+          node --test --test-concurrency=1 .test-cache/fashion-tryon-product-activation/*.test.mjs
+          node --experimental-strip-types --test tests/fashion-tryon-recovery-preview-f4b6d1.test.ts
+          node --test tests/fashion-tryon-recovery-preview-boundary.test.mjs tests/fashion-tryon-recovery-preview-transport-boundary.test.mjs
+
+      - name: Prove support diagnostics expose correlation only
+        run: |
+          set -euo pipefail
+          SUPPORT=src/application/fashion/canonicalTryOnSupportDiagnostic.js
+          HOOK=src/components/editor/outfits/useCanonicalTryOnEditor.js
+          grep -Fq 'error.correlationId = data?.correlationId' src/api/coreClient.js
+          grep -Fq "'x-correlation-id')?.slice(0, 128)" server/core/http/fashionTryOnProductHttpAdapter.ts
+          grep -Fq "'x-correlation-id')?.slice(0, 128)" server/core/http/fashionTryOnReadinessHttpAdapter.ts
+          grep -Fq "'x-correlation-id')?.slice(0, 128)" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
+          grep -Fq "'x-correlation-id')?.slice(0, 128)" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -Fq 'annotateCanonicalTryOnError' "$HOOK"
+          ! grep -E 'error\.data|\.data\?\.' "$HOOK"
+          ! grep -E 'storageId|contentSha256|representationId|anchorSetId|destinationMesh|ticketId|clientRequestId' "$SUPPORT"
+
+      - name: Prove canonical activation has no parallel evidence provider or legacy authority
+        run: |
+          set -euo pipefail
+          BROWSER=src/application/fashion/createCanonicalTryOnBrowserApplication.js
+          EDITOR=src/pages/Editor.jsx
+          REACT_FILES=(
+            src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx
+            src/components/editor/outfits/CanonicalTryOnProductControls.jsx
+            src/components/editor/outfits/CanonicalTryOnManualRemediationPanel.jsx
+            src/components/editor/outfits/CanonicalTryOnContourEditor.jsx
+            src/components/editor/outfits/CanonicalTryOnBodyAnchorEditor.jsx
+            src/components/editor/outfits/useCanonicalTryOnEditor.js
+          )
+          grep -Fq 'CorePreparedGarmentMeshWarp' "$BROWSER"
+          grep -Fq 'CorePreparedGarmentTextureComposite' "$BROWSER"
+          ! grep -E 'prepareGarmentMeshWarp|prepareGarmentTextureComposite|FASHN|Billing|credits' "$BROWSER"
+          ! grep -E 'clientRequestId|representationId|anchorSetId|storageId|contentSha256|destinationMesh|ticketId|FASHN|Billing|localStorage|sessionStorage|indexedDB' "${REACT_FILES[@]}"
+          ! grep -E 'createCanonicalTryOnProductRuntime|createCanonicalTryOnProductSession|createCanonicalTryOnEditorController|coreClient|tryonEngine|\.manual\b' "$EDITOR"
+          ! grep -Fq 'prepareGarmentMeshWarp' src/api/coreClient.js
+          ! grep -Fq 'prepareGarmentTextureComposite' src/api/coreClient.js
+          grep -Fq 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+          ! grep -Fq 'checkTryOnReadiness' src/lib/tryon/tryonEngine.js
+
+      - name: Prove FINAL still uses explicit existing Project Accept authority
+        run: |
+          set -euo pipefail
+          grep -Fq "pending?.kind === 'FASHION_TRYON'" src/pages/Editor.jsx
+          grep -Fq 'await pushEdit(result.finalArtifactId, used)' src/pages/Editor.jsx
+          grep -Fq 'void tryOn.retry()' src/pages/Editor.jsx
+          grep -Fq 'FASHION_TRYON' src/application/fashion/createTryOnEditorFinalHandoff.js
+          grep -Fq "mode === 'RECHECK_REQUIRED'" src/components/editor/outfits/CanonicalTryOnManualRemediationPanel.jsx
+
+      - name: Check exact stacked candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
