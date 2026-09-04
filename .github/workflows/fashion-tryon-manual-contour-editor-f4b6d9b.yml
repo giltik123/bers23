@@ -1,0 +1,50 @@
+name: Fashion F4b.6d.9b manual contour editor
+
+on:
+  pull_request:
+    paths:
+      - 'src/components/editor/outfits/CanonicalTryOnContourEditor.jsx'
+      - 'src/application/fashion/canonicalTryOnManualContourDraft.js'
+      - 'src/application/fashion/canonicalTryOnManualAcquisition.js'
+      - 'src/application/fashion/createCanonicalTryOnManualPrerequisiteApplication.js'
+      - 'tests/fashion-tryon-manual-contour-draft.test.mjs'
+      - '.github/workflows/fashion-tryon-manual-contour-editor-f4b6d9b.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  manual-contour-editor:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install exact frontend graph
+        run: npm ci
+      - name: Prove contour draft semantics and browser boundary
+        run: node --test tests/fashion-tryon-manual-contour-draft.test.mjs
+      - name: Typecheck and build production frontend
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Prove explicit-point-only UI and retained Try-On lockdown
+        run: |
+          set -euo pipefail
+          COMPONENT=src/components/editor/outfits/CanonicalTryOnContourEditor.jsx
+          HELPER=src/application/fashion/canonicalTryOnManualContourDraft.js
+          grep -q 'normalizeManualContourEditorSource(source)' "$COMPONENT"
+          grep -q 'validateManualContourDraft(points)' "$COMPONENT"
+          grep -q 'TRYON_MANUAL_CONTOUR_SAVED_RELOAD_PENDING' "$COMPONENT"
+          grep -q 'Core remains the final geometry/admission authority' "$HELPER"
+          ! grep -E 'coreClient|fetch\(|representationId|anchorSetId|storageId|contentSha256|ticketId|executionId|destinationMesh|FASHN|Billing|credits|outfitManager|tryonEngine' "$COMPONENT"
+          grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
+      - name: Check candidate diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
