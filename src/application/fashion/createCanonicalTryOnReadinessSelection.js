@@ -1,9 +1,6 @@
+import { normalizeCanonicalTryOnReadinessSummary } from './canonicalTryOnReadinessContract.js';
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const READINESS = new Set([
-  'READY', 'SOURCE_UNAVAILABLE', 'STALE_SOURCE', 'GARMENT_UNAVAILABLE', 'GARMENT_UNSUPPORTED',
-  'REPRESENTATION_REQUIRED', 'REPRESENTATION_AMBIGUOUS', 'BODY_ANCHORS_REQUIRED',
-  'BODY_ANCHORS_AMBIGUOUS', 'EVIDENCE_INVALID',
-]);
 
 /**
  * UI-only selection/readiness boundary for the canonical Outfit surface.
@@ -49,18 +46,11 @@ function normalizeSelection(value) {
 }
 
 function normalizeReadiness(value, selection) {
-  requirePlainObject(value, 'Try-On readiness');
-  const allowed = value.categoryGroup === undefined ? ['status'] : ['categoryGroup', 'status'];
-  requireExactKeys(value, allowed, 'Try-On readiness');
-  if (!READINESS.has(value.status)) throw new Error('Unknown Try-On readiness status');
-  if (value.categoryGroup !== undefined && !['tops', 'bottoms', 'dresses', 'footwear', 'accessories', 'other'].includes(value.categoryGroup)) {
-    throw new Error('Unknown Try-On category group');
-  }
+  const summary = normalizeCanonicalTryOnReadinessSummary(value, 'Try-On readiness');
   return Object.freeze({
     entryId: selection.entryId,
     garmentId: selection.garmentId,
-    status: value.status,
-    ...(value.categoryGroup !== undefined ? { categoryGroup: value.categoryGroup } : {}),
+    ...summary,
   });
 }
 
