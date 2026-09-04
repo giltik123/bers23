@@ -165,14 +165,12 @@ export function createCanonicalTryOnEditorUiOwner({
     const actionEpoch = epoch;
     operation = token;
     emit();
+    let failed = null;
     try {
       const result = await target[action]();
       if (controller !== target || epoch !== actionEpoch) {
         if (result?.status === 'FINAL_CANDIDATE') disposePendingPreview(result.pendingResult);
-        return snapshot();
-      }
-
-      if (result?.status === 'FINAL_CANDIDATE') {
+      } else if (result?.status === 'FINAL_CANDIDATE') {
         lastOutcome = null;
         try {
           publishPendingResult(result.pendingResult);
@@ -183,17 +181,18 @@ export function createCanonicalTryOnEditorUiOwner({
       } else {
         lastOutcome = safeOutcome(result);
       }
-      return snapshot();
     } catch (error) {
+      failed = error;
       if (controller === target && epoch === actionEpoch) {
         lastOutcome = null;
         reportError(error);
       }
-      throw error;
     } finally {
       if (operation === token) operation = null;
       emit();
     }
+    if (failed) throw failed;
+    return snapshot();
   };
 
   function requireActive(action) {
