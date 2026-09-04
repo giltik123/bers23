@@ -1,4 +1,4 @@
-import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng.js';
+import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng';
 import { normalizeCanonicalTryOnReadinessSummary } from './canonicalTryOnReadinessContract.js';
 import { createCanonicalTryOnEditorController } from './createCanonicalTryOnEditorController.js';
 import { createCanonicalTryOnProductRuntime } from './createCanonicalTryOnProductRuntime.js';
