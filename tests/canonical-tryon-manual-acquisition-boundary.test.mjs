@@ -19,7 +19,7 @@ test('browser helper stays aligned with accepted manual PARAMETRIC transport/sch
   assert.match(client, /admitManualParametricRepresentation:/);
 });
 
-test('browser helper stays aligned with accepted body-anchor names, frames and transport', () => {
+test('browser helper stays aligned with accepted body-anchor names, frames and capability transport', () => {
   for (const name of ['leftShoulder','rightShoulder','leftWaist','rightWaist','leftHip','rightHip','leftAnkle','rightAnkle','leftToe','rightToe']) {
     assert.ok(anchors.includes(`'${name}'`), `server must retain ${name}`);
     assert.ok(helper.includes(`'${name}'`), `browser helper must retain ${name}`);
@@ -34,7 +34,7 @@ test('browser helper stays aligned with accepted body-anchor names, frames and t
     assert.ok(helper.includes(frame));
   }
   assert.match(anchors, /BODY_ANCHOR_COORDINATE_SPACE = 'PROJECT_IMAGE_NORMALIZED'/);
-  assert.match(anchorsHttp, /BODY_KEYS = Object\.freeze\(\['payload', 'sourceArtifactId'\]/);
+  assert.match(anchorsHttp, /BODY_KEYS = Object\.freeze\(\['idempotencyKey', 'payload', 'sourceArtifactId'\]/);
   assert.match(helper, /BODY_ANCHOR_COORDINATE_SPACE = 'PROJECT_IMAGE_NORMALIZED'/);
   assert.match(client, /acquireManualBodyAnchors:/);
 });
@@ -49,11 +49,11 @@ test('helper intentionally does not duplicate authoritative polygon or destinati
   ]) assert.equal(helper.includes(forbidden), false, `browser helper must not implement ${forbidden}`);
 });
 
-test('manual acquisition browser intent cannot carry server evidence authority', () => {
+test('manual acquisition browser intent cannot carry server evidence or transport-replay authority', () => {
   for (const forbidden of [
     'representationId', 'representationContentSha256', 'anchorSetId', 'payloadSha256',
     'projectImageStorageId', 'projectImageSha256', 'destinationMesh', 'storageId',
-    'producerId', 'validatorId', 'admissionState', 'ticketId', 'executionId',
+    'producerId', 'validatorId', 'admissionState', 'ticketId', 'executionId', 'idempotencyKey',
     'fetch(', 'coreClient.entities', 'FASHN', 'billing', 'credits',
   ]) {
     assert.equal(helper.includes(forbidden), false, `manual acquisition helper must not contain ${forbidden}`);

@@ -99,7 +99,7 @@ test('F4b.6c.2a exact-source creation is pre-insert guarded and sequence-ordered
     const ordered = await pool.query(`SELECT anchor_set_id,acquisition_sequence::text AS acquisition_sequence
       FROM canonical_project_body_anchor_sets
       WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_image_storage_id=$4
-      ORDER BY acquisition_sequence DESC,anchor_set_id`, [projectId, owner.tenantId, owner.userId, expected.storageId]);
+      ORDER BY canonical_project_body_anchor_sets.acquisition_sequence DESC,anchor_set_id`, [projectId, owner.tenantId, owner.userId, expected.storageId]);
     assert.equal(ordered.rows.length, 3);
     const sequenceValues = ordered.rows.map(row => BigInt(String(row.acquisition_sequence)));
     assert.ok(sequenceValues[0] > sequenceValues[1] && sequenceValues[1] > sequenceValues[2]);

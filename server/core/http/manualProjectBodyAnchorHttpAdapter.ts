@@ -16,7 +16,8 @@ import {
 } from './browserSessionCookie.ts';
 
 const PATH_PATTERN = /^\/api\/core\/fashion\/projects\/([^/]+)\/body-anchors$/;
-const BODY_KEYS = Object.freeze(['payload', 'sourceArtifactId'] as const);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const BODY_KEYS = Object.freeze(['idempotencyKey', 'payload', 'sourceArtifactId'] as const);
 const MAX_SOURCE_ARTIFACT_ID_LENGTH = 4096;
 
 type BodyAnchorAuth = Readonly<{
@@ -33,6 +34,7 @@ type AdapterInput = Readonly<{
 type RequestBody = Readonly<{
   sourceArtifactId: string;
   payload: unknown;
+  idempotencyKey: string;
 }>;
 
 /** Capability-specific manual body-anchor acquisition transport. */
@@ -68,6 +70,7 @@ export function createManualProjectBodyAnchorHttpAdapter(input: AdapterInput) {
         projectId,
         sourceArtifactId: body.sourceArtifactId,
         payload: body.payload,
+        idempotencyKey: body.idempotencyKey,
       }));
       send(response, 201, publicResult(result, projectId, body.sourceArtifactId));
       return true;
@@ -118,7 +121,7 @@ function exactBody(value: unknown): RequestBody {
   const actual = Object.keys(record).sort();
   const expected = [...BODY_KEYS].sort();
   if (actual.length !== expected.length || expected.some((key, index) => actual[index] !== key)) {
-    throw httpError(400, 'forbidden_client_authority', 'Manual body-anchor acquisition accepts source and explicit anchor payload only');
+    throw httpError(400, 'forbidden_client_authority', 'Manual body-anchor acquisition accepts source, explicit anchor payload and one opaque idempotency key only');
   }
   if (typeof record.sourceArtifactId !== 'string') {
     throw httpError(400, 'invalid_manual_body_anchor_request', 'sourceArtifactId is required');
@@ -131,7 +134,14 @@ function exactBody(value: unknown): RequestBody {
   ) {
     throw httpError(400, 'invalid_manual_body_anchor_request', 'sourceArtifactId is outside the accepted identifier contract');
   }
-  return Object.freeze({ sourceArtifactId, payload: record.payload });
+  if (typeof record.idempotencyKey !== 'string' || !UUID_PATTERN.test(record.idempotencyKey)) {
+    throw httpError(400, 'invalid_manual_body_anchor_request', 'idempotencyKey must be a UUID');
+  }
+  return Object.freeze({
+    sourceArtifactId,
+    payload: record.payload,
+    idempotencyKey: record.idempotencyKey.toLowerCase(),
+  });
 }
 
 function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {

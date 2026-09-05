@@ -90,7 +90,11 @@ jobs:
       - name: Prove timestamp authority is removed without destructive contract migration
         run: |
           grep -q "acquisition_sequence::text AS acquisition_sequence" server/core/fashion/FashionTryOnReadinessService.ts
-          grep -q "ORDER BY acquisition_sequence DESC, anchor_set_id" server/core/fashion/FashionTryOnReadinessService.ts
+          grep -q "ORDER BY canonical_project_body_anchor_sets.acquisition_sequence DESC, anchor_set_id" server/core/fashion/FashionTryOnReadinessService.ts
+          if grep -q "ORDER BY acquisition_sequence DESC, anchor_set_id" server/core/fashion/FashionTryOnReadinessService.ts; then
+            echo "readiness consumer must order the bigint column, not the text output alias" >&2
+            exit 1
+          fi
           if grep -q "ORDER BY created_at" server/core/fashion/FashionTryOnReadinessService.ts; then
             echo "timestamp ordering authority remains in readiness consumer" >&2
             exit 1

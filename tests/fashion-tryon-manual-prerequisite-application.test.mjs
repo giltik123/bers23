@@ -8,6 +8,7 @@ import {
 const GARMENT = 'aaaaaaaa-1111-4111-8111-111111111111';
 const PROJECT = 'bbbbbbbb-2222-4222-8222-222222222222';
 const VIEW = 'cccccccc-3333-4333-8333-333333333333';
+const IDEMPOTENCY = 'dddddddd-4444-4444-8444-444444444444';
 
 function image(revision = 7, overrides = {}) {
   return {
@@ -55,6 +56,7 @@ function fixture({ images = [image()], metadataRows = [metadata()], garmentError
         return { anchorSetId: 'must-not-escape', payloadSha256: 'e'.repeat(64), destinationMesh: {} };
       },
     },
+    createIdempotencyKey: () => IDEMPOTENCY,
   });
   return { app, calls };
 }
@@ -123,7 +125,7 @@ test('successful contour admission plus failed reload is explicit non-retryable 
   assert.equal(calls.filter((call) => call[0] === 'garments.get').length, 1);
 });
 
-test('body-anchor save sends only stable Project source and explicit points, then drops Core evidence', async () => {
+test('body-anchor save sends only stable Project source explicit points and private idempotency intent, then drops Core evidence', async () => {
   const { app, calls } = fixture();
   const result = await app.saveBodyAnchors({
     projectId: PROJECT.toUpperCase(),
@@ -146,9 +148,11 @@ test('body-anchor save sends only stable Project source and explicit points, the
         leftHip: [0.4, 0.7], rightHip: [0.6, 0.7],
       },
     },
+    idempotencyKey: IDEMPOTENCY,
   });
   assert.equal(JSON.stringify(result).includes('anchorSetId'), false);
   assert.equal(JSON.stringify(result).includes('payloadSha256'), false);
+  assert.equal(JSON.stringify(result).includes(IDEMPOTENCY), false);
 });
 
 test('source projection fails closed on split revision, inactive garment, ambiguous primary view, foreign delivery and noncanonical expiry/category', async () => {

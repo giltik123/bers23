@@ -42,16 +42,17 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Build production Core and package migrations 028 and 031
+      - name: Build production Core and package body-anchor migrations
         run: |
           npm run server:build
           test -f dist-server/migrations/028_project_body_anchor_sets.sql
           test -f dist-server/migrations/031_project_body_anchor_acquisition_sequence.sql
+          test -f dist-server/migrations/035_project_body_anchor_idempotency.sql
       - name: Prove aggregate production migration and readiness order
         run: |
           npm run db:migrate:transactions
           npm run db:check:transactions
-      - name: Bundle body-anchor schema and sequence PostgreSQL acceptance
+      - name: Bundle body-anchor schema sequence idempotency and PostgreSQL acceptance
         run: |
           mkdir -p .test-cache/fashion-body-anchor-f4b6c2a
           npx esbuild tests/fashion-body-anchor-schema-postgres.test.ts \
@@ -62,18 +63,26 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-body-anchor-f4b6c2a/body-anchor-sequence.test.mjs \
             --external:node:* --external:pg --external:sharp
+          npx esbuild tests/fashion-manual-body-anchor-idempotency-f4b6c2d.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/fashion-body-anchor-f4b6c2a/body-anchor-idempotency.test.mjs \
+            --external:node:* --external:pg --external:sharp
           npx esbuild tests/fashion-body-anchor-destination-mesh-postgres.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-body-anchor-f4b6c2a/body-anchor-existing-vertical.test.mjs \
             --external:node:* --external:pg --external:sharp
-      - name: Prove schema drift exact-source pre-insert guard concurrency and existing F4b.3 compatibility
+      - name: Prove schema drift exact-source pre-insert guard exactly-once replay concurrency and existing F4b.3 compatibility
         run: node --test --test-concurrency=1 .test-cache/fashion-body-anchor-f4b6c2a/*.test.mjs
-      - name: Prove sequence is DB-owned and no execution provider Billing or cloud authority opened
+      - name: Prove sequence and idempotency are DB-owned and no execution provider Billing or cloud authority opened
         run: |
           grep -q "GENERATED ALWAYS AS IDENTITY" server/core/fashion/migrations/031_project_body_anchor_acquisition_sequence.sql
+          grep -q "idempotency_binding_sha256" server/core/fashion/migrations/035_project_body_anchor_idempotency.sql
+          grep -q "canonical_project_body_anchor_sets_owner_idempotency_key_unique" server/core/fashion/migrations/035_project_body_anchor_idempotency.sql
           grep -q "createForExpectedImage" server/core/fashion/postgresProjectBodyAnchorStore.ts
+          grep -q "body_anchor_idempotency_conflict" server/core/fashion/postgresProjectBodyAnchorStore.ts
           ! grep -R -E 'FAL_KEY|creditsUsed|Billing|provider|tryonEngine' \
             server/core/fashion/migrations/031_project_body_anchor_acquisition_sequence.sql \
+            server/core/fashion/migrations/035_project_body_anchor_idempotency.sql \
             server/core/fashion/bodyAnchorSchema.ts \
             server/core/fashion/postgresProjectBodyAnchorStore.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js

@@ -221,7 +221,7 @@ async function loadAnchorCandidates(
      WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3
        AND project_image_storage_id=$4 AND project_image_sha256=$5
        AND project_image_width=$6 AND project_image_height=$7
-     ORDER BY acquisition_sequence DESC, anchor_set_id`,
+     ORDER BY canonical_project_body_anchor_sets.acquisition_sequence DESC, anchor_set_id`,
     [projectId, scope.tenantId, scope.userId, source.storageId, source.sha256, source.width, source.height],
   );
   return Object.freeze(result.rows.map(row => Object.freeze({

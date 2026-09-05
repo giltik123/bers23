@@ -9,6 +9,7 @@ if (!databaseUrl) throw new Error('DATABASE_URL is required for F4b.3 body-ancho
 const schemaError = /body anchor schema is incomplete or drifted/i;
 const legacyIndex = 'canonical_project_body_anchor_sets_owner_project_idx';
 const sequenceIndex = 'canonical_project_body_anchor_sets_owner_project_sequence_idx';
+const idempotencyIndex = 'canonical_project_body_anchor_sets_owner_idempotency_key_unique';
 
 async function indexState(pool: Pool) {
   const result = await pool.query(`SELECT i.indexname,x.indisvalid,x.indisready
@@ -36,6 +37,12 @@ async function createSequenceIndex(pool: Pool): Promise<void> {
   await pool.query(`CREATE INDEX ${sequenceIndex}
     ON canonical_project_body_anchor_sets
     (tenant_id,user_id,project_id,project_image_storage_id,acquisition_sequence DESC,anchor_set_id)`);
+}
+
+async function createIdempotencyIndex(pool: Pool): Promise<void> {
+  await pool.query(`CREATE UNIQUE INDEX ${idempotencyIndex}
+    ON canonical_project_body_anchor_sets (tenant_id,user_id,idempotency_key)
+    WHERE idempotency_key IS NOT NULL`);
 }
 
 test('F4b.3/F4b.6c sequence-reader schema preserves rolling overlap and fail-closes index drift', async () => {
@@ -101,6 +108,23 @@ test('F4b.3/F4b.6c sequence-reader schema preserves rolling overlap and fail-clo
     await assert.rejects(checkProjectBodyAnchorSchema(pool), schemaError, 'missing acquisition-sequence uniqueness must fail readiness');
     await pool.query(`ALTER TABLE canonical_project_body_anchor_sets
       ADD CONSTRAINT canonical_project_body_anchor_sets_acquisition_sequence_unique UNIQUE (acquisition_sequence)`);
+    await checkProjectBodyAnchorSchema(pool);
+
+    await pool.query(`DROP INDEX ${idempotencyIndex}`);
+    await assert.rejects(checkProjectBodyAnchorSchema(pool), schemaError, 'missing idempotency uniqueness must fail readiness');
+    await createIdempotencyIndex(pool);
+    await checkProjectBodyAnchorSchema(pool);
+
+    await pool.query('ALTER TABLE canonical_project_body_anchor_sets DROP CONSTRAINT canonical_project_body_anchor_sets_idempotency_binding_check');
+    await pool.query(`ALTER TABLE canonical_project_body_anchor_sets
+      ADD CONSTRAINT canonical_project_body_anchor_sets_idempotency_binding_check CHECK (idempotency_key IS NULL OR idempotency_binding_sha256 IS NOT NULL)`);
+    await assert.rejects(checkProjectBodyAnchorSchema(pool), schemaError, 'weakened idempotency pair binding must fail readiness');
+    await pool.query('ALTER TABLE canonical_project_body_anchor_sets DROP CONSTRAINT canonical_project_body_anchor_sets_idempotency_binding_check');
+    await pool.query(`ALTER TABLE canonical_project_body_anchor_sets
+      ADD CONSTRAINT canonical_project_body_anchor_sets_idempotency_binding_check CHECK (
+        (idempotency_key IS NULL AND idempotency_binding_sha256 IS NULL)
+        OR (idempotency_key IS NOT NULL AND idempotency_binding_sha256 IS NOT NULL AND idempotency_binding_sha256 ~ '^[0-9a-f]{64}$')
+      )`);
     await checkProjectBodyAnchorSchema(pool);
 
     await pool.query('ALTER TABLE canonical_project_body_anchor_sets DISABLE TRIGGER canonical_project_body_anchor_sets_insert_guard');
