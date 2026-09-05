@@ -20,7 +20,8 @@ test('Editor navigation is capability-based rather than gated by detected object
   const editor = await readFile(EDITOR, 'utf8');
   const modes = editorModeBlock(editor);
 
-  assert.match(modes, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\} onChange=\{setEditTab\} \/>/);
+  assert.match(modes, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
+  assert.match(modes, /onChange=\{\(next\) => \{\s*if \(!tryOnActive\) setEditTab\(next\);\s*\}\}/);
   assert.doesNotMatch(modes, /objects\.length === 0 \? \([\s\S]*<AdaptiveNavigation/,
     'zero-object projects must not be routed around the main navigation');
   assert.match(modes, /editTab === 'fashion'[\s\S]*<FashionPanel \/>/);

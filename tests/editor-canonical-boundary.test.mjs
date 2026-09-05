@@ -223,7 +223,8 @@ test('zero-object projects expose canonical whole-image Prompt and shared naviga
   assert.match(editor, /\{objects\.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && \(/);
   assert.match(editor, /Object detection is optional\. You can edit the whole image now or detect\/select an object first\./);
   assert.match(editor, /<Button onClick=\{detect\} disabled=\{detecting \|\| editorBusy \|\| committing\}/);
-  assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\} onChange=\{setEditTab\} \/>/);
+  assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
+  assert.match(editor, /onChange=\{\(next\) => \{\s*if \(!tryOnActive\) setEditTab\(next\);\s*\}\}/);
   assert.match(editor, /allowWholeImage=\{objects\.length === 0\}/);
   assert.match(editor, /applying=\{editorBusy \|\| detecting \|\| committing\}/);
   assert.doesNotMatch(editor, /\) : objects\.length === 0 \? \(/);
