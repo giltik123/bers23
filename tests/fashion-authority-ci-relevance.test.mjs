@@ -22,6 +22,8 @@ test('Fashion authority classifier recognizes reviewed runtime, transport, workf
     '.github/workflows/managed-wardrobe-f2a.yml',
     '.github/workflows/managed-wardrobe-f2b.yml',
     '.github/workflows/managed-outfits-f3a.yml',
+    '.github/workflows/managed-garment-representations-f4a.yml',
+    '.github/workflows/managed-garment-glb-f4a1.yml',
     '.github/workflows/fashion-authority-ci-policy.yml',
     'package.json',
     'package-lock.json',
@@ -35,6 +37,21 @@ test('Fashion authority classifier recognizes reviewed runtime, transport, workf
     'src/components/editor/outfits/OutfitPanel.jsx',
   ]) {
     assert.equal(isFashionAuthorityCiRelevant(path), true, path);
+  }
+});
+
+test('representation classifier boundary does not absorb F4b execution-only authority', () => {
+  for (const path of [
+    '.github/workflows/fashion-managed-garment-input-f4b2.yml',
+    '.github/workflows/fashion-body-anchor-destination-mesh-f4b3.yml',
+    'server/core/localExecution/productionLocalExecutorPolicy.ts',
+    'server/core/providers/productionExecutionCapabilities.ts',
+    'server/core/providers/productionExecutionRoute.ts',
+    'server/core/providers/productionTargetSelection.ts',
+    'src/platform/creative/deterministic/DeterministicToolRegistry.ts',
+    'src/lib/tryon/tryonEngine.js',
+  ]) {
+    assert.equal(isFashionAuthorityCiRelevant(path), false, path);
   }
 });
 
