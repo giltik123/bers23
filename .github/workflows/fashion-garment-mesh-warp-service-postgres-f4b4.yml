@@ -75,9 +75,11 @@ jobs:
       - name: Assert production admission remains Fashion-only
         run: |
           grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
-          grep -q 'GARMENT_MESH_WARP_CAPABILITY' server/core/localExecution/productionLocalExecutorPolicy.ts
-          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionCapabilities.ts
-          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionRoute.ts
-          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionTargetSelection.ts
+          grep -q 'productionGarmentMeshWarpExecutorsByCapability' server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q 'GARMENT_MESH_WARP_CAPABILITY' server/core/localExecution/productionGarmentMeshWarpExecutorPolicy.ts
+          grep -q 'GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE' server/core/providers/productionExecutionCapabilities.ts
+          grep -q 'GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE' server/core/providers/productionExecutionRoute.ts
+          grep -q 'GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE' server/core/providers/productionTargetSelection.ts
+          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionGarmentMeshWarpExecutionPolicy.ts
           grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
           ! grep -Eq 'garment-mesh-warp|GARMENT_MESH_WARP' src/lib/tryon/tryonEngine.js
