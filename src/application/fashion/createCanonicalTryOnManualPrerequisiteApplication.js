@@ -33,12 +33,24 @@ export class CanonicalTryOnManualContourReloadError extends Error {
  * concurrency revision and Wardrobe category. This boundary reconciles the two
  * canonical aggregates and deliberately drops view IDs, SHA/storage provenance,
  * representation/anchor identity and admission responses before data reaches UI.
+ *
+ * Manual body-anchor idempotency is also private here. One opaque request key is
+ * retained only after an ambiguous failed Save and reused only for the exact same
+ * normalized Project/source/payload retry. It is never returned to React state.
  */
-export function createCanonicalTryOnManualPrerequisiteApplication({ garments, wardrobe, fashion }) {
+export function createCanonicalTryOnManualPrerequisiteApplication({
+  garments,
+  wardrobe,
+  fashion,
+  createIdempotencyKey = () => globalThis.crypto.randomUUID(),
+}) {
   requireMethod(garments, 'get', 'Managed Garment client');
   requireMethod(wardrobe, 'get', 'Managed Wardrobe client');
   requireMethod(fashion, 'admitManualParametricRepresentation', 'Fashion Core client');
   requireMethod(fashion, 'acquireManualBodyAnchors', 'Fashion Core client');
+  if (typeof createIdempotencyKey !== 'function') throw new TypeError('Manual Try-On idempotency key generator must be a function');
+
+  let pendingBodyAnchorSave = null;
 
   const loadGarmentSource = async (garmentId) => {
     const id = uuid(garmentId, 'garmentId');
@@ -77,12 +89,29 @@ export function createCanonicalTryOnManualPrerequisiteApplication({ garments, wa
         sourceArtifactId: value.sourceArtifactId,
         anchors: value.anchors,
       });
-      await fashion.acquireManualBodyAnchors(projectId, intent);
+      const fingerprint = bodyAnchorSaveFingerprint(projectId, intent);
+      let idempotencyKey;
+      if (pendingBodyAnchorSave?.fingerprint === fingerprint) {
+        idempotencyKey = pendingBodyAnchorSave.idempotencyKey;
+      } else {
+        idempotencyKey = uuid(createIdempotencyKey(), 'manual body-anchor idempotency key');
+      }
+      pendingBodyAnchorSave = Object.freeze({ fingerprint, idempotencyKey });
+      await fashion.acquireManualBodyAnchors(projectId, Object.freeze({ ...intent, idempotencyKey }));
+      pendingBodyAnchorSave = null;
       // Anchor-set/storage/SHA/destination-mesh response is intentionally discarded.
       // The product must rerun canonical readiness after this acknowledgement.
       return Object.freeze({ status: 'SAVED' });
     },
   });
+}
+
+function bodyAnchorSaveFingerprint(projectId, intent) {
+  return JSON.stringify([
+    projectId,
+    intent.sourceArtifactId,
+    intent.payload,
+  ]);
 }
 
 function safeGarmentSource(image, metadata, expectedId) {

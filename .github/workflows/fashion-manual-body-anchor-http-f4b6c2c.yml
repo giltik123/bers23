@@ -44,7 +44,7 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/fashion-manual-body-anchor-http-f4b6c2c/artifact-errors.test.mjs \
             --external:node:*
-      - name: Prove exact source binding redaction browser mutation protections and typed client error semantics
+      - name: Prove exact source binding idempotency redaction browser mutation protections and typed client error semantics
         run: node --test .test-cache/fashion-manual-body-anchor-http-f4b6c2c/*.test.mjs
       - name: Prove one shared Fashion authority graph and closed browser boundary
         run: |
@@ -57,7 +57,8 @@ jobs:
           grep -q "createManualProjectBodyAnchorHttpAdapter" server/index.ts
           grep -q "const MANUAL_BODY_ANCHOR_PATH = /" server/index.ts
           grep -q "MANUAL_BODY_ANCHOR_PATH.test(path)" server/index.ts
-          grep -q "const BODY_KEYS = Object.freeze(\['payload', 'sourceArtifactId'\]" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -q "const BODY_KEYS = Object.freeze(\['idempotencyKey', 'payload', 'sourceArtifactId'\]" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -q "idempotencyKey must be a UUID" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -q "assertBrowserMutationAllowed" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -q "forbidden_client_authority" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -q "invalid_body_anchor_payload" server/core/fashion/ManualProjectBodyAnchorAcquisitionService.ts
@@ -67,6 +68,7 @@ jobs:
           ! grep -q "acquisitionSequence" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           ! grep -q "projectImageStorageId" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           ! grep -q "projectImageSha256" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          ! grep -q "idempotency_binding_sha256" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           ! grep -E "providers|Billing|FAL_KEY|FASHN|tryonEngine" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -q "acquireManualBodyAnchors: (projectId, payload) => request" src/api/coreClient.js
           ! grep -q "acquisitionSequence" src/api/coreClient.js

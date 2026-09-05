@@ -15,6 +15,7 @@ const projectId = '11111111-1111-4111-8111-111111111111';
 const storageId = '22222222-2222-4222-8222-222222222222';
 const anchorSetId = '33333333-3333-4333-8333-333333333333';
 const sourceArtifactId = 'signed-current-project-image';
+const idempotencyKey = '44444444-4444-4444-8444-444444444444';
 const sourceSha256 = 'a'.repeat(64);
 const auth = Object.freeze({ tenantId: 'tenant-anchor-http', userId: 'user-anchor-http' });
 const bearerHeaders = Object.freeze({ Authorization: 'Bearer test.token.value' });
@@ -185,7 +186,7 @@ async function withHttpServer(
 const acquisitionResult = Object.freeze({ projectId, sourceArtifactId, anchorSet: storedAnchor });
 
 function body(extra: Record<string, unknown> = {}) {
-  return JSON.stringify({ sourceArtifactId, payload, ...extra });
+  return JSON.stringify({ sourceArtifactId, payload, idempotencyKey, ...extra });
 }
 
 function csrfFor(sessionToken: string): string {
@@ -214,8 +215,9 @@ test('F4b.6c.2c HTTP returns only stable acquisition acknowledgement and redacts
     assert.ok(!JSON.stringify(publicBody).includes('42'));
     assert.ok(!JSON.stringify(publicBody).includes(storageId));
     assert.ok(!JSON.stringify(publicBody).includes(sourceSha256));
+    assert.ok(!JSON.stringify(publicBody).includes(idempotencyKey));
     assert.equal(calls.acquires.length, 1);
-    assert.deepEqual(calls.acquires[0], { principal: auth, command: { projectId, sourceArtifactId, payload } });
+    assert.deepEqual(calls.acquires[0], { principal: auth, command: { projectId, sourceArtifactId, payload, idempotencyKey } });
   });
 });
 
@@ -287,7 +289,7 @@ test('F4b.6c.2c HTTP enforces POST JSON origin OPTIONS body-size and session-bou
 
     const huge = await fetch(`${base}/api/core/fashion/projects/${projectId}/body-anchors`, {
       method: 'POST', headers: { ...bearerHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceArtifactId, payload: 'x'.repeat(9000) }),
+      body: JSON.stringify({ sourceArtifactId, idempotencyKey, payload: 'x'.repeat(9000) }),
     });
     assert.equal(huge.status, 413);
 

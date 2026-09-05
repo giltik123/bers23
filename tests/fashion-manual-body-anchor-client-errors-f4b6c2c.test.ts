@@ -9,6 +9,7 @@ import { createManualProjectBodyAnchorHttpAdapter } from '../server/core/http/ma
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const sourceArtifactId = 'signed-current-project-image';
+const idempotencyKey = '22222222-2222-4222-8222-222222222222';
 const auth = Object.freeze({ tenantId: 'tenant-anchor-errors', userId: 'user-anchor-errors' });
 const validPayload = Object.freeze({
   schemaVersion: 1,
@@ -57,7 +58,7 @@ function post(base: string, payload: unknown) {
   return fetch(`${base}/api/core/fashion/projects/${projectId}/body-anchors`, {
     method: 'POST',
     headers: { Authorization: 'Bearer test.token.value', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sourceArtifactId, payload }),
+    body: JSON.stringify({ sourceArtifactId, payload, idempotencyKey }),
   });
 }
 

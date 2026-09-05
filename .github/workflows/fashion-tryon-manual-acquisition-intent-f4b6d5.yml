@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
     paths:
       - 'src/application/fashion/canonicalTryOnManualAcquisition.js'
+      - 'server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts'
+      - 'server/core/http/manualProjectBodyAnchorHttpAdapter.ts'
       - 'tests/canonical-tryon-manual-acquisition.test.mjs'
       - 'tests/canonical-tryon-manual-acquisition-boundary.test.mjs'
       - '.github/workflows/fashion-tryon-manual-acquisition-intent-f4b6d5.yml'
@@ -35,14 +37,14 @@ jobs:
       - name: Re-prove accepted manual acquisition browser transports
         run: |
           grep -Fq "BODY_KEYS = Object.freeze(['contour', 'expectedRevision']" server/core/http/manualParametricGarmentAdmissionHttpAdapter.ts
-          grep -Fq "BODY_KEYS = Object.freeze(['payload', 'sourceArtifactId']" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
+          grep -Fq "BODY_KEYS = Object.freeze(['idempotencyKey', 'payload', 'sourceArtifactId']" server/core/http/manualProjectBodyAnchorHttpAdapter.ts
           grep -Fq "MANUAL_PARAMETRIC_CONTOUR_MAX_POINTS = 256" server/core/fashion/manualParametricContour.ts
           grep -Fq "BODY_ANCHOR_SCHEMA_ID = 'BERS_BODY_ANCHORS_V1'" server/core/fashion/bodyAnchorGeometry.ts
       - name: Keep browser acquisition intent authority narrow
         run: |
           set -euo pipefail
           FILE=src/application/fashion/canonicalTryOnManualAcquisition.js
-          ! grep -E -q 'representation(Id|ContentSha256)|anchorSetId|payloadSha256|projectImage(StorageId|Sha256)|destinationMesh|storageId|producerId|validatorId|admissionState|ticketId|executionId|fetch\(|coreClient\.entities|FASHN|billing|credits' "$FILE"
+          ! grep -E -q 'representation(Id|ContentSha256)|anchorSetId|payloadSha256|projectImage(StorageId|Sha256)|destinationMesh|storageId|producerId|validatorId|admissionState|ticketId|executionId|idempotencyKey|fetch\(|coreClient\.entities|FASHN|billing|credits' "$FILE"
       - name: Build production frontend
         run: npm run build
       - name: Check committed diff whitespace

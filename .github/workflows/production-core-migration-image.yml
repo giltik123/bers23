@@ -49,7 +49,8 @@ jobs:
           test -f dist-server/migrations/015_workflow_continuations.sql
           test -f dist-server/migrations/033_manual_parametric_basis_content_uniqueness.sql
           test -f dist-server/migrations/034_execution_run_registry.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 34
+          test -f dist-server/migrations/035_project_body_anchor_idempotency.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 35
           test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.down.sql' | wc -l)" -eq 0
       - name: Prove bundled migrator on a clean PostgreSQL database
         env:
@@ -64,9 +65,27 @@ jobs:
           import { Pool } from 'pg';
           const pool = new Pool({ connectionString: process.env.DATABASE_URL });
           try {
-            const result = await pool.query("SELECT to_regclass('workflow_continuations')::text AS continuation, to_regclass('canonical_execution_runs')::text AS execution_runs");
+            const result = await pool.query(`SELECT
+              to_regclass('workflow_continuations')::text AS continuation,
+              to_regclass('canonical_execution_runs')::text AS execution_runs,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema()
+                  AND table_name='canonical_project_body_anchor_sets'
+                  AND column_name='idempotency_key' AND udt_name='uuid'
+              ) AS body_anchor_idempotency_key,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema()
+                  AND table_name='canonical_project_body_anchor_sets'
+                  AND column_name='idempotency_binding_sha256' AND udt_name='bpchar'
+              ) AS body_anchor_idempotency_binding,
+              to_regclass('canonical_project_body_anchor_sets_owner_idempotency_key_unique')::text AS body_anchor_idempotency_index`);
             if (result.rows[0]?.continuation !== 'workflow_continuations') throw new Error('migration 015 was not applied');
             if (result.rows[0]?.execution_runs !== 'canonical_execution_runs') throw new Error('migration 034 was not applied');
+            if (result.rows[0]?.body_anchor_idempotency_key !== true) throw new Error('migration 035 idempotency key was not applied');
+            if (result.rows[0]?.body_anchor_idempotency_binding !== true) throw new Error('migration 035 binding hash was not applied');
+            if (result.rows[0]?.body_anchor_idempotency_index !== 'canonical_project_body_anchor_sets_owner_idempotency_key_unique') throw new Error('migration 035 unique index was not applied');
           } finally { await pool.end(); }
           NODE
       - name: Create independent clean database for immutable-image proof

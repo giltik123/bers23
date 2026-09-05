@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/application/fashion/createCanonicalTryOnManualPrerequisiteApplication.js'
       - 'tests/fashion-tryon-manual-prerequisite-application.test.mjs'
+      - 'tests/fashion-tryon-manual-body-anchor-idempotency.test.mjs'
       - 'src/application/fashion/canonicalTryOnManualAcquisition.js'
       - 'src/api/managedGarmentClient.js'
       - 'src/api/managedWardrobeClient.js'
@@ -28,14 +29,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
-      - name: Prove minimized manual prerequisite application
-        run: node --test tests/fashion-tryon-manual-prerequisite-application.test.mjs tests/canonical-tryon-manual-acquisition-boundary.test.mjs
+      - name: Prove minimized manual prerequisite application and private lost-ACK replay identity
+        run: node --test tests/fashion-tryon-manual-prerequisite-application.test.mjs tests/fashion-tryon-manual-body-anchor-idempotency.test.mjs tests/canonical-tryon-manual-acquisition-boundary.test.mjs
       - name: Prove browser boundary cannot retain Core evidence authority
         run: |
           set -euo pipefail
           FILE=src/application/fashion/createCanonicalTryOnManualPrerequisiteApplication.js
           grep -q 'buildManualParametricAdmissionIntent' "$FILE"
           grep -q 'buildManualBodyAnchorAcquisitionIntent' "$FILE"
+          grep -q 'pendingBodyAnchorSave' "$FILE"
+          grep -q 'createIdempotencyKey' "$FILE"
           grep -q "return Object.freeze({ status: 'SAVED' })" "$FILE"
           grep -q "GARMENT_DELIVERY = /" "$FILE"
           ! grep -E 'representationId|representationContentSha256|anchorSetId|payloadSha256|destinationMesh|projectImageStorageId|projectImageSha256|storageProvenance|contentSha256|ticketId|executionId|coreClient|fetch\(|FASHN|Billing|credits' "$FILE"

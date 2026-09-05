@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 
 const BASE_MIGRATION = '028_project_body_anchor_sets.sql';
 const SEQUENCE_MIGRATION = '031_project_body_anchor_acquisition_sequence.sql';
+const IDEMPOTENCY_MIGRATION = '035_project_body_anchor_idempotency.sql';
 const TABLE = 'canonical_project_body_anchor_sets';
 const EXPECTED_COLUMNS = Object.freeze([
   ['anchor_set_id', 'uuid', false],
@@ -22,6 +23,8 @@ const EXPECTED_COLUMNS = Object.freeze([
   ['producer_version', 'text', false],
   ['created_at', 'timestamptz', false],
   ['acquisition_sequence', 'int8', false],
+  ['idempotency_key', 'uuid', true],
+  ['idempotency_binding_sha256', 'bpchar', true],
 ] as const);
 
 const EXPECTED_CHECK_FRAGMENTS = Object.freeze(new Map<string, readonly string[]>([
@@ -34,12 +37,21 @@ const EXPECTED_CHECK_FRAGMENTS = Object.freeze(new Map<string, readonly string[]
   ['canonical_project_body_anchor_sets_payload_sha256_check', ["anchor_payload_sha256 ~ '^[0-9a-f]{64}$'::text"]],
   ['canonical_project_body_anchor_sets_producer_id_check', ['producer_id = btrim(producer_id)', "producer_id !~ '[[:cntrl:]]'::text"]],
   ['canonical_project_body_anchor_sets_producer_version_check', ['producer_version = btrim(producer_version)', "producer_version !~ '[[:cntrl:]]'::text"]],
+  ['canonical_project_body_anchor_sets_idempotency_binding_check', [
+    'idempotency_key IS NULL',
+    'idempotency_binding_sha256 IS NULL',
+    'idempotency_key IS NOT NULL',
+    'idempotency_binding_sha256 IS NOT NULL',
+    "idempotency_binding_sha256 ~ '^[0-9a-f]{64}$'::text",
+  ]],
 ]));
 
 const LEGACY_INDEX = 'canonical_project_body_anchor_sets_owner_project_idx';
 const SEQUENCE_INDEX = 'canonical_project_body_anchor_sets_owner_project_sequence_idx';
+const IDEMPOTENCY_INDEX = 'canonical_project_body_anchor_sets_owner_idempotency_key_unique';
 const LEGACY_INDEX_FRAGMENT = 'USING btree (tenant_id, user_id, project_id, project_image_storage_id, created_at DESC, anchor_set_id)';
 const SEQUENCE_INDEX_FRAGMENT = 'USING btree (tenant_id, user_id, project_id, project_image_storage_id, acquisition_sequence DESC, anchor_set_id)';
+const IDEMPOTENCY_INDEX_FRAGMENT = 'USING btree (tenant_id, user_id, idempotency_key)';
 
 async function migration(name: string): Promise<string> {
   try { return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8'); }
@@ -90,7 +102,7 @@ async function ready(pool: Pool): Promise<boolean> {
   for (const [name, type, nullable] of EXPECTED_COLUMNS) {
     const candidate = byName.get(name);
     if (!candidate || String(candidate.udt_name) !== type || ((String(candidate.is_nullable) === 'YES') !== nullable)) return false;
-    if ((name === 'project_image_sha256' || name === 'anchor_payload_sha256') && Number(candidate.character_maximum_length) !== 64) return false;
+    if ((name === 'project_image_sha256' || name === 'anchor_payload_sha256' || name === 'idempotency_binding_sha256') && Number(candidate.character_maximum_length) !== 64) return false;
     const columnDefault = candidate.column_default == null ? null : normalizeSql(String(candidate.column_default));
     if (name === 'created_at') {
       if (columnDefault !== 'CURRENT_TIMESTAMP' || String(candidate.is_identity) !== 'NO') return false;
@@ -111,20 +123,22 @@ async function ready(pool: Pool): Promise<boolean> {
     if ((name.endsWith('_producer_id_check') || name.endsWith('_producer_version_check')) && !hasOneToHundredBound(definition)) return false;
   }
 
-  const indexes = await pool.query(`SELECT i.indexname,i.indexdef,x.indisvalid,x.indisready
+  const indexes = await pool.query(`SELECT i.indexname,i.indexdef,x.indisvalid,x.indisready,x.indisunique
     FROM pg_indexes i
     JOIN pg_namespace n ON n.nspname=i.schemaname
     JOIN pg_class c ON c.relnamespace=n.oid AND c.relname=i.indexname
     JOIN pg_index x ON x.indexrelid=c.oid
     WHERE i.schemaname=current_schema() AND i.tablename=$1
-      AND i.indexname IN ($2,$3)`, [TABLE, LEGACY_INDEX, SEQUENCE_INDEX]);
+      AND i.indexname IN ($2,$3,$4)`, [TABLE, LEGACY_INDEX, SEQUENCE_INDEX, IDEMPOTENCY_INDEX]);
   const indexByName = new Map(indexes.rows.map(candidate => [String(candidate.indexname), candidate]));
   const legacyIndex = indexByName.get(LEGACY_INDEX);
   const sequenceIndex = indexByName.get(SEQUENCE_INDEX);
+  const idempotencyIndex = indexByName.get(IDEMPOTENCY_INDEX);
   if (
     !healthyIndex(sequenceIndex, SEQUENCE_INDEX_FRAGMENT)
+    || !healthyIdempotencyIndex(idempotencyIndex)
     || (legacyIndex !== undefined && !healthyIndex(legacyIndex, LEGACY_INDEX_FRAGMENT))
-    || indexByName.size !== (legacyIndex === undefined ? 1 : 2)
+    || indexByName.size !== (legacyIndex === undefined ? 2 : 3)
   ) return false;
 
   const triggers = await pool.query(`SELECT t.tgname,t.tgtype,t.tgenabled,p.proname
@@ -153,9 +167,15 @@ function healthyIndex(candidate: any, expectedFragment: string): boolean {
   const definition = normalizeSql(String(candidate.indexdef));
   return definition.includes(expectedFragment) && !/\bWHERE\b/.test(definition);
 }
+function healthyIdempotencyIndex(candidate: any): boolean {
+  if (!candidate || candidate.indisvalid !== true || candidate.indisready !== true || candidate.indisunique !== true) return false;
+  const definition = normalizeSql(String(candidate.indexdef));
+  return definition.includes(IDEMPOTENCY_INDEX_FRAGMENT)
+    && definition.includes('WHERE (idempotency_key IS NOT NULL)');
+}
 
 export async function checkProjectBodyAnchorSchema(pool: Pool): Promise<void> {
-  if (!await ready(pool)) throw new Error('canonical Project body anchor schema is incomplete or drifted; apply migrations 028 and 031; legacy index cleanup is a separate post-rollout contract step');
+  if (!await ready(pool)) throw new Error('canonical Project body anchor schema is incomplete or drifted; apply migrations 028, 031 and 035; legacy index cleanup is a separate post-rollout contract step');
 }
 
 export async function migrateProjectBodyAnchorSchema(pool: Pool): Promise<void> {
@@ -164,5 +184,8 @@ export async function migrateProjectBodyAnchorSchema(pool: Pool): Promise<void> 
   const sequenceColumn = await pool.query(`SELECT 1 FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name=$1 AND column_name='acquisition_sequence'`, [TABLE]);
   if (sequenceColumn.rowCount !== 1) await pool.query(await migration(SEQUENCE_MIGRATION));
+  const idempotencyColumn = await pool.query(`SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name=$1 AND column_name='idempotency_key'`, [TABLE]);
+  if (idempotencyColumn.rowCount !== 1) await pool.query(await migration(IDEMPOTENCY_MIGRATION));
   await checkProjectBodyAnchorSchema(pool);
 }

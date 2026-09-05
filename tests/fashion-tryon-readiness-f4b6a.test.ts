@@ -152,7 +152,8 @@ test('F4b.6 readiness resolves server-owned representation and sequence-selected
   const anchorQuery = (harness.queries as any[]).find(value => value.sql.includes('canonical_project_body_anchor_sets'));
   assert.deepEqual(anchorQuery.params, [PROJECT_ID, 'tenant-a', 'user-a', SOURCE_STORAGE_ID, SOURCE_SHA, 256, 384]);
   assert.match(anchorQuery.sql, /acquisition_sequence::text AS acquisition_sequence/);
-  assert.match(anchorQuery.sql, /ORDER BY acquisition_sequence DESC, anchor_set_id/);
+  assert.match(anchorQuery.sql, /ORDER BY canonical_project_body_anchor_sets\.acquisition_sequence DESC, anchor_set_id/);
+  assert.doesNotMatch(anchorQuery.sql, /ORDER BY acquisition_sequence DESC/);
   assert.doesNotMatch(anchorQuery.sql, /created_at/);
 });
 

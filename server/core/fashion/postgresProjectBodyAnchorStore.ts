@@ -19,6 +19,8 @@ import {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const POSITIVE_BIGINT_PATTERN = /^[1-9][0-9]*$/;
+const IDEMPOTENCY_SOURCE_ARTIFACT_MAX_LENGTH = 4096;
+const IDEMPOTENCY_UNIQUE_INDEX = 'canonical_project_body_anchor_sets_owner_idempotency_key_unique';
 
 export type ManagedProjectBodyAnchorSet = Readonly<{
   id: string;
@@ -41,6 +43,8 @@ export type CreateProjectBodyAnchorSetInput = Readonly<{
   payload: unknown;
   producerId: unknown;
   producerVersion: unknown;
+  idempotencyKey?: unknown;
+  idempotencySourceArtifactId?: unknown;
 }>;
 
 export type ProjectBodyAnchorExpectedImage = Readonly<{
@@ -61,6 +65,7 @@ export type ProjectBodyAnchorStoreDependencies = Readonly<{
 }>;
 
 type CurrentProjectImage = ProjectBodyAnchorExpectedImage;
+type IdempotencyIntent = Readonly<{ key: string; sourceArtifactId: string }>;
 
 export class PostgresProjectBodyAnchorStore {
   private readonly dependencies: ProjectBodyAnchorStoreDependencies;
@@ -112,27 +117,99 @@ export class PostgresProjectBodyAnchorStore {
     const payloadSha256 = bodyAnchorPayloadSha256(payload);
     const producerId = normalizeProvenance(input?.producerId, 'producerId');
     const producerVersion = normalizeProvenance(input?.producerVersion, 'producerVersion');
-    const anchorSetId = normalizeGeneratedId(this.nextId());
+    const idempotency = normalizeIdempotency(input);
     const client = await this.pool.connect();
+    let anchorSetId: string | undefined;
     try {
       await client.query('BEGIN');
+
+      // A committed replay is authoritative for the original Save intent even if
+      // the Project has advanced since the acknowledgement was lost. The signed
+      // expected image is sufficient to re-derive the original private binding;
+      // no new evidence is written on this path.
+      let idempotencyBindingSha256: string | undefined;
+      if (idempotency && expectedImage) {
+        idempotencyBindingSha256 = bodyAnchorIdempotencyBindingSha256(
+          scope,
+          projectId,
+          idempotency.sourceArtifactId,
+          expectedImage,
+          payloadSha256,
+          producerId,
+          producerVersion,
+        );
+        const committedReplay = await loadByIdempotencyKey(client, scope, idempotency.key);
+        if (committedReplay) {
+          assertIdempotentReplay(
+            committedReplay,
+            idempotencyBindingSha256,
+            projectId,
+            expectedImage,
+            payloadSha256,
+            producerId,
+            producerVersion,
+          );
+          await client.query('COMMIT');
+          return committedReplay.anchorSet;
+        }
+      }
+
+      // No committed replay exists. Only now acquire the Project lock and require
+      // the resolved source to still be current before any INSERT can happen.
       const image = await loadCurrentProjectImage(client, scope, projectId, true);
       if (!image) throw anchorError(404, 'body_anchor_project_not_found', 'Project not found');
       if (expectedImage) assertExpectedImageMatches(expectedImage, image);
+
+      if (idempotency) {
+        const bindingImage = expectedImage ?? image;
+        idempotencyBindingSha256 ??= bodyAnchorIdempotencyBindingSha256(
+          scope,
+          projectId,
+          idempotency.sourceArtifactId,
+          bindingImage,
+          payloadSha256,
+          producerId,
+          producerVersion,
+        );
+
+        // Re-read after the Project lock. A same-Project concurrent duplicate may
+        // have committed while this transaction waited for the lock.
+        const replayAfterLock = await loadByIdempotencyKey(client, scope, idempotency.key);
+        if (replayAfterLock) {
+          assertIdempotentReplay(
+            replayAfterLock,
+            idempotencyBindingSha256,
+            projectId,
+            bindingImage,
+            payloadSha256,
+            producerId,
+            producerVersion,
+          );
+          await client.query('COMMIT');
+          return replayAfterLock.anchorSet;
+        }
+      }
+
+      anchorSetId = normalizeGeneratedId(this.nextId());
       await client.query(`INSERT INTO canonical_project_body_anchor_sets
         (anchor_set_id,tenant_id,user_id,project_id,project_image_storage_id,project_image_sha256,project_image_width,project_image_height,
-         schema_id,coordinate_space,anchor_payload,anchor_payload_sha256,producer_id,producer_version)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14)`, [
+         schema_id,coordinate_space,anchor_payload,anchor_payload_sha256,producer_id,producer_version,idempotency_key,idempotency_binding_sha256)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16)`, [
         anchorSetId, scope.tenantId, scope.userId, projectId, image.storageId, image.sha256, image.width, image.height,
         BODY_ANCHOR_SCHEMA_ID, BODY_ANCHOR_COORDINATE_SPACE, JSON.stringify(payload), payloadSha256, producerId, producerVersion,
+        idempotency?.key ?? null, idempotencyBindingSha256 ?? null,
       ]);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
+      if (idempotency && isIdempotencyUniqueViolation(error)) {
+        throw anchorError(409, 'body_anchor_idempotency_conflict', 'Manual body-anchor idempotency key is already bound to another acquisition intent');
+      }
       throw error;
     } finally {
       client.release();
     }
+    if (!anchorSetId) throw new Error('Project body anchor set commit completed without an anchor identity');
     const created = await this.get(scope, projectId, anchorSetId);
     if (!created) throw new Error('Project body anchor set committed but could not be reloaded');
     return created;
@@ -254,6 +331,72 @@ function fromRow(row: any): ManagedProjectBodyAnchorSet {
   });
 }
 
+async function loadByIdempotencyKey(
+  client: PoolClient,
+  scope: GarmentOwnerScope,
+  idempotencyKey: string,
+): Promise<Readonly<{ anchorSet: ManagedProjectBodyAnchorSet; bindingSha256: string }> | undefined> {
+  const result = await client.query(`SELECT * FROM canonical_project_body_anchor_sets
+    WHERE tenant_id=$1 AND user_id=$2 AND idempotency_key=$3`, [scope.tenantId, scope.userId, idempotencyKey]);
+  const row = result.rows[0];
+  if (!row) return undefined;
+  const bindingSha256 = String(row.idempotency_binding_sha256 ?? '');
+  if (!SHA256_PATTERN.test(bindingSha256)) {
+    throw anchorError(409, 'body_anchor_integrity_mismatch', 'Stored body-anchor idempotency binding is invalid');
+  }
+  return Object.freeze({ anchorSet: fromRow(row), bindingSha256 });
+}
+
+function assertIdempotentReplay(
+  replay: Readonly<{ anchorSet: ManagedProjectBodyAnchorSet; bindingSha256: string }>,
+  expectedBindingSha256: string,
+  projectId: string,
+  image: CurrentProjectImage,
+  payloadSha256: string,
+  producerId: string,
+  producerVersion: string,
+): void {
+  const anchorSet = replay.anchorSet;
+  if (
+    replay.bindingSha256 !== expectedBindingSha256
+    || anchorSet.projectId !== projectId
+    || anchorSet.projectImageStorageId !== image.storageId
+    || anchorSet.projectImageSha256 !== image.sha256
+    || anchorSet.projectImageWidth !== image.width
+    || anchorSet.projectImageHeight !== image.height
+    || anchorSet.payloadSha256 !== payloadSha256
+    || anchorSet.producerId !== producerId
+    || anchorSet.producerVersion !== producerVersion
+  ) {
+    throw anchorError(409, 'body_anchor_idempotency_conflict', 'Manual body-anchor idempotency key is already bound to another acquisition intent');
+  }
+}
+
+function bodyAnchorIdempotencyBindingSha256(
+  scope: GarmentOwnerScope,
+  projectId: string,
+  sourceArtifactId: string,
+  image: CurrentProjectImage,
+  payloadSha256: string,
+  producerId: string,
+  producerVersion: string,
+): string {
+  return createHash('sha256').update(JSON.stringify([
+    'BERS_MANUAL_BODY_ANCHOR_IDEMPOTENCY_V1',
+    scope.tenantId,
+    scope.userId,
+    projectId,
+    sourceArtifactId,
+    image.storageId,
+    image.sha256,
+    image.width,
+    image.height,
+    payloadSha256,
+    producerId,
+    producerVersion,
+  ])).digest('hex');
+}
+
 async function loadCurrentProjectImage(
   queryable: Pool | PoolClient,
   scope: GarmentOwnerScope,
@@ -333,6 +476,26 @@ function normalizeExpectedImage(value: ProjectBodyAnchorExpectedImage): ProjectB
   return Object.freeze({ storageId, sha256: sha, width, height });
 }
 
+function normalizeIdempotency(input: CreateProjectBodyAnchorSetInput): IdempotencyIntent | undefined {
+  const hasKey = input?.idempotencyKey !== undefined;
+  const hasSource = input?.idempotencySourceArtifactId !== undefined;
+  if (!hasKey && !hasSource) return undefined;
+  if (!hasKey || !hasSource) {
+    throw anchorError(400, 'invalid_body_anchor_idempotency', 'Body-anchor idempotency key and source intent must be supplied together');
+  }
+  const key = normalizeUuid(input.idempotencyKey, 'invalid_body_anchor_idempotency', 400);
+  if (typeof input.idempotencySourceArtifactId !== 'string') {
+    throw anchorError(400, 'invalid_body_anchor_idempotency', 'Body-anchor idempotency source must be a string');
+  }
+  const sourceArtifactId = input.idempotencySourceArtifactId.trim();
+  if (
+    !sourceArtifactId
+    || sourceArtifactId.length > IDEMPOTENCY_SOURCE_ARTIFACT_MAX_LENGTH
+    || /[\u0000-\u001f\u007f]/u.test(sourceArtifactId)
+  ) throw anchorError(400, 'invalid_body_anchor_idempotency', 'Body-anchor idempotency source is outside the accepted identifier contract');
+  return Object.freeze({ key, sourceArtifactId });
+}
+
 function normalizeProvenance(value: unknown, field: string): string {
   if (typeof value !== 'string') throw anchorError(400, 'invalid_body_anchor_provenance', `${field} must be a string`);
   const normalized = value.normalize('NFKC').trim();
@@ -352,6 +515,11 @@ function normalizeUuid(value: unknown, code: string, status: number): string {
 }
 function isUuid(value: unknown): value is string { return typeof value === 'string' && UUID_PATTERN.test(value); }
 function sha256(bytes: Uint8Array): string { return createHash('sha256').update(bytes).digest('hex'); }
+function isIdempotencyUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object'
+    && (error as any).code === '23505'
+    && (error as any).constraint === IDEMPOTENCY_UNIQUE_INDEX);
+}
 function isBodyAnchorError(error: unknown): error is Error & { status: number; code: string } {
   return Boolean(error && typeof error === 'object' && typeof (error as any).status === 'number' && typeof (error as any).code === 'string');
 }

@@ -31,6 +31,7 @@ export type ManualProjectBodyAnchorAcquisitionCommand = Readonly<{
   projectId: string;
   sourceArtifactId: string;
   payload: unknown;
+  idempotencyKey?: string;
 }>;
 
 export type ManualProjectBodyAnchorAcquisitionResult = Readonly<{
@@ -51,6 +52,11 @@ export type ManualProjectBodyAnchorAcquisitionDependencies = Readonly<{
  * positions. Storage identity, source hash/geometry and producer provenance are
  * resolved inside Core. The store's Project-row lock remains the final guard:
  * a signed historical source cannot be rebound to a newer Project image.
+ *
+ * Canonical HTTP acquisition additionally carries an opaque idempotency key.
+ * Core binds that key to authenticated owner + Project + exact source capability
+ * + resolved image + canonical payload/provenance without publishing the key or
+ * any body-anchor evidence identity in the response.
  *
  * This service creates immutable body-anchor evidence only. It owns no Project
  * mutation, FINAL, provider, Billing, cloud or Try-On execution authority.
@@ -104,6 +110,10 @@ export class ManualProjectBodyAnchorAcquisitionService {
         payload,
         producerId: MANUAL_BODY_ANCHOR_PRODUCER_ID,
         producerVersion: MANUAL_BODY_ANCHOR_PRODUCER_VERSION,
+        ...(normalized.idempotencyKey ? {
+          idempotencyKey: normalized.idempotencyKey,
+          idempotencySourceArtifactId: normalized.sourceArtifactId,
+        } : {}),
       }),
     );
 
@@ -165,10 +175,18 @@ function normalizeCommand(command: ManualProjectBodyAnchorAcquisitionCommand): M
     || sourceArtifactId.length > MAX_SOURCE_ARTIFACT_ID_LENGTH
     || /[\u0000-\u001f\u007f]/u.test(sourceArtifactId)
   ) throw acquisitionError(400, 'invalid_manual_body_anchor_request', 'sourceArtifactId is outside the accepted identifier contract');
+  let idempotencyKey: string | undefined;
+  if (command.idempotencyKey !== undefined) {
+    if (typeof command.idempotencyKey !== 'string' || !UUID_PATTERN.test(command.idempotencyKey)) {
+      throw acquisitionError(400, 'invalid_manual_body_anchor_request', 'idempotencyKey must be a UUID');
+    }
+    idempotencyKey = command.idempotencyKey.toLowerCase();
+  }
   return Object.freeze({
     projectId: command.projectId.toLowerCase(),
     sourceArtifactId,
     payload: command.payload,
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   });
 }
 
