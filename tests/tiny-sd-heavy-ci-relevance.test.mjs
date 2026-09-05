@@ -84,3 +84,5 @@ test('unrelated scripts and tests do not accidentally trigger the heavyweight mo
   assert.equal(isTinySdHeavyCiRelevant('tests/editor-canonical-boundary.test.mjs'), false);
   assert.equal(isTinySdHeavyCiRelevant('.github/workflows/node.js.yml'), false);
 });
+
+// CI fanout probe: Tiny-SD-only change used to prove Fashion execution heavy jobs remain NOT_APPLICABLE.
