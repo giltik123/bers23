@@ -9,6 +9,7 @@ on:
       - '.github/workflows/fashion-body-anchor-destination-mesh-f4b3.yml'
       - 'scripts/classify-fashion-execution-ci.mjs'
       - 'tests/fashion-execution-ci-relevance.test.mjs'
+      - 'tests/fashion-execution-ci-workflow-trust.test.mjs'
   workflow_dispatch:
 
 permissions:
@@ -35,8 +36,8 @@ jobs:
           node-version: 24.x
       - name: Syntax-check execution classifier
         run: node --check scripts/classify-fashion-execution-ci.mjs
-      - name: Prove profile separation and runtime import closure
-        run: node --test tests/fashion-execution-ci-relevance.test.mjs
+      - name: Prove profile separation runtime import closure and workflow trust
+        run: node --test tests/fashion-execution-ci-relevance.test.mjs tests/fashion-execution-ci-workflow-trust.test.mjs
       - name: Prove NUL-delimited profile-specific GitHub-output contracts
         run: |
           set -euo pipefail
