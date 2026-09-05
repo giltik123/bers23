@@ -22,6 +22,20 @@ const WORKFLOWS = Object.freeze([
     heavyId: 'heavy_body_anchor_destination_mesh',
     acceptedBlob: '30b7de0db0e792dc5e144f7c40301d3d6691f0c2',
   }),
+  Object.freeze({
+    path: '.github/workflows/fashion-garment-mesh-warp-admission-f4b4.yml',
+    profile: FASHION_EXECUTION_PROFILES.F4B4_WARP_ADMISSION,
+    gateId: 'garment-mesh-warp-admission',
+    heavyId: 'heavy_garment_mesh_warp_admission',
+    acceptedBlob: 'b4ed9549a409e229247576b0cf4452a6aa0dfcb7',
+  }),
+  Object.freeze({
+    path: '.github/workflows/fashion-garment-warp-layer-f4b4.yml',
+    profile: FASHION_EXECUTION_PROFILES.F4B4_WARP_LAYER,
+    gateId: 'garment-warp-layer',
+    heavyId: 'heavy_garment_warp_layer',
+    acceptedBlob: 'bb5a5e85bd163a0fb7c8ae70ea8733f927225636',
+  }),
 ]);
 
 function regexEscape(value) {
@@ -90,7 +104,7 @@ for (const descriptor of WORKFLOWS) {
   });
 }
 
-test('Fashion execution policy owns both wrappers and the workflow-trust guard', async () => {
+test('Fashion execution policy owns all wrappers and the workflow-trust guard', async () => {
   const policy = await readFile('.github/workflows/fashion-execution-ci-policy.yml', 'utf8');
   for (const { path } of WORKFLOWS) {
     assert.ok(policy.includes(`      - '${path}'`), `policy trigger missing ${path}`);
