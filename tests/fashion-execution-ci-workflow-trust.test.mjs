@@ -42,7 +42,20 @@ const WORKFLOWS = Object.freeze([
     gateId: 'garment-mesh-warp-postgres',
     heavyId: 'heavy_garment_mesh_warp_postgres',
     acceptedBlob: 'f0b980ded9ba9ff5e0a706be3f230204086e4385',
-    requiresAdjacentManifest: true,
+    manifestPath: 'scripts/f4b4-postgres-ci-closure.json',
+    trustedDirName: 'fashion-execution-postgres-base',
+    headClosureTest: 'tests/fashion-f4b4-postgres-ci-relevance.test.mjs',
+  }),
+  Object.freeze({
+    path: '.github/workflows/fashion-garment-texture-composite-service-postgres-f4b5b.yml',
+    profile: FASHION_EXECUTION_PROFILES.F4B5B_TEXTURE_POSTGRES_VERTICAL,
+    gateId: 'texture-composite-postgres',
+    heavyId: 'heavy_texture_composite_postgres',
+    acceptedBlob: '9dab9c56db2e5d6128b2c2165f608dc0c9e08473',
+    manifestPath: 'scripts/f4b5b-postgres-ci-closure.json',
+    trustedDirName: 'fashion-execution-f4b5b-postgres-base',
+    headClosureTest: 'tests/fashion-f4b5b-postgres-ci-relevance.test.mjs',
+    acceptedHadPermissions: true,
   }),
 ]);
 
@@ -58,10 +71,14 @@ function gitBlobSha(content) {
     .digest('hex');
 }
 
-function reconstructAcceptedWorkflow(workflow, { gateId, heavyId }) {
+function reconstructAcceptedWorkflow(workflow, { gateId, heavyId, acceptedHadPermissions = false }) {
   const permissionsMarker = '\npermissions:\n';
   const permissionsIndex = workflow.indexOf(permissionsMarker);
   assert.notEqual(permissionsIndex, -1, 'missing permissions boundary');
+
+  const concurrencyMarker = '\nconcurrency:\n';
+  const concurrencyIndex = workflow.indexOf(concurrencyMarker, permissionsIndex);
+  assert.notEqual(concurrencyIndex, -1, 'missing concurrency boundary');
 
   const heavyMarker = `  ${heavyId}:\n`;
   const heavyIndex = workflow.indexOf(heavyMarker);
@@ -74,7 +91,10 @@ function reconstructAcceptedWorkflow(workflow, { gateId, heavyId }) {
   const gateIndex = workflow.indexOf(gateMarker, bodyStart);
   assert.notEqual(gateIndex, -1, `missing stable outward gate ${gateId}`);
 
-  return `${workflow.slice(0, permissionsIndex)}\njobs:\n  ${gateId}:\n${workflow.slice(bodyStart, gateIndex)}\n`;
+  const acceptedPrefix = acceptedHadPermissions
+    ? workflow.slice(0, concurrencyIndex)
+    : workflow.slice(0, permissionsIndex);
+  return `${acceptedPrefix}\njobs:\n  ${gateId}:\n${workflow.slice(bodyStart, gateIndex)}\n`;
 }
 
 for (const descriptor of WORKFLOWS) {
@@ -110,17 +130,18 @@ for (const descriptor of WORKFLOWS) {
     assert.match(workflow, /NOT_APPLICABLE_NON_FASHION_EXECUTION_CHANGE/);
     assert.equal(workflow.includes('|| true'), false, `${descriptor.path} must fail closed`);
 
-    if (descriptor.requiresAdjacentManifest) {
+    if (descriptor.manifestPath) {
+      const manifestFilename = descriptor.manifestPath.split('/').at(-1);
       assert.ok(
-        workflow.includes('TRUSTED_DIR="${RUNNER_TEMP}/fashion-execution-postgres-base"'),
+        workflow.includes(`TRUSTED_DIR="\${RUNNER_TEMP}/${descriptor.trustedDirName}"`),
         `${descriptor.path} must extract PostgreSQL trust files into one adjacent directory`,
       );
       assert.ok(
-        workflow.includes('git show "${BASE_SHA}:scripts/f4b4-postgres-ci-closure.json" > "${TRUSTED_DIR}/f4b4-postgres-ci-closure.json"'),
+        workflow.includes(`git show "\${BASE_SHA}:${descriptor.manifestPath}" > "\${TRUSTED_DIR}/${manifestFilename}"`),
         `${descriptor.path} must extract the base-owned PostgreSQL closure manifest`,
       );
       assert.ok(
-        workflow.includes('node "${TRUSTED_DIR}/classify-fashion-execution-ci.mjs" --profile F4B4_POSTGRES_VERTICAL --stdin0 --github-output "${GITHUB_OUTPUT}"'),
+        workflow.includes(`node "\${TRUSTED_DIR}/classify-fashion-execution-ci.mjs" --profile ${descriptor.profile} --stdin0 --github-output "\${GITHUB_OUTPUT}"`),
         `${descriptor.path} must execute the classifier beside its base-owned manifest`,
       );
       assert.ok(
@@ -128,7 +149,7 @@ for (const descriptor of WORKFLOWS) {
         `${descriptor.path} must install closure-proof dependencies only for relevant changes`,
       );
       assert.ok(
-        workflow.includes('run: node --test tests/fashion-f4b4-postgres-ci-relevance.test.mjs'),
+        workflow.includes(`run: node --test ${descriptor.headClosureTest}`),
         `${descriptor.path} must prove the exact HEAD bundle/migration closure before heavy execution`,
       );
     }

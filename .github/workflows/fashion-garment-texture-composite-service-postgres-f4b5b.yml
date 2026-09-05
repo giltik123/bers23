@@ -10,8 +10,70 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  texture-composite-postgres:
+  classify_fashion_execution_relevance:
+    name: classify-fashion-execution-relevance
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.classify.outputs.relevant }}
+      classification: ${{ steps.classify.outputs.classification }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Classify F4b.5b PostgreSQL relevance from trusted base
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${HEAD_SHA}"
+          if [ "${EVENT_NAME}" != "pull_request" ]; then
+            test "${EVENT_NAME}" = "push" -o "${EVENT_NAME}" = "workflow_dispatch"
+            printf '%s\n' 'relevant=true' 'classification=RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          TRUSTED_DIR="${RUNNER_TEMP}/fashion-execution-f4b5b-postgres-base"
+          rm -rf "${TRUSTED_DIR}"
+          mkdir -p "${TRUSTED_DIR}"
+          trap 'rm -rf "${TRUSTED_DIR}"' EXIT
+          git show "${BASE_SHA}:scripts/classify-fashion-execution-ci.mjs" > "${TRUSTED_DIR}/classify-fashion-execution-ci.mjs"
+          git show "${BASE_SHA}:scripts/f4b5b-postgres-ci-closure.json" > "${TRUSTED_DIR}/f4b5b-postgres-ci-closure.json"
+          test -s "${TRUSTED_DIR}/classify-fashion-execution-ci.mjs"
+          test -s "${TRUSTED_DIR}/f4b5b-postgres-ci-closure.json"
+          test "$(wc -c < "${TRUSTED_DIR}/classify-fashion-execution-ci.mjs")" -le 1048576
+          test "$(wc -c < "${TRUSTED_DIR}/f4b5b-postgres-ci-closure.json")" -le 1048576
+          git diff --name-only --no-renames -z "${BASE_SHA}" "${HEAD_SHA}" \
+            | node "${TRUSTED_DIR}/classify-fashion-execution-ci.mjs" --profile F4B5B_TEXTURE_POSTGRES_VERTICAL --stdin0 --github-output "${GITHUB_OUTPUT}"
+      - name: Prove Fashion execution workflow trust envelope
+        run: node --test tests/fashion-execution-ci-workflow-trust.test.mjs
+      - name: Install pinned PostgreSQL closure proof dependencies when relevant
+        if: ${{ steps.classify.outputs.relevant == 'true' }}
+        run: npm ci
+      - name: Prove exact HEAD PostgreSQL bundle and migration closure when relevant
+        if: ${{ steps.classify.outputs.relevant == 'true' }}
+        run: node --test tests/fashion-f4b5b-postgres-ci-relevance.test.mjs
+
+  heavy_texture_composite_postgres:
+    name: texture-composite-postgres-heavy
+    needs: classify_fashion_execution_relevance
+    if: ${{ needs.classify_fashion_execution_relevance.outputs.relevant == 'true' }}
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -98,3 +160,27 @@ jobs:
           ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' server/core/providers/productionProviderSelection.ts
           grep -q "TRYON_EXECUTION_NOT_WIRED" src/lib/tryon/tryonEngine.js
           ! grep -E 'garment-texture-composite|GARMENT_TEXTURE_COMPOSITE' src/lib/tryon/tryonEngine.js
+
+  texture-composite-postgres:
+    name: texture-composite-postgres
+    needs: [classify_fashion_execution_relevance, heavy_texture_composite_postgres]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require F4b.5b PostgreSQL acceptance exactly when the trusted closure is relevant
+        env:
+          CLASSIFIER_RESULT: ${{ needs.classify_fashion_execution_relevance.result }}
+          RELEVANT: ${{ needs.classify_fashion_execution_relevance.outputs.relevant }}
+          CLASSIFICATION: ${{ needs.classify_fashion_execution_relevance.outputs.classification }}
+          HEAVY_RESULT: ${{ needs.heavy_texture_composite_postgres.result }}
+        run: |
+          set -euo pipefail
+          test "${CLASSIFIER_RESULT}" = "success"
+          if [ "${RELEVANT}" = "true" ]; then
+            test "${CLASSIFICATION}" = "RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED"
+            test "${HEAVY_RESULT}" = "success"
+            exit 0
+          fi
+          test "${RELEVANT}" = "false"
+          test "${CLASSIFICATION}" = "NOT_APPLICABLE_NON_FASHION_EXECUTION_CHANGE"
+          test "${HEAVY_RESULT}" = "skipped"
