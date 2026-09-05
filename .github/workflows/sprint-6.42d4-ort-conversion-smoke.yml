@@ -8,8 +8,60 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  ort-conversion-smoke:
+  classify_tiny_sd_relevance:
+    name: classify-tiny-sd-relevance
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.classify.outputs.relevant }}
+      classification: ${{ steps.classify.outputs.classification }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Classify heavyweight Tiny-SD relevance from trusted base
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            printf '%s\n' \
+              'relevant=true' \
+              'classification=RELEVANT_HEAVY_ACCEPTANCE_REQUIRED' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          test "${EVENT_NAME}" = "pull_request"
+          [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          TRUSTED_CLASSIFIER="${RUNNER_TEMP}/tiny-sd-heavy-ci-base-classifier.mjs"
+          trap 'rm -f "${TRUSTED_CLASSIFIER}"' EXIT
+          git show "${BASE_SHA}:scripts/classify-tiny-sd-heavy-ci.mjs" > "${TRUSTED_CLASSIFIER}"
+          test -s "${TRUSTED_CLASSIFIER}"
+          test "$(wc -c < "${TRUSTED_CLASSIFIER}")" -le 1048576
+          git diff --name-only --no-renames -z "${BASE_SHA}" "${HEAD_SHA}" \
+            | GITHUB_ACTIONS=false node "${TRUSTED_CLASSIFIER}" --stdin0 --github-output "${GITHUB_OUTPUT}"
+          echo "trusted_base_classifier_sha=${BASE_SHA}"
+
+      - name: Prove Tiny-SD relevance classifier contract
+        run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs tests/tiny-sd-heavy-ci-workflow-trust.test.mjs
+
+  ort-conversion-smoke-heavy:
+    name: ort-conversion-smoke-heavy
+    needs: classify_tiny_sd_relevance
+    if: ${{ needs.classify_tiny_sd_relevance.outputs.relevant == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -46,3 +98,29 @@ jobs:
           python scripts/test-tiny-sd-d4-ort-conversion-smoke.py \
             --work-dir "${RUNNER_TEMP}/tiny-sd-d4-ort-smoke"
           test ! -e "${RUNNER_TEMP}/tiny-sd-d4-ort-smoke"
+
+  ort_conversion_smoke_gate:
+    name: ort-conversion-smoke
+    needs: [classify_tiny_sd_relevance, ort-conversion-smoke-heavy]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require D4 ORT conversion smoke heavy acceptance when relevant
+        env:
+          CLASSIFIER_RESULT: ${{ needs.classify_tiny_sd_relevance.result }}
+          RELEVANT: ${{ needs.classify_tiny_sd_relevance.outputs.relevant }}
+          CLASSIFICATION: ${{ needs.classify_tiny_sd_relevance.outputs.classification }}
+          HEAVY_RESULT: ${{ needs.ort-conversion-smoke-heavy.result }}
+        run: |
+          set -euo pipefail
+          test "${CLASSIFIER_RESULT}" = "success"
+          if [ "${RELEVANT}" = "true" ]; then
+            test "${CLASSIFICATION}" = "RELEVANT_HEAVY_ACCEPTANCE_REQUIRED"
+            test "${HEAVY_RESULT}" = "success"
+            echo "Tiny-SD D4 ORT conversion smoke: SUCCESS"
+            exit 0
+          fi
+          test "${RELEVANT}" = "false"
+          test "${CLASSIFICATION}" = "NOT_APPLICABLE_PRODUCT_ONLY_CHANGE"
+          test "${HEAVY_RESULT}" = "skipped"
+          echo "Tiny-SD D4 ORT conversion smoke: NOT_APPLICABLE_PRODUCT_ONLY_CHANGE"

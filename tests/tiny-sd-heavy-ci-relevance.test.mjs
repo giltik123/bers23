@@ -41,6 +41,7 @@ test('Tiny-SD model, runtime, workflow, script, test and dependency changes requ
     '.github/workflows/sprint-6.42d4-secure-threading.yml',
     '.github/workflows/sprint-6.42d4-tiny-sd-ort-memory.yml',
     '.github/workflows/sprint-6.42d5-tiny-sd-pipeline.yml',
+    '.github/workflows/sprint-6.42d6-tiny-sd-accelerated-admission.yml',
     'scripts/check-model-weight-tracking.mjs',
     'package.json',
     'package-lock.json',

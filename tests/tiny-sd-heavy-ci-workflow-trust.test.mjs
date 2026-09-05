@@ -27,6 +27,16 @@ const workflows = [
     finalGateMarker: '- name: Require D3 WASM heavy acceptance when relevant',
   },
   {
+    url: '../.github/workflows/sprint-6.42d4-ort-conversion-smoke.yml',
+    workflowName: 'Sprint 6.42D4 ORT conversion smoke',
+    finalGateMarker: '- name: Require D4 ORT conversion smoke heavy acceptance when relevant',
+  },
+  {
+    url: '../.github/workflows/sprint-6.42d4-secure-threading.yml',
+    workflowName: 'Sprint 6.42D4 secure threading classification',
+    finalGateMarker: '- name: Require D4 secure threading heavy acceptance when relevant',
+  },
+  {
     url: '../.github/workflows/sprint-6.42d4-tiny-sd-ort-memory.yml',
     workflowName: 'Sprint 6.42D4 Tiny-SD ORT memory and latency',
     finalGateMarker: '- name: Require D4 ORT heavy acceptance when relevant',
@@ -35,6 +45,11 @@ const workflows = [
     url: '../.github/workflows/sprint-6.42d5-tiny-sd-pipeline.yml',
     workflowName: 'Sprint 6.42D5 Tiny-SD short pipeline composition',
     finalGateMarker: '- name: Require D5 heavy acceptance when relevant',
+  },
+  {
+    url: '../.github/workflows/sprint-6.42d6-tiny-sd-accelerated-admission.yml',
+    workflowName: 'Sprint 6.42D6 Tiny-SD accelerated admission contract',
+    finalGateMarker: '- name: Require D6 accelerated admission heavy acceptance when relevant',
   },
 ];
 
@@ -108,12 +123,16 @@ for (const { url: relativeUrl, workflowName, finalGateMarker } of workflows) {
     assert.match(source, /\n  workflow_dispatch:\n/);
 
     const concurrencyStart = source.indexOf('\nconcurrency:\n');
-    const envStart = source.indexOf('\nenv:\n');
+    const envStart = source.indexOf('\nenv:\n', concurrencyStart + 1);
+    const jobsStart = source.indexOf('\njobs:\n', concurrencyStart + 1);
+    const concurrencyEnd = [envStart, jobsStart]
+      .filter(position => position > concurrencyStart)
+      .sort((left, right) => left - right)[0] ?? -1;
     assert.ok(concurrencyStart >= 0, `${name}: top-level concurrency block missing`);
-    assert.ok(envStart > concurrencyStart, `${name}: concurrency must be established before jobs/environment work`);
+    assert.ok(concurrencyEnd > concurrencyStart, `${name}: concurrency must be established before jobs/environment work`);
     assert.equal((source.match(/^concurrency:/gmu) ?? []).length, 1, `${name}: concurrency policy must have one owner`);
 
-    const concurrencyBlock = source.slice(concurrencyStart, envStart);
+    const concurrencyBlock = source.slice(concurrencyStart, concurrencyEnd);
     assert.equal(
       concurrencyBlock,
       `\nconcurrency:\n  ${expectedGroupLine}\n  ${expectedCancelLine}\n`,
@@ -157,3 +176,13 @@ for (const { url: relativeUrl, workflowName, finalGateMarker } of workflows) {
     assert.doesNotMatch(finalGate, /HEAVY_RESULT[^\n]*(?:cancelled|failure)/u, `${name}: cancellation/failure must never be accepted as a terminal success value`);
   });
 }
+
+test('D6 heavyweight admission only accepts PRs targeting current main', async () => {
+  const source = await readFile(new URL('../.github/workflows/sprint-6.42d6-tiny-sd-accelerated-admission.yml', import.meta.url), 'utf8');
+  const triggerStart = source.indexOf('on:\n');
+  const permissionsStart = source.indexOf('\npermissions:\n');
+  assert.ok(triggerStart >= 0 && permissionsStart > triggerStart);
+  const trigger = source.slice(triggerStart, permissionsStart);
+  assert.match(trigger, /pull_request:\n\s+branches: \[ "main" \]/);
+  assert.doesNotMatch(trigger, /sprint-6\.42d5-tiny-sd-pipeline-composition/);
+});
