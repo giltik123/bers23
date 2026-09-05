@@ -1,6 +1,6 @@
 import type { LocalExecutionOutputEvidence, LocalExecutionResultV2, LocalExecutionTicketV2 } from '../../platform/creative/canonical';
 import { decodeGarmentMeshWarpInputEnvelope } from '../../platform/creative/canonical/garmentMeshWarpInputEnvelope';
-import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../../platform/creative/deterministic/DeterministicToolRegistry';
+import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../../platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js';
 import { garmentMeshWarpRgba8 } from '../../platform/creative/deterministic/GarmentMeshWarp';
 import { encodeDeterministicRgbaPng } from '../../platform/creative/deterministic/DeterministicPng';
 import type { PixelImage } from '../../platform/creative/pipeline/ControlledLocalEdit';

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   GARMENT_MESH_WARP_CAPABILITY,
@@ -8,13 +9,11 @@ import {
   GARMENT_MESH_WARP_TOOL_ID,
   GARMENT_MESH_WARP_TOOL_VERSION,
 } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
-import {
-  GARMENT_MESH_WARP_TOOL_DEFINITION,
-  requireDeterministicToolByCapability,
-  requireDeterministicToolByExecutor,
-} from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js';
 
-test('garment mesh warp registry keeps Project lineage and managed Garment authorities distinct', () => {
+const registryPath = 'src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+
+test('garment mesh warp leaf keeps Project lineage and managed Garment authorities distinct', () => {
   const definition = GARMENT_MESH_WARP_TOOL_DEFINITION;
   assert.equal(definition.capability, GARMENT_MESH_WARP_CAPABILITY);
   assert.deepEqual(definition.operation, { id: GARMENT_MESH_WARP_STEP_ID, type: GARMENT_MESH_WARP_OPERATION, version: GARMENT_MESH_WARP_TOOL_VERSION });
@@ -28,9 +27,8 @@ test('garment mesh warp registry keeps Project lineage and managed Garment autho
   assert.deepEqual(definition.lineage, { parentInputs: ['projectSource'], managedParents: ['basisView', 'representation'], finalRole: 'WORKING', producerOperation: GARMENT_MESH_WARP_OPERATION });
 });
 
-test('garment mesh warp registry binds exact managed identities and deterministic pixel law under explicit F4b.4 production admission', () => {
-  const definition = requireDeterministicToolByCapability(GARMENT_MESH_WARP_CAPABILITY);
-  assert.equal(requireDeterministicToolByExecutor(definition.executor), definition);
+test('garment mesh warp leaf binds exact managed identities and deterministic pixel law under explicit F4b.4 production admission', () => {
+  const definition = GARMENT_MESH_WARP_TOOL_DEFINITION;
   assert.deepEqual(definition.parameters.managedIdBindings, [
     { parameter: 'garmentId', input: 'basisView', field: 'garmentId' },
     { parameter: 'viewId', input: 'basisView', field: 'viewId' },
@@ -46,4 +44,12 @@ test('garment mesh warp registry binds exact managed identities and deterministi
   assert.equal(definition.pixelContract.overlapOwnership, 'DECLARED_TRIANGLE_ORDER_FIRST_OWNER');
   assert.equal(definition.pixelContract.uncoveredPixels, 'TRANSPARENT_BLACK');
   assert.equal(GARMENT_MESH_WARP_PRODUCTION_ADMISSION, 'ADMITTED');
+});
+
+test('aggregate deterministic registry reuses the exact GarmentMeshWarp leaf object instead of recreating contract data', async () => {
+  const registry = await readFile(registryPath, 'utf8');
+  assert.match(registry, /import \{ GARMENT_MESH_WARP_TOOL_DEFINITION_DATA \} from '\.\/GarmentMeshWarpRegistryDefinition\.js';/);
+  assert.match(registry, /const garmentMeshWarpDefinition: DeterministicToolDefinition = GARMENT_MESH_WARP_TOOL_DEFINITION_DATA;/);
+  assert.match(registry, /export const GARMENT_MESH_WARP_TOOL_DEFINITION = garmentMeshWarpDefinition;/);
+  assert.doesNotMatch(registry, /from '\.\/GarmentMeshWarpIdentity\.js';/);
 });

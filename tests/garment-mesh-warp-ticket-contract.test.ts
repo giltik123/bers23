@@ -11,7 +11,7 @@ import {
   GARMENT_MESH_WARP_TOOL_ID,
   GARMENT_MESH_WARP_TOOL_VERSION,
 } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
-import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js';
 import {
   assertGarmentMeshWarpTicket,
   garmentMeshWarpExecutionId,

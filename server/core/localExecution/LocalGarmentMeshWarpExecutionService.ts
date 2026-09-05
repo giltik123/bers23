@@ -17,7 +17,7 @@ import {
   garmentMeshWarpRgba8,
 } from '../../../src/platform/creative/deterministic/GarmentMeshWarp.ts';
 import { GARMENT_MESH_WARP_STEP_ID } from '../../../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
-import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js';
 import type { ArtifactAuthority, StoredProjectImageEvidence } from '../artifacts/artifactAuthority.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import type { GarmentDestinationMesh } from '../fashion/bodyAnchorGeometry.ts';
