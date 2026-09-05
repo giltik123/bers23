@@ -9,9 +9,12 @@ on:
       - '.github/workflows/fashion-body-anchor-destination-mesh-f4b3.yml'
       - '.github/workflows/fashion-garment-mesh-warp-admission-f4b4.yml'
       - '.github/workflows/fashion-garment-warp-layer-f4b4.yml'
+      - '.github/workflows/fashion-garment-mesh-warp-service-postgres-f4b4.yml'
       - 'scripts/classify-fashion-execution-ci.mjs'
+      - 'scripts/f4b4-postgres-ci-closure.json'
       - 'tests/fashion-execution-ci-relevance.test.mjs'
       - 'tests/fashion-f4b4-execution-ci-relevance.test.mjs'
+      - 'tests/fashion-f4b4-postgres-ci-relevance.test.mjs'
       - 'tests/fashion-execution-ci-workflow-trust.test.mjs'
   workflow_dispatch:
 
@@ -44,8 +47,8 @@ jobs:
         run: node --check scripts/classify-fashion-execution-ci.mjs
       - name: Prove accepted legacy profile relevance and workflow trust
         run: node --test tests/fashion-execution-ci-relevance.test.mjs tests/fashion-execution-ci-workflow-trust.test.mjs
-      - name: Prove F4b.4 profile separation and actual bundle closure
-        run: node --test tests/fashion-f4b4-execution-ci-relevance.test.mjs
+      - name: Prove F4b.4 profile separation and PostgreSQL bundle closure
+        run: node --test tests/fashion-f4b4-execution-ci-relevance.test.mjs tests/fashion-f4b4-postgres-ci-relevance.test.mjs
       - name: Prove NUL-delimited profile-specific GitHub-output contracts
         run: |
           set -euo pipefail
@@ -102,6 +105,20 @@ jobs:
           grep -qx 'classification=RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED' "${out_layer}"
           grep -qx 'matched_count=1' "${out_layer}"
 
+          postgres_input="${RUNNER_TEMP}/fashion-execution-f4b4-postgres-paths"
+          printf '%s\0%s\0' \
+            'server/core/composition/createProductionCore.ts' \
+            'server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql' > "${postgres_input}"
+          out_postgres="${RUNNER_TEMP}/fashion-execution-f4b4-postgres-output"
+          cat "${postgres_input}" \
+            | node scripts/classify-fashion-execution-ci.mjs \
+                --profile F4B4_POSTGRES_VERTICAL --stdin0 --github-output "${out_postgres}" \
+            | tee "${RUNNER_TEMP}/fashion-execution-f4b4-postgres-result.json"
+          grep -qx 'profile=F4B4_POSTGRES_VERTICAL' "${out_postgres}"
+          grep -qx 'relevant=true' "${out_postgres}"
+          grep -qx 'classification=RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED' "${out_postgres}"
+          grep -qx 'matched_count=1' "${out_postgres}"
+
           node --input-type=module - <<'NODE'
           import assert from 'node:assert/strict';
           import { readFile } from 'node:fs/promises';
@@ -110,10 +127,12 @@ jobs:
           const f4b3 = JSON.parse(await readFile(`${root}/fashion-execution-f4b3-result.json`, 'utf8'));
           const admission = JSON.parse(await readFile(`${root}/fashion-execution-f4b4-admission-result.json`, 'utf8'));
           const layer = JSON.parse(await readFile(`${root}/fashion-execution-f4b4-layer-result.json`, 'utf8'));
+          const postgres = JSON.parse(await readFile(`${root}/fashion-execution-f4b4-postgres-result.json`, 'utf8'));
           assert.deepEqual(f4b2.matchedPaths, ['server/core/localExecution/PostgresLocalExecutionLedger.ts']);
           assert.deepEqual(f4b3.matchedPaths, ['server/core/fashion/bodyAnchorGeometry.ts']);
           assert.deepEqual(admission.matchedPaths, ['server/core/providers/productionGarmentMeshWarpExecutionPolicy.ts']);
           assert.deepEqual(layer.matchedPaths, ['server/core/fashion/garmentWarpLayerSchema.ts']);
+          assert.deepEqual(postgres.matchedPaths, ['server/core/composition/createProductionCore.ts']);
           NODE
       - name: Check committed diff whitespace
         env:

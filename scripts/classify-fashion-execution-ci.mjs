@@ -6,6 +6,7 @@ export const FASHION_EXECUTION_PROFILES = Object.freeze({
   F4B3_BODY_ANCHOR: 'F4B3_BODY_ANCHOR',
   F4B4_WARP_ADMISSION: 'F4B4_WARP_ADMISSION',
   F4B4_WARP_LAYER: 'F4B4_WARP_LAYER',
+  F4B4_POSTGRES_VERTICAL: 'F4B4_POSTGRES_VERTICAL',
 });
 
 export const RELEVANT_CLASSIFICATION = 'RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED';
@@ -241,6 +242,34 @@ const F4B4_LAYER_EXACT_PATHS = new Set([
   'server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql',
 ]);
 
+let f4b4PostgresExactPaths;
+
+function getF4b4PostgresExactPaths() {
+  if (f4b4PostgresExactPaths) return f4b4PostgresExactPaths;
+  const manifest = JSON.parse(fs.readFileSync(new URL('./f4b4-postgres-ci-closure.json', import.meta.url), 'utf8'));
+  if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B4_POSTGRES_VERTICAL) {
+    throw new Error('Invalid F4b.4 PostgreSQL CI closure manifest identity');
+  }
+  const expectedCounts = Object.freeze({ bundleInputs: 190, migrationPaths: 34, supportPaths: 17 });
+  for (const [key, expected] of Object.entries(expectedCounts)) {
+    if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
+      throw new Error(`Invalid F4b.4 PostgreSQL CI closure ${key}: expected ${expected} exact paths`);
+    }
+  }
+  const paths = [...manifest.bundleInputs, ...manifest.migrationPaths, ...manifest.supportPaths];
+  if (new Set(paths).size !== paths.length) throw new Error('F4b.4 PostgreSQL CI closure contains duplicate paths');
+  for (const path of paths) {
+    if (typeof path !== 'string' || !path || path !== normalizeRepoPath(path) || /[*?\[\]]/.test(path)) {
+      throw new Error(`Invalid F4b.4 PostgreSQL CI closure path: ${String(path)}`);
+    }
+  }
+  if (manifest.migrationPaths.includes('server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql')) {
+    throw new Error('F5 refinement migration 032 must not enter F4b.4 PostgreSQL CI authority');
+  }
+  f4b4PostgresExactPaths = new Set(paths);
+  return f4b4PostgresExactPaths;
+}
+
 function normalizeRepoPath(value) {
   return String(value ?? '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
 }
@@ -269,6 +298,9 @@ export function isFashionExecutionCiRelevant(filePath, profile) {
     return F4B4_COMMON_EXACT_PATHS.has(normalized)
       || F4B4_ADMISSION_EXACT_PATHS.has(normalized)
       || matchesPrefix(normalized, F4B4_ADMISSION_PREFIXES);
+  }
+  if (resolvedProfile === FASHION_EXECUTION_PROFILES.F4B4_POSTGRES_VERTICAL) {
+    return getF4b4PostgresExactPaths().has(normalized);
   }
   return F4B4_COMMON_EXACT_PATHS.has(normalized) || F4B4_LAYER_EXACT_PATHS.has(normalized);
 }
