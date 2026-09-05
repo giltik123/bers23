@@ -10,6 +10,8 @@ on:
       - '.github/workflows/managed-wardrobe-f2a.yml'
       - '.github/workflows/managed-wardrobe-f2b.yml'
       - '.github/workflows/managed-outfits-f3a.yml'
+      - '.github/workflows/managed-garment-representations-f4a.yml'
+      - '.github/workflows/managed-garment-glb-f4a1.yml'
       - 'scripts/classify-fashion-authority-ci.mjs'
       - 'tests/fashion-authority-ci-relevance.test.mjs'
       - 'tests/fashion-authority-ci-workflow-trust.test.mjs'
