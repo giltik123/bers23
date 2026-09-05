@@ -69,7 +69,7 @@ test('reload failure still clears the stale pending result and preview, without 
   assert.deepEqual(events, ['disarm-retry', 'reload', 'clear-pending', 'dispose-preview', 'message']);
 });
 
-test('Editor wires stale recovery to the captured pending preview and clears ErrorBanner retry authority', async () => {
+test('Editor wires stale recovery to the captured pending preview, closes Try-On authority, and clears ErrorBanner retry authority', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const acceptStart = editor.indexOf('const acceptResult = async () => {');
   const acceptEnd = editor.indexOf('\n  const retryResult = () => {', acceptStart);
@@ -80,7 +80,7 @@ test('Editor wires stale recovery to the captured pending preview and clears Err
   assert.match(accept, /if \(!isFinalSourceConflict\(e\)\) throw e;/);
   assert.match(accept, /reloadCanonicalProject: reload/);
   assert.match(accept, /disarmRetry: \(\) => setLastAction\(null\)/);
-  assert.match(accept, /clearPendingResult: \(\) => setPendingResult\(null\)/);
+  assert.match(accept, /clearPendingResult: \(\) => \{[\s\S]*if \(pending\?\.kind === 'FASHION_TRYON'\)[\s\S]*tryOn\.close\(\)[\s\S]*setPendingResult\(null\);[\s\S]*\}/);
   assert.match(accept, /disposePendingPreview: \(\) => disposePendingPreview\(pending\)/);
   assert.doesNotMatch(accept, /retryResult\(|applyEdit\(|isolateBackground\(|applyCrop\(|applyResize\(|upscaleImage\(/);
 });
