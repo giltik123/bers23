@@ -2,10 +2,30 @@ name: Sprint 6.42D5 Tiny-SD control semantics
 
 on:
   pull_request:
+    paths:
+      - '.github/workflows/sprint-6.42d5-control-semantics.yml'
+      - 'scripts/tiny-sd-d5-control-constants.mjs'
+      - 'scripts/tiny-sd-d5-dpm-solver.mjs'
+      - 'scripts/test-tiny-sd-d5-dpm-parity.mjs'
+      - 'scripts/test-tiny-sd-d5-control-browser.mjs'
+      - 'scripts/probe-tiny-sd-d5-control.py'
+      - 'scripts/prepare-tiny-sd-d5-browser-tokenizer.py'
+      - 'scripts/check-model-weight-tracking.mjs'
+      - 'tests/tiny-sd-d5-control-policy.test.mjs'
+      - 'tests/tiny-sd-d5-control-browser.html'
+      - 'vite.config.js'
+      - 'config/frontendSecurityPolicy.mjs'
+      - '.npmrc'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: tiny-sd-d5-control-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   control-semantics:

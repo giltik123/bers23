@@ -12,6 +12,45 @@ const browserHarness = read('scripts/test-tiny-sd-d5-control-browser.mjs');
 const browserPage = read('tests/tiny-sd-d5-control-browser.html');
 const workflow = read('.github/workflows/sprint-6.42d5-control-semantics.yml');
 
+const EXPECTED_D5_PULL_REQUEST_PATHS = Object.freeze([
+  '.github/workflows/sprint-6.42d5-control-semantics.yml',
+  'scripts/tiny-sd-d5-control-constants.mjs',
+  'scripts/tiny-sd-d5-dpm-solver.mjs',
+  'scripts/test-tiny-sd-d5-dpm-parity.mjs',
+  'scripts/test-tiny-sd-d5-control-browser.mjs',
+  'scripts/probe-tiny-sd-d5-control.py',
+  'scripts/prepare-tiny-sd-d5-browser-tokenizer.py',
+  'scripts/check-model-weight-tracking.mjs',
+  'tests/tiny-sd-d5-control-policy.test.mjs',
+  'tests/tiny-sd-d5-control-browser.html',
+  'vite.config.js',
+  'config/frontendSecurityPolicy.mjs',
+  '.npmrc',
+  'package.json',
+  'package-lock.json',
+]);
+
+function d5PullRequestPaths(source) {
+  const start = source.indexOf('  pull_request:\n    paths:\n');
+  const end = source.indexOf('  workflow_dispatch:', start);
+  assert.notEqual(start, -1, 'D5 workflow must retain pull_request.paths');
+  assert.notEqual(end, -1, 'D5 workflow must retain workflow_dispatch after pull_request.paths');
+  const block = source.slice(start, end);
+  return [...block.matchAll(/^\s{6}- '([^']+)'$/gm)].map(match => match[1]);
+}
+
+test('D5 control workflow is scoped to its exact dependency surface and cancels stale PR heads', () => {
+  const actual = d5PullRequestPaths(workflow);
+  assert.deepEqual(actual, EXPECTED_D5_PULL_REQUEST_PATHS);
+  assert.equal(new Set(actual).size, actual.length, 'D5 pull_request.paths must not contain duplicate entries');
+
+  assert.match(
+    workflow,
+    /concurrency:\s*\n\s*group: tiny-sd-d5-control-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\s*\n\s*cancel-in-progress: true/,
+  );
+  assert.doesNotMatch(workflow, /on:\s*\n\s*pull_request:\s*\n\s*workflow_dispatch:/);
+});
+
 test('D5 control proof pins the actual Tiny-SD CLIP + DPM-Solver identities', () => {
   for (const needle of [
     'cad0bd7495fa6c4bcca01b19a723dc91627fe84f',
