@@ -7,6 +7,16 @@ const expectedCancelLine = "cancel-in-progress: ${{ github.event_name == 'pull_r
 
 const workflows = [
   {
+    url: '../.github/workflows/sprint-6.42d1-tiny-sd-acquisition.yml',
+    workflowName: 'Sprint 6.42D1 Tiny-SD acquisition trust',
+    finalGateMarker: '- name: Require D1 acquisition heavy acceptance when relevant',
+  },
+  {
+    url: '../.github/workflows/sprint-6.42d2-tiny-sd-components.yml',
+    workflowName: 'Sprint 6.42D2 Tiny-SD component ONNX feasibility',
+    finalGateMarker: '- name: Require D2 component heavy acceptance when relevant',
+  },
+  {
     url: '../.github/workflows/sprint-6.42d3-tiny-sd-precision.yml',
     workflowName: 'Sprint 6.42D3 Tiny-SD precision tiers',
     finalGateMarker: '- name: Require D3 precision heavy acceptance when relevant',
@@ -38,38 +48,38 @@ function cancelInProgress(eventName) {
 }
 
 test('heavy workflow concurrency keys cancel only obsolete runs for the same PR and workflow', () => {
-  const [precision, wasm] = workflows;
+  const [d1, d2] = workflows;
   const firstHead = concurrencyGroup({
-    workflow: precision.workflowName,
+    workflow: d1.workflowName,
     eventName: 'pull_request',
     pullRequestNumber: 357,
     runId: 1001,
   });
   const newerHead = concurrencyGroup({
-    workflow: precision.workflowName,
+    workflow: d1.workflowName,
     eventName: 'pull_request',
     pullRequestNumber: 357,
     runId: 1002,
   });
   const anotherPr = concurrencyGroup({
-    workflow: precision.workflowName,
+    workflow: d1.workflowName,
     eventName: 'pull_request',
     pullRequestNumber: 358,
     runId: 1003,
   });
   const anotherWorkflow = concurrencyGroup({
-    workflow: wasm.workflowName,
+    workflow: d2.workflowName,
     eventName: 'pull_request',
     pullRequestNumber: 357,
     runId: 1004,
   });
   const manualA = concurrencyGroup({
-    workflow: precision.workflowName,
+    workflow: d1.workflowName,
     eventName: 'workflow_dispatch',
     runId: 2001,
   });
   const manualB = concurrencyGroup({
-    workflow: precision.workflowName,
+    workflow: d1.workflowName,
     eventName: 'workflow_dispatch',
     runId: 2002,
   });
