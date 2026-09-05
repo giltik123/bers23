@@ -36,6 +36,14 @@ const WORKFLOWS = Object.freeze([
     heavyId: 'heavy_garment_warp_layer',
     acceptedBlob: 'bb5a5e85bd163a0fb7c8ae70ea8733f927225636',
   }),
+  Object.freeze({
+    path: '.github/workflows/fashion-garment-mesh-warp-service-postgres-f4b4.yml',
+    profile: FASHION_EXECUTION_PROFILES.F4B4_POSTGRES_VERTICAL,
+    gateId: 'garment-mesh-warp-postgres',
+    heavyId: 'heavy_garment_mesh_warp_postgres',
+    acceptedBlob: 'f0b980ded9ba9ff5e0a706be3f230204086e4385',
+    requiresAdjacentManifest: true,
+  }),
 ]);
 
 function regexEscape(value) {
@@ -101,6 +109,29 @@ for (const descriptor of WORKFLOWS) {
     assert.match(workflow, /RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED/);
     assert.match(workflow, /NOT_APPLICABLE_NON_FASHION_EXECUTION_CHANGE/);
     assert.equal(workflow.includes('|| true'), false, `${descriptor.path} must fail closed`);
+
+    if (descriptor.requiresAdjacentManifest) {
+      assert.ok(
+        workflow.includes('TRUSTED_DIR="${RUNNER_TEMP}/fashion-execution-postgres-base"'),
+        `${descriptor.path} must extract PostgreSQL trust files into one adjacent directory`,
+      );
+      assert.ok(
+        workflow.includes('git show "${BASE_SHA}:scripts/f4b4-postgres-ci-closure.json" > "${TRUSTED_DIR}/f4b4-postgres-ci-closure.json"'),
+        `${descriptor.path} must extract the base-owned PostgreSQL closure manifest`,
+      );
+      assert.ok(
+        workflow.includes('node "${TRUSTED_DIR}/classify-fashion-execution-ci.mjs" --profile F4B4_POSTGRES_VERTICAL --stdin0 --github-output "${GITHUB_OUTPUT}"'),
+        `${descriptor.path} must execute the classifier beside its base-owned manifest`,
+      );
+      assert.ok(
+        workflow.includes("if: ${{ steps.classify.outputs.relevant == 'true' }}\n        run: npm ci"),
+        `${descriptor.path} must install closure-proof dependencies only for relevant changes`,
+      );
+      assert.ok(
+        workflow.includes('run: node --test tests/fashion-f4b4-postgres-ci-relevance.test.mjs'),
+        `${descriptor.path} must prove the exact HEAD bundle/migration closure before heavy execution`,
+      );
+    }
   });
 }
 
