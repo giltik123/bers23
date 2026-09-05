@@ -2,8 +2,27 @@ name: Fashion F4b.5b.1 canonical texture FINAL lineage
 
 on:
   pull_request:
-    branches: [ "main", "fashion-garment-texture-composite-kernels-f4b5a" ]
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/fashion-garment-texture-final-lineage-f4b5b1.yml"
+      - "tests/ci-domain-fanout-wave3a.test.mjs"
+      - "tests/fashion-garment-texture-final-lineage-postgres.test.ts"
+      - "server/core/fashion/**"
+      - "server/core/artifacts/**"
+      - "server/transactions/**"
+      - "src/platform/creative/deterministic/**"
+      - "src/lib/tryon/tryonEngine.js"
+      - "scripts/build-core-server.mjs"
+      - "jsconfig.json"
+      - "server/tsconfig.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".npmrc"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   canonical-fashion-final-lineage:

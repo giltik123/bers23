@@ -3,10 +3,29 @@ name: Sprint 6.42C4 EfficientSAM acquisition acceptance
 on:
   pull_request:
     branches: [ "main" ]
+    paths:
+      - ".github/workflows/sprint-6.42c4-efficientsam-acquisition.yml"
+      - ".github/workflows/efficientsam-release.yml"
+      - "scripts/inspect-efficientsam-ti-release.py"
+      - "scripts/check-model-weight-tracking.mjs"
+      - "tests/efficientsam-release-policy.test.ts"
+      - "tests/efficientsam-release-workflow.test.mjs"
+      - "tests/local-model-candidate-catalog.test.ts"
+      - "tests/ci-domain-fanout-wave3a.test.mjs"
+      - "src/platform/creative/local-ai/**"
+      - "server/core/localExecution/productionLocalModelPolicy.ts"
+      - "server/core/localExecution/productionLocalExecutorPolicy.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".npmrc"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   pinned-upstream-candidate:
