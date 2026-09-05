@@ -4,12 +4,16 @@ import { fileURLToPath } from 'node:url';
 export const FASHION_EXECUTION_PROFILES = Object.freeze({
   F4B2_MANAGED_INPUT: 'F4B2_MANAGED_INPUT',
   F4B3_BODY_ANCHOR: 'F4B3_BODY_ANCHOR',
+  F4B4_WARP_ADMISSION: 'F4B4_WARP_ADMISSION',
+  F4B4_WARP_LAYER: 'F4B4_WARP_LAYER',
 });
 
 export const RELEVANT_CLASSIFICATION = 'RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED';
 export const NOT_APPLICABLE_CLASSIFICATION = 'NOT_APPLICABLE_NON_FASHION_EXECUTION_CHANGE';
 
-const COMMON_EXACT_PATHS = new Set([
+// Accepted F4b.2/F4b.3 trust root. Keep byte-for-byte path semantics stable:
+// the new F4b.4 leaves must not silently widen either existing profile.
+const LEGACY_COMMON_EXACT_PATHS = new Set([
   '.github/workflows/fashion-execution-ci-policy.yml',
   'scripts/classify-fashion-execution-ci.mjs',
   'tests/fashion-execution-ci-relevance.test.mjs',
@@ -109,23 +113,164 @@ const F4B3_EXACT_PATHS = new Set([
   'tests/fashion-body-anchor-schema-postgres.test.ts',
 ]);
 
+const F4B4_COMMON_EXACT_PATHS = new Set([
+  '.github/workflows/fashion-execution-ci-policy.yml',
+  'scripts/classify-fashion-execution-ci.mjs',
+  'tests/fashion-f4b4-execution-ci-relevance.test.mjs',
+  'package.json',
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  '.npmrc',
+  'tsconfig.json',
+  'server/tsconfig.json',
+  'scripts/build-core-server.mjs',
+  'src/platform/creative/deterministic/GarmentMeshWarp.ts',
+  'src/platform/creative/deterministic/GarmentMeshWarpIdentity.js',
+  'src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js',
+  'server/core/localExecution/productionGarmentMeshWarpExecutorPolicy.ts',
+  'server/core/providers/productionGarmentMeshWarpExecutionPolicy.ts',
+  // Source-read and shell-assertion dependencies of the accepted F4b.4 boundary.
+  'src/platform/creative/deterministic/DeterministicToolRegistry.ts',
+  'server/core/localExecution/productionLocalExecutorPolicy.ts',
+  'server/core/providers/productionExecutionCapabilities.ts',
+  'server/core/providers/productionExecutionRoute.ts',
+  'server/core/providers/productionTargetSelection.ts',
+  'src/lib/tryon/tryonEngine.js',
+  'tests/deterministic-garment-mesh-warp-admission-boundary.test.ts',
+]);
+
+const F4B4_ADMISSION_EXACT_PATHS = new Set([
+  '.github/workflows/fashion-garment-mesh-warp-admission-f4b4.yml',
+  'src/application/local-execution/CoreAuthorizedGarmentMeshWarp.ts',
+  'src/platform/creative/canonical/garmentMeshWarpInputEnvelope.ts',
+  'src/platform/creative/super-resolution/SuperResolutionContract.ts',
+  'src/platform/creative/deterministic/ResizeIdentity.js',
+  'src/platform/creative/deterministic/OrthogonalTransformIdentity.js',
+  'src/platform/creative/deterministic/DeterministicPng.ts',
+  'src/platform/creative/pipeline/ControlledLocalEdit.ts',
+  'server/core/artifacts/artifactAuthority.ts',
+  'server/core/artifacts/signedArtifactAuthority.ts',
+  'server/core/http/browserSessionCookie.ts',
+  'server/core/localExecution/GarmentMeshWarpExecutionContract.ts',
+  'server/core/localExecution/GarmentMeshWarpManagedInputAuthority.ts',
+  'server/core/localExecution/GarmentMeshWarpInputDeliveryService.ts',
+  'server/core/localExecution/LocalGarmentMeshWarpExecutionService.ts',
+  'server/core/localExecution/LocalExecutionAdmission.ts',
+  'server/core/localExecution/LocalExecutionTicketAuthority.ts',
+  'server/core/localExecution/LocalExecutionLedger.ts',
+  'server/core/localExecution/localExecutionReplayDigest.ts',
+  'server/core/localExecution/ManagedGarmentLocalExecutionInputAuthority.ts',
+  'server/core/providers/garmentMeshWarpWorkflowVerifier.ts',
+  'server/core/http/garmentMeshWarpHttpAdapter.ts',
+  'tests/local-execution-managed-input-platform.test.ts',
+  'tests/garment-mesh-warp-managed-input-limits.test.ts',
+  'tests/garment-mesh-warp-registry-contract.test.ts',
+  'tests/garment-mesh-warp-planner-contract.test.ts',
+  'tests/garment-mesh-warp-ticket-contract.test.ts',
+  'tests/artifact-authority-stored-image-evidence.test.ts',
+  'tests/garment-mesh-warp-input-delivery.test.ts',
+  'tests/garment-mesh-warp-execution-service.test.ts',
+  'tests/garment-mesh-warp-workflow-verifier.test.ts',
+  'tests/garment-mesh-warp-browser-executor.test.ts',
+  'tests/garment-mesh-warp-http-adapter.test.ts',
+]);
+
+// These cohesive canonical execution directories are runtime dependencies of
+// CreativeExecutionPlatform. They are bounded foundations, not model/provider trees.
+const F4B4_ADMISSION_PREFIXES = Object.freeze([
+  'src/platform/creative/canonical/',
+  'src/platform/creative/workflow-engine/',
+  'src/platform/creative/authority/',
+  'src/platform/creative/cost/',
+  'src/platform/creative/operations/',
+]);
+
+const F4B4_LAYER_EXACT_PATHS = new Set([
+  '.github/workflows/fashion-garment-warp-layer-f4b4.yml',
+  'tests/fashion-garment-warp-layer-postgres.test.ts',
+  'server/core/fashion/garmentWarpLayerSchema.ts',
+  'server/core/fashion/postgresGarmentWarpLayerStore.ts',
+  'server/core/fashion/migrations/029_fashion_garment_warp_layers.sql',
+  'server/core/fashion/bodyAnchorSchema.ts',
+  'server/core/fashion/bodyAnchorGeometry.ts',
+  'server/core/fashion/postgresProjectBodyAnchorStore.ts',
+  'server/core/fashion/migrations/028_project_body_anchor_sets.sql',
+  'server/core/fashion/migrations/031_project_body_anchor_acquisition_sequence.sql',
+  'server/core/fashion/migrations/035_project_body_anchor_idempotency.sql',
+  'server/core/fashion/garmentSchema.ts',
+  'server/core/fashion/garmentWardrobeSchema.ts',
+  'server/core/fashion/garmentCollectionSchema.ts',
+  'server/core/fashion/outfitSchema.ts',
+  'server/core/fashion/garmentRepresentationSchema.ts',
+  'server/core/fashion/postgresGarmentStore.ts',
+  'server/core/fashion/postgresGarmentWardrobeStore.ts',
+  'server/core/fashion/postgresGarmentRepresentationStore.ts',
+  'server/core/fashion/glbExecutionSubsetValidator.ts',
+  'server/core/fashion/manualParametricContour.ts',
+  'server/core/fashion/garmentTextureFinalLineage.ts',
+  'server/core/fashion/garmentAppearanceRefinementFinalLineage.ts',
+  'server/core/fashion/migrations/022_managed_garments_and_initial_views.sql',
+  'server/core/fashion/migrations/023_managed_garment_wardrobe_metadata.sql',
+  'server/core/fashion/migrations/024_managed_garment_collections.sql',
+  'server/core/fashion/migrations/026_managed_garment_representations.sql',
+  'server/core/fashion/migrations/027_garment_representation_revocation_lifecycle.sql',
+  'server/core/fashion/migrations/033_manual_parametric_basis_content_uniqueness.sql',
+  'server/core/projects/projectSchema.ts',
+  'server/core/projects/postgresProjectStore.ts',
+  'server/core/projects/migrations/004_canonical_projects_and_originals.sql',
+  'server/core/projects/migrations/005_canonical_project_history_versions.sql',
+  'server/core/projects/migrations/006_project_history_acceptance_hardening.sql',
+  'server/core/projects/migrations/007_project_history_source_lineage.sql',
+  'server/core/artifacts/imageArtifactSchema.ts',
+  'server/core/artifacts/maskArtifactSchema.ts',
+  'server/core/artifacts/postgresImageArtifactStore.ts',
+  'server/core/artifacts/finalImageLineageSchema.ts',
+  'server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql',
+  'server/core/artifacts/migrations/018_canonical_final_image_lineage.sql',
+  'server/core/artifacts/migrations/019_canonical_crop_final_lineage.sql',
+  'server/core/artifacts/migrations/020_canonical_resize_final_lineage.sql',
+  'server/core/artifacts/migrations/021_canonical_orthogonal_transform_final_lineage.sql',
+  'server/core/localExecution/ManagedGarmentLocalExecutionInputAuthority.ts',
+  'src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js',
+  'src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js',
+  'src/platform/creative/deterministic/GarmentTextureCompositeParameters.ts',
+  'server/transactions/infrastructure/postgres/transactionSchemaCli.ts',
+  'server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts',
+  'server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql',
+]);
+
 function normalizeRepoPath(value) {
   return String(value ?? '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
 }
 
 function requireProfile(value) {
-  if (value === FASHION_EXECUTION_PROFILES.F4B2_MANAGED_INPUT) return value;
-  if (value === FASHION_EXECUTION_PROFILES.F4B3_BODY_ANCHOR) return value;
+  if (Object.values(FASHION_EXECUTION_PROFILES).includes(value)) return value;
   throw new Error(`Unsupported Fashion execution classifier profile: ${value}`);
+}
+
+function matchesPrefix(path, prefixes) {
+  return prefixes.some(prefix => path.startsWith(prefix));
 }
 
 export function isFashionExecutionCiRelevant(filePath, profile) {
   const normalized = normalizeRepoPath(filePath);
   if (!normalized) return false;
   const resolvedProfile = requireProfile(profile);
-  if (COMMON_EXACT_PATHS.has(normalized)) return true;
-  if (resolvedProfile === FASHION_EXECUTION_PROFILES.F4B2_MANAGED_INPUT) return F4B2_EXACT_PATHS.has(normalized);
-  return F4B3_EXACT_PATHS.has(normalized);
+
+  if (resolvedProfile === FASHION_EXECUTION_PROFILES.F4B2_MANAGED_INPUT) {
+    return LEGACY_COMMON_EXACT_PATHS.has(normalized) || F4B2_EXACT_PATHS.has(normalized);
+  }
+  if (resolvedProfile === FASHION_EXECUTION_PROFILES.F4B3_BODY_ANCHOR) {
+    return LEGACY_COMMON_EXACT_PATHS.has(normalized) || F4B3_EXACT_PATHS.has(normalized);
+  }
+  if (resolvedProfile === FASHION_EXECUTION_PROFILES.F4B4_WARP_ADMISSION) {
+    return F4B4_COMMON_EXACT_PATHS.has(normalized)
+      || F4B4_ADMISSION_EXACT_PATHS.has(normalized)
+      || matchesPrefix(normalized, F4B4_ADMISSION_PREFIXES);
+  }
+  return F4B4_COMMON_EXACT_PATHS.has(normalized) || F4B4_LAYER_EXACT_PATHS.has(normalized);
 }
 
 export function classifyFashionExecutionCi(paths, profile) {
