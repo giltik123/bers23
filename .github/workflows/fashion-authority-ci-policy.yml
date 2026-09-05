@@ -5,8 +5,14 @@ on:
     branches: [ "main" ]
     paths:
       - '.github/workflows/fashion-authority-ci-policy.yml'
+      - '.github/workflows/managed-garment-f1a.yml'
+      - '.github/workflows/managed-garment-f1b.yml'
+      - '.github/workflows/managed-wardrobe-f2a.yml'
+      - '.github/workflows/managed-wardrobe-f2b.yml'
+      - '.github/workflows/managed-outfits-f3a.yml'
       - 'scripts/classify-fashion-authority-ci.mjs'
       - 'tests/fashion-authority-ci-relevance.test.mjs'
+      - 'tests/fashion-authority-ci-workflow-trust.test.mjs'
   workflow_dispatch:
 
 permissions:
@@ -33,8 +39,8 @@ jobs:
           node-version: 24.x
       - name: Syntax-check classifier
         run: node --check scripts/classify-fashion-authority-ci.mjs
-      - name: Prove Fashion authority classifier contract
-        run: node --test tests/fashion-authority-ci-relevance.test.mjs
+      - name: Prove Fashion authority classifier and workflow trust contracts
+        run: node --test tests/fashion-authority-ci-relevance.test.mjs tests/fashion-authority-ci-workflow-trust.test.mjs
       - name: Prove CLI NUL-delimited GitHub-output contract
         run: |
           set -euo pipefail
