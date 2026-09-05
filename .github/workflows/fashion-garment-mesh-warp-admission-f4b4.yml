@@ -49,27 +49,35 @@ jobs:
           const metaFiles = (await readdir(dir)).filter(name => name.endsWith('.meta.json')).sort();
           if (metaFiles.length !== 12) throw new Error(`Expected 12 F4b.4 bundle metafiles, found ${metaFiles.length}`);
           const inputs = new Set();
+          const inputsByMeta = new Map();
           for (const name of metaFiles) {
             const meta = JSON.parse(await readFile(`${dir}/${name}`, 'utf8'));
-            for (const input of Object.keys(meta.inputs ?? {})) inputs.add(input.replaceAll('\\', '/').replace(/^\.\//, ''));
+            const normalizedInputs = new Set(Object.keys(meta.inputs ?? {}).map(input => input.replaceAll('\\', '/').replace(/^\.\//, '')));
+            inputsByMeta.set(name, normalizedInputs);
+            for (const input of normalizedInputs) inputs.add(input);
           }
           const banned = [
             'src/platform/creative/deterministic/DeterministicToolRegistry.ts',
             'server/core/localExecution/productionLocalExecutorPolicy.ts',
             'server/core/localExecution/productionLocalModelPolicy.ts',
+            'server/core/providers/productionExecutionCapabilities.ts',
+            'server/core/providers/productionExecutionRoute.ts',
+            'server/core/providers/productionTargetSelection.ts',
             'src/platform/creative/local-ai/models/super-resolution.manifest.json',
-            'src/platform/creative/deterministic/BackgroundIsolationIdentity.js',
-            'src/platform/creative/deterministic/CropIdentity.js',
-            'src/platform/creative/deterministic/ResizeIdentity.js',
-            'src/platform/creative/deterministic/OrthogonalTransformIdentity.js',
             'src/platform/creative/deterministic/GarmentTextureCompositeRegistryDefinition.js',
           ];
+          const escapes = [];
           for (const candidate of banned) {
-            if (inputs.has(candidate)) throw new Error(`F4b.4 bundle dependency escaped into unrelated aggregate/model graph: ${candidate}`);
+            const owners = [...inputsByMeta.entries()]
+              .filter(([, metaInputs]) => metaInputs.has(candidate))
+              .map(([name]) => name);
+            if (owners.length) escapes.push(`${candidate} <= ${owners.join(',')}`);
           }
+          if (escapes.length) throw new Error(`F4b.4 structural bundle dependency escaped narrow policy leaves:\n${escapes.join('\n')}`);
           const required = [
             'src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js',
             'server/core/localExecution/productionGarmentMeshWarpExecutorPolicy.ts',
+            'server/core/providers/productionGarmentMeshWarpExecutionPolicy.ts',
           ];
           for (const candidate of required) {
             if (!inputs.has(candidate)) throw new Error(`F4b.4 bundle dependency proof did not exercise required leaf: ${candidate}`);
@@ -106,8 +114,9 @@ jobs:
           grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
           grep -q 'productionGarmentMeshWarpExecutorsByCapability' server/core/localExecution/productionLocalExecutorPolicy.ts
           grep -q 'GARMENT_MESH_WARP_CAPABILITY' server/core/localExecution/productionGarmentMeshWarpExecutorPolicy.ts
-          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionCapabilities.ts
-          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionRoute.ts
-          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionTargetSelection.ts
+          grep -q 'GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE' server/core/providers/productionExecutionCapabilities.ts
+          grep -q 'GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE' server/core/providers/productionExecutionRoute.ts
+          grep -q 'GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE' server/core/providers/productionTargetSelection.ts
+          grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionGarmentMeshWarpExecutionPolicy.ts
           grep -q 'TRYON_EXECUTION_NOT_WIRED' src/lib/tryon/tryonEngine.js
           ! grep -Eq 'garment-mesh-warp|GARMENT_MESH_WARP' src/lib/tryon/tryonEngine.js
