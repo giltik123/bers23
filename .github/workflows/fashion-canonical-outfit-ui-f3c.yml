@@ -7,8 +7,10 @@ on:
       - 'src/application/fashion/canonicalOutfitViewModel.js'
       - 'src/components/editor/outfits/OutfitPanel.jsx'
       - 'src/components/editor/creative/CreativeStudioPanel.jsx'
+      - 'scripts/build-fashion-f3c-browser-closure.mjs'
       - 'tests/canonical-outfit-view-model.test.mjs'
       - 'tests/fashion-canonical-outfit-ui.test.mjs'
+      - 'tests/fashion-f3c-browser-build-closure.test.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - '.github/workflows/fashion-canonical-outfit-ui-f3c.yml'
 
@@ -41,8 +43,8 @@ jobs:
         run: |
           node --test tests/fashion-canonical-outfit-ui.test.mjs
           node --test tests/editor-zero-object-navigation.test.mjs
-      - name: Build production frontend
-        run: npm run build
+      - name: Prove bounded F3c browser compile closure
+        run: node --test tests/fashion-f3c-browser-build-closure.test.mjs
       - name: Reject legacy, execution and financial authority widening
         run: |
           set -euo pipefail
