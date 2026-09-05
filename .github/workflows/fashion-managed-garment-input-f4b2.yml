@@ -5,8 +5,61 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  managed-garment-local-input-authority:
+  classify_fashion_execution_relevance:
+    name: classify-fashion-execution-relevance
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.classify.outputs.relevant }}
+      classification: ${{ steps.classify.outputs.classification }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Classify F4b.2 execution relevance from trusted base
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${HEAD_SHA}"
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            printf '%s\n' 'relevant=true' 'classification=RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          test "${EVENT_NAME}" = "pull_request"
+          [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          TRUSTED_CLASSIFIER="${RUNNER_TEMP}/fashion-execution-base-classifier.mjs"
+          trap 'rm -f "${TRUSTED_CLASSIFIER}"' EXIT
+          git show "${BASE_SHA}:scripts/classify-fashion-execution-ci.mjs" > "${TRUSTED_CLASSIFIER}"
+          test -s "${TRUSTED_CLASSIFIER}"
+          test "$(wc -c < "${TRUSTED_CLASSIFIER}")" -le 1048576
+          git diff --name-only --no-renames -z "${BASE_SHA}" "${HEAD_SHA}" \
+            | node "${TRUSTED_CLASSIFIER}" --profile F4B2_MANAGED_INPUT --stdin0 --github-output "${GITHUB_OUTPUT}"
+      - name: Prove Fashion execution relevance and workflow trust contracts
+        run: node --test tests/fashion-execution-ci-relevance.test.mjs tests/fashion-execution-ci-workflow-trust.test.mjs
+
+  heavy_managed_garment_local_input_authority:
+    name: managed-garment-local-input-authority-heavy
+    needs: classify_fashion_execution_relevance
+    if: ${{ needs.classify_fashion_execution_relevance.outputs.relevant == 'true' }}
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -84,3 +137,27 @@ jobs:
           ! grep -E 'managedInputs|GARMENT_VIEW|GARMENT_REPRESENTATION' \
             server/core/localExecution/LocalExecutionInputAdmission.ts \
             server/core/localExecution/LocalExecutionInputDeliveryService.ts
+
+  managed-garment-local-input-authority:
+    name: managed-garment-local-input-authority
+    needs: [classify_fashion_execution_relevance, heavy_managed_garment_local_input_authority]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require F4b.2 acceptance exactly when managed-input execution authority is relevant
+        env:
+          CLASSIFIER_RESULT: ${{ needs.classify_fashion_execution_relevance.result }}
+          RELEVANT: ${{ needs.classify_fashion_execution_relevance.outputs.relevant }}
+          CLASSIFICATION: ${{ needs.classify_fashion_execution_relevance.outputs.classification }}
+          HEAVY_RESULT: ${{ needs.heavy_managed_garment_local_input_authority.result }}
+        run: |
+          set -euo pipefail
+          test "${CLASSIFIER_RESULT}" = "success"
+          if [ "${RELEVANT}" = "true" ]; then
+            test "${CLASSIFICATION}" = "RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED"
+            test "${HEAVY_RESULT}" = "success"
+            exit 0
+          fi
+          test "${RELEVANT}" = "false"
+          test "${CLASSIFICATION}" = "NOT_APPLICABLE_NON_FASHION_EXECUTION_CHANGE"
+          test "${HEAVY_RESULT}" = "skipped"
