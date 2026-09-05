@@ -1,0 +1,225 @@
+name: Tiny-SD D3 WASM component browser
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        required: true
+        type: string
+      candidate_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+  COMPONENT: ${{ inputs.component }}
+  WORKFLOW_RUN_ID: ${{ github.run_id }}
+
+jobs:
+  browser_component:
+    name: browser-${{ inputs.component }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+
+      - name: Assert exact candidate, run and component
+        env:
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${WORKFLOW_RUN_ID}" =~ ^[1-9][0-9]*$ ]]
+          case "${COMPONENT}" in
+            text_encoder|unet|vae_decoder) ;;
+            *) echo "invalid D3 WASM component: ${COMPONENT}" >&2; exit 1 ;;
+          esac
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify browser runner policy
+        run: |
+          set -euo pipefail
+          npm ci
+          python -m py_compile \
+            scripts/verify-tiny-sd-d3-d2-handoff.py \
+            scripts/reproduce-tiny-sd-d3-selected-wasm-component.py \
+            scripts/reproduce-tiny-sd-d3-selected-wasm.py \
+            scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py \
+            scripts/prepare-tiny-sd-d3-wasm-quantized.py \
+            scripts/tiny_sd_d2_common.py
+          node --check scripts/test-tiny-sd-d3-browser-wasm.mjs
+          npm run check:model-weight-tracking
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+
+      - name: Restore exact run and SHA-bound accepted D2 FP32 cache
+        id: d2_handoff_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .test-cache/6.42d3-wasm/d2-handoff-${{ inputs.component }}
+          key: tiny-sd-d3-d2-v2-${{ github.run_id }}-${{ inputs.candidate_sha }}-${{ inputs.component }}
+
+      - name: Require exact D2 cache hit and verify before browser reproduction
+        env:
+          CACHE_HIT: ${{ steps.d2_handoff_cache.outputs.cache-hit }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          test "${CACHE_HIT}" = "true"
+          python scripts/verify-tiny-sd-d3-d2-handoff.py \
+            --component "${COMPONENT}" \
+            --candidate-sha "${CANDIDATE_SHA}" \
+            --workflow-run-id "${WORKFLOW_RUN_ID}" \
+            --upstream-revision "${UPSTREAM_REVISION}" \
+            --input-dir ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
+
+      - name: Download JSON-only accepted component matrix evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: tiny-sd-d3-wasm-matrix-${{ inputs.component }}
+          path: .test-cache/6.42d3-wasm/matrix-input
+
+      - name: Verify component matrix handoff is bounded JSON only
+        run: |
+          set -euo pipefail
+          test -f ".test-cache/6.42d3-wasm/matrix-input/${COMPONENT}-matrix.json"
+          test "$(find .test-cache/6.42d3-wasm/matrix-input -type l | wc -l)" -eq 0
+          test "$(find .test-cache/6.42d3-wasm/matrix-input -type f ! -name '*.json' | wc -l)" -eq 0
+          test "$(find .test-cache/6.42d3-wasm/matrix-input -type f | wc -l)" -eq 1
+          test "$(wc -c < ".test-cache/6.42d3-wasm/matrix-input/${COMPONENT}-matrix.json")" -le 4194304
+
+      - name: Install minimal exact selected-reproduction environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d3-browser-venv"
+          D3_PY="${RUNNER_TEMP}/tiny-sd-d3-browser-venv/bin/python"
+          "${D3_PY}" -m pip install --disable-pip-version-check --upgrade pip
+          "${D3_PY}" -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          "${D3_PY}" -m pip install --disable-pip-version-check \
+            numpy==2.4.6 safetensors==0.8.0 onnx==1.22.0 onnxruntime==1.27.0
+          "${D3_PY}" - <<'PY'
+          import numpy, onnx, onnxruntime, safetensors, torch
+          assert torch.__version__.startswith('2.13.0')
+          assert numpy.__version__ == '2.4.6'
+          assert safetensors.__version__ == '0.8.0'
+          assert onnx.__version__ == '1.22.0'
+          assert onnxruntime.__version__ == '1.27.0'
+          PY
+
+      - name: Reproduce accepted selected D3 component and bind to matrix identity
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          D2_INPUT="${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
+          D3_PY="${RUNNER_TEMP}/tiny-sd-d3-browser-venv/bin/python"
+          timeout --signal=TERM 180s "${D3_PY}" scripts/reproduce-tiny-sd-d3-selected-wasm-component.py \
+            --component "${COMPONENT}" \
+            --candidate-sha "${CANDIDATE_SHA}" \
+            --workflow-run-id "${WORKFLOW_RUN_ID}" \
+            --fp32-dir "${D2_INPUT}" \
+            --d2-report "${D2_INPUT}/d2-components.json" \
+            --matrix-report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/matrix-input/${COMPONENT}-matrix.json" \
+            --output-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-selected" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-fixtures" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/${COMPONENT}-selected.json"
+
+      - name: Prove system Google Chrome is installed
+        run: google-chrome --version
+
+      - name: Run real Chrome WASM feasibility for exactly one component
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM 180s node scripts/test-tiny-sd-d3-browser-wasm.mjs \
+            --component "${COMPONENT}" \
+            --model-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-selected" \
+            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-fixtures" \
+            --quant-report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/${COMPONENT}-selected.json" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/${COMPONENT}-browser.json"
+
+      - name: Validate component browser classification without granting authority
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          component = os.environ['COMPONENT']
+          quant = json.load(open(f'.test-cache/6.42d3-wasm/{component}-selected.json', encoding='utf-8'))
+          browser = json.load(open(f'.test-cache/6.42d3-wasm/{component}-browser.json', encoding='utf-8'))
+          allowed = {
+              'WASM_MODEL_FETCH_BLOCKED', 'WASM_MODEL_SIZE_MISMATCH', 'WASM_SESSION_BLOCKED',
+              'WASM_INFERENCE_BLOCKED', 'WASM_BROWSER_EVALUATION_BLOCKED', 'WASM_BROWSER_LAUNCH_BLOCKED',
+              'WASM_BROWSER_PROCESS_BLOCKED', 'WASM_PARITY_FAILED', 'PASS',
+          }
+          assert quant['status'] == 'CANDIDATE'
+          assert quant['scope'] == 'SINGLE_COMPONENT_BROWSER_REPRODUCTION'
+          assert quant['componentUnderTest'] == component
+          assert quant['candidateSha'] == os.environ['CANDIDATE_SHA']
+          assert quant['workflowRunId'] == os.environ['WORKFLOW_RUN_ID']
+          assert quant['d2HandoffTransport'] == 'ACTIONS_CACHE_EXACT_RUN_SHA_COMPONENT_KEY'
+          assert quant['acceptedSelectionPolicyMatched'] is True
+          assert quant['crossJobD2Fp32Handoff'] is True
+          assert quant['crossJobD3CandidateBinaryHandoff'] is False
+          assert quant['runtimeAuthorityGranted'] is False
+          assert quant['productionApproval'] is False
+          assert set(quant['components']) == {component}
+          assert browser['status'] == 'CANDIDATE'
+          assert browser['stage'] == 'D3_BROWSER_WASM_COMPACT'
+          assert browser['componentScope'] == component
+          assert browser['provider'] == 'wasm'
+          assert browser['productionFactory'] == 'BrowserOnnxSessionFactory'
+          assert browser['providerFallbackAllowed'] is False
+          assert browser['runtimeAuthorityGranted'] is False
+          assert browser['productionDeviceApproval'] is False
+          assert browser['productionApproval'] is False
+          assert set(browser['components']) == {component}
+          assert browser['components'][component]['result'] in allowed
+          assert browser['browserAttemptCount'] == 1
+          print('TINY-SD D3 COMPONENT BROWSER CLASSIFICATION: PASS', component, browser['components'][component]['result'])
+          PY
+
+      - name: Destroy restored D2 cache bytes and D3 binary evidence before JSON upload
+        run: |
+          set -euo pipefail
+          rm -rf \
+            ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}" \
+            .test-cache/6.42d3-wasm/matrix-input \
+            "${RUNNER_TEMP}/tiny-sd-d3-browser-venv" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-selected" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-fixtures"
+          test "$(find .test-cache/6.42d3-wasm -type f ! -name '*.json' | wc -l)" -eq 0
+          test "$(find .test-cache/6.42d3-wasm -type l | wc -l)" -eq 0
+
+      - name: Upload JSON-only component browser evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-sd-d3-wasm-browser-${{ inputs.component }}
+          path: |
+            .test-cache/6.42d3-wasm/${{ inputs.component }}-selected.json
+            .test-cache/6.42d3-wasm/${{ inputs.component }}-browser.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Failure cleanup
+        if: failure() || cancelled()
+        run: |
+          rm -rf \
+            ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}" \
+            .test-cache/6.42d3-wasm/matrix-input \
+            "${RUNNER_TEMP}/tiny-sd-d3-browser-venv" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-selected" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-fixtures"

@@ -5,8 +5,16 @@ on:
     branches: [ "main" ]
     paths:
       - "scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py"
+      - "scripts/verify-tiny-sd-d3-d2-handoff.py"
+      - "scripts/aggregate-tiny-sd-d3-wasm-strategy-evidence.py"
+      - "scripts/reproduce-tiny-sd-d3-selected-wasm-component.py"
+      - "scripts/test-tiny-sd-d3-browser-wasm.mjs"
       - "tests/tiny-sd-d3-candidate-isolation-policy.test.mjs"
+      - "tests/tiny-sd-d3-runner-lease-topology.test.mjs"
       - ".github/workflows/tiny-sd-d3-candidate-process-isolation-policy.yml"
+      - ".github/workflows/tiny-sd-d3-wasm-d2-prep.yml"
+      - ".github/workflows/tiny-sd-d3-wasm-strategy-phase.yml"
+      - ".github/workflows/tiny-sd-d3-wasm-browser-phase.yml"
       - ".github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml"
   workflow_dispatch:
 
@@ -30,9 +38,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Prove D3 candidate process-isolation contract
+      - name: Prove D3 candidate isolation and bounded runner topology
         run: |
           set -euo pipefail
-          python -m py_compile scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py
-          node --test tests/tiny-sd-d3-policy.test.mjs tests/tiny-sd-d3-candidate-isolation-policy.test.mjs
+          python -m py_compile \
+            scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py \
+            scripts/verify-tiny-sd-d3-d2-handoff.py \
+            scripts/aggregate-tiny-sd-d3-wasm-strategy-evidence.py \
+            scripts/reproduce-tiny-sd-d3-selected-wasm-component.py
+          node --check scripts/test-tiny-sd-d3-browser-wasm.mjs
+          node --test \
+            tests/tiny-sd-d3-policy.test.mjs \
+            tests/tiny-sd-d3-candidate-isolation-policy.test.mjs \
+            tests/tiny-sd-d3-runner-lease-topology.test.mjs \
+            tests/tiny-sd-heavy-ci-relevance.test.mjs
           git diff --check

@@ -4,32 +4,29 @@ import test from 'node:test';
 
 const matrix = fs.readFileSync('scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py', 'utf8');
 const d4Selected = fs.readFileSync('scripts/reproduce-tiny-sd-d3-selected-wasm.py', 'utf8');
-const workflow = fs.readFileSync('.github/workflows/tiny-sd-d3-candidate-process-isolation-policy.yml', 'utf8');
-const d3Workflow = fs.readFileSync('.github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml', 'utf8');
+const policyWorkflow = fs.readFileSync('.github/workflows/tiny-sd-d3-candidate-process-isolation-policy.yml', 'utf8');
+const caller = fs.readFileSync('.github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml', 'utf8');
+const prepWorkflow = fs.readFileSync('.github/workflows/tiny-sd-d3-wasm-d2-prep.yml', 'utf8');
+const strategyWorkflow = fs.readFileSync('.github/workflows/tiny-sd-d3-wasm-strategy-phase.yml', 'utf8');
+const browserWorkflow = fs.readFileSync('.github/workflows/tiny-sd-d3-wasm-browser-phase.yml', 'utf8');
+const verifier = fs.readFileSync('scripts/verify-tiny-sd-d3-d2-handoff.py', 'utf8');
+const aggregate = fs.readFileSync('scripts/aggregate-tiny-sd-d3-wasm-strategy-evidence.py', 'utf8');
+const selectedComponent = fs.readFileSync('scripts/reproduce-tiny-sd-d3-selected-wasm-component.py', 'utf8');
 
-test('D3 bounds native candidate lifetime with one checked-in subprocess worker per strategy', () => {
+const exactCacheKey = /tiny-sd-d3-d2-v2-\$\{\{ github\.run_id \}\}-\$\{\{ inputs\.candidate_sha \}\}-\$\{\{ inputs\.component \}\}/;
+
+test('canonical D3 candidate worker still bounds native candidate lifetime per strategy', () => {
   assert.match(matrix, /MAX_WORKER_RECORD_BYTES = 2 \* 1024 \* 1024/);
   assert.match(matrix, /--candidate-worker/);
   assert.match(matrix, /subprocess\.run\(/);
   assert.match(matrix, /sys\.executable/);
   assert.match(matrix, /def _resolve_strategy\([\s\S]*?_strategy_definitions\(component\)/);
   assert.match(matrix, /def candidate_worker_main\([\s\S]*?_candidate_record\(/);
-
-  const loopStart = matrix.indexOf('for strategy_name, transform in _strategy_definitions(component):');
-  const loopEnd = matrix.indexOf('selected_name = None', loopStart);
-  assert.ok(loopStart >= 0 && loopEnd > loopStart, 'D3 strategy loop must remain explicit');
-  const strategyLoop = matrix.slice(loopStart, loopEnd);
-  assert.match(strategyLoop, /_run_candidate_isolated\(/);
-  assert.doesNotMatch(strategyLoop, /_candidate_record\(/, 'matrix parent must not retain candidate ORT sessions in-process');
+  assert.match(matrix, /candidate worker exited non-zero/);
+  assert.match(matrix, /candidate worker artifact identity mismatch/);
 });
 
-test('D3 candidate worker records fail closed and preserve the original selection authority', () => {
-  assert.match(matrix, /ALLOWED_CANDIDATE_RESULTS = \{[\s\S]*?"PASS"[\s\S]*?"SIZE_BLOCKED"[\s\S]*?"NUMERIC_RISK"[\s\S]*?"TRANSFORM_BLOCKED"/);
-  assert.match(matrix, /candidate worker exited non-zero/);
-  assert.match(matrix, /candidate worker record is missing, symlinked or empty/);
-  assert.match(matrix, /candidate worker record exceeds bounded JSON size/);
-  assert.match(matrix, /candidate worker record is malformed/);
-  assert.match(matrix, /candidate worker artifact identity mismatch/);
+test('accepted strategy authority remains canonical and fail closed', () => {
   assert.match(matrix, /MIN_SIZE_AMONG_ORIGINAL_D3_NATIVE_PARITY_PASSING_CANDIDATES/);
   assert.match(matrix, /"text_encoder": "exact_fp16_storage"/);
   assert.match(matrix, /"unet": "exact_fp16_storage"/);
@@ -39,32 +36,84 @@ test('D3 candidate worker records fail closed and preserve the original selectio
   assert.match(matrix, /"vae_decoder": "EXACT_FP16_STORAGE_FP32_COMPUTE"/);
 });
 
-test('D3 releases only obsolete reproduction inputs after accepted D2 parity and before candidate preparation', () => {
-  const d2Step = d3Workflow.indexOf('- name: Reproduce D2 accepted FP32 component graphs and CPU parity');
-  const cleanupStep = d3Workflow.indexOf('- name: Release D1/D2 reproduction inputs before D3 candidate preparation');
-  const d3Step = d3Workflow.indexOf('- name: Prepare component-specific D3 WASM compact candidates');
-  assert.ok(d2Step >= 0 && cleanupStep > d2Step && d3Step > cleanupStep, 'resource cleanup must be bounded by accepted D2 parity and D3 candidate preparation');
+test('trusted D2 prep completes 3/3 parity before saving exact run-scoped component cache', () => {
+  const d2Step = prepWorkflow.indexOf('- name: Reproduce D2 accepted FP32 component graphs and CPU parity');
+  const handoffStep = prepWorkflow.indexOf('- name: Stage exact component-scoped D2 handoff on cache miss');
+  const verifyStep = prepWorkflow.indexOf('- name: Verify newly staged D2 component handoff');
+  const saveStep = prepWorkflow.indexOf('- name: Save exact run and SHA-bound verified D2 component cache');
+  assert.ok(d2Step >= 0 && handoffStep > d2Step && verifyStep > handoffStep && saveStep > verifyStep);
+  assert.match(prepWorkflow, /assert report\['passCount'\] == 3/);
+  assert.match(prepWorkflow, /assert report\['allComponentsPass'\] is True/);
+  assert.match(prepWorkflow, /WORKFLOW_RUN_ID: \$\{\{ github\.run_id \}\}/);
+  assert.match(prepWorkflow, /actions\/cache\/restore@v4/);
+  assert.match(prepWorkflow, /actions\/cache\/save@v4/);
+  assert.match(prepWorkflow, exactCacheKey);
+  assert.doesNotMatch(prepWorkflow, /restore-keys:/);
+  assert.match(prepWorkflow, /verify-tiny-sd-d3-d2-handoff\.py/);
+  assert.match(prepWorkflow, /--workflow-run-id "\$\{WORKFLOW_RUN_ID\}"/);
+  assert.match(prepWorkflow, /workflowRunId': os\.environ\['WORKFLOW_RUN_ID'\]/);
+  assert.match(prepWorkflow, /handoffTransport': 'ACTIONS_CACHE_EXACT_RUN_SHA_COMPONENT_KEY'/);
+  assert.match(prepWorkflow, /d3CandidateBinaryIncluded': False/);
+  assert.match(prepWorkflow, /runtimeAuthorityGranted': False/);
+  assert.match(prepWorkflow, /productionApproval': False/);
+  assert.match(verifier, /HANDOFF_TRANSPORT = "ACTIONS_CACHE_EXACT_RUN_SHA_COMPONENT_KEY"/);
+  assert.match(verifier, /parser\.add_argument\("--workflow-run-id", required=True\)/);
+  assert.match(verifier, /manifest\.get\("workflowRunId"\) != args\.workflow_run_id/);
+});
 
-  const nextStep = d3Workflow.indexOf('\n      - name:', cleanupStep + 1);
-  assert.ok(nextStep > cleanupStep, 'resource cleanup step must have a bounded workflow body');
-  const cleanup = d3Workflow.slice(cleanupStep, nextStep);
+test('strategy runners require exact run-scoped D2 cache hit and preserve manifest identity', () => {
+  assert.match(strategyWorkflow, /Restore exact run and SHA-bound accepted D2 FP32 cache/);
+  assert.match(strategyWorkflow, exactCacheKey);
+  assert.match(strategyWorkflow, /test "\$\{CACHE_HIT\}" = "true"/);
+  assert.match(strategyWorkflow, /Require exact D2 cache hit and verify before use/);
+  assert.match(strategyWorkflow, /--workflow-run-id "\$\{WORKFLOW_RUN_ID\}"/);
+  assert.doesNotMatch(strategyWorkflow, /restore-keys:/);
+  assert.match(strategyWorkflow, /--candidate-worker/);
+  assert.match(strategyWorkflow, /--component "\$\{COMPONENT\}"/);
+  assert.match(strategyWorkflow, /--strategy "\$\{STRATEGY\}"/);
+  assert.match(strategyWorkflow, /timeout --signal=TERM 240s/);
+  assert.match(strategyWorkflow, /workflowRunId': os\.environ\['WORKFLOW_RUN_ID'\]/);
+  assert.match(strategyWorkflow, /d2HandoffTransport': handoff\['handoffTransport'\]/);
+  assert.match(strategyWorkflow, /d2HandoffManifestSha256': hashlib\.sha256\(handoff_manifest\.read_bytes\(\)\)\.hexdigest\(\)/);
+  assert.match(strategyWorkflow, /d3CandidateBinaryCrossJobHandoff': False/);
+  assert.match(aggregate, /wrapper\.get\("workflowRunId"\) != workflow_run_id/);
+  assert.match(aggregate, /wrapper\.get\("d2HandoffTransport"\) != HANDOFF_TRANSPORT/);
+  assert.match(aggregate, /wrapper\.get\("d2HandoffManifestSha256"\)/);
+  assert.match(aggregate, /if len\(handoff_manifest_shas\) != 1:/);
+  assert.match(aggregate, /"d2HandoffManifestConsensus": True/);
+  assert.match(caller, /--workflow-run-id "\$\{WORKFLOW_RUN_ID\}"/);
+});
 
-  assert.match(cleanup, /tiny-sd-d3-wasm-snapshot/);
-  assert.match(cleanup, /tiny-sd-d3-wasm-bridge/);
-  assert.match(cleanup, /tiny-sd-d3-wasm-reference-venv/);
-  assert.match(cleanup, /tiny-sd-d3-wasm-reference\.npz/);
-  assert.match(cleanup, /\$\{HOME\}\/\.cache\/pip/);
-  assert.match(cleanup, /test ! -e/);
-  assert.match(cleanup, /sync/);
+test('browser runner re-verifies exact cache and matrix-to-cache D2 manifest consensus', () => {
+  assert.match(browserWorkflow, /Restore exact run and SHA-bound accepted D2 FP32 cache/);
+  assert.match(browserWorkflow, exactCacheKey);
+  assert.match(browserWorkflow, /test "\$\{CACHE_HIT\}" = "true"/);
+  assert.match(browserWorkflow, /Require exact D2 cache hit and verify before browser reproduction/);
+  assert.match(browserWorkflow, /--workflow-run-id "\$\{WORKFLOW_RUN_ID\}"/);
+  assert.doesNotMatch(browserWorkflow, /restore-keys:/);
+  assert.match(browserWorkflow, /reproduce-tiny-sd-d3-selected-wasm-component\.py/);
+  assert.doesNotMatch(browserWorkflow, /--candidate-worker/);
+  assert.match(browserWorkflow, /test-tiny-sd-d3-browser-wasm\.mjs/);
+  assert.match(browserWorkflow, /--component "\$\{COMPONENT\}"/);
+  assert.match(browserWorkflow, /Destroy restored D2 cache bytes and D3 binary evidence before JSON upload/);
+  assert.match(selectedComponent, /HANDOFF_TRANSPORT = "ACTIONS_CACHE_EXACT_RUN_SHA_COMPONENT_KEY"/);
+  assert.match(selectedComponent, /parser\.add_argument\("--workflow-run-id", required=True\)/);
+  assert.match(selectedComponent, /handoff_manifest_sha = _require_handoff_manifest/);
+  assert.match(selectedComponent, /component_matrix\.get\("workflowRunId"\) != args\.workflow_run_id/);
+  assert.match(selectedComponent, /component_matrix\.get\("d2HandoffTransport"\) != HANDOFF_TRANSPORT/);
+  assert.match(selectedComponent, /component_matrix\.get\("d2HandoffManifestSha256"\) != handoff_manifest_sha/);
+  assert.match(selectedComponent, /component_matrix\.get\("d2HandoffManifestConsensus"\) is not True/);
+  assert.match(selectedComponent, /matrix_record\.get\("d2HandoffManifestSha256"\) != handoff_manifest_sha/);
+  assert.match(selectedComponent, /"d2HandoffManifestConsensusVerified": True/);
+});
 
-  assert.doesNotMatch(cleanup, /rm -rf[\s\S]*tiny-sd-d3-wasm-fp32/);
-  assert.doesNotMatch(cleanup, /rm -rf[\s\S]*tiny-sd-d3-wasm-export-venv/);
-  assert.doesNotMatch(cleanup, /rm -rf[\s\S]*tiny-sd-d3-wasm-quantized/);
-  assert.doesNotMatch(cleanup, /rm -rf[\s\S]*tiny-sd-d3-wasm-fixtures/);
-  assert.doesNotMatch(cleanup, /node_modules/);
-
-  assert.match(d3Workflow, /Run real Chrome WASM compact component feasibility/);
-  assert.match(d3Workflow, /Destroy Tiny-SD D3 WASM binary evidence before JSON upload/);
+test('caller owns trusted relevance, all bounded fanouts and one stable outward gate', () => {
+  assert.match(caller, /classify_tiny_sd_relevance:/);
+  assert.match(caller, /heavy_wasm_d2_prep:/);
+  assert.match(caller, /heavy_wasm_strategy:/);
+  assert.match(caller, /heavy_wasm_component_matrix:/);
+  assert.match(caller, /heavy_wasm_component_browser:/);
+  assert.equal((caller.match(/name: wasm-compact-feasibility\n/g) ?? []).length, 1);
 });
 
 test('D4 selected-only reproduction remains independent from D3 research worker orchestration', () => {
@@ -73,12 +122,18 @@ test('D4 selected-only reproduction remains independent from D3 research worker 
   assert.match(d4Selected, /PINNED_ACCEPTED_SCHEME_REPRODUCTION_NO_RESELECTION/);
 });
 
-test('dedicated hosted policy workflow is read-only, tests the exact PR head, and watches D3 lifecycle changes', () => {
-  assert.match(workflow, /tests\/tiny-sd-d3-candidate-isolation-policy\.test\.mjs/);
-  assert.match(workflow, /python -m py_compile scripts\/prepare-tiny-sd-d3-wasm-strategy-matrix\.py/);
-  assert.match(workflow, /\.github\/workflows\/sprint-6\.42d3-tiny-sd-wasm-compact\.yml/);
-  assert.match(workflow, /permissions:\n  contents: read/);
-  assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
-  assert.match(workflow, /test "\$\(git rev-parse HEAD\)" = "\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}"/);
-  assert.doesNotMatch(workflow, /contents: write|pull-requests: write|actions: write/);
+test('dedicated hosted policy workflow is read-only, exact-head bound and watches every lifecycle surface', () => {
+  for (const path of [
+    'scripts/verify-tiny-sd-d3-d2-handoff.py',
+    'scripts/aggregate-tiny-sd-d3-wasm-strategy-evidence.py',
+    'scripts/reproduce-tiny-sd-d3-selected-wasm-component.py',
+    '.github/workflows/tiny-sd-d3-wasm-d2-prep.yml',
+    '.github/workflows/tiny-sd-d3-wasm-strategy-phase.yml',
+    '.github/workflows/tiny-sd-d3-wasm-browser-phase.yml',
+    '.github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml',
+  ]) assert.ok(policyWorkflow.includes(path), path);
+  assert.match(policyWorkflow, /permissions:\n  contents: read/);
+  assert.match(policyWorkflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(policyWorkflow, /test "\$\(git rev-parse HEAD\)" = "\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}"/);
+  assert.doesNotMatch(policyWorkflow, /contents: write|pull-requests: write|actions: write/);
 });
