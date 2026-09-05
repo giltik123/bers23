@@ -16,6 +16,7 @@ const EXACT_RELEVANT_PATHS = new Set([
   '.github/workflows/sprint-6.42d4-secure-threading.yml',
   '.github/workflows/sprint-6.42d4-tiny-sd-ort-memory.yml',
   '.github/workflows/sprint-6.42d5-tiny-sd-pipeline.yml',
+  '.github/workflows/sprint-6.42d6-tiny-sd-accelerated-admission.yml',
   'package.json',
   'package-lock.json',
   'npm-shrinkwrap.json',
