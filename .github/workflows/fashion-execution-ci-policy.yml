@@ -42,8 +42,10 @@ jobs:
         run: npm ci
       - name: Syntax-check execution classifier
         run: node --check scripts/classify-fashion-execution-ci.mjs
-      - name: Prove legacy profiles F4b.4 separation actual bundle closure and workflow trust
-        run: node --test tests/fashion-execution-ci-relevance.test.mjs tests/fashion-f4b4-execution-ci-relevance.test.mjs tests/fashion-execution-ci-workflow-trust.test.mjs
+      - name: Prove accepted legacy profile relevance and workflow trust
+        run: node --test tests/fashion-execution-ci-relevance.test.mjs tests/fashion-execution-ci-workflow-trust.test.mjs
+      - name: Prove F4b.4 profile separation and actual bundle closure
+        run: node --test tests/fashion-f4b4-execution-ci-relevance.test.mjs
       - name: Prove NUL-delimited profile-specific GitHub-output contracts
         run: |
           set -euo pipefail
