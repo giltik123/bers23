@@ -29,18 +29,54 @@ jobs:
       - name: Bundle managed-input, policy, Core-recompute, verifier, browser and transport contracts
         run: |
           mkdir -p .test-cache/fashion-f4b4-admission
-          npx esbuild tests/local-execution-managed-input-platform.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/platform.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-managed-input-limits.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/managed-limits.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-registry-contract.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/registry.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-planner-contract.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/planner.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-ticket-contract.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/ticket.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/artifact-authority-stored-image-evidence.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/project-evidence.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-input-delivery.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/delivery.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-execution-service.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/service.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-workflow-verifier.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/verifier.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-browser-executor.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/browser.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-http-adapter.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/http.mjs --external:node:* --external:pg --external:sharp
-          npx esbuild tests/deterministic-garment-mesh-warp-admission-boundary.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/production-policy.mjs --external:node:* --external:pg --external:sharp
+          npx esbuild tests/local-execution-managed-input-platform.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/platform.mjs --metafile=.test-cache/fashion-f4b4-admission/platform.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-managed-input-limits.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/managed-limits.mjs --metafile=.test-cache/fashion-f4b4-admission/managed-limits.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-registry-contract.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/registry.mjs --metafile=.test-cache/fashion-f4b4-admission/registry.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-planner-contract.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/planner.mjs --metafile=.test-cache/fashion-f4b4-admission/planner.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-ticket-contract.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/ticket.mjs --metafile=.test-cache/fashion-f4b4-admission/ticket.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/artifact-authority-stored-image-evidence.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/project-evidence.mjs --metafile=.test-cache/fashion-f4b4-admission/project-evidence.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-input-delivery.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/delivery.mjs --metafile=.test-cache/fashion-f4b4-admission/delivery.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-execution-service.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/service.mjs --metafile=.test-cache/fashion-f4b4-admission/service.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-workflow-verifier.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/verifier.mjs --metafile=.test-cache/fashion-f4b4-admission/verifier.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-browser-executor.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/browser.mjs --metafile=.test-cache/fashion-f4b4-admission/browser.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-http-adapter.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/http.mjs --metafile=.test-cache/fashion-f4b4-admission/http.meta.json --external:node:* --external:pg --external:sharp
+          npx esbuild tests/deterministic-garment-mesh-warp-admission-boundary.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/fashion-f4b4-admission/production-policy.mjs --metafile=.test-cache/fashion-f4b4-admission/production-policy.meta.json --external:node:* --external:pg --external:sharp
+      - name: Prove actual F4b.4 bundles exclude unrelated aggregate and model-policy graphs
+        run: |
+          node --input-type=module <<'NODE'
+          import { readdir, readFile } from 'node:fs/promises';
+          const dir = '.test-cache/fashion-f4b4-admission';
+          const metaFiles = (await readdir(dir)).filter(name => name.endsWith('.meta.json')).sort();
+          if (metaFiles.length !== 12) throw new Error(`Expected 12 F4b.4 bundle metafiles, found ${metaFiles.length}`);
+          const inputs = new Set();
+          for (const name of metaFiles) {
+            const meta = JSON.parse(await readFile(`${dir}/${name}`, 'utf8'));
+            for (const input of Object.keys(meta.inputs ?? {})) inputs.add(input.replaceAll('\\', '/').replace(/^\.\//, ''));
+          }
+          const banned = [
+            'src/platform/creative/deterministic/DeterministicToolRegistry.ts',
+            'server/core/localExecution/productionLocalExecutorPolicy.ts',
+            'server/core/localExecution/productionLocalModelPolicy.ts',
+            'src/platform/creative/local-ai/models/super-resolution.manifest.json',
+            'src/platform/creative/deterministic/BackgroundIsolationIdentity.js',
+            'src/platform/creative/deterministic/CropIdentity.js',
+            'src/platform/creative/deterministic/ResizeIdentity.js',
+            'src/platform/creative/deterministic/OrthogonalTransformIdentity.js',
+            'src/platform/creative/deterministic/GarmentTextureCompositeRegistryDefinition.js',
+          ];
+          for (const candidate of banned) {
+            if (inputs.has(candidate)) throw new Error(`F4b.4 bundle dependency escaped into unrelated aggregate/model graph: ${candidate}`);
+          }
+          const required = [
+            'src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js',
+            'server/core/localExecution/productionGarmentMeshWarpExecutorPolicy.ts',
+          ];
+          for (const candidate of required) {
+            if (!inputs.has(candidate)) throw new Error(`F4b.4 bundle dependency proof did not exercise required leaf: ${candidate}`);
+          }
+          console.log(`F4B4_BUNDLE_METAFILES=${metaFiles.length}`);
+          console.log(`F4B4_BUNDLE_INPUTS=${inputs.size}`);
+          NODE
       - name: Prove Project and managed Garment ticket namespaces stay distinct
         run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-admission/platform.mjs
       - name: Prove oversized basis views fail before ticket issuance and delivery
@@ -68,7 +104,8 @@ jobs:
       - name: Assert exact production admission surface
         run: |
           grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
-          grep -q 'GARMENT_MESH_WARP_CAPABILITY' server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q 'productionGarmentMeshWarpExecutorsByCapability' server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q 'GARMENT_MESH_WARP_CAPABILITY' server/core/localExecution/productionGarmentMeshWarpExecutorPolicy.ts
           grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionCapabilities.ts
           grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionExecutionRoute.ts
           grep -q 'GARMENT_MESH_WARP_OPERATION' server/core/providers/productionTargetSelection.ts

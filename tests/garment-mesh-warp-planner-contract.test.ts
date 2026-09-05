@@ -16,8 +16,8 @@ import {
   GARMENT_MESH_WARP_TOOL_ID,
   GARMENT_MESH_WARP_TOOL_VERSION,
 } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
-import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
-import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
+import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js';
+import { productionGarmentMeshWarpExecutorsByCapability } from '../server/core/localExecution/productionGarmentMeshWarpExecutorPolicy.ts';
 import { productionExecutionCapabilities } from '../server/core/providers/productionExecutionCapabilities.ts';
 import { productionExecutionRoute } from '../server/core/providers/productionExecutionRoute.ts';
 import { productionTargetSelection } from '../server/core/providers/productionTargetSelection.ts';
@@ -109,7 +109,7 @@ test('production policy admits only the exact garment warp LOCAL_ONLY tuple and 
     productionExecutionCapabilities.admit({ request: input, operation: { ...operation, executionRoute: 'ON_DEVICE' }, route: 'ON_DEVICE', target: 'LOCAL' }),
     { allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: GARMENT_MESH_WARP_CAPABILITY },
   );
-  assert.deepEqual(productionLocalExecutorsByCapability[GARMENT_MESH_WARP_CAPABILITY], [GARMENT_MESH_WARP_TOOL_DEFINITION.executor]);
+  assert.deepEqual(productionGarmentMeshWarpExecutorsByCapability[GARMENT_MESH_WARP_CAPABILITY], [GARMENT_MESH_WARP_TOOL_DEFINITION.executor]);
 
   const forgedRequest: CreativeRequest = Object.freeze({
     ...input,

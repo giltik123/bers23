@@ -3,7 +3,7 @@ import test from 'node:test';
 import { CoreAuthorizedGarmentMeshWarp } from '../src/application/local-execution/CoreAuthorizedGarmentMeshWarp.ts';
 import { encodeGarmentMeshWarpInputEnvelope } from '../src/platform/creative/canonical/garmentMeshWarpInputEnvelope.ts';
 import type { LocalExecutionTicketV2 } from '../src/platform/creative/canonical/localExecution.ts';
-import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js';
 import { garmentMeshWarpRgba8 } from '../src/platform/creative/deterministic/GarmentMeshWarp.ts';
 
 const TOOL = GARMENT_MESH_WARP_TOOL_DEFINITION;

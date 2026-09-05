@@ -4,7 +4,7 @@ import {
   GARMENT_MESH_WARP_TOOL_ID,
   GARMENT_MESH_WARP_TOOL_VERSION,
 } from '../../../src/platform/creative/deterministic/GarmentMeshWarp.ts';
-import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js';
 
 const SHA = /^[a-f0-9]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

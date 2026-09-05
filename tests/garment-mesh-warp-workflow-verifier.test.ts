@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GARMENT_MESH_WARP_OPERATION } from '../src/platform/creative/deterministic/GarmentMeshWarp.ts';
-import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { GARMENT_MESH_WARP_TOOL_DEFINITION } from '../src/platform/creative/deterministic/GarmentMeshWarpRegistryDefinition.js';
 import { verifyGarmentMeshWarpWorkingArtifact } from '../server/core/providers/garmentMeshWarpWorkflowVerifier.ts';
 
 const exact = GARMENT_MESH_WARP_TOOL_DEFINITION.parameters.exact;
