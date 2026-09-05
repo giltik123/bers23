@@ -7,8 +7,11 @@ on:
       - '.github/workflows/fashion-execution-ci-policy.yml'
       - '.github/workflows/fashion-managed-garment-input-f4b2.yml'
       - '.github/workflows/fashion-body-anchor-destination-mesh-f4b3.yml'
+      - '.github/workflows/fashion-garment-mesh-warp-admission-f4b4.yml'
+      - '.github/workflows/fashion-garment-warp-layer-f4b4.yml'
       - 'scripts/classify-fashion-execution-ci.mjs'
       - 'tests/fashion-execution-ci-relevance.test.mjs'
+      - 'tests/fashion-f4b4-execution-ci-relevance.test.mjs'
       - 'tests/fashion-execution-ci-workflow-trust.test.mjs'
   workflow_dispatch:
 
@@ -34,20 +37,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
+          cache: npm
+      - name: Install pinned classifier proof dependencies
+        run: npm ci
       - name: Syntax-check execution classifier
         run: node --check scripts/classify-fashion-execution-ci.mjs
-      - name: Prove profile separation runtime import closure and workflow trust
-        run: node --test tests/fashion-execution-ci-relevance.test.mjs tests/fashion-execution-ci-workflow-trust.test.mjs
+      - name: Prove legacy profiles F4b.4 separation actual bundle closure and workflow trust
+        run: node --test tests/fashion-execution-ci-relevance.test.mjs tests/fashion-f4b4-execution-ci-relevance.test.mjs tests/fashion-execution-ci-workflow-trust.test.mjs
       - name: Prove NUL-delimited profile-specific GitHub-output contracts
         run: |
           set -euo pipefail
-          input="${RUNNER_TEMP}/fashion-execution-paths"
+          legacy_input="${RUNNER_TEMP}/fashion-execution-legacy-paths"
           printf '%s\0%s\0' \
             'server/core/localExecution/PostgresLocalExecutionLedger.ts' \
-            'server/core/fashion/bodyAnchorGeometry.ts' > "${input}"
+            'server/core/fashion/bodyAnchorGeometry.ts' > "${legacy_input}"
 
           out_f4b2="${RUNNER_TEMP}/fashion-execution-f4b2-output"
-          cat "${input}" \
+          cat "${legacy_input}" \
             | node scripts/classify-fashion-execution-ci.mjs \
                 --profile F4B2_MANAGED_INPUT --stdin0 --github-output "${out_f4b2}" \
             | tee "${RUNNER_TEMP}/fashion-execution-f4b2-result.json"
@@ -57,7 +63,7 @@ jobs:
           grep -qx 'matched_count=1' "${out_f4b2}"
 
           out_f4b3="${RUNNER_TEMP}/fashion-execution-f4b3-output"
-          cat "${input}" \
+          cat "${legacy_input}" \
             | node scripts/classify-fashion-execution-ci.mjs \
                 --profile F4B3_BODY_ANCHOR --stdin0 --github-output "${out_f4b3}" \
             | tee "${RUNNER_TEMP}/fashion-execution-f4b3-result.json"
@@ -66,14 +72,46 @@ jobs:
           grep -qx 'classification=RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED' "${out_f4b3}"
           grep -qx 'matched_count=1' "${out_f4b3}"
 
+          admission_input="${RUNNER_TEMP}/fashion-execution-f4b4-admission-paths"
+          printf '%s\0%s\0' \
+            'server/core/providers/productionGarmentMeshWarpExecutionPolicy.ts' \
+            'server/core/fashion/garmentWarpLayerSchema.ts' > "${admission_input}"
+          out_admission="${RUNNER_TEMP}/fashion-execution-f4b4-admission-output"
+          cat "${admission_input}" \
+            | node scripts/classify-fashion-execution-ci.mjs \
+                --profile F4B4_WARP_ADMISSION --stdin0 --github-output "${out_admission}" \
+            | tee "${RUNNER_TEMP}/fashion-execution-f4b4-admission-result.json"
+          grep -qx 'profile=F4B4_WARP_ADMISSION' "${out_admission}"
+          grep -qx 'relevant=true' "${out_admission}"
+          grep -qx 'classification=RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED' "${out_admission}"
+          grep -qx 'matched_count=1' "${out_admission}"
+
+          layer_input="${RUNNER_TEMP}/fashion-execution-f4b4-layer-paths"
+          printf '%s\0%s\0' \
+            'server/core/fashion/garmentWarpLayerSchema.ts' \
+            'server/core/http/garmentMeshWarpHttpAdapter.ts' > "${layer_input}"
+          out_layer="${RUNNER_TEMP}/fashion-execution-f4b4-layer-output"
+          cat "${layer_input}" \
+            | node scripts/classify-fashion-execution-ci.mjs \
+                --profile F4B4_WARP_LAYER --stdin0 --github-output "${out_layer}" \
+            | tee "${RUNNER_TEMP}/fashion-execution-f4b4-layer-result.json"
+          grep -qx 'profile=F4B4_WARP_LAYER' "${out_layer}"
+          grep -qx 'relevant=true' "${out_layer}"
+          grep -qx 'classification=RELEVANT_FASHION_EXECUTION_ACCEPTANCE_REQUIRED' "${out_layer}"
+          grep -qx 'matched_count=1' "${out_layer}"
+
           node --input-type=module - <<'NODE'
           import assert from 'node:assert/strict';
           import { readFile } from 'node:fs/promises';
           const root = process.env.RUNNER_TEMP;
           const f4b2 = JSON.parse(await readFile(`${root}/fashion-execution-f4b2-result.json`, 'utf8'));
           const f4b3 = JSON.parse(await readFile(`${root}/fashion-execution-f4b3-result.json`, 'utf8'));
+          const admission = JSON.parse(await readFile(`${root}/fashion-execution-f4b4-admission-result.json`, 'utf8'));
+          const layer = JSON.parse(await readFile(`${root}/fashion-execution-f4b4-layer-result.json`, 'utf8'));
           assert.deepEqual(f4b2.matchedPaths, ['server/core/localExecution/PostgresLocalExecutionLedger.ts']);
           assert.deepEqual(f4b3.matchedPaths, ['server/core/fashion/bodyAnchorGeometry.ts']);
+          assert.deepEqual(admission.matchedPaths, ['server/core/providers/productionGarmentMeshWarpExecutionPolicy.ts']);
+          assert.deepEqual(layer.matchedPaths, ['server/core/fashion/garmentWarpLayerSchema.ts']);
           NODE
       - name: Check committed diff whitespace
         env:
