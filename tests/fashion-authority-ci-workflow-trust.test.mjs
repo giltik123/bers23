@@ -35,6 +35,18 @@ const WORKFLOWS = Object.freeze([
     heavyId: 'heavy_managed_outfits_postgres',
     acceptedBlob: 'f7b6461466b9b6c0b1c98ee36d4748bb9d5f2040',
   }),
+  Object.freeze({
+    path: '.github/workflows/managed-garment-representations-f4a.yml',
+    gateId: 'managed-garment-representations-postgres',
+    heavyId: 'heavy_managed_garment_representations_postgres',
+    acceptedBlob: '45cb1f7434dfb458b74a034315da6896110d40d2',
+  }),
+  Object.freeze({
+    path: '.github/workflows/managed-garment-glb-f4a1.yml',
+    gateId: 'strict-glb-postgres',
+    heavyId: 'heavy_strict_glb_postgres',
+    acceptedBlob: '208da9b3491e639aaf474a61ea104440ccca4a57',
+  }),
 ]);
 
 function regexEscape(value) {
@@ -75,7 +87,7 @@ for (const descriptor of WORKFLOWS) {
     assert.equal(
       gitBlobSha(reconstructAcceptedWorkflow(workflow, descriptor)),
       descriptor.acceptedBlob,
-      `${descriptor.path} changed accepted pre-Wave3 workflow bytes outside the orchestration envelope`,
+      `${descriptor.path} changed accepted pre-gating workflow bytes outside the orchestration envelope`,
     );
 
     assert.equal(isFashionAuthorityCiRelevant(descriptor.path), true, descriptor.path);
@@ -102,7 +114,7 @@ for (const descriptor of WORKFLOWS) {
   });
 }
 
-test('Fashion policy workflow owns all Wave 3b wrappers and the workflow-trust guard', async () => {
+test('Fashion policy workflow owns all trusted wrappers and the workflow-trust guard', async () => {
   const policy = await readFile('.github/workflows/fashion-authority-ci-policy.yml', 'utf8');
   for (const { path } of WORKFLOWS) {
     assert.ok(policy.includes(`      - '${path}'`), `policy trigger missing ${path}`);
