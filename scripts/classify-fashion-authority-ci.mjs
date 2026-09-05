@@ -10,6 +10,8 @@ const EXACT_RELEVANT_PATHS = new Set([
   '.github/workflows/managed-wardrobe-f2a.yml',
   '.github/workflows/managed-wardrobe-f2b.yml',
   '.github/workflows/managed-outfits-f3a.yml',
+  '.github/workflows/managed-garment-representations-f4a.yml',
+  '.github/workflows/managed-garment-glb-f4a1.yml',
   '.github/workflows/fashion-authority-ci-policy.yml',
   'scripts/classify-fashion-authority-ci.mjs',
   'tests/fashion-authority-ci-relevance.test.mjs',
@@ -51,7 +53,7 @@ export function isFashionAuthorityCiRelevant(filePath) {
 
   if (EXACT_RELEVANT_PATHS.has(normalized)) return true;
 
-  // Runtime/data authority owned by the F1-F3 PostgreSQL acceptance chain.
+  // Runtime/data authority owned by the F1-F4a representation acceptance chain.
   if (normalized.startsWith('server/core/fashion/')) return true;
   if (MANAGED_FASHION_HTTP_PREFIXES.some(prefix => normalized.startsWith(prefix))) return true;
 
