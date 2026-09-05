@@ -1,0 +1,183 @@
+name: Tiny-SD D3 WASM single strategy
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        required: true
+        type: string
+      strategy:
+        required: true
+        type: string
+      candidate_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+  COMPONENT: ${{ inputs.component }}
+  STRATEGY: ${{ inputs.strategy }}
+  WORKFLOW_RUN_ID: ${{ github.run_id }}
+
+jobs:
+  single_strategy:
+    name: strategy-${{ inputs.component }}-${{ inputs.strategy }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+
+      - name: Assert exact candidate, run and strategy tuple
+        env:
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${WORKFLOW_RUN_ID}" =~ ^[1-9][0-9]*$ ]]
+          case "${COMPONENT}:${STRATEGY}" in
+            text_encoder:dynamic_signed|text_encoder:dynamic_signed_reduce_range|text_encoder:weight_only_s8|text_encoder:exact_fp16_storage) ;;
+            unet:static_s8s8_qdq|unet:static_u8u8_qdq|unet:weight_only_s8|unet:exact_fp16_storage) ;;
+            vae_decoder:static_s8s8_qdq|vae_decoder:static_u8u8_qdq|vae_decoder:weight_only_s8|vae_decoder:exact_fp16_storage) ;;
+            *) echo "invalid D3 WASM component/strategy tuple: ${COMPONENT}:${STRATEGY}" >&2; exit 1 ;;
+          esac
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify strategy runner policy
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            scripts/verify-tiny-sd-d3-d2-handoff.py \
+            scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py \
+            scripts/prepare-tiny-sd-d3-wasm-quantized.py \
+            scripts/tiny_sd_d2_common.py
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+          if git grep -n -I -E -- '^-----BEGIN (ED25519 |EC |RSA |OPENSSH )?PRIVATE KEY-----$'; then
+            echo 'Private key material is tracked by Git' >&2
+            exit 1
+          fi
+
+      - name: Restore exact run and SHA-bound accepted D2 FP32 cache
+        id: d2_handoff_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .test-cache/6.42d3-wasm/d2-handoff-${{ inputs.component }}
+          key: tiny-sd-d3-d2-v2-${{ github.run_id }}-${{ inputs.candidate_sha }}-${{ inputs.component }}
+
+      - name: Require exact D2 cache hit and verify before use
+        env:
+          CACHE_HIT: ${{ steps.d2_handoff_cache.outputs.cache-hit }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          test "${CACHE_HIT}" = "true"
+          python scripts/verify-tiny-sd-d3-d2-handoff.py \
+            --component "${COMPONENT}" \
+            --candidate-sha "${CANDIDATE_SHA}" \
+            --workflow-run-id "${WORKFLOW_RUN_ID}" \
+            --upstream-revision "${UPSTREAM_REVISION}" \
+            --input-dir ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
+
+      - name: Install minimal exact D3 strategy environment
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d3-strategy-venv"
+          D3_PY="${RUNNER_TEMP}/tiny-sd-d3-strategy-venv/bin/python"
+          "${D3_PY}" -m pip install --disable-pip-version-check --upgrade pip
+          "${D3_PY}" -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          "${D3_PY}" -m pip install --disable-pip-version-check \
+            numpy==2.4.6 safetensors==0.8.0 onnx==1.22.0 onnxruntime==1.27.0
+          "${D3_PY}" - <<'PY'
+          import numpy, onnx, onnxruntime, safetensors, torch
+          assert torch.__version__.startswith('2.13.0')
+          assert numpy.__version__ == '2.4.6'
+          assert safetensors.__version__ == '0.8.0'
+          assert onnx.__version__ == '1.22.0'
+          assert onnxruntime.__version__ == '1.27.0'
+          PY
+
+      - name: Run one original D3 selectable strategy in bounded worker
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          case "${COMPONENT}" in
+            text_encoder) MODEL_FILE=text_encoder.onnx ;;
+            unet) MODEL_FILE=unet.onnx ;;
+            vae_decoder) MODEL_FILE=vae_decoder.onnx ;;
+          esac
+          D2_INPUT="${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
+          D3_PY="${RUNNER_TEMP}/tiny-sd-d3-strategy-venv/bin/python"
+          TARGET="${RUNNER_TEMP}/tiny-sd-d3-strategy-candidate.onnx"
+          RECORD="${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/${COMPONENT}--${STRATEGY}.json"
+          mkdir -p "$(dirname "${RECORD}")"
+          timeout --signal=TERM 240s "${D3_PY}" scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py \
+            --candidate-worker \
+            --component "${COMPONENT}" \
+            --strategy "${STRATEGY}" \
+            --source "${D2_INPUT}/${MODEL_FILE}" \
+            --d2-report "${D2_INPUT}/d2-components.json" \
+            --target "${TARGET}" \
+            --record "${RECORD}"
+          RECORD="${RECORD}" CANDIDATE_SHA="${CANDIDATE_SHA}" D2_INPUT="${D2_INPUT}" python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          record_path = Path(os.environ['RECORD'])
+          raw = json.loads(record_path.read_text(encoding='utf-8'))
+          handoff_manifest = Path(os.environ['D2_INPUT']) / 'handoff-manifest.json'
+          handoff = json.loads(handoff_manifest.read_text(encoding='utf-8'))
+          wrapper = {
+              'schemaVersion': 1,
+              'status': 'CANDIDATE',
+              'stage': 'D3_WASM_SINGLE_STRATEGY_EVIDENCE',
+              'candidateSha': os.environ['CANDIDATE_SHA'],
+              'workflowRunId': os.environ['WORKFLOW_RUN_ID'],
+              'component': os.environ['COMPONENT'],
+              'strategy': os.environ['STRATEGY'],
+              'workerRecord': raw,
+              'd2Fp32HandoffVerified': True,
+              'd2HandoffTransport': handoff['handoffTransport'],
+              'd2HandoffManifestSha256': hashlib.sha256(handoff_manifest.read_bytes()).hexdigest(),
+              'crossJobD2Fp32Handoff': True,
+              'd3CandidateBinaryCrossJobHandoff': False,
+              'releaseIdentityPinned': False,
+              'runtimeAuthorityGranted': False,
+              'productionApproval': False,
+          }
+          record_path.write_text(json.dumps(wrapper, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print('TINY-SD D3 SINGLE STRATEGY:', os.environ['COMPONENT'], os.environ['STRATEGY'], raw['result'])
+          PY
+
+      - name: Destroy restored D2 cache bytes and D3 binary evidence before JSON upload
+        run: |
+          set -euo pipefail
+          rm -rf \
+            ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}" \
+            "${RUNNER_TEMP}/tiny-sd-d3-strategy-candidate.onnx" \
+            "${RUNNER_TEMP}/tiny-sd-d3-strategy-venv"
+          test "$(find .test-cache/6.42d3-wasm -type f ! -name '*.json' | wc -l)" -eq 0
+          test "$(find .test-cache/6.42d3-wasm -type l | wc -l)" -eq 0
+
+      - name: Upload JSON-only single-strategy evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiny-sd-d3-wasm-strategy-${{ inputs.component }}-${{ inputs.strategy }}
+          path: .test-cache/6.42d3-wasm/${{ inputs.component }}--${{ inputs.strategy }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Failure cleanup
+        if: failure() || cancelled()
+        run: |
+          rm -rf \
+            ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}" \
+            "${RUNNER_TEMP}/tiny-sd-d3-strategy-candidate.onnx" \
+            "${RUNNER_TEMP}/tiny-sd-d3-strategy-venv"

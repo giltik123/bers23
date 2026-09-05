@@ -28,7 +28,12 @@ const outputDir = path.resolve('.test-cache/tiny-sd-d3-wasm-dist');
 const port = 4178;
 const origin = `http://127.0.0.1:${port}`;
 const OUTER_BROWSER_TIMEOUT_MS = 540_000;
-const COMPONENTS = ['text_encoder', 'unet', 'vae_decoder'];
+const ALL_COMPONENTS = ['text_encoder', 'unet', 'vae_decoder'];
+const requestedComponent = args.get('component') ?? null;
+if (requestedComponent !== null && !ALL_COMPONENTS.includes(requestedComponent)) {
+  throw new Error(`invalid --component: ${requestedComponent}`);
+}
+const COMPONENTS = requestedComponent === null ? ALL_COMPONENTS : [requestedComponent];
 const launchArgs = ['--enable-precise-memory-info'];
 const EXPECTED_WORKER_FREE_RUNTIME = Object.freeze({
   numThreads: 1,
@@ -336,6 +341,7 @@ try {
     schemaVersion: 1,
     status: 'CANDIDATE',
     stage: 'D3_BROWSER_WASM_COMPACT',
+    componentScope: requestedComponent,
     quantizationEvidenceSha256: createHash('sha256').update(quantBytes).digest('hex'),
     provider: 'wasm',
     productionFactory: 'BrowserOnnxSessionFactory',
@@ -353,7 +359,7 @@ try {
   };
   await fs.mkdir(path.dirname(reportPath), { recursive: true });
   await fs.writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-  console.log(`TINY-SD D3 BROWSER WASM: pass=${passCount}/3 attempted=${browserAttemptCount}/3 blocked=${JSON.stringify(report.blockedComponents)}`);
+  console.log(`TINY-SD D3 BROWSER WASM: pass=${passCount}/${COMPONENTS.length} attempted=${browserAttemptCount}/${COMPONENTS.length} blocked=${JSON.stringify(report.blockedComponents)}`);
 } finally {
   await new Promise(resolve => server.close(resolve));
 }

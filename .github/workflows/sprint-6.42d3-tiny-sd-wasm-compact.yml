@@ -14,7 +14,6 @@ concurrency:
 
 env:
   UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
-  TINY_SD_MANIFEST: src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json
 
 jobs:
   classify_tiny_sd_relevance:
@@ -62,378 +61,137 @@ jobs:
       - name: Prove Tiny-SD relevance classifier contract
         run: node --test tests/tiny-sd-heavy-ci-relevance.test.mjs tests/tiny-sd-heavy-ci-workflow-trust.test.mjs
 
-  heavy_wasm_compact_feasibility:
-    name: wasm-compact-feasibility-heavy
+  heavy_wasm_d2_prep:
+    name: wasm-d2-prep-${{ matrix.component }}
     needs: classify_tiny_sd_relevance
     if: ${{ needs.classify_tiny_sd_relevance.outputs.relevant == 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [text_encoder, unet, vae_decoder]
+    uses: ./.github/workflows/tiny-sd-d3-wasm-d2-prep.yml
+    with:
+      component: ${{ matrix.component }}
+      candidate_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+  heavy_wasm_strategy:
+    name: wasm-strategy-${{ matrix.component }}-${{ matrix.strategy }}
+    needs: [classify_tiny_sd_relevance, heavy_wasm_d2_prep]
+    if: ${{ needs.classify_tiny_sd_relevance.outputs.relevant == 'true' && needs.heavy_wasm_d2_prep.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: text_encoder
+            strategy: dynamic_signed
+          - component: text_encoder
+            strategy: dynamic_signed_reduce_range
+          - component: text_encoder
+            strategy: weight_only_s8
+          - component: text_encoder
+            strategy: exact_fp16_storage
+          - component: unet
+            strategy: static_s8s8_qdq
+          - component: unet
+            strategy: static_u8u8_qdq
+          - component: unet
+            strategy: weight_only_s8
+          - component: unet
+            strategy: exact_fp16_storage
+          - component: vae_decoder
+            strategy: static_s8s8_qdq
+          - component: vae_decoder
+            strategy: static_u8u8_qdq
+          - component: vae_decoder
+            strategy: weight_only_s8
+          - component: vae_decoder
+            strategy: exact_fp16_storage
+    uses: ./.github/workflows/tiny-sd-d3-wasm-strategy-phase.yml
+    with:
+      component: ${{ matrix.component }}
+      strategy: ${{ matrix.strategy }}
+      candidate_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+  heavy_wasm_component_matrix:
+    name: wasm-component-matrix-${{ matrix.component }}
+    needs: [classify_tiny_sd_relevance, heavy_wasm_strategy]
+    if: ${{ needs.classify_tiny_sd_relevance.outputs.relevant == 'true' && needs.heavy_wasm_strategy.result == 'success' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [text_encoder, unet, vae_decoder]
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
-      - name: Use Node.js 24
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-
-      - name: Use Python 3.11 for trust reproduction
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Verify D3 WASM fail-closed policy before network/model work
+      - name: Assert exact candidate, run and aggregate policy syntax
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          npm ci
-          node --test tests/tiny-sd-d3-policy.test.mjs
-          python -m py_compile \
-            scripts/prepare-tiny-sd-d3-wasm-quantized.py \
-            scripts/tiny_sd_d2_common.py \
-            scripts/probe-tiny-sd-reference.py \
-            scripts/probe-tiny-sd-component-onnx.py
-          node --check scripts/test-tiny-sd-d3-browser-wasm.mjs
-          npm run check:model-weight-tracking
-          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
-          if git grep -n -I -E -- '^-----BEGIN (ED25519 |EC |RSA |OPENSSH )?PRIVATE KEY-----$'; then
-            echo 'Private key material is tracked by Git' >&2
-            exit 1
-          fi
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          [[ "${WORKFLOW_RUN_ID}" =~ ^[1-9][0-9]*$ ]]
+          python -m py_compile scripts/aggregate-tiny-sd-d3-wasm-strategy-evidence.py
 
-      - name: Install pinned Hugging Face transport client
-        run: |
-          set -euo pipefail
-          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
-          python - <<'PY'
-          import huggingface_hub
-          assert huggingface_hub.__version__ == '0.36.0'
-          PY
-
-      - name: Reproduce accepted D1 Tiny-SD snapshot
-        run: |
-          set -euo pipefail
-          mkdir -p "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm"
-          python - <<'PY'
-          import os
-          from huggingface_hub import snapshot_download
-          expected = [
-              'model_index.json',
-              'scheduler/scheduler_config.json',
-              'text_encoder/config.json',
-              'text_encoder/pytorch_model.bin',
-              'tokenizer/merges.txt',
-              'tokenizer/special_tokens_map.json',
-              'tokenizer/tokenizer_config.json',
-              'tokenizer/vocab.json',
-              'unet/config.json',
-              'unet/diffusion_pytorch_model.bin',
-              'vae/config.json',
-              'vae/diffusion_pytorch_model.bin',
-          ]
-          snapshot_download(
-              repo_id='segmind/tiny-sd',
-              revision=os.environ['UPSTREAM_REVISION'],
-              local_dir=os.path.join(os.environ['RUNNER_TEMP'], 'tiny-sd-d3-wasm-snapshot'),
-              allow_patterns=expected,
-          )
-          PY
-          python scripts/inspect-tiny-sd-snapshot.py \
-            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
-            --revision "${UPSTREAM_REVISION}" \
-            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
-            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-snapshot.json"
-
-      - name: Install accepted D1 restricted bridge environment
-        run: |
-          set -euo pipefail
-          python -m pip install --disable-pip-version-check numpy==1.26.4
-          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install --disable-pip-version-check safetensors==0.8.0
-          python - <<'PY'
-          import numpy, safetensors, torch
-          assert numpy.__version__ == '1.26.4'
-          assert torch.__version__.startswith('2.6.0')
-          assert safetensors.__version__ == '0.8.0'
-          PY
-
-      - name: Reproduce exact D1 tensor-only bridge
-        run: |
-          set -euo pipefail
-          python scripts/bridge-tiny-sd-safetensors.py \
-            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
-            --inventory "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-snapshot.json" \
-            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
-            --out-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
-            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-bridge.json"
-
-      - name: Use Python 3.10 for D2 historical reference
-        uses: actions/setup-python@v5
+      - name: Download JSON-only strategy evidence for component
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.10'
+          pattern: tiny-sd-d3-wasm-strategy-${{ matrix.component }}-*
+          path: .test-cache/6.42d3-wasm/strategy-input
+          merge-multiple: true
 
-      - name: Install exact D2 historical reference environment
+      - name: Aggregate original minimum-size winner policy
+        env:
+          CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          python -m venv "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv"
-          REF_PY="${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv/bin/python"
-          "${REF_PY}" -m pip install --disable-pip-version-check --upgrade 'pip<25'
-          "${REF_PY}" -m pip install --disable-pip-version-check numpy==1.24.4 huggingface_hub==0.16.4 safetensors==0.3.1
-          "${REF_PY}" -m pip install --disable-pip-version-check torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
-          "${REF_PY}" -m pip install --disable-pip-version-check diffusers==0.19.0 transformers==4.30.2
-          "${REF_PY}" - <<'PY'
-          import diffusers, huggingface_hub, numpy, safetensors, torch, transformers
-          assert numpy.__version__ == '1.24.4'
-          assert torch.__version__ == '2.0.1+cpu'
-          assert diffusers.__version__ == '0.19.0'
-          assert transformers.__version__ == '4.30.2'
-          assert huggingface_hub.__version__ == '0.16.4'
-          assert safetensors.__version__ == '0.3.1'
-          PY
+          test "$(find .test-cache/6.42d3-wasm/strategy-input -type l | wc -l)" -eq 0
+          test "$(find .test-cache/6.42d3-wasm/strategy-input -type f ! -name '*.json' | wc -l)" -eq 0
+          python scripts/aggregate-tiny-sd-d3-wasm-strategy-evidence.py \
+            --component "${{ matrix.component }}" \
+            --candidate-sha "${CANDIDATE_SHA}" \
+            --workflow-run-id "${WORKFLOW_RUN_ID}" \
+            --input-dir .test-cache/6.42d3-wasm/strategy-input \
+            --matrix-script scripts/prepare-tiny-sd-d3-wasm-strategy-matrix.py \
+            --report ".test-cache/6.42d3-wasm/${{ matrix.component }}-matrix.json"
 
-      - name: Re-establish D2 historical component semantics
-        run: |
-          set -euo pipefail
-          REF_PY="${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv/bin/python"
-          "${REF_PY}" scripts/probe-tiny-sd-reference.py \
-            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
-            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
-            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
-            --reference-out "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
-            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-reference.json"
-
-      - name: Use Python 3.11 for D2 modern exporter and D3 quantizer
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install exact D2 exporter and D3 WASM quantizer environment
-        run: |
-          set -euo pipefail
-          python -m venv "${RUNNER_TEMP}/tiny-sd-d3-wasm-export-venv"
-          EXP_PY="${RUNNER_TEMP}/tiny-sd-d3-wasm-export-venv/bin/python"
-          "${EXP_PY}" -m pip install --disable-pip-version-check --upgrade pip
-          "${EXP_PY}" -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
-          "${EXP_PY}" -m pip install --disable-pip-version-check \
-            numpy==2.4.6 safetensors==0.8.0 \
-            diffusers==0.39.0 transformers==4.57.6 \
-            onnx==1.22.0 onnxscript==0.7.1 onnxruntime==1.27.0
-          "${EXP_PY}" - <<'PY'
-          import diffusers, numpy, onnx, onnxruntime, onnxscript, safetensors, torch, transformers
-          assert torch.__version__.startswith('2.13.0')
-          assert numpy.__version__ == '2.4.6'
-          assert diffusers.__version__ == '0.39.0'
-          assert transformers.__version__ == '4.57.6'
-          assert safetensors.__version__ == '0.8.0'
-          assert onnx.__version__ == '1.22.0'
-          assert onnxscript.__version__ == '0.7.1'
-          assert onnxruntime.__version__ == '1.27.0'
-          PY
-
-      - name: Reproduce D2 accepted FP32 component graphs and CPU parity
-        run: |
-          set -euo pipefail
-          EXP_PY="${RUNNER_TEMP}/tiny-sd-d3-wasm-export-venv/bin/python"
-          mkdir -p "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32"
-          "${EXP_PY}" scripts/probe-tiny-sd-component-onnx.py \
-            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
-            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
-            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
-            --reference "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
-            --reference-report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-reference.json" \
-            --onnx-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32" \
-            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-d2-components.json"
-          "${EXP_PY}" - <<'PY'
-          import json
-          report = json.load(open('.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-d2-components.json', encoding='utf-8'))
-          assert report['passCount'] == 3
-          assert report['allComponentsPass'] is True
-          assert report['blockedComponents'] == {}
-          assert all(value['result'] == 'PASS' and value['ortParityPassed'] is True for value in report['components'].values())
-          PY
-
-      - name: Release D1/D2 reproduction inputs before D3 candidate preparation
-        run: |
-          set -euo pipefail
-          echo 'Resource state before D3 lifecycle cleanup:'
-          df -h "${RUNNER_TEMP}"
-          du -sh \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
-            "${HOME}/.cache/pip" 2>/dev/null || true
-          free -h || true
-          rm -rf \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
-            "${HOME}/.cache/pip"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz"
-          test ! -e "${HOME}/.cache/pip"
-          sync
-          echo 'Resource state after D3 lifecycle cleanup:'
-          df -h "${RUNNER_TEMP}"
-          free -h || true
-
-      - name: Prepare component-specific D3 WASM compact candidates
-        run: |
-          set -euo pipefail
-          EXP_PY="${RUNNER_TEMP}/tiny-sd-d3-wasm-export-venv/bin/python"
-          "${EXP_PY}" scripts/prepare-tiny-sd-d3-wasm-quantized.py \
-            --fp32-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32" \
-            --d2-report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-d2-components.json" \
-            --output-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-quantized" \
-            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-fixtures" \
-            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-quantized.json"
-
-      - name: Prove system Google Chrome is installed
-        run: |
-          set -euo pipefail
-          google-chrome --version
-
-      - name: Run real Chrome WASM compact component feasibility
-        run: |
-          set -euo pipefail
-          node scripts/test-tiny-sd-d3-browser-wasm.mjs \
-            --model-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-quantized" \
-            --fixture-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-fixtures" \
-            --quant-report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-quantized.json" \
-            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-browser.json"
-
-      - name: Validate D3 WASM classification without granting authority
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          quant = json.load(open('.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-quantized.json', encoding='utf-8'))
-          browser = json.load(open('.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-browser.json', encoding='utf-8'))
-          expected = {'text_encoder', 'unet', 'vae_decoder'}
-          accepted = {name: 'exact_fp16_storage' for name in expected}
-          allowed_native = {
-              'WASM_COMPACT_NATIVE_PASS', 'WASM_COMPACT_SIZE_BLOCKED',
-              'WASM_COMPACT_NUMERIC_RISK', 'WASM_COMPACT_TRANSFORM_BLOCKED',
-          }
-          allowed_browser = {
-              'WASM_COMPACT_PRE_BROWSER_BLOCKED', 'WASM_MODEL_FETCH_BLOCKED',
-              'WASM_MODEL_SIZE_MISMATCH', 'WASM_SESSION_BLOCKED', 'WASM_INFERENCE_BLOCKED',
-              'WASM_BROWSER_EVALUATION_BLOCKED', 'WASM_BROWSER_LAUNCH_BLOCKED',
-              'WASM_BROWSER_PROCESS_BLOCKED', 'WASM_PARITY_FAILED', 'PASS',
-          }
-          assert quant['status'] == 'CANDIDATE'
-          assert quant['stage'] == 'D3_WASM_COMPACT_PREPARATION'
-          assert quant['strategy'] == 'COMPONENT_SPECIFIC_QUANTIZATION_FIRST_BASELINE'
-          assert quant['selectionStrategy'] == 'MULTI_STRATEGY_NATIVE_PARITY_SELECTION'
-          assert quant['selectionRule'] == 'MIN_SIZE_AMONG_ORIGINAL_D3_NATIVE_PARITY_PASSING_CANDIDATES'
-          assert quant['acceptedSelectionPolicy'] == accepted
-          assert quant['acceptedSelectionPolicyMatched'] is True
-          assert quant['selectionPolicyMismatches'] == {}
-          assert quant['selectionPolicyUpdateRequiredOnWinnerChange'] is True
-          assert quant['textEncoderStrategy'] == 'DYNAMIC_U8_WEIGHT_MATMUL'
-          assert quant['cnnStrategy'] == 'STATIC_QDQ_U8S8_CONV_MATMUL_GEMM'
-          assert quant['fullInt8UniversalPackClaimed'] is False
-          assert quant['browserWasmStillRequired'] is True
-          assert quant['calibrationIsProductionQualityAuthority'] is False
-          assert quant['runtimeAuthorityGranted'] is False
-          assert quant['productionApproval'] is False
-          assert quant['realDeviceApproval'] is False
-          assert quant['releaseIdentityPinned'] is False
-          assert set(quant['components']) == expected
-          assert all(value['result'] in allowed_native for value in quant['components'].values())
-          assert all(value['acceptedSelectionPolicyMatched'] is True for value in quant['components'].values())
-          assert all(value['browserFixture']['reference']['authority'] == 'D2_ACCEPTED_FP32_CPU_ORT_OUTPUT' for value in quant['components'].values())
-          for value in quant['components'].values():
-              if value['result'] == 'WASM_COMPACT_NATIVE_PASS':
-                  assert value['candidate'] is not None
-                  assert value['candidate']['sizeRatio'] < 0.80
-                  assert value['candidate']['graph']['domains'] == ['ai.onnx']
-                  assert value['candidate']['graph']['functionCount'] == 0
-                  assert value['nativeOrtParity']['passed'] is True
-          assert browser['status'] == 'CANDIDATE'
-          assert browser['stage'] == 'D3_BROWSER_WASM_COMPACT'
-          assert browser['provider'] == 'wasm'
-          assert browser['productionFactory'] == 'BrowserOnnxSessionFactory'
-          assert browser['providerFallbackAllowed'] is False
-          assert browser['runtimeAuthorityGranted'] is False
-          assert browser['productionDeviceApproval'] is False
-          assert browser['productionApproval'] is False
-          assert set(browser['components']) == expected
-          assert all(value['result'] in allowed_browser for value in browser['components'].values())
-          assert browser['browserAttemptCount'] == sum(
-              value['result'] == 'WASM_COMPACT_NATIVE_PASS' for value in quant['components'].values()
-          )
-          print('TINY-SD D3 WASM CLASSIFICATION: PASS', quant['blockedComponents'], browser['blockedComponents'])
-          PY
-
-      - name: Destroy Tiny-SD D3 WASM binary evidence before JSON upload
-        run: |
-          set -euo pipefail
-          rm -rf \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-quantized" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-fixtures" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-quantized"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-fixtures"
-          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz"
-          test "$(find .test-cache/6.42d3-wasm -type f \( -name '*.onnx' -o -name '*.ort' -o -name '*.bin' -o -name '*.safetensors' -o -name '*.npz' -o -name '*.pt' -o -name '*.pth' -o -name '*.ckpt' -o -name '*.f32' \) | wc -l)" -eq 0
-
-      - name: Upload JSON-only D3 WASM evidence
+      - name: Upload JSON-only accepted component matrix
         uses: actions/upload-artifact@v4
         with:
-          name: tiny-sd-d3-wasm-evidence
-          path: |
-            .test-cache/6.42d3-wasm/tiny-sd-d3-wasm-snapshot.json
-            .test-cache/6.42d3-wasm/tiny-sd-d3-wasm-bridge.json
-            .test-cache/6.42d3-wasm/tiny-sd-d3-wasm-reference.json
-            .test-cache/6.42d3-wasm/tiny-sd-d3-wasm-d2-components.json
-            .test-cache/6.42d3-wasm/tiny-sd-d3-wasm-quantized.json
-            .test-cache/6.42d3-wasm/tiny-sd-d3-wasm-browser.json
+          name: tiny-sd-d3-wasm-matrix-${{ matrix.component }}
+          path: .test-cache/6.42d3-wasm/${{ matrix.component }}-matrix.json
           if-no-files-found: error
           retention-days: 14
 
-      - name: Summarize D3 WASM evidence
-        run: |
-          set -euo pipefail
-          python - <<'PY' >> "${GITHUB_STEP_SUMMARY}"
-          import json
-          quant = json.load(open('.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-quantized.json', encoding='utf-8'))
-          browser = json.load(open('.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-browser.json', encoding='utf-8'))
-          print('## Tiny-SD D3 WASM compact feasibility')
-          print()
-          print(f"- native compact pass: **{quant['nativePassCount']}/3**")
-          print(f"- browser WASM pass: **{browser['passCount']}/3**")
-          print(f"- source FP32 bytes: **{quant['totals']['sourceFp32Bytes']:,}**")
-          print(f"- produced candidate bytes: **{quant['totals']['candidateBytesProduced']:,}**")
-          print(f"- native blockers: `{quant['blockedComponents']}`")
-          print(f"- browser blockers: `{browser['blockedComponents']}`")
-          print('- authority: **CANDIDATE / no runtime, device, release, or production approval**')
-          PY
-
-      - name: Failure cleanup
-        if: failure() || cancelled()
-        run: |
-          rm -rf \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-quantized" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-fixtures" \
-            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz"
+  heavy_wasm_component_browser:
+    name: wasm-component-browser-${{ matrix.component }}
+    needs: [classify_tiny_sd_relevance, heavy_wasm_d2_prep, heavy_wasm_component_matrix]
+    if: ${{ needs.classify_tiny_sd_relevance.outputs.relevant == 'true' && needs.heavy_wasm_d2_prep.result == 'success' && needs.heavy_wasm_component_matrix.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [text_encoder, unet, vae_decoder]
+    uses: ./.github/workflows/tiny-sd-d3-wasm-browser-phase.yml
+    with:
+      component: ${{ matrix.component }}
+      candidate_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
   wasm_compact_feasibility_gate:
     name: wasm-compact-feasibility
-    needs: [classify_tiny_sd_relevance, heavy_wasm_compact_feasibility]
+    needs:
+      - classify_tiny_sd_relevance
+      - heavy_wasm_d2_prep
+      - heavy_wasm_strategy
+      - heavy_wasm_component_matrix
+      - heavy_wasm_component_browser
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -442,17 +200,29 @@ jobs:
           CLASSIFIER_RESULT: ${{ needs.classify_tiny_sd_relevance.result }}
           RELEVANT: ${{ needs.classify_tiny_sd_relevance.outputs.relevant }}
           CLASSIFICATION: ${{ needs.classify_tiny_sd_relevance.outputs.classification }}
-          HEAVY_RESULT: ${{ needs.heavy_wasm_compact_feasibility.result }}
+          PREP_RESULT: ${{ needs.heavy_wasm_d2_prep.result }}
+          STRATEGY_RESULT: ${{ needs.heavy_wasm_strategy.result }}
+          MATRIX_RESULT: ${{ needs.heavy_wasm_component_matrix.result }}
+          BROWSER_RESULT: ${{ needs.heavy_wasm_component_browser.result }}
+          HEAVY_RESULT: ${{ needs.heavy_wasm_component_browser.result }}
         run: |
           set -euo pipefail
           test "${CLASSIFIER_RESULT}" = "success"
           if [ "${RELEVANT}" = "true" ]; then
             test "${CLASSIFICATION}" = "RELEVANT_HEAVY_ACCEPTANCE_REQUIRED"
+            test "${PREP_RESULT}" = "success"
+            test "${STRATEGY_RESULT}" = "success"
+            test "${MATRIX_RESULT}" = "success"
+            test "${BROWSER_RESULT}" = "success"
             test "${HEAVY_RESULT}" = "success"
-            echo "Tiny-SD D3 WASM heavy acceptance: SUCCESS"
+            echo "Tiny-SD D3 WASM bounded prep + strategy + matrix + browser acceptance: SUCCESS"
             exit 0
           fi
           test "${RELEVANT}" = "false"
           test "${CLASSIFICATION}" = "NOT_APPLICABLE_PRODUCT_ONLY_CHANGE"
+          test "${PREP_RESULT}" = "skipped"
+          test "${STRATEGY_RESULT}" = "skipped"
+          test "${MATRIX_RESULT}" = "skipped"
+          test "${BROWSER_RESULT}" = "skipped"
           test "${HEAVY_RESULT}" = "skipped"
           echo "Tiny-SD D3 WASM: NOT_APPLICABLE_PRODUCT_ONLY_CHANGE"

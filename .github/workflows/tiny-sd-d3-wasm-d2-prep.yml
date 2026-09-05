@@ -1,0 +1,350 @@
+name: Tiny-SD D3 WASM trusted D2 prep
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        required: true
+        type: string
+      candidate_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REVISION: cad0bd7495fa6c4bcca01b19a723dc91627fe84f
+  TINY_SD_MANIFEST: src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json
+  COMPONENT: ${{ inputs.component }}
+  WORKFLOW_RUN_ID: ${{ github.run_id }}
+
+jobs:
+  d2_prep:
+    name: d2-prep-${{ inputs.component }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.candidate_sha }}
+
+      - name: Assert exact candidate, run and component
+        env:
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${WORKFLOW_RUN_ID}" =~ ^[1-9][0-9]*$ ]]
+          case "${COMPONENT}" in
+            text_encoder|unet|vae_decoder) ;;
+            *) echo "invalid D3 WASM component: ${COMPONENT}" >&2; exit 1 ;;
+          esac
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify trust policy before cache/network/model work
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            scripts/verify-tiny-sd-d3-d2-handoff.py \
+            scripts/tiny_sd_d2_common.py \
+            scripts/probe-tiny-sd-reference.py \
+            scripts/probe-tiny-sd-component-onnx.py
+          node scripts/check-model-weight-tracking.mjs
+          test "$(git ls-files '*.ckpt' '*.pth' '*.pt' '*.bin' '*.safetensors' '*.onnx' '*.ort' | wc -l)" -eq 0
+          if git grep -n -I -E -- '^-----BEGIN (ED25519 |EC |RSA |OPENSSH )?PRIVATE KEY-----$'; then
+            echo 'Private key material is tracked by Git' >&2
+            exit 1
+          fi
+
+      - name: Restore exact run and SHA-bound D2 component cache
+        id: d2_handoff_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .test-cache/6.42d3-wasm/d2-handoff-${{ inputs.component }}
+          key: tiny-sd-d3-d2-v2-${{ github.run_id }}-${{ inputs.candidate_sha }}-${{ inputs.component }}
+
+      - name: Verify restored D2 component cache before accepting hit
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit == 'true' }}
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          python scripts/verify-tiny-sd-d3-d2-handoff.py \
+            --component "${COMPONENT}" \
+            --candidate-sha "${CANDIDATE_SHA}" \
+            --workflow-run-id "${WORKFLOW_RUN_ID}" \
+            --upstream-revision "${UPSTREAM_REVISION}" \
+            --input-dir ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
+          echo "Tiny-SD D3 D2 prep: exact run/SHA/component cache HIT verified"
+
+      - name: Install pinned Hugging Face transport client
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          PY
+
+      - name: Reproduce accepted D1 Tiny-SD snapshot
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm"
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          expected = [
+              'model_index.json',
+              'scheduler/scheduler_config.json',
+              'text_encoder/config.json',
+              'text_encoder/pytorch_model.bin',
+              'tokenizer/merges.txt',
+              'tokenizer/special_tokens_map.json',
+              'tokenizer/tokenizer_config.json',
+              'tokenizer/vocab.json',
+              'unet/config.json',
+              'unet/diffusion_pytorch_model.bin',
+              'vae/config.json',
+              'vae/diffusion_pytorch_model.bin',
+          ]
+          snapshot_download(
+              repo_id='segmind/tiny-sd',
+              revision=os.environ['UPSTREAM_REVISION'],
+              local_dir=os.path.join(os.environ['RUNNER_TEMP'], 'tiny-sd-d3-wasm-snapshot'),
+              allow_patterns=expected,
+          )
+          PY
+          python scripts/inspect-tiny-sd-snapshot.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
+            --revision "${UPSTREAM_REVISION}" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-snapshot.json"
+
+      - name: Install accepted D1 restricted bridge environment
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==1.26.4
+          python -m pip install --disable-pip-version-check torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check safetensors==0.8.0
+          python - <<'PY'
+          import numpy, safetensors, torch
+          assert numpy.__version__ == '1.26.4'
+          assert torch.__version__.startswith('2.6.0')
+          assert safetensors.__version__ == '0.8.0'
+          PY
+
+      - name: Reproduce exact D1 tensor-only bridge
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          python scripts/bridge-tiny-sd-safetensors.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
+            --inventory "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-snapshot.json" \
+            --expected-manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --out-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-bridge.json"
+
+      - uses: actions/setup-python@v5
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        with:
+          python-version: '3.10'
+
+      - name: Install exact D2 historical reference environment
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv"
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv/bin/python"
+          "${REF_PY}" -m pip install --disable-pip-version-check --upgrade 'pip<25'
+          "${REF_PY}" -m pip install --disable-pip-version-check numpy==1.24.4 huggingface_hub==0.16.4 safetensors==0.3.1
+          "${REF_PY}" -m pip install --disable-pip-version-check torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+          "${REF_PY}" -m pip install --disable-pip-version-check diffusers==0.19.0 transformers==4.30.2
+          "${REF_PY}" - <<'PY'
+          import diffusers, huggingface_hub, numpy, safetensors, torch, transformers
+          assert numpy.__version__ == '1.24.4'
+          assert torch.__version__ == '2.0.1+cpu'
+          assert diffusers.__version__ == '0.19.0'
+          assert transformers.__version__ == '4.30.2'
+          assert huggingface_hub.__version__ == '0.16.4'
+          assert safetensors.__version__ == '0.3.1'
+          PY
+
+      - name: Re-establish D2 historical component semantics
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          REF_PY="${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv/bin/python"
+          "${REF_PY}" scripts/probe-tiny-sd-reference.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference-out "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-reference.json"
+
+      - uses: actions/setup-python@v5
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        with:
+          python-version: '3.11'
+
+      - name: Install exact D2 modern exporter environment
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/tiny-sd-d3-wasm-export-venv"
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d3-wasm-export-venv/bin/python"
+          "${EXP_PY}" -m pip install --disable-pip-version-check --upgrade pip
+          "${EXP_PY}" -m pip install --disable-pip-version-check torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          "${EXP_PY}" -m pip install --disable-pip-version-check \
+            numpy==2.4.6 safetensors==0.8.0 \
+            diffusers==0.39.0 transformers==4.57.6 \
+            onnx==1.22.0 onnxscript==0.7.1 onnxruntime==1.27.0
+          "${EXP_PY}" - <<'PY'
+          import diffusers, numpy, onnx, onnxruntime, onnxscript, safetensors, torch, transformers
+          assert torch.__version__.startswith('2.13.0')
+          assert numpy.__version__ == '2.4.6'
+          assert diffusers.__version__ == '0.39.0'
+          assert transformers.__version__ == '4.57.6'
+          assert safetensors.__version__ == '0.8.0'
+          assert onnx.__version__ == '1.22.0'
+          assert onnxscript.__version__ == '0.7.1'
+          assert onnxruntime.__version__ == '1.27.0'
+          PY
+
+      - name: Reproduce D2 accepted FP32 component graphs and CPU parity
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          EXP_PY="${RUNNER_TEMP}/tiny-sd-d3-wasm-export-venv/bin/python"
+          mkdir -p "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32"
+          "${EXP_PY}" scripts/probe-tiny-sd-component-onnx.py \
+            --snapshot "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
+            --bridge-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
+            --manifest "${GITHUB_WORKSPACE}/${TINY_SD_MANIFEST}" \
+            --reference "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
+            --reference-report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-reference.json" \
+            --onnx-dir "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32" \
+            --report "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-d2-components.json"
+          "${EXP_PY}" - <<'PY'
+          import json
+          report = json.load(open('.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-d2-components.json', encoding='utf-8'))
+          assert report['passCount'] == 3
+          assert report['allComponentsPass'] is True
+          assert report['blockedComponents'] == {}
+          assert all(value['result'] == 'PASS' and value['ortParityPassed'] is True for value in report['components'].values())
+          assert report['runtimeAuthorityGranted'] is False
+          assert report['productionApproval'] is False
+          PY
+
+      - name: Stage exact component-scoped D2 handoff on cache miss
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          HANDOFF="${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
+          rm -rf "${HANDOFF}"
+          mkdir -p "${HANDOFF}"
+          case "${COMPONENT}" in
+            text_encoder) MODEL_FILE=text_encoder.onnx ;;
+            unet) MODEL_FILE=unet.onnx ;;
+            vae_decoder) MODEL_FILE=vae_decoder.onnx ;;
+          esac
+          cp "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32/${MODEL_FILE}" "${HANDOFF}/${MODEL_FILE}"
+          cp "${GITHUB_WORKSPACE}/.test-cache/6.42d3-wasm/tiny-sd-d3-wasm-d2-components.json" "${HANDOFF}/d2-components.json"
+          MODEL_FILE="${MODEL_FILE}" HANDOFF="${HANDOFF}" python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['HANDOFF'])
+          model = root / os.environ['MODEL_FILE']
+          d2 = root / 'd2-components.json'
+          def sha(path):
+              h = hashlib.sha256()
+              with path.open('rb') as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                      h.update(chunk)
+              return h.hexdigest()
+          manifest = {
+              'schemaVersion': 1,
+              'status': 'CANDIDATE',
+              'stage': 'D3_D2_COMPONENT_HANDOFF',
+              'candidateSha': os.environ['CANDIDATE_SHA'],
+              'workflowRunId': os.environ['WORKFLOW_RUN_ID'],
+              'upstreamRevision': os.environ['UPSTREAM_REVISION'],
+              'component': os.environ['COMPONENT'],
+              'model': {'filename': model.name, 'size': model.stat().st_size, 'sha256': sha(model)},
+              'd2Report': {'size': d2.stat().st_size, 'sha256': sha(d2)},
+              'crossJobD2Fp32Handoff': True,
+              'handoffTransport': 'ACTIONS_CACHE_EXACT_RUN_SHA_COMPONENT_KEY',
+              'd3CandidateBinaryIncluded': False,
+              'releaseIdentityPinned': False,
+              'runtimeAuthorityGranted': False,
+              'productionApproval': False,
+          }
+          (root / 'handoff-manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Verify newly staged D2 component handoff
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          python scripts/verify-tiny-sd-d3-d2-handoff.py \
+            --component "${COMPONENT}" \
+            --candidate-sha "${CANDIDATE_SHA}" \
+            --workflow-run-id "${WORKFLOW_RUN_ID}" \
+            --upstream-revision "${UPSTREAM_REVISION}" \
+            --input-dir ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
+
+      - name: Destroy non-handoff Tiny-SD binary evidence before cache save
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-export-venv" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32" \
+            "${HOME}/.cache/pip"
+          test ! -e "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32"
+          sync
+
+      - name: Save exact run and SHA-bound verified D2 component cache
+        if: ${{ steps.d2_handoff_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .test-cache/6.42d3-wasm/d2-handoff-${{ inputs.component }}
+          key: tiny-sd-d3-d2-v2-${{ github.run_id }}-${{ inputs.candidate_sha }}-${{ inputs.component }}
+
+      - name: Destroy local D2 handoff after verified cache availability
+        run: |
+          set -euo pipefail
+          rm -rf ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
+          test ! -e ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
+
+      - name: Failure cleanup
+        if: failure() || cancelled()
+        run: |
+          rm -rf \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-snapshot" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-bridge" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference-venv" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-export-venv" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-reference.npz" \
+            "${RUNNER_TEMP}/tiny-sd-d3-wasm-fp32" \
+            ".test-cache/6.42d3-wasm/d2-handoff-${COMPONENT}"
