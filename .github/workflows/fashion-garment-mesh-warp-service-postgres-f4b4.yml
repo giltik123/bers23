@@ -34,44 +34,69 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Typecheck and build production Core
+      - name: Typecheck F4b.4 source contracts without global migration packaging
         run: |
           npm run typecheck
           npm run server:typecheck
-          npm run server:build
-          test -f dist-server/migrations/028_project_body_anchor_sets.sql
-          test -f dist-server/migrations/029_fashion_garment_warp_layers.sql
-      - name: Apply canonical transaction predecessor schema
+          test -f server/core/fashion/migrations/028_project_body_anchor_sets.sql
+          test -f server/core/fashion/migrations/029_fashion_garment_warp_layers.sql
+      - name: Prove bundle-derived production migration closure tooling
+        run: node --test tests/bundle-migration-pack.test.mjs
+      - name: Bundle PostgreSQL F4b.4 verticals and stage only their migration closure
         run: |
-          npm run db:migrate:transactions
-          npm run db:check:transactions
-      - name: Bundle PostgreSQL F4b.4 service and production-admission verticals
-        run: |
+          set -euo pipefail
           runtime=.test-cache/fashion-f4b4-service-postgres
           artifact_runtime=.test-cache/artifacts/migrations
-          mkdir -p "$runtime/migrations" "$artifact_runtime"
-          mapfile -t migration_files < <(find server -type f -path '*/migrations/*.sql' -print | sort)
-          test "${#migration_files[@]}" -gt 0
-          duplicates="$(printf '%s\n' "${migration_files[@]}" | xargs -n1 basename | sort | uniq -d)"
-          if [[ -n "$duplicates" ]]; then
-            echo "::error::Cannot stage bundled schema migrations because migration basenames collide:"
-            printf '%s\n' "$duplicates"
-            exit 1
-          fi
-          for source in "${migration_files[@]}"; do
-            name="$(basename "$source")"
-            cp "$source" "$runtime/migrations/$name"
-            cp "$source" "$artifact_runtime/$name"
-          done
-          npx esbuild tests/garment-mesh-warp-service-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/service.mjs" --external:node:* --external:pg --external:sharp
-          npx esbuild tests/local-execution-working-upload-retry-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/working-retry.mjs" --external:node:* --external:pg --external:sharp
-          npx esbuild tests/garment-mesh-warp-production-composition-closed.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/production-admission.mjs" --external:node:* --external:pg --external:sharp
+          mkdir -p "$runtime"
+          npx esbuild tests/f4b4-postgres-schema-bootstrap.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/bootstrap.mjs" --metafile="$runtime/bootstrap.meta.json" --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-service-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/service.mjs" --metafile="$runtime/service.meta.json" --external:node:* --external:pg --external:sharp
+          npx esbuild tests/local-execution-working-upload-retry-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/working-retry.mjs" --metafile="$runtime/working-retry.meta.json" --external:node:* --external:pg --external:sharp
+          npx esbuild tests/garment-mesh-warp-production-composition-closed.test.ts --bundle --platform=node --format=esm --target=node24 --outfile="$runtime/production-admission.mjs" --metafile="$runtime/production-admission.meta.json" --external:node:* --external:pg --external:sharp
+          node scripts/stage-bundle-migrations.mjs \
+            --metafile "$runtime/bootstrap.meta.json" \
+            --metafile "$runtime/service.meta.json" \
+            --metafile "$runtime/working-retry.meta.json" \
+            --metafile "$runtime/production-admission.meta.json" \
+            --destination "$runtime/migrations" \
+            --destination "$artifact_runtime" \
+            --summary "$runtime/migration-pack.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFile } from 'node:fs/promises';
+          const summary = JSON.parse(await readFile('.test-cache/fashion-f4b4-service-postgres/migration-pack.json', 'utf8'));
+          const names = new Set(summary.migrations.map(migration => migration.name));
+          for (const required of [
+            '001_transaction_store.sql',
+            '012_local_execution_uploads.sql',
+            '013_local_execution_ticket_ledger.sql',
+            '016_local_execution_result_replay_binding.sql',
+            '022_managed_garments_and_initial_views.sql',
+            '028_project_body_anchor_sets.sql',
+            '029_fashion_garment_warp_layers.sql',
+            '030_fashion_garment_texture_final_lineage.sql',
+          ]) assert.ok(names.has(required), `missing required F4b.4 migration ${required}`);
+          assert.equal(names.has('032_fashion_garment_refinement_final_lineage.sql'), false, 'F5 refinement migration escaped into F4b.4 pack');
+          assert.equal(summary.destinations.length, 2);
+          console.log(`F4B4_POSTGRES_BUNDLE_INPUTS=${summary.inputCount}`);
+          console.log(`F4B4_POSTGRES_MIGRATIONS=${summary.migrationCount}`);
+          console.log(`F4B4_POSTGRES_MIGRATION_NAMES=${[...names].join(',')}`);
+          NODE
+      - name: Apply bounded transaction predecessor from the staged bundle pack
+        run: |
+          cd .test-cache/fashion-f4b4-service-postgres
+          node --test --test-concurrency=1 bootstrap.mjs
       - name: Prove durable ticket, quarantine, Core recompute and immutable Fashion layer
-        run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-service-postgres/service.mjs
+        run: |
+          cd .test-cache/fashion-f4b4-service-postgres
+          node --test --test-concurrency=1 service.mjs
       - name: Prove rejected WORKING output can be corrected without weakening other quarantine roles
-        run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-service-postgres/working-retry.mjs
+        run: |
+          cd .test-cache/fashion-f4b4-service-postgres
+          node --test --test-concurrency=1 working-retry.mjs
       - name: Prove actual production Core admits LOCAL_ONLY warp with zero cloud and no Project FINAL mutation
-        run: node --test --test-concurrency=1 .test-cache/fashion-f4b4-service-postgres/production-admission.mjs
+        run: |
+          cd .test-cache/fashion-f4b4-service-postgres
+          node --test --test-concurrency=1 production-admission.mjs
       - name: Assert production admission remains Fashion-only
         run: |
           grep -q "PRODUCTION_ADMISSION = 'ADMITTED'" src/platform/creative/deterministic/GarmentMeshWarpIdentity.js
