@@ -12,9 +12,41 @@ on:
       - '.github/workflows/managed-outfits-f3a.yml'
       - '.github/workflows/managed-garment-representations-f4a.yml'
       - '.github/workflows/managed-garment-glb-f4a1.yml'
+      - '.github/workflows/fashion-canonical-outfit-ui-f3c.yml'
       - 'scripts/classify-fashion-authority-ci.mjs'
+      - 'scripts/f3c-canonical-outfit-ui-ci-closure.json'
+      - 'scripts/build-fashion-f3c-browser-closure.mjs'
       - 'tests/fashion-authority-ci-relevance.test.mjs'
       - 'tests/fashion-authority-ci-workflow-trust.test.mjs'
+      - 'tests/fashion-f3c-ci-relevance.test.mjs'
+      - 'tests/fashion-f3c-browser-build-closure.test.mjs'
+      - 'tests/canonical-outfit-view-model.test.mjs'
+      - 'tests/managed-outfit-browser-client.test.mjs'
+      - 'tests/managed-outfit-browser-server-contract.test.mjs'
+      - 'tests/fashion-canonical-outfit-ui.test.mjs'
+      - 'tests/editor-zero-object-navigation.test.mjs'
+      - 'src/api/coreClient.js'
+      - 'src/api/managedGarmentClient.js'
+      - 'src/api/managedGarmentCollectionClient.js'
+      - 'src/api/managedOutfitClient.js'
+      - 'src/api/managedWardrobeClient.js'
+      - 'src/application/fashion/canonicalOutfitViewModel.js'
+      - 'src/components/editor/outfits/OutfitPanel.jsx'
+      - 'src/components/ui/button.jsx'
+      - 'src/components/ui/input.jsx'
+      - 'src/lib/app-params.js'
+      - 'src/lib/utils.js'
+      - 'src/components/editor/creative/CreativeStudioPanel.jsx'
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/fashion/FashionPanel.jsx'
+      - 'src/components/editor/agent/AgentPanel.jsx'
+      - 'src/components/editor/outfits/TryOnPanel.jsx'
+      - 'server/core/fashion/postgresOutfitStore.ts'
+      - 'server/core/fashion/postgresGarmentWardrobeStore.ts'
+      - 'server/core/http/managedOutfitHttpAdapter.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.npmrc'
   workflow_dispatch:
 
 permissions:
@@ -39,11 +71,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
+          cache: npm
       - name: Syntax-check classifier
         run: node --check scripts/classify-fashion-authority-ci.mjs
-      - name: Prove Fashion authority classifier and workflow trust contracts
+      - name: Prove accepted legacy Fashion authority classifier and workflow trust contracts
         run: node --test tests/fashion-authority-ci-relevance.test.mjs tests/fashion-authority-ci-workflow-trust.test.mjs
-      - name: Prove CLI NUL-delimited GitHub-output contract
+      - name: Install pinned F3c closure proof dependencies
+        run: npm ci
+      - name: Prove exact F3c Canonical Outfit UI profile closure
+        run: node --test tests/fashion-f3c-ci-relevance.test.mjs
+      - name: Prove legacy CLI NUL-delimited GitHub-output contract
         run: |
           set -euo pipefail
           output="${RUNNER_TEMP}/fashion-classifier-output"
@@ -61,6 +98,28 @@ jobs:
           const result = JSON.parse(await readFile(process.env.RUNNER_TEMP + '/fashion-classifier-result.json', 'utf8'));
           assert.equal(result.relevant, true);
           assert.deepEqual(result.matchedPaths, ['server/core/fashion/garmentSchema.ts']);
+          NODE
+      - name: Prove F3c profile NUL-delimited GitHub-output contract
+        run: |
+          set -euo pipefail
+          output="${RUNNER_TEMP}/fashion-f3c-classifier-output"
+          printf '%s\0%s\0' \
+            'server/core/fashion/garmentSchema.ts' \
+            'src/application/fashion/canonicalOutfitViewModel.js' \
+            | node scripts/classify-fashion-authority-ci.mjs \
+                --profile F3C_CANONICAL_OUTFIT_UI \
+                --stdin0 \
+                --github-output "${output}" \
+            | tee "${RUNNER_TEMP}/fashion-f3c-classifier-result.json"
+          grep -qx 'relevant=true' "${output}"
+          grep -qx 'classification=RELEVANT_FASHION_AUTHORITY_ACCEPTANCE_REQUIRED' "${output}"
+          grep -qx 'matched_count=1' "${output}"
+          node --input-type=module - <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFile } from 'node:fs/promises';
+          const result = JSON.parse(await readFile(process.env.RUNNER_TEMP + '/fashion-f3c-classifier-result.json', 'utf8'));
+          assert.equal(result.relevant, true);
+          assert.deepEqual(result.matchedPaths, ['src/application/fashion/canonicalOutfitViewModel.js']);
           NODE
       - name: Check committed diff whitespace
         env:
