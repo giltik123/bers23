@@ -1,0 +1,174 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
+import type { CoreServerConfig } from '../config.ts';
+import type { ExecutionRun, ExecutionRunRegistry, ExecutionRunScope } from '../execution/executionRunRegistry.ts';
+import { BROWSER_CSRF_HEADER, requestAuthorization } from './browserSessionCookie.ts';
+
+const PREFIX = '/api/core/execution-runs';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DEFAULT_ROOT_LIMIT = 50;
+const DEFAULT_CHILD_LIMIT = 100;
+const MAX_LIMIT = 100;
+
+type ExecutionRunRecoveryReader = Pick<ExecutionRunRegistry, 'get' | 'listRoots' | 'listChildren'>;
+type RecoveryAuth = Readonly<{
+  verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
+}>;
+
+/**
+ * Authenticated observation-only transport for durable canonical ExecutionRuns.
+ * The dependency is intentionally narrowed so HTTP recovery cannot mutate or
+ * dispatch execution state even if a future route is added accidentally.
+ */
+export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
+  runs: ExecutionRunRecoveryReader;
+  auth: RecoveryAuth;
+  config: CoreServerConfig;
+}>) {
+  return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
+    const url = new URL(request.url ?? '/', 'http://core.invalid');
+    if (url.pathname !== PREFIX && !url.pathname.startsWith(`${PREFIX}/`)) return false;
+
+    const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || globalThis.crypto.randomUUID();
+    response.setHeader('X-Correlation-Id', correlationId);
+    response.setHeader('Cache-Control', 'no-store');
+
+    try {
+      applyCors(request, response, input.config);
+      if (request.method === 'OPTIONS') { send(response, 204, undefined); return true; }
+      if (request.method !== 'GET') throw httpError(405, 'method_not_allowed', 'Execution run recovery is read-only');
+
+      const principal = await input.auth.verify(requestAuthorization(request, input.config));
+      const projectId = requiredProjectId(url);
+      const scope = recoveryScope(principal, projectId);
+
+      if (url.pathname === PREFIX) {
+        rejectUnexpectedQuery(url, new Set(['projectId', 'limit']));
+        const limit = readLimit(url, DEFAULT_ROOT_LIMIT);
+        const runs = await input.runs.listRoots(scope, limit);
+        send(response, 200, Object.freeze({ runs: Object.freeze(runs.map(publicRun)) }));
+        return true;
+      }
+
+      const childrenMatch = url.pathname.match(/^\/api\/core\/execution-runs\/([^/]+)\/children$/);
+      if (childrenMatch) {
+        rejectUnexpectedQuery(url, new Set(['projectId', 'limit']));
+        const runId = runIdFromPath(childrenMatch[1]);
+        const parent = await input.runs.get(scope, runId);
+        if (!parent) throw httpError(404, 'execution_run_not_found', 'Execution run is unavailable in this scope');
+        const limit = readLimit(url, DEFAULT_CHILD_LIMIT);
+        const children = await input.runs.listChildren(scope, runId, limit);
+        send(response, 200, Object.freeze({ parent: publicRun(parent), runs: Object.freeze(children.map(publicRun)) }));
+        return true;
+      }
+
+      const runMatch = url.pathname.match(/^\/api\/core\/execution-runs\/([^/]+)$/);
+      if (runMatch) {
+        rejectUnexpectedQuery(url, new Set(['projectId']));
+        const runId = runIdFromPath(runMatch[1]);
+        const run = await input.runs.get(scope, runId);
+        if (!run) throw httpError(404, 'execution_run_not_found', 'Execution run is unavailable in this scope');
+        send(response, 200, publicRun(run));
+        return true;
+      }
+
+      throw httpError(404, 'not_found', 'Route not found');
+    } catch (cause) {
+      const error = cause as Error & { status?: number; code?: string };
+      const status = Number(error.status) || 500;
+      send(response, status, {
+        error: error.code ?? (status === 500 ? 'internal_error' : 'execution_run_recovery_error'),
+        message: status === 500 ? 'Execution run recovery request failed' : error.message,
+        correlationId,
+      });
+      return true;
+    }
+  };
+}
+
+function publicRun(run: ExecutionRun) {
+  return Object.freeze({
+    runId: run.runId,
+    capability: run.capability,
+    authorityKind: run.authorityKind,
+    authorityRef: run.authorityRef,
+    ...(run.parentRunId ? { parentRunId: run.parentRunId } : {}),
+    status: run.status,
+    revision: run.revision,
+    ...(run.statusReasonCode ? { statusReasonCode: run.statusReasonCode } : {}),
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    ...(run.startedAt ? { startedAt: run.startedAt } : {}),
+    ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
+  });
+}
+
+function requiredProjectId(url: URL): string {
+  const values = url.searchParams.getAll('projectId');
+  if (values.length !== 1) throw httpError(400, 'invalid_project_id', 'Exactly one projectId is required');
+  return canonicalUuid(values[0], 'invalid_project_id', 'projectId');
+}
+
+function runIdFromPath(value: string): string {
+  let decoded: string;
+  try { decoded = decodeURIComponent(value); }
+  catch { throw httpError(400, 'invalid_run_id', 'runId must be a UUID'); }
+  return canonicalUuid(decoded, 'invalid_run_id', 'runId');
+}
+
+function readLimit(url: URL, fallback: number): number {
+  const values = url.searchParams.getAll('limit');
+  if (values.length === 0) return fallback;
+  if (values.length !== 1 || !/^[1-9][0-9]{0,2}$/.test(values[0])) throw httpError(400, 'invalid_limit', `limit must be an integer from 1 to ${MAX_LIMIT}`);
+  const limit = Number(values[0]);
+  if (!Number.isSafeInteger(limit) || limit > MAX_LIMIT) throw httpError(400, 'invalid_limit', `limit must be an integer from 1 to ${MAX_LIMIT}`);
+  return limit;
+}
+
+function rejectUnexpectedQuery(url: URL, allowed: ReadonlySet<string>): void {
+  for (const key of url.searchParams.keys()) {
+    if (!allowed.has(key)) throw httpError(400, 'unexpected_query_parameter', `Query parameter ${key} is not accepted by execution run recovery`);
+  }
+}
+
+function recoveryScope(principal: AuthenticatedPrincipal, projectId: string): ExecutionRunScope {
+  return Object.freeze({ tenantId: principal.tenantId, userId: principal.userId, projectId });
+}
+
+function canonicalUuid(value: unknown, code: string, label: string): string {
+  if (typeof value !== 'string') throw httpError(400, code, `${label} must be a UUID`);
+  const normalized = value.normalize('NFKC').trim().toLowerCase();
+  if (!UUID.test(normalized)) throw httpError(400, code, `${label} must be a UUID`);
+  return normalized;
+}
+
+function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {
+  const origin = header(request, 'origin');
+  if (!origin) return;
+  if (!config.allowedWebOrigins.includes(origin)) throw httpError(403, 'origin_denied', 'Origin is not allowed');
+  response.setHeader('Access-Control-Allow-Origin', origin);
+  response.setHeader('Access-Control-Allow-Credentials', 'true');
+  response.setHeader('Vary', 'Origin');
+  response.setHeader('Access-Control-Allow-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}`);
+  response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}`);
+  response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+}
+
+function send(response: ServerResponse, status: number, body: unknown): void {
+  response.statusCode = status;
+  if (body === undefined) { response.end(); return; }
+  const bytes = Buffer.from(JSON.stringify(body));
+  response.setHeader('Content-Type', 'application/json');
+  response.setHeader('Content-Length', bytes.byteLength);
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.end(bytes);
+}
+
+function header(request: IncomingMessage, name: string): string | undefined {
+  const value = request.headers[name.toLowerCase()];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function httpError(status: number, code: string, message: string): Error & { status: number; code: string } {
+  return Object.assign(new Error(message), { status, code });
+}

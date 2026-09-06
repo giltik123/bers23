@@ -102,6 +102,17 @@ export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
     return Object.freeze(result.rows.map(rowToRun));
   }
 
+  async listRoots(scopeValue: ExecutionRunScope, limitValue = 100): Promise<readonly ExecutionRun[]> {
+    const scope = normalizeScope(scopeValue);
+    const limit = positiveSafeInteger(limitValue, 'limit');
+    if (limit > 200) throw new TypeError('limit must be at most 200');
+    const result = await this.pool.query(`SELECT ${COLUMNS} FROM ${TABLE}
+      WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND parent_run_id IS NULL
+      ORDER BY created_at DESC,run_id DESC LIMIT $4`,
+    [scope.tenantId,scope.userId,scope.projectId,limit]);
+    return Object.freeze(result.rows.map(rowToRun));
+  }
+
   async listChildren(scopeValue: ExecutionRunScope, parentRunIdValue: string, limitValue = 100): Promise<readonly ExecutionRun[]> {
     const scope = normalizeScope(scopeValue);
     const parentRunId = canonicalUuid(parentRunIdValue, 'parentRunId');

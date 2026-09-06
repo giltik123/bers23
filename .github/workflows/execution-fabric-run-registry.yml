@@ -13,11 +13,14 @@ on:
       - 'server/core/workflow/createProductionLocalCompositeContinuation.ts'
       - 'server/core/workflow/LocalCompositeOutputUploadService.ts'
       - 'server/core/http/localCompositeContinuationHttpAdapter.ts'
+      - 'server/core/http/executionRunRecoveryHttpAdapter.ts'
+      - 'server/core/http/executionRunRecoveryHttpAdapter.test.mjs'
       - 'server/core/composition/createProductionCore.ts'
       - 'server/index.ts'
       - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
       - 'scripts/build-core-server.mjs'
       - 'tests/execution-run-registry-postgres.test.ts'
+      - 'tests/execution-run-recovery-http-postgres.test.ts'
       - '.github/workflows/execution-fabric-run-registry.yml'
   workflow_dispatch:
 
@@ -72,19 +75,29 @@ jobs:
           npm run db:check:transactions
       - name: Prove workflow parent LOCAL child and INTERNAL verify projection semantics without redispatch authority
         run: node --experimental-strip-types --test server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.test.mjs
+      - name: Prove authenticated ExecutionRun recovery HTTP boundary is read-only
+        run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
       - name: Bundle durable registry PostgreSQL acceptance
         run: |
           mkdir -p .test-cache/execution-run-registry/migrations
           node --input-type=module - <<'EOF'
           import { build } from 'esbuild';
-          await build({
-            entryPoints: ['tests/execution-run-registry-postgres.test.ts'],
+          const common = {
             bundle: true,
             platform: 'node',
             format: 'esm',
             target: 'node24',
-            outfile: '.test-cache/execution-run-registry/execution-run-registry-postgres.test.mjs',
             external: ['pg', 'sharp', 'node:*'],
+          };
+          await build({
+            ...common,
+            entryPoints: ['tests/execution-run-registry-postgres.test.ts'],
+            outfile: '.test-cache/execution-run-registry/execution-run-registry-postgres.test.mjs',
+          });
+          await build({
+            ...common,
+            entryPoints: ['tests/execution-run-recovery-http-postgres.test.ts'],
+            outfile: '.test-cache/execution-run-registry/execution-run-recovery-http-postgres.test.mjs',
           });
           EOF
           cp server/core/artifacts/migrations/003_canonical_final_image_artifacts.sql .test-cache/execution-run-registry/migrations/
@@ -97,7 +110,9 @@ jobs:
           cp server/core/execution/migrations/037_execution_run_workflow_internal_step.sql .test-cache/execution-run-registry/migrations/
       - name: Prove durable run identity scope parent binding replay and lifecycle semantics
         run: node --test --test-concurrency=1 .test-cache/execution-run-registry/execution-run-registry-postgres.test.mjs
-      - name: Prove exact production continuation LOCAL child and INTERNAL verify projection wiring
+      - name: Prove PostgreSQL-backed authenticated ExecutionRun recovery tree
+        run: node --test --test-concurrency=1 .test-cache/execution-run-registry/execution-run-recovery-http-postgres.test.mjs
+      - name: Prove exact production continuation LOCAL child INTERNAL verify and read-only recovery wiring
         run: |
           set -euo pipefail
           grep -q 'new ExecutionRunBoundLocalCompositeContinuationService' server/core/composition/createProductionCore.ts
@@ -108,8 +123,18 @@ jobs:
           grep -q 'runs: input.runs' server/core/workflow/createProductionLocalCompositeContinuation.ts
           grep -q "capability: 'WORKFLOW_CONTINUATION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "authorityKind: 'WORKFLOW_CONTINUATION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q 'listRoots(scope: ExecutionRunScope, limit?: number)' server/core/execution/executionRunRegistry.ts
+          grep -q 'AND parent_run_id IS NULL' server/core/execution/PostgresExecutionRunRegistry.ts
           grep -q 'listChildren(scope: ExecutionRunScope, parentRunId: string' server/core/execution/executionRunRegistry.ts
           grep -q 'AND parent_run_id=\$4' server/core/execution/PostgresExecutionRunRegistry.ts
+          grep -q "type ExecutionRunRecoveryReader = Pick<ExecutionRunRegistry, 'get' | 'listRoots' | 'listChildren'>" server/core/http/executionRunRecoveryHttpAdapter.ts
+          grep -q 'new PostgresExecutionRunRegistry(production.transactions.pool)' server/index.ts
+          grep -q 'get: executionRunRegistry.get.bind(executionRunRegistry)' server/index.ts
+          grep -q 'listRoots: executionRunRegistry.listRoots.bind(executionRunRegistry)' server/index.ts
+          grep -q 'listChildren: executionRunRegistry.listChildren.bind(executionRunRegistry)' server/index.ts
+          grep -q "path === '/api/core/execution-runs'" server/index.ts
+          ! grep -E -q '\.(issue|start|succeed|fail|cancel|markUnknown)\(' server/core/http/executionRunRecoveryHttpAdapter.ts
+          ! grep -E -q 'Billing|billing|provider|FAL|fal_|stripe|ArtifactAuthority|ProjectStore' server/core/http/executionRunRecoveryHttpAdapter.ts
           grep -q "capability: 'LOCAL_EXECUTION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "authorityKind: 'LOCAL_EXECUTION_TICKET'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "capability: 'WORKFLOW_STEP'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
@@ -122,10 +147,10 @@ jobs:
           grep -q 'getByClientRequestId(scope, command.clientRequestId)' server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "snapshot?.state === 'RUNNING_INTERNAL'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q 'parent_run_id IS NOT NULL' server/core/execution/migrations/037_execution_run_workflow_internal_step.sql
-      - name: Prove D3 opens no Agent Automation browser provider or Billing authority
+      - name: Preserve D3 authority lockdown and prove P1a is observation-only
         run: |
           set -euo pipefail
-          FILES=(
+          D3_FILES=(
             server/core/execution/executionRunRegistry.ts
             server/core/execution/PostgresExecutionRunRegistry.ts
             server/core/execution/executionRunSchema.ts
@@ -134,8 +159,11 @@ jobs:
             server/core/execution/migrations/037_execution_run_workflow_internal_step.sql
             server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           )
-          ! grep -E -q 'coreClient|create.*HttpAdapter|/api/core/|providers|Billing|billing|FAL|fal_|stripe|JobRecord|coreClient\.entities' "${FILES[@]}"
+          ! grep -E -q 'coreClient|create.*HttpAdapter|/api/core/|providers|Billing|billing|FAL|fal_|stripe|JobRecord|coreClient\.entities' "${D3_FILES[@]}"
           ! grep -E -q "'AGENT'|'AUTOMATION'|\"AGENT\"|\"AUTOMATION\"" server/core/execution/executionRunRegistry.ts server/core/execution/migrations/034_execution_run_registry.sql server/core/execution/migrations/036_execution_run_workflow_continuation.sql server/core/execution/migrations/037_execution_run_workflow_internal_step.sql
+          P1A_FILE=server/core/http/executionRunRecoveryHttpAdapter.ts
+          ! grep -E -q 'coreClient|create.*Mutation|providers|Billing|billing|FAL|fal_|stripe|JobRecord|coreClient\.entities' "$P1A_FILE"
+          ! grep -E -q '\.(issue|start|succeed|fail|cancel|markUnknown)\(' "$P1A_FILE"
           ! grep -q 'canonical_execution_runs' src/lib/jobs/jobStorage.js
       - name: Check committed diff whitespace
         env:

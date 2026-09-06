@@ -9,6 +9,7 @@ import { createFashionTryOnReadinessHttpAdapter } from './core/http/fashionTryOn
 import { createManualParametricGarmentAdmissionHttpAdapter } from './core/http/manualParametricGarmentAdmissionHttpAdapter.ts';
 import { createManualProjectBodyAnchorHttpAdapter } from './core/http/manualProjectBodyAnchorHttpAdapter.ts';
 import { createLocalCompositeContinuationHttpAdapter } from './core/http/localCompositeContinuationHttpAdapter.ts';
+import { createExecutionRunRecoveryHttpAdapter } from './core/http/executionRunRecoveryHttpAdapter.ts';
 import { createManagedGarmentHttpAdapter } from './core/http/managedGarmentHttpAdapter.ts';
 import { createManagedWardrobeHttpAdapter } from './core/http/managedWardrobeHttpAdapter.ts';
 import { createManagedGarmentCollectionHttpAdapter } from './core/http/managedGarmentCollectionHttpAdapter.ts';
@@ -19,6 +20,7 @@ import { createCanonicalNodeHttpAdapter } from './core/http/canonicalNodeHttpAda
 import { applyCoreSecurityHeaders } from './core/http/securityHeaders.ts';
 import { checkGarmentSchema, migrateGarmentSchema } from './core/fashion/garmentSchema.ts';
 import { checkExecutionRunSchema, migrateExecutionRunSchema } from './core/execution/executionRunSchema.ts';
+import { PostgresExecutionRunRegistry } from './core/execution/PostgresExecutionRunRegistry.ts';
 import { PostgresGarmentStore } from './core/fashion/postgresGarmentStore.ts';
 import { PostgresGarmentWardrobeStore } from './core/fashion/postgresGarmentWardrobeStore.ts';
 import { PostgresGarmentCollectionStore } from './core/fashion/postgresGarmentCollectionStore.ts';
@@ -63,6 +65,16 @@ export async function startCoreServer() {
   const localExecutionAdapter = createLocalExecutionHttpAdapter({ service: production.localExecution.segmentation, deterministicImages: production.localExecution.deterministicImages, crop: production.localExecution.crop, resize: production.localExecution.resize, superResolution: production.localExecution.superResolution, inputDelivery: production.localExecution.inputDelivery, auth: production.auth, config });
   const localCompositeOutputs = new LocalCompositeOutputUploadService({ continuation: production.localExecution.composite, uploads: production.localExecution.uploads });
   const localCompositeAdapter = createLocalCompositeContinuationHttpAdapter({ continuation: production.localExecution.composite, outputs: localCompositeOutputs, startAdmission: production.localExecution.compositeStartAdmission, auth: production.auth, config });
+  const executionRunRegistry = new PostgresExecutionRunRegistry(production.transactions.pool);
+  const executionRunRecoveryAdapter = createExecutionRunRecoveryHttpAdapter({
+    runs: Object.freeze({
+      get: executionRunRegistry.get.bind(executionRunRegistry),
+      listRoots: executionRunRegistry.listRoots.bind(executionRunRegistry),
+      listChildren: executionRunRegistry.listChildren.bind(executionRunRegistry),
+    }),
+    auth: production.auth,
+    config,
+  });
   const server = createServer((request, response) => {
     applyCoreSecurityHeaders(response, config);
     const target = parseCoreRequestTarget(request.url);
@@ -77,6 +89,7 @@ export async function startCoreServer() {
     if (MANUAL_BODY_ANCHOR_PATH.test(path)) return void manualBodyAnchorAcquisitionAdapter(request, response);
     if (path.startsWith('/api/core/fashion/try-on/')) return void fashionTryOnProductAdapter(request, response);
     if (LEGACY_FASHION_PREPARE_PATHS.has(path)) return void legacyFashionPrepareTombstoneAdapter(request, response);
+    if (path === '/api/core/execution-runs' || path.startsWith('/api/core/execution-runs/')) return void executionRunRecoveryAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/orthogonal-transform/')) return void orthogonalTransformAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/')) return void localExecutionAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/composite-continuations/')) return void localCompositeAdapter(request, response);
