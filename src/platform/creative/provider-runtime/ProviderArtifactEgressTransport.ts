@@ -30,6 +30,7 @@ export class ProviderArtifactEgressTransport implements ProviderTransport {
   async send(request: ProviderTransportRequest, signal: AbortSignal): Promise<ProviderTransportResponse> {
     if (request.method !== 'GET') throw new Error('Provider artifact egress transport is GET-only');
     if (!Number.isFinite(request.timeoutMs) || request.timeoutMs <= 0) throw new Error('Provider artifact timeout is invalid');
+    if (signal.aborted) throw abortReason(signal);
     let current = this.#admit(request.url);
     const visited = new Set<string>();
     const deadline = Date.now() + request.timeoutMs;
@@ -59,6 +60,7 @@ export class ProviderArtifactEgressTransport implements ProviderTransport {
   }
 
   async #request(url: URL, headersInput: Readonly<Record<string, string>>, timeoutMs: number, parentSignal: AbortSignal): Promise<ProviderTransportResponse> {
+    if (parentSignal.aborted) throw abortReason(parentSignal);
     const controller = new AbortController();
     const relay = () => controller.abort(parentSignal.reason);
     parentSignal.addEventListener('abort', relay, { once: true });
@@ -77,6 +79,7 @@ export class ProviderArtifactEgressTransport implements ProviderTransport {
   }
 }
 
+function abortReason(signal: AbortSignal): Error { return signal.reason instanceof Error ? signal.reason : new DOMException('Provider artifact request cancelled', 'AbortError'); }
 function validPolicyHost(host: string): boolean {
   if (!host || host === 'localhost' || host.includes(':') || /^\d+(?:\.\d+){3}$/.test(host)) return false;
   return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(host);

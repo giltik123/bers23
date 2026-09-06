@@ -12,6 +12,7 @@ export function deepFreeze<T>(value:T):Readonly<T>{ if(value&&typeof value==='ob
 const clone=<T>(value:T):T=>structuredClone(value);
 const immutable=<T>(value:T):Readonly<T>=>deepFreeze(clone(value));
 const scopeKey=(scope:Scope)=>{ if(!scope?.tenantId||!scope.projectId||!scope.userId) throw new Error('tenantId, projectId and userId are required'); return `${scope.tenantId}\0${scope.projectId}\0${scope.userId}`; };
+const abortReason=(signal:AbortSignal):Error=>signal.reason instanceof Error?signal.reason:new DOMException('Provider request cancelled','AbortError');
 
 export class ProviderRequestBuilder {
   build(request:ProviderRequest, config:{baseUrl:string; path?:string; method?:'GET'|'POST'; headers?:Readonly<Record<string,string>>; timeoutMs?:number}):Readonly<RuntimeHttpRequest>{
@@ -36,6 +37,7 @@ export class HttpProviderTransport implements ProviderTransport {
   #controllers=new Map<string,AbortController>();
   constructor(private readonly fetcher:FetchLike=globalThis.fetch.bind(globalThis)){}
   async send(request:RuntimeHttpRequest, signal:AbortSignal):Promise<RuntimeHttpResponse>{
+    if(signal.aborted)throw abortReason(signal);
     const controller=new AbortController(); const key=request.url; this.#controllers.set(key,controller);
     const relay=()=>controller.abort(signal.reason); signal.addEventListener('abort',relay,{once:true});
     const timer=setTimeout(()=>controller.abort(new DOMException('Timeout','TimeoutError')),request.timeoutMs);
@@ -78,8 +80,8 @@ export class ArtifactLoader {
 /** The sole provider artifact download boundary; concrete providers receive this through DI. */
 export class RuntimeProviderArtifactLoader implements ProviderArtifactLoader {
   constructor(private readonly transport: ProviderTransport) {}
-  async load(url: string, options: Readonly<{ maxBytes: number; allowedMimeTypes: readonly string[] }>) {
-    const response = await this.transport.send({ url, method: 'GET', headers: {}, timeoutMs: 30_000 }, new AbortController().signal);
+  async load(url: string, options: Readonly<{ maxBytes: number; allowedMimeTypes: readonly string[] }>, signal: AbortSignal = new AbortController().signal) {
+    const response = await this.transport.send({ url, method: 'GET', headers: {}, timeoutMs: 30_000 }, signal);
     if (response.status < 200 || response.status >= 300) throw new Error(`Artifact download failed: ${response.status}`);
     const mimeType = (response.headers['content-type'] ?? '').split(';')[0].toLowerCase();
     if (!options.allowedMimeTypes.includes(mimeType)) throw new Error(`Unsupported artifact MIME: ${mimeType || 'missing'}`);

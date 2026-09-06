@@ -11,8 +11,27 @@ on:
       - 'server/core/composition/createCreativeCore.ts'
       - 'server/core/composition/createProductionCore.ts'
       - 'server/core/execution/**'
+      - 'server/core/http/creativeLifecycleHandlers.ts'
+      - 'server/core/http/nodeHttpAdapter.ts'
+      - 'server/core/providers/falWorkflowRuntime.ts'
+      - 'src/platform/creative/canonical/CreativeExecutionPlatform.ts'
+      - 'src/platform/creative/provider-platform/contracts.ts'
+      - 'src/platform/creative/provider-runtime/index.ts'
+      - 'src/platform/creative/provider-runtime/ProviderArtifactEgressTransport.ts'
+      - 'src/platform/creative/providers/fal/FalJobTracker.ts'
+      - 'src/platform/creative/providers/fal/FalProvider.ts'
+      - 'src/platform/creative/providers/fal/types.ts'
+      - 'src/platform/creative/workflow-engine/WorkflowEngine.ts'
+      - 'src/platform/creative/workflow-engine/types.ts'
+      - 'tests/creative-cancellation-http.test.ts'
+      - 'tests/creative-cancellation-race.test.ts'
       - 'tests/creative-execution-run-binding.test.ts'
       - 'tests/creative-execution-run-restart-postgres.test.ts'
+      - 'tests/creative-fal-artifact-cancellation.integration.test.ts'
+      - 'tests/creative-fal-cancellation.test.ts'
+      - 'tests/creative-pre-execution-cancellation.test.ts'
+      - 'tests/creative-reservation-cancellation.test.ts'
+      - 'tests/provider-transport-cancellation.test.ts'
       - 'tests/core-server-postgres-vertical.test.ts'
       - 'tests/canonical-product-vertical-slice.test.ts'
       - '.github/workflows/execution-fabric-creative-production-binding.yml'
@@ -73,6 +92,13 @@ jobs:
           for (const [entry, outfile] of [
             ['tests/creative-execution-run-binding.test.ts', '.test-cache/creative-production-binding/creative-execution-run-binding.test.mjs'],
             ['tests/creative-execution-run-restart-postgres.test.ts', '.test-cache/creative-production-binding/creative-execution-run-restart-postgres.test.mjs'],
+            ['tests/creative-fal-cancellation.test.ts', '.test-cache/creative-production-binding/creative-fal-cancellation.test.mjs'],
+            ['tests/creative-fal-artifact-cancellation.integration.test.ts', '.test-cache/creative-production-binding/creative-fal-artifact-cancellation.integration.test.mjs'],
+            ['tests/creative-cancellation-http.test.ts', '.test-cache/creative-production-binding/creative-cancellation-http.test.mjs'],
+            ['tests/creative-cancellation-race.test.ts', '.test-cache/creative-production-binding/creative-cancellation-race.test.mjs'],
+            ['tests/creative-pre-execution-cancellation.test.ts', '.test-cache/creative-production-binding/creative-pre-execution-cancellation.test.mjs'],
+            ['tests/creative-reservation-cancellation.test.ts', '.test-cache/creative-production-binding/creative-reservation-cancellation.test.mjs'],
+            ['tests/provider-transport-cancellation.test.ts', '.test-cache/creative-production-binding/provider-transport-cancellation.test.mjs'],
             ['tests/canonical-product-vertical-slice.test.ts', '.test-cache/creative-production-binding/canonical-product-vertical-slice.test.mjs'],
           ]) await build({
             entryPoints: [entry],
@@ -84,15 +110,29 @@ jobs:
             external: ['pg', 'sharp', 'node:*'],
           });
           EOF
-      - name: Prove service lifecycle ordering and replay guard
+      - name: Prove service lifecycle ordering, owning cancellation and replay guard
         run: node --test .test-cache/creative-production-binding/creative-execution-run-binding.test.mjs
+      - name: Prove cancellation/provider failure race never creates false CANCELLED truth
+        run: node --test .test-cache/creative-production-binding/creative-cancellation-race.test.mjs
+      - name: Prove prepared cancellation releases Billing exactly once before SKIPPED
+        run: node --test .test-cache/creative-production-binding/creative-pre-execution-cancellation.test.mjs
+      - name: Prove reserve-in-flight cancellation cannot leak Billing or dispatch provider work
+        run: node --test .test-cache/creative-production-binding/creative-reservation-cancellation.test.mjs
+      - name: Prove active Fal cancellation is abort-backed and non-retryable
+        run: node --test .test-cache/creative-production-binding/creative-fal-cancellation.test.mjs
+      - name: Prove production Fal artifact egress shares owning cancellation signal
+        run: node --test .test-cache/creative-production-binding/creative-fal-artifact-cancellation.integration.test.mjs
+      - name: Prove provider transports fail fast on pre-aborted owning signals
+        run: node --test .test-cache/creative-production-binding/provider-transport-cancellation.test.mjs
+      - name: Prove lifecycle HTTP waits for owning cancellation reconciliation
+        run: node --test .test-cache/creative-production-binding/creative-cancellation-http.test.mjs
       - name: Prove PostgreSQL process-restart replay cannot redispatch spend or provider work
         run: node --test --test-concurrency=1 .test-cache/creative-production-binding/creative-execution-run-restart-postgres.test.mjs
       - name: Preserve accepted Creative provider Billing and scope semantics
         run: node --test .test-cache/creative-production-binding/canonical-product-vertical-slice.test.mjs
       - name: Prove real HTTP Project scope reaches durable Run then Billing and provider authority
         run: npm run test:core-server-postgres-vertical
-      - name: Prove production composition is fail-closed on durable registry readiness
+      - name: Prove production composition is fail-closed on durable registry readiness and owning cancel
         run: |
           set -euo pipefail
           grep -q 'checkExecutionRunSchema(transactions.pool)' server/core/composition/createProductionCore.ts
@@ -103,7 +143,17 @@ jobs:
           grep -q 'executionRuns.issue' server/core/application/creativeExecutionService.ts
           grep -q 'creative_reconciliation_required' server/core/application/creativeExecutionService.ts
           grep -q "outcome.status === 'UNKNOWN'" server/core/application/creativeExecutionService.ts
-          ! grep -q 'executionRuns.cancel' server/core/application/creativeExecutionService.ts
+          grep -q 'executionRuns.cancel' server/core/application/creativeExecutionService.ts
+          grep -q 'CREATIVE_EXECUTION_CANCELLED' server/core/application/creativeExecutionService.ts
+          grep -q 'runtime.cancel' server/core/application/creativeExecutionService.ts
+          grep -q 'cancelPreparedExecution' server/core/application/creativeExecutionService.ts
+          grep -q 'cancelPreparedExecution' src/platform/creative/canonical/CreativeExecutionPlatform.ts
+          grep -q 'await input.core.lifecycle.cancel' server/core/http/nodeHttpAdapter.ts
+          grep -q 'cancel(workflowId: string)' server/core/providers/falWorkflowRuntime.ts
+          grep -q 'signal?: AbortSignal' src/platform/creative/provider-platform/contracts.ts
+          grep -q 'signal: AbortSignal = new AbortController().signal' src/platform/creative/provider-runtime/index.ts
+          ! grep -E -q 'LOCAL_EXECUTION.*cancel|WORKFLOW_CONTINUATION.*cancel|WORKFLOW_STEP.*cancel' server/core/application/creativeExecutionService.ts
+          ! grep -R -E -q 'ExecutionRunRegistry\.cancel|executionRuns\.cancel|/api/core/execution-runs/[^ ]*/cancel' src
       - name: Reject authority widening in Creative binding slice
         run: |
           set -euo pipefail
@@ -111,6 +161,9 @@ jobs:
             server/core/application/creativeExecutionService.ts
             server/core/composition/createCreativeCore.ts
             server/core/composition/createProductionCore.ts
+            server/core/http/creativeLifecycleHandlers.ts
+            server/core/providers/falWorkflowRuntime.ts
+            src/platform/creative/canonical/CreativeExecutionPlatform.ts
           )
           ! grep -E -q '/api/core/(jobs|agent|automation)|JobRecord|coreClient\.entities|FASHN|stripe' "${FILES[@]}"
       - name: Check committed diff whitespace

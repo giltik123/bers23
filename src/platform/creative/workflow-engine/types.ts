@@ -12,7 +12,11 @@ export type TimelineEvent = Readonly<{ sequence: number; at: number; type: strin
 export type WorkflowMetrics = Readonly<{ executionTimeMs: number; latencyMs: number; credits: number; peakMemoryMb: number; gpuMs: number; aiCalls: number; failures: number; retries: number; maxParallelism: number; providerUsage: Readonly<Record<string, number>> }>;
 export type VerificationResult = Readonly<{ stepId: string; valid: boolean; checks: readonly string[]; errors: readonly string[] }>;
 export type WorkflowSnapshot = Readonly<{ workflow: CompiledWorkflow; status: 'SUCCESS' | 'FAILED'; steps: readonly StepResult[]; artifacts: readonly Artifact[]; verification: readonly VerificationResult[]; metrics: WorkflowMetrics; timeline: readonly TimelineEvent[]; budget: ResourceBudget; health: 'healthy' | 'degraded' | 'failed'; replay: Readonly<{ snapshotVersion: 1; executableWithoutProviders: true }> }>;
-export interface ProviderRuntimePort { execute(request: Readonly<{ workflowId: string; operation: WorkflowOperation; artifacts: readonly Artifact[]; scope: Scope }>): Promise<Readonly<{ artifacts?: readonly Omit<Artifact, 'scope' | 'producerStepId'>[]; latencyMs?: number; memoryMb?: number; gpuMs?: number }>> }
+export interface ProviderRuntimePort {
+  execute(request: Readonly<{ workflowId: string; operation: WorkflowOperation; artifacts: readonly Artifact[]; scope: Scope }>): Promise<Readonly<{ artifacts?: readonly Omit<Artifact, 'scope' | 'producerStepId'>[]; latencyMs?: number; memoryMb?: number; gpuMs?: number }>>;
+  /** Cancels only an execution currently owned by this runtime. False means there is no active provider authority to cancel. */
+  cancel?(workflowId: string): boolean;
+}
 export interface ProviderIntelligencePort { isAvailable(providerId: string, scope: Scope): boolean; fallback(providerId: string, operation: WorkflowOperation, scope: Scope): string | undefined }
 export interface WorkflowPolicyPort { allows(operation: WorkflowOperation, scope: Scope): boolean }
 export interface WorkflowVerifierPort { verify(operation: WorkflowOperation, artifacts: readonly Artifact[]): Promise<VerificationResult> }
