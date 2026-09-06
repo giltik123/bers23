@@ -14,8 +14,19 @@ export function createCreativeExecuteHandler(service: CreativeExecutionService) 
       const outcome = await service.execute(command, request.auth, correlationId);
       return { status: outcome.status === 'UNKNOWN' ? 202 : 200, body: publicCreativeOutcome(outcome, correlationId, artifact => service.deliveryUrl(artifact)) };
     } catch (cause) {
-      const error = cause as Error & { code?: string; status?: number; retryable?: boolean };
-      return { status: error.status ?? 500, body: { code: error.code ?? 'creative_execution_failed', message: error.status ? error.message : 'Creative execution failed', correlationId, retryable: error.retryable ?? false } };
+      const error = cause as Error & { code?: string; status?: number; retryable?: boolean; executionId?: string; runStatus?: string; replay?: boolean };
+      return {
+        status: error.status ?? 500,
+        body: {
+          code: error.code ?? 'creative_execution_failed',
+          message: error.status ? error.message : 'Creative execution failed',
+          correlationId,
+          retryable: error.retryable ?? false,
+          ...(typeof error.executionId === 'string' ? { executionId: error.executionId } : {}),
+          ...(typeof error.runStatus === 'string' ? { runStatus: error.runStatus } : {}),
+          ...(typeof error.replay === 'boolean' ? { replay: error.replay } : {}),
+        },
+      };
     }
   };
 }
