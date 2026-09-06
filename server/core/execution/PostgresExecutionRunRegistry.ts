@@ -61,6 +61,10 @@ export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
           WHERE run_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4`,
         [candidate.parentRunId,candidate.scope.tenantId,candidate.scope.userId,candidate.scope.projectId]);
         if (!parent.rows[0]) throw registryError('execution_run_parent_unavailable', 'Parent execution run is unavailable in this scope');
+        const parentRun = rowToRun(parent.rows[0]);
+        if (candidate.capability === 'WORKFLOW_STEP' && parentRun.capability !== 'WORKFLOW_CONTINUATION') {
+          throw registryError('execution_run_parent_capability_conflict', 'WORKFLOW_STEP parent must be a WORKFLOW_CONTINUATION run in the same scope');
+        }
       }
 
       const inserted = await client.query(`INSERT INTO ${TABLE}
@@ -167,13 +171,15 @@ function normalizeIssue(input: IssueExecutionRunInput): IssueExecutionRunInput {
   const capability = exactEnum(input.capability, CAPABILITIES, 'capability') as ExecutionRunCapability;
   const authorityKind = exactEnum(input.authorityKind, AUTHORITY_KINDS, 'authorityKind') as ExecutionRunAuthorityKind;
   if (!validAuthorityBinding(capability, authorityKind)) throw new TypeError('Execution run capability and authority kind are incompatible');
+  const parentRunId = input.parentRunId ? canonicalUuid(input.parentRunId, 'parentRunId') : undefined;
+  if (capability === 'WORKFLOW_STEP' && !parentRunId) throw new TypeError('WORKFLOW_STEP execution run requires parentRunId');
   return Object.freeze({
     scope,
     capability,
     idempotencyKey: boundedText(input.idempotencyKey, 'idempotencyKey', 256),
     authorityKind,
     authorityRef: boundedText(input.authorityRef, 'authorityRef', 4096),
-    ...(input.parentRunId ? { parentRunId: canonicalUuid(input.parentRunId, 'parentRunId') } : {}),
+    ...(parentRunId ? { parentRunId } : {}),
   });
 }
 
@@ -227,7 +233,8 @@ function assertSameIssueBinding(stored: ExecutionRun, candidate: IssueExecutionR
 function validAuthorityBinding(capability: ExecutionRunCapability, authorityKind: ExecutionRunAuthorityKind): boolean {
   return (capability === 'LOCAL_EXECUTION' && authorityKind === 'LOCAL_EXECUTION_TICKET')
     || (capability === 'CREATIVE_EXECUTION' && authorityKind === 'CREATIVE_EXECUTION')
-    || (capability === 'WORKFLOW_CONTINUATION' && authorityKind === 'WORKFLOW_CONTINUATION');
+    || (capability === 'WORKFLOW_CONTINUATION' && authorityKind === 'WORKFLOW_CONTINUATION')
+    || (capability === 'WORKFLOW_STEP' && authorityKind === 'WORKFLOW_INTERNAL_STEP');
 }
 function requiresReason(status: ExecutionRunStatus): boolean { return status === 'FAILED' || status === 'CANCELLED' || status === 'UNKNOWN'; }
 function isTerminalStatus(status: ExecutionRunStatus): boolean { return status === 'SUCCEEDED' || requiresReason(status); }

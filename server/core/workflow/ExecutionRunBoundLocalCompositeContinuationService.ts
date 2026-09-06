@@ -4,6 +4,7 @@ import {
   LOCAL_COMPOSITE_CONTINUATION_STEPS,
   type LocalCompositeContinuationService,
   type LocalCompositeContinuationView,
+  type LocalCompositeInternalVerifier,
   type LocalCompositeStartCommand,
 } from './LocalCompositeContinuationService.ts';
 import type { WorkflowContinuationSnapshot, WorkflowContinuationStore } from './WorkflowContinuationStore.ts';
@@ -19,20 +20,26 @@ type ExecutionRunProjectionInput = Readonly<{
   continuations: ContinuationReader;
   runs: ExecutionRunRegistry;
 }>;
+type InternalVerifierProjectionInput = Readonly<{
+  delegate: LocalCompositeInternalVerifier;
+  continuations: Pick<WorkflowContinuationStore, 'get'>;
+  runs: ExecutionRunRegistry;
+}>;
+type InternalVerifyInput = Parameters<LocalCompositeInternalVerifier['verify']>[0];
 
 const CHILD_LIMIT = 8;
 const SEGMENT_STEP = LOCAL_COMPOSITE_CONTINUATION_STEPS.segment;
 const BACKGROUND_STEP = LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation;
+const VERIFY_STEP = LOCAL_COMPOSITE_CONTINUATION_STEPS.verify;
 
 /**
  * Production projection boundary between durable WorkflowContinuation authority
  * and the canonical ExecutionRun index. The continuation remains execution
  * authority; runs are recoverable, monotonic projections only.
  *
- * D2 pre-reconciles an already-outstanding LOCAL ticket before delegate
- * advancement. That closes the crash window in which a delegate can consume the
- * ticket and terminalize the continuation (clearing outstandingLocal) before the
- * ticket becomes a durable child run. ExecutionRun state never redispatches work.
+ * D2 pre-reconciles already-outstanding LOCAL work before delegate advancement.
+ * D3 also pre-reconciles RUNNING_INTERNAL so the exact server-owned verify child
+ * is durable before a verifier retry. ExecutionRun state never redispatches work.
  */
 export class ExecutionRunBoundLocalCompositeContinuationService implements LocalCompositeContinuationPort {
   private readonly input: ExecutionRunProjectionInput;
@@ -63,13 +70,37 @@ export class ExecutionRunBoundLocalCompositeContinuationService implements Local
   }
 
   private async preReconcile(snapshot: WorkflowContinuationSnapshot | undefined): Promise<void> {
-    if (snapshot?.state === 'WAITING_FOR_LOCAL_RESULT') await projectWorkflowContinuationRun(this.input.runs, snapshot);
+    if (snapshot?.state === 'WAITING_FOR_LOCAL_RESULT' || snapshot?.state === 'RUNNING_INTERNAL') {
+      await projectWorkflowContinuationRun(this.input.runs, snapshot);
+    }
   }
 
   private async reconcile(executionId: string, scope: Scope): Promise<void> {
     const snapshot = await this.input.continuations.get(executionId, scope);
     if (!snapshot) throw projectionError('workflow_execution_run_snapshot_missing', 'Durable workflow continuation is unavailable for ExecutionRun projection');
     await projectWorkflowContinuationRun(this.input.runs, snapshot);
+  }
+}
+
+/**
+ * D3 boundary placed immediately before the accepted server-owned verifier.
+ * It proves the durable RUNNING_INTERNAL continuation and creates/reuses the
+ * verify child before verifier side effects. Verifier return is not terminal
+ * authority; only a later durable completed-step binding may succeed the child.
+ */
+export class ExecutionRunBoundLocalCompositeInternalVerifier implements LocalCompositeInternalVerifier {
+  private readonly input: InternalVerifierProjectionInput;
+
+  constructor(input: InternalVerifierProjectionInput) {
+    this.input = input;
+  }
+
+  async verify(request: InternalVerifyInput): Promise<void> {
+    const snapshot = await this.input.continuations.get(request.executionId, request.scope);
+    if (!snapshot) throw projectionError('workflow_internal_run_snapshot_missing', 'Durable workflow continuation is unavailable before INTERNAL verification');
+    assertInternalVerifyInvocation(snapshot, request);
+    await projectWorkflowContinuationRun(this.input.runs, snapshot);
+    await this.input.delegate.verify(request);
   }
 }
 
@@ -86,6 +117,7 @@ export async function projectWorkflowContinuationRun(
   });
   const preparedParent = await prepareParentRun(runs, issued.run, snapshot);
   await projectLocalChildren(runs, preparedParent, snapshot);
+  await projectInternalVerifyChild(runs, preparedParent, snapshot);
   return finalizeParentRun(runs, preparedParent, snapshot);
 }
 
@@ -135,8 +167,9 @@ async function projectLocalChildren(
   parent: ExecutionRun,
   snapshot: WorkflowContinuationSnapshot,
 ): Promise<void> {
-  let children = await runs.listChildren(parent.scope, parent.runId, CHILD_LIMIT);
-  validateChildSet(parent, children);
+  let allChildren = await runs.listChildren(parent.scope, parent.runId, CHILD_LIMIT);
+  validateChildSet(parent, allChildren);
+  let children = localChildren(allChildren);
 
   // A terminal D1-era continuation can have no D2 child topology at all. Do not
   // invent historical ticket execution after the fact. New D2 executions create
@@ -146,7 +179,7 @@ async function projectLocalChildren(
   for (const completed of snapshot.completedSteps) {
     if (isAcceptedLocalStep(completed.stepId)) {
       if (!completed.ticketId) throw projectionError('workflow_child_run_ticket_missing', `Completed local step ${completed.stepId} has no durable ticket binding`);
-      await projectSucceededChild(runs, parent, completed.stepId, completed.ticketId, snapshot);
+      await projectSucceededLocalChild(runs, parent, completed.stepId, completed.ticketId, snapshot);
     } else if (completed.ticketId) {
       throw projectionError('workflow_child_run_step_contract', `Non-local workflow step ${completed.stepId} cannot own a LOCAL_EXECUTION child`);
     }
@@ -155,21 +188,22 @@ async function projectLocalChildren(
   if (snapshot.outstandingLocal) {
     const stepId = requireAcceptedLocalStep(snapshot.outstandingLocal.stepId);
     if (snapshot.currentStepId !== stepId) throw projectionError('workflow_child_run_step_contract', 'Outstanding local ticket does not match current workflow step');
-    await projectRunningChild(runs, parent, stepId, snapshot.outstandingLocal.ticketId, snapshot);
+    await projectRunningLocalChild(runs, parent, stepId, snapshot.outstandingLocal.ticketId, snapshot);
   } else if (snapshot.state === 'WAITING_FOR_LOCAL_RESULT') {
     throw projectionError('workflow_child_run_ticket_missing', 'Waiting workflow continuation has no durable local ticket binding');
   }
 
   if (!isTerminalSnapshot(snapshot)) return;
-  children = await runs.listChildren(parent.scope, parent.runId, CHILD_LIMIT);
-  validateChildSet(parent, children);
+  allChildren = await runs.listChildren(parent.scope, parent.runId, CHILD_LIMIT);
+  validateChildSet(parent, allChildren);
+  children = localChildren(allChildren);
   const completedTicketIds = new Set(snapshot.completedSteps.flatMap(step => step.ticketId ? [step.ticketId] : []));
   const unresolved = children.filter(child => !completedTicketIds.has(child.authorityRef));
   if (unresolved.length > 1) throw projectionError('workflow_child_run_active_conflict', 'Workflow continuation has more than one unresolved LOCAL_EXECUTION child');
   if (unresolved.length === 0) return;
 
   const child = unresolved[0];
-  const stepId = childStepFromRun(parent, child);
+  const stepId = localChildStepFromRun(parent, child);
   if (snapshot.state === 'SUCCESS') {
     throw projectionError('workflow_child_run_state_conflict', 'Successful workflow continuation cannot retain an unresolved LOCAL_EXECUTION child');
   }
@@ -180,8 +214,8 @@ async function projectLocalChildren(
       await runs.fail(child.scope, child.runId, reason);
       return;
     }
-    if (child.status !== 'QUEUED' && child.status !== 'RUNNING') throw childStateConflict(child, snapshot, stepId);
-    const running = await ensureChildRunning(runs, child, snapshot);
+    if (child.status !== 'QUEUED' && child.status !== 'RUNNING') throw localChildStateConflict(child, snapshot, stepId);
+    const running = await ensureLocalChildRunning(runs, child, snapshot);
     await runs.fail(running.scope, running.runId, reason);
     return;
   }
@@ -192,8 +226,8 @@ async function projectLocalChildren(
       await runs.markUnknown(child.scope, child.runId, reason);
       return;
     }
-    if (child.status !== 'QUEUED' && child.status !== 'RUNNING') throw childStateConflict(child, snapshot, stepId);
-    const running = await ensureChildRunning(runs, child, snapshot);
+    if (child.status !== 'QUEUED' && child.status !== 'RUNNING') throw localChildStateConflict(child, snapshot, stepId);
+    const running = await ensureLocalChildRunning(runs, child, snapshot);
     await runs.markUnknown(running.scope, running.runId, reason);
     return;
   }
@@ -202,37 +236,83 @@ async function projectLocalChildren(
     await runs.cancel(child.scope, child.runId, reason);
     return;
   }
-  if (child.status !== 'QUEUED' && child.status !== 'RUNNING') throw childStateConflict(child, snapshot, stepId);
+  if (child.status !== 'QUEUED' && child.status !== 'RUNNING') throw localChildStateConflict(child, snapshot, stepId);
   await runs.cancel(child.scope, child.runId, reason);
 }
 
-async function projectRunningChild(
+async function projectInternalVerifyChild(
+  runs: ExecutionRunRegistry,
+  parent: ExecutionRun,
+  snapshot: WorkflowContinuationSnapshot,
+): Promise<void> {
+  const allChildren = await runs.listChildren(parent.scope, parent.runId, CHILD_LIMIT);
+  validateChildSet(parent, allChildren);
+  const existing = internalChildren(allChildren)[0];
+  const completed = snapshot.completedSteps.find(step => step.stepId === VERIFY_STEP);
+
+  if (completed) {
+    if (completed.ticketId) throw projectionError('workflow_internal_child_step_contract', 'INTERNAL verify completed-step binding cannot contain a local ticket');
+    if (!existing) return; // Historical pre-D3 terminal truth must not be fabricated.
+    if (existing.status === 'SUCCEEDED') return;
+    if (existing.status !== 'QUEUED' && existing.status !== 'RUNNING') throw internalChildStateConflict(existing, snapshot);
+    const running = await ensureInternalChildRunning(runs, existing, snapshot);
+    await runs.succeed(running.scope, running.runId);
+    return;
+  }
+
+  if (snapshot.state === 'RUNNING_INTERNAL') {
+    assertRunningInternalVerifySnapshot(snapshot);
+    const child = existing ?? await issueInternalVerifyChild(runs, parent, snapshot);
+    if (child.status === 'RUNNING') return;
+    if (child.status !== 'QUEUED') throw internalChildStateConflict(child, snapshot);
+    await runs.start(child.scope, child.runId);
+    return;
+  }
+
+  if (!existing) return;
+  if (snapshot.state === 'CANCELLED') {
+    const reason = snapshot.failureCode ?? 'WORKFLOW_CANCELLED';
+    if (existing.status === 'CANCELLED') {
+      await runs.cancel(existing.scope, existing.runId, reason);
+      return;
+    }
+    if (existing.status !== 'QUEUED' && existing.status !== 'RUNNING') throw internalChildStateConflict(existing, snapshot);
+    await runs.cancel(existing.scope, existing.runId, reason);
+    return;
+  }
+  if (snapshot.state === 'FAILED' || snapshot.state === 'UNKNOWN') {
+    throw projectionError('workflow_internal_child_terminal_policy_missing', `Durable workflow ${snapshot.state} cannot be projected onto an unresolved INTERNAL verify child without an accepted internal terminal policy`);
+  }
+  throw internalChildStateConflict(existing, snapshot);
+}
+
+async function projectRunningLocalChild(
   runs: ExecutionRunRegistry,
   parent: ExecutionRun,
   stepId: string,
   ticketId: string,
   snapshot: WorkflowContinuationSnapshot,
 ): Promise<ExecutionRun> {
-  const child = await issueChild(runs, parent, stepId, ticketId);
+  const child = await issueLocalChild(runs, parent, stepId, ticketId);
   if (child.status === 'RUNNING') return child;
-  if (child.status !== 'QUEUED') throw childStateConflict(child, snapshot, stepId);
+  if (child.status !== 'QUEUED') throw localChildStateConflict(child, snapshot, stepId);
   return runs.start(child.scope, child.runId);
 }
 
-async function projectSucceededChild(
+async function projectSucceededLocalChild(
   runs: ExecutionRunRegistry,
   parent: ExecutionRun,
   stepId: string,
   ticketId: string,
   snapshot: WorkflowContinuationSnapshot,
 ): Promise<ExecutionRun> {
-  const child = await issueChild(runs, parent, stepId, ticketId);
+  const child = await issueLocalChild(runs, parent, stepId, ticketId);
   if (child.status === 'SUCCEEDED') return child;
-  const running = await ensureChildRunning(runs, child, snapshot);
+  const running = await ensureLocalChildRunning(runs, child, snapshot);
   return runs.succeed(running.scope, running.runId);
 }
 
-async function issueChild(
+async function issueLocalChild(
   runs: ExecutionRunRegistry,
   parent: ExecutionRun,
   stepIdValue: string,
@@ -250,6 +330,23 @@ async function issueChild(
   return issued.run;
 }
 
+async function issueInternalVerifyChild(
+  runs: ExecutionRunRegistry,
+  parent: ExecutionRun,
+  snapshot: WorkflowContinuationSnapshot,
+): Promise<ExecutionRun> {
+  assertRunningInternalVerifySnapshot(snapshot);
+  const issued = await runs.issue({
+    scope: parent.scope,
+    capability: 'WORKFLOW_STEP',
+    idempotencyKey: childIdempotencyKey(parent.runId, VERIFY_STEP),
+    authorityKind: 'WORKFLOW_INTERNAL_STEP',
+    authorityRef: internalAuthorityRef(snapshot.executionId, VERIFY_STEP),
+    parentRunId: parent.runId,
+  });
+  return issued.run;
+}
+
 async function ensureRunning(
   runs: ExecutionRunRegistry,
   run: ExecutionRun,
@@ -260,34 +357,67 @@ async function ensureRunning(
   throw stateConflict(run, snapshot);
 }
 
-async function ensureChildRunning(
+async function ensureLocalChildRunning(
   runs: ExecutionRunRegistry,
   child: ExecutionRun,
   snapshot: WorkflowContinuationSnapshot,
 ): Promise<ExecutionRun> {
   if (child.status === 'RUNNING') return child;
   if (child.status === 'QUEUED') return runs.start(child.scope, child.runId);
-  throw childStateConflict(child, snapshot, childStepFromIdempotency(child));
+  throw localChildStateConflict(child, snapshot, localChildStepFromIdempotency(child));
+}
+
+async function ensureInternalChildRunning(
+  runs: ExecutionRunRegistry,
+  child: ExecutionRun,
+  snapshot: WorkflowContinuationSnapshot,
+): Promise<ExecutionRun> {
+  if (child.status === 'RUNNING') return child;
+  if (child.status === 'QUEUED') return runs.start(child.scope, child.runId);
+  throw internalChildStateConflict(child, snapshot);
 }
 
 function validateChildSet(parent: ExecutionRun, children: readonly ExecutionRun[]): void {
-  if (children.length > 2) throw projectionError('workflow_child_run_topology_conflict', 'Accepted local composite can have at most two LOCAL_EXECUTION children');
-  for (const child of children) {
-    if (child.parentRunId !== parent.runId || child.capability !== 'LOCAL_EXECUTION' || child.authorityKind !== 'LOCAL_EXECUTION_TICKET') {
-      throw projectionError('workflow_child_run_topology_conflict', 'ExecutionRun child is outside the accepted local-step topology');
+  if (children.length > 3) throw projectionError('workflow_child_run_topology_conflict', 'Accepted local composite can have at most two LOCAL children and one INTERNAL verify child');
+  const local = localChildren(children);
+  const internal = internalChildren(children);
+  if (local.length > 2 || internal.length > 1 || local.length + internal.length !== children.length) {
+    throw projectionError('workflow_child_run_topology_conflict', 'ExecutionRun children are outside the accepted local-composite topology');
+  }
+  const localSteps = new Set<string>();
+  for (const child of local) {
+    if (child.parentRunId !== parent.runId || child.authorityKind !== 'LOCAL_EXECUTION_TICKET') {
+      throw projectionError('workflow_child_run_topology_conflict', 'LOCAL_EXECUTION child is outside the accepted local-step topology');
     }
-    childStepFromRun(parent, child);
+    const stepId = localChildStepFromRun(parent, child);
+    if (localSteps.has(stepId)) throw projectionError('workflow_child_run_topology_conflict', `Duplicate LOCAL_EXECUTION child for ${stepId}`);
+    localSteps.add(stepId);
+  }
+  for (const child of internal) {
+    if (child.parentRunId !== parent.runId || child.authorityKind !== 'WORKFLOW_INTERNAL_STEP'
+      || child.idempotencyKey !== childIdempotencyKey(parent.runId, VERIFY_STEP)
+      || child.authorityRef !== internalAuthorityRef(parent.authorityRef, VERIFY_STEP)) {
+      throw projectionError('workflow_child_run_topology_conflict', 'WORKFLOW_STEP child is not the exact accepted INTERNAL verify binding');
+    }
   }
 }
 
-function childStepFromRun(parent: ExecutionRun, child: ExecutionRun): string {
+function localChildren(children: readonly ExecutionRun[]): readonly ExecutionRun[] {
+  return children.filter(child => child.capability === 'LOCAL_EXECUTION');
+}
+
+function internalChildren(children: readonly ExecutionRun[]): readonly ExecutionRun[] {
+  return children.filter(child => child.capability === 'WORKFLOW_STEP');
+}
+
+function localChildStepFromRun(parent: ExecutionRun, child: ExecutionRun): string {
   for (const stepId of [SEGMENT_STEP, BACKGROUND_STEP]) {
     if (child.idempotencyKey === childIdempotencyKey(parent.runId, stepId)) return stepId;
   }
   throw projectionError('workflow_child_run_topology_conflict', 'LOCAL_EXECUTION child idempotency is not bound to an accepted workflow step');
 }
 
-function childStepFromIdempotency(child: ExecutionRun): string {
+function localChildStepFromIdempotency(child: ExecutionRun): string {
   if (!child.parentRunId) throw projectionError('workflow_child_run_topology_conflict', 'LOCAL_EXECUTION child has no parent run');
   for (const stepId of [SEGMENT_STEP, BACKGROUND_STEP]) {
     if (child.idempotencyKey === childIdempotencyKey(child.parentRunId, stepId)) return stepId;
@@ -299,6 +429,10 @@ function childIdempotencyKey(parentRunId: string, stepId: string): string {
   return `workflow-child:${parentRunId}:${stepId}`;
 }
 
+function internalAuthorityRef(executionId: string, stepId: string): string {
+  return `workflow-internal-step:${executionId}:${stepId}`;
+}
+
 function isAcceptedLocalStep(stepId: string): boolean {
   return stepId === SEGMENT_STEP || stepId === BACKGROUND_STEP;
 }
@@ -306,6 +440,30 @@ function isAcceptedLocalStep(stepId: string): boolean {
 function requireAcceptedLocalStep(stepId: string): string {
   if (!isAcceptedLocalStep(stepId)) throw projectionError('workflow_child_run_step_contract', `Workflow step ${stepId} is not an accepted LOCAL_EXECUTION child step`);
   return stepId;
+}
+
+function assertRunningInternalVerifySnapshot(snapshot: WorkflowContinuationSnapshot): void {
+  if (snapshot.state !== 'RUNNING_INTERNAL' || snapshot.currentStepId !== VERIFY_STEP || snapshot.outstandingLocal) {
+    throw projectionError('workflow_internal_child_step_contract', 'INTERNAL verify child requires exact RUNNING_INTERNAL durable continuation state');
+  }
+  const segment = snapshot.completedSteps.find(step => step.stepId === SEGMENT_STEP);
+  const background = snapshot.completedSteps.find(step => step.stepId === BACKGROUND_STEP);
+  const verify = snapshot.completedSteps.find(step => step.stepId === VERIFY_STEP);
+  if (!segment?.ticketId || !background?.ticketId || verify) {
+    throw projectionError('workflow_internal_child_step_contract', 'INTERNAL verify requires both exact completed LOCAL dependencies and no prior verify completion');
+  }
+  if (background.artifactIds.length !== 1) {
+    throw projectionError('workflow_internal_child_step_contract', 'INTERNAL verify requires one exact background-isolation Artifact dependency');
+  }
+}
+
+function assertInternalVerifyInvocation(snapshot: WorkflowContinuationSnapshot, request: InternalVerifyInput): void {
+  assertRunningInternalVerifySnapshot(snapshot);
+  if (request.stepId !== VERIFY_STEP) throw projectionError('workflow_internal_child_step_contract', 'Verifier invocation is not the accepted INTERNAL verify step');
+  const background = snapshot.completedSteps.find(step => step.stepId === BACKGROUND_STEP);
+  if (!background || background.artifactIds.length !== 1 || background.artifactIds[0] !== request.artifactId) {
+    throw projectionError('workflow_internal_child_artifact_conflict', 'Verifier Artifact is not the exact durable background-isolation output');
+  }
 }
 
 function assertLocalTerminalReason(stepId: string, reason: string, suffix: 'FAILED' | 'UNKNOWN'): void {
@@ -329,10 +487,17 @@ function stateConflict(run: ExecutionRun, snapshot: WorkflowContinuationSnapshot
   );
 }
 
-function childStateConflict(child: ExecutionRun, snapshot: WorkflowContinuationSnapshot, stepId: string) {
+function localChildStateConflict(child: ExecutionRun, snapshot: WorkflowContinuationSnapshot, stepId: string) {
   return projectionError(
     'workflow_child_run_state_conflict',
     `LOCAL_EXECUTION child ${stepId} is ${child.status} while workflow continuation is ${snapshot.state}`,
+  );
+}
+
+function internalChildStateConflict(child: ExecutionRun, snapshot: WorkflowContinuationSnapshot) {
+  return projectionError(
+    'workflow_internal_child_state_conflict',
+    `INTERNAL verify child is ${child.status} while workflow continuation is ${snapshot.state}`,
   );
 }
 

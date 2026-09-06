@@ -10,6 +10,7 @@ on:
       - 'server/core/execution/**'
       - 'server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts'
       - 'server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.test.mjs'
+      - 'server/core/workflow/createProductionLocalCompositeContinuation.ts'
       - 'server/core/workflow/LocalCompositeOutputUploadService.ts'
       - 'server/core/http/localCompositeContinuationHttpAdapter.ts'
       - 'server/core/composition/createProductionCore.ts'
@@ -64,11 +65,12 @@ jobs:
           npm run server:build
           test -f dist-server/migrations/034_execution_run_registry.sql
           test -f dist-server/migrations/036_execution_run_workflow_continuation.sql
+          test -f dist-server/migrations/037_execution_run_workflow_internal_step.sql
       - name: Prove production schema CLI migration and check
         run: |
           npm run db:migrate:transactions
           npm run db:check:transactions
-      - name: Prove workflow-continuation projection semantics without redispatch authority
+      - name: Prove workflow parent LOCAL child and INTERNAL verify projection semantics without redispatch authority
         run: node --experimental-strip-types --test server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.test.mjs
       - name: Bundle durable registry PostgreSQL acceptance
         run: |
@@ -92,25 +94,35 @@ jobs:
           cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/execution-run-registry/migrations/
           cp server/core/execution/migrations/034_execution_run_registry.sql .test-cache/execution-run-registry/migrations/
           cp server/core/execution/migrations/036_execution_run_workflow_continuation.sql .test-cache/execution-run-registry/migrations/
-      - name: Prove durable run identity, scope, replay and lifecycle semantics
+          cp server/core/execution/migrations/037_execution_run_workflow_internal_step.sql .test-cache/execution-run-registry/migrations/
+      - name: Prove durable run identity scope parent binding replay and lifecycle semantics
         run: node --test --test-concurrency=1 .test-cache/execution-run-registry/execution-run-registry-postgres.test.mjs
-      - name: Prove exact production continuation and child-run projection wiring
+      - name: Prove exact production continuation LOCAL child and INTERNAL verify projection wiring
         run: |
           set -euo pipefail
           grep -q 'new ExecutionRunBoundLocalCompositeContinuationService' server/core/composition/createProductionCore.ts
           grep -q 'delegate: admittedLocalComposite' server/core/composition/createProductionCore.ts
           grep -q 'continuations: new PostgresWorkflowContinuationStore(transactions.pool, now)' server/core/composition/createProductionCore.ts
           grep -q 'runs: executionRuns' server/core/composition/createProductionCore.ts
+          grep -q 'new ExecutionRunBoundLocalCompositeInternalVerifier' server/core/workflow/createProductionLocalCompositeContinuation.ts
+          grep -q 'runs: input.runs' server/core/workflow/createProductionLocalCompositeContinuation.ts
           grep -q "capability: 'WORKFLOW_CONTINUATION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "authorityKind: 'WORKFLOW_CONTINUATION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q 'listChildren(scope: ExecutionRunScope, parentRunId: string' server/core/execution/executionRunRegistry.ts
           grep -q 'AND parent_run_id=\$4' server/core/execution/PostgresExecutionRunRegistry.ts
           grep -q "capability: 'LOCAL_EXECUTION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "authorityKind: 'LOCAL_EXECUTION_TICKET'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q "capability: 'WORKFLOW_STEP'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          test "$(grep -R -F "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core --include='*.ts' | wc -l)" -eq 1
+          grep -R -F "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core --include='*.ts' | grep -q '^server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts:'
           grep -q 'parentRunId: parent.runId' server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q 'WORKFLOW_STEP execution run requires parentRunId' server/core/execution/PostgresExecutionRunRegistry.ts
+          grep -q "parentRun.capability !== 'WORKFLOW_CONTINUATION'" server/core/execution/PostgresExecutionRunRegistry.ts
           grep -q 'getByClientRequestId(scope, command.clientRequestId)' server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
-          grep -q 'preReconcile' server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
-      - name: Prove D2 opens no Agent Automation browser provider or Billing authority
+          grep -q "snapshot?.state === 'RUNNING_INTERNAL'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q 'parent_run_id IS NOT NULL' server/core/execution/migrations/037_execution_run_workflow_internal_step.sql
+      - name: Prove D3 opens no Agent Automation browser provider or Billing authority
         run: |
           set -euo pipefail
           FILES=(
@@ -119,10 +131,11 @@ jobs:
             server/core/execution/executionRunSchema.ts
             server/core/execution/migrations/034_execution_run_registry.sql
             server/core/execution/migrations/036_execution_run_workflow_continuation.sql
+            server/core/execution/migrations/037_execution_run_workflow_internal_step.sql
             server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           )
           ! grep -E -q 'coreClient|create.*HttpAdapter|/api/core/|providers|Billing|billing|FAL|fal_|stripe|JobRecord|coreClient\.entities' "${FILES[@]}"
-          ! grep -E -q "'AGENT'|'AUTOMATION'|\"AGENT\"|\"AUTOMATION\"" server/core/execution/executionRunRegistry.ts server/core/execution/migrations/034_execution_run_registry.sql server/core/execution/migrations/036_execution_run_workflow_continuation.sql
+          ! grep -E -q "'AGENT'|'AUTOMATION'|\"AGENT\"|\"AUTOMATION\"" server/core/execution/executionRunRegistry.ts server/core/execution/migrations/034_execution_run_registry.sql server/core/execution/migrations/036_execution_run_workflow_continuation.sql server/core/execution/migrations/037_execution_run_workflow_internal_step.sql
           ! grep -q 'canonical_execution_runs' src/lib/jobs/jobStorage.js
       - name: Check committed diff whitespace
         env:

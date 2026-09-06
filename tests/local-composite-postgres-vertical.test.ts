@@ -300,6 +300,34 @@ test('C5B production composition survives restart across both ON_DEVICE boundari
     'local-continuation-02-background-isolation',
     'local-continuation-03-verify',
   ]);
+
+  const runRows = await pool.query(`SELECT run_id,capability,authority_kind,authority_ref,parent_run_id,status,idempotency_key
+    FROM canonical_execution_runs WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3`, [scope.tenantId, scope.userId, scope.projectId]);
+  assert.equal(runRows.rowCount, 4, 'accepted C5B graph must project exactly one parent plus three durable step children');
+  const parentRun = runRows.rows.find(row => row.capability === 'WORKFLOW_CONTINUATION');
+  assert.ok(parentRun);
+  assert.equal(parentRun.authority_kind, 'WORKFLOW_CONTINUATION');
+  assert.equal(parentRun.authority_ref, started.executionId);
+  assert.equal(parentRun.parent_run_id, null);
+  assert.equal(parentRun.status, 'SUCCEEDED');
+
+  const childRuns = runRows.rows.filter(row => row.parent_run_id === parentRun.run_id);
+  assert.equal(childRuns.length, 3);
+  const segmentRun = childRuns.find(row => row.capability === 'LOCAL_EXECUTION' && row.authority_ref === segmentTicket.ticketId);
+  const backgroundRun = childRuns.find(row => row.capability === 'LOCAL_EXECUTION' && row.authority_ref === resumedTicket.ticketId);
+  const verifyRun = childRuns.find(row => row.capability === 'WORKFLOW_STEP');
+  assert.ok(segmentRun);
+  assert.ok(backgroundRun);
+  assert.ok(verifyRun);
+  assert.equal(segmentRun.authority_kind, 'LOCAL_EXECUTION_TICKET');
+  assert.equal(segmentRun.status, 'SUCCEEDED');
+  assert.equal(backgroundRun.authority_kind, 'LOCAL_EXECUTION_TICKET');
+  assert.equal(backgroundRun.status, 'SUCCEEDED');
+  assert.equal(verifyRun.authority_kind, 'WORKFLOW_INTERNAL_STEP');
+  assert.equal(verifyRun.authority_ref, `workflow-internal-step:${started.executionId}:local-continuation-03-verify`);
+  assert.equal(verifyRun.idempotency_key, `workflow-child:${parentRun.run_id}:local-continuation-03-verify`);
+  assert.equal(verifyRun.status, 'SUCCEEDED');
+
   assert.equal(providerCalls, 0);
   assert.equal(Number((await pool.query('SELECT count(*)::int AS count FROM credit_reservations')).rows[0].count), 0);
 

@@ -230,7 +230,8 @@
     "server/core/fashion/migrations/033_manual_parametric_basis_content_uniqueness.sql",
     "server/core/execution/migrations/034_execution_run_registry.sql",
     "server/core/fashion/migrations/035_project_body_anchor_idempotency.sql",
-    "server/core/execution/migrations/036_execution_run_workflow_continuation.sql"
+    "server/core/execution/migrations/036_execution_run_workflow_continuation.sql",
+    "server/core/execution/migrations/037_execution_run_workflow_internal_step.sql"
   ],
   "supportPaths": [
     ".github/workflows/fashion-execution-ci-policy.yml",
