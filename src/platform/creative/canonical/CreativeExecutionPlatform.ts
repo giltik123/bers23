@@ -143,6 +143,27 @@ export class CreativeExecutionPlatform {
     return record.execution;
   }
 
+  /**
+   * Cancels an already prepared Creative execution before workflow dispatch.
+   * The Billing reservation is released exactly once before canonical SKIPPED
+   * becomes visible; any non-releasable authority state fails closed.
+   */
+  async cancelPreparedExecution(id: string): Promise<void> {
+    const record = this.require(id);
+    if (record.cancelled) return;
+    if (!record.operation || !record.workflow || !record.execution) throw new Error('Creative execution is not prepared for cancellation');
+    if (record.snapshot || record.outcome || record.paused) throw new Error('Creative execution crossed the prepared cancellation boundary');
+    const authority = this.#authority.snapshot(record.operation);
+    const reservation = authority.reservation;
+    if (!reservation) throw new Error('Prepared Creative execution has no Billing reservation');
+    if (reservation.status === 'RESERVED') {
+      await this.#authority.release(record.operation, 'user cancelled before execution');
+    } else if (reservation.status !== 'RELEASED') {
+      throw new Error(`Prepared Creative Billing reservation is not releasable: ${reservation.status}`);
+    }
+    record.cancelled = true;
+  }
+
   /** Stable v1 model-only preparation retained for existing segmentation. */
   async prepareLocalExecution(id: string): Promise<readonly LocalExecutionTicket[]> {
     const record = this.require(id);

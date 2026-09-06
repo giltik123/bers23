@@ -12,7 +12,7 @@ export interface ProviderTransport {
   health?(): Promise<'ONLINE' | 'OFFLINE' | 'DEGRADED'> | 'ONLINE' | 'OFFLINE' | 'DEGRADED';
 }
 export interface DownloadedProviderArtifact { readonly url: string; readonly mimeType: string; readonly size: number; readonly hash: string; readonly bytes?: Uint8Array }
-export interface ProviderArtifactLoader { load(url: string, options: Readonly<{ maxBytes: number; allowedMimeTypes: readonly string[] }>): Promise<DownloadedProviderArtifact> }
+export interface ProviderArtifactLoader { load(url: string, options: Readonly<{ maxBytes: number; allowedMimeTypes: readonly string[] }>, signal?: AbortSignal): Promise<DownloadedProviderArtifact> }
 
 export interface RegisteredProviderAdapter<Request = unknown, Result = unknown> { readonly name: string; supports(capability: string): boolean; execute(request: Request): Promise<Result> }
 export class ProviderAdapterRegistry {

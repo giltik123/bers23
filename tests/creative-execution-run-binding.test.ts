@@ -51,15 +51,25 @@ class FakeExecutionRuns implements ExecutionRunRegistry {
   async start() { this.events.push('run:start'); this.run = Object.freeze({ ...this.run, status: 'RUNNING', revision: 2, startedAt: '2026-09-03T00:00:01.000Z' }); return this.run; }
   async succeed() { this.events.push('run:succeed'); this.run = Object.freeze({ ...this.run, status: 'SUCCEEDED', revision: 3, finishedAt: '2026-09-03T00:00:02.000Z' }); return this.run; }
   async fail(_scope: ExecutionRunScope, _runId: string, reasonCode: string) { this.events.push(`run:fail:${reasonCode}`); this.run = Object.freeze({ ...this.run, status: 'FAILED', revision: 3, statusReasonCode: reasonCode, finishedAt: '2026-09-03T00:00:02.000Z' }); return this.run; }
-  async cancel(_scope: ExecutionRunScope, _runId: string, reasonCode: string) { this.events.push(`run:cancel:${reasonCode}`); this.run = Object.freeze({ ...this.run, status: 'CANCELLED', revision: 3, statusReasonCode: reasonCode, finishedAt: '2026-09-03T00:00:02.000Z' }); return this.run; }
+  async cancel(_scope: ExecutionRunScope, _runId: string, reasonCode: string) {
+    this.events.push(`run:cancel:${reasonCode}`);
+    if (this.run.status === 'CANCELLED') {
+      if (this.run.statusReasonCode !== reasonCode) throw new Error('terminal reason conflict');
+      return this.run;
+    }
+    this.run = Object.freeze({ ...this.run, status: 'CANCELLED', revision: 3, statusReasonCode: reasonCode, finishedAt: '2026-09-03T00:00:02.000Z' }); return this.run;
+  }
   async markUnknown(_scope: ExecutionRunScope, _runId: string, reasonCode: string) { this.events.push(`run:unknown:${reasonCode}`); this.run = Object.freeze({ ...this.run, status: 'UNKNOWN', revision: 3, statusReasonCode: reasonCode, finishedAt: '2026-09-03T00:00:02.000Z' }); return this.run; }
 }
 
-function fixture(options: { created?: boolean; runtime?: 'success' | 'failure' | 'unknown'; security?: boolean } = {}) {
+function fixture(options: { created?: boolean; runtime?: 'success' | 'failure' | 'unknown' | 'pending-cancel'; security?: boolean } = {}) {
   const events: string[] = [];
   const runs = new FakeExecutionRuns(events, options.created ?? true);
   let providerCalls = 0;
   let billingMutations = 0;
+  let pendingReject: ((reason?: unknown) => void) | undefined;
+  let providerEnteredResolve!: () => void;
+  const providerEntered = new Promise<void>((resolve) => { providerEnteredResolve = resolve; });
   const billing: BillingTransactionAuthority = {
     reserve: async () => { events.push('billing:reserve'); billingMutations++; return { reservationId: 'reservation-1', status: 'RESERVED' }; },
     commit: async id => { events.push('billing:commit'); billingMutations++; return { reservationId: id, status: 'COMMITTED' }; },
@@ -80,13 +90,24 @@ function fixture(options: { created?: boolean; runtime?: 'success' | 'failure' |
       providerSelector: { select: () => ({ allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'fal', selectionId: 'run-binding:fal' }) },
       capabilityAdmission: { admit: () => ({ allowed: true, reasonCode: 'CAPABILITY_SUPPORTED', capabilityId: 'run-binding-provider' }) },
       securityGate: { authorize: () => options.security !== false },
-      runtime: { execute: async () => {
-        events.push('provider:execute');
-        providerCalls++;
-        if (options.runtime === 'unknown') throw Object.assign(new Error('lost provider response'), { code: 'PROVIDER_RESULT_UNKNOWN', unknownOutcome: true });
-        if (options.runtime === 'failure') throw new Error('definitive provider failure');
-        return { artifacts: [{ id: 'result', kind: 'image', value: { url: 'https://assets.example.test/result.png' } }] };
-      } },
+      runtime: {
+        execute: async () => {
+          events.push('provider:execute');
+          providerCalls++;
+          providerEnteredResolve();
+          if (options.runtime === 'pending-cancel') return await new Promise((_, reject) => { pendingReject = reject; });
+          if (options.runtime === 'unknown') throw Object.assign(new Error('lost provider response'), { code: 'PROVIDER_RESULT_UNKNOWN', unknownOutcome: true });
+          if (options.runtime === 'failure') throw new Error('definitive provider failure');
+          return { artifacts: [{ id: 'result', kind: 'image', value: { url: 'https://assets.example.test/result.png' } }] };
+        },
+        cancel: workflowId => {
+          if (!pendingReject) return false;
+          events.push(`provider:cancel:${workflowId}`);
+          const reject = pendingReject; pendingReject = undefined;
+          reject(new DOMException('Creative execution cancelled', 'AbortError'));
+          return true;
+        },
+      },
       providers: { isAvailable: () => true, fallback: () => undefined },
       verifier: { verify: async operation => ({ stepId: operation.id, valid: true, checks: ['image'], errors: [] }) },
       recovery: { decide: () => 'MARK_UNKNOWN' },
@@ -94,7 +115,7 @@ function fixture(options: { created?: boolean; runtime?: 'success' | 'failure' |
       id: (() => { let value = 0; return () => `run-binding-id-${++value}`; })(),
     },
   });
-  return Object.freeze({ service, runs, events, counters: () => ({ providerCalls, billingMutations }) });
+  return Object.freeze({ service, runs, events, providerEntered, counters: () => ({ providerCalls, billingMutations }) });
 }
 
 function assertOrdered(events: readonly string[], values: readonly string[]) {
@@ -161,10 +182,37 @@ test('compile/admission exception after durable start records execution error an
   assertOrdered(f.events, ['plan', 'run:issue', 'run:start', 'run:fail:CREATIVE_EXECUTION_ERROR']);
 });
 
-test('current Creative cancel is not projected as durable terminal truth before cancellability/reconciliation hardening', async () => {
+test('active owning Creative cancel aborts provider, releases Billing, then terminalizes durable run as CANCELLED', async () => {
+  const f = fixture({ runtime: 'pending-cancel' });
+  const execution = f.service.execute(command, auth);
+  const executionRejected = assert.rejects(
+    execution,
+    (error: any) => error?.code === 'creative_execution_cancelled' && error?.status === 409 && error?.retryable === false,
+  );
+  await f.providerEntered;
+  const executionId = f.runs.issueInput?.authorityRef;
+  assert.ok(executionId);
+  await f.service.cancel(executionId, auth);
+  await executionRejected;
+  assert.equal(f.service.status(executionId, auth), 'SKIPPED');
+  assert.equal(f.runs.run.status, 'CANCELLED');
+  assert.equal(f.runs.run.statusReasonCode, 'CREATIVE_EXECUTION_CANCELLED');
+  assert.equal(f.events.some(value => value.startsWith('run:fail:')), false);
+  assertOrdered(f.events, ['billing:reserve', 'provider:execute', `provider:cancel:${executionId}`, 'billing:release', 'run:cancel:CREATIVE_EXECUTION_CANCELLED']);
+  assert.deepEqual(f.counters(), { providerCalls: 1, billingMutations: 2 });
+
+  const revision = f.runs.run.revision;
+  await f.service.cancel(executionId, auth);
+  assert.equal(f.runs.run.revision, revision, 'same owning cancel replay must be idempotent');
+});
+
+test('completed Creative execution is not retroactively cancellable', async () => {
   const f = fixture();
   const outcome = await f.service.execute(command, auth);
-  f.service.cancel(outcome.executionId, auth);
-  assert.equal(f.events.some(value => value.startsWith('run:cancel:')), false);
+  await assert.rejects(
+    () => f.service.cancel(outcome.executionId, auth),
+    (error: any) => error?.code === 'creative_cancel_unavailable' && error?.status === 409 && error?.retryable === false,
+  );
   assert.equal(f.runs.run.status, 'SUCCEEDED');
+  assert.equal(f.events.some(value => value.startsWith('run:cancel:')), false);
 });

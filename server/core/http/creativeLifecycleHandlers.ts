@@ -8,6 +8,6 @@ export function createCreativeLifecycleHandlers(service: CreativeExecutionServic
   return Object.freeze({
     status: (request: CoreRequest, executionId: string): CoreResponse => authenticated(request) ?? { status: 200, body: { executionId, status: service.status(executionId, request.auth) } },
     result: (request: CoreRequest, executionId: string): CoreResponse => { const denied = authenticated(request); if (denied) return denied; const result = service.result(executionId, request.auth); return result ? { status: 200, body: publicCreativeOutcome(result, request.correlationId, artifact => service.deliveryUrl(artifact)) } : { status: 404, body: { code: 'result_not_found', message: 'Result is not available', retryable: true } }; },
-    cancel: (request: CoreRequest, executionId: string): CoreResponse => { const denied = authenticated(request); if (denied) return denied; service.cancel(executionId, request.auth); return { status: 202, body: { executionId, status: service.status(executionId, request.auth) } }; },
+    cancel: async (request: CoreRequest, executionId: string): Promise<CoreResponse> => { const denied = authenticated(request); if (denied) return denied; await service.cancel(executionId, request.auth); return { status: 202, body: { executionId, status: service.status(executionId, request.auth) } }; },
   });
 }
