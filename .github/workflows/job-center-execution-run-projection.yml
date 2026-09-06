@@ -1,0 +1,66 @@
+name: P1b Job Center canonical execution recovery
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/api/executionRunRecoveryClient.js'
+      - 'src/api/executionRunRecoveryClient.test.mjs'
+      - 'src/lib/jobs/executionRunProjection.js'
+      - 'src/lib/jobs/executionRunProjection.test.mjs'
+      - 'src/lib/jobs/executionRunProjectionAuthority.test.mjs'
+      - 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx'
+      - 'src/components/editor/jobs/JobCenter.jsx'
+      - 'src/components/editor/jobs/JobQueuePanel.jsx'
+      - 'src/components/editor/jobs/JobRow.jsx'
+      - 'src/lib/jobs/jobManager.js'
+      - 'src/lib/jobs/jobStorage.js'
+      - 'server/core/http/executionRunRecoveryHttpAdapter.ts'
+      - 'server/core/http/executionRunRecoveryHttpAdapter.test.mjs'
+      - '.github/workflows/job-center-execution-run-projection.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-job-center-recovery:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove GET-only recovery transport and projection semantics
+        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs
+      - name: Preserve accepted server recovery HTTP contract
+        run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Build production browser
+        run: npm run build
+      - name: Prove P1b does not mutate legacy client scheduler or JobRecord compatibility storage
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test -n "${BASE_SHA:-}"
+          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- src/lib/jobs/jobManager.js src/lib/jobs/jobStorage.js src/components/editor/jobs/JobRow.jsx)"
+          ! grep -E -q 'coreClient|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|\.cancel\(|\.retry\(|\.issue\(' src/lib/jobs/executionRunProjection.js
+          ! grep -E -q "method: 'POST'|method: 'PATCH'|method: 'DELETE'|coreClient|entities|creative|localExecution" src/api/executionRunRecoveryClient.js
+          ! grep -E -q 'Button|jobManager|jobStorage|onCancel|onRetry|onDuplicate|onMoveUp' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+      - name: Check committed diff whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA"..HEAD
