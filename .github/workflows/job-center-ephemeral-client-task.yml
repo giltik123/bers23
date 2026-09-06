@@ -1,0 +1,60 @@
+name: P1c Job Center ephemeral client task truth
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/lib/jobs/jobModel.js'
+      - 'src/lib/jobs/jobModelEphemeral.test.mjs'
+      - 'src/lib/jobs/jobManager.js'
+      - 'src/lib/jobs/jobStorage.js'
+      - 'src/lib/jobs/jobEphemeralAuthority.test.mjs'
+      - 'src/components/editor/jobs/JobCenter.jsx'
+      - 'src/components/editor/jobs/JobRow.jsx'
+      - '.github/workflows/job-center-execution-run-projection.yml'
+      - '.github/workflows/job-center-ephemeral-client-task.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ephemeral-client-task-truth:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove exact ephemeral classification and persistence removal
+        run: node --test src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
+      - name: Typecheck and build production browser
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Preserve accepted scheduler controls and canonical recovery authority
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test -n "${BASE_SHA:-}"
+          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- server src/api/executionRunRecoveryClient.js src/lib/jobs/executionRunProjection.js src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js src/lib/jobs/jobScheduler.js src/lib/jobs/jobRetryManager.js src/components/editor/jobs/JobRow.jsx)"
+          ! grep -E -q 'jobStorage|JobRecord|coreClient\.entities|_persist\(' src/lib/jobs/jobManager.js
+          ! grep -E -q 'coreClient|JobRecord|entities\.|\.create\(|\.update\(|\.filter\(' src/lib/jobs/jobStorage.js
+          grep -q 'executionClass: JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK' src/lib/jobs/jobManager.js
+          grep -q 'Ephemeral browser-only tasks · reload interrupts them' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'Unsupported session task classification. Controls are withheld.' src/components/editor/jobs/JobCenter.jsx
+          ! grep -E -q '\.(cancel|retry|duplicate|reorder)\(' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+      - name: Check committed diff whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA"..HEAD
