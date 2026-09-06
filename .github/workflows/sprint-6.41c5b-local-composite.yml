@@ -63,8 +63,8 @@ jobs:
         run: node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
       - name: Prove capability aliases preserve existing model and executor trust authority
         run: node --experimental-strip-types --test server/core/localExecution/localCompositeCapabilityPolicy.test.mjs server/core/localExecution/productionLocalModelPolicy.test.mjs
-      - name: Prove canonical admission, shared selection, ticket-first sequencing and authenticated HTTP authority
-        run: node --experimental-strip-types --test server/core/localExecution/localSegmentationInputContract.test.mjs server/core/workflow/localCompositeCanonicalAdmission.test.mjs server/core/workflow/LocalCompositeContinuationService.test.mjs server/core/workflow/LocalCompositeOutputUploadService.test.mjs server/core/http/localCompositeContinuationHttpAdapter.test.mjs
+      - name: Prove D0 production-start admission, canonical sequencing and authenticated HTTP authority
+        run: node --experimental-strip-types --test server/core/localExecution/localSegmentationInputContract.test.mjs server/core/workflow/ProductionLocalCompositeStartAdmission.test.mjs server/core/workflow/localCompositeCanonicalAdmission.test.mjs server/core/workflow/LocalCompositeContinuationService.test.mjs server/core/workflow/LocalCompositeOutputUploadService.test.mjs server/core/http/localCompositeContinuationHttpAdapter.test.mjs
       - name: Prove in-memory and standalone segmentation obey exact replay identity
         run: |
           mkdir -p .test-cache/c5b-replay
@@ -156,16 +156,18 @@ jobs:
         run: node --experimental-strip-types --test server/core/artifacts/postgresImageArtifactStore.backgroundIsolationLineage.integration.test.mjs
       - name: Prove durable Artifact resolver reconstructs exact lineage after Core restart
         run: node --experimental-strip-types --test server/core/artifacts/durableArtifactLineageResolver.integration.test.mjs
-      - name: Preserve CANDIDATE MobileSAM while requiring authenticated composite server wiring
+      - name: Preserve CANDIDATE MobileSAM while requiring D0-authenticated composite server wiring
         run: |
           node --input-type=module <<'NODE'
           import { readFile } from 'node:fs/promises';
           const manifest = JSON.parse(await readFile('src/platform/creative/local-ai/models/interactive-segmentation.manifest.json', 'utf8'));
           const server = await readFile('server/index.ts', 'utf8');
           const productionCore = await readFile('server/core/composition/createProductionCore.ts', 'utf8');
-          if (manifest.status !== 'CANDIDATE') throw new Error(`C5B must not change MobileSAM release state; found ${manifest.status}`);
+          if (manifest.status !== 'CANDIDATE') throw new Error(`C5B/D0 must not change MobileSAM release state; found ${manifest.status}`);
           if (!server.includes("startsWith('/api/core/composite-continuations/')")) throw new Error('Accepted transport slice must wire the composite continuation route in the Core server');
           if (!server.includes('createLocalCompositeContinuationHttpAdapter') || !server.includes('LocalCompositeOutputUploadService')) throw new Error('Composite route must use the authenticated adapter and Core-selected output authority');
+          if (!server.includes('startAdmission: production.localExecution.compositeStartAdmission')) throw new Error('Composite start route must use the D0 admission selected by the same production Core');
+          if (!productionCore.includes('createProductionLocalCompositeStartAdmission') || !productionCore.includes('compositeStartAdmission: localCompositeStartAdmission')) throw new Error('Production Core must construct and expose the selected D0 start admission');
           if (productionCore.includes('localCompositeContinuationEnabled: true')) throw new Error('Composite HTTP transport must not globally enable local composite planning');
-          console.log('C5B authenticated server transport wired without MobileSAM promotion: PASS');
+          console.log('C5B/D0 authenticated server transport wired without MobileSAM promotion: PASS');
           NODE

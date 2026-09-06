@@ -110,6 +110,7 @@
     "server/core/providers/productionWorkflowVerifier.ts",
     "server/core/workflow/LocalCompositeContinuationService.ts",
     "server/core/workflow/PostgresWorkflowContinuationStore.ts",
+    "server/core/workflow/ProductionLocalCompositeStartAdmission.ts",
     "server/core/workflow/WorkflowContinuationStore.ts",
     "server/core/workflow/createProductionLocalCompositeContinuation.ts",
     "server/core/workflow/workflowContinuationSchema.ts",

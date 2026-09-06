@@ -3,6 +3,7 @@ import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import type { LocalCompositeContinuationService } from '../workflow/LocalCompositeContinuationService.ts';
 import type { LocalCompositeOutputUploadService } from '../workflow/LocalCompositeOutputUploadService.ts';
+import type { ProductionLocalCompositeStartAdmission } from '../workflow/ProductionLocalCompositeStartAdmission.ts';
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/composite-continuations/';
@@ -15,6 +16,7 @@ type CompositeAuth = Readonly<{
 export function createLocalCompositeContinuationHttpAdapter(input: Readonly<{
   continuation: LocalCompositeContinuationService;
   outputs: LocalCompositeOutputUploadService;
+  startAdmission: Pick<ProductionLocalCompositeStartAdmission, 'assertStartAllowed'>;
   auth: CompositeAuth;
   config: CoreServerConfig;
 }>) {
@@ -35,12 +37,14 @@ export function createLocalCompositeContinuationHttpAdapter(input: Readonly<{
         const projectId = string(body.projectId);
         if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
         rejectAuthorityFields(body);
-        const view = await input.continuation.start({
+        const command = Object.freeze({
           clientRequestId: string(body.clientRequestId),
           inputArtifactId: string(body.inputArtifactId),
           analysis: requiredRecord(body.analysis, 'analysis'),
           points: requiredRecordArray(body.points, 'points'),
-        }, scope(principal, projectId));
+        });
+        input.startAdmission.assertStartAllowed();
+        const view = await input.continuation.start(command, scope(principal, projectId));
         send(response, 202, publicView(view)); return true;
       }
 

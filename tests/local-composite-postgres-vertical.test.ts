@@ -6,6 +6,7 @@ import { createProductionCore } from '../server/core/composition/createProductio
 import { migrateFinalImageLineageSchema } from '../server/core/artifacts/finalImageLineageSchema.ts';
 import { migrateProjectSchema } from '../server/core/projects/projectSchema.ts';
 import type { CoreServerConfig } from '../server/core/config.ts';
+import { MOBILE_SAM_LOCAL_CAPABILITY } from '../server/core/localExecution/productionLocalModelPolicy.ts';
 import { migrateTransactionSchema } from '../server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts';
 import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../src/platform/creative/canonical/localComposite.ts';
 import type { LocalExecutionOutputEvidence, LocalExecutionResult, LocalExecutionResultV2, LocalExecutionTicket, LocalExecutionTicketV2 } from '../src/platform/creative/canonical/localExecution.ts';
@@ -28,8 +29,10 @@ const tenantId = 'c5b-composite-tenant';
 const userId = 'c5b-composite-user';
 const auth = Object.freeze({ tenantId, userId });
 const testMobileSam = Object.freeze({ modelId: 'mobilesam-vit-t', version: '1.0.2' });
+const testMobileSamBindings = Object.freeze([testMobileSam]);
 const testModels = Object.freeze({
-  [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment]: Object.freeze([testMobileSam]),
+  [MOBILE_SAM_LOCAL_CAPABILITY]: testMobileSamBindings,
+  [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment]: testMobileSamBindings,
 });
 const analysis = Object.freeze({ originalWidth: 4, originalHeight: 4, analysisWidth: 4, analysisHeight: 4, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 });
 const points = Object.freeze([Object.freeze({ x: 1, y: 1, label: 'POSITIVE', coordinateSpace: 'ORIGINAL' })]);
@@ -115,9 +118,9 @@ test('C5B production composition survives restart across both ON_DEVICE boundari
     throw new Error('C5B LOCAL_ONLY composite must not cross an external HTTP/provider boundary');
   };
 
-  // The production catalog remains empty because MobileSAM is CANDIDATE. The test-only
-  // catalog grants only the exact composite segment ticket so hosted acceptance can prove
-  // orchestration without changing model release authority or pretending to run inference.
+  // Production stays blocked because MobileSAM is CANDIDATE. The test-only catalog
+  // aliases the exact standalone/composite MobileSAM authority so hosted acceptance can
+  // exercise the already-proven graph without creating an independent composite trust root.
   await assert.rejects(
     () => createProductionCore({ ...config, nodeEnv: 'production' }, { testLocalModelsByCapability: testModels }),
     /Test local authority injection is forbidden outside nodeEnv=test/,
@@ -134,6 +137,7 @@ test('C5B production composition survives restart across both ON_DEVICE boundari
 
   let production = await createProductionCore(config, { fetcher: forbiddenFetcher, now: () => 10_000, testLocalModelsByCapability: testModels });
   t.after(async () => { await production.close().catch(() => undefined); });
+  assert.equal(production.localExecution.compositeStartAdmission.check().admitted, true, 'test Core must select the same exact alias topology used by D0 admission');
 
   const project = await production.projects.create(auth, 'C5B Composite Project', sourcePng, { maxDimension: 256, maxPixels: 65_536 });
   const scope = Object.freeze({ tenantId, userId, projectId: String(project.project_id) });

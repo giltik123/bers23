@@ -62,7 +62,7 @@ export async function startCoreServer() {
   const manualBodyAnchorAcquisitionAdapter = createManualProjectBodyAnchorHttpAdapter({ acquisition: production.fashion.manualBodyAnchorAcquisition, auth: production.auth, config, accepting: () => accepting });
   const localExecutionAdapter = createLocalExecutionHttpAdapter({ service: production.localExecution.segmentation, deterministicImages: production.localExecution.deterministicImages, crop: production.localExecution.crop, resize: production.localExecution.resize, superResolution: production.localExecution.superResolution, inputDelivery: production.localExecution.inputDelivery, auth: production.auth, config });
   const localCompositeOutputs = new LocalCompositeOutputUploadService({ continuation: production.localExecution.composite, uploads: production.localExecution.uploads });
-  const localCompositeAdapter = createLocalCompositeContinuationHttpAdapter({ continuation: production.localExecution.composite, outputs: localCompositeOutputs, auth: production.auth, config });
+  const localCompositeAdapter = createLocalCompositeContinuationHttpAdapter({ continuation: production.localExecution.composite, outputs: localCompositeOutputs, startAdmission: production.localExecution.compositeStartAdmission, auth: production.auth, config });
   const server = createServer((request, response) => {
     applyCoreSecurityHeaders(response, config);
     const target = parseCoreRequestTarget(request.url);

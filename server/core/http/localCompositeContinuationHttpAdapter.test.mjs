@@ -34,8 +34,15 @@ function browserHeaders(contentType = 'application/json') {
   return { origin, cookie, 'x-bers-csrf-token': csrf, 'content-type': contentType };
 }
 
-test('composite HTTP transport is authenticated/CSRF-bound and never accepts client workflow authority', async () => {
+function auth() {
+  return {
+    async verify(authorization) { assert.equal(authorization, `Bearer ${sessionToken}`); return principal; },
+  };
+}
+
+test('composite HTTP transport validates browser intent before one start-only production admission and never accepts client workflow authority', async () => {
   const calls = [];
+  let admissionCalls = 0;
   const continuation = {
     async start(command, scope) { calls.push(['start', command, scope]); return waitingView(); },
     async resume(executionId, scope) { calls.push(['resume', executionId, scope]); return waitingView(); },
@@ -44,23 +51,21 @@ test('composite HTTP transport is authenticated/CSRF-bound and never accepts cli
   const outputs = {
     async upload(value) { calls.push(['upload', value]); return Object.freeze({ uploadId: 'upload-http', kind: 'mask', role: 'MASK', sha256: 'a'.repeat(64), sizeBytes: value.bytes.byteLength, mimeType: value.mimeType, width: 2, height: 2 }); },
   };
-  const auth = {
-    async verify(authorization) { assert.equal(authorization, `Bearer ${sessionToken}`); return principal; },
-  };
-  const adapter = createLocalCompositeContinuationHttpAdapter({ continuation, outputs, auth, config });
+  const startAdmission = Object.freeze({ assertStartAllowed() { admissionCalls += 1; return Object.freeze({ admitted: true, status: 'ADMITTED', blockers: [] }); } });
+  const adapter = createLocalCompositeContinuationHttpAdapter({ continuation, outputs, startAdmission, auth: auth(), config });
 
   await withServer(adapter, async base => {
     const denied = await fetch(`${base}/api/core/composite-continuations/start`, {
       method: 'POST', headers: { origin, cookie, 'content-type': 'application/json' },
       body: JSON.stringify({ projectId: 'project-http', clientRequestId: 'client-http', inputArtifactId: 'original-http', analysis: {}, points: [{}] }),
     });
-    assert.equal(denied.status, 403); assert.equal((await denied.json()).error, 'csrf_denied'); assert.equal(calls.length, 0);
+    assert.equal(denied.status, 403); assert.equal((await denied.json()).error, 'csrf_denied'); assert.equal(calls.length, 0); assert.equal(admissionCalls, 0);
 
     const forged = await fetch(`${base}/api/core/composite-continuations/start`, {
       method: 'POST', headers: browserHeaders(),
       body: JSON.stringify({ projectId: 'project-http', clientRequestId: 'client-http', inputArtifactId: 'original-http', analysis: {}, points: [{}], stepId: 'forged-step' }),
     });
-    assert.equal(forged.status, 400); assert.equal((await forged.json()).error, 'client_workflow_authority_forbidden'); assert.equal(calls.length, 0);
+    assert.equal(forged.status, 400); assert.equal((await forged.json()).error, 'client_workflow_authority_forbidden'); assert.equal(calls.length, 0); assert.equal(admissionCalls, 0);
 
     const malformedSelection = await fetch(`${base}/api/core/composite-continuations/start`, {
       method: 'POST', headers: browserHeaders(),
@@ -69,6 +74,7 @@ test('composite HTTP transport is authenticated/CSRF-bound and never accepts cli
     assert.equal(malformedSelection.status, 400);
     assert.equal((await malformedSelection.json()).error, 'invalid_local_selection');
     assert.equal(calls.length, 0, 'transport must reject the whole malformed selection instead of filtering individual points');
+    assert.equal(admissionCalls, 0, 'invalid browser intent must not cross production start admission');
 
     const started = await fetch(`${base}/api/core/composite-continuations/start`, {
       method: 'POST', headers: browserHeaders(),
@@ -77,17 +83,20 @@ test('composite HTTP transport is authenticated/CSRF-bound and never accepts cli
     assert.equal(started.status, 202);
     const startedBody = await started.json();
     assert.equal(startedBody.executionId, 'execution-http'); assert.equal(startedBody.state, 'WAITING_FOR_LOCAL_RESULT'); assert.equal(startedBody.nextAction.ticket.ticketId, 'ticket-http');
+    assert.equal(admissionCalls, 1, 'exactly one production admission must occur before one new start');
     assert.deepEqual(calls[0][2], { tenantId: principal.tenantId, userId: principal.userId, projectId: 'project-http' });
     assert.equal(calls[0][1].stepId, undefined); assert.equal(calls[0][1].capability, undefined);
 
     const resumed = await fetch(`${base}/api/core/composite-continuations/execution-http?projectId=project-http`, { headers: { cookie } });
     assert.equal(resumed.status, 200); assert.equal((await resumed.json()).nextAction.ticket.ticketId, 'ticket-http');
+    assert.equal(admissionCalls, 1, 'resume must not be re-gated by current release readiness');
 
     const uploaded = await fetch(`${base}/api/core/composite-continuations/execution-http/output?projectId=project-http`, {
       method: 'POST', headers: browserHeaders('application/octet-stream'), body: new Uint8Array([255, 0, 0, 255]),
     });
     assert.equal(uploaded.status, 201); assert.equal((await uploaded.json()).uploadId, 'upload-http');
     const uploadCall = calls.find(value => value[0] === 'upload'); assert.ok(uploadCall); assert.equal(uploadCall[1].executionId, 'execution-http'); assert.equal(uploadCall[1].mimeType, 'application/octet-stream');
+    assert.equal(admissionCalls, 1, 'output upload must obey the outstanding ticket, not current start readiness');
 
     const resultPayload = Object.freeze({ ticketId: 'ticket-http', nonce: 'nonce-http', outputs: Object.freeze([{ uploadId: 'upload-http' }]) });
     const submitted = await fetch(`${base}/api/core/composite-continuations/execution-http/result`, {
@@ -95,10 +104,56 @@ test('composite HTTP transport is authenticated/CSRF-bound and never accepts cli
     });
     assert.equal(submitted.status, 202); assert.equal((await submitted.json()).state, 'WAITING_FOR_LOCAL_RESULT');
     const resultCall = calls.find(value => value[0] === 'result'); assert.ok(resultCall); assert.deepEqual(resultCall[3], resultPayload);
+    assert.equal(admissionCalls, 1, 'result submit must not be re-gated by current start readiness');
 
     const forgedResult = await fetch(`${base}/api/core/composite-continuations/execution-http/result`, {
       method: 'POST', headers: browserHeaders(), body: JSON.stringify({ projectId: 'project-http', ticketId: 'attacker-ticket', result: resultPayload }),
     });
     assert.equal(forgedResult.status, 400); assert.equal((await forgedResult.json()).error, 'client_workflow_authority_forbidden');
+    assert.equal(admissionCalls, 1);
+  });
+});
+
+test('blocked production start returns stable 503 before continuation creation while existing workflow resume remains recoverable', async () => {
+  let startCalls = 0;
+  let resumeCalls = 0;
+  let admissionCalls = 0;
+  const continuation = {
+    async start() { startCalls += 1; return waitingView(); },
+    async resume() { resumeCalls += 1; return waitingView(); },
+    async submitLocalResult() { throw new Error('not used'); },
+  };
+  const outputs = { async upload() { throw new Error('not used'); } };
+  const startAdmission = Object.freeze({
+    assertStartAllowed() {
+      admissionCalls += 1;
+      throw Object.assign(new Error('Local composite production start is not admitted'), {
+        status: 503,
+        code: 'local_composite_production_unavailable',
+        readiness: Object.freeze({ blockers: Object.freeze(['SEGMENT_MODEL_AUTHORITY_UNAVAILABLE']) }),
+      });
+    },
+  });
+  const adapter = createLocalCompositeContinuationHttpAdapter({ continuation, outputs, startAdmission, auth: auth(), config });
+
+  await withServer(adapter, async base => {
+    const blocked = await fetch(`${base}/api/core/composite-continuations/start`, {
+      method: 'POST', headers: browserHeaders(),
+      body: JSON.stringify({ projectId: 'project-http', clientRequestId: 'client-http', inputArtifactId: 'original-http', analysis: { originalWidth: 2 }, points: [{ x: 1 }] }),
+    });
+    assert.equal(blocked.status, 503);
+    assert.deepEqual(await blocked.json(), {
+      error: 'local_composite_production_unavailable',
+      message: 'Local composite production start is not admitted',
+      correlationId: blocked.headers.get('x-correlation-id'),
+    });
+    assert.equal(admissionCalls, 1);
+    assert.equal(startCalls, 0, 'blocked admission must precede durable continuation creation');
+
+    const resumed = await fetch(`${base}/api/core/composite-continuations/execution-http?projectId=project-http`, { headers: { cookie } });
+    assert.equal(resumed.status, 200);
+    assert.equal((await resumed.json()).executionId, 'execution-http');
+    assert.equal(resumeCalls, 1);
+    assert.equal(admissionCalls, 1, 'existing workflow recovery must not consult current start admission');
   });
 });
