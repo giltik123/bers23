@@ -21,6 +21,14 @@ on:
       - 'scripts/build-core-server.mjs'
       - 'tests/execution-run-registry-postgres.test.ts'
       - 'tests/execution-run-recovery-http-postgres.test.ts'
+      - 'src/api/executionRunRecoveryClient.js'
+      - 'src/api/executionRunRecoveryClient.test.mjs'
+      - 'src/lib/jobs/executionRunProjection.js'
+      - 'src/lib/jobs/executionRunProjection.test.mjs'
+      - 'src/lib/jobs/executionRunProjectionAuthority.test.mjs'
+      - 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx'
+      - 'src/components/editor/jobs/JobCenter.jsx'
+      - 'src/components/editor/jobs/JobQueuePanel.jsx'
       - '.github/workflows/execution-fabric-run-registry.yml'
   workflow_dispatch:
 
