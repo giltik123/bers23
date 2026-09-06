@@ -4,6 +4,8 @@ import type { AnyLocalExecutionTicket } from '../../../src/platform/creative/can
 import type { PostgresLocalExecutionUploadStore } from '../localExecution/PostgresLocalExecutionUploadStore.ts';
 import { LOCAL_COMPOSITE_CONTINUATION_STEPS, type LocalCompositeContinuationService } from './LocalCompositeContinuationService.ts';
 
+type LocalCompositeResumePort = Pick<LocalCompositeContinuationService, 'resume'>;
+
 export type LocalCompositeUploadEvidence = Readonly<{
   uploadId: string;
   kind: string;
@@ -21,11 +23,11 @@ export type LocalCompositeUploadEvidence = Readonly<{
  * step, output kind and geometry from durable continuation authority.
  */
 export class LocalCompositeOutputUploadService {
-  private readonly continuation: LocalCompositeContinuationService;
+  private readonly continuation: LocalCompositeResumePort;
   private readonly uploads: PostgresLocalExecutionUploadStore;
   private readonly now: () => number;
 
-  constructor(input: Readonly<{ continuation: LocalCompositeContinuationService; uploads: PostgresLocalExecutionUploadStore; now?: () => number }>) {
+  constructor(input: Readonly<{ continuation: LocalCompositeResumePort; uploads: PostgresLocalExecutionUploadStore; now?: () => number }>) {
     this.continuation = input.continuation;
     this.uploads = input.uploads;
     this.now = input.now ?? Date.now;

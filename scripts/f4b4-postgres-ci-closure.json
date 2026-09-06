@@ -108,6 +108,7 @@
     "server/core/providers/productionProviderSelection.ts",
     "server/core/providers/productionTargetSelection.ts",
     "server/core/providers/productionWorkflowVerifier.ts",
+    "server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts",
     "server/core/workflow/LocalCompositeContinuationService.ts",
     "server/core/workflow/PostgresWorkflowContinuationStore.ts",
     "server/core/workflow/ProductionLocalCompositeStartAdmission.ts",
@@ -228,7 +229,8 @@
     "server/core/fashion/migrations/031_project_body_anchor_acquisition_sequence.sql",
     "server/core/fashion/migrations/033_manual_parametric_basis_content_uniqueness.sql",
     "server/core/execution/migrations/034_execution_run_registry.sql",
-    "server/core/fashion/migrations/035_project_body_anchor_idempotency.sql"
+    "server/core/fashion/migrations/035_project_body_anchor_idempotency.sql",
+    "server/core/execution/migrations/036_execution_run_workflow_continuation.sql"
   ],
   "supportPaths": [
     ".github/workflows/fashion-execution-ci-policy.yml",

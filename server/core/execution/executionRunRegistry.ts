@@ -1,6 +1,6 @@
-export const EXECUTION_RUN_CAPABILITIES = Object.freeze(['LOCAL_EXECUTION','CREATIVE_EXECUTION'] as const);
-export const EXECUTION_RUN_AUTHORITY_KINDS = Object.freeze(['LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION'] as const);
-export const EXECUTION_RUN_STATUSES = Object.freeze(['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED'] as const);
+export const EXECUTION_RUN_CAPABILITIES = Object.freeze(['LOCAL_EXECUTION','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION'] as const);
+export const EXECUTION_RUN_AUTHORITY_KINDS = Object.freeze(['LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION'] as const);
+export const EXECUTION_RUN_STATUSES = Object.freeze(['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED','UNKNOWN'] as const);
 
 export type ExecutionRunCapability = (typeof EXECUTION_RUN_CAPABILITIES)[number];
 export type ExecutionRunAuthorityKind = (typeof EXECUTION_RUN_AUTHORITY_KINDS)[number];
@@ -57,4 +57,5 @@ export interface ExecutionRunRegistry {
   succeed(scope: ExecutionRunScope, runId: string): Promise<ExecutionRun>;
   fail(scope: ExecutionRunScope, runId: string, reasonCode: string): Promise<ExecutionRun>;
   cancel(scope: ExecutionRunScope, runId: string, reasonCode: string): Promise<ExecutionRun>;
+  markUnknown(scope: ExecutionRunScope, runId: string, reasonCode: string): Promise<ExecutionRun>;
 }

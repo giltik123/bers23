@@ -50,7 +50,8 @@ jobs:
           test -f dist-server/migrations/033_manual_parametric_basis_content_uniqueness.sql
           test -f dist-server/migrations/034_execution_run_registry.sql
           test -f dist-server/migrations/035_project_body_anchor_idempotency.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 35
+          test -f dist-server/migrations/036_execution_run_workflow_continuation.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 36
           test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.down.sql' | wc -l)" -eq 0
       - name: Prove bundled migrator on a clean PostgreSQL database
         env:
@@ -68,6 +69,8 @@ jobs:
             const result = await pool.query(`SELECT
               to_regclass('workflow_continuations')::text AS continuation,
               to_regclass('canonical_execution_runs')::text AS execution_runs,
+              pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('canonical_execution_runs') AND conname='canonical_execution_runs_capability_check')) AS execution_run_capability,
+              pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('canonical_execution_runs') AND conname='canonical_execution_runs_status_check')) AS execution_run_status,
               EXISTS (
                 SELECT 1 FROM information_schema.columns
                 WHERE table_schema=current_schema()
@@ -83,6 +86,8 @@ jobs:
               to_regclass('canonical_project_body_anchor_sets_owner_idempotency_key_unique')::text AS body_anchor_idempotency_index`);
             if (result.rows[0]?.continuation !== 'workflow_continuations') throw new Error('migration 015 was not applied');
             if (result.rows[0]?.execution_runs !== 'canonical_execution_runs') throw new Error('migration 034 was not applied');
+            if (!String(result.rows[0]?.execution_run_capability ?? '').includes('WORKFLOW_CONTINUATION')) throw new Error('migration 036 workflow-continuation capability was not applied');
+            if (!String(result.rows[0]?.execution_run_status ?? '').includes('UNKNOWN')) throw new Error('migration 036 UNKNOWN run status was not applied');
             if (result.rows[0]?.body_anchor_idempotency_key !== true) throw new Error('migration 035 idempotency key was not applied');
             if (result.rows[0]?.body_anchor_idempotency_binding !== true) throw new Error('migration 035 binding hash was not applied');
             if (result.rows[0]?.body_anchor_idempotency_index !== 'canonical_project_body_anchor_sets_owner_idempotency_key_unique') throw new Error('migration 035 unique index was not applied');

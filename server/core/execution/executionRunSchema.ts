@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
 
-const MIGRATION = '034_execution_run_registry.sql';
+const BASE_MIGRATION = '034_execution_run_registry.sql';
+const WORKFLOW_CONTINUATION_MIGRATION = '036_execution_run_workflow_continuation.sql';
 const TABLE = 'canonical_execution_runs';
 
 const REQUIRED_COLUMNS = Object.freeze([
@@ -42,9 +43,33 @@ const REQUIRED_CONSTRAINTS = Object.freeze([
   'canonical_execution_runs_reason_shape_check',
 ] as const);
 
-async function migration(): Promise<string> {
-  try { return await readFile(new URL(`./migrations/${MIGRATION}`, import.meta.url), 'utf8'); }
-  catch { return readFile(resolve(process.cwd(), 'server/core/execution/migrations', MIGRATION), 'utf8'); }
+type SchemaProfile = Readonly<{
+  capabilities: readonly string[];
+  authorities: readonly string[];
+  bindingLiterals: readonly string[];
+  statuses: readonly string[];
+  reasonStatuses: readonly string[];
+}>;
+
+const BASE_PROFILE: SchemaProfile = Object.freeze({
+  capabilities: Object.freeze(['LOCAL_EXECUTION','CREATIVE_EXECUTION']),
+  authorities: Object.freeze(['LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION']),
+  bindingLiterals: Object.freeze(['LOCAL_EXECUTION','LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION']),
+  statuses: Object.freeze(['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED']),
+  reasonStatuses: Object.freeze(['FAILED','CANCELLED']),
+});
+
+const D1_PROFILE: SchemaProfile = Object.freeze({
+  capabilities: Object.freeze(['LOCAL_EXECUTION','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION']),
+  authorities: Object.freeze(['LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION']),
+  bindingLiterals: Object.freeze(['LOCAL_EXECUTION','LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION']),
+  statuses: Object.freeze(['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED','UNKNOWN']),
+  reasonStatuses: Object.freeze(['FAILED','CANCELLED','UNKNOWN']),
+});
+
+async function migration(name: string): Promise<string> {
+  try { return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8'); }
+  catch { return readFile(resolve(process.cwd(), 'server/core/execution/migrations', name), 'utf8'); }
 }
 
 async function schemaState(pool: Pool) {
@@ -64,7 +89,7 @@ async function schemaState(pool: Pool) {
   });
 }
 
-function schemaReady(state: Awaited<ReturnType<typeof schemaState>>): boolean {
+function schemaReady(state: Awaited<ReturnType<typeof schemaState>>, profile: SchemaProfile): boolean {
   if (state.table !== TABLE) return false;
   const columns = new Map(state.columns.map(row => [String(row.column_name), row]));
   if (!REQUIRED_COLUMNS.every(([name, type, nullable]) => {
@@ -90,11 +115,18 @@ function schemaReady(state: Awaited<ReturnType<typeof schemaState>>): boolean {
   const authority = definition(constraints.get('canonical_execution_runs_authority_kind_check'));
   const binding = definition(constraints.get('canonical_execution_runs_authority_binding_check'));
   const status = definition(constraints.get('canonical_execution_runs_status_check'));
-  if (!sameLiteralSet(capability, ['LOCAL_EXECUTION','CREATIVE_EXECUTION'])) return false;
-  if (!sameLiteralSet(authority, ['LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION'])) return false;
-  if (!sameLiteralSet(status, ['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED'])) return false;
-  if (!sameLiteralSet(binding, ['LOCAL_EXECUTION','LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION'])
+  const timeShape = definition(constraints.get('canonical_execution_runs_time_shape_check'));
+  const reasonShape = definition(constraints.get('canonical_execution_runs_reason_shape_check'));
+  if (!sameLiteralSet(capability, profile.capabilities)) return false;
+  if (!sameLiteralSet(authority, profile.authorities)) return false;
+  if (!sameLiteralSet(status, profile.statuses)) return false;
+  if (!sameLiteralSet(binding, profile.bindingLiterals)
     || !binding.includes('capability') || !binding.includes('authority_kind')) return false;
+  if (!sameLiteralSet(timeShape, profile.statuses)
+    || !timeShape.includes('status') || !timeShape.includes('started_at') || !timeShape.includes('finished_at')) return false;
+  if (!sameLiteralSet(reasonShape, profile.reasonStatuses)
+    || !reasonShape.includes('status') || !reasonShape.includes('status_reason_code')
+    || !reasonShape.includes('IS NOT NULL') || !reasonShape.includes('IS NULL')) return false;
 
   const projectFk = constraints.get('canonical_execution_runs_project_fkey');
   const parentFk = constraints.get('canonical_execution_runs_parent_run_id_fkey');
@@ -116,13 +148,23 @@ function sameLiteralSet(value: string, expected: readonly string[]): boolean {
 }
 
 export async function checkExecutionRunSchema(pool: Pool): Promise<void> {
-  if (!schemaReady(await schemaState(pool))) {
-    throw new Error('canonical execution run registry schema is incomplete or permissive; apply migration 034');
+  if (!schemaReady(await schemaState(pool), D1_PROFILE)) {
+    throw new Error('canonical execution run registry schema is incomplete or permissive; apply migrations 034 and 036');
   }
 }
 
 export async function migrateExecutionRunSchema(pool: Pool): Promise<void> {
-  const state = await schemaState(pool);
-  if (!schemaReady(state)) await pool.query(await migration());
+  let state = await schemaState(pool);
+  if (schemaReady(state, D1_PROFILE)) return;
+
+  if (!state.table) {
+    await pool.query(await migration(BASE_MIGRATION));
+    state = await schemaState(pool);
+  }
+  if (!schemaReady(state, BASE_PROFILE)) {
+    throw new Error('canonical execution run registry schema cannot be safely upgraded because migration 034 authority is not exact');
+  }
+
+  await pool.query(await migration(WORKFLOW_CONTINUATION_MIGRATION));
   await checkExecutionRunSchema(pool);
 }
