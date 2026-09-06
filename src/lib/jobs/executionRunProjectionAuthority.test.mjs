@@ -21,6 +21,9 @@ test('canonical projection imports only the narrow recovery client and no browse
   assert.match(text, /WORKFLOW_STEP cannot be an ExecutionRun root/);
   assert.match(text, /generation !== this\.generation/);
   assert.match(text, /terminal time shape is invalid/);
+  assert.match(text, /RESULT_PATH/);
+  assert.match(text, /status !== 'SUCCEEDED' \|\| capability !== 'CREATIVE_EXECUTION' \|\| authorityKind !== 'CREATIVE_EXECUTION'/);
+  assert.match(text, /result\.imageUrl is invalid/);
 });
 
 test('recovery transport is explicitly GET-only and exposes no generic request or mutation API', async () => {
@@ -42,7 +45,7 @@ test('owning Creative control is separate from recovery and fail-closed on exact
   assert.doesNotMatch(text, /ExecutionRunRegistry|executionRunRecoveryClient|execution-runs|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|stripe|retry|duplicate/);
 });
 
-test('canonical UI exposes only owning Creative cancel while session repeats remain explicit new operations', async () => {
+test('canonical UI exposes owning Creative cancel and read-only recovered FINAL while session repeats remain explicit new operations', async () => {
   const [row, center] = await Promise.all([source(rowUrl), source(centerUrl)]);
   assert.match(row, /data-canonical-execution-run/);
   assert.match(row, /run\.capability === 'CREATIVE_EXECUTION'/);
@@ -50,6 +53,12 @@ test('canonical UI exposes only owning Creative cancel while session repeats rem
   assert.match(row, /run\.status === 'RUNNING'/);
   assert.match(row, /control\?\.state === 'AVAILABLE'/);
   assert.match(row, /onClick=\{\(\) => onCancel\(run\)\}/);
+  assert.match(row, /run\.status === 'SUCCEEDED'/);
+  assert.match(row, /run\.result\?\.kind === 'FINAL_IMAGE'/);
+  assert.match(row, /data-canonical-execution-result/);
+  assert.match(row, /href=\{run\.result\.imageUrl\}/);
+  assert.match(row, /target="_blank"/);
+  assert.match(row, /rel="noopener noreferrer"/);
   assert.doesNotMatch(row, /jobManager|jobStorage|onRunAgain|onRetry|onDuplicate|onMoveUp|runAgain|retry|duplicate|coreClient|execution-runs/);
 
   assert.match(center, /useMemo\(\(\) => createExecutionRunProjection\(\), \[\]\)/);

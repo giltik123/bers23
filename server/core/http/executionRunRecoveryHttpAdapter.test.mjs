@@ -11,6 +11,7 @@ const scope = Object.freeze({ tenantId, userId, projectId });
 const parentRunId = randomUUID();
 const localChildRunId = randomUUID();
 const internalChildRunId = randomUUID();
+const creativeRunId = randomUUID();
 const now = '2026-09-06T00:00:00.000Z';
 
 const parent = run({
@@ -43,6 +44,16 @@ const internalChild = run({
   revision: 2,
   startedAt: now,
 });
+const succeededCreative = run({
+  runId: creativeRunId,
+  capability: 'CREATIVE_EXECUTION',
+  authorityKind: 'CREATIVE_EXECUTION',
+  authorityRef: 'creative-recovery-final-1',
+  status: 'SUCCEEDED',
+  revision: 3,
+  startedAt: now,
+  finishedAt: now,
+});
 
 function run(overrides) {
   return Object.freeze({
@@ -64,23 +75,31 @@ function sameScope(candidate) {
   return candidate?.tenantId === tenantId && candidate?.userId === userId && candidate?.projectId === projectId;
 }
 
-function harness(principal = Object.freeze({ tenantId, userId })) {
-  const calls = { roots: [], gets: [], children: [] };
+function harness(principal = Object.freeze({ tenantId, userId }), options = {}) {
+  const calls = { roots: [], gets: [], children: [], results: [] };
+  const rootRuns = options.rootRuns ?? [parent];
+  const allRuns = options.allRuns ?? [parent, localChild, internalChild];
   const reader = Object.freeze({
     listRoots: async (candidateScope, limit) => {
       calls.roots.push({ scope: candidateScope, limit });
-      return sameScope(candidateScope) ? Object.freeze([parent]) : Object.freeze([]);
+      return sameScope(candidateScope) ? Object.freeze(rootRuns) : Object.freeze([]);
     },
     get: async (candidateScope, runId) => {
       calls.gets.push({ scope: candidateScope, runId });
       if (!sameScope(candidateScope)) return undefined;
-      return [parent, localChild, internalChild].find(candidate => candidate.runId === runId);
+      return allRuns.find(candidate => candidate.runId === runId);
     },
     listChildren: async (candidateScope, runId, limit) => {
       calls.children.push({ scope: candidateScope, runId, limit });
       return sameScope(candidateScope) && runId === parentRunId
         ? Object.freeze([localChild, internalChild])
         : Object.freeze([]);
+    },
+  });
+  const results = Object.freeze({
+    resolveCreativeFinal: async (candidateScope, executionId) => {
+      calls.results.push({ scope: candidateScope, executionId });
+      return options.resolveCreativeFinal ? options.resolveCreativeFinal(candidateScope, executionId) : undefined;
     },
   });
   const config = Object.freeze({
@@ -96,7 +115,7 @@ function harness(principal = Object.freeze({ tenantId, userId })) {
       return principal;
     },
   });
-  return Object.freeze({ adapter: createExecutionRunRecoveryHttpAdapter({ runs: reader, auth, config }), calls });
+  return Object.freeze({ adapter: createExecutionRunRecoveryHttpAdapter({ runs: reader, results, auth, config }), calls });
 }
 
 async function withServer(handler, fn) {
@@ -131,8 +150,10 @@ test('root recovery is authenticated, scoped, bounded and does not expose idempo
     assert.equal(body.runs[0].authorityRef, 'workflow-execution-recovery-1');
     assert.equal('idempotencyKey' in body.runs[0], false);
     assert.equal('scope' in body.runs[0], false);
+    assert.equal('result' in body.runs[0], false);
   });
   assert.deepEqual(calls.roots, [{ scope, limit: 2 }]);
+  assert.deepEqual(calls.results, []);
 });
 
 test('exact get and direct children return the canonical run tree without mutation authority', async () => {
@@ -159,6 +180,54 @@ test('exact get and direct children return the canonical run tree without mutati
   });
   assert.equal(calls.gets.length, 2);
   assert.deepEqual(calls.children, [{ scope, runId: parentRunId, limit: 2 }]);
+  assert.deepEqual(calls.results, []);
+});
+
+test('only a SUCCEEDED Creative run can project a validated read-only FINAL descriptor', async () => {
+  const descriptor = Object.freeze({
+    kind: 'FINAL_IMAGE',
+    artifactId: 'signed.final.artifact',
+    imageUrl: '/api/core/artifacts/results/signed.final.delivery',
+    width: 1024,
+    height: 768,
+  });
+  const { adapter, calls } = harness(Object.freeze({ tenantId, userId }), {
+    rootRuns: [succeededCreative, parent],
+    allRuns: [succeededCreative, parent, localChild, internalChild],
+    resolveCreativeFinal: async (candidateScope, executionId) => sameScope(candidateScope) && executionId === succeededCreative.authorityRef ? descriptor : undefined,
+  });
+
+  await withServer(adapter, async base => {
+    const response = await fetch(`${base}/api/core/execution-runs?projectId=${projectId}`, { headers: headers() });
+    assert.equal(response.status, 200);
+    const body = await json(response);
+    const creative = body.runs.find(candidate => candidate.runId === creativeRunId);
+    assert.deepEqual(creative.result, descriptor);
+    assert.equal('storageId' in creative.result, false);
+    assert.equal('bytes' in creative.result, false);
+    assert.equal('idempotencyKey' in creative, false);
+    assert.equal(body.runs.find(candidate => candidate.runId === parentRunId).result, undefined);
+  });
+  assert.deepEqual(calls.results, [{ scope, executionId: succeededCreative.authorityRef }]);
+});
+
+test('malformed result descriptors fail closed instead of becoming browser navigation authority', async () => {
+  const { adapter } = harness(Object.freeze({ tenantId, userId }), {
+    rootRuns: [succeededCreative],
+    allRuns: [succeededCreative],
+    resolveCreativeFinal: async () => Object.freeze({
+      kind: 'FINAL_IMAGE',
+      artifactId: 'signed.final.artifact',
+      imageUrl: 'javascript:alert(1)',
+      width: 1,
+      height: 1,
+    }),
+  });
+  await withServer(adapter, async base => {
+    const response = await fetch(`${base}/api/core/execution-runs?projectId=${projectId}`, { headers: headers() });
+    assert.equal(response.status, 500);
+    assert.equal((await json(response)).error, 'internal_error');
+  });
 });
 
 test('cross-scope and unknown runs are existence-safe', async () => {
@@ -176,6 +245,7 @@ test('cross-scope and unknown runs are existence-safe', async () => {
     assert.equal(childrenResponse.status, 404);
     assert.equal((await json(childrenResponse)).error, 'execution_run_not_found');
   });
+  assert.deepEqual(wrongUser.calls.results, []);
 
   const ownerHarness = harness();
   await withServer(ownerHarness.adapter, async base => {
@@ -208,6 +278,7 @@ test('invalid identifiers, limits, query authority and malformed path encoding f
   assert.equal(calls.roots.length, 0);
   assert.equal(calls.gets.length, 0);
   assert.equal(calls.children.length, 0);
+  assert.equal(calls.results.length, 0);
 });
 
 test('authentication and origin policy are preserved and OPTIONS is read-only', async () => {
@@ -229,4 +300,5 @@ test('authentication and origin policy are preserved and OPTIONS is read-only', 
   assert.equal(calls.roots.length, 0);
   assert.equal(calls.gets.length, 0);
   assert.equal(calls.children.length, 0);
+  assert.equal(calls.results.length, 0);
 });

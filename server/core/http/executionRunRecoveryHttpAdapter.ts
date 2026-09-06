@@ -9,19 +9,32 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DEFAULT_ROOT_LIMIT = 50;
 const DEFAULT_CHILD_LIMIT = 100;
 const MAX_LIMIT = 100;
+const RESULT_PATH = /^\/api\/core\/artifacts\/results\/[^/?#\s]+$/;
 
 type ExecutionRunRecoveryReader = Pick<ExecutionRunRegistry, 'get' | 'listRoots' | 'listChildren'>;
+export type ExecutionRunFinalResultDescriptor = Readonly<{
+  kind: 'FINAL_IMAGE';
+  artifactId: string;
+  imageUrl: string;
+  width: number;
+  height: number;
+}>;
+export type ExecutionRunResultReader = Readonly<{
+  resolveCreativeFinal(scope: ExecutionRunScope, executionId: string): Promise<ExecutionRunFinalResultDescriptor | undefined>;
+}>;
 type RecoveryAuth = Readonly<{
   verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
 }>;
 
 /**
  * Authenticated observation-only transport for durable canonical ExecutionRuns.
- * The dependency is intentionally narrowed so HTTP recovery cannot mutate or
- * dispatch execution state even if a future route is added accidentally.
+ * Registry and result dependencies are intentionally narrowed so HTTP recovery
+ * cannot mutate or dispatch execution state. FINAL descriptors are projections
+ * of existing Artifact truth, never an alternate execution/result authority.
  */
 export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
   runs: ExecutionRunRecoveryReader;
+  results: ExecutionRunResultReader;
   auth: RecoveryAuth;
   config: CoreServerConfig;
 }>) {
@@ -46,7 +59,7 @@ export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
         rejectUnexpectedQuery(url, new Set(['projectId', 'limit']));
         const limit = readLimit(url, DEFAULT_ROOT_LIMIT);
         const runs = await input.runs.listRoots(scope, limit);
-        send(response, 200, Object.freeze({ runs: Object.freeze(runs.map(publicRun)) }));
+        send(response, 200, Object.freeze({ runs: Object.freeze(await Promise.all(runs.map(run => publicRun(run, scope, input.results)))) }));
         return true;
       }
 
@@ -58,7 +71,10 @@ export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
         if (!parent) throw httpError(404, 'execution_run_not_found', 'Execution run is unavailable in this scope');
         const limit = readLimit(url, DEFAULT_CHILD_LIMIT);
         const children = await input.runs.listChildren(scope, runId, limit);
-        send(response, 200, Object.freeze({ parent: publicRun(parent), runs: Object.freeze(children.map(publicRun)) }));
+        send(response, 200, Object.freeze({
+          parent: await publicRun(parent, scope, input.results),
+          runs: Object.freeze(await Promise.all(children.map(run => publicRun(run, scope, input.results)))),
+        }));
         return true;
       }
 
@@ -68,7 +84,7 @@ export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
         const runId = runIdFromPath(runMatch[1]);
         const run = await input.runs.get(scope, runId);
         if (!run) throw httpError(404, 'execution_run_not_found', 'Execution run is unavailable in this scope');
-        send(response, 200, publicRun(run));
+        send(response, 200, await publicRun(run, scope, input.results));
         return true;
       }
 
@@ -86,7 +102,12 @@ export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
   };
 }
 
-function publicRun(run: ExecutionRun) {
+async function publicRun(run: ExecutionRun, scope: ExecutionRunScope, results: ExecutionRunResultReader) {
+  const result = run.status === 'SUCCEEDED'
+    && run.capability === 'CREATIVE_EXECUTION'
+    && run.authorityKind === 'CREATIVE_EXECUTION'
+    ? await results.resolveCreativeFinal(scope, run.authorityRef)
+    : undefined;
   return Object.freeze({
     runId: run.runId,
     capability: run.capability,
@@ -100,7 +121,18 @@ function publicRun(run: ExecutionRun) {
     updatedAt: run.updatedAt,
     ...(run.startedAt ? { startedAt: run.startedAt } : {}),
     ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
+    ...(result ? { result: publicResult(result) } : {}),
   });
+}
+
+function publicResult(value: ExecutionRunFinalResultDescriptor): ExecutionRunFinalResultDescriptor {
+  if (!value || value.kind !== 'FINAL_IMAGE') throw new Error('Execution run result reader returned an unsupported result kind');
+  const artifactId = boundedPublicText(value.artifactId, 'artifactId', 8192);
+  const imageUrl = boundedPublicText(value.imageUrl, 'imageUrl', 8192);
+  if (!RESULT_PATH.test(imageUrl)) throw new Error('Execution run result reader returned an invalid result delivery URL');
+  const width = positiveSafeInteger(value.width, 'width');
+  const height = positiveSafeInteger(value.height, 'height');
+  return Object.freeze({ kind: 'FINAL_IMAGE', artifactId, imageUrl, width, height });
 }
 
 function requiredProjectId(url: URL): string {
@@ -140,6 +172,19 @@ function canonicalUuid(value: unknown, code: string, label: string): string {
   const normalized = value.normalize('NFKC').trim().toLowerCase();
   if (!UUID.test(normalized)) throw httpError(400, code, `${label} must be a UUID`);
   return normalized;
+}
+
+function boundedPublicText(value: unknown, label: string, max: number): string {
+  if (typeof value !== 'string') throw new Error(`Execution run result ${label} must be text`);
+  const normalized = value.normalize('NFKC').trim();
+  if (!normalized || normalized.length > max || /[\u0000-\u001f\u007f]/u.test(normalized)) throw new Error(`Execution run result ${label} is invalid`);
+  return normalized;
+}
+
+function positiveSafeInteger(value: unknown, label: string): number {
+  const numeric = Number(value);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) throw new Error(`Execution run result ${label} must be a positive integer`);
+  return numeric;
 }
 
 function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {

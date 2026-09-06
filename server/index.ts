@@ -33,6 +33,7 @@ const LEGACY_FASHION_PREPARE_PATHS = new Set([
   '/api/core/local-execution/garment-mesh-warp/prepare',
   '/api/core/local-execution/garment-texture-composite/prepare',
 ]);
+const EXECUTION_RESULT_DELIVERY_TTL_MS = 5 * 60_000;
 
 export async function startCoreServer() {
   const config = loadCoreServerConfig(); const production = await createProductionCore(config); let accepting = true;
@@ -71,6 +72,21 @@ export async function startCoreServer() {
       get: executionRunRegistry.get.bind(executionRunRegistry),
       listRoots: executionRunRegistry.listRoots.bind(executionRunRegistry),
       listChildren: executionRunRegistry.listChildren.bind(executionRunRegistry),
+    }),
+    results: Object.freeze({
+      resolveCreativeFinal: async (scope, executionId) => {
+        const stored = await production.artifacts.images.loadFinalByExecution(executionId, scope);
+        if (!stored) return undefined;
+        const artifactId = production.artifacts.external.issueStoredFinal(stored.storageId, scope);
+        const deliveryToken = production.artifacts.external.issueStoredFinalDelivery(stored.storageId, scope, Date.now() + EXECUTION_RESULT_DELIVERY_TTL_MS);
+        return Object.freeze({
+          kind: 'FINAL_IMAGE' as const,
+          artifactId,
+          imageUrl: `/api/core/artifacts/results/${encodeURIComponent(deliveryToken)}`,
+          width: stored.width,
+          height: stored.height,
+        });
+      },
     }),
     auth: production.auth,
     config,
