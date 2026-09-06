@@ -102,6 +102,7 @@ export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
   succeed(scope: ExecutionRunScope, runId: string): Promise<ExecutionRun> { return this.transition(scope, runId, 'SUCCEEDED'); }
   fail(scope: ExecutionRunScope, runId: string, reasonCode: string): Promise<ExecutionRun> { return this.transition(scope, runId, 'FAILED', canonicalReason(reasonCode)); }
   cancel(scope: ExecutionRunScope, runId: string, reasonCode: string): Promise<ExecutionRun> { return this.transition(scope, runId, 'CANCELLED', canonicalReason(reasonCode)); }
+  markUnknown(scope: ExecutionRunScope, runId: string, reasonCode: string): Promise<ExecutionRun> { return this.transition(scope, runId, 'UNKNOWN', canonicalReason(reasonCode)); }
 
   private async transition(scopeValue: ExecutionRunScope, runIdValue: string, target: ExecutionRunStatus, reason?: string): Promise<ExecutionRun> {
     const scope = normalizeScope(scopeValue);
@@ -116,7 +117,7 @@ export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
       if (!selected.rows[0]) throw registryError('execution_run_unavailable', 'Execution run is unavailable in this scope');
       const current = rowToRun(selected.rows[0]);
       if (current.status === target) {
-        if ((target === 'FAILED' || target === 'CANCELLED') && current.statusReasonCode !== reason) {
+        if (requiresReason(target) && current.statusReasonCode !== reason) {
           throw registryError('execution_run_terminal_conflict', 'Terminal execution run reason cannot change');
         }
         await client.query('COMMIT');
@@ -125,7 +126,7 @@ export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
       if (!allowedTransition(current.status, target)) {
         throw registryError('execution_run_transition_conflict', `Execution run cannot transition from ${current.status} to ${target}`);
       }
-      const terminal = target === 'SUCCEEDED' || target === 'FAILED' || target === 'CANCELLED';
+      const terminal = isTerminalStatus(target);
       const updated = await client.query(`UPDATE ${TABLE} SET
         status=$5,
         revision=revision+1,
@@ -153,10 +154,7 @@ function normalizeIssue(input: IssueExecutionRunInput): IssueExecutionRunInput {
   const scope = normalizeScope(input.scope);
   const capability = exactEnum(input.capability, CAPABILITIES, 'capability') as ExecutionRunCapability;
   const authorityKind = exactEnum(input.authorityKind, AUTHORITY_KINDS, 'authorityKind') as ExecutionRunAuthorityKind;
-  if ((capability === 'LOCAL_EXECUTION' && authorityKind !== 'LOCAL_EXECUTION_TICKET')
-    || (capability === 'CREATIVE_EXECUTION' && authorityKind !== 'CREATIVE_EXECUTION')) {
-    throw new TypeError('Execution run capability and authority kind are incompatible');
-  }
+  if (!validAuthorityBinding(capability, authorityKind)) throw new TypeError('Execution run capability and authority kind are incompatible');
   return Object.freeze({
     scope,
     capability,
@@ -179,11 +177,10 @@ function normalizeScope(value: ExecutionRunScope): ExecutionRunScope {
 function rowToRun(row: Record<string, unknown>): ExecutionRun {
   const status = exactEnum(row.status, STATUSES, 'status') as ExecutionRunStatus;
   const reason = row.status_reason_code === null || row.status_reason_code === undefined ? undefined : canonicalReason(String(row.status_reason_code));
-  if ((status === 'FAILED' || status === 'CANCELLED') !== Boolean(reason)) throw new Error('Execution run row reason does not match status');
+  if (requiresReason(status) !== Boolean(reason)) throw new Error('Execution run row reason does not match status');
   const capability = exactEnum(row.capability, CAPABILITIES, 'capability') as ExecutionRunCapability;
   const authorityKind = exactEnum(row.authority_kind, AUTHORITY_KINDS, 'authority_kind') as ExecutionRunAuthorityKind;
-  if ((capability === 'LOCAL_EXECUTION' && authorityKind !== 'LOCAL_EXECUTION_TICKET')
-    || (capability === 'CREATIVE_EXECUTION' && authorityKind !== 'CREATIVE_EXECUTION')) throw new Error('Execution run row capability binding is invalid');
+  if (!validAuthorityBinding(capability, authorityKind)) throw new Error('Execution run row capability binding is invalid');
   return Object.freeze({
     runId: canonicalUuid(String(row.run_id), 'run_id'),
     scope: Object.freeze({
@@ -215,9 +212,16 @@ function assertSameIssueBinding(stored: ExecutionRun, candidate: IssueExecutionR
   }
 }
 
+function validAuthorityBinding(capability: ExecutionRunCapability, authorityKind: ExecutionRunAuthorityKind): boolean {
+  return (capability === 'LOCAL_EXECUTION' && authorityKind === 'LOCAL_EXECUTION_TICKET')
+    || (capability === 'CREATIVE_EXECUTION' && authorityKind === 'CREATIVE_EXECUTION')
+    || (capability === 'WORKFLOW_CONTINUATION' && authorityKind === 'WORKFLOW_CONTINUATION');
+}
+function requiresReason(status: ExecutionRunStatus): boolean { return status === 'FAILED' || status === 'CANCELLED' || status === 'UNKNOWN'; }
+function isTerminalStatus(status: ExecutionRunStatus): boolean { return status === 'SUCCEEDED' || requiresReason(status); }
 function allowedTransition(from: ExecutionRunStatus, to: ExecutionRunStatus): boolean {
   if (from === 'QUEUED') return to === 'RUNNING' || to === 'CANCELLED';
-  if (from === 'RUNNING') return to === 'SUCCEEDED' || to === 'FAILED' || to === 'CANCELLED';
+  if (from === 'RUNNING') return to === 'SUCCEEDED' || to === 'FAILED' || to === 'CANCELLED' || to === 'UNKNOWN';
   return false;
 }
 function canonicalUuid(value: unknown, label: string): string {

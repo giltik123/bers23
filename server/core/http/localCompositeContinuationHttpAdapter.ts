@@ -7,6 +7,7 @@ import type { ProductionLocalCompositeStartAdmission } from '../workflow/Product
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/composite-continuations/';
+type LocalCompositeContinuationPort = Pick<LocalCompositeContinuationService, 'start' | 'resume' | 'submitLocalResult'>;
 
 type CompositeAuth = Readonly<{
   verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
@@ -14,7 +15,7 @@ type CompositeAuth = Readonly<{
 
 /** Authenticated browser transport for the first narrow durable LOCAL_ONLY composite. */
 export function createLocalCompositeContinuationHttpAdapter(input: Readonly<{
-  continuation: LocalCompositeContinuationService;
+  continuation: LocalCompositeContinuationPort;
   outputs: LocalCompositeOutputUploadService;
   startAdmission: Pick<ProductionLocalCompositeStartAdmission, 'assertStartAllowed'>;
   auth: CompositeAuth;
@@ -91,7 +92,7 @@ export function createLocalCompositeContinuationHttpAdapter(input: Readonly<{
   };
 }
 
-function publicView(view: Awaited<ReturnType<LocalCompositeContinuationService['resume']>>) {
+function publicView(view: Awaited<ReturnType<LocalCompositeContinuationPort['resume']>>) {
   return Object.freeze({
     executionId: view.executionId,
     revision: view.revision,

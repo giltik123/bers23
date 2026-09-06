@@ -8,6 +8,11 @@ on:
     branches: [ "main" ]
     paths:
       - 'server/core/execution/**'
+      - 'server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts'
+      - 'server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.test.mjs'
+      - 'server/core/workflow/LocalCompositeOutputUploadService.ts'
+      - 'server/core/http/localCompositeContinuationHttpAdapter.ts'
+      - 'server/core/composition/createProductionCore.ts'
       - 'server/index.ts'
       - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
       - 'scripts/build-core-server.mjs'
@@ -54,14 +59,17 @@ jobs:
         run: npm ci
       - name: Typecheck Core server
         run: npm run server:typecheck
-      - name: Build production Core and package migration 034
+      - name: Build production Core and package execution-run migrations
         run: |
           npm run server:build
           test -f dist-server/migrations/034_execution_run_registry.sql
+          test -f dist-server/migrations/036_execution_run_workflow_continuation.sql
       - name: Prove production schema CLI migration and check
         run: |
           npm run db:migrate:transactions
           npm run db:check:transactions
+      - name: Prove workflow-continuation projection semantics without redispatch authority
+        run: node --experimental-strip-types --test server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.test.mjs
       - name: Bundle durable registry PostgreSQL acceptance
         run: |
           mkdir -p .test-cache/execution-run-registry/migrations
@@ -83,9 +91,19 @@ jobs:
           cp server/core/projects/migrations/006_project_history_acceptance_hardening.sql .test-cache/execution-run-registry/migrations/
           cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/execution-run-registry/migrations/
           cp server/core/execution/migrations/034_execution_run_registry.sql .test-cache/execution-run-registry/migrations/
+          cp server/core/execution/migrations/036_execution_run_workflow_continuation.sql .test-cache/execution-run-registry/migrations/
       - name: Prove durable run identity, scope, replay and lifecycle semantics
         run: node --test --test-concurrency=1 .test-cache/execution-run-registry/execution-run-registry-postgres.test.mjs
-      - name: Prove foundation opens no Agent Automation browser provider or Billing authority
+      - name: Prove exact production continuation projection wiring
+        run: |
+          set -euo pipefail
+          grep -q 'new ExecutionRunBoundLocalCompositeContinuationService' server/core/composition/createProductionCore.ts
+          grep -q 'delegate: admittedLocalComposite' server/core/composition/createProductionCore.ts
+          grep -q 'continuations: new PostgresWorkflowContinuationStore(transactions.pool, now)' server/core/composition/createProductionCore.ts
+          grep -q 'runs: executionRuns' server/core/composition/createProductionCore.ts
+          grep -q "capability: 'WORKFLOW_CONTINUATION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q "authorityKind: 'WORKFLOW_CONTINUATION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+      - name: Prove D1 opens no Agent Automation browser provider or Billing authority
         run: |
           set -euo pipefail
           FILES=(
@@ -93,9 +111,11 @@ jobs:
             server/core/execution/PostgresExecutionRunRegistry.ts
             server/core/execution/executionRunSchema.ts
             server/core/execution/migrations/034_execution_run_registry.sql
+            server/core/execution/migrations/036_execution_run_workflow_continuation.sql
+            server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           )
           ! grep -E -q 'coreClient|create.*HttpAdapter|/api/core/|providers|Billing|billing|FAL|fal_|stripe|JobRecord|coreClient\.entities' "${FILES[@]}"
-          ! grep -E -q "'AGENT'|'AUTOMATION'|\"AGENT\"|\"AUTOMATION\"" server/core/execution/executionRunRegistry.ts server/core/execution/migrations/034_execution_run_registry.sql
+          ! grep -E -q "'AGENT'|'AUTOMATION'|\"AGENT\"|\"AUTOMATION\"" server/core/execution/executionRunRegistry.ts server/core/execution/migrations/034_execution_run_registry.sql server/core/execution/migrations/036_execution_run_workflow_continuation.sql
           ! grep -q 'canonical_execution_runs' src/lib/jobs/jobStorage.js
       - name: Check committed diff whitespace
         env:

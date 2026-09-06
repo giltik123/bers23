@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import test from 'node:test';
 import { Pool } from 'pg';
 import sharp from 'sharp';
@@ -68,6 +70,17 @@ function creativeInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function workflowInput(overrides: Record<string, unknown> = {}) {
+  return {
+    scope: { ...owner, projectId },
+    capability: 'WORKFLOW_CONTINUATION' as const,
+    idempotencyKey: 'workflow:request-1',
+    authorityKind: 'WORKFLOW_CONTINUATION' as const,
+    authorityRef: 'workflow-execution-1',
+    ...overrides,
+  };
+}
+
 async function issueRun(input: any) {
   return (await registry.issue(input)).run;
 }
@@ -119,6 +132,10 @@ test('exact idempotent replay is explicitly marked and remains recoverable after
 test('capability and authority kind cannot be mixed or pre-open Agent/Automation authority', async () => {
   await assert.rejects(
     () => registry.issue({ ...localInput(), authorityKind: 'CREATIVE_EXECUTION' as any }),
+    /incompatible/,
+  );
+  await assert.rejects(
+    () => registry.issue({ ...workflowInput(), authorityKind: 'CREATIVE_EXECUTION' as any }),
     /incompatible/,
   );
   await assert.rejects(
@@ -186,6 +203,24 @@ test('lifecycle is monotonic, revisioned and terminal transitions are immutable'
     () => registry.cancel(creative.scope, creative.runId, 'OTHER_REASON'),
     (error: any) => error?.code === 'execution_run_terminal_conflict',
   );
+
+  const workflow = await issueRun(workflowInput());
+  const workflowRunning = await registry.start(workflow.scope, workflow.runId);
+  const unknown = await registry.markUnknown(workflowRunning.scope, workflowRunning.runId, 'LOCAL_COMPOSITE_RESULT_UNKNOWN');
+  assert.equal(unknown.status, 'UNKNOWN');
+  assert.equal(unknown.revision, 3);
+  assert.equal(unknown.statusReasonCode, 'LOCAL_COMPOSITE_RESULT_UNKNOWN');
+  assert.ok(unknown.startedAt);
+  assert.ok(unknown.finishedAt);
+  assert.equal((await registry.markUnknown(unknown.scope, unknown.runId, 'LOCAL_COMPOSITE_RESULT_UNKNOWN')).revision, 3);
+  await assert.rejects(
+    () => registry.markUnknown(unknown.scope, unknown.runId, 'OTHER_UNKNOWN'),
+    (error: any) => error?.code === 'execution_run_terminal_conflict',
+  );
+  await assert.rejects(
+    () => registry.succeed(unknown.scope, unknown.runId),
+    (error: any) => error?.code === 'execution_run_transition_conflict',
+  );
 });
 
 test('list is scoped and parent linkage is allowed only inside one Project scope', async () => {
@@ -200,10 +235,10 @@ test('list is scoped and parent linkage is allowed only inside one Project scope
 
 test('schema check rejects arbitrary capability widening, not only known future capabilities', async () => {
   await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_capability_check');
-  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION','OTHER_CAPABILITY'))");
+  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION','OTHER_CAPABILITY'))");
   await assert.rejects(() => checkExecutionRunSchema(pool), /incomplete or permissive/);
   await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_capability_check');
-  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION'))");
+  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION'))");
   await checkExecutionRunSchema(pool);
 });
 
@@ -215,4 +250,20 @@ test('schema check rejects a scope-local authority uniqueness lookalike', async 
   await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_authority_unique');
   await pool.query('ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_authority_unique UNIQUE (authority_kind,authority_ref)');
   await checkExecutionRunSchema(pool);
+});
+
+test('exact historical 034 schema upgrades forward to D1 and migration replay is idempotent', async () => {
+  await pool.query('DROP TABLE canonical_execution_runs');
+  const baseMigration = await readFile(resolve(process.cwd(), 'server/core/execution/migrations/034_execution_run_registry.sql'), 'utf8');
+  await pool.query(baseMigration);
+  await assert.rejects(() => checkExecutionRunSchema(pool), /apply migrations 034 and 036/);
+  await migrateExecutionRunSchema(pool);
+  await checkExecutionRunSchema(pool);
+  await migrateExecutionRunSchema(pool);
+  await checkExecutionRunSchema(pool);
+
+  const issued = await registry.issue(workflowInput({ idempotencyKey: 'workflow:upgrade-proof', authorityRef: 'workflow-upgrade-proof' }));
+  assert.equal(issued.created, true);
+  assert.equal(issued.run.capability, 'WORKFLOW_CONTINUATION');
+  assert.equal(issued.run.authorityKind, 'WORKFLOW_CONTINUATION');
 });

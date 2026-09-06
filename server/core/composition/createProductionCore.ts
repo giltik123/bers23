@@ -39,6 +39,8 @@ import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from '../workflow/workflowContinuationSchema.ts';
 import { createProductionLocalCompositeContinuation } from '../workflow/createProductionLocalCompositeContinuation.ts';
 import { createProductionLocalCompositeStartAdmission } from '../workflow/ProductionLocalCompositeStartAdmission.ts';
+import { PostgresWorkflowContinuationStore } from '../workflow/PostgresWorkflowContinuationStore.ts';
+import { ExecutionRunBoundLocalCompositeContinuationService } from '../workflow/ExecutionRunBoundLocalCompositeContinuationService.ts';
 
 const LOCAL_EXECUTION_TICKET_TTL_MS = 5 * 60_000;
 
@@ -240,7 +242,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       now,
     });
     const localInputDelivery = new LocalExecutionInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
-    const localComposite = createProductionLocalCompositeContinuation({
+    const admittedLocalComposite = createProductionLocalCompositeContinuation({
       pool: transactions.pool,
       now,
       tickets: localExecution,
@@ -251,6 +253,11 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       signed: externalArtifacts,
       masks: maskArtifacts,
       verifier: productionWorkflowVerifier,
+    });
+    const localComposite = new ExecutionRunBoundLocalCompositeContinuationService({
+      delegate: admittedLocalComposite,
+      continuations: new PostgresWorkflowContinuationStore(transactions.pool, now),
+      runs: executionRuns,
     });
     const authStore = new PostgresAuthStore(transactions.pool);
     const authSecurityStore = new PostgresAuthSecurityStore(transactions.pool);
