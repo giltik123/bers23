@@ -1,9 +1,10 @@
 class JobScheduler {
-  constructor() { this.timers = new Map(); }
-  schedule(job, delay, callback) {
-    this.cancel(job.id);
-    this.timers.set(job.id, window.setTimeout(() => { this.timers.delete(job.id); callback(job); }, delay));
+  schedule() {
+    throw Object.assign(new Error('Generic JobManager retry scheduling is disabled; the owning adapter must define retry semantics'), {
+      code: 'job_retry_scheduling_disabled',
+    });
   }
-  cancel(jobId) { const timer = this.timers.get(jobId); if (timer) window.clearTimeout(timer); this.timers.delete(jobId); }
+  cancel() { return false; }
 }
-export const jobScheduler = new JobScheduler();
+
+export const jobScheduler = Object.freeze(new JobScheduler());

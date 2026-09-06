@@ -97,12 +97,12 @@ export default function JobCenter({ projectId = null }) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[11px] font-medium">This session</p>
-          <p className="text-[10px] text-muted-foreground">Ephemeral browser-only tasks · reload interrupts them</p>
+          <p className="text-[10px] text-muted-foreground">Ephemeral browser-only tasks · reload interrupts them · Run again starts a new operation</p>
         </div>
         <button onClick={() => state.paused ? jobManager.resume() : jobManager.pause()} className="text-[11px] text-muted-foreground hover:text-foreground">{state.paused ? 'Resume queue' : 'Pause queue'}</button>
       </div>
       {unsupportedSessionJobs > 0 && <p className="text-[11px] text-destructive">Unsupported session task classification. Controls are withheld.</p>}
-      {ephemeralJobs.map((job) => <JobRow key={job.id} job={job} onCancel={(id) => jobManager.cancel(id)} onRetry={(id) => jobManager.retry(id)} onDuplicate={(id) => jobManager.duplicate(id)} onMoveUp={(id) => jobManager.reorder(id, Math.max(0, state.queued.findIndex((item) => item.id === id) - 1))} />)}
+      {ephemeralJobs.map((job) => <JobRow key={job.id} job={job} onCancel={(id) => jobManager.cancel(id)} onRunAgain={(id) => jobManager.runAgain(id)} onDuplicate={(id) => jobManager.duplicate(id)} onMoveUp={(id) => jobManager.reorder(id, Math.max(0, state.queued.findIndex((item) => item.id === id) - 1))} />)}
     </div>}
   </section>;
 }

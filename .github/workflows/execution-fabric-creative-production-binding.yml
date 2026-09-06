@@ -23,6 +23,15 @@ on:
       - 'src/platform/creative/providers/fal/types.ts'
       - 'src/platform/creative/workflow-engine/WorkflowEngine.ts'
       - 'src/platform/creative/workflow-engine/types.ts'
+      - 'src/lib/jobs/jobManager.js'
+      - 'src/lib/jobs/jobRepeatPolicy.js'
+      - 'src/lib/jobs/jobRepeatPolicy.test.mjs'
+      - 'src/lib/jobs/jobRetryManager.js'
+      - 'src/lib/jobs/jobScheduler.js'
+      - 'src/lib/jobs/jobEphemeralAuthority.test.mjs'
+      - 'src/lib/jobs/executionRunProjectionAuthority.test.mjs'
+      - 'src/components/editor/jobs/JobCenter.jsx'
+      - 'src/components/editor/jobs/JobRow.jsx'
       - 'tests/creative-cancellation-http.test.ts'
       - 'tests/creative-cancellation-race.test.ts'
       - 'tests/creative-execution-run-binding.test.ts'
@@ -128,6 +137,15 @@ jobs:
         run: node --test .test-cache/creative-production-binding/creative-cancellation-http.test.mjs
       - name: Prove PostgreSQL process-restart replay cannot redispatch spend or provider work
         run: node --test --test-concurrency=1 .test-cache/creative-production-binding/creative-execution-run-restart-postgres.test.mjs
+      - name: Prove browser repeat policy cannot become Creative redispatch authority
+        run: |
+          set -euo pipefail
+          grep -q 'onJobFailure: () => false' src/lib/jobs/jobManager.js
+          grep -q 'buildNewOperationRepeatMetadata(job)' src/lib/jobs/jobManager.js
+          grep -q "NEW_OPERATION: 'NEW_OPERATION'" src/lib/jobs/jobRepeatPolicy.js
+          ! grep -E -q 'jobRetryManager|jobScheduler|retry\(jobId\)' src/lib/jobs/jobManager.js
+          ! grep -q 'coreClient.creative.execute' src/components/editor/jobs/JobCenter.jsx
+          ! grep -E -q 'onRunAgain|onRetry|onDuplicate' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
       - name: Preserve accepted Creative provider Billing and scope semantics
         run: node --test .test-cache/creative-production-binding/canonical-product-vertical-slice.test.mjs
       - name: Prove real HTTP Project scope reaches durable Run then Billing and provider authority
