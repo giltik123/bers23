@@ -9,6 +9,8 @@ on:
       - 'src/lib/jobs/executionRunProjection.js'
       - 'src/lib/jobs/executionRunProjection.test.mjs'
       - 'src/lib/jobs/executionRunProjectionAuthority.test.mjs'
+      - 'src/lib/jobs/creativeExecutionControl.js'
+      - 'src/lib/jobs/creativeExecutionControl.test.mjs'
       - 'src/lib/jobs/jobModel.js'
       - 'src/lib/jobs/jobModelEphemeral.test.mjs'
       - 'src/lib/jobs/jobEphemeralAuthority.test.mjs'
@@ -43,8 +45,8 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove GET-only recovery projection and ephemeral session authority
-        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
+      - name: Prove GET-only recovery, owning Creative cancel policy and ephemeral session authority
+        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
       - name: Preserve accepted server recovery HTTP contract
         run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
       - name: Typecheck browser and Core contracts
@@ -53,16 +55,25 @@ jobs:
           npm run server:typecheck
       - name: Build production browser
         run: npm run build
-      - name: Prove canonical recovery remains read-only and session scheduling is ephemeral-only
+      - name: Prove recovery stays read-only and only owning Creative lifecycle gains canonical cancel control
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           test -n "${BASE_SHA:-}"
-          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js src/lib/jobs/jobScheduler.js src/lib/jobs/jobRetryManager.js src/components/editor/jobs/JobRow.jsx)"
+          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js src/lib/jobs/jobScheduler.js src/lib/jobs/jobRetryManager.js src/components/editor/jobs/JobRow.jsx server)"
           ! grep -E -q 'coreClient|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|\.cancel\(|\.retry\(|\.issue\(' src/lib/jobs/executionRunProjection.js
           ! grep -E -q "method: 'POST'|method: 'PATCH'|method: 'DELETE'|coreClient|entities|creative|localExecution" src/api/executionRunRecoveryClient.js
-          ! grep -E -q 'Button|jobManager|jobStorage|onCancel|onRetry|onDuplicate|onMoveUp' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "run.capability === 'CREATIVE_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "run.authorityKind === 'CREATIVE_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "run.status === 'RUNNING'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "control?.state === 'AVAILABLE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          ! grep -E -q 'jobManager|jobStorage|onRetry|onDuplicate|onMoveUp|coreClient|execution-runs' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'new CreativeExecutionControlPolicy(coreClient.creative)' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'await creativeControl.cancel(run)' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'await canonicalProjection.refresh()' src/components/editor/jobs/JobCenter.jsx
+          ! grep -E -q 'ExecutionRunRegistry|coreClient\.executionRuns|execution-runs/.*/cancel' src/lib/jobs/creativeExecutionControl.js src/components/editor/jobs/JobCenter.jsx
+          ! grep -E -q 'retry|duplicate' src/lib/jobs/creativeExecutionControl.js
           ! grep -E -q 'jobStorage|JobRecord|coreClient\.entities|_persist\(' src/lib/jobs/jobManager.js
           ! grep -E -q 'coreClient|JobRecord|entities\.|\.create\(|\.update\(|\.filter\(' src/lib/jobs/jobStorage.js
           grep -q 'EPHEMERAL_CLIENT_TASK' src/lib/jobs/jobModel.js

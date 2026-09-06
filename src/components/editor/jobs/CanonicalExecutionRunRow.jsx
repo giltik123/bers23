@@ -11,7 +11,12 @@ function StatusIcon({ status }) {
   return <Circle className="w-3.5 h-3.5 text-muted-foreground" />;
 }
 
-export default function CanonicalExecutionRunRow({ run, depth = 0 }) {
+export default function CanonicalExecutionRunRow({ run, control, onCancel, depth = 0 }) {
+  const creativeRunning = run.capability === 'CREATIVE_EXECUTION' && run.authorityKind === 'CREATIVE_EXECUTION' && run.status === 'RUNNING';
+  const cancelAvailable = creativeRunning && control?.state === 'AVAILABLE' && typeof onCancel === 'function';
+  const cancelPending = creativeRunning && control?.state === 'PENDING';
+  const cancelUnavailable = creativeRunning && control?.state === 'UNAVAILABLE';
+
   return <div data-canonical-execution-run={run.runId} className={depth ? 'ml-4 border-l border-border/60 pl-3' : ''}>
     <div className="rounded-xl border border-border/60 p-3 text-xs space-y-1">
       <div className="flex items-center gap-2">
@@ -23,6 +28,11 @@ export default function CanonicalExecutionRunRow({ run, depth = 0 }) {
         <span>{executionRunStatusLabel(run.status)}{run.statusReasonCode ? ` · ${run.statusReasonCode}` : ''}</span>
         <span className="font-mono">r{run.revision}</span>
       </div>
+      {cancelAvailable && <div className="flex justify-end pt-1">
+        <button type="button" onClick={() => onCancel(run)} className="text-[11px] text-destructive hover:underline">Cancel</button>
+      </div>}
+      {cancelPending && <p className="text-[10px] text-muted-foreground text-right">Cancelling through Creative authority…</p>}
+      {cancelUnavailable && <p className="text-[10px] text-muted-foreground text-right">Cancellation unavailable.</p>}
     </div>
     {run.children?.length > 0 && <div className="mt-1 space-y-1">{run.children.map((child) => <CanonicalExecutionRunRow key={child.runId} run={child} depth={depth + 1} />)}</div>}
   </div>;

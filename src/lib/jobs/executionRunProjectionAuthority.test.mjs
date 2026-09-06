@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const projectionUrl = new URL('./executionRunProjection.js', import.meta.url);
+const controlUrl = new URL('./creativeExecutionControl.js', import.meta.url);
 const clientUrl = new URL('../../api/executionRunRecoveryClient.js', import.meta.url);
 const rowUrl = new URL('../../components/editor/jobs/CanonicalExecutionRunRow.jsx', import.meta.url);
 const centerUrl = new URL('../../components/editor/jobs/JobCenter.jsx', import.meta.url);
@@ -29,19 +30,42 @@ test('recovery transport is explicitly GET-only and exposes no generic request o
   assert.match(text, /return Object\.freeze\(\{\s*listRoots[\s\S]*get\(runId, projectId\)[\s\S]*listChildren/);
 });
 
-test('canonical UI row is display-only while session JobRow controls remain wired separately', async () => {
+test('owning Creative control is separate from recovery and fail-closed on exact capability, authority and live lifecycle', async () => {
+  const text = await source(controlUrl);
+  assert.match(text, /CreativeExecutionControlPolicy/);
+  assert.match(text, /run\.capability !== CREATIVE_CAPABILITY \|\| run\.authorityKind !== CREATIVE_AUTHORITY/);
+  assert.match(text, /run\.status !== ACTIVE_RUN_STATUS/);
+  assert.match(text, /this\.client\.status\(run\.authorityRef\)/);
+  assert.match(text, /lifecycle\.status !== CANCELLABLE_LIFECYCLE_STATUS/);
+  assert.match(text, /this\.client\.cancel\(control\.executionId\)/);
+  assert.match(text, /response\.status !== 'SKIPPED'/);
+  assert.doesNotMatch(text, /ExecutionRunRegistry|executionRunRecoveryClient|execution-runs|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|stripe|retry|duplicate/);
+});
+
+test('canonical UI exposes only owning Creative cancel while session JobRow controls remain separate', async () => {
   const [row, center] = await Promise.all([source(rowUrl), source(centerUrl)]);
-  assert.doesNotMatch(row, /Button|jobManager|jobStorage|onCancel|onRetry|onDuplicate|onMoveUp/);
   assert.match(row, /data-canonical-execution-run/);
+  assert.match(row, /run\.capability === 'CREATIVE_EXECUTION'/);
+  assert.match(row, /run\.authorityKind === 'CREATIVE_EXECUTION'/);
+  assert.match(row, /run\.status === 'RUNNING'/);
+  assert.match(row, /control\?\.state === 'AVAILABLE'/);
+  assert.match(row, /onClick=\{\(\) => onCancel\(run\)\}/);
+  assert.doesNotMatch(row, /jobManager|jobStorage|onRetry|onDuplicate|onMoveUp|retry|duplicate|coreClient|execution-runs/);
+
   assert.match(center, /useMemo\(\(\) => createExecutionRunProjection\(\), \[\]\)/);
+  assert.match(center, /new CreativeExecutionControlPolicy\(coreClient\.creative\)/);
   assert.match(center, /canonicalScopeMatches = Boolean\(normalizedProjectId\) && canonical\.projectId === normalizedProjectId/);
-  assert.match(center, /data-job-center-canonical-executions/);
-  assert.match(center, /Canonical recovery state · read only/);
+  assert.match(center, /await creativeControl\.cancel\(run\)/);
+  assert.match(center, /await canonicalProjection\.refresh\(\)/);
+  assert.match(center, /Canonical recovery state · owning Creative controls only/);
+  assert.match(center, /<CanonicalExecutionRunRow[^>]*control=\{canonicalControls\[run\.runId\]\}[^>]*onCancel=\{cancelCanonicalRun\}/);
+  assert.doesNotMatch(center, /<CanonicalExecutionRunRow[^>]*(onRetry|onDuplicate|onMoveUp)=/);
+  assert.doesNotMatch(center, /ExecutionRunRegistry|coreClient\.executionRuns|execution-runs\/.*cancel/);
+
   assert.match(center, /data-job-center-session-jobs/);
   assert.match(center, /onCancel=\{\(id\) => jobManager\.cancel\(id\)\}/);
   assert.match(center, /onRetry=\{\(id\) => jobManager\.retry\(id\)/);
   assert.match(center, /onDuplicate=\{\(id\) => jobManager\.duplicate\(id\)/);
-  assert.doesNotMatch(center, /<CanonicalExecutionRunRow[^>]*(onCancel|onRetry|onDuplicate|onMoveUp)=/);
 });
 
 test('JobQueuePanel scopes recovery to the current Editor project route without creating mutation authority', async () => {
