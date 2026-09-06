@@ -3,7 +3,12 @@ import test from 'node:test';
 import { Pool } from 'pg';
 import sharp from 'sharp';
 
-import { CreativeExecutionService } from '../server/core/application/creativeExecutionService.ts';
+import {
+  CreativeExecutionService,
+  creativeExecutionRunIdempotencyKey,
+  creativeRequestFingerprint,
+  type CreativeEditCommand,
+} from '../server/core/application/creativeExecutionService.ts';
 import { PostgresExecutionRunRegistry } from '../server/core/execution/PostgresExecutionRunRegistry.ts';
 import { checkExecutionRunSchema } from '../server/core/execution/executionRunSchema.ts';
 import { PostgresProjectStore } from '../server/core/projects/postgresProjectStore.ts';
@@ -27,6 +32,17 @@ async function resetDatabase() {
   await pool.query('TRUNCATE canonical_execution_runs,canonical_projects,canonical_project_history,canonical_project_versions,canonical_image_artifacts RESTART IDENTITY CASCADE');
 }
 
+function replayFingerprint(command: CreativeEditCommand): string {
+  return creativeRequestFingerprint(command, Object.freeze({
+    inputArtifactIdentity: command.inputArtifactId,
+    maskArtifactIdentities: Object.freeze([...(command.maskArtifactIds ?? [])]),
+  }));
+}
+
+function durableKey(command: CreativeEditCommand): string {
+  return creativeExecutionRunIdempotencyKey(command, replayFingerprint(command));
+}
+
 test.before(async () => {
   await checkExecutionRunSchema(pool);
   await resetDatabase();
@@ -43,7 +59,7 @@ test.beforeEach(async () => {
   await pool.query('TRUNCATE canonical_execution_runs RESTART IDENTITY CASCADE');
 });
 
-type Counters = { providerCalls: number; billingMutations: number };
+type Counters = { providerCalls: number; billingMutations: number; planningCalls: number; finalPersists: number };
 type RuntimeMode = 'success' | 'unknown';
 
 function createService(registry: PostgresExecutionRunRegistry, counters: Counters, runtimeMode: RuntimeMode) {
@@ -71,13 +87,20 @@ function createService(registry: PostgresExecutionRunRegistry, counters: Counter
     creditsPerEdit: 1,
     hardBudgetCredits: 1,
     ownsArtifacts: async () => true,
+    persistFinal: async (_scope, _executionId, artifact) => {
+      counters.finalPersists += 1;
+      return artifact;
+    },
     platform: {
       billing,
       decision: { decide: async request => ({ requestId: request.id, goal: request.intent, constraints: [] }) },
-      planning: { plan: async request => ({
-        requestId: request.id,
-        operations: [{ id: 'image-edit', type: 'image-edit', produces: ['image'], cost: { credits: 1 } }],
-      }) },
+      planning: { plan: async request => {
+        counters.planningCalls += 1;
+        return {
+          requestId: request.id,
+          operations: [{ id: 'image-edit', type: 'image-edit', produces: ['image'], cost: { credits: 1 } }],
+        };
+      } },
       routeSelector: { select: () => 'PROVIDER' },
       targetSelector: { select: () => 'CLOUD' },
       providerSelector: { select: () => ({ allowed: true, reasonCode: 'PROVIDER_SELECTED', providerId: 'fal', selectionId: 'creative-restart:fal' }) },
@@ -104,7 +127,7 @@ function createService(registry: PostgresExecutionRunRegistry, counters: Counter
   });
 }
 
-test('process restart replay of a RUNNING UNKNOWN Creative execution never redispatches Billing or provider work', async () => {
+test('process restart exact replay of a RUNNING UNKNOWN Creative execution is classified before planning and never redispatches spend/provider/FINAL work', async () => {
   const scope = Object.freeze({ ...auth, projectId });
   const command = Object.freeze({
     projectId,
@@ -112,20 +135,23 @@ test('process restart replay of a RUNNING UNKNOWN Creative execution never redis
     inputArtifactId: 'artifact-creative-restart',
     clientRequestId: 'creative-restart-request-1',
   });
-  const counters: Counters = { providerCalls: 0, billingMutations: 0 };
+  const counters: Counters = { providerCalls: 0, billingMutations: 0, planningCalls: 0, finalPersists: 0 };
 
   const firstRegistry = new PostgresExecutionRunRegistry(pool);
   const firstProcess = createService(firstRegistry, counters, 'unknown');
   const firstOutcome = await firstProcess.execute(command, auth);
   assert.equal(firstOutcome.status, 'UNKNOWN');
   assert.equal(counters.providerCalls, 1);
+  assert.equal(counters.planningCalls, 1);
+  assert.equal(counters.finalPersists, 0);
   assert.ok(counters.billingMutations > 0);
 
   const firstRuns = await firstRegistry.list(scope);
   assert.equal(firstRuns.length, 1);
   assert.equal(firstRuns[0].capability, 'CREATIVE_EXECUTION');
   assert.equal(firstRuns[0].authorityKind, 'CREATIVE_EXECUTION');
-  assert.equal(firstRuns[0].idempotencyKey, command.clientRequestId);
+  assert.equal(firstRuns[0].idempotencyKey, durableKey(command));
+  assert.notEqual(firstRuns[0].idempotencyKey, command.clientRequestId);
   assert.equal(firstRuns[0].status, 'RUNNING');
   const durableRunId = firstRuns[0].runId;
   const sideEffectsAfterFirstProcess = Object.freeze({ ...counters });
@@ -140,16 +166,25 @@ test('process restart replay of a RUNNING UNKNOWN Creative execution never redis
       && error?.retryable === true,
   );
 
-  assert.deepEqual(counters, sideEffectsAfterFirstProcess, 'restart replay must not mutate Billing or dispatch provider work');
+  assert.deepEqual(counters, sideEffectsAfterFirstProcess, 'exact restart replay must stop before planning, Billing, provider and FINAL work');
   const afterRestart = await secondRegistry.list(scope);
   assert.equal(afterRestart.length, 1);
   assert.equal(afterRestart[0].runId, durableRunId);
   assert.equal(afterRestart[0].status, 'RUNNING');
 
+  const changedProcess = createService(new PostgresExecutionRunRegistry(pool), counters, 'success');
+  await assert.rejects(
+    () => changedProcess.execute(Object.freeze({ ...command, instruction: 'preserve the product and make it red' }), auth),
+    (error: any) => error?.code === 'creative_idempotency_conflict'
+      && error?.status === 409
+      && error?.retryable === false,
+  );
+  assert.deepEqual(counters, sideEffectsAfterFirstProcess, 'conflicting restart reuse must also stop before planning, Billing, provider and FINAL work');
+
   const directReplay = await secondRegistry.issue({
     scope,
     capability: 'CREATIVE_EXECUTION',
-    idempotencyKey: command.clientRequestId,
+    idempotencyKey: durableKey(command),
     authorityKind: 'CREATIVE_EXECUTION',
     authorityRef: firstOutcome.executionId,
   });
@@ -157,4 +192,35 @@ test('process restart replay of a RUNNING UNKNOWN Creative execution never redis
   assert.equal(directReplay.run.runId, durableRunId);
   assert.equal(directReplay.run.status, 'RUNNING');
   assert.deepEqual(counters, sideEffectsAfterFirstProcess);
+});
+
+test('legacy raw-clientRequestId durable rows remain fail-closed because their historical payload fingerprint is unknowable', async () => {
+  const scope = Object.freeze({ ...auth, projectId });
+  const command = Object.freeze({
+    projectId,
+    instruction: 'legacy replay cannot prove its historical payload',
+    inputArtifactId: 'artifact-legacy-replay',
+    clientRequestId: 'creative-legacy-request-1',
+  });
+  const executionKey = `${auth.tenantId}:${auth.userId}:${projectId}:${command.clientRequestId}`;
+  const { createHash } = await import('node:crypto');
+  const executionId = `creative-${createHash('sha256').update(executionKey).digest('hex').slice(0, 24)}`;
+  const registry = new PostgresExecutionRunRegistry(pool);
+  await registry.issue({
+    scope,
+    capability: 'CREATIVE_EXECUTION',
+    idempotencyKey: command.clientRequestId,
+    authorityKind: 'CREATIVE_EXECUTION',
+    authorityRef: executionId,
+  });
+  const counters: Counters = { providerCalls: 0, billingMutations: 0, planningCalls: 0, finalPersists: 0 };
+  const service = createService(registry, counters, 'success');
+
+  await assert.rejects(
+    () => service.execute(command, auth),
+    (error: any) => error?.code === 'creative_reconciliation_required'
+      && error?.status === 409
+      && error?.retryable === true,
+  );
+  assert.deepEqual(counters, { providerCalls: 0, billingMutations: 0, planningCalls: 0, finalPersists: 0 });
 });

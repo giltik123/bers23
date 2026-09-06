@@ -7,6 +7,19 @@ export type StoredFinalIdClaim = Readonly<{ v: 1; location: 'STORED_FINAL_ID'; s
 export type StoredFinalDeliveryClaim = Readonly<{ v: 1; location: 'STORED_FINAL_DELIVERY'; storageId: string; tenantId: string; userId: string; projectId: string; role: 'COMPOSITE'; lifecycle: 'FINAL'; exp: number }>;
 export type StoredOriginalIdClaim = Readonly<{ v: 1; location: 'STORED_ORIGINAL_ID'; storageId: string; tenantId: string; userId: string; projectId: string; role: 'ORIGINAL'; lifecycle: 'IMMUTABLE' }>;
 export type StoredOriginalDeliveryClaim = Readonly<{ v: 1; location: 'STORED_ORIGINAL_DELIVERY'; storageId: string; tenantId: string; userId: string; projectId: string; role: 'ORIGINAL'; lifecycle: 'IMMUTABLE'; exp: number }>;
+type ReplayArtifactClaim = Readonly<{
+  v?: unknown;
+  location?: unknown;
+  storageId?: unknown;
+  tenantId?: unknown;
+  userId?: unknown;
+  projectId?: unknown;
+  role?: unknown;
+  lifecycle?: unknown;
+  id?: unknown;
+  url?: unknown;
+  exp?: unknown;
+}>;
 
 /** Expected fail-closed denial for a malformed, stale, expired, or wrong-scope signed Artifact reference. */
 export class ArtifactReferenceDeniedError extends Error {
@@ -44,6 +57,39 @@ export class SignedArtifactAuthority {
       return Object.freeze(claim);
     } catch { throw denied(); }
   }
+
+  /**
+   * Return a signature-verified, scope-bound semantic identity for replay classification.
+   *
+   * Capability envelope bytes (HMAC and expiry) are deliberately excluded. A freshly
+   * minted reference to the same canonical artifact must remain the same Creative
+   * request. External expiry is still enforced by `resolve`/`owns` before any new
+   * execution can dispatch; replay classification only needs to recognize the signed
+   * historical resource identity so an existing durable run cannot be redispatched.
+   */
+  resolveReplayIdentity(reference: string, scope: AuthenticatedScope & { projectId: string }): string {
+    const claim = this.verifiedPayload(reference) as ReplayArtifactClaim;
+    if (claim.tenantId !== scope.tenantId || claim.userId !== scope.userId || claim.projectId !== scope.projectId) throw denied();
+
+    if (claim.v === 1 && claim.location === 'STORED_ORIGINAL_ID' && claim.role === 'ORIGINAL' && claim.lifecycle === 'IMMUTABLE' && typeof claim.storageId === 'string' && claim.storageId) {
+      return replayIdentity({ v: 1, location: 'STORED_ORIGINAL_ID', storageId: claim.storageId, role: 'ORIGINAL', lifecycle: 'IMMUTABLE' });
+    }
+    if (claim.v === 1 && claim.location === 'STORED_FINAL_ID' && claim.role === 'COMPOSITE' && claim.lifecycle === 'FINAL' && typeof claim.storageId === 'string' && claim.storageId) {
+      return replayIdentity({ v: 1, location: 'STORED_FINAL_ID', storageId: claim.storageId, role: 'COMPOSITE', lifecycle: 'FINAL' });
+    }
+    if (claim.v === 1 && claim.location === 'STORED_MASK' && claim.role === 'MASK' && typeof claim.storageId === 'string' && claim.storageId) {
+      return replayIdentity({ v: 1, location: 'STORED_MASK', storageId: claim.storageId, role: 'MASK' });
+    }
+
+    if ((claim.location === undefined || claim.location === 'EXTERNAL') && typeof claim.id === 'string' && claim.id && typeof claim.url === 'string' && typeof claim.exp === 'number' && Number.isFinite(claim.exp)) {
+      let url: URL;
+      try { url = new URL(claim.url); } catch { throw denied(); }
+      if (url.protocol !== 'https:' || !this.#trustedHosts.includes(url.hostname)) throw denied();
+      return replayIdentity({ v: 1, location: 'EXTERNAL', id: claim.id, url: url.href });
+    }
+    throw denied();
+  }
+
   owns(scope: AuthenticatedScope & { projectId: string }, ids: readonly string[]): Promise<boolean> { try { ids.forEach(id => this.resolve(id, scope)); return Promise.resolve(true); } catch { return Promise.resolve(false); } }
   private verifiedPayload(artifactId: string): unknown {
     const [payload, signature, extra] = artifactId.split('.');
@@ -61,4 +107,5 @@ export class SignedArtifactAuthority {
 function durableScope(scope: AuthenticatedScope & { projectId: string }) {
   return { tenantId: scope.tenantId, userId: scope.userId, projectId: scope.projectId };
 }
+function replayIdentity(value: object): string { return JSON.stringify(value); }
 function denied() { return new ArtifactReferenceDeniedError(); }

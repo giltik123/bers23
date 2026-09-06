@@ -52,6 +52,7 @@ export type IssueExecutionRunResult = Readonly<{
 export interface ExecutionRunRegistry {
   issue(input: IssueExecutionRunInput): Promise<IssueExecutionRunResult>;
   get(scope: ExecutionRunScope, runId: string): Promise<ExecutionRun | undefined>;
+  getByAuthority(scope: ExecutionRunScope, authorityKind: ExecutionRunAuthorityKind, authorityRef: string): Promise<ExecutionRun | undefined>;
   list(scope: ExecutionRunScope, limit?: number): Promise<readonly ExecutionRun[]>;
   listRoots(scope: ExecutionRunScope, limit?: number): Promise<readonly ExecutionRun[]>;
   listChildren(scope: ExecutionRunScope, parentRunId: string, limit?: number): Promise<readonly ExecutionRun[]>;

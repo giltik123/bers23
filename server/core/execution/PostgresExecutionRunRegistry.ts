@@ -91,6 +91,16 @@ export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
     return result.rows[0] ? rowToRun(result.rows[0]) : undefined;
   }
 
+  async getByAuthority(scopeValue: ExecutionRunScope, authorityKindValue: ExecutionRunAuthorityKind, authorityRefValue: string): Promise<ExecutionRun | undefined> {
+    const scope = normalizeScope(scopeValue);
+    const authorityKind = exactEnum(authorityKindValue, AUTHORITY_KINDS, 'authorityKind') as ExecutionRunAuthorityKind;
+    const authorityRef = boundedText(authorityRefValue, 'authorityRef', 4096);
+    const result = await this.pool.query(`SELECT ${COLUMNS} FROM ${TABLE}
+      WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND authority_kind=$4 AND authority_ref=$5`,
+    [scope.tenantId,scope.userId,scope.projectId,authorityKind,authorityRef]);
+    return result.rows[0] ? rowToRun(result.rows[0]) : undefined;
+  }
+
   async list(scopeValue: ExecutionRunScope, limitValue = 100): Promise<readonly ExecutionRun[]> {
     const scope = normalizeScope(scopeValue);
     const limit = positiveSafeInteger(limitValue, 'limit');

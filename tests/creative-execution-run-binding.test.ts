@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CreativeExecutionService } from '../server/core/application/creativeExecutionService.ts';
+import { CreativeExecutionService, creativeExecutionRunIdempotencyKey, creativeRequestFingerprint } from '../server/core/application/creativeExecutionService.ts';
 import type {
   ExecutionRun,
+  ExecutionRunAuthorityKind,
   ExecutionRunRegistry,
   ExecutionRunScope,
   IssueExecutionRunInput,
@@ -16,6 +17,10 @@ const command = Object.freeze({
   inputArtifactId: 'artifact-run-binding',
   clientRequestId: 'request-run-binding-1',
 });
+const commandFingerprint = creativeRequestFingerprint(command, Object.freeze({
+  inputArtifactIdentity: command.inputArtifactId,
+  maskArtifactIdentities: Object.freeze([]),
+}));
 
 class FakeExecutionRuns implements ExecutionRunRegistry {
   readonly events: string[];
@@ -29,7 +34,7 @@ class FakeExecutionRuns implements ExecutionRunRegistry {
       runId: '11111111-1111-4111-8111-111111111111',
       scope: Object.freeze({ ...auth, projectId: command.projectId }),
       capability: 'CREATIVE_EXECUTION',
-      idempotencyKey: command.clientRequestId,
+      idempotencyKey: creativeExecutionRunIdempotencyKey(command, commandFingerprint),
       authorityKind: 'CREATIVE_EXECUTION',
       authorityRef: 'unset',
       status: 'QUEUED',
@@ -45,6 +50,12 @@ class FakeExecutionRuns implements ExecutionRunRegistry {
     return Object.freeze({ run: this.run, created: this.created });
   }
   async get(_scope: ExecutionRunScope, _runId: string) { return this.run; }
+  async getByAuthority(scope: ExecutionRunScope, authorityKind: ExecutionRunAuthorityKind, authorityRef: string) {
+    this.events.push('run:preflight');
+    if (this.created) return undefined;
+    this.run = Object.freeze({ ...this.run, scope, authorityKind, authorityRef });
+    return this.run;
+  }
   async list(_scope: ExecutionRunScope) { return Object.freeze([this.run]); }
   async listRoots(_scope: ExecutionRunScope) { return Object.freeze(this.run.parentRunId ? [] : [this.run]); }
   async listChildren(_scope: ExecutionRunScope, parentRunId: string) { return Object.freeze(this.run.parentRunId === parentRunId ? [this.run] : []); }
@@ -127,28 +138,49 @@ function assertOrdered(events: readonly string[], values: readonly string[]) {
   }
 }
 
-test('new Creative run becomes durable before Billing/provider side effects and succeeds only after owning outcome', async () => {
+test('new Creative run preflights replay identity, becomes durable before Billing/provider side effects and succeeds only after owning outcome', async () => {
   const f = fixture();
   const outcome = await f.service.execute(command, auth);
   assert.equal(outcome.status, 'SUCCESS');
   assert.equal(f.runs.issueInput?.capability, 'CREATIVE_EXECUTION');
   assert.equal(f.runs.issueInput?.authorityKind, 'CREATIVE_EXECUTION');
-  assert.equal(f.runs.issueInput?.idempotencyKey, command.clientRequestId);
+  assert.equal(f.runs.issueInput?.idempotencyKey, creativeExecutionRunIdempotencyKey(command, commandFingerprint));
+  assert.notEqual(f.runs.issueInput?.idempotencyKey, command.clientRequestId);
+  assert.match(f.runs.issueInput?.idempotencyKey ?? '', /^creative-request-v1:[0-9a-f]{64}$/);
   assert.equal(f.runs.issueInput?.authorityRef, outcome.executionId);
-  assertOrdered(f.events, ['plan', 'run:issue', 'run:start', 'billing:reserve', 'provider:execute', 'billing:commit', 'run:succeed']);
+  assertOrdered(f.events, ['run:preflight', 'plan', 'run:issue', 'run:start', 'billing:reserve', 'provider:execute', 'billing:commit', 'run:succeed']);
   assert.deepEqual(f.counters(), { providerCalls: 1, billingMutations: 2 });
   assert.equal(f.runs.run.status, 'SUCCEEDED');
 });
 
-test('durable replay never redispatches provider or Billing even when stored run is still QUEUED', async () => {
+test('durable exact replay is classified before planning and never redispatches provider or Billing', async () => {
   const f = fixture({ created: false });
   await assert.rejects(
     () => f.service.execute(command, auth),
     (error: any) => error?.code === 'creative_reconciliation_required' && error?.status === 409 && error?.retryable === true,
   );
   assert.deepEqual(f.counters(), { providerCalls: 0, billingMutations: 0 });
-  assert.deepEqual(f.events, ['plan', 'run:issue']);
+  assert.deepEqual(f.events, ['run:preflight']);
   assert.equal(f.runs.run.status, 'QUEUED');
+});
+
+test('same-process exact replay reuses the accepted operation while changed payload with the same clientRequestId fails before any new side effect', async () => {
+  const f = fixture();
+  const first = await f.service.execute(command, auth);
+  const eventsAfterFirst = [...f.events];
+  const countersAfterFirst = f.counters();
+
+  const exact = await f.service.execute(Object.freeze({ ...command }), auth);
+  assert.equal(exact.executionId, first.executionId);
+  assert.deepEqual(f.events, eventsAfterFirst);
+  assert.deepEqual(f.counters(), countersAfterFirst);
+
+  await assert.rejects(
+    () => f.service.execute(Object.freeze({ ...command, instruction: 'make the product red' }), auth),
+    (error: any) => error?.code === 'creative_idempotency_conflict' && error?.status === 409 && error?.retryable === false,
+  );
+  assert.deepEqual(f.events, eventsAfterFirst);
+  assert.deepEqual(f.counters(), countersAfterFirst);
 });
 
 test('UNKNOWN Creative outcome stays non-terminal in durable registry for later owning reconciliation', async () => {
@@ -179,7 +211,7 @@ test('compile/admission exception after durable start records execution error an
   assert.equal(f.runs.run.status, 'FAILED');
   assert.equal(f.runs.run.statusReasonCode, 'CREATIVE_EXECUTION_ERROR');
   assert.deepEqual(f.counters(), { providerCalls: 0, billingMutations: 0 });
-  assertOrdered(f.events, ['plan', 'run:issue', 'run:start', 'run:fail:CREATIVE_EXECUTION_ERROR']);
+  assertOrdered(f.events, ['run:preflight', 'plan', 'run:issue', 'run:start', 'run:fail:CREATIVE_EXECUTION_ERROR']);
 });
 
 test('active owning Creative cancel aborts provider, releases Billing, then terminalizes durable run as CANCELLED', async () => {
