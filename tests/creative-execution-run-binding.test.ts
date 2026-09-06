@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { creativeExecutionIdentity } from '../server/core/application/creativeExecutionIdentity.ts';
 import { CreativeExecutionService } from '../server/core/application/creativeExecutionService.ts';
 import type {
   ExecutionRun,
@@ -130,11 +131,13 @@ function assertOrdered(events: readonly string[], values: readonly string[]) {
 test('new Creative run becomes durable before Billing/provider side effects and succeeds only after owning outcome', async () => {
   const f = fixture();
   const outcome = await f.service.execute(command, auth);
+  const durableIdentity = creativeExecutionIdentity(command, auth);
   assert.equal(outcome.status, 'SUCCESS');
   assert.equal(f.runs.issueInput?.capability, 'CREATIVE_EXECUTION');
   assert.equal(f.runs.issueInput?.authorityKind, 'CREATIVE_EXECUTION');
-  assert.equal(f.runs.issueInput?.idempotencyKey, command.clientRequestId);
+  assert.equal(f.runs.issueInput?.idempotencyKey, durableIdentity.runIdempotencyKey);
   assert.equal(f.runs.issueInput?.authorityRef, outcome.executionId);
+  assert.equal(outcome.executionId, durableIdentity.executionId);
   assertOrdered(f.events, ['plan', 'run:issue', 'run:start', 'billing:reserve', 'provider:execute', 'billing:commit', 'run:succeed']);
   assert.deepEqual(f.counters(), { providerCalls: 1, billingMutations: 2 });
   assert.equal(f.runs.run.status, 'SUCCEEDED');
@@ -144,7 +147,10 @@ test('durable replay never redispatches provider or Billing even when stored run
   const f = fixture({ created: false });
   await assert.rejects(
     () => f.service.execute(command, auth),
-    (error: any) => error?.code === 'creative_reconciliation_required' && error?.status === 409 && error?.retryable === true,
+    (error: any) => error?.code === 'creative_exact_replay_reconciliation_required'
+      && error?.status === 409
+      && error?.retryable === false
+      && error?.replay === true,
   );
   assert.deepEqual(f.counters(), { providerCalls: 0, billingMutations: 0 });
   assert.deepEqual(f.events, ['plan', 'run:issue']);
