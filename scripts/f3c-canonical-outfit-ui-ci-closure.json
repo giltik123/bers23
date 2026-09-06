@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "profile": "F3C_CANONICAL_OUTFIT_UI",
+  "bundleInputs": [
+    "src/api/coreClient.js",
+    "src/api/managedGarmentClient.js",
+    "src/api/managedGarmentCollectionClient.js",
+    "src/api/managedOutfitClient.js",
+    "src/api/managedWardrobeClient.js",
+    "src/application/fashion/canonicalOutfitViewModel.js",
+    "src/components/editor/outfits/OutfitPanel.jsx",
+    "src/components/ui/button.jsx",
+    "src/components/ui/input.jsx",
+    "src/lib/app-params.js",
+    "src/lib/utils.js"
+  ],
+  "supportPaths": [
+    ".github/workflows/fashion-canonical-outfit-ui-f3c.yml",
+    "scripts/build-fashion-f3c-browser-closure.mjs",
+    "tests/fashion-f3c-browser-build-closure.test.mjs",
+    "tests/canonical-outfit-view-model.test.mjs",
+    "tests/managed-outfit-browser-client.test.mjs",
+    "tests/managed-outfit-browser-server-contract.test.mjs",
+    "tests/fashion-canonical-outfit-ui.test.mjs",
+    "tests/editor-zero-object-navigation.test.mjs",
+    "src/components/editor/creative/CreativeStudioPanel.jsx",
+    "src/pages/Editor.jsx",
+    "src/components/editor/fashion/FashionPanel.jsx",
+    "src/components/editor/agent/AgentPanel.jsx",
+    "src/components/editor/outfits/TryOnPanel.jsx",
+    "server/core/fashion/postgresOutfitStore.ts",
+    "server/core/fashion/postgresGarmentWardrobeStore.ts",
+    "server/core/http/managedOutfitHttpAdapter.ts",
+    "package.json",
+    "package-lock.json",
+    ".npmrc"
+  ]
+}
