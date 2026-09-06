@@ -14,7 +14,11 @@ const REASON = /^[A-Z0-9_]{1,128}$/;
 const COLUMNS = 's.run_id,s.step_id,s.source_authority,s.status,s.revision,s.local_ticket_id,s.artifact_ids_json,s.status_reason_code,s.created_at,s.updated_at,s.started_at,s.finished_at';
 
 export class PostgresExecutionStepRegistry implements ExecutionStepRegistry {
-  constructor(private readonly pool: Pool) {}
+  private readonly pool: Pool;
+
+  constructor(pool: Pool) {
+    this.pool = pool;
+  }
 
   async project(inputValue: ProjectExecutionStepInput): Promise<ExecutionStep> {
     const input = normalizeProjection(inputValue);
