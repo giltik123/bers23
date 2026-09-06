@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Pool } from 'pg';
 import sharp from 'sharp';
 
+import { creativeExecutionIdentity } from '../server/core/application/creativeExecutionIdentity.ts';
 import { CreativeExecutionService } from '../server/core/application/creativeExecutionService.ts';
 import { PostgresExecutionRunRegistry } from '../server/core/execution/PostgresExecutionRunRegistry.ts';
 import { checkExecutionRunSchema } from '../server/core/execution/executionRunSchema.ts';
@@ -104,7 +105,7 @@ function createService(registry: PostgresExecutionRunRegistry, counters: Counter
   });
 }
 
-test('process restart replay of a RUNNING UNKNOWN Creative execution never redispatches Billing or provider work', async () => {
+test('process restart exact replay is reconcile-only and changed payload cannot redispatch Billing or provider work', async () => {
   const scope = Object.freeze({ ...auth, projectId });
   const command = Object.freeze({
     projectId,
@@ -112,6 +113,7 @@ test('process restart replay of a RUNNING UNKNOWN Creative execution never redis
     inputArtifactId: 'artifact-creative-restart',
     clientRequestId: 'creative-restart-request-1',
   });
+  const durableIdentity = creativeExecutionIdentity(command, auth);
   const counters: Counters = { providerCalls: 0, billingMutations: 0 };
 
   const firstRegistry = new PostgresExecutionRunRegistry(pool);
@@ -125,7 +127,7 @@ test('process restart replay of a RUNNING UNKNOWN Creative execution never redis
   assert.equal(firstRuns.length, 1);
   assert.equal(firstRuns[0].capability, 'CREATIVE_EXECUTION');
   assert.equal(firstRuns[0].authorityKind, 'CREATIVE_EXECUTION');
-  assert.equal(firstRuns[0].idempotencyKey, command.clientRequestId);
+  assert.equal(firstRuns[0].idempotencyKey, durableIdentity.runIdempotencyKey);
   assert.equal(firstRuns[0].status, 'RUNNING');
   const durableRunId = firstRuns[0].runId;
   const sideEffectsAfterFirstProcess = Object.freeze({ ...counters });
@@ -135,21 +137,38 @@ test('process restart replay of a RUNNING UNKNOWN Creative execution never redis
   const secondProcess = createService(secondRegistry, counters, 'success');
   await assert.rejects(
     () => secondProcess.execute(command, auth),
-    (error: any) => error?.code === 'creative_reconciliation_required'
+    (error: any) => error?.code === 'creative_exact_replay_reconciliation_required'
       && error?.status === 409
-      && error?.retryable === true,
+      && error?.retryable === false
+      && error?.executionId === firstOutcome.executionId
+      && error?.runStatus === 'RUNNING'
+      && error?.replay === true,
   );
 
-  assert.deepEqual(counters, sideEffectsAfterFirstProcess, 'restart replay must not mutate Billing or dispatch provider work');
+  assert.deepEqual(counters, sideEffectsAfterFirstProcess, 'exact restart replay must not mutate Billing or dispatch provider work');
   const afterRestart = await secondRegistry.list(scope);
   assert.equal(afterRestart.length, 1);
   assert.equal(afterRestart[0].runId, durableRunId);
   assert.equal(afterRestart[0].status, 'RUNNING');
 
-  const directReplay = await secondRegistry.issue({
+  // A different process reusing the public request id with a changed semantic
+  // request must observe the same authority but a different fingerprint key.
+  const thirdRegistry = new PostgresExecutionRunRegistry(pool);
+  const thirdProcess = createService(thirdRegistry, counters, 'success');
+  await assert.rejects(
+    () => thirdProcess.execute({ ...command, instruction: 'make the product red instead' }, auth),
+    (error: any) => error?.code === 'creative_idempotency_conflict'
+      && error?.status === 409
+      && error?.retryable === false
+      && error?.executionId === firstOutcome.executionId
+      && error?.replay === false,
+  );
+  assert.deepEqual(counters, sideEffectsAfterFirstProcess, 'conflicting restart replay must not mutate Billing or dispatch provider work');
+
+  const directReplay = await thirdRegistry.issue({
     scope,
     capability: 'CREATIVE_EXECUTION',
-    idempotencyKey: command.clientRequestId,
+    idempotencyKey: durableIdentity.runIdempotencyKey,
     authorityKind: 'CREATIVE_EXECUTION',
     authorityRef: firstOutcome.executionId,
   });
