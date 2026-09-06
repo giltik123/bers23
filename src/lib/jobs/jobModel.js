@@ -2,12 +2,19 @@
 export const JOB_PRIORITIES = { high: 0, normal: 1, low: 2 };
 export const JOB_TYPES = { IMAGE_EDITING: 'image_editing', VIRTUAL_TRYON: 'virtual_tryon', SEGMENTATION: 'segmentation', RECIPE_CHAIN: 'recipe_chain', AI_AGENT_CHAIN: 'ai_agent_chain', BATCH_EDITING: 'batch_editing', UPSCALING: 'upscaling' };
 export const JOB_STATUSES = { QUEUED: 'queued', PREPARING: 'preparing', RUNNING: 'running', WAITING: 'waiting', COMPLETED: 'completed', CANCELLED: 'cancelled', FAILED: 'failed', RETRYING: 'retrying' };
+export const JOB_EXECUTION_CLASSES = Object.freeze({ EPHEMERAL_CLIENT_TASK: 'EPHEMERAL_CLIENT_TASK' });
 
 export const priorityLabel = (p) => ({ high: 'High', normal: 'Normal', low: 'Low' }[p] || p);
 
-export const createJob = ({ type, label, priority = 'normal', projectId = null, userId = null, provider = 'unknown', estimatedTime = 30000, creditsReserved = 0, payload = {}, metadata = {}, run, onCancel = null }) => {
+export const assertJobExecutionClass = (value) => {
+  if (value !== JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK) throw new TypeError('Job executionClass must be EPHEMERAL_CLIENT_TASK');
+  return value;
+};
+
+export const createJob = ({ type, label, priority = 'normal', projectId = null, userId = null, provider = 'unknown', estimatedTime = 30000, creditsReserved = 0, payload = {}, metadata = {}, executionClass, run, onCancel = null }) => {
   const createdAt = Date.now();
-  return { id: `job_${createdAt.toString(36)}_${Math.random().toString(36).slice(2, 6)}`, type, label, priority, projectId, userId, provider, run, onCancel, status: 'queued', progress: 0, estimatedTime, creditsReserved, creditsConsumed: 0, createdAt, startedAt: null, completedAt: null, failedAt: null, retryCount: 0, payload, result: null, error: null, metadata, created_at: createdAt, started_at: null, completed_at: null, failed_at: null, retry_count: 0, finished_at: null };
+  const exactExecutionClass = assertJobExecutionClass(executionClass);
+  return { id: `job_${createdAt.toString(36)}_${Math.random().toString(36).slice(2, 6)}`, type, label, priority, projectId, userId, provider, executionClass: exactExecutionClass, estimatedTime, creditsReserved, creditsConsumed: 0, createdAt, startedAt: null, completedAt: null, failedAt: null, retryCount: 0, payload, result: null, error: null, metadata, run, onCancel, created_at: createdAt, started_at: null, completed_at: null, failed_at: null, retry_count: 0, finished_at: null };
 };
 
 export const setJobStatus = (job, status) => {

@@ -1,11 +1,10 @@
 import { coreClient } from '@/api/coreClient';
-import { createJob, setJobStatus, updateJobProgress } from '@/lib/jobs/jobModel';
+import { JOB_EXECUTION_CLASSES, createJob, setJobStatus, updateJobProgress } from '@/lib/jobs/jobModel';
 import { jobQueue } from '@/lib/jobs/jobQueue';
 import { jobWorkerPool } from '@/lib/jobs/jobWorker';
 import { notificationCenter } from '@/lib/notifications/notificationCenter';
 import { jobScheduler } from '@/lib/jobs/jobScheduler';
 import { jobRetryManager } from '@/lib/jobs/jobRetryManager';
-import { jobStorage } from '@/lib/jobs/jobStorage';
 import { jobHistory } from '@/lib/jobs/jobHistory';
 import { jobEvents, JOB_EVENTS } from '@/lib/jobs/jobEvents';
 import { jobAnalytics } from '@/lib/jobs/jobAnalytics';
@@ -19,7 +18,6 @@ class JobManager {
   _notify() { const state = this.snapshot(); this.listeners.forEach((fn) => fn(state)); }
   snapshot() { return { running: jobWorkerPool.active.map((job) => ({ ...job })), queued: jobQueue.list().map((job) => ({ ...job })), recent: this.recent.slice(0, 20), paused: this.paused }; }
   _feature(type) { return type === 'chain' ? FEATURES.RECIPE_CHAINS : FEATURES.AI_EDITING; }
-  _persist(job) { return jobStorage.save(job).catch(() => null); }
   _remember(job) { this.jobs.set(job.id, job); if (['completed', 'failed', 'cancelled'].includes(job.status)) this.recent = [{ ...job }, ...this.recent.filter((item) => item.id !== job.id)].slice(0, 20); }
   _emit(type, job) { jobEvents.emit(type, job); }
 
@@ -27,10 +25,10 @@ class JobManager {
     const feature = this._feature(type); await subscriptionValidator.validateOperation({ feature });
     await subscriptionValidator.validateQueue(jobQueue.size + jobWorkerPool.active.length);
     const user = await coreClient.auth.me();
-    const job = createJob({ type, label, priority, projectId, userId: user.id, provider, estimatedTime, creditsReserved, payload, metadata: { ...metadata, feature }, run, onCancel });
+    const job = createJob({ type, label, priority, projectId, userId: user.id, provider, executionClass: JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK, estimatedTime, creditsReserved, payload, metadata: { ...metadata, feature }, run, onCancel });
     job.notifyOnComplete = notifyOnComplete;
     const promise = new Promise((resolve, reject) => { job._resolve = resolve; job._reject = reject; });
-    this.jobs.set(job.id, job); await jobStorage.save(job); jobQueue.enqueue(job);
+    this.jobs.set(job.id, job); jobQueue.enqueue(job);
     this._emit(JOB_EVENTS.CREATED, job); jobAnalytics.record('created', job, jobQueue.size); this._notify(); this._kick(); return promise;
   }
 
@@ -48,14 +46,14 @@ class JobManager {
     }
     if (job.status === 'failed' && !job.failedRecorded) { job.failedRecorded = true; this._emit(JOB_EVENTS.FAILED, job); jobAnalytics.record('failed', job); notificationCenter.push({ title: 'Generation failed', message: job.error || job.label, type: 'error', jobId: job.id, projectId: job.projectId }).catch(() => {}); }
     if (job.status === 'cancelled' && !job.cancelledRecorded) { job.cancelledRecorded = true; this._emit(JOB_EVENTS.CANCELLED, job); jobAnalytics.record('cancelled', job); }
-    this._remember(job); await this._persist(job); this._notify();
+    this._remember(job); this._notify();
   }
 
   async _onJobFailure(job, error) {
     if (!jobRetryManager.canRetry(job, error)) return false;
     job.retryCount += 1; job.retry_count += 1; setJobStatus(job, 'retrying');
-    this._emit(JOB_EVENTS.RETRIED, job); jobAnalytics.record('retried', job); await this._persist(job); this._notify();
-    jobScheduler.schedule(job, jobRetryManager.delay(job), (scheduledJob) => { setJobStatus(scheduledJob, 'queued'); jobQueue.enqueue(scheduledJob); this._emit(JOB_EVENTS.RETRIED, scheduledJob); this._persist(scheduledJob); this._notify(); this._kick(); });
+    this._emit(JOB_EVENTS.RETRIED, job); jobAnalytics.record('retried', job); this._notify();
+    jobScheduler.schedule(job, jobRetryManager.delay(job), (scheduledJob) => { setJobStatus(scheduledJob, 'queued'); jobQueue.enqueue(scheduledJob); this._emit(JOB_EVENTS.RETRIED, scheduledJob); this._notify(); this._kick(); });
     return true;
   }
 
@@ -63,7 +61,7 @@ class JobManager {
   markWaiting(jobId) { const job = this.jobs.get(jobId); if (!job) return; setJobStatus(job, 'waiting'); this._onJobUpdate(job); }
   pause() { this.paused = true; this._notify(); }
   resume() { this.paused = false; this._notify(); this._kick(); }
-  reorder(jobId, index) { const job = jobQueue.reorder(jobId, index); if (job) { this._persist(job); this._notify(); } return job; }
+  reorder(jobId, index) { const job = jobQueue.reorder(jobId, index); if (job) this._notify(); return job; }
 
   cancel(jobId) {
     const queued = jobQueue.remove(jobId); jobScheduler.cancel(jobId);

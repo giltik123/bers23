@@ -9,6 +9,9 @@ on:
       - 'src/lib/jobs/executionRunProjection.js'
       - 'src/lib/jobs/executionRunProjection.test.mjs'
       - 'src/lib/jobs/executionRunProjectionAuthority.test.mjs'
+      - 'src/lib/jobs/jobModel.js'
+      - 'src/lib/jobs/jobModelEphemeral.test.mjs'
+      - 'src/lib/jobs/jobEphemeralAuthority.test.mjs'
       - 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx'
       - 'src/components/editor/jobs/JobCenter.jsx'
       - 'src/components/editor/jobs/JobQueuePanel.jsx'
@@ -40,8 +43,8 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove GET-only recovery transport and projection semantics
-        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs
+      - name: Prove GET-only recovery projection and ephemeral session authority
+        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
       - name: Preserve accepted server recovery HTTP contract
         run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
       - name: Typecheck browser and Core contracts
@@ -50,16 +53,21 @@ jobs:
           npm run server:typecheck
       - name: Build production browser
         run: npm run build
-      - name: Prove P1b does not mutate legacy client scheduler or JobRecord compatibility storage
+      - name: Prove canonical recovery remains read-only and session scheduling is ephemeral-only
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           test -n "${BASE_SHA:-}"
-          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- src/lib/jobs/jobManager.js src/lib/jobs/jobStorage.js src/components/editor/jobs/JobRow.jsx)"
+          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js src/lib/jobs/jobScheduler.js src/lib/jobs/jobRetryManager.js src/components/editor/jobs/JobRow.jsx)"
           ! grep -E -q 'coreClient|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|\.cancel\(|\.retry\(|\.issue\(' src/lib/jobs/executionRunProjection.js
           ! grep -E -q "method: 'POST'|method: 'PATCH'|method: 'DELETE'|coreClient|entities|creative|localExecution" src/api/executionRunRecoveryClient.js
           ! grep -E -q 'Button|jobManager|jobStorage|onCancel|onRetry|onDuplicate|onMoveUp' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          ! grep -E -q 'jobStorage|JobRecord|coreClient\.entities|_persist\(' src/lib/jobs/jobManager.js
+          ! grep -E -q 'coreClient|JobRecord|entities\.|\.create\(|\.update\(|\.filter\(' src/lib/jobs/jobStorage.js
+          grep -q 'EPHEMERAL_CLIENT_TASK' src/lib/jobs/jobModel.js
+          grep -q 'EPHEMERAL_CLIENT_TASK' src/lib/jobs/jobManager.js
+          grep -q 'Ephemeral browser-only tasks · reload interrupts them' src/components/editor/jobs/JobCenter.jsx
       - name: Check committed diff whitespace
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

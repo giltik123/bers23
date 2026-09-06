@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ListOrdered, RefreshCw } from 'lucide-react';
 import { jobManager } from '@/lib/jobs/jobManager';
+import { JOB_EXECUTION_CLASSES } from '@/lib/jobs/jobModel';
 import { createExecutionRunProjection } from '@/lib/jobs/executionRunProjection';
 import JobRow from '@/components/editor/jobs/JobRow';
 import CanonicalExecutionRunRow from '@/components/editor/jobs/CanonicalExecutionRunRow';
@@ -21,6 +22,8 @@ export default function JobCenter({ projectId = null }) {
   }, [canonicalProjection, projectId]);
 
   const jobs = [...state.running, ...state.queued, ...state.recent];
+  const ephemeralJobs = jobs.filter((job) => job.executionClass === JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK);
+  const unsupportedSessionJobs = jobs.length - ephemeralJobs.length;
   const normalizedProjectId = typeof projectId === 'string' ? projectId.trim().toLowerCase() : null;
   const canonicalScopeMatches = Boolean(normalizedProjectId) && canonical.projectId === normalizedProjectId;
   const canonicalRuns = canonicalScopeMatches ? canonical.runs : [];
@@ -52,15 +55,16 @@ export default function JobCenter({ projectId = null }) {
       {canonicalRuns.map((run) => <CanonicalExecutionRunRow key={run.runId} run={run} />)}
     </div>}
 
-    {jobs.length > 0 && <div className="space-y-2" data-job-center-session-jobs>
+    {jobs.length > 0 && <div className="space-y-2" data-job-center-session-jobs data-execution-class={JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK}>
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[11px] font-medium">This session</p>
-          <p className="text-[10px] text-muted-foreground">Browser-local queue and controls</p>
+          <p className="text-[10px] text-muted-foreground">Ephemeral browser-only tasks · reload interrupts them</p>
         </div>
         <button onClick={() => state.paused ? jobManager.resume() : jobManager.pause()} className="text-[11px] text-muted-foreground hover:text-foreground">{state.paused ? 'Resume queue' : 'Pause queue'}</button>
       </div>
-      {jobs.map((job) => <JobRow key={job.id} job={job} onCancel={(id) => jobManager.cancel(id)} onRetry={(id) => jobManager.retry(id)} onDuplicate={(id) => jobManager.duplicate(id)} onMoveUp={(id) => jobManager.reorder(id, Math.max(0, state.queued.findIndex((item) => item.id === id) - 1))} />)}
+      {unsupportedSessionJobs > 0 && <p className="text-[11px] text-destructive">Unsupported session task classification. Controls are withheld.</p>}
+      {ephemeralJobs.map((job) => <JobRow key={job.id} job={job} onCancel={(id) => jobManager.cancel(id)} onRetry={(id) => jobManager.retry(id)} onDuplicate={(id) => jobManager.duplicate(id)} onMoveUp={(id) => jobManager.reorder(id, Math.max(0, state.queued.findIndex((item) => item.id === id) - 1))} />)}
     </div>}
   </section>;
 }
