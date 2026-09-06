@@ -7,6 +7,8 @@ import {
   type ExecutionRun,
   type ExecutionRunAuthorityKind,
   type ExecutionRunCapability,
+  type ExecutionRunIdentityLookup,
+  type ExecutionRunIdentityReader,
   type ExecutionRunRegistry,
   type ExecutionRunScope,
   type ExecutionRunStatus,
@@ -22,7 +24,7 @@ const CAPABILITIES = new Set<string>(EXECUTION_RUN_CAPABILITIES);
 const AUTHORITY_KINDS = new Set<string>(EXECUTION_RUN_AUTHORITY_KINDS);
 const STATUSES = new Set<string>(EXECUTION_RUN_STATUSES);
 
-export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
+export class PostgresExecutionRunRegistry implements ExecutionRunRegistry, ExecutionRunIdentityReader {
   constructor(private readonly pool: Pool) {}
 
   async issue(input: IssueExecutionRunInput): Promise<IssueExecutionRunResult> {
@@ -80,6 +82,24 @@ export class PostgresExecutionRunRegistry implements ExecutionRunRegistry {
     } finally {
       client.release();
     }
+  }
+
+  async lookupIdentity(input: IssueExecutionRunInput): Promise<ExecutionRunIdentityLookup> {
+    const candidate = normalizeIssue(input);
+    const [idempotency, authority] = await Promise.all([
+      this.pool.query(`SELECT ${COLUMNS} FROM ${TABLE}
+        WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND capability=$4 AND idempotency_key=$5`,
+      [candidate.scope.tenantId,candidate.scope.userId,candidate.scope.projectId,candidate.capability,candidate.idempotencyKey]),
+      this.pool.query(`SELECT ${COLUMNS} FROM ${TABLE}
+        WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND authority_kind=$4 AND authority_ref=$5`,
+      [candidate.scope.tenantId,candidate.scope.userId,candidate.scope.projectId,candidate.authorityKind,candidate.authorityRef]),
+    ]);
+    const byIdempotencyKey = idempotency.rows[0] ? rowToRun(idempotency.rows[0]) : undefined;
+    const byAuthority = authority.rows[0] ? rowToRun(authority.rows[0]) : undefined;
+    return Object.freeze({
+      ...(byIdempotencyKey ? { byIdempotencyKey } : {}),
+      ...(byAuthority ? { byAuthority } : {}),
+    });
   }
 
   async get(scopeValue: ExecutionRunScope, runIdValue: string): Promise<ExecutionRun | undefined> {
