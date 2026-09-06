@@ -7,6 +7,7 @@ const root = process.cwd();
 const managerPath = path.join(root, 'src/lib/jobs/jobManager.js');
 const storagePath = path.join(root, 'src/lib/jobs/jobStorage.js');
 const centerPath = path.join(root, 'src/components/editor/jobs/JobCenter.jsx');
+const canonicalRowPath = path.join(root, 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx');
 
 async function productionSourceFiles(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -54,12 +55,19 @@ test('production source has no client persistence or direct queue-entry bypass',
   }
 });
 
-test('Job Center exposes canonical and ephemeral truths separately and withholds unsupported controls', async () => {
-  const source = await readFile(centerPath, 'utf8');
-  assert.match(source, /Canonical recovery state · read only/);
-  assert.match(source, /Ephemeral browser-only tasks · reload interrupts them/);
-  assert.match(source, /job\.executionClass === JOB_EXECUTION_CLASSES\.EPHEMERAL_CLIENT_TASK/);
-  assert.match(source, /Unsupported session task classification\. Controls are withheld\./);
-  assert.match(source, /data-job-center-canonical-executions/);
-  assert.match(source, /data-job-center-session-jobs/);
+test('Job Center exposes canonical and ephemeral truths separately and keeps canonical retry unavailable', async () => {
+  const [center, canonicalRow] = await Promise.all([
+    readFile(centerPath, 'utf8'),
+    readFile(canonicalRowPath, 'utf8'),
+  ]);
+  assert.match(center, /Canonical recovery state · owning Creative controls only/);
+  assert.match(center, /Ephemeral browser-only tasks · reload interrupts them/);
+  assert.match(center, /job\.executionClass === JOB_EXECUTION_CLASSES\.EPHEMERAL_CLIENT_TASK/);
+  assert.match(center, /Unsupported session task classification\. Controls are withheld\./);
+  assert.match(center, /data-job-center-canonical-executions/);
+  assert.match(center, /data-job-center-session-jobs/);
+  assert.match(center, /onRetry=\{\(id\) => jobManager\.retry\(id\)/);
+  assert.match(center, /onDuplicate=\{\(id\) => jobManager\.duplicate\(id\)/);
+  assert.doesNotMatch(center, /<CanonicalExecutionRunRow[^>]*(onRetry|onDuplicate|onMoveUp)=/);
+  assert.doesNotMatch(canonicalRow, /onRetry|onDuplicate|onMoveUp|jobManager|jobStorage/);
 });
