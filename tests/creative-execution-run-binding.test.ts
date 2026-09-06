@@ -46,10 +46,12 @@ class FakeExecutionRuns implements ExecutionRunRegistry {
   }
   async get(_scope: ExecutionRunScope, _runId: string) { return this.run; }
   async list(_scope: ExecutionRunScope) { return Object.freeze([this.run]); }
+  async listChildren(_scope: ExecutionRunScope, parentRunId: string) { return Object.freeze(this.run.parentRunId === parentRunId ? [this.run] : []); }
   async start() { this.events.push('run:start'); this.run = Object.freeze({ ...this.run, status: 'RUNNING', revision: 2, startedAt: '2026-09-03T00:00:01.000Z' }); return this.run; }
   async succeed() { this.events.push('run:succeed'); this.run = Object.freeze({ ...this.run, status: 'SUCCEEDED', revision: 3, finishedAt: '2026-09-03T00:00:02.000Z' }); return this.run; }
   async fail(_scope: ExecutionRunScope, _runId: string, reasonCode: string) { this.events.push(`run:fail:${reasonCode}`); this.run = Object.freeze({ ...this.run, status: 'FAILED', revision: 3, statusReasonCode: reasonCode, finishedAt: '2026-09-03T00:00:02.000Z' }); return this.run; }
   async cancel(_scope: ExecutionRunScope, _runId: string, reasonCode: string) { this.events.push(`run:cancel:${reasonCode}`); this.run = Object.freeze({ ...this.run, status: 'CANCELLED', revision: 3, statusReasonCode: reasonCode, finishedAt: '2026-09-03T00:00:02.000Z' }); return this.run; }
+  async markUnknown(_scope: ExecutionRunScope, _runId: string, reasonCode: string) { this.events.push(`run:unknown:${reasonCode}`); this.run = Object.freeze({ ...this.run, status: 'UNKNOWN', revision: 3, statusReasonCode: reasonCode, finishedAt: '2026-09-03T00:00:02.000Z' }); return this.run; }
 }
 
 function fixture(options: { created?: boolean; runtime?: 'success' | 'failure' | 'unknown'; security?: boolean } = {}) {

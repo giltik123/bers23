@@ -53,6 +53,7 @@ export interface ExecutionRunRegistry {
   issue(input: IssueExecutionRunInput): Promise<IssueExecutionRunResult>;
   get(scope: ExecutionRunScope, runId: string): Promise<ExecutionRun | undefined>;
   list(scope: ExecutionRunScope, limit?: number): Promise<readonly ExecutionRun[]>;
+  listChildren(scope: ExecutionRunScope, parentRunId: string, limit?: number): Promise<readonly ExecutionRun[]>;
   start(scope: ExecutionRunScope, runId: string): Promise<ExecutionRun>;
   succeed(scope: ExecutionRunScope, runId: string): Promise<ExecutionRun>;
   fail(scope: ExecutionRunScope, runId: string, reasonCode: string): Promise<ExecutionRun>;
