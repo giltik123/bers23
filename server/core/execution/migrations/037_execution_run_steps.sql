@@ -20,13 +20,7 @@ CREATE TABLE IF NOT EXISTS execution_run_steps (
   CONSTRAINT execution_run_steps_revision_check CHECK (revision >= 1),
   CONSTRAINT execution_run_steps_step_id_check CHECK (char_length(step_id) BETWEEN 1 AND 256 AND step_id !~ '[[:cntrl:]]'),
   CONSTRAINT execution_run_steps_reason_check CHECK (status_reason_code IS NULL OR status_reason_code ~ '^[A-Z0-9_]{1,128}$'),
-  CONSTRAINT execution_run_steps_artifact_ids_shape_check CHECK (
-    jsonb_typeof(artifact_ids_json)='array'
-    AND NOT EXISTS (
-      SELECT 1 FROM jsonb_array_elements(artifact_ids_json) AS item
-      WHERE jsonb_typeof(item) <> 'string' OR length(item #>> '{}') < 1
-    )
-  ),
+  CONSTRAINT execution_run_steps_artifact_ids_shape_check CHECK (jsonb_typeof(artifact_ids_json)='array'),
   CONSTRAINT execution_run_steps_terminal_shape_check CHECK (
     (status IN ('WAITING_FOR_LOCAL_RESULT','RUNNING_INTERNAL') AND finished_at IS NULL AND status_reason_code IS NULL AND jsonb_array_length(artifact_ids_json)=0)
     OR (status='SUCCEEDED' AND finished_at IS NOT NULL AND status_reason_code IS NULL AND jsonb_array_length(artifact_ids_json)>0)
