@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 
 const BASE_MIGRATION = '034_execution_run_registry.sql';
 const WORKFLOW_CONTINUATION_MIGRATION = '036_execution_run_workflow_continuation.sql';
+const WORKFLOW_INTERNAL_STEP_MIGRATION = '037_execution_run_workflow_internal_step.sql';
 const TABLE = 'canonical_execution_runs';
 
 const REQUIRED_COLUMNS = Object.freeze([
@@ -49,6 +50,7 @@ type SchemaProfile = Readonly<{
   bindingLiterals: readonly string[];
   statuses: readonly string[];
   reasonStatuses: readonly string[];
+  workflowStepParentRequired: boolean;
 }>;
 
 const BASE_PROFILE: SchemaProfile = Object.freeze({
@@ -57,6 +59,7 @@ const BASE_PROFILE: SchemaProfile = Object.freeze({
   bindingLiterals: Object.freeze(['LOCAL_EXECUTION','LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION']),
   statuses: Object.freeze(['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED']),
   reasonStatuses: Object.freeze(['FAILED','CANCELLED']),
+  workflowStepParentRequired: false,
 });
 
 const D1_PROFILE: SchemaProfile = Object.freeze({
@@ -65,6 +68,16 @@ const D1_PROFILE: SchemaProfile = Object.freeze({
   bindingLiterals: Object.freeze(['LOCAL_EXECUTION','LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION']),
   statuses: Object.freeze(['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED','UNKNOWN']),
   reasonStatuses: Object.freeze(['FAILED','CANCELLED','UNKNOWN']),
+  workflowStepParentRequired: false,
+});
+
+const D3_PROFILE: SchemaProfile = Object.freeze({
+  capabilities: Object.freeze(['LOCAL_EXECUTION','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION','WORKFLOW_STEP']),
+  authorities: Object.freeze(['LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION','WORKFLOW_INTERNAL_STEP']),
+  bindingLiterals: Object.freeze(['LOCAL_EXECUTION','LOCAL_EXECUTION_TICKET','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION','WORKFLOW_STEP','WORKFLOW_INTERNAL_STEP']),
+  statuses: Object.freeze(['QUEUED','RUNNING','SUCCEEDED','FAILED','CANCELLED','UNKNOWN']),
+  reasonStatuses: Object.freeze(['FAILED','CANCELLED','UNKNOWN']),
+  workflowStepParentRequired: true,
 });
 
 async function migration(name: string): Promise<string> {
@@ -122,6 +135,7 @@ function schemaReady(state: Awaited<ReturnType<typeof schemaState>>, profile: Sc
   if (!sameLiteralSet(status, profile.statuses)) return false;
   if (!sameLiteralSet(binding, profile.bindingLiterals)
     || !binding.includes('capability') || !binding.includes('authority_kind')) return false;
+  if (profile.workflowStepParentRequired && (!binding.includes('parent_run_id') || !binding.includes('IS NOT NULL'))) return false;
   if (!sameLiteralSet(timeShape, profile.statuses)
     || !timeShape.includes('status') || !timeShape.includes('started_at') || !timeShape.includes('finished_at')) return false;
   if (!sameLiteralSet(reasonShape, profile.reasonStatuses)
@@ -148,23 +162,31 @@ function sameLiteralSet(value: string, expected: readonly string[]): boolean {
 }
 
 export async function checkExecutionRunSchema(pool: Pool): Promise<void> {
-  if (!schemaReady(await schemaState(pool), D1_PROFILE)) {
-    throw new Error('canonical execution run registry schema is incomplete or permissive; apply migrations 034 and 036');
+  if (!schemaReady(await schemaState(pool), D3_PROFILE)) {
+    throw new Error('canonical execution run registry schema is incomplete or permissive; apply migrations 034, 036 and 037');
   }
 }
 
 export async function migrateExecutionRunSchema(pool: Pool): Promise<void> {
   let state = await schemaState(pool);
-  if (schemaReady(state, D1_PROFILE)) return;
+  if (schemaReady(state, D3_PROFILE)) return;
 
   if (!state.table) {
     await pool.query(await migration(BASE_MIGRATION));
     state = await schemaState(pool);
   }
-  if (!schemaReady(state, BASE_PROFILE)) {
-    throw new Error('canonical execution run registry schema cannot be safely upgraded because migration 034 authority is not exact');
+
+  if (schemaReady(state, BASE_PROFILE)) {
+    await pool.query(await migration(WORKFLOW_CONTINUATION_MIGRATION));
+    state = await schemaState(pool);
   }
 
-  await pool.query(await migration(WORKFLOW_CONTINUATION_MIGRATION));
-  await checkExecutionRunSchema(pool);
+  if (schemaReady(state, D1_PROFILE)) {
+    await pool.query(await migration(WORKFLOW_INTERNAL_STEP_MIGRATION));
+    state = await schemaState(pool);
+  }
+
+  if (!schemaReady(state, D3_PROFILE)) {
+    throw new Error('canonical execution run registry schema cannot be safely upgraded because 034/036/037 authority is not exact');
+  }
 }

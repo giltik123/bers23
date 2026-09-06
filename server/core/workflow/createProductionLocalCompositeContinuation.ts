@@ -20,6 +20,7 @@ import type { CanonicalArtifactHydrator } from '../artifacts/canonicalArtifactHy
 import { DurableArtifactLineageResolver } from '../artifacts/durableArtifactLineageResolver.ts';
 import type { PostgresMaskArtifactStore } from '../artifacts/postgresMaskArtifactStore.ts';
 import type { SignedArtifactAuthority } from '../artifacts/signedArtifactAuthority.ts';
+import type { ExecutionRunRegistry } from '../execution/executionRunRegistry.ts';
 import { BackgroundIsolationResultAuthority, SegmentationResultAuthority } from '../localExecution/LocalExecutionResultAuthority.ts';
 import type { PostgresLocalExecutionLedger } from '../localExecution/PostgresLocalExecutionLedger.ts';
 import type { PostgresLocalExecutionUploadStore } from '../localExecution/PostgresLocalExecutionUploadStore.ts';
@@ -35,10 +36,12 @@ import { productionExecutionRoute } from '../providers/productionExecutionRoute.
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
 import { productionTargetSelection } from '../providers/productionTargetSelection.ts';
 import { productionWorkflowVerifier } from '../providers/productionWorkflowVerifier.ts';
+import { ExecutionRunBoundLocalCompositeInternalVerifier } from './ExecutionRunBoundLocalCompositeContinuationService.ts';
 import {
   LocalCompositeContinuationService,
   LOCAL_COMPOSITE_CONTINUATION_STEPS,
   type LocalCompositeContinuationDependencies,
+  type LocalCompositeInternalVerifier,
   type LocalCompositeLocalResult,
   type LocalCompositeResolvedArtifact,
   type LocalCompositeStartCommand,
@@ -64,6 +67,7 @@ export type ProductionLocalCompositeContinuationInput = Readonly<{
   hydrator: CanonicalArtifactHydrator;
   signed: SignedArtifactAuthority;
   masks: PostgresMaskArtifactStore;
+  runs: ExecutionRunRegistry;
   verifier?: WorkflowVerifierPort;
 }>;
 
@@ -125,6 +129,25 @@ export function createProductionLocalCompositeContinuation(input: ProductionLoca
     stepId: LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation,
   });
 
+  const internalVerifierDelegate: LocalCompositeInternalVerifier = Object.freeze({
+    verify: async ({ scope, stepId, artifactId }) => {
+      const durable = await resolver.resolve(scope, artifactId);
+      if (durable.kind !== 'image' || durable.role !== 'COMPOSITE') throw compositionError('local_composite_verify_artifact_contract', 'INTERNAL verify requires a durable canonical COMPOSITE');
+      const hydrated = await input.hydrator.hydrate(scope, artifactId, []);
+      const image = hydrated.find(candidate => candidate.id === artifactId && candidate.kind === 'image');
+      if (!image) throw compositionError('local_composite_verify_artifact_unavailable', 'Durable COMPOSITE pixels are unavailable for INTERNAL verification');
+      const operation: WorkflowOperation = Object.freeze({
+        id: stepId,
+        type: 'verify',
+        executionRoute: 'INTERNAL',
+        requiredArtifacts: Object.freeze([artifactId]),
+        outputBindings: Object.freeze([Object.freeze({ logicalId: 'verified-image', artifactId, kind: 'image', slot: 0 })]),
+      });
+      const verification = await verifier.verify(operation, Object.freeze([asWorkflowArtifact(image, LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation)]));
+      if (!verification.valid) throw compositionError('local_composite_internal_verification_failed', `INTERNAL verify failed: ${verification.errors.join(',')}`);
+    },
+  });
+
   const dependencies: LocalCompositeContinuationDependencies = Object.freeze({
     continuations,
     tickets: input.admission,
@@ -148,23 +171,10 @@ export function createProductionLocalCompositeContinuation(input: ProductionLoca
     finalizedResults: Object.freeze({
       recover: (ticket) => recoverFinalizedCompositeResult(input, ticket),
     }),
-    internalVerifier: Object.freeze({
-      verify: async ({ scope, stepId, artifactId }) => {
-        const durable = await resolver.resolve(scope, artifactId);
-        if (durable.kind !== 'image' || durable.role !== 'COMPOSITE') throw compositionError('local_composite_verify_artifact_contract', 'INTERNAL verify requires a durable canonical COMPOSITE');
-        const hydrated = await input.hydrator.hydrate(scope, artifactId, []);
-        const image = hydrated.find(candidate => candidate.id === artifactId && candidate.kind === 'image');
-        if (!image) throw compositionError('local_composite_verify_artifact_unavailable', 'Durable COMPOSITE pixels are unavailable for INTERNAL verification');
-        const operation: WorkflowOperation = Object.freeze({
-          id: stepId,
-          type: 'verify',
-          executionRoute: 'INTERNAL',
-          requiredArtifacts: Object.freeze([artifactId]),
-          outputBindings: Object.freeze([Object.freeze({ logicalId: 'verified-image', artifactId, kind: 'image', slot: 0 })]),
-        });
-        const verification = await verifier.verify(operation, Object.freeze([asWorkflowArtifact(image, LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation)]));
-        if (!verification.valid) throw compositionError('local_composite_internal_verification_failed', `INTERNAL verify failed: ${verification.errors.join(',')}`);
-      },
+    internalVerifier: new ExecutionRunBoundLocalCompositeInternalVerifier({
+      delegate: internalVerifierDelegate,
+      continuations,
+      runs: input.runs,
     }),
     now: input.now,
   });

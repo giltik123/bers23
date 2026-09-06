@@ -252,6 +252,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       hydrator,
       signed: externalArtifacts,
       masks: maskArtifacts,
+      runs: executionRuns,
       verifier: productionWorkflowVerifier,
     });
     const localComposite = new ExecutionRunBoundLocalCompositeContinuationService({

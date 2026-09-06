@@ -81,6 +81,18 @@ function workflowInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function workflowStepInput(parentRunId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    scope: { ...owner, projectId },
+    capability: 'WORKFLOW_STEP' as const,
+    idempotencyKey: `workflow-child:${parentRunId}:verify`,
+    authorityKind: 'WORKFLOW_INTERNAL_STEP' as const,
+    authorityRef: 'workflow-internal-step:workflow-execution-1:verify',
+    parentRunId,
+    ...overrides,
+  };
+}
+
 async function issueRun(input: any) {
   return (await registry.issue(input)).run;
 }
@@ -135,7 +147,11 @@ test('capability and authority kind cannot be mixed or pre-open Agent/Automation
     /incompatible/,
   );
   await assert.rejects(
-    () => registry.issue({ ...workflowInput(), authorityKind: 'CREATIVE_EXECUTION' as any }),
+    () => registry.issue({ ...workflowInput(), authorityKind: 'WORKFLOW_INTERNAL_STEP' as any }),
+    /incompatible/,
+  );
+  await assert.rejects(
+    () => registry.issue({ ...workflowStepInput(randomUUID()), authorityKind: 'WORKFLOW_CONTINUATION' as any }),
     /incompatible/,
   );
   await assert.rejects(
@@ -152,6 +168,47 @@ test('capability and authority kind cannot be mixed or pre-open Agent/Automation
       (run_id,tenant_id,user_id,project_id,capability,idempotency_key,authority_kind,authority_ref)
       VALUES ($1,$2,$3,$4,'LOCAL_EXECUTION',$5,'CREATIVE_EXECUTION',$6)`,
     [randomUUID(),owner.tenantId,owner.userId,projectId,'direct-mismatch','direct-mismatch-authority']),
+  );
+});
+
+test('WORKFLOW_STEP requires an exact scoped WORKFLOW_CONTINUATION parent', async () => {
+  await assert.rejects(
+    () => registry.issue({
+      scope: { ...owner, projectId },
+      capability: 'WORKFLOW_STEP',
+      idempotencyKey: 'workflow-step:parentless',
+      authorityKind: 'WORKFLOW_INTERNAL_STEP',
+      authorityRef: 'workflow-internal-step:parentless:verify',
+    } as any),
+    /requires parentRunId/,
+  );
+
+  const creativeParent = await issueRun(creativeInput());
+  await assert.rejects(
+    () => registry.issue(workflowStepInput(creativeParent.runId)),
+    (error: any) => error?.code === 'execution_run_parent_capability_conflict',
+  );
+
+  const workflowParent = await issueRun(workflowInput());
+  const child = await issueRun(workflowStepInput(workflowParent.runId));
+  assert.equal(child.capability, 'WORKFLOW_STEP');
+  assert.equal(child.authorityKind, 'WORKFLOW_INTERNAL_STEP');
+  assert.equal(child.parentRunId, workflowParent.runId);
+
+  await assert.rejects(
+    () => registry.issue(workflowStepInput(workflowParent.runId, {
+      scope: { ...owner, projectId: secondProjectId },
+      idempotencyKey: 'workflow-child:other-project:verify',
+      authorityRef: 'workflow-internal-step:other-project:verify',
+    })),
+    (error: any) => error?.code === 'execution_run_parent_unavailable',
+  );
+
+  await assert.rejects(
+    () => pool.query(`INSERT INTO canonical_execution_runs
+      (run_id,tenant_id,user_id,project_id,capability,idempotency_key,authority_kind,authority_ref,parent_run_id)
+      VALUES ($1,$2,$3,$4,'WORKFLOW_STEP',$5,'WORKFLOW_INTERNAL_STEP',$6,NULL)`,
+    [randomUUID(),owner.tenantId,owner.userId,projectId,'direct-parentless-step','direct-parentless-authority']),
   );
 });
 
@@ -237,17 +294,18 @@ test('list and listChildren are scoped, bounded and isolate direct parent lineag
     authorityRef: 'ticket-local-other-parent',
     parentRunId: otherParent.runId,
   }));
+  const internalChild = await issueRun(workflowStepInput(otherParent.runId));
 
   assert.equal(firstChild.parentRunId, parent.runId);
   assert.equal(secondChild.parentRunId, parent.runId);
   const listed = await registry.list(parent.scope, 10);
-  assert.equal(listed.length, 5);
-  assert.deepEqual(new Set(listed.map(run => run.runId)), new Set([parent.runId, firstChild.runId, secondChild.runId, otherParent.runId, otherChild.runId]));
+  assert.equal(listed.length, 6);
+  assert.deepEqual(new Set(listed.map(run => run.runId)), new Set([parent.runId, firstChild.runId, secondChild.runId, otherParent.runId, otherChild.runId, internalChild.runId]));
 
   const directChildren = await registry.listChildren(parent.scope, parent.runId, 10);
-  assert.deepEqual(directChildren.map(run => run.runId), [firstChild.runId, secondChild.runId]);
-  assert.deepEqual((await registry.listChildren(parent.scope, parent.runId, 1)).map(run => run.runId), [firstChild.runId]);
-  assert.deepEqual((await registry.listChildren(parent.scope, otherParent.runId, 10)).map(run => run.runId), [otherChild.runId]);
+  assert.deepEqual(new Set(directChildren.map(run => run.runId)), new Set([firstChild.runId, secondChild.runId]));
+  assert.equal((await registry.listChildren(parent.scope, parent.runId, 1)).length, 1);
+  assert.deepEqual(new Set((await registry.listChildren(parent.scope, otherParent.runId, 10)).map(run => run.runId)), new Set([otherChild.runId, internalChild.runId]));
   assert.equal((await registry.listChildren({ ...owner, projectId: secondProjectId }, parent.runId, 10)).length, 0);
   assert.equal((await registry.list({ ...owner, projectId: secondProjectId })).length, 0);
 
@@ -257,10 +315,24 @@ test('list and listChildren are scoped, bounded and isolate direct parent lineag
 
 test('schema check rejects arbitrary capability widening, not only known future capabilities', async () => {
   await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_capability_check');
-  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION','OTHER_CAPABILITY'))");
+  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION','WORKFLOW_STEP','OTHER_CAPABILITY'))");
   await assert.rejects(() => checkExecutionRunSchema(pool), /incomplete or permissive/);
   await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_capability_check');
-  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION'))");
+  await pool.query("ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_capability_check CHECK (capability IN ('LOCAL_EXECUTION','CREATIVE_EXECUTION','WORKFLOW_CONTINUATION','WORKFLOW_STEP'))");
+  await checkExecutionRunSchema(pool);
+});
+
+test('schema check rejects workflow-step authority without required parent binding', async () => {
+  await pool.query('ALTER TABLE canonical_execution_runs DROP CONSTRAINT canonical_execution_runs_authority_binding_check');
+  await pool.query(`ALTER TABLE canonical_execution_runs ADD CONSTRAINT canonical_execution_runs_authority_binding_check CHECK (
+    (capability='LOCAL_EXECUTION' AND authority_kind='LOCAL_EXECUTION_TICKET')
+    OR (capability='CREATIVE_EXECUTION' AND authority_kind='CREATIVE_EXECUTION')
+    OR (capability='WORKFLOW_CONTINUATION' AND authority_kind='WORKFLOW_CONTINUATION')
+    OR (capability='WORKFLOW_STEP' AND authority_kind='WORKFLOW_INTERNAL_STEP')
+  )`);
+  await assert.rejects(() => checkExecutionRunSchema(pool), /incomplete or permissive/);
+  const migration = await readFile(resolve(process.cwd(), 'server/core/execution/migrations/037_execution_run_workflow_internal_step.sql'), 'utf8');
+  await pool.query(migration);
   await checkExecutionRunSchema(pool);
 });
 
@@ -274,18 +346,40 @@ test('schema check rejects a scope-local authority uniqueness lookalike', async 
   await checkExecutionRunSchema(pool);
 });
 
-test('exact historical 034 schema upgrades forward to D1 and migration replay is idempotent', async () => {
+test('exact historical 034 schema upgrades through 036 to D3 and migration replay is idempotent', async () => {
   await pool.query('DROP TABLE canonical_execution_runs');
   const baseMigration = await readFile(resolve(process.cwd(), 'server/core/execution/migrations/034_execution_run_registry.sql'), 'utf8');
   await pool.query(baseMigration);
-  await assert.rejects(() => checkExecutionRunSchema(pool), /apply migrations 034 and 036/);
+  await assert.rejects(() => checkExecutionRunSchema(pool), /apply migrations 034, 036 and 037/);
   await migrateExecutionRunSchema(pool);
   await checkExecutionRunSchema(pool);
   await migrateExecutionRunSchema(pool);
   await checkExecutionRunSchema(pool);
 
-  const issued = await registry.issue(workflowInput({ idempotencyKey: 'workflow:upgrade-proof', authorityRef: 'workflow-upgrade-proof' }));
-  assert.equal(issued.created, true);
-  assert.equal(issued.run.capability, 'WORKFLOW_CONTINUATION');
-  assert.equal(issued.run.authorityKind, 'WORKFLOW_CONTINUATION');
+  const parent = await issueRun(workflowInput({ idempotencyKey: 'workflow:upgrade-proof', authorityRef: 'workflow-upgrade-proof' }));
+  const child = await issueRun(workflowStepInput(parent.runId, {
+    idempotencyKey: `workflow-child:${parent.runId}:upgrade-verify`,
+    authorityRef: 'workflow-internal-step:workflow-upgrade-proof:verify',
+  }));
+  assert.equal(parent.capability, 'WORKFLOW_CONTINUATION');
+  assert.equal(child.capability, 'WORKFLOW_STEP');
+  assert.equal(child.authorityKind, 'WORKFLOW_INTERNAL_STEP');
+});
+
+test('exact 036 schema is rejected by D3 check and upgrades forward through 037 only', async () => {
+  await pool.query('DROP TABLE canonical_execution_runs');
+  const baseMigration = await readFile(resolve(process.cwd(), 'server/core/execution/migrations/034_execution_run_registry.sql'), 'utf8');
+  const d1Migration = await readFile(resolve(process.cwd(), 'server/core/execution/migrations/036_execution_run_workflow_continuation.sql'), 'utf8');
+  await pool.query(baseMigration);
+  await pool.query(d1Migration);
+  await assert.rejects(() => checkExecutionRunSchema(pool), /apply migrations 034, 036 and 037/);
+  await migrateExecutionRunSchema(pool);
+  await checkExecutionRunSchema(pool);
+
+  const parent = await issueRun(workflowInput({ idempotencyKey: 'workflow:d1-upgrade-proof', authorityRef: 'workflow-d1-upgrade-proof' }));
+  const child = await issueRun(workflowStepInput(parent.runId, {
+    idempotencyKey: `workflow-child:${parent.runId}:d1-upgrade-verify`,
+    authorityRef: 'workflow-internal-step:workflow-d1-upgrade-proof:verify',
+  }));
+  assert.equal(child.parentRunId, parent.runId);
 });
