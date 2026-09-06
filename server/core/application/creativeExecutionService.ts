@@ -1,12 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { CreativeExecutionPlatform, type CreativeArtifact, type CreativeExecutionPlatformRuntimeDependencies, type CreativeRequest, type ProductionOutcome } from '../../../src/platform/creative/canonical/index.ts';
-import type { ExecutionRunRegistry } from '../execution/executionRunRegistry.ts';
+import type { ExecutionRun, ExecutionRunRegistry } from '../execution/executionRunRegistry.ts';
 
 export type CreativeEditCommand = Readonly<{ projectId: string; instruction: string; selectedObjectIds?: readonly string[]; inputArtifactId: string; maskArtifactIds?: readonly string[]; preserveMode?: string; clientRequestId: string }>;
 export type AuthenticatedScope = Readonly<{ tenantId: string; userId: string }>;
+export type CreativeArtifactReplayIdentities = Readonly<{ inputArtifactIdentity: string; maskArtifactIdentities: readonly string[] }>;
 export type CreativeExecutionServiceDependencies = Readonly<{
   platform: CreativeExecutionPlatformRuntimeDependencies;
   ownsArtifacts(scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]): Promise<boolean>;
+  /**
+   * Production must reduce signed capability envelopes to signature-verified,
+   * stable artifact identities before request fingerprinting. Optional only for
+   * isolated fixtures whose artifact IDs are already stable semantic identities.
+   */
+  resolveArtifactReplayIdentities?(scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]): Promise<readonly string[]>;
   hydrateArtifacts?(scope: AuthenticatedScope & { projectId: string }, originalId: string, maskIds: readonly string[]): Promise<readonly CreativeArtifact[]>;
   persistFinal?(scope: AuthenticatedScope & { projectId: string }, executionId: string, artifact: CreativeArtifact): Promise<CreativeArtifact>;
   mintFinalDelivery?(scope: AuthenticatedScope & { projectId: string }, storageId: string): string;
@@ -24,11 +31,32 @@ export type CreativeExecutionServiceDependencies = Readonly<{
 
 type CreativeSettlement = Readonly<{ error?: unknown }>;
 type CreativeSettlementRecord = Readonly<{ promise: Promise<CreativeSettlement> }>;
+type CreativeInflight = Readonly<{ fingerprint: Promise<string>; promise: Promise<ProductionOutcome> }>;
 const CREATIVE_CANCEL_REASON = 'CREATIVE_EXECUTION_CANCELLED';
+const CREATIVE_REPLAY_IDENTITY_VERSION = 'creative-request-v1';
+
+export function creativeRequestFingerprint(command: CreativeEditCommand, artifacts: CreativeArtifactReplayIdentities): string {
+  const canonical = JSON.stringify({
+    version: CREATIVE_REPLAY_IDENTITY_VERSION,
+    instruction: command.instruction,
+    inputArtifactIdentity: artifacts.inputArtifactIdentity,
+    maskArtifactIdentities: [...artifacts.maskArtifactIdentities],
+    selectedObjectIds: [...(command.selectedObjectIds ?? [])],
+    preserveMode: command.preserveMode ?? 'STRICT',
+  });
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+export function creativeExecutionRunIdempotencyKey(command: CreativeEditCommand, fingerprint: string): string {
+  const digest = createHash('sha256')
+    .update(JSON.stringify([CREATIVE_REPLAY_IDENTITY_VERSION, command.clientRequestId, fingerprint]))
+    .digest('hex');
+  return `${CREATIVE_REPLAY_IDENTITY_VERSION}:${digest}`;
+}
 
 /** Server application boundary: identity, scope and idempotency are authoritative here. */
 export class CreativeExecutionService {
-  readonly #inflight = new Map<string, Promise<ProductionOutcome>>();
+  readonly #inflight = new Map<string, CreativeInflight>();
   readonly #results = new Map<string, ProductionOutcome>();
   readonly #scopes = new Map<string, AuthenticatedScope>();
   readonly #durableRuns = new Map<string, Readonly<{ scope: AuthenticatedScope & { projectId: string }; runId: string }>>();
@@ -38,8 +66,17 @@ export class CreativeExecutionService {
   constructor(private readonly dependencies: CreativeExecutionServiceDependencies) { this.#platform = new CreativeExecutionPlatform(dependencies.platform); }
   execute(command: CreativeEditCommand, auth: AuthenticatedScope, correlationId?: string): Promise<ProductionOutcome> {
     const key = `${auth.tenantId}:${auth.userId}:${command.projectId}:${command.clientRequestId}`;
-    const prior = this.#inflight.get(key); if (prior) return prior;
-    const task = this.#execute(command, auth, key, correlationId); this.#inflight.set(key, task); return task;
+    const fingerprint = this.#resolveFingerprint(command, auth);
+    const prior = this.#inflight.get(key);
+    if (prior) return joinSameProcessReplay(prior, fingerprint);
+
+    const task = fingerprint.then(value => this.#execute(command, auth, key, value, correlationId));
+    this.#inflight.set(key, Object.freeze({ fingerprint, promise: task }));
+    void task.catch(() => {
+      const current = this.#inflight.get(key);
+      if (current?.promise === task) this.#inflight.delete(key);
+    });
+    return task;
   }
   async cancel(executionId: string, auth?: AuthenticatedScope): Promise<void> {
     this.assertScope(executionId, auth);
@@ -69,15 +106,46 @@ export class CreativeExecutionService {
   status(executionId: string, auth?: AuthenticatedScope) { this.assertScope(executionId, auth); return this.#platform.status(executionId); }
   result(executionId: string, auth?: AuthenticatedScope) { this.assertScope(executionId, auth); return this.#results.get(executionId); }
   deliveryUrl(artifact: CreativeArtifact): string | undefined { const storageId = artifact.metadata?.storageId; return artifact.role === 'COMPOSITE' && artifact.state === 'FINAL' && typeof storageId === 'string' && this.dependencies.mintFinalDelivery ? this.dependencies.mintFinalDelivery(artifact.scope, storageId) : undefined; }
-  async #execute(command: CreativeEditCommand, auth: AuthenticatedScope, key: string, correlationId?: string): Promise<ProductionOutcome> {
-    const artifacts = [command.inputArtifactId, ...(command.maskArtifactIds ?? [])];
+
+  async #resolveFingerprint(command: CreativeEditCommand, auth: AuthenticatedScope): Promise<string> {
+    const scope = Object.freeze({ tenantId: auth.tenantId, userId: auth.userId, projectId: command.projectId });
+    const references = Object.freeze([command.inputArtifactId, ...(command.maskArtifactIds ?? [])]);
+    let identities: readonly string[];
+    if (this.dependencies.resolveArtifactReplayIdentities) {
+      try {
+        identities = await this.dependencies.resolveArtifactReplayIdentities(scope, references);
+      } catch (error) {
+        if ((error as { code?: unknown })?.code !== 'ARTIFACT_REFERENCE_DENIED') throw error;
+        throw publicError('scope_denied', 'Artifact scope is not authorized', 403, false);
+      }
+      if (identities.length !== references.length || identities.some(value => typeof value !== 'string' || value.length === 0)) {
+        throw new Error('Artifact replay identity resolver violated its exact cardinality contract');
+      }
+    } else {
+      identities = references;
+    }
+    return creativeRequestFingerprint(command, Object.freeze({
+      inputArtifactIdentity: identities[0],
+      maskArtifactIdentities: Object.freeze(identities.slice(1)),
+    }));
+  }
+
+  async #execute(command: CreativeEditCommand, auth: AuthenticatedScope, key: string, fingerprint: string, correlationId?: string): Promise<ProductionOutcome> {
     const scope = Object.freeze({
       tenantId: auth.tenantId,
       userId: auth.userId,
       projectId: command.projectId,
     });
-    if (!await this.dependencies.ownsArtifacts(scope, artifacts)) throw publicError('scope_denied', 'Artifact scope is not authorized', 403, false);
     const executionId = `creative-${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
+    const durableIdempotencyKey = creativeExecutionRunIdempotencyKey(command, fingerprint);
+
+    if (this.dependencies.executionRuns) {
+      const existing = await this.dependencies.executionRuns.getByAuthority(scope, 'CREATIVE_EXECUTION', executionId);
+      if (existing) throw classifyCreativeReplay(existing, command.clientRequestId, durableIdempotencyKey);
+    }
+
+    const artifacts = [command.inputArtifactId, ...(command.maskArtifactIds ?? [])];
+    if (!await this.dependencies.ownsArtifacts(scope, artifacts)) throw publicError('scope_denied', 'Artifact scope is not authorized', 403, false);
     const requestCorrelationId = correlationId ?? randomUUID();
     const estimatedCredits = this.dependencies.creditsPerEdit ?? 1; const hardBudgetCredits = this.dependencies.hardBudgetCredits ?? estimatedCredits;
     const controlled = Boolean(command.maskArtifactIds?.length && command.selectedObjectIds?.length);
@@ -86,30 +154,32 @@ export class CreativeExecutionService {
       : artifacts.map((id, index) => ({ id, kind: 'image', value: { artifactId: id }, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: index ? 'MASK' : 'ORIGINAL' } as CreativeArtifact));
     const request: CreativeRequest = { id: executionId, intent: command.instruction, scope, inputArtifacts: hydrated, budget: { credits: hardBudgetCredits, aiCalls: 1, latencyMs: 120_000, ramMb: 2048, gpuMs: 120_000, retries: 0 }, metadata: { idempotencyKey: command.clientRequestId, estimatedCredits, requestId: requestCorrelationId, correlationId: requestCorrelationId, editCapability: controlled ? 'CONTROLLED_LOCAL_EDIT' : 'GLOBAL_EDIT', preserveMode: command.preserveMode ?? 'STRICT', selectedObjectIds: command.selectedObjectIds ?? [], maskArtifactIds: command.maskArtifactIds ?? [] } };
 
-    // Planning is intentionally completed before issuing the durable run. It is
-    // advisory/pure and must not reserve Billing or dispatch a runtime. The run
-    // is therefore created only once the request can enter the side-effecting
-    // Creative authority lifecycle.
+    // Replay/conflicting-key classification is completed above before planning.
+    // Planning remains advisory/pure and must not reserve Billing or dispatch a
+    // runtime. The durable run is issued only once the request can enter the
+    // side-effecting Creative authority lifecycle.
     this.#platform.createExecution(request);
     await this.#platform.plan(executionId);
 
     let durableRun: Awaited<ReturnType<ExecutionRunRegistry['issue']>>['run'] | undefined;
     if (this.dependencies.executionRuns) {
-      const issued = await this.dependencies.executionRuns.issue({
-        scope,
-        capability: 'CREATIVE_EXECUTION',
-        idempotencyKey: command.clientRequestId,
-        authorityKind: 'CREATIVE_EXECUTION',
-        authorityRef: executionId,
-      });
-      if (!issued.created) {
-        throw publicError(
-          'creative_reconciliation_required',
-          'Creative execution already has a durable run and requires reconciliation before redispatch',
-          409,
-          true,
-        );
+      let issued: Awaited<ReturnType<ExecutionRunRegistry['issue']>>;
+      try {
+        issued = await this.dependencies.executionRuns.issue({
+          scope,
+          capability: 'CREATIVE_EXECUTION',
+          idempotencyKey: durableIdempotencyKey,
+          authorityKind: 'CREATIVE_EXECUTION',
+          authorityRef: executionId,
+        });
+      } catch (error) {
+        if ((error as { code?: unknown })?.code === 'execution_run_authority_already_bound') {
+          const concurrent = await this.dependencies.executionRuns.getByAuthority(scope, 'CREATIVE_EXECUTION', executionId);
+          if (concurrent) throw classifyCreativeReplay(concurrent, command.clientRequestId, durableIdempotencyKey);
+        }
+        throw error;
       }
+      if (!issued.created) throw classifyCreativeReplay(issued.run, command.clientRequestId, durableIdempotencyKey);
       durableRun = issued.run;
       // RUNNING begins before compile because compile performs canonical Billing
       // reservation. No financial/provider side effect may occur while the
@@ -166,5 +236,23 @@ export class CreativeExecutionService {
   }
   private assertScope(executionId: string, auth?: AuthenticatedScope) { if (!auth) return; const scope = this.#scopes.get(executionId); if (!scope) throw publicError('result_not_found', 'Result is not available', 404, false); if (scope.tenantId !== auth.tenantId || scope.userId !== auth.userId) throw publicError('scope_denied', 'Execution scope is not authorized', 403, false); }
 }
+
+async function joinSameProcessReplay(prior: CreativeInflight, fingerprint: Promise<string>): Promise<ProductionOutcome> {
+  const [acceptedFingerprint, replayFingerprint] = await Promise.all([prior.fingerprint, fingerprint]);
+  if (acceptedFingerprint !== replayFingerprint) throw creativeIdempotencyConflict();
+  return prior.promise;
+}
+function classifyCreativeReplay(existing: ExecutionRun, legacyClientRequestId: string, durableIdempotencyKey: string): Error {
+  if (existing.idempotencyKey === durableIdempotencyKey || existing.idempotencyKey === legacyClientRequestId) {
+    return publicError(
+      'creative_reconciliation_required',
+      'Creative execution already has a durable run and requires reconciliation before redispatch',
+      409,
+      true,
+    );
+  }
+  return creativeIdempotencyConflict();
+}
+function creativeIdempotencyConflict(): Error { return publicError('creative_idempotency_conflict', 'Creative clientRequestId is already bound to a different request payload', 409, false); }
 function isCreativeCancellation(error: unknown): boolean { return error instanceof DOMException && error.name === 'AbortError'; }
 export function publicError(code: string, message: string, status: number, retryable: boolean) { return Object.assign(new Error(message), { code, status, retryable }); }

@@ -35,6 +35,7 @@ export type CreativeCoreCompositionInput = Readonly<{
   /** Required by production in the promotion slice; optional here for isolated composition fixtures. */
   executionRuns?: ExecutionRunRegistry;
   ownsArtifacts: CreativeExecutionServiceDependencies['ownsArtifacts'];
+  resolveArtifactReplayIdentities?: CreativeExecutionServiceDependencies['resolveArtifactReplayIdentities'];
   hydrateArtifacts?: CreativeExecutionServiceDependencies['hydrateArtifacts'];
   persistFinal?: CreativeExecutionServiceDependencies['persistFinal'];
   mintFinalDelivery?: CreativeExecutionServiceDependencies['mintFinalDelivery'];
@@ -47,10 +48,12 @@ type ExecutionRecord = Readonly<{ scope: Scope; promise: Promise<void> }>;
 
 /** Existing application composition retained for callers that supply transaction services directly. */
 function createCreativeApplicationCore(input: CreativeCoreCompositionInput) {
+  if (input.executionRuns && !input.resolveArtifactReplayIdentities) throw new Error('Creative durable execution requires a stable artifact replay identity resolver');
   const billing = new TransactionBillingAuthorityAdapter(input.transactions, input.transactionStore, 'fal');
   const service = new CreativeExecutionService({
     platform: { ...input.canonical, billing },
     ownsArtifacts: input.ownsArtifacts,
+    resolveArtifactReplayIdentities: input.resolveArtifactReplayIdentities,
     hydrateArtifacts: input.hydrateArtifacts,
     persistFinal: input.persistFinal,
     mintFinalDelivery: input.mintFinalDelivery,

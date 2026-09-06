@@ -17,6 +17,7 @@ class ReserveRuns implements ExecutionRunRegistry {
   readonly events: string[] = [];
   async issue(input: IssueExecutionRunInput) { this.events.push('run:issue'); this.run = Object.freeze({ ...this.run, scope: input.scope, capability: input.capability, idempotencyKey: input.idempotencyKey, authorityKind: input.authorityKind, authorityRef: input.authorityRef }); return Object.freeze({ run: this.run, created: true }); }
   async get() { return this.run; }
+  async getByAuthority() { return undefined; }
   async list() { return Object.freeze([this.run]); }
   async listRoots() { return Object.freeze([this.run]); }
   async listChildren() { return Object.freeze([]); }

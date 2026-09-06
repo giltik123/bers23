@@ -134,12 +134,14 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       now,
     });
     const ownsArtifacts = (scope: Parameters<ArtifactAuthority['owns']>[0], ids: readonly string[]) => artifacts.owns(scope, ids);
+    const resolveArtifactReplayIdentities = async (scope: Parameters<ArtifactAuthority['owns']>[0], ids: readonly string[]) => Object.freeze(ids.map(id => externalArtifacts.resolveReplayIdentity(id, scope)));
     const hydrateArtifacts = (scope: Parameters<CanonicalArtifactHydrator['hydrate']>[0], original: string, masks: readonly string[]) => hydrator.hydrate(scope, original, masks);
     const core = createCreativeCore({
       transactions: transactions.transactions,
       transactionStore: transactions.store,
       executionRuns,
       ownsArtifacts,
+      resolveArtifactReplayIdentities,
       hydrateArtifacts,
       persistFinal: async (scope, executionId, artifact) => {
         const metrics = artifact.metadata?.integrityMetrics as { verificationOutcome?: string } | undefined;

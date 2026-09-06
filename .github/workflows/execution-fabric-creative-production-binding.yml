@@ -8,6 +8,7 @@ on:
     branches: [ "main" ]
     paths:
       - 'server/core/application/creativeExecutionService.ts'
+      - 'server/core/artifacts/signedArtifactAuthority.ts'
       - 'server/core/composition/createCreativeCore.ts'
       - 'server/core/composition/createProductionCore.ts'
       - 'server/core/execution/**'
@@ -39,7 +40,9 @@ on:
       - 'tests/creative-fal-artifact-cancellation.integration.test.ts'
       - 'tests/creative-fal-cancellation.test.ts'
       - 'tests/creative-pre-execution-cancellation.test.ts'
+      - 'tests/creative-request-fingerprint.test.ts'
       - 'tests/creative-reservation-cancellation.test.ts'
+      - 'tests/execution-run-authority-preflight-postgres.test.ts'
       - 'tests/provider-transport-cancellation.test.ts'
       - 'tests/core-server-postgres-vertical.test.ts'
       - 'tests/canonical-product-vertical-slice.test.ts'
@@ -99,7 +102,9 @@ jobs:
           node --input-type=module <<'EOF'
           import { build } from 'esbuild';
           for (const [entry, outfile] of [
+            ['tests/creative-request-fingerprint.test.ts', '.test-cache/creative-production-binding/creative-request-fingerprint.test.mjs'],
             ['tests/creative-execution-run-binding.test.ts', '.test-cache/creative-production-binding/creative-execution-run-binding.test.mjs'],
+            ['tests/execution-run-authority-preflight-postgres.test.ts', '.test-cache/creative-production-binding/execution-run-authority-preflight-postgres.test.mjs'],
             ['tests/creative-execution-run-restart-postgres.test.ts', '.test-cache/creative-production-binding/creative-execution-run-restart-postgres.test.mjs'],
             ['tests/creative-fal-cancellation.test.ts', '.test-cache/creative-production-binding/creative-fal-cancellation.test.mjs'],
             ['tests/creative-fal-artifact-cancellation.integration.test.ts', '.test-cache/creative-production-binding/creative-fal-artifact-cancellation.integration.test.mjs'],
@@ -119,8 +124,12 @@ jobs:
             external: ['pg', 'sharp', 'node:*'],
           });
           EOF
+      - name: Prove deterministic Creative request fingerprint and fresh-operation identity
+        run: node --test .test-cache/creative-production-binding/creative-request-fingerprint.test.mjs
       - name: Prove service lifecycle ordering, owning cancellation and replay guard
         run: node --test .test-cache/creative-production-binding/creative-execution-run-binding.test.mjs
+      - name: Prove ExecutionRun authority preflight is scope-bound and observation-only
+        run: node --test --test-concurrency=1 .test-cache/creative-production-binding/execution-run-authority-preflight-postgres.test.mjs
       - name: Prove cancellation/provider failure race never creates false CANCELLED truth
         run: node --test .test-cache/creative-production-binding/creative-cancellation-race.test.mjs
       - name: Prove prepared cancellation releases Billing exactly once before SKIPPED
@@ -135,7 +144,7 @@ jobs:
         run: node --test .test-cache/creative-production-binding/provider-transport-cancellation.test.mjs
       - name: Prove lifecycle HTTP waits for owning cancellation reconciliation
         run: node --test .test-cache/creative-production-binding/creative-cancellation-http.test.mjs
-      - name: Prove PostgreSQL process-restart replay cannot redispatch spend or provider work
+      - name: Prove PostgreSQL process-restart replay cannot redispatch planning, spend or provider work
         run: node --test --test-concurrency=1 .test-cache/creative-production-binding/creative-execution-run-restart-postgres.test.mjs
       - name: Prove browser repeat policy cannot become Creative redispatch authority
         run: |
@@ -150,7 +159,7 @@ jobs:
         run: node --test .test-cache/creative-production-binding/canonical-product-vertical-slice.test.mjs
       - name: Prove real HTTP Project scope reaches durable Run then Billing and provider authority
         run: npm run test:core-server-postgres-vertical
-      - name: Prove production composition is fail-closed on durable registry readiness and owning cancel
+      - name: Prove production composition is fail-closed on durable registry readiness, replay identity and owning cancel
         run: |
           set -euo pipefail
           grep -q 'checkExecutionRunSchema(transactions.pool)' server/core/composition/createProductionCore.ts
@@ -158,8 +167,17 @@ jobs:
           grep -q 'new PostgresExecutionRunRegistry(transactions.pool)' server/core/composition/createProductionCore.ts
           grep -q '^      executionRuns,$' server/core/composition/createProductionCore.ts
           grep -q 'executionRuns: input.executionRuns' server/core/composition/createCreativeCore.ts
+          grep -q 'resolveArtifactReplayIdentities: input.resolveArtifactReplayIdentities' server/core/composition/createCreativeCore.ts
+          grep -q 'externalArtifacts.resolveReplayIdentity' server/core/composition/createProductionCore.ts
+          grep -q '^      resolveArtifactReplayIdentities,$' server/core/composition/createProductionCore.ts
+          grep -q 'resolveReplayIdentity(reference:' server/core/artifacts/signedArtifactAuthority.ts
+          grep -q 'executionRuns.getByAuthority' server/core/application/creativeExecutionService.ts
           grep -q 'executionRuns.issue' server/core/application/creativeExecutionService.ts
           grep -q 'creative_reconciliation_required' server/core/application/creativeExecutionService.ts
+          grep -q 'creative_idempotency_conflict' server/core/application/creativeExecutionService.ts
+          grep -q "CREATIVE_REPLAY_IDENTITY_VERSION = 'creative-request-v1'" server/core/application/creativeExecutionService.ts
+          grep -q "Pick<ExecutionRunRegistry, 'get' | 'listRoots' | 'listChildren'>" server/core/http/executionRunRecoveryHttpAdapter.ts
+          ! grep -q 'run.idempotencyKey' server/core/http/executionRunRecoveryHttpAdapter.ts
           grep -q "outcome.status === 'UNKNOWN'" server/core/application/creativeExecutionService.ts
           grep -q 'executionRuns.cancel' server/core/application/creativeExecutionService.ts
           grep -q 'CREATIVE_EXECUTION_CANCELLED' server/core/application/creativeExecutionService.ts
@@ -177,6 +195,7 @@ jobs:
           set -euo pipefail
           FILES=(
             server/core/application/creativeExecutionService.ts
+            server/core/artifacts/signedArtifactAuthority.ts
             server/core/composition/createCreativeCore.ts
             server/core/composition/createProductionCore.ts
             server/core/http/creativeLifecycleHandlers.ts
