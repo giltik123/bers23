@@ -38,6 +38,7 @@ import { checkProjectSchema } from '../projects/projectSchema.ts';
 import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from '../workflow/workflowContinuationSchema.ts';
 import { createProductionLocalCompositeContinuation } from '../workflow/createProductionLocalCompositeContinuation.ts';
+import { createProductionLocalCompositeStartAdmission } from '../workflow/ProductionLocalCompositeStartAdmission.ts';
 
 const LOCAL_EXECUTION_TICKET_TTL_MS = 5 * 60_000;
 
@@ -115,6 +116,11 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       now,
       id: randomUUID,
     };
+    const localCompositeStartAdmission = createProductionLocalCompositeStartAdmission({
+      modelsByCapability: localModelsByCapability,
+      executorsByCapability: localExecutorsByCapability,
+      capabilityAdmission: canonical.capabilityAdmission,
+    });
     const garmentMeshWarp = await createProductionGarmentMeshWarp({
       nodeEnv: config.nodeEnv,
       pool: transactions.pool,
@@ -291,6 +297,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
         garmentTextureCompositeInputDelivery: garmentMeshWarp.textureComposite.inputDelivery,
         superResolution: localSuperResolution,
         inputDelivery: localInputDelivery,
+        compositeStartAdmission: localCompositeStartAdmission,
         composite: localComposite,
       }),
       transactions,

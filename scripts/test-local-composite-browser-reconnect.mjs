@@ -10,6 +10,7 @@ import { createProductionCore } from '../server/core/composition/createProductio
 import { createCanonicalNodeHttpAdapter } from '../server/core/http/canonicalNodeHttpAdapter.ts';
 import { createLocalCompositeContinuationHttpAdapter } from '../server/core/http/localCompositeContinuationHttpAdapter.ts';
 import { applyCoreSecurityHeaders } from '../server/core/http/securityHeaders.ts';
+import { MOBILE_SAM_LOCAL_CAPABILITY } from '../server/core/localExecution/productionLocalModelPolicy.ts';
 import { LocalCompositeOutputUploadService } from '../server/core/workflow/LocalCompositeOutputUploadService.ts';
 import { migrateFinalImageLineageSchema } from '../server/core/artifacts/finalImageLineageSchema.ts';
 import { migrateProjectSchema } from '../server/core/projects/projectSchema.ts';
@@ -29,8 +30,10 @@ const userId = 'c5b-browser-user';
 const email = 'c5b-browser@example.test';
 const password = 'C5b-Browser-Password-42!';
 const testMobileSam = Object.freeze({ modelId: 'mobilesam-vit-t', version: '1.0.2' });
+const testMobileSamBindings = Object.freeze([testMobileSam]);
 const testModels = Object.freeze({
-  [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment]: Object.freeze([testMobileSam]),
+  [MOBILE_SAM_LOCAL_CAPABILITY]: testMobileSamBindings,
+  [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment]: testMobileSamBindings,
 });
 const analysis = Object.freeze({ originalWidth: 4, originalHeight: 4, analysisWidth: 4, analysisHeight: 4, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 });
 const points = Object.freeze([Object.freeze({ x: 1, y: 1, label: 'POSITIVE', coordinateSpace: 'ORIGINAL' })]);
@@ -75,6 +78,7 @@ await build({
 });
 
 let production = await createProductionCore(config, { fetcher: forbiddenFetcher, testLocalModelsByCapability: testModels });
+assert.equal(production.localExecution.compositeStartAdmission.check().admitted, true, 'browser test Core must satisfy exact D0 alias topology');
 await production.auth.store.provisionLocalUser({ tenantId, userId, email, password, displayName: 'C5B Browser User' });
 const project = await production.projects.create({ tenantId, userId }, 'C5B Browser Project', sourcePng, { maxDimension: 256, maxPixels: 65_536 });
 const projectId = String(project.project_id);
@@ -190,7 +194,7 @@ async function startHttp(runtime, fixtureValue) {
   const ready = async () => { try { await runtime.transactions.pool.query('SELECT 1'); return true; } catch { return false; } };
   const canonical = createCanonicalNodeHttpAdapter({ core: runtime.core, artifacts: runtime.artifacts, projects: runtime.projects, auth: runtime.auth, config, ready, accepting: () => true });
   const outputs = new LocalCompositeOutputUploadService({ continuation: runtime.localExecution.composite, uploads: runtime.localExecution.uploads });
-  const composite = createLocalCompositeContinuationHttpAdapter({ continuation: runtime.localExecution.composite, outputs, auth: runtime.auth, config });
+  const composite = createLocalCompositeContinuationHttpAdapter({ continuation: runtime.localExecution.composite, outputs, startAdmission: runtime.localExecution.compositeStartAdmission, auth: runtime.auth, config });
   const contentTypes = new Map([['.html', 'text/html; charset=utf-8'], ['.js', 'text/javascript; charset=utf-8'], ['.css', 'text/css; charset=utf-8'], ['.map', 'application/json']]);
   const server = http.createServer((request, response) => {
     void (async () => {
