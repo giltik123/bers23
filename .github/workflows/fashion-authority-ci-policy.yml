@@ -19,6 +19,7 @@ on:
       - 'tests/fashion-authority-ci-relevance.test.mjs'
       - 'tests/fashion-authority-ci-workflow-trust.test.mjs'
       - 'tests/fashion-f3c-ci-relevance.test.mjs'
+      - 'tests/fashion-f3c-workflow-trigger-trust.test.mjs'
       - 'tests/fashion-f3c-browser-build-closure.test.mjs'
       - 'tests/canonical-outfit-view-model.test.mjs'
       - 'tests/managed-outfit-browser-client.test.mjs'
@@ -80,6 +81,8 @@ jobs:
         run: npm ci
       - name: Prove exact F3c Canonical Outfit UI profile closure
         run: node --test tests/fashion-f3c-ci-relevance.test.mjs
+      - name: Prove F3c workflow trigger alignment and accepted-body preservation
+        run: node --test tests/fashion-f3c-workflow-trigger-trust.test.mjs
       - name: Prove legacy CLI NUL-delimited GitHub-output contract
         run: |
           set -euo pipefail
