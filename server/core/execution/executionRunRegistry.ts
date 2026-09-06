@@ -49,6 +49,20 @@ export type IssueExecutionRunResult = Readonly<{
   created: boolean;
 }>;
 
+export type ExecutionRunIdentityLookup = Readonly<{
+  byIdempotencyKey?: ExecutionRun;
+  byAuthority?: ExecutionRun;
+}>;
+
+/**
+ * Internal observation-only identity lookup. This is deliberately separate from
+ * ExecutionRunRegistry so readers can classify replay without gaining lifecycle
+ * mutation authority, and existing registry fixtures need not implement it.
+ */
+export interface ExecutionRunIdentityReader {
+  lookupIdentity(input: IssueExecutionRunInput): Promise<ExecutionRunIdentityLookup>;
+}
+
 export interface ExecutionRunRegistry {
   issue(input: IssueExecutionRunInput): Promise<IssueExecutionRunResult>;
   get(scope: ExecutionRunScope, runId: string): Promise<ExecutionRun | undefined>;
