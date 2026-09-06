@@ -1,4 +1,4 @@
-name: P1c Job Center ephemeral client task truth
+name: P1f Job Center explicit retry and replay semantics
 
 on:
   pull_request:
@@ -8,6 +8,10 @@ on:
       - 'src/lib/jobs/jobModelEphemeral.test.mjs'
       - 'src/lib/jobs/jobManager.js'
       - 'src/lib/jobs/jobStorage.js'
+      - 'src/lib/jobs/jobRepeatPolicy.js'
+      - 'src/lib/jobs/jobRepeatPolicy.test.mjs'
+      - 'src/lib/jobs/jobRetryManager.js'
+      - 'src/lib/jobs/jobScheduler.js'
       - 'src/lib/jobs/jobEphemeralAuthority.test.mjs'
       - 'src/components/editor/jobs/JobCenter.jsx'
       - 'src/components/editor/jobs/JobRow.jsx'
@@ -35,25 +39,37 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove exact ephemeral classification and persistence removal
-        run: node --test src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
+      - name: Prove exact ephemeral classification, explicit new-operation repeat lineage and retry lockdown
+        run: node --test src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
       - name: Typecheck and build production browser
         run: |
           npm run typecheck
           npm run build
-      - name: Preserve accepted scheduler controls and canonical recovery authority
+      - name: Preserve canonical recovery while removing hidden browser redispatch
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           test -n "${BASE_SHA:-}"
-          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- server src/api/executionRunRecoveryClient.js src/lib/jobs/executionRunProjection.js src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js src/lib/jobs/jobScheduler.js src/lib/jobs/jobRetryManager.js src/components/editor/jobs/JobRow.jsx)"
+          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- server src/api/executionRunRecoveryClient.js src/lib/jobs/executionRunProjection.js src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js)"
           ! grep -E -q 'jobStorage|JobRecord|coreClient\.entities|_persist\(' src/lib/jobs/jobManager.js
           ! grep -E -q 'coreClient|JobRecord|entities\.|\.create\(|\.update\(|\.filter\(' src/lib/jobs/jobStorage.js
           grep -q 'executionClass: JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK' src/lib/jobs/jobManager.js
-          grep -q 'Ephemeral browser-only tasks · reload interrupts them' src/components/editor/jobs/JobCenter.jsx
-          grep -q 'Unsupported session task classification. Controls are withheld.' src/components/editor/jobs/JobCenter.jsx
-          ! grep -E -q '\.(cancel|retry|duplicate|reorder)\(' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'onJobFailure: () => false' src/lib/jobs/jobManager.js
+          grep -q 'buildNewOperationRepeatMetadata(job)' src/lib/jobs/jobManager.js
+          grep -q 'runAgain(jobId)' src/lib/jobs/jobManager.js
+          ! grep -E -q 'jobRetryManager|jobScheduler|JOB_EVENTS\.RETRIED|retry\(jobId\)' src/lib/jobs/jobManager.js
+          grep -q "NEW_OPERATION: 'NEW_OPERATION'" src/lib/jobs/jobRepeatPolicy.js
+          grep -q 'repeatOfJobId: job.id' src/lib/jobs/jobRepeatPolicy.js
+          grep -q 'repeatRootJobId:' src/lib/jobs/jobRepeatPolicy.js
+          grep -q 'job_retry_disabled' src/lib/jobs/jobRetryManager.js
+          grep -q 'job_retry_scheduling_disabled' src/lib/jobs/jobScheduler.js
+          ! grep -E -q 'setTimeout|clearTimeout|\.enqueue\(' src/lib/jobs/jobRetryManager.js src/lib/jobs/jobScheduler.js
+          grep -q 'Run again starts a new operation' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'onRunAgain={(id) => jobManager.runAgain(id)}' src/components/editor/jobs/JobCenter.jsx
+          grep -q '>Run again<' src/components/editor/jobs/JobRow.jsx
+          ! grep -E -q 'onRetry|jobManager\.retry|>Retry<' src/components/editor/jobs/JobCenter.jsx src/components/editor/jobs/JobRow.jsx
+          ! grep -E -q '\.(cancel|retry|duplicate|runAgain|reorder)\(' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
       - name: Check committed diff whitespace
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

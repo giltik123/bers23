@@ -1,10 +1,9 @@
 import { coreClient } from '@/api/coreClient';
 import { JOB_EXECUTION_CLASSES, createJob, setJobStatus, updateJobProgress } from '@/lib/jobs/jobModel';
+import { buildNewOperationRepeatMetadata } from '@/lib/jobs/jobRepeatPolicy';
 import { jobQueue } from '@/lib/jobs/jobQueue';
 import { jobWorkerPool } from '@/lib/jobs/jobWorker';
 import { notificationCenter } from '@/lib/notifications/notificationCenter';
-import { jobScheduler } from '@/lib/jobs/jobScheduler';
-import { jobRetryManager } from '@/lib/jobs/jobRetryManager';
 import { jobHistory } from '@/lib/jobs/jobHistory';
 import { jobEvents, JOB_EVENTS } from '@/lib/jobs/jobEvents';
 import { jobAnalytics } from '@/lib/jobs/jobAnalytics';
@@ -33,7 +32,7 @@ class JobManager {
   }
 
   _kick() {
-    jobWorkerPool.start(jobQueue, { isPaused: () => this.paused, onJobUpdate: (job) => this._onJobUpdate(job), onJobFailure: (job, error) => this._onJobFailure(job, error) });
+    jobWorkerPool.start(jobQueue, { isPaused: () => this.paused, onJobUpdate: (job) => this._onJobUpdate(job), onJobFailure: () => false });
   }
 
   async _onJobUpdate(job) {
@@ -49,14 +48,6 @@ class JobManager {
     this._remember(job); this._notify();
   }
 
-  async _onJobFailure(job, error) {
-    if (!jobRetryManager.canRetry(job, error)) return false;
-    job.retryCount += 1; job.retry_count += 1; setJobStatus(job, 'retrying');
-    this._emit(JOB_EVENTS.RETRIED, job); jobAnalytics.record('retried', job); this._notify();
-    jobScheduler.schedule(job, jobRetryManager.delay(job), (scheduledJob) => { setJobStatus(scheduledJob, 'queued'); jobQueue.enqueue(scheduledJob); this._emit(JOB_EVENTS.RETRIED, scheduledJob); this._notify(); this._kick(); });
-    return true;
-  }
-
   updateProgress(jobId, progress, stage) { const job = this.jobs.get(jobId); if (!job) return; updateJobProgress(job, progress, stage); this._onJobUpdate(job); }
   markWaiting(jobId) { const job = this.jobs.get(jobId); if (!job) return; setJobStatus(job, 'waiting'); this._onJobUpdate(job); }
   pause() { this.paused = true; this._notify(); }
@@ -64,16 +55,39 @@ class JobManager {
   reorder(jobId, index) { const job = jobQueue.reorder(jobId, index); if (job) this._notify(); return job; }
 
   cancel(jobId) {
-    const queued = jobQueue.remove(jobId); jobScheduler.cancel(jobId);
+    const queued = jobQueue.remove(jobId);
     if (queued) { setJobStatus(queued, 'cancelled'); queued._reject(Object.assign(new Error('Job cancelled'), { code: 'cancelled' })); this._onJobUpdate(queued); return; }
     jobWorkerPool.cancelCurrent(jobId);
   }
 
+  _repeatNewOperation(job) {
+    return this.submit({
+      type: job.type,
+      label: job.label,
+      priority: job.priority,
+      projectId: job.projectId,
+      run: job.run,
+      onCancel: job.onCancel,
+      notifyOnComplete: job.notifyOnComplete,
+      provider: job.provider,
+      estimatedTime: job.estimatedTime,
+      creditsReserved: job.creditsReserved,
+      payload: job.payload,
+      metadata: buildNewOperationRepeatMetadata(job),
+    });
+  }
+
   duplicate(jobId) {
     const job = this.jobs.get(jobId); if (!job) return Promise.reject(new Error('Job not found'));
-    return this.submit({ type: job.type, label: job.label, priority: job.priority, projectId: job.projectId, run: job.run, onCancel: job.onCancel, notifyOnComplete: job.notifyOnComplete, provider: job.provider, estimatedTime: job.estimatedTime, creditsReserved: job.creditsReserved, payload: job.payload, metadata: job.metadata });
+    if (!['completed', 'failed', 'cancelled'].includes(job.status)) return Promise.reject(new Error('Only terminal jobs may be duplicated'));
+    return this._repeatNewOperation(job);
   }
-  retry(jobId) { return this.duplicate(jobId); }
+
+  runAgain(jobId) {
+    const job = this.jobs.get(jobId); if (!job) return Promise.reject(new Error('Job not found'));
+    if (job.status !== 'failed') return Promise.reject(new Error('Run again is available only for failed jobs'));
+    return this._repeatNewOperation(job);
+  }
 }
 
 export const jobManager = new JobManager();

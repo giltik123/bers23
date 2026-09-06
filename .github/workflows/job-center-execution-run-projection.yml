@@ -1,4 +1,4 @@
-name: P1b Job Center canonical execution recovery
+name: P1b/P1e/P1f Job Center canonical execution authority
 
 on:
   pull_request:
@@ -13,6 +13,10 @@ on:
       - 'src/lib/jobs/creativeExecutionControl.test.mjs'
       - 'src/lib/jobs/jobModel.js'
       - 'src/lib/jobs/jobModelEphemeral.test.mjs'
+      - 'src/lib/jobs/jobRepeatPolicy.js'
+      - 'src/lib/jobs/jobRepeatPolicy.test.mjs'
+      - 'src/lib/jobs/jobRetryManager.js'
+      - 'src/lib/jobs/jobScheduler.js'
       - 'src/lib/jobs/jobEphemeralAuthority.test.mjs'
       - 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx'
       - 'src/components/editor/jobs/JobCenter.jsx'
@@ -45,8 +49,8 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove GET-only recovery, owning Creative cancel policy and ephemeral session authority
-        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
+      - name: Prove GET-only recovery, owning Creative cancel and explicit session repeat semantics
+        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
       - name: Preserve accepted server recovery HTTP contract
         run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
       - name: Typecheck browser and Core contracts
@@ -55,30 +59,34 @@ jobs:
           npm run server:typecheck
       - name: Build production browser
         run: npm run build
-      - name: Prove recovery stays read-only and only owning Creative lifecycle gains canonical cancel control
+      - name: Prove canonical recovery remains reconciliation-only and session repeats are new operations
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           test -n "${BASE_SHA:-}"
-          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js src/lib/jobs/jobScheduler.js src/lib/jobs/jobRetryManager.js src/components/editor/jobs/JobRow.jsx server)"
+          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- server src/api/executionRunRecoveryClient.js src/lib/jobs/executionRunProjection.js src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js)"
           ! grep -E -q 'coreClient|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|\.cancel\(|\.retry\(|\.issue\(' src/lib/jobs/executionRunProjection.js
           ! grep -E -q "method: 'POST'|method: 'PATCH'|method: 'DELETE'|coreClient|entities|creative|localExecution" src/api/executionRunRecoveryClient.js
           grep -q "run.capability === 'CREATIVE_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "run.authorityKind === 'CREATIVE_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "run.status === 'RUNNING'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "control?.state === 'AVAILABLE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
-          ! grep -E -q 'jobManager|jobStorage|onRetry|onDuplicate|onMoveUp|coreClient|execution-runs' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          ! grep -E -q 'jobManager|jobStorage|onRunAgain|onRetry|onDuplicate|onMoveUp|coreClient|execution-runs|runAgain|retry|duplicate' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'new CreativeExecutionControlPolicy(coreClient.creative)' src/components/editor/jobs/JobCenter.jsx
           grep -q 'await creativeControl.cancel(run)' src/components/editor/jobs/JobCenter.jsx
           grep -q 'await canonicalProjection.refresh()' src/components/editor/jobs/JobCenter.jsx
-          ! grep -E -q 'ExecutionRunRegistry|coreClient\.executionRuns|execution-runs/.*/cancel' src/lib/jobs/creativeExecutionControl.js src/components/editor/jobs/JobCenter.jsx
-          ! grep -E -q 'retry|duplicate' src/lib/jobs/creativeExecutionControl.js
+          ! grep -E -q 'ExecutionRunRegistry|coreClient\.executionRuns|execution-runs/.*/(cancel|retry)' src/lib/jobs/creativeExecutionControl.js src/components/editor/jobs/JobCenter.jsx
+          ! grep -q 'coreClient.creative.execute' src/components/editor/jobs/JobCenter.jsx
+          ! grep -E -q 'retry|duplicate|runAgain' src/lib/jobs/creativeExecutionControl.js
           ! grep -E -q 'jobStorage|JobRecord|coreClient\.entities|_persist\(' src/lib/jobs/jobManager.js
           ! grep -E -q 'coreClient|JobRecord|entities\.|\.create\(|\.update\(|\.filter\(' src/lib/jobs/jobStorage.js
           grep -q 'EPHEMERAL_CLIENT_TASK' src/lib/jobs/jobModel.js
           grep -q 'EPHEMERAL_CLIENT_TASK' src/lib/jobs/jobManager.js
-          grep -q 'Ephemeral browser-only tasks · reload interrupts them' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'onJobFailure: () => false' src/lib/jobs/jobManager.js
+          grep -q 'Run again starts a new operation' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'onRunAgain={(id) => jobManager.runAgain(id)}' src/components/editor/jobs/JobCenter.jsx
+          ! grep -E -q 'onRetry|jobManager\.retry' src/components/editor/jobs/JobCenter.jsx src/components/editor/jobs/JobRow.jsx
       - name: Check committed diff whitespace
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
