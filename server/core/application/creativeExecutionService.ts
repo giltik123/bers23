@@ -18,8 +18,8 @@ export type CreativeExecutionServiceDependencies = Readonly<{
    */
   executionRuns?: ExecutionRunRegistry;
   /**
-   * Observation-only replay preflight. Production supplies the same PostgreSQL
-   * registry through this narrower port; isolated fixtures may omit it.
+   * Observation-only replay preflight. Production's concrete PostgreSQL registry
+   * implements this narrower port; isolated fixtures may inject or omit it.
    */
   executionRunIdentity?: ExecutionRunIdentityReader;
   creditsPerEdit?: number;
@@ -91,8 +91,9 @@ export class CreativeExecutionService {
       projectId: command.projectId,
     });
     const runIdentity = creativeRunIdentity(scope, identity);
-    if (this.dependencies.executionRunIdentity) {
-      const existing = await this.dependencies.executionRunIdentity.lookupIdentity(runIdentity);
+    const identityReader = this.dependencies.executionRunIdentity ?? asExecutionRunIdentityReader(this.dependencies.executionRuns);
+    if (identityReader) {
+      const existing = await identityReader.lookupIdentity(runIdentity);
       assertCreativeReplayAvailable(existing, runIdentity, identity.executionId);
     }
     if (!await this.dependencies.ownsArtifacts(scope, artifacts)) throw publicError('scope_denied', 'Artifact scope is not authorized', 403, false);
@@ -178,6 +179,12 @@ export class CreativeExecutionService {
     }
   }
   private assertScope(executionId: string, auth?: AuthenticatedScope) { if (!auth) return; const scope = this.#scopes.get(executionId); if (!scope) throw publicError('result_not_found', 'Result is not available', 404, false); if (scope.tenantId !== auth.tenantId || scope.userId !== auth.userId) throw publicError('scope_denied', 'Execution scope is not authorized', 403, false); }
+}
+
+function asExecutionRunIdentityReader(value: unknown): ExecutionRunIdentityReader | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as { lookupIdentity?: unknown };
+  return typeof candidate.lookupIdentity === 'function' ? value as ExecutionRunIdentityReader : undefined;
 }
 
 function creativeRunIdentity(scope: AuthenticatedScope & { projectId: string }, identity: CreativeExecutionIdentity): IssueExecutionRunInput {
