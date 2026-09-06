@@ -13,6 +13,7 @@ function StatusIcon({ status }) {
 
 export default function CanonicalExecutionRunRow({ run, control, onCancel, depth = 0 }) {
   const creativeRunning = run.capability === 'CREATIVE_EXECUTION' && run.authorityKind === 'CREATIVE_EXECUTION' && run.status === 'RUNNING';
+  const recoveredFinal = run.capability === 'CREATIVE_EXECUTION' && run.authorityKind === 'CREATIVE_EXECUTION' && run.status === 'SUCCEEDED' && run.result?.kind === 'FINAL_IMAGE';
   const cancelAvailable = creativeRunning && control?.state === 'AVAILABLE' && typeof onCancel === 'function';
   const cancelPending = creativeRunning && control?.state === 'PENDING';
   const cancelUnavailable = creativeRunning && control?.state === 'UNAVAILABLE';
@@ -28,6 +29,10 @@ export default function CanonicalExecutionRunRow({ run, control, onCancel, depth
         <span>{executionRunStatusLabel(run.status)}{run.statusReasonCode ? ` · ${run.statusReasonCode}` : ''}</span>
         <span className="font-mono">r{run.revision}</span>
       </div>
+      {recoveredFinal && <div className="flex items-center justify-between gap-2 pt-1 text-[10px] text-muted-foreground" data-canonical-execution-result>
+        <span>{run.result.width}×{run.result.height} FINAL</span>
+        <a href={run.result.imageUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Open result</a>
+      </div>}
       {cancelAvailable && <div className="flex justify-end pt-1">
         <button type="button" onClick={() => onCancel(run)} className="text-[11px] text-destructive hover:underline">Cancel</button>
       </div>}

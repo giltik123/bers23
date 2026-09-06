@@ -2,6 +2,7 @@ import { executionRunRecoveryClient } from '../../api/executionRunRecoveryClient
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const REASON = /^[A-Z0-9_]{1,128}$/;
+const RESULT_PATH = /^\/api\/core\/artifacts\/results\/[^/?#\s]+$/;
 const ROOT_LIMIT = 10;
 const CHILD_LIMIT = 25;
 const POLL_INTERVAL_MS = 15000;
@@ -230,6 +231,7 @@ function normalizeRun(value, label) {
   const startedAt = value.startedAt ? canonicalTimestamp(value.startedAt, `${label}.startedAt`) : undefined;
   const finishedAt = value.finishedAt ? canonicalTimestamp(value.finishedAt, `${label}.finishedAt`) : undefined;
   assertTimeShape(status, startedAt, finishedAt, label);
+  const result = value.result === undefined ? undefined : normalizeResult(value.result, label, capability, authorityKind, status);
 
   return Object.freeze({
     runId: canonicalUuid(value.runId, `${label}.runId`),
@@ -244,7 +246,22 @@ function normalizeRun(value, label) {
     updatedAt: canonicalTimestamp(value.updatedAt, `${label}.updatedAt`),
     ...(startedAt ? { startedAt } : {}),
     ...(finishedAt ? { finishedAt } : {}),
+    ...(result ? { result } : {}),
   });
+}
+
+function normalizeResult(value, label, capability, authorityKind, status) {
+  if (status !== 'SUCCEEDED' || capability !== 'CREATIVE_EXECUTION' || authorityKind !== 'CREATIVE_EXECUTION') {
+    throw new Error(`ExecutionRun ${label} result is not valid for this lifecycle authority`);
+  }
+  if (!value || typeof value !== 'object' || value.kind !== 'FINAL_IMAGE') throw new Error(`ExecutionRun ${label}.result kind is unsupported`);
+  const artifactId = boundedText(value.artifactId, `${label}.result.artifactId`, 8192);
+  const imageUrl = boundedText(value.imageUrl, `${label}.result.imageUrl`, 8192);
+  if (!RESULT_PATH.test(imageUrl)) throw new Error(`ExecutionRun ${label}.result.imageUrl is invalid`);
+  const width = Number(value.width);
+  const height = Number(value.height);
+  if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) throw new Error(`ExecutionRun ${label}.result dimensions are invalid`);
+  return Object.freeze({ kind: 'FINAL_IMAGE', artifactId, imageUrl, width, height });
 }
 
 function freezeRun(run, children) {

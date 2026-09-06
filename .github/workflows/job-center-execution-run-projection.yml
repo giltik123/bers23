@@ -1,4 +1,4 @@
-name: P1b/P1e/P1f Job Center canonical execution authority
+name: P1b/P1e/P1f/P1g Job Center canonical execution authority
 
 on:
   pull_request:
@@ -8,6 +8,7 @@ on:
       - 'src/api/executionRunRecoveryClient.test.mjs'
       - 'src/lib/jobs/executionRunProjection.js'
       - 'src/lib/jobs/executionRunProjection.test.mjs'
+      - 'src/lib/jobs/executionRunFinalResultProjection.test.mjs'
       - 'src/lib/jobs/executionRunProjectionAuthority.test.mjs'
       - 'src/lib/jobs/creativeExecutionControl.js'
       - 'src/lib/jobs/creativeExecutionControl.test.mjs'
@@ -26,6 +27,10 @@ on:
       - 'src/lib/jobs/jobStorage.js'
       - 'server/core/http/executionRunRecoveryHttpAdapter.ts'
       - 'server/core/http/executionRunRecoveryHttpAdapter.test.mjs'
+      - 'server/core/artifacts/postgresImageArtifactStore.ts'
+      - 'server/core/artifacts/signedArtifactAuthority.ts'
+      - 'server/index.ts'
+      - 'tests/execution-run-recovery-http-postgres.test.ts'
       - '.github/workflows/job-center-execution-run-projection.yml'
   workflow_dispatch:
 
@@ -49,8 +54,8 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove GET-only recovery, owning Creative cancel and explicit session repeat semantics
-        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
+      - name: Prove GET-only recovery, durable FINAL projection, owning Creative cancel and explicit session repeat semantics
+        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
       - name: Preserve accepted server recovery HTTP contract
         run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
       - name: Typecheck browser and Core contracts
@@ -59,19 +64,26 @@ jobs:
           npm run server:typecheck
       - name: Build production browser
         run: npm run build
-      - name: Prove canonical recovery remains reconciliation-only and session repeats are new operations
+      - name: Prove canonical recovery remains observation-only while projecting durable FINAL and session repeats stay new operations
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           test -n "${BASE_SHA:-}"
-          test -z "$(git diff --name-only "$BASE_SHA"..HEAD -- server src/api/executionRunRecoveryClient.js src/lib/jobs/executionRunProjection.js src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js)"
+          UNEXPECTED_SERVER="$(git diff --name-only "$BASE_SHA"..HEAD -- server | grep -Ev '^(server/index\.ts|server/core/http/executionRunRecoveryHttpAdapter\.ts|server/core/http/executionRunRecoveryHttpAdapter\.test\.mjs)$' || true)"
+          test -z "$UNEXPECTED_SERVER"
           ! grep -E -q 'coreClient|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|\.cancel\(|\.retry\(|\.issue\(' src/lib/jobs/executionRunProjection.js
           ! grep -E -q "method: 'POST'|method: 'PATCH'|method: 'DELETE'|coreClient|entities|creative|localExecution" src/api/executionRunRecoveryClient.js
+          grep -q 'RESULT_PATH' src/lib/jobs/executionRunProjection.js
+          grep -q "status !== 'SUCCEEDED' || capability !== 'CREATIVE_EXECUTION' || authorityKind !== 'CREATIVE_EXECUTION'" src/lib/jobs/executionRunProjection.js
           grep -q "run.capability === 'CREATIVE_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "run.authorityKind === 'CREATIVE_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "run.status === 'RUNNING'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "control?.state === 'AVAILABLE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "run.status === 'SUCCEEDED'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "run.result?.kind === 'FINAL_IMAGE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'href={run.result.imageUrl}' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'data-canonical-execution-result' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           ! grep -E -q 'jobManager|jobStorage|onRunAgain|onRetry|onDuplicate|onMoveUp|coreClient|execution-runs|runAgain|retry|duplicate' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'new CreativeExecutionControlPolicy(coreClient.creative)' src/components/editor/jobs/JobCenter.jsx
           grep -q 'await creativeControl.cancel(run)' src/components/editor/jobs/JobCenter.jsx
@@ -87,6 +99,13 @@ jobs:
           grep -q 'Run again starts a new operation' src/components/editor/jobs/JobCenter.jsx
           grep -q 'onRunAgain={(id) => jobManager.runAgain(id)}' src/components/editor/jobs/JobCenter.jsx
           ! grep -E -q 'onRetry|jobManager\.retry' src/components/editor/jobs/JobCenter.jsx src/components/editor/jobs/JobRow.jsx
+          grep -q 'type ExecutionRunResultReader' server/core/http/executionRunRecoveryHttpAdapter.ts
+          grep -q 'resolveCreativeFinal(scope: ExecutionRunScope, executionId: string)' server/core/http/executionRunRecoveryHttpAdapter.ts
+          grep -q 'results.resolveCreativeFinal(scope, run.authorityRef)' server/core/http/executionRunRecoveryHttpAdapter.ts
+          ! grep -E -q '\.(issue|start|succeed|fail|cancel|markUnknown)\(' server/core/http/executionRunRecoveryHttpAdapter.ts
+          grep -q 'production.artifacts.images.loadFinalByExecution(executionId, scope)' server/index.ts
+          grep -q 'production.artifacts.external.issueStoredFinal(stored.storageId, scope)' server/index.ts
+          grep -q 'production.artifacts.external.issueStoredFinalDelivery' server/index.ts
       - name: Check committed diff whitespace
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
