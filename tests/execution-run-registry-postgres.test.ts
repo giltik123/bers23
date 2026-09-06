@@ -223,14 +223,36 @@ test('lifecycle is monotonic, revisioned and terminal transitions are immutable'
   );
 });
 
-test('list is scoped and parent linkage is allowed only inside one Project scope', async () => {
+test('list and listChildren are scoped, bounded and isolate direct parent lineage', async () => {
   const parent = await issueRun(creativeInput());
-  const child = await issueRun(localInput({ parentRunId: parent.runId }));
-  assert.equal(child.parentRunId, parent.runId);
+  const firstChild = await issueRun(localInput({ parentRunId: parent.runId }));
+  const secondChild = await issueRun(localInput({
+    idempotencyKey: 'local:resize:request-2',
+    authorityRef: 'ticket-local-2',
+    parentRunId: parent.runId,
+  }));
+  const otherParent = await issueRun(workflowInput());
+  const otherChild = await issueRun(localInput({
+    idempotencyKey: 'local:resize:other-parent',
+    authorityRef: 'ticket-local-other-parent',
+    parentRunId: otherParent.runId,
+  }));
+
+  assert.equal(firstChild.parentRunId, parent.runId);
+  assert.equal(secondChild.parentRunId, parent.runId);
   const listed = await registry.list(parent.scope, 10);
-  assert.equal(listed.length, 2);
-  assert.deepEqual(new Set(listed.map(run => run.runId)), new Set([parent.runId, child.runId]));
+  assert.equal(listed.length, 5);
+  assert.deepEqual(new Set(listed.map(run => run.runId)), new Set([parent.runId, firstChild.runId, secondChild.runId, otherParent.runId, otherChild.runId]));
+
+  const directChildren = await registry.listChildren(parent.scope, parent.runId, 10);
+  assert.deepEqual(directChildren.map(run => run.runId), [firstChild.runId, secondChild.runId]);
+  assert.deepEqual((await registry.listChildren(parent.scope, parent.runId, 1)).map(run => run.runId), [firstChild.runId]);
+  assert.deepEqual((await registry.listChildren(parent.scope, otherParent.runId, 10)).map(run => run.runId), [otherChild.runId]);
+  assert.equal((await registry.listChildren({ ...owner, projectId: secondProjectId }, parent.runId, 10)).length, 0);
   assert.equal((await registry.list({ ...owner, projectId: secondProjectId })).length, 0);
+
+  await assert.rejects(() => registry.listChildren(parent.scope, parent.runId, 0), /positive safe integer/);
+  await assert.rejects(() => registry.listChildren(parent.scope, parent.runId, 201), /at most 200/);
 });
 
 test('schema check rejects arbitrary capability widening, not only known future capabilities', async () => {

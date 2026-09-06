@@ -94,7 +94,7 @@ jobs:
           cp server/core/execution/migrations/036_execution_run_workflow_continuation.sql .test-cache/execution-run-registry/migrations/
       - name: Prove durable run identity, scope, replay and lifecycle semantics
         run: node --test --test-concurrency=1 .test-cache/execution-run-registry/execution-run-registry-postgres.test.mjs
-      - name: Prove exact production continuation projection wiring
+      - name: Prove exact production continuation and child-run projection wiring
         run: |
           set -euo pipefail
           grep -q 'new ExecutionRunBoundLocalCompositeContinuationService' server/core/composition/createProductionCore.ts
@@ -103,7 +103,14 @@ jobs:
           grep -q 'runs: executionRuns' server/core/composition/createProductionCore.ts
           grep -q "capability: 'WORKFLOW_CONTINUATION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "authorityKind: 'WORKFLOW_CONTINUATION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
-      - name: Prove D1 opens no Agent Automation browser provider or Billing authority
+          grep -q 'listChildren(scope: ExecutionRunScope, parentRunId: string' server/core/execution/executionRunRegistry.ts
+          grep -q 'AND parent_run_id=\$4' server/core/execution/PostgresExecutionRunRegistry.ts
+          grep -q "capability: 'LOCAL_EXECUTION'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q "authorityKind: 'LOCAL_EXECUTION_TICKET'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q 'parentRunId: parent.runId' server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q 'getByClientRequestId(scope, command.clientRequestId)' server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+          grep -q 'preReconcile' server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
+      - name: Prove D2 opens no Agent Automation browser provider or Billing authority
         run: |
           set -euo pipefail
           FILES=(
