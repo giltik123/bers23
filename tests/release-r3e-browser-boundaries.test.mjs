@@ -30,8 +30,9 @@ test('R3e drives real manual Selection pointer input into Core-issued canonical 
   for (const text of [
     "getByRole('button', { name: 'Smart Select', exact: true })",
     "getByRole('button', { name: 'Add', exact: true })",
+    "getByLabel('Brush Size').fill('96')",
     'page.mouse.down()',
-    'page.mouse.move(centerX + 2, centerY, { steps: 3 })',
+    'page.mouse.move(endX, centerY, { steps: 8 })',
     'page.mouse.up()',
     "getByRole('button', { name: 'Done', exact: true })",
     "'/api/core/artifacts/masks'",
@@ -39,6 +40,7 @@ test('R3e drives real manual Selection pointer input into Core-issued canonical 
 
   assert.match(harness, /manual selection draft must remain noncanonical before Done/);
   assert.match(harness, /manual selection draft must not mutate Project before Done/);
+  assert.match(harness, /manual Add release-floor selection must not invoke Smart Select\/model execution/);
   assert.match(harness, /producerOperation, 'MANUAL_SELECTION'/);
   assert.match(harness, /selectedPixels > 0/);
   assert.match(harness, /selectedPixels < 12 \* 8/);
@@ -70,7 +72,10 @@ test('R3e consumes the exact selected canonical MASK through production Backgrou
   assert.match(harness, /Background Isolation Preview must not mutate Project before explicit Accept/);
   assert.match(harness, /Background Isolation Discard must be non-mutating/);
   assert.match(harness, /repeated Background Isolation must reuse the exact canonical MASK rather than minting another/);
-  assert.match(harness, /source_image_storage_id, sourceStorageId/);
+  assert.match(harness, /local_execution_tickets/);
+  assert.match(harness, /maskInputs\[0\]\.artifactId, maskArtifactId/);
+  assert.match(harness, /acceptedFinal\.mask_storage_id, canonicalMask\.storage_id/);
+  assert.match(harness, /acceptedFinal\.source_image_storage_id, sourceStorageId/);
 });
 
 test('R3e uses built SPA built production Core and PostgreSQL only as read-only correctness oracle', async () => {
@@ -84,6 +89,7 @@ test('R3e uses built SPA built production Core and PostgreSQL only as read-only 
   assert.match(harness, /canonical_project_history/);
   assert.match(harness, /canonical_image_artifacts/);
   assert.match(harness, /canonical_mask_artifacts/);
+  assert.match(harness, /local_execution_tickets/);
   assert.match(harness, /chromium\.launch\(\{ channel: 'chrome', headless: true \}\)/);
   assert.doesNotMatch(harness, /InMemory|FakeProject|MockProject|FakeArtifact|MockArtifact|FakeMask|MockMask/);
 
@@ -92,9 +98,10 @@ test('R3e uses built SPA built production Core and PostgreSQL only as read-only 
   assert.deepEqual([...new Set(sqlMutations)], ['SELECT'], 'browser must be the only Project/MASK mutation actor; PostgreSQL is read-only oracle');
 });
 
-test('R3e manual Selection and deterministic MASK consumer cannot silently cross cloud or financial authority', async () => {
+test('R3e manual Selection and deterministic MASK consumer cannot silently cross model cloud or financial authority', async () => {
   const harness = await readFile(HARNESS, 'utf8');
 
+  assert.match(harness, /diagnostics\.segmentationRequests, \[\]/);
   assert.match(harness, /providerCalls, 0/);
   assert.match(harness, /diagnostics\.creativeRequests, \[\]/);
   assert.match(harness, /diagnostics\.financialRequests, \[\]/);
