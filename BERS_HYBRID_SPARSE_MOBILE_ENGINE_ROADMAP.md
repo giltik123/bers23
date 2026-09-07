@@ -4,13 +4,13 @@
 
 This document is the detailed companion to Stage E of `BERS_V1_DEVELOPMENT_ROADMAP.md` and issue #352. It records the selected long-term architecture for the BERS-owned local-first image AI engine.
 
-It does **not** promote any current R&D model or expert path into production, does not replace Tiny-SD/Kandinsky/LaMa acceptance programs, and does not weaken Core, Artifact, Project, Billing, provider, lineage, or local-only authority boundaries.
+It does **not** promote any current R&D model or expert path into production, does not replace Tiny-SD/Kandinsky/LaMa acceptance programs, and does not weaken Core, Artifact, Project, Billing, provider, lineage, local-only, or real-device evidence boundaries.
 
 ## 1. Canonical architecture decision
 
-The selected direction is the combination of two complementary systems:
+The selected direction combines two complementary systems:
 
-1. **BERS Hybrid Sparse Mobile Engine (HSME)** — top-level execution architecture: what runs on-device, what model packs are required, when cloud is allowed, and how local/hybrid/cloud execution is selected.
+1. **BERS Hybrid Sparse Mobile Engine (HSME)** — top-level execution architecture: what may run on-device, which model packs are required, and how an already Core-admitted execution target is realized.
 2. **BERS Hierarchical Adapter-MoE + FreeToken-inspired Adaptive Runtime** — internal model/runtime architecture: expert composition, routing, residency, prefetch, memory hierarchy, heterogeneous CPU/GPU/NPU execution, and sparse scheduling.
 
 Together they form the target **BERS Local-First AI Engine**.
@@ -25,26 +25,22 @@ multi-teacher distillation
 BERS dense shared mobile core
         |
         +-- compact expert/adapters
-        |     Fashion / Identity / Pose / Material / Detail / ...
         |
         v
-hierarchical routing
-Task -> Pack -> Timestep -> Spatial -> Sparse Expert
+advisory hierarchical routing
+Task proposal -> Pack -> Timestep -> Block/Spatial -> Sparse Expert
         |
         v
 FreeToken-inspired adaptive runtime
 NPU/GPU <-> RAM <-> Flash <- verified Model CDN
         |
         v
-FULL LOCAL by default
-        |
-        +-- semantic HYBRID when explicitly admitted
-        +-- CLOUD fallback / Ultra only when required
+canonical Core target remains LOCAL / HYBRID / CLOUD / BLOCKED
 ```
 
 ## 2. Product goals
 
-The architecture exists to optimize measurable product outcomes, not parameter-count aesthetics.
+The architecture optimizes measurable product outcomes, not parameter-count aesthetics.
 
 Primary goals:
 
@@ -55,17 +51,17 @@ Primary goals:
 - majority of eligible inference performed on the user's GPU/NPU;
 - minimal server GPU cost for local-capable workloads;
 - graceful device-tier fallback rather than universal lowest-common-denominator execution;
-- strict offline-capable local execution after required packs are present;
+- offline-capable local execution after required packs are present;
 - model/expert additions without forcing every user to download the complete fleet;
 - deterministic, inspectable routing/evidence sufficient for debugging and release qualification.
 
-All numeric values in this document are R&D targets until verified on real devices.
+All numeric values are R&D targets until verified on real devices.
 
 ## 3. Teacher / student law
 
-Large models such as Kandinsky-class models, specialized VTO teachers, face/identity teachers, restoration teachers, and future BERS foundation models are primarily **training teachers**, not mobile runtime payloads.
+Large Kandinsky-class models, specialized VTO teachers, face/identity teachers, restoration teachers, and future BERS foundation models are primarily **training teachers**, not mandatory mobile runtime payloads.
 
-The mobile path is trained through multi-level distillation including, where justified:
+The mobile path may use:
 
 - semantic/text representation matching;
 - intermediate feature matching;
@@ -75,23 +71,15 @@ The mobile path is trained through multi-level distillation including, where jus
 - preference/quality training;
 - few-step consistency/distillation.
 
-BERS must not promise that a sub-2 GB student preserves every universal capability of a much larger teacher. The target is to preserve or exceed teacher usefulness on BERS product domains, especially people, fashion, garments, identity preservation, localized editing, backgrounds, restoration, and controlled generation.
+BERS must not promise that a sub-2 GB student preserves every universal capability of a much larger teacher. The target is to preserve or exceed teacher usefulness on BERS product domains.
 
 ## 4. Shared dense mobile core
 
-The baseline architecture retains a compact **dense shared generative core**. It is not a fully sparse model.
+The baseline retains a compact **dense shared generative core**. It is not a fully sparse model.
 
 The shared path owns general semantics and provides a safe fallback when specialist routing is imperfect. Specialists augment the shared path rather than replacing all common capability.
 
-Target composition, to be established experimentally:
-
-- compact text/vision conditioning;
-- dense latent/DiT-style generative backbone;
-- compact latent codec/decoder;
-- routing/runtime metadata;
-- hardware-specific graph variants where required.
-
-The first architecture experiments should prefer approximately 500–800M active-scale dense/student capacity before adding deep sparse complexity. Parameter counts are not acceptance gates by themselves.
+Initial experiments should prefer an approximately 500–800M active-scale dense/student baseline before adding deep sparse complexity. Parameter counts are not acceptance gates by themselves.
 
 ## 5. Adapter-MoE first
 
@@ -106,49 +94,41 @@ Specialists should primarily be compact deltas such as:
 - embeddings/normalization deltas;
 - other compact domain modules.
 
-Initial expert families to research may include Fashion, Identity/Face, Pose/Person, Material/Texture, Background and Detail/Restoration, but semantic names are hypotheses rather than production truth. Training and measured specialization must justify each expert.
-
-Expert packs must not be full independent copies of the backbone.
+Initial expert-family names such as Fashion, Identity/Face, Pose/Person, Material/Texture, Background and Detail/Restoration are research hypotheses. Training and measured specialization must justify them. Expert packs must not be full independent copies of the backbone.
 
 ## 6. Hierarchical routing law
 
-One router must not be responsible for every decision. BERS uses staged routing:
+One router must not own every decision.
 
-### 6.1 Task router
+### 6.1 Task router is advisory only
 
-Determines the admitted capability family, for example Try-On, portrait edit, background operation, restoration, or general generation.
+The runtime/task router may **propose** a capability family such as Try-On, portrait edit, background operation, restoration, or general generation.
+
+It may not admit that capability. **Canonical Core remains the only capability/execution admission authority.** Core must validate the proposal against operation, Artifact, provider, Billing, project, privacy and execution policy before any HSME execution begins.
+
+No browser/device router output is trusted as an authorization decision.
 
 ### 6.2 Pack router
 
-Determines which signed local packs must be resident before execution.
+After Core admission, the runtime determines which signed local packs are required for the admitted local subgraph.
 
 ### 6.3 Timestep / stage router
 
-Allows different specialists at different denoising/flow stages, e.g. coarse geometry early, material/appearance mid-run, identity/detail late.
+Different specialists may be used at different denoising/flow stages, such as coarse geometry early, material/appearance mid-run and identity/detail late.
 
-### 6.4 Spatial router
+### 6.4 Block / spatial router
 
-May route different image/latent regions differently, such as garment, face, hair, hands, or low-information background.
+Coarse block/group routing is preferred before unrestricted token routing. Spatial routing may differentiate high-value regions from low-information background where measurements justify it.
 
 ### 6.5 Sparse expert router
 
-Uses tightly bounded Top-1/Top-2 or another measured policy inside selected blocks.
-
-Routing must remain deterministic enough to record versioned evidence and diagnose replay/performance behavior.
+Use tightly bounded Top-1/Top-2 or another measured policy inside selected blocks. Routing must remain sufficiently inspectable for replay/debug/performance evidence.
 
 ## 7. Selective internal MoE
 
 Do not convert every transformer block into MoE.
 
-After Adapter-MoE is proven, selected large FFN/attention-adjacent blocks may be tested as sparse experts. Each conversion requires an A/B comparison against the dense baseline for:
-
-- quality;
-- end-to-end latency;
-- peak memory;
-- bytes moved;
-- energy/thermal behavior;
-- actual kernel/device efficiency;
-- replay/debug complexity.
+After Adapter-MoE is proven, selected large FFN/attention-adjacent blocks may be tested as sparse experts. Each conversion requires an A/B comparison against the dense baseline for quality, latency, peak memory, bytes moved, energy/thermal behavior, kernel efficiency and replay/debug complexity.
 
 If sparse routing reduces theoretical FLOPs but performs worse on real hardware, keep the dense block.
 
@@ -156,11 +136,11 @@ If sparse routing reduces theoretical FLOPs but performs worse on real hardware,
 
 Later generations may reduce expensive processing of low-value visual tokens/regions. Critical areas such as identity, garment boundaries, hands or fine texture may receive more compute while low-information background uses a cheaper shared path.
 
-Token pruning or spatial sparsity must preserve image coherence and may not become a shortcut that degrades anatomy, identity, garment shape, logos/patterns, or canonical Fashion support regions.
+Token pruning may not degrade anatomy, identity, garment shape, logos/patterns, or canonical Fashion support regions.
 
 ## 9. Few-step generation before aggressive offload
 
-Preferred mobile optimization order:
+Preferred optimization order:
 
 1. task-specific student/distillation;
 2. few-step generation;
@@ -168,23 +148,23 @@ Preferred mobile optimization order:
 4. mixed quantization;
 5. Adapter-MoE;
 6. selective internal MoE;
-7. timestep/spatial/token sparsity;
+7. timestep/block/spatial/token sparsity;
 8. expert residency/offload refinements where measurements prove value.
 
-Target quality modes are initially:
+Initial quality modes:
 
 - `FAST`: ~2 steps;
 - `BALANCED`: ~4 steps;
 - `QUALITY`: ~6–8 steps;
-- `ULTRA`: immediate local result plus optional admitted cloud refinement.
+- `ULTRA`: immediate local result plus optional separately Core-admitted cloud refinement.
 
 Exact schedules require model-specific evidence.
 
 ## 10. FreeToken-derived runtime principles
 
-FreeToken is a reference for system mechanisms, not a drop-in BERS image runtime. Reimplement only mechanisms that produce measured image-runtime value.
+FreeToken is a reference for system mechanisms, not a drop-in BERS image runtime.
 
-Adopt/evaluate:
+Adopt/evaluate only where image-runtime evidence proves value:
 
 - expert residency;
 - hot/warm/cold expert classification;
@@ -202,8 +182,6 @@ Do not inherit LLM-specific KV-cache, prefix-cache, autoregressive token-samplin
 
 ## 11. Memory hierarchy
 
-The on-device runtime treats available memory tiers as a controlled hierarchy:
-
 ```text
 Accelerator / NPU / GPU  -> hot active state
 RAM / unified memory     -> warm experts / staging buffers
@@ -213,82 +191,93 @@ Verified Model CDN       -> acquisition/update source only
 
 The CDN is **not** a live inference memory tier. Normal local inference must not depend on network fetches after execution begins.
 
-## 12. Predictive prefetch and double buffering
+## 12. Deterministic prefetch before speculative prefetch
 
-Before generation, the planner determines the likely required expert set and, where possible, a stage schedule.
-
-While expert/block A executes, the runtime may prefetch B from flash to RAM. The goal is to hide I/O behind useful compute.
+Before generation, the planner determines the known required expert set and, where possible, a stage schedule.
 
 ```text
-GPU/NPU:  [ compute A ............ ][ compute B ............ ]
-Flash/RAM:          [ prefetch B .. ][ prefetch C .. ]
+GPU/NPU:   [ compute A ........ ][ compute B ........ ]
+Flash/RAM:          [ prefetch B ][ prefetch C ]
 ```
 
-Prefetch policy is device- and workload-specific. Excessive speculative loading that increases memory pressure or thermal cost must be rejected.
+Policy order:
+
+1. known next-stage requirements;
+2. high-confidence bounded prediction;
+3. broader speculation only if measurements prove benefit.
+
+Speculation is capped by RAM, flash-bandwidth, thermal and battery budgets.
 
 ## 13. Heterogeneous execution
 
-Do not require one processor to run the entire graph.
-
 Research defaults:
 
-- CPU: routing, orchestration, lightweight preprocessing/control;
+- CPU: advisory routing, orchestration and lightweight preprocessing/control;
 - NPU: static dense supported graph regions;
 - GPU: dynamic attention/expert paths and unsupported/irregular accelerator operations;
-- device-specific alternatives where measurements prove a better mapping.
+- device-specific alternatives where benchmarks prove a better mapping.
 
-Dynamic expert routing must not be forced onto an NPU when scatter/gather, dynamic shapes, or graph recompilation erase the benefit.
+Dynamic expert routing must not be forced onto an NPU when scatter/gather, dynamic shapes or graph recompilation erase the benefit.
 
-## 14. Hardware-specific packs
+## 14. Hardware-specific representation identity
 
-A single universal binary is not the long-term target.
+A single universal binary is not the long-term target. Candidate families include Apple Core ML/Metal/ANE, Snapdragon LiteRT/QNN/Hexagon, generic Android GPU, browser ONNX/WebGPU/WASM and desktop/native variants.
 
-Potential deployment families:
+**Current fleet law:** `DurableModelFleet` binds runtime/format/URI/hash/platform metadata to immutable `modelId@version`. Therefore two different hardware/runtime representations must not currently masquerade as one existing `modelId@version` identity.
 
-- Apple: Core ML / Metal / ANE-compatible pack where supported;
-- Snapdragon/Android: LiteRT/QNN/Hexagon-capable pack where supported;
-- generic Android: GPU-oriented pack;
-- browser: ONNX/WebGPU/WASM path;
-- desktop/native: larger local tier where appropriate.
+Until a separately reviewed representation-discriminator/evidence-schema change exists, each materially different hardware representation must receive a distinct fleet identity/version with its own immutable manifest, hash, promotion evidence and supported-device claim.
 
-The same model version may therefore have multiple signed hardware/runtime representations under one canonical model identity and evidence policy.
+A future representation discriminator may unify these under a higher-level logical model family, but that schema change is a separate authority/evidence migration and is not granted by this roadmap.
 
 ## 15. Mixed precision law
 
 Do not globally force INT4.
 
-Use sensitivity- and hardware-aware mixed precision. Candidate policy includes FP16/INT8 for sensitive norms/attention paths and INT8/INT6/INT4 weight formats for tolerant large linear/expert blocks where real quality survives.
-
-Quantization is accepted only after parity/quality and device performance evidence. Smaller storage that causes slower dequantization or worse accelerator utilization is not a win.
+Use sensitivity- and hardware-aware mixed precision. Smaller storage that causes slower dequantization, worse accelerator utilization or unacceptable quality is not a win.
 
 ## 16. Model acquisition and cache policy
 
-Model packs are versioned, signed and hash-verified before use. Required packs are acquired before local execution starts and reused thereafter.
+Model packs are versioned, signed and hash-verified before use.
 
-Expected behavior:
-
-- Base pack: retained as required local capability;
+- Base pack: retained where required;
 - frequently used experts: retained hot/warm within resource policy;
 - rare experts: evictable from RAM and potentially flash cache;
-- not-installed experts: acquired from CDN on first admitted use;
+- not-installed experts: acquired from CDN before admitted local execution;
 - repeat generation with unchanged installed packs: zero model-network transfer.
 
-Delta/content-addressed update techniques should be evaluated so small expert changes do not require re-downloading a complete base pack.
+Delta/content-addressed update techniques should be evaluated.
 
-## 17. Hybrid execution policy
+## 17. Mapping HSME states to canonical execution policy
 
-`HYBRID` does not mean continual layer-by-layer network round trips by default.
+HSME does **not** create a second execution-policy vocabulary.
 
-Preferred execution order:
+Canonical Core targets remain exactly:
 
-1. `FULL_LOCAL`;
-2. `LOCAL_WITH_INSTALLED_OR_PREFETCHED_EXPERTS`;
-3. semantic hybrid execution when explicitly admitted;
-4. full cloud fallback / Ultra.
+- `LOCAL`;
+- `CLOUD`;
+- `HYBRID`;
+- `BLOCKED`.
 
-A useful semantic split may perform segmentation/pose/encoding locally, a heavy synthesis/refinement stage in cloud, then local decode/composite/postprocess. Classical layer-level split inference remains experimental and requires clear latency/cost/privacy benefit.
+Canonical policies remain exactly:
 
-No local failure may silently switch to a paid cloud provider or consume credits.
+- `LOCAL_ONLY`;
+- `CLOUD_ALLOWED`;
+- `CLOUD_PREFERRED`;
+- `AUTO`.
+
+Terms such as `FULL_LOCAL` or `LOCAL_WITH_INSTALLED_OR_PREFETCHED_EXPERTS` are **internal residency/readiness states beneath an already admitted canonical `LOCAL` target**. They must never be passed as Core execution-policy values and must never cause unknown-policy fallback to `AUTO`.
+
+Conceptual internal ordering for an admitted `LOCAL` run may be:
+
+```text
+LOCAL / all required packs resident
+LOCAL / required packs must be acquired or prefetched before start
+LOCAL / blocked because packs/resources are unavailable
+```
+
+If Core admits `HYBRID` or `CLOUD`, HSME may realize only the subgraph and target already admitted by Core. No local failure may silently switch to a paid cloud provider or consume credits.
+
+Classical layer-level split inference remains experimental and requires clear latency/cost/privacy benefit.
 
 ## 18. Edit-first mobile strategy
 
@@ -319,11 +308,9 @@ Initial engineering targets, subject to evidence:
 - repeat model-network transfer: `0 MB` after required packs are installed;
 - cloud GPU usage: minority path for supported local workloads.
 
-The total server-side BERS model/expert fleet may be many GB larger than a user's installed set.
-
 ## 20. Product metric law
 
-Every architecture candidate is selected by measured outcomes:
+Every candidate is selected by measured outcomes:
 
 - quality / GB;
 - quality / active FLOP;
@@ -344,12 +331,12 @@ Sparse active-parameter count alone is never sufficient evidence.
 
 ## 21. Explicit non-goals
 
-The canonical direction rejects the following as default architecture unless later evidence overturns the decision:
+Reject as default architecture unless later evidence overturns the decision:
 
-- a giant 15–20 GB mobile MoE that relies on constant flash thrashing;
-- a literal FreeToken CUDA/LLM runtime port;
-- full-model network weight streaming during every denoising step;
-- layer-by-layer phone/server round trips as the normal path;
+- giant 15–20 GB mobile MoE with constant flash thrashing;
+- literal FreeToken CUDA/LLM runtime port;
+- full-model network weight streaming during denoising;
+- layer-by-layer phone/server round trips as normal execution;
 - dozens of full-size expert model copies;
 - universal fully dynamic MoE on NPU without hardware evidence;
 - universal INT4 regardless of quality/kernel support;
@@ -360,21 +347,17 @@ The canonical direction rejects the following as default architecture unless lat
 
 ### HSME-1 — Control-plane expert runtime
 
-Build on the existing ModelFleet/DeviceExecutionAdmission/ResourceGovernor/downloader trust foundation.
-
-Required research/prototypes:
-
-- task and capability routing;
+- advisory task/capability routing under Core admission;
 - signed expert-pack identity;
 - on-demand acquisition and cache state;
 - device profiling and resource budgets;
-- local/cloud execution policy;
+- canonical local/hybrid/cloud policy integration;
 - download/prefetch observability.
 
 ### HSME-2 — Dense distilled BERS mobile student
 
 - select teacher/reference set;
-- establish a compact dense student baseline;
+- establish compact dense baseline;
 - few-step distillation;
 - exact package/quality/latency/memory evidence;
 - hardware-specific representation feasibility.
@@ -382,14 +365,14 @@ Required research/prototypes:
 ### HSME-3 — Adapter-MoE
 
 - shared core + compact specialist deltas;
-- start with small expert count;
-- compare Top-1/Top-2 and shared+specialist behavior;
-- prove that expert specialization improves product quality or resource cost.
+- small expert count first;
+- Top-1/Top-2 and shared+specialist comparisons;
+- prove measured product benefit.
 
 ### HSME-4 — FreeToken-inspired adaptive residency
 
-- hot/warm/cold expert cache;
-- predictive prefetch;
+- hot/warm/cold cache;
+- deterministic/predictive prefetch;
 - double buffering;
 - bandwidth/device profiling;
 - elastic RAM/accelerator budgets;
@@ -403,19 +386,19 @@ Required research/prototypes:
 
 ### HSME-6 — Timestep/stage routing
 
-- measure coarse geometry/appearance/detail stage specialization;
-- use predictable stage transitions for expert prefetch;
+- measure geometry/appearance/detail stage specialization;
+- exploit predictable stage transitions for prefetch;
 - record deterministic routing evidence.
 
 ### HSME-7 — Spatial/token sparsity
 
-- region-aware expert routing;
+- region-aware routing;
 - bounded token pruning/cheap-path processing;
-- strict preservation tests for identity/Fashion regions.
+- strict identity/Fashion preservation tests.
 
-### HSME-8 — Hardware-specialized production candidates
+### HSME-8 — Hardware-specialized candidates
 
-- Apple and Android device-tier packs;
+- distinct fleet identities/evidence for Apple and Android runtime representations under current schema;
 - NPU/GPU/CPU placement benchmarks;
 - battery/thermal qualification;
 - explicit supported-device classes;
@@ -423,9 +406,9 @@ Required research/prototypes:
 
 ## 23. Relationship to BERS v1 Stage E
 
-Before `BERS_V1_RC`, Stage E still requires only the defined `R&D_VALIDATED` milestone, not completion of the entire HSME roadmap.
+Before `BERS_V1_RC`, Stage E still requires the defined `R&D_VALIDATED` milestone, not completion of the entire HSME roadmap.
 
-The pre-v1 evidence should establish:
+The pre-v1 evidence must establish:
 
 1. one pinned dense reference/student baseline;
 2. at least one functioning sparse/Adapter-MoE prototype;
@@ -433,10 +416,10 @@ The pre-v1 evidence should establish:
 4. at least one implemented FreeToken-derived memory mechanism;
 5. quality/latency/memory/bytes-moved comparison against dense;
 6. explicit desktop feasibility decision;
-7. explicit mobile feasibility decision or recorded blocker;
+7. **explicit mobile feasibility decision based on real supported-device evidence, or a recorded blocker when such evidence cannot be obtained**;
 8. `ADVANCE / REDESIGN / REJECT` decision.
 
-Later HSME phases remain post-validation development unless separately promoted into the v1 mandatory gate.
+Browser/WASM capability evidence alone cannot satisfy item 7.
 
 ## 24. Authority law
 
@@ -444,9 +427,11 @@ The BERS AI runtime remains subordinate to canonical Core authority.
 
 It may not independently authorize:
 
+- capability admission;
+- execution target/policy outside Core admission;
 - Project mutation;
 - Artifact acceptance;
-- provider selection outside admitted policy;
+- provider selection;
 - Billing/credit consumption;
 - model identity or provenance;
 - cloud fallback;
@@ -457,21 +442,17 @@ Image-producing work still ends as a canonical candidate Artifact and requires t
 
 ## 25. Architecture success criterion
 
-The architecture advances only if it produces a material product benefit over the best relevant dense baseline on at least one target device class while preserving Core authority, provenance, local-first policy, quality gates, Fashion lineage/geometry constraints, and fail-closed cloud/billing behavior.
-
-The intended long-term outcome is a BERS-owned image engine with a large total capability/model fleet while a normal user stores only the subset needed for their workflows and performs most eligible inference locally.
+The architecture advances only if it produces a material product benefit over the best relevant dense baseline on at least one target device class while preserving Core authority, provenance, local-first policy, quality gates, Fashion lineage/geometry constraints and fail-closed cloud/billing behavior.
 
 ## 26. HSME v2 — Scheduled Hierarchical Sparse Engine
 
-HSME v2 records the preferred advanced research direction once the HSME-1 through HSME-4 foundations are measurable. It strengthens the original sparse-runtime concept with deterministic scheduling and image-specific routing rather than adopting unrestricted LLM-style MoE.
-
-The target hierarchy is:
+HSME v2 is the preferred advanced research direction once HSME-1 through HSME-4 are measurable.
 
 ```text
-Request
+Core-admitted request
   |
   v
-Task Router
+Advisory Task Router
   |
   v
 Pack Router
@@ -498,93 +479,38 @@ Expert Residency Planner
 CPU / GPU / NPU <-> RAM <-> Flash
 ```
 
-The following five mechanisms are selected as the primary HSME v2 research priorities.
-
 ### 26.1 Timestep-specialized experts
 
-Different denoising/flow stages may specialize in different work. BERS should explicitly test stage-specialized capacity rather than assuming the same expert set is optimal at every step.
+Explicitly compare:
 
-Initial hypotheses include:
-
-- early: composition, coarse geometry and pose;
-- middle: garment structure, material and lighting;
-- late: identity preservation, texture, boundaries and fine detail.
-
-These semantic labels are research hypotheses, not model or product authority. Learned specialization and measured quality determine the actual expert roles.
-
-The primary experiment compares:
-
-1. dense/shared execution at every step;
-2. Adapter-MoE with one fixed expert set;
+1. dense/shared execution every step;
+2. Adapter-MoE with fixed expert set;
 3. scheduled timestep expert groups;
 4. learned bounded timestep routing.
 
-Required evidence includes quality, active/resident bytes, end-to-end latency, per-step latency, expert reuse, bytes moved, cache hit rate and deterministic replay metadata.
+Initial semantic hypotheses: early composition/geometry/pose; middle garment/material/lighting; late identity/texture/boundaries/detail. Learned specialization, not labels, determines actual roles.
 
-A timestep-MoE candidate advances only if stage specialization yields a real product or resource benefit rather than merely different routing labels.
+### 26.2 Guided hierarchical and block-level routing
 
-### 26.2 Guided hierarchical and block-level routing before unrestricted token MoE
-
-Mobile BERS should prefer coarse, guided routing before unconstrained per-token routing.
-
-The preferred order is:
+Preferred order:
 
 ```text
-Task
+Task proposal
+ -> Core admission
  -> Pack
  -> Timestep
  -> Block / Expert Group
  -> optional Spatial Region
- -> optional Token-level specialist
+ -> optional Token specialist
 ```
 
-The router may consume model inputs derived from admitted operation context, such as timestep embedding, region/segmentation features, pose/garment conditioning, operation embedding and latent features. Such hints are **conditioning only**; they never become Core, Fashion geometry, Artifact, provider or Billing authority.
+Admitted operation context may provide conditioning hints, but those hints never become Core/Fashion/Artifact/provider/Billing authority.
 
-Research a BERS Guided Router with a two-stage concept where useful:
+Block/coarse routing is preferred if it achieves similar quality with more regular kernels, fewer dispatches and lower memory traffic than per-token routing.
 
-```text
-latent/visual representation
-        |
-        v
-function / coarse route
-        |
-        v
-prototype / specialist route
-        |
-        v
-bounded expert group
-```
+### 26.3 Deterministic prefetch first
 
-The purpose is to reduce router collapse, dead experts, unstable specialization and mobile scatter/gather overhead.
-
-Block-level/coarse routing is preferred if it achieves similar quality with more regular kernels, fewer dispatches and lower memory traffic than per-token routing.
-
-Do not hard-code an internal expert as immutable `Face`, `Garment`, `Hair`, etc. merely because the product exposes those concepts. Expert semantics must be learned and measured; product-level packs may remain named while internal experts stay versioned numeric/functional identities.
-
-### 26.3 Deterministic prefetch first; speculative prefetch second
-
-HSME must exploit predictable image-generation schedules before adding speculative expert prediction.
-
-If Task/Pack/Timestep planning establishes a likely sequence such as:
-
-```text
-Geometry -> Pose -> Fashion -> Material -> Identity -> Detail
-```
-
-then the runtime should use that deterministic or bounded schedule to prefetch the next required expert while the current expert executes.
-
-```text
-Accelerator: [ compute A ........ ][ compute B ........ ]
-Flash/RAM:           [ load B ... ][ load C ... ]
-```
-
-Policy law:
-
-1. known next-stage requirements first;
-2. high-confidence bounded prediction second;
-3. broad speculative prefetch only if measurements prove benefit.
-
-Speculation must be capped by RAM, flash-bandwidth, thermal and battery budgets. A predictor that improves expert hit rate but increases page faults, flash reads or total latency is rejected.
+Exploit known schedules before speculation.
 
 Required telemetry:
 
@@ -596,36 +522,9 @@ Required telemetry:
 - prefetch lead time;
 - memory pressure caused by prefetched experts.
 
-### 26.4 Shared core plus bounded expert capacity tied to Quality Mode
+### 26.4 Shared core + bounded expert capacity tied to Quality Mode
 
-The shared dense path remains always available. Specialists receive an explicit compute/capacity budget rather than unbounded access to every visual token.
-
-BERS should research expert capacity as a controllable quality/performance dimension. Example experimental policies:
-
-```text
-FAST
-- few steps
-- Top-1 or shared-only where sufficient
-- small specialist token/capacity budget
-- aggressive cheap-path use
-
-BALANCED
-- moderate steps
-- Top-1 / bounded Top-2
-- medium specialist capacity
-
-QUALITY
-- more steps
-- larger specialist capacity
-- more identity/detail processing
-- less aggressive pruning
-
-ULTRA
-- maximum admitted local budget
-- optional explicit cloud refinement
-```
-
-Quality mode therefore becomes a multidimensional execution policy, not only `num_inference_steps`:
+Quality mode controls multiple axes:
 
 ```text
 quality budget =
@@ -636,28 +535,13 @@ x token/spatial compute budget
 x precision/runtime tier
 ```
 
-Target examples such as 5%, 15%, 25% or 40% specialist token capacity are experimental values only. The accepted policy is determined by quality/latency/energy/device evidence.
-
-The runtime must retain a safe shared path so a specialist routing miss does not remove universal image semantics.
+`FAST`, `BALANCED`, `QUALITY` and `ULTRA` may use different bounded specialist capacity, but the shared path remains available.
 
 ### 26.5 Expert Residency Planner
 
-Replace simple LRU as the long-term policy with a schedule-aware **BERS Expert Residency Planner**.
+Inputs may include admitted task, timestep schedule, expert reuse distance, memory state, accelerator budget, flash throughput, cache state, battery/thermal state and quality mode.
 
-Inputs may include:
-
-- admitted task/capability;
-- current and future timestep schedule;
-- current expert set;
-- predicted expert reuse distance;
-- device RAM/unified-memory state;
-- accelerator-resident budget;
-- flash throughput;
-- current cache state;
-- battery and thermal state;
-- active quality mode.
-
-The planner produces bounded actions such as:
+Bounded actions:
 
 ```text
 KEEP
@@ -668,87 +552,64 @@ MATERIALIZE
 DEQUANTIZE
 ```
 
-Example policy:
+**Bytes moved are a first-class optimization target.** A sparse model with fewer active parameters but excessive flash/RAM/accelerator traffic may be inferior to a larger dense resident model.
 
-```text
-Fashion expert: needed again next step -> KEEP
-Geometry expert: no future use -> EVICT
-Identity expert: needed in two steps -> PREFETCH when budget permits
-```
+Required metrics:
 
-The planner must be deterministic/replayable for the same recorded policy inputs where production evidence requires deterministic planning.
-
-**Bytes moved are a first-class optimization target.** A sparse model with fewer active parameters but excessive Flash -> RAM -> accelerator traffic may be inferior to a larger dense resident model.
-
-Required metrics include:
-
-- total bytes moved per generation;
-- bytes moved per denoising/flow step;
+- total bytes moved/generation;
+- bytes moved/step;
 - flash reads;
 - RAM <-> accelerator traffic;
 - expert residency duration;
 - cache hit/miss ratio;
 - accelerator idle/stall time;
-- thermal and energy impact.
+- thermal/energy impact.
 
-### 26.6 Secondary experiments retained from the earlier sparse roadmap
-
-The following are retained as explicit comparison tracks, but they are not presumed to beat the primary HSME v2 design.
+### 26.6 Secondary experiments
 
 #### Dense-to-sparse conversion
 
-Start from the accepted dense BERS student, clone or decompose selected candidate FFN capacity into experts, then train specialization/routing while retaining the dense checkpoint as the exact quality/resource baseline.
-
-Advance only if the converted sparse candidate avoids router collapse/dead experts and materially improves at least one product metric without unacceptable quality loss.
+Start from the pinned dense BERS student, decompose selected capacity into experts and retain the dense checkpoint as exact quality/resource baseline. Advance only if router collapse/dead experts are controlled and measured product benefit exists.
 
 #### Expert Choice / capacity-directed routing
 
-Compare conventional token-choice routing against a bounded expert-choice variant in which an expert selects only the highest-value visual tokens up to a fixed capacity budget.
-
-This is especially relevant for Detail/Identity-like learned specialists where only a subset of regions may justify expensive processing.
-
-Expert Choice remains experimental until it proves stable specialization, predictable capacity and hardware-efficient kernels.
+Compare token-choice routing against bounded expert-choice routing where an expert selects only the highest-value visual tokens up to a fixed capacity. This remains experimental until specialization and hardware efficiency are proven.
 
 ### 26.7 HSME v2 acceptance matrix
 
-Every HSME v2 candidate must compare against the same pinned dense/Adapter-MoE baseline using at least:
+Every candidate compares against the same pinned dense/Adapter-MoE baseline using:
 
-- real-image and product-domain quality;
+- real-image/product-domain quality;
 - identity/garment/logo/pattern preservation;
 - anatomy/artifact failure rate;
-- end-to-end and per-step latency;
+- end-to-end/per-step latency;
 - active parameters;
-- resident bytes;
-- installed/package bytes;
+- resident/installed bytes;
 - total bytes moved;
 - flash reads;
 - RAM/accelerator traffic;
 - cache hit/miss and wasted-prefetch ratio;
 - peak memory;
-- energy/battery and thermal behavior;
+- energy/battery/thermal behavior;
 - routing stability/expert utilization;
-- deterministic replay/debug evidence;
+- replay/debug evidence;
 - device-specific kernel efficiency.
 
-The architecture decision must be based on wall-clock and product metrics. Sparse FLOPs, theoretical expert count or router novelty are never sufficient promotion evidence.
+Sparse FLOPs or router novelty are never sufficient promotion evidence.
 
-### 26.8 Relationship to HSME phases
-
-HSME v2 is an advanced overlay on the existing staged roadmap, not permission to skip earlier evidence.
-
-Recommended dependency order:
+### 26.8 Dependency order
 
 ```text
-HSME-1  control-plane/model-pack runtime
-   -> HSME-2  dense distilled student
-   -> HSME-3  Adapter-MoE
-   -> HSME-4  measurable residency/prefetch substrate
-   -> HSME-v2.A  timestep specialization + deterministic schedule
-   -> HSME-v2.B  guided/block routing
-   -> HSME-v2.C  bounded expert capacity + Quality Mode
-   -> HSME-v2.D  schedule-aware Expert Residency Planner
-   -> HSME-v2.E  optional spatial/token/Expert-Choice experiments
-   -> HSME-8  hardware-specialized candidates only after device evidence
+HSME-1 control-plane/model-pack runtime
+ -> HSME-2 dense distilled student
+ -> HSME-3 Adapter-MoE
+ -> HSME-4 measurable residency/prefetch substrate
+ -> HSME-v2.A timestep specialization + deterministic schedule
+ -> HSME-v2.B guided/block routing
+ -> HSME-v2.C bounded expert capacity + Quality Mode
+ -> HSME-v2.D schedule-aware Expert Residency Planner
+ -> HSME-v2.E optional spatial/token/Expert-Choice experiments
+ -> HSME-8 hardware-specialized candidates only after real-device evidence
 ```
 
-This preserves the core engineering rule: **first prove a compact dense student and measurable runtime substrate; then add sparse sophistication only where it wins on real devices.**
+Core engineering rule: **first prove a compact dense student and measurable runtime substrate; then add sparse sophistication only where it wins on real devices.**
