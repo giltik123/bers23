@@ -213,14 +213,27 @@ try {
   const rotate = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
   await rotate.waitFor({ state: 'visible', timeout: 10_000 });
   assert.equal(await rotate.isEnabled(), true, 'Rotate 90° clockwise must be available for a zero-object whole image');
+  const resultResponsePromise = page.waitForResponse(response => {
+    const url = safeUrl(response.url());
+    return response.request().method() === 'POST'
+      && url?.origin === coreOrigin
+      && /^\/api\/core\/local-execution\/orthogonal-transform\/[^/]+\/result$/.test(url.pathname);
+  }, { timeout: 20_000 });
   await rotate.click();
+
+  const resultResponse = await resultResponsePromise;
+  assert.equal(resultResponse.status(), 200, 'Core must accept and verify the deterministic orthogonal-transform result');
+  const coreResult = await resultResponse.json();
+  assert.equal(coreResult.status, 'SUCCESS', 'Core result must be terminal SUCCESS before Preview is admitted');
+  assert.equal(coreResult.verification?.valid, true, 'Core must verify the local deterministic result before Preview is admitted');
+  assert.equal(typeof coreResult.artifactId === 'string' && coreResult.artifactId.length > 0, true, 'Core-verified deterministic result must expose canonical FINAL artifact identity');
+  diagnostics.deterministicEdit.coreResult = Object.freeze({ status: coreResult.status, verificationValid: coreResult.verification?.valid, artifactIdPresent: true });
 
   const accept = page.getByRole('button', { name: 'Accept', exact: true });
   await accept.waitFor({ state: 'visible', timeout: 20_000 });
   const previewImage = await loadedImageEvidence(page, 'after', 8, 12, 20_000);
   diagnostics.deterministicEdit.previewImage = previewImage;
-  assertSignedCoreImage(previewImage, [8, 12], 'orthogonal-transform preview');
-  assertArtifactResponse(previewImage.src, 'orthogonal-transform preview');
+  assertLocalVerifiedPreview(previewImage, [8, 12], 'orthogonal-transform preview');
 
   const localCalls = diagnostics.localExecutionRequests;
   assert.ok(localCalls.some(call => call.method === 'POST' && call.pathname === '/api/core/local-execution/orthogonal-transform/prepare'), 'Rotate must prepare through canonical orthogonal-transform Core authority');
@@ -331,6 +344,7 @@ try {
     zeroObjectPromptVisible: true,
     deterministicEdit: {
       mode: 'ROTATE_90_CW',
+      coreResult: diagnostics.deterministicEdit.coreResult,
       previewImage,
       acceptedImage,
       undoImage,
@@ -417,6 +431,11 @@ async function waitForEnabledButton(page, label, timeout = 15_000) {
     { timeout },
   );
   assert.equal(await button.isEnabled(), true, `${label} must become enabled after canonical Project state updates`);
+}
+
+function assertLocalVerifiedPreview(evidence, dimensions, label) {
+  assert.equal(evidence.src.startsWith(`blob:${frontendOrigin}/`), true, `${label} must remain a browser-local blob after Core verification and before Accept`);
+  assert.deepEqual([evidence.naturalWidth, evidence.naturalHeight], dimensions, `${label} geometry is incorrect`);
 }
 
 function assertSignedCoreImage(evidence, dimensions, label) {
