@@ -52,6 +52,7 @@ on:
       - 'scripts/test-release-r3c-browser-e2e.mjs'
       - 'scripts/test-release-r3d-browser-e2e.mjs'
       - 'scripts/test-release-r3e-browser-e2e.mjs'
+      - 'scripts/test-release-r3f-browser-e2e.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - 'tests/editor-orthogonal-transform-ui.test.mjs'
       - 'tests/editor-final-source-conflict-recovery.test.mjs'
@@ -64,6 +65,7 @@ on:
       - 'tests/release-r3c-browser-boundaries.test.mjs'
       - 'tests/release-r3d-browser-boundaries.test.mjs'
       - 'tests/release-r3e-browser-boundaries.test.mjs'
+      - 'tests/release-r3f-browser-boundaries.test.mjs'
       - 'tests/release-r3b-production-orthogonal-prepare.test.ts'
       - 'tests/frontend-security-deployment-contract.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
@@ -146,6 +148,7 @@ jobs:
           node --test tests/release-r3c-browser-boundaries.test.mjs
           node --test tests/release-r3d-browser-boundaries.test.mjs
           node --test tests/release-r3e-browser-boundaries.test.mjs
+          node --test tests/release-r3f-browser-boundaries.test.mjs
       - name: Prove runtime-compatible frontend security and preserve worker lockdown
         run: |
           mkdir -p .test-cache/release-r3
@@ -282,6 +285,38 @@ jobs:
           grep -q "diagnostics.creativeRequests, \[\]" "$script"
           grep -q "diagnostics.financialRequests, \[\]" "$script"
           grep -q "diagnostics.externalBrowserRequests, \[\]" "$script"
+          ! grep -E -q 'financialAccount|financialTrial|credit_grants|credit_wallets' "$script"
+      - name: Bundle focused R3f LOCAL_ONLY failure harness without replacing production stores
+        run: |
+          npx esbuild scripts/test-release-r3f-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3/test-release-r3f-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove R3f LOCAL_ONLY local capability failure cannot cross Provider or Billing
+        run: node .test-cache/release-r3/test-release-r3f-browser-e2e.mjs
+      - name: Prove R3f failure harness uses real Core and forbids fallback authority
+        run: |
+          set -euo pipefail
+          script=scripts/test-release-r3f-browser-e2e.mjs
+          grep -q "dist-server/server.mjs" "$script"
+          grep -q "path.resolve('dist')" "$script"
+          grep -q "NODE_ENV: 'production'" "$script"
+          grep -q "PostgresAuthStore" "$script"
+          grep -q "browserContext.addInitScript" "$script"
+          grep -q "CompressionStream" "$script"
+          grep -q "canonical_projects" "$script"
+          grep -q "canonical_project_history" "$script"
+          grep -q "canonical_image_artifacts" "$script"
+          grep -q "local_execution_tickets" "$script"
+          grep -q "consumed_at" "$script"
+          grep -q "finalized_status" "$script"
+          grep -q "R3F_BROWSER_LOCAL_ONLY_FAILURE_ACCEPTED" "$script"
+          grep -q "providerCalls, 0" "$script"
+          grep -q "diagnostics.creativeRequests, \[\]" "$script"
+          grep -q "diagnostics.financialRequests, \[\]" "$script"
+          grep -q "diagnostics.externalBrowserRequests, \[\]" "$script"
+          grep -q "diagnostics.projectMutations, \[\]" "$script"
+          ! grep -E -q 'page\.route|browserContext\.route|context\.route|route\.abort|route\.fulfill|route\.continue' "$script"
           ! grep -E -q 'financialAccount|financialTrial|credit_grants|credit_wallets' "$script"
       - name: Check committed diff whitespace
         run: git diff --check "$BASE_SHA"..HEAD
