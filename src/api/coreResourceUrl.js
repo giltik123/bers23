@@ -24,10 +24,20 @@ export function resolveCoreResourceUrl(value, apiRoot = CANONICAL_CORE_PATH) {
 
 export function normalizeProjectResourceUrls(project, apiRoot = CANONICAL_CORE_PATH) {
   if (!project || typeof project !== 'object') return project;
+  const versions = Array.isArray(project.versions)
+    ? project.versions.map(version => {
+      if (!version || typeof version !== 'object') return version;
+      return {
+        ...version,
+        preview_url: resolveCoreResourceUrl(version.preview_url, apiRoot),
+      };
+    })
+    : project.versions;
   return {
     ...project,
     current_image_url: resolveCoreResourceUrl(project.current_image_url, apiRoot),
     original_image_url: resolveCoreResourceUrl(project.original_image_url, apiRoot),
     thumbnail_url: resolveCoreResourceUrl(project.thumbnail_url, apiRoot),
+    versions,
   };
 }

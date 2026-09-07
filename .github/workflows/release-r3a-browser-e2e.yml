@@ -10,10 +10,13 @@ on:
       - 'src/api/coreResourceUrl.js'
       - 'src/application/createOrthogonalTransform.ts'
       - 'src/application/editor/orthogonalTransformStartPolicy.js'
+      - 'src/application/editor/recoverFinalSourceConflict.js'
       - 'src/components/ProtectedRoute.jsx'
       - 'src/components/editor/HistoryControls.jsx'
       - 'src/components/editor/OrthogonalTransformToolbar.jsx'
       - 'src/components/editor/ResultCompare.jsx'
+      - 'src/components/editor/VersionsPanel.jsx'
+      - 'src/hooks/useProject.js'
       - 'src/lib/AuthContext.jsx'
       - 'src/lib/projectService.js'
       - 'src/lib/scene/**'
@@ -38,14 +41,17 @@ on:
       - 'scripts/production-migration-inventory.mjs'
       - 'scripts/test-release-r3a-browser-e2e.mjs'
       - 'scripts/test-release-r3b-browser-e2e.mjs'
+      - 'scripts/test-release-r3c-browser-e2e.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - 'tests/editor-orthogonal-transform-ui.test.mjs'
+      - 'tests/editor-final-source-conflict-recovery.test.mjs'
       - 'tests/auth-client-contract.test.mjs'
       - 'tests/auth-public-route-routing.test.mjs'
       - 'tests/core-resource-url.test.mjs'
       - 'tests/core-image-csp.test.mjs'
       - 'tests/release-r3a-browser-boundaries.test.mjs'
       - 'tests/release-r3b-browser-boundaries.test.mjs'
+      - 'tests/release-r3c-browser-boundaries.test.mjs'
       - 'tests/release-r3b-production-orthogonal-prepare.test.ts'
       - 'tests/frontend-security-deployment-contract.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
@@ -61,7 +67,7 @@ concurrency:
 jobs:
   auth-project-editor-deterministic-browser:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -114,16 +120,18 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Preserve R3 baseline and deterministic edit composition contracts
+      - name: Preserve R3 baseline deterministic edit and Project lifecycle composition contracts
         run: |
           node --test tests/auth-public-route-routing.test.mjs
           node --test tests/editor-zero-object-navigation.test.mjs
           node --test tests/editor-orthogonal-transform-ui.test.mjs
+          node --test tests/editor-final-source-conflict-recovery.test.mjs
           node --test tests/auth-client-contract.test.mjs
           node --test tests/core-resource-url.test.mjs
           node --test tests/core-image-csp.test.mjs
           node --test tests/release-r3a-browser-boundaries.test.mjs
           node --test tests/release-r3b-browser-boundaries.test.mjs
+          node --test tests/release-r3c-browser-boundaries.test.mjs
       - name: Prove runtime-compatible frontend security and preserve worker lockdown
         run: |
           mkdir -p .test-cache/release-r3
@@ -158,29 +166,40 @@ jobs:
         run: |
           npm run build
           test -f dist/index.html
-      - name: Bundle external cumulative R3 release harness without replacing production stores
+      - name: Bundle accepted R3b browser baseline without replacing production stores
         run: |
           mkdir -p .test-cache/release-r3
           npx esbuild scripts/test-release-r3b-browser-e2e.mjs \
             --bundle --platform=node --format=esm --target=node24 \
-            --outfile=.test-cache/release-r3/test-release-r3-browser-e2e.mjs \
+            --outfile=.test-cache/release-r3/test-release-r3b-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
-      - name: Prove built SPA -> built Core -> PostgreSQL Auth Project Rotate Accept Undo Redo journey
-        run: node .test-cache/release-r3/test-release-r3-browser-e2e.mjs
-      - name: Prove cumulative harness uses production local authority with no provider financial or legacy fallback
+      - name: Prove accepted R3b Auth Project Rotate Accept Undo Redo baseline
+        run: node .test-cache/release-r3/test-release-r3b-browser-e2e.mjs
+      - name: Bundle external cumulative R3c Project lifecycle harness without replacing production stores
+        run: |
+          npx esbuild scripts/test-release-r3c-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3/test-release-r3c-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove built SPA -> built Core -> PostgreSQL Discard Version Restore stale FINAL journey
+        run: node .test-cache/release-r3/test-release-r3c-browser-e2e.mjs
+      - name: Prove cumulative R3c harness uses production Project and local authorities with no forbidden fallback
         run: |
           set -euo pipefail
-          script=scripts/test-release-r3b-browser-e2e.mjs
+          script=scripts/test-release-r3c-browser-e2e.mjs
+          grep -q "R3B_BROWSER_DETERMINISTIC_EDIT_ACCEPTED" scripts/test-release-r3b-browser-e2e.mjs
           grep -q "dist-server/server.mjs" "$script"
           grep -q "path.resolve('dist')" "$script"
           grep -q "NODE_ENV: 'production'" "$script"
           grep -q "PostgresAuthStore" "$script"
           grep -q "canonical_projects" "$script"
           grep -q "canonical_project_history" "$script"
+          grep -q "canonical_project_versions" "$script"
           grep -q "Rotate 90° clockwise" "$script"
-          grep -q "R3B_BROWSER_DETERMINISTIC_EDIT_ACCEPTED" "$script"
-          grep -q "local-execution/orthogonal-transform/prepare" "$script"
-          grep -q "source_image_storage_id" "$script"
+          grep -q "Save current as version" "$script"
+          grep -q "RESTORE_VERSION" "$script"
+          grep -q "final_source_conflict" "$script"
+          grep -q "R3C_BROWSER_PROJECT_LIFECYCLE_ACCEPTED" "$script"
           grep -q "providerCalls, 0" "$script"
           grep -q "diagnostics.creativeRequests, \[\]" "$script"
           grep -q "diagnostics.legacyRequests, \[\]" "$script"
