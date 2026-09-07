@@ -53,6 +53,7 @@ on:
       - 'scripts/test-release-r3d-browser-e2e.mjs'
       - 'scripts/test-release-r3e-browser-e2e.mjs'
       - 'scripts/test-release-r3f-browser-e2e.mjs'
+      - 'scripts/test-release-r3g-browser-e2e.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - 'tests/editor-orthogonal-transform-ui.test.mjs'
       - 'tests/editor-final-source-conflict-recovery.test.mjs'
@@ -66,6 +67,7 @@ on:
       - 'tests/release-r3d-browser-boundaries.test.mjs'
       - 'tests/release-r3e-browser-boundaries.test.mjs'
       - 'tests/release-r3f-browser-boundaries.test.mjs'
+      - 'tests/release-r3g-browser-boundaries.test.mjs'
       - 'tests/release-r3b-production-orthogonal-prepare.test.ts'
       - 'tests/frontend-security-deployment-contract.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
@@ -149,6 +151,7 @@ jobs:
           node --test tests/release-r3d-browser-boundaries.test.mjs
           node --test tests/release-r3e-browser-boundaries.test.mjs
           node --test tests/release-r3f-browser-boundaries.test.mjs
+          node --test tests/release-r3g-browser-boundaries.test.mjs
       - name: Prove runtime-compatible frontend security and preserve worker lockdown
         run: |
           mkdir -p .test-cache/release-r3
@@ -318,5 +321,41 @@ jobs:
           grep -q "diagnostics.projectMutations, \[\]" "$script"
           ! grep -E -q 'page\.route|browserContext\.route|context\.route|route\.abort|route\.fulfill|route\.continue' "$script"
           ! grep -E -q 'financialAccount|financialTrial|credit_grants|credit_wallets' "$script"
+      - name: Bundle focused R3g zero-object Fashion Outfits harness without replacing production stores
+        run: |
+          npx esbuild scripts/test-release-r3g-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3/test-release-r3g-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove R3g zero-object Project Fashion Outfits journey
+        run: node .test-cache/release-r3/test-release-r3g-browser-e2e.mjs
+      - name: Prove R3g navigation uses canonical Fashion authorities without Detect Object MASK or fallback
+        run: |
+          set -euo pipefail
+          script=scripts/test-release-r3g-browser-e2e.mjs
+          grep -q "dist-server/server.mjs" "$script"
+          grep -q "path.resolve('dist')" "$script"
+          grep -q "NODE_ENV: 'production'" "$script"
+          grep -q "PostgresAuthStore" "$script"
+          grep -q "canonical_projects" "$script"
+          grep -q "canonical_project_history" "$script"
+          grep -q "canonical_mask_artifacts" "$script"
+          grep -q "local_execution_tickets" "$script"
+          grep -q "p.objects" "$script"
+          grep -q "/api/core/garments" "$script"
+          grep -q "/api/core/wardrobe/garments" "$script"
+          grep -q "/api/core/wardrobe/outfits" "$script"
+          grep -q "Canonical fashion wardrobe" "$script"
+          grep -q "Canonical Outfit builder" "$script"
+          grep -q "R3G_BROWSER_ZERO_OBJECT_FASHION_OUTFITS_ACCEPTED" "$script"
+          grep -q "providerCalls, 0" "$script"
+          grep -q "diagnostics.localExecutionRequests, \[\]" "$script"
+          grep -q "diagnostics.creativeRequests, \[\]" "$script"
+          grep -q "diagnostics.financialRequests, \[\]" "$script"
+          grep -q "diagnostics.maskRequests, \[\]" "$script"
+          grep -q "diagnostics.projectMutations, \[\]" "$script"
+          grep -q "diagnostics.externalBrowserRequests, \[\]" "$script"
+          ! grep -E -q 'page\.route|browserContext\.route|context\.route|route\.abort|route\.fulfill|route\.continue' "$script"
+          ! grep -E -q 'financialAccount|financialTrial|credit_grants|credit_wallets|saveObjects|persistMask|smartPoint|selectionPointer' "$script"
       - name: Check committed diff whitespace
         run: git diff --check "$BASE_SHA"..HEAD
