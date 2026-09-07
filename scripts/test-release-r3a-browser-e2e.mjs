@@ -97,8 +97,12 @@ const diagnostics = {
   expectedAuthContext401s: [],
   unexpectedResponses: [],
   financialRequests: [],
+  creativeRequests: [],
+  legacyRequests: [],
+  artifactResponses: [],
   lastUrl: undefined,
   projectId: undefined,
+  projectImage: undefined,
 };
 
 try {
@@ -113,12 +117,20 @@ try {
   page.on('console', message => { if (message.type() === 'error') diagnostics.consoleErrors.push(message.text()); });
   page.on('request', request => {
     const url = safeUrl(request.url());
-    if (url?.pathname.startsWith('/api/core/financial/')) diagnostics.financialRequests.push({ url: request.url(), method: request.method() });
+    if (!url) return;
+    if (url.pathname.startsWith('/api/core/financial/')) diagnostics.financialRequests.push({ url: request.url(), method: request.method() });
+    if (url.pathname.startsWith('/api/core/creative/')) diagnostics.creativeRequests.push({ url: request.url(), method: request.method() });
+    if (url.pathname === '/api/core/observability/events' || url.pathname.startsWith('/api/core/data/Notification')) {
+      diagnostics.legacyRequests.push({ url: request.url(), method: request.method() });
+    }
   });
   page.on('requestfailed', request => diagnostics.requestFailures.push({ url: request.url(), error: request.failure()?.errorText ?? 'unknown' }));
   page.on('response', response => {
-    if (response.status() < 400) return;
     const url = safeUrl(response.url());
+    if (url?.pathname.startsWith('/api/core/artifacts/results/')) {
+      diagnostics.artifactResponses.push({ url: response.url(), status: response.status(), contentType: response.headers()['content-type'] ?? null });
+    }
+    if (response.status() < 400) return;
     if (!authenticated && response.status() === 401 && url?.pathname === '/api/core/auth/context') {
       diagnostics.expectedAuthContext401s.push({ url: response.url(), status: response.status() });
       return;
@@ -150,6 +162,27 @@ try {
   await page.getByText('Prompt', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('button', { name: /Detect objects/i }).waitFor({ state: 'visible', timeout: 10_000 });
 
+  const projectImage = page.getByRole('img', { name: 'Project' });
+  await projectImage.waitFor({ state: 'visible', timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const image = document.querySelector('img[alt="Project"]');
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0;
+  }, { timeout: 15_000 });
+  const imageEvidence = await projectImage.evaluate(image => ({
+    src: image.currentSrc || image.src,
+    naturalWidth: image.naturalWidth,
+    naturalHeight: image.naturalHeight,
+  }));
+  diagnostics.projectImage = imageEvidence;
+  const imageUrl = new URL(imageEvidence.src);
+  assert.equal(imageUrl.origin, coreOrigin, 'canonical signed Project image must resolve against split-origin Core, not the SPA origin');
+  assert.match(imageUrl.pathname, /^\/api\/core\/artifacts\/results\//, 'Project image must use signed Core artifact delivery');
+  assert.deepEqual([imageEvidence.naturalWidth, imageEvidence.naturalHeight], [12, 8], 'browser must decode the uploaded canonical Project image');
+  assert.ok(
+    diagnostics.artifactResponses.some(response => response.status === 200 && response.url === imageEvidence.src && /^image\/png(?:;|$)/i.test(response.contentType || '')),
+    'signed canonical Project image must receive an HTTP 200 image/png response from Core',
+  );
+
   const project = await pool.query(
     `SELECT project_id,tenant_id,user_id,current_image_storage_id,original_image_storage_id
      FROM canonical_projects WHERE project_id=$1`,
@@ -161,6 +194,8 @@ try {
   assert.equal(project.rows[0].current_image_storage_id, project.rows[0].original_image_storage_id, 'new zero-object Project must still point at its canonical ORIGINAL before edits');
 
   assert.equal(providerCalls, 0, 'Auth/Project/zero-object Editor journey must not invoke an external provider');
+  assert.deepEqual(diagnostics.creativeRequests, [], 'opening zero-object Editor must not implicitly start creative execution');
+  assert.deepEqual(diagnostics.legacyRequests, [], 'release browser path must not probe unowned legacy Notification/observability routes');
   assert.deepEqual(diagnostics.financialRequests, [], 'frozen financial authority must not be touched by the base release journey');
   assert.ok(diagnostics.expectedAuthContext401s.length >= 1, 'unauthenticated protected-route probe must observe canonical auth denial');
   assert.deepEqual(diagnostics.pageErrors, []);
@@ -183,8 +218,11 @@ try {
     tenantId,
     userId,
     providerCalls,
+    creativeRequestCount: diagnostics.creativeRequests.length,
+    legacyRequestCount: diagnostics.legacyRequests.length,
     financialRequestCount: diagnostics.financialRequests.length,
     expectedAuthContext401Count: diagnostics.expectedAuthContext401s.length,
+    projectImage: imageEvidence,
     protectedRouteRedirect: '/login',
     zeroObjectPromptVisible: true,
   }, null, 2));
