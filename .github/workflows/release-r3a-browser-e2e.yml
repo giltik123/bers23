@@ -4,6 +4,7 @@ on:
   pull_request:
     branches: [ "main" ]
     paths:
+      - 'config/frontendSecurityPolicy.mjs'
       - 'src/App.jsx'
       - 'src/api/coreClient.js'
       - 'src/components/ProtectedRoute.jsx'
@@ -12,6 +13,7 @@ on:
       - 'src/pages/Login.jsx'
       - 'src/pages/Projects.jsx'
       - 'src/pages/Editor.jsx'
+      - 'src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts'
       - 'server/core/auth/**'
       - 'server/core/projects/**'
       - 'server/core/artifacts/**'
@@ -19,11 +21,13 @@ on:
       - 'server/core/config.ts'
       - 'server/index.ts'
       - 'scripts/build-core-server.mjs'
+      - 'scripts/classify-tiny-sd-d4-secure-threading.mjs'
       - 'scripts/production-migration-inventory.mjs'
       - 'scripts/test-release-r3a-browser-e2e.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - 'tests/auth-client-contract.test.mjs'
       - 'tests/auth-public-route-routing.test.mjs'
+      - 'tests/frontend-security-deployment-contract.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
   workflow_dispatch:
 
@@ -95,6 +99,13 @@ jobs:
           node --test tests/auth-public-route-routing.test.mjs
           node --test tests/editor-zero-object-navigation.test.mjs
           node --test tests/auth-client-contract.test.mjs
+      - name: Prove runtime-compatible frontend security and preserve worker lockdown
+        run: |
+          mkdir -p .test-cache/release-r3a
+          node --test tests/frontend-security-deployment-contract.test.mjs
+          node scripts/classify-tiny-sd-d4-secure-threading.mjs --report .test-cache/release-r3a/d4-secure-threading.json
+          grep -q '"result": "SECURE_THREADING_BLOCKED"' .test-cache/release-r3a/d4-secure-threading.json
+          grep -q '"requireTrustedTypesForScript": false' .test-cache/release-r3a/d4-secure-threading.json
       - name: Build immutable Core and apply its packaged production migrations
         run: |
           npm run server:build
