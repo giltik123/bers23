@@ -10,11 +10,14 @@ import {
 } from '../config/frontendSecurityPolicy.mjs';
 import { verifyFrontendSecurityHeaders } from '../scripts/verify-frontend-security-headers.mjs';
 
-test('meta CSP preserves browser hardening but never pretends to enforce frame-ancestors', () => {
+test('meta CSP preserves browser hardening, stays runtime-compatible, and never pretends to enforce frame-ancestors', () => {
   const csp = productionBrowserMetaCsp('/api/core');
   assert.match(csp, /script-src 'self' 'wasm-unsafe-eval'/u);
-  assert.match(csp, /require-trusted-types-for 'script'/u);
-  assert.match(csp, /trusted-types 'none'/u);
+  assert.match(csp, /script-src-attr 'none'/u);
+  assert.match(csp, /object-src 'none'/u);
+  assert.match(csp, /frame-src 'none'/u);
+  assert.doesNotMatch(csp, /require-trusted-types-for/u);
+  assert.doesNotMatch(csp, /(?:^|;)\s*trusted-types\s/u);
   assert.match(csp, /connect-src 'self'/u);
   assert.doesNotMatch(csp, /frame-ancestors/u);
 });
