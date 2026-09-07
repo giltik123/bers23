@@ -115,12 +115,13 @@ jobs:
             --external:node:* --external:pg --external:sharp --external:playwright
       - name: Prove built SPA -> built Core -> real PostgreSQL Auth Project Editor journey
         run: node .test-cache/release-r3a/test-release-r3a-browser-e2e.mjs
-      - name: Prove harness uses built artifacts and no financial/provider authority
+      - name: Prove harness uses production built artifacts and no financial/provider authority
         run: |
           set -euo pipefail
           script=scripts/test-release-r3a-browser-e2e.mjs
           grep -q "dist-server/server.mjs" "$script"
           grep -q "path.resolve('dist')" "$script"
+          grep -q "NODE_ENV: 'production'" "$script"
           grep -q "PostgresAuthStore" "$script"
           grep -q "canonical_projects" "$script"
           grep -q "providerCalls, 0" "$script"
