@@ -109,17 +109,18 @@ test('creative client uses explicit Core endpoint and preserves public error fie
   for (const field of ['status', 'code', 'correlationId', 'retryable']) assert.match(client, new RegExp(`error\\.${field}`));
 });
 
-test('production CSP permits local WASM but no arbitrary script execution or HTML policy creation', () => {
+test('production CSP permits local WASM without arbitrary script execution and does not enforce incompatible Trusted Types', () => {
   const local = productionBrowserCsp('/api/core');
   assert.match(local, /script-src 'self' 'wasm-unsafe-eval'/);
   assert.doesNotMatch(local, /'unsafe-eval'/);
   assert.doesNotMatch(local, /script-src[^;]*'unsafe-inline'/);
+  assert.match(local, /script-src-attr 'none'/);
   assert.match(local, /worker-src 'self' blob:/);
   assert.match(local, /connect-src 'self'/);
   assert.match(local, /object-src 'none'/);
   assert.match(local, /frame-src 'none'/);
-  assert.match(local, /require-trusted-types-for 'script'/);
-  assert.match(local, /trusted-types 'none'/);
+  assert.doesNotMatch(local, /require-trusted-types-for/);
+  assert.doesNotMatch(local, /(?:^|;)\s*trusted-types\s/);
 
   const remote = productionBrowserCsp('https://core.example.test/api/core');
   assert.match(remote, /connect-src 'self' https:\/\/core\.example\.test(?:;|$)/);
