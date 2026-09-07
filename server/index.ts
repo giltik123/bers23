@@ -11,6 +11,7 @@ import { createManualProjectBodyAnchorHttpAdapter } from './core/http/manualProj
 import { createLocalCompositeContinuationHttpAdapter } from './core/http/localCompositeContinuationHttpAdapter.ts';
 import { createExecutionRunRecoveryHttpAdapter } from './core/http/executionRunRecoveryHttpAdapter.ts';
 import { createFinancialAccountHttpAdapter, FINANCIAL_ACCOUNT_PATH } from './core/http/financialAccountHttpAdapter.ts';
+import { createFinancialAccountPolicyHttpAdapter, FINANCIAL_ACCOUNT_INITIALIZE_PATH } from './core/http/financialAccountPolicyHttpAdapter.ts';
 import { createManagedGarmentHttpAdapter } from './core/http/managedGarmentHttpAdapter.ts';
 import { createManagedWardrobeHttpAdapter } from './core/http/managedWardrobeHttpAdapter.ts';
 import { createManagedGarmentCollectionHttpAdapter } from './core/http/managedGarmentCollectionHttpAdapter.ts';
@@ -102,6 +103,14 @@ export async function startCoreServer() {
     auth: production.auth,
     config,
   });
+  const financialAccountPolicyAdapter = createFinancialAccountPolicyHttpAdapter({
+    account: Object.freeze({
+      initializeFreeAccount: production.transactions.financialAccounts.initializeFreeAccount.bind(production.transactions.financialAccounts),
+    }),
+    auth: production.auth,
+    config,
+    accepting: () => accepting,
+  });
   const server = createServer((request, response) => {
     applyCoreSecurityHeaders(response, config);
     const target = parseCoreRequestTarget(request.url);
@@ -117,6 +126,7 @@ export async function startCoreServer() {
     if (path.startsWith('/api/core/fashion/try-on/')) return void fashionTryOnProductAdapter(request, response);
     if (LEGACY_FASHION_PREPARE_PATHS.has(path)) return void legacyFashionPrepareTombstoneAdapter(request, response);
     if (path === '/api/core/execution-runs' || path.startsWith('/api/core/execution-runs/')) return void executionRunRecoveryAdapter(request, response);
+    if (path === FINANCIAL_ACCOUNT_INITIALIZE_PATH) return void financialAccountPolicyAdapter(request, response);
     if (path === FINANCIAL_ACCOUNT_PATH) return void financialAccountAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/orthogonal-transform/')) return void orthogonalTransformAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/')) return void localExecutionAdapter(request, response);

@@ -64,9 +64,23 @@ export type CreditGrantResult =
   | Readonly<{ kind: 'applied' | 'replayed'; grant: CreditGrantRecord; wallet: CreditWalletSnapshot }>
   | Readonly<{ kind: 'conflict' | 'account_not_found' }>;
 
+export type FinancialAccountBootstrapResult =
+  | Readonly<{ kind: 'initialized'; snapshot: FinancialAccountSnapshot }>
+  | Readonly<{ kind: 'replayed'; snapshot: FinancialAccountSnapshot }>
+  | Readonly<{ kind: 'policy_conflict' }>
+  | Readonly<{ kind: 'policy_drift' }>;
+
 /** Internal server authority. This port is intentionally never exposed as a browser command. */
 export interface CreditGrantAuthority {
   grant(input: CreditGrantInput): Promise<CreditGrantResult>;
+}
+
+/**
+ * Narrow server-policy authority for the one-time FREE bootstrap only.
+ * Amount, plan, state, timestamps and idempotency material are not caller inputs.
+ */
+export interface FinancialAccountBootstrapAuthority {
+  initializeFreeAccount(identity: FinancialIdentity): Promise<FinancialAccountBootstrapResult>;
 }
 
 /** Observation-only surface suitable for an authenticated Core projection. */
