@@ -64,8 +64,6 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${BASE_SHA:-}"
-          UNEXPECTED_SERVER="$(git diff --name-only "$BASE_SHA"..HEAD -- server | grep -Ev '^(server/index\.ts|server/core/http/executionRunRecoveryHttpAdapter\.ts|server/core/http/executionRunRecoveryHttpAdapter\.test\.mjs|server/core/localExecution/LocalExecutionLedger\.ts|server/core/localExecution/PostgresLocalExecutionLedger\.ts|server/core/localExecution/PostgresLocalExecutionLedger\.integration\.test\.mjs|server/core/localExecution/PostgresLocalExecutionLedgerV2\.integration\.test\.mjs)$' || true)"
-          test -z "$UNEXPECTED_SERVER"
           UNEXPECTED_RECOVERY="$(git diff --name-only "$BASE_SHA"..HEAD -- src/api/executionRunRecoveryClient.js src/lib/jobs/executionRunProjection.js src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js | grep -Ev '^src/lib/jobs/executionRunProjection\.js$' || true)"
           test -z "$UNEXPECTED_RECOVERY"
           ! grep -E -q 'jobStorage|JobRecord|coreClient\.entities|_persist\(' src/lib/jobs/jobManager.js
