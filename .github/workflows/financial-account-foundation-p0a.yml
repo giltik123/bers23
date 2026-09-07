@@ -1,0 +1,102 @@
+name: P0a financial account foundation
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/transactions/application/financialAccountPorts.ts'
+      - 'server/transactions/infrastructure/postgres/postgresFinancialAccountStore.ts'
+      - 'server/transactions/infrastructure/postgres/postgresFinancialAccountStore.integration.test.mjs'
+      - 'server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts'
+      - 'server/transactions/infrastructure/postgres/postgresTransactionRuntime.ts'
+      - 'server/transactions/infrastructure/postgres/migrations/038_financial_account_foundation.sql'
+      - 'server/core/http/financialAccountHttpAdapter.ts'
+      - 'server/core/http/financialAccountHttpAdapter.test.mjs'
+      - 'server/index.ts'
+      - 'tests/financial-account-http-postgres.test.ts'
+      - 'scripts/build-core-server.mjs'
+      - 'scripts/production-migration-inventory.mjs'
+      - '.github/workflows/financial-account-foundation-p0a.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  financial-authority-postgres:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: financial_p0a_test
+          POSTGRES_USER: financial_p0a_test
+          POSTGRES_PASSWORD: financial_p0a_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U financial_p0a_test -d financial_p0a_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://financial_p0a_test:financial_p0a_test@127.0.0.1:5432/financial_p0a_test
+      TEST_DATABASE_URL: postgresql://financial_p0a_test:financial_p0a_test@127.0.0.1:5432/financial_p0a_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Preserve immutable transaction root migration
+        run: |
+          set -euo pipefail
+          test -n "$BASE_SHA"
+          git diff --exit-code "$BASE_SHA"..HEAD -- server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql
+      - name: Prove global migration inventory reaches 038 contiguously
+        run: |
+          node --input-type=module <<'NODE'
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.at(-1)?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration must be the exact global inventory tail');
+          if (migrations.length !== 38) throw new Error(`Expected 38 contiguous production migrations, got ${migrations.length}`);
+          NODE
+      - name: Typecheck Core financial contracts
+        run: npm run server:typecheck
+      - name: Build Core and package financial migration
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/001_transaction_store.sql
+          test -f dist-server/migrations/038_financial_account_foundation.sql
+      - name: Apply and verify ordered transaction migrations
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Prove atomic idempotent grants and migration drift handling
+        run: node --experimental-strip-types --test server/transactions/infrastructure/postgres/postgresFinancialAccountStore.integration.test.mjs
+      - name: Prove GET-only financial HTTP contract
+        run: node --experimental-strip-types --test server/core/http/financialAccountHttpAdapter.test.mjs
+      - name: Prove PostgreSQL-backed financial GET is scope-safe and mutation-free
+        run: node --experimental-strip-types --test tests/financial-account-http-postgres.test.ts
+      - name: Preserve reservation spend authority
+        run: npm run test:transactions-postgres
+      - name: Prove production wiring is observation-only
+        run: |
+          set -euo pipefail
+          grep -q 'createFinancialAccountHttpAdapter' server/index.ts
+          grep -q 'snapshot: production.transactions.financialAccounts.snapshot.bind' server/index.ts
+          grep -q 'path === FINANCIAL_ACCOUNT_PATH' server/index.ts
+          ! grep -E -q '\.(grant|reserve|commit|release)\(' server/core/http/financialAccountHttpAdapter.ts
+          ! grep -E -q "method: 'POST'|method: 'PATCH'|method: 'DELETE'" server/core/http/financialAccountHttpAdapter.ts
+          ! grep -E -q 'subscriptionManager|creditsWallet|coreClient|providerCustomerRef|providerSubscriptionRef|providerEventId' server/core/http/financialAccountHttpAdapter.ts
+          grep -q 'REVOKE ALL ON financial_entitlement_accounts, credit_grants FROM PUBLIC' server/transactions/infrastructure/postgres/migrations/038_financial_account_foundation.sql
+      - name: Check committed diff whitespace
+        run: git diff --check "$BASE_SHA"..HEAD
