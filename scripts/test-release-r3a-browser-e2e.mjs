@@ -50,7 +50,7 @@ const coreLogs = [];
 const core = spawn(process.execPath, [coreEntry], {
   env: {
     ...process.env,
-    NODE_ENV: 'test',
+    NODE_ENV: 'production',
     PORT: String(corePort),
     DATABASE_URL: databaseUrl,
     CREATIVE_PROVIDER: 'FAL',
