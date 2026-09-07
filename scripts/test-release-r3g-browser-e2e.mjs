@@ -201,9 +201,9 @@ try {
   assert.equal(await countMasks(projectId), 0, 'zero-object Fashion/Outfits navigation must not mint canonical MASK artifacts');
   assert.equal(await countLocalTickets(projectId), 0, 'zero-object Fashion/Outfits navigation must not prepare local execution');
 
-  assert.equal(countRequest('GET /api/core/garments'), 2, 'Fashion must load Managed Garment authority on each mount');
-  assert.equal(countRequest('GET /api/core/wardrobe/outfits'), 2, 'Outfits must load canonical Outfit authority on each mount');
-  assert.equal(countRequest('GET /api/core/wardrobe/garments'), 4, 'Fashion and Outfits must each load the canonical Wardrobe projection on each mount');
+  assert.equal(countRequest('GET /api/core/garments'), 2, 'Fashion must load Managed Garment authority once on each of its two mounts');
+  assert.equal(countRequest('GET /api/core/wardrobe/outfits'), 4, 'each Outfits mount contains the Try-On chooser and Outfit builder; both must load canonical Outfit authority once');
+  assert.equal(countRequest('GET /api/core/wardrobe/garments'), 6, 'Fashion loads one Wardrobe projection per mount and both Outfits consumers load one projection per mount');
   assert.equal(providerCalls, 0, 'zero-object navigation must never reach provider boundary');
   assert.deepEqual(diagnostics.localExecutionRequests, [], 'zero-object navigation must not invoke local execution');
   assert.deepEqual(diagnostics.creativeRequests, [], 'zero-object navigation must not route through generic Creative/provider authority');
