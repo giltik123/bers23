@@ -66,6 +66,9 @@ test('R3e consumes the exact selected canonical MASK through production Backgrou
     "getByRole('button', { name: 'Accept', exact: true })",
     "waitEnabledButton(page, 'Undo')",
     "waitEnabledButton(page, 'Redo')",
+    "waitForProjectMutationResponse(page, projectId, 'accept-final')",
+    "waitForProjectMutationResponse(page, projectId, 'undo')",
+    "waitForProjectMutationResponse(page, projectId, 'redo')",
   ]) assert.equal(harness.includes(text), true, `R3e harness must drive ${text}`);
 
   assert.match(harness, /Background Isolation Preview must not mutate Project before explicit Accept/);
@@ -75,6 +78,10 @@ test('R3e consumes the exact selected canonical MASK through production Backgrou
   assert.match(harness, /maskInputs\[0\]\.artifactId, maskArtifactId/);
   assert.match(harness, /acceptedFinal\.mask_storage_id, canonicalMask\.storage_id/);
   assert.match(harness, /acceptedFinal\.source_image_storage_id, sourceStorageId/);
+  assert.match(harness, /waitImageChanged\(page, 'Project', sourceProjectImageSrc, 12, 8\)/);
+  assert.match(harness, /waitImageChanged\(page, 'Project', acceptedProjectImageSrc, 12, 8\)/);
+  assert.match(harness, /waitImageChanged\(page, 'Project', undoneProjectImageSrc, 12, 8\)/);
+  assert.match(harness, /element\.src !== prior/);
 });
 
 test('R3e uses built SPA built production Core and PostgreSQL only as read-only correctness oracle', async () => {
@@ -90,6 +97,8 @@ test('R3e uses built SPA built production Core and PostgreSQL only as read-only 
   assert.match(harness, /canonical_mask_artifacts/);
   assert.match(harness, /local_execution_tickets/);
   assert.match(harness, /chromium\.launch\(\{ channel: 'chrome', headless: true \}\)/);
+  assert.match(harness, /response\.request\(\)\.method\(\) === 'POST'/);
+  assert.match(harness, /url\.pathname === `\/api\/core\/projects\/\$\{projectId\}\/\$\{action\}`/);
   assert.doesNotMatch(harness, /InMemory|FakeProject|MockProject|FakeArtifact|MockArtifact|FakeMask|MockMask/);
 
   const sqlMutations = [...harness.matchAll(/pool\.query\(\s*`([^`]+)`/g)]

@@ -234,9 +234,13 @@ try {
   const secondTicket = await readLatestBackgroundIsolationTicket(projectId);
   assert.notEqual(secondTicket.ticket_id, firstTicket.ticket_id, 'second user intent must receive its own durable local execution ticket');
   assertExactMaskTicketBinding(secondTicket, maskBody.artifactId);
+  const sourceProjectImageSrc = await projectImage.evaluate(element => element.src);
+  const acceptResponsePromise = waitForProjectMutationResponse(page, projectId, 'accept-final');
   await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  const acceptResponse = await acceptResponsePromise;
+  assert.equal(acceptResponse.ok(), true, 'Background Isolation Accept must succeed through canonical Core Project mutation');
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
-  await waitImage(page, 'Project', 12, 8);
+  await waitImageChanged(page, 'Project', sourceProjectImageSrc, 12, 8);
 
   const accepted = await readProjectState(projectId);
   assert.notEqual(accepted.project.current_image_storage_id, sourceStorageId);
@@ -256,15 +260,23 @@ try {
   assert.equal(acceptedFinal.height, 8);
 
   await waitEnabledButton(page, 'Undo');
+  const acceptedProjectImageSrc = await projectImage.evaluate(element => element.src);
+  const undoResponsePromise = waitForProjectMutationResponse(page, projectId, 'undo');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await waitImage(page, 'Project', 12, 8);
+  const undoResponse = await undoResponsePromise;
+  assert.equal(undoResponse.ok(), true, 'Undo must succeed through canonical Core Project mutation');
+  await waitImageChanged(page, 'Project', acceptedProjectImageSrc, 12, 8);
   const undone = await readProjectState(projectId);
   assert.equal(undone.project.current_image_storage_id, sourceStorageId);
   assert.equal(undone.cursor.ordinal, 0);
 
   await waitEnabledButton(page, 'Redo');
+  const undoneProjectImageSrc = await projectImage.evaluate(element => element.src);
+  const redoResponsePromise = waitForProjectMutationResponse(page, projectId, 'redo');
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
-  await waitImage(page, 'Project', 12, 8);
+  const redoResponse = await redoResponsePromise;
+  assert.equal(redoResponse.ok(), true, 'Redo must succeed through canonical Core Project mutation');
+  await waitImageChanged(page, 'Project', undoneProjectImageSrc, 12, 8);
   const redone = await readProjectState(projectId);
   assert.equal(redone.project.current_image_storage_id, acceptedStorageId);
   assert.equal(redone.cursor.ordinal, 1);
@@ -453,6 +465,37 @@ async function waitImage(page, accessibleName, width, height, timeout = 20_000) 
     { timeout },
   );
   return image;
+}
+
+async function waitImageChanged(page, accessibleName, previousSrc, width, height, timeout = 20_000) {
+  assert(previousSrc, `${accessibleName} image must have a source before canonical Project mutation`);
+  const image = page.getByRole('img', { name: accessibleName, exact: true });
+  await image.waitFor({ state: 'visible', timeout });
+  await page.waitForFunction(
+    ({ name, previousSrc: prior, expectedWidth, expectedHeight }) => {
+      const candidates = [...document.querySelectorAll('img')];
+      const element = candidates.find(candidate => candidate.getAttribute('alt') === name);
+      return Boolean(
+        element?.complete
+        && element.src
+        && element.src !== prior
+        && element.naturalWidth === expectedWidth
+        && element.naturalHeight === expectedHeight
+      );
+    },
+    { name: accessibleName, previousSrc, expectedWidth: width, expectedHeight: height },
+    { timeout },
+  );
+  return image;
+}
+
+function waitForProjectMutationResponse(page, projectId, action, timeout = 20_000) {
+  return page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return response.request().method() === 'POST'
+      && url.origin === coreOrigin
+      && url.pathname === `/api/core/projects/${projectId}/${action}`;
+  }, { timeout });
 }
 
 async function waitEnabledButton(page, name) {
