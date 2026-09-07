@@ -1,10 +1,15 @@
 import { coreClient } from '@/api/coreClient';
+import { normalizeProjectResourceUrls } from '@/api/coreResourceUrl';
 
 // Project Engine service layer — ALL project CRUD/business operations live here.
 // UI components never call the entities SDK directly for projects.
 //
 // Subscription/storage entitlement enforcement is server-owned. The browser must
 // not manufacture usage counters or treat client plan state as authorization.
+
+const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
+const normalizeProject = (project) => normalizeProjectResourceUrls(project, API_ROOT);
+const normalizeProjects = (projects) => Array.isArray(projects) ? projects.map(normalizeProject) : projects;
 
 export const genId = () =>
   `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -20,27 +25,27 @@ export function getImageDimensions(url) {
 }
 
 export const projectService = {
-  list: () => coreClient.projects.list(),
+  list: async () => normalizeProjects(await coreClient.projects.list()),
 
-  get: (id) => coreClient.projects.get(id),
+  get: async (id) => normalizeProject(await coreClient.projects.get(id)),
 
-  update: (id, data) => coreClient.projects.update(id, data),
+  update: async (id, data) => normalizeProject(await coreClient.projects.update(id, data)),
 
-  createFromFile: (file) => coreClient.projects.createFromFile({ file, name: file.name.replace(/\.[^.]+$/, '') }),
+  createFromFile: async (file) => normalizeProject(await coreClient.projects.createFromFile({ file, name: file.name.replace(/\.[^.]+$/, '') })),
 
-  rename: (id, name) => coreClient.projects.update(id, { name }),
+  rename: async (id, name) => normalizeProject(await coreClient.projects.update(id, { name })),
 
   remove: (id) => coreClient.projects.delete(id),
-  acceptFinal: (id, finalArtifactId, instruction) => coreClient.projects.acceptFinal(id, finalArtifactId, instruction),
-  undo: (id) => coreClient.projects.undo(id),
-  redo: (id) => coreClient.projects.redo(id),
-  restoreOriginal: (id) => coreClient.projects.restoreOriginal(id),
-  createVersion: (id, name) => coreClient.projects.createVersion(id, name),
-  restoreVersion: (id, versionId) => coreClient.projects.restoreVersion(id, versionId),
+  acceptFinal: async (id, finalArtifactId, instruction) => normalizeProject(await coreClient.projects.acceptFinal(id, finalArtifactId, instruction)),
+  undo: async (id) => normalizeProject(await coreClient.projects.undo(id)),
+  redo: async (id) => normalizeProject(await coreClient.projects.redo(id)),
+  restoreOriginal: async (id) => normalizeProject(await coreClient.projects.restoreOriginal(id)),
+  createVersion: async (id, name) => normalizeProject(await coreClient.projects.createVersion(id, name)),
+  restoreVersion: async (id, versionId) => normalizeProject(await coreClient.projects.restoreVersion(id, versionId)),
 
-  setFavorite: (id, favorite) => coreClient.projects.update(id, { favorite }),
+  setFavorite: async (id, favorite) => normalizeProject(await coreClient.projects.update(id, { favorite })),
 
-  setArchived: (id, archived) => coreClient.projects.update(id, { archived }),
+  setArchived: async (id, archived) => normalizeProject(await coreClient.projects.update(id, { archived })),
 };
 
 // --- Pure helpers for listing UI ---
