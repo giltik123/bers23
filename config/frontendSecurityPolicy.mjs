@@ -17,15 +17,27 @@ const BASE_DIRECTIVES = Object.freeze([
   Object.freeze(['worker-src', "'self'", 'blob:']),
   Object.freeze(['manifest-src', "'self'"]),
   Object.freeze(['media-src', "'self'", 'blob:', 'data:']),
-  Object.freeze(['require-trusted-types-for', "'script'"]),
-  Object.freeze(['trusted-types', "'none'"]),
 ]);
+
+// Trusted Types enforcement is intentionally absent from the production CSP for
+// this release. The built React/Radix dependency graph still performs framework-
+// internal HTML sink assignments, so `require-trusted-types-for 'script'` would
+// make the ordinary SPA non-functional. Do not paper over that incompatibility
+// with a permissive default Trusted Types policy. First-party raw HTML/string-code
+// sinks remain forbidden by source contracts; a future Trusted Types rollout must
+// first migrate or replace every incompatible dependency and prove the built SPA
+// under browser enforcement.
 
 /** CSP supported by HTML meta delivery. frame-ancestors is intentionally absent. */
 export function productionBrowserMetaCsp(coreApiUrl = CANONICAL_CORE_PATH) {
+  const coreSources = resolveCoreConnectSources(coreApiUrl);
+  const externalCoreSources = coreSources.filter(source => source !== "'self'");
+  const imageDirective = BASE_DIRECTIVES[8];
   return serializeCsp([
-    ...BASE_DIRECTIVES.slice(0, 10),
-    Object.freeze(['connect-src', ...resolveCoreConnectSources(coreApiUrl)]),
+    ...BASE_DIRECTIVES.slice(0, 8),
+    Object.freeze(['img-src', ...imageDirective.slice(1), ...externalCoreSources]),
+    BASE_DIRECTIVES[9],
+    Object.freeze(['connect-src', ...coreSources]),
     ...BASE_DIRECTIVES.slice(10),
   ]);
 }

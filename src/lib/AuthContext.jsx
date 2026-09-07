@@ -45,10 +45,9 @@ export const AuthProvider = ({ children }) => {
       throw error;
     }
   };
-  const navigateToLogin = () => { coreClient.auth.redirectToLogin(window.location.href); };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isLoadingAuth, isLoadingPublicSettings: false, authError, appPublicSettings: null, authChecked, logout, navigateToLogin, checkUserAuth, checkAppState }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoadingAuth, isLoadingPublicSettings: false, authError, appPublicSettings: null, authChecked, logout, checkUserAuth, checkAppState }}>
       {children}
     </AuthContext.Provider>
   );

@@ -39,11 +39,12 @@ assert.match(factory, /BROWSER_WASM_WORKER_POLICY = 'DISABLED_PENDING_SEPARATE_S
 assert.doesNotMatch(factory, /new Worker\s*\(/);
 assert.doesNotMatch(factory, /trustedTypes\.createPolicy|createPolicy\s*\(/);
 
-// The browser CSP is now a shared deployment contract rather than Vite-local text.
-// Prove both the effective policy and that Vite consumes that exact source of truth.
+// The browser CSP is a shared deployment contract rather than Vite-local text.
+// Trusted Types enforcement is deliberately not claimed until the full built SPA
+// dependency graph is compatible; that deferral must not silently grant workers.
 assert.match(browserMetaCsp, /(?:^|;)\s*worker-src 'self' blob:(?:;|$)/);
-assert.match(browserMetaCsp, /(?:^|;)\s*require-trusted-types-for 'script'(?:;|$)/);
-assert.match(browserMetaCsp, /(?:^|;)\s*trusted-types 'none'(?:;|$)/);
+assert.doesNotMatch(browserMetaCsp, /require-trusted-types-for/);
+assert.doesNotMatch(browserMetaCsp, /(?:^|;)\s*trusted-types\s/);
 assert.match(vite, /from '\.\/config\/frontendSecurityPolicy\.mjs'/);
 assert.match(vite, /productionBrowserMetaCsp\(env\.VITE_CORE_API_URL\)/);
 assert.doesNotMatch(vite, /worker-src\s+/);
@@ -78,13 +79,13 @@ const report = {
     viteIntegrationSourceSha256: sourceDigest(vite),
     csp: {
       workerSrc: "'self' blob:",
-      requireTrustedTypesForScript: true,
-      trustedTypesPolicyAllowlist: 'none',
+      requireTrustedTypesForScript: false,
+      trustedTypesPolicyAllowlist: 'NOT_ENFORCED_PENDING_BUILT_SPA_COMPATIBILITY',
     },
   },
   reasons: [
     'ORT_WEB_1_27_PUBLIC_API_HAS_NO_REVIEWED_WORKER_FACTORY_HOOK',
-    'PRODUCTION_TRUSTED_TYPES_POLICY_ALLOWS_NO_POLICY_CREATION',
+    'PRODUCTION_TRUSTED_TYPES_ENFORCEMENT_DEFERRED_PENDING_BUILT_SPA_COMPATIBILITY',
     'D4_FORBIDS_GLOBAL_WORKER_MONKEY_PATCH_OR_PERMISSIVE_DEFAULT_TRUSTED_TYPES_POLICY',
     'MULTITHREADING_WOULD_EXPAND_THE_CURRENT_SCRIPT_WORKER_TRUST_BOUNDARY',
   ],
@@ -101,7 +102,7 @@ const report = {
     workerFree: true,
   },
   benchmarkRequiredForBlockedCandidate: false,
-  reasonBenchmarkNotRun: 'No security-admissible multithread candidate exists under the pinned public API and current CSP/Trusted Types boundary.',
+  reasonBenchmarkNotRun: 'No security-admissible multithread candidate exists under the pinned public API and reviewed worker policy.',
   runtimeAuthorityGranted: false,
   productionApproval: false,
   editorAuthorityGranted: false,
