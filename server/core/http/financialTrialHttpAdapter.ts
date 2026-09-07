@@ -19,6 +19,7 @@ type FinancialAuth = Readonly<{
 }>;
 
 type TrialAuthority = Pick<FinancialTrialAuthority, 'startTrial'>;
+type TrialFailure = Exclude<FinancialTrialStartResult, { kind: 'started' | 'replayed' }>;
 
 type AdapterInput = Readonly<{
   trials: TrialAuthority;
@@ -65,8 +66,10 @@ export function createFinancialTrialHttpAdapter(input: AdapterInput) {
         userId: principal.userId,
       }), planId);
 
-      const failure = trialFailure(result);
-      if (failure) throw httpError(failure.status, failure.code, failure.message);
+      if (result.kind !== 'started' && result.kind !== 'replayed') {
+        const failure = trialFailure(result);
+        throw httpError(failure.status, failure.code, failure.message);
+      }
 
       send(response, result.kind === 'started' ? 201 : 200, publicResult(result));
       return true;
@@ -83,11 +86,8 @@ export function createFinancialTrialHttpAdapter(input: AdapterInput) {
   };
 }
 
-function trialFailure(result: FinancialTrialStartResult): Readonly<{ status: number; code: string; message: string }> | undefined {
+function trialFailure(result: TrialFailure): Readonly<{ status: number; code: string; message: string }> {
   switch (result.kind) {
-    case 'started':
-    case 'replayed':
-      return undefined;
     case 'account_not_found':
       return Object.freeze({ status: 409, code: 'financial_account_unconfigured', message: 'Initialize the canonical FREE account before starting a trial' });
     case 'plan_not_eligible':
