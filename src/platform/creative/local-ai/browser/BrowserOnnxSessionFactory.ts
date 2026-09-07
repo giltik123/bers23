@@ -6,8 +6,10 @@ import type { OnnxSession, OnnxSessionFactory, TensorValue } from '../types';
 // Never fall back to ORT's CDN. Vite fingerprints and emits these runtime assets.
 ort.env.wasm.wasmPaths = { wasm: wasmUrl, mjs: wasmModuleUrl };
 
-// CSP/Trusted Types compatibility is fail-closed: ORT's pthread/proxy paths create Workers.
-// Keep the production browser runtime worker-free unless a separately reviewed worker policy is introduced.
+// Worker authority is fail-closed. ORT's pthread/proxy paths create Workers, so
+// keep the production browser runtime worker-free unless a separately reviewed
+// worker policy is introduced. Trusted Types compatibility is tracked separately
+// and must never be used as an implicit reason to enable workers.
 export const BROWSER_WASM_NUM_THREADS = 1;
 export const BROWSER_WASM_PROXY = false;
 export const BROWSER_WASM_WORKER_POLICY = 'DISABLED_PENDING_SEPARATE_SECURITY_REVIEW' as const;
