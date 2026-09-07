@@ -10,9 +10,9 @@ import { sceneFingerprint } from '@/lib/scene/sceneFingerprint';
 import { memoryCache } from '@/lib/scene/memoryCache';
 import { sceneLogger } from '@/lib/scene/sceneLogger';
 
-// SceneMemory — analyzes the original image ONCE (vision LLM), stores visual-identity
-// profiles inside the project, and exposes the active memory to Style Lock and the
-// Consistency Engine. It NEVER edits images — it only analyzes, stores and guides.
+// SceneMemory — analyzes the original image only after an explicit user action,
+// stores visual-identity profiles inside the project, and exposes the active
+// memory to Style Lock and the Consistency Engine. It NEVER edits images.
 class SceneMemory {
   constructor() {
     this.state = { status: 'idle', projectId: null, memory: null, error: null };
@@ -25,7 +25,8 @@ class SceneMemory {
 
   getActive() { return this.state.memory; }
 
-  // Loads (or builds) scene memory for a project: active state → cache → project → fresh analysis.
+  // Restore existing scene memory only. Opening a Project must never trigger a
+  // provider/creative request; fresh analysis is user-initiated via refresh().
   async ensure(project) {
     if (!project) return null;
     if (this.state.projectId === project.id && this.state.memory?.source_url === project.original_image_url) {
@@ -40,10 +41,11 @@ class SceneMemory {
       this.setState({ status: 'ready', projectId: project.id, memory: cached, error: null });
       return cached;
     }
-    return this.refresh(project);
+    this.setState({ status: 'idle', projectId: project.id, memory: null, error: null });
+    return null;
   }
 
-  // Full scene analysis of the ORIGINAL image via a single vision call.
+  // Full scene analysis of the ORIGINAL image via a single explicit vision call.
   async refresh(project) {
     this.setState({ status: 'analyzing', projectId: project.id, error: null });
     sceneLogger.log('analysis_started', { projectId: project.id });
