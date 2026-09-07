@@ -67,7 +67,19 @@ function adapterFor(overrides = {}) {
 }
 
 async function withServer(handler, fn) {
-  const server = createServer((request, response) => { void handler(request, response); });
+  const server = createServer((request, response) => {
+    void Promise.resolve(handler(request, response)).then(handled => {
+      if (!handled && !response.writableEnded) {
+        response.statusCode = 404;
+        response.end();
+      }
+    }).catch(() => {
+      if (!response.writableEnded) {
+        response.statusCode = 500;
+        response.end();
+      }
+    });
+  });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Expected TCP server address');
@@ -249,7 +261,7 @@ test('OPTIONS is bounded CORS preflight and unrelated paths are not claimed', as
     assert.match(preflight.headers.get('access-control-allow-methods') ?? '', /POST/);
 
     const unrelated = await fetch(`${base}/api/core/financial/account/not-trial`, { method: 'POST' });
-    assert.equal(unrelated.status, 200, 'test server remains unclaimed when adapter returns false');
+    assert.equal(unrelated.status, 404, 'adapter must not claim unrelated routes');
   });
   assert.equal(calls.length, 0);
 });
