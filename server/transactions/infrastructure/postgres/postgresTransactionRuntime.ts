@@ -9,6 +9,7 @@ import type { ProviderRecoveryPort } from '../../application/ports.ts';
 import { type TransactionTelemetry, NOOP_TRANSACTION_TELEMETRY } from '../../application/telemetry.ts';
 import { TransactionService } from '../../application/transactionService.ts';
 import { PostgresFinancialAccountStore } from './postgresFinancialAccountStore.ts';
+import { PostgresFinancialTrialPolicy } from './postgresFinancialTrialPolicy.ts';
 import { PostgresTransactionStore } from './postgresTransactionStore.ts';
 import { RetryingPostgresTransactionRunner, type PostgresRunnerOptions } from './retryingTransactionRunner.ts';
 
@@ -25,6 +26,7 @@ export type PostgresTransactionRuntime = Readonly<{
   pool: Pool;
   store: PostgresTransactionStore;
   financialAccounts: PostgresFinancialAccountStore;
+  financialTrials: PostgresFinancialTrialPolicy;
   transactions: TransactionService;
   reservations: ReservationGateway;
   billableOperations: BillableOperationService;
@@ -54,6 +56,7 @@ export function createPostgresTransactionRuntime(options: PostgresRuntimeOptions
   const runner = new RetryingPostgresTransactionRunner(pool, undefined, options.runner);
   const store = new PostgresTransactionStore(runner, { next: randomUUID });
   const financialAccounts = new PostgresFinancialAccountStore(runner);
+  const financialTrials = new PostgresFinancialTrialPolicy(runner);
   const clock = Object.freeze({ now: () => new Date() });
   const transactions = new TransactionService(store, clock);
   const reservations = new ReservationGateway(transactions, { next: randomUUID });
@@ -69,6 +72,7 @@ export function createPostgresTransactionRuntime(options: PostgresRuntimeOptions
     pool,
     store,
     financialAccounts,
+    financialTrials,
     transactions,
     reservations,
     billableOperations,
