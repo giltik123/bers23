@@ -28,7 +28,10 @@ test('R3c browser harness extends accepted R3 with Discard Version Restore and s
   assert.match(harness, /version\.history_id,\s*baselineHistoryId/);
   assert.match(harness, /restoredState\.history\[3\]\.kind,\s*'RESTORE_VERSION'/);
   assert.match(harness, /restoredState\.history\[3\]\.source_image_storage_id,\s*advancedStorageId/);
-  assert.match(harness, /page\.context\(\)\.newPage\(\)/);
+  assert.match(harness, /browserContext\s*=\s*await browser\.newContext\(\)/);
+  assert.match(harness, /const page = await browserContext\.newPage\(\)/);
+  assert.match(harness, /tabB = await browserContext\.newPage\(\)/);
+  assert.doesNotMatch(harness, /browser\.newPage\(\)/, 'R3c must not use the implicit one-page Browser.newPage context');
   assert.match(harness, /conflictResponse\.status\(\),\s*409/);
   assert.match(harness, /conflictBody\?\.code \?\? conflictBody\?\.error,\s*'final_source_conflict'/);
   assert.match(harness, /assert\.deepEqual\(recoveredState,\s*historyBeforeRejectedAccept/);

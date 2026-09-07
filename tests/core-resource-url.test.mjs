@@ -31,17 +31,29 @@ test('malformed or non-canonical API roots never become browser URL rewrite auth
   ]) assert.equal(resolveCoreResourceUrl(delivery, root), delivery);
 });
 
-test('project normalization covers browser-visible canonical image surfaces', () => {
+test('project normalization covers browser-visible canonical image surfaces including version previews', () => {
+  const canonicalVersionPreview = '/api/core/artifacts/results/version.signature';
+  const externalVersionPreview = 'https://assets.example.test/version.png';
   const project = Object.freeze({
     id: 'project-1',
     current_image_url: delivery,
     original_image_url: '/api/core/artifacts/results/original.signature',
     thumbnail_url: '/api/core/artifacts/results/thumb.signature',
+    versions: Object.freeze([
+      Object.freeze({ version_id: 'version-1', name: 'Canonical', preview_url: canonicalVersionPreview }),
+      Object.freeze({ version_id: 'version-2', name: 'External', preview_url: externalVersionPreview }),
+    ]),
     metadata: Object.freeze({ retained: true }),
   });
   const normalized = normalizeProjectResourceUrls(project, 'http://127.0.0.1:4188/api/core');
   assert.equal(normalized.current_image_url, `http://127.0.0.1:4188${delivery}`);
   assert.equal(normalized.original_image_url, 'http://127.0.0.1:4188/api/core/artifacts/results/original.signature');
   assert.equal(normalized.thumbnail_url, 'http://127.0.0.1:4188/api/core/artifacts/results/thumb.signature');
+  assert.equal(normalized.versions[0].preview_url, `http://127.0.0.1:4188${canonicalVersionPreview}`);
+  assert.equal(normalized.versions[0].version_id, 'version-1');
+  assert.equal(normalized.versions[0].name, 'Canonical');
+  assert.equal(normalized.versions[1].preview_url, externalVersionPreview);
+  assert.notEqual(normalized.versions, project.versions);
+  assert.equal(project.versions[0].preview_url, canonicalVersionPreview, 'normalization must not mutate the server response');
   assert.equal(normalized.metadata, project.metadata);
 });

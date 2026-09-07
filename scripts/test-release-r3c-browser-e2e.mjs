@@ -95,6 +95,7 @@ core.stderr.on('data', chunk => coreLogs.push(String(chunk)));
 
 let frontend;
 let browser;
+let browserContext;
 let tabB;
 let authenticated = false;
 let expectingFinalSourceConflict = false;
@@ -124,7 +125,8 @@ try {
   try { browser = await chromium.launch({ channel: 'chrome', headless: true }); }
   catch (error) { throw new Error(`Mandatory system Google Chrome launch failed: ${error instanceof Error ? error.message : String(error)}`); }
 
-  const page = await browser.newPage();
+  browserContext = await browser.newContext();
+  const page = await browserContext.newPage();
   attachPageDiagnostics(page, 'A');
 
   await page.goto(`${frontendOrigin}/editor?id=unauthenticated-release-r3c`, { waitUntil: 'domcontentloaded' });
@@ -295,7 +297,7 @@ try {
   assert.equal(staleSourceState.history.length, 4);
   assert.equal(diagnostics.localExecutionRequests.length, staleLocalBefore + 4);
 
-  tabB = await page.context().newPage();
+  tabB = await browserContext.newPage();
   attachPageDiagnostics(tabB, 'B');
   await tabB.goto(`${frontendOrigin}/editor?id=${projectId}`, { waitUntil: 'domcontentloaded' });
   await loadedImageEvidence(tabB, 'Project', 8, 12, 20_000);
@@ -398,6 +400,7 @@ try {
 } finally {
   expectingFinalSourceConflict = false;
   await tabB?.close().catch(() => undefined);
+  await browserContext?.close().catch(() => undefined);
   await browser?.close().catch(() => undefined);
   if (frontend) await closeServer(frontend).catch(() => undefined);
   core.kill('SIGTERM');
