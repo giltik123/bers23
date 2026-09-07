@@ -11,11 +11,15 @@ on:
       - 'src/application/createCrop.ts'
       - 'src/application/createResize.ts'
       - 'src/application/createOrthogonalTransform.ts'
+      - 'src/application/createBackgroundIsolation.ts'
+      - 'src/application/selection/**'
       - 'src/application/editor/orthogonalTransformStartPolicy.js'
       - 'src/application/editor/recoverFinalSourceConflict.js'
       - 'src/components/ProtectedRoute.jsx'
       - 'src/components/editor/CropToolbar.jsx'
       - 'src/components/editor/ResizeToolbar.jsx'
+      - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/components/editor/ImageCanvas.jsx'
       - 'src/components/editor/HistoryControls.jsx'
       - 'src/components/editor/OrthogonalTransformToolbar.jsx'
       - 'src/components/editor/ResultCompare.jsx'
@@ -47,6 +51,7 @@ on:
       - 'scripts/test-release-r3b-browser-e2e.mjs'
       - 'scripts/test-release-r3c-browser-e2e.mjs'
       - 'scripts/test-release-r3d-browser-e2e.mjs'
+      - 'scripts/test-release-r3e-browser-e2e.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - 'tests/editor-orthogonal-transform-ui.test.mjs'
       - 'tests/editor-final-source-conflict-recovery.test.mjs'
@@ -58,6 +63,7 @@ on:
       - 'tests/release-r3b-browser-boundaries.test.mjs'
       - 'tests/release-r3c-browser-boundaries.test.mjs'
       - 'tests/release-r3d-browser-boundaries.test.mjs'
+      - 'tests/release-r3e-browser-boundaries.test.mjs'
       - 'tests/release-r3b-production-orthogonal-prepare.test.ts'
       - 'tests/frontend-security-deployment-contract.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
@@ -139,6 +145,7 @@ jobs:
           node --test tests/release-r3b-browser-boundaries.test.mjs
           node --test tests/release-r3c-browser-boundaries.test.mjs
           node --test tests/release-r3d-browser-boundaries.test.mjs
+          node --test tests/release-r3e-browser-boundaries.test.mjs
       - name: Prove runtime-compatible frontend security and preserve worker lockdown
         run: |
           mkdir -p .test-cache/release-r3
@@ -238,6 +245,39 @@ jobs:
           grep -q "Start resize" "$script"
           grep -q "Apply resize" "$script"
           grep -q "R3D_BROWSER_DETERMINISTIC_GEOMETRY_ACCEPTED" "$script"
+          grep -q "providerCalls, 0" "$script"
+          grep -q "diagnostics.creativeRequests, \[\]" "$script"
+          grep -q "diagnostics.financialRequests, \[\]" "$script"
+          grep -q "diagnostics.externalBrowserRequests, \[\]" "$script"
+          ! grep -E -q 'financialAccount|financialTrial|credit_grants|credit_wallets' "$script"
+      - name: Bundle focused R3e Selection MASK harness without replacing production stores
+        run: |
+          npx esbuild scripts/test-release-r3e-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3/test-release-r3e-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove R3e Selection canonical MASK Background Isolation journey
+        run: node .test-cache/release-r3/test-release-r3e-browser-e2e.mjs
+      - name: Prove R3e Selection MASK harness remains LOCAL_ONLY and Core authoritative
+        run: |
+          set -euo pipefail
+          script=scripts/test-release-r3e-browser-e2e.mjs
+          grep -q "dist-server/server.mjs" "$script"
+          grep -q "path.resolve('dist')" "$script"
+          grep -q "NODE_ENV: 'production'" "$script"
+          grep -q "PostgresAuthStore" "$script"
+          grep -q "canonical_projects" "$script"
+          grep -q "canonical_project_history" "$script"
+          grep -q "canonical_image_artifacts" "$script"
+          grep -q "canonical_mask_artifacts" "$script"
+          grep -q "Smart Select" "$script"
+          grep -q "name: 'Add'" "$script"
+          grep -F -q "projectImage.click({ position:" "$script"
+          ! grep -F -q "page.mouse." "$script"
+          grep -q "name: 'Done'" "$script"
+          grep -q "/api/core/artifacts/masks" "$script"
+          grep -q "Remove background" "$script"
+          grep -q "R3E_BROWSER_SELECTION_MASK_ACCEPTED" "$script"
           grep -q "providerCalls, 0" "$script"
           grep -q "diagnostics.creativeRequests, \[\]" "$script"
           grep -q "diagnostics.financialRequests, \[\]" "$script"
