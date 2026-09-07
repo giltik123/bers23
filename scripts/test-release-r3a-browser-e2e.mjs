@@ -24,7 +24,8 @@ const coreEntry = path.resolve('dist-server/server.mjs');
 const tenantId = 'release-r3a-tenant';
 const userId = 'release-r3a-user';
 const email = 'release-r3a@example.test';
-const password = 'Release-R3a-Browser-Password-42!';
+const deterministicSecret = label => `release-r3a-${label}-${'x'.repeat(40)}`;
+const password = deterministicSecret('browser-password');
 
 await assertFile(path.join(distDir, 'index.html'));
 await assertFile(coreEntry);
@@ -54,19 +55,19 @@ const core = spawn(process.execPath, [coreEntry], {
     PORT: String(corePort),
     DATABASE_URL: databaseUrl,
     CREATIVE_PROVIDER: 'FAL',
-    FAL_KEY: 'release-r3a-provider-must-not-run',
+    FAL_KEY: deterministicSecret('provider'),
     FAL_BASE_URL: providerOrigin,
-    JWT_SECRET: 'release-r3a-jwt-secret-at-least-32-bytes',
+    JWT_SECRET: deterministicSecret('jwt'),
     JWT_ISSUER: 'release-r3a-core',
     JWT_AUDIENCE: 'release-r3a-browser',
-    AUTH_CHALLENGE_SECRET: 'release-r3a-auth-challenge-secret-at-least-32-bytes',
+    AUTH_CHALLENGE_SECRET: deterministicSecret('auth-challenge'),
     AUTH_DEFAULT_TENANT_ID: tenantId,
     AUTH_PUBLIC_ORIGIN: frontendOrigin,
-    RESEND_API_KEY: 'release-r3a-resend-unused',
+    RESEND_API_KEY: deterministicSecret('mail'),
     AUTH_EMAIL_FROM: 'BERS R3a <auth@example.test>',
     GOOGLE_OAUTH_CLIENT_ID: 'release-r3a-google-unused',
-    GOOGLE_OAUTH_CLIENT_SECRET: 'release-r3a-google-secret-unused',
-    ARTIFACT_SIGNING_SECRET: 'release-r3a-artifact-signing-secret-at-least-32-bytes',
+    GOOGLE_OAUTH_CLIENT_SECRET: deterministicSecret('oauth'),
+    ARTIFACT_SIGNING_SECRET: deterministicSecret('artifact'),
     ALLOWED_WEB_ORIGINS: frontendOrigin,
     TRUSTED_PROXY_HEADER_MODE: 'NONE',
     HARD_BUDGET_CREDITS: '1',
@@ -88,11 +89,14 @@ core.stderr.on('data', chunk => coreLogs.push(String(chunk)));
 
 let frontend;
 let browser;
+let authenticated = false;
 const diagnostics = {
   pageErrors: [],
   consoleErrors: [],
   requestFailures: [],
-  serverErrors: [],
+  expectedAuthContext401s: [],
+  unexpectedResponses: [],
+  financialRequests: [],
   lastUrl: undefined,
   projectId: undefined,
 };
@@ -107,8 +111,20 @@ try {
   const page = await browser.newPage();
   page.on('pageerror', error => diagnostics.pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') diagnostics.consoleErrors.push(message.text()); });
+  page.on('request', request => {
+    const url = safeUrl(request.url());
+    if (url?.pathname.startsWith('/api/core/financial/')) diagnostics.financialRequests.push({ url: request.url(), method: request.method() });
+  });
   page.on('requestfailed', request => diagnostics.requestFailures.push({ url: request.url(), error: request.failure()?.errorText ?? 'unknown' }));
-  page.on('response', response => { if (response.status() >= 500) diagnostics.serverErrors.push({ url: response.url(), status: response.status() }); });
+  page.on('response', response => {
+    if (response.status() < 400) return;
+    const url = safeUrl(response.url());
+    if (!authenticated && response.status() === 401 && url?.pathname === '/api/core/auth/context') {
+      diagnostics.expectedAuthContext401s.push({ url: response.url(), status: response.status() });
+      return;
+    }
+    diagnostics.unexpectedResponses.push({ url: response.url(), status: response.status() });
+  });
 
   await page.goto(`${frontendOrigin}/editor?id=unauthenticated-release-r3a`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/login', { timeout: 15_000 });
@@ -118,6 +134,7 @@ try {
   await page.locator('#password').fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
+  authenticated = true;
   await page.getByRole('heading', { name: 'Projects' }).waitFor({ state: 'visible', timeout: 15_000 });
 
   const input = page.locator('input[type="file"]');
@@ -144,11 +161,17 @@ try {
   assert.equal(project.rows[0].current_image_storage_id, project.rows[0].original_image_storage_id, 'new zero-object Project must still point at its canonical ORIGINAL before edits');
 
   assert.equal(providerCalls, 0, 'Auth/Project/zero-object Editor journey must not invoke an external provider');
+  assert.deepEqual(diagnostics.financialRequests, [], 'frozen financial authority must not be touched by the base release journey');
+  assert.ok(diagnostics.expectedAuthContext401s.length >= 1, 'unauthenticated protected-route probe must observe canonical auth denial');
   assert.deepEqual(diagnostics.pageErrors, []);
   assert.deepEqual(diagnostics.requestFailures, []);
-  assert.deepEqual(diagnostics.serverErrors, []);
+  assert.deepEqual(diagnostics.unexpectedResponses, []);
 
-  const toleratedConsole = diagnostics.consoleErrors.filter(message => /favicon|ResizeObserver/i.test(message));
+  const expected401Console = /Failed to load resource: the server responded with a status of 401 \(Unauthorized\)/i;
+  const toleratedConsole = diagnostics.consoleErrors.filter(message =>
+    /favicon|ResizeObserver/i.test(message)
+    || (diagnostics.expectedAuthContext401s.length > 0 && expected401Console.test(message))
+  );
   assert.equal(diagnostics.consoleErrors.length, toleratedConsole.length, `unexpected browser console errors: ${JSON.stringify(diagnostics.consoleErrors)}`);
 
   console.log(JSON.stringify({
@@ -160,6 +183,8 @@ try {
     tenantId,
     userId,
     providerCalls,
+    financialRequestCount: diagnostics.financialRequests.length,
+    expectedAuthContext401Count: diagnostics.expectedAuthContext401s.length,
     protectedRouteRedirect: '/login',
     zeroObjectPromptVisible: true,
   }, null, 2));
@@ -174,6 +199,11 @@ try {
   await waitForExit(core, 5_000).catch(() => core.kill('SIGKILL'));
   await closeServer(providerTrap).catch(() => undefined);
   await pool.end();
+}
+
+function safeUrl(value) {
+  try { return new URL(value); }
+  catch { return undefined; }
 }
 
 async function assertFile(file) {
