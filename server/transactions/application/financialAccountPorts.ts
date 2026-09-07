@@ -70,6 +70,16 @@ export type FinancialAccountBootstrapResult =
   | Readonly<{ kind: 'policy_conflict' }>
   | Readonly<{ kind: 'policy_drift' }>;
 
+export type FinancialTrialStartResult =
+  | Readonly<{ kind: 'started'; snapshot: FinancialAccountSnapshot }>
+  | Readonly<{ kind: 'replayed'; snapshot: FinancialAccountSnapshot }>
+  | Readonly<{ kind: 'account_not_found' }>
+  | Readonly<{ kind: 'plan_not_eligible' }>
+  | Readonly<{ kind: 'trial_conflict' }>
+  | Readonly<{ kind: 'trial_consumed' }>
+  | Readonly<{ kind: 'policy_conflict' }>
+  | Readonly<{ kind: 'policy_drift' }>;
+
 /** Internal server authority. This port is intentionally never exposed as a browser command. */
 export interface CreditGrantAuthority {
   grant(input: CreditGrantInput): Promise<CreditGrantResult>;
@@ -81,6 +91,15 @@ export interface CreditGrantAuthority {
  */
 export interface FinancialAccountBootstrapAuthority {
   initializeFreeAccount(identity: FinancialIdentity): Promise<FinancialAccountBootstrapResult>;
+}
+
+/**
+ * Narrow server-policy authority for a one-time trial entitlement transition.
+ * The caller selects only a plan id; eligibility, duration, timestamps, state and
+ * any financial grant policy remain server-owned.
+ */
+export interface FinancialTrialAuthority {
+  startTrial(identity: FinancialIdentity, planId: string): Promise<FinancialTrialStartResult>;
 }
 
 /** Observation-only surface suitable for an authenticated Core projection. */
