@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import type { ExecutionRun, ExecutionRunRegistry, ExecutionRunScope } from '../execution/executionRunRegistry.ts';
+import type { LocalExecutionAuthorityObservation } from '../localExecution/LocalExecutionLedger.ts';
 import { BROWSER_CSRF_HEADER, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/execution-runs';
@@ -10,6 +11,7 @@ const DEFAULT_ROOT_LIMIT = 50;
 const DEFAULT_CHILD_LIMIT = 100;
 const MAX_LIMIT = 100;
 const RESULT_PATH = /^\/api\/core\/artifacts\/results\/[^/?#\s]+$/;
+const LOCAL_AUTHORITY_STATES = new Set(['ACTIVE', 'EXPIRED', 'FINALIZED_SUCCESS', 'FINALIZED_FAILED', 'FINALIZED_UNKNOWN']);
 
 type ExecutionRunRecoveryReader = Pick<ExecutionRunRegistry, 'get' | 'listRoots' | 'listChildren'>;
 export type ExecutionRunFinalResultDescriptor = Readonly<{
@@ -22,19 +24,24 @@ export type ExecutionRunFinalResultDescriptor = Readonly<{
 export type ExecutionRunResultReader = Readonly<{
   resolveCreativeFinal(scope: ExecutionRunScope, executionId: string): Promise<ExecutionRunFinalResultDescriptor | undefined>;
 }>;
+export type ExecutionRunLocalAuthorityReader = Readonly<{
+  observeLocalExecution(scope: ExecutionRunScope, ticketId: string): Promise<LocalExecutionAuthorityObservation | undefined>;
+}>;
 type RecoveryAuth = Readonly<{
   verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
 }>;
 
 /**
  * Authenticated observation-only transport for durable canonical ExecutionRuns.
- * Registry and result dependencies are intentionally narrowed so HTTP recovery
- * cannot mutate or dispatch execution state. FINAL descriptors are projections
- * of existing Artifact truth, never an alternate execution/result authority.
+ * Registry, Artifact-result and Local-ticket dependencies are intentionally narrowed
+ * so HTTP recovery cannot mutate or dispatch execution state. FINAL descriptors and
+ * Local authority observations project existing owner truth; neither rewrites the
+ * canonical ExecutionRun lifecycle.
  */
 export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
   runs: ExecutionRunRecoveryReader;
   results: ExecutionRunResultReader;
+  localExecution: ExecutionRunLocalAuthorityReader;
   auth: RecoveryAuth;
   config: CoreServerConfig;
 }>) {
@@ -59,7 +66,7 @@ export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
         rejectUnexpectedQuery(url, new Set(['projectId', 'limit']));
         const limit = readLimit(url, DEFAULT_ROOT_LIMIT);
         const runs = await input.runs.listRoots(scope, limit);
-        send(response, 200, Object.freeze({ runs: Object.freeze(await Promise.all(runs.map(run => publicRun(run, scope, input.results)))) }));
+        send(response, 200, Object.freeze({ runs: Object.freeze(await Promise.all(runs.map(run => publicRun(run, scope, input.results, input.localExecution)))) }));
         return true;
       }
 
@@ -72,8 +79,8 @@ export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
         const limit = readLimit(url, DEFAULT_CHILD_LIMIT);
         const children = await input.runs.listChildren(scope, runId, limit);
         send(response, 200, Object.freeze({
-          parent: await publicRun(parent, scope, input.results),
-          runs: Object.freeze(await Promise.all(children.map(run => publicRun(run, scope, input.results)))),
+          parent: await publicRun(parent, scope, input.results, input.localExecution),
+          runs: Object.freeze(await Promise.all(children.map(run => publicRun(run, scope, input.results, input.localExecution)))),
         }));
         return true;
       }
@@ -84,7 +91,7 @@ export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
         const runId = runIdFromPath(runMatch[1]);
         const run = await input.runs.get(scope, runId);
         if (!run) throw httpError(404, 'execution_run_not_found', 'Execution run is unavailable in this scope');
-        send(response, 200, await publicRun(run, scope, input.results));
+        send(response, 200, await publicRun(run, scope, input.results, input.localExecution));
         return true;
       }
 
@@ -102,11 +109,20 @@ export function createExecutionRunRecoveryHttpAdapter(input: Readonly<{
   };
 }
 
-async function publicRun(run: ExecutionRun, scope: ExecutionRunScope, results: ExecutionRunResultReader) {
+async function publicRun(
+  run: ExecutionRun,
+  scope: ExecutionRunScope,
+  results: ExecutionRunResultReader,
+  localExecution: ExecutionRunLocalAuthorityReader,
+) {
   const result = run.status === 'SUCCEEDED'
     && run.capability === 'CREATIVE_EXECUTION'
     && run.authorityKind === 'CREATIVE_EXECUTION'
     ? await results.resolveCreativeFinal(scope, run.authorityRef)
+    : undefined;
+  const localAuthority = run.capability === 'LOCAL_EXECUTION'
+    && run.authorityKind === 'LOCAL_EXECUTION_TICKET'
+    ? await localExecution.observeLocalExecution(scope, run.authorityRef)
     : undefined;
   return Object.freeze({
     runId: run.runId,
@@ -122,6 +138,7 @@ async function publicRun(run: ExecutionRun, scope: ExecutionRunScope, results: E
     ...(run.startedAt ? { startedAt: run.startedAt } : {}),
     ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
     ...(result ? { result: publicResult(result) } : {}),
+    ...(localAuthority ? { localExecution: publicLocalAuthority(localAuthority) } : {}),
   });
 }
 
@@ -133,6 +150,14 @@ function publicResult(value: ExecutionRunFinalResultDescriptor): ExecutionRunFin
   const width = positiveSafeInteger(value.width, 'width');
   const height = positiveSafeInteger(value.height, 'height');
   return Object.freeze({ kind: 'FINAL_IMAGE', artifactId, imageUrl, width, height });
+}
+
+function publicLocalAuthority(value: LocalExecutionAuthorityObservation): LocalExecutionAuthorityObservation {
+  if (!value || value.kind !== 'LOCAL_EXECUTION_TICKET') throw new Error('Execution run Local authority reader returned an unsupported kind');
+  if (!LOCAL_AUTHORITY_STATES.has(value.state)) throw new Error('Execution run Local authority reader returned an unsupported state');
+  if (value.cancellation !== 'UNSUPPORTED') throw new Error('Execution run Local authority reader attempted to grant cancellation authority');
+  const expiresAt = canonicalPublicTimestamp(value.expiresAt, 'localExecution.expiresAt');
+  return Object.freeze({ kind: 'LOCAL_EXECUTION_TICKET', state: value.state, expiresAt, cancellation: 'UNSUPPORTED' });
 }
 
 function requiredProjectId(url: URL): string {
@@ -179,6 +204,15 @@ function boundedPublicText(value: unknown, label: string, max: number): string {
   const normalized = value.normalize('NFKC').trim();
   if (!normalized || normalized.length > max || /[\u0000-\u001f\u007f]/u.test(normalized)) throw new Error(`Execution run result ${label} is invalid`);
   return normalized;
+}
+
+function canonicalPublicTimestamp(value: unknown, label: string): string {
+  if (typeof value !== 'string') throw new Error(`Execution run ${label} must be a timestamp`);
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error(`Execution run ${label} must be a timestamp`);
+  const canonical = date.toISOString();
+  if (canonical !== value) throw new Error(`Execution run ${label} must be canonical ISO time`);
+  return canonical;
 }
 
 function positiveSafeInteger(value: unknown, label: string): number {

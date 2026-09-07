@@ -1,4 +1,4 @@
-name: P1f/P1g Job Center retry and recovery authority separation
+name: P1f/P1g/P1h Job Center retry and recovery authority separation
 
 on:
   pull_request:
@@ -14,12 +14,18 @@ on:
       - 'src/lib/jobs/jobScheduler.js'
       - 'src/lib/jobs/jobEphemeralAuthority.test.mjs'
       - 'src/lib/jobs/executionRunProjection.js'
+      - 'src/lib/jobs/executionRunProjection.test.mjs'
+      - 'src/lib/jobs/executionRunProjectionAuthority.test.mjs'
       - 'src/lib/jobs/executionRunFinalResultProjection.test.mjs'
       - 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx'
       - 'src/components/editor/jobs/JobCenter.jsx'
       - 'src/components/editor/jobs/JobRow.jsx'
       - 'server/core/http/executionRunRecoveryHttpAdapter.ts'
       - 'server/core/http/executionRunRecoveryHttpAdapter.test.mjs'
+      - 'server/core/localExecution/LocalExecutionLedger.ts'
+      - 'server/core/localExecution/PostgresLocalExecutionLedger.ts'
+      - 'server/core/localExecution/PostgresLocalExecutionLedger.integration.test.mjs'
+      - 'server/core/localExecution/PostgresLocalExecutionLedgerV2.integration.test.mjs'
       - 'server/index.ts'
       - 'tests/execution-run-recovery-http-postgres.test.ts'
       - '.github/workflows/job-center-execution-run-projection.yml'
@@ -47,18 +53,18 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Prove exact ephemeral classification, explicit new-operation repeat lineage and retry lockdown
-        run: node --test src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs
+        run: node --test src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs
       - name: Typecheck and build production browser
         run: |
           npm run typecheck
           npm run build
-      - name: Preserve explicit NEW_OPERATION repeats while allowing only read-only canonical FINAL recovery
+      - name: Preserve explicit NEW_OPERATION repeats while allowing only read-only canonical FINAL and Local authority recovery
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           test -n "${BASE_SHA:-}"
-          UNEXPECTED_SERVER="$(git diff --name-only "$BASE_SHA"..HEAD -- server | grep -Ev '^(server/index\.ts|server/core/http/executionRunRecoveryHttpAdapter\.ts|server/core/http/executionRunRecoveryHttpAdapter\.test\.mjs)$' || true)"
+          UNEXPECTED_SERVER="$(git diff --name-only "$BASE_SHA"..HEAD -- server | grep -Ev '^(server/index\.ts|server/core/http/executionRunRecoveryHttpAdapter\.ts|server/core/http/executionRunRecoveryHttpAdapter\.test\.mjs|server/core/localExecution/LocalExecutionLedger\.ts|server/core/localExecution/PostgresLocalExecutionLedger\.ts|server/core/localExecution/PostgresLocalExecutionLedger\.integration\.test\.mjs|server/core/localExecution/PostgresLocalExecutionLedgerV2\.integration\.test\.mjs)$' || true)"
           test -z "$UNEXPECTED_SERVER"
           UNEXPECTED_RECOVERY="$(git diff --name-only "$BASE_SHA"..HEAD -- src/api/executionRunRecoveryClient.js src/lib/jobs/executionRunProjection.js src/lib/jobs/jobQueue.js src/lib/jobs/jobWorker.js | grep -Ev '^src/lib/jobs/executionRunProjection\.js$' || true)"
           test -z "$UNEXPECTED_RECOVERY"
@@ -82,10 +88,18 @@ jobs:
           ! grep -E -q '\.(cancel|retry|duplicate|runAgain|reorder)\(' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'RESULT_PATH' src/lib/jobs/executionRunProjection.js
           grep -q "run.result?.kind === 'FINAL_IMAGE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'LOCAL_AUTHORITY_STATE' src/lib/jobs/executionRunProjection.js
+          grep -q "value.cancellation !== 'UNSUPPORTED'" src/lib/jobs/executionRunProjection.js
+          grep -q 'data-local-execution-authority' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'Cancellation unsupported.' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           ! grep -E -q 'coreClient|jobManager|jobStorage|\.cancel\(|\.retry\(|\.issue\(|\.start\(' src/lib/jobs/executionRunProjection.js
           grep -q 'type ExecutionRunResultReader' server/core/http/executionRunRecoveryHttpAdapter.ts
-          ! grep -E -q '\.(issue|start|succeed|fail|cancel|markUnknown)\(' server/core/http/executionRunRecoveryHttpAdapter.ts
+          grep -q 'type ExecutionRunLocalAuthorityReader' server/core/http/executionRunRecoveryHttpAdapter.ts
+          grep -q "value.cancellation !== 'UNSUPPORTED'" server/core/http/executionRunRecoveryHttpAdapter.ts
+          ! grep -E -q '\.(issue|issueV2|claim|claimV2|commit|release|start|succeed|fail|cancel|markUnknown)\(' server/core/http/executionRunRecoveryHttpAdapter.ts
           grep -q 'production.artifacts.images.loadFinalByExecution(executionId, scope)' server/index.ts
+          grep -q 'production.localExecution.admission.observe(ticketId, scope, Date.now())' server/index.ts
+          ! grep -E -q 'cancel\(' server/core/localExecution/LocalExecutionLedger.ts server/core/localExecution/PostgresLocalExecutionLedger.ts
       - name: Check committed diff whitespace
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

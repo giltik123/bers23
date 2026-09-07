@@ -24,6 +24,10 @@ test('canonical projection imports only the narrow recovery client and no browse
   assert.match(text, /RESULT_PATH/);
   assert.match(text, /status !== 'SUCCEEDED' \|\| capability !== 'CREATIVE_EXECUTION' \|\| authorityKind !== 'CREATIVE_EXECUTION'/);
   assert.match(text, /result\.imageUrl is invalid/);
+  assert.match(text, /LOCAL_AUTHORITY_STATE/);
+  assert.match(text, /capability !== 'LOCAL_EXECUTION' \|\| authorityKind !== 'LOCAL_EXECUTION_TICKET'/);
+  assert.match(text, /value\.cancellation !== 'UNSUPPORTED'/);
+  assert.match(text, /localExecutionAuthorityStateLabel/);
 });
 
 test('recovery transport is explicitly GET-only and exposes no generic request or mutation API', async () => {
@@ -45,7 +49,7 @@ test('owning Creative control is separate from recovery and fail-closed on exact
   assert.doesNotMatch(text, /ExecutionRunRegistry|executionRunRecoveryClient|execution-runs|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|stripe|retry|duplicate/);
 });
 
-test('canonical UI exposes owning Creative cancel and read-only recovered FINAL while session repeats remain explicit new operations', async () => {
+test('canonical UI exposes owning Creative cancel, read-only FINAL, and Local ticket truth without Local cancel authority', async () => {
   const [row, center] = await Promise.all([source(rowUrl), source(centerUrl)]);
   assert.match(row, /data-canonical-execution-run/);
   assert.match(row, /run\.capability === 'CREATIVE_EXECUTION'/);
@@ -59,7 +63,16 @@ test('canonical UI exposes owning Creative cancel and read-only recovered FINAL 
   assert.match(row, /href=\{run\.result\.imageUrl\}/);
   assert.match(row, /target="_blank"/);
   assert.match(row, /rel="noopener noreferrer"/);
+  assert.match(row, /run\.capability === 'LOCAL_EXECUTION'/);
+  assert.match(row, /run\.authorityKind === 'LOCAL_EXECUTION_TICKET'/);
+  assert.match(row, /data-local-execution-authority/);
+  assert.match(row, /localExecutionAuthorityStateLabel\(localAuthority\.state\)/);
+  assert.match(row, /Cancellation unsupported\./);
   assert.doesNotMatch(row, /jobManager|jobStorage|onRunAgain|onRetry|onDuplicate|onMoveUp|runAgain|retry|duplicate|coreClient|execution-runs/);
+
+  const cancelButtonIndex = row.indexOf('onClick={() => onCancel(run)}');
+  const creativeGateIndex = row.indexOf("const cancelAvailable = creativeRunning");
+  assert.ok(creativeGateIndex >= 0 && cancelButtonIndex > creativeGateIndex, 'canonical cancel button must remain gated by Creative ownership only');
 
   assert.match(center, /useMemo\(\(\) => createExecutionRunProjection\(\), \[\]\)/);
   assert.match(center, /new CreativeExecutionControlPolicy\(coreClient\.creative\)/);

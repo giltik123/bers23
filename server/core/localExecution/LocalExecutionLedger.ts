@@ -9,6 +9,16 @@ import type { Scope } from '../../../src/platform/creative/workflow-engine/types
 export type MaybePromise<T> = T | Promise<T>;
 export type LocalExecutionFinalizationStatus = 'SUCCESS' | 'FAILED' | 'UNKNOWN';
 export type LocalExecutionFinalization = Readonly<{ status: LocalExecutionFinalizationStatus; finalizedAt?: string }>;
+export type LocalExecutionAuthorityState = 'ACTIVE' | 'EXPIRED' | 'FINALIZED_SUCCESS' | 'FINALIZED_FAILED' | 'FINALIZED_UNKNOWN';
+export type LocalExecutionAuthorityObservation = Readonly<{
+  kind: 'LOCAL_EXECUTION_TICKET';
+  state: LocalExecutionAuthorityState;
+  expiresAt: string;
+  cancellation: 'UNSUPPORTED';
+}>;
+export type LocalExecutionAuthorityObservationReader = Readonly<{
+  observe(ticketId: string, scope: Scope, now: number): MaybePromise<LocalExecutionAuthorityObservation | undefined>;
+}>;
 
 export type LocalExecutionClaimInput = Readonly<{
   ticketId: string;

@@ -41,6 +41,13 @@ const result = (stored, overrides = {}) => ({
   ...overrides,
 });
 
+const observation = (state, expiresAt = 61_000) => Object.freeze({
+  kind: 'LOCAL_EXECUTION_TICKET',
+  state,
+  expiresAt: new Date(expiresAt).toISOString(),
+  cancellation: 'UNSUPPORTED',
+});
+
 test('PostgreSQL local execution ledger is scope-isolated, durable, idempotent and serializes finalization across instances', { skip: !databaseUrl }, async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'bers-local-ledger-integration' });
   const token = `local-ledger-${process.pid}-${Date.now()}`;
@@ -55,6 +62,11 @@ test('PostgreSQL local execution ledger is scope-isolated, durable, idempotent a
     assert.deepEqual(await secondLedger.get(first.ticketId), first, 'another Core instance must read the same durable ticket');
     assert.equal((await secondLedger.getByIdempotencyKey(first.scope, first.idempotencyKey))?.ticketId, first.ticketId);
     assert.equal(await firstLedger.getFinalization(first.ticketId), undefined);
+    assert.deepEqual(await secondLedger.observe(first.ticketId, first.scope, 2_500), observation('ACTIVE'));
+    assert.deepEqual(await secondLedger.observe(first.ticketId, first.scope, 99_000), observation('EXPIRED'));
+    assert.equal(await secondLedger.observe(first.ticketId, { ...first.scope, userId: `${token}-other-user` }, 2_500), undefined, 'cross-scope observation must be existence-safe');
+    assert.equal(await secondLedger.observe(`${token}-missing-ticket`, first.scope, 2_500), undefined);
+    await assert.rejects(() => secondLedger.observe(first.ticketId, first.scope, Number.NaN), /observation time must be finite/);
 
     const otherScope = scope(`${token}-other`);
     const sameClientIdOtherScope = await secondLedger.issue(ticket(token, {
@@ -82,6 +94,7 @@ test('PostgreSQL local execution ledger is scope-isolated, durable, idempotent a
 
     assert.equal((await firstLedger.getFinalization(first.ticketId))?.status, 'SUCCESS');
     assert.equal((await secondLedger.getFinalization(first.ticketId))?.status, 'SUCCESS');
+    assert.deepEqual(await firstLedger.observe(first.ticketId, first.scope, 99_000), observation('FINALIZED_SUCCESS'), 'terminal owner truth must take precedence over elapsed TTL');
     const replayBinding = await pool.query('SELECT admitted_result_sha256 FROM local_execution_tickets WHERE ticket_id=$1', [first.ticketId]);
     assert.match(replayBinding.rows[0]?.admitted_result_sha256 ?? '', /^[a-f0-9]{64}$/);
     assert.equal((await firstLedger.claim({ ticketId: first.ticketId, result: result(first), callerScope: first.scope, now: 99_000 })).reasonCode, 'REPLAYED_TICKET', 'exact replay remains idempotent after ticket expiry');
@@ -89,10 +102,20 @@ test('PostgreSQL local execution ledger is scope-isolated, durable, idempotent a
 
     await pool.query('UPDATE local_execution_tickets SET admitted_result_sha256=NULL WHERE ticket_id=$1', [first.ticketId]);
     assert.equal((await firstLedger.claim({ ticketId: first.ticketId, result: result(first), callerScope: first.scope, now: 99_002 })).reasonCode, 'CONFLICTING_REPLAY', 'legacy consumed rows without a replay digest cannot be treated as exact replay');
+
+    const failed = await secondLedger.issue(ticket(`${token}-failed`, { issuedAt: 1_000, expiresAt: 61_000 }));
+    const failedAdmission = await secondLedger.claim({ ticketId: failed.ticketId, result: result(failed), callerScope: failed.scope, now: 2_500 });
+    assert.equal(failedAdmission.allowed, true);
+    await secondLedger.commit(failed.ticketId, 'FAILED');
+    assert.deepEqual(await firstLedger.observe(failed.ticketId, failed.scope, 99_000), observation('FINALIZED_FAILED'), 'failed finalization must remain distinct from expiry');
+
+    const legacyUnknown = await secondLedger.issue(ticket(`${token}-legacy`, { issuedAt: 1_000, expiresAt: 61_000 }));
+    await pool.query('UPDATE local_execution_tickets SET consumed_at=CURRENT_TIMESTAMP, finalized_status=NULL, finalized_at=NULL WHERE ticket_id=$1', [legacyUnknown.ticketId]);
+    assert.deepEqual(await secondLedger.observe(legacyUnknown.ticketId, legacyUnknown.scope, 99_000), observation('FINALIZED_UNKNOWN'), 'legacy consumed rows remain explicit unknown authority truth');
   } finally {
     await firstLedger.release(`${token}-ticket-a`).catch(() => undefined);
     await secondLedger.release(`${token}-ticket-a`).catch(() => undefined);
-    await pool.query('DELETE FROM local_execution_tickets WHERE idempotency_key=$1', [`${token}-idem`]).catch(() => undefined);
+    await pool.query("DELETE FROM local_execution_tickets WHERE idempotency_key LIKE $1", [`${token}%`]).catch(() => undefined);
     await pool.end();
   }
 });

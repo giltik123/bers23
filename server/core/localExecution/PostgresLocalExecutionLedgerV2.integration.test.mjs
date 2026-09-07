@@ -33,6 +33,14 @@ function result(stored, overrides = {}) {
     ...overrides,
   });
 }
+function observation(state) {
+  return Object.freeze({
+    kind: 'LOCAL_EXECUTION_TICKET',
+    state,
+    expiresAt: new Date(61_000).toISOString(),
+    cancellation: 'UNSUPPORTED',
+  });
+}
 
 test('PostgreSQL v2 deterministic ticket survives Core restart and reconciles idempotency/finalization', { skip: !databaseUrl }, async () => {
   const token = `local-ledger-v2-${process.pid}-${Date.now()}`;
@@ -43,6 +51,7 @@ test('PostgreSQL v2 deterministic ticket survives Core restart and reconciles id
     stored = await first.issueV2(ticket(token));
     assert.equal(stored.version, '2');
     assert.equal(stored.allowedExecutors[0].kind, 'DETERMINISTIC_TOOL');
+    assert.deepEqual(await first.observe(stored.ticketId, stored.scope, 2_500), observation('ACTIVE'));
   } finally {
     await firstPool.end();
   }
@@ -52,6 +61,9 @@ test('PostgreSQL v2 deterministic ticket survives Core restart and reconciles id
   try {
     assert.deepEqual(await second.getV2(stored.ticketId), stored, 'a new Core process must read the exact durable v2 ticket');
     assert.deepEqual(await second.getByIdempotencyKeyV2(stored.scope, stored.idempotencyKey), stored, 'scoped v2 idempotency must survive restart');
+    assert.deepEqual(await second.observe(stored.ticketId, stored.scope, 2_500), observation('ACTIVE'), 'v2 owner truth must survive Core restart');
+    assert.deepEqual(await second.observe(stored.ticketId, stored.scope, 99_000), observation('EXPIRED'), 'unconsumed v2 owner truth must classify elapsed TTL after restart');
+    assert.equal(await second.observe(stored.ticketId, { ...stored.scope, projectId: `${stored.scope.projectId}-other` }, 2_500), undefined);
 
     const replayCandidate = ticket(token, { ticketId: `${token}-replacement-ticket`, nonce: `${token}-replacement-nonce`, issuedAt: 2_000, expiresAt: 62_000 });
     const reconciled = await second.issueV2(replayCandidate);
@@ -70,6 +82,7 @@ test('PostgreSQL v2 deterministic ticket survives Core restart and reconciles id
     assert.equal(admitted.allowed, true);
     await second.commit(stored.ticketId, 'SUCCESS');
     assert.equal((await second.getFinalization(stored.ticketId))?.status, 'SUCCESS');
+    assert.deepEqual(await second.observe(stored.ticketId, stored.scope, 99_000), observation('FINALIZED_SUCCESS'), 'v2 finalization must take precedence over elapsed TTL');
     const replayBinding = await secondPool.query('SELECT admitted_result_sha256 FROM local_execution_tickets WHERE ticket_id=$1', [stored.ticketId]);
     assert.match(replayBinding.rows[0]?.admitted_result_sha256 ?? '', /^[a-f0-9]{64}$/);
   } finally {
@@ -80,6 +93,7 @@ test('PostgreSQL v2 deterministic ticket survives Core restart and reconciles id
   try {
     const third = new PostgresLocalExecutionLedger(thirdPool);
     assert.equal((await third.getFinalization(stored.ticketId))?.status, 'SUCCESS', 'terminal v2 finalization must survive another Core restart');
+    assert.deepEqual(await third.observe(stored.ticketId, stored.scope, 99_000), observation('FINALIZED_SUCCESS'), 'terminal owner truth must survive another Core restart');
     assert.equal((await third.claimV2({ ticketId: stored.ticketId, result: result(stored), callerScope: stored.scope, now: 99_000 })).reasonCode, 'REPLAYED_TICKET', 'exact v2 replay must remain idempotent after restart and expiry');
     assert.equal((await third.claimV2({ ticketId: stored.ticketId, result: result(stored, { metrics: Object.freeze({ latencyMs: 5 }) }), callerScope: stored.scope, now: 99_001 })).reasonCode, 'CONFLICTING_REPLAY', 'different valid v2 payload must fail closed after restart');
     await thirdPool.query('DELETE FROM local_execution_tickets WHERE idempotency_key=$1', [`${token}-idem`]);

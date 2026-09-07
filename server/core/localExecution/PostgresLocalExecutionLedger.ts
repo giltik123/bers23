@@ -10,14 +10,21 @@ import type {
 } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { LocalExecutionAdmissionRegistry } from './LocalExecutionAdmission.ts';
-import type { LocalExecutionClaimInput, LocalExecutionFinalization, LocalExecutionLedger, LocalExecutionLedgerV2 } from './LocalExecutionLedger.ts';
+import type {
+  LocalExecutionAuthorityObservation,
+  LocalExecutionAuthorityObservationReader,
+  LocalExecutionClaimInput,
+  LocalExecutionFinalization,
+  LocalExecutionLedger,
+  LocalExecutionLedgerV2,
+} from './LocalExecutionLedger.ts';
 import { localExecutionResultReplayDigest } from './localExecutionReplayDigest.ts';
 
 const TICKET_COLUMNS = 'ticket_id,idempotency_key,tenant_id,user_id,project_id,request_id,workflow_id,step_id,ticket_json,consumed_at,finalized_status,finalized_at,admitted_result_sha256';
 type HeldClaim = Readonly<{ client: PoolClient; resultDigest: string }>;
 
 /** One PostgreSQL authority exposing explicit v1/v2 typed surfaces over the same table and advisory locks. */
-export class PostgresLocalExecutionLedger implements LocalExecutionLedger, LocalExecutionLedgerV2 {
+export class PostgresLocalExecutionLedger implements LocalExecutionLedger, LocalExecutionLedgerV2, LocalExecutionAuthorityObservationReader {
   private readonly heldClaims = new Map<string, HeldClaim>();
   private readonly pool: Pool;
   constructor(pool: Pool) { this.pool = pool; }
@@ -36,6 +43,33 @@ export class PostgresLocalExecutionLedger implements LocalExecutionLedger, Local
     const row = result.rows[0]; if (!row?.consumed_at) return undefined;
     const status = row.finalized_status === 'SUCCESS' || row.finalized_status === 'FAILED' ? row.finalized_status : 'UNKNOWN';
     return Object.freeze({ status, finalizedAt: row.finalized_at instanceof Date ? row.finalized_at.toISOString() : typeof row.finalized_at === 'string' ? row.finalized_at : undefined });
+  }
+
+  async observe(ticketId: string, scope: Scope, now: number): Promise<LocalExecutionAuthorityObservation | undefined> {
+    if (!Number.isFinite(now)) throw new TypeError('Local execution authority observation time must be finite');
+    const result = await this.pool.query(
+      `SELECT ${TICKET_COLUMNS} FROM local_execution_tickets
+       WHERE ticket_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4`,
+      [ticketId, scope.tenantId, scope.userId, scope.projectId],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    const ticket = ticketFromRow(row);
+    const state = row.consumed_at
+      ? row.finalized_status === 'SUCCESS'
+        ? 'FINALIZED_SUCCESS'
+        : row.finalized_status === 'FAILED'
+          ? 'FINALIZED_FAILED'
+          : 'FINALIZED_UNKNOWN'
+      : now >= ticket.expiresAt
+        ? 'EXPIRED'
+        : 'ACTIVE';
+    return Object.freeze({
+      kind: 'LOCAL_EXECUTION_TICKET' as const,
+      state,
+      expiresAt: new Date(ticket.expiresAt).toISOString(),
+      cancellation: 'UNSUPPORTED' as const,
+    });
   }
 
   async claim(input: LocalExecutionClaimInput): Promise<LocalExecutionAdmissionDecision> { return requireDecisionV1(await this.claimAny(input, '1')); }
