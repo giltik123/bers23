@@ -1,4 +1,4 @@
-name: R3a browser release E2E foundation
+name: R3 browser release E2E
 
 on:
   pull_request:
@@ -8,7 +8,12 @@ on:
       - 'src/App.jsx'
       - 'src/api/coreClient.js'
       - 'src/api/coreResourceUrl.js'
+      - 'src/application/createOrthogonalTransform.ts'
+      - 'src/application/editor/orthogonalTransformStartPolicy.js'
       - 'src/components/ProtectedRoute.jsx'
+      - 'src/components/editor/HistoryControls.jsx'
+      - 'src/components/editor/OrthogonalTransformToolbar.jsx'
+      - 'src/components/editor/ResultCompare.jsx'
       - 'src/lib/AuthContext.jsx'
       - 'src/lib/projectService.js'
       - 'src/lib/scene/**'
@@ -19,23 +24,29 @@ on:
       - 'src/pages/Login.jsx'
       - 'src/pages/Projects.jsx'
       - 'src/pages/Editor.jsx'
+      - 'src/platform/creative/deterministic/**'
       - 'src/platform/creative/local-ai/browser/BrowserOnnxSessionFactory.ts'
       - 'server/core/auth/**'
       - 'server/core/projects/**'
       - 'server/core/artifacts/**'
       - 'server/core/http/**'
+      - 'server/core/localExecution/**'
       - 'server/core/config.ts'
       - 'server/index.ts'
       - 'scripts/build-core-server.mjs'
       - 'scripts/classify-tiny-sd-d4-secure-threading.mjs'
       - 'scripts/production-migration-inventory.mjs'
       - 'scripts/test-release-r3a-browser-e2e.mjs'
+      - 'scripts/test-release-r3b-browser-e2e.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
+      - 'tests/editor-orthogonal-transform-ui.test.mjs'
       - 'tests/auth-client-contract.test.mjs'
       - 'tests/auth-public-route-routing.test.mjs'
       - 'tests/core-resource-url.test.mjs'
       - 'tests/core-image-csp.test.mjs'
       - 'tests/release-r3a-browser-boundaries.test.mjs'
+      - 'tests/release-r3b-browser-boundaries.test.mjs'
+      - 'tests/release-r3b-production-orthogonal-prepare.test.ts'
       - 'tests/frontend-security-deployment-contract.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
   workflow_dispatch:
@@ -44,11 +55,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-r3a-browser-e2e-${{ github.workflow }}-${{ github.ref }}
+  group: release-r3-browser-e2e-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  auth-project-editor-browser:
+  auth-project-editor-deterministic-browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
@@ -103,21 +114,23 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Preserve auth, zero-object and baseline browser composition contracts
+      - name: Preserve R3 baseline and deterministic edit composition contracts
         run: |
           node --test tests/auth-public-route-routing.test.mjs
           node --test tests/editor-zero-object-navigation.test.mjs
+          node --test tests/editor-orthogonal-transform-ui.test.mjs
           node --test tests/auth-client-contract.test.mjs
           node --test tests/core-resource-url.test.mjs
           node --test tests/core-image-csp.test.mjs
           node --test tests/release-r3a-browser-boundaries.test.mjs
+          node --test tests/release-r3b-browser-boundaries.test.mjs
       - name: Prove runtime-compatible frontend security and preserve worker lockdown
         run: |
-          mkdir -p .test-cache/release-r3a
+          mkdir -p .test-cache/release-r3
           node --test tests/frontend-security-deployment-contract.test.mjs
-          node scripts/classify-tiny-sd-d4-secure-threading.mjs --report .test-cache/release-r3a/d4-secure-threading.json
-          grep -q '"result": "SECURE_THREADING_BLOCKED"' .test-cache/release-r3a/d4-secure-threading.json
-          grep -q '"requireTrustedTypesForScript": false' .test-cache/release-r3a/d4-secure-threading.json
+          node scripts/classify-tiny-sd-d4-secure-threading.mjs --report .test-cache/release-r3/d4-secure-threading.json
+          grep -q '"result": "SECURE_THREADING_BLOCKED"' .test-cache/release-r3/d4-secure-threading.json
+          grep -q '"requireTrustedTypesForScript": false' .test-cache/release-r3/d4-secure-threading.json
       - name: Build immutable Core and apply its packaged production migrations
         run: |
           npm run server:build
@@ -125,33 +138,55 @@ jobs:
           test -f dist-server/migrations/038_financial_account_foundation.sql
           node dist-server/migrate.mjs migrate
           node dist-server/migrate.mjs check
+      - name: Generate and mask ephemeral R3 runtime secrets on the runner
+        run: |
+          set -euo pipefail
+          for name in FAL_KEY JWT_SECRET AUTH_CHALLENGE_SECRET RESEND_API_KEY GOOGLE_OAUTH_CLIENT_SECRET ARTIFACT_SIGNING_SECRET; do
+            value="$(openssl rand -hex 32)"
+            printf '::add-mask::%s\n' "$value"
+            printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+          done
+      - name: Prove production composition prepares browser-shaped orthogonal ticket
+        run: |
+          mkdir -p .test-cache/release-r3-production-probe
+          npx esbuild tests/release-r3b-production-orthogonal-prepare.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3-production-probe/orthogonal-prepare.test.mjs \
+            --external:node:* --external:pg --external:sharp
+          node --test .test-cache/release-r3-production-probe/orthogonal-prepare.test.mjs
       - name: Build real SPA against the built Core origin
         run: |
           npm run build
           test -f dist/index.html
-      - name: Bundle external release harness without replacing production stores
+      - name: Bundle external cumulative R3 release harness without replacing production stores
         run: |
-          mkdir -p .test-cache/release-r3a
-          npx esbuild scripts/test-release-r3a-browser-e2e.mjs \
+          mkdir -p .test-cache/release-r3
+          npx esbuild scripts/test-release-r3b-browser-e2e.mjs \
             --bundle --platform=node --format=esm --target=node24 \
-            --outfile=.test-cache/release-r3a/test-release-r3a-browser-e2e.mjs \
+            --outfile=.test-cache/release-r3/test-release-r3-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
-      - name: Prove built SPA -> built Core -> real PostgreSQL Auth Project Editor journey
-        run: node .test-cache/release-r3a/test-release-r3a-browser-e2e.mjs
-      - name: Prove harness uses production artifacts and no implicit provider financial or legacy authority
+      - name: Prove built SPA -> built Core -> PostgreSQL Auth Project Rotate Accept Undo Redo journey
+        run: node .test-cache/release-r3/test-release-r3-browser-e2e.mjs
+      - name: Prove cumulative harness uses production local authority with no provider financial or legacy fallback
         run: |
           set -euo pipefail
-          script=scripts/test-release-r3a-browser-e2e.mjs
+          script=scripts/test-release-r3b-browser-e2e.mjs
           grep -q "dist-server/server.mjs" "$script"
           grep -q "path.resolve('dist')" "$script"
           grep -q "NODE_ENV: 'production'" "$script"
           grep -q "PostgresAuthStore" "$script"
           grep -q "canonical_projects" "$script"
+          grep -q "canonical_project_history" "$script"
+          grep -q "Rotate 90° clockwise" "$script"
+          grep -q "R3B_BROWSER_DETERMINISTIC_EDIT_ACCEPTED" "$script"
+          grep -q "local-execution/orthogonal-transform/prepare" "$script"
+          grep -q "source_image_storage_id" "$script"
           grep -q "providerCalls, 0" "$script"
           grep -q "diagnostics.creativeRequests, \[\]" "$script"
           grep -q "diagnostics.legacyRequests, \[\]" "$script"
           grep -q "diagnostics.financialRequests, \[\]" "$script"
-          grep -q "imageUrl.origin, coreOrigin" "$script"
-          ! grep -E -q 'financialAccount|financialTrial|checkout|subscription|credit_grants|credit_wallets' "$script"
+          grep -q "diagnostics.externalBrowserRequests, \[\]" "$script"
+          grep -q "assertSignedCoreImage" "$script"
+          ! grep -E -q 'financialAccount|financialTrial|credit_grants|credit_wallets' "$script"
       - name: Check committed diff whitespace
         run: git diff --check "$BASE_SHA"..HEAD
