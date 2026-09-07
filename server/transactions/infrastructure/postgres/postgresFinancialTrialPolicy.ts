@@ -124,18 +124,22 @@ export class PostgresFinancialTrialPolicy implements FinancialTrialAuthority {
       if (account.tenant_id !== identity.tenantId || account.owner_id !== identity.userId) {
         return Object.freeze({ kind: 'policy_conflict' as const });
       }
-
-      const welcomeCandidates = await findWelcomeGrantCandidates(tx, identity);
-      const welcome = welcomeCandidates.length === 1 ? welcomeCandidates[0] : undefined;
-      if (!welcome || !sameWelcomeBinding(welcome, identity)) {
-        return Object.freeze({ kind: 'policy_drift' as const });
+      // P0b.2 owns only SERVER_POLICY FREE/TRIAL state. Provider/manual authority is
+      // legitimate external ownership, not server-policy corruption.
+      if (account.source !== SERVER_POLICY) {
+        return Object.freeze({ kind: 'policy_conflict' as const });
       }
 
       const now = new Date().toISOString();
 
-      if (account.state === TRIAL_STATE && account.source === SERVER_POLICY) {
+      if (account.state === TRIAL_STATE) {
         const existingPlan = exactTrialPlan(account.plan_id);
         if (!existingPlan || !sameTrialPolicyAccount(account, identity, existingPlan)) {
+          return Object.freeze({ kind: 'policy_drift' as const });
+        }
+        const welcomeCandidates = await findWelcomeGrantCandidates(tx, identity);
+        const welcome = welcomeCandidates.length === 1 ? welcomeCandidates[0] : undefined;
+        if (!welcome || !sameWelcomeBinding(welcome, identity)) {
           return Object.freeze({ kind: 'policy_drift' as const });
         }
         if (!account.ends_at) return Object.freeze({ kind: 'policy_drift' as const });
@@ -151,10 +155,11 @@ export class PostgresFinancialTrialPolicy implements FinancialTrialAuthority {
       }
 
       if (!sameFreePolicyAccount(account, identity)) {
-        if (account.source === SERVER_POLICY) return Object.freeze({ kind: 'policy_drift' as const });
-        return Object.freeze({ kind: 'policy_conflict' as const });
+        return Object.freeze({ kind: 'policy_drift' as const });
       }
-      if (!sameFreeWelcomeStartBinding(account, welcome)) {
+      const welcomeCandidates = await findWelcomeGrantCandidates(tx, identity);
+      const welcome = welcomeCandidates.length === 1 ? welcomeCandidates[0] : undefined;
+      if (!welcome || !sameWelcomeBinding(welcome, identity) || !sameFreeWelcomeStartBinding(account, welcome)) {
         return Object.freeze({ kind: 'policy_drift' as const });
       }
 
