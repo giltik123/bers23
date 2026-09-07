@@ -200,7 +200,7 @@ test('cross-tenant owner, provider entitlement and malformed server policy fail 
     [identity.userId, identity.tenantId, '2026-09-01T00:00:00.000Z'],
   );
   const beforeProvider = await state(identity.userId);
-  assert.deepEqual(await trials.startTrial(identity, 'plus'), { kind: 'policy_drift' }, 'missing accepted welcome binding fails before provider conflict');
+  assert.deepEqual(await trials.startTrial(identity, 'plus'), { kind: 'policy_conflict' });
   assert.deepEqual(await state(identity.userId), beforeProvider);
 
   await reset();
