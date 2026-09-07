@@ -163,7 +163,7 @@ try {
   await page.getByRole('region', { name: 'Canonical fashion wardrobe', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed garments yet. Add a garment photo to create the first stable wardrobe item.', { exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
-  assertActiveNavigation(fashion, 'Fashion');
+  await assertActiveNavigation(fashion, 'Fashion');
 
   const outfitLoad = waitForCoreResponses(page, [
     '/api/core/wardrobe/outfits',
@@ -174,7 +174,7 @@ try {
   await page.getByRole('region', { name: 'Canonical Outfit builder', exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
   await page.getByText('No managed outfits yet. Create one to compose stable garment references.', { exact: true })
     .waitFor({ state: 'visible', timeout: 15_000 });
-  assertActiveNavigation(outfits, 'Outfits');
+  await assertActiveNavigation(outfits, 'Outfits');
 
   await prompt.click();
   await assertActiveNavigation(prompt, 'Prompt');
