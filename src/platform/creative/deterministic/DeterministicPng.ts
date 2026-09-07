@@ -35,13 +35,16 @@ export async function encodeDeterministicRgbaPng(image: PixelImage): Promise<Uin
 async function deflate(bytes: Uint8Array): Promise<Uint8Array> {
   const stream = new CompressionStream('deflate');
   const writer = stream.writable.getWriter();
+  // Begin draining before writing. Awaiting writer.write()/close() with no active
+  // reader can stall a real browser on TransformStream backpressure.
+  const read = new Response(stream.readable).arrayBuffer();
   // Copy into a fresh ArrayBuffer-backed view. DOM BufferSource types reject a
   // generic Uint8Array<ArrayBufferLike> because it may reference SharedArrayBuffer.
   const source = new Uint8Array(bytes.byteLength);
   source.set(bytes);
   await writer.write(source);
   await writer.close();
-  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+  return new Uint8Array(await read);
 }
 function chunk(type: Uint8Array, data: Uint8Array): Uint8Array {
   const output = new Uint8Array(12 + data.length);
