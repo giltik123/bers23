@@ -7,6 +7,7 @@ import type { LocalExecutionInputDeliveryService } from '../localExecution/Local
 import type { LocalResizeExecutionService } from '../localExecution/LocalResizeExecutionService.ts';
 import type { LocalSegmentationExecutionService } from '../localExecution/LocalSegmentationExecutionService.ts';
 import type { LocalSuperResolutionExecutionService } from '../localExecution/LocalSuperResolutionExecutionService.ts';
+import { authenticatedOwnerScope } from './authenticatedPrincipalScope.ts';
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/local-execution/';
@@ -42,6 +43,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
       if (request.method === 'OPTIONS') { send(response, 204, undefined); return true; }
       if (request.method !== 'GET' && request.method !== 'HEAD') assertBrowserMutationAllowed(request, input.config);
       const principal = await input.auth.verify(requestAuthorization(request, input.config));
+      const auth = authenticatedOwnerScope(principal);
 
       if (url.pathname === `${PREFIX}segment/prepare` && request.method === 'POST') {
         requireJson(request);
@@ -52,7 +54,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
           clientRequestId: string(body.clientRequestId),
           analysis: record(body.analysis) as never,
           points: (Array.isArray(body.points) ? body.points : []) as never,
-        }, principal);
+        }, auth);
         send(response, 202, prepared); return true;
       }
 
@@ -65,7 +67,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
           sourceArtifactId: string(body.sourceArtifactId),
           maskArtifactId: string(body.maskArtifactId),
           clientRequestId: string(body.clientRequestId),
-        }, principal);
+        }, auth);
         send(response, 202, prepared); return true;
       }
 
@@ -78,7 +80,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
           sourceArtifactId: string(body.sourceArtifactId),
           clientRequestId: string(body.clientRequestId),
           x: number(body.x), y: number(body.y), width: number(body.width), height: number(body.height),
-        }, principal);
+        }, auth);
         send(response, 202, prepared); return true;
       }
 
@@ -91,7 +93,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
           sourceArtifactId: string(body.sourceArtifactId),
           clientRequestId: string(body.clientRequestId),
           width: number(body.width), height: number(body.height),
-        }, principal);
+        }, auth);
         send(response, 202, prepared); return true;
       }
 
@@ -99,7 +101,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
         const service = requireSuperResolution(input.superResolution);
         requireJson(request);
         const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
-        const prepared = await service.prepare({ projectId: string(body.projectId), sourceArtifactId: string(body.sourceArtifactId), clientRequestId: string(body.clientRequestId) }, principal);
+        const prepared = await service.prepare({ projectId: string(body.projectId), sourceArtifactId: string(body.sourceArtifactId), clientRequestId: string(body.clientRequestId) }, auth);
         send(response, 202, prepared); return true;
       }
 
@@ -107,7 +109,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
       if (deterministicInputMatch && request.method === 'GET') {
         const delivery = requireInputDelivery(input.inputDelivery);
         const projectId = requireProjectId(url);
-        const canonical = await delivery.backgroundIsolation({ ticketId: decodeURIComponent(deterministicInputMatch[1]), projectId }, principal);
+        const canonical = await delivery.backgroundIsolation({ ticketId: decodeURIComponent(deterministicInputMatch[1]), projectId }, auth);
         const expectedBytes = canonical.width * canonical.height * 5;
         if (canonical.sourceRgba.byteLength + canonical.maskAlpha.byteLength !== expectedBytes) throw httpError(500, 'local_input_delivery_contract', 'Canonical local input delivery length is invalid');
         const bytes = new Uint8Array(expectedBytes);
@@ -120,7 +122,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
       if (cropInputMatch && request.method === 'GET') {
         const delivery = requireInputDelivery(input.inputDelivery);
         const projectId = requireProjectId(url);
-        const canonical = await delivery.crop({ ticketId: decodeURIComponent(cropInputMatch[1]), projectId }, principal);
+        const canonical = await delivery.crop({ ticketId: decodeURIComponent(cropInputMatch[1]), projectId }, auth);
         assertSourceDelivery(canonical, 'Crop');
         setInputHeaders(response, canonical.width, canonical.height, canonical.sourceSha256);
         sendBytes(response, 200, canonical.sourceRgba, 'application/octet-stream'); return true;
@@ -130,7 +132,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
       if (resizeInputMatch && request.method === 'GET') {
         const delivery = requireInputDelivery(input.inputDelivery);
         const projectId = requireProjectId(url);
-        const canonical = await delivery.resize({ ticketId: decodeURIComponent(resizeInputMatch[1]), projectId }, principal);
+        const canonical = await delivery.resize({ ticketId: decodeURIComponent(resizeInputMatch[1]), projectId }, auth);
         assertSourceDelivery(canonical, 'Resize');
         setInputHeaders(response, canonical.width, canonical.height, canonical.sourceSha256);
         sendBytes(response, 200, canonical.sourceRgba, 'application/octet-stream'); return true;
@@ -140,7 +142,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
       if (superResolutionInputMatch && request.method === 'GET') {
         const delivery = requireInputDelivery(input.inputDelivery);
         const projectId = requireProjectId(url);
-        const canonical = await delivery.superResolution({ ticketId: decodeURIComponent(superResolutionInputMatch[1]), projectId }, principal);
+        const canonical = await delivery.superResolution({ ticketId: decodeURIComponent(superResolutionInputMatch[1]), projectId }, auth);
         assertSourceDelivery(canonical, 'super-resolution');
         setInputHeaders(response, canonical.width, canonical.height, canonical.sourceSha256);
         sendBytes(response, 200, canonical.sourceRgba, 'application/octet-stream'); return true;
@@ -151,7 +153,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
         const service = requireDeterministicImages(input.deterministicImages);
         const projectId = requirePngUpload(request, url);
         const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
-        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(deterministicUploadMatch[1]), projectId, bytes }, principal);
+        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(deterministicUploadMatch[1]), projectId, bytes }, auth);
         assertSafeImageEvidence(evidence, input.config); send(response, 201, evidence); return true;
       }
 
@@ -160,7 +162,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
         const service = requireCrop(input.crop);
         const projectId = requirePngUpload(request, url);
         const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
-        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(cropUploadMatch[1]), projectId, bytes }, principal);
+        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(cropUploadMatch[1]), projectId, bytes }, auth);
         assertSafeImageEvidence(evidence, input.config); send(response, 201, evidence); return true;
       }
 
@@ -169,7 +171,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
         const service = requireResize(input.resize);
         const projectId = requirePngUpload(request, url);
         const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
-        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(resizeUploadMatch[1]), projectId, bytes }, principal);
+        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(resizeUploadMatch[1]), projectId, bytes }, auth);
         assertSafeImageEvidence(evidence, input.config); send(response, 201, evidence); return true;
       }
 
@@ -178,7 +180,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
         const service = requireSuperResolution(input.superResolution);
         const projectId = requirePngUpload(request, url);
         const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
-        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(superResolutionUploadMatch[1]), projectId, bytes }, principal);
+        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(superResolutionUploadMatch[1]), projectId, bytes }, auth);
         assertSafeImageEvidence(evidence, input.config); send(response, 201, evidence); return true;
       }
 
@@ -186,7 +188,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
       if (deterministicResultMatch && request.method === 'POST') {
         const service = requireDeterministicImages(input.deterministicImages);
         const body = await readResultBody(request, input.config.bodyLimitBytes);
-        const finalized = await service.submit({ ticketId: decodeURIComponent(deterministicResultMatch[1]), projectId: body.projectId, result: body.result }, principal);
+        const finalized = await service.submit({ ticketId: decodeURIComponent(deterministicResultMatch[1]), projectId: body.projectId, result: body.result }, auth);
         sendFinalized(response, finalized); return true;
       }
 
@@ -194,7 +196,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
       if (cropResultMatch && request.method === 'POST') {
         const service = requireCrop(input.crop);
         const body = await readResultBody(request, input.config.bodyLimitBytes);
-        const finalized = await service.submit({ ticketId: decodeURIComponent(cropResultMatch[1]), projectId: body.projectId, result: body.result }, principal);
+        const finalized = await service.submit({ ticketId: decodeURIComponent(cropResultMatch[1]), projectId: body.projectId, result: body.result }, auth);
         sendFinalized(response, finalized); return true;
       }
 
@@ -202,7 +204,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
       if (resizeResultMatch && request.method === 'POST') {
         const service = requireResize(input.resize);
         const body = await readResultBody(request, input.config.bodyLimitBytes);
-        const finalized = await service.submit({ ticketId: decodeURIComponent(resizeResultMatch[1]), projectId: body.projectId, result: body.result }, principal);
+        const finalized = await service.submit({ ticketId: decodeURIComponent(resizeResultMatch[1]), projectId: body.projectId, result: body.result }, auth);
         sendFinalized(response, finalized); return true;
       }
 
@@ -210,7 +212,7 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
       if (superResolutionResultMatch && request.method === 'POST') {
         const service = requireSuperResolution(input.superResolution);
         const body = await readResultBody(request, input.config.bodyLimitBytes);
-        const finalized = await service.submit({ ticketId: decodeURIComponent(superResolutionResultMatch[1]), projectId: body.projectId, result: body.result }, principal);
+        const finalized = await service.submit({ ticketId: decodeURIComponent(superResolutionResultMatch[1]), projectId: body.projectId, result: body.result }, auth);
         sendFinalized(response, finalized); return true;
       }
 
@@ -221,14 +223,14 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
         const width = Number(url.searchParams.get('width')); const height = Number(url.searchParams.get('height'));
         if (!projectId || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > input.config.maskMaxDimension || height > input.config.maskMaxDimension || width * height > input.config.maskUploadLimitBytes) throw httpError(400, 'invalid_mask_dimensions', 'Local MASK dimensions are invalid or unsafe');
         const bytes = await readBytes(request, input.config.maskUploadLimitBytes);
-        const evidence = await input.service.uploadMask({ ticketId: decodeURIComponent(uploadMatch[1]), projectId, width, height, bytes }, principal);
+        const evidence = await input.service.uploadMask({ ticketId: decodeURIComponent(uploadMatch[1]), projectId, width, height, bytes }, auth);
         send(response, 201, evidence); return true;
       }
 
       const resultMatch = url.pathname.match(/^\/api\/core\/local-execution\/([^/]+)\/result$/);
       if (resultMatch && request.method === 'POST') {
         const body = await readResultBody(request, input.config.bodyLimitBytes);
-        const finalized = await input.service.submit({ ticketId: decodeURIComponent(resultMatch[1]), projectId: body.projectId, result: body.result }, principal);
+        const finalized = await input.service.submit({ ticketId: decodeURIComponent(resultMatch[1]), projectId: body.projectId, result: body.result }, auth);
         sendFinalized(response, finalized); return true;
       }
 

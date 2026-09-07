@@ -5,6 +5,7 @@ import type {
   FashionTryOnReadiness,
   FashionTryOnReadinessService,
 } from '../fashion/FashionTryOnReadinessService.ts';
+import { authenticatedOwnerScope } from './authenticatedPrincipalScope.ts';
 import {
   BROWSER_CSRF_HEADER,
   assertBrowserMutationAllowed,
@@ -57,7 +58,7 @@ export function createFashionTryOnReadinessHttpAdapter(input: AdapterInput) {
       requireJson(request);
       const principal = await input.auth.verify(requestAuthorization(request, input.config));
       const body = exactBody(await readJson(request, input.config.bodyLimitBytes));
-      const readiness = await input.readiness.check(body, principal);
+      const readiness = await input.readiness.check(body, authenticatedOwnerScope(principal));
       send(response, 200, publicReadiness(readiness));
       return true;
     } catch (cause) {
