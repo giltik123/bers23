@@ -303,11 +303,12 @@ function attachDiagnostics(page) {
     if (url.origin !== frontendOrigin && url.origin !== coreOrigin) diagnostics.externalBrowserRequests.push(request.url());
     if (url.origin !== coreOrigin) return;
     const pathName = url.pathname;
-    const entry = `${request.method()} ${pathName}`;
-    if (pathName.includes('/api/core/local-execution/')) diagnostics.localExecutionRequests.push(entry);
-    if (pathName.includes('/api/core/creative')) diagnostics.creativeRequests.push(entry);
-    if (/financial|billing|credit|subscription/i.test(pathName)) diagnostics.financialRequests.push(entry);
-    if (request.method() !== 'GET' && request.method() !== 'HEAD' && pathName.includes('/api/core/projects/')) diagnostics.projectMutations.push(entry);
+    const method = request.method();
+    const entry = `${method} ${pathName}`;
+    if (method !== 'OPTIONS' && pathName.includes('/api/core/local-execution/')) diagnostics.localExecutionRequests.push(entry);
+    if (method !== 'OPTIONS' && pathName.includes('/api/core/creative')) diagnostics.creativeRequests.push(entry);
+    if (method !== 'OPTIONS' && /financial|billing|credit|subscription/i.test(pathName)) diagnostics.financialRequests.push(entry);
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && pathName.includes('/api/core/projects/')) diagnostics.projectMutations.push(entry);
   });
 }
 
