@@ -88,6 +88,9 @@ export async function startCoreServer() {
         });
       },
     }),
+    localExecution: Object.freeze({
+      observeLocalExecution: (scope, ticketId) => production.localExecution.admission.observe(ticketId, scope, Date.now()),
+    }),
     auth: production.auth,
     config,
   });

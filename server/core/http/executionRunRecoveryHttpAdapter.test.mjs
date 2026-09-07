@@ -34,6 +34,16 @@ const localChild = run({
   startedAt: now,
   finishedAt: now,
 });
+const runningLocalChild = run({
+  runId: localChildRunId,
+  parentRunId,
+  capability: 'LOCAL_EXECUTION',
+  authorityKind: 'LOCAL_EXECUTION_TICKET',
+  authorityRef: 'ticket-recovery-1',
+  status: 'RUNNING',
+  revision: 2,
+  startedAt: now,
+});
 const internalChild = run({
   runId: internalChildRunId,
   parentRunId,
@@ -76,9 +86,10 @@ function sameScope(candidate) {
 }
 
 function harness(principal = Object.freeze({ tenantId, userId }), options = {}) {
-  const calls = { roots: [], gets: [], children: [], results: [] };
+  const calls = { roots: [], gets: [], children: [], results: [], localExecution: [] };
   const rootRuns = options.rootRuns ?? [parent];
-  const allRuns = options.allRuns ?? [parent, localChild, internalChild];
+  const childRuns = options.childRuns ?? [localChild, internalChild];
+  const allRuns = options.allRuns ?? [...rootRuns, ...childRuns];
   const reader = Object.freeze({
     listRoots: async (candidateScope, limit) => {
       calls.roots.push({ scope: candidateScope, limit });
@@ -92,7 +103,7 @@ function harness(principal = Object.freeze({ tenantId, userId }), options = {}) 
     listChildren: async (candidateScope, runId, limit) => {
       calls.children.push({ scope: candidateScope, runId, limit });
       return sameScope(candidateScope) && runId === parentRunId
-        ? Object.freeze([localChild, internalChild])
+        ? Object.freeze(childRuns)
         : Object.freeze([]);
     },
   });
@@ -100,6 +111,12 @@ function harness(principal = Object.freeze({ tenantId, userId }), options = {}) 
     resolveCreativeFinal: async (candidateScope, executionId) => {
       calls.results.push({ scope: candidateScope, executionId });
       return options.resolveCreativeFinal ? options.resolveCreativeFinal(candidateScope, executionId) : undefined;
+    },
+  });
+  const localExecution = Object.freeze({
+    observeLocalExecution: async (candidateScope, ticketId) => {
+      calls.localExecution.push({ scope: candidateScope, ticketId });
+      return options.observeLocalExecution ? options.observeLocalExecution(candidateScope, ticketId) : undefined;
     },
   });
   const config = Object.freeze({
@@ -115,7 +132,7 @@ function harness(principal = Object.freeze({ tenantId, userId }), options = {}) 
       return principal;
     },
   });
-  return Object.freeze({ adapter: createExecutionRunRecoveryHttpAdapter({ runs: reader, results, auth, config }), calls });
+  return Object.freeze({ adapter: createExecutionRunRecoveryHttpAdapter({ runs: reader, results, localExecution, auth, config }), calls });
 }
 
 async function withServer(handler, fn) {
@@ -151,9 +168,11 @@ test('root recovery is authenticated, scoped, bounded and does not expose idempo
     assert.equal('idempotencyKey' in body.runs[0], false);
     assert.equal('scope' in body.runs[0], false);
     assert.equal('result' in body.runs[0], false);
+    assert.equal('localExecution' in body.runs[0], false);
   });
   assert.deepEqual(calls.roots, [{ scope, limit: 2 }]);
   assert.deepEqual(calls.results, []);
+  assert.deepEqual(calls.localExecution, []);
 });
 
 test('exact get and direct children return the canonical run tree without mutation authority', async () => {
@@ -181,6 +200,52 @@ test('exact get and direct children return the canonical run tree without mutati
   assert.equal(calls.gets.length, 2);
   assert.deepEqual(calls.children, [{ scope, runId: parentRunId, limit: 2 }]);
   assert.deepEqual(calls.results, []);
+  assert.deepEqual(calls.localExecution, [{ scope, ticketId: localChild.authorityRef }]);
+});
+
+test('Local Execution owner authority is projected separately without rewriting canonical lifecycle', async () => {
+  const descriptor = Object.freeze({
+    kind: 'LOCAL_EXECUTION_TICKET',
+    state: 'EXPIRED',
+    expiresAt: '2026-09-06T00:05:00.000Z',
+    cancellation: 'UNSUPPORTED',
+  });
+  const { adapter, calls } = harness(Object.freeze({ tenantId, userId }), {
+    childRuns: [runningLocalChild, internalChild],
+    allRuns: [parent, runningLocalChild, internalChild],
+    observeLocalExecution: async (candidateScope, ticketId) => sameScope(candidateScope) && ticketId === runningLocalChild.authorityRef ? descriptor : undefined,
+  });
+
+  await withServer(adapter, async base => {
+    const response = await fetch(`${base}/api/core/execution-runs/${parentRunId}/children?projectId=${projectId}&limit=2`, { headers: headers() });
+    assert.equal(response.status, 200);
+    const body = await json(response);
+    const local = body.runs.find(candidate => candidate.runId === localChildRunId);
+    assert.equal(local.status, 'RUNNING', 'ticket expiry must not fabricate an ExecutionRun terminal transition');
+    assert.deepEqual(local.localExecution, descriptor);
+    assert.equal(body.runs.find(candidate => candidate.runId === internalChildRunId).localExecution, undefined);
+  });
+  assert.deepEqual(calls.localExecution, [{ scope, ticketId: runningLocalChild.authorityRef }]);
+  assert.deepEqual(calls.results, []);
+});
+
+test('malformed Local authority descriptors fail closed and cannot grant cancellation authority', async () => {
+  for (const descriptor of [
+    Object.freeze({ kind: 'LOCAL_EXECUTION_TICKET', state: 'CANCELLED', expiresAt: '2026-09-06T00:05:00.000Z', cancellation: 'UNSUPPORTED' }),
+    Object.freeze({ kind: 'LOCAL_EXECUTION_TICKET', state: 'ACTIVE', expiresAt: '2026-09-06T00:05:00.000Z', cancellation: 'AVAILABLE' }),
+    Object.freeze({ kind: 'LOCAL_EXECUTION_TICKET', state: 'ACTIVE', expiresAt: 'not-a-time', cancellation: 'UNSUPPORTED' }),
+  ]) {
+    const { adapter } = harness(Object.freeze({ tenantId, userId }), {
+      childRuns: [runningLocalChild],
+      allRuns: [parent, runningLocalChild],
+      observeLocalExecution: async () => descriptor,
+    });
+    await withServer(adapter, async base => {
+      const response = await fetch(`${base}/api/core/execution-runs/${parentRunId}/children?projectId=${projectId}&limit=2`, { headers: headers() });
+      assert.equal(response.status, 500);
+      assert.equal((await json(response)).error, 'internal_error');
+    });
+  }
 });
 
 test('only a SUCCEEDED Creative run can project a validated read-only FINAL descriptor', async () => {
@@ -209,6 +274,7 @@ test('only a SUCCEEDED Creative run can project a validated read-only FINAL desc
     assert.equal(body.runs.find(candidate => candidate.runId === parentRunId).result, undefined);
   });
   assert.deepEqual(calls.results, [{ scope, executionId: succeededCreative.authorityRef }]);
+  assert.deepEqual(calls.localExecution, []);
 });
 
 test('malformed result descriptors fail closed instead of becoming browser navigation authority', async () => {
@@ -246,6 +312,7 @@ test('cross-scope and unknown runs are existence-safe', async () => {
     assert.equal((await json(childrenResponse)).error, 'execution_run_not_found');
   });
   assert.deepEqual(wrongUser.calls.results, []);
+  assert.deepEqual(wrongUser.calls.localExecution, []);
 
   const ownerHarness = harness();
   await withServer(ownerHarness.adapter, async base => {
@@ -279,6 +346,7 @@ test('invalid identifiers, limits, query authority and malformed path encoding f
   assert.equal(calls.gets.length, 0);
   assert.equal(calls.children.length, 0);
   assert.equal(calls.results.length, 0);
+  assert.equal(calls.localExecution.length, 0);
 });
 
 test('authentication and origin policy are preserved and OPTIONS is read-only', async () => {
@@ -301,4 +369,5 @@ test('authentication and origin policy are preserved and OPTIONS is read-only', 
   assert.equal(calls.gets.length, 0);
   assert.equal(calls.children.length, 0);
   assert.equal(calls.results.length, 0);
+  assert.equal(calls.localExecution.length, 0);
 });

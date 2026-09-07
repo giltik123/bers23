@@ -1,4 +1,4 @@
-name: P1b/P1e/P1f/P1g Job Center canonical execution authority
+name: P1b/P1e/P1f/P1g/P1h Job Center canonical execution authority
 
 on:
   pull_request:
@@ -27,6 +27,10 @@ on:
       - 'src/lib/jobs/jobStorage.js'
       - 'server/core/http/executionRunRecoveryHttpAdapter.ts'
       - 'server/core/http/executionRunRecoveryHttpAdapter.test.mjs'
+      - 'server/core/localExecution/LocalExecutionLedger.ts'
+      - 'server/core/localExecution/PostgresLocalExecutionLedger.ts'
+      - 'server/core/localExecution/PostgresLocalExecutionLedger.integration.test.mjs'
+      - 'server/core/localExecution/PostgresLocalExecutionLedgerV2.integration.test.mjs'
       - 'server/core/artifacts/postgresImageArtifactStore.ts'
       - 'server/core/artifacts/signedArtifactAuthority.ts'
       - 'server/index.ts'
@@ -54,7 +58,7 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove GET-only recovery, durable FINAL projection, owning Creative cancel and explicit session repeat semantics
+      - name: Prove GET-only recovery, durable FINAL and Local authority projection, owning Creative cancel and explicit session repeat semantics
         run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
       - name: Preserve accepted server recovery HTTP contract
         run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
@@ -64,18 +68,21 @@ jobs:
           npm run server:typecheck
       - name: Build production browser
         run: npm run build
-      - name: Prove canonical recovery remains observation-only while projecting durable FINAL and session repeats stay new operations
+      - name: Prove canonical recovery remains observation-only while projecting durable FINAL/Local owner truth and session repeats stay new operations
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           test -n "${BASE_SHA:-}"
-          UNEXPECTED_SERVER="$(git diff --name-only "$BASE_SHA"..HEAD -- server | grep -Ev '^(server/index\.ts|server/core/http/executionRunRecoveryHttpAdapter\.ts|server/core/http/executionRunRecoveryHttpAdapter\.test\.mjs)$' || true)"
+          UNEXPECTED_SERVER="$(git diff --name-only "$BASE_SHA"..HEAD -- server | grep -Ev '^(server/index\.ts|server/core/http/executionRunRecoveryHttpAdapter\.ts|server/core/http/executionRunRecoveryHttpAdapter\.test\.mjs|server/core/localExecution/LocalExecutionLedger\.ts|server/core/localExecution/PostgresLocalExecutionLedger\.ts|server/core/localExecution/PostgresLocalExecutionLedger\.integration\.test\.mjs|server/core/localExecution/PostgresLocalExecutionLedgerV2\.integration\.test\.mjs)$' || true)"
           test -z "$UNEXPECTED_SERVER"
           ! grep -E -q 'coreClient|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|\.cancel\(|\.retry\(|\.issue\(' src/lib/jobs/executionRunProjection.js
           ! grep -E -q "method: 'POST'|method: 'PATCH'|method: 'DELETE'|coreClient|entities|creative|localExecution" src/api/executionRunRecoveryClient.js
           grep -q 'RESULT_PATH' src/lib/jobs/executionRunProjection.js
           grep -q "status !== 'SUCCEEDED' || capability !== 'CREATIVE_EXECUTION' || authorityKind !== 'CREATIVE_EXECUTION'" src/lib/jobs/executionRunProjection.js
+          grep -q 'LOCAL_AUTHORITY_STATE' src/lib/jobs/executionRunProjection.js
+          grep -q "capability !== 'LOCAL_EXECUTION' || authorityKind !== 'LOCAL_EXECUTION_TICKET'" src/lib/jobs/executionRunProjection.js
+          grep -q "value.cancellation !== 'UNSUPPORTED'" src/lib/jobs/executionRunProjection.js
           grep -q "run.capability === 'CREATIVE_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "run.authorityKind === 'CREATIVE_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q "run.status === 'RUNNING'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
@@ -84,6 +91,10 @@ jobs:
           grep -q "run.result?.kind === 'FINAL_IMAGE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'href={run.result.imageUrl}' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'data-canonical-execution-result' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "run.capability === 'LOCAL_EXECUTION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "run.authorityKind === 'LOCAL_EXECUTION_TICKET'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'data-local-execution-authority' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'Cancellation unsupported.' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           ! grep -E -q 'jobManager|jobStorage|onRunAgain|onRetry|onDuplicate|onMoveUp|coreClient|execution-runs|runAgain|retry|duplicate' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'new CreativeExecutionControlPolicy(coreClient.creative)' src/components/editor/jobs/JobCenter.jsx
           grep -q 'await creativeControl.cancel(run)' src/components/editor/jobs/JobCenter.jsx
@@ -102,10 +113,16 @@ jobs:
           grep -q 'type ExecutionRunResultReader' server/core/http/executionRunRecoveryHttpAdapter.ts
           grep -q 'resolveCreativeFinal(scope: ExecutionRunScope, executionId: string)' server/core/http/executionRunRecoveryHttpAdapter.ts
           grep -q 'results.resolveCreativeFinal(scope, run.authorityRef)' server/core/http/executionRunRecoveryHttpAdapter.ts
-          ! grep -E -q '\.(issue|start|succeed|fail|cancel|markUnknown)\(' server/core/http/executionRunRecoveryHttpAdapter.ts
+          grep -q 'type ExecutionRunLocalAuthorityReader' server/core/http/executionRunRecoveryHttpAdapter.ts
+          grep -q 'localExecution.observeLocalExecution(scope, run.authorityRef)' server/core/http/executionRunRecoveryHttpAdapter.ts
+          grep -q "value.cancellation !== 'UNSUPPORTED'" server/core/http/executionRunRecoveryHttpAdapter.ts
+          ! grep -E -q '\.(issue|issueV2|claim|claimV2|commit|release|start|succeed|fail|cancel|markUnknown)\(' server/core/http/executionRunRecoveryHttpAdapter.ts
           grep -q 'production.artifacts.images.loadFinalByExecution(executionId, scope)' server/index.ts
           grep -q 'production.artifacts.external.issueStoredFinal(stored.storageId, scope)' server/index.ts
           grep -q 'production.artifacts.external.issueStoredFinalDelivery' server/index.ts
+          grep -q 'production.localExecution.admission.observe(ticketId, scope, Date.now())' server/index.ts
+          grep -q 'WHERE ticket_id=\$1 AND tenant_id=\$2 AND user_id=\$3 AND project_id=\$4' server/core/localExecution/PostgresLocalExecutionLedger.ts
+          ! grep -E -q 'cancel\(' server/core/localExecution/LocalExecutionLedger.ts server/core/localExecution/PostgresLocalExecutionLedger.ts
       - name: Check committed diff whitespace
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ExecutionRunProjection, executionRunCapabilityLabel, executionRunStatusLabel } from './executionRunProjection.js';
+import { ExecutionRunProjection, executionRunCapabilityLabel, executionRunStatusLabel, localExecutionAuthorityStateLabel } from './executionRunProjection.js';
 
 const projectA = '11111111-1111-4111-8111-111111111111';
 const projectB = '22222222-2222-4222-8222-222222222222';
@@ -32,6 +32,16 @@ function run(overrides = {}) {
   });
 }
 
+function localAuthority(state, overrides = {}) {
+  return Object.freeze({
+    kind: 'LOCAL_EXECUTION_TICKET',
+    state,
+    expiresAt: '2026-09-06T07:02:00.000Z',
+    cancellation: 'UNSUPPORTED',
+    ...overrides,
+  });
+}
+
 function projection(client, options = {}) {
   let scheduled = 0;
   let cancelled = 0;
@@ -56,7 +66,16 @@ function deferred() {
 test('projection recovers canonical roots plus direct workflow children and preserves UNKNOWN as distinct terminal truth', async () => {
   const workflow = run({ runId: workflowId, capability: 'WORKFLOW_CONTINUATION', authorityRef: 'workflow:1' });
   const unknownCreative = run({ runId: creativeId, status: 'UNKNOWN', revision: 3, statusReasonCode: 'PROVIDER_OUTCOME_UNKNOWN', finishedAt: now });
-  const local = run({ runId: localId, parentRunId: workflowId, capability: 'LOCAL_EXECUTION', authorityRef: 'ticket:1', status: 'SUCCEEDED', revision: 3, finishedAt: now });
+  const local = run({
+    runId: localId,
+    parentRunId: workflowId,
+    capability: 'LOCAL_EXECUTION',
+    authorityRef: 'ticket:1',
+    status: 'SUCCEEDED',
+    revision: 3,
+    finishedAt: now,
+    localExecution: localAuthority('FINALIZED_SUCCESS'),
+  });
   const internal = run({ runId: internalId, parentRunId: workflowId, capability: 'WORKFLOW_STEP', authorityRef: 'workflow-internal-step:1:verify', status: 'FAILED', revision: 3, statusReasonCode: 'VERIFY_FAILED', finishedAt: now });
   const calls = [];
   const client = Object.freeze({
@@ -83,11 +102,60 @@ test('projection recovers canonical roots plus direct workflow children and pres
   assert.equal(state.runs[0].runId, workflowId);
   assert.equal(state.runs[0].revision, 3);
   assert.deepEqual(state.runs[0].children.map((child) => [child.runId, child.status]), [[localId, 'SUCCEEDED'], [internalId, 'FAILED']]);
+  assert.deepEqual(state.runs[0].children[0].localExecution, localAuthority('FINALIZED_SUCCESS'));
   assert.equal(state.runs[1].status, 'UNKNOWN');
   assert.equal(state.runs[1].statusReasonCode, 'PROVIDER_OUTCOME_UNKNOWN');
   assert.notEqual(state.runs[1].status, 'FAILED');
   assert.equal(executionRunStatusLabel('UNKNOWN'), 'Unknown');
   assert.equal(executionRunCapabilityLabel('WORKFLOW_CONTINUATION'), 'Composite workflow');
+  assert.equal(localExecutionAuthorityStateLabel('FINALIZED_SUCCESS'), 'Ticket finalized: success');
+});
+
+test('RUNNING Local Execution can truthfully project EXPIRED owner authority without fabricating terminal lifecycle', async () => {
+  const workflow = run({ runId: workflowId, capability: 'WORKFLOW_CONTINUATION', authorityRef: 'workflow:local-expiry' });
+  const expired = run({
+    runId: localId,
+    parentRunId: workflowId,
+    capability: 'LOCAL_EXECUTION',
+    authorityRef: 'ticket:expired',
+    status: 'RUNNING',
+    revision: 2,
+    localExecution: localAuthority('EXPIRED'),
+  });
+  const client = Object.freeze({
+    listRoots: async () => ({ runs: [workflow] }),
+    get: async () => undefined,
+    listChildren: async () => ({ parent: workflow, runs: [expired] }),
+  });
+  const { value } = projection(client);
+
+  assert.equal(await value.start(projectA), true);
+  const child = value.snapshot().runs[0].children[0];
+  assert.equal(child.status, 'RUNNING');
+  assert.equal(child.localExecution.state, 'EXPIRED');
+  assert.equal(child.localExecution.cancellation, 'UNSUPPORTED');
+  assert.equal(localExecutionAuthorityStateLabel(child.localExecution.state), 'Ticket expired');
+});
+
+test('Local authority descriptors are accepted only for exact LOCAL_EXECUTION_TICKET authority and fail closed on widening', async () => {
+  const cases = [
+    run({ localExecution: localAuthority('ACTIVE') }),
+    run({ capability: 'LOCAL_EXECUTION', runId: localId, authorityRef: 'ticket:bad-state', localExecution: localAuthority('CANCELLED') }),
+    run({ capability: 'LOCAL_EXECUTION', runId: localId, authorityRef: 'ticket:bad-cancel', localExecution: localAuthority('ACTIVE', { cancellation: 'AVAILABLE' }) }),
+    run({ capability: 'LOCAL_EXECUTION', runId: localId, authorityRef: 'ticket:bad-time', localExecution: localAuthority('ACTIVE', { expiresAt: 'not-a-time' }) }),
+  ];
+  for (const candidate of cases) {
+    const client = Object.freeze({
+      listRoots: async () => ({ runs: [candidate] }),
+      get: async () => undefined,
+      listChildren: async () => ({ parent: null, runs: [] }),
+    });
+    const { value } = projection(client);
+    assert.equal(await value.start(projectA), false);
+    assert.equal(value.snapshot().authoritative, false);
+    assert.equal(value.snapshot().runs.length, 0);
+    assert.equal(value.snapshot().error.code, 'execution_run_recovery_unavailable');
+  }
 });
 
 test('project switch rejects an older in-flight response and never exposes cross-project stale data', async () => {

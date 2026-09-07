@@ -148,6 +148,7 @@ function adapterFor(principal: Readonly<{ tenantId: string; userId: string }>) {
   return createExecutionRunRecoveryHttpAdapter({
     runs,
     results: resultReader(),
+    localExecution: Object.freeze({ observeLocalExecution: async () => undefined }),
     auth: Object.freeze({
       verify: async (authorization: string | undefined) => {
         if (authorization !== 'Bearer recovery.token.value') throw Object.assign(new Error('Authentication token is invalid'), { status: 401, code: 'unauthenticated' });
@@ -195,6 +196,7 @@ test('PostgreSQL recovery lists only roots and returns exact direct LOCAL and IN
     assert.equal(local.status, 'SUCCEEDED');
     assert.equal(local.authorityKind, 'LOCAL_EXECUTION_TICKET');
     assert.equal('result' in local, false);
+    assert.equal('localExecution' in local, false);
     assert.equal(internal.status, 'RUNNING');
     assert.equal(internal.authorityKind, 'WORKFLOW_INTERNAL_STEP');
     assert.equal(children.runs.some((candidate: any) => 'idempotencyKey' in candidate), false);

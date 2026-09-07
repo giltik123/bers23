@@ -7,6 +7,7 @@ const ROOT_LIMIT = 10;
 const CHILD_LIMIT = 25;
 const POLL_INTERVAL_MS = 15000;
 const STATUS = new Set(['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'UNKNOWN']);
+const LOCAL_AUTHORITY_STATE = new Set(['ACTIVE', 'EXPIRED', 'FINALIZED_SUCCESS', 'FINALIZED_FAILED', 'FINALIZED_UNKNOWN']);
 const AUTHORITY_BY_CAPABILITY = Object.freeze({
   LOCAL_EXECUTION: 'LOCAL_EXECUTION_TICKET',
   CREATIVE_EXECUTION: 'CREATIVE_EXECUTION',
@@ -185,6 +186,16 @@ export function executionRunCapabilityLabel(capability) {
   })[capability] || 'Execution';
 }
 
+export function localExecutionAuthorityStateLabel(state) {
+  return ({
+    ACTIVE: 'Ticket active',
+    EXPIRED: 'Ticket expired',
+    FINALIZED_SUCCESS: 'Ticket finalized: success',
+    FINALIZED_FAILED: 'Ticket finalized: failed',
+    FINALIZED_UNKNOWN: 'Ticket finalized: unknown',
+  })[state] || 'Ticket authority unavailable';
+}
+
 function emptyState(error = null) {
   return Object.freeze({
     projectId: null,
@@ -232,6 +243,9 @@ function normalizeRun(value, label) {
   const finishedAt = value.finishedAt ? canonicalTimestamp(value.finishedAt, `${label}.finishedAt`) : undefined;
   assertTimeShape(status, startedAt, finishedAt, label);
   const result = value.result === undefined ? undefined : normalizeResult(value.result, label, capability, authorityKind, status);
+  const localExecution = value.localExecution === undefined
+    ? undefined
+    : normalizeLocalExecution(value.localExecution, label, capability, authorityKind);
 
   return Object.freeze({
     runId: canonicalUuid(value.runId, `${label}.runId`),
@@ -247,6 +261,7 @@ function normalizeRun(value, label) {
     ...(startedAt ? { startedAt } : {}),
     ...(finishedAt ? { finishedAt } : {}),
     ...(result ? { result } : {}),
+    ...(localExecution ? { localExecution } : {}),
   });
 }
 
@@ -262,6 +277,17 @@ function normalizeResult(value, label, capability, authorityKind, status) {
   const height = Number(value.height);
   if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) throw new Error(`ExecutionRun ${label}.result dimensions are invalid`);
   return Object.freeze({ kind: 'FINAL_IMAGE', artifactId, imageUrl, width, height });
+}
+
+function normalizeLocalExecution(value, label, capability, authorityKind) {
+  if (capability !== 'LOCAL_EXECUTION' || authorityKind !== 'LOCAL_EXECUTION_TICKET') {
+    throw new Error(`ExecutionRun ${label}.localExecution is not valid for this authority`);
+  }
+  if (!value || typeof value !== 'object' || value.kind !== 'LOCAL_EXECUTION_TICKET') throw new Error(`ExecutionRun ${label}.localExecution kind is unsupported`);
+  const state = exactString(value.state, LOCAL_AUTHORITY_STATE, `${label}.localExecution.state`);
+  if (value.cancellation !== 'UNSUPPORTED') throw new Error(`ExecutionRun ${label}.localExecution cancellation authority is invalid`);
+  const expiresAt = canonicalTimestamp(value.expiresAt, `${label}.localExecution.expiresAt`);
+  return Object.freeze({ kind: 'LOCAL_EXECUTION_TICKET', state, expiresAt, cancellation: 'UNSUPPORTED' });
 }
 
 function freezeRun(run, children) {
