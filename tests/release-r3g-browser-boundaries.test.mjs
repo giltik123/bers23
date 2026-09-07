@@ -6,20 +6,22 @@ const HARNESS = 'scripts/test-release-r3g-browser-e2e.mjs';
 const WORKFLOW = '.github/workflows/release-r3a-browser-e2e.yml';
 
 test('R3g drives visible zero-object navigation into canonical Fashion and Outfits', async () => {
-  const [harness, editor, fashion, outfits, navigation] = await Promise.all([
+  const [harness, editor, fashion, outfits, tryOnRunner, navigation] = await Promise.all([
     readFile(HARNESS, 'utf8'),
     readFile('src/pages/Editor.jsx', 'utf8'),
     readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
     readFile('src/components/editor/outfits/OutfitPanel.jsx', 'utf8'),
+    readFile('src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx', 'utf8'),
     readFile('src/components/adaptive/AdaptiveNavigation.jsx', 'utf8'),
   ]);
 
   assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
   assert.match(editor, /editTab === 'fashion'[\s\S]*<FashionPanel \/>/);
-  assert.match(editor, /editTab === 'outfits'[\s\S]*<OutfitPanel \/>/);
+  assert.match(editor, /editTab === 'outfits'[\s\S]*<CanonicalTryOnRunnerPanel[\s\S]*!tryOn\.state\.host\.active && <OutfitPanel \/>/);
   assert.match(navigation, /<button key=\{item\.id\} onClick=\{\(\) => onChange\(item\.id\)\}/);
   assert.match(fashion, /aria-label="Canonical fashion wardrobe"/);
   assert.match(outfits, /aria-label="Canonical Outfit builder"/);
+  assert.match(tryOnRunner, /aria-label="Canonical deterministic Try-On runner"/);
 
   for (const text of [
     "getByRole('button', { name: 'Prompt', exact: true })",
@@ -53,17 +55,22 @@ test('R3g uses built SPA built production Core and PostgreSQL only as correctnes
   assert.doesNotMatch(harness, /InMemory|FakeProject|MockProject|FakeArtifact|MockArtifact/);
 });
 
-test('R3g proves canonical Fashion and Outfit reads without Detect Object MASK or fallback authority', async () => {
-  const [harness, fashion, outfits] = await Promise.all([
+test('R3g proves canonical Fashion and dual Outfit reads without Detect Object MASK or fallback authority', async () => {
+  const [harness, fashion, outfits, tryOnRunner] = await Promise.all([
     readFile(HARNESS, 'utf8'),
     readFile('src/components/editor/fashion/FashionPanel.jsx', 'utf8'),
     readFile('src/components/editor/outfits/OutfitPanel.jsx', 'utf8'),
+    readFile('src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx', 'utf8'),
   ]);
 
   assert.match(fashion, /coreClient\.fashion\.garments/);
   assert.match(fashion, /coreClient\.fashion\.wardrobe/);
-  assert.match(outfits, /coreClient\.fashion\.outfits/);
-  assert.match(outfits, /coreClient\.fashion\.wardrobe/);
+  assert.match(outfits, /createCanonicalOutfitViewModel/);
+  assert.match(outfits, /applySnapshot\(await model\.load\(\)\)/);
+  assert.match(tryOnRunner, /createCanonicalOutfitViewModel/);
+  assert.match(tryOnRunner, /const snapshot = await model\.load\(\)/);
+  assert.match(harness, /countRequest\('GET \/api\/core\/wardrobe\/outfits'\), 4/);
+  assert.match(harness, /countRequest\('GET \/api\/core\/wardrobe\/garments'\), 6/);
   assert.match(harness, /\/api\/core\/garments/);
   assert.match(harness, /\/api\/core\/wardrobe\/garments/);
   assert.match(harness, /\/api\/core\/wardrobe\/outfits/);
