@@ -1,0 +1,127 @@
+name: R3a browser release E2E foundation
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/App.jsx'
+      - 'src/api/coreClient.js'
+      - 'src/components/ProtectedRoute.jsx'
+      - 'src/lib/AuthContext.jsx'
+      - 'src/lib/projectService.js'
+      - 'src/pages/Login.jsx'
+      - 'src/pages/Projects.jsx'
+      - 'src/pages/Editor.jsx'
+      - 'server/core/auth/**'
+      - 'server/core/projects/**'
+      - 'server/core/artifacts/**'
+      - 'server/core/http/**'
+      - 'server/core/config.ts'
+      - 'server/index.ts'
+      - 'scripts/build-core-server.mjs'
+      - 'scripts/production-migration-inventory.mjs'
+      - 'scripts/test-release-r3a-browser-e2e.mjs'
+      - 'tests/editor-zero-object-navigation.test.mjs'
+      - 'tests/auth-client-contract.test.mjs'
+      - '.github/workflows/release-r3a-browser-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-r3a-browser-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auth-project-editor-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: release_r3a_test
+          POSTGRES_USER: release_r3a_test
+          POSTGRES_PASSWORD: release_r3a_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U release_r3a_test -d release_r3a_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://release_r3a_test:release_r3a_test@127.0.0.1:5432/release_r3a_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      VITE_CORE_API_URL: http://127.0.0.1:4188/api/core
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Preserve financial redesign freeze
+        run: |
+          set -euo pipefail
+          test -n "$BASE_SHA"
+          git diff --exit-code "$BASE_SHA"..HEAD -- \
+            server/transactions/application/financialAccountPorts.ts \
+            server/transactions/infrastructure/postgres/postgresFinancialAccountStore.ts \
+            server/transactions/infrastructure/postgres/postgresFinancialAccountPolicy.ts \
+            server/transactions/infrastructure/postgres/postgresFinancialTrialPolicy.ts \
+            server/transactions/infrastructure/postgres/migrations/038_financial_account_foundation.sql \
+            server/core/http/financialAccountHttpAdapter.ts \
+            server/core/http/financialAccountPolicyHttpAdapter.ts \
+            server/core/http/financialTrialHttpAdapter.ts \
+            src/lib/credits \
+            src/lib/subscriptions \
+            src/pages/Billing.jsx \
+            src/pages/Subscription.jsx
+      - name: Typecheck browser and Core release surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Preserve zero-object and canonical auth client contracts
+        run: |
+          node --test tests/editor-zero-object-navigation.test.mjs
+          node --test tests/auth-client-contract.test.mjs
+      - name: Build immutable Core and apply its packaged production migrations
+        run: |
+          npm run server:build
+          test -f dist-server/server.mjs
+          test -f dist-server/migrations/038_financial_account_foundation.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Build real SPA against the built Core origin
+        run: |
+          npm run build
+          test -f dist/index.html
+      - name: Bundle external release harness without replacing production stores
+        run: |
+          mkdir -p .test-cache/release-r3a
+          npx esbuild scripts/test-release-r3a-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3a/test-release-r3a-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove built SPA -> built Core -> real PostgreSQL Auth Project Editor journey
+        run: node .test-cache/release-r3a/test-release-r3a-browser-e2e.mjs
+      - name: Prove harness uses built artifacts and no financial/provider authority
+        run: |
+          set -euo pipefail
+          script=scripts/test-release-r3a-browser-e2e.mjs
+          grep -q "dist-server/server.mjs" "$script"
+          grep -q "path.resolve('dist')" "$script"
+          grep -q "PostgresAuthStore" "$script"
+          grep -q "canonical_projects" "$script"
+          grep -q "providerCalls, 0" "$script"
+          ! grep -E -q 'financialAccount|financialTrial|checkout|subscription|credit_grants|credit_wallets' "$script"
+      - name: Check committed diff whitespace
+        run: git diff --check "$BASE_SHA"..HEAD
