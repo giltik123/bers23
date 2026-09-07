@@ -1,0 +1,107 @@
+name: P0b.1 server-policy FREE account bootstrap
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/transactions/application/financialAccountPorts.ts'
+      - 'server/transactions/infrastructure/postgres/postgresFinancialAccountStore.ts'
+      - 'server/transactions/infrastructure/postgres/postgresFinancialAccountPolicy.integration.test.mjs'
+      - 'server/core/http/financialAccountPolicyHttpAdapter.ts'
+      - 'server/core/http/financialAccountPolicyHttpAdapter.test.mjs'
+      - 'server/index.ts'
+      - 'tests/financial-account-initialize-http-postgres.test.ts'
+      - '.github/workflows/financial-account-free-bootstrap-p0b1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  free-bootstrap-postgres:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: financial_p0b1_test
+          POSTGRES_USER: financial_p0b1_test
+          POSTGRES_PASSWORD: financial_p0b1_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U financial_p0b1_test -d financial_p0b1_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://financial_p0b1_test:financial_p0b1_test@127.0.0.1:5432/financial_p0b1_test
+      TEST_DATABASE_URL: postgresql://financial_p0b1_test:financial_p0b1_test@127.0.0.1:5432/financial_p0b1_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Preserve accepted transaction and financial schemas
+        run: |
+          set -euo pipefail
+          test -n "$BASE_SHA"
+          git diff --exit-code "$BASE_SHA"..HEAD -- \
+            server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql \
+            server/transactions/infrastructure/postgres/migrations/038_financial_account_foundation.sql
+      - name: Prove global migration inventory remains exactly 001 through 038
+        run: |
+          node --input-type=module <<'NODE'
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.length !== 38) throw new Error(`Expected 38 contiguous production migrations, got ${migrations.length}`);
+          if (migrations[0]?.name !== '001_transaction_store.sql') throw new Error('001 transaction root migration moved');
+          if (migrations.at(-1)?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration must remain the inventory tail');
+          NODE
+      - name: Typecheck and build Core
+        run: |
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/001_transaction_store.sql
+          test -f dist-server/migrations/038_financial_account_foundation.sql
+      - name: Apply and verify accepted database schema
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Preserve P0a grant and replay authority
+        run: node --experimental-strip-types --test server/transactions/infrastructure/postgres/postgresFinancialAccountStore.integration.test.mjs
+      - name: Prove atomic concurrent FREE bootstrap and fail-closed drift semantics
+        run: node --experimental-strip-types --test server/transactions/infrastructure/postgres/postgresFinancialAccountPolicy.integration.test.mjs
+      - name: Preserve GET-only financial observation transport
+        run: node --experimental-strip-types --test server/core/http/financialAccountHttpAdapter.test.mjs
+      - name: Prove bounded initialize HTTP capability contract
+        run: node --experimental-strip-types --test server/core/http/financialAccountPolicyHttpAdapter.test.mjs
+      - name: Preserve PostgreSQL-backed mutation-free GET vertical
+        run: node --experimental-strip-types --test tests/financial-account-http-postgres.test.ts
+      - name: Prove HTTP to PostgreSQL FREE initialize vertical
+        run: node --experimental-strip-types --test tests/financial-account-initialize-http-postgres.test.ts
+      - name: Preserve canonical reservation spend authority
+        run: npm run test:transactions-postgres
+      - name: Prove FREE bootstrap authority remains narrow
+        run: |
+          set -euo pipefail
+          grep -q "FINANCIAL_ACCOUNT_INITIALIZE_PATH = '/api/core/financial/account/initialize'" server/core/http/financialAccountPolicyHttpAdapter.ts
+          grep -q 'initializeFreeAccount: production.transactions.financialAccounts.initializeFreeAccount.bind' server/index.ts
+          grep -q 'path === FINANCIAL_ACCOUNT_INITIALIZE_PATH' server/index.ts
+          grep -q "FREE_WELCOME_AMOUNT = 500" server/transactions/infrastructure/postgres/postgresFinancialAccountStore.ts
+          grep -q "FREE_WELCOME_IDEMPOTENCY_KEY = 'server-policy/free-account/welcome/v1'" server/transactions/infrastructure/postgres/postgresFinancialAccountStore.ts
+          grep -q 'exactEmptyBody' server/core/http/financialAccountPolicyHttpAdapter.ts
+          ! grep -E -q '\.(grant|reserve|commit|release)\(' server/core/http/financialAccountPolicyHttpAdapter.ts
+          ! grep -E -q 'providerEventId|providerCustomerRef|providerSubscriptionRef|checkout|webhook' server/core/http/financialAccountPolicyHttpAdapter.ts
+          git diff --exit-code "$BASE_SHA"..HEAD -- src/lib/credits src/lib/subscription src/pages/Subscription.jsx
+      - name: Check committed diff whitespace
+        run: git diff --check "$BASE_SHA"..HEAD

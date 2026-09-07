@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type {
   BillingInterval,
   CreditGrantAuthority,
@@ -7,6 +9,8 @@ import type {
   CreditWalletSnapshot,
   EntitlementSource,
   EntitlementState,
+  FinancialAccountBootstrapAuthority,
+  FinancialAccountBootstrapResult,
   FinancialAccountReader,
   FinancialAccountSnapshot,
   FinancialEntitlementSnapshot,
@@ -48,11 +52,37 @@ type SnapshotRow = WalletRow & Readonly<{
   entitlement_updated_at: string | Date;
 }>;
 
+type PolicyAccountRow = Readonly<{
+  owner_id: string;
+  tenant_id: string;
+  plan_id: string;
+  state: EntitlementState;
+  billing_interval: BillingInterval | null;
+  source: EntitlementSource;
+  entitlement_revision: string | number;
+  starts_at: string | Date;
+  ends_at: string | Date | null;
+  trial_consumed_at: string | Date | null;
+  provider_customer_ref: string | null;
+  provider_subscription_ref: string | null;
+}>;
+
+const FREE_POLICY_PLAN_ID = 'free';
+const FREE_POLICY_STATE = 'FREE' as const;
+const FREE_POLICY_SOURCE = 'SERVER_POLICY' as const;
+const FREE_POLICY_REVISION = 1;
+const FREE_WELCOME_AMOUNT = 500;
+const FREE_WELCOME_IDEMPOTENCY_KEY = 'server-policy/free-account/welcome/v1';
+const FREE_WELCOME_FINGERPRINT = sha256(
+  'bers.financial.free-welcome.v1|plan=free|state=FREE|source=SERVER_POLICY|grant=WELCOME|amount=500',
+);
+
 /**
  * Canonical PostgreSQL financial account authority over the existing credit_wallets balance.
- * Grants and wallet increments commit atomically; no browser-facing mutation API is provided here.
+ * Grants and wallet increments commit atomically. The FREE bootstrap is a narrow server-policy
+ * command whose amount, plan, state and idempotency material are fixed in this module.
  */
-export class PostgresFinancialAccountStore implements CreditGrantAuthority, FinancialAccountReader {
+export class PostgresFinancialAccountStore implements CreditGrantAuthority, FinancialAccountBootstrapAuthority, FinancialAccountReader {
   private readonly runner: SqlTransactionRunner;
 
   constructor(runner: SqlTransactionRunner) {
@@ -62,100 +92,193 @@ export class PostgresFinancialAccountStore implements CreditGrantAuthority, Fina
   async grant(inputValue: CreditGrantInput): Promise<CreditGrantResult> {
     const input = normalizeGrantInput(inputValue);
     return this.runner.transaction('read committed', async (tx) => {
+      // The canonical transaction authority uses the wallet as the first lock for
+      // every balance mutation. Keep grants/bootstrap in that same global order.
+      const wallet = await lockWallet(tx, input.identity.userId);
+      if (!wallet) return Object.freeze({ kind: 'account_not_found' as const });
+
       const account = await tx.query<{ owner_id: string }>(
         `SELECT owner_id FROM financial_entitlement_accounts
          WHERE tenant_id=$1 AND owner_id=$2 FOR UPDATE`,
         [input.identity.tenantId, input.identity.userId],
       );
       if (account.rowCount !== 1) return Object.freeze({ kind: 'account_not_found' as const });
+      return applyGrantLocked(tx, input, wallet);
+    });
+  }
 
-      const wallet = await tx.query<WalletRow>(
-        `SELECT total_credited,lifetime_spent,balance,reserved,version,updated_at
-         FROM credit_wallets WHERE owner_id=$1 FOR UPDATE`,
-        [input.identity.userId],
+  async initializeFreeAccount(identityValue: FinancialIdentity): Promise<FinancialAccountBootstrapResult> {
+    const identity = normalizeIdentity(identityValue);
+    const occurredAt = new Date().toISOString();
+    const expectedGrant = freeWelcomeGrant(identity, occurredAt);
+
+    return this.runner.transaction('read committed', async (tx) => {
+      // A wallet can legitimately predate P0a/P0b, so preserve it byte-for-byte except for
+      // the one accepted +500 welcome increment. INSERT only creates a missing zero wallet.
+      await tx.query(
+        `INSERT INTO credit_wallets(owner_id,created_at,updated_at)
+         VALUES ($1,$2,$2)
+         ON CONFLICT (owner_id) DO NOTHING`,
+        [identity.userId, occurredAt],
       );
-      if (wallet.rowCount !== 1) throw new Error('financial entitlement account is missing its canonical credit wallet');
+      const wallet = await lockWallet(tx, identity.userId);
+      if (!wallet) throw new Error('canonical credit wallet could not be locked for FREE bootstrap');
 
-      const inserted = await tx.query<GrantRow>(
-        `INSERT INTO credit_grants
-          (id,tenant_id,owner_id,idempotency_key,request_fingerprint,grant_kind,source,amount,provider_event_id,occurred_at,metadata)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
-         ON CONFLICT DO NOTHING
-         RETURNING id,tenant_id,owner_id,idempotency_key,request_fingerprint,grant_kind,source,amount,provider_event_id,occurred_at`,
+      // Lock by globally unique owner_id rather than tenant-filtering. A wallet owner already
+      // bound to another tenant must conflict, never appear unconfigured and be rebound.
+      const account = await tx.query<PolicyAccountRow>(
+        `SELECT owner_id,tenant_id,plan_id,state,billing_interval,source,entitlement_revision,
+                starts_at,ends_at,trial_consumed_at,provider_customer_ref,provider_subscription_ref
+         FROM financial_entitlement_accounts
+         WHERE owner_id=$1
+         FOR UPDATE`,
+        [identity.userId],
+      );
+      const policyGrantCandidates = await findPolicyGrantCandidates(tx, expectedGrant);
+
+      if (account.rowCount === 1) {
+        if (!sameFreePolicyAccount(account.rows[0], identity)) {
+          return Object.freeze({ kind: 'policy_conflict' as const });
+        }
+        const policyGrant = policyGrantCandidates.length === 1 ? policyGrantCandidates[0] : undefined;
+        if (!policyGrant
+          || !samePolicyGrantBinding(policyGrant, expectedGrant)
+          || !sameFreePolicyStartBinding(account.rows[0], policyGrant)) {
+          return Object.freeze({ kind: 'policy_drift' as const });
+        }
+        const snapshot = await snapshotLocked(tx, identity);
+        if (!snapshot.entitlement || !snapshot.wallet) throw new Error('FREE bootstrap replay lost canonical account state');
+        return Object.freeze({ kind: 'replayed' as const, snapshot });
+      }
+      if (account.rowCount !== 0) throw new Error('financial entitlement owner uniqueness invariant failed');
+
+      // A policy grant without its policy-owned entitlement can only be partial/drifted state.
+      // Do not "repair" financial truth by adding or recreating money.
+      if (policyGrantCandidates.length !== 0) return Object.freeze({ kind: 'policy_drift' as const });
+
+      const entitlement = await tx.query<{ owner_id: string }>(
+        `INSERT INTO financial_entitlement_accounts
+          (owner_id,tenant_id,plan_id,state,billing_interval,source,entitlement_revision,starts_at,ends_at,
+           trial_consumed_at,provider_customer_ref,provider_subscription_ref,created_at,updated_at)
+         VALUES ($1,$2,$3,$4,NULL,$5,$6,$7,NULL,NULL,NULL,NULL,$7,$7)
+         RETURNING owner_id`,
         [
-          input.id,
-          input.identity.tenantId,
-          input.identity.userId,
-          input.idempotencyKey,
-          input.requestFingerprint,
-          input.kind,
-          input.source,
-          input.amount,
-          input.providerEventId ?? null,
-          input.occurredAt,
-          JSON.stringify(input.metadata ?? {}),
+          identity.userId,
+          identity.tenantId,
+          FREE_POLICY_PLAN_ID,
+          FREE_POLICY_STATE,
+          FREE_POLICY_SOURCE,
+          FREE_POLICY_REVISION,
+          occurredAt,
         ],
       );
+      if (entitlement.rowCount !== 1) throw new Error('FREE entitlement bootstrap was not inserted');
 
-      if (inserted.rowCount !== 1) {
-        const existing = await findConflictingGrant(tx, input);
-        if (!existing || !sameGrantBinding(existing, input)) return Object.freeze({ kind: 'conflict' as const });
-        return Object.freeze({
-          kind: 'replayed' as const,
-          grant: grantFromRow(existing),
-          wallet: walletFromRow(wallet.rows[0]),
-        });
+      const grant = await applyGrantLocked(tx, expectedGrant, wallet);
+      if (grant.kind !== 'applied') {
+        // Throw rather than return: account creation must roll back if the welcome grant cannot
+        // be atomically inserted and reflected in the canonical wallet.
+        throw new Error(`FREE welcome bootstrap violated grant invariant: ${grant.kind}`);
       }
 
-      const updated = await tx.query<WalletRow>(
-        `UPDATE credit_wallets
-         SET total_credited=total_credited+$2,
-             balance=balance+$2,
-             version=version+1,
-             updated_at=$3
-         WHERE owner_id=$1
-         RETURNING total_credited,lifetime_spent,balance,reserved,version,updated_at`,
-        [input.identity.userId, input.amount, input.occurredAt],
-      );
-      if (updated.rowCount !== 1) throw new Error('canonical credit wallet disappeared during grant transaction');
-
-      return Object.freeze({
-        kind: 'applied' as const,
-        grant: grantFromRow(inserted.rows[0]),
-        wallet: walletFromRow(updated.rows[0]),
-      });
+      const snapshot = await snapshotLocked(tx, identity);
+      if (!snapshot.entitlement || !snapshot.wallet) throw new Error('FREE bootstrap commit lost canonical account state');
+      return Object.freeze({ kind: 'initialized' as const, snapshot });
     });
   }
 
   async snapshot(identityValue: FinancialIdentity): Promise<FinancialAccountSnapshot> {
     const identity = normalizeIdentity(identityValue);
-    return this.runner.transaction('read committed', async (tx) => {
-      const result = await tx.query<SnapshotRow>(
-        `SELECT
-           w.total_credited,w.lifetime_spent,w.balance,w.reserved,w.version,w.updated_at,
-           e.plan_id AS entitlement_plan_id,
-           e.state AS entitlement_state,
-           e.billing_interval AS entitlement_billing_interval,
-           e.source AS entitlement_source,
-           e.entitlement_revision AS entitlement_revision_value,
-           e.starts_at AS entitlement_starts_at,
-           e.ends_at AS entitlement_ends_at,
-           e.trial_consumed_at AS entitlement_trial_consumed_at,
-           e.updated_at AS entitlement_updated_at
-         FROM financial_entitlement_accounts e
-         JOIN credit_wallets w ON w.owner_id=e.owner_id
-         WHERE e.tenant_id=$1 AND e.owner_id=$2`,
-        [identity.tenantId, identity.userId],
-      );
-      const row = result.rows[0];
-      if (!row) return Object.freeze({ identity });
-      return Object.freeze({
-        identity,
-        entitlement: entitlementFromSnapshotRow(row),
-        wallet: walletFromRow(row),
-      });
+    return this.runner.transaction('read committed', tx => snapshotLocked(tx, identity));
+  }
+}
+
+async function applyGrantLocked(tx: SqlTransaction, input: CreditGrantInput, wallet: WalletRow): Promise<CreditGrantResult> {
+  const inserted = await tx.query<GrantRow>(
+    `INSERT INTO credit_grants
+      (id,tenant_id,owner_id,idempotency_key,request_fingerprint,grant_kind,source,amount,provider_event_id,occurred_at,metadata)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
+     ON CONFLICT DO NOTHING
+     RETURNING id,tenant_id,owner_id,idempotency_key,request_fingerprint,grant_kind,source,amount,provider_event_id,occurred_at`,
+    [
+      input.id,
+      input.identity.tenantId,
+      input.identity.userId,
+      input.idempotencyKey,
+      input.requestFingerprint,
+      input.kind,
+      input.source,
+      input.amount,
+      input.providerEventId ?? null,
+      input.occurredAt,
+      JSON.stringify(input.metadata ?? {}),
+    ],
+  );
+
+  if (inserted.rowCount !== 1) {
+    const existing = await findConflictingGrant(tx, input);
+    if (!existing || !sameGrantBinding(existing, input)) return Object.freeze({ kind: 'conflict' as const });
+    return Object.freeze({
+      kind: 'replayed' as const,
+      grant: grantFromRow(existing),
+      wallet: walletFromRow(wallet),
     });
   }
+
+  const updated = await tx.query<WalletRow>(
+    `UPDATE credit_wallets
+     SET total_credited=total_credited+$2,
+         balance=balance+$2,
+         version=version+1,
+         updated_at=$3
+     WHERE owner_id=$1
+     RETURNING total_credited,lifetime_spent,balance,reserved,version,updated_at`,
+    [input.identity.userId, input.amount, input.occurredAt],
+  );
+  if (updated.rowCount !== 1) throw new Error('canonical credit wallet disappeared during grant transaction');
+
+  return Object.freeze({
+    kind: 'applied' as const,
+    grant: grantFromRow(inserted.rows[0]),
+    wallet: walletFromRow(updated.rows[0]),
+  });
+}
+
+async function lockWallet(tx: SqlTransaction, ownerId: string): Promise<WalletRow | undefined> {
+  const result = await tx.query<WalletRow>(
+    `SELECT total_credited,lifetime_spent,balance,reserved,version,updated_at
+     FROM credit_wallets WHERE owner_id=$1 FOR UPDATE`,
+    [ownerId],
+  );
+  if (result.rowCount > 1) throw new Error('canonical credit wallet owner uniqueness invariant failed');
+  return result.rows[0];
+}
+
+async function snapshotLocked(tx: SqlTransaction, identity: FinancialIdentity): Promise<FinancialAccountSnapshot> {
+  const result = await tx.query<SnapshotRow>(
+    `SELECT
+       w.total_credited,w.lifetime_spent,w.balance,w.reserved,w.version,w.updated_at,
+       e.plan_id AS entitlement_plan_id,
+       e.state AS entitlement_state,
+       e.billing_interval AS entitlement_billing_interval,
+       e.source AS entitlement_source,
+       e.entitlement_revision AS entitlement_revision_value,
+       e.starts_at AS entitlement_starts_at,
+       e.ends_at AS entitlement_ends_at,
+       e.trial_consumed_at AS entitlement_trial_consumed_at,
+       e.updated_at AS entitlement_updated_at
+     FROM financial_entitlement_accounts e
+     JOIN credit_wallets w ON w.owner_id=e.owner_id
+     WHERE e.tenant_id=$1 AND e.owner_id=$2`,
+    [identity.tenantId, identity.userId],
+  );
+  const row = result.rows[0];
+  if (!row) return Object.freeze({ identity });
+  return Object.freeze({
+    identity,
+    entitlement: entitlementFromSnapshotRow(row),
+    wallet: walletFromRow(row),
+  });
 }
 
 async function findConflictingGrant(tx: SqlTransaction, input: CreditGrantInput): Promise<GrantRow | undefined> {
@@ -171,6 +294,57 @@ async function findConflictingGrant(tx: SqlTransaction, input: CreditGrantInput)
   );
   if (result.rowCount !== 1) return undefined;
   return result.rows[0];
+}
+
+async function findPolicyGrantCandidates(tx: SqlTransaction, input: CreditGrantInput): Promise<readonly GrantRow[]> {
+  const result = await tx.query<GrantRow>(
+    `SELECT id,tenant_id,owner_id,idempotency_key,request_fingerprint,grant_kind,source,amount,provider_event_id,occurred_at
+     FROM credit_grants
+     WHERE id=$1 OR (owner_id=$2 AND idempotency_key=$3)
+     ORDER BY id
+     LIMIT 2`,
+    [input.id, input.identity.userId, input.idempotencyKey],
+  );
+  return result.rows;
+}
+
+function freeWelcomeGrant(identity: FinancialIdentity, occurredAt: string): CreditGrantInput {
+  const subject = `${identity.tenantId}\u0000${identity.userId}`;
+  return Object.freeze({
+    id: `free-welcome-v1-${sha256(subject)}`,
+    identity,
+    idempotencyKey: FREE_WELCOME_IDEMPOTENCY_KEY,
+    requestFingerprint: FREE_WELCOME_FINGERPRINT,
+    kind: 'WELCOME' as const,
+    source: FREE_POLICY_SOURCE,
+    amount: FREE_WELCOME_AMOUNT,
+    occurredAt,
+    metadata: Object.freeze({ policy: 'free-account-welcome', policyVersion: 1 }),
+  });
+}
+
+function sameFreePolicyAccount(row: PolicyAccountRow, identity: FinancialIdentity): boolean {
+  return row.owner_id === identity.userId
+    && row.tenant_id === identity.tenantId
+    && row.plan_id === FREE_POLICY_PLAN_ID
+    && row.state === FREE_POLICY_STATE
+    && row.billing_interval === null
+    && row.source === FREE_POLICY_SOURCE
+    && safeInteger(row.entitlement_revision, 'entitlement revision') === FREE_POLICY_REVISION
+    && row.ends_at === null
+    && row.trial_consumed_at === null
+    && row.provider_customer_ref === null
+    && row.provider_subscription_ref === null;
+}
+
+function samePolicyGrantBinding(row: GrantRow, expected: CreditGrantInput): boolean {
+  return row.id === expected.id
+    && sameGrantBinding(row, expected)
+    && row.provider_event_id === null;
+}
+
+function sameFreePolicyStartBinding(account: PolicyAccountRow, grant: GrantRow): boolean {
+  return timestamp(account.starts_at, 'FREE entitlement startsAt') === timestamp(grant.occurred_at, 'WELCOME occurredAt');
 }
 
 function sameGrantBinding(row: GrantRow, input: CreditGrantInput): boolean {
@@ -330,4 +504,8 @@ function timestamp(value: unknown, label: string): string {
   const candidate = value instanceof Date ? value : typeof value === 'string' ? new Date(value) : undefined;
   if (!candidate || !Number.isFinite(candidate.getTime())) throw new TypeError(`${label} must be a timestamp`);
   return candidate.toISOString();
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
 }
