@@ -33,6 +33,7 @@ export function createOrthogonalTransformHttpAdapter(input: AdapterInput) {
       if (request.method === 'OPTIONS') { send(response, 204, undefined); return true; }
       if (request.method !== 'GET' && request.method !== 'HEAD') assertBrowserMutationAllowed(request, input.config);
       const principal = await input.auth.verify(requestAuthorization(request, input.config));
+      const auth = authenticatedScope(principal);
 
       if (url.pathname === `${PREFIX}prepare` && request.method === 'POST') {
         requireJson(request);
@@ -42,13 +43,13 @@ export function createOrthogonalTransformHttpAdapter(input: AdapterInput) {
           sourceArtifactId: string(body.sourceArtifactId),
           clientRequestId: string(body.clientRequestId),
           mode: string(body.mode) as never,
-        }, principal);
+        }, auth);
         send(response, 202, prepared); return true;
       }
 
       const inputMatch = url.pathname.match(/^\/api\/core\/local-execution\/orthogonal-transform\/([^/]+)\/inputs$/);
       if (inputMatch && request.method === 'GET') {
-        const canonical = await input.inputDelivery.deliver({ ticketId: decodeURIComponent(inputMatch[1]), projectId: requireProjectId(url) }, principal);
+        const canonical = await input.inputDelivery.deliver({ ticketId: decodeURIComponent(inputMatch[1]), projectId: requireProjectId(url) }, auth);
         const expectedBytes = canonical.width * canonical.height * 4;
         if (!Number.isSafeInteger(expectedBytes) || canonical.sourceRgba.byteLength !== expectedBytes) throw httpError(500, 'local_input_delivery_contract', 'Canonical orthogonal-transform input delivery length is invalid');
         response.setHeader(INPUT_WIDTH_HEADER, String(canonical.width));
@@ -61,7 +62,7 @@ export function createOrthogonalTransformHttpAdapter(input: AdapterInput) {
       if (uploadMatch && request.method === 'POST') {
         if (mediaType(request) !== 'image/png') throw httpError(415, 'unsupported_media_type', 'Content-Type must be image/png');
         const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
-        const evidence = await input.service.uploadImage({ ticketId: decodeURIComponent(uploadMatch[1]), projectId: requireProjectId(url), bytes }, principal);
+        const evidence = await input.service.uploadImage({ ticketId: decodeURIComponent(uploadMatch[1]), projectId: requireProjectId(url), bytes }, auth);
         if (!evidence.width || !evidence.height || evidence.width > input.config.imageMaxDimension || evidence.height > input.config.imageMaxDimension || evidence.width * evidence.height > input.config.imageMaxPixels) throw httpError(400, 'invalid_image_dimensions', 'Local image dimensions are invalid or unsafe');
         send(response, 201, evidence); return true;
       }
@@ -72,7 +73,7 @@ export function createOrthogonalTransformHttpAdapter(input: AdapterInput) {
         const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
         const projectId = string(body.projectId);
         if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
-        const finalized = await input.service.submit({ ticketId: decodeURIComponent(resultMatch[1]), projectId, result: body.result }, principal);
+        const finalized = await input.service.submit({ ticketId: decodeURIComponent(resultMatch[1]), projectId, result: body.result }, auth);
         const publicResult = Object.freeze({ executionId: finalized.executionId, status: finalized.status, artifactId: finalized.artifactId, verification: Object.freeze({ valid: finalized.outcome.verification.valid }) });
         send(response, finalized.status === 'SUCCESS' ? 200 : 422, publicResult); return true;
       }
@@ -87,6 +88,9 @@ export function createOrthogonalTransformHttpAdapter(input: AdapterInput) {
   };
 }
 
+function authenticatedScope(principal: AuthenticatedPrincipal): Readonly<{ tenantId: string; userId: string }> {
+  return Object.freeze({ tenantId: principal.tenantId, userId: principal.userId });
+}
 function requireProjectId(url: URL): string { const projectId = url.searchParams.get('projectId')?.trim() ?? ''; if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required'); return projectId; }
 function applyCors(request: IncomingMessage, response: ServerResponse, config: CoreServerConfig): void {
   const origin = header(request, 'origin');
