@@ -3,6 +3,7 @@ import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import type { ManualParametricGarmentAdmissionService } from '../fashion/ManualParametricGarmentAdmissionService.ts';
 import type { ManualParametricGarmentAdmissionResult } from '../fashion/postgresGarmentRepresentationStore.ts';
+import { authenticatedOwnerScope } from './authenticatedPrincipalScope.ts';
 import {
   BROWSER_CSRF_HEADER,
   assertBrowserMutationAllowed,
@@ -66,7 +67,7 @@ export function createManualParametricGarmentAdmissionHttpAdapter(input: Adapter
       const principal = await input.auth.verify(requestAuthorization(request, input.config));
       const garmentId = decodePathSegment(match[1]);
       const body = exactBody(await readJson(request, input.config.bodyLimitBytes));
-      const result = await input.admission.admit(principal, Object.freeze({
+      const result = await input.admission.admit(authenticatedOwnerScope(principal), Object.freeze({
         garmentId,
         expectedRevision: body.expectedRevision,
         contour: body.contour,
