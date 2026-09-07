@@ -42,6 +42,18 @@ test('R3 orthogonal HTTP boundary strips session metadata before canonical local
   assert.doesNotMatch(adapter, /input\.(?:service|inputDelivery)\.[A-Za-z]+\([\s\S]*?, principal\)/);
 });
 
+test('R3 deterministic PNG begins browser drain before compression writes', async () => {
+  const encoder = await readFile('src/platform/creative/deterministic/DeterministicPng.ts', 'utf8');
+  const read = encoder.indexOf('const read = new Response(stream.readable).arrayBuffer()');
+  const write = encoder.indexOf('await writer.write(source)');
+  const close = encoder.indexOf('await writer.close()');
+
+  assert.notEqual(read, -1, 'deterministic PNG must start draining CompressionStream output');
+  assert.notEqual(write, -1, 'deterministic PNG must write canonical scanlines');
+  assert.notEqual(close, -1, 'deterministic PNG must close the compressor');
+  assert.equal(read < write && write < close, true, 'CompressionStream reader must be active before write/close to avoid browser backpressure stalls');
+});
+
 test('R3 deterministic journey fails closed against provider cloud financial and legacy browser authority', async () => {
   const harness = await readFile('scripts/test-release-r3b-browser-e2e.mjs', 'utf8');
 
