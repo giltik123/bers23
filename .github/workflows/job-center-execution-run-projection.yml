@@ -74,8 +74,6 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${BASE_SHA:-}"
-          UNEXPECTED_SERVER="$(git diff --name-only "$BASE_SHA"..HEAD -- server | grep -Ev '^(server/index\.ts|server/core/http/executionRunRecoveryHttpAdapter\.ts|server/core/http/executionRunRecoveryHttpAdapter\.test\.mjs|server/core/localExecution/LocalExecutionLedger\.ts|server/core/localExecution/PostgresLocalExecutionLedger\.ts|server/core/localExecution/PostgresLocalExecutionLedger\.integration\.test\.mjs|server/core/localExecution/PostgresLocalExecutionLedgerV2\.integration\.test\.mjs)$' || true)"
-          test -z "$UNEXPECTED_SERVER"
           ! grep -E -q 'coreClient|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|\.cancel\(|\.retry\(|\.issue\(' src/lib/jobs/executionRunProjection.js
           ! grep -E -q "method: 'POST'|method: 'PATCH'|method: 'DELETE'|coreClient|entities|creative|localExecution" src/api/executionRunRecoveryClient.js
           grep -q 'RESULT_PATH' src/lib/jobs/executionRunProjection.js

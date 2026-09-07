@@ -8,6 +8,7 @@ import { RecoveryWorker, type RecoveryWorkerOptions } from '../../application/re
 import type { ProviderRecoveryPort } from '../../application/ports.ts';
 import { type TransactionTelemetry, NOOP_TRANSACTION_TELEMETRY } from '../../application/telemetry.ts';
 import { TransactionService } from '../../application/transactionService.ts';
+import { PostgresFinancialAccountStore } from './postgresFinancialAccountStore.ts';
 import { PostgresTransactionStore } from './postgresTransactionStore.ts';
 import { RetryingPostgresTransactionRunner, type PostgresRunnerOptions } from './retryingTransactionRunner.ts';
 
@@ -23,6 +24,7 @@ export type PostgresRuntimeOptions = Readonly<{
 export type PostgresTransactionRuntime = Readonly<{
   pool: Pool;
   store: PostgresTransactionStore;
+  financialAccounts: PostgresFinancialAccountStore;
   transactions: TransactionService;
   reservations: ReservationGateway;
   billableOperations: BillableOperationService;
@@ -51,6 +53,7 @@ export function createPostgresTransactionRuntime(options: PostgresRuntimeOptions
   });
   const runner = new RetryingPostgresTransactionRunner(pool, undefined, options.runner);
   const store = new PostgresTransactionStore(runner, { next: randomUUID });
+  const financialAccounts = new PostgresFinancialAccountStore(runner);
   const clock = Object.freeze({ now: () => new Date() });
   const transactions = new TransactionService(store, clock);
   const reservations = new ReservationGateway(transactions, { next: randomUUID });
@@ -65,6 +68,7 @@ export function createPostgresTransactionRuntime(options: PostgresRuntimeOptions
   return Object.freeze({
     pool,
     store,
+    financialAccounts,
     transactions,
     reservations,
     billableOperations,
