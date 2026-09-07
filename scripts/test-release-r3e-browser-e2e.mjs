@@ -144,8 +144,8 @@ try {
   assert.equal((await readMasks(projectId)).length, 0);
 
   // Start Selection without invoking Smart Select, switch immediately to deterministic manual Add,
-  // and drive the real ImageCanvas pointer path. The maximum UI brush size plus a substantial
-  // displayed stroke keeps this tiny 12x8 fixture robust after display->original scaling.
+  // and use Playwright's locator pointer action against the real Project image. A single brush dot
+  // is sufficient for the release-floor MASK while preserving normal actionability and pointer events.
   await page.getByRole('button', { name: 'Smart Select', exact: true }).click();
   await page.getByRole('region', { name: 'Selection tools' }).waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('button', { name: 'Add', exact: true }).click();
@@ -154,13 +154,7 @@ try {
   const projectImage = page.getByRole('img', { name: 'Project', exact: true });
   const box = await projectImage.boundingBox();
   assert(box && box.width > 4 && box.height > 4, 'Project image must expose a real browser pointer surface');
-  const startX = box.x + box.width * 0.4;
-  const endX = box.x + box.width * 0.6;
-  const centerY = box.y + box.height * 0.5;
-  await page.mouse.move(startX, centerY);
-  await page.mouse.down();
-  await page.mouse.move(endX, centerY, { steps: 8 });
-  await page.mouse.up();
+  await projectImage.click({ position: { x: box.width * 0.5, y: box.height * 0.5 } });
 
   const done = page.getByRole('button', { name: 'Done', exact: true });
   await waitForEnabled(done, 'Done');
