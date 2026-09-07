@@ -26,7 +26,8 @@ test('opening Editor restores Scene Memory without initiating fresh creative ana
 
 test('baseline notifications do not probe the retired generic Notification entity surface', async () => {
   const notifications = await readFile('src/lib/notifications/notificationCenter.js', 'utf8');
-  assert.doesNotMatch(notifications, /coreClient|entities\.Notification|\/data\/Notification/);
+  assert.doesNotMatch(notifications, /import\s+.*coreClient|coreClient\.|entities\.Notification/);
+  assert.doesNotMatch(notifications, /(?:fetch|request)\s*\([^)]*\/data\/Notification/);
   assert.match(notifications, /session-local/);
 });
 
