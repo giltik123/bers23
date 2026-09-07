@@ -23,6 +23,7 @@ on:
       - 'scripts/test-release-r3a-browser-e2e.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - 'tests/auth-client-contract.test.mjs'
+      - 'tests/auth-public-route-routing.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
   workflow_dispatch:
 
@@ -89,8 +90,9 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Preserve zero-object and canonical auth client contracts
+      - name: Preserve public auth routing, zero-object and canonical auth client contracts
         run: |
+          node --test tests/auth-public-route-routing.test.mjs
           node --test tests/editor-zero-object-navigation.test.mjs
           node --test tests/auth-client-contract.test.mjs
       - name: Build immutable Core and apply its packaged production migrations
