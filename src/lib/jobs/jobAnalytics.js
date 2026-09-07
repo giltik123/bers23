@@ -1,6 +1,5 @@
-// Job analytics are local release diagnostics. A generic remote observability
-// endpoint is not production authority; durable telemetry requires a separate
-// narrow Core contract before the browser may emit it.
+import { coreClient } from '@/api/coreClient';
+
 class JobAnalytics {
   constructor() { this.completed = []; this.failures = 0; this.retries = 0; this.queueLengths = []; }
   record(event, job, queueLength = null) {
@@ -8,6 +7,7 @@ class JobAnalytics {
     if (event === 'failed') this.failures += 1;
     if (event === 'retried') this.retries += 1;
     if (queueLength !== null) this.queueLengths.push(queueLength);
+    coreClient.analytics.track({ eventName: `job_${event}`, properties: { type: job.type, provider: job.provider || 'unknown', retry_count: job.retry_count || 0, duration_ms: event === 'completed' ? job.completed_at - job.started_at : null } });
   }
   snapshot() {
     const average = (values) => values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
