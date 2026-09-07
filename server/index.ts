@@ -142,7 +142,7 @@ function sendInvalidRequestTarget(response: ServerResponse, error: Readonly<{ st
 }
 
 function startupFailure(error: unknown): Readonly<{ event: 'core_startup_failed'; name: string; code?: string; message: string }> {
-  const candidate = error && typeof error === 'object' ? error as { name?: unknown; code?: unknown; message?: unknown } | undefined;
+  const candidate = error && typeof error === 'object' ? error as { name?: unknown; code?: unknown; message?: unknown } : undefined;
   const name = typeof candidate?.name === 'string' && candidate.name ? candidate.name.slice(0, 80) : 'Error';
   const code = typeof candidate?.code === 'string' && /^[A-Za-z0-9_.:-]{1,100}$/.test(candidate.code) ? candidate.code : undefined;
   const rawMessage = typeof candidate?.message === 'string' && candidate.message ? candidate.message : 'Core startup failed';
