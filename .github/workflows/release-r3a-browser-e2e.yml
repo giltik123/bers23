@@ -34,6 +34,7 @@ on:
       - 'tests/auth-client-contract.test.mjs'
       - 'tests/auth-public-route-routing.test.mjs'
       - 'tests/core-resource-url.test.mjs'
+      - 'tests/core-image-csp.test.mjs'
       - 'tests/release-r3a-browser-boundaries.test.mjs'
       - 'tests/frontend-security-deployment-contract.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
@@ -108,6 +109,7 @@ jobs:
           node --test tests/editor-zero-object-navigation.test.mjs
           node --test tests/auth-client-contract.test.mjs
           node --test tests/core-resource-url.test.mjs
+          node --test tests/core-image-csp.test.mjs
           node --test tests/release-r3a-browser-boundaries.test.mjs
       - name: Prove runtime-compatible frontend security and preserve worker lockdown
         run: |
