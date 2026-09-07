@@ -143,23 +143,26 @@ try {
   assert.equal((await readMasks(projectId)).length, 0);
 
   // Start Selection without invoking Smart Select, switch immediately to deterministic manual Add,
-  // and drive the real ImageCanvas pointer path.
+  // and drive the real ImageCanvas pointer path. The maximum UI brush size plus a substantial
+  // displayed stroke keeps this tiny 12x8 fixture robust after display->original scaling.
   await page.getByRole('button', { name: 'Smart Select', exact: true }).click();
   await page.getByRole('region', { name: 'Selection tools' }).waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByLabel('Brush Size').fill('96');
 
   const projectImage = page.getByRole('img', { name: 'Project', exact: true });
   const box = await projectImage.boundingBox();
   assert(box && box.width > 4 && box.height > 4, 'Project image must expose a real browser pointer surface');
-  const centerX = box.x + box.width * 0.5;
+  const startX = box.x + box.width * 0.4;
+  const endX = box.x + box.width * 0.6;
   const centerY = box.y + box.height * 0.5;
-  await page.mouse.move(centerX - 2, centerY);
+  await page.mouse.move(startX, centerY);
   await page.mouse.down();
-  await page.mouse.move(centerX + 2, centerY, { steps: 3 });
+  await page.mouse.move(endX, centerY, { steps: 8 });
   await page.mouse.up();
 
   const done = page.getByRole('button', { name: 'Done', exact: true });
-  await assertEnabled(done, 'Done');
+  await waitForEnabled(done, 'Done');
   assert.equal((await readMasks(projectId)).length, 0, 'manual selection draft must remain noncanonical before Done');
   assert.deepEqual(await readProjectState(projectId), initial, 'manual selection draft must not mutate Project before Done');
 
@@ -297,7 +300,7 @@ try {
 
 async function runBackgroundIsolation(page) {
   const button = page.getByRole('button', { name: 'Remove background', exact: true });
-  await assertEnabled(button, 'Remove background');
+  await waitForEnabled(button, 'Remove background');
   await button.click();
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
 }
@@ -405,17 +408,17 @@ async function waitImage(page, accessibleName, width, height, timeout = 20_000) 
 
 async function waitEnabledButton(page, name) {
   const button = page.getByRole('button', { name, exact: true });
-  await button.waitFor({ state: 'visible', timeout: 15_000 });
-  await assertEnabled(button, name);
+  await waitForEnabled(button, name);
 }
 
-async function assertEnabled(locator, label) {
-  await assert.doesNotReject(async () => {
-    await locator.waitFor({ state: 'visible', timeout: 10_000 });
-    await locator.evaluate(element => {
-      if (element.disabled) throw new Error('disabled');
-    });
-  }, `${label} must be enabled`);
+async function waitForEnabled(locator, label, timeoutMs = 10_000) {
+  await locator.waitFor({ state: 'visible', timeout: timeoutMs });
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await locator.isEnabled()) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error(`${label} must become enabled`);
 }
 
 async function waitForHttp(url, timeoutMs, child) {
