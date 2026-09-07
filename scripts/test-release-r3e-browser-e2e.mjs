@@ -93,6 +93,7 @@ const diagnostics = {
   consoleErrors: [],
   requestFailures: [],
   maskRequests: [],
+  segmentationRequests: [],
   localExecutionRequests: [],
   creativeRequests: [],
   financialRequests: [],
@@ -165,6 +166,7 @@ try {
   await waitForEnabled(done, 'Done');
   assert.equal((await readMasks(projectId)).length, 0, 'manual selection draft must remain noncanonical before Done');
   assert.deepEqual(await readProjectState(projectId), initial, 'manual selection draft must not mutate Project before Done');
+  assert.deepEqual(diagnostics.segmentationRequests, [], 'manual Add release-floor selection must not invoke Smart Select/model execution');
 
   const maskResponsePromise = page.waitForResponse(response => {
     const url = new URL(response.url());
@@ -221,6 +223,8 @@ try {
   await waitImage(page, 'after', 12, 8);
   assert.equal(diagnostics.localExecutionRequests.length, firstIsolationRequests + 4, 'Background Isolation must use exactly prepare/input/upload/result semantic requests');
   assert.deepEqual(await readProjectState(projectId), isolationDiscardBefore, 'Background Isolation Preview must not mutate Project before explicit Accept');
+  const firstTicket = await readLatestBackgroundIsolationTicket(projectId);
+  assertExactMaskTicketBinding(firstTicket, maskBody.artifactId);
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 15_000 });
   await waitImage(page, 'Project', 12, 8);
@@ -233,6 +237,9 @@ try {
   await waitImage(page, 'after', 12, 8);
   assert.equal(diagnostics.localExecutionRequests.length, secondIsolationRequests + 4);
   assert.equal((await readMasks(projectId)).length, 1, 'repeated Background Isolation must reuse the exact canonical MASK rather than minting another');
+  const secondTicket = await readLatestBackgroundIsolationTicket(projectId);
+  assert.notEqual(secondTicket.ticket_id, firstTicket.ticket_id, 'second user intent must receive its own durable local execution ticket');
+  assertExactMaskTicketBinding(secondTicket, maskBody.artifactId);
   await page.getByRole('button', { name: 'Accept', exact: true }).click();
   await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
   await waitImage(page, 'Project', 12, 8);
@@ -246,6 +253,13 @@ try {
   assert.equal(accepted.history[1].height, 8);
   assert.equal(accepted.history[1].source_image_storage_id, sourceStorageId);
   const acceptedStorageId = accepted.project.current_image_storage_id;
+
+  const acceptedFinal = await readImageArtifact(acceptedStorageId, projectId);
+  assert.equal(acceptedFinal.producer_operation, 'BACKGROUND_ISOLATION');
+  assert.equal(acceptedFinal.source_image_storage_id, sourceStorageId);
+  assert.equal(acceptedFinal.mask_storage_id, canonicalMask.storage_id, 'accepted FINAL must durably bind the exact manual MASK row');
+  assert.equal(acceptedFinal.width, 12);
+  assert.equal(acceptedFinal.height, 8);
 
   await waitEnabledButton(page, 'Undo');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
@@ -262,6 +276,7 @@ try {
   assert.equal(redone.cursor.ordinal, 1);
 
   assert.deepEqual(diagnostics.maskRequests, ['POST /api/core/artifacts/masks'], 'manual release-floor Selection must create exactly one Core MASK');
+  assert.deepEqual(diagnostics.segmentationRequests, [], 'manual release-floor selection must remain model-independent');
   assert.equal(providerCalls, 0, 'manual Selection and deterministic Background Isolation must never reach provider boundary');
   assert.deepEqual(diagnostics.creativeRequests, [], 'Selection/MASK deterministic journey must not route through generic Creative/provider authority');
   assert.deepEqual(diagnostics.financialRequests, [], 'Selection/MASK deterministic journey must not reach Billing/credits authority');
@@ -274,6 +289,9 @@ try {
     maskArtifactId: maskBody.artifactId,
     maskStorageId: canonicalMask.storage_id,
     selectedPixels,
+    firstTicketId: firstTicket.ticket_id,
+    secondTicketId: secondTicket.ticket_id,
+    finalStorageId: acceptedFinal.storage_id,
     initial: summarize(initial),
     accepted: summarize(accepted),
     maskRequests: diagnostics.maskRequests,
@@ -318,6 +336,7 @@ function attachDiagnostics(page) {
     const method = request.method();
     const entry = `${method} ${pathName}`;
     if (method !== 'OPTIONS' && pathName === '/api/core/artifacts/masks') diagnostics.maskRequests.push(entry);
+    if (method !== 'OPTIONS' && pathName.includes('/api/core/local-execution/segment')) diagnostics.segmentationRequests.push(entry);
     if (method !== 'OPTIONS' && pathName.includes('/api/core/local-execution/')) diagnostics.localExecutionRequests.push(entry);
     if (method !== 'OPTIONS' && pathName.includes('/api/core/creative')) diagnostics.creativeRequests.push(entry);
     if (method !== 'OPTIONS' && /financial|billing|credit|subscription/i.test(pathName)) diagnostics.financialRequests.push(entry);
@@ -368,6 +387,42 @@ async function readMasks(projectId) {
     [projectId, tenantId, userId],
   );
   return result.rows;
+}
+
+async function readLatestBackgroundIsolationTicket(projectId) {
+  const result = await pool.query(
+    `SELECT ticket_id,ticket_json
+       FROM local_execution_tickets
+      WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND step_id='background-isolation'
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [projectId, tenantId, userId],
+  );
+  assert.equal(result.rowCount, 1, 'Background Isolation must persist a durable local execution ticket');
+  return result.rows[0];
+}
+
+function assertExactMaskTicketBinding(row, maskArtifactId) {
+  const ticket = row.ticket_json;
+  assert.equal(ticket.version, '2');
+  assert.equal(ticket.policy, 'LOCAL_ONLY');
+  assert.equal(ticket.stepId, 'background-isolation');
+  assert.equal(ticket.operation?.type, 'BACKGROUND_ISOLATION');
+  const maskInputs = Array.isArray(ticket.inputs) ? ticket.inputs.filter(binding => binding.kind === 'mask') : [];
+  assert.equal(maskInputs.length, 1);
+  assert.equal(maskInputs[0].artifactId, maskArtifactId, 'durable ticket must bind the exact Core-issued MASK artifact id stored on Project');
+  assert.match(maskInputs[0].sha256 ?? '', /^[a-f0-9]{64}$/i);
+}
+
+async function readImageArtifact(storageId, projectId) {
+  const result = await pool.query(
+    `SELECT storage_id,width,height,source_image_storage_id,mask_storage_id,producer_operation
+       FROM canonical_image_artifacts
+      WHERE storage_id=$1 AND project_id=$2 AND tenant_id=$3 AND user_id=$4 AND revoked_at IS NULL AND deleted_at IS NULL`,
+    [storageId, projectId, tenantId, userId],
+  );
+  assert.equal(result.rowCount, 1, 'accepted canonical IMAGE row must exist');
+  return result.rows[0];
 }
 
 async function waitForSelectedMaskObject(projectId, artifactId) {
