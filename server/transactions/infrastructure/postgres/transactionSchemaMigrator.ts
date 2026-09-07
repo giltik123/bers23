@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import type { PgPoolLike } from './retryingTransactionRunner.ts';
 
@@ -145,13 +146,25 @@ async function applyMigration(client: MigrationClient, migration: LoadedMigratio
 
 async function loadMigrations(): Promise<readonly LoadedMigration[]> {
   return Object.freeze(await Promise.all(TRANSACTION_MIGRATIONS.map(async (migration) => {
-    const sql = await readFile(new URL(`./migrations/${migration.file}`, import.meta.url), 'utf8');
+    const sql = await readMigrationSql(migration.file);
     return Object.freeze({
       ...migration,
       sql,
       checksum: createHash('sha256').update(sql).digest('hex'),
     });
   })));
+}
+
+async function readMigrationSql(file: string): Promise<string> {
+  try {
+    return await readFile(new URL(`./migrations/${file}`, import.meta.url), 'utf8');
+  } catch (bundledLayoutError) {
+    try {
+      return await readFile(resolve(process.cwd(), 'server/transactions/infrastructure/postgres/migrations', file), 'utf8');
+    } catch {
+      throw bundledLayoutError;
+    }
+  }
 }
 
 function withoutOuterTransaction(sql: string): string {
