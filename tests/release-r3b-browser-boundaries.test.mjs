@@ -27,6 +27,11 @@ test('R3 browser harness cumulatively proves baseline plus deterministic Rotate 
   assert.match(harness, /loadedImageEvidence\(page,\s*'after',\s*8,\s*12/);
   assert.match(harness, /loadedImageEvidence\(page,\s*'Project',\s*12,\s*8/);
   assert.match(harness, /loadedImageEvidence\(page,\s*'Project',\s*8,\s*12/);
+  assert.match(harness, /resultResponse\.status\(\),\s*200/);
+  assert.match(harness, /coreResult\.status,\s*'SUCCESS'/);
+  assert.match(harness, /coreResult\.verification\?\.valid,\s*true/);
+  assert.match(harness, /assertLocalVerifiedPreview\(previewImage,\s*\[8,\s*12\]/);
+  assert.doesNotMatch(harness, /assertSignedCoreImage\(previewImage/);
 });
 
 test('R3 orthogonal HTTP boundary strips session metadata before canonical local execution', async () => {
