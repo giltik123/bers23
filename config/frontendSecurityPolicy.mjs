@@ -30,9 +30,14 @@ const BASE_DIRECTIVES = Object.freeze([
 
 /** CSP supported by HTML meta delivery. frame-ancestors is intentionally absent. */
 export function productionBrowserMetaCsp(coreApiUrl = CANONICAL_CORE_PATH) {
+  const coreSources = resolveCoreConnectSources(coreApiUrl);
+  const externalCoreSources = coreSources.filter(source => source !== "'self'");
+  const imageDirective = BASE_DIRECTIVES[8];
   return serializeCsp([
-    ...BASE_DIRECTIVES.slice(0, 10),
-    Object.freeze(['connect-src', ...resolveCoreConnectSources(coreApiUrl)]),
+    ...BASE_DIRECTIVES.slice(0, 8),
+    Object.freeze(['img-src', ...imageDirective.slice(1), ...externalCoreSources]),
+    BASE_DIRECTIVES[9],
+    Object.freeze(['connect-src', ...coreSources]),
     ...BASE_DIRECTIVES.slice(10),
   ]);
 }
