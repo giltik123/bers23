@@ -460,3 +460,295 @@ Image-producing work still ends as a canonical candidate Artifact and requires t
 The architecture advances only if it produces a material product benefit over the best relevant dense baseline on at least one target device class while preserving Core authority, provenance, local-first policy, quality gates, Fashion lineage/geometry constraints, and fail-closed cloud/billing behavior.
 
 The intended long-term outcome is a BERS-owned image engine with a large total capability/model fleet while a normal user stores only the subset needed for their workflows and performs most eligible inference locally.
+
+## 26. HSME v2 — Scheduled Hierarchical Sparse Engine
+
+HSME v2 records the preferred advanced research direction once the HSME-1 through HSME-4 foundations are measurable. It strengthens the original sparse-runtime concept with deterministic scheduling and image-specific routing rather than adopting unrestricted LLM-style MoE.
+
+The target hierarchy is:
+
+```text
+Request
+  |
+  v
+Task Router
+  |
+  v
+Pack Router
+  |
+  v
+Compact Dense Core + Adapter-MoE
+  |
+  v
+Timestep Planner
+  |
+  v
+Guided / Coarse Block Router
+  |
+  v
+Optional Spatial / Token Router
+  |
+  v
+Shared Path + Bounded Specialist Capacity
+  |
+  v
+Expert Residency Planner
+  |
+  v
+CPU / GPU / NPU <-> RAM <-> Flash
+```
+
+The following five mechanisms are selected as the primary HSME v2 research priorities.
+
+### 26.1 Timestep-specialized experts
+
+Different denoising/flow stages may specialize in different work. BERS should explicitly test stage-specialized capacity rather than assuming the same expert set is optimal at every step.
+
+Initial hypotheses include:
+
+- early: composition, coarse geometry and pose;
+- middle: garment structure, material and lighting;
+- late: identity preservation, texture, boundaries and fine detail.
+
+These semantic labels are research hypotheses, not model or product authority. Learned specialization and measured quality determine the actual expert roles.
+
+The primary experiment compares:
+
+1. dense/shared execution at every step;
+2. Adapter-MoE with one fixed expert set;
+3. scheduled timestep expert groups;
+4. learned bounded timestep routing.
+
+Required evidence includes quality, active/resident bytes, end-to-end latency, per-step latency, expert reuse, bytes moved, cache hit rate and deterministic replay metadata.
+
+A timestep-MoE candidate advances only if stage specialization yields a real product or resource benefit rather than merely different routing labels.
+
+### 26.2 Guided hierarchical and block-level routing before unrestricted token MoE
+
+Mobile BERS should prefer coarse, guided routing before unconstrained per-token routing.
+
+The preferred order is:
+
+```text
+Task
+ -> Pack
+ -> Timestep
+ -> Block / Expert Group
+ -> optional Spatial Region
+ -> optional Token-level specialist
+```
+
+The router may consume model inputs derived from admitted operation context, such as timestep embedding, region/segmentation features, pose/garment conditioning, operation embedding and latent features. Such hints are **conditioning only**; they never become Core, Fashion geometry, Artifact, provider or Billing authority.
+
+Research a BERS Guided Router with a two-stage concept where useful:
+
+```text
+latent/visual representation
+        |
+        v
+function / coarse route
+        |
+        v
+prototype / specialist route
+        |
+        v
+bounded expert group
+```
+
+The purpose is to reduce router collapse, dead experts, unstable specialization and mobile scatter/gather overhead.
+
+Block-level/coarse routing is preferred if it achieves similar quality with more regular kernels, fewer dispatches and lower memory traffic than per-token routing.
+
+Do not hard-code an internal expert as immutable `Face`, `Garment`, `Hair`, etc. merely because the product exposes those concepts. Expert semantics must be learned and measured; product-level packs may remain named while internal experts stay versioned numeric/functional identities.
+
+### 26.3 Deterministic prefetch first; speculative prefetch second
+
+HSME must exploit predictable image-generation schedules before adding speculative expert prediction.
+
+If Task/Pack/Timestep planning establishes a likely sequence such as:
+
+```text
+Geometry -> Pose -> Fashion -> Material -> Identity -> Detail
+```
+
+then the runtime should use that deterministic or bounded schedule to prefetch the next required expert while the current expert executes.
+
+```text
+Accelerator: [ compute A ........ ][ compute B ........ ]
+Flash/RAM:           [ load B ... ][ load C ... ]
+```
+
+Policy law:
+
+1. known next-stage requirements first;
+2. high-confidence bounded prediction second;
+3. broad speculative prefetch only if measurements prove benefit.
+
+Speculation must be capped by RAM, flash-bandwidth, thermal and battery budgets. A predictor that improves expert hit rate but increases page faults, flash reads or total latency is rejected.
+
+Required telemetry:
+
+- useful-prefetch ratio;
+- wasted-prefetch bytes;
+- flash bytes read per generation;
+- accelerator stall time waiting for weights;
+- cache hit/miss rate;
+- prefetch lead time;
+- memory pressure caused by prefetched experts.
+
+### 26.4 Shared core plus bounded expert capacity tied to Quality Mode
+
+The shared dense path remains always available. Specialists receive an explicit compute/capacity budget rather than unbounded access to every visual token.
+
+BERS should research expert capacity as a controllable quality/performance dimension. Example experimental policies:
+
+```text
+FAST
+- few steps
+- Top-1 or shared-only where sufficient
+- small specialist token/capacity budget
+- aggressive cheap-path use
+
+BALANCED
+- moderate steps
+- Top-1 / bounded Top-2
+- medium specialist capacity
+
+QUALITY
+- more steps
+- larger specialist capacity
+- more identity/detail processing
+- less aggressive pruning
+
+ULTRA
+- maximum admitted local budget
+- optional explicit cloud refinement
+```
+
+Quality mode therefore becomes a multidimensional execution policy, not only `num_inference_steps`:
+
+```text
+quality budget =
+steps
+x expert activation budget
+x expert capacity
+x token/spatial compute budget
+x precision/runtime tier
+```
+
+Target examples such as 5%, 15%, 25% or 40% specialist token capacity are experimental values only. The accepted policy is determined by quality/latency/energy/device evidence.
+
+The runtime must retain a safe shared path so a specialist routing miss does not remove universal image semantics.
+
+### 26.5 Expert Residency Planner
+
+Replace simple LRU as the long-term policy with a schedule-aware **BERS Expert Residency Planner**.
+
+Inputs may include:
+
+- admitted task/capability;
+- current and future timestep schedule;
+- current expert set;
+- predicted expert reuse distance;
+- device RAM/unified-memory state;
+- accelerator-resident budget;
+- flash throughput;
+- current cache state;
+- battery and thermal state;
+- active quality mode.
+
+The planner produces bounded actions such as:
+
+```text
+KEEP
+PREFETCH
+EVICT
+MOVE
+MATERIALIZE
+DEQUANTIZE
+```
+
+Example policy:
+
+```text
+Fashion expert: needed again next step -> KEEP
+Geometry expert: no future use -> EVICT
+Identity expert: needed in two steps -> PREFETCH when budget permits
+```
+
+The planner must be deterministic/replayable for the same recorded policy inputs where production evidence requires deterministic planning.
+
+**Bytes moved are a first-class optimization target.** A sparse model with fewer active parameters but excessive Flash -> RAM -> accelerator traffic may be inferior to a larger dense resident model.
+
+Required metrics include:
+
+- total bytes moved per generation;
+- bytes moved per denoising/flow step;
+- flash reads;
+- RAM <-> accelerator traffic;
+- expert residency duration;
+- cache hit/miss ratio;
+- accelerator idle/stall time;
+- thermal and energy impact.
+
+### 26.6 Secondary experiments retained from the earlier sparse roadmap
+
+The following are retained as explicit comparison tracks, but they are not presumed to beat the primary HSME v2 design.
+
+#### Dense-to-sparse conversion
+
+Start from the accepted dense BERS student, clone or decompose selected candidate FFN capacity into experts, then train specialization/routing while retaining the dense checkpoint as the exact quality/resource baseline.
+
+Advance only if the converted sparse candidate avoids router collapse/dead experts and materially improves at least one product metric without unacceptable quality loss.
+
+#### Expert Choice / capacity-directed routing
+
+Compare conventional token-choice routing against a bounded expert-choice variant in which an expert selects only the highest-value visual tokens up to a fixed capacity budget.
+
+This is especially relevant for Detail/Identity-like learned specialists where only a subset of regions may justify expensive processing.
+
+Expert Choice remains experimental until it proves stable specialization, predictable capacity and hardware-efficient kernels.
+
+### 26.7 HSME v2 acceptance matrix
+
+Every HSME v2 candidate must compare against the same pinned dense/Adapter-MoE baseline using at least:
+
+- real-image and product-domain quality;
+- identity/garment/logo/pattern preservation;
+- anatomy/artifact failure rate;
+- end-to-end and per-step latency;
+- active parameters;
+- resident bytes;
+- installed/package bytes;
+- total bytes moved;
+- flash reads;
+- RAM/accelerator traffic;
+- cache hit/miss and wasted-prefetch ratio;
+- peak memory;
+- energy/battery and thermal behavior;
+- routing stability/expert utilization;
+- deterministic replay/debug evidence;
+- device-specific kernel efficiency.
+
+The architecture decision must be based on wall-clock and product metrics. Sparse FLOPs, theoretical expert count or router novelty are never sufficient promotion evidence.
+
+### 26.8 Relationship to HSME phases
+
+HSME v2 is an advanced overlay on the existing staged roadmap, not permission to skip earlier evidence.
+
+Recommended dependency order:
+
+```text
+HSME-1  control-plane/model-pack runtime
+   -> HSME-2  dense distilled student
+   -> HSME-3  Adapter-MoE
+   -> HSME-4  measurable residency/prefetch substrate
+   -> HSME-v2.A  timestep specialization + deterministic schedule
+   -> HSME-v2.B  guided/block routing
+   -> HSME-v2.C  bounded expert capacity + Quality Mode
+   -> HSME-v2.D  schedule-aware Expert Residency Planner
+   -> HSME-v2.E  optional spatial/token/Expert-Choice experiments
+   -> HSME-8  hardware-specialized candidates only after device evidence
+```
+
+This preserves the core engineering rule: **first prove a compact dense student and measurable runtime substrate; then add sparse sophistication only where it wins on real devices.**
