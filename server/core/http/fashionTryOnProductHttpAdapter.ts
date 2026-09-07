@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import type { FashionTryOnProductService } from '../fashion/FashionTryOnProductService.ts';
+import { authenticatedOwnerScope } from './authenticatedPrincipalScope.ts';
 import {
   BROWSER_CSRF_HEADER,
   assertBrowserMutationAllowed,
@@ -74,31 +75,32 @@ export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductH
       }
       if (request.method !== 'GET' && request.method !== 'HEAD') assertBrowserMutationAllowed(request, input.config);
       const principal = await input.auth.verify(requestAuthorization(request, input.config));
+      const auth = authenticatedOwnerScope(principal);
 
       if (url.pathname === `${ROOT}/prepare` && request.method === 'POST') {
         requireJson(request);
-        const result = await input.product.prepare(exactIntent(await readJson(request, input.config.bodyLimitBytes)), principal);
+        const result = await input.product.prepare(exactIntent(await readJson(request, input.config.bodyLimitBytes)), auth);
         send(response, 200, result);
         return true;
       }
 
       if (url.pathname === `${ROOT}/continue` && request.method === 'POST') {
         requireJson(request);
-        const result = await input.product.continue(exactIntent(await readJson(request, input.config.bodyLimitBytes)), principal);
+        const result = await input.product.continue(exactIntent(await readJson(request, input.config.bodyLimitBytes)), auth);
         send(response, 200, result);
         return true;
       }
 
       if (url.pathname === `${ROOT}/result` && request.method === 'POST') {
         requireJson(request);
-        const result = await input.product.result(exactIntent(await readJson(request, input.config.bodyLimitBytes)), principal);
+        const result = await input.product.result(exactIntent(await readJson(request, input.config.bodyLimitBytes)), auth);
         send(response, 200, result);
         return true;
       }
 
       if (url.pathname === `${ROOT}/preview` && request.method === 'POST') {
         requireJson(request);
-        const result = await input.product.preview(exactIntent(await readJson(request, input.config.bodyLimitBytes)), principal);
+        const result = await input.product.preview(exactIntent(await readJson(request, input.config.bodyLimitBytes)), auth);
         send(response, 200, result);
         return true;
       }
@@ -108,7 +110,7 @@ export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductH
         const bytes = await input.product.loadGarmentWarpInput(Object.freeze({
           ticketId: decodeHandle(warpInput[1]),
           projectId: requireProjectId(url),
-        }), principal);
+        }), auth);
         sendBytes(response, 200, bytes);
         return true;
       }
@@ -118,7 +120,7 @@ export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductH
         const bytes = await input.product.loadTextureCompositeInput(Object.freeze({
           ticketId: decodeHandle(textureInput[1]),
           projectId: requireProjectId(url),
-        }), principal);
+        }), auth);
         sendBytes(response, 200, bytes);
         return true;
       }
@@ -131,7 +133,7 @@ export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductH
           projectId: requireProjectId(url),
           bytes: await readBytes(request, input.config.imageUploadLimitBytes),
           latencyMs: requireLatencyMs(request),
-        }), principal);
+        }), auth);
         send(response, 200, result);
         return true;
       }
@@ -144,7 +146,7 @@ export function createFashionTryOnProductHttpAdapter(input: FashionTryOnProductH
           projectId: requireProjectId(url),
           bytes: await readBytes(request, input.config.imageUploadLimitBytes),
           latencyMs: requireLatencyMs(request),
-        }), principal);
+        }), auth);
         send(response, 200, result);
         return true;
       }

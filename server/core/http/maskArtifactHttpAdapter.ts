@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { CoreServerConfig } from '../config.ts';
+import { authenticatedProjectScope } from './authenticatedPrincipalScope.ts';
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PATH = '/api/core/artifacts/masks';
@@ -28,7 +30,7 @@ export function createMaskArtifactHttpAdapter(input: Readonly<{ artifacts: Artif
       if (!projectId || !sourceImageArtifactId || !Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > input.config.maskMaxDimension || height > input.config.maskMaxDimension || width * height > input.config.maskUploadLimitBytes) {
         throw httpError(400, 'invalid_mask_lineage', 'Canonical MASK dimensions and source lineage are required');
       }
-      const scope = { ...principal, projectId };
+      const scope = authenticatedProjectScope(principal, projectId);
       const source = await resolveSourceImage(input.artifacts, sourceImageArtifactId, scope);
       if (!source) throw httpError(400, 'invalid_source_image', 'Canonical source image is invalid for this scope');
       if (source.width !== width || source.height !== height) throw httpError(409, 'source_geometry_mismatch', 'MASK geometry must match its canonical source image');
@@ -73,7 +75,7 @@ export function createMaskArtifactHttpAdapter(input: Readonly<{ artifacts: Artif
   };
 }
 
-async function resolveSourceImage(artifacts: ArtifactAuthority, artifactId: string, scope: AuthenticatedPrincipal & { projectId: string }) {
+async function resolveSourceImage(artifacts: ArtifactAuthority, artifactId: string, scope: AuthenticatedScope & { projectId: string }) {
   try {
     const claim = artifacts.external.resolveStoredOriginalId(artifactId, scope);
     return await artifacts.images.loadSource(claim.storageId, scope);

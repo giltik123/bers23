@@ -9,6 +9,7 @@ import type {
   ManualProjectBodyAnchorAcquisitionResult,
   ManualProjectBodyAnchorAcquisitionService,
 } from '../fashion/ManualProjectBodyAnchorAcquisitionService.ts';
+import { authenticatedOwnerScope } from './authenticatedPrincipalScope.ts';
 import {
   BROWSER_CSRF_HEADER,
   assertBrowserMutationAllowed,
@@ -66,7 +67,7 @@ export function createManualProjectBodyAnchorHttpAdapter(input: AdapterInput) {
       const principal = await input.auth.verify(requestAuthorization(request, input.config));
       const projectId = decodePathSegment(match[1]);
       const body = exactBody(await readJson(request, input.config.bodyLimitBytes));
-      const result = await input.acquisition.acquire(principal, Object.freeze({
+      const result = await input.acquisition.acquire(authenticatedOwnerScope(principal), Object.freeze({
         projectId,
         sourceArtifactId: body.sourceArtifactId,
         payload: body.payload,

@@ -4,6 +4,7 @@ import type { CoreServerConfig } from '../config.ts';
 import type { LocalGarmentMeshWarpExecutionService } from '../localExecution/LocalGarmentMeshWarpExecutionService.ts';
 import type { GarmentMeshWarpInputDeliveryService } from '../localExecution/GarmentMeshWarpInputDeliveryService.ts';
 import { encodeGarmentMeshWarpInputEnvelope } from '../../../src/platform/creative/canonical/garmentMeshWarpInputEnvelope.ts';
+import { authenticatedOwnerScope } from './authenticatedPrincipalScope.ts';
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/local-execution/garment-mesh-warp/';
@@ -38,6 +39,7 @@ export function createGarmentMeshWarpHttpAdapter(input: AdapterInput) {
       if (request.method === 'OPTIONS') { send(response, 204, undefined); return true; }
       if (request.method !== 'GET' && request.method !== 'HEAD') assertBrowserMutationAllowed(request, input.config);
       const principal = await input.auth.verify(requestAuthorization(request, input.config));
+      const auth = authenticatedOwnerScope(principal);
 
       if (url.pathname === `${PREFIX}prepare` && request.method === 'POST') {
         requireJson(request);
@@ -49,13 +51,13 @@ export function createGarmentMeshWarpHttpAdapter(input: AdapterInput) {
           representationId: body.representationId,
           anchorSetId: body.anchorSetId,
           clientRequestId: body.clientRequestId,
-        }, principal);
+        }, auth);
         send(response, 202, prepared); return true;
       }
 
       const inputMatch = url.pathname.match(/^\/api\/core\/local-execution\/garment-mesh-warp\/([^/]+)\/inputs$/);
       if (inputMatch && request.method === 'GET') {
-        const delivered = await input.inputDelivery.deliver(decodeURIComponent(inputMatch[1]), requireProjectId(url), principal);
+        const delivered = await input.inputDelivery.deliver(decodeURIComponent(inputMatch[1]), requireProjectId(url), auth);
         const envelope = encodeGarmentMeshWarpInputEnvelope({
           metadata: {
             ticketId: delivered.ticketId,
@@ -88,7 +90,7 @@ export function createGarmentMeshWarpHttpAdapter(input: AdapterInput) {
       if (uploadMatch && request.method === 'POST') {
         if (mediaType(request) !== 'image/png') throw httpError(415, 'unsupported_media_type', 'Content-Type must be image/png');
         const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
-        const evidence = await input.service.uploadImage({ ticketId: decodeURIComponent(uploadMatch[1]), projectId: requireProjectId(url), bytes }, principal);
+        const evidence = await input.service.uploadImage({ ticketId: decodeURIComponent(uploadMatch[1]), projectId: requireProjectId(url), bytes }, auth);
         if (!evidence.width || !evidence.height || evidence.width > input.config.imageMaxDimension || evidence.height > input.config.imageMaxDimension || evidence.width * evidence.height > input.config.imageMaxPixels) {
           throw httpError(400, 'invalid_image_dimensions', 'Garment mesh-warp image dimensions are invalid or unsafe');
         }
@@ -102,7 +104,7 @@ export function createGarmentMeshWarpHttpAdapter(input: AdapterInput) {
         assertExactKeys(body, ['projectId','result'], 'Garment mesh-warp result request schema is invalid');
         const projectId = string(body.projectId);
         if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
-        const finalized = await input.service.submit({ ticketId: decodeURIComponent(resultMatch[1]), projectId, result: body.result }, principal);
+        const finalized = await input.service.submit({ ticketId: decodeURIComponent(resultMatch[1]), projectId, result: body.result }, auth);
         const publicResult = finalized.status === 'SUCCESS'
           ? Object.freeze({ executionId: finalized.executionId, status: finalized.status, layerId: finalized.layerId, contentSha256: finalized.contentSha256, verification: Object.freeze({ valid: finalized.verification.valid }) })
           : Object.freeze({ executionId: finalized.executionId, status: finalized.status, verification: Object.freeze({ valid: finalized.verification.valid }) });
