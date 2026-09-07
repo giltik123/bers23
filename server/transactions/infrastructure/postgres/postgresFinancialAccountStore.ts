@@ -49,15 +49,15 @@ type GrantRow = Readonly<{
 }>;
 
 type SnapshotRow = WalletRow & Readonly<{
-  entitlement_plan_id: string | null;
-  entitlement_state: EntitlementState | null;
+  entitlement_plan_id: string;
+  entitlement_state: EntitlementState;
   entitlement_billing_interval: BillingInterval | null;
-  entitlement_source: EntitlementSource | null;
-  entitlement_revision_value: string | number | null;
-  entitlement_starts_at: string | Date | null;
+  entitlement_source: EntitlementSource;
+  entitlement_revision_value: string | number;
+  entitlement_starts_at: string | Date;
   entitlement_ends_at: string | Date | null;
   entitlement_trial_consumed_at: string | Date | null;
-  entitlement_updated_at: string | Date | null;
+  entitlement_updated_at: string | Date;
 }>;
 
 /**
@@ -150,18 +150,16 @@ export class PostgresFinancialAccountStore implements CreditGrantAuthority, Fina
            e.ends_at AS entitlement_ends_at,
            e.trial_consumed_at AS entitlement_trial_consumed_at,
            e.updated_at AS entitlement_updated_at
-         FROM credit_wallets w
-         LEFT JOIN financial_entitlement_accounts e
-           ON e.owner_id=w.owner_id AND e.tenant_id=$1
-         WHERE w.owner_id=$2`,
+         FROM financial_entitlement_accounts e
+         JOIN credit_wallets w ON w.owner_id=e.owner_id
+         WHERE e.tenant_id=$1 AND e.owner_id=$2`,
         [identity.tenantId, identity.userId],
       );
       const row = result.rows[0];
       if (!row) return Object.freeze({ identity });
-      const entitlement = entitlementFromSnapshotRow(row);
       return Object.freeze({
         identity,
-        ...(entitlement ? { entitlement } : {}),
+        entitlement: entitlementFromSnapshotRow(row),
         wallet: walletFromRow(row),
       });
     });
@@ -203,8 +201,8 @@ function grantFromRow(row: GrantRow): CreditGrantRecord {
     }),
     idempotencyKey: boundedText(row.idempotency_key, 'grant idempotency key', 256),
     requestFingerprint: fingerprint(row.request_fingerprint),
-    kind: row.grant_kind,
-    source: row.source,
+    kind: exactGrantKind(row.grant_kind),
+    source: exactGrantSource(row.source),
     amount: positiveSafeInteger(row.amount, 'grant amount'),
     ...(row.provider_event_id ? { providerEventId: boundedText(row.provider_event_id, 'provider event id', 512) } : {}),
     occurredAt: timestamp(row.occurred_at, 'grant occurredAt'),
@@ -231,21 +229,12 @@ function walletFromRow(row: WalletRow): CreditWalletSnapshot {
   });
 }
 
-function entitlementFromSnapshotRow(row: SnapshotRow): FinancialEntitlementSnapshot | undefined {
-  if (row.entitlement_plan_id === null) {
-    if (row.entitlement_state !== null || row.entitlement_source !== null || row.entitlement_revision_value !== null || row.entitlement_starts_at !== null || row.entitlement_updated_at !== null) {
-      throw new Error('financial entitlement projection is partially populated');
-    }
-    return undefined;
-  }
-  if (!row.entitlement_state || !row.entitlement_source || row.entitlement_revision_value === null || row.entitlement_starts_at === null || row.entitlement_updated_at === null) {
-    throw new Error('financial entitlement projection is incomplete');
-  }
+function entitlementFromSnapshotRow(row: SnapshotRow): FinancialEntitlementSnapshot {
   return Object.freeze({
     planId: planId(row.entitlement_plan_id),
-    state: row.entitlement_state,
-    ...(row.entitlement_billing_interval ? { billingInterval: row.entitlement_billing_interval } : {}),
-    source: row.entitlement_source,
+    state: exactEntitlementState(row.entitlement_state),
+    ...(row.entitlement_billing_interval ? { billingInterval: exactBillingInterval(row.entitlement_billing_interval) } : {}),
+    source: exactEntitlementSource(row.entitlement_source),
     revision: positiveSafeInteger(row.entitlement_revision_value, 'entitlement revision'),
     startsAt: timestamp(row.entitlement_starts_at, 'entitlement startsAt'),
     ...(row.entitlement_ends_at ? { endsAt: timestamp(row.entitlement_ends_at, 'entitlement endsAt') } : {}),
@@ -260,15 +249,15 @@ function normalizeGrantInput(value: CreditGrantInput): CreditGrantInput {
   const id = boundedText(value.id, 'grant id', 256);
   const idempotencyKey = boundedText(value.idempotencyKey, 'grant idempotency key', 256);
   const requestFingerprint = fingerprint(value.requestFingerprint);
-  if (!['WELCOME', 'TRIAL', 'PURCHASE', 'ADJUSTMENT'].includes(value.kind)) throw new TypeError('credit grant kind is unsupported');
-  if (!['SERVER_POLICY', 'VERIFIED_PROVIDER', 'MANUAL_RESOLUTION'].includes(value.source)) throw new TypeError('credit grant source is unsupported');
+  const kind = exactGrantKind(value.kind);
+  const source = exactGrantSource(value.source);
   const amount = positiveSafeInteger(value.amount, 'grant amount');
   const providerEventId = value.providerEventId === undefined ? undefined : boundedText(value.providerEventId, 'provider event id', 512);
-  if (value.source === 'VERIFIED_PROVIDER' && !providerEventId) throw new TypeError('verified-provider grant requires providerEventId');
-  if (value.source !== 'VERIFIED_PROVIDER' && providerEventId) throw new TypeError('providerEventId is reserved for verified-provider grants');
+  if (source === 'VERIFIED_PROVIDER' && !providerEventId) throw new TypeError('verified-provider grant requires providerEventId');
+  if (source !== 'VERIFIED_PROVIDER' && providerEventId) throw new TypeError('providerEventId is reserved for verified-provider grants');
   const occurredAt = timestamp(value.occurredAt, 'grant occurredAt');
   const metadata = normalizeMetadata(value.metadata);
-  return Object.freeze({ id, identity, idempotencyKey, requestFingerprint, kind: value.kind, source: value.source, amount, ...(providerEventId ? { providerEventId } : {}), occurredAt, metadata });
+  return Object.freeze({ id, identity, idempotencyKey, requestFingerprint, kind, source, amount, ...(providerEventId ? { providerEventId } : {}), occurredAt, metadata });
 }
 
 function normalizeIdentity(value: FinancialIdentity): FinancialIdentity {
@@ -306,6 +295,31 @@ function planId(value: unknown): string {
 function fingerprint(value: unknown): string {
   if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw new TypeError('request fingerprint must be lowercase SHA-256');
   return value;
+}
+
+function exactGrantKind(value: unknown): CreditGrantRecord['kind'] {
+  if (value === 'WELCOME' || value === 'TRIAL' || value === 'PURCHASE' || value === 'ADJUSTMENT') return value;
+  throw new TypeError('credit grant kind is unsupported');
+}
+
+function exactGrantSource(value: unknown): CreditGrantRecord['source'] {
+  if (value === 'SERVER_POLICY' || value === 'VERIFIED_PROVIDER' || value === 'MANUAL_RESOLUTION') return value;
+  throw new TypeError('credit grant source is unsupported');
+}
+
+function exactEntitlementState(value: unknown): EntitlementState {
+  if (value === 'FREE' || value === 'TRIAL' || value === 'ACTIVE' || value === 'GRACE' || value === 'PAST_DUE' || value === 'CANCELLED') return value;
+  throw new Error('financial entitlement state is invalid');
+}
+
+function exactEntitlementSource(value: unknown): EntitlementSource {
+  if (value === 'SERVER_POLICY' || value === 'VERIFIED_PROVIDER' || value === 'MANUAL_RESOLUTION') return value;
+  throw new Error('financial entitlement source is invalid');
+}
+
+function exactBillingInterval(value: unknown): BillingInterval {
+  if (value === 'MONTHLY' || value === 'YEARLY' || value === 'CUSTOM') return value;
+  throw new Error('financial entitlement billing interval is invalid');
 }
 
 function positiveSafeInteger(value: unknown, label: string): number {
