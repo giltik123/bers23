@@ -31,13 +31,12 @@ test('R3e drives real manual Selection pointer input into Core-issued canonical 
     "getByRole('button', { name: 'Smart Select', exact: true })",
     "getByRole('button', { name: 'Add', exact: true })",
     "getByLabel('Brush Size').fill('96')",
-    'page.mouse.down()',
-    'page.mouse.move(endX, centerY, { steps: 8 })',
-    'page.mouse.up()',
+    "projectImage.click({ position: { x: box.width * 0.5, y: box.height * 0.5 } })",
     "getByRole('button', { name: 'Done', exact: true })",
     "'/api/core/artifacts/masks'",
   ]) assert.equal(harness.includes(text), true, `R3e harness must drive ${text}`);
 
+  assert.doesNotMatch(harness, /page\.mouse\./, 'R3e must use actionability-backed locator pointer input rather than a mouse-only event assumption');
   assert.match(harness, /manual selection draft must remain noncanonical before Done/);
   assert.match(harness, /manual selection draft must not mutate Project before Done/);
   assert.match(harness, /manual Add release-floor selection must not invoke Smart Select\/model execution/);
