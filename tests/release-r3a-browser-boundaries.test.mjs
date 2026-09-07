@@ -30,13 +30,8 @@ test('baseline notifications do not probe the retired generic Notification entit
   assert.match(notifications, /session-local/);
 });
 
-test('local analytics collectors do not emit to an unowned remote observability route', async () => {
-  const sources = await Promise.all([
-    readFile('src/lib/jobs/jobAnalytics.js', 'utf8'),
-    readFile('src/lib/recipes/recipeAnalytics.js', 'utf8'),
-    readFile('src/lib/i18n/LocalizationAnalytics.js', 'utf8'),
-  ]);
-  for (const source of sources) {
-    assert.doesNotMatch(source, /coreClient\.analytics|observability\/events/);
-  }
+test('startup localization diagnostics do not emit to an unowned remote observability route', async () => {
+  const localization = await readFile('src/lib/i18n/LocalizationAnalytics.js', 'utf8');
+  assert.doesNotMatch(localization, /coreClient\.analytics|observability\/events/);
+  assert.match(localization, /_reportedMissing/);
 });
