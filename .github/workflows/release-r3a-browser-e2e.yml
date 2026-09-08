@@ -68,6 +68,7 @@ on:
       - 'tests/auth-public-route-routing.test.mjs'
       - 'tests/core-resource-url.test.mjs'
       - 'tests/core-image-csp.test.mjs'
+      - 'tests/managed-garment-browser-client.test.mjs'
       - 'tests/release-r3a-browser-boundaries.test.mjs'
       - 'tests/release-r3b-browser-boundaries.test.mjs'
       - 'tests/release-r3c-browser-boundaries.test.mjs'
@@ -153,6 +154,7 @@ jobs:
           node --test tests/auth-client-contract.test.mjs
           node --test tests/core-resource-url.test.mjs
           node --test tests/core-image-csp.test.mjs
+          node --test tests/managed-garment-browser-client.test.mjs
           node --test tests/release-r3a-browser-boundaries.test.mjs
           node --test tests/release-r3b-browser-boundaries.test.mjs
           node --test tests/release-r3c-browser-boundaries.test.mjs
