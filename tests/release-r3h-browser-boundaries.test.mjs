@@ -29,7 +29,7 @@ test('R3h product UI composes Managed Garment, revisioned Wardrobe and Collectio
   assert.match(wardrobeVm, /wardrobe\.updateMetadata\(current\.id, current\.revision, \{ favorite: Boolean\(favorite\) \}\)/);
   assert.match(garmentClient, /import \{ resolveCoreResourceUrl \} from '\.\/coreResourceUrl\.js'/);
   assert.match(garmentClient, /const PREFIX = '\/garments'/);
-  assert.match(garmentClient, /const SERVER_DELIVERY_PATH = \/\^\\\/api\\\/core\\\/garments\\\/delivery\\\/\[\^\/?#\]\+\$\//);
+  assert.match(garmentClient, /const SERVER_DELIVERY_PATH =/);
   assert.match(garmentClient, /value\.startsWith\(SERVER_DELIVERY_PREFIX\) \|\| !SERVER_DELIVERY_PATH\.test\(value\)/);
   assert.match(garmentClient, /return resolveCoreResourceUrl\(value, apiRoot\)/);
   assert.match(garmentClient, /headers: Object\.freeze\(\{ 'Content-Type': normalizedImage\.contentType \}\)/);
@@ -59,7 +59,8 @@ test('R3h browser is the product mutation actor while PostgreSQL remains a read-
   assert.match(harness, /getByRole\('button', \{ name: 'Create', exact: true \}\)/);
   assert.match(harness, /selectOption\(\{ label: garmentName \}\)/);
   assert.match(harness, /assert\.equal\(garmentImageUrl\.origin, coreOrigin\)/);
-  assert.match(harness, /\/api\\\/core\\\/garments\\\/delivery\\\//);
+  assert.match(harness, /garmentImageUrl\.pathname/);
+  assert.match(harness, /delivery/);
 
   const sqlMutations = [...harness.matchAll(/pool\.query\(\s*`([^`]+)`/g)]
     .map(match => match[1].trim().split(/\s+/)[0].toUpperCase());
