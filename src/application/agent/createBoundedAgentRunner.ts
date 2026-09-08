@@ -14,6 +14,7 @@ type BoundedAgentView = Readonly<{
   retryAvailable?: boolean;
   attemptStatus?: string;
   terminalArtifactId?: string;
+  terminalImageUrl?: string;
   failureCode?: string;
 }>;
 
