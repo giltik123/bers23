@@ -9,10 +9,15 @@ export type WorkflowContinuationState =
   | 'CANCELLED'
   | 'UNKNOWN';
 
+export type WorkflowPlanParameterValue = string | number | boolean;
+export type WorkflowPlanParameters = Readonly<Record<string, WorkflowPlanParameterValue>>;
+
 export type WorkflowPlanBinding = Readonly<{
   planId: string;
   planRevision: string;
   planDigest: string;
+  /** Immutable normalized server-owned plan data. Empty legacy plans omit it. */
+  parameters?: WorkflowPlanParameters;
 }>;
 
 /** Immutable canonical inputs from which the durable workflow was authorized. */
@@ -131,13 +136,44 @@ export function normalizeWorkflowContinuationCreate(input: CreateWorkflowContinu
   const executionId = requireToken(input.executionId, 'executionId');
   const clientRequestId = requireToken(input.clientRequestId, 'clientRequestId');
   const scope = normalizeScope(input.scope);
+  const parameters = normalizeWorkflowPlanParameters(input.plan?.parameters);
   const plan = Object.freeze({
     planId: requireToken(input.plan?.planId, 'planId'),
     planRevision: requireToken(input.plan?.planRevision, 'planRevision'),
     planDigest: requireSha256(input.plan?.planDigest, 'planDigest'),
+    ...(parameters === undefined ? {} : { parameters }),
   });
   const inputArtifacts = normalizeInputArtifactBindings(input.inputArtifacts);
   return Object.freeze({ executionId, clientRequestId, scope, plan, inputArtifacts });
+}
+
+export function normalizeWorkflowPlanParameters(value: unknown): WorkflowPlanParameters | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('plan.parameters must be an object');
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return undefined;
+  if (entries.length > 16) throw new Error('plan.parameters exceeds the 16-field workflow limit');
+  const normalized = entries.map(([rawKey, rawValue]) => {
+    const key = rawKey.normalize('NFKC').trim();
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key)) throw new Error(`plan.parameters key is invalid: ${rawKey}`);
+    let parameter: WorkflowPlanParameterValue;
+    if (typeof rawValue === 'string') {
+      parameter = rawValue.normalize('NFKC').trim();
+      if (!parameter || Array.from(parameter).length > 256 || /[\u0000-\u001f\u007f]/u.test(parameter)) throw new Error(`plan.parameters.${key} is outside the accepted string contract`);
+    } else if (typeof rawValue === 'number') {
+      if (!Number.isFinite(rawValue) || !Number.isSafeInteger(rawValue)) throw new Error(`plan.parameters.${key} must be a safe integer`);
+      parameter = rawValue;
+    } else if (typeof rawValue === 'boolean') {
+      parameter = rawValue;
+    } else {
+      throw new Error(`plan.parameters.${key} must be a string, safe integer or boolean`);
+    }
+    return [key, parameter] as const;
+  }).sort(([left], [right]) => left.localeCompare(right));
+  if (new Set(normalized.map(([key]) => key)).size !== normalized.length) throw new Error('plan.parameters keys must be unique after normalization');
+  const result = Object.freeze(Object.fromEntries(normalized)) as WorkflowPlanParameters;
+  if (Buffer.byteLength(JSON.stringify(result), 'utf8') > 4096) throw new Error('plan.parameters exceeds the 4096-byte workflow limit');
+  return result;
 }
 
 export function normalizeInputArtifactBindings(values: readonly WorkflowInputArtifactBinding[]): readonly WorkflowInputArtifactBinding[] {
@@ -188,7 +224,8 @@ export function sameScope(a: Scope, b: Scope): boolean {
 }
 
 export function samePlanBinding(a: WorkflowPlanBinding, b: WorkflowPlanBinding): boolean {
-  return a.planId === b.planId && a.planRevision === b.planRevision && a.planDigest === b.planDigest;
+  return a.planId === b.planId && a.planRevision === b.planRevision && a.planDigest === b.planDigest
+    && canonicalPlanParameters(a.parameters) === canonicalPlanParameters(b.parameters);
 }
 
 export function sameInputArtifactBindings(a: readonly WorkflowInputArtifactBinding[], b: readonly WorkflowInputArtifactBinding[]): boolean {
@@ -214,6 +251,10 @@ export function assertExpectedRevision(actual: number, expected: number): void {
 
 export function isTerminalWorkflowState(state: WorkflowContinuationState): boolean {
   return state === 'SUCCESS' || state === 'FAILED' || state === 'CANCELLED' || state === 'UNKNOWN';
+}
+
+function canonicalPlanParameters(value: WorkflowPlanParameters | undefined): string {
+  return JSON.stringify(normalizeWorkflowPlanParameters(value) ?? {});
 }
 
 function normalizeOptionalArtifactIds(values: readonly string[] | undefined, field: string): readonly string[] {
