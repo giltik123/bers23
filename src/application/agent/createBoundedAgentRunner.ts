@@ -99,14 +99,14 @@ export function createBoundedAgentRunner(input: Readonly<{
     const parameters = ticket.operation.parameters;
     const width = parameters?.width;
     const height = parameters?.height;
-    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) throw new Error('Bounded Agent Resize ticket is missing server-owned target geometry');
+    if (typeof width !== 'number' || typeof height !== 'number' || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)) throw new Error('Bounded Agent Resize ticket is missing server-owned target geometry');
     const delivered = memo(() => client.localExecution.loadResizeInput({ ticketId: ticket.ticketId, projectId }));
     const executor = new CoreAuthorizedResize(projectId, {
       prepareResize: async () => { throw new Error('Bounded Agent must not prepare a second Resize ticket'); },
       uploadResizeImage: payload => client.localExecution.uploadResizeImage(payload),
       submitResize: async () => { throw new Error('Bounded Agent must not finalize through standalone Resize transport'); },
     }, imageInputs(sourceArtifactId, delivered), clock);
-    return executor.runPrepared({ ticket, sourceArtifactId, target: { width: Number(width), height: Number(height) } });
+    return executor.runPrepared({ ticket, sourceArtifactId, target: { width, height } });
   };
 
   return Object.freeze({
