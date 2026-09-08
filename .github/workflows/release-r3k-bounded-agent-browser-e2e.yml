@@ -129,5 +129,32 @@ jobs:
           set -euo pipefail
           node .test-cache/release-r3k/test-release-r3k-browser-e2e.mjs | tee .test-cache/release-r3k/runtime.log
           grep -q 'R3K_BROWSER_BOUNDED_AGENT_RECOVERY_ACCEPTED' .test-cache/release-r3k/runtime.log
+      - name: Preserve PostgreSQL forensic state after R3k failure
+        if: failure()
+        run: |
+          node --input-type=module <<'NODE'
+          import { Pool } from 'pg';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-r3k-forensics' });
+          const queries = {
+            continuations: `SELECT execution_id,client_request_id,project_id,plan_id,state,current_step_id,completed_steps_json,terminal_artifact_id,failure_code,revision FROM workflow_continuations ORDER BY created_at`,
+            tickets: `SELECT ticket_id,idempotency_key,request_id,workflow_id,step_id,consumed_at,finalized_status,finalized_at,admitted_result_sha256 FROM local_execution_tickets ORDER BY ticket_id`,
+            uploads: `SELECT upload_id,ticket_id,kind,artifact_role,width,height,size_bytes,sha256,consumed_at,expires_at FROM local_execution_uploads ORDER BY created_at`,
+            images: `SELECT storage_id::text,execution_id,operation_id,role,lifecycle,width,height,source_image_storage_id::text,producer_operation,revoked_at,deleted_at FROM canonical_image_artifacts ORDER BY created_at`,
+            runs: `SELECT run_id::text,capability,authority_kind,authority_ref,parent_run_id::text,status,revision,status_reason_code FROM canonical_execution_runs ORDER BY created_at,run_id`,
+          };
+          try {
+            for (const [name, sql] of Object.entries(queries)) {
+              try {
+                const result = await pool.query(sql);
+                console.log(`R3K_FORENSICS_${name.toUpperCase()}`, JSON.stringify(result.rows));
+              } catch (error) {
+                console.log(`R3K_FORENSICS_${name.toUpperCase()}_ERROR`, error instanceof Error ? error.message : String(error));
+              }
+            }
+          } finally {
+            await pool.end();
+          }
+          NODE
       - name: Check committed diff whitespace
+        if: always()
         run: git diff --check
