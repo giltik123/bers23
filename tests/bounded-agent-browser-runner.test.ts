@@ -72,7 +72,7 @@ test('browser runner follows only Core nextAction views and returns the terminal
           return waiting(workflowId, 3, 'RESIZE', second);
         }
         assert.equal(payload.result.ticketId, second.ticketId);
-        return Object.freeze({ executionId: workflowId, revision: 6, state: 'SUCCESS', terminalArtifactId: 'resize-final' });
+        return Object.freeze({ executionId: workflowId, revision: 6, state: 'SUCCESS', terminalArtifactId: 'resize-final', terminalImageUrl: '/api/core/artifacts/results/live-delivery' });
       },
     },
     localExecution: {
@@ -88,12 +88,49 @@ test('browser runner follows only Core nextAction views and returns the terminal
 
   assert.equal(outcome.view.state, 'SUCCESS');
   assert.equal(outcome.view.terminalArtifactId, 'resize-final');
+  assert.equal(outcome.view.terminalImageUrl, '/api/core/artifacts/results/live-delivery');
   assert.ok(outcome.preview);
   assert.deepEqual([...outcome.preview!.data], [...resizeRgba8(orthogonalRgba, 3, 2, { width: 4, height: 4 })]);
   assert.equal(submitted.length, 2);
   assert.equal(submitted[0].workflowId, workflowId); assert.equal(submitted[1].workflowId, workflowId);
   assert.deepEqual(events, ['agent-start', 'orthogonal-input', 'orthogonal-upload', 'agent-result', 'resize-input', 'resize-upload', 'agent-result']);
   assert.deepEqual(views.map(view => [view.revision, view.nextAction?.operation ?? view.state]), [[1, 'ORTHOGONAL_TRANSFORM'], [3, 'RESIZE'], [6, 'SUCCESS']]);
+});
+
+test('browser runner resumes durable terminal SUCCESS without replaying local pixels or uploads', async () => {
+  const localEvents: string[] = [];
+  let resumeCalls = 0;
+  const client = {
+    agent: {
+      async startBoundedDeterministic() { throw new Error('not used'); },
+      async resumeBoundedDeterministic(payload) {
+        resumeCalls += 1;
+        assert.deepEqual(payload, { executionId: workflowId, projectId });
+        return Object.freeze({ executionId: workflowId, revision: 9, state: 'SUCCESS', terminalArtifactId: 'resize-final', terminalImageUrl: '/api/core/artifacts/results/recovered-delivery' });
+      },
+      async submitBoundedDeterministicResult() { throw new Error('must not submit recovered SUCCESS'); },
+      async retryBoundedDeterministic() { throw new Error('not used'); },
+      async cancelBoundedDeterministic() { throw new Error('not used'); },
+    },
+    localExecution: {
+      async loadOrthogonalTransformInput() { localEvents.push('orthogonal-input'); throw new Error('must not execute'); },
+      async uploadOrthogonalTransformImage() { localEvents.push('orthogonal-upload'); throw new Error('must not execute'); },
+      async loadResizeInput() { localEvents.push('resize-input'); throw new Error('must not execute'); },
+      async uploadResizeImage() { localEvents.push('resize-upload'); throw new Error('must not execute'); },
+    },
+  };
+  const views: any[] = [];
+  const runner = createBoundedAgentRunner({ projectId, client: client as never });
+  const outcome = await runner.resume(workflowId, view => views.push(view));
+
+  assert.equal(resumeCalls, 1);
+  assert.deepEqual(localEvents, []);
+  assert.equal(outcome.view.state, 'SUCCESS');
+  assert.equal(outcome.view.terminalArtifactId, 'resize-final');
+  assert.equal(outcome.view.terminalImageUrl, '/api/core/artifacts/results/recovered-delivery');
+  assert.equal(outcome.preview, undefined, 'recovered terminal view must use the server-minted delivery rather than inventing pixels');
+  assert.equal(outcome.localLatencyMs, 0);
+  assert.deepEqual(views.map(view => [view.revision, view.state]), [[9, 'SUCCESS']]);
 });
 
 test('browser runner stops at durable retry state instead of inventing another local attempt', async () => {
