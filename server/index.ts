@@ -1,6 +1,7 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { loadCoreServerConfig } from './core/config.ts';
 import { createProductionCore } from './core/composition/createProductionCore.ts';
+import { createBoundedAgentHttpAdapter } from './core/http/boundedAgentHttpAdapter.ts';
 import { createLocalExecutionHttpAdapter } from './core/http/localExecutionHttpAdapter.ts';
 import { createOrthogonalTransformHttpAdapter } from './core/http/orthogonalTransformHttpAdapter.ts';
 import { createFashionTryOnProductHttpAdapter } from './core/http/fashionTryOnProductHttpAdapter.ts';
@@ -62,6 +63,7 @@ export async function startCoreServer() {
   const managedWardrobeAdapter = createManagedWardrobeHttpAdapter({ wardrobe, auth: production.auth, config, accepting: () => accepting });
   const managedCollectionAdapter = createManagedGarmentCollectionHttpAdapter({ collections, auth: production.auth, config, accepting: () => accepting });
   const managedOutfitAdapter = createManagedOutfitHttpAdapter({ outfits, auth: production.auth, config, accepting: () => accepting });
+  const boundedAgentAdapter = createBoundedAgentHttpAdapter({ workflow: production.agent.boundedDeterministic, auth: production.auth, config });
   const orthogonalTransformAdapter = createOrthogonalTransformHttpAdapter({ service: production.localExecution.orthogonalTransform, inputDelivery: production.localExecution.orthogonalTransformInputDelivery, auth: production.auth, config });
   const fashionTryOnProductAdapter = createFashionTryOnProductHttpAdapter({ product: production.fashion.tryOnProduct, auth: production.auth, config });
   const legacyFashionPrepareTombstoneAdapter = createFashionTryOnLegacyPrepareTombstoneHttpAdapter();
@@ -139,6 +141,7 @@ export async function startCoreServer() {
     if (path === '/api/core/execution-runs' || path.startsWith('/api/core/execution-runs/')) return void executionRunRecoveryAdapter(request, response);
     if (path === FINANCIAL_ACCOUNT_INITIALIZE_PATH) return void financialAccountPolicyAdapter(request, response);
     if (path === FINANCIAL_ACCOUNT_PATH) return void financialAccountAdapter(request, response);
+    if ((request.url ?? '').startsWith('/api/core/agent/bounded-deterministic/')) return void boundedAgentAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/orthogonal-transform/')) return void orthogonalTransformAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/local-execution/')) return void localExecutionAdapter(request, response);
     if ((request.url ?? '').startsWith('/api/core/composite-continuations/')) return void localCompositeAdapter(request, response);
