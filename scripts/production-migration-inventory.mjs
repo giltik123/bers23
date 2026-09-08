@@ -8,6 +8,7 @@ export const PRODUCTION_MIGRATION_DIRECTORIES = Object.freeze([
   'server/core/auth/migrations',
   'server/core/fashion/migrations',
   'server/core/execution/migrations',
+  'server/core/automation/migrations',
 ]);
 
 export const PRODUCTION_MIGRATION_NAME_PATTERN = /^(\d{3})_[a-z0-9_]+\.sql$/;

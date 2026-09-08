@@ -228,6 +228,7 @@ jobs:
               server/core/auth/migrations \
               server/core/fashion/migrations \
               server/core/execution/migrations \
+              server/core/automation/migrations \
               -maxdepth 1 -type f -name '*.sql' ! -name '*.down.sql' -printf '%f\n' | sort
           )"
           actual="$(
@@ -240,6 +241,7 @@ jobs:
           printf '%s\n' "$actual" | grep -qx '028_project_body_anchor_sets.sql'
           printf '%s\n' "$actual" | grep -qx '029_fashion_garment_warp_layers.sql'
           printf '%s\n' "$actual" | grep -qx '034_execution_run_registry.sql'
+          printf '%s\n' "$actual" | grep -qx '040_automation_definitions.sql'
       - name: Assert production image contents
         run: |
           docker run --rm --entrypoint sh bers-core:${{ env.CANDIDATE_SHA }} -c '
