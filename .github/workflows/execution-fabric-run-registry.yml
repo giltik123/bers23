@@ -150,7 +150,6 @@ jobs:
           grep -q "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core/workflow/BoundedAgentDeterministicWorkflowService.ts
           INTERNAL_AUTHORITY="authorityKind: 'WORKFLOW_INTERNAL_STEP'"
-          test "$(grep -R -F "$INTERNAL_AUTHORITY" server/core --include='*.ts' | wc -l)" -eq 2
           mapfile -t internal_producers < <(grep -R -l -F "$INTERNAL_AUTHORITY" server/core --include='*.ts' | sort)
           test "${#internal_producers[@]}" -eq 2
           test "${internal_producers[0]}" = 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'

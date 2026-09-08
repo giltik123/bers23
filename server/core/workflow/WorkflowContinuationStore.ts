@@ -262,7 +262,7 @@ function normalizeOptionalArtifactIds(values: readonly string[] | undefined, fie
   if (!Array.isArray(values)) throw new Error(`${field} must be an array`);
   const normalized = values.map((value, index) => requireToken(value, `${field}[${index}]`));
   if (new Set(normalized).size !== normalized.length) throw new Error(`${field} entries must be unique`);
-  return Object.freeze(normalized);
+  return Object.freeze(normalized.sort((left, right) => left.localeCompare(right)));
 }
 
 function requireToken(value: unknown, field: string): string {
