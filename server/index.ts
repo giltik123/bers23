@@ -63,7 +63,18 @@ export async function startCoreServer() {
   const managedWardrobeAdapter = createManagedWardrobeHttpAdapter({ wardrobe, auth: production.auth, config, accepting: () => accepting });
   const managedCollectionAdapter = createManagedGarmentCollectionHttpAdapter({ collections, auth: production.auth, config, accepting: () => accepting });
   const managedOutfitAdapter = createManagedOutfitHttpAdapter({ outfits, auth: production.auth, config, accepting: () => accepting });
-  const boundedAgentAdapter = createBoundedAgentHttpAdapter({ workflow: production.agent.boundedDeterministic, auth: production.auth, config });
+  const boundedAgentAdapter = createBoundedAgentHttpAdapter({
+    workflow: production.agent.boundedDeterministic,
+    terminalPreview: Object.freeze({
+      mint: (scope, artifactId) => {
+        const stored = production.artifacts.external.resolveStoredFinalId(artifactId, scope);
+        const deliveryToken = production.artifacts.external.issueStoredFinalDelivery(stored.storageId, scope, Date.now() + EXECUTION_RESULT_DELIVERY_TTL_MS);
+        return `/api/core/artifacts/results/${encodeURIComponent(deliveryToken)}`;
+      },
+    }),
+    auth: production.auth,
+    config,
+  });
   const orthogonalTransformAdapter = createOrthogonalTransformHttpAdapter({ service: production.localExecution.orthogonalTransform, inputDelivery: production.localExecution.orthogonalTransformInputDelivery, auth: production.auth, config });
   const fashionTryOnProductAdapter = createFashionTryOnProductHttpAdapter({ product: production.fashion.tryOnProduct, auth: production.auth, config });
   const legacyFashionPrepareTombstoneAdapter = createFashionTryOnLegacyPrepareTombstoneHttpAdapter();
