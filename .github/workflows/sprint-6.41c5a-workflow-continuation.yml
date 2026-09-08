@@ -10,6 +10,7 @@ on:
       - "server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql"
       - "server/core/artifacts/migrations/015_workflow_continuations.sql"
       - "server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql"
+      - "server/core/artifacts/migrations/039_workflow_continuation_plan_parameters.sql"
       - "src/platform/creative/canonical/planning/**"
       - "server/core/providers/productionExecutionCapabilities.ts"
       - "server/core/providers/productionOnDeviceRoute.test.mjs"
@@ -51,6 +52,8 @@ jobs:
       - name: Run fail-closed continuation and deterministic recovery unit tests
         run: |
           node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.test.mjs
+          node --experimental-strip-types --test server/core/workflow/WorkflowContinuationPlanParameters.test.mjs
+          node --experimental-strip-types --test server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.test.mjs
           node --experimental-strip-types --test server/core/workflow/WorkflowLocalExecutionAttemptRunProjection.test.mjs
           node --experimental-strip-types --test server/core/localExecution/DeterministicWorkflowStepFinalRecoveryAuthority.test.mjs
       - name: Apply exact prerequisite and C5A schemas
@@ -66,11 +69,14 @@ jobs:
               'server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql',
               'server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql',
               'server/core/artifacts/migrations/015_workflow_continuations.sql',
+              'server/core/artifacts/migrations/039_workflow_continuation_plan_parameters.sql',
             ]) await pool.query(await readFile(path, 'utf8'));
           } finally { await pool.end(); }
           NODE
       - name: Prove PostgreSQL restart, concurrency and replay semantics
-        run: node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.integration.test.mjs
+        run: |
+          node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.integration.test.mjs
+          node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationPlanParameters.integration.test.mjs
       - name: Preserve composite and capability fail-closed boundaries
         run: |
           npm run test:creative-planning-v2
