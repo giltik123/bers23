@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CONFIGURED_CORE_API_ROOT, resolveCoreResourceUrl } from '@/api/coreResourceUrl';
 import { createBoundedAgentRunner } from '@/application/agent/createBoundedAgentRunner';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
 
 const HINT_PREFIX = 'bers:bounded-agent:v1:';
 const EMPTY_STATE = Object.freeze({ active: false, busy: false, view: null, error: null });
 const TERMINAL = new Set(['SUCCESS', 'FAILED', 'CANCELLED', 'UNKNOWN']);
+const TERMINAL_DELIVERY_PREFIX = '/api/core/artifacts/results/';
 
 export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   const mountedRef = useRef(false);
@@ -27,9 +29,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
       const view = outcome.view;
       if (view.state === 'SUCCESS') {
         if (!view.terminalArtifactId) throw new Error('Bounded Agent SUCCESS is missing the canonical terminal Artifact');
-        if (!outcome.preview) throw new Error('Bounded Agent terminal preview is unavailable after recovery');
-        const png = await encodeDeterministicRgbaPng(outcome.preview);
-        const previewUrl = URL.createObjectURL(new Blob([png], { type: 'image/png' }));
+        const previewUrl = await terminalPreviewUrl(view, outcome.preview);
         const pending = Object.freeze({
           kind: 'BOUNDED_AGENT',
           result: Object.freeze({
@@ -44,12 +44,12 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
           beforeUrl: context.beforeUrl,
           context: Object.freeze({ mode: context.mode, width: context.width, height: context.height }),
         });
-        if (!mountedRef.current) { URL.revokeObjectURL(previewUrl); return outcome; }
+        if (!mountedRef.current) { revokeBlob(previewUrl); return outcome; }
         setState(Object.freeze({ active: false, busy: false, view, error: null }));
         try {
           finalCallbackRef.current?.(pending);
           clearHint(project?.id);
-        } catch (error) { URL.revokeObjectURL(previewUrl); throw error; }
+        } catch (error) { revokeBlob(previewUrl); throw error; }
         return outcome;
       }
       if (view.retryAvailable) {
@@ -138,6 +138,16 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   return Object.freeze({ state, busy: state.busy, start, retry, cancel });
 }
 
+async function terminalPreviewUrl(view, localPreview) {
+  if (localPreview) {
+    const png = await encodeDeterministicRgbaPng(localPreview);
+    return URL.createObjectURL(new Blob([png], { type: 'image/png' }));
+  }
+  const delivery = view?.terminalImageUrl;
+  if (typeof delivery !== 'string' || !delivery.startsWith(TERMINAL_DELIVERY_PREFIX)) throw new Error('Bounded Agent terminal preview delivery is unavailable after recovery');
+  return resolveCoreResourceUrl(delivery, CONFIGURED_CORE_API_ROOT);
+}
+function revokeBlob(value) { if (typeof value === 'string' && value.startsWith('blob:')) URL.revokeObjectURL(value); }
 function terminalMessage(view) {
   if (view.state === 'CANCELLED') return null;
   if (view.state === 'UNKNOWN') return 'Bounded Agent outcome is UNKNOWN and requires recovery before retry.';
