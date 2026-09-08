@@ -13,9 +13,9 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required: R3i release browser E2E must use real PostgreSQL');
 
 const host = '127.0.0.1';
-const frontendPort = 4190;
-const corePort = 4191;
-const providerPort = 4192;
+const frontendPort = 4187;
+const corePort = 4188;
+const providerPort = 4189;
 const frontendOrigin = `http://${host}:${frontendPort}`;
 const coreOrigin = `http://${host}:${corePort}`;
 const providerOrigin = `http://${host}:${providerPort}`;
@@ -37,6 +37,11 @@ for (const name of ['FAL_KEY', 'JWT_SECRET', 'AUTH_CHALLENGE_SECRET', 'RESEND_AP
 await assertFile(path.join(distDir, 'index.html'));
 await assertFile(coreEntry);
 await assertFile(viteEntry);
+assert.equal(
+  process.env.VITE_CORE_API_URL,
+  `${coreOrigin}/api/core`,
+  'R3i harness Core origin must exactly match the Core API origin baked into the release SPA',
+);
 
 const pool = new Pool({ connectionString: databaseUrl, max: 5, application_name: 'bers-release-r3i-browser-e2e' });
 const authStore = new PostgresAuthStore(pool);
@@ -64,6 +69,7 @@ const providerTrap = http.createServer((request, response) => {
 await listen(providerTrap, providerPort);
 
 const coreLogs = [];
+const frontendLogs = [];
 const core = spawn(process.execPath, [coreEntry], {
   env: {
     ...process.env,
@@ -120,6 +126,8 @@ try {
     env: process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  frontend.stdout.on('data', chunk => frontendLogs.push(String(chunk)));
+  frontend.stderr.on('data', chunk => frontendLogs.push(String(chunk)));
   await waitForHttp(frontendOrigin, 15_000, frontend);
 
   try { browser = await chromium.launch({ channel: 'chrome', headless: true }); }
@@ -455,6 +463,7 @@ try {
     `R3i browser E2E failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`,
     `diagnostics=${JSON.stringify(diagnostics)}`,
     `providerCalls=${providerCalls}`,
+    `frontendLogs=${frontendLogs.join('').slice(-8000)}`,
     `coreLogs=${coreLogs.join('').slice(-16000)}`,
   ].join('\n');
   throw new Error(detail);
