@@ -87,7 +87,28 @@ test('continuation exposes Resume/Recover/Abandon only while an in-flight run ex
   assert.equal(staleDisplay.canAbandon, false);
 });
 
-test('busy or externally disabled UI blocks every mutating product action', () => {
+test('ambiguous transport outcome is projected from host UNCERTAIN and exposes only explicit reconciliation', () => {
+  const ui = canonicalTryOnProductUiState({
+    result: readiness('READY', 'tops'),
+    host: host({ hasInFlight: true, phase: 'UNCERTAIN' }),
+  });
+  assert.equal(ui.status, 'UNCERTAIN');
+  assert.match(ui.message, /outcome is uncertain/i);
+  assert.match(ui.message, /no automatic retry/i);
+  assert.equal(ui.canInspect, false);
+  assert.equal(ui.canRun, false);
+  assert.equal(ui.canResume, true);
+  assert.equal(ui.canRecover, true);
+  assert.equal(ui.canAbandon, true);
+  assert.equal(ui.hasInFlight, true);
+
+  assert.throws(
+    () => canonicalTryOnProductUiState({ result: readiness('READY', 'tops'), host: host({ phase: 'UNCERTAIN' }) }),
+    /requires an in-flight product identity/,
+  );
+});
+
+test('busy or externally disabled UI blocks every mutating product action including UNCERTAIN reconciliation', () => {
   for (const flags of [{ busy: true }, { disabled: true }]) {
     const ui = canonicalTryOnProductUiState({
       result: { status: 'TEXTURE_PENDING' },
@@ -99,6 +120,15 @@ test('busy or externally disabled UI blocks every mutating product action', () =
     assert.equal(ui.canResume, false);
     assert.equal(ui.canRecover, false);
     assert.equal(ui.canAbandon, false);
+
+    const uncertain = canonicalTryOnProductUiState({
+      result: readiness('READY', 'tops'),
+      host: host({ hasInFlight: true, phase: 'UNCERTAIN' }),
+      ...flags,
+    });
+    assert.equal(uncertain.canResume, false);
+    assert.equal(uncertain.canRecover, false);
+    assert.equal(uncertain.canAbandon, false);
   }
 });
 
