@@ -279,8 +279,12 @@ try {
   await serverExecutions.waitFor({ state: 'visible', timeout: 15_000 });
   await serverExecutions.getByRole('button', { name: 'Refresh', exact: true }).click();
   await serverExecutions.getByText('Workflow execution', { exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
-  assert.equal(await serverExecutions.getByText('Local execution', { exact: true }).count(), 2);
-  assert.equal(await serverExecutions.getByText('Internal workflow step', { exact: true }).count(), 1);
+  const localRunLabels = serverExecutions.getByText('Local execution', { exact: true });
+  await localRunLabels.nth(1).waitFor({ state: 'visible', timeout: 15_000 });
+  const internalRunLabel = serverExecutions.getByText('Internal workflow step', { exact: true });
+  await internalRunLabel.waitFor({ state: 'visible', timeout: 15_000 });
+  assert.equal(await localRunLabels.count(), 2);
+  assert.equal(await internalRunLabel.count(), 1);
 
   // Reload a second time while ResultCompare is visible. Because terminal recovery
   // remains armed until Accept/Discard, this reload must re-publish the same FINAL
@@ -385,7 +389,7 @@ try {
 }
 
 function resetJourneyDiagnostics() {
-  for (const key of ['agentRequests', 'localExecutionRequests', 'executionRunRequests', 'terminalDeliveryRequests', 'creativeRequests', 'financialRequests', 'projectMutations', 'externalBrowserRequests']) diagnostics[key].length = 0;
+  for (const key of ['pageErrors', 'consoleErrors', 'requestFailures', 'agentRequests', 'localExecutionRequests', 'executionRunRequests', 'terminalDeliveryRequests', 'creativeRequests', 'financialRequests', 'projectMutations', 'externalBrowserRequests']) diagnostics[key].length = 0;
 }
 
 function attachDiagnostics(page) {
