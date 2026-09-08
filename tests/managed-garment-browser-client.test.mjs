@@ -136,7 +136,7 @@ test('Managed Garment image intent rejects empty or unsupported browser media be
   assert.equal(calls.length, 0);
 });
 
-test('Managed Garment response exposes only canonical immutable view evidence and server-issued delivery path', () => {
+test('Managed Garment response validates server delivery capability before same-origin or split-origin resolution', () => {
   const result = normalizeManagedGarmentDto(dto());
   assert.equal(result.id, GARMENT_ID);
   assert.equal(result.primaryViewId, VIEW_ID);
@@ -146,13 +146,20 @@ test('Managed Garment response exposes only canonical immutable view evidence an
   assert.equal(Object.isFrozen(result.views), true);
   assert.equal(Object.isFrozen(result.captureAssessment), true);
 
+  const splitOrigin = normalizeManagedGarmentDto(dto(), 'http://127.0.0.1:4188/api/core');
+  assert.equal(
+    splitOrigin.views[0].deliveryUrl,
+    'http://127.0.0.1:4188/api/core/garments/delivery/signed-token',
+    'split-origin browser must render the exact validated server capability at the configured Core origin',
+  );
+
   assert.throws(() => normalizeManagedGarmentDto(dto({ primary_view_id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee' })), /primary_view_id/);
   const badUrl = dto();
   badUrl.views[0].delivery_url = 'https://example.com/garment.png';
-  assert.throws(() => normalizeManagedGarmentDto(badUrl), /delivery_url/);
+  assert.throws(() => normalizeManagedGarmentDto(badUrl, 'http://127.0.0.1:4188/api/core'), /delivery_url/);
   const widenedUrl = dto();
   widenedUrl.views[0].delivery_url = '/api/core/garments/delivery/token/extra';
-  assert.throws(() => normalizeManagedGarmentDto(widenedUrl), /delivery_url/);
+  assert.throws(() => normalizeManagedGarmentDto(widenedUrl, 'http://127.0.0.1:4188/api/core'), /delivery_url/);
   const badHash = dto();
   badHash.views[0].content_sha256 = SHA.toUpperCase();
   assert.throws(() => normalizeManagedGarmentDto(badHash), /SHA-256/);
