@@ -49,7 +49,11 @@ const projectPng = await sharp({
 const garmentPng = await sharp({
   create: { width: 640, height: 640, channels: 4, background: { r: 31, g: 57, b: 83, alpha: 1 } },
 }).png({ compressionLevel: 9 }).toBuffer();
-const garmentSourceSha256 = createHash('sha256').update(garmentPng).digest('hex');
+const garmentSourceDecoded = await sharp(garmentPng).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+assert.equal(garmentSourceDecoded.info.width, 640);
+assert.equal(garmentSourceDecoded.info.height, 640);
+assert.equal(garmentSourceDecoded.info.channels, 4);
+const garmentSourcePixelSha256 = createHash('sha256').update(garmentSourceDecoded.data).digest('hex');
 
 let providerCalls = 0;
 const providerTrap = http.createServer((request, response) => {
@@ -201,10 +205,6 @@ try {
   assert.equal(garmentCreateUrl.searchParams.get('name'), garmentName);
   assert.equal(garmentCreateUrl.searchParams.get('view'), 'FRONT');
   assert.equal(await garmentCreateRequest.headerValue('content-type'), 'image/png');
-  const postedGarmentBytes = garmentCreateRequest.postDataBuffer();
-  assert(postedGarmentBytes, 'Managed Garment create must carry the selected image bytes');
-  assert.equal(postedGarmentBytes.byteLength, garmentPng.byteLength);
-  assert.equal(createHash('sha256').update(postedGarmentBytes).digest('hex'), garmentSourceSha256, 'browser must send selected image bytes directly to Managed Garment authority');
 
   const createdGarment = await garmentCreateResponse.json();
   const garmentId = createdGarment.id;
@@ -218,6 +218,7 @@ try {
   assert.equal(createdGarment.views[0].height, 640);
   assert.equal(createdGarment.views[0].encoding, 'PNG_RGBA8_LOSSLESS');
   assert.equal(createdGarment.views[0].content_type, 'image/png');
+  assert.match(createdGarment.views[0].content_sha256, /^[a-f0-9]{64}$/);
   assert.equal(createdGarment.views[0].storage_provenance, 'POSTGRES_BYTEA_V1');
 
   assert.equal(new URL(metadataPatchResponse.url()).pathname, `/api/core/wardrobe/garments/${garmentId}`);
@@ -333,11 +334,15 @@ try {
   assert.equal(durable.view.revoked_at, null);
   assert.equal(durable.view.deleted_at, null);
   assert(Buffer.isBuffer(durable.view.image_bytes));
-  assert.equal(createHash('sha256').update(durable.view.image_bytes).digest('hex'), String(durable.view.content_sha256));
-  const storedMetadata = await sharp(durable.view.image_bytes).metadata();
-  assert.equal(storedMetadata.format, 'png');
-  assert.equal(storedMetadata.width, 640);
-  assert.equal(storedMetadata.height, 640);
+  const storedCanonicalSha256 = createHash('sha256').update(durable.view.image_bytes).digest('hex');
+  assert.equal(storedCanonicalSha256, String(durable.view.content_sha256), 'PostgreSQL content_sha256 must identify the exact canonical image_bytes');
+  assert.equal(createdGarment.views[0].content_sha256, String(durable.view.content_sha256), 'Managed Garment response hash must bind to durable PostgreSQL bytes');
+  const storedDecoded = await sharp(durable.view.image_bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.equal(storedDecoded.info.width, 640);
+  assert.equal(storedDecoded.info.height, 640);
+  assert.equal(storedDecoded.info.channels, 4);
+  const storedPixelSha256 = createHash('sha256').update(storedDecoded.data).digest('hex');
+  assert.equal(storedPixelSha256, garmentSourcePixelSha256, 'canonical Managed Garment bytes must preserve the exact decoded RGBA pixels selected in the browser');
   assert.deepEqual(durable.tags, ['capsule', 'navy']);
 
   assert.equal(durable.collection.collection_id, collectionId);
@@ -380,6 +385,8 @@ try {
     garmentRevision: Number(durable.garment.revision),
     viewId: durable.view.view_id,
     viewSha256: durable.view.content_sha256,
+    garmentSourcePixelSha256,
+    storedPixelSha256,
     collectionId,
     collectionRevision: Number(durable.collection.revision),
     membership: durable.members,
