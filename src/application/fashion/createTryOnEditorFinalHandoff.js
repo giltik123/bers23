@@ -8,12 +8,15 @@ const RECOVERY_PREVIEW_URL = /^\/api\/core\/artifacts\/results\/[A-Za-z0-9_-]+\.
  * Local PixelImage previews are encoded through the already-admitted
  * deterministic PNG codec injected by Editor and become Editor-owned blob:
  * URLs. Recovery previews remain the short-lived Core delivery capability
- * already validated by the canonical application. Blob revocation remains the
- * existing Editor pending-result lifecycle responsibility.
+ * already validated by the canonical application. The browser composition may
+ * add only the configured Core origin to that exact capability for split-origin
+ * deployments; it cannot rewrite the server-issued path. Blob revocation remains
+ * the existing Editor pending-result lifecycle responsibility.
  */
-export function createTryOnEditorFinalHandoff({ encodePreviewPng, createBlobUrl }) {
+export function createTryOnEditorFinalHandoff({ encodePreviewPng, createBlobUrl, resolveRecoveryPreviewUrl }) {
   requireFunction(encodePreviewPng, 'encodePreviewPng');
   requireFunction(createBlobUrl, 'createBlobUrl');
+  requireFunction(resolveRecoveryPreviewUrl, 'resolveRecoveryPreviewUrl');
 
   return async function handoff(value) {
     requirePlainObject(value, 'Try-On Editor handoff');
@@ -29,7 +32,10 @@ export function createTryOnEditorFinalHandoff({ encodePreviewPng, createBlobUrl 
       if (!RECOVERY_PREVIEW_URL.test(final.preview)) {
         throw new Error('Try-On recovery preview is outside the accepted Editor delivery contract');
       }
-      previewUrl = final.preview;
+      previewUrl = normalizeResolvedRecoveryPreview(
+        final.preview,
+        resolveRecoveryPreviewUrl(final.preview),
+      );
     } else {
       const png = await encodePreviewPng(final.preview);
       if (!(png instanceof Uint8Array) || png.byteLength === 0) {
@@ -55,6 +61,23 @@ export function createTryOnEditorFinalHandoff({ encodePreviewPng, createBlobUrl 
       context: Object.freeze({ garmentId, sourceArtifactId }),
     });
   };
+}
+
+function normalizeResolvedRecoveryPreview(original, value) {
+  if (value === original) return original;
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('Try-On recovery preview resolver returned an invalid URL');
+  }
+  let resolved;
+  try { resolved = new URL(value); }
+  catch { throw new Error('Try-On recovery preview resolver returned an invalid URL'); }
+  if (!['http:', 'https:'].includes(resolved.protocol)
+    || resolved.username
+    || resolved.password
+    || `${resolved.pathname}${resolved.search}${resolved.hash}` !== original) {
+    throw new Error('Try-On recovery preview resolver changed the server-issued delivery capability');
+  }
+  return resolved.toString();
 }
 
 function normalizeFinal(value) {
