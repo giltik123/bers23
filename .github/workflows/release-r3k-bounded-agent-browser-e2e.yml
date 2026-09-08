@@ -1,0 +1,133 @@
+name: R3k bounded Agent browser E2E
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/index.ts'
+      - 'server/core/artifacts/**'
+      - 'server/core/composition/**'
+      - 'server/core/execution/**'
+      - 'server/core/http/boundedAgentHttpAdapter.ts'
+      - 'server/core/localExecution/**'
+      - 'server/core/projects/**'
+      - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
+      - 'server/core/workflow/PostgresWorkflowContinuationStore.ts'
+      - 'server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts'
+      - 'server/core/workflow/WorkflowLocalExecutionAttemptRunProjection.ts'
+      - 'server/core/workflow/workflowContinuationSchema.ts'
+      - 'src/api/coreClient.js'
+      - 'src/api/coreResourceUrl.js'
+      - 'src/application/agent/**'
+      - 'src/application/local-execution/CoreAuthorizedOrthogonalTransform.ts'
+      - 'src/application/local-execution/CoreAuthorizedResize.ts'
+      - 'src/components/editor/ResultCompare.jsx'
+      - 'src/components/editor/agent/**'
+      - 'src/components/editor/jobs/**'
+      - 'src/hooks/useProject.js'
+      - 'src/lib/jobs/executionRunProjection.js'
+      - 'src/lib/projectService.js'
+      - 'src/pages/Editor.jsx'
+      - 'src/platform/creative/deterministic/**'
+      - 'scripts/build-core-server.mjs'
+      - 'scripts/test-release-r3k-browser-e2e.mjs'
+      - 'tests/bounded-agent-browser-runner.test.ts'
+      - 'tests/bounded-agent-prepared-local-execution.test.ts'
+      - 'tests/editor-canonical-boundary.test.mjs'
+      - 'tests/release-r3k-browser-boundaries.test.mjs'
+      - '.github/workflows/release-r3k-bounded-agent-browser-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-r3k-bounded-agent-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bounded-agent-recovery-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: release_r3k_test
+          POSTGRES_USER: release_r3k_test
+          POSTGRES_PASSWORD: release_r3k_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U release_r3k_test -d release_r3k_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://release_r3k_test:release_r3k_test@127.0.0.1:5432/release_r3k_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      VITE_CORE_API_URL: http://127.0.0.1:4188/api/core
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck bounded Agent browser and Core surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove static R3k and bounded Agent browser authority contracts
+        run: |
+          node --test tests/release-r3k-browser-boundaries.test.mjs
+          mkdir -p .test-cache/release-r3k/unit
+          npx esbuild tests/bounded-agent-browser-runner.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3k/unit/browser-runner.test.mjs \
+            --external:node:*
+          node --test .test-cache/release-r3k/unit/browser-runner.test.mjs
+          npx esbuild tests/bounded-agent-prepared-local-execution.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3k/unit/prepared-local.test.mjs \
+            --external:node:*
+          node --test .test-cache/release-r3k/unit/prepared-local.test.mjs
+          node --test tests/editor-canonical-boundary.test.mjs
+      - name: Build immutable Core and apply packaged production migrations
+        run: |
+          npm run server:build
+          test -f dist-server/server.mjs
+          test -f dist-server/migrations/039_workflow_continuation_plan_parameters.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Generate and mask ephemeral R3k runtime secrets
+        run: |
+          set -euo pipefail
+          for name in FAL_KEY JWT_SECRET AUTH_CHALLENGE_SECRET RESEND_API_KEY GOOGLE_OAUTH_CLIENT_SECRET ARTIFACT_SIGNING_SECRET; do
+            value="$(openssl rand -hex 32)"
+            printf '::add-mask::%s\n' "$value"
+            printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+          done
+      - name: Build real SPA against built Core origin
+        run: |
+          npm run build
+          test -f dist/index.html
+      - name: Bundle focused R3k browser harness without replacing production stores
+        run: |
+          mkdir -p .test-cache/release-r3k
+          npx esbuild scripts/test-release-r3k-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3k/test-release-r3k-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove lost-response reload terminal-reload and explicit Accept journey
+        run: |
+          set -euo pipefail
+          node .test-cache/release-r3k/test-release-r3k-browser-e2e.mjs | tee .test-cache/release-r3k/runtime.log
+          grep -q 'R3K_BROWSER_BOUNDED_AGENT_RECOVERY_ACCEPTED' .test-cache/release-r3k/runtime.log
+      - name: Check committed diff whitespace
+        run: git diff --check
