@@ -17,9 +17,19 @@ on:
       - "server/core/artifacts/migrations/015_workflow_continuations.sql"
       - "server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql"
       - "server/core/artifacts/migrations/039_workflow_continuation_plan_parameters.sql"
+      - "src/api/coreClient.js"
+      - "src/application/agent/**"
+      - "src/application/local-execution/CoreAuthorizedOrthogonalTransform.ts"
+      - "src/application/local-execution/CoreAuthorizedResize.ts"
+      - "src/components/editor/agent/**"
+      - "src/pages/Editor.jsx"
       - "src/platform/creative/canonical/planning/**"
       - "server/core/providers/productionExecutionCapabilities.ts"
       - "server/core/providers/productionOnDeviceRoute.test.mjs"
+      - "tests/bounded-agent-browser-runner.test.ts"
+      - "tests/bounded-agent-prepared-local-execution.test.ts"
+      - "tests/editor-canonical-boundary.test.mjs"
+      - "tests/editor-zero-object-navigation.test.mjs"
       - ".github/workflows/sprint-6.41c5a-workflow-continuation.yml"
       - "package.json"
       - "package-lock.json"
@@ -55,10 +65,18 @@ jobs:
       - run: npm ci
       - name: Typecheck continuation authority
         run: npm run server:typecheck
+      - name: Build bounded Agent browser surface
+        run: npm run build
       - name: Prove production workflow-bound v2 issuer and bounded Agent composition
         run: node --test server/core/composition/boundedAgentProductionComposition.test.mjs
       - name: Prove bounded Agent HTTP authority and principal boundary
         run: node --experimental-strip-types --test server/core/http/boundedAgentHttpAdapter.test.mjs
+      - name: Prove prepared local execution, browser sequencing and Editor boundary
+        run: |
+          node --experimental-strip-types --test tests/bounded-agent-prepared-local-execution.test.ts
+          node --experimental-strip-types --test tests/bounded-agent-browser-runner.test.ts
+          node --test tests/editor-canonical-boundary.test.mjs
+          node --test tests/editor-zero-object-navigation.test.mjs
       - name: Run fail-closed continuation, workflow-ticket, bounded Agent and deterministic recovery unit tests
         run: |
           node --experimental-strip-types --test server/core/workflow/WorkflowContinuationPlanParameters.test.mjs
