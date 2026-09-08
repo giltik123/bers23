@@ -8,6 +8,9 @@ on:
       - 'src/App.jsx'
       - 'src/api/coreClient.js'
       - 'src/api/coreResourceUrl.js'
+      - 'src/api/managedGarmentClient.js'
+      - 'src/api/managedWardrobeClient.js'
+      - 'src/api/managedGarmentCollectionClient.js'
       - 'src/application/createCrop.ts'
       - 'src/application/createResize.ts'
       - 'src/application/createOrthogonalTransform.ts'
@@ -15,6 +18,7 @@ on:
       - 'src/application/selection/**'
       - 'src/application/editor/orthogonalTransformStartPolicy.js'
       - 'src/application/editor/recoverFinalSourceConflict.js'
+      - 'src/application/fashion/**'
       - 'src/components/ProtectedRoute.jsx'
       - 'src/components/editor/CropToolbar.jsx'
       - 'src/components/editor/ResizeToolbar.jsx'
@@ -24,6 +28,7 @@ on:
       - 'src/components/editor/OrthogonalTransformToolbar.jsx'
       - 'src/components/editor/ResultCompare.jsx'
       - 'src/components/editor/VersionsPanel.jsx'
+      - 'src/components/editor/fashion/**'
       - 'src/hooks/useProject.js'
       - 'src/lib/AuthContext.jsx'
       - 'src/lib/projectService.js'
@@ -40,6 +45,7 @@ on:
       - 'server/core/auth/**'
       - 'server/core/projects/**'
       - 'server/core/artifacts/**'
+      - 'server/core/fashion/**'
       - 'server/core/http/**'
       - 'server/core/localExecution/**'
       - 'server/core/config.ts'
@@ -54,6 +60,7 @@ on:
       - 'scripts/test-release-r3e-browser-e2e.mjs'
       - 'scripts/test-release-r3f-browser-e2e.mjs'
       - 'scripts/test-release-r3g-browser-e2e.mjs'
+      - 'scripts/test-release-r3h-browser-e2e.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - 'tests/editor-orthogonal-transform-ui.test.mjs'
       - 'tests/editor-final-source-conflict-recovery.test.mjs'
@@ -68,6 +75,7 @@ on:
       - 'tests/release-r3e-browser-boundaries.test.mjs'
       - 'tests/release-r3f-browser-boundaries.test.mjs'
       - 'tests/release-r3g-browser-boundaries.test.mjs'
+      - 'tests/release-r3h-browser-boundaries.test.mjs'
       - 'tests/release-r3b-production-orthogonal-prepare.test.ts'
       - 'tests/frontend-security-deployment-contract.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
@@ -152,6 +160,7 @@ jobs:
           node --test tests/release-r3e-browser-boundaries.test.mjs
           node --test tests/release-r3f-browser-boundaries.test.mjs
           node --test tests/release-r3g-browser-boundaries.test.mjs
+          node --test tests/release-r3h-browser-boundaries.test.mjs
       - name: Prove runtime-compatible frontend security and preserve worker lockdown
         run: |
           mkdir -p .test-cache/release-r3
@@ -357,5 +366,42 @@ jobs:
           grep -q "diagnostics.externalBrowserRequests, \[\]" "$script"
           ! grep -E -q 'page\.route|browserContext\.route|context\.route|route\.abort|route\.fulfill|route\.continue' "$script"
           ! grep -E -q 'financialAccount|financialTrial|credit_grants|credit_wallets|saveObjects|persistMask|smartPoint|selectionPointer' "$script"
+      - name: Bundle focused R3h managed Fashion mutation harness without replacing production stores
+        run: |
+          npx esbuild scripts/test-release-r3h-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3/test-release-r3h-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove R3h managed garment create favorite collection membership journey
+        run: node .test-cache/release-r3/test-release-r3h-browser-e2e.mjs
+      - name: Prove R3h stays on revision-bound canonical Fashion mutation authority
+        run: |
+          set -euo pipefail
+          script=scripts/test-release-r3h-browser-e2e.mjs
+          grep -q "dist-server/server.mjs" "$script"
+          grep -q "path.resolve('dist')" "$script"
+          grep -q "NODE_ENV: 'production'" "$script"
+          grep -q "PostgresAuthStore" "$script"
+          grep -q "postDataBuffer" "$script"
+          grep -q "x-expected-garment-revision" "$script"
+          grep -q "x-expected-collection-revision" "$script"
+          grep -q "canonical_garments" "$script"
+          grep -q "canonical_garment_views" "$script"
+          grep -q "canonical_garment_tags" "$script"
+          grep -q "canonical_garment_collections" "$script"
+          grep -q "canonical_garment_collection_members" "$script"
+          grep -q "PNG_RGBA8_LOSSLESS" "$script"
+          grep -q "POSTGRES_BYTEA_V1" "$script"
+          grep -q "R3H_BROWSER_MANAGED_GARMENT_COLLECTION_ACCEPTED" "$script"
+          grep -q "providerCalls, 0" "$script"
+          grep -q "diagnostics.localExecutionRequests, \[\]" "$script"
+          grep -q "diagnostics.creativeRequests, \[\]" "$script"
+          grep -q "diagnostics.financialRequests, \[\]" "$script"
+          grep -q "diagnostics.maskRequests, \[\]" "$script"
+          grep -q "diagnostics.genericAssetRequests, \[\]" "$script"
+          grep -q "diagnostics.projectMutations, \[\]" "$script"
+          grep -q "diagnostics.externalBrowserRequests, \[\]" "$script"
+          ! grep -E -q 'page\.route|browserContext\.route|context\.route|route\.abort|route\.fulfill|route\.continue' "$script"
+          ! grep -E -q 'financialAccount|financialTrial|credit_grants|credit_wallets' "$script"
       - name: Check committed diff whitespace
         run: git diff --check "$BASE_SHA"..HEAD
