@@ -17,7 +17,10 @@ import { createManagedWardrobeHttpAdapter } from './core/http/managedWardrobeHtt
 import { createManagedGarmentCollectionHttpAdapter } from './core/http/managedGarmentCollectionHttpAdapter.ts';
 import { createManagedOutfitHttpAdapter } from './core/http/managedOutfitHttpAdapter.ts';
 import { parseCoreRequestTarget } from './core/http/requestTarget.ts';
+import { CanonicalArtifactHydrator } from './core/artifacts/canonicalArtifactHydrator.ts';
+import { LocalCompositeInputDeliveryService } from './core/workflow/LocalCompositeInputDeliveryService.ts';
 import { LocalCompositeOutputUploadService } from './core/workflow/LocalCompositeOutputUploadService.ts';
+import { PostgresWorkflowContinuationStore } from './core/workflow/PostgresWorkflowContinuationStore.ts';
 import { createCanonicalNodeHttpAdapter } from './core/http/canonicalNodeHttpAdapter.ts';
 import { applyCoreSecurityHeaders } from './core/http/securityHeaders.ts';
 import { checkGarmentSchema, migrateGarmentSchema } from './core/fashion/garmentSchema.ts';
@@ -66,8 +69,16 @@ export async function startCoreServer() {
   const manualParametricAdmissionAdapter = createManualParametricGarmentAdmissionHttpAdapter({ admission: production.fashion.manualParametricAdmission, auth: production.auth, config, accepting: () => accepting });
   const manualBodyAnchorAcquisitionAdapter = createManualProjectBodyAnchorHttpAdapter({ acquisition: production.fashion.manualBodyAnchorAcquisition, auth: production.auth, config, accepting: () => accepting });
   const localExecutionAdapter = createLocalExecutionHttpAdapter({ service: production.localExecution.segmentation, deterministicImages: production.localExecution.deterministicImages, crop: production.localExecution.crop, resize: production.localExecution.resize, superResolution: production.localExecution.superResolution, inputDelivery: production.localExecution.inputDelivery, auth: production.auth, config });
+  const localCompositeHydrator = new CanonicalArtifactHydrator(production.artifacts);
+  const localCompositeInputs = new LocalCompositeInputDeliveryService({
+    continuations: new PostgresWorkflowContinuationStore(production.transactions.pool, Date.now),
+    tickets: production.localExecution.admission,
+    ownsArtifacts: (scope, artifactIds) => production.artifacts.owns(scope, artifactIds),
+    hydrateArtifacts: (scope, sourceId, maskIds) => localCompositeHydrator.hydrate(scope, sourceId, maskIds),
+    now: Date.now,
+  });
   const localCompositeOutputs = new LocalCompositeOutputUploadService({ continuation: production.localExecution.composite, uploads: production.localExecution.uploads });
-  const localCompositeAdapter = createLocalCompositeContinuationHttpAdapter({ continuation: production.localExecution.composite, outputs: localCompositeOutputs, startAdmission: production.localExecution.compositeStartAdmission, auth: production.auth, config });
+  const localCompositeAdapter = createLocalCompositeContinuationHttpAdapter({ continuation: production.localExecution.composite, inputs: localCompositeInputs, outputs: localCompositeOutputs, startAdmission: production.localExecution.compositeStartAdmission, auth: production.auth, config });
   const executionRunRegistry = new PostgresExecutionRunRegistry(production.transactions.pool);
   const executionRunRecoveryAdapter = createExecutionRunRecoveryHttpAdapter({
     runs: Object.freeze({
