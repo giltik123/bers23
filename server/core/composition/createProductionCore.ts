@@ -4,6 +4,7 @@ import { createPostgresTransactionRuntime } from '../../transactions/infrastruct
 import { SignedArtifactAuthority } from '../artifacts/signedArtifactAuthority.ts';
 import { CanonicalArtifactHydrator } from '../artifacts/canonicalArtifactHydrator.ts';
 import { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
+import { DurableArtifactLineageResolver } from '../artifacts/durableArtifactLineageResolver.ts';
 import { PostgresMaskArtifactStore } from '../artifacts/postgresMaskArtifactStore.ts';
 import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
@@ -22,11 +23,12 @@ import { GoogleOidcClient } from '../auth/googleOidcClient.ts';
 import type { CoreServerConfig } from '../config.ts';
 import { checkExecutionRunSchema, migrateExecutionRunSchema } from '../execution/executionRunSchema.ts';
 import { PostgresExecutionRunRegistry } from '../execution/PostgresExecutionRunRegistry.ts';
+import { DeterministicWorkflowStepFinalRecoveryAuthority } from '../localExecution/DeterministicWorkflowStepFinalRecoveryAuthority.ts';
 import { LocalCropExecutionService, LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalOrthogonalTransformExecutionService, LocalResizeExecutionService, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, OrthogonalTransformInputDeliveryService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../localExecution/productionLocalExecutorPolicy.ts';
-import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
+import { createFalWorkflowRuntime } from '../providers/falWorkflowRuntime.ts';
 import { productionExecutionRoute } from '../providers/productionExecutionRoute.ts';
 import { productionTargetSelection } from '../providers/productionTargetSelection.ts';
 import { productionExecutionCapabilities } from '../providers/productionExecutionCapabilities.ts';
@@ -36,6 +38,7 @@ import { createCreativeCore, type CreativeCoreCompositionInput } from './createC
 import { createProductionGarmentMeshWarp } from './createProductionGarmentMeshWarp.ts';
 import { checkProjectSchema } from '../projects/projectSchema.ts';
 import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
+import { BoundedAgentDeterministicWorkflowService } from '../workflow/BoundedAgentDeterministicWorkflowService.ts';
 import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from '../workflow/workflowContinuationSchema.ts';
 import { createProductionLocalCompositeContinuation } from '../workflow/createProductionLocalCompositeContinuation.ts';
 import { createProductionLocalCompositeStartAdmission } from '../workflow/ProductionLocalCompositeStartAdmission.ts';
@@ -85,7 +88,10 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     const now = options.now ?? Date.now;
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
     const maskArtifacts = new PostgresMaskArtifactStore(transactions.pool);
-    const artifacts = new ArtifactAuthority(externalArtifacts, maskArtifacts, new PostgresImageArtifactStore(transactions.pool));
+    const imageArtifacts = new PostgresImageArtifactStore(transactions.pool);
+    const artifacts = new ArtifactAuthority(externalArtifacts, maskArtifacts, imageArtifacts);
+    const projects = new PostgresProjectStore(transactions.pool);
+    const workflowContinuations = new PostgresWorkflowContinuationStore(transactions.pool, now);
     const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
     const runtime = createFalWorkflowRuntime({ apiKey: config.falKey, baseUrl: config.falBaseUrl, timeoutMs: config.providerTimeoutMs, artifacts: externalArtifacts, fetcher });
     const hydrator = new CanonicalArtifactHydrator(artifacts, fetcher);
@@ -246,6 +252,24 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       now,
     });
     const localInputDelivery = new LocalExecutionInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
+    const durableArtifactResolver = new DurableArtifactLineageResolver({ signed: externalArtifacts, images: imageArtifacts, masks: maskArtifacts });
+    const deterministicWorkflowFinalRecovery = new DeterministicWorkflowStepFinalRecoveryAuthority({
+      admission: localExecutionAdmission,
+      images: imageArtifacts,
+      issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
+    });
+    const boundedAgent = new BoundedAgentDeterministicWorkflowService({
+      continuations: workflowContinuations,
+      tickets: localExecutionAdmission,
+      workflowTickets: workflowBoundLocalExecutionV2,
+      orthogonal: localOrthogonalTransform,
+      resize: localResize,
+      finalRecovery: deterministicWorkflowFinalRecovery,
+      artifacts: durableArtifactResolver,
+      projects,
+      runs: executionRuns,
+      now,
+    });
     const admittedLocalComposite = createProductionLocalCompositeContinuation({
       pool: transactions.pool,
       now,
@@ -261,7 +285,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     });
     const localComposite = new ExecutionRunBoundLocalCompositeContinuationService({
       delegate: admittedLocalComposite,
-      continuations: new PostgresWorkflowContinuationStore(transactions.pool, now),
+      continuations: workflowContinuations,
       runs: executionRuns,
     });
     const authStore = new PostgresAuthStore(transactions.pool);
@@ -286,8 +310,9 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     return Object.freeze({
       core,
       artifacts,
-      projects: new PostgresProjectStore(transactions.pool),
+      projects,
       auth,
+      agent: Object.freeze({ boundedDeterministic: boundedAgent }),
       fashion: Object.freeze({
         manualParametricAdmission: garmentMeshWarp.manualParametricAdmission,
         manualBodyAnchorAcquisition: garmentMeshWarp.manualBodyAnchorAcquisition,
