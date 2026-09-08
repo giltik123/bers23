@@ -612,6 +612,7 @@ export default function Editor() {
           if (pending?.kind === 'FASHION_TRYON') {
             try { tryOn.close(); } catch (cleanupError) { console.error('[Editor] Try-On host cleanup failed', cleanupError); }
           }
+          if (pending?.kind === 'BOUNDED_AGENT') boundedAgent.dismiss();
           setInstruction('');
           setActiveRecipe(null);
         },
@@ -639,6 +640,7 @@ export default function Editor() {
           if (pending?.kind === 'FASHION_TRYON') {
             try { tryOn.close(); } catch (cleanupError) { console.error('[Editor] Try-On source-conflict cleanup failed', cleanupError); }
           }
+          if (pending?.kind === 'BOUNDED_AGENT') boundedAgent.dismiss();
           setPendingResult(null);
         },
         disposePendingPreview: () => disposePendingPreview(pending),
@@ -689,6 +691,7 @@ export default function Editor() {
     disposePendingPreview(pending);
     setPendingResult(null);
     if (pending?.kind === 'FASHION_TRYON') closeTryOn();
+    if (pending?.kind === 'BOUNDED_AGENT') boundedAgent.dismiss();
   };
 
   const handleRename = async () => {
