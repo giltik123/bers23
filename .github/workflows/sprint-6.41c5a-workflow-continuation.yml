@@ -49,12 +49,13 @@ jobs:
       - run: npm ci
       - name: Typecheck continuation authority
         run: npm run server:typecheck
-      - name: Run fail-closed continuation, workflow-ticket and deterministic recovery unit tests
+      - name: Run fail-closed continuation, workflow-ticket, bounded Agent and deterministic recovery unit tests
         run: |
           node --experimental-strip-types --test server/core/workflow/WorkflowContinuationStore.planParameters.test.mjs
           node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.test.mjs
           node --experimental-strip-types --test server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.test.mjs
           node --experimental-strip-types --test server/core/workflow/WorkflowLocalExecutionAttemptRunProjection.test.mjs
+          node --experimental-strip-types --test server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs
           node --experimental-strip-types --test server/core/localExecution/DeterministicWorkflowStepFinalRecoveryAuthority.test.mjs
       - name: Apply exact prerequisite and C5A schemas
         run: |
