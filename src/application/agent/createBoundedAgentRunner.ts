@@ -1,6 +1,6 @@
 import { coreClient } from '../../api/coreClient.js';
-import { CoreAuthorizedOrthogonalTransform } from '../local-execution/CoreAuthorizedOrthogonalTransform.ts';
-import { CoreAuthorizedResize } from '../local-execution/CoreAuthorizedResize.ts';
+import { CoreAuthorizedOrthogonalTransform } from '../local-execution/CoreAuthorizedOrthogonalTransform';
+import { CoreAuthorizedResize } from '../local-execution/CoreAuthorizedResize';
 import type { LocalExecutionResultV2, LocalExecutionTicketV2 } from '../../platform/creative/canonical/index.ts';
 import type { PixelImage } from '../../platform/creative/pipeline/ControlledLocalEdit.ts';
 
