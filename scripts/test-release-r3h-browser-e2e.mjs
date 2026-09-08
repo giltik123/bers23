@@ -193,8 +193,8 @@ try {
   const garmentCreateWait = waitForCoreResponse(page, 'POST', pathname => pathname === '/api/core/garments');
   const metadataPatchWait = waitForCoreResponse(page, 'PATCH', pathname => /^\/api\/core\/wardrobe\/garments\/[0-9a-f-]+$/.test(pathname));
   await dialog.getByRole('button', { name: 'Save garment', exact: true }).click();
+  const [garmentCreateResponse, metadataPatchResponse] = await Promise.all([garmentCreateWait, metadataPatchWait]);
 
-  const garmentCreateResponse = await garmentCreateWait;
   assert.equal(garmentCreateResponse.status(), 201, 'Managed Garment create must commit through real Core');
   const garmentCreateRequest = garmentCreateResponse.request();
   const garmentCreateUrl = new URL(garmentCreateResponse.url());
@@ -220,7 +220,6 @@ try {
   assert.equal(createdGarment.views[0].content_type, 'image/png');
   assert.equal(createdGarment.views[0].storage_provenance, 'POSTGRES_BYTEA_V1');
 
-  const metadataPatchResponse = await metadataPatchWait;
   assert.equal(new URL(metadataPatchResponse.url()).pathname, `/api/core/wardrobe/garments/${garmentId}`);
   assert.equal(metadataPatchResponse.status(), 200);
   assert.equal(await metadataPatchResponse.request().headerValue('x-expected-garment-revision'), '1');
