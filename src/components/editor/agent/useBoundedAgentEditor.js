@@ -26,7 +26,6 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
       const outcome = await operation(publishView);
       const view = outcome.view;
       if (view.state === 'SUCCESS') {
-        clearHint(project?.id);
         if (!view.terminalArtifactId) throw new Error('Bounded Agent SUCCESS is missing the canonical terminal Artifact');
         if (!outcome.preview) throw new Error('Bounded Agent terminal preview is unavailable after recovery');
         const png = await encodeDeterministicRgbaPng(outcome.preview);
@@ -47,12 +46,14 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
         });
         if (!mountedRef.current) { URL.revokeObjectURL(previewUrl); return outcome; }
         setState(Object.freeze({ active: false, busy: false, view, error: null }));
-        try { finalCallbackRef.current?.(pending); }
-        catch (error) { URL.revokeObjectURL(previewUrl); throw error; }
+        try {
+          finalCallbackRef.current?.(pending);
+          clearHint(project?.id);
+        } catch (error) { URL.revokeObjectURL(previewUrl); throw error; }
         return outcome;
       }
       if (view.retryAvailable) {
-        writeHint(project?.id, { executionId: view.executionId, sourceArtifactId: context.sourceArtifactId });
+        writeHint(project?.id, { executionId: view.executionId, sourceArtifactId: context.sourceArtifactId, mode: context.mode, width: context.width, height: context.height });
         if (mountedRef.current) setState(Object.freeze({ active: true, busy: false, view, error: null }));
         return outcome;
       }
@@ -61,7 +62,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
         if (mountedRef.current) setState(Object.freeze({ active: false, busy: false, view, error: terminalMessage(view) }));
         return outcome;
       }
-      writeHint(project?.id, { executionId: view.executionId, sourceArtifactId: context.sourceArtifactId });
+      writeHint(project?.id, { executionId: view.executionId, sourceArtifactId: context.sourceArtifactId, mode: context.mode, width: context.width, height: context.height });
       if (mountedRef.current) setState(Object.freeze({ active: true, busy: false, view, error: null }));
       return outcome;
     } catch (error) {
@@ -79,10 +80,10 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     const context = Object.freeze({ sourceArtifactId, beforeUrl, mode, width, height });
     const runner = createBoundedAgentRunner({ projectId: project.id });
     const clientRequestId = globalThis.crypto.randomUUID();
-    writeHint(project.id, { executionId: null, sourceArtifactId });
+    writeHint(project.id, { executionId: null, sourceArtifactId, mode, width, height });
     try {
       return await runOperation('start', async (onView) => runner.start({ clientRequestId, sourceArtifactId, mode, width, height }, (view) => {
-        writeHint(project.id, { executionId: view.executionId, sourceArtifactId });
+        writeHint(project.id, { executionId: view.executionId, sourceArtifactId, mode, width, height });
         onView(view);
       }), context);
     } catch (error) {
@@ -94,11 +95,12 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
 
   const retry = useCallback(async () => {
     const view = state.view;
-    const sourceArtifactId = project?.current_image_artifact_id;
-    if (!project?.id || !view?.executionId || !view.retryAvailable || !sourceArtifactId) throw new Error('Bounded Agent retry is not available');
-    const parameters = recoverContext(view, project);
+    const hint = readHint(project?.id);
+    if (!project?.id || !view?.executionId || !view.retryAvailable || !hint?.sourceArtifactId) throw new Error('Bounded Agent retry is not available');
+    if (hint.sourceArtifactId !== project.current_image_artifact_id) throw new Error('Bounded Agent retry source is no longer the current canonical Project IMAGE');
+    const context = Object.freeze({ sourceArtifactId: hint.sourceArtifactId, beforeUrl: project.current_image_url, mode: hint.mode, width: hint.width, height: hint.height });
     const runner = createBoundedAgentRunner({ projectId: project.id });
-    return runOperation('retry', (onView) => runner.retry(view.executionId, onView), Object.freeze({ ...parameters, sourceArtifactId, beforeUrl: project.current_image_url }));
+    return runOperation('retry', (onView) => runner.retry(view.executionId, onView), context);
   }, [project, runOperation, state.view]);
 
   const cancel = useCallback(async () => {
@@ -128,7 +130,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     if (!hint?.executionId) return;
     if (hint.sourceArtifactId !== project.current_image_artifact_id) { clearHint(project.id); return; }
     const runner = createBoundedAgentRunner({ projectId: project.id });
-    const context = Object.freeze({ sourceArtifactId: hint.sourceArtifactId, beforeUrl: project.current_image_url, mode: undefined, width: undefined, height: undefined });
+    const context = Object.freeze({ sourceArtifactId: hint.sourceArtifactId, beforeUrl: project.current_image_url, mode: hint.mode, width: hint.width, height: hint.height });
     void runOperation('resume', (onView) => runner.resume(hint.executionId, onView), context)
       .catch(() => undefined);
   }, [project?.id, project?.current_image_artifact_id, project?.current_image_url, runOperation]);
@@ -136,14 +138,6 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
   return Object.freeze({ state, busy: state.busy, start, retry, cancel });
 }
 
-function recoverContext(view, project) {
-  const ticket = view?.nextAction?.ticket;
-  const plan = ticket?.operation?.parameters;
-  const width = Number(plan?.width ?? project?.width);
-  const height = Number(plan?.height ?? project?.height);
-  const mode = typeof plan?.mode === 'string' ? plan.mode : 'ROTATE_90_CW';
-  return Object.freeze({ mode, width, height });
-}
 function terminalMessage(view) {
   if (view.state === 'CANCELLED') return null;
   if (view.state === 'UNKNOWN') return 'Bounded Agent outcome is UNKNOWN and requires recovery before retry.';
@@ -156,7 +150,14 @@ function readHint(projectId) {
   try {
     const value = JSON.parse(sessionStorage.getItem(hintKey(projectId)) || 'null');
     if (!value || typeof value !== 'object') return null;
-    return Object.freeze({ executionId: typeof value.executionId === 'string' && value.executionId ? value.executionId : null, sourceArtifactId: typeof value.sourceArtifactId === 'string' ? value.sourceArtifactId : '' });
+    const width = Number(value.width); const height = Number(value.height);
+    return Object.freeze({
+      executionId: typeof value.executionId === 'string' && value.executionId ? value.executionId : null,
+      sourceArtifactId: typeof value.sourceArtifactId === 'string' ? value.sourceArtifactId : '',
+      mode: typeof value.mode === 'string' ? value.mode : '',
+      width: Number.isSafeInteger(width) && width > 0 ? width : 0,
+      height: Number.isSafeInteger(height) && height > 0 ? height : 0,
+    });
   } catch { return null; }
 }
 function writeHint(projectId, value) {
