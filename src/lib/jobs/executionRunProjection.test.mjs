@@ -107,7 +107,7 @@ test('projection recovers canonical roots plus direct workflow children and pres
   assert.equal(state.runs[1].statusReasonCode, 'PROVIDER_OUTCOME_UNKNOWN');
   assert.notEqual(state.runs[1].status, 'FAILED');
   assert.equal(executionRunStatusLabel('UNKNOWN'), 'Unknown');
-  assert.equal(executionRunCapabilityLabel('WORKFLOW_CONTINUATION'), 'Composite workflow');
+  assert.equal(executionRunCapabilityLabel('WORKFLOW_CONTINUATION'), 'Workflow execution');
   assert.equal(localExecutionAuthorityStateLabel('FINALIZED_SUCCESS'), 'Ticket finalized: success');
 });
 
