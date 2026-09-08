@@ -27,7 +27,11 @@ test('R3h product UI composes Managed Garment, revisioned Wardrobe and Collectio
   assert.match(wardrobeVm, /metadata = await wardrobe\.updateMetadata\(created\.id, created\.revision, patch\)/);
   assert.match(wardrobeVm, /throw new CanonicalWardrobePartialCreateError\(created\.id, cause\)/);
   assert.match(wardrobeVm, /wardrobe\.updateMetadata\(current\.id, current\.revision, \{ favorite: Boolean\(favorite\) \}\)/);
+  assert.match(garmentClient, /import \{ resolveCoreResourceUrl \} from '\.\/coreResourceUrl\.js'/);
   assert.match(garmentClient, /const PREFIX = '\/garments'/);
+  assert.match(garmentClient, /const SERVER_DELIVERY_PATH = \/\^\\\/api\\\/core\\\/garments\\\/delivery\\\/\[\^\/?#\]\+\$\//);
+  assert.match(garmentClient, /value\.startsWith\(SERVER_DELIVERY_PREFIX\) \|\| !SERVER_DELIVERY_PATH\.test\(value\)/);
+  assert.match(garmentClient, /return resolveCoreResourceUrl\(value, apiRoot\)/);
   assert.match(garmentClient, /headers: Object\.freeze\(\{ 'Content-Type': normalizedImage\.contentType \}\)/);
   assert.doesNotMatch(garmentClient, /UploadFile|\/assets|FASHN|provider|Billing|cloud/);
   assert.match(wardrobeClient, /X-Expected-Garment-Revision/);
@@ -54,6 +58,8 @@ test('R3h browser is the product mutation actor while PostgreSQL remains a read-
   assert.match(harness, /getByPlaceholder\('New collection'\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Create', exact: true \}\)/);
   assert.match(harness, /selectOption\(\{ label: garmentName \}\)/);
+  assert.match(harness, /assert\.equal\(garmentImageUrl\.origin, coreOrigin\)/);
+  assert.match(harness, /\/api\\\/core\\\/garments\\\/delivery\\\//);
 
   const sqlMutations = [...harness.matchAll(/pool\.query\(\s*`([^`]+)`/g)]
     .map(match => match[1].trim().split(/\s+/)[0].toUpperCase());
@@ -105,13 +111,15 @@ test('R3h binds selected browser image pixels and revisions to durable Garment v
   assert.doesNotMatch(harness, /financialAccount|financialTrial|credit_grants|credit_wallets/);
 });
 
-test('R3 release workflow makes R3h cumulative evidence an exact-head merge gate', async () => {
+test('R3 release workflow makes R3h cumulative evidence and Managed Garment split-origin regression exact-head merge gates', async () => {
   const workflow = await readFile(WORKFLOW, 'utf8');
 
   assert.match(workflow, /CANDIDATE_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(workflow, /Assert exact candidate SHA/);
   assert.match(workflow, /src\/components\/editor\/fashion\/\*\*/);
   assert.match(workflow, /server\/core\/fashion\/\*\*/);
+  assert.match(workflow, /tests\/managed-garment-browser-client\.test\.mjs/);
+  assert.match(workflow, /node --test tests\/managed-garment-browser-client\.test\.mjs/);
   assert.match(workflow, /tests\/release-r3h-browser-boundaries\.test\.mjs/);
   assert.match(workflow, /scripts\/test-release-r3h-browser-e2e\.mjs/);
   assert.match(workflow, /R3h managed garment create favorite collection membership journey/);
