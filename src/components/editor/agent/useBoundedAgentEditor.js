@@ -46,10 +46,9 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
         });
         if (!mountedRef.current) { revokeBlob(previewUrl); return outcome; }
         setState(Object.freeze({ active: false, busy: false, view, error: null }));
-        try {
-          finalCallbackRef.current?.(pending);
-          clearHint(project?.id);
-        } catch (error) { revokeBlob(previewUrl); throw error; }
+        writeHint(project?.id, { executionId: view.executionId, sourceArtifactId: context.sourceArtifactId, mode: context.mode, width: context.width, height: context.height });
+        try { finalCallbackRef.current?.(pending); }
+        catch (error) { revokeBlob(previewUrl); throw error; }
         return outcome;
       }
       if (view.retryAvailable) {
@@ -119,6 +118,11 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
     }
   }, [project?.id, state.view?.executionId]);
 
+  const dismiss = useCallback(() => {
+    clearHint(project?.id);
+    if (mountedRef.current) setState(EMPTY_STATE);
+  }, [project?.id]);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -135,7 +139,7 @@ export default function useBoundedAgentEditor({ project, onFinalCandidate }) {
       .catch(() => undefined);
   }, [project?.id, project?.current_image_artifact_id, project?.current_image_url, runOperation]);
 
-  return Object.freeze({ state, busy: state.busy, start, retry, cancel });
+  return Object.freeze({ state, busy: state.busy, start, retry, cancel, dismiss });
 }
 
 async function terminalPreviewUrl(view, localPreview) {
