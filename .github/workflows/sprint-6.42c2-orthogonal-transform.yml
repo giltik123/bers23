@@ -73,4 +73,5 @@ jobs:
           cp server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/015_workflow_continuations.sql .test-cache/artifacts/migrations/
           cp server/core/artifacts/migrations/016_local_execution_result_replay_binding.sql .test-cache/artifacts/migrations/
+          cp server/core/artifacts/migrations/039_workflow_continuation_plan_parameters.sql .test-cache/artifacts/migrations/
           node --test --test-concurrency=1 .test-cache/orthogonal-postgres/deterministic-orthogonal-transform-postgres-vertical.test.mjs
