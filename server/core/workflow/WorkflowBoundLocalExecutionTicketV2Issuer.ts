@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
   LocalExecutionTicketIssueRequestV2,
   LocalExecutionTicketV2,
@@ -7,39 +8,43 @@ import type { Scope } from '../../../src/platform/creative/workflow-engine/types
 import type { LocalExecutionLedgerV2 } from '../localExecution/LocalExecutionLedger.ts';
 
 type DurableReader = Pick<LocalExecutionLedgerV2, 'getByIdempotencyKeyV2'>;
-type WorkflowBinding = Readonly<{ scope: Scope; requestId: string; workflowId: string }>;
+type WorkflowBinding = Readonly<{
+  scope: Scope;
+  workflowId: string;
+  allowedStepIds: readonly string[];
+}>;
+type NormalizedBinding = Readonly<{
+  scope: Scope;
+  workflowId: string;
+  allowedStepIds: ReadonlySet<string>;
+}>;
 
 /**
  * Server-only adapter that lets one already-reviewed local execution remain the
  * ticket authority while a durable workflow owns the ticket's workflowId.
  *
- * No browser value can reach `withWorkflowBinding`. Normal v2 issuance is byte-
- * for-byte equivalent at the authority level because, without an active server
- * binding, the original workflowId is forwarded unchanged. After Core restart,
- * an already durable ticket supplies its own workflowId so service reconstruction
- * cannot accidentally rebind it to a child execution identity.
+ * Workflow binding is carried only through AsyncLocalStorage for the exact
+ * server call tree; browser values cannot select it. Normal deterministic v2
+ * issuance is unchanged. After Core restart, an already durable ticket supplies
+ * its own workflowId so canonical service reconstruction cannot silently rebind
+ * the ticket to a child execution identity.
  */
 export class WorkflowBoundLocalExecutionTicketV2Issuer implements LocalExecutionTicketV2IssuerPort {
-  private readonly active = new Map<string, string>();
-  private readonly delegate: LocalExecutionTicketV2IssuerPort;
-  private readonly durable: DurableReader;
+  private readonly context = new AsyncLocalStorage<NormalizedBinding>();
 
-  constructor(delegate: LocalExecutionTicketV2IssuerPort, durable: DurableReader) {
-    this.delegate = delegate;
-    this.durable = durable;
-  }
+  constructor(
+    private readonly delegate: LocalExecutionTicketV2IssuerPort,
+    private readonly durable: DurableReader,
+  ) {}
 
   async withWorkflowBinding<T>(binding: WorkflowBinding, work: () => Promise<T>): Promise<T> {
-    const scope = normalizeScope(binding.scope);
-    const requestId = token(binding.requestId, 'requestId');
-    const workflowId = token(binding.workflowId, 'workflowId');
-    const key = bindingKey(scope, requestId);
-    const existing = this.active.get(key);
-    if (existing && existing !== workflowId) throw bindingError('Local execution request is already bound to a different active workflow');
-    if (existing === workflowId) return work();
-    this.active.set(key, workflowId);
-    try { return await work(); }
-    finally { if (this.active.get(key) === workflowId) this.active.delete(key); }
+    const normalized = normalizeBinding(binding);
+    const existing = this.context.getStore();
+    if (existing) {
+      if (!sameBinding(existing, normalized)) throw bindingError('Conflicting nested local workflow binding is forbidden');
+      return work();
+    }
+    return this.context.run(normalized, work);
   }
 
   async issue(input: LocalExecutionTicketIssueRequestV2): Promise<LocalExecutionTicketV2> {
@@ -50,14 +55,31 @@ export class WorkflowBoundLocalExecutionTicketV2Issuer implements LocalExecution
       }
       return await this.delegate.issue(Object.freeze({ ...input, workflowId: durable.workflowId }));
     }
-    const workflowId = this.active.get(bindingKey(normalizeScope(input.scope), token(input.requestId, 'requestId')))
-      ?? token(input.workflowId, 'workflowId');
-    return await this.delegate.issue(Object.freeze({ ...input, workflowId }));
+
+    const active = this.context.getStore();
+    if (!active) return await this.delegate.issue(input);
+    if (!sameScope(active.scope, input.scope)) throw bindingError('Active local workflow binding scope does not match ticket scope');
+    if (!active.allowedStepIds.has(input.stepId)) throw bindingError(`Local workflow binding does not admit step ${input.stepId}`);
+    return await this.delegate.issue(Object.freeze({ ...input, workflowId: active.workflowId }));
   }
 }
 
-function bindingKey(scope: Scope, requestId: string): string {
-  return JSON.stringify(['workflow-bound-local-v2', scope.tenantId, scope.userId, scope.projectId, requestId]);
+function normalizeBinding(binding: WorkflowBinding): NormalizedBinding {
+  const scope = normalizeScope(binding.scope);
+  const workflowId = token(binding.workflowId, 'workflowId');
+  if (!Array.isArray(binding.allowedStepIds) || binding.allowedStepIds.length < 1) throw bindingError('allowedStepIds must contain at least one server-owned workflow step');
+  const allowed = binding.allowedStepIds.map((value, index) => token(value, `allowedStepIds[${index}]`));
+  if (new Set(allowed).size !== allowed.length) throw bindingError('allowedStepIds must be unique');
+  return Object.freeze({ scope, workflowId, allowedStepIds: new Set(allowed) });
+}
+function sameBinding(a: NormalizedBinding, b: NormalizedBinding): boolean {
+  return sameScope(a.scope, b.scope)
+    && a.workflowId === b.workflowId
+    && a.allowedStepIds.size === b.allowedStepIds.size
+    && [...a.allowedStepIds].every(value => b.allowedStepIds.has(value));
+}
+function sameScope(a: Scope, b: Scope): boolean {
+  return a.tenantId === b.tenantId && a.userId === b.userId && a.projectId === b.projectId;
 }
 function normalizeScope(scope: Scope): Scope {
   return Object.freeze({
