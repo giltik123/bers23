@@ -59,8 +59,10 @@ export type LocalCompositeInputDeliveryDependencies = Readonly<{
  */
 export class LocalCompositeInputDeliveryService {
   readonly #now: () => number;
+  private readonly dependencies: LocalCompositeInputDeliveryDependencies;
 
-  constructor(private readonly dependencies: LocalCompositeInputDeliveryDependencies) {
+  constructor(dependencies: LocalCompositeInputDeliveryDependencies) {
+    this.dependencies = dependencies;
     this.#now = dependencies.now ?? Date.now;
   }
 
