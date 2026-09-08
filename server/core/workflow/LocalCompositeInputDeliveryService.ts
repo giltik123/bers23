@@ -73,7 +73,7 @@ export class LocalCompositeInputDeliveryService {
     if (binding.stepId === SEGMENT_STEP && binding.ticketVersion === '1') {
       const ticket = await this.dependencies.tickets.get(binding.ticketId);
       if (!ticket) throw serviceError(409, 'local_composite_input_ticket_missing', 'Durable segment ticket is unavailable');
-      assertTicketBinding(snapshot, ticket);
+      assertTicketBinding(snapshot, ticket, this.#now());
       assertSegmentTicket(ticket);
       return this.deliverSegment(snapshot, ticket);
     }
@@ -81,7 +81,7 @@ export class LocalCompositeInputDeliveryService {
     if (binding.stepId === BACKGROUND_STEP && binding.ticketVersion === '2') {
       const ticket = await this.dependencies.tickets.getV2(binding.ticketId);
       if (!ticket) throw serviceError(409, 'local_composite_input_ticket_missing', 'Durable background-isolation ticket is unavailable');
-      assertTicketBinding(snapshot, ticket);
+      assertTicketBinding(snapshot, ticket, this.#now());
       assertBackgroundTicket(ticket);
       return this.deliverBackground(snapshot, ticket);
     }
@@ -174,7 +174,7 @@ function requireOutstanding(snapshot: WorkflowContinuationSnapshot) {
   return snapshot.outstandingLocal;
 }
 
-function assertTicketBinding(snapshot: WorkflowContinuationSnapshot, ticket: LocalExecutionTicket | LocalExecutionTicketV2): void {
+function assertTicketBinding(snapshot: WorkflowContinuationSnapshot, ticket: LocalExecutionTicket | LocalExecutionTicketV2, now: number): void {
   const binding = snapshot.outstandingLocal!;
   if (
     ticket.ticketId !== binding.ticketId
@@ -188,7 +188,7 @@ function assertTicketBinding(snapshot: WorkflowContinuationSnapshot, ticket: Loc
     || ticket.scope.userId !== snapshot.scope.userId
     || ticket.scope.projectId !== snapshot.scope.projectId
   ) throw serviceError(409, 'local_composite_input_ticket_binding_mismatch', 'Durable workflow ticket binding no longer matches local execution authority');
-  if (Date.now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Durable composite local ticket has expired');
+  if (now >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Durable composite local ticket has expired');
 }
 
 function assertSegmentTicket(ticket: LocalExecutionTicket): void {
