@@ -128,7 +128,8 @@ jobs:
           set -euo pipefail
           grep -q 'new ExecutionRunBoundLocalCompositeContinuationService' server/core/composition/createProductionCore.ts
           grep -q 'delegate: admittedLocalComposite' server/core/composition/createProductionCore.ts
-          grep -q 'continuations: new PostgresWorkflowContinuationStore(transactions.pool, now)' server/core/composition/createProductionCore.ts
+          grep -q 'const workflowContinuations = new PostgresWorkflowContinuationStore(transactions.pool, now)' server/core/composition/createProductionCore.ts
+          grep -q 'continuations: workflowContinuations' server/core/composition/createProductionCore.ts
           grep -q 'runs: executionRuns' server/core/composition/createProductionCore.ts
           grep -q 'new ExecutionRunBoundLocalCompositeInternalVerifier' server/core/workflow/createProductionLocalCompositeContinuation.ts
           grep -q 'runs: input.runs' server/core/workflow/createProductionLocalCompositeContinuation.ts

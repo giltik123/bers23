@@ -40,14 +40,14 @@ test('Project Accept admits an uncommitted multi-step FINAL chain rooted at the 
 
   const intermediate = await images.persistFinal(
     scope,
-    'project-chain-execution',
+    'project-chain-orthogonal-execution',
     'project-chain-orthogonal',
     Object.freeze({ width: 1, height: 2, data: new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]) }),
     Object.freeze({ sourceImageStorageId: originalStorageId, producerOperation: 'ORTHOGONAL_TRANSFORM' as const }),
   );
   const terminal = await images.persistFinal(
     scope,
-    'project-chain-execution',
+    'project-chain-resize-execution',
     'project-chain-resize',
     Object.freeze({ width: 2, height: 1, data: new Uint8ClampedArray([7, 8, 9, 255, 10, 11, 12, 255]) }),
     Object.freeze({ sourceImageStorageId: intermediate.storageId, producerOperation: 'RESIZE' as const }),
