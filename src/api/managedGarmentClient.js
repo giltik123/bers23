@@ -1,3 +1,5 @@
+import { resolveCoreResourceUrl } from './coreResourceUrl.js';
+
 const PREFIX = '/garments';
 const SERVER_DELIVERY_PREFIX = '/api/core/garments/delivery/';
 const SERVER_DELIVERY_PATH = /^\/api\/core\/garments\/delivery\/[^/?#]+$/;
@@ -12,6 +14,7 @@ const TECHNICAL_STATUS = new Set(['NOT_ASSESSED','ADEQUATE','NEEDS_HIGHER_RESOLU
 const CAPTURE_REASONS = new Set(['MISSING_CARDINAL_VIEW','LOW_RESOLUTION_CARDINAL_VIEW']);
 const MIN_TECHNICAL_CAPTURE_SHORT_EDGE_PX = 512;
 const IMAGE_MEDIA_TYPES = new Set(['image/png','image/jpeg','image/webp']);
+const API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
 
 /**
  * Browser adapter for the canonical Managed Garment image/view aggregate.
@@ -52,27 +55,27 @@ export function createManagedGarmentClient(request) {
   });
 }
 
-export function normalizeManagedGarmentDto(value) {
-  return normalizeGarment(value);
+export function normalizeManagedGarmentDto(value, apiRoot = API_ROOT) {
+  return normalizeGarment(value, apiRoot);
 }
 
 function garmentPath(garmentId) {
   return `${PREFIX}/${encodeURIComponent(canonicalUuidIntent(garmentId, 'garmentId'))}`;
 }
 
-function normalizeList(value) {
+function normalizeList(value, apiRoot = API_ROOT) {
   if (!Array.isArray(value)) throw new TypeError('Managed Garment list response must be an array');
-  return Object.freeze(value.map(normalizeGarment));
+  return Object.freeze(value.map(item => normalizeGarment(item, apiRoot)));
 }
 
-function normalizeGarment(value) {
+function normalizeGarment(value, apiRoot = API_ROOT) {
   assertPlainObject(value, 'Managed Garment response');
   assertExactKeys(value, [
     'id','name','representation_tier','status','revision','primary_view_id',
     'capture_assessment','views','created_at','updated_at',
   ], 'Managed Garment response');
   if (!Array.isArray(value.views) || value.views.length < 1) throw new TypeError('Managed Garment must contain at least one immutable view');
-  const views = value.views.map((view, index) => normalizeView(view, index));
+  const views = value.views.map((view, index) => normalizeView(view, index, apiRoot));
   if (views.some((view, index) => view.ordinal !== index)) throw new TypeError('Managed Garment views must have contiguous canonical ordinals');
   if (new Set(views.map(view => view.id)).size !== views.length) throw new TypeError('Managed Garment view IDs must be unique');
   const primaryViewId = canonicalUuidResponse(value.primary_view_id, 'primary_view_id');
@@ -93,7 +96,7 @@ function normalizeGarment(value) {
   });
 }
 
-function normalizeView(value, index) {
+function normalizeView(value, index, apiRoot) {
   const label = `Managed Garment view ${index}`;
   assertPlainObject(value, label);
   assertExactKeys(value, [
@@ -110,7 +113,7 @@ function normalizeView(value, index) {
     contentType: exactLiteral(value.content_type, 'image/png', `${label}.content_type`),
     contentSha256: canonicalSha256(value.content_sha256, `${label}.content_sha256`),
     storageProvenance: exactLiteral(value.storage_provenance, 'POSTGRES_BYTEA_V1', `${label}.storage_provenance`),
-    deliveryUrl: canonicalDeliveryUrl(value.delivery_url, `${label}.delivery_url`),
+    deliveryUrl: canonicalDeliveryUrl(value.delivery_url, `${label}.delivery_url`, apiRoot),
     deliveryExpiresAt: canonicalTimestamp(value.delivery_expires_at, `${label}.delivery_expires_at`),
     createdAt: canonicalTimestamp(value.created_at, `${label}.created_at`),
   });
@@ -240,11 +243,11 @@ function canonicalCardinalArray(value, label) {
   return Object.freeze(kinds);
 }
 
-function canonicalDeliveryUrl(value, label) {
+function canonicalDeliveryUrl(value, label, apiRoot) {
   if (typeof value !== 'string' || !value.startsWith(SERVER_DELIVERY_PREFIX) || !SERVER_DELIVERY_PATH.test(value)) {
     throw new TypeError(`${label} must be one narrow server-issued Managed Garment delivery path`);
   }
-  return value;
+  return resolveCoreResourceUrl(value, apiRoot);
 }
 
 function canonicalUuidIntent(value, label) {
