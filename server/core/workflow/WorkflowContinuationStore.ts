@@ -70,6 +70,18 @@ export type WaitForLocalResultInput = Readonly<{
   ticket: WorkflowLocalTicketBinding;
 }>;
 
+/**
+ * Explicit replacement of one failed/expired outstanding local attempt while
+ * preserving the workflow execution identity, immutable plan and step.
+ */
+export type RetryLocalResultInput = Readonly<{
+  executionId: string;
+  scope: Scope;
+  expectedRevision: number;
+  previousTicketId: string;
+  ticket: WorkflowLocalTicketBinding;
+}>;
+
 export type CompleteLocalStepInput = Readonly<{
   executionId: string;
   scope: Scope;
@@ -105,6 +117,7 @@ export interface WorkflowContinuationStore {
   get(executionId: string, scope: Scope): Promise<WorkflowContinuationSnapshot | undefined>;
   getByClientRequestId(scope: Scope, clientRequestId: string): Promise<WorkflowContinuationSnapshot | undefined>;
   waitForLocalResult(input: WaitForLocalResultInput): Promise<WorkflowContinuationSnapshot>;
+  retryLocalResult(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot>;
   completeLocalStep(input: CompleteLocalStepInput): Promise<WorkflowContinuationSnapshot>;
   runInternalStep(input: RunInternalStepInput): Promise<WorkflowContinuationSnapshot>;
   completeInternalStep(input: CompleteInternalStepInput): Promise<WorkflowContinuationSnapshot>;

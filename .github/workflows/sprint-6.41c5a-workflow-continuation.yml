@@ -48,8 +48,11 @@ jobs:
       - run: npm ci
       - name: Typecheck continuation authority
         run: npm run server:typecheck
-      - name: Run fail-closed continuation unit tests
-        run: node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.test.mjs
+      - name: Run fail-closed continuation and deterministic recovery unit tests
+        run: |
+          node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.test.mjs
+          node --experimental-strip-types --test server/core/workflow/WorkflowLocalExecutionAttemptRunProjection.test.mjs
+          node --experimental-strip-types --test server/core/localExecution/DeterministicWorkflowStepFinalRecoveryAuthority.test.mjs
       - name: Apply exact prerequisite and C5A schemas
         run: |
           node --input-type=module <<'NODE'

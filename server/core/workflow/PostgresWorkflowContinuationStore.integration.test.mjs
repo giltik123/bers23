@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Pool } from 'pg';
+import { RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { PostgresLocalExecutionLedger } from '../localExecution/PostgresLocalExecutionLedger.ts';
 import { PostgresWorkflowContinuationStore } from './PostgresWorkflowContinuationStore.ts';
 import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from './workflowContinuationSchema.ts';
@@ -21,6 +22,22 @@ function ticket(token, executionId, scoped) {
     expectedOutputs: Object.freeze([Object.freeze({ kind: 'mask', role: 'MASK', count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: 2, height: 2 })]),
     allowedModels: Object.freeze([Object.freeze({ modelId: 'mobilesam-vit-t', version: '1.0.2' })]),
     policy: 'LOCAL_ONLY', idempotencyKey: `${token}-ticket-idem`, nonce: `${token}-nonce`, issuedAt: NOW, expiresAt: NOW + 60_000,
+    cost: Object.freeze({ paidCloudCredits: 0, providerCalls: 0 }),
+  });
+}
+function retryTicket(token, executionId, scoped, rootArtifact, expiresAt) {
+  const def = RESIZE_TOOL_DEFINITION;
+  return Object.freeze({
+    ticketId: `${token}-ticket`, version: '2', issuer: 'CORE', requestId: `${token}-request`, workflowId: executionId, stepId: def.operation.id,
+    operation: Object.freeze({
+      id: def.operation.id, version: def.operation.version, type: def.operation.type, capability: def.capability,
+      parameters: Object.freeze({ sourceArtifactId: rootArtifact.artifactId, width: 2, height: 2, ...def.parameters.exact }),
+    }),
+    scope: scoped,
+    inputs: Object.freeze([Object.freeze({ artifactId: rootArtifact.artifactId, kind: 'image', role: rootArtifact.role, sha256: rootArtifact.sha256 })]),
+    expectedOutputs: Object.freeze([Object.freeze({ kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: Object.freeze(['image/png']), width: 2, height: 2 })]),
+    allowedExecutors: Object.freeze([def.executor]),
+    policy: 'LOCAL_ONLY', idempotencyKey: `${token}-resize-idem`, nonce: `${token}-nonce`, issuedAt: NOW, expiresAt,
     cost: Object.freeze({ paidCloudCredits: 0, providerCalls: 0 }),
   });
 }
@@ -122,5 +139,81 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
     await fourthPool.query('DELETE FROM workflow_continuations WHERE execution_id=$1', [executionId]).catch(() => undefined);
     await fourthPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [storedTicket.ticketId]).catch(() => undefined);
     await fourthPool.end();
+  }
+});
+
+test('PostgreSQL same-step deterministic v2 retry survives Core restart under one workflow execution identity', { skip: !databaseUrl }, async () => {
+  const token = `workflow-retry-${process.pid}-${Date.now()}`;
+  const scoped = scope(token);
+  const executionId = `${token}-execution`;
+  const clientRequestId = `${token}-client`;
+  const plan = Object.freeze({ planId: `${token}-plan`, planRevision: '1', planDigest: 'e'.repeat(64) });
+  const retryRoot = Object.freeze({ ...rootInput(token), role: 'ORIGINAL' });
+  const inputArtifacts = Object.freeze([retryRoot]);
+  let firstTicket;
+  let replacementTicket;
+
+  const firstPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-retry-first' });
+  try {
+    await migrateWorkflowContinuationSchema(firstPool);
+    await checkWorkflowContinuationSchema(firstPool);
+    const store = new PostgresWorkflowContinuationStore(firstPool, () => NOW);
+    const ledger = new PostgresLocalExecutionLedger(firstPool);
+    const created = await store.create({ executionId, clientRequestId, scope: scoped, plan, inputArtifacts });
+    firstTicket = await ledger.issueV2(retryTicket(`${token}-first`, executionId, scoped, retryRoot, NOW + 1_000));
+    const waiting = await store.waitForLocalResult({
+      executionId,
+      scope: scoped,
+      expectedRevision: created.revision,
+      ticket: { stepId: firstTicket.stepId, ticketId: firstTicket.ticketId, ticketVersion: firstTicket.version, nonce: firstTicket.nonce, expiresAt: new Date(firstTicket.expiresAt).toISOString() },
+    });
+    assert.equal(waiting.state, 'WAITING_FOR_LOCAL_RESULT');
+    assert.equal(waiting.revision, 1);
+    assert.equal(waiting.outstandingLocal.ticketVersion, '2');
+  } finally { await firstPool.end(); }
+
+  const secondPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-retry-second' });
+  try {
+    const store = new PostgresWorkflowContinuationStore(secondPool, () => NOW + 2_000);
+    const ledger = new PostgresLocalExecutionLedger(secondPool);
+    const recovered = await store.get(executionId, scoped);
+    assert.equal(recovered.executionId, executionId);
+    assert.equal(recovered.clientRequestId, clientRequestId);
+    assert.equal(recovered.outstandingLocal.ticketId, firstTicket.ticketId);
+
+    replacementTicket = await ledger.issueV2(retryTicket(`${token}-replacement`, executionId, scoped, retryRoot, NOW + 60_000));
+    const retried = await store.retryLocalResult({
+      executionId,
+      scope: scoped,
+      expectedRevision: recovered.revision,
+      previousTicketId: firstTicket.ticketId,
+      ticket: { stepId: replacementTicket.stepId, ticketId: replacementTicket.ticketId, ticketVersion: replacementTicket.version, nonce: replacementTicket.nonce, expiresAt: new Date(replacementTicket.expiresAt).toISOString() },
+    });
+    assert.equal(retried.executionId, executionId);
+    assert.equal(retried.clientRequestId, clientRequestId);
+    assert.equal(retried.state, 'WAITING_FOR_LOCAL_RESULT');
+    assert.equal(retried.revision, 2);
+    assert.equal(retried.currentStepId, RESIZE_TOOL_DEFINITION.operation.id);
+    assert.equal(retried.outstandingLocal.ticketId, replacementTicket.ticketId);
+    assert.equal(retried.outstandingLocal.ticketVersion, '2');
+    assert.deepEqual(retried.plan, plan);
+    assert.deepEqual(retried.inputArtifacts, inputArtifacts);
+  } finally { await secondPool.end(); }
+
+  const thirdPool = new Pool({ connectionString: databaseUrl, max: 2, application_name: 'bers-workflow-retry-third' });
+  try {
+    const afterRestart = new PostgresWorkflowContinuationStore(thirdPool, () => NOW + 2_000);
+    const durable = await afterRestart.get(executionId, scoped);
+    assert.equal(durable.executionId, executionId, 'retry must not invent a second workflow execution');
+    assert.equal(durable.clientRequestId, clientRequestId);
+    assert.equal(durable.revision, 2);
+    assert.equal(durable.outstandingLocal.ticketId, replacementTicket.ticketId, 'new Core must recover the replacement v2 attempt');
+    assert.equal(durable.outstandingLocal.ticketVersion, '2');
+    assert.deepEqual(durable.inputArtifacts, inputArtifacts);
+  } finally {
+    await thirdPool.query('DELETE FROM workflow_continuations WHERE execution_id=$1', [executionId]).catch(() => undefined);
+    if (firstTicket) await thirdPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [firstTicket.ticketId]).catch(() => undefined);
+    if (replacementTicket) await thirdPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [replacementTicket.ticketId]).catch(() => undefined);
+    await thirdPool.end();
   }
 });

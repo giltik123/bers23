@@ -158,3 +158,59 @@ test('foreign, paid, expired and late local work cannot advance a continuation',
   pool.finalize(valid.ticketId);
   await assert.rejects(() => store.completeLocalStep({ executionId: created.executionId, scope: created.scope, expectedRevision: cancelled.revision, stepId: valid.stepId, ticketId: valid.ticketId, artifactIds: ['late-artifact'] }), /Terminal workflow continuation CANCELLED cannot advance/);
 });
+
+test('same-step local retry preserves workflow identity and is allowed only for failed or expired unconsumed attempts', async () => {
+  const token = 'continuation-retry';
+  const pool = new FakePool();
+  const initialStore = new PostgresWorkflowContinuationStore(pool, () => NOW);
+  const created = await initialStore.create(createInput(token));
+  const first = Object.freeze({ ...ticket(`${token}-first`, 'resize'), expiresAt: new Date(NOW + 1_000).toISOString() });
+  pool.addTicket(created, first);
+  const waiting = await initialStore.waitForLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 0, ticket: first });
+  assert.equal(waiting.revision, 1);
+
+  const replacement = ticket(`${token}-replacement`, 'resize');
+  pool.addTicket(created, replacement);
+  await assert.rejects(() => initialStore.retryLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 1, previousTicketId: first.ticketId, ticket: replacement }), /Unexpired outstanding local execution ticket/);
+
+  const restartedAfterExpiry = new PostgresWorkflowContinuationStore(pool, () => NOW + 2_000);
+  const retried = await restartedAfterExpiry.retryLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 1, previousTicketId: first.ticketId, ticket: replacement });
+  assert.equal(retried.executionId, created.executionId);
+  assert.equal(retried.clientRequestId, created.clientRequestId);
+  assert.equal(retried.state, 'WAITING_FOR_LOCAL_RESULT');
+  assert.equal(retried.revision, 2);
+  assert.equal(retried.currentStepId, 'resize');
+  assert.equal(retried.outstandingLocal.ticketId, replacement.ticketId);
+  assert.deepEqual(retried.plan, created.plan);
+  assert.deepEqual(retried.inputArtifacts, created.inputArtifacts);
+  assert.deepEqual(await restartedAfterExpiry.retryLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 1, previousTicketId: first.ticketId, ticket: replacement }), retried, 'lost retry response must replay idempotently without another revision');
+
+  const wrongStep = ticket(`${token}-wrong-step`, 'orthogonal-transform');
+  pool.addTicket(created, wrongStep);
+  await assert.rejects(() => restartedAfterExpiry.retryLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 2, previousTicketId: replacement.ticketId, ticket: wrongStep }), /cannot change the durable workflow step/);
+
+  const staleReplacement = ticket(`${token}-stale`, 'resize'); pool.addTicket(created, staleReplacement);
+  await assert.rejects(() => restartedAfterExpiry.retryLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 1, previousTicketId: replacement.ticketId, ticket: staleReplacement }), /revision conflict/);
+
+  const failedToken = 'continuation-retry-failed';
+  const failedCreated = await initialStore.create(createInput(failedToken));
+  const failedFirst = ticket(`${failedToken}-first`, 'resize'); pool.addTicket(failedCreated, failedFirst);
+  const failedWaiting = await initialStore.waitForLocalResult({ executionId: failedCreated.executionId, scope: failedCreated.scope, expectedRevision: 0, ticket: failedFirst });
+  pool.finalize(failedFirst.ticketId, 'FAILED');
+  const failedReplacement = ticket(`${failedToken}-replacement`, 'resize'); pool.addTicket(failedCreated, failedReplacement);
+  const failedRetried = await initialStore.retryLocalResult({ executionId: failedCreated.executionId, scope: failedCreated.scope, expectedRevision: failedWaiting.revision, previousTicketId: failedFirst.ticketId, ticket: failedReplacement });
+  assert.equal(failedRetried.outstandingLocal.ticketId, failedReplacement.ticketId);
+
+  for (const terminalStatus of ['SUCCESS', 'UNKNOWN']) {
+    const statusToken = `continuation-retry-${terminalStatus.toLowerCase()}`;
+    const statusCreated = await initialStore.create(createInput(statusToken));
+    const statusFirst = ticket(`${statusToken}-first`, 'resize'); pool.addTicket(statusCreated, statusFirst);
+    const statusWaiting = await initialStore.waitForLocalResult({ executionId: statusCreated.executionId, scope: statusCreated.scope, expectedRevision: 0, ticket: statusFirst });
+    pool.finalize(statusFirst.ticketId, terminalStatus);
+    const statusReplacement = ticket(`${statusToken}-replacement`, 'resize'); pool.addTicket(statusCreated, statusReplacement);
+    await assert.rejects(
+      () => initialStore.retryLocalResult({ executionId: statusCreated.executionId, scope: statusCreated.scope, expectedRevision: statusWaiting.revision, previousTicketId: statusFirst.ticketId, ticket: statusReplacement }),
+      terminalStatus === 'SUCCESS' ? /must be reconciled instead of retried/ : /without deterministic FAILED finalization cannot be retried/,
+    );
+  }
+});

@@ -15,6 +15,7 @@ import {
   type CompleteInternalStepInput,
   type CompleteLocalStepInput,
   type CreateWorkflowContinuationInput,
+  type RetryLocalResultInput,
   type RunInternalStepInput,
   type TerminalWorkflowInput,
   type WaitForLocalResultInput,
@@ -94,6 +95,29 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
       if (snapshot.state !== 'READY') throw conflict(`Workflow cannot wait for a local result from state ${snapshot.state}`);
       assertExpectedRevision(snapshot.revision, input.expectedRevision);
       if (snapshot.completedSteps.some(step => step.stepId === ticket.stepId)) throw conflict('Completed workflow step cannot be reissued as local work');
+      await this.assertOutstandingTicket(client, snapshot, ticket);
+      return Object.freeze({ state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: ticket.stepId, outstandingLocal: ticket, completedSteps: snapshot.completedSteps });
+    });
+  }
+
+  retryLocalResult(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot> {
+    const previousTicketId = requireToken(input.previousTicketId, 'previousTicketId');
+    const ticket = normalizeTicketBinding(input.ticket);
+    return this.mutate(input.executionId, input.scope, async (snapshot, client) => {
+      assertMutable(snapshot);
+      if (snapshot.state !== 'WAITING_FOR_LOCAL_RESULT' || !snapshot.outstandingLocal || !snapshot.currentStepId) {
+        throw conflict('Workflow can retry local work only while waiting for an exact outstanding ticket');
+      }
+      if (sameTicket(snapshot.outstandingLocal, ticket) && snapshot.outstandingLocal.ticketId !== previousTicketId) {
+        return snapshot;
+      }
+      assertExpectedRevision(snapshot.revision, input.expectedRevision);
+      const current = snapshot.outstandingLocal;
+      if (current.ticketId !== previousTicketId) throw conflict('Local retry previous ticket does not match the durable outstanding attempt');
+      if (ticket.ticketId === previousTicketId) throw conflict('Local retry must use a new Core-issued ticket identity');
+      if (ticket.stepId !== current.stepId || ticket.stepId !== snapshot.currentStepId) throw conflict('Local retry cannot change the durable workflow step');
+      if (snapshot.completedSteps.some(step => step.stepId === ticket.stepId)) throw conflict('Completed workflow step cannot be retried');
+      await this.assertRetryablePreviousTicket(client, snapshot, current);
       await this.assertOutstandingTicket(client, snapshot, ticket);
       return Object.freeze({ state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: ticket.stepId, outstandingLocal: ticket, completedSteps: snapshot.completedSteps });
     });
@@ -199,6 +223,26 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
     if (cost?.providerCalls !== 0 || cost?.paidCloudCredits !== 0) throw conflict('Local composite step contains forbidden provider or paid-credit authority');
     if (Date.parse(ticket.expiresAt) <= this.now()) throw conflict('Expired local execution ticket cannot become outstanding work');
     assertTicketInputsBound(snapshot, durable.inputs);
+  }
+
+  private async assertRetryablePreviousTicket(client: PoolClient, snapshot: WorkflowContinuationSnapshot, ticket: WorkflowLocalTicketBinding): Promise<void> {
+    const result = await client.query(`SELECT ticket_id,tenant_id,user_id,project_id,workflow_id,step_id,ticket_json,consumed_at,finalized_status
+      FROM local_execution_tickets WHERE ticket_id=$1`, [ticket.ticketId]);
+    const row = result.rows[0];
+    if (!row) throw conflict('Previous local execution ticket is not durable');
+    if (row.tenant_id !== snapshot.scope.tenantId || row.user_id !== snapshot.scope.userId || row.project_id !== snapshot.scope.projectId || row.workflow_id !== snapshot.executionId || row.step_id !== ticket.stepId) {
+      throw conflict('Previous local execution ticket no longer matches workflow scope/step authority');
+    }
+    const durable = row.ticket_json as Record<string, unknown>;
+    if (String(durable.version) !== ticket.ticketVersion || durable.nonce !== ticket.nonce || toIsoTimestamp(durable.expiresAt) !== ticket.expiresAt) {
+      throw conflict('Previous local execution ticket identity no longer matches its durable ledger');
+    }
+    if (row.consumed_at) {
+      if (row.finalized_status === 'FAILED') return;
+      if (row.finalized_status === 'SUCCESS') throw conflict('Successful local execution ticket must be reconciled instead of retried');
+      throw conflict('Consumed local execution ticket without deterministic FAILED finalization cannot be retried');
+    }
+    if (Date.parse(ticket.expiresAt) > this.now()) throw conflict('Unexpired outstanding local execution ticket cannot be duplicated by retry');
   }
 
   private async mutate(executionIdInput: string, scopeInput: Scope, mutation: Mutation): Promise<WorkflowContinuationSnapshot> {
@@ -358,19 +402,6 @@ function requireToken(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} is required`);
   return value.trim();
 }
-
-function optionalToken(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function requireSha256(value: unknown, field: string): string {
-  const normalized = requireToken(value, field).toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(normalized)) throw new Error(`${field} must be a SHA-256 digest`);
-  return normalized;
-}
-
-function toIsoTimestamp(value: unknown): string {
-  const milliseconds = value instanceof Date ? value.getTime() : typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) : NaN;
-  if (!Number.isFinite(milliseconds)) throw new Error('Workflow continuation timestamp is invalid');
-  return new Date(milliseconds).toISOString();
-}
+function optionalToken(value: unknown): string | undefined { if (value === undefined || value === null || value === '') return undefined; return requireToken(value, 'optional token'); }
+function requireSha256(value: unknown, field: string): string { const normalized = requireToken(value, field).toLowerCase(); if (!/^[a-f0-9]{64}$/.test(normalized)) throw new Error(`${field} must be a SHA-256 digest`); return normalized; }
+function toIsoTimestamp(value: unknown): string { const date = value instanceof Date ? value : new Date(typeof value === 'number' ? value : String(value)); if (!Number.isFinite(date.getTime())) throw new Error('Workflow continuation timestamp is invalid'); return date.toISOString(); }
