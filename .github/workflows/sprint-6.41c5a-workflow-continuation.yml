@@ -11,6 +11,8 @@ on:
       - "server/core/http/boundedAgentHttpAdapter.test.mjs"
       - "server/core/composition/createProductionCore.ts"
       - "server/core/composition/boundedAgentProductionComposition.test.mjs"
+      - "server/core/artifacts/canonicalArtifactHydrator.ts"
+      - "server/core/artifacts/canonicalArtifactHydrator.role.test.mjs"
       - "server/core/artifacts/durableArtifactLineageResolver.ts"
       - "server/core/artifacts/migrations/012_local_execution_uploads.sql"
       - "server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql"
@@ -71,9 +73,11 @@ jobs:
         run: node --test server/core/composition/boundedAgentProductionComposition.test.mjs
       - name: Prove bounded Agent HTTP authority and principal boundary
         run: node --experimental-strip-types --test server/core/http/boundedAgentHttpAdapter.test.mjs
-      - name: Prove prepared local execution, browser sequencing and Editor boundary
+      - name: Prove stored FINAL role, prepared local execution, browser sequencing and Editor boundary
         run: |
           mkdir -p .test-cache/c5a
+          npx esbuild server/core/artifacts/canonicalArtifactHydrator.role.test.mjs --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/c5a/artifact-hydrator-role.test.mjs --external:node:* --external:pg --external:sharp
+          node --test .test-cache/c5a/artifact-hydrator-role.test.mjs
           npx esbuild tests/bounded-agent-prepared-local-execution.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/c5a/prepared-local-execution.test.mjs --external:node:*
           node --test .test-cache/c5a/prepared-local-execution.test.mjs
           npx esbuild tests/bounded-agent-browser-runner.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/c5a/browser-runner.test.mjs --external:node:*
