@@ -13,11 +13,9 @@ import { checkGarmentSchema, migrateGarmentSchema } from '../../../core/fashion/
 import { checkProjectBodyAnchorSchema, migrateProjectBodyAnchorSchema } from '../../../core/fashion/bodyAnchorSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from '../../../core/fashion/garmentWarpLayerSchema.ts';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from '../../../core/fashion/garmentTextureFinalLineageSchema.ts';
-import {
-  checkGarmentAppearanceRefinementFinalLineageSchema,
-  migrateGarmentAppearanceRefinementFinalLineageSchema,
-} from '../../../core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts';
+import { checkGarmentAppearanceRefinementFinalLineageSchema, migrateGarmentAppearanceRefinementFinalLineageSchema } from '../../../core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts';
 import { checkExecutionRunSchema, migrateExecutionRunSchema } from '../../../core/execution/executionRunSchema.ts';
+import { checkAutomationDefinitionSchema, migrateAutomationDefinitionSchema } from '../../../core/automation/automationDefinitionSchema.ts';
 
 const command = process.argv[2];
 const databaseUrl = process.env.DATABASE_URL;
@@ -41,6 +39,7 @@ try {
     await migrateGarmentTextureFinalLineageSchema(pool);
     await migrateGarmentAppearanceRefinementFinalLineageSchema(pool);
     await migrateExecutionRunSchema(pool);
+    await migrateAutomationDefinitionSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', version: result.version, status: result.status }));
   } else if (command === 'check') {
     await checkTransactionSchema(pool);
@@ -58,6 +57,7 @@ try {
     await checkGarmentTextureFinalLineageSchema(pool);
     await checkGarmentAppearanceRefinementFinalLineageSchema(pool);
     await checkExecutionRunSchema(pool);
+    await checkAutomationDefinitionSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', status: 'ready' }));
   } else {
     throw new Error('expected migrate or check command');

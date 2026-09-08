@@ -17,6 +17,7 @@ import { createManagedGarmentHttpAdapter } from './core/http/managedGarmentHttpA
 import { createManagedWardrobeHttpAdapter } from './core/http/managedWardrobeHttpAdapter.ts';
 import { createManagedGarmentCollectionHttpAdapter } from './core/http/managedGarmentCollectionHttpAdapter.ts';
 import { createManagedOutfitHttpAdapter } from './core/http/managedOutfitHttpAdapter.ts';
+import { AUTOMATION_DEFINITION_PATH, createAutomationDefinitionHttpAdapter } from './core/http/automationDefinitionHttpAdapter.ts';
 import { parseCoreRequestTarget } from './core/http/requestTarget.ts';
 import { CanonicalArtifactHydrator } from './core/artifacts/canonicalArtifactHydrator.ts';
 import { LocalCompositeInputDeliveryService } from './core/workflow/LocalCompositeInputDeliveryService.ts';
@@ -32,6 +33,8 @@ import { PostgresGarmentWardrobeStore } from './core/fashion/postgresGarmentWard
 import { PostgresGarmentCollectionStore } from './core/fashion/postgresGarmentCollectionStore.ts';
 import { PostgresOutfitStore } from './core/fashion/postgresOutfitStore.ts';
 import { GarmentDeliveryAuthority } from './core/fashion/garmentDeliveryAuthority.ts';
+import { checkAutomationDefinitionSchema, migrateAutomationDefinitionSchema } from './core/automation/automationDefinitionSchema.ts';
+import { PostgresAutomationDefinitionStore } from './core/automation/PostgresAutomationDefinitionStore.ts';
 
 const MANUAL_PARAMETRIC_PATH = /^\/api\/core\/fashion\/garments\/[^/]+\/parametric-representation$/;
 const MANUAL_BODY_ANCHOR_PATH = /^\/api\/core\/fashion\/projects\/[^/]+\/body-anchors$/;
@@ -47,22 +50,26 @@ export async function startCoreServer() {
     if (config.nodeEnv === 'test') {
       await migrateGarmentSchema(production.transactions.pool);
       await migrateExecutionRunSchema(production.transactions.pool);
+      await migrateAutomationDefinitionSchema(production.transactions.pool);
     } else {
       await checkGarmentSchema(production.transactions.pool);
       await checkExecutionRunSchema(production.transactions.pool);
+      await checkAutomationDefinitionSchema(production.transactions.pool);
     }
   } catch (error) { await production.close(); throw error; }
-  const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); await checkGarmentSchema(production.transactions.pool); await checkExecutionRunSchema(production.transactions.pool); return true; } catch { return false; } };
+  const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); await checkGarmentSchema(production.transactions.pool); await checkExecutionRunSchema(production.transactions.pool); await checkAutomationDefinitionSchema(production.transactions.pool); return true; } catch { return false; } };
   const adapter = createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
   const garments = new PostgresGarmentStore(production.transactions.pool);
   const wardrobe = new PostgresGarmentWardrobeStore(production.transactions.pool);
   const collections = new PostgresGarmentCollectionStore(production.transactions.pool);
   const outfits = new PostgresOutfitStore(production.transactions.pool);
+  const automationDefinitions = new PostgresAutomationDefinitionStore(production.transactions.pool, Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels }));
   const garmentDelivery = new GarmentDeliveryAuthority(config.artifactSigningSecret);
   const managedGarmentAdapter = createManagedGarmentHttpAdapter({ garments, delivery: garmentDelivery, auth: production.auth, config, accepting: () => accepting });
   const managedWardrobeAdapter = createManagedWardrobeHttpAdapter({ wardrobe, auth: production.auth, config, accepting: () => accepting });
   const managedCollectionAdapter = createManagedGarmentCollectionHttpAdapter({ collections, auth: production.auth, config, accepting: () => accepting });
   const managedOutfitAdapter = createManagedOutfitHttpAdapter({ outfits, auth: production.auth, config, accepting: () => accepting });
+  const automationDefinitionAdapter = createAutomationDefinitionHttpAdapter({ definitions: automationDefinitions, auth: production.auth, config, accepting: () => accepting });
   const boundedAgentAdapter = createBoundedAgentHttpAdapter({
     workflow: production.agent.boundedDeterministic,
     terminalPreview: Object.freeze({
@@ -140,6 +147,7 @@ export async function startCoreServer() {
     const target = parseCoreRequestTarget(request.url);
     if (target.ok === false) { sendInvalidRequestTarget(response, target); return; }
     const path = target.path;
+    if (path === AUTOMATION_DEFINITION_PATH || path.startsWith(`${AUTOMATION_DEFINITION_PATH}/`)) return void automationDefinitionAdapter(request, response);
     if (path === '/api/core/wardrobe/outfits' || path.startsWith('/api/core/wardrobe/outfits/')) return void managedOutfitAdapter(request, response);
     if (path === '/api/core/wardrobe/collections' || path.startsWith('/api/core/wardrobe/collections/')) return void managedCollectionAdapter(request, response);
     if (path === '/api/core/wardrobe/garments' || path.startsWith('/api/core/wardrobe/garments/')) return void managedWardrobeAdapter(request, response);

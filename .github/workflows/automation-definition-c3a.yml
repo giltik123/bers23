@@ -1,0 +1,105 @@
+name: Stage C3a Automation definition authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/core/automation/**'
+      - 'server/core/http/automationDefinitionHttpAdapter.ts'
+      - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
+      - 'server/index.ts'
+      - 'tests/automation-definition-postgres.test.ts'
+      - 'tests/automation-definition-http-postgres.test.ts'
+      - 'scripts/production-migration-inventory.mjs'
+      - '.github/workflows/automation-definition-c3a.yml'
+      - '.github/workflows/node.js.yml'
+      - '.github/workflows/production-core-migration-image.yml'
+      - '.github/workflows/financial-account-foundation-p0a.yml'
+      - '.github/workflows/financial-account-free-bootstrap-p0b1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  automation-definition-postgres:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: automation_c3a_test
+          POSTGRES_USER: automation_c3a_test
+          POSTGRES_PASSWORD: automation_c3a_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U automation_c3a_test -d automation_c3a_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://automation_c3a_test:automation_c3a_test@127.0.0.1:5432/automation_c3a_test
+      TEST_DATABASE_URL: postgresql://automation_c3a_test:automation_c3a_test@127.0.0.1:5432/automation_c3a_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove global migration sequence and Automation tail
+        run: |
+          node --input-type=module <<'NODE'
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.length !== 40) throw new Error(`Expected 40 contiguous migrations, got ${migrations.length}`);
+          if (migrations[37]?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration moved');
+          if (migrations[38]?.name !== '039_workflow_continuation_plan_parameters.sql') throw new Error('039 workflow migration moved');
+          if (migrations[39]?.name !== '040_automation_definitions.sql') throw new Error('040 Automation migration is not the exact tail');
+          NODE
+      - name: Typecheck Core authority
+        run: npm run server:typecheck
+      - name: Build Core and package migration 040
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/040_automation_definitions.sql
+      - name: Apply and verify canonical schema CLI
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Prove PostgreSQL Automation identity revision isolation and restart durability
+        run: |
+          mkdir -p .test-cache/automation-c3a
+          npx esbuild tests/automation-definition-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/automation-c3a/automation-definition-postgres.test.mjs \
+            --external:pg --external:node:*
+          node --test .test-cache/automation-c3a/automation-definition-postgres.test.mjs
+      - name: Prove authenticated HTTP authority and hostile widening rejection
+        run: |
+          mkdir -p .test-cache/automation-c3a
+          npx esbuild tests/automation-definition-http-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/automation-c3a/automation-definition-http-postgres.test.mjs \
+            --external:pg --external:node:*
+          node --test .test-cache/automation-c3a/automation-definition-http-postgres.test.mjs
+      - name: Preserve preview-only Automation Studio and execution lockdown
+        run: |
+          set -euo pipefail
+          grep -q 'AUTOMATION_EXECUTION_NOT_WIRED' src/lib/automation/AutomationRunner.js
+          grep -q 'automationRunner.plan' src/pages/AutomationStudio.jsx
+          ! grep -q 'automationRunner.run' src/pages/AutomationStudio.jsx
+          ! grep -E -q 'executionRuns|boundedDeterministic|providerSelector|billing|creditsWallet' server/core/http/automationDefinitionHttpAdapter.ts server/core/automation/PostgresAutomationDefinitionStore.ts
+          grep -q 'authenticatedOwnerScope' server/core/http/automationDefinitionHttpAdapter.ts
+          grep -q "trigger text NOT NULL DEFAULT 'MANUAL'" server/core/automation/migrations/040_automation_definitions.sql
+          grep -q "plan_kind = 'BOUNDED_DETERMINISTIC_IMAGE_V1'" server/core/automation/migrations/040_automation_definitions.sql
+      - name: Check committed diff whitespace
+        run: git diff --check "$BASE_SHA"..HEAD
