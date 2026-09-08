@@ -42,7 +42,17 @@ Historical PRs #13, #28, #33, #35 and #38 are not merge candidates by default. R
 
 ## Working discipline
 
-Keep changes scoped and evidence-based. Before finishing:
+Keep changes scoped and evidence-based.
+
+For every implementation or design task:
+
+- identify multiple technically credible solution variants before committing to an approach;
+- compare them explicitly on correctness, canonical authority boundaries, security/data integrity, maintainability, testability, regression risk, and relevant performance/operational cost;
+- choose the option with the strongest overall quality, not merely the smallest diff or fastest implementation;
+- when the decision materially affects architecture or acceptance, record the rejected alternatives and the reason the selected option is superior in the issue, PR, or acceptance notes;
+- do not invent artificial alternatives when one option is uniquely valid under canonical constraints; instead record why competing approaches are invalid.
+
+Before finishing:
 
 - inspect the exact diff for collateral changes;
 - run the relevant local checks when available;
