@@ -28,7 +28,7 @@ test('bounded Agent production composition reuses the canonical PostgreSQL autho
   assert.match(source, /agent: Object\.freeze\(\{ boundedDeterministic: boundedAgent \}\)/);
 });
 
-test('bounded Agent gains only the dedicated HTTP transport and no provider or billing authority', async () => {
+test('bounded Agent gains only the dedicated HTTP transport and scoped terminal preview authority', async () => {
   const [source, server] = await Promise.all([
     readFile(productionCoreUrl, 'utf8'),
     readFile(serverUrl, 'utf8'),
@@ -43,7 +43,21 @@ test('bounded Agent gains only the dedicated HTTP transport and no provider or b
   }
 
   assert.match(server, /import \{ createBoundedAgentHttpAdapter \} from '\.\/core\/http\/boundedAgentHttpAdapter\.ts';/);
-  assert.match(server, /const boundedAgentAdapter = createBoundedAgentHttpAdapter\(\{ workflow: production\.agent\.boundedDeterministic, auth: production\.auth, config \}\);/);
+  const adapterStart = server.indexOf('const boundedAgentAdapter = createBoundedAgentHttpAdapter({');
+  const adapterEnd = server.indexOf('  const orthogonalTransformAdapter =', adapterStart);
+  assert.ok(adapterStart >= 0 && adapterEnd > adapterStart, 'bounded Agent HTTP adapter block must be present');
+  const adapterBlock = server.slice(adapterStart, adapterEnd);
+  assert.match(adapterBlock, /workflow: production\.agent\.boundedDeterministic/);
+  assert.match(adapterBlock, /terminalPreview: Object\.freeze\(\{/);
+  assert.match(adapterBlock, /resolveStoredFinalId\(artifactId, scope\)/);
+  assert.match(adapterBlock, /issueStoredFinalDelivery\(stored\.storageId, scope, Date\.now\(\) \+ EXECUTION_RESULT_DELIVERY_TTL_MS\)/);
+  assert.match(adapterBlock, /return `\/api\/core\/artifacts\/results\/\$\{encodeURIComponent\(deliveryToken\)\}`/);
+  assert.match(adapterBlock, /auth: production\.auth/);
+  assert.match(adapterBlock, /config,/);
+  for (const forbidden of ['providerSelector', 'creditsPerEdit', 'hardBudgetCredits', 'FAL_KEY', 'falWorkflowRuntime']) {
+    assert.equal(adapterBlock.includes(forbidden), false, `bounded Agent HTTP adapter must not receive ${forbidden} authority`);
+  }
+
   assert.match(server, /startsWith\('\/api\/core\/agent\/bounded-deterministic\/'\)\) return void boundedAgentAdapter\(request, response\);/);
   assert.equal(server.includes("startsWith('/api/core/agent/')"), false, 'Core must not expose a generic Agent command namespace');
   assert.equal(server.includes('createAgentHttpAdapter'), false, 'Core must not introduce a generic Agent dispatcher');
