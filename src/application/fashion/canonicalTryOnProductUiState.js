@@ -15,7 +15,10 @@ const KNOWN_GROUPS = new Set([...SUPPORTED_GROUPS, 'accessories', 'other']);
  *
  * This layer never infers readiness, retries, advances orchestration, or owns
  * execution identity. It only decides which already-accepted user actions may
- * be rendered from a safe controller result + host snapshot.
+ * be rendered from a safe controller result + host snapshot. An UNCERTAIN host
+ * means the transport outcome is ambiguous while the product session still owns
+ * the exact in-flight identity; only explicit Resume/Recover/Abandon may act on
+ * that identity.
  */
 export function canonicalTryOnProductUiState({ result = null, host, busy = false, disabled = false } = {}) {
   const safeHost = normalizeHost(host);
@@ -23,16 +26,19 @@ export function canonicalTryOnProductUiState({ result = null, host, busy = false
   const safeResult = normalizeResult(result);
   const interactionBlocked = busy || disabled || safeHost.busy;
   const continuation = safeResult && CONTINUATION_STATUSES.has(safeResult.status);
+  const uncertain = safeHost.hasInFlight && safeHost.phase === 'UNCERTAIN';
   const ready = safeResult?.status === 'READINESS' && safeResult.readiness.status === 'READY';
 
   return Object.freeze({
-    status: safeResult?.status ?? 'UNCHECKED',
-    message: messageFor(safeResult),
+    status: uncertain ? 'UNCERTAIN' : (safeResult?.status ?? 'UNCHECKED'),
+    message: uncertain
+      ? 'Try-On outcome is uncertain. Recover or resume explicitly; no automatic retry occurs.'
+      : messageFor(safeResult),
     readiness: safeResult?.readiness ?? null,
     canInspect: !interactionBlocked && !safeHost.hasInFlight,
     canRun: !interactionBlocked && !safeHost.hasInFlight && ready,
-    canResume: !interactionBlocked && safeHost.hasInFlight && continuation,
-    canRecover: !interactionBlocked && safeHost.hasInFlight && continuation,
+    canResume: !interactionBlocked && safeHost.hasInFlight && (continuation || uncertain),
+    canRecover: !interactionBlocked && safeHost.hasInFlight && (continuation || uncertain),
     canAbandon: !interactionBlocked && safeHost.hasInFlight,
     hasInFlight: safeHost.hasInFlight,
   });
@@ -79,6 +85,9 @@ function normalizeHost(value) {
   }
   if (typeof value.phase !== 'string' || !value.phase) throw new TypeError('Try-On UI host phase is unavailable');
   if (value.disposed) throw new Error('Try-On UI cannot render a disposed Editor host');
+  if (value.phase === 'UNCERTAIN' && !value.hasInFlight) {
+    throw new Error('Try-On UI UNCERTAIN phase requires an in-flight product identity');
+  }
   return value;
 }
 
