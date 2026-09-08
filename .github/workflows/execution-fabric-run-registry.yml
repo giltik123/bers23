@@ -10,6 +10,7 @@ on:
       - 'server/core/execution/**'
       - 'server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts'
       - 'server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.test.mjs'
+      - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
       - 'server/core/workflow/createProductionLocalCompositeContinuation.ts'
       - 'server/core/workflow/LocalCompositeOutputUploadService.ts'
       - 'server/core/http/localCompositeContinuationHttpAdapter.ts'
@@ -147,8 +148,13 @@ jobs:
           grep -q "authorityKind: 'LOCAL_EXECUTION_TICKET'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "capability: 'WORKFLOW_STEP'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
-          test "$(grep -R -F "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core --include='*.ts' | wc -l)" -eq 1
-          grep -R -F "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core --include='*.ts' | grep -q '^server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts:'
+          grep -q "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core/workflow/BoundedAgentDeterministicWorkflowService.ts
+          INTERNAL_AUTHORITY="authorityKind: 'WORKFLOW_INTERNAL_STEP'"
+          test "$(grep -R -F "$INTERNAL_AUTHORITY" server/core --include='*.ts' | wc -l)" -eq 2
+          mapfile -t internal_producers < <(grep -R -l -F "$INTERNAL_AUTHORITY" server/core --include='*.ts' | sort)
+          test "${#internal_producers[@]}" -eq 2
+          test "${internal_producers[0]}" = 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
+          test "${internal_producers[1]}" = 'server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts'
           grep -q 'parentRunId: parent.runId' server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q 'WORKFLOW_STEP execution run requires parentRunId' server/core/execution/PostgresExecutionRunRegistry.ts
           grep -q "parentRun.capability !== 'WORKFLOW_CONTINUATION'" server/core/execution/PostgresExecutionRunRegistry.ts
