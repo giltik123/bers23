@@ -31,9 +31,18 @@ function recoveryFinal(extra = {}) {
   });
 }
 
+function createHandoff(overrides = {}) {
+  return createTryOnEditorFinalHandoff({
+    encodePreviewPng: async () => new Uint8Array([1]),
+    createBlobUrl: async () => 'blob:ok',
+    resolveRecoveryPreviewUrl: (value) => value,
+    ...overrides,
+  });
+}
+
 test('local FINAL becomes an Editor-owned zero-credit pending result without execution identities', async () => {
   const calls = [];
-  const handoff = createTryOnEditorFinalHandoff({
+  const handoff = createHandoff({
     encodePreviewPng: async (preview) => {
       calls.push(['encode', preview]);
       return new Uint8Array([137, 80, 78, 71]);
@@ -70,12 +79,17 @@ test('local FINAL becomes an Editor-owned zero-credit pending result without exe
   assert.equal(JSON.stringify(result).includes('anchorSetId'), false);
 });
 
-test('recovered FINAL keeps only the accepted short-lived Core preview capability', async () => {
+test('recovered FINAL may add only the configured Core origin to the accepted short-lived capability', async () => {
   let encoded = 0;
   let blobbed = 0;
-  const handoff = createTryOnEditorFinalHandoff({
+  const resolutions = [];
+  const handoff = createHandoff({
     encodePreviewPng: async () => { encoded += 1; return new Uint8Array([1]); },
     createBlobUrl: async () => { blobbed += 1; return 'blob:unexpected'; },
+    resolveRecoveryPreviewUrl: (value) => {
+      resolutions.push(value);
+      return `http://127.0.0.1:4188${value}`;
+    },
   });
 
   const result = await handoff({
@@ -85,17 +99,36 @@ test('recovered FINAL keeps only the accepted short-lived Core preview capabilit
     beforeUrl: BEFORE,
   });
 
-  assert.equal(result.result.preview_url, '/api/core/artifacts/results/preview.token');
+  assert.deepEqual(resolutions, ['/api/core/artifacts/results/preview.token']);
+  assert.equal(result.result.preview_url, 'http://127.0.0.1:4188/api/core/artifacts/results/preview.token');
+  assert.equal(result.result.image_url, result.result.preview_url);
   assert.equal(result.result.finalArtifactId, 'canonical-final');
   assert.equal(encoded, 0);
   assert.equal(blobbed, 0);
+
+  const sameOrigin = await createHandoff()({
+    final: recoveryFinal(), garmentId: GARMENT, sourceArtifactId: SOURCE, beforeUrl: BEFORE,
+  });
+  assert.equal(sameOrigin.result.preview_url, '/api/core/artifacts/results/preview.token');
+});
+
+test('recovery preview resolver cannot change path, query, fragment, scheme or credentials', async () => {
+  const base = { final: recoveryFinal(), garmentId: GARMENT, sourceArtifactId: SOURCE, beforeUrl: BEFORE };
+  for (const resolved of [
+    'http://127.0.0.1:4188/api/core/artifacts/results/other.token',
+    'http://127.0.0.1:4188/api/core/artifacts/results/preview.token?extra=1',
+    'http://127.0.0.1:4188/api/core/artifacts/results/preview.token#extra',
+    'ftp://127.0.0.1/api/core/artifacts/results/preview.token',
+    'http://user:pass@127.0.0.1:4188/api/core/artifacts/results/preview.token',
+    '/not-canonical',
+  ]) {
+    const handoff = createHandoff({ resolveRecoveryPreviewUrl: () => resolved });
+    await assert.rejects(() => handoff(base), /resolver (changed the server-issued delivery capability|returned an invalid URL)/);
+  }
 });
 
 test('handoff fails closed on malformed stable intent and authority-shaped top-level fields', async () => {
-  const handoff = createTryOnEditorFinalHandoff({
-    encodePreviewPng: async () => new Uint8Array([1]),
-    createBlobUrl: async () => 'blob:ok',
-  });
+  const handoff = createHandoff();
   const base = { garmentId: GARMENT, sourceArtifactId: SOURCE, beforeUrl: BEFORE, final: localFinal() };
 
   await assert.rejects(() => handoff({ ...base, garmentId: 'not-a-uuid' }), /garmentId must be a UUID/);
@@ -104,10 +137,7 @@ test('handoff fails closed on malformed stable intent and authority-shaped top-l
 });
 
 test('handoff fails closed on missing preview, arbitrary URLs, malformed pixels and authority-shaped FINAL fields', async () => {
-  const handoff = createTryOnEditorFinalHandoff({
-    encodePreviewPng: async () => new Uint8Array([1]),
-    createBlobUrl: async () => 'blob:ok',
-  });
+  const handoff = createHandoff();
   const base = { garmentId: GARMENT, sourceArtifactId: SOURCE, beforeUrl: BEFORE };
 
   await assert.rejects(() => handoff({ ...base, final: { status: 'FINAL_READY', artifactId: 'x' } }), /unknown or missing fields/);
@@ -117,7 +147,7 @@ test('handoff fails closed on missing preview, arbitrary URLs, malformed pixels 
 });
 
 test('handoff rejects PixelImage byte-count arithmetic outside safe integer range before encoder', async () => {
-  const handoff = createTryOnEditorFinalHandoff({
+  const handoff = createHandoff({
     encodePreviewPng: async () => { throw new Error('encoder must not run'); },
     createBlobUrl: async () => { throw new Error('blob factory must not run'); },
   });
@@ -138,11 +168,21 @@ test('handoff rejects PixelImage byte-count arithmetic outside safe integer rang
 test('local preview rejects invalid encoder bytes and non-owned URL output', async () => {
   const base = { final: localFinal(), garmentId: GARMENT, sourceArtifactId: SOURCE, beforeUrl: BEFORE };
   await assert.rejects(
-    () => createTryOnEditorFinalHandoff({ encodePreviewPng: async () => new Uint8Array(), createBlobUrl: async () => 'blob:x' })(base),
+    () => createHandoff({ encodePreviewPng: async () => new Uint8Array(), createBlobUrl: async () => 'blob:x' })(base),
     /invalid PNG bytes/,
   );
   await assert.rejects(
-    () => createTryOnEditorFinalHandoff({ encodePreviewPng: async () => new Uint8Array([1]), createBlobUrl: async () => '/not-owned' })(base),
+    () => createHandoff({ encodePreviewPng: async () => new Uint8Array([1]), createBlobUrl: async () => '/not-owned' })(base),
     /Editor-owned blob URL/,
+  );
+});
+
+test('recovery resolver is an explicit required browser-composition dependency', () => {
+  assert.throws(
+    () => createTryOnEditorFinalHandoff({
+      encodePreviewPng: async () => new Uint8Array([1]),
+      createBlobUrl: async () => 'blob:ok',
+    }),
+    /resolveRecoveryPreviewUrl/,
   );
 });
