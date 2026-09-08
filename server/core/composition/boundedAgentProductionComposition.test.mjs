@@ -28,7 +28,7 @@ test('bounded Agent production composition reuses the canonical PostgreSQL autho
   assert.match(source, /agent: Object\.freeze\(\{ boundedDeterministic: boundedAgent \}\)/);
 });
 
-test('bounded Agent composition does not gain provider, billing or HTTP authority in the server-only slice', async () => {
+test('bounded Agent gains only the dedicated HTTP transport and no provider or billing authority', async () => {
   const [source, server] = await Promise.all([
     readFile(productionCoreUrl, 'utf8'),
     readFile(serverUrl, 'utf8'),
@@ -41,6 +41,10 @@ test('bounded Agent composition does not gain provider, billing or HTTP authorit
   for (const forbidden of ['runtime,', 'transactions', 'providerSelector', 'creditsPerEdit', 'hardBudgetCredits', 'fal']) {
     assert.equal(block.includes(forbidden), false, `bounded Agent composition must not receive ${forbidden} authority`);
   }
-  assert.equal(server.includes('boundedDeterministic'), false, 'server-only slice must not expose bounded Agent through HTTP yet');
-  assert.equal(server.includes('/api/core/agent'), false, 'server-only slice must not add an Agent HTTP namespace yet');
+
+  assert.match(server, /import \{ createBoundedAgentHttpAdapter \} from '\.\/core\/http\/boundedAgentHttpAdapter\.ts';/);
+  assert.match(server, /const boundedAgentAdapter = createBoundedAgentHttpAdapter\(\{ workflow: production\.agent\.boundedDeterministic, auth: production\.auth, config \}\);/);
+  assert.match(server, /startsWith\('\/api\/core\/agent\/bounded-deterministic\/'\)\) return void boundedAgentAdapter\(request, response\);/);
+  assert.equal(server.includes("startsWith('/api/core/agent/')"), false, 'Core must not expose a generic Agent command namespace');
+  assert.equal(server.includes('createAgentHttpAdapter'), false, 'Core must not introduce a generic Agent dispatcher');
 });
