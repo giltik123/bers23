@@ -45,7 +45,7 @@ const MANAGED_FASHION_HTTP_PREFIXES = Object.freeze([
 ]);
 
 const F3C_MANIFEST_NAME = 'f3c-canonical-outfit-ui-ci-closure.json';
-const F3C_EXPECTED_BUNDLE_INPUTS = 11;
+const F3C_EXPECTED_BUNDLE_INPUTS = 12;
 const F3C_EXPECTED_SUPPORT_PATHS = 19;
 const F3C_CONTROL_PATHS = Object.freeze([
   '.github/workflows/fashion-authority-ci-policy.yml',

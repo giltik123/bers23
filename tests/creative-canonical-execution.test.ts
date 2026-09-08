@@ -107,6 +107,23 @@ test('6.40A controlled edit requires canonical ORIGINAL, MASK and selected objec
   }
 });
 
+test('6.40A controlled edit preserves accepted COMPOSITE as the next editable source', async () => {
+  const composite = artifact('accepted-final', 'COMPOSITE');
+  const mask = artifact('mask', 'MASK');
+  const controlledRequest: CreativeRequest = {
+    id: 'controlled-composite', intent: 'replace selected object again', scope, inputArtifacts: [composite, mask],
+    metadata: { editCapability: 'CONTROLLED_LOCAL_EDIT', selectedObjectIds: ['object-1'], preserveMode: 'BALANCED', correlationId: 'corr-composite' },
+  };
+  const decision = await new CanonicalDecisionService().decide(controlledRequest);
+  const plan = await new CanonicalPlanningService().plan(controlledRequest, decision);
+  assert.equal(plan.operations[0].type, 'CONTROLLED_LOCAL_EDIT');
+  assert.deepEqual(plan.operations[0].requiredArtifacts, ['accepted-final', 'mask']);
+  assert.deepEqual(plan.provenance?.inputArtifacts, [
+    { id: 'accepted-final', kind: 'image', role: 'COMPOSITE' },
+    { id: 'mask', kind: 'image', role: 'MASK' },
+  ]);
+});
+
 test('6.40A planning is deterministic and deeply immutable at the proposal boundary', async () => {
   const original = artifact('original', 'ORIGINAL');
   const planRequest: CreativeRequest = { id: 'deterministic-1', intent: 'edit image', scope, inputArtifacts: [original], metadata: { correlationId: 'corr' } };

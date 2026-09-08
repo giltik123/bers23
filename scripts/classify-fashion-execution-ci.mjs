@@ -155,6 +155,7 @@ const F4B4_ADMISSION_EXACT_PATHS = new Set([
   'server/core/artifacts/artifactAuthority.ts',
   'server/core/artifacts/signedArtifactAuthority.ts',
   'server/core/http/browserSessionCookie.ts',
+  'server/core/http/authenticatedPrincipalScope.ts',
   'server/core/localExecution/GarmentMeshWarpExecutionContract.ts',
   'server/core/localExecution/GarmentMeshWarpManagedInputAuthority.ts',
   'server/core/localExecution/GarmentMeshWarpInputDeliveryService.ts',
