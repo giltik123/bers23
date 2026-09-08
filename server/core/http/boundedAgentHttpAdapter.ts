@@ -14,16 +14,22 @@ type AgentPort = Pick<BoundedAgentDeterministicWorkflowService, 'start' | 'resum
 type AgentAuth = Readonly<{
   verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
 }>;
+type AgentScope = Readonly<{ tenantId: string; userId: string; projectId: string }>;
+type AgentTerminalPreview = Readonly<{
+  mint: (scope: AgentScope, artifactId: string) => string | Promise<string>;
+}>;
 
 /**
  * Narrow authenticated transport for the fixed deterministic Agent v1.
  *
  * The route does not expose step/capability/provider/model selection. The only
  * ticket identity accepted from the browser is nested inside the result for the
- * exact outstanding Core-issued nextAction.
+ * exact outstanding Core-issued nextAction. Terminal preview delivery is minted
+ * only after durable SUCCESS and is never stored as workflow authority.
  */
 export function createBoundedAgentHttpAdapter(input: Readonly<{
   workflow: AgentPort;
+  terminalPreview: AgentTerminalPreview;
   auth: AgentAuth;
   config: CoreServerConfig;
 }>) {
@@ -44,15 +50,16 @@ export function createBoundedAgentHttpAdapter(input: Readonly<{
         requireJson(request);
         const body = await readObject(request, input.config.bodyLimitBytes);
         assertOnlyFields(body, START_FIELDS);
+        const projectId = requiredString(body.projectId, 'projectId');
         const view = await input.workflow.start(Object.freeze({
           clientRequestId: string(body.clientRequestId),
-          projectId: string(body.projectId),
+          projectId,
           sourceArtifactId: string(body.sourceArtifactId),
           mode: string(body.mode) as never,
           width: body.width as number,
           height: body.height as number,
         }), auth);
-        send(response, view.state === 'SUCCESS' ? 200 : 202, publicView(view)); return true;
+        send(response, view.state === 'SUCCESS' ? 200 : 202, await publicView(view, scoped(auth, projectId), input.terminalPreview)); return true;
       }
 
       const executionMatch = url.pathname.match(/^\/api\/core\/agent\/bounded-deterministic\/([^/]+)$/);
@@ -60,7 +67,7 @@ export function createBoundedAgentHttpAdapter(input: Readonly<{
         assertOnlyQueryFields(url, RESUME_QUERY_FIELDS);
         const projectId = requireProjectId(url);
         const view = await input.workflow.resume(decodeURIComponent(executionMatch[1]), projectId, auth);
-        send(response, 200, publicView(view)); return true;
+        send(response, 200, await publicView(view, scoped(auth, projectId), input.terminalPreview)); return true;
       }
 
       const resultMatch = url.pathname.match(/^\/api\/core\/agent\/bounded-deterministic\/([^/]+)\/result$/);
@@ -71,7 +78,7 @@ export function createBoundedAgentHttpAdapter(input: Readonly<{
         const projectId = requiredString(body.projectId, 'projectId');
         if (!body.result || typeof body.result !== 'object' || Array.isArray(body.result)) throw httpError(400, 'invalid_agent_result', 'result must be an object');
         const view = await input.workflow.submitLocalResult(decodeURIComponent(resultMatch[1]), projectId, auth, body.result);
-        send(response, view.state === 'SUCCESS' ? 200 : 202, publicView(view)); return true;
+        send(response, view.state === 'SUCCESS' ? 200 : 202, await publicView(view, scoped(auth, projectId), input.terminalPreview)); return true;
       }
 
       const retryMatch = url.pathname.match(/^\/api\/core\/agent\/bounded-deterministic\/([^/]+)\/retry$/);
@@ -79,8 +86,9 @@ export function createBoundedAgentHttpAdapter(input: Readonly<{
         requireJson(request);
         const body = await readObject(request, input.config.bodyLimitBytes);
         assertOnlyFields(body, PROJECT_ONLY_FIELDS);
-        const view = await input.workflow.retry(decodeURIComponent(retryMatch[1]), requiredString(body.projectId, 'projectId'), auth);
-        send(response, view.state === 'SUCCESS' ? 200 : 202, publicView(view)); return true;
+        const projectId = requiredString(body.projectId, 'projectId');
+        const view = await input.workflow.retry(decodeURIComponent(retryMatch[1]), projectId, auth);
+        send(response, view.state === 'SUCCESS' ? 200 : 202, await publicView(view, scoped(auth, projectId), input.terminalPreview)); return true;
       }
 
       const cancelMatch = url.pathname.match(/^\/api\/core\/agent\/bounded-deterministic\/([^/]+)\/cancel$/);
@@ -88,8 +96,9 @@ export function createBoundedAgentHttpAdapter(input: Readonly<{
         requireJson(request);
         const body = await readObject(request, input.config.bodyLimitBytes);
         assertOnlyFields(body, PROJECT_ONLY_FIELDS);
-        const view = await input.workflow.cancel(decodeURIComponent(cancelMatch[1]), requiredString(body.projectId, 'projectId'), auth);
-        send(response, 200, publicView(view)); return true;
+        const projectId = requiredString(body.projectId, 'projectId');
+        const view = await input.workflow.cancel(decodeURIComponent(cancelMatch[1]), projectId, auth);
+        send(response, 200, await publicView(view, scoped(auth, projectId), input.terminalPreview)); return true;
       }
 
       throw httpError(404, 'not_found', 'Route not found');
@@ -106,7 +115,13 @@ export function createBoundedAgentHttpAdapter(input: Readonly<{
   };
 }
 
-function publicView(view: BoundedAgentWorkflowView) {
+async function publicView(view: BoundedAgentWorkflowView, scope: AgentScope, terminalPreview: AgentTerminalPreview) {
+  let terminalImageUrl: string | undefined;
+  if (view.state === 'SUCCESS') {
+    if (!view.terminalArtifactId) throw new Error('Bounded Agent SUCCESS is missing its terminal Artifact');
+    terminalImageUrl = await terminalPreview.mint(scope, view.terminalArtifactId);
+    if (typeof terminalImageUrl !== 'string' || !terminalImageUrl.startsWith('/api/core/artifacts/results/')) throw new Error('Bounded Agent terminal preview delivery contract is invalid');
+  }
   return Object.freeze({
     executionId: view.executionId,
     revision: view.revision,
@@ -115,12 +130,16 @@ function publicView(view: BoundedAgentWorkflowView) {
     retryAvailable: view.retryAvailable,
     attemptStatus: view.attemptStatus,
     terminalArtifactId: view.terminalArtifactId,
+    terminalImageUrl,
     failureCode: view.failureCode,
   });
 }
 
 function authenticatedScope(principal: AuthenticatedPrincipal): Readonly<{ tenantId: string; userId: string }> {
   return Object.freeze({ tenantId: principal.tenantId, userId: principal.userId });
+}
+function scoped(auth: Readonly<{ tenantId: string; userId: string }>, projectId: string): AgentScope {
+  return Object.freeze({ tenantId: auth.tenantId, userId: auth.userId, projectId });
 }
 function assertOnlyFields(body: Readonly<Record<string, unknown>>, accepted: ReadonlySet<string>): void {
   for (const field of Object.keys(body)) if (!accepted.has(field)) throw httpError(400, 'client_agent_authority_forbidden', `${field} is not admitted by bounded Agent v1`);
