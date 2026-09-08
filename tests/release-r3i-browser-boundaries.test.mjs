@@ -44,6 +44,13 @@ test('R3i browser uses built SPA/Core, system Chrome and visible Fashion/Outfit 
   assert.match(harness, /path\.resolve\('dist-server\/server\.mjs'\)/);
   assert.match(harness, /NODE_ENV: 'production'/);
   assert.match(harness, /PostgresAuthStore/);
+  assert.match(harness, /const frontendPort = 4187;/);
+  assert.match(harness, /const corePort = 4188;/);
+  assert.match(harness, /const providerPort = 4189;/);
+  assert.match(harness, /process\.env\.VITE_CORE_API_URL/);
+  assert.match(harness, /`\$\{coreOrigin\}\/api\/core`/);
+  assert.match(harness, /R3i harness Core origin must exactly match the Core API origin baked into the release SPA/);
+  assert.match(harness, /frontendLogs/);
   assert.match(harness, /chromium\.launch\(\{ channel: 'chrome', headless: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Fashion', exact: true \}\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Outfits', exact: true \}\)/);
