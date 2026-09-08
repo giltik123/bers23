@@ -11,6 +11,7 @@ on:
       - 'src/api/managedGarmentClient.js'
       - 'src/api/managedWardrobeClient.js'
       - 'src/api/managedGarmentCollectionClient.js'
+      - 'src/api/managedOutfitClient.js'
       - 'src/application/createCrop.ts'
       - 'src/application/createResize.ts'
       - 'src/application/createOrthogonalTransform.ts'
@@ -29,6 +30,7 @@ on:
       - 'src/components/editor/ResultCompare.jsx'
       - 'src/components/editor/VersionsPanel.jsx'
       - 'src/components/editor/fashion/**'
+      - 'src/components/editor/outfits/**'
       - 'src/hooks/useProject.js'
       - 'src/lib/AuthContext.jsx'
       - 'src/lib/projectService.js'
@@ -61,6 +63,7 @@ on:
       - 'scripts/test-release-r3f-browser-e2e.mjs'
       - 'scripts/test-release-r3g-browser-e2e.mjs'
       - 'scripts/test-release-r3h-browser-e2e.mjs'
+      - 'scripts/test-release-r3i-browser-e2e.mjs'
       - 'tests/editor-zero-object-navigation.test.mjs'
       - 'tests/editor-orthogonal-transform-ui.test.mjs'
       - 'tests/editor-final-source-conflict-recovery.test.mjs'
@@ -77,6 +80,7 @@ on:
       - 'tests/release-r3f-browser-boundaries.test.mjs'
       - 'tests/release-r3g-browser-boundaries.test.mjs'
       - 'tests/release-r3h-browser-boundaries.test.mjs'
+      - 'tests/release-r3i-browser-boundaries.test.mjs'
       - 'tests/release-r3b-production-orthogonal-prepare.test.ts'
       - 'tests/frontend-security-deployment-contract.test.mjs'
       - '.github/workflows/release-r3a-browser-e2e.yml'
@@ -163,6 +167,7 @@ jobs:
           node --test tests/release-r3f-browser-boundaries.test.mjs
           node --test tests/release-r3g-browser-boundaries.test.mjs
           node --test tests/release-r3h-browser-boundaries.test.mjs
+          node --test tests/release-r3i-browser-boundaries.test.mjs
       - name: Prove runtime-compatible frontend security and preserve worker lockdown
         run: |
           mkdir -p .test-cache/release-r3
@@ -397,6 +402,40 @@ jobs:
           grep -q "PNG_RGBA8_LOSSLESS" "$script"
           grep -q "POSTGRES_BYTEA_V1" "$script"
           grep -q "R3H_BROWSER_MANAGED_GARMENT_COLLECTION_ACCEPTED" "$script"
+          grep -q "providerCalls, 0" "$script"
+          grep -q "diagnostics.localExecutionRequests, \[\]" "$script"
+          grep -q "diagnostics.creativeRequests, \[\]" "$script"
+          grep -q "diagnostics.financialRequests, \[\]" "$script"
+          grep -q "diagnostics.maskRequests, \[\]" "$script"
+          grep -q "diagnostics.genericAssetRequests, \[\]" "$script"
+          grep -q "diagnostics.projectMutations, \[\]" "$script"
+          grep -q "diagnostics.externalBrowserRequests, \[\]" "$script"
+          ! grep -E -q 'page\.route|browserContext\.route|context\.route|route\.abort|route\.fulfill|route\.continue' "$script"
+          ! grep -E -q 'financialAccount|financialTrial|credit_grants|credit_wallets' "$script"
+      - name: Bundle focused R3i Outfit stable-identity reorder harness without replacing production stores
+        run: |
+          npx esbuild scripts/test-release-r3i-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3/test-release-r3i-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove R3i Outfit stable-identity reorder journey
+        run: node .test-cache/release-r3/test-release-r3i-browser-e2e.mjs
+      - name: Prove R3i reorder stays revision-bound with stable canonical identities and no fallback
+        run: |
+          set -euo pipefail
+          script=scripts/test-release-r3i-browser-e2e.mjs
+          grep -q "dist-server/server.mjs" "$script"
+          grep -q "path.resolve('dist')" "$script"
+          grep -q "NODE_ENV: 'production'" "$script"
+          grep -q "PostgresAuthStore" "$script"
+          grep -q "Canonical Outfit builder" "$script"
+          grep -q "x-expected-outfit-revision" "$script"
+          grep -q "entry_ids" "$script"
+          grep -q "canonical_outfits" "$script"
+          grep -q "canonical_outfit_entries" "$script"
+          grep -q "stableEntryIds" "$script"
+          grep -q "stableGarmentIds" "$script"
+          grep -q "R3I_BROWSER_OUTFIT_REORDER_ACCEPTED" "$script"
           grep -q "providerCalls, 0" "$script"
           grep -q "diagnostics.localExecutionRequests, \[\]" "$script"
           grep -q "diagnostics.creativeRequests, \[\]" "$script"
