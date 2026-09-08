@@ -41,6 +41,7 @@ import { createProductionLocalCompositeContinuation } from '../workflow/createPr
 import { createProductionLocalCompositeStartAdmission } from '../workflow/ProductionLocalCompositeStartAdmission.ts';
 import { PostgresWorkflowContinuationStore } from '../workflow/PostgresWorkflowContinuationStore.ts';
 import { ExecutionRunBoundLocalCompositeContinuationService } from '../workflow/ExecutionRunBoundLocalCompositeContinuationService.ts';
+import { WorkflowBoundLocalExecutionTicketV2Issuer } from '../workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts';
 
 const LOCAL_EXECUTION_TICKET_TTL_MS = 5 * 60_000;
 
@@ -100,6 +101,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       modelsByCapability: localModelsByCapability,
       executorsByCapability: localExecutorsByCapability,
     });
+    const workflowBoundLocalExecutionV2 = new WorkflowBoundLocalExecutionTicketV2Issuer(localExecution, localExecutionAdmission);
     const localUploads = new PostgresLocalExecutionUploadStore(transactions.pool);
     const canonical = {
       runtime,
@@ -114,7 +116,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       recovery: { decide: () => 'MARK_UNKNOWN' as const },
       verifier: productionFashionWorkflowVerifier,
       localExecution,
-      localExecutionV2: localExecution,
+      localExecutionV2: workflowBoundLocalExecutionV2,
       now,
       id: randomUUID,
     };
