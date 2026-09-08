@@ -1,3 +1,4 @@
+import { canonicalCoreResourcePath } from '../../api/coreResourceUrl.js';
 import {
   BODY_ANCHOR_NAMES,
   deterministicTryOnSupportedCategory,
@@ -10,14 +11,14 @@ const SOURCE_ARTIFACT_MAX_LENGTH = 512;
 const SOURCE_KEYS = Object.freeze(['category', 'imageUrl', 'projectId', 'sourceArtifactId']);
 const BODY_ANCHOR_NAME_SET = new Set(BODY_ANCHOR_NAMES);
 
-export function normalizeManualBodyAnchorEditorSource(value) {
+export function normalizeManualBodyAnchorEditorSource(value, coreApiRoot) {
   if (!isPlainObject(value)) throw new TypeError('Manual body-anchor editor source must be a plain object');
   requireExactKeys(value, SOURCE_KEYS, 'Manual body-anchor editor source');
 
   const projectId = uuid(value.projectId, 'projectId');
   const sourceArtifactId = canonicalSourceArtifactId(value.sourceArtifactId);
   const category = canonicalCategory(value.category);
-  const imageUrl = safeDisplayImageUrl(value.imageUrl);
+  const imageUrl = safeDisplayImageUrl(value.imageUrl, coreApiRoot);
   const requiredAnchors = requiredBodyAnchorsForCategory(category);
   const supported = deterministicTryOnSupportedCategory(category);
 
@@ -118,13 +119,14 @@ function canonicalSourceArtifactId(value) {
   return normalized;
 }
 
-function safeDisplayImageUrl(value) {
+function safeDisplayImageUrl(value, coreApiRoot) {
   if (typeof value !== 'string') throw new TypeError('Project image URL must be a string');
   const normalized = value.trim();
   if (!normalized) throw new TypeError('Project image URL is unavailable');
   const sameOrigin = normalized.startsWith('/') && !normalized.startsWith('//');
   const secureRemote = normalized.startsWith('https://');
-  if (!sameOrigin && !secureRemote) throw new TypeError('Project image URL is outside the accepted display contract');
+  const configuredCore = canonicalCoreResourcePath(normalized, coreApiRoot) !== null;
+  if (!sameOrigin && !secureRemote && !configuredCore) throw new TypeError('Project image URL is outside the accepted display contract');
   return normalized;
 }
 
