@@ -60,7 +60,10 @@ function final(value, overrides = {}) {
   });
 }
 
-function runtime(value, { finalization = { status: 'SUCCESS' }, stored = final(value), durableTicket = ticket(value) } = {}) {
+function runtime(value, options = {}) {
+  const finalization = Object.hasOwn(options, 'finalization') ? options.finalization : { status: 'SUCCESS' };
+  const stored = Object.hasOwn(options, 'stored') ? options.stored : final(value);
+  const durableTicket = Object.hasOwn(options, 'durableTicket') ? options.durableTicket : ticket(value);
   const calls = [];
   const authority = new DeterministicWorkflowStepFinalRecoveryAuthority({
     admission: Object.freeze({
