@@ -155,7 +155,7 @@ export function normalizeWorkflowPlanParameters(value: unknown): WorkflowPlanPar
   if (entries.length > 16) throw new Error('plan.parameters exceeds the 16-field workflow limit');
   const normalized = entries.map(([rawKey, rawValue]) => {
     const key = rawKey.normalize('NFKC').trim();
-    if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key)) throw new Error(`plan.parameters key is invalid: ${rawKey}`);
+    if (key !== rawKey || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key)) throw new Error(`plan.parameters key is invalid: ${rawKey}`);
     let parameter: WorkflowPlanParameterValue;
     if (typeof rawValue === 'string') {
       parameter = rawValue.normalize('NFKC').trim();
@@ -260,8 +260,8 @@ function canonicalPlanParameters(value: WorkflowPlanParameters | undefined): str
 function normalizeOptionalArtifactIds(values: readonly string[] | undefined, field: string): readonly string[] {
   if (values === undefined) return Object.freeze([]);
   if (!Array.isArray(values)) throw new Error(`${field} must be an array`);
-  const normalized = values.map((value, index) => requireToken(value, `${field}[${index}]`)).sort((a, b) => a.localeCompare(b));
-  if (new Set(normalized).size !== normalized.length) throw new Error(`${field} must contain unique canonical Artifact identities`);
+  const normalized = values.map((value, index) => requireToken(value, `${field}[${index}]`));
+  if (new Set(normalized).size !== normalized.length) throw new Error(`${field} entries must be unique`);
   return Object.freeze(normalized);
 }
 
@@ -269,13 +269,11 @@ function requireToken(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} is required`);
   return value.trim();
 }
-
 function requireSha256(value: unknown, field: string): string {
   const normalized = requireToken(value, field).toLowerCase();
   if (!/^[a-f0-9]{64}$/.test(normalized)) throw new Error(`${field} must be a SHA-256 digest`);
   return normalized;
 }
-
 function requireTimestamp(value: unknown, field: string): string {
   const normalized = requireToken(value, field);
   const milliseconds = Date.parse(normalized);
