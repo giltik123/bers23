@@ -159,12 +159,37 @@ test('Asset Library indexes canonical Project artifacts without generic asset CR
   ]) assert.equal(source.includes(forbidden), false, forbidden);
 });
 
-test('Agent image execution stays gated until canonical composite execution exists', async () => {
-  const panel = await readFile('src/components/editor/agent/AgentPanel.jsx', 'utf8');
-  const queue = await readFile('src/lib/agent/executionQueue.js', 'utf8');
-  assert.match(panel, /Canonical Agent execution is not enabled yet/);
-  assert.match(panel, /Use the Prompt tab for canonical single edits/);
+test('bounded deterministic Agent uses canonical Core actions while arbitrary legacy Agent execution stays gated', async () => {
+  const [editor, panel, hook, runner, queue] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/editor/agent/AgentPanel.jsx', 'utf8'),
+    readFile('src/components/editor/agent/useBoundedAgentEditor.js', 'utf8'),
+    readFile('src/application/agent/createBoundedAgentRunner.ts', 'utf8'),
+    readFile('src/lib/agent/executionQueue.js', 'utf8'),
+  ]);
+  assert.match(panel, /AI Agent · Bounded deterministic v1/);
+  assert.match(panel, /Core owns sequencing, tickets, lineage and recovery/);
+  assert.match(panel, /No provider selection, paid cloud calls, generic tools or browser-owned step reordering/);
   for (const forbidden of ['aiAgent', 'executionQueue', 'taskHistory', 'onCommit', 'onRollback']) assert.equal(panel.includes(forbidden), false, forbidden);
+
+  assert.match(editor, /useBoundedAgentEditor\(/);
+  assert.match(editor, /state=\{boundedAgent\.state\}/);
+  assert.match(editor, /onStart=\{boundedAgent\.start\}/);
+  assert.match(editor, /onRetry=\{boundedAgent\.retry\}/);
+  assert.match(editor, /onCancel=\{boundedAgent\.cancel\}/);
+  assert.match(editor, /kind === 'BOUNDED_AGENT'/);
+  assert.match(editor, /await pushEdit\(result\.finalArtifactId, used\)/);
+  assert.doesNotMatch(editor, /executionQueue|agent[\s\S]{0,200}(acceptFinal|pushEdit)/i);
+
+  assert.match(hook, /createBoundedAgentRunner/);
+  assert.match(hook, /terminalImageUrl/);
+  assert.match(hook, /resolveCoreResourceUrl/);
+  assert.match(hook, /sourceArtifactId !== project\.current_image_artifact_id/);
+  assert.match(runner, /action\.operation !== 'ORTHOGONAL_TRANSFORM' && action\.operation !== 'RESIZE'/);
+  assert.match(runner, /ticket\.cost\?\.providerCalls !== 0 \|\| ticket\.cost\?\.paidCloudCredits !== 0/);
+  assert.match(runner, /Bounded Agent must not prepare a second orthogonal ticket/);
+  assert.match(runner, /Bounded Agent must not finalize through standalone Resize transport/);
+
   assert.match(queue, /AGENT_EXECUTION_NOT_WIRED/);
   assert.match(queue, /async run\(\)/);
   for (const forbidden of ['editingEngine', 'recipeEngine', 'aiPlanner', 'taskHistory', 'result.image_url']) assert.equal(queue.includes(forbidden), false, forbidden);
@@ -224,7 +249,7 @@ test('zero-object projects expose canonical whole-image Prompt and shared naviga
   assert.match(editor, /Object detection is optional\. You can edit the whole image now or detect\/select an object first\./);
   assert.match(editor, /<Button onClick=\{detect\} disabled=\{detecting \|\| editorBusy \|\| committing\}/);
   assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
-  assert.match(editor, /onChange=\{\(next\) => \{\s*if \(!tryOnActive\) setEditTab\(next\);\s*\}\}/);
+  assert.match(editor, /onChange=\{\(next\) => \{\s*if \(!tryOnActive && !agentActive\) setEditTab\(next\);\s*\}\}/);
   assert.match(editor, /allowWholeImage=\{objects\.length === 0\}/);
   assert.match(editor, /applying=\{editorBusy \|\| detecting \|\| committing\}/);
   assert.doesNotMatch(editor, /\) : objects\.length === 0 \? \(/);
