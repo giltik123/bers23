@@ -62,11 +62,15 @@ test('R3h browser is the product mutation actor while PostgreSQL remains a read-
   assert.doesNotMatch(harness, /InMemory|FakeProject|MockProject|FakeGarment|MockGarment|FakeCollection|MockCollection/);
 });
 
-test('R3h binds browser bytes and revisions to durable Garment view metadata and Collection membership', async () => {
+test('R3h binds selected browser image pixels and revisions to durable Garment view metadata and Collection membership', async () => {
   const harness = await readFile(HARNESS, 'utf8');
 
-  assert.match(harness, /postDataBuffer\(\)/);
-  assert.match(harness, /browser must send selected image bytes directly to Managed Garment authority/);
+  assert.doesNotMatch(harness, /\.postDataBuffer\(\)/, 'Playwright binary request-body introspection must not be treated as the byte oracle');
+  assert.match(harness, /garmentSourcePixelSha256/);
+  assert.match(harness, /storedPixelSha256/);
+  assert.match(harness, /canonical Managed Garment bytes must preserve the exact decoded RGBA pixels selected in the browser/);
+  assert.match(harness, /Managed Garment response hash must bind to durable PostgreSQL bytes/);
+  assert.match(harness, /PostgreSQL content_sha256 must identify the exact canonical image_bytes/);
   assert.match(harness, /headerValue\('x-expected-garment-revision'\), '1'/);
   assert.match(harness, /headerValue\('x-expected-garment-revision'\), '2'/);
   assert.match(harness, /headerValue\('x-expected-collection-revision'\), '1'/);
@@ -79,6 +83,7 @@ test('R3h binds browser bytes and revisions to durable Garment view metadata and
   assert.match(harness, /canonical_garment_collections/);
   assert.match(harness, /canonical_garment_collection_members/);
   assert.match(harness, /createHash\('sha256'\)\.update\(durable\.view\.image_bytes\)/);
+  assert.match(harness, /ensureAlpha\(\)\.raw\(\)\.toBuffer\(\{ resolveWithObject: true \}\)/);
   assert.match(harness, /Number\(durable\.garment\.revision\), 3/);
   assert.match(harness, /Number\(durable\.collection\.revision\), 2/);
   assert.match(harness, /Managed Wardrobe mutations must not mutate canonical Project state or objects/);
