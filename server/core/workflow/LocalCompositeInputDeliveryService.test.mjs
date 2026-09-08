@@ -180,7 +180,6 @@ test('delivery rejects a durable binding that no longer matches ticket nonce or 
 test('delivery uses the injected clock and rejects an expired outstanding ticket before artifact reads', async () => {
   const ticket = segmentTicket({ expiresAt: now - 1 });
   const { service, calls } = harness(ticket, snapshot(ticket));
-  await assert.rejects(service.deliver(executionId, scope), Object.assign(new Error(), { code: undefined }));
   try {
     await service.deliver(executionId, scope);
     assert.fail('expired ticket unexpectedly delivered bytes');
@@ -188,6 +187,8 @@ test('delivery uses the injected clock and rejects an expired outstanding ticket
     assert.equal(error.code, 'local_ticket_expired');
     assert.equal(error.status, 410);
   }
+  assert.equal(calls.get, 1);
+  assert.equal(calls.getV2, 0);
   assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
 });
 
