@@ -49,10 +49,10 @@ jobs:
       - run: npm ci
       - name: Typecheck continuation authority
         run: npm run server:typecheck
-      - name: Run fail-closed continuation and deterministic recovery unit tests
+      - name: Run fail-closed continuation, workflow-ticket and deterministic recovery unit tests
         run: |
+          node --experimental-strip-types --test server/core/workflow/WorkflowContinuationStore.planParameters.test.mjs
           node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.test.mjs
-          node --experimental-strip-types --test server/core/workflow/WorkflowContinuationPlanParameters.test.mjs
           node --experimental-strip-types --test server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.test.mjs
           node --experimental-strip-types --test server/core/workflow/WorkflowLocalExecutionAttemptRunProjection.test.mjs
           node --experimental-strip-types --test server/core/localExecution/DeterministicWorkflowStepFinalRecoveryAuthority.test.mjs
@@ -73,10 +73,10 @@ jobs:
             ]) await pool.query(await readFile(path, 'utf8'));
           } finally { await pool.end(); }
           NODE
-      - name: Prove PostgreSQL restart, concurrency and replay semantics
+      - name: Prove PostgreSQL restart, immutable plan parameters, concurrency and replay semantics
         run: |
           node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.integration.test.mjs
-          node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationPlanParameters.integration.test.mjs
+          node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.planParameters.integration.test.mjs
       - name: Preserve composite and capability fail-closed boundaries
         run: |
           npm run test:creative-planning-v2
