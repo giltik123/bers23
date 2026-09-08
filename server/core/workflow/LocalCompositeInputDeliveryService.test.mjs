@@ -14,6 +14,7 @@ const sourceHash = 'a'.repeat(64);
 const maskHash = 'b'.repeat(64);
 const expiresAt = 2_000_000_000_000;
 const now = 1_900_000_000_000;
+const zeroCost = Object.freeze({ paidCloudCredits: 0, providerCalls: 0 });
 const sourcePixels = new Uint8ClampedArray([
   10, 20, 30, 255, 40, 50, 60, 255,
   70, 80, 90, 255, 100, 110, 120, 255,
@@ -42,6 +43,7 @@ function segmentTicket(overrides = {}) {
     inputs: Object.freeze([{ artifactId: sourceId, kind: 'image', role: 'ORIGINAL', sha256: sourceHash }]),
     expectedOutputs: Object.freeze([{ kind: 'mask', role: 'MASK', count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: 2, height: 2 }]),
     allowedModels: Object.freeze([{ modelId: 'mobilesam-vit-t', revision: 'test', weightsSha256: 'c'.repeat(64), runtime: 'ONNX_RUNTIME_WEB', accelerator: 'WASM', deterministic: true }]),
+    cost: zeroCost,
     policy: 'LOCAL_ONLY', idempotencyKey: 'segment-key', nonce: 'segment-nonce', expiresAt,
     ...overrides,
   });
@@ -62,18 +64,22 @@ function backgroundTicket(overrides = {}) {
     ]),
     expectedOutputs: Object.freeze([{ kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: Object.freeze(['image/png']), width: 2, height: 2 }]),
     allowedExecutors: Object.freeze([{ kind: 'DETERMINISTIC_TOOL', toolId: 'background-isolation', version: '1', deterministic: true }]),
+    cost: zeroCost,
     policy: 'LOCAL_ONLY', idempotencyKey: 'background-key', nonce: 'background-nonce', expiresAt,
     ...overrides,
   });
 }
 
 function snapshot(ticket, overrides = {}) {
+  const completedSteps = ticket.version === '2'
+    ? Object.freeze([{ stepId: SEGMENT, ticketId: 'segment-ticket', artifactIds: Object.freeze([maskId]) }])
+    : Object.freeze([]);
   return Object.freeze({
     executionId, clientRequestId: 'agent-request', scope,
     plan: Object.freeze({ planId: 'local-background-isolation-composite', planRevision: '1', planDigest: 'd'.repeat(64) }),
     inputArtifacts: Object.freeze([{ artifactId: sourceId, kind: 'image', role: 'ORIGINAL', sha256: sourceHash, parentArtifactIds: Object.freeze([]) }]),
     state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: ticket.stepId, outstandingLocal: binding(ticket),
-    completedSteps: Object.freeze([]), revision: 2,
+    completedSteps, revision: 2,
     createdAt: '2026-09-08T00:00:00.000Z', updatedAt: '2026-09-08T00:00:00.000Z',
     ...overrides,
   });
@@ -122,7 +128,7 @@ function harness(ticket, snapshotValue = snapshot(ticket)) {
   return { service, calls };
 }
 
-test('durable composite SEGMENT input is derived from the outstanding workflow ticket, not browser ticket authority', async () => {
+test('durable composite SEGMENT input is derived from immutable workflow root + outstanding ticket', async () => {
   const ticket = segmentTicket();
   const { service, calls } = harness(ticket);
   const delivered = await service.deliver(executionId, scope);
@@ -138,7 +144,7 @@ test('durable composite SEGMENT input is derived from the outstanding workflow t
   assert.deepEqual(calls.hydrate, [[sourceId, []]]);
 });
 
-test('durable composite BACKGROUND_ISOLATION input rehydrates exact IMAGE + MASK from the Core-selected outstanding ticket', async () => {
+test('durable composite BACKGROUND_ISOLATION input is exact immutable root + completed SEGMENT MASK lineage', async () => {
   const ticket = backgroundTicket();
   const { service, calls } = harness(ticket);
   const delivered = await service.deliver(executionId, scope);
@@ -154,10 +160,48 @@ test('durable composite BACKGROUND_ISOLATION input rehydrates exact IMAGE + MASK
   assert.deepEqual(calls.hydrate, [[sourceId, [maskId]]]);
 });
 
-test('delivery rejects forged capability before exposing canonical bytes', async () => {
+test('delivery rejects forged standalone capability before exposing canonical bytes', async () => {
   const ticket = segmentTicket({ operation: Object.freeze({ id: SEGMENT, version: '1', type: 'segment', capability: 'local:mobilesam:segment:v1', parameters: Object.freeze({}) }) });
   const { service, calls } = harness(ticket);
-  await assert.rejects(service.deliver(executionId, scope), /composite segmentation contract/);
+  await assert.rejects(service.deliver(executionId, scope), /zero-cloud composite segmentation contract/);
+  assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
+});
+
+test('delivery rejects any ticket carrying provider or paid-cloud cost authority before artifact reads', async () => {
+  for (const cost of [{ paidCloudCredits: 1, providerCalls: 0 }, { paidCloudCredits: 0, providerCalls: 1 }]) {
+    const ticket = segmentTicket({ cost: Object.freeze(cost) });
+    const { service, calls } = harness(ticket);
+    await assert.rejects(service.deliver(executionId, scope), /zero-cloud composite segmentation contract/);
+    assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
+  }
+});
+
+test('SEGMENT ticket cannot substitute a different source than immutable continuation root', async () => {
+  const ticket = segmentTicket({
+    inputs: Object.freeze([{ artifactId: 'other-source', kind: 'image', role: 'ORIGINAL', sha256: sourceHash }]),
+  });
+  const { service, calls } = harness(ticket);
+  await assert.rejects(service.deliver(executionId, scope), /immutable workflow root/);
+  assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
+});
+
+test('BACKGROUND ticket cannot substitute a mask that is not the completed SEGMENT Artifact', async () => {
+  const ticket = backgroundTicket({
+    inputs: Object.freeze([
+      { artifactId: sourceId, kind: 'image', role: 'ORIGINAL', sha256: sourceHash },
+      { artifactId: 'other-mask', kind: 'mask', role: 'MASK', sha256: maskHash },
+    ]),
+  });
+  const { service, calls } = harness(ticket);
+  await assert.rejects(service.deliver(executionId, scope), /immutable root \+ completed SEGMENT MASK lineage/);
+  assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
+});
+
+test('BACKGROUND recovery requires exactly one durable completed SEGMENT Artifact before ticket inputs are exposed', async () => {
+  const ticket = backgroundTicket();
+  const invalid = snapshot(ticket, { completedSteps: Object.freeze([]) });
+  const { service, calls } = harness(ticket, invalid);
+  await assert.rejects(service.deliver(executionId, scope), /exactly one completed SEGMENT MASK Artifact/);
   assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
 });
 
