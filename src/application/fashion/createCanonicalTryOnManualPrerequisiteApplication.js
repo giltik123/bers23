@@ -1,3 +1,4 @@
+import { canonicalCoreResourcePath } from '../../api/coreResourceUrl.js';
 import {
   buildManualBodyAnchorAcquisitionIntent,
   buildManualParametricAdmissionIntent,
@@ -43,6 +44,7 @@ export function createCanonicalTryOnManualPrerequisiteApplication({
   wardrobe,
   fashion,
   createIdempotencyKey = () => globalThis.crypto.randomUUID(),
+  coreApiRoot,
 }) {
   requireMethod(garments, 'get', 'Managed Garment client');
   requireMethod(wardrobe, 'get', 'Managed Wardrobe client');
@@ -55,7 +57,7 @@ export function createCanonicalTryOnManualPrerequisiteApplication({
   const loadGarmentSource = async (garmentId) => {
     const id = uuid(garmentId, 'garmentId');
     const [image, metadata] = await Promise.all([garments.get(id), wardrobe.get(id)]);
-    return safeGarmentSource(image, metadata, id);
+    return safeGarmentSource(image, metadata, id, coreApiRoot);
   };
 
   return Object.freeze({
@@ -114,7 +116,7 @@ function bodyAnchorSaveFingerprint(projectId, intent) {
   ]);
 }
 
-function safeGarmentSource(image, metadata, expectedId) {
+function safeGarmentSource(image, metadata, expectedId, coreApiRoot) {
   requirePlainObject(image, 'Managed Garment snapshot');
   requirePlainObject(metadata, 'Managed Wardrobe snapshot');
   if (image.id !== expectedId || metadata.garmentId !== expectedId) {
@@ -134,7 +136,8 @@ function safeGarmentSource(image, metadata, expectedId) {
   const primary = image.views.filter((view) => view?.id === image.primaryViewId);
   if (primary.length !== 1) throw new Error('Managed Garment primary view is ambiguous or unavailable');
   const view = primary[0];
-  if (typeof view.deliveryUrl !== 'string' || !GARMENT_DELIVERY.test(view.deliveryUrl)) {
+  const deliveryPath = canonicalCoreResourcePath(view.deliveryUrl, coreApiRoot);
+  if (!deliveryPath || !GARMENT_DELIVERY.test(deliveryPath)) {
     throw new Error('Managed Garment primary-view delivery is outside the accepted capability contract');
   }
   if (!canonicalTimestamp(view.deliveryExpiresAt)) {
