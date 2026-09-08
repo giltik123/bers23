@@ -87,6 +87,11 @@ jobs:
         run: |
           node --test tests/release-r3k-browser-boundaries.test.mjs
           mkdir -p .test-cache/release-r3k/unit
+          npx esbuild server/core/artifacts/canonicalArtifactHydrator.role.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/release-r3k/unit/artifact-hydrator-role.test.mjs \
+            --external:node:* --external:pg --external:sharp
+          node --test .test-cache/release-r3k/unit/artifact-hydrator-role.test.mjs
           npx esbuild tests/bounded-agent-browser-runner.test.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/release-r3k/unit/browser-runner.test.mjs \
