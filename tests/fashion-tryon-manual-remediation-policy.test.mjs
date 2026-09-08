@@ -11,6 +11,7 @@ const OUTFIT_ID = 'bbbbbbbb-2222-4222-8222-222222222222';
 const ENTRY = 'cccccccc-3333-4333-8333-333333333333';
 const GARMENT = 'dddddddd-4444-4444-8444-444444444444';
 const SOURCE = 'current-source-artifact';
+const SPLIT_CORE = 'http://127.0.0.1:4188/api/core';
 
 function selection({ category = 'shirts', entryId = ENTRY, garmentId = GARMENT, extra = null } = {}) {
   const value = {
@@ -74,6 +75,25 @@ test('body-anchor required and ambiguous bind the editor to the exact current pr
     });
     assert.equal(state.contourRequest, null);
   }
+});
+
+test('split-origin Project display URL is accepted only for the configured Core origin', () => {
+  const absolute = 'http://127.0.0.1:4188/api/core/artifacts/results/current.token';
+  const state = canonicalTryOnManualRemediationPolicy({
+    selection: selection({ extra: { beforeUrl: absolute } }),
+    result: result('BODY_ANCHORS_REQUIRED'),
+    coreApiRoot: SPLIT_CORE,
+  });
+  assert.equal(state.bodyAnchorSource.imageUrl, absolute);
+
+  assert.throws(
+    () => canonicalTryOnManualRemediationPolicy({
+      selection: selection({ extra: { beforeUrl: 'http://127.0.0.1:4187/api/core/artifacts/results/current.token' } }),
+      result: result('BODY_ANCHORS_REQUIRED'),
+      coreApiRoot: SPLIT_CORE,
+    }),
+    /outside the accepted Editor display contract/,
+  );
 });
 
 test('non-manual failures never authorize browser evidence creation', () => {
