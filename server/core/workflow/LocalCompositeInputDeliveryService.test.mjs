@@ -13,6 +13,7 @@ const maskId = 'mask-artifact';
 const sourceHash = 'a'.repeat(64);
 const maskHash = 'b'.repeat(64);
 const expiresAt = 2_000_000_000_000;
+const now = 1_900_000_000_000;
 const sourcePixels = new Uint8ClampedArray([
   10, 20, 30, 255, 40, 50, 60, 255,
   70, 80, 90, 255, 100, 110, 120, 255,
@@ -93,10 +94,20 @@ function maskArtifact() {
   });
 }
 
+function sameScope(a, b) {
+  return a?.tenantId === b.tenantId && a?.userId === b.userId && a?.projectId === b.projectId;
+}
+
 function harness(ticket, snapshotValue = snapshot(ticket)) {
-  const calls = { get: 0, getV2: 0, owns: [], hydrate: [] };
+  const calls = { continuationScopes: [], get: 0, getV2: 0, owns: [], hydrate: [] };
   const service = new LocalCompositeInputDeliveryService({
-    continuations: Object.freeze({ async get(id, requestedScope) { assert.equal(id, executionId); assert.deepEqual(requestedScope, scope); return snapshotValue; } }),
+    continuations: Object.freeze({
+      async get(id, requestedScope) {
+        assert.equal(id, executionId);
+        calls.continuationScopes.push({ ...requestedScope });
+        return sameScope(requestedScope, scope) ? snapshotValue : undefined;
+      },
+    }),
     tickets: Object.freeze({
       async get(id) { calls.get += 1; return id === ticket.ticketId && ticket.version === '1' ? ticket : undefined; },
       async getV2(id) { calls.getV2 += 1; return id === ticket.ticketId && ticket.version === '2' ? ticket : undefined; },
@@ -106,7 +117,7 @@ function harness(ticket, snapshotValue = snapshot(ticket)) {
       calls.hydrate.push([source, [...masks]]); assert.deepEqual(requestedScope, scope);
       return masks.length ? Object.freeze([sourceArtifact(), maskArtifact()]) : Object.freeze([sourceArtifact()]);
     },
-    now: () => 1_900_000_000_000,
+    now: () => now,
   });
   return { service, calls };
 }
@@ -146,7 +157,7 @@ test('durable composite BACKGROUND_ISOLATION input rehydrates exact IMAGE + MASK
 test('delivery rejects forged capability before exposing canonical bytes', async () => {
   const ticket = segmentTicket({ operation: Object.freeze({ id: SEGMENT, version: '1', type: 'segment', capability: 'local:mobilesam:segment:v1', parameters: Object.freeze({}) }) });
   const { service, calls } = harness(ticket);
-  await assert.rejects(service.deliver(executionId, scope), Object.assign(/composite segmentation contract/, { code: undefined }));
+  await assert.rejects(service.deliver(executionId, scope), /composite segmentation contract/);
   assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
 });
 
@@ -158,10 +169,39 @@ test('delivery rejects terminal or non-outstanding workflow state and never fall
   assert.equal(calls.get, 0); assert.equal(calls.getV2, 0);
 });
 
-test('delivery rejects a durable binding that no longer matches ticket nonce or expiry', async () => {
+test('delivery rejects a durable binding that no longer matches ticket nonce or expiry binding before hydration', async () => {
   const ticket = segmentTicket();
   const mismatched = snapshot(ticket, { outstandingLocal: Object.freeze({ ...binding(ticket), nonce: 'different-nonce' }) });
   const { service, calls } = harness(ticket, mismatched);
   await assert.rejects(service.deliver(executionId, scope), /ticket binding no longer matches/);
+  assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
+});
+
+test('delivery uses the injected clock and rejects an expired outstanding ticket before artifact reads', async () => {
+  const ticket = segmentTicket({ expiresAt: now - 1 });
+  const { service, calls } = harness(ticket, snapshot(ticket));
+  await assert.rejects(service.deliver(executionId, scope), Object.assign(new Error(), { code: undefined }));
+  try {
+    await service.deliver(executionId, scope);
+    assert.fail('expired ticket unexpectedly delivered bytes');
+  } catch (error) {
+    assert.equal(error.code, 'local_ticket_expired');
+    assert.equal(error.status, 410);
+  }
+  assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
+});
+
+test('delivery denies a different authenticated project scope before ticket or artifact authority is consulted', async () => {
+  const ticket = segmentTicket();
+  const { service, calls } = harness(ticket);
+  const foreign = Object.freeze({ ...scope, projectId: 'other-project' });
+  try {
+    await service.deliver(executionId, foreign);
+    assert.fail('foreign scope unexpectedly delivered bytes');
+  } catch (error) {
+    assert.equal(error.code, 'local_composite_not_found');
+    assert.equal(error.status, 404);
+  }
+  assert.equal(calls.get, 0); assert.equal(calls.getV2, 0);
   assert.deepEqual(calls.owns, []); assert.deepEqual(calls.hydrate, []);
 });
