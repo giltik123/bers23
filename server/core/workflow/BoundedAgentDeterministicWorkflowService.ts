@@ -351,11 +351,9 @@ export class BoundedAgentDeterministicWorkflowService {
       || ticket.policy !== 'LOCAL_ONLY' || ticket.cost.providerCalls !== 0 || ticket.cost.paidCloudCredits !== 0) {
       throw serviceError(409, 'bounded_agent_ticket_contract', 'Deterministic child ticket does not match bounded Agent authority');
     }
-    if (ticket.idempotencyKey !== deterministicTicketIdempotencyKey(ticket.requestId.replace(/^agent-child-[^-]+-/, ticket.requestId.startsWith(`agent-child-${stepId}-`) ? `agent-child-${stepId}-` : ''), stepId)) {
-      // The exact canonical service key is asserted independently below through
-      // the expected idempotencyKey argument. This guard only rejects empty or
-      // malformed request identity before terminal recovery.
-      if (!ticket.requestId.trim()) throw serviceError(409, 'bounded_agent_ticket_request_contract', 'Deterministic child ticket request identity is invalid');
+    const childClientRequestId = childClientRequestIdFromIdempotencyKey(idempotencyKey, stepId);
+    if (ticket.requestId !== childExecutionIdFor(scope, childClientRequestId, stepId)) {
+      throw serviceError(409, 'bounded_agent_ticket_request_contract', 'Deterministic child ticket request identity does not match its canonical idempotency binding');
     }
     const recovery = await this.dependencies.finalRecovery.recover(recoveryBinding(workflowId, ticket, source, parameters, stepId), auth);
     if (recovery.status === 'SUCCESS') await this.validateArtifact(scope, stepId, source, recovery.artifactId, parameters);
@@ -437,7 +435,7 @@ export class BoundedAgentDeterministicWorkflowService {
   private async assertSnapshotAuthority(snapshot: WorkflowContinuationSnapshot): Promise<void> {
     const root = await this.resolveImmutableRoot(snapshot);
     const parameters = requirePlanParameters(snapshot.plan);
-    const expectedPlan = planBinding(root, { clientRequestId: snapshot.clientRequestId, projectId: snapshot.scope.projectId, sourceArtifactId: root.artifactId, ...parameters });
+    const expectedPlan = planBinding(root, parameters);
     if (!samePlanBinding(snapshot.plan, expectedPlan) || !sameInputArtifactBindings(snapshot.inputArtifacts, [workflowBinding(root)])) {
       throw serviceError(409, 'bounded_agent_plan_binding_mismatch', 'Durable Agent plan no longer matches canonical root and parameters');
     }
@@ -576,6 +574,11 @@ function childExecutionIdFor(scope: Scope, clientRequestId: string, stepId: Loca
   return `${domain}${createHash('sha256').update(`${scope.tenantId}\0${scope.userId}\0${scope.projectId}\0${clientRequestId}`).digest('hex').slice(0, 32)}`;
 }
 function deterministicTicketIdempotencyKey(clientRequestId: string, stepId: LocalStepId): string { return `${clientRequestId}:${stepId}:local-v2`; }
+function childClientRequestIdFromIdempotencyKey(idempotencyKey: string, stepId: LocalStepId): string {
+  const suffix = `:${stepId}:local-v2`;
+  if (!idempotencyKey.endsWith(suffix)) throw serviceError(409, 'bounded_agent_ticket_request_contract', 'Deterministic child idempotency key is malformed');
+  return token(idempotencyKey.slice(0, -suffix.length), 'childClientRequestId');
+}
 function recoveryBinding(workflowId: string, ticket: LocalExecutionTicketV2, source: DurableResolvedArtifact, parameters: PlanParameters, stepId: LocalStepId) {
   const common = { projectId: ticket.scope.projectId, workflowId, executionId: ticket.requestId, idempotencyKey: ticket.idempotencyKey, ticket: Object.freeze({ ticketId: ticket.ticketId, ticketVersion: '2' as const, nonce: ticket.nonce, expiresAt: new Date(ticket.expiresAt).toISOString() }), source: Object.freeze({ artifactId: source.artifactId, role: source.role as 'ORIGINAL' | 'COMPOSITE', sha256: source.sha256, storageId: source.storageId, width: source.width, height: source.height }) };
   return stepId === ORTHOGONAL_TRANSFORM_STEP_ID ? Object.freeze({ ...common, operation: 'ORTHOGONAL_TRANSFORM' as const, mode: parameters.mode }) : Object.freeze({ ...common, operation: 'RESIZE' as const, width: parameters.width, height: parameters.height });
@@ -600,4 +603,5 @@ function normalizeAuth(auth: AuthenticatedScope): AuthenticatedScope { return Ob
 function token(value: unknown, field: string): string { if (typeof value !== 'string' || !value.trim()) throw serviceError(400, 'bounded_agent_request_invalid', `${field} is required`); return value.trim(); }
 function canonicalJson(value: unknown): string { return JSON.stringify(canonicalValue(value)); }
 function canonicalValue(value: unknown): unknown { if (Array.isArray(value)) return value.map(canonicalValue); if (!value || typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalValue(child)])); }
+function sameScope(a: Scope, b: Scope): boolean { return a.tenantId === b.tenantId && a.userId === b.userId && a.projectId === b.projectId; }
 function serviceError(status: number, code: string, message: string): Error & { status: number; code: string } { return Object.assign(new Error(message), { status, code }); }
