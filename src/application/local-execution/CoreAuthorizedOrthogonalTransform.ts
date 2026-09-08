@@ -28,6 +28,22 @@ export type OrthogonalTransformRunInput = Readonly<{
   mode: OrthogonalTransformMode;
 }>;
 
+export type OrthogonalTransformPreparedRunInput = Readonly<{
+  ticket: LocalExecutionTicketV2;
+  sourceArtifactId: string;
+  mode: OrthogonalTransformMode;
+}>;
+
+export type OrthogonalTransformPreparedRunResult = Readonly<{
+  target: 'LOCAL';
+  runtime: 'BROWSER_JS';
+  accelerator: 'cpu';
+  preview: PixelImage;
+  latencyMs: number;
+  mode: OrthogonalTransformMode;
+  result: LocalExecutionResultV2;
+}>;
+
 export type OrthogonalTransformRunResult = Readonly<{
   target: 'LOCAL';
   runtime: 'BROWSER_JS';
@@ -53,7 +69,21 @@ export class CoreAuthorizedOrthogonalTransform {
     if (!input.requestId || !input.sourceArtifactId) throw new Error('Orthogonal transform request is incomplete');
     const mode = normalizeOrthogonalTransformMode(input.mode);
     const prepared = await this.core.prepareOrthogonalTransform({ projectId: this.projectId, sourceArtifactId: input.sourceArtifactId, clientRequestId: input.requestId, mode });
-    const ticket = validateTicket(prepared.ticket, input.sourceArtifactId, mode);
+    const candidate = await this.runPrepared({ ticket: prepared.ticket, sourceArtifactId: input.sourceArtifactId, mode });
+    const finalized = await this.core.submitOrthogonalTransform({ ticketId: candidate.result.ticketId, projectId: this.projectId, result: candidate.result });
+    if (finalized.status !== 'SUCCESS' || finalized.verification?.valid === false || !finalized.artifactId) throw new Error('Core rejected deterministic orthogonal transform');
+    return Object.freeze({ target: candidate.target, runtime: candidate.runtime, accelerator: candidate.accelerator, canonicalArtifactId: finalized.artifactId, preview: candidate.preview, latencyMs: candidate.latencyMs, mode: candidate.mode });
+  }
+
+  /**
+   * Execute one already Core-issued ticket without preparing or finalizing it.
+   * Durable workflows use this path so ticket issuance/step advancement remain
+   * server-owned while browser pixel execution reuses the exact standalone kernel.
+   */
+  async runPrepared(input: OrthogonalTransformPreparedRunInput): Promise<OrthogonalTransformPreparedRunResult> {
+    if (!input.sourceArtifactId) throw new Error('Orthogonal transform prepared request is incomplete');
+    const mode = normalizeOrthogonalTransformMode(input.mode);
+    const ticket = validateTicket(input.ticket, input.sourceArtifactId, mode);
     const sourceBinding = ticket.inputs[0];
     const [sourceHash, source] = await Promise.all([this.inputs.sha256(input.sourceArtifactId), this.inputs.loadImage(input.sourceArtifactId)]);
     if (sourceHash.toLowerCase() !== sourceBinding.sha256!.toLowerCase()) throw new Error('Orthogonal transform source SHA-256 does not match the Core ticket');
@@ -84,9 +114,7 @@ export class CoreAuthorizedOrthogonalTransform {
       metrics: Object.freeze({ latencyMs }),
       benchmarkEvidence: Object.freeze({ pixelCount: geometry.width * geometry.height, deterministicTool: TOOL.parameters.exact.deterministicTool, mode }),
     });
-    const finalized = await this.core.submitOrthogonalTransform({ ticketId: ticket.ticketId, projectId: this.projectId, result });
-    if (finalized.status !== 'SUCCESS' || finalized.verification?.valid === false || !finalized.artifactId) throw new Error('Core rejected deterministic orthogonal transform');
-    return Object.freeze({ target: 'LOCAL', runtime: TOOL.browser.runtime, accelerator: TOOL.browser.accelerator, canonicalArtifactId: finalized.artifactId, preview, latencyMs, mode });
+    return Object.freeze({ target: 'LOCAL', runtime: TOOL.browser.runtime, accelerator: TOOL.browser.accelerator, preview, latencyMs, mode, result });
   }
 }
 
