@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { Pool } from 'pg';
 import { checkLocalExecutionLedgerSchema } from '../localExecution/localExecutionLedgerSchema.ts';
+
+const WORKFLOW_CONTINUATION_MIGRATION = '015_workflow_continuations.sql';
+const WORKFLOW_CONTINUATION_PLAN_PARAMETERS_MIGRATION = '039_workflow_continuation_plan_parameters.sql';
 
 type WorkflowContinuationSchemaState = Readonly<{
   table: boolean;
@@ -23,11 +27,11 @@ export async function migrateWorkflowContinuationSchema(pool: Pool): Promise<voi
   await checkLocalExecutionLedgerSchema(pool);
   let state = await inspectWorkflowContinuationSchema(pool);
   if (!baseComplete(state)) {
-    await pool.query(await readWorkflowContinuationMigration());
+    await pool.query(await readWorkflowMigration(WORKFLOW_CONTINUATION_MIGRATION));
     state = await inspectWorkflowContinuationSchema(pool);
   }
   if (!state.planParametersJson) {
-    await pool.query(await readWorkflowContinuationPlanParametersMigration());
+    await pool.query(await readWorkflowMigration(WORKFLOW_CONTINUATION_PLAN_PARAMETERS_MIGRATION));
   }
   await checkWorkflowContinuationSchema(pool);
 }
@@ -128,26 +132,19 @@ async function inspectWorkflowContinuationSchema(pool: Pool): Promise<WorkflowCo
   });
 }
 
-async function readWorkflowContinuationMigration(): Promise<string> {
+async function readWorkflowMigration(name: string): Promise<string> {
   try {
-    return await readFile(new URL('../artifacts/migrations/015_workflow_continuations.sql', import.meta.url), 'utf8');
+    return await readFile(new URL(`../artifacts/migrations/${name}`, import.meta.url), 'utf8');
   } catch (sourceLayoutError) {
     try {
-      return await readFile(new URL('./migrations/015_workflow_continuations.sql', import.meta.url), 'utf8');
-    } catch {
-      throw sourceLayoutError;
-    }
-  }
-}
-
-async function readWorkflowContinuationPlanParametersMigration(): Promise<string> {
-  try {
-    return await readFile(new URL('../artifacts/migrations/039_workflow_continuation_plan_parameters.sql', import.meta.url), 'utf8');
-  } catch (sourceLayoutError) {
-    try {
-      return await readFile(new URL('./migrations/039_workflow_continuation_plan_parameters.sql', import.meta.url), 'utf8');
-    } catch {
-      throw sourceLayoutError;
+      return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8');
+    } catch (bundleLayoutError) {
+      if (process.env.NODE_ENV === 'production') throw bundleLayoutError;
+      try {
+        return await readFile(resolve(process.cwd(), 'server/core/artifacts/migrations', name), 'utf8');
+      } catch {
+        throw sourceLayoutError;
+      }
     }
   }
 }
