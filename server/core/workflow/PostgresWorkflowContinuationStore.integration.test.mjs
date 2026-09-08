@@ -24,6 +24,14 @@ function ticket(token, executionId, scoped) {
     cost: Object.freeze({ paidCloudCredits: 0, providerCalls: 0 }),
   });
 }
+function retryTicket(token, executionId, scoped, rootArtifactId, expiresAt) {
+  const base = ticket(token, executionId, scoped);
+  return Object.freeze({
+    ...base,
+    inputs: Object.freeze([Object.freeze({ artifactId: rootArtifactId, kind: 'image', role: 'WORKING', sha256: 'b'.repeat(64) })]),
+    expiresAt,
+  });
+}
 function result(stored) {
   return Object.freeze({
     ticketId: stored.ticketId, ticketVersion: stored.version, requestId: stored.requestId, workflowId: stored.workflowId, stepId: stored.stepId, nonce: stored.nonce,
@@ -44,9 +52,6 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
 
   const firstPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-continuation-first' });
   try {
-    // Keep this integration test autonomous when it is discovered by the broad server:test command.
-    // The dedicated C5A workflow separately applies the exact SQL migration chain before running this test,
-    // so this test bootstrap does not replace the hosted production-migration acceptance gate.
     await migrateWorkflowContinuationSchema(firstPool);
     await checkWorkflowContinuationSchema(firstPool);
     const continuations = new PostgresWorkflowContinuationStore(firstPool, () => NOW);
@@ -81,9 +86,6 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
     assert.equal(a.revision, 2); assert.equal(a.completedSteps.length, 1);
     await assert.rejects(() => first.completeLocalStep({ ...completion, expectedRevision: 2, artifactIds: [`${token}-other-mask`] }), /different canonical result/);
 
-    // Persist RUNNING_INTERNAL, then deliberately destroy this Core/Pool before verify completes.
-    // The next independent Core instance must recover exactly this internal step rather than
-    // reissuing local work or skipping directly to SUCCESS.
     const running = await first.runInternalStep({ executionId, scope: scoped, expectedRevision: 2, stepId: 'verify' });
     assert.equal(running.state, 'RUNNING_INTERNAL');
     assert.equal(running.currentStepId, 'verify');
@@ -100,7 +102,6 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
     assert.equal(recoveredInternal.revision, runningRevision);
     assert.deepEqual(recoveredInternal.completedSteps[0].artifactIds, [canonicalArtifactId]);
 
-    // Lost response/replay of the internal-start transition is idempotent across the restart.
     const replayedRunning = await afterInternalRestart.runInternalStep({ executionId, scope: scoped, expectedRevision: 2, stepId: 'verify' });
     assert.deepEqual(replayedRunning, recoveredInternal);
 
@@ -122,5 +123,77 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
     await fourthPool.query('DELETE FROM workflow_continuations WHERE execution_id=$1', [executionId]).catch(() => undefined);
     await fourthPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [storedTicket.ticketId]).catch(() => undefined);
     await fourthPool.end();
+  }
+});
+
+test('PostgreSQL same-step retry survives Core restart under one workflow execution identity', { skip: !databaseUrl }, async () => {
+  const token = `workflow-retry-${process.pid}-${Date.now()}`;
+  const scoped = scope(token);
+  const executionId = `${token}-execution`;
+  const clientRequestId = `${token}-client`;
+  const plan = Object.freeze({ planId: `${token}-plan`, planRevision: '1', planDigest: 'e'.repeat(64) });
+  const inputArtifacts = Object.freeze([rootInput(token)]);
+  let firstTicket;
+  let replacementTicket;
+
+  const firstPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-retry-first' });
+  try {
+    await migrateWorkflowContinuationSchema(firstPool);
+    await checkWorkflowContinuationSchema(firstPool);
+    const store = new PostgresWorkflowContinuationStore(firstPool, () => NOW);
+    const ledger = new PostgresLocalExecutionLedger(firstPool);
+    const created = await store.create({ executionId, clientRequestId, scope: scoped, plan, inputArtifacts });
+    firstTicket = await ledger.issue(retryTicket(`${token}-first`, executionId, scoped, inputArtifacts[0].artifactId, NOW + 1_000));
+    const waiting = await store.waitForLocalResult({
+      executionId,
+      scope: scoped,
+      expectedRevision: created.revision,
+      ticket: { stepId: firstTicket.stepId, ticketId: firstTicket.ticketId, ticketVersion: firstTicket.version, nonce: firstTicket.nonce, expiresAt: new Date(firstTicket.expiresAt).toISOString() },
+    });
+    assert.equal(waiting.state, 'WAITING_FOR_LOCAL_RESULT');
+    assert.equal(waiting.revision, 1);
+  } finally { await firstPool.end(); }
+
+  const secondPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-retry-second' });
+  try {
+    const store = new PostgresWorkflowContinuationStore(secondPool, () => NOW + 2_000);
+    const ledger = new PostgresLocalExecutionLedger(secondPool);
+    const recovered = await store.get(executionId, scoped);
+    assert.equal(recovered.executionId, executionId);
+    assert.equal(recovered.clientRequestId, clientRequestId);
+    assert.equal(recovered.outstandingLocal.ticketId, firstTicket.ticketId);
+
+    replacementTicket = await ledger.issue(retryTicket(`${token}-replacement`, executionId, scoped, inputArtifacts[0].artifactId, NOW + 60_000));
+    const retried = await store.retryLocalResult({
+      executionId,
+      scope: scoped,
+      expectedRevision: recovered.revision,
+      previousTicketId: firstTicket.ticketId,
+      ticket: { stepId: replacementTicket.stepId, ticketId: replacementTicket.ticketId, ticketVersion: replacementTicket.version, nonce: replacementTicket.nonce, expiresAt: new Date(replacementTicket.expiresAt).toISOString() },
+    });
+    assert.equal(retried.executionId, executionId);
+    assert.equal(retried.clientRequestId, clientRequestId);
+    assert.equal(retried.state, 'WAITING_FOR_LOCAL_RESULT');
+    assert.equal(retried.revision, 2);
+    assert.equal(retried.currentStepId, firstTicket.stepId);
+    assert.equal(retried.outstandingLocal.ticketId, replacementTicket.ticketId);
+    assert.deepEqual(retried.plan, plan);
+    assert.deepEqual(retried.inputArtifacts, inputArtifacts);
+  } finally { await secondPool.end(); }
+
+  const thirdPool = new Pool({ connectionString: databaseUrl, max: 2, application_name: 'bers-workflow-retry-third' });
+  try {
+    const afterRestart = new PostgresWorkflowContinuationStore(thirdPool, () => NOW + 2_000);
+    const durable = await afterRestart.get(executionId, scoped);
+    assert.equal(durable.executionId, executionId, 'retry must not invent a second workflow execution');
+    assert.equal(durable.clientRequestId, clientRequestId);
+    assert.equal(durable.revision, 2);
+    assert.equal(durable.outstandingLocal.ticketId, replacementTicket.ticketId, 'new Core must recover the replacement attempt');
+    assert.deepEqual(durable.inputArtifacts, inputArtifacts);
+  } finally {
+    await thirdPool.query('DELETE FROM workflow_continuations WHERE execution_id=$1', [executionId]).catch(() => undefined);
+    if (firstTicket) await thirdPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [firstTicket.ticketId]).catch(() => undefined);
+    if (replacementTicket) await thirdPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [replacementTicket.ticketId]).catch(() => undefined);
+    await thirdPool.end();
   }
 });
