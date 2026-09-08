@@ -161,12 +161,18 @@ test('R3j forbids provider, Billing, generic artifact mutation, MASK and legacy 
   assert.match(harness, /FAL_BASE_URL: providerOrigin/);
 });
 
-test('cumulative R3 workflow must run R3j after the already accepted R3i journey', async () => {
-  const workflow = await read('.github/workflows/release-r3a-browser-e2e.yml');
-  const r3i = workflow.indexOf('scripts/test-release-r3i-browser-e2e.mjs');
-  const r3j = workflow.indexOf('scripts/test-release-r3j-browser-e2e.mjs');
-  assert(r3i >= 0, 'accepted R3i journey must remain in cumulative workflow');
-  assert(r3j > r3i, 'R3j must be appended after R3i');
-  assert.match(workflow, /tests\/release-r3j-browser-boundaries\.test\.mjs/);
-  assert.match(workflow, /R3J_BROWSER_CANONICAL_TRYON_ACCEPTED/);
+test('dedicated R3j exact-head gate follows the already accepted cumulative R3i baseline', async () => {
+  const [cumulative, r3j] = await Promise.all([
+    read('.github/workflows/release-r3a-browser-e2e.yml'),
+    read('.github/workflows/release-r3j-browser-e2e.yml'),
+  ]);
+
+  assert.match(cumulative, /scripts\/test-release-r3i-browser-e2e\.mjs/);
+  assert.doesNotMatch(cumulative, /scripts\/test-release-r3j-browser-e2e\.mjs/);
+  assert.match(r3j, /name: R3j canonical Try-On release E2E/);
+  assert.match(r3j, /CANDIDATE_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(r3j, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(r3j, /node --test tests\/release-r3j-browser-boundaries\.test\.mjs/);
+  assert.match(r3j, /scripts\/test-release-r3j-browser-e2e\.mjs/);
+  assert.match(r3j, /R3J_BROWSER_CANONICAL_TRYON_ACCEPTED/);
 });
