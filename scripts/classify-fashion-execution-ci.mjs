@@ -155,6 +155,7 @@ const F4B4_ADMISSION_EXACT_PATHS = new Set([
   'server/core/artifacts/artifactAuthority.ts',
   'server/core/artifacts/signedArtifactAuthority.ts',
   'server/core/http/browserSessionCookie.ts',
+  'server/core/http/authenticatedPrincipalScope.ts',
   'server/core/localExecution/GarmentMeshWarpExecutionContract.ts',
   'server/core/localExecution/GarmentMeshWarpManagedInputAuthority.ts',
   'server/core/localExecution/GarmentMeshWarpInputDeliveryService.ts',
@@ -251,7 +252,7 @@ function getF4b4PostgresExactPaths() {
   if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B4_POSTGRES_VERTICAL) {
     throw new Error('Invalid F4b.4 PostgreSQL CI closure manifest identity');
   }
-  const expectedCounts = Object.freeze({ bundleInputs: 192, migrationPaths: 36, supportPaths: 17 });
+  const expectedCounts = Object.freeze({ bundleInputs: 197, migrationPaths: 38, supportPaths: 17 });
   for (const [key, expected] of Object.entries(expectedCounts)) {
     if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
       throw new Error(`Invalid F4b.4 PostgreSQL CI closure ${key}: expected ${expected} exact paths`);

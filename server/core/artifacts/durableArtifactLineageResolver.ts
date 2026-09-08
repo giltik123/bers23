@@ -7,6 +7,7 @@ import type { PostgresMaskArtifactStore } from './postgresMaskArtifactStore.ts';
 
 export type DurableResolvedArtifact = Readonly<{
   artifactId: string;
+  storageId: string;
   kind: 'image' | 'mask';
   role: 'ORIGINAL' | 'COMPOSITE' | 'MASK';
   sha256: string;
@@ -14,6 +15,8 @@ export type DurableResolvedArtifact = Readonly<{
   width: number;
   height: number;
 }>;
+
+const SINGLE_PARENT_DETERMINISTIC_OPERATIONS = new Set(['CROP', 'RESIZE', 'ORTHOGONAL_TRANSFORM']);
 
 /**
  * Reconstructs canonical integrity + lineage from durable storage authority only.
@@ -58,6 +61,7 @@ export class DurableArtifactLineageResolver {
     const parents = await this.imageParents(scope, stored);
     return Object.freeze({
       artifactId,
+      storageId,
       kind: 'image',
       role: stored.role,
       sha256: sha256(stored.bytes),
@@ -79,6 +83,7 @@ export class DurableArtifactLineageResolver {
     const alpha = await decodeMaskAlpha(stored.png, stored.width, stored.height);
     return Object.freeze({
       artifactId,
+      storageId,
       kind: 'mask',
       role: 'MASK',
       sha256: sha256(alpha),
@@ -142,6 +147,17 @@ export class DurableArtifactLineageResolver {
     if (
       stored.refinementParentImageStorageId || stored.refinementParentImageSha256 || stored.refinementProfile || stored.refinementContractVersion
     ) throw resolverError('durable_lineage_invalid', 'Non-refinement canonical FINAL carries refinement-specific lineage');
+
+    if (SINGLE_PARENT_DETERMINISTIC_OPERATIONS.has(stored.producerOperation ?? '')) {
+      if (
+        !stored.sourceImageStorageId || stored.maskStorageId
+        || stored.garmentWarpLayerId || stored.garmentWarpLayerSha256 || stored.producerParameters || stored.producerParametersSha256
+      ) throw resolverError('durable_lineage_invalid', 'Deterministic one-parent FINAL lineage is incomplete');
+      const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
+      if (!source) throw resolverError('durable_lineage_unavailable', 'Deterministic FINAL source IMAGE is unavailable');
+      return Object.freeze([issueStoredImageId(this.signed, source, scope)]);
+    }
+
     if (stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId) {
       throw resolverError('durable_lineage_invalid', 'Derived FINAL lineage is incomplete or unsupported');
     }

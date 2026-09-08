@@ -3,6 +3,7 @@
   "profile": "F3C_CANONICAL_OUTFIT_UI",
   "bundleInputs": [
     "src/api/coreClient.js",
+    "src/api/coreResourceUrl.js",
     "src/api/managedGarmentClient.js",
     "src/api/managedGarmentCollectionClient.js",
     "src/api/managedOutfitClient.js",

@@ -10,9 +10,11 @@ test('Editor wires canonical Try-On through the private hook and existing Result
   assert.match(editor, /pending\?\.kind === 'FASHION_TRYON'/);
   assert.match(editor, /void tryOn\.retry\(\)/);
   assert.match(editor, /if \(pending\?\.kind === 'FASHION_TRYON'\) closeTryOn\(\)/);
-  assert.match(editor, /const editorBusy = localEditorBusy \|\| tryOnActive/);
-  assert.match(editor, /!tryOnActive && !applying/);
-  assert.match(editor, /if \(!tryOnActive\) setEditTab\(next\)/);
+  assert.match(editor, /const editorBusy = localEditorBusy \|\| tryOnActive \|\| agentActive/);
+  assert.match(editor, /const tryOnBlockedByEditor = localEditorBusy/);
+  assert.match(editor, /if \(tryOnBlockedByEditor \|\| pendingResult\) return/);
+  assert.match(editor, /disabled=\{tryOnBlockedByEditor\}/);
+  assert.match(editor, /if \(!tryOnActive && !agentActive\) setEditTab\(next\)/);
   assert.match(editor, /!tryOn\.state\.host\.active && <OutfitPanel \/>/);
 
   const fashionRetry = editor.indexOf("pending?.kind === 'FASHION_TRYON'");

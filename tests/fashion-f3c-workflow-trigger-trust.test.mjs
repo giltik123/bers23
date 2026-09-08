@@ -43,18 +43,18 @@ function readGitBlob(blobSha) {
   return result.stdout;
 }
 
-test('F3c pull-request trigger is exactly the accepted 11+19 authority manifest', async () => {
+test('F3c pull-request trigger is exactly the accepted 12+19 authority manifest', async () => {
   const workflow = await readFile(WORKFLOW_PATH, 'utf8');
   const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8'));
 
   const expected = [...manifest.bundleInputs, ...manifest.supportPaths];
-  assert.equal(manifest.bundleInputs.length, 11, 'bundle input cardinality');
+  assert.equal(manifest.bundleInputs.length, 12, 'bundle input cardinality');
   assert.equal(manifest.supportPaths.length, 19, 'support path cardinality');
-  assert.equal(expected.length, 30, 'F3c trusted trigger cardinality');
+  assert.equal(expected.length, 31, 'F3c trusted trigger cardinality');
   assert.equal(new Set(expected).size, expected.length, 'trusted trigger paths must remain unique');
 
   const { paths } = parseSingleQuotedPathsBlock(workflow);
-  assert.equal(paths.length, 30, 'workflow must expose exactly 30 trusted paths');
+  assert.equal(paths.length, 31, 'workflow must expose exactly 31 trusted paths');
   assert.deepEqual(paths, expected, 'workflow trigger order and content must exactly equal bundleInputs + supportPaths');
 });
 

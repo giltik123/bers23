@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
+
+const MAX_ACCEPT_LINEAGE_DEPTH = 64;
 
 export class PostgresProjectStore {
   constructor(private readonly pool: Pool) {}
@@ -40,10 +42,11 @@ export class PostgresProjectStore {
    *
    * Source-lineaged FINALs additionally carry their durable input image identity.
    * Because this method runs behind mutate()'s project-row FOR UPDATE lock,
-   * checking that lineage here serializes Accept against undo/redo/version
-   * navigation across tabs and processes. A FINAL computed from an old cursor
-   * must never be attached to a newer Project cursor merely because a browser
-   * still holds the result capability.
+   * checking the complete active source chain here serializes Accept against
+   * undo/redo/version navigation across tabs and processes. A multi-step FINAL is
+   * admissible only through intermediates that never became a Project cursor and
+   * whose durable chain reaches the exact current cursor. Historical cursor
+   * ancestry is intentionally insufficient: stale results remain fail-closed.
    *
    * Before the first mutation, canonical Artifact/Fashion lineage is revalidated
    * through PostgresImageArtifactStore on this exact transaction client. This
@@ -57,13 +60,21 @@ export class PostgresProjectStore {
       if(!artifact)throw Object.assign(new Error('FINAL artifact is invalid or unavailable'),{status:400,code:'invalid_final_artifact'});
       const existing=(await client.query(`SELECT history_id FROM canonical_project_history WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND image_storage_id=$4 AND kind='ACCEPTED_FINAL'`,[id,scope.tenantId,scope.userId,storageId])).rows[0];
       if(existing)return;
+      const images = new PostgresImageArtifactStore(client);
       try {
-        const validated=await new PostgresImageArtifactStore(client).load(storageId,{...scope,projectId:id});
+        const validated=await images.load(storageId,{...scope,projectId:id});
         if(!validated)throw new Error('FINAL artifact disappeared during acceptance');
       } catch (error) {
         throw Object.assign(new Error('FINAL artifact durable lineage is invalid or unavailable'),{status:409,code:'invalid_final_lineage',cause:error});
       }
-      if(artifact.source_image_storage_id && artifact.source_image_storage_id!==project.current_image_storage_id)throw Object.assign(new Error('FINAL artifact was produced from a stale Project source'),{status:409,code:'final_source_conflict'});
+      if(artifact.source_image_storage_id) await this.assertFinalSourceReachesCurrent(
+        client,
+        images,
+        {...scope,projectId:id},
+        storageId,
+        String(artifact.source_image_storage_id),
+        String(project.current_image_storage_id),
+      );
       const cursor=(await client.query(`SELECT ordinal FROM canonical_project_history WHERE history_id=$1 AND project_id=$2 AND tenant_id=$3 AND user_id=$4`,[project.history_cursor_id,id,scope.tenantId,scope.userId])).rows[0];
       await client.query(`UPDATE canonical_project_history SET retired_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND retired_at IS NULL AND ordinal>$4`,[id,scope.tenantId,scope.userId,cursor.ordinal]);
       const historyId=randomUUID();
@@ -100,6 +111,45 @@ export class PostgresProjectStore {
       await client.query(`INSERT INTO canonical_project_history(history_id,project_id,tenant_id,user_id,ordinal,source_image_storage_id,image_storage_id,kind,instruction,credits_used) VALUES($1,$2,$3,$4,$5,$6,$7,'RESTORE_VERSION',$8,0)`,[historyId,id,scope.tenantId,scope.userId,cursor.ordinal+1,project.current_image_storage_id,version.image_storage_id,`Restored version "${version.name}"`]);
       await client.query(`UPDATE canonical_projects SET current_image_storage_id=$2,history_cursor_id=$3,width=$4,height=$5,objects='[]',updated_at=CURRENT_TIMESTAMP WHERE project_id=$1`,[id,version.image_storage_id,historyId,image.width,image.height]);
     });
+  }
+
+  private async assertFinalSourceReachesCurrent(
+    client: PoolClient,
+    images: PostgresImageArtifactStore,
+    scope: AuthenticatedScope & { projectId: string },
+    finalStorageId: string,
+    sourceStorageId: string,
+    currentStorageId: string,
+  ): Promise<void> {
+    const visited = new Set<string>([finalStorageId]);
+    let candidateStorageId = sourceStorageId;
+    for (let depth = 0; depth < MAX_ACCEPT_LINEAGE_DEPTH; depth += 1) {
+      if (visited.has(candidateStorageId)) {
+        throw Object.assign(new Error('FINAL artifact durable source lineage is cyclic'), { status: 409, code: 'invalid_final_lineage' });
+      }
+      visited.add(candidateStorageId);
+      let source;
+      try {
+        source = await images.loadSource(candidateStorageId, scope);
+      } catch (cause) {
+        throw Object.assign(new Error('FINAL artifact durable source lineage is invalid or unavailable'), { status: 409, code: 'invalid_final_lineage', cause });
+      }
+      if (!source) {
+        throw Object.assign(new Error('FINAL artifact durable source lineage is invalid or unavailable'), { status: 409, code: 'invalid_final_lineage' });
+      }
+      if (source.storageId === currentStorageId) return;
+      const historicalCursor = (await client.query(`SELECT 1 FROM canonical_project_history WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND image_storage_id=$4 LIMIT 1`, [
+        scope.projectId, scope.tenantId, scope.userId, source.storageId,
+      ])).rows[0];
+      if (historicalCursor) {
+        throw Object.assign(new Error('FINAL artifact was produced through a stale Project cursor'), { status: 409, code: 'final_source_conflict' });
+      }
+      if (!source.sourceImageStorageId) {
+        throw Object.assign(new Error('FINAL artifact was produced from a stale Project source'), { status: 409, code: 'final_source_conflict' });
+      }
+      candidateStorageId = source.sourceImageStorageId;
+    }
+    throw Object.assign(new Error('FINAL artifact durable source lineage exceeds the accepted depth'), { status: 409, code: 'invalid_final_lineage' });
   }
 
   private async mutate(scope:AuthenticatedScope,id:string,action:(client:any,project:any)=>Promise<void>){const client=await this.pool.connect();try{await client.query('BEGIN');const project=(await client.query(`SELECT * FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL FOR UPDATE`,[id,scope.tenantId,scope.userId])).rows[0];if(!project)throw Object.assign(new Error('Project not found'),{status:404,code:'project_not_found'});await action(client,project);await client.query('COMMIT');return this.state(scope,id);}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}

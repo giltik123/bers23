@@ -8,6 +8,7 @@ import {
   normalizeScope,
   normalizeTicketBinding,
   normalizeWorkflowContinuationCreate,
+  normalizeWorkflowPlanParameters,
   sameInputArtifactBindings,
   samePlanBinding,
   sameScope,
@@ -27,7 +28,7 @@ import {
   type WorkflowLocalTicketBinding,
 } from './WorkflowContinuationStore.ts';
 
-const COLUMNS = `execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,input_artifacts_json,state,current_step_id,
+const COLUMNS = `execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,plan_parameters_json,input_artifacts_json,state,current_step_id,
   outstanding_ticket_id,outstanding_ticket_version,outstanding_ticket_nonce,outstanding_ticket_expires_at,completed_steps_json,
   terminal_artifact_id,failure_code,revision,created_at,updated_at`;
 const LOCK_SALT = 643;
@@ -55,10 +56,10 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
   async create(input: CreateWorkflowContinuationInput): Promise<WorkflowContinuationSnapshot> {
     const normalized = normalizeWorkflowContinuationCreate(input);
     const inserted = await this.pool.query(`INSERT INTO workflow_continuations
-      (execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,input_artifacts_json,state,completed_steps_json)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,'READY','[]'::jsonb)
+      (execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,input_artifacts_json,plan_parameters_json,state,completed_steps_json)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,'READY','[]'::jsonb)
       ON CONFLICT DO NOTHING RETURNING ${COLUMNS}`,
-      [normalized.executionId, normalized.clientRequestId, normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId, normalized.plan.planId, normalized.plan.planRevision, normalized.plan.planDigest, JSON.stringify(normalized.inputArtifacts)]);
+      [normalized.executionId, normalized.clientRequestId, normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId, normalized.plan.planId, normalized.plan.planRevision, normalized.plan.planDigest, JSON.stringify(normalized.inputArtifacts), JSON.stringify(normalized.plan.parameters ?? {})]);
     if (inserted.rows[0]) return snapshotFromRow(inserted.rows[0]);
 
     const byClient = await this.getByClientRequestId(normalized.scope, normalized.clientRequestId);
@@ -297,6 +298,7 @@ function snapshotFromRow(row: Record<string, unknown>): WorkflowContinuationSnap
   const inputRaw = row.input_artifacts_json;
   if (!Array.isArray(inputRaw)) throw new Error('Workflow continuation input Artifact binding is invalid');
   const inputArtifacts = normalizeInputArtifactBindings(inputRaw as readonly WorkflowInputArtifactBinding[]);
+  const planParameters = normalizeWorkflowPlanParameters(row.plan_parameters_json);
   const completedRaw = row.completed_steps_json;
   if (!Array.isArray(completedRaw)) throw new Error('Workflow continuation completed-step binding is invalid');
   const completedSteps = Object.freeze(completedRaw.map((value, index) => normalizeCompletedBinding(value, index)));
@@ -311,7 +313,12 @@ function snapshotFromRow(row: Record<string, unknown>): WorkflowContinuationSnap
     executionId: requireToken(row.execution_id, 'execution_id'),
     clientRequestId: requireToken(row.client_request_id, 'client_request_id'),
     scope: Object.freeze({ tenantId: requireToken(row.tenant_id, 'tenant_id'), userId: requireToken(row.user_id, 'user_id'), projectId: requireToken(row.project_id, 'project_id') }),
-    plan: Object.freeze({ planId: requireToken(row.plan_id, 'plan_id'), planRevision: requireToken(row.plan_revision, 'plan_revision'), planDigest: requireSha256(row.plan_digest, 'plan_digest') }),
+    plan: Object.freeze({
+      planId: requireToken(row.plan_id, 'plan_id'),
+      planRevision: requireToken(row.plan_revision, 'plan_revision'),
+      planDigest: requireSha256(row.plan_digest, 'plan_digest'),
+      ...(planParameters === undefined ? {} : { parameters: planParameters }),
+    }),
     inputArtifacts,
     state,
     currentStepId: optionalToken(row.current_step_id),

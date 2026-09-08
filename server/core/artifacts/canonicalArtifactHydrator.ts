@@ -11,26 +11,19 @@ export class CanonicalArtifactHydrator {
   async hydrate(scope: Scope, originalId: string, maskIds: readonly string[]): Promise<readonly CreativeArtifact[]> {
     let bytes: Uint8Array;
     let sourceStorageId: string | undefined;
+    let sourceRole: Extract<CreativeArtifact['role'], 'ORIGINAL' | 'COMPOSITE'> = 'ORIGINAL';
     try {
-      const claim=this.authority.external.resolveStoredOriginalId(originalId,scope);
-      const stored=await this.authority.images.loadSource(claim.storageId,scope);
-      if(!stored) throw new Error('Canonical ORIGINAL is unavailable');
-      bytes=stored.bytes; sourceStorageId=claim.storageId;
+      const stored = await this.authority.resolveStoredImage(scope, originalId);
+      bytes = stored.bytes;
+      sourceStorageId = stored.storageId;
+      sourceRole = stored.role;
     }
-    catch (originalError) {
-      try {
-        const claim=this.authority.external.resolveStoredFinalId(originalId,scope);
-        const stored=await this.authority.images.loadSource(claim.storageId,scope);
-        if(!stored) throw new Error('Canonical FINAL source is unavailable');
-        bytes=stored.bytes; sourceStorageId=claim.storageId;
-      }
-      catch {
-        try { const claim=this.authority.external.resolve(originalId,scope); bytes=await this.load(claim.url); }
-        catch { throw originalError; }
-      }
+    catch (storedError) {
+      try { const claim=this.authority.external.resolve(originalId,scope); bytes=await this.load(claim.url); }
+      catch { throw storedError; }
     }
     const original = await decodeImage(bytes); const sourceSha256 = createHash('sha256').update(bytes).digest('hex');
-    const artifacts: CreativeArtifact[] = [{ id: originalId, kind: 'image', value: original, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: 'ORIGINAL', image: imageMetadata(original), metadata: Object.freeze({ sha256: sourceSha256 }) }];
+    const artifacts: CreativeArtifact[] = [{ id: originalId, kind: 'image', value: original, producerOperationId: 'user-input', scope, state: 'AVAILABLE', role: sourceRole, image: imageMetadata(original), metadata: Object.freeze({ sha256: sourceSha256 }) }];
     for (const id of maskIds) {
       const claim = this.authority.external.resolveStoredMask(id, scope); const stored = await this.authority.masks.load(claim.storageId, scope);
       if (!stored) throw new Error('Canonical MASK is unavailable');

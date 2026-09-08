@@ -7,6 +7,7 @@ on:
       - 'server/transactions/application/financialAccountPorts.ts'
       - 'server/transactions/infrastructure/postgres/postgresFinancialAccountStore.ts'
       - 'server/transactions/infrastructure/postgres/postgresFinancialAccountPolicy.integration.test.mjs'
+      - 'server/core/artifacts/migrations/039_workflow_continuation_plan_parameters.sql'
       - 'server/core/http/financialAccountPolicyHttpAdapter.ts'
       - 'server/core/http/financialAccountPolicyHttpAdapter.test.mjs'
       - 'server/index.ts'
@@ -58,14 +59,15 @@ jobs:
           git diff --exit-code "$BASE_SHA"..HEAD -- \
             server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql \
             server/transactions/infrastructure/postgres/migrations/038_financial_account_foundation.sql
-      - name: Prove global migration inventory remains exactly 001 through 038
+      - name: Prove global migration inventory remains exactly 001 through 039
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 38) throw new Error(`Expected 38 contiguous production migrations, got ${migrations.length}`);
+          if (migrations.length !== 39) throw new Error(`Expected 39 contiguous production migrations, got ${migrations.length}`);
           if (migrations[0]?.name !== '001_transaction_store.sql') throw new Error('001 transaction root migration moved');
-          if (migrations.at(-1)?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration must remain the inventory tail');
+          if (migrations[37]?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration moved from its accepted global position');
+          if (migrations.at(-1)?.name !== '039_workflow_continuation_plan_parameters.sql') throw new Error('039 workflow plan-parameter migration must be the global inventory tail');
           NODE
       - name: Typecheck and build Core
         run: |
@@ -73,6 +75,7 @@ jobs:
           npm run server:build
           test -f dist-server/migrations/001_transaction_store.sql
           test -f dist-server/migrations/038_financial_account_foundation.sql
+          test -f dist-server/migrations/039_workflow_continuation_plan_parameters.sql
       - name: Apply and verify accepted database schema
         run: |
           npm run db:migrate:transactions

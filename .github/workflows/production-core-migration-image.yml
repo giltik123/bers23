@@ -53,7 +53,8 @@ jobs:
           test -f dist-server/migrations/036_execution_run_workflow_continuation.sql
           test -f dist-server/migrations/037_execution_run_workflow_internal_step.sql
           test -f dist-server/migrations/038_financial_account_foundation.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 38
+          test -f dist-server/migrations/039_workflow_continuation_plan_parameters.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 39
           test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.down.sql' | wc -l)" -eq 0
       - name: Prove bundled migrator on a clean PostgreSQL database
         env:
@@ -70,6 +71,14 @@ jobs:
           try {
             const result = await pool.query(`SELECT
               to_regclass('workflow_continuations')::text AS continuation,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema()
+                  AND table_name='workflow_continuations'
+                  AND column_name='plan_parameters_json'
+                  AND data_type='jsonb'
+                  AND is_nullable='NO'
+              ) AS continuation_plan_parameters,
               to_regclass('canonical_execution_runs')::text AS execution_runs,
               to_regclass('financial_entitlement_accounts')::text AS financial_entitlement_accounts,
               to_regclass('credit_grants')::text AS credit_grants,
@@ -91,6 +100,7 @@ jobs:
               ) AS body_anchor_idempotency_binding,
               to_regclass('canonical_project_body_anchor_sets_owner_idempotency_key_unique')::text AS body_anchor_idempotency_index`);
             if (result.rows[0]?.continuation !== 'workflow_continuations') throw new Error('migration 015 was not applied');
+            if (result.rows[0]?.continuation_plan_parameters !== true) throw new Error('migration 039 workflow plan parameters were not applied');
             if (result.rows[0]?.execution_runs !== 'canonical_execution_runs') throw new Error('migration 034 was not applied');
             if (!String(result.rows[0]?.execution_run_capability ?? '').includes('WORKFLOW_CONTINUATION')) throw new Error('migration 036 workflow-continuation capability was not applied');
             if (!String(result.rows[0]?.execution_run_status ?? '').includes('UNKNOWN')) throw new Error('migration 036 UNKNOWN run status was not applied');

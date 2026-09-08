@@ -181,7 +181,7 @@ export function executionRunCapabilityLabel(capability) {
   return ({
     CREATIVE_EXECUTION: 'Creative execution',
     LOCAL_EXECUTION: 'Local execution',
-    WORKFLOW_CONTINUATION: 'Composite workflow',
+    WORKFLOW_CONTINUATION: 'Workflow execution',
     WORKFLOW_STEP: 'Internal workflow step',
   })[capability] || 'Execution';
 }

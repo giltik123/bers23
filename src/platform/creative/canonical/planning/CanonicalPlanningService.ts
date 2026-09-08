@@ -308,7 +308,10 @@ function superResolutionOperations(artifacts: readonly CreativePlanArtifactSnaps
 
 function simpleOperations(request: CreativeRequest, artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints): readonly CreativeOperation[] {
   const selected = request.metadata?.selectedObjectIds as readonly unknown[] | undefined;
-  const controlled = request.metadata?.editCapability === 'CONTROLLED_LOCAL_EDIT' && artifacts.some(a => a.role === 'ORIGINAL') && artifacts.some(a => a.role === 'MASK') && Boolean(selected?.length);
+  const controlled = request.metadata?.editCapability === 'CONTROLLED_LOCAL_EDIT'
+    && artifacts.some(a => a.role === 'ORIGINAL' || a.role === 'COMPOSITE')
+    && artifacts.some(a => a.role === 'MASK')
+    && Boolean(selected?.length);
   const id = 'creative-image-edit'; return immutable([{ id, type: controlled ? 'CONTROLLED_LOCAL_EDIT' : 'image-edit', providerId: 'fal', requiredArtifacts: artifacts.map(a => a.id), produces: ['image'], verification: verificationFor(id, 'image-edit', constraints, 'image'), input: controlled ? { instruction: request.intent, preserveMode: request.metadata?.preserveMode ?? 'STRICT', correlationId: request.metadata?.correlationId } : { prompt: request.intent, correlationId: request.metadata?.correlationId } }]);
 }
 

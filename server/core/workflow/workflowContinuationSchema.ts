@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { Pool } from 'pg';
 import { checkLocalExecutionLedgerSchema } from '../localExecution/localExecutionLedgerSchema.ts';
+
+const WORKFLOW_CONTINUATION_MIGRATION = '015_workflow_continuations.sql';
+const WORKFLOW_CONTINUATION_PLAN_PARAMETERS_MIGRATION = '039_workflow_continuation_plan_parameters.sql';
 
 type WorkflowContinuationSchemaState = Readonly<{
   table: boolean;
@@ -8,22 +12,36 @@ type WorkflowContinuationSchemaState = Readonly<{
   outstandingTicketForeignKey: boolean;
   inputArtifactsJson: boolean;
   completedStepsJson: boolean;
+  planParametersJson: boolean;
   revision: boolean;
 }>;
 
 export async function checkWorkflowContinuationSchema(pool: Pool): Promise<void> {
   const state = await inspectWorkflowContinuationSchema(pool);
-  if (!state.table || !state.scopeClientRequestUnique || !state.outstandingTicketForeignKey || !state.inputArtifactsJson || !state.completedStepsJson || !state.revision) {
-    throw new Error('workflow continuation schema is incomplete; apply migration 015_workflow_continuations.sql');
+  if (!complete(state)) {
+    throw new Error('workflow continuation schema is incomplete; apply migrations 015_workflow_continuations.sql and 039_workflow_continuation_plan_parameters.sql');
   }
 }
 
 export async function migrateWorkflowContinuationSchema(pool: Pool): Promise<void> {
   await checkLocalExecutionLedgerSchema(pool);
-  const state = await inspectWorkflowContinuationSchema(pool);
-  if (state.table && state.scopeClientRequestUnique && state.outstandingTicketForeignKey && state.inputArtifactsJson && state.completedStepsJson && state.revision) return;
-  await pool.query(await readWorkflowContinuationMigration());
+  let state = await inspectWorkflowContinuationSchema(pool);
+  if (!baseComplete(state)) {
+    await pool.query(await readWorkflowMigration(WORKFLOW_CONTINUATION_MIGRATION));
+    state = await inspectWorkflowContinuationSchema(pool);
+  }
+  if (!state.planParametersJson) {
+    await pool.query(await readWorkflowMigration(WORKFLOW_CONTINUATION_PLAN_PARAMETERS_MIGRATION));
+  }
   await checkWorkflowContinuationSchema(pool);
+}
+
+function baseComplete(state: WorkflowContinuationSchemaState): boolean {
+  return state.table && state.scopeClientRequestUnique && state.outstandingTicketForeignKey
+    && state.inputArtifactsJson && state.completedStepsJson && state.revision;
+}
+function complete(state: WorkflowContinuationSchemaState): boolean {
+  return baseComplete(state) && state.planParametersJson;
 }
 
 async function inspectWorkflowContinuationSchema(pool: Pool): Promise<WorkflowContinuationSchemaState> {
@@ -85,6 +103,19 @@ async function inspectWorkflowContinuationSchema(pool: Pool): Promise<WorkflowCo
       SELECT 1 FROM information_schema.columns
       WHERE table_schema = current_schema()
         AND table_name = 'workflow_continuations'
+        AND column_name = 'plan_parameters_json'
+        AND data_type = 'jsonb'
+        AND is_nullable = 'NO'
+    ) AND EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = to_regclass('workflow_continuations')
+        AND conname = 'workflow_continuations_plan_parameters_shape_check'
+        AND contype = 'c'
+    ) AS plan_parameters_json,
+    EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'workflow_continuations'
         AND column_name = 'revision'
         AND data_type = 'bigint'
         AND is_nullable = 'NO'
@@ -96,18 +127,24 @@ async function inspectWorkflowContinuationSchema(pool: Pool): Promise<WorkflowCo
     outstandingTicketForeignKey: row.outstanding_ticket_foreign_key === true,
     inputArtifactsJson: row.input_artifacts_json === true,
     completedStepsJson: row.completed_steps_json === true,
+    planParametersJson: row.plan_parameters_json === true,
     revision: row.revision === true,
   });
 }
 
-async function readWorkflowContinuationMigration(): Promise<string> {
+async function readWorkflowMigration(name: string): Promise<string> {
   try {
-    return await readFile(new URL('../artifacts/migrations/015_workflow_continuations.sql', import.meta.url), 'utf8');
+    return await readFile(new URL(`../artifacts/migrations/${name}`, import.meta.url), 'utf8');
   } catch (sourceLayoutError) {
     try {
-      return await readFile(new URL('./migrations/015_workflow_continuations.sql', import.meta.url), 'utf8');
-    } catch {
-      throw sourceLayoutError;
+      return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8');
+    } catch (bundleLayoutError) {
+      if (process.env.NODE_ENV === 'production') throw bundleLayoutError;
+      try {
+        return await readFile(resolve(process.cwd(), 'server/core/artifacts/migrations', name), 'utf8');
+      } catch {
+        throw sourceLayoutError;
+      }
     }
   }
 }
