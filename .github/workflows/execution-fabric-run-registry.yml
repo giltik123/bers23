@@ -84,6 +84,8 @@ jobs:
           npm run db:check:transactions
       - name: Prove workflow parent LOCAL child and INTERNAL verify projection semantics without redispatch authority
         run: node --experimental-strip-types --test server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.test.mjs
+      - name: Prove WORKFLOW_INTERNAL_STEP producer allowlist by AST
+        run: node --test server/core/execution/internalWorkflowAuthorityProducerBoundary.test.mjs
       - name: Prove authenticated ExecutionRun recovery HTTP boundary is read-only
         run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
       - name: Bundle durable registry PostgreSQL acceptance
@@ -149,11 +151,6 @@ jobs:
           grep -q "capability: 'WORKFLOW_STEP'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q "authorityKind: 'WORKFLOW_INTERNAL_STEP'" server/core/workflow/BoundedAgentDeterministicWorkflowService.ts
-          INTERNAL_AUTHORITY="authorityKind: 'WORKFLOW_INTERNAL_STEP'"
-          mapfile -t internal_producers < <(grep -R -l -F "$INTERNAL_AUTHORITY" server/core --include='*.ts' | sort)
-          test "${#internal_producers[@]}" -eq 2
-          test "${internal_producers[0]}" = 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
-          test "${internal_producers[1]}" = 'server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts'
           grep -q 'parentRunId: parent.runId' server/core/workflow/ExecutionRunBoundLocalCompositeContinuationService.ts
           grep -q 'WORKFLOW_STEP execution run requires parentRunId' server/core/execution/PostgresExecutionRunRegistry.ts
           grep -q "parentRun.capability !== 'WORKFLOW_CONTINUATION'" server/core/execution/PostgresExecutionRunRegistry.ts

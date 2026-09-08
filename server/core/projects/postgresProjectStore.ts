@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
 
@@ -44,8 +44,9 @@ export class PostgresProjectStore {
    * Because this method runs behind mutate()'s project-row FOR UPDATE lock,
    * checking the complete active source chain here serializes Accept against
    * undo/redo/version navigation across tabs and processes. A multi-step FINAL is
-   * admissible only when that exact chain reaches the current Project cursor; a
-   * stale, broken, cross-scope, cyclic or excessively deep chain still fails closed.
+   * admissible only through intermediates that never became a Project cursor and
+   * whose durable chain reaches the exact current cursor. Historical cursor
+   * ancestry is intentionally insufficient: stale results remain fail-closed.
    *
    * Before the first mutation, canonical Artifact/Fashion lineage is revalidated
    * through PostgresImageArtifactStore on this exact transaction client. This
@@ -67,6 +68,7 @@ export class PostgresProjectStore {
         throw Object.assign(new Error('FINAL artifact durable lineage is invalid or unavailable'),{status:409,code:'invalid_final_lineage',cause:error});
       }
       if(artifact.source_image_storage_id) await this.assertFinalSourceReachesCurrent(
+        client,
         images,
         {...scope,projectId:id},
         storageId,
@@ -112,6 +114,7 @@ export class PostgresProjectStore {
   }
 
   private async assertFinalSourceReachesCurrent(
+    client: PoolClient,
     images: PostgresImageArtifactStore,
     scope: AuthenticatedScope & { projectId: string },
     finalStorageId: string,
@@ -135,6 +138,12 @@ export class PostgresProjectStore {
         throw Object.assign(new Error('FINAL artifact durable source lineage is invalid or unavailable'), { status: 409, code: 'invalid_final_lineage' });
       }
       if (source.storageId === currentStorageId) return;
+      const historicalCursor = (await client.query(`SELECT 1 FROM canonical_project_history WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND image_storage_id=$4 LIMIT 1`, [
+        scope.projectId, scope.tenantId, scope.userId, source.storageId,
+      ])).rows[0];
+      if (historicalCursor) {
+        throw Object.assign(new Error('FINAL artifact was produced through a stale Project cursor'), { status: 409, code: 'final_source_conflict' });
+      }
       if (!source.sourceImageStorageId) {
         throw Object.assign(new Error('FINAL artifact was produced from a stale Project source'), { status: 409, code: 'final_source_conflict' });
       }
