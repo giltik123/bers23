@@ -26,9 +26,10 @@ test('normal deterministic v2 issuance preserves the existing child workflow bin
   assert.equal(issued[0].workflowId, 'child-execution');
 });
 
-test('server-owned workflow binding changes only workflowId for one exact scoped child request', async () => {
+test('server-owned async workflow context changes only workflowId for admitted deterministic steps', async () => {
   const { issuer, issued } = runtime(undefined);
-  await issuer.withWorkflowBinding({ scope, requestId: 'child-execution', workflowId: 'agent-workflow' }, async () => {
+  await issuer.withWorkflowBinding({ scope, workflowId: 'agent-workflow', allowedStepIds: ['resize'] }, async () => {
+    await Promise.resolve();
     await issuer.issue(request());
   });
   assert.equal(issued[0].requestId, 'child-execution');
@@ -36,7 +37,37 @@ test('server-owned workflow binding changes only workflowId for one exact scoped
   assert.equal(issued[0].stepId, 'resize');
 
   await issuer.issue(request({ idempotencyKey: 'next:resize:local-v2' }));
-  assert.equal(issued[1].workflowId, 'child-execution', 'binding must be removed after the server-owned call');
+  assert.equal(issued[1].workflowId, 'child-execution', 'binding must disappear after the exact server-owned async call');
+});
+
+test('workflow binding fails closed for foreign scope or an unadmitted nested step', async () => {
+  const scoped = runtime(undefined);
+  await scoped.issuer.withWorkflowBinding({ scope, workflowId: 'agent-workflow', allowedStepIds: ['resize'] }, async () => {
+    await assert.rejects(
+      () => scoped.issuer.issue(request({ scope: { ...scope, userId: 'foreign-user' } })),
+      error => error?.code === 'WORKFLOW_LOCAL_TICKET_BINDING_CONFLICT',
+    );
+    await assert.rejects(
+      () => scoped.issuer.issue(request({ stepId: 'orthogonal-transform', idempotencyKey: 'child:orthogonal:local-v2' })),
+      error => error?.code === 'WORKFLOW_LOCAL_TICKET_BINDING_CONFLICT',
+    );
+  });
+  assert.equal(scoped.issued.length, 0);
+});
+
+test('concurrent server workflow bindings do not leak across async call trees', async () => {
+  const { issuer, issued } = runtime(undefined);
+  await Promise.all([
+    issuer.withWorkflowBinding({ scope, workflowId: 'workflow-a', allowedStepIds: ['resize'] }, async () => {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      await issuer.issue(request({ requestId: 'child-a', workflowId: 'child-a', idempotencyKey: 'a:resize:local-v2' }));
+    }),
+    issuer.withWorkflowBinding({ scope, workflowId: 'workflow-b', allowedStepIds: ['resize'] }, async () => {
+      await issuer.issue(request({ requestId: 'child-b', workflowId: 'child-b', idempotencyKey: 'b:resize:local-v2' }));
+    }),
+  ]);
+  assert.equal(issued.find(value => value.requestId === 'child-a')?.workflowId, 'workflow-a');
+  assert.equal(issued.find(value => value.requestId === 'child-b')?.workflowId, 'workflow-b');
 });
 
 test('durable ticket restores its workflowId after Core restart without an active transient binding', async () => {
@@ -46,11 +77,11 @@ test('durable ticket restores its workflowId after Core restart without an activ
   assert.equal(issued[0].workflowId, 'agent-workflow');
 });
 
-test('conflicting active workflow bindings and durable idempotency substitution fail closed', async () => {
+test('conflicting nested workflow contexts and durable idempotency substitution fail closed', async () => {
   const nested = runtime(undefined);
   await assert.rejects(
-    () => nested.issuer.withWorkflowBinding({ scope, requestId: 'child-execution', workflowId: 'workflow-a' }, () =>
-      nested.issuer.withWorkflowBinding({ scope, requestId: 'child-execution', workflowId: 'workflow-b' }, async () => undefined)),
+    () => nested.issuer.withWorkflowBinding({ scope, workflowId: 'workflow-a', allowedStepIds: ['resize'] }, () =>
+      nested.issuer.withWorkflowBinding({ scope, workflowId: 'workflow-b', allowedStepIds: ['resize'] }, async () => undefined)),
     error => error?.code === 'WORKFLOW_LOCAL_TICKET_BINDING_CONFLICT',
   );
 
