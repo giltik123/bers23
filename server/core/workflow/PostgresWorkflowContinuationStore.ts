@@ -56,10 +56,10 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
   async create(input: CreateWorkflowContinuationInput): Promise<WorkflowContinuationSnapshot> {
     const normalized = normalizeWorkflowContinuationCreate(input);
     const inserted = await this.pool.query(`INSERT INTO workflow_continuations
-      (execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,plan_parameters_json,input_artifacts_json,state,completed_steps_json)
+      (execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,input_artifacts_json,plan_parameters_json,state,completed_steps_json)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,'READY','[]'::jsonb)
       ON CONFLICT DO NOTHING RETURNING ${COLUMNS}`,
-      [normalized.executionId, normalized.clientRequestId, normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId, normalized.plan.planId, normalized.plan.planRevision, normalized.plan.planDigest, JSON.stringify(normalized.plan.parameters ?? {}), JSON.stringify(normalized.inputArtifacts)]);
+      [normalized.executionId, normalized.clientRequestId, normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId, normalized.plan.planId, normalized.plan.planRevision, normalized.plan.planDigest, JSON.stringify(normalized.inputArtifacts), JSON.stringify(normalized.plan.parameters ?? {})]);
     if (inserted.rows[0]) return snapshotFromRow(inserted.rows[0]);
 
     const byClient = await this.getByClientRequestId(normalized.scope, normalized.clientRequestId);
