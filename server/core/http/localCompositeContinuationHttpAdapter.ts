@@ -2,11 +2,17 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import type { LocalCompositeContinuationService } from '../workflow/LocalCompositeContinuationService.ts';
+import type { LocalCompositeInputDeliveryService } from '../workflow/LocalCompositeInputDeliveryService.ts';
 import type { LocalCompositeOutputUploadService } from '../workflow/LocalCompositeOutputUploadService.ts';
 import type { ProductionLocalCompositeStartAdmission } from '../workflow/ProductionLocalCompositeStartAdmission.ts';
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/composite-continuations/';
+const INPUT_STEP_HEADER = 'X-Bers-Composite-Input-Step';
+const INPUT_WIDTH_HEADER = 'X-Bers-Local-Input-Width';
+const INPUT_HEIGHT_HEADER = 'X-Bers-Local-Input-Height';
+const SOURCE_SHA_HEADER = 'X-Bers-Local-Source-Sha256';
+const MASK_SHA_HEADER = 'X-Bers-Local-Mask-Sha256';
 type LocalCompositeContinuationPort = Pick<LocalCompositeContinuationService, 'start' | 'resume' | 'submitLocalResult'>;
 
 type CompositeAuth = Readonly<{
@@ -16,6 +22,7 @@ type CompositeAuth = Readonly<{
 /** Authenticated browser transport for the first narrow durable LOCAL_ONLY composite. */
 export function createLocalCompositeContinuationHttpAdapter(input: Readonly<{
   continuation: LocalCompositeContinuationPort;
+  inputs?: LocalCompositeInputDeliveryService;
   outputs: LocalCompositeOutputUploadService;
   startAdmission: Pick<ProductionLocalCompositeStartAdmission, 'assertStartAllowed'>;
   auth: CompositeAuth;
@@ -26,6 +33,7 @@ export function createLocalCompositeContinuationHttpAdapter(input: Readonly<{
     if (!url.pathname.startsWith(PREFIX)) return false;
     const correlationId = header(request, 'x-correlation-id')?.slice(0, 128) || globalThis.crypto.randomUUID();
     response.setHeader('X-Correlation-Id', correlationId);
+    response.setHeader('Cache-Control', 'no-store');
     try {
       applyCors(request, response, input.config);
       if (request.method === 'OPTIONS') { send(response, 204, undefined); return true; }
@@ -49,18 +57,41 @@ export function createLocalCompositeContinuationHttpAdapter(input: Readonly<{
         send(response, 202, publicView(view)); return true;
       }
 
+      const inputMatch = url.pathname.match(/^\/api\/core\/composite-continuations\/([^/]+)\/input$/);
+      if (inputMatch && request.method === 'GET') {
+        const delivery = requireInputDelivery(input.inputs);
+        const projectId = requireProjectId(url);
+        const canonical = await delivery.deliver(decodeURIComponent(inputMatch[1]), scope(principal, projectId));
+        response.setHeader(INPUT_STEP_HEADER, canonical.step);
+        response.setHeader(INPUT_WIDTH_HEADER, String(canonical.width));
+        response.setHeader(INPUT_HEIGHT_HEADER, String(canonical.height));
+        response.setHeader(SOURCE_SHA_HEADER, canonical.sourceSha256);
+        if (canonical.step === 'SEGMENT') {
+          assertSourceDelivery(canonical.sourceRgba, canonical.width, canonical.height);
+          sendBytes(response, 200, canonical.sourceRgba); return true;
+        }
+        response.setHeader(MASK_SHA_HEADER, canonical.maskSha256);
+        const pixelCount = canonical.width * canonical.height;
+        const expectedBytes = pixelCount * 5;
+        if (!Number.isSafeInteger(pixelCount) || canonical.sourceRgba.byteLength + canonical.maskAlpha.byteLength !== expectedBytes) {
+          throw httpError(500, 'local_composite_input_delivery_contract', 'Composite background input delivery length is invalid');
+        }
+        const bytes = new Uint8Array(expectedBytes);
+        bytes.set(canonical.sourceRgba, 0);
+        bytes.set(canonical.maskAlpha, canonical.sourceRgba.byteLength);
+        sendBytes(response, 200, bytes); return true;
+      }
+
       const executionMatch = url.pathname.match(/^\/api\/core\/composite-continuations\/([^/]+)$/);
       if (executionMatch && request.method === 'GET') {
-        const projectId = url.searchParams.get('projectId')?.trim() ?? '';
-        if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
+        const projectId = requireProjectId(url);
         const view = await input.continuation.resume(decodeURIComponent(executionMatch[1]), scope(principal, projectId));
         send(response, 200, publicView(view)); return true;
       }
 
       const outputMatch = url.pathname.match(/^\/api\/core\/composite-continuations\/([^/]+)\/output$/);
       if (outputMatch && request.method === 'POST') {
-        const projectId = url.searchParams.get('projectId')?.trim() ?? '';
-        if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required');
+        const projectId = requireProjectId(url);
         const mimeType = mediaType(request);
         if (mimeType !== 'application/octet-stream' && mimeType !== 'image/png') throw httpError(415, 'unsupported_media_type', 'Composite output must use application/octet-stream or image/png');
         const limit = mimeType === 'image/png' ? input.config.imageUploadLimitBytes : input.config.maskUploadLimitBytes;
@@ -118,14 +149,24 @@ function applyCors(request: IncomingMessage, response: ServerResponse, config: C
   response.setHeader('Access-Control-Allow-Credentials', 'true');
   response.setHeader('Vary', 'Origin');
   response.setHeader('Access-Control-Allow-Headers', `Content-Type, X-Correlation-Id, ${BROWSER_CSRF_HEADER}`);
-  response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}`);
+  response.setHeader('Access-Control-Expose-Headers', `X-Correlation-Id, ${BROWSER_CSRF_HEADER}, ${INPUT_STEP_HEADER}, ${INPUT_WIDTH_HEADER}, ${INPUT_HEIGHT_HEADER}, ${SOURCE_SHA_HEADER}, ${MASK_SHA_HEADER}`);
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+}
+function requireInputDelivery(value: LocalCompositeInputDeliveryService | undefined): LocalCompositeInputDeliveryService {
+  if (!value) throw httpError(503, 'local_composite_input_delivery_unavailable', 'Composite input delivery is not configured');
+  return value;
+}
+function requireProjectId(url: URL): string { const projectId = url.searchParams.get('projectId')?.trim() ?? ''; if (!projectId) throw httpError(400, 'invalid_project_id', 'projectId is required'); return projectId; }
+function assertSourceDelivery(bytes: Uint8Array, width: number, height: number): void {
+  const expected = width * height * 4;
+  if (!Number.isSafeInteger(expected) || bytes.byteLength !== expected) throw httpError(500, 'local_composite_input_delivery_contract', 'Composite segment input delivery length is invalid');
 }
 function requireJson(request: IncomingMessage): void { if (!mediaType(request).startsWith('application/json')) throw httpError(415, 'unsupported_media_type', 'Content-Type must be application/json'); }
 function mediaType(request: IncomingMessage): string { return String(request.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase(); }
 function header(request: IncomingMessage, name: string): string | undefined { const value = request.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value; }
 async function readJson(request: IncomingMessage, limit: number): Promise<unknown> { const bytes = await readBytes(request, limit); try { return JSON.parse(Buffer.from(bytes).toString('utf8')); } catch { throw httpError(400, 'invalid_json', 'Invalid JSON body'); } }
 async function readBytes(request: IncomingMessage, limit: number): Promise<Uint8Array> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of request) { const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += value.byteLength; if (size > limit) throw httpError(413, 'body_too_large', 'Request body exceeds the configured limit'); chunks.push(value); } return new Uint8Array(Buffer.concat(chunks)); }
+function sendBytes(response: ServerResponse, status: number, bytes: Uint8Array): void { response.statusCode = status; response.setHeader('Content-Type', 'application/octet-stream'); response.setHeader('Content-Length', bytes.byteLength); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(Buffer.from(bytes)); }
 function send(response: ServerResponse, status: number, body: unknown): void { response.statusCode = status; if (body === undefined) { response.end(); return; } const bytes = Buffer.from(JSON.stringify(body)); response.setHeader('Content-Type', 'application/json'); response.setHeader('Content-Length', bytes.byteLength); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(bytes); }
 function string(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined { return value && typeof value === 'object' && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined; }
