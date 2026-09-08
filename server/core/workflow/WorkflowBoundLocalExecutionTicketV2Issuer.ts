@@ -31,11 +31,13 @@ type NormalizedBinding = Readonly<{
  */
 export class WorkflowBoundLocalExecutionTicketV2Issuer implements LocalExecutionTicketV2IssuerPort {
   private readonly context = new AsyncLocalStorage<NormalizedBinding>();
+  private readonly delegate: LocalExecutionTicketV2IssuerPort;
+  private readonly durable: DurableReader;
 
-  constructor(
-    private readonly delegate: LocalExecutionTicketV2IssuerPort,
-    private readonly durable: DurableReader,
-  ) {}
+  constructor(delegate: LocalExecutionTicketV2IssuerPort, durable: DurableReader) {
+    this.delegate = delegate;
+    this.durable = durable;
+  }
 
   async withWorkflowBinding<T>(binding: WorkflowBinding, work: () => Promise<T>): Promise<T> {
     const normalized = normalizeBinding(binding);
