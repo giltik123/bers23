@@ -18,6 +18,7 @@ import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
 const AgentPanel = lazy(() => import('@/components/editor/agent/AgentPanel'));
+import useBoundedAgentEditor from '@/components/editor/agent/useBoundedAgentEditor';
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
 import ImageCanvas from '@/components/editor/ImageCanvas';
 import CropToolbar from '@/components/editor/CropToolbar';
@@ -135,6 +136,15 @@ export default function Editor() {
       });
     },
   });
+  const boundedAgent = useBoundedAgentEditor({
+    project,
+    onFinalCandidate: (candidate) => {
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return candidate;
+      });
+    },
+  });
   const [segMeta, setSegMeta] = useState(null);
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
@@ -158,8 +168,10 @@ export default function Editor() {
   const resizeTarget = exactResizeTarget(resizeDraft);
   const resizeInteractionActive = Boolean(resizeDraft);
   const tryOnActive = tryOn.state.host.active || tryOn.busy || pendingResult?.kind === 'FASHION_TRYON';
-  const editorBusy = localEditorBusy || tryOnActive;
+  const agentActive = boundedAgent.state.active || boundedAgent.busy;
+  const editorBusy = localEditorBusy || tryOnActive || agentActive;
   const tryOnBlockedByEditor = localEditorBusy
+    || agentActive
     || detecting
     || committing
     || Boolean(selection)
@@ -167,6 +179,15 @@ export default function Editor() {
     || resizeInteractionActive
     || Boolean(driftWarning)
     || (Boolean(pendingResult) && pendingResult?.kind !== 'FASHION_TRYON');
+  const agentBlockedByEditor = localEditorBusy
+    || tryOnActive
+    || detecting
+    || committing
+    || Boolean(selection)
+    || cropInteractionActive
+    || resizeInteractionActive
+    || Boolean(driftWarning)
+    || Boolean(pendingResult);
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
   useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
@@ -636,6 +657,10 @@ export default function Editor() {
       void tryOn.retry().catch((cause) => setAiError(cause?.message || 'Canonical deterministic Try-On retry failed.'));
       return;
     }
+    if (pending?.kind === 'BOUNDED_AGENT') {
+      void boundedAgent.start(pending.context).catch((cause) => setAiError(cause?.message || 'Bounded Agent retry failed.'));
+      return;
+    }
     if (pending?.kind === 'BACKGROUND_ISOLATION') {
       void isolateBackground(pending.context);
       return;
@@ -805,7 +830,7 @@ export default function Editor() {
         onInvert={() => updateSelection((service) => service.invert())}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
-        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
+        canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
         isolatingBackground={isolatingBackground}
         onIsolateBackground={() => isolateBackground()}
       />
@@ -844,7 +869,7 @@ export default function Editor() {
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
-          busy={committing || tryOn.busy || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
+          busy={committing || tryOn.busy || boundedAgent.busy || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
         />
       ) : cropInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>
@@ -864,7 +889,7 @@ export default function Editor() {
               />
             </>
           )}
-          <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={(next) => { if (!tryOnActive) setEditTab(next); }} />
+          <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
           {editTab === 'creative' ? (
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
@@ -887,7 +912,15 @@ export default function Editor() {
           ) : editTab === 'fashion' ? (
             <FashionPanel />
           ) : editTab === 'agent' ? (
-            <AgentPanel project={project} objects={objects} disabled={editorBusy} />
+            <AgentPanel
+              project={project}
+              state={boundedAgent.state}
+              busy={boundedAgent.busy}
+              disabled={agentBlockedByEditor}
+              onStart={boundedAgent.start}
+              onRetry={boundedAgent.retry}
+              onCancel={boundedAgent.cancel}
+            />
           ) : editTab === 'recipes' ? (
             <RecipePanel
               objects={objects}
