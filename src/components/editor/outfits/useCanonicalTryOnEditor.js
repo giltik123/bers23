@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { resolveCoreResourceUrl } from '@/api/coreResourceUrl';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
 import { createCanonicalTryOnProductRuntime } from '@/application/fashion/createCanonicalTryOnProductRuntime';
 import { createCanonicalTryOnEditorController } from '@/application/fashion/createCanonicalTryOnEditorController';
@@ -6,6 +7,7 @@ import { createCanonicalTryOnEditorHost } from '@/application/fashion/createCano
 import { createTryOnEditorFinalHandoff } from '@/application/fashion/createTryOnEditorFinalHandoff';
 import { annotateCanonicalTryOnError } from '@/application/fashion/canonicalTryOnSupportDiagnostic';
 
+const CORE_API_ROOT = (import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core';
 const IDLE_HOST = Object.freeze({ active: false, busy: false, disposed: false, hasInFlight: false, phase: 'IDLE' });
 const EMPTY_STATE = Object.freeze({ selection: null, result: null, host: IDLE_HOST });
 const ACTIONS = new Set(['inspect', 'run', 'resume', 'recover']);
@@ -25,6 +27,7 @@ export default function useCanonicalTryOnEditor({ onFinalCandidate }) {
     const handoff = createTryOnEditorFinalHandoff({
       encodePreviewPng: encodeDeterministicRgbaPng,
       createBlobUrl: async (png) => URL.createObjectURL(new Blob([png], { type: 'image/png' })),
+      resolveRecoveryPreviewUrl: (value) => resolveCoreResourceUrl(value, CORE_API_ROOT),
     });
     return createCanonicalTryOnEditorHost({
       createController: ({ selection, beforeUrl }) => createCanonicalTryOnEditorController({
