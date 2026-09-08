@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
     paths:
       - 'src/api/coreClient.js'
+      - 'src/api/coreResourceUrl.js'
       - 'src/api/managedGarmentClient.js'
       - 'src/api/managedGarmentCollectionClient.js'
       - 'src/api/managedOutfitClient.js'
