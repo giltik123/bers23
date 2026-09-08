@@ -52,6 +52,9 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
 
   const firstPool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-continuation-first' });
   try {
+    // Keep this integration test autonomous when it is discovered by the broad server:test command.
+    // The dedicated C5A workflow separately applies the exact SQL migration chain before running this test,
+    // so this test bootstrap does not replace the hosted production-migration acceptance gate.
     await migrateWorkflowContinuationSchema(firstPool);
     await checkWorkflowContinuationSchema(firstPool);
     const continuations = new PostgresWorkflowContinuationStore(firstPool, () => NOW);
@@ -86,6 +89,9 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
     assert.equal(a.revision, 2); assert.equal(a.completedSteps.length, 1);
     await assert.rejects(() => first.completeLocalStep({ ...completion, expectedRevision: 2, artifactIds: [`${token}-other-mask`] }), /different canonical result/);
 
+    // Persist RUNNING_INTERNAL, then deliberately destroy this Core/Pool before verify completes.
+    // The next independent Core instance must recover exactly this internal step rather than
+    // reissuing local work or skipping directly to SUCCESS.
     const running = await first.runInternalStep({ executionId, scope: scoped, expectedRevision: 2, stepId: 'verify' });
     assert.equal(running.state, 'RUNNING_INTERNAL');
     assert.equal(running.currentStepId, 'verify');
@@ -102,6 +108,7 @@ test('PostgreSQL continuation survives Core restart with immutable roots and ser
     assert.equal(recoveredInternal.revision, runningRevision);
     assert.deepEqual(recoveredInternal.completedSteps[0].artifactIds, [canonicalArtifactId]);
 
+    // Lost response/replay of the internal-start transition is idempotent across the restart.
     const replayedRunning = await afterInternalRestart.runInternalStep({ executionId, scope: scoped, expectedRevision: 2, stepId: 'verify' });
     assert.deepEqual(replayedRunning, recoveredInternal);
 
