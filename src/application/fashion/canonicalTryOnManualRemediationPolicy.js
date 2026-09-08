@@ -1,3 +1,4 @@
+import { canonicalCoreResourcePath } from '../../api/coreResourceUrl.js';
 import {
   normalizeCanonicalTryOnReadinessSummary,
   requireCanonicalTryOnSupportedCategoryGroup,
@@ -17,8 +18,8 @@ const MANUAL_BODY = new Set(['BODY_ANCHORS_REQUIRED', 'BODY_ANCHORS_AMBIGUOUS'])
  * into READY. Save acknowledgement must be followed by a fresh canonical
  * readiness check; Run remains a separate explicit user action.
  */
-export function canonicalTryOnManualRemediationPolicy({ selection, result }) {
-  const stable = normalizeSelection(selection);
+export function canonicalTryOnManualRemediationPolicy({ selection, result, coreApiRoot }) {
+  const stable = normalizeSelection(selection, coreApiRoot);
   const readiness = normalizeResult(result, stable.entryId, stable.garmentId);
 
   if (!readiness) return none('Check canonical readiness before opening manual prerequisite editors.');
@@ -91,7 +92,7 @@ export function canonicalTryOnManualSaveTransition(previous) {
   });
 }
 
-function normalizeSelection(value) {
+function normalizeSelection(value, coreApiRoot) {
   requirePlainObject(value, 'Canonical Try-On remediation selection');
   requireExactKeys(
     value,
@@ -104,7 +105,7 @@ function normalizeSelection(value) {
   const entryId = uuid(value.entryId, 'entryId');
   const projectId = uuid(value.projectId, 'projectId');
   const sourceArtifactId = sourceArtifact(value.sourceArtifactId);
-  const beforeUrl = displayUrl(value.beforeUrl);
+  const beforeUrl = displayUrl(value.beforeUrl, coreApiRoot);
   const matches = value.outfit.entries.filter((entry) => entry?.entryId === entryId);
   if (matches.length !== 1) throw new Error('Canonical Try-On remediation selection does not resolve one Outfit entry');
   const entry = matches[0];
@@ -195,13 +196,15 @@ function sourceArtifact(value) {
   return normalized;
 }
 
-function displayUrl(value) {
+function displayUrl(value, coreApiRoot) {
   if (typeof value !== 'string') throw new TypeError('beforeUrl must be a string');
   const normalized = value.trim();
   if (!normalized) throw new TypeError('beforeUrl is unavailable');
   const sameOrigin = normalized.startsWith('/') && !normalized.startsWith('//');
   const secureRemote = normalized.startsWith('https://');
-  if (!sameOrigin && !secureRemote && !normalized.startsWith('blob:')) {
+  const editorBlob = normalized.startsWith('blob:');
+  const configuredCore = canonicalCoreResourcePath(normalized, coreApiRoot) !== null;
+  if (!sameOrigin && !secureRemote && !editorBlob && !configuredCore) {
     throw new TypeError('beforeUrl is outside the accepted Editor display contract');
   }
   return normalized;
