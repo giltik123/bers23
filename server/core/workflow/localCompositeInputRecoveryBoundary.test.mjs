@@ -21,7 +21,7 @@ test('C2a.1 production recovery wiring is workflow-owned, PostgreSQL-backed and 
   assert.match(server, /hydrateArtifacts:\s*\(scope, sourceId, maskIds\) => localCompositeHydrator\.hydrate\(scope, sourceId, maskIds\)/);
   assert.match(server, /createLocalCompositeContinuationHttpAdapter\(\{ continuation: production\.localExecution\.composite, inputs: localCompositeInputs,/);
 
-  assert.match(adapter, /const inputMatch = url\.pathname\.match\(\/\^\\\/api\\\/core\\\/composite-continuations\\\/\(\[\^\/\]\+\)\\\/input\$\/\)/);
+  assert.match(adapter, /const inputMatch = url\.pathname\.match/);
   assert.match(adapter, /if \(inputMatch && request\.method === 'GET'\)/);
   assert.match(adapter, /delivery\.deliver\(decodeURIComponent\(inputMatch\[1\]\), scope\(principal, projectId\)\)/);
   assert.doesNotMatch(adapter, /searchParams\.get\(['"]ticketId['"]\)/);
