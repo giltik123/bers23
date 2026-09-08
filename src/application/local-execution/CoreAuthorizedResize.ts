@@ -23,6 +23,21 @@ export type ResizeRunInput = Readonly<{
   target: ResizeDimensions;
 }>;
 
+export type ResizePreparedRunInput = Readonly<{
+  ticket: LocalExecutionTicketV2;
+  sourceArtifactId: string;
+  target: ResizeDimensions;
+}>;
+
+export type ResizePreparedRunResult = Readonly<{
+  target: 'LOCAL';
+  runtime: 'BROWSER_JS';
+  accelerator: 'cpu';
+  preview: PixelImage;
+  latencyMs: number;
+  result: LocalExecutionResultV2;
+}>;
+
 export type ResizeRunResult = Readonly<{
   target: 'LOCAL';
   runtime: 'BROWSER_JS';
@@ -47,7 +62,17 @@ export class CoreAuthorizedResize {
     if (!input.requestId || !input.sourceArtifactId) throw new Error('Resize request is incomplete');
     const target = normalizeRequestTarget(input.target);
     const prepared = await this.core.prepareResize({ projectId: this.projectId, sourceArtifactId: input.sourceArtifactId, clientRequestId: input.requestId, ...target });
-    const ticket = validateTicket(prepared.ticket, input.sourceArtifactId, target);
+    const candidate = await this.runPrepared({ ticket: prepared.ticket, sourceArtifactId: input.sourceArtifactId, target });
+    const finalized = await this.core.submitResize({ ticketId: candidate.result.ticketId, projectId: this.projectId, result: candidate.result });
+    if (finalized.status !== 'SUCCESS' || finalized.verification?.valid === false || !finalized.artifactId) throw new Error('Core rejected deterministic Resize');
+    return Object.freeze({ target: candidate.target, runtime: candidate.runtime, accelerator: candidate.accelerator, canonicalArtifactId: finalized.artifactId, preview: candidate.preview, latencyMs: candidate.latencyMs });
+  }
+
+  /** Execute one already Core-issued Resize ticket without preparing or finalizing it. */
+  async runPrepared(input: ResizePreparedRunInput): Promise<ResizePreparedRunResult> {
+    if (!input.sourceArtifactId) throw new Error('Resize prepared request is incomplete');
+    const target = normalizeRequestTarget(input.target);
+    const ticket = validateTicket(input.ticket, input.sourceArtifactId, target);
     const sourceBinding = ticket.inputs[0];
     const [sourceHash, source] = await Promise.all([this.inputs.sha256(input.sourceArtifactId), this.inputs.loadImage(input.sourceArtifactId)]);
     if (sourceHash.toLowerCase() !== sourceBinding.sha256!.toLowerCase()) throw new Error('Resize source SHA-256 does not match the Core ticket');
@@ -76,9 +101,7 @@ export class CoreAuthorizedResize {
       metrics: Object.freeze({ latencyMs }),
       benchmarkEvidence: Object.freeze({ pixelCount: bounded.width * bounded.height, deterministicTool: TOOL.parameters.exact.deterministicTool }),
     });
-    const finalized = await this.core.submitResize({ ticketId: ticket.ticketId, projectId: this.projectId, result });
-    if (finalized.status !== 'SUCCESS' || finalized.verification?.valid === false || !finalized.artifactId) throw new Error('Core rejected deterministic Resize');
-    return Object.freeze({ target: 'LOCAL', runtime: TOOL.browser.runtime, accelerator: TOOL.browser.accelerator, canonicalArtifactId: finalized.artifactId, preview, latencyMs });
+    return Object.freeze({ target: 'LOCAL', runtime: TOOL.browser.runtime, accelerator: TOOL.browser.accelerator, preview, latencyMs, result });
   }
 }
 
