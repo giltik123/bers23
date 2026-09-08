@@ -6,6 +6,7 @@ on:
     paths:
       - "server/core/workflow/**"
       - "server/core/localExecution/**"
+      - "server/core/composition/createProductionCore.ts"
       - "server/core/artifacts/migrations/012_local_execution_uploads.sql"
       - "server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql"
       - "server/core/artifacts/migrations/015_workflow_continuations.sql"
@@ -49,9 +50,14 @@ jobs:
       - run: npm ci
       - name: Typecheck continuation authority
         run: npm run server:typecheck
+      - name: Prove production workflow-bound v2 issuer composition
+        run: |
+          grep -F "import { WorkflowBoundLocalExecutionTicketV2Issuer } from '../workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts';" server/core/composition/createProductionCore.ts
+          grep -F "const workflowBoundLocalExecutionV2 = new WorkflowBoundLocalExecutionTicketV2Issuer(localExecution, localExecutionAdmission);" server/core/composition/createProductionCore.ts
+          grep -F "localExecutionV2: workflowBoundLocalExecutionV2" server/core/composition/createProductionCore.ts
       - name: Run fail-closed continuation, workflow-ticket, bounded Agent and deterministic recovery unit tests
         run: |
-          node --experimental-strip-types --test server/core/workflow/WorkflowContinuationStore.planParameters.test.mjs
+          node --experimental-strip-types --test server/core/workflow/WorkflowContinuationPlanParameters.test.mjs
           node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.test.mjs
           node --experimental-strip-types --test server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.test.mjs
           node --experimental-strip-types --test server/core/workflow/WorkflowLocalExecutionAttemptRunProjection.test.mjs
@@ -77,7 +83,7 @@ jobs:
       - name: Prove PostgreSQL restart, immutable plan parameters, concurrency and replay semantics
         run: |
           node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.integration.test.mjs
-          node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationStore.planParameters.integration.test.mjs
+          node --experimental-strip-types --test server/core/workflow/PostgresWorkflowContinuationPlanParameters.integration.test.mjs
       - name: Preserve composite and capability fail-closed boundaries
         run: |
           npm run test:creative-planning-v2
