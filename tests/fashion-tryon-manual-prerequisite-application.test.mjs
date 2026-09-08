@@ -9,6 +9,7 @@ const GARMENT = 'aaaaaaaa-1111-4111-8111-111111111111';
 const PROJECT = 'bbbbbbbb-2222-4222-8222-222222222222';
 const VIEW = 'cccccccc-3333-4333-8333-333333333333';
 const IDEMPOTENCY = 'dddddddd-4444-4444-8444-444444444444';
+const SPLIT_CORE = 'http://127.0.0.1:4188/api/core';
 
 function image(revision = 7, overrides = {}) {
   return {
@@ -31,7 +32,7 @@ function image(revision = 7, overrides = {}) {
 function metadata(revision = 7, overrides = {}) {
   return { garmentId: GARMENT, name: 'Jacket', revision, status: 'ACTIVE', category: 'jackets', ...overrides };
 }
-function fixture({ images = [image()], metadataRows = [metadata()], garmentError = null, wardrobeError = null } = {}) {
+function fixture({ images = [image()], metadataRows = [metadata()], garmentError = null, wardrobeError = null, coreApiRoot } = {}) {
   const calls = [];
   let imageIndex = 0;
   let metadataIndex = 0;
@@ -57,6 +58,7 @@ function fixture({ images = [image()], metadataRows = [metadata()], garmentError
       },
     },
     createIdempotencyKey: () => IDEMPOTENCY,
+    coreApiRoot,
   });
   return { app, calls };
 }
@@ -76,6 +78,23 @@ test('primary Garment source projection drops view/storage/hash authority', asyn
   for (const forbidden of ['primaryViewId','viewId','contentSha256','storageProvenance','representationId','anchorSetId']) {
     assert.equal(serialized.includes(forbidden), false);
   }
+});
+
+test('split-origin Managed Garment display URL is accepted only for the configured Core origin', async () => {
+  const deliveryUrl = 'http://127.0.0.1:4188/api/core/garments/delivery/capability-token';
+  const accepted = await fixture({
+    coreApiRoot: SPLIT_CORE,
+    images: [image(7, { views: [{ ...image().views[0], deliveryUrl }] })],
+  }).app.loadGarmentSource(GARMENT);
+  assert.equal(accepted.imageUrl, deliveryUrl);
+
+  await assert.rejects(
+    () => fixture({
+      coreApiRoot: SPLIT_CORE,
+      images: [image(7, { views: [{ ...image().views[0], deliveryUrl: 'http://127.0.0.1:4187/api/core/garments/delivery/capability-token' }] })],
+    }).app.loadGarmentSource(GARMENT),
+    /delivery is outside/,
+  );
 });
 
 test('contour save uses accepted intent shaper, discards admission evidence and reloads fresh coherent source', async () => {
