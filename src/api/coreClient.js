@@ -108,6 +108,13 @@ export const coreClient = Object.freeze({
     result: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/result`),
     cancel: (executionId) => request(`/creative/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
   },
+  agent: {
+    startBoundedDeterministic: (payload) => request('/agent/bounded-deterministic/start', json('POST', payload)),
+    resumeBoundedDeterministic: ({ executionId, projectId }) => request(`/agent/bounded-deterministic/${encodeURIComponent(executionId)}?${new URLSearchParams({ projectId })}`),
+    submitBoundedDeterministicResult: ({ executionId, projectId, result }) => request(`/agent/bounded-deterministic/${encodeURIComponent(executionId)}/result`, json('POST', { projectId, result })),
+    retryBoundedDeterministic: ({ executionId, projectId }) => request(`/agent/bounded-deterministic/${encodeURIComponent(executionId)}/retry`, json('POST', { projectId })),
+    cancelBoundedDeterministic: ({ executionId, projectId }) => request(`/agent/bounded-deterministic/${encodeURIComponent(executionId)}/cancel`, json('POST', { projectId })),
+  },
   fashion: {
     garments: createManagedGarmentClient(request),
     wardrobe: createManagedWardrobeClient(request),
