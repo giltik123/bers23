@@ -8,10 +8,11 @@ import type { AuthenticatedScope } from '../application/creativeExecutionService
 import { admitLocalExecutionInputs } from '../localExecution/LocalExecutionInputAdmission.ts';
 import type { LocalExecutionLedger, LocalExecutionLedgerV2 } from '../localExecution/LocalExecutionLedger.ts';
 import { LOCAL_COMPOSITE_CONTINUATION_STEPS } from './LocalCompositeContinuationService.ts';
-import type { WorkflowContinuationSnapshot, WorkflowContinuationStore } from './WorkflowContinuationStore.ts';
+import type { WorkflowContinuationSnapshot, WorkflowContinuationStore, WorkflowInputArtifactBinding } from './WorkflowContinuationStore.ts';
 
 const SEGMENT_STEP = LOCAL_COMPOSITE_CONTINUATION_STEPS.segment;
 const BACKGROUND_STEP = LOCAL_COMPOSITE_CONTINUATION_STEPS.backgroundIsolation;
+const SHA256 = /^[a-f0-9]{64}$/i;
 
 type ScopedProject = AuthenticatedScope & Readonly<{ projectId: string }>;
 type TicketReader = Pick<LocalExecutionLedger, 'get'> & Pick<LocalExecutionLedgerV2, 'getV2'>;
@@ -71,30 +72,29 @@ export class LocalCompositeInputDeliveryService {
     const snapshot = await this.dependencies.continuations.get(executionId, scope);
     if (!snapshot) throw serviceError(404, 'local_composite_not_found', 'Local composite continuation was not found in authenticated scope');
     const binding = requireOutstanding(snapshot);
+    const root = requireImmutableRoot(snapshot);
 
     if (binding.stepId === SEGMENT_STEP && binding.ticketVersion === '1') {
       const ticket = await this.dependencies.tickets.get(binding.ticketId);
       if (!ticket) throw serviceError(409, 'local_composite_input_ticket_missing', 'Durable segment ticket is unavailable');
       assertTicketBinding(snapshot, ticket, this.#now());
-      assertSegmentTicket(ticket);
-      return this.deliverSegment(snapshot, ticket);
+      assertSegmentTicket(ticket, root);
+      return this.deliverSegment(snapshot, ticket, root);
     }
 
     if (binding.stepId === BACKGROUND_STEP && binding.ticketVersion === '2') {
       const ticket = await this.dependencies.tickets.getV2(binding.ticketId);
       if (!ticket) throw serviceError(409, 'local_composite_input_ticket_missing', 'Durable background-isolation ticket is unavailable');
       assertTicketBinding(snapshot, ticket, this.#now());
-      assertBackgroundTicket(ticket);
-      return this.deliverBackground(snapshot, ticket);
+      const maskArtifactId = requireCompletedSegmentMask(snapshot);
+      assertBackgroundTicket(ticket, root, maskArtifactId);
+      return this.deliverBackground(snapshot, ticket, root, maskArtifactId);
     }
 
     throw serviceError(409, 'local_composite_input_step_contract', 'Durable composite is waiting for an unsupported local input contract');
   }
 
-  private async deliverSegment(snapshot: WorkflowContinuationSnapshot, ticket: LocalExecutionTicket): Promise<LocalCompositeSegmentInputDelivery> {
-    if (ticket.inputs.length !== 1 || ticket.inputs[0].kind !== 'image' || ticket.inputs[0].role !== 'ORIGINAL' || !ticket.inputs[0].sha256) {
-      throw serviceError(409, 'local_composite_input_contract_mismatch', 'Composite segmentation requires one hash-bound ORIGINAL IMAGE');
-    }
+  private async deliverSegment(snapshot: WorkflowContinuationSnapshot, ticket: LocalExecutionTicket, root: WorkflowInputArtifactBinding): Promise<LocalCompositeSegmentInputDelivery> {
     const sourceBinding = ticket.inputs[0];
     if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId])) {
       throw serviceError(409, 'local_composite_input_lineage_unavailable', 'Composite segmentation source is no longer available');
@@ -109,28 +109,27 @@ export class LocalCompositeInputDeliveryService {
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || !(value?.data instanceof Uint8ClampedArray) || value.data.length !== width * height * 4) {
       throw serviceError(409, 'canonical_source_pixels_unavailable', 'Composite segmentation source RGBA pixels are unavailable');
     }
-    const output = ticket.expectedOutputs[0];
-    if (ticket.expectedOutputs.length !== 1 || output.kind !== 'mask' || output.role !== 'MASK' || output.width !== width || output.height !== height || !output.mimeTypes?.includes('application/octet-stream')) {
-      throw serviceError(409, 'local_composite_output_contract_mismatch', 'Composite segmentation output contract does not match the canonical source');
-    }
+    assertOutputGeometry(ticket, width, height, 'mask', 'MASK', 'application/octet-stream', 'Composite segmentation output contract does not match the canonical source');
     return Object.freeze({
       step: 'SEGMENT',
       executionId: snapshot.executionId,
       ticketId: ticket.ticketId,
-      sourceArtifactId: sourceBinding.artifactId,
-      sourceSha256: sourceBinding.sha256.toLowerCase(),
+      sourceArtifactId: root.artifactId,
+      sourceSha256: root.sha256.toLowerCase(),
       width,
       height,
       sourceRgba: Uint8Array.from(value.data),
     });
   }
 
-  private async deliverBackground(snapshot: WorkflowContinuationSnapshot, ticket: LocalExecutionTicketV2): Promise<LocalCompositeBackgroundInputDelivery> {
-    const sourceBinding = ticket.inputs.find(binding => binding.kind === 'image');
-    const maskBinding = ticket.inputs.find(binding => binding.kind === 'mask');
-    if (ticket.inputs.length !== 2 || sourceBinding?.role !== 'ORIGINAL' || maskBinding?.role !== 'MASK' || !sourceBinding.sha256 || !maskBinding.sha256) {
-      throw serviceError(409, 'local_composite_input_contract_mismatch', 'Composite background isolation requires exact hash-bound ORIGINAL IMAGE + MASK inputs');
-    }
+  private async deliverBackground(
+    snapshot: WorkflowContinuationSnapshot,
+    ticket: LocalExecutionTicketV2,
+    root: WorkflowInputArtifactBinding,
+    maskArtifactId: string,
+  ): Promise<LocalCompositeBackgroundInputDelivery> {
+    const sourceBinding = ticket.inputs.find(binding => binding.artifactId === root.artifactId)!;
+    const maskBinding = ticket.inputs.find(binding => binding.artifactId === maskArtifactId)!;
     if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId, maskBinding.artifactId])) {
       throw serviceError(409, 'local_composite_input_lineage_unavailable', 'Composite background-isolation inputs are no longer available');
     }
@@ -149,18 +148,15 @@ export class LocalCompositeInputDeliveryService {
     if (!(maskValue?.alpha instanceof Uint8Array) || Number(maskValue.width) !== width || Number(maskValue.height) !== height || maskValue.alpha.length !== width * height) {
       throw serviceError(409, 'canonical_mask_pixels_unavailable', 'Composite background-isolation MASK alpha pixels are unavailable');
     }
-    const output = ticket.expectedOutputs[0];
-    if (ticket.expectedOutputs.length !== 1 || output.kind !== 'image' || output.role !== 'COMPOSITE' || output.width !== width || output.height !== height || !output.mimeTypes?.includes('image/png')) {
-      throw serviceError(409, 'local_composite_output_contract_mismatch', 'Composite background-isolation output contract does not match the canonical source');
-    }
+    assertOutputGeometry(ticket, width, height, 'image', 'COMPOSITE', 'image/png', 'Composite background-isolation output contract does not match the canonical source');
     return Object.freeze({
       step: 'BACKGROUND_ISOLATION',
       executionId: snapshot.executionId,
       ticketId: ticket.ticketId,
-      sourceArtifactId: sourceBinding.artifactId,
-      maskArtifactId: maskBinding.artifactId,
-      sourceSha256: sourceBinding.sha256.toLowerCase(),
-      maskSha256: maskBinding.sha256.toLowerCase(),
+      sourceArtifactId: root.artifactId,
+      maskArtifactId,
+      sourceSha256: root.sha256.toLowerCase(),
+      maskSha256: maskBinding.sha256!.toLowerCase(),
       width,
       height,
       sourceRgba: Uint8Array.from(sourceValue.data),
@@ -174,6 +170,27 @@ function requireOutstanding(snapshot: WorkflowContinuationSnapshot) {
     throw serviceError(409, 'local_composite_input_not_outstanding', 'Composite input bytes are available only for the exact outstanding local step');
   }
   return snapshot.outstandingLocal;
+}
+
+function requireImmutableRoot(snapshot: WorkflowContinuationSnapshot): WorkflowInputArtifactBinding {
+  const root = snapshot.inputArtifacts[0];
+  if (
+    snapshot.inputArtifacts.length !== 1
+    || !root
+    || root.kind !== 'image'
+    || root.role !== 'ORIGINAL'
+    || !SHA256.test(root.sha256)
+    || root.parentArtifactIds.length !== 0
+  ) throw serviceError(409, 'local_composite_input_root_contract', 'Durable composite input root is not one parentless hash-bound ORIGINAL IMAGE');
+  return root;
+}
+
+function requireCompletedSegmentMask(snapshot: WorkflowContinuationSnapshot): string {
+  const completed = snapshot.completedSteps.find(step => step.stepId === SEGMENT_STEP);
+  if (!completed || completed.artifactIds.length !== 1 || !completed.artifactIds[0]) {
+    throw serviceError(409, 'local_composite_input_mask_binding', 'Background-isolation recovery requires exactly one completed SEGMENT MASK Artifact');
+  }
+  return completed.artifactIds[0];
 }
 
 function assertTicketBinding(snapshot: WorkflowContinuationSnapshot, ticket: LocalExecutionTicket | LocalExecutionTicketV2, now: number): void {
@@ -193,7 +210,7 @@ function assertTicketBinding(snapshot: WorkflowContinuationSnapshot, ticket: Loc
   if (now >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Durable composite local ticket has expired');
 }
 
-function assertSegmentTicket(ticket: LocalExecutionTicket): void {
+function assertSegmentTicket(ticket: LocalExecutionTicket, root: WorkflowInputArtifactBinding): void {
   if (
     ticket.version !== '1'
     || ticket.issuer !== 'CORE'
@@ -202,10 +219,20 @@ function assertSegmentTicket(ticket: LocalExecutionTicket): void {
     || ticket.operation.id !== SEGMENT_STEP
     || ticket.operation.type !== 'segment'
     || ticket.operation.capability !== LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.segment
-  ) throw serviceError(409, 'local_composite_input_capability_mismatch', 'Ticket is not the admitted composite segmentation contract');
+    || ticket.cost.providerCalls !== 0
+    || ticket.cost.paidCloudCredits !== 0
+  ) throw serviceError(409, 'local_composite_input_capability_mismatch', 'Ticket is not the admitted zero-cloud composite segmentation contract');
+  const source = ticket.inputs[0];
+  if (
+    ticket.inputs.length !== 1
+    || source?.artifactId !== root.artifactId
+    || source.kind !== 'image'
+    || source.role !== 'ORIGINAL'
+    || source.sha256?.toLowerCase() !== root.sha256.toLowerCase()
+  ) throw serviceError(409, 'local_composite_input_root_mismatch', 'Composite segmentation ticket source does not match the immutable workflow root');
 }
 
-function assertBackgroundTicket(ticket: LocalExecutionTicketV2): void {
+function assertBackgroundTicket(ticket: LocalExecutionTicketV2, root: WorkflowInputArtifactBinding, maskArtifactId: string): void {
   if (
     ticket.version !== '2'
     || ticket.issuer !== 'CORE'
@@ -215,11 +242,49 @@ function assertBackgroundTicket(ticket: LocalExecutionTicketV2): void {
     || ticket.operation.type !== 'BACKGROUND_ISOLATION'
     || ticket.operation.capability !== LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation
     || ticket.allowedExecutors.length !== 1
-  ) throw serviceError(409, 'local_composite_input_capability_mismatch', 'Ticket is not the admitted composite background-isolation contract');
+    || ticket.cost.providerCalls !== 0
+    || ticket.cost.paidCloudCredits !== 0
+  ) throw serviceError(409, 'local_composite_input_capability_mismatch', 'Ticket is not the admitted zero-cloud composite background-isolation contract');
   const executor = ticket.allowedExecutors[0];
   if (executor.kind !== 'DETERMINISTIC_TOOL' || executor.toolId !== BACKGROUND_ISOLATION_TOOL_ID || executor.version !== BACKGROUND_ISOLATION_TOOL_VERSION) {
     throw serviceError(409, 'local_composite_input_executor_mismatch', 'Composite background isolation ticket has an invalid deterministic executor binding');
   }
+  const source = ticket.inputs.find(binding => binding.artifactId === root.artifactId);
+  const mask = ticket.inputs.find(binding => binding.artifactId === maskArtifactId);
+  if (
+    ticket.inputs.length !== 2
+    || !source
+    || !mask
+    || source.kind !== 'image'
+    || source.role !== 'ORIGINAL'
+    || source.sha256?.toLowerCase() !== root.sha256.toLowerCase()
+    || mask.kind !== 'mask'
+    || mask.role !== 'MASK'
+    || !mask.sha256
+  ) throw serviceError(409, 'local_composite_input_lineage_mismatch', 'Composite background-isolation ticket does not match immutable root + completed SEGMENT MASK lineage');
+}
+
+function assertOutputGeometry(
+  ticket: LocalExecutionTicket | LocalExecutionTicketV2,
+  width: number,
+  height: number,
+  kind: 'mask' | 'image',
+  role: 'MASK' | 'COMPOSITE',
+  mimeType: string,
+  message: string,
+): void {
+  const output = ticket.expectedOutputs[0];
+  if (
+    ticket.expectedOutputs.length !== 1
+    || !output
+    || output.kind !== kind
+    || output.role !== role
+    || output.count !== 1
+    || output.width !== width
+    || output.height !== height
+    || output.mimeTypes?.length !== 1
+    || output.mimeTypes[0] !== mimeType
+  ) throw serviceError(409, 'local_composite_output_contract_mismatch', message);
 }
 
 function assertInputAdmission(ticket: LocalExecutionTicket | LocalExecutionTicketV2, artifacts: readonly CreativeArtifact[]): void {
