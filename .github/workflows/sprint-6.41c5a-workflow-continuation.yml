@@ -73,8 +73,11 @@ jobs:
         run: node --experimental-strip-types --test server/core/http/boundedAgentHttpAdapter.test.mjs
       - name: Prove prepared local execution, browser sequencing and Editor boundary
         run: |
-          node --experimental-strip-types --test tests/bounded-agent-prepared-local-execution.test.ts
-          node --experimental-strip-types --test tests/bounded-agent-browser-runner.test.ts
+          mkdir -p .test-cache/c5a
+          npx esbuild tests/bounded-agent-prepared-local-execution.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/c5a/prepared-local-execution.test.mjs --external:node:*
+          node --test .test-cache/c5a/prepared-local-execution.test.mjs
+          npx esbuild tests/bounded-agent-browser-runner.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/c5a/browser-runner.test.mjs --external:node:*
+          node --test .test-cache/c5a/browser-runner.test.mjs
           node --test tests/editor-canonical-boundary.test.mjs
           node --test tests/editor-zero-object-navigation.test.mjs
       - name: Run fail-closed continuation, workflow-ticket, bounded Agent and deterministic recovery unit tests
