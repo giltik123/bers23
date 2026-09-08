@@ -67,7 +67,11 @@ export type DeterministicWorkflowStepFinalRecoveryDependencies = Readonly<{
  * claims/commits a ticket, advances a workflow or mutates a Project.
  */
 export class DeterministicWorkflowStepFinalRecoveryAuthority {
-  constructor(private readonly dependencies: DeterministicWorkflowStepFinalRecoveryDependencies) {}
+  private readonly dependencies: DeterministicWorkflowStepFinalRecoveryDependencies;
+
+  constructor(dependencies: DeterministicWorkflowStepFinalRecoveryDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async recover(input: DeterministicWorkflowStepRecoveryBinding, auth: AuthenticatedScope): Promise<DeterministicWorkflowStepRecoveryResult> {
     const binding = normalizeBinding(input);
