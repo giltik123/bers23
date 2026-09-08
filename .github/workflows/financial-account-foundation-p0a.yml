@@ -10,6 +10,7 @@ on:
       - 'server/transactions/infrastructure/postgres/transactionSchemaMigrator.ts'
       - 'server/transactions/infrastructure/postgres/postgresTransactionRuntime.ts'
       - 'server/transactions/infrastructure/postgres/migrations/038_financial_account_foundation.sql'
+      - 'server/core/artifacts/migrations/039_workflow_continuation_plan_parameters.sql'
       - 'server/core/http/financialAccountHttpAdapter.ts'
       - 'server/core/http/financialAccountHttpAdapter.test.mjs'
       - 'server/index.ts'
@@ -61,13 +62,14 @@ jobs:
           set -euo pipefail
           test -n "$BASE_SHA"
           git diff --exit-code "$BASE_SHA"..HEAD -- server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql
-      - name: Prove global migration inventory reaches 038 contiguously
+      - name: Prove global migration inventory reaches 039 contiguously while preserving financial 038
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.at(-1)?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration must be the exact global inventory tail');
-          if (migrations.length !== 38) throw new Error(`Expected 38 contiguous production migrations, got ${migrations.length}`);
+          if (migrations.length !== 39) throw new Error(`Expected 39 contiguous production migrations, got ${migrations.length}`);
+          if (migrations[37]?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration moved from its accepted global position');
+          if (migrations.at(-1)?.name !== '039_workflow_continuation_plan_parameters.sql') throw new Error('039 workflow plan-parameter migration must be the global inventory tail');
           NODE
       - name: Typecheck Core financial contracts
         run: npm run server:typecheck
@@ -76,6 +78,7 @@ jobs:
           npm run server:build
           test -f dist-server/migrations/001_transaction_store.sql
           test -f dist-server/migrations/038_financial_account_foundation.sql
+          test -f dist-server/migrations/039_workflow_continuation_plan_parameters.sql
       - name: Apply and verify ordered transaction migrations
         run: |
           npm run db:migrate:transactions
