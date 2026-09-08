@@ -7,6 +7,8 @@ on:
       - "server/core/workflow/**"
       - "server/core/localExecution/**"
       - "server/core/composition/createProductionCore.ts"
+      - "server/core/composition/boundedAgentProductionComposition.test.mjs"
+      - "server/core/artifacts/durableArtifactLineageResolver.ts"
       - "server/core/artifacts/migrations/012_local_execution_uploads.sql"
       - "server/core/artifacts/migrations/013_local_execution_ticket_ledger.sql"
       - "server/core/artifacts/migrations/015_workflow_continuations.sql"
@@ -50,11 +52,8 @@ jobs:
       - run: npm ci
       - name: Typecheck continuation authority
         run: npm run server:typecheck
-      - name: Prove production workflow-bound v2 issuer composition
-        run: |
-          grep -F "import { WorkflowBoundLocalExecutionTicketV2Issuer } from '../workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts';" server/core/composition/createProductionCore.ts
-          grep -F "const workflowBoundLocalExecutionV2 = new WorkflowBoundLocalExecutionTicketV2Issuer(localExecution, localExecutionAdmission);" server/core/composition/createProductionCore.ts
-          grep -F "localExecutionV2: workflowBoundLocalExecutionV2" server/core/composition/createProductionCore.ts
+      - name: Prove production workflow-bound v2 issuer and bounded Agent composition
+        run: node --test server/core/composition/boundedAgentProductionComposition.test.mjs
       - name: Run fail-closed continuation, workflow-ticket, bounded Agent and deterministic recovery unit tests
         run: |
           node --experimental-strip-types --test server/core/workflow/WorkflowContinuationPlanParameters.test.mjs
