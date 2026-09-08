@@ -3,6 +3,8 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { normalizeManualContourEditorSource, validateManualContourDraft } from '../src/application/fashion/canonicalTryOnManualContourDraft.js';
 
+const SPLIT_CORE = 'http://127.0.0.1:4188/api/core';
+
 test('valid simple polygon is saveable without rewriting explicit points', () => {
   const points = [[0.1, 0.1], [0.8, 0.1], [0.8, 0.8], [0.1, 0.8]];
   const before = JSON.stringify(points);
@@ -36,6 +38,21 @@ test('editor source accepts only the minimized 9a projection', () => {
   assert.deepEqual(normalizeManualContourEditorSource(source), source);
   assert.throws(() => normalizeManualContourEditorSource({ ...source, contentSha256: 'x' }), /unknown or missing/);
   assert.throws(() => normalizeManualContourEditorSource({ ...source, imageUrl: 'https://example.com/garment.png' }), /delivery is invalid/);
+});
+
+test('editor source accepts split-origin Garment URL only for exact configured Core root', () => {
+  const source = {
+    garmentId: '123e4567-e89b-12d3-a456-426614174000',
+    expectedRevision: 3,
+    category: 'shirts',
+    imageUrl: 'http://127.0.0.1:4188/api/core/garments/delivery/token',
+    imageExpiresAt: '2026-09-04T06:00:00.000Z',
+  };
+  assert.deepEqual(normalizeManualContourEditorSource(source, SPLIT_CORE), source);
+  assert.throws(
+    () => normalizeManualContourEditorSource({ ...source, imageUrl: 'http://127.0.0.1:4187/api/core/garments/delivery/token' }, SPLIT_CORE),
+    /delivery is invalid/,
+  );
 });
 
 test('React contour editor maps pointer coordinates to the actual image box', async () => {

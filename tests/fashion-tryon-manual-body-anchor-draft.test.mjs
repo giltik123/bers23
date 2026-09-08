@@ -10,6 +10,7 @@ import {
   validateManualBodyAnchorDraft,
 } from '../src/application/fashion/canonicalTryOnManualBodyAnchorDraft.js';
 
+const SPLIT_CORE = 'http://127.0.0.1:4188/api/core';
 const TOP_ANCHORS = Object.freeze({
   leftShoulder: [0.3, 0.2],
   rightShoulder: [0.7, 0.2],
@@ -76,6 +77,20 @@ test('body-anchor source accepts only the product-safe readiness identity inters
   );
   assert.throws(() => normalizeManualBodyAnchorEditorSource({ ...source, storageId: 'x' }), /unknown or missing/);
   assert.throws(() => normalizeManualBodyAnchorEditorSource({ ...source, imageUrl: 'javascript:alert(1)' }), /display contract/);
+});
+
+test('body-anchor source admits split-origin Project image only for exact configured Core root', () => {
+  const source = {
+    projectId: '123e4567-e89b-12d3-a456-426614174000',
+    sourceArtifactId: 'artifact-current-image',
+    category: 'shirts',
+    imageUrl: 'http://127.0.0.1:4188/api/core/artifacts/results/current.token',
+  };
+  assert.equal(normalizeManualBodyAnchorEditorSource(source, SPLIT_CORE).imageUrl, source.imageUrl);
+  assert.throws(
+    () => normalizeManualBodyAnchorEditorSource({ ...source, imageUrl: 'http://127.0.0.1:4187/api/core/artifacts/results/current.token' }, SPLIT_CORE),
+    /display contract/,
+  );
 });
 
 test('all ten accepted body-anchor names retain stable explicit labels', () => {

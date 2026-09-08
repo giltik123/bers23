@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeProjectResourceUrls, resolveCoreResourceUrl } from '../src/api/coreResourceUrl.js';
+import {
+  canonicalCoreResourcePath,
+  normalizeProjectResourceUrls,
+  resolveCoreResourceUrl,
+} from '../src/api/coreResourceUrl.js';
 
 const delivery = '/api/core/artifacts/results/payload.signature';
 
@@ -21,6 +25,24 @@ test('split-origin Core resolves only canonical Core-owned root-relative resourc
   ]) assert.equal(resolveCoreResourceUrl(value, 'https://core.example.test/api/core'), value);
 });
 
+test('configured Core resource path recognizes only the exact split-origin rewrite', () => {
+  const apiRoot = 'http://127.0.0.1:4188/api/core';
+  const absolute = `http://127.0.0.1:4188${delivery}`;
+  assert.equal(canonicalCoreResourcePath(delivery, apiRoot), delivery);
+  assert.equal(canonicalCoreResourcePath(absolute, apiRoot), delivery);
+
+  for (const value of [
+    `http://127.0.0.1:4187${delivery}`,
+    `http://localhost:4188${delivery}`,
+    `http://user:secret@127.0.0.1:4188${delivery}`,
+    'http://127.0.0.1:4188/other/image.png',
+    ` ${absolute}`,
+  ]) assert.equal(canonicalCoreResourcePath(value, apiRoot), null, value);
+
+  assert.equal(canonicalCoreResourcePath(absolute, '/api/core'), null);
+  assert.equal(canonicalCoreResourcePath(absolute, 'https://core.example.test/api/core'), null);
+});
+
 test('malformed or non-canonical API roots never become browser URL rewrite authority', () => {
   for (const root of [
     'not-a-url',
@@ -28,7 +50,10 @@ test('malformed or non-canonical API roots never become browser URL rewrite auth
     'https://user:secret@core.example.test/api/core',
     'https://core.example.test/api/core?mode=unsafe',
     'ftp://core.example.test/api/core',
-  ]) assert.equal(resolveCoreResourceUrl(delivery, root), delivery);
+  ]) {
+    assert.equal(resolveCoreResourceUrl(delivery, root), delivery);
+    assert.equal(canonicalCoreResourcePath(`https://core.example.test${delivery}`, root), null);
+  }
 });
 
 test('project normalization covers browser-visible canonical image surfaces including version previews', () => {

@@ -1,3 +1,4 @@
+import { canonicalCoreResourcePath } from '../../api/coreResourceUrl.js';
 import { MANUAL_PARAMETRIC_MAX_POINTS } from './canonicalTryOnManualAcquisition.js';
 
 export const MANUAL_CONTOUR_MIN_POINTS = 3;
@@ -6,19 +7,20 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const GARMENT_DELIVERY = /^\/api\/core\/garments\/delivery\/[^/?#]+$/;
 const SOURCE_KEYS = Object.freeze(['category', 'expectedRevision', 'garmentId', 'imageExpiresAt', 'imageUrl']);
 
-export function normalizeManualContourEditorSource(value) {
+export function normalizeManualContourEditorSource(value, coreApiRoot) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) {
     throw new TypeError('Manual contour editor source must be a plain object');
   }
   const actual = Object.keys(value).sort();
   const expected = [...SOURCE_KEYS].sort();
-  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+  if (actual.length !== expected.length || actual.some((key, index) => actual[index] !== expected[index])) {
     throw new Error('Manual contour editor source has unknown or missing fields');
   }
   if (typeof value.garmentId !== 'string' || !UUID.test(value.garmentId)) throw new TypeError('Manual contour garmentId must be a UUID');
   if (!Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 1) throw new TypeError('Manual contour expectedRevision must be positive');
   if (typeof value.category !== 'string' || !value.category.trim()) throw new TypeError('Manual contour category is unavailable');
-  if (typeof value.imageUrl !== 'string' || !GARMENT_DELIVERY.test(value.imageUrl)) throw new TypeError('Manual contour image delivery is invalid');
+  const deliveryPath = canonicalCoreResourcePath(value.imageUrl, coreApiRoot);
+  if (!deliveryPath || !GARMENT_DELIVERY.test(deliveryPath)) throw new TypeError('Manual contour image delivery is invalid');
   if (typeof value.imageExpiresAt !== 'string') throw new TypeError('Manual contour image expiry is invalid');
   const expiry = new Date(value.imageExpiresAt);
   if (!Number.isFinite(expiry.getTime()) || expiry.toISOString() !== value.imageExpiresAt) throw new TypeError('Manual contour image expiry is invalid');
