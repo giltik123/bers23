@@ -21,12 +21,13 @@ test('Editor navigation is capability-based rather than gated by detected object
   const modes = editorModeBlock(editor);
 
   assert.match(modes, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
-  assert.match(modes, /onChange=\{\(next\) => \{\s*if \(!tryOnActive\) setEditTab\(next\);\s*\}\}/);
+  assert.match(modes, /onChange=\{\(next\) => \{\s*if \(!tryOnActive && !agentActive\) setEditTab\(next\);\s*\}\}/);
   assert.doesNotMatch(modes, /objects\.length === 0 \? \([\s\S]*<AdaptiveNavigation/,
     'zero-object projects must not be routed around the main navigation');
   assert.match(modes, /editTab === 'fashion'[\s\S]*<FashionPanel \/>/);
   assert.match(modes, /editTab === 'outfits'[\s\S]*<OutfitPanel \/>/);
   assert.match(modes, /editTab === 'creative'[\s\S]*<CreativeStudioPanel/);
+  assert.match(modes, /editTab === 'agent'[\s\S]*<AgentPanel/);
 });
 
 test('zero-object Prompt remains a canonical whole-image edit without inventing Object or MASK identity', async () => {
@@ -39,7 +40,7 @@ test('zero-object Prompt remains a canonical whole-image edit without inventing 
   assert.doesNotMatch(modes, /objects\.length === 0[\s\S]{0,300}(randomUUID|mask_artifact_id|selected:\s*true)/);
 });
 
-test('reachable Fashion and Outfit surfaces use narrow canonical authorities while later verticals remain fail-closed', async () => {
+test('reachable Fashion, Outfit and bounded Agent surfaces preserve narrow canonical authorities while later verticals remain fail-closed', async () => {
   const [editor, fashion, outfits, creative, agent, tryOn] = await Promise.all([
     readFile(EDITOR, 'utf8'),
     readFile(FASHION, 'utf8'),
@@ -73,13 +74,16 @@ test('reachable Fashion and Outfit surfaces use narrow canonical authorities whi
   assert.match(creative, /outfits: \[\]/, 'Creative Studio must explicitly remain disconnected from canonical Outfit data');
 
   assert.doesNotMatch(editor, /<OutfitPanel[\s\S]{0,500}onCommit=/);
-  assert.doesNotMatch(editor, /<AgentPanel[\s\S]{0,500}(onCommit|onRollback)=/);
-  assert.match(agent, /Canonical Agent execution is not enabled yet\./);
+  assert.doesNotMatch(editor, /<AgentPanel[\s\S]{0,700}(onCommit|onRollback)=/);
+  assert.match(agent, /AI Agent · Bounded deterministic v1/);
+  assert.match(agent, /Core owns sequencing, tickets, lineage and recovery/);
+  assert.match(agent, /No provider selection, paid cloud calls, generic tools or browser-owned step reordering/);
+  for (const forbidden of ['aiAgent', 'executionQueue', 'taskHistory', 'onCommit', 'onRollback']) assert.equal(agent.includes(forbidden), false, forbidden);
   assert.match(tryOn, /Canonical Try-On execution is not enabled yet\./);
   assert.match(tryOn, /legacy browser FASHN execution path is disabled/);
 });
 
-test('Detect remains an optional separate action and does not own Fashion or Outfit reachability', async () => {
+test('Detect remains an optional separate action and does not own Fashion, Outfit or Agent reachability', async () => {
   const editor = await readFile(EDITOR, 'utf8');
 
   const detectIndex = editor.indexOf("objects.length === 0 && !pendingResult");
