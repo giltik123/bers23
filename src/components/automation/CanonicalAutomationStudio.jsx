@@ -91,11 +91,18 @@ export default function CanonicalAutomationStudio() {
   async function run() {
     if (!selected || !selectedProjectId || dirty) return;
     setBusy(true); setError('');
+    const clientRequestId = loadOrCreateStartIntent(selected.id, selectedProjectId, selected.revision);
     try {
       const runner = createAutomationInvocationRunner({ projectId: selectedProjectId });
-      const result = await runner.start({ automationId: selected.id, definitionRevision: selected.revision, clientRequestId: globalThis.crypto.randomUUID() }, setInvocation);
+      const observe = view => {
+        setInvocation(view);
+        rememberInvocation(selected.id, selectedProjectId, view.invocationId);
+        clearStartIntent(selected.id, selectedProjectId);
+      };
+      const result = await runner.start({ automationId: selected.id, definitionRevision: selected.revision, clientRequestId }, observe);
       setInvocation(result.view);
       rememberInvocation(selected.id, selectedProjectId, result.view.invocationId);
+      clearStartIntent(selected.id, selectedProjectId);
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
   }
@@ -137,7 +144,10 @@ export default function CanonicalAutomationStudio() {
     setBusy(true); setError('');
     try {
       await coreClient.projects.acceptFinal(invocation.projectId, invocation.terminalArtifactId, `Automation: ${selected?.name || invocation.automationId}`);
-      if (selected) forgetInvocation(selected.id, invocation.projectId);
+      if (selected) {
+        forgetInvocation(selected.id, invocation.projectId);
+        clearStartIntent(selected.id, invocation.projectId);
+      }
       setInvocation(null);
       const nextProjects = await coreClient.projects.list();
       setProjects(Array.isArray(nextProjects) ? nextProjects : []);
@@ -239,7 +249,21 @@ function deliveryUrl(value) {
   } catch { return value; }
 }
 function storageKey(automationId, projectId) { return `bers:automation-invocation:${automationId}:${projectId}`; }
+function startIntentKey(automationId, projectId) { return `bers:automation-start-intent:${automationId}:${projectId}`; }
 function rememberInvocation(automationId, projectId, invocationId) { try { localStorage.setItem(storageKey(automationId, projectId), invocationId); } catch {} }
 function recalledInvocation(automationId, projectId) { try { return localStorage.getItem(storageKey(automationId, projectId)) || ''; } catch { return ''; } }
 function forgetInvocation(automationId, projectId) { try { localStorage.removeItem(storageKey(automationId, projectId)); } catch {} }
+function loadOrCreateStartIntent(automationId, projectId, definitionRevision) {
+  const key = startIntentKey(automationId, projectId);
+  try {
+    const existing = JSON.parse(localStorage.getItem(key) || 'null');
+    if (existing?.version === 1 && existing.definitionRevision === definitionRevision && typeof existing.clientRequestId === 'string' && existing.clientRequestId) return existing.clientRequestId;
+    const clientRequestId = globalThis.crypto.randomUUID();
+    localStorage.setItem(key, JSON.stringify({ version: 1, definitionRevision, clientRequestId }));
+    return clientRequestId;
+  } catch {
+    return globalThis.crypto.randomUUID();
+  }
+}
+function clearStartIntent(automationId, projectId) { try { localStorage.removeItem(startIntentKey(automationId, projectId)); } catch {} }
 function message(cause) { return cause instanceof Error ? cause.message : 'Automation request failed.'; }
