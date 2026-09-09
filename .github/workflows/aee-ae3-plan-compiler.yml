@@ -1,0 +1,77 @@
+name: AEE AE-3 Deterministic Plan Compiler V1
+
+on:
+  push:
+    branches: ["aee-ae3-plan-compiler-v1"]
+    paths:
+      - 'server/core/agentic/**'
+      - '.github/workflows/aee-ae3-plan-compiler.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'src/platform/creative/deterministic/**'
+      - 'server/core/workflow/**'
+      - '.github/workflows/aee-ae3-plan-compiler.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  plan-compiler-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove AE-3 compiler and accepted AEE contracts
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/AeePlanCompilerV1.test.mjs \
+            server/core/agentic/AeeCapabilityRegistryV1.test.mjs \
+            server/core/agentic/AgentIntentV1.test.mjs \
+            server/core/agentic/ContextGraphV1.test.mjs \
+            server/core/agentic/agentArchitectureBoundary.test.mjs
+      - name: Preserve accepted bounded Agent workflow authority
+        run: |
+          node --experimental-strip-types --test \
+            server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs \
+            server/core/execution/internalWorkflowAuthorityProducerBoundary.test.mjs \
+            server/core/composition/boundedAgentProductionComposition.test.mjs
+      - name: Build immutable Core
+        run: npm run server:build
+      - name: Prove compiler owns no realization or execution-state authority
+        run: |
+          set -euo pipefail
+          COMPILER=server/core/agentic/AeePlanCompilerV1.ts
+          PROPOSAL=server/core/agentic/PlanProposalV1.ts
+          if grep '^import ' "$COMPILER" | grep -E -q '/(providers|billing|execution|workflow|localExecution|projects|artifacts)/'; then
+            echo 'AE-3 compiler imports forbidden realization/execution authority' >&2
+            grep '^import ' "$COMPILER" >&2
+            exit 1
+          fi
+          if grep '^import ' "$PROPOSAL" | grep -v -F "node:crypto"; then
+            echo 'PlanProposalV1 must remain standalone advisory schema' >&2
+            exit 1
+          fi
+          ! grep -E -q 'providerId|modelId|runtimeId|executorId|ticketId|executionId|runId|creditsWallet' "$PROPOSAL"
+          grep -q 'AEE_CAPABILITY_REGISTRY_V1.digest' "$COMPILER"
+          grep -q "policy: 'LOCAL_ONLY'" "$COMPILER"
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
