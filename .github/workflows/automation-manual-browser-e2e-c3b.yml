@@ -1,0 +1,145 @@
+name: Stage C3b Automation browser recovery E2E
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/index.ts'
+      - 'server/core/automation/**'
+      - 'server/core/artifacts/**'
+      - 'server/core/composition/createProductionAutomation.ts'
+      - 'server/core/execution/**'
+      - 'server/core/http/automationManualExecutionHttpAdapter.ts'
+      - 'server/core/http/executionRunRecoveryHttpAdapter.ts'
+      - 'server/core/localExecution/**'
+      - 'server/core/projects/**'
+      - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
+      - 'server/core/workflow/PostgresWorkflowContinuationStore.ts'
+      - 'server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts'
+      - 'server/transactions/infrastructure/postgres/**'
+      - 'src/application/local-execution/CoreAuthorizedOrthogonalTransform.ts'
+      - 'src/application/local-execution/CoreAuthorizedResize.ts'
+      - 'src/platform/creative/deterministic/**'
+      - 'scripts/build-core-server.mjs'
+      - 'scripts/test-automation-c3b-browser-e2e.mjs'
+      - '.github/workflows/automation-manual-browser-e2e-c3b.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automation-c3b-browser-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  automation-manual-browser-recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: automation_c3b_browser_test
+          POSTGRES_USER: automation_c3b_browser_test
+          POSTGRES_PASSWORD: automation_c3b_browser_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U automation_c3b_browser_test -d automation_c3b_browser_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://automation_c3b_browser_test:automation_c3b_browser_test@127.0.0.1:5432/automation_c3b_browser_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      VITE_CORE_API_URL: http://127.0.0.1:4198/api/core
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck C3b browser and production Core surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Build immutable Core and apply packaged production migrations through 041
+        run: |
+          npm run server:build
+          test -f dist-server/server.mjs
+          test -f dist-server/migrations/040_automation_definitions.sql
+          test -f dist-server/migrations/041_automation_invocation_bindings.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Generate and mask ephemeral C3b runtime secrets
+        run: |
+          set -euo pipefail
+          for name in FAL_KEY JWT_SECRET AUTH_CHALLENGE_SECRET RESEND_API_KEY GOOGLE_OAUTH_CLIENT_SECRET ARTIFACT_SIGNING_SECRET; do
+            value="$(openssl rand -hex 32)"
+            printf '::add-mask::%s\n' "$value"
+            printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+          done
+      - name: Build real SPA against C3b Core origin
+        run: |
+          npm run build
+          test -f dist/index.html
+      - name: Bundle focused C3b browser harness using production deterministic executors
+        run: |
+          mkdir -p .test-cache/automation-c3b-browser
+          npx esbuild scripts/test-automation-c3b-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove Automation lost-response reload Job Center zero-credit terminal Preview and explicit Accept journey
+        run: |
+          set -euo pipefail
+          node .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.mjs | tee .test-cache/automation-c3b-browser/runtime.log
+          grep -q 'C3B_BROWSER_AUTOMATION_RECOVERY_ACCEPTED' .test-cache/automation-c3b-browser/runtime.log
+      - name: Preserve C3b PostgreSQL forensic state after browser failure
+        if: failure()
+        run: |
+          node --input-type=module <<'NODE'
+          import { Pool } from 'pg';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-c3b-browser-forensics' });
+          const queries = {
+            invocations: `SELECT invocation_id::text,tenant_id,user_id,automation_id::text,definition_revision,project_id::text,source_image_storage_id::text,source_role,client_request_id,downstream_client_request_id FROM canonical_automation_invocation_bindings ORDER BY created_at`,
+            continuations: `SELECT execution_id,client_request_id,project_id,plan_id,state,current_step_id,completed_steps_json,terminal_artifact_id,failure_code,revision FROM workflow_continuations ORDER BY created_at`,
+            tickets: `SELECT ticket_id,idempotency_key,request_id,workflow_id,step_id,consumed_at,finalized_status,finalized_at,admitted_result_sha256 FROM local_execution_tickets ORDER BY ticket_id`,
+            uploads: `SELECT upload_id,ticket_id,kind,artifact_role,width,height,size_bytes,sha256,consumed_at,expires_at FROM local_execution_uploads ORDER BY created_at`,
+            runs: `SELECT run_id::text,capability,authority_kind,authority_ref,parent_run_id::text,status,revision,status_reason_code FROM canonical_execution_runs ORDER BY created_at,run_id`,
+            projects: `SELECT project_id::text,original_image_storage_id::text,current_image_storage_id::text,width,height,history_cursor_id::text FROM canonical_projects ORDER BY created_at`,
+            wallets: `SELECT owner_id,total_credited,lifetime_spent,balance,reserved,version FROM credit_wallets ORDER BY owner_id`,
+            reservations: `SELECT id,owner_id,project_id,provider,amount,status,provider_state FROM credit_reservations ORDER BY id`,
+            journal: `SELECT id,reservation_id,sequence,event,source FROM transaction_journal ORDER BY reservation_id,sequence`,
+            entitlements: `SELECT owner_id,tenant_id,plan_id,state,source,entitlement_revision FROM financial_entitlement_accounts ORDER BY owner_id`,
+            grants: `SELECT id,tenant_id,owner_id,grant_kind,source,amount FROM credit_grants ORDER BY id`,
+          };
+          try {
+            for (const [name, sql] of Object.entries(queries)) {
+              try {
+                const result = await pool.query(sql);
+                console.log(`C3B_BROWSER_FORENSICS_${name.toUpperCase()}`, JSON.stringify(result.rows));
+              } catch (error) {
+                console.log(`C3B_BROWSER_FORENSICS_${name.toUpperCase()}_ERROR`, error instanceof Error ? error.message : String(error));
+              }
+            }
+          } finally {
+            await pool.end();
+          }
+          NODE
+      - name: Preserve C3c and authority boundaries
+        if: always()
+        run: |
+          set -euo pipefail
+          grep -q 'AUTOMATION_EXECUTION_NOT_WIRED' src/lib/automation/AutomationRunner.js
+          ! grep -q 'automationRunner.run' src/pages/AutomationStudio.jsx
+          ! grep -q '/agent/bounded-deterministic/' scripts/test-automation-c3b-browser-e2e.mjs
+          grep -q '/automation-invocations/' scripts/test-automation-c3b-browser-e2e.mjs
+          git diff --check
