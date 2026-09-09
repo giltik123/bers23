@@ -1,0 +1,66 @@
+name: AEE AE-2 Capability Registry V1
+
+on:
+  push:
+    branches: ["aee-ae2-capability-registry-v1"]
+    paths:
+      - 'server/core/agentic/**'
+      - '.github/workflows/aee-ae2-capability-registry.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'src/platform/creative/deterministic/**'
+      - '.github/workflows/aee-ae2-capability-registry.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  capability-registry-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove AE-2 registry and accepted AEE grounding contracts
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/AeeCapabilityRegistryV1.test.mjs \
+            server/core/agentic/AgentIntentV1.test.mjs \
+            server/core/agentic/ContextGraphV1.test.mjs \
+            server/core/agentic/agentArchitectureBoundary.test.mjs
+      - name: Prove capability registry stays provider-independent and read-only
+        run: |
+          set -euo pipefail
+          REGISTRY=server/core/agentic/AeeCapabilityRegistryV1.ts
+          if grep '^import ' "$REGISTRY" | grep -E -q '/(providers|billing|projects|artifacts|execution|workflow|localExecution)/|productionExecutionCapabilities|ExecutionRun|WorkflowContinuation'; then
+            echo 'AE-2 registry imports a forbidden execution/authority layer' >&2
+            grep '^import ' "$REGISTRY" >&2
+            exit 1
+          fi
+          grep -q 'requireDeterministicToolByCapability' "$REGISTRY" || { echo 'AE-2 registry lost deterministic-tool binding validation' >&2; exit 1; }
+          grep -q 'AEE_CAPABILITY_ORTHOGONAL_TRANSFORM_V1' "$REGISTRY" || { echo 'AE-2 V1 lost ORTHOGONAL_TRANSFORM semantic capability' >&2; exit 1; }
+          grep -q 'AEE_CAPABILITY_RESIZE_V1' "$REGISTRY" || { echo 'AE-2 V1 lost RESIZE semantic capability' >&2; exit 1; }
+          if grep -E -q 'bers:capability:(crop|segment|background|try-on)' "$REGISTRY"; then
+            echo 'AE-2 V1 accidentally widens the registered Agent surface' >&2
+            exit 1
+          fi
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
