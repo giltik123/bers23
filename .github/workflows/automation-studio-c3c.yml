@@ -1,0 +1,48 @@
+name: Stage C3c Automation Studio
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/AutomationStudio.jsx'
+      - 'src/components/automation/CanonicalAutomationStudio.jsx'
+      - 'src/api/automationClient.js'
+      - 'src/application/automation/**'
+      - 'tests/automation-studio-c3c-boundary.test.mjs'
+      - 'tests/automation-invocation-runner.test.ts'
+      - '.github/workflows/automation-studio-c3c.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  c3c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Exact-head guard
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: C3c authority boundary
+        run: node --test tests/automation-studio-c3c-boundary.test.mjs
+      - name: C3c invocation runner
+        run: |
+          mkdir -p .test-cache/c3c
+          npx esbuild tests/automation-invocation-runner.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/c3c/automation-invocation-runner.test.mjs \
+            --external:node:*
+          node --test .test-cache/c3c/automation-invocation-runner.test.mjs
+      - name: Browser typecheck
+        run: npm run typecheck
+      - name: Production frontend build
+        run: npm run build
+      - name: Review hygiene
+        run: git diff --check

@@ -128,17 +128,31 @@ test('browser financial surfaces and legacy writers cannot mutate privileged aut
   assert.match(eslint, /callee\.object\.object\.object\.name='coreClient'/);
 });
 
-test('Automation Studio remains preview-only until durable server execution authority exists', async () => {
-  const page = await readFile('src/pages/AutomationStudio.jsx', 'utf8');
-  const runner = await readFile('src/lib/automation/AutomationRunner.js', 'utf8');
-  for (const forbidden of ['coreClient', 'automationManager', 'automationHistory', 'AutomationHistoryPanel']) assert.equal(page.includes(forbidden), false, forbidden);
-  assert.match(page, /automationRunner\.plan\(/);
-  assert.doesNotMatch(page, /automationRunner\.run\(/);
-  assert.match(page, /previewOnly/);
-  assert.match(runner, /status:\s*'PLANNED_NOT_EXECUTED'/);
-  assert.match(runner, /conditionsEvaluated:\s*Boolean\(context\)/);
-  assert.match(runner, /AUTOMATION_EXECUTION_NOT_WIRED/);
-  for (const forbidden of ['jobManager', 'automationHistory', "status: 'completed'", 'credits_consumed']) assert.equal(runner.includes(forbidden), false, forbidden);
+test('Automation Studio uses canonical C3a/C3b authority while legacy arbitrary Automation execution remains gated', async () => {
+  const [page, studio, client, invocationRunner, legacyRunner] = await Promise.all([
+    readFile('src/pages/AutomationStudio.jsx', 'utf8'),
+    readFile('src/components/automation/CanonicalAutomationStudio.jsx', 'utf8'),
+    readFile('src/api/automationClient.js', 'utf8'),
+    readFile('src/application/automation/createAutomationInvocationRunner.ts', 'utf8'),
+    readFile('src/lib/automation/AutomationRunner.js', 'utf8'),
+  ]);
+  assert.match(page, /CanonicalAutomationStudio/);
+  assert.doesNotMatch(page, /automationRunner|AutomationBuilder|previewOnly/);
+  assert.match(studio, /automationClient\.definitions\.list/);
+  assert.match(studio, /createAutomationInvocationRunner/);
+  assert.match(studio, /coreClient\.projects\.acceptFinal/);
+  assert.match(studio, /loadOrCreateStartIntent/);
+  assert.match(client, /X-Expected-Automation-Revision/);
+  assert.match(client, /\/automation-invocations\//);
+  assert.doesNotMatch(client, /\/agent\/bounded-deterministic\//);
+  assert.match(invocationRunner, /policy !== 'LOCAL_ONLY'/);
+  assert.match(invocationRunner, /providerCalls !== 0/);
+  assert.match(invocationRunner, /paidCloudCredits !== 0/);
+  assert.doesNotMatch(invocationRunner, /\/agent\/bounded-deterministic\//);
+  assert.match(legacyRunner, /status:\s*'PLANNED_NOT_EXECUTED'/);
+  assert.match(legacyRunner, /conditionsEvaluated:\s*Boolean\(context\)/);
+  assert.match(legacyRunner, /AUTOMATION_EXECUTION_NOT_WIRED/);
+  for (const forbidden of ['jobManager', 'automationHistory', "status: 'completed'", 'credits_consumed']) assert.equal(legacyRunner.includes(forbidden), false, forbidden);
 });
 
 test('Asset Library indexes canonical Project artifacts without generic asset CRUD', async () => {
