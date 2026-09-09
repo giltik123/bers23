@@ -22,6 +22,7 @@ on:
       - 'src/platform/creative/deterministic/**'
       - 'scripts/build-core-server.mjs'
       - 'scripts/test-automation-c3b-browser-e2e.mjs'
+      - 'scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs'
       - '.github/workflows/automation-manual-browser-e2e-c3b.yml'
   workflow_dispatch:
 
@@ -90,18 +91,27 @@ jobs:
         run: |
           npm run build
           test -f dist/index.html
-      - name: Bundle focused C3b browser harness using production deterministic executors
+      - name: Bundle focused C3b browser harnesses using production deterministic executors
         run: |
           mkdir -p .test-cache/automation-c3b-browser
           npx esbuild scripts/test-automation-c3b-browser-e2e.mjs \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
+          npx esbuild scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
       - name: Prove Automation lost-response reload Job Center zero-credit terminal Preview and explicit Accept journey
         run: |
           set -euo pipefail
           node .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.mjs | tee .test-cache/automation-c3b-browser/runtime.log
           grep -q 'C3B_BROWSER_AUTOMATION_RECOVERY_ACCEPTED' .test-cache/automation-c3b-browser/runtime.log
+      - name: Prove durable FAILED retry cancel and local-ticket authority separation
+        run: |
+          set -euo pipefail
+          node .test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.mjs | tee .test-cache/automation-c3b-browser/retry-cancel-runtime.log
+          grep -q 'C3B_BROWSER_AUTOMATION_RETRY_CANCEL_ACCEPTED' .test-cache/automation-c3b-browser/retry-cancel-runtime.log
       - name: Preserve C3b PostgreSQL forensic state after browser failure
         if: failure()
         run: |
@@ -110,7 +120,7 @@ jobs:
           const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-c3b-browser-forensics' });
           const queries = {
             invocations: `SELECT invocation_id::text,tenant_id,user_id,automation_id::text,definition_revision,project_id::text,source_image_storage_id::text,source_role,client_request_id,downstream_client_request_id FROM canonical_automation_invocation_bindings ORDER BY created_at`,
-            continuations: `SELECT execution_id,client_request_id,project_id,plan_id,state,current_step_id,completed_steps_json,terminal_artifact_id,failure_code,revision FROM workflow_continuations ORDER BY created_at`,
+            continuations: `SELECT execution_id,client_request_id,project_id,plan_id,state,current_step_id,completed_steps_json,outstanding_local_json,terminal_artifact_id,failure_code,revision FROM workflow_continuations ORDER BY created_at`,
             tickets: `SELECT ticket_id,idempotency_key,request_id,workflow_id,step_id,consumed_at,finalized_status,finalized_at,admitted_result_sha256 FROM local_execution_tickets ORDER BY ticket_id`,
             uploads: `SELECT upload_id,ticket_id,kind,artifact_role,width,height,size_bytes,sha256,consumed_at,expires_at FROM local_execution_uploads ORDER BY created_at`,
             runs: `SELECT run_id::text,capability,authority_kind,authority_ref,parent_run_id::text,status,revision,status_reason_code FROM canonical_execution_runs ORDER BY created_at,run_id`,
@@ -141,5 +151,9 @@ jobs:
           grep -q 'AUTOMATION_EXECUTION_NOT_WIRED' src/lib/automation/AutomationRunner.js
           ! grep -q 'automationRunner.run' src/pages/AutomationStudio.jsx
           ! grep -q '/agent/bounded-deterministic/' scripts/test-automation-c3b-browser-e2e.mjs
+          ! grep -q '/agent/bounded-deterministic/' scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
           grep -q '/automation-invocations/' scripts/test-automation-c3b-browser-e2e.mjs
+          grep -q '/automation-invocations/' scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
+          grep -q "ledger.commit(firstTicket.ticketId, 'FAILED')" scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
+          grep -q "replacementAuthority?.cancellation, 'UNSUPPORTED'" scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
           git diff --check
