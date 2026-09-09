@@ -10,6 +10,7 @@ on:
       - 'server/core/artifacts/migrations/039_workflow_continuation_plan_parameters.sql'
       - 'server/core/automation/migrations/040_automation_definitions.sql'
       - 'server/core/automation/migrations/041_automation_invocation_bindings.sql'
+      - 'server/core/automation/migrations/042_automation_schedules.sql'
       - 'server/core/http/financialAccountPolicyHttpAdapter.ts'
       - 'server/core/http/financialAccountPolicyHttpAdapter.test.mjs'
       - 'server/index.ts'
@@ -62,17 +63,18 @@ jobs:
           git diff --exit-code "$BASE_SHA"..HEAD -- \
             server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql \
             server/transactions/infrastructure/postgres/migrations/038_financial_account_foundation.sql
-      - name: Prove global migration inventory remains exactly 001 through 041
+      - name: Prove global migration inventory remains exactly 001 through 042
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 41) throw new Error(`Expected 41 contiguous production migrations, got ${migrations.length}`);
+          if (migrations.length !== 42) throw new Error(`Expected 42 contiguous production migrations, got ${migrations.length}`);
           if (migrations[0]?.name !== '001_transaction_store.sql') throw new Error('001 transaction root migration moved');
           if (migrations[37]?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration moved from its accepted global position');
           if (migrations[38]?.name !== '039_workflow_continuation_plan_parameters.sql') throw new Error('039 workflow plan-parameter migration moved from its accepted global position');
           if (migrations[39]?.name !== '040_automation_definitions.sql') throw new Error('040 Automation definition migration moved from its accepted global position');
-          if (migrations[40]?.name !== '041_automation_invocation_bindings.sql') throw new Error('041 Automation invocation binding migration must be the global inventory tail');
+          if (migrations[40]?.name !== '041_automation_invocation_bindings.sql') throw new Error('041 Automation invocation binding migration moved');
+          if (migrations[41]?.name !== '042_automation_schedules.sql') throw new Error('042 Automation recurring schedule migration must be the global inventory tail');
           NODE
       - name: Typecheck and build Core
         run: |
@@ -83,6 +85,7 @@ jobs:
           test -f dist-server/migrations/039_workflow_continuation_plan_parameters.sql
           test -f dist-server/migrations/040_automation_definitions.sql
           test -f dist-server/migrations/041_automation_invocation_bindings.sql
+          test -f dist-server/migrations/042_automation_schedules.sql
       - name: Apply and verify accepted database schema
         run: |
           npm run db:migrate:transactions

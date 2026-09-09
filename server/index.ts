@@ -2,6 +2,7 @@ import { createServer, type ServerResponse } from 'node:http';
 import { loadCoreServerConfig } from './core/config.ts';
 import { createProductionCore } from './core/composition/createProductionCore.ts';
 import { createProductionAutomation } from './core/composition/createProductionAutomation.ts';
+import { AutomationSchedulePoller } from './core/automation/AutomationSchedulePoller.ts';
 import { createBoundedAgentHttpAdapter } from './core/http/boundedAgentHttpAdapter.ts';
 import { createLocalExecutionHttpAdapter } from './core/http/localExecutionHttpAdapter.ts';
 import { createOrthogonalTransformHttpAdapter } from './core/http/orthogonalTransformHttpAdapter.ts';
@@ -20,6 +21,7 @@ import { createManagedGarmentCollectionHttpAdapter } from './core/http/managedGa
 import { createManagedOutfitHttpAdapter } from './core/http/managedOutfitHttpAdapter.ts';
 import { AUTOMATION_DEFINITION_PATH, createAutomationDefinitionHttpAdapter } from './core/http/automationDefinitionHttpAdapter.ts';
 import { createAutomationManualExecutionHttpAdapter, isAutomationManualExecutionPath } from './core/http/automationManualExecutionHttpAdapter.ts';
+import { AUTOMATION_SCHEDULE_PATH, createAutomationScheduleHttpAdapter } from './core/http/automationScheduleHttpAdapter.ts';
 import { parseCoreRequestTarget } from './core/http/requestTarget.ts';
 import { CanonicalArtifactHydrator } from './core/artifacts/canonicalArtifactHydrator.ts';
 import { LocalCompositeInputDeliveryService } from './core/workflow/LocalCompositeInputDeliveryService.ts';
@@ -37,6 +39,7 @@ import { PostgresOutfitStore } from './core/fashion/postgresOutfitStore.ts';
 import { GarmentDeliveryAuthority } from './core/fashion/garmentDeliveryAuthority.ts';
 import { checkAutomationDefinitionSchema, migrateAutomationDefinitionSchema } from './core/automation/automationDefinitionSchema.ts';
 import { checkAutomationInvocationSchema, migrateAutomationInvocationSchema } from './core/automation/automationInvocationSchema.ts';
+import { checkAutomationScheduleSchema, migrateAutomationScheduleSchema } from './core/automation/automationScheduleSchema.ts';
 
 const MANUAL_PARAMETRIC_PATH = /^\/api\/core\/fashion\/garments\/[^/]+\/parametric-representation$/;
 const MANUAL_BODY_ANCHOR_PATH = /^\/api\/core\/fashion\/projects\/[^/]+\/body-anchors$/;
@@ -54,14 +57,16 @@ export async function startCoreServer() {
       await migrateExecutionRunSchema(production.transactions.pool);
       await migrateAutomationDefinitionSchema(production.transactions.pool);
       await migrateAutomationInvocationSchema(production.transactions.pool);
+      await migrateAutomationScheduleSchema(production.transactions.pool);
     } else {
       await checkGarmentSchema(production.transactions.pool);
       await checkExecutionRunSchema(production.transactions.pool);
       await checkAutomationDefinitionSchema(production.transactions.pool);
       await checkAutomationInvocationSchema(production.transactions.pool);
+      await checkAutomationScheduleSchema(production.transactions.pool);
     }
   } catch (error) { await production.close(); throw error; }
-  const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); await checkGarmentSchema(production.transactions.pool); await checkExecutionRunSchema(production.transactions.pool); await checkAutomationDefinitionSchema(production.transactions.pool); await checkAutomationInvocationSchema(production.transactions.pool); return true; } catch { return false; } };
+  const ready = async () => { try { await production.transactions.pool.query('SELECT 1'); await checkGarmentSchema(production.transactions.pool); await checkExecutionRunSchema(production.transactions.pool); await checkAutomationDefinitionSchema(production.transactions.pool); await checkAutomationInvocationSchema(production.transactions.pool); await checkAutomationScheduleSchema(production.transactions.pool); return true; } catch { return false; } };
   const adapter = createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready, accepting: () => accepting });
   const garments = new PostgresGarmentStore(production.transactions.pool);
   const wardrobe = new PostgresGarmentWardrobeStore(production.transactions.pool);
@@ -73,12 +78,14 @@ export async function startCoreServer() {
     artifacts: production.artifacts.external,
     limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels }),
   });
+  const automationSchedulePoller = new AutomationSchedulePoller(automation.scheduleWorker);
   const garmentDelivery = new GarmentDeliveryAuthority(config.artifactSigningSecret);
   const managedGarmentAdapter = createManagedGarmentHttpAdapter({ garments, delivery: garmentDelivery, auth: production.auth, config, accepting: () => accepting });
   const managedWardrobeAdapter = createManagedWardrobeHttpAdapter({ wardrobe, auth: production.auth, config, accepting: () => accepting });
   const managedCollectionAdapter = createManagedGarmentCollectionHttpAdapter({ collections, auth: production.auth, config, accepting: () => accepting });
   const managedOutfitAdapter = createManagedOutfitHttpAdapter({ outfits, auth: production.auth, config, accepting: () => accepting });
   const automationDefinitionAdapter = createAutomationDefinitionHttpAdapter({ definitions: automation.definitions, auth: production.auth, config, accepting: () => accepting });
+  const automationScheduleAdapter = createAutomationScheduleHttpAdapter({ schedules: automation.schedules, auth: production.auth, config, accepting: () => accepting });
   const automationManualExecutionAdapter = createAutomationManualExecutionHttpAdapter({
     execution: automation.manualExecution,
     terminalPreview: Object.freeze({
@@ -169,6 +176,7 @@ export async function startCoreServer() {
     const target = parseCoreRequestTarget(request.url);
     if (target.ok === false) { sendInvalidRequestTarget(response, target); return; }
     const path = target.path;
+    if (path === AUTOMATION_SCHEDULE_PATH || path.startsWith(`${AUTOMATION_SCHEDULE_PATH}/`)) return void automationScheduleAdapter(request, response);
     if (isAutomationManualExecutionPath(path)) return void automationManualExecutionAdapter(request, response);
     if (path === AUTOMATION_DEFINITION_PATH || path.startsWith(`${AUTOMATION_DEFINITION_PATH}/`)) return void automationDefinitionAdapter(request, response);
     if (path === '/api/core/wardrobe/outfits' || path.startsWith('/api/core/wardrobe/outfits/')) return void managedOutfitAdapter(request, response);
@@ -191,8 +199,18 @@ export async function startCoreServer() {
   });
   server.requestTimeout = config.requestTimeoutMs; server.headersTimeout = Math.min(config.requestTimeoutMs, 60_000); server.keepAliveTimeout = 5_000;
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(config.port, resolve); });
+  automationSchedulePoller.start();
   let stopping: Promise<void> | undefined;
-  const stop = () => stopping ??= (async () => { accepting = false; await Promise.race([new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())), new Promise<void>(resolve => setTimeout(resolve, config.shutdownTimeoutMs))]); server.closeIdleConnections(); await production.close(); })();
+  const stop = () => stopping ??= (async () => {
+    accepting = false;
+    await automationSchedulePoller.stop();
+    await Promise.race([
+      new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
+      new Promise<void>(resolve => setTimeout(resolve, config.shutdownTimeoutMs)),
+    ]);
+    server.closeIdleConnections();
+    await production.close();
+  })();
   process.once('SIGTERM', () => { void stop(); }); process.once('SIGINT', () => { void stop(); });
   return Object.freeze({ server, stop, config });
 }
