@@ -63,12 +63,7 @@ jobs:
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
           if (migrations.length !== 41) throw new Error(`Expected 41 contiguous migrations, got ${migrations.length}`);
-          const expected = [
-            [37, '038_financial_account_foundation.sql'],
-            [38, '039_workflow_continuation_plan_parameters.sql'],
-            [39, '040_automation_definitions.sql'],
-            [40, '041_automation_invocation_bindings.sql'],
-          ];
+          const expected = [[37,'038_financial_account_foundation.sql'],[38,'039_workflow_continuation_plan_parameters.sql'],[39,'040_automation_definitions.sql'],[40,'041_automation_invocation_bindings.sql']];
           for (const [index, name] of expected) if (migrations[index]?.name !== name) throw new Error(`${name} moved from global migration position ${index + 1}`);
           NODE
       - name: Typecheck Core C3b authority
@@ -80,23 +75,35 @@ jobs:
           test -f dist-server/migrations/041_automation_invocation_bindings.sql
       - name: Apply and verify canonical schema CLI
         run: |
+          set +e
           npm run db:migrate:transactions
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            node --input-type=module <<'NODE'
+            import { Pool } from 'pg';
+            const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+            try {
+              const columns = await pool.query(`SELECT column_name,udt_name,is_nullable,column_default,character_maximum_length FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='canonical_automation_invocation_bindings' ORDER BY ordinal_position`);
+              const constraints = await pool.query(`SELECT conname,contype,convalidated,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid=to_regclass('canonical_automation_invocation_bindings') ORDER BY conname`);
+              const indexes = await pool.query(`SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename='canonical_automation_invocation_bindings' ORDER BY indexname`);
+              console.error('C3B_SCHEMA_COLUMNS=' + JSON.stringify(columns.rows));
+              console.error('C3B_SCHEMA_CONSTRAINTS=' + JSON.stringify(constraints.rows));
+              console.error('C3B_SCHEMA_INDEXES=' + JSON.stringify(indexes.rows));
+            } finally { await pool.end(); }
+            NODE
+            exit "$status"
+          fi
           npm run db:check:transactions
       - name: Prove immutable binding PostgreSQL revision source replay and isolation semantics
         run: |
           mkdir -p .test-cache/automation-c3b
-          npx esbuild tests/automation-invocation-postgres.test.ts \
-            --bundle --platform=node --format=esm --target=node24 \
-            --outfile=.test-cache/automation-c3b/automation-invocation-postgres.test.mjs \
-            --external:pg --external:sharp --external:node:*
+          npx esbuild tests/automation-invocation-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/automation-c3b/automation-invocation-postgres.test.mjs --external:pg --external:sharp --external:node:*
           node --test .test-cache/automation-c3b/automation-invocation-postgres.test.mjs
       - name: Prove Automation delegates immutable binding into existing bounded Agent only
         run: |
           mkdir -p .test-cache/automation-c3b
-          npx esbuild tests/automation-manual-execution-service.test.ts \
-            --bundle --platform=node --format=esm --target=node24 \
-            --outfile=.test-cache/automation-c3b/automation-manual-execution-service.test.mjs \
-            --external:node:*
+          npx esbuild tests/automation-manual-execution-service.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/automation-c3b/automation-manual-execution-service.test.mjs --external:node:*
           node --test .test-cache/automation-c3b/automation-manual-execution-service.test.mjs
       - name: Preserve C3 authority separation and preview-only Studio
         run: |
@@ -106,8 +113,8 @@ jobs:
           grep -q 'WorkflowContinuation + ExecutionRun remain the sole execution-state authorities' server/core/automation/AutomationManualExecutionService.ts
           ! grep -E -q 'provider|model|credits|billing|ticket_id|execution_id|run_status' server/core/automation/migrations/041_automation_invocation_bindings.sql
           ! grep -E -q 'providerSelector|billing|creditsWallet|ExecutionRunRegistry|PostgresWorkflowContinuationStore' server/core/automation/PostgresAutomationInvocationStore.ts server/core/automation/AutomationManualExecutionService.ts
-          grep -q "FOR UPDATE" server/core/automation/PostgresAutomationInvocationStore.ts
-          grep -q "FOR SHARE" server/core/automation/PostgresAutomationInvocationStore.ts
-          grep -q "automation-agent-v1-" server/core/automation/PostgresAutomationInvocationStore.ts
+          grep -q 'FOR UPDATE' server/core/automation/PostgresAutomationInvocationStore.ts
+          grep -q 'FOR SHARE' server/core/automation/PostgresAutomationInvocationStore.ts
+          grep -q 'automation-agent-v1-' server/core/automation/PostgresAutomationInvocationStore.ts
       - name: Check committed diff whitespace
         run: git diff --check "$BASE_SHA"..HEAD
