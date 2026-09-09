@@ -7,6 +7,8 @@ on:
       - 'server/core/automation/**'
       - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
       - 'server/core/composition/createProductionCore.ts'
+      - 'server/core/composition/createProductionAutomation.ts'
+      - 'server/core/composition/automationProductionComposition.test.mjs'
       - 'server/core/http/**automation**'
       - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
       - 'server/index.ts'
@@ -116,6 +118,8 @@ jobs:
             --outfile=.test-cache/automation-c3b/automation-manual-execution-service.test.mjs \
             --external:node:*
           node --test .test-cache/automation-c3b/automation-manual-execution-service.test.mjs
+      - name: Prove production Automation composition reuses accepted Agent and Artifact authorities
+        run: node --test server/core/composition/automationProductionComposition.test.mjs
       - name: Preserve C3 authority separation and preview-only Studio
         run: |
           set -euo pipefail
