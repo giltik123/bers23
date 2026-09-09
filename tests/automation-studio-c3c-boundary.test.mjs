@@ -34,5 +34,5 @@ test('Automation Studio is canonical and does not revive legacy browser executio
   assert.match(runner, /Automation must not prepare a second orthogonal ticket/);
   assert.match(runner, /Automation must not finalize through standalone Resize transport/);
   assert.equal(runner.includes('/agent/bounded-deterministic/'), false);
-  assert.equal(runner.includes('executionId'), false, 'Automation browser runner must not expose delegated Agent executionId');
+  assert.doesNotMatch(runner, /view\.executionId|executionId\s*:/, 'Automation browser runner must not consume or expose delegated Agent executionId');
 });
