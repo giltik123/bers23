@@ -1,0 +1,156 @@
+name: AEE AE-4a Durable Admitted Plan Binding
+
+on:
+  push:
+    branches: ["aee-ae4a-durable-admitted-plan"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
+      - 'scripts/production-migration-inventory.mjs'
+      - '.github/workflows/aee-ae4a-durable-admitted-plan.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'server/core/workflow/**'
+      - 'server/core/execution/**'
+      - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
+      - 'scripts/production-migration-inventory.mjs'
+      - '.github/workflows/aee-ae4a-durable-admitted-plan.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  admitted-plan-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove AE-4a codec, adapter and accepted AEE contracts
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/AeeAdmittedPlanCodecV1.test.mjs \
+            server/core/agentic/AeePlanCompilerV1.test.mjs \
+            server/core/agentic/AeeCapabilityRegistryV1.test.mjs \
+            server/core/agentic/AgentIntentV1.test.mjs \
+            server/core/agentic/ContextGraphV1.test.mjs \
+            server/core/agentic/agentArchitectureBoundary.test.mjs
+      - name: Preserve accepted bounded Agent execution authority
+        run: |
+          node --experimental-strip-types --test \
+            server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs \
+            server/core/execution/internalWorkflowAuthorityProducerBoundary.test.mjs \
+            server/core/composition/boundedAgentProductionComposition.test.mjs
+      - name: Prove production inventory advances contiguously through 043
+        run: |
+          node --input-type=module <<'NODE'
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.length !== 43) throw new Error(`Expected 43 contiguous migrations, got ${migrations.length}`);
+          if (migrations[41]?.name !== '042_automation_schedules.sql') throw new Error('042 Automation schedule migration moved');
+          if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration must be the exact tail');
+          if (migrations[42]?.source !== 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE migration moved outside Agentic authority');
+          NODE
+      - name: Build immutable Core
+        run: npm run server:build
+      - name: Prove AE-4a owns no execution, provider, Billing or Project mutation authority
+        run: |
+          set -euo pipefail
+          for FILE in \
+            server/core/agentic/AeeAdmittedPlanCodecV1.ts \
+            server/core/agentic/PostgresAeeAdmittedPlanStore.ts \
+            server/core/agentic/AeeCapabilityExecutionAdapterRegistryV1.ts; do
+            if grep '^import ' "$FILE" | grep -E -q '/(providers|billing|execution|workflow|localExecution|projects|artifacts)/'; then
+              echo "AE-4a imports forbidden execution/mutation authority: $FILE" >&2
+              grep '^import ' "$FILE" >&2
+              exit 1
+            fi
+          done
+          ! grep -E -q 'INSERT INTO (execution_runs|workflow_continuations|local_execution_tickets)|UPDATE canonical_projects|DELETE FROM canonical_projects|providerSelector|creditsWallet' \
+            server/core/agentic/PostgresAeeAdmittedPlanStore.ts
+          grep -q "adapterKind: 'LOCAL_DETERMINISTIC_TOOL'" server/core/agentic/AeeCapabilityExecutionAdapterRegistryV1.ts
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
+
+  admitted-plan-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: aee_admitted_plan_test
+          POSTGRES_USER: aee_admitted_plan_test
+          POSTGRES_PASSWORD: aee_admitted_plan_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aee_admitted_plan_test -d aee_admitted_plan_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://aee_admitted_plan_test:aee_admitted_plan_test@127.0.0.1:5432/aee_admitted_plan_test
+      TEST_DATABASE_URL: postgresql://aee_admitted_plan_test:aee_admitted_plan_test@127.0.0.1:5432/aee_admitted_plan_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Build Core and prove canonical migration CLI applies exact 043 schema
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/042_automation_schedules.sql
+          test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+          node --input-type=module <<'NODE'
+          import { Pool } from 'pg';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+          try {
+            const result = await pool.query(`SELECT
+              to_regclass('aee_admitted_plan_graphs')::text AS admitted_plan,
+              EXISTS (
+                SELECT 1 FROM pg_trigger
+                WHERE tgrelid=to_regclass('aee_admitted_plan_graphs')
+                  AND tgname='aee_admitted_plan_graphs_immutable'
+                  AND tgenabled='O'
+                  AND NOT tgisinternal
+              ) AS immutable_trigger`);
+            if (result.rows[0]?.admitted_plan !== 'aee_admitted_plan_graphs') throw new Error('canonical migration CLI did not apply AEE migration 043');
+            if (result.rows[0]?.immutable_trigger !== true) throw new Error('canonical migration CLI did not enable AEE immutable trigger');
+          } finally { await pool.end(); }
+          NODE
+      - name: Prove immutable scoped admitted-plan persistence and strict schema
+        run: |
+          mkdir -p .test-cache/aee-admitted-plan
+          npx esbuild server/core/agentic/AeeAdmittedPlanStore.postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/aee-admitted-plan/AeeAdmittedPlanStore.postgres.test.mjs \
+            --external:pg --external:node:*
+          node --test .test-cache/aee-admitted-plan/AeeAdmittedPlanStore.postgres.test.mjs

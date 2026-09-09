@@ -18,6 +18,7 @@ import { checkExecutionRunSchema, migrateExecutionRunSchema } from '../../../cor
 import { checkAutomationDefinitionSchema, migrateAutomationDefinitionSchema } from '../../../core/automation/automationDefinitionSchema.ts';
 import { checkAutomationInvocationSchema, migrateAutomationInvocationSchema } from '../../../core/automation/automationInvocationSchema.ts';
 import { checkAutomationScheduleSchema, migrateAutomationScheduleSchema } from '../../../core/automation/automationScheduleSchema.ts';
+import { checkAeeAdmittedPlanSchema, migrateAeeAdmittedPlanSchema } from '../../../core/agentic/aeeAdmittedPlanSchema.ts';
 
 const command = process.argv[2];
 const databaseUrl = process.env.DATABASE_URL;
@@ -44,6 +45,7 @@ try {
     await migrateAutomationDefinitionSchema(pool);
     await migrateAutomationInvocationSchema(pool);
     await migrateAutomationScheduleSchema(pool);
+    await migrateAeeAdmittedPlanSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', version: result.version, status: result.status }));
   } else if (command === 'check') {
     await checkTransactionSchema(pool);
@@ -64,6 +66,7 @@ try {
     await checkAutomationDefinitionSchema(pool);
     await checkAutomationInvocationSchema(pool);
     await checkAutomationScheduleSchema(pool);
+    await checkAeeAdmittedPlanSchema(pool);
     console.info(JSON.stringify({ scope: 'transaction_schema', status: 'ready' }));
   } else {
     throw new Error('expected migrate or check command');
