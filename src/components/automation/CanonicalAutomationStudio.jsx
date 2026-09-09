@@ -91,8 +91,8 @@ export default function CanonicalAutomationStudio() {
   async function run() {
     if (!selected || !selectedProjectId || dirty) return;
     setBusy(true); setError('');
-    const clientRequestId = loadOrCreateStartIntent(selected.id, selectedProjectId, selected.revision);
     try {
+      const clientRequestId = loadOrCreateStartIntent(selected.id, selectedProjectId, selected.revision);
       const runner = createAutomationInvocationRunner({ projectId: selectedProjectId });
       const observe = view => {
         setInvocation(view);
@@ -255,15 +255,19 @@ function recalledInvocation(automationId, projectId) { try { return localStorage
 function forgetInvocation(automationId, projectId) { try { localStorage.removeItem(storageKey(automationId, projectId)); } catch {} }
 function loadOrCreateStartIntent(automationId, projectId, definitionRevision) {
   const key = startIntentKey(automationId, projectId);
-  try {
-    const existing = JSON.parse(localStorage.getItem(key) || 'null');
-    if (existing?.version === 1 && existing.definitionRevision === definitionRevision && typeof existing.clientRequestId === 'string' && existing.clientRequestId) return existing.clientRequestId;
-    const clientRequestId = globalThis.crypto.randomUUID();
-    localStorage.setItem(key, JSON.stringify({ version: 1, definitionRevision, clientRequestId }));
-    return clientRequestId;
-  } catch {
-    return globalThis.crypto.randomUUID();
+  let raw;
+  try { raw = localStorage.getItem(key); }
+  catch { throw new Error('Durable browser storage is required to start an Automation safely.'); }
+  if (raw) {
+    try {
+      const existing = JSON.parse(raw);
+      if (existing?.version === 1 && existing.definitionRevision === definitionRevision && typeof existing.clientRequestId === 'string' && existing.clientRequestId) return existing.clientRequestId;
+    } catch {}
   }
+  const clientRequestId = globalThis.crypto.randomUUID();
+  try { localStorage.setItem(key, JSON.stringify({ version: 1, definitionRevision, clientRequestId })); }
+  catch { throw new Error('Durable browser storage is required to start an Automation safely.'); }
+  return clientRequestId;
 }
 function clearStartIntent(automationId, projectId) { try { localStorage.removeItem(startIntentKey(automationId, projectId)); } catch {} }
 function message(cause) { return cause instanceof Error ? cause.message : 'Automation request failed.'; }
