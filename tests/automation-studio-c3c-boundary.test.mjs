@@ -17,6 +17,10 @@ test('Automation Studio is canonical and does not revive legacy browser executio
   assert.match(studio, /coreClient\.projects\.list/);
   assert.match(studio, /createAutomationInvocationRunner/);
   assert.match(studio, /coreClient\.projects\.acceptFinal/);
+  assert.match(studio, /loadOrCreateStartIntent\(selected\.id, selectedProjectId, selected\.revision\)/);
+  assert.match(studio, /rememberInvocation\(selected\.id, selectedProjectId, view\.invocationId\)/);
+  assert.match(studio, /Durable browser storage is required to start an Automation safely/);
+  assert.match(studio, /dirty[\s\S]*canRun/);
   for (const forbidden of ['coreClient.entities', '/data/', 'automationRunner', 'AutomationBuilder', 'providerSelector', 'billing', 'creditsWallet', 'run_ai_agent', 'scheduleDaily', 'scheduleWeekly']) assert.equal(studio.includes(forbidden), false, forbidden);
 
   assert.match(client, /\/automations\/\$\{encodeURIComponent\(token\(automationId, 'automationId'\)\)\}\/manual-runs/);
