@@ -4,13 +4,13 @@ export const AGENT_INTENT_V1_SCHEMA = 'BERS_AGENT_INTENT_V1' as const;
 export const AGENT_INTENT_V1_DIGEST_VERSION = '1' as const;
 const DIGEST_DOMAIN = `bers:aee:agent-intent:v${AGENT_INTENT_V1_DIGEST_VERSION}\0`;
 
-const MODALITIES = Object.freeze(['TEXT', 'VOICE', 'TOUCH', 'IMAGE'] as const);
-const TARGET_KINDS = Object.freeze(['GARMENT', 'PERSON', 'SELECTED_REGION', 'SELECTED_OBJECT', 'PRIOR_CANDIDATE'] as const);
+const MODALITIES = ['TEXT', 'VOICE', 'TOUCH', 'IMAGE'] as const;
+const TARGET_KINDS = ['GARMENT', 'PERSON', 'SELECTED_REGION', 'SELECTED_OBJECT', 'PRIOR_CANDIDATE'] as const;
 const PROJECT_TARGET_KINDS = new Set<string>(['PERSON', 'SELECTED_REGION', 'SELECTED_OBJECT', 'PRIOR_CANDIDATE']);
-const REGION_KINDS = Object.freeze(['FACE', 'HAIR', 'HANDS', 'BACKGROUND', 'LOGO', 'REGION', 'OBJECT', 'TARGET'] as const);
-const QUALITY_LEVELS = Object.freeze(['FAST', 'BALANCED', 'QUALITY', 'ULTRA'] as const);
-const EXECUTION_POLICIES = Object.freeze(['LOCAL_ONLY', 'LOCAL_FIRST', 'AUTO'] as const);
-const EVIDENCE_KINDS = Object.freeze(['UI_SELECTION', 'PROJECT_STATE', 'USER_EXPLICIT', 'MODEL_ADVISORY', 'PRIOR_CANDIDATE'] as const);
+const REGION_KINDS = ['FACE', 'HAIR', 'HANDS', 'BACKGROUND', 'LOGO', 'REGION', 'OBJECT', 'TARGET'] as const;
+const QUALITY_LEVELS = ['FAST', 'BALANCED', 'QUALITY', 'ULTRA'] as const;
+const EXECUTION_POLICIES = ['LOCAL_ONLY', 'LOCAL_FIRST', 'AUTO'] as const;
+const EVIDENCE_KINDS = ['UI_SELECTION', 'PROJECT_STATE', 'USER_EXPLICIT', 'MODEL_ADVISORY', 'PRIOR_CANDIDATE'] as const;
 
 export type AgentIntentSourceModalityV1 = typeof MODALITIES[number];
 export type AgentIntentTargetKindV1 = typeof TARGET_KINDS[number];
@@ -50,22 +50,12 @@ export type AgentIntentAmbiguityV1 = Readonly<{
 export type AgentIntentV1 = Readonly<{
   schemaVersion: typeof AGENT_INTENT_V1_SCHEMA;
   parserVersion: string;
-  goal: Readonly<{
-    capability: string;
-    instruction: string;
-  }>;
-  source: Readonly<{
-    projectId: string;
-    projectRevision: number;
-    sourceRef: string;
-  }>;
+  goal: Readonly<{ capability: string; instruction: string }>;
+  source: Readonly<{ projectId: string; projectRevision: number; sourceRef: string }>;
   targets: readonly AgentIntentTargetReferenceV1[];
   mutable: readonly AgentIntentRegionReferenceV1[];
   preserve: readonly AgentIntentRegionReferenceV1[];
-  constraints: Readonly<{
-    quality: AgentIntentQualityV1;
-    styleTags: readonly string[];
-  }>;
+  constraints: Readonly<{ quality: AgentIntentQualityV1; styleTags: readonly string[] }>;
   execution: Readonly<{
     policy: AgentIntentExecutionPolicyV1;
     cloudAllowed: boolean;
@@ -93,133 +83,128 @@ export type AgentIntentCanonicalContextV1 = Readonly<{
 }>;
 
 export class AgentIntentV1Error extends Error {
-  constructor(readonly code: string, message: string) {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
     super(message);
     this.name = 'AgentIntentV1Error';
+    this.code = code;
   }
 }
 
-const ROOT_KEYS = Object.freeze([
+const ROOT_KEYS = [
   'schemaVersion', 'parserVersion', 'goal', 'source', 'targets', 'mutable', 'preserve',
   'constraints', 'execution', 'context', 'ambiguities', 'evidence', 'confidence',
-]);
-const GOAL_KEYS = Object.freeze(['capability', 'instruction']);
-const SOURCE_KEYS = Object.freeze(['projectId', 'projectRevision', 'sourceRef']);
-const TARGET_KEYS = Object.freeze(['kind', 'id', 'scope', 'projectId', 'projectRevision']);
-const REGION_KEYS = Object.freeze(['kind', 'id', 'projectId', 'projectRevision']);
-const CONSTRAINT_KEYS = Object.freeze(['quality', 'styleTags']);
-const EXECUTION_KEYS = Object.freeze([
+] as const;
+const GOAL_KEYS = ['capability', 'instruction'] as const;
+const SOURCE_KEYS = ['projectId', 'projectRevision', 'sourceRef'] as const;
+const TARGET_KEYS = ['kind', 'id', 'scope', 'projectId', 'projectRevision'] as const;
+const REGION_KEYS = ['kind', 'id', 'projectId', 'projectRevision'] as const;
+const CONSTRAINT_KEYS = ['quality', 'styleTags'] as const;
+const EXECUTION_KEYS = [
   'policy', 'cloudAllowed', 'maxNodes', 'maxRetries', 'maxReplans', 'maxCandidates',
   'maxPaidCredits', 'maxWallClockMs', 'maxMemoryBytes',
-]);
-const CONTEXT_KEYS = Object.freeze(['modalities', 'uiReferences']);
-const AMBIGUITY_KEYS = Object.freeze(['code', 'fieldPath', 'candidateIds', 'confidence']);
-const EVIDENCE_KEYS = Object.freeze(['kind', 'ref', 'sha256']);
+] as const;
+const CONTEXT_KEYS = ['modalities', 'uiReferences'] as const;
+const AMBIGUITY_KEYS = ['code', 'fieldPath', 'candidateIds', 'confidence'] as const;
+const EVIDENCE_KEYS = ['kind', 'ref', 'sha256'] as const;
 
 /**
- * AE-1 canonical boundary. The returned value is deep-frozen advisory intent.
- * It does not resolve capability admission, model/provider routing, Artifact identity,
- * Billing authority, execution state or Project mutation.
+ * Canonical AE-1 boundary. The result is immutable advisory intent only; it grants
+ * no capability, provider/model, Artifact, Billing, execution or Project authority.
  */
 export function normalizeAgentIntentV1(raw: unknown): AgentIntentV1 {
-  const root = exactRecord(raw, ROOT_KEYS, ROOT_KEYS, 'agent_intent_invalid_root');
-  if (root.schemaVersion !== AGENT_INTENT_V1_SCHEMA) fail('agent_intent_schema_unsupported', `schemaVersion must be ${AGENT_INTENT_V1_SCHEMA}`);
-
-  const goalRecord = exactRecord(root.goal, GOAL_KEYS, GOAL_KEYS, 'agent_intent_invalid_goal');
-  const sourceRecord = exactRecord(root.source, SOURCE_KEYS, SOURCE_KEYS, 'agent_intent_invalid_source');
-  const constraintsRecord = exactRecord(root.constraints, CONSTRAINT_KEYS, CONSTRAINT_KEYS, 'agent_intent_invalid_constraints');
-  const executionRecord = exactRecord(root.execution, EXECUTION_KEYS, EXECUTION_KEYS, 'agent_intent_invalid_execution');
-  const contextRecord = exactRecord(root.context, CONTEXT_KEYS, CONTEXT_KEYS, 'agent_intent_invalid_context');
-
-  const source = Object.freeze({
-    projectId: boundedIdentifier(sourceRecord.projectId, 'source.projectId'),
-    projectRevision: boundedInteger(sourceRecord.projectRevision, 'source.projectRevision', 0, Number.MAX_SAFE_INTEGER),
-    sourceRef: boundedIdentifier(sourceRecord.sourceRef, 'source.sourceRef'),
-  });
-
-  const policy = enumValue(executionRecord.policy, EXECUTION_POLICIES, 'execution.policy');
-  const cloudAllowed = booleanValue(executionRecord.cloudAllowed, 'execution.cloudAllowed');
-  const maxPaidCredits = boundedInteger(executionRecord.maxPaidCredits, 'execution.maxPaidCredits', 0, 1_000_000);
-  if (policy === 'LOCAL_ONLY' && (cloudAllowed || maxPaidCredits !== 0)) {
-    fail('agent_intent_local_only_violation', 'LOCAL_ONLY intent must set cloudAllowed=false and maxPaidCredits=0');
+  const root = exactRecord(raw, ROOT_KEYS, ROOT_KEYS, 'root');
+  if (root.schemaVersion !== AGENT_INTENT_V1_SCHEMA) {
+    fail('agent_intent_schema_unsupported', `schemaVersion must be ${AGENT_INTENT_V1_SCHEMA}`);
   }
 
-  const normalized: AgentIntentV1 = {
+  const goal = exactRecord(root.goal, GOAL_KEYS, GOAL_KEYS, 'goal');
+  const sourceRaw = exactRecord(root.source, SOURCE_KEYS, SOURCE_KEYS, 'source');
+  const constraints = exactRecord(root.constraints, CONSTRAINT_KEYS, CONSTRAINT_KEYS, 'constraints');
+  const execution = exactRecord(root.execution, EXECUTION_KEYS, EXECUTION_KEYS, 'execution');
+  const context = exactRecord(root.context, CONTEXT_KEYS, CONTEXT_KEYS, 'context');
+
+  const source = Object.freeze({
+    projectId: identifier(sourceRaw.projectId, 'source.projectId'),
+    projectRevision: integer(sourceRaw.projectRevision, 'source.projectRevision', 0, Number.MAX_SAFE_INTEGER),
+    sourceRef: identifier(sourceRaw.sourceRef, 'source.sourceRef'),
+  });
+
+  const policy = enumValue(execution.policy, EXECUTION_POLICIES, 'execution.policy');
+  const cloudAllowed = bool(execution.cloudAllowed, 'execution.cloudAllowed');
+  const maxPaidCredits = integer(execution.maxPaidCredits, 'execution.maxPaidCredits', 0, 1_000_000);
+  if (policy === 'LOCAL_ONLY' && (cloudAllowed || maxPaidCredits !== 0)) {
+    fail('agent_intent_local_only_violation', 'LOCAL_ONLY requires cloudAllowed=false and maxPaidCredits=0');
+  }
+
+  return deepFreeze({
     schemaVersion: AGENT_INTENT_V1_SCHEMA,
-    parserVersion: boundedText(root.parserVersion, 'parserVersion', 1, 120, false),
+    parserVersion: text(root.parserVersion, 'parserVersion', 1, 120, false),
     goal: Object.freeze({
-      capability: capabilityId(goalRecord.capability),
-      instruction: boundedText(goalRecord.instruction, 'goal.instruction', 1, 4_000, true),
+      capability: capability(goal.capability),
+      instruction: text(goal.instruction, 'goal.instruction', 1, 4_000, true),
     }),
     source,
-    targets: normalizeArray(root.targets, 'targets', 32, normalizeTargetReference),
-    mutable: normalizeArray(root.mutable, 'mutable', 32, normalizeRegionReference),
-    preserve: normalizeArray(root.preserve, 'preserve', 32, normalizeRegionReference),
+    targets: array(root.targets, 'targets', 32, normalizeTarget),
+    mutable: array(root.mutable, 'mutable', 32, normalizeRegion),
+    preserve: array(root.preserve, 'preserve', 32, normalizeRegion),
     constraints: Object.freeze({
-      quality: enumValue(constraintsRecord.quality, QUALITY_LEVELS, 'constraints.quality'),
-      styleTags: normalizeStringSet(constraintsRecord.styleTags, 'constraints.styleTags', 32, 80),
+      quality: enumValue(constraints.quality, QUALITY_LEVELS, 'constraints.quality'),
+      styleTags: stringSet(constraints.styleTags, 'constraints.styleTags', 32, 80),
     }),
     execution: Object.freeze({
       policy,
       cloudAllowed,
-      maxNodes: boundedInteger(executionRecord.maxNodes, 'execution.maxNodes', 1, 32),
-      maxRetries: boundedInteger(executionRecord.maxRetries, 'execution.maxRetries', 0, 8),
-      maxReplans: boundedInteger(executionRecord.maxReplans, 'execution.maxReplans', 0, 8),
-      maxCandidates: boundedInteger(executionRecord.maxCandidates, 'execution.maxCandidates', 1, 16),
+      maxNodes: integer(execution.maxNodes, 'execution.maxNodes', 1, 32),
+      maxRetries: integer(execution.maxRetries, 'execution.maxRetries', 0, 8),
+      maxReplans: integer(execution.maxReplans, 'execution.maxReplans', 0, 8),
+      maxCandidates: integer(execution.maxCandidates, 'execution.maxCandidates', 1, 16),
       maxPaidCredits,
-      maxWallClockMs: boundedInteger(executionRecord.maxWallClockMs, 'execution.maxWallClockMs', 1_000, 86_400_000),
-      maxMemoryBytes: boundedInteger(executionRecord.maxMemoryBytes, 'execution.maxMemoryBytes', 1_048_576, 137_438_953_472),
+      maxWallClockMs: integer(execution.maxWallClockMs, 'execution.maxWallClockMs', 1_000, 86_400_000),
+      maxMemoryBytes: integer(execution.maxMemoryBytes, 'execution.maxMemoryBytes', 1_048_576, 137_438_953_472),
     }),
     context: Object.freeze({
-      modalities: normalizeEnumSet(contextRecord.modalities, MODALITIES, 'context.modalities', 4),
-      uiReferences: normalizeArray(contextRecord.uiReferences, 'context.uiReferences', 64, normalizeTargetReference),
+      modalities: enumSet(context.modalities, MODALITIES, 'context.modalities', 4),
+      uiReferences: array(context.uiReferences, 'context.uiReferences', 64, normalizeTarget),
     }),
-    ambiguities: normalizeArray(root.ambiguities, 'ambiguities', 32, normalizeAmbiguity),
-    evidence: normalizeArray(root.evidence, 'evidence', 64, normalizeEvidence),
-    confidence: confidenceValue(root.confidence, 'confidence'),
-  };
-
-  return deepFreeze(normalized);
+    ambiguities: array(root.ambiguities, 'ambiguities', 32, normalizeAmbiguity),
+    evidence: array(root.evidence, 'evidence', 64, normalizeEvidence),
+    confidence: confidence(root.confidence, 'confidence'),
+  });
 }
 
-/** Deterministic key-order-independent bytes for an already normalized AgentIntentV1. */
 export function serializeAgentIntentV1(intent: AgentIntentV1): string {
-  const normalized = normalizeAgentIntentV1(intent);
-  return JSON.stringify(canonicalValue(normalized));
+  return JSON.stringify(canonicalValue(normalizeAgentIntentV1(intent)));
 }
 
-/** Domain-separated SHA-256 identity for replay/debugging and later compiler binding. */
 export function agentIntentV1Digest(intent: AgentIntentV1): string {
   return createHash('sha256').update(DIGEST_DOMAIN).update(serializeAgentIntentV1(intent)).digest('hex');
 }
 
-/**
- * Core-context stale/substitution guard. This does not mint source truth: callers must
- * obtain `context` from canonical Project authority immediately before compilation.
- */
+/** Caller must supply this context from canonical Project authority immediately before compilation. */
 export function assertAgentIntentV1CanonicalContext(
   intent: AgentIntentV1,
   context: AgentIntentCanonicalContextV1,
 ): AgentIntentV1 {
   const normalized = normalizeAgentIntentV1(intent);
-  const expectedProjectId = boundedIdentifier(context?.projectId, 'canonicalContext.projectId');
-  const expectedProjectRevision = boundedInteger(context?.projectRevision, 'canonicalContext.projectRevision', 0, Number.MAX_SAFE_INTEGER);
-  const expectedSourceRef = boundedIdentifier(context?.sourceRef, 'canonicalContext.sourceRef');
+  const projectId = identifier(context?.projectId, 'canonicalContext.projectId');
+  const projectRevision = integer(context?.projectRevision, 'canonicalContext.projectRevision', 0, Number.MAX_SAFE_INTEGER);
+  const sourceRef = identifier(context?.sourceRef, 'canonicalContext.sourceRef');
 
-  if (normalized.source.projectId !== expectedProjectId) fail('agent_intent_cross_project', 'Intent source project does not match canonical Project');
-  if (normalized.source.projectRevision !== expectedProjectRevision) fail('agent_intent_stale_project', 'Intent Project revision is stale');
-  if (normalized.source.sourceRef !== expectedSourceRef) fail('agent_intent_stale_source', 'Intent source reference is stale');
+  if (normalized.source.projectId !== projectId) fail('agent_intent_cross_project', 'Intent source project differs from canonical Project');
+  if (normalized.source.projectRevision !== projectRevision) fail('agent_intent_stale_project', 'Intent Project revision is stale');
+  if (normalized.source.sourceRef !== sourceRef) fail('agent_intent_stale_source', 'Intent source reference is stale');
 
-  const projectReferences = [
+  for (const reference of [
     ...normalized.targets,
     ...normalized.mutable,
     ...normalized.preserve,
     ...normalized.context.uiReferences,
-  ];
-  for (const reference of projectReferences) {
+  ]) {
     if ('scope' in reference && reference.scope === 'OWNER') continue;
-    if (reference.projectId !== expectedProjectId) fail('agent_intent_cross_project_reference', 'Intent contains a cross-project reference');
-    if (reference.projectRevision !== expectedProjectRevision) fail('agent_intent_stale_reference', 'Intent contains a stale Project reference');
+    if (reference.projectId !== projectId) fail('agent_intent_cross_project_reference', 'Intent contains a cross-project reference');
+    if (reference.projectRevision !== projectRevision) fail('agent_intent_stale_reference', 'Intent contains a stale Project reference');
   }
   return normalized;
 }
@@ -228,141 +213,188 @@ export function agentIntentV1RequiresClarification(intent: AgentIntentV1): boole
   return normalizeAgentIntentV1(intent).ambiguities.length > 0;
 }
 
-function normalizeTargetReference(raw: unknown, index: number, path: string): AgentIntentTargetReferenceV1 {
+function normalizeTarget(raw: unknown, index: number, path: string): AgentIntentTargetReferenceV1 {
   const record = exactRecord(raw, TARGET_KEYS, ['kind', 'id', 'scope'], `${path}[${index}]`);
   const kind = enumValue(record.kind, TARGET_KINDS, `${path}[${index}].kind`);
   const scope = enumValue(record.scope, ['PROJECT', 'OWNER'] as const, `${path}[${index}].scope`);
-  const id = boundedIdentifier(record.id, `${path}[${index}].id`);
+  const id = identifier(record.id, `${path}[${index}].id`);
   const hasProjectId = Object.hasOwn(record, 'projectId');
   const hasProjectRevision = Object.hasOwn(record, 'projectRevision');
 
-  if (PROJECT_TARGET_KINDS.has(kind) && scope !== 'PROJECT') fail('agent_intent_reference_scope_invalid', `${kind} references must be PROJECT scoped`);
-  if (kind === 'GARMENT' && scope !== 'OWNER') fail('agent_intent_reference_scope_invalid', 'GARMENT references must be OWNER scoped in AgentIntentV1');
+  if (PROJECT_TARGET_KINDS.has(kind) && scope !== 'PROJECT') {
+    fail('agent_intent_reference_scope_invalid', `${kind} must be PROJECT scoped`);
+  }
+  if (kind === 'GARMENT' && scope !== 'OWNER') {
+    fail('agent_intent_reference_scope_invalid', 'GARMENT must be OWNER scoped in AgentIntentV1');
+  }
 
   if (scope === 'PROJECT') {
-    if (!hasProjectId || !hasProjectRevision) fail('agent_intent_project_reference_incomplete', `${path}[${index}] PROJECT reference requires projectId and projectRevision`);
+    if (!hasProjectId || !hasProjectRevision) {
+      fail('agent_intent_project_reference_incomplete', `${path}[${index}] requires projectId and projectRevision`);
+    }
     return Object.freeze({
       kind,
       id,
       scope,
-      projectId: boundedIdentifier(record.projectId, `${path}[${index}].projectId`),
-      projectRevision: boundedInteger(record.projectRevision, `${path}[${index}].projectRevision`, 0, Number.MAX_SAFE_INTEGER),
+      projectId: identifier(record.projectId, `${path}[${index}].projectId`),
+      projectRevision: integer(record.projectRevision, `${path}[${index}].projectRevision`, 0, Number.MAX_SAFE_INTEGER),
     });
   }
-  if (hasProjectId || hasProjectRevision) fail('agent_intent_owner_reference_widened', `${path}[${index}] OWNER reference cannot carry Project authority`);
+
+  if (hasProjectId || hasProjectRevision) {
+    fail('agent_intent_owner_reference_widened', `${path}[${index}] OWNER reference cannot carry Project authority`);
+  }
   return Object.freeze({ kind, id, scope });
 }
 
-function normalizeRegionReference(raw: unknown, index: number, path: string): AgentIntentRegionReferenceV1 {
+function normalizeRegion(raw: unknown, index: number, path: string): AgentIntentRegionReferenceV1 {
   const record = exactRecord(raw, REGION_KEYS, REGION_KEYS, `${path}[${index}]`);
   return Object.freeze({
     kind: enumValue(record.kind, REGION_KINDS, `${path}[${index}].kind`),
-    id: boundedIdentifier(record.id, `${path}[${index}].id`),
-    projectId: boundedIdentifier(record.projectId, `${path}[${index}].projectId`),
-    projectRevision: boundedInteger(record.projectRevision, `${path}[${index}].projectRevision`, 0, Number.MAX_SAFE_INTEGER),
+    id: identifier(record.id, `${path}[${index}].id`),
+    projectId: identifier(record.projectId, `${path}[${index}].projectId`),
+    projectRevision: integer(record.projectRevision, `${path}[${index}].projectRevision`, 0, Number.MAX_SAFE_INTEGER),
   });
 }
 
 function normalizeAmbiguity(raw: unknown, index: number, path: string): AgentIntentAmbiguityV1 {
   const record = exactRecord(raw, AMBIGUITY_KEYS, AMBIGUITY_KEYS, `${path}[${index}]`);
-  const candidates = normalizeStringSet(record.candidateIds, `${path}[${index}].candidateIds`, 32, 128);
-  if (candidates.length === 0) fail('agent_intent_ambiguity_candidates_empty', `${path}[${index}] must contain at least one candidate`);
+  const candidateIds = stringSet(record.candidateIds, `${path}[${index}].candidateIds`, 32, 128);
+  if (candidateIds.length === 0) {
+    fail('agent_intent_ambiguity_candidates_empty', `${path}[${index}] requires at least one candidate`);
+  }
   return Object.freeze({
-    code: boundedToken(record.code, `${path}[${index}].code`, 80),
-    fieldPath: boundedText(record.fieldPath, `${path}[${index}].fieldPath`, 1, 240, false),
-    candidateIds: candidates,
-    confidence: confidenceValue(record.confidence, `${path}[${index}].confidence`),
+    code: token(record.code, `${path}[${index}].code`, 80),
+    fieldPath: text(record.fieldPath, `${path}[${index}].fieldPath`, 1, 240, false),
+    candidateIds,
+    confidence: confidence(record.confidence, `${path}[${index}].confidence`),
   });
 }
 
 function normalizeEvidence(raw: unknown, index: number, path: string): AgentIntentEvidenceV1 {
   const record = exactRecord(raw, EVIDENCE_KEYS, ['kind', 'ref'], `${path}[${index}]`);
-  const sha256 = Object.hasOwn(record, 'sha256') ? sha256Value(record.sha256, `${path}[${index}].sha256`) : undefined;
+  const digest = Object.hasOwn(record, 'sha256') ? sha256(record.sha256, `${path}[${index}].sha256`) : undefined;
   return Object.freeze({
     kind: enumValue(record.kind, EVIDENCE_KINDS, `${path}[${index}].kind`),
-    ref: boundedIdentifier(record.ref, `${path}[${index}].ref`),
-    ...(sha256 ? { sha256 } : {}),
+    ref: identifier(record.ref, `${path}[${index}].ref`),
+    ...(digest ? { sha256: digest } : {}),
   });
 }
 
-function exactRecord(raw: unknown, allowed: readonly string[], required: readonly string[], path: string): Record<string, unknown> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail('agent_intent_object_required', `${path} must be a plain object`);
+function exactRecord(
+  raw: unknown,
+  allowed: readonly string[],
+  required: readonly string[],
+  path: string,
+): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    fail('agent_intent_object_required', `${path} must be a plain object`);
+  }
   const prototype = Object.getPrototypeOf(raw);
-  if (prototype !== Object.prototype && prototype !== null) fail('agent_intent_non_plain_object', `${path} must be a plain data object`);
+  if (prototype !== Object.prototype && prototype !== null) {
+    fail('agent_intent_non_plain_object', `${path} must be plain data`);
+  }
   const record = raw as Record<string, unknown>;
   const keys = Object.keys(record);
-  if (keys.some(key => !allowed.includes(key)) || required.some(key => !Object.hasOwn(record, key))) {
+  if (keys.some((key) => !allowed.includes(key)) || required.some((key) => !Object.hasOwn(record, key))) {
     fail('agent_intent_exact_schema_violation', `${path} accepts exactly the documented keys`);
   }
   return record;
 }
 
-function normalizeArray<T>(raw: unknown, path: string, max: number, item: (value: unknown, index: number, path: string) => T): readonly T[] {
-  if (!Array.isArray(raw) || raw.length > max) fail('agent_intent_array_invalid', `${path} must be an array with at most ${max} items`);
-  return Object.freeze(raw.map((value, index) => item(value, index, path)));
+function array<T>(
+  raw: unknown,
+  path: string,
+  max: number,
+  normalize: (value: unknown, index: number, path: string) => T,
+): readonly T[] {
+  if (!Array.isArray(raw) || raw.length > max) {
+    fail('agent_intent_array_invalid', `${path} must contain at most ${max} items`);
+  }
+  return Object.freeze(raw.map((value, index) => normalize(value, index, path)));
 }
 
-function normalizeStringSet(raw: unknown, path: string, maxItems: number, maxLength: number): readonly string[] {
-  if (!Array.isArray(raw) || raw.length > maxItems) fail('agent_intent_string_set_invalid', `${path} must contain at most ${maxItems} strings`);
-  const values = raw.map((value, index) => boundedText(value, `${path}[${index}]`, 1, maxLength, true));
+function stringSet(raw: unknown, path: string, maxItems: number, maxLength: number): readonly string[] {
+  if (!Array.isArray(raw) || raw.length > maxItems) {
+    fail('agent_intent_string_set_invalid', `${path} must contain at most ${maxItems} strings`);
+  }
+  const values = raw.map((value, index) => text(value, `${path}[${index}]`, 1, maxLength, true));
   return Object.freeze([...new Set(values)].sort((a, b) => a.localeCompare(b)));
 }
 
-function normalizeEnumSet<T extends readonly string[]>(raw: unknown, allowed: T, path: string, maxItems: number): readonly T[number][] {
-  if (!Array.isArray(raw) || raw.length > maxItems) fail('agent_intent_enum_set_invalid', `${path} must contain at most ${maxItems} values`);
+function enumSet<T extends readonly string[]>(raw: unknown, allowed: T, path: string, maxItems: number): readonly T[number][] {
+  if (!Array.isArray(raw) || raw.length > maxItems) {
+    fail('agent_intent_enum_set_invalid', `${path} must contain at most ${maxItems} values`);
+  }
   const values = raw.map((value, index) => enumValue(value, allowed, `${path}[${index}]`));
   return Object.freeze([...new Set(values)].sort((a, b) => a.localeCompare(b)) as T[number][]);
 }
 
-function capabilityId(value: unknown): string {
-  const capability = boundedText(value, 'goal.capability', 2, 64, false);
-  if (!/^[A-Z][A-Z0-9_]*$/.test(capability)) fail('agent_intent_capability_invalid', 'goal.capability must be an uppercase capability identifier');
-  return capability;
-}
-
-function boundedIdentifier(value: unknown, path: string): string {
-  const text = boundedText(value, path, 1, 160, false);
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(text)) fail('agent_intent_identifier_invalid', `${path} contains unsupported identifier characters`);
-  return text;
-}
-
-function boundedToken(value: unknown, path: string, maxLength: number): string {
-  const text = boundedText(value, path, 1, maxLength, false);
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(text)) fail('agent_intent_token_invalid', `${path} contains unsupported token characters`);
-  return text;
-}
-
-function boundedText(value: unknown, path: string, minLength: number, maxLength: number, preserveInnerWhitespace: boolean): string {
-  if (typeof value !== 'string') fail('agent_intent_string_required', `${path} must be a string`);
-  const trimmed = value.trim();
-  const normalized = preserveInnerWhitespace ? trimmed : trimmed.replace(/\s+/g, ' ');
-  if (normalized.length < minLength || normalized.length > maxLength) fail('agent_intent_string_bounds', `${path} must contain ${minLength}-${maxLength} characters`);
-  if (/\u0000/.test(normalized)) fail('agent_intent_string_invalid', `${path} contains a forbidden NUL character`);
+function capability(value: unknown): string {
+  const normalized = text(value, 'goal.capability', 2, 64, false);
+  if (!/^[A-Z][A-Z0-9_]*$/.test(normalized)) {
+    fail('agent_intent_capability_invalid', 'goal.capability must be an uppercase capability identifier');
+  }
   return normalized;
 }
 
-function boundedInteger(value: unknown, path: string, min: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) fail('agent_intent_integer_invalid', `${path} must be a safe integer in [${min}, ${max}]`);
+function identifier(value: unknown, path: string): string {
+  const normalized = text(value, path, 1, 160, false);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(normalized)) {
+    fail('agent_intent_identifier_invalid', `${path} contains unsupported identifier characters`);
+  }
+  return normalized;
+}
+
+function token(value: unknown, path: string, maxLength: number): string {
+  const normalized = text(value, path, 1, maxLength, false);
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(normalized)) {
+    fail('agent_intent_token_invalid', `${path} contains unsupported token characters`);
+  }
+  return normalized;
+}
+
+function text(value: unknown, path: string, min: number, max: number, preserveInnerWhitespace: boolean): string {
+  if (typeof value !== 'string') fail('agent_intent_string_required', `${path} must be a string`);
+  const trimmed = value.trim();
+  const normalized = preserveInnerWhitespace ? trimmed : trimmed.replace(/\s+/g, ' ');
+  if (normalized.length < min || normalized.length > max) {
+    fail('agent_intent_string_bounds', `${path} must contain ${min}-${max} characters`);
+  }
+  if (normalized.includes('\u0000')) fail('agent_intent_string_invalid', `${path} contains NUL`);
+  return normalized;
+}
+
+function integer(value: unknown, path: string, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
+    fail('agent_intent_integer_invalid', `${path} must be a safe integer in [${min}, ${max}]`);
+  }
   return value;
 }
 
-function confidenceValue(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) fail('agent_intent_confidence_invalid', `${path} must be finite and within [0, 1]`);
+function confidence(value: unknown, path: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    fail('agent_intent_confidence_invalid', `${path} must be finite and within [0, 1]`);
+  }
   return value;
 }
 
-function booleanValue(value: unknown, path: string): boolean {
+function bool(value: unknown, path: string): boolean {
   if (typeof value !== 'boolean') fail('agent_intent_boolean_required', `${path} must be boolean`);
   return value;
 }
 
-function sha256Value(value: unknown, path: string): string {
-  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) fail('agent_intent_sha256_invalid', `${path} must be lowercase SHA-256 hex`);
+function sha256(value: unknown, path: string): string {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
+    fail('agent_intent_sha256_invalid', `${path} must be lowercase SHA-256 hex`);
+  }
   return value;
 }
 
 function enumValue<T extends readonly string[]>(value: unknown, allowed: T, path: string): T[number] {
-  if (typeof value !== 'string' || !allowed.includes(value as T[number])) fail('agent_intent_enum_invalid', `${path} is unsupported`);
+  if (typeof value !== 'string' || !allowed.includes(value as T[number])) {
+    fail('agent_intent_enum_invalid', `${path} is unsupported`);
+  }
   return value as T[number];
 }
 
