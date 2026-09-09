@@ -46,6 +46,7 @@ All work below obeys these rules:
 - deterministic tool first, then trusted local AI, then heavier local AI, then only an explicit admitted cloud path;
 - `LOCAL_ONLY` failure cannot silently consume credits or invoke a provider;
 - AI planning/routing is advisory until canonical Core admission;
+- **reasoning is flexible, authority is deterministic**: an LLM/model may propose intent, plans, evaluations and repairs, but its output is never itself an admission token, execution identity, ticket, Artifact identity, provider/model choice, Billing decision or Project mutation authority;
 - image-producing work ends as a canonical candidate Artifact; Project mutation requires explicit Accept;
 - exact source lineage and stale-source protection remain mandatory;
 - exact-head acceptance belongs to the final commit under review;
@@ -132,20 +133,351 @@ Required:
 - one provider/Billing authority shared with interactive Creative execution;
 - local-first target policy remains canonical.
 
-#### C2 — Agent
+#### C2 — Agent / BERS Agentic Execution Engine (AEE)
 
-Pre-release target: `PRODUCTION_READY` for a bounded multi-step v1 Agent surface.
+Pre-release target: `PRODUCTION_READY` for a bounded multi-step v1 Agent surface, while establishing the long-term **BERS Agentic Execution Engine (AEE)** architecture.
+
+The canonical Agent design is **compile, do not execute model output directly**. Natural-language, voice, vision or multimodal reasoning produces an advisory structured proposal. A deterministic Core compiler validates and binds that proposal into an immutable admitted execution graph. Only the admitted graph may enter the existing durable execution authorities.
+
+Canonical flow:
+
+`Text / Voice / Touch / Image context -> advisory Intent Interpreter -> AgentIntentV1 -> PlanProposalV1 -> deterministic Core Plan Compiler -> AdmittedPlanGraphV1 -> WorkflowContinuation + ExecutionRun -> admitted deterministic/local/HSME/cloud execution -> canonical Artifact -> advisory Result Evaluator -> PASS / REPAIR / REPLAN proposal -> Core admission again`.
+
+This compiler boundary is the central long-term Agent architecture because it allows reasoning models to improve or change without moving execution authority into the model, browser or planner.
+
+##### Current accepted substrate and convergence law
+
+Carry forward the accepted C2/C3 foundation rather than building a new competing run system:
+
+- `BoundedAgentDeterministicWorkflowService` plus `WorkflowContinuation` and `ExecutionRun` are the current production Agent execution substrate;
+- Automation invocation binding delegates into that substrate; Automation must not create a parallel Agent run registry;
+- `src/lib/agent/*` is legacy/advisory planning code only. Preserve useful concepts such as structured parsing, ambiguity, dependencies and optimization, but keep browser image execution disabled;
+- `src/platform/agent/*` is a useful pure planning/memory/events/research library, but its process-memory sessions/history/retry state must not become production execution truth;
+- production retry/recovery/cancellation/result state remains durable and server-owned;
+- no Agent or planner may bypass canonical Artifact, provider, Billing, local-execution or Project authorities.
+
+Do not maintain three independently evolving Agent architectures. Converge them into one planning plane above one durable execution plane.
+
+##### AEE architecture laws
+
+- model/LLM output is **untrusted advisory data** until compiled and admitted by Core;
+- the Agent plans in typed **capabilities**, not provider names or model names;
+- ambiguous destructive or object-targeted intent fails closed to clarification or visible candidate selection; no production `best effort` target mutation;
+- runtime SUCCESS is not equivalent to user-goal SUCCESS; quality/effect correctness is evaluated separately;
+- every replan or repair is a new bounded proposal evaluated by Core policy; evaluators never gain execution authority;
+- memory/preferences may influence ranking and defaults but never become Artifact, geometry, entitlement, provider, execution or Project truth;
+- `LOCAL_ONLY` remains transitive across planning, repair and replanning: a local failure cannot silently become paid/cloud execution;
+- Project mutation remains explicit Accept even when the Agent autonomously plans, executes, evaluates or repairs candidate work;
+- bounded autonomy is mandatory: node, retry, replan, candidate, credit, cloud, time and resource budgets are explicit and enforceable;
+- plan and intent schemas are versioned, canonicalized and digest-bound for replay/debugging.
+
+##### AE-0 — Agent architecture consolidation
+
+Goal: remove ambiguity about which existing layer owns what before adding more intelligence.
 
 Required:
 
-- no browser `editingEngine -> provider` side path;
-- Agent plans compile into admitted structured operations only;
-- every image-producing step uses canonical Artifacts;
-- explicit operation/target/provider constraints;
-- cancellation and retry preserve run identity;
-- refresh/reconnect does not invent a new paid run;
-- Project mutation remains explicit Accept;
-- bounded v1 tool/capability allowlist rather than arbitrary autonomous side effects.
+- classify `src/lib/agent` as legacy/advisory compatibility; no execution authority;
+- classify `src/platform/agent` as pure planning/reasoning primitives unless and until specific pieces are adopted behind Core contracts;
+- document `WorkflowContinuation + ExecutionRun` as the sole production Agent execution-state authority;
+- map legacy concepts worth retaining: structured parser, `depends_on`, ambiguity, task optimization, events, memory/context and debugging;
+- prohibit URL-based/browser in-memory task history from being treated as rollback or lineage authority;
+- add architecture tests that prevent new provider/Billing/Artifact/Project execution side paths from either planning layer.
+
+Exit: one explicit Agent architecture, with no competing execution truth.
+
+##### AE-1 — `AgentIntentV1`: structured intent and reference contract
+
+Replace coarse `intent: string` / regex-only interpretation as the production planning contract with a versioned structured intent.
+
+`AgentIntentV1` must be able to represent at minimum:
+
+- goal/capability intent;
+- current Project/source reference;
+- target references such as garment, person, selected region/object or prior candidate;
+- mutable regions/entities;
+- preserve/locked regions/entities such as face, hair, hands, background or logo;
+- quality/style constraints;
+- local-first/local-only preference;
+- requested credit/cloud/resource budget;
+- source modalities and UI context used to resolve references;
+- explicit ambiguities and confidence/evidence;
+- parser/schema version.
+
+Required behavior:
+
+- exact schema validation and canonical serialization;
+- unknown fields fail closed at Core boundary;
+- ambiguous object/history references do not silently resolve to a destructive action;
+- natural-language/LLM parsing is replaceable; the canonical contract remains stable;
+- tests cover multilingual phrasing, adversarial prompt fields, stale UI references and cross-project substitution.
+
+Exit: reasoning is separated cleanly from execution semantics.
+
+##### AE-2 — Capability Registry
+
+Create a typed server-owned registry describing **what** the Agent may ask for without encoding **which provider/model** performs it.
+
+Initial bounded capabilities should reuse accepted operations where possible, for example:
+
+- `ORTHOGONAL_TRANSFORM`;
+- `RESIZE`;
+- `SEGMENT_PERSON` / bounded segmentation where admitted;
+- `BACKGROUND_ISOLATION`;
+- later `TRY_ON`, `INPAINT_REGION`, `RESTORE_DETAIL`, `UPSCALE`, pose/garment analysis only when their canonical authorities are ready.
+
+Each `CapabilityDescriptor` records:
+
+- versioned capability ID;
+- accepted Artifact/input roles;
+- output Artifact roles;
+- preconditions;
+- deterministic/local/cloud eligibility class;
+- side-effect class;
+- resource class;
+- required evidence/readiness class;
+- supported evaluator hooks;
+- whether user confirmation is required.
+
+Provider/model/runtime identities remain downstream routing/admission concerns and are never accepted from arbitrary Agent text.
+
+Exit: Agent planning is provider-independent and capability-bounded.
+
+##### AE-3 — `PlanProposalV1` and deterministic Core Plan Compiler
+
+Introduce a compiler boundary analogous to source -> intermediate representation -> verified executable plan.
+
+The advisory planner emits `PlanProposalV1` with a bounded DAG of capability requests and dependencies. The Core compiler must:
+
+- resolve references against current authenticated canonical state;
+- validate capability/version compatibility;
+- reject cycles, unsupported fan-out and unknown node types;
+- bind immutable source Artifact identities and exact relevant revisions;
+- bind constraints and preserve/mutable policy;
+- compute canonical node identities, plan digest and schema/compiler version;
+- perform stale-source checks;
+- apply budget/autonomy policy;
+- apply provider/local/HSME/Billing admission through existing authorities rather than planner claims;
+- emit `AdmittedPlanGraphV1` or a structured rejection/clarification requirement.
+
+Initial graph rules:
+
+- DAG only;
+- small bounded node count;
+- bounded fan-out;
+- explicit typed dependencies;
+- no arbitrary code/tool names;
+- no free-form loops. Repair/replan cycles occur as new bounded graph revisions/invocations rather than an unbounded runtime loop.
+
+Determinism requirement: the same canonical intent/proposal + same canonical state + same compiler/policy version must produce the same admitted graph digest or the same deterministic rejection class.
+
+Exit: no LLM-generated plan can execute without deterministic compilation and Core admission.
+
+##### AE-4 — Generalize durable execution from one fixed workflow to admitted bounded graphs
+
+Evolve the current fixed `Orthogonal -> Resize -> INTERNAL verify` implementation without weakening its guarantees.
+
+Compare implementation approaches before coding:
+
+1. extend the current service with conditionals for every new workflow — reject once this creates operation-specific branching debt;
+2. build a new independent Agent runtime — reject because it duplicates WorkflowContinuation/ExecutionRun authority;
+3. **selected:** generalize the accepted WorkflowContinuation/ExecutionRun substrate to execute only `AdmittedPlanGraphV1` node types through capability adapters.
+
+Required proof slices:
+
+- preserve current Orthogonal -> Resize -> verify behavior byte-for-byte/semantically as a compiled graph;
+- add at least one second bounded workflow with different dependencies, preferably using already accepted local/deterministic authorities;
+- prove canonical intermediate Artifact lineage;
+- prove browser refresh/Core restart/lost-response recovery;
+- prove retry stays under the same logical workflow while attempt identity changes correctly;
+- prove cancellation authority separation;
+- prove `LOCAL_ONLY` graph failure cannot reach provider/Billing;
+- prove explicit Accept remains the only Project mutation.
+
+Exit: production Agent execution is graph-general enough for multiple bounded workflows without becoming arbitrary.
+
+##### AE-5 — Failure Taxonomy and Bounded Replanner
+
+Replace generic "retry the same task" behavior with structured failure classification and bounded alternative planning.
+
+Initial failure classes should distinguish at least:
+
+- transient transport;
+- expired attempt/ticket;
+- durable local failure;
+- provider `UNKNOWN`/reconciliation required;
+- stale source/evidence;
+- missing/insufficient mask, anchors or other prerequisites;
+- model/capability unavailable;
+- insufficient device memory/resources;
+- quality rejected;
+- user input/clarification required;
+- policy/budget denial.
+
+The Replanner may propose only registered capabilities and bounded plan changes. Examples:
+
+- insufficient anchors -> propose anchor acquisition before Try-On;
+- missing mask -> propose segmentation/manual selection;
+- insufficient device memory -> propose a lower admitted local tier where policy allows;
+- quality failure -> propose targeted repair;
+- `LOCAL_ONLY` failure -> never propose implicit cloud escalation.
+
+Exit: retries are reserved for genuinely retryable attempts; semantic failures can produce a bounded, inspectable replan.
+
+##### AE-6 — Result Evaluator and targeted repair
+
+Add a separate advisory quality/effect-verification layer because technical runtime success does not prove goal success.
+
+Use multiple evaluator classes rather than one universal judge:
+
+1. deterministic Artifact/lineage/geometry/MIME/hash checks;
+2. domain evaluators such as identity preservation, garment alignment, logo/pattern preservation, anatomy, background preservation or mask quality;
+3. preference/aesthetic ranking only where appropriate.
+
+Evaluator output is structured evidence such as `PASS`, `REPAIRABLE`, `REPLAN_REQUIRED`, `USER_REVIEW_REQUIRED` plus metrics/reasons. It cannot mutate Project, spend credits, select a provider or execute repair itself.
+
+Repair rules:
+
+- prefer region-specific/low-cost repair over full regeneration when evidence supports it;
+- every repair re-enters Core admission with remaining budget;
+- cap repair cycles;
+- retain all candidate Artifact lineage for audit/recovery;
+- quality thresholds are capability/version-specific and evidence-driven.
+
+Exit: Agent can distinguish "a file was produced" from "the requested goal was satisfied".
+
+##### AE-7 — Agent Budget and autonomy policy
+
+Introduce an immutable bounded autonomy envelope. At minimum support:
+
+- maximum graph nodes;
+- maximum retries per node;
+- maximum replans;
+- maximum repair cycles;
+- maximum candidate fan-out;
+- maximum credits;
+- maximum paid/cloud executions;
+- wall-clock/resource budget where enforceable;
+- local-only/local-first policy;
+- quality mode.
+
+User-facing autonomy levels:
+
+- `L0 SUGGEST` — propose only;
+- `L1 PLAN_AND_CONFIRM` — compile/show plan, user explicitly starts it;
+- `L2 BOUNDED_AUTONOMY` — execute/evaluate/repair within an approved envelope;
+- `L3 CREATIVE_AUTONOMY` — bounded candidate fan-out/evaluation/ranking, still without implicit Project Accept or unapproved paid/cloud escalation.
+
+Any higher/proactive autonomy remains out of scope until server-owned Automation scheduling is accepted.
+
+Exit: autonomy cannot become an unbounded retry/spend/compute loop.
+
+##### AE-8 — Durable typed Agent memory and execution experience
+
+The current in-memory memory/history abstractions are useful prototypes, not production durable truth.
+
+Separate memory into:
+
+- working/session memory;
+- explicit user preference memory;
+- episodic workflow summaries;
+- reusable workflow-pattern memory;
+- device/runtime experience signals for planning optimization.
+
+Every durable memory record must carry scope, provenance/source, confidence, retention/purpose and version. Preferences may rank plans or prefill defaults but cannot override canonical state or authority.
+
+Do not store raw volatile browser URLs as history identity. Use canonical Artifact/run/project references where durable references are necessary.
+
+Exit: Agent personalization survives restart without becoming a second Project/Artifact/financial authority.
+
+##### AE-9 — Multimodal Intent Engine and Voice
+
+Build voice as one input modality into the same `AgentIntentV1`, not as a separate Voice Agent.
+
+Target inputs:
+
+- text;
+- push-to-talk transcript;
+- touch/selected object/region;
+- current Editor selection;
+- current Project image/candidate context;
+- Garment/Outfit/Wardrobe references;
+- bounded workflow-history references.
+
+Preferred speech architecture is local-first capability routing: OS on-device ASR where adequate -> optional BERS Local Voice Pack -> explicit cloud fallback only when permitted. Speech-to-text itself has no execution authority.
+
+Contextual commands such as "this one on me", "do not change my face", "go back to the second version" or "make only the jacket looser" must resolve to typed references/constraints before planning.
+
+Exit: multimodal interaction changes intent quality/UX without weakening Core admission.
+
+##### AE-10 — Creative branching, comparison and ranking
+
+After graph execution/evaluation is proven, add bounded fan-out:
+
+`one goal -> N admitted candidate branches -> canonical candidate Artifacts -> evaluator/ranker -> recommended candidate + alternatives`.
+
+Use cases include:
+
+- multiple outfit candidates;
+- controlled color/style alternatives;
+- repair strategy comparison;
+- local vs admitted higher-quality path comparison where user policy permits.
+
+Requirements:
+
+- every branch has canonical lineage and bounded cost;
+- planner cannot silently discard financially relevant execution truth;
+- ranking does not auto-Accept a Project result;
+- HSME/runtime signals may optimize branch ordering/residency but not alter semantics.
+
+Exit: BERS can act as a bounded creative copilot rather than a single-shot generator.
+
+##### AE-11 — Proactive Agent only on accepted Automation scheduler authority
+
+Do not create a background Agent loop or wake-up mechanism before C3 establishes server-owned scheduler/worker authority.
+
+After recurring/triggered Automation is accepted, the Agent may propose or operate within versioned Automation definitions and explicit user policy for tasks such as scheduled preparation/recommendation. Trigger identity, idempotency, run recovery and permissions remain Automation/Core-owned.
+
+Exit: proactive behavior reuses canonical Automation authority instead of inventing another scheduler.
+
+##### AEE acceptance matrix
+
+Every production AEE expansion must prove, as relevant:
+
+- exact schema and unknown-field rejection;
+- parser/model prompt injection cannot mint a capability, provider/model selection, ticket, Artifact or Billing authority;
+- cross-user/cross-project reference substitution fails closed;
+- stale Project/source/garment/outfit references fail closed;
+- ambiguous target resolution requires clarification/selection rather than best-effort mutation;
+- deterministic plan compiler digest/rejection behavior;
+- graph cycle/fan-out/node-count/resource bounds;
+- crash/reload/lost-response recovery against real PostgreSQL;
+- canonical intermediate Artifact lineage;
+- retry vs replan identity semantics;
+- cancellation ownership;
+- `LOCAL_ONLY` transitive zero-provider/zero-credit behavior including repair/replan paths;
+- budget exhaustion stops cleanly without hidden continuation;
+- evaluator cannot execute or mutate by itself;
+- Project remains unchanged until explicit Accept;
+- Agent/Automation/Job Center observe the same canonical execution truth;
+- exact-head browser/Core/PostgreSQL acceptance on the final candidate.
+
+##### C2 v1 cut line
+
+The v1 production Agent must not wait for every advanced AEE feature, but it must be built **on** the AEE contracts rather than on a throwaway second architecture.
+
+Required before `BERS_V1_RC` for enabled Agent behavior:
+
+- AE-0 consolidation;
+- AE-1 structured intent for the enabled surface;
+- AE-2 bounded Capability Registry;
+- AE-3 deterministic plan compiler / admitted plan representation;
+- AE-4 durable multi-workflow execution proof;
+- minimum AE-7 budget/autonomy envelope;
+- production browser recovery/retry/cancel/Accept evidence;
+- no legacy browser execution authority.
+
+AE-5 through AE-11 continue as the canonical Agent development direction and may land before v1 whenever their evidence is ready, but unfinished advanced autonomy must not masquerade as an enabled production capability.
 
 #### C3 — Automation
 
@@ -370,11 +702,11 @@ Mandatory journeys include:
 - Garment upload/manage/multi-view/Collection;
 - Outfit create/reorder;
 - deterministic Try-On -> FINAL preview -> Accept;
-- Agent bounded multi-step run;
+- Agent bounded multi-step run compiled through the admitted AEE plan contract, including refresh/recovery and explicit Accept;
 - Automation durable run for the enabled v1 subset;
 - Job Center refresh/reconciliation/cancel/retry;
-- `LOCAL_ONLY` cannot reach provider or credits;
-- cross-user/cross-project Artifact/Garment/Outfit/run substitution denied.
+- `LOCAL_ONLY` cannot reach provider or credits, including Agent retry/repair/replan paths;
+- cross-user/cross-project Artifact/Garment/Outfit/run/Agent-plan substitution denied.
 
 If Billing is enabled in v1, add checkout/webhook/entitlement transition as mandatory release E2E. If Billing is not enabled, prove paid-plan and credit-mutation UI is gated.
 
@@ -422,7 +754,7 @@ To maximize progress without creating authority collisions, use these concurrent
 ### Lane 2 — Execution/orchestration
 
 - Execution Fabric
-- Agent
+- Agentic Execution Engine: AE-0 consolidation -> AgentIntent -> Capability Registry -> Plan Compiler/AdmittedPlanGraph -> durable graph execution -> evaluator/replanner/budget -> multimodal/creative autonomy
 - Automation
 - Job Center
 - local-first target/fallback policy
@@ -486,16 +818,17 @@ Do not broaden thresholds or authority merely to obtain green CI.
 
 From current `main`, the preferred execution sequence is:
 
-1. land this roadmap and bind it to #365;
+1. keep this roadmap bound to #365 and update it when accepted architecture materially changes;
 2. finish repository protection/ruleset authority (#355);
 3. continue Fashion UI convergence over the already accepted Garment/Wardrobe/Collections/Outfit clients;
 4. activate deterministic Try-On product UI only after prerequisites remain production-real (#314);
-5. in parallel, advance Execution Fabric -> Agent -> Automation -> Job Center;
-6. in parallel, complete local model real-device/quality evidence and the F5 Big-LaMa/Kandinsky comparison;
-7. in parallel, start #352 at E1 dense DiT baseline and E2 sparse prototype rather than waiting until after product UI work;
-8. bring #233 browser E2E online incrementally as each user journey becomes canonical;
-9. close/gate Billing before RC;
-10. execute the complete pre-release matrix, select exact `BERS_V1_RC`, then run final release evidence.
+5. continue orchestration convergence with **AEE AE-0 -> AE-1 -> AE-2 -> AE-3 -> AE-4** while Automation proceeds through its remaining UI/scheduler stages and Job Center consumes the same canonical run truth;
+6. after the compiler/graph substrate is proven, advance failure taxonomy/replanning, result evaluation/repair and bounded autonomy before adding broader multimodal/creative autonomy;
+7. in parallel, complete local model real-device/quality evidence and the F5 Big-LaMa/Kandinsky comparison;
+8. in parallel, advance #352 dense DiT/sparse-runtime work rather than waiting until after product UI work;
+9. bring #233 browser E2E forward incrementally as each Agent/Automation/product journey becomes canonical;
+10. close/gate Billing before RC;
+11. execute the complete pre-release matrix, select exact `BERS_V1_RC`, then run final release evidence.
 
 ## 9. Definition of program success
 
@@ -504,7 +837,7 @@ The pre-release program is complete when BERS has:
 - a secure canonical Core/Project/Artifact foundation;
 - a production-usable Editor and deterministic local tool base;
 - production Wardrobe/Collections/Outfit and deterministic Try-On;
-- a bounded production Agent;
+- a bounded production Agent built on the AEE intent/compiler/admitted-graph contracts rather than a competing browser or in-memory execution authority;
 - a bounded durable production Automation path;
 - a durable production Job Center;
 - an evidence-based advanced local generative strategy;
