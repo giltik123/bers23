@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS canonical_automation_invocation_bindings (
   CONSTRAINT canonical_automation_invocation_bindings_client_request_check CHECK (
     client_request_id ~ '^[A-Za-z0-9._:-]{1,160}$'
   ),
-  CONSTRAINT canonical_automation_invocation_bindings_downstream_request_check CHECK (
+  CONSTRAINT canonical_automation_invocation_downstream_request_check CHECK (
     downstream_client_request_id ~ '^automation-agent-v1-[0-9a-f]{64}$'
   ),
   CONSTRAINT canonical_automation_invocation_bindings_intent_unique UNIQUE (
@@ -60,5 +60,21 @@ CREATE TABLE IF NOT EXISTS canonical_automation_invocation_bindings (
 
 CREATE INDEX IF NOT EXISTS canonical_automation_invocation_bindings_scope_created_idx
   ON canonical_automation_invocation_bindings (tenant_id, user_id, automation_id, project_id, created_at DESC, invocation_id);
+
+CREATE OR REPLACE FUNCTION canonical_automation_invocation_binding_immutable_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'canonical Automation invocation binding is immutable'
+    USING ERRCODE = '55000';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS canonical_automation_invocation_bindings_immutable_guard
+  ON canonical_automation_invocation_bindings;
+CREATE TRIGGER canonical_automation_invocation_bindings_immutable_guard
+  BEFORE UPDATE OR DELETE ON canonical_automation_invocation_bindings
+  FOR EACH ROW EXECUTE FUNCTION canonical_automation_invocation_binding_immutable_guard();
 
 COMMIT;

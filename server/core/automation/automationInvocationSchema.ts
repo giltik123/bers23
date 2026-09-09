@@ -4,6 +4,9 @@ import type { Pool } from 'pg';
 
 const MIGRATION = '041_automation_invocation_bindings.sql';
 const TABLE = 'canonical_automation_invocation_bindings';
+const IMMUTABLE_TRIGGER = 'canonical_automation_invocation_bindings_immutable_guard';
+const IMMUTABLE_FUNCTION = 'canonical_automation_invocation_binding_immutable_guard';
+const BEFORE_UPDATE_DELETE_ROW_TGTYPE = 27;
 const REQUIRED_COLUMNS = Object.freeze([
   ['invocation_id','uuid','NO'],
   ['tenant_id','text','NO'],
@@ -34,7 +37,7 @@ const REQUIRED_CONSTRAINTS = Object.freeze([
   'canonical_automation_invocation_bindings_plan_digest_check',
   'canonical_automation_invocation_bindings_source_check',
   'canonical_automation_invocation_bindings_client_request_check',
-  'canonical_automation_invocation_bindings_downstream_request_check',
+  'canonical_automation_invocation_downstream_request_check',
   'canonical_automation_invocation_bindings_intent_unique',
   'canonical_automation_invocation_bindings_downstream_unique',
 ] as const);
@@ -46,6 +49,7 @@ const EXACT_PLAN_KIND = "checkplan_kind='bounded_deterministic_image_v1'";
 const EXACT_PLAN_DIGEST = "checkplan_digest~'^[0-9a-f]{64}$'";
 const EXACT_CLIENT_REQUEST = "checkclient_request_id~'^[a-za-z0-9._:-]{1,160}$'";
 const EXACT_DOWNSTREAM_REQUEST = "checkdownstream_client_request_id~'^automation-agent-v1-[0-9a-f]{64}$'";
+const EXACT_IMMUTABLE_FUNCTION_BODY = "beginraiseexception'canonicalautomationinvocationbindingisimmutable'usingerrcode='55000';end;";
 const EXACT_ORTHOGONAL = membershipChecks('orthogonal_mode', [
   'flip_horizontal','flip_vertical','rotate_90_cw','rotate_180','rotate_270_cw',
 ]);
@@ -59,15 +63,24 @@ async function migration(): Promise<string> {
 }
 
 async function state(pool: Pool) {
-  const [table, columns, constraints, indexes] = await Promise.all([
+  const [table, columns, constraints, indexes, triggers] = await Promise.all([
     pool.query("SELECT to_regclass('canonical_automation_invocation_bindings')::text AS table_name"),
     pool.query(`SELECT column_name,udt_name,is_nullable,column_default,character_maximum_length
       FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=$1`, [TABLE]),
     pool.query(`SELECT conname,contype,convalidated,pg_get_constraintdef(oid) AS definition
       FROM pg_constraint WHERE conrelid=to_regclass($1)`, [TABLE]),
     pool.query(`SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename=$1`, [TABLE]),
+    pool.query(`SELECT t.tgname,t.tgtype,t.tgenabled,p.proname,p.prosrc
+      FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
+      WHERE t.tgrelid=to_regclass($1) AND NOT t.tgisinternal`, [TABLE]),
   ]);
-  return Object.freeze({ table: table.rows[0]?.table_name, columns: columns.rows, constraints: constraints.rows, indexes: indexes.rows });
+  return Object.freeze({
+    table: table.rows[0]?.table_name,
+    columns: columns.rows,
+    constraints: constraints.rows,
+    indexes: indexes.rows,
+    triggers: triggers.rows,
+  });
 }
 
 function ready(value: Awaited<ReturnType<typeof state>>): boolean {
@@ -99,11 +112,21 @@ function ready(value: Awaited<ReturnType<typeof state>>): boolean {
   const source = semanticDefinition(constraints.get('canonical_automation_invocation_bindings_source_check'));
   if (![...EXACT_SOURCE_ROLE].some(role => [...EXACT_SOURCE_GEOMETRY].some(geometry => source === `check${role.slice(5)}and${geometry.slice(5)}`))) return false;
   if (semanticDefinition(constraints.get('canonical_automation_invocation_bindings_client_request_check')) !== EXACT_CLIENT_REQUEST) return false;
-  if (semanticDefinition(constraints.get('canonical_automation_invocation_bindings_downstream_request_check')) !== EXACT_DOWNSTREAM_REQUEST) return false;
+  if (semanticDefinition(constraints.get('canonical_automation_invocation_downstream_request_check')) !== EXACT_DOWNSTREAM_REQUEST) return false;
 
   const scopeIndex = value.indexes.find(row => String(row.indexname) === SCOPE_INDEX);
   const indexDefinition = String(scopeIndex?.indexdef ?? '').replace(/["\s]+/g, '').toLowerCase();
-  return indexDefinition.includes('usingbtree(tenant_id,user_id,automation_id,project_id,created_atdesc,invocation_id)');
+  if (!indexDefinition.includes('usingbtree(tenant_id,user_id,automation_id,project_id,created_atdesc,invocation_id)')) return false;
+
+  if (value.triggers.length !== 1) return false;
+  const immutable = value.triggers[0];
+  if (String(immutable?.tgname) !== IMMUTABLE_TRIGGER
+    || Number(immutable?.tgtype) !== BEFORE_UPDATE_DELETE_ROW_TGTYPE
+    || String(immutable?.tgenabled) !== 'O'
+    || String(immutable?.proname) !== IMMUTABLE_FUNCTION
+    || semanticFunctionBody(immutable?.prosrc) !== EXACT_IMMUTABLE_FUNCTION_BODY) return false;
+
+  return true;
 }
 
 function definition(row: any): string { return String(row?.definition ?? ''); }
@@ -113,6 +136,9 @@ function semanticDefinition(row: any): string {
 }
 function semanticDefault(row: any): string {
   return String(row?.column_default ?? '').replace(/::(?:text|bigint|integer|bpchar)/gi, '').replace(/[()\s]+/g, '').toLowerCase();
+}
+function semanticFunctionBody(value: unknown): string {
+  return String(value ?? '').replace(/\s+/g, '').toLowerCase();
 }
 function membershipChecks(field: string, values: readonly string[]): ReadonlySet<string> {
   const literals = values.map(value => `'${value}'`).join(',');

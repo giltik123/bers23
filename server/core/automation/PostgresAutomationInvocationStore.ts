@@ -8,6 +8,7 @@ import {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLIENT_REQUEST_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
+const CONTROL_PATTERN = /[\u0000-\u001f\u007f]/;
 const PLAN_DIGEST_DOMAIN = 'bers:automation-definition-plan:v1\0';
 const DOWNSTREAM_REQUEST_DOMAIN = 'bers:automation-agent-invocation:v1\0';
 
@@ -79,8 +80,24 @@ export class PostgresAutomationInvocationStore {
       // one atomic invocation snapshot without moving either authority into this store.
       const project = await lockProject(client, scope, command.projectId);
       if (!project) throw notFound('project_not_found', 'Project not found');
-      const source = await lockCurrentProjectImage(client, scope, command.projectId, String(project.current_image_storage_id));
-      if (!source) throw conflict('automation_project_source_invalid', 'Current Project image is unavailable or not a canonical editable IMAGE');
+      const currentStorageId = String(project.current_image_storage_id).toLowerCase();
+      const originalStorageId = String(project.original_image_storage_id).toLowerCase();
+      if (!normalizeUuid(currentStorageId) || !normalizeUuid(originalStorageId)) {
+        throw conflict('automation_project_source_invalid', 'Project image cursor is not canonical');
+      }
+      // Exact Project transport rule: the original storage identity is the role
+      // discriminator. Any other current cursor must be a durable FINAL composite.
+      const expectedSourceRole = currentStorageId === originalStorageId ? 'ORIGINAL' : 'COMPOSITE';
+      const expectedSourceLifecycle = expectedSourceRole === 'ORIGINAL' ? 'IMMUTABLE' : 'FINAL';
+      const source = await lockCurrentProjectImage(
+        client,
+        scope,
+        command.projectId,
+        currentStorageId,
+        expectedSourceRole,
+        expectedSourceLifecycle,
+      );
+      if (!source) throw conflict('automation_project_source_invalid', 'Current Project image is unavailable or does not match the canonical Project source role');
       if (Number(project.width) !== Number(source.width) || Number(project.height) !== Number(source.height)) {
         throw conflict('automation_project_source_geometry_conflict', 'Project geometry does not match its current canonical image');
       }
@@ -139,20 +156,27 @@ async function lockDefinition(client: PoolClient, scope: AutomationOwnerScope, a
 }
 
 async function lockProject(client: PoolClient, scope: AutomationOwnerScope, projectId: string): Promise<any | undefined> {
-  const result = await client.query(`SELECT project_id,current_image_storage_id,width,height
+  const result = await client.query(`SELECT project_id,original_image_storage_id,current_image_storage_id,width,height
     FROM canonical_projects
     WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL
     FOR UPDATE`, [projectId, scope.tenantId, scope.userId]);
   return result.rows[0];
 }
 
-async function lockCurrentProjectImage(client: PoolClient, scope: AutomationOwnerScope, projectId: string, storageId: string): Promise<any | undefined> {
+async function lockCurrentProjectImage(
+  client: PoolClient,
+  scope: AutomationOwnerScope,
+  projectId: string,
+  storageId: string,
+  role: 'ORIGINAL' | 'COMPOSITE',
+  lifecycle: 'IMMUTABLE' | 'FINAL',
+): Promise<any | undefined> {
   const result = await client.query(`SELECT storage_id,role,lifecycle,width,height
     FROM canonical_image_artifacts
     WHERE storage_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4
+      AND role=$5 AND lifecycle=$6
       AND revoked_at IS NULL AND deleted_at IS NULL
-      AND ((role='ORIGINAL' AND lifecycle='IMMUTABLE') OR (role='COMPOSITE' AND lifecycle='FINAL'))
-    FOR SHARE`, [storageId, scope.tenantId, scope.userId, projectId]);
+    FOR SHARE`, [storageId, scope.tenantId, scope.userId, projectId, role, lifecycle]);
   return result.rows[0];
 }
 
@@ -207,7 +231,9 @@ function normalizeBindCommand(input: AutomationInvocationBindCommand): Automatio
 function requireScope(scope: AutomationOwnerScope): AutomationOwnerScope {
   const tenantId = typeof scope?.tenantId === 'string' ? scope.tenantId.trim() : '';
   const userId = typeof scope?.userId === 'string' ? scope.userId.trim() : '';
-  if (!tenantId || !userId) throw Object.assign(new Error('Authenticated Automation owner scope is required'), { status: 401, code: 'automation_scope_invalid' });
+  if (!tenantId || !userId || tenantId.length > 256 || userId.length > 256 || CONTROL_PATTERN.test(tenantId) || CONTROL_PATTERN.test(userId)) {
+    throw Object.assign(new Error('Authenticated Automation owner scope is required'), { status: 401, code: 'automation_scope_invalid' });
+  }
   return Object.freeze({ tenantId, userId });
 }
 
