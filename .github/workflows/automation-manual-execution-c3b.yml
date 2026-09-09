@@ -1,0 +1,150 @@
+name: Stage C3b Automation manual execution binding
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/core/automation/**'
+      - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
+      - 'server/core/composition/createProductionCore.ts'
+      - 'server/core/composition/createProductionAutomation.ts'
+      - 'server/core/composition/automationProductionComposition.test.mjs'
+      - 'server/core/http/**automation**'
+      - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
+      - 'server/index.ts'
+      - 'tests/automation-invocation-postgres.test.ts'
+      - 'tests/automation-manual-execution-service.test.ts'
+      - 'tests/automation-manual-execution-http.test.ts'
+      - 'scripts/production-migration-inventory.mjs'
+      - '.github/workflows/automation-manual-execution-c3b.yml'
+      - '.github/workflows/automation-definition-c3a.yml'
+      - '.github/workflows/production-core-migration-image.yml'
+      - '.github/workflows/financial-account-foundation-p0a.yml'
+      - '.github/workflows/financial-account-free-bootstrap-p0b1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  automation-invocation-postgres:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: automation_c3b_test
+          POSTGRES_USER: automation_c3b_test
+          POSTGRES_PASSWORD: automation_c3b_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U automation_c3b_test -d automation_c3b_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://automation_c3b_test:automation_c3b_test@127.0.0.1:5432/automation_c3b_test
+      TEST_DATABASE_URL: postgresql://automation_c3b_test:automation_c3b_test@127.0.0.1:5432/automation_c3b_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove global migration sequence reaches immutable Automation invocation binding
+        run: |
+          node --input-type=module <<'NODE'
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.length !== 41) throw new Error(`Expected 41 contiguous migrations, got ${migrations.length}`);
+          const expected = [
+            [37, '038_financial_account_foundation.sql'],
+            [38, '039_workflow_continuation_plan_parameters.sql'],
+            [39, '040_automation_definitions.sql'],
+            [40, '041_automation_invocation_bindings.sql'],
+          ];
+          for (const [index, name] of expected) if (migrations[index]?.name !== name) throw new Error(`${name} moved from global migration position ${index + 1}`);
+          NODE
+      - name: Reject PostgreSQL identifier truncation in migration 041
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const sql = await readFile('server/core/automation/migrations/041_automation_invocation_bindings.sql', 'utf8');
+          const patterns = [
+            /\bCONSTRAINT\s+([A-Za-z_][A-Za-z0-9_]*)/gi,
+            /\bCREATE(?:\s+OR\s+REPLACE)?\s+FUNCTION\s+([A-Za-z_][A-Za-z0-9_]*)/gi,
+            /\bCREATE\s+TRIGGER\s+([A-Za-z_][A-Za-z0-9_]*)/gi,
+            /\bCREATE\s+(?:UNIQUE\s+)?INDEX(?:\s+IF\s+NOT\s+EXISTS)?\s+([A-Za-z_][A-Za-z0-9_]*)/gi,
+          ];
+          const names = new Set(patterns.flatMap(pattern => [...sql.matchAll(pattern)].map(match => match[1])));
+          if (names.size === 0) throw new Error('Migration 041 identifier inventory is empty');
+          for (const name of names) {
+            const bytes = Buffer.byteLength(name, 'utf8');
+            if (bytes > 63) throw new Error(`PostgreSQL identifier exceeds 63 bytes and would be truncated: ${name} (${bytes})`);
+          }
+          NODE
+      - name: Typecheck Core C3b authority
+        run: npm run server:typecheck
+      - name: Build Core and package Automation migrations
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/040_automation_definitions.sql
+          test -f dist-server/migrations/041_automation_invocation_bindings.sql
+      - name: Apply and verify canonical schema CLI
+        run: |
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Prove immutable binding PostgreSQL revision source replay and isolation semantics
+        run: |
+          mkdir -p .test-cache/automation-c3b
+          npx esbuild tests/automation-invocation-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/automation-c3b/automation-invocation-postgres.test.mjs \
+            --external:pg --external:sharp --external:node:*
+          node --test .test-cache/automation-c3b/automation-invocation-postgres.test.mjs
+      - name: Prove Automation delegates immutable binding into existing bounded Agent only
+        run: |
+          mkdir -p .test-cache/automation-c3b
+          npx esbuild tests/automation-manual-execution-service.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/automation-c3b/automation-manual-execution-service.test.mjs \
+            --external:node:*
+          node --test .test-cache/automation-c3b/automation-manual-execution-service.test.mjs
+      - name: Prove authenticated manual-run HTTP keeps browser authority at invocation boundary
+        run: |
+          mkdir -p .test-cache/automation-c3b
+          npx esbuild tests/automation-manual-execution-http.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/automation-c3b/automation-manual-execution-http.test.mjs \
+            --external:node:*
+          node --test .test-cache/automation-c3b/automation-manual-execution-http.test.mjs
+      - name: Prove production Automation composition reuses accepted Agent and Artifact authorities
+        run: node --test server/core/composition/automationProductionComposition.test.mjs
+      - name: Preserve C3 authority separation and preview-only Studio
+        run: |
+          set -euo pipefail
+          grep -q 'AUTOMATION_EXECUTION_NOT_WIRED' src/lib/automation/AutomationRunner.js
+          ! grep -q 'automationRunner.run' src/pages/AutomationStudio.jsx
+          grep -q 'WorkflowContinuation + ExecutionRun remain the sole execution-state authorities' server/core/automation/AutomationManualExecutionService.ts
+          ! grep -E -q 'provider|model|credits|billing|ticket_id|execution_id|run_status' server/core/automation/migrations/041_automation_invocation_bindings.sql
+          ! grep -E -q 'providerSelector|billing|creditsWallet|ExecutionRunRegistry|PostgresWorkflowContinuationStore' server/core/automation/PostgresAutomationInvocationStore.ts server/core/automation/AutomationManualExecutionService.ts
+          grep -q 'FOR UPDATE' server/core/automation/PostgresAutomationInvocationStore.ts
+          grep -q 'FOR SHARE' server/core/automation/PostgresAutomationInvocationStore.ts
+          grep -q 'automation-agent-v1-' server/core/automation/PostgresAutomationInvocationStore.ts
+          grep -q 'BEFORE UPDATE OR DELETE ON canonical_automation_invocation_bindings' server/core/automation/migrations/041_automation_invocation_bindings.sql
+          grep -q "ERRCODE = '55000'" server/core/automation/migrations/041_automation_invocation_bindings.sql
+          grep -q 'execution: automation.manualExecution' server/index.ts
+          grep -q 'isAutomationManualExecutionPath(path)' server/index.ts
+          grep -q "const START_FIELDS = new Set(\['projectId', 'clientRequestId'\])" server/core/http/automationManualExecutionHttpAdapter.ts
+          grep -q 'authenticatedOwnerScope(principal)' server/core/http/automationManualExecutionHttpAdapter.ts
+      - name: Check committed diff whitespace
+        run: git diff --check "$BASE_SHA"..HEAD

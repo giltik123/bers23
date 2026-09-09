@@ -55,22 +55,24 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove global migration sequence and Automation tail
+      - name: Prove global migration sequence preserves C3a and reaches C3b tail
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 40) throw new Error(`Expected 40 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 41) throw new Error(`Expected 41 contiguous migrations, got ${migrations.length}`);
           if (migrations[37]?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration moved');
           if (migrations[38]?.name !== '039_workflow_continuation_plan_parameters.sql') throw new Error('039 workflow migration moved');
-          if (migrations[39]?.name !== '040_automation_definitions.sql') throw new Error('040 Automation migration is not the exact tail');
+          if (migrations[39]?.name !== '040_automation_definitions.sql') throw new Error('040 Automation definition migration moved');
+          if (migrations[40]?.name !== '041_automation_invocation_bindings.sql') throw new Error('041 Automation invocation migration is not the exact tail');
           NODE
       - name: Typecheck Core authority
         run: npm run server:typecheck
-      - name: Build Core and package migration 040
+      - name: Build Core and package Automation migrations
         run: |
           npm run server:build
           test -f dist-server/migrations/040_automation_definitions.sql
+          test -f dist-server/migrations/041_automation_invocation_bindings.sql
       - name: Apply and verify canonical schema CLI
         run: |
           npm run db:migrate:transactions
