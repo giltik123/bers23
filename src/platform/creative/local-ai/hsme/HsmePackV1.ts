@@ -82,6 +82,7 @@ const DESCRIPTOR_KEYS = Object.freeze(['schemaVersion', 'packId', 'packVersion',
 const ROOT_KEYS = Object.freeze(['role', 'modelId', 'version', 'sha256', 'expertId']);
 const ROUTING_KEYS = Object.freeze(['mode', 'maxActiveExperts']);
 const RESOURCE_KEYS = Object.freeze(['peakMemoryBytes', 'maxResidentBytes', 'maxPrefetchBytes']);
+const ADMISSION_KEYS = Object.freeze(['target', 'policy', 'localSubgraphAdmitted']);
 
 /**
  * HSME-1 composition identity only. Trust for every representation byte remains owned by
@@ -116,6 +117,20 @@ export function normalizeHsmePackDescriptorV1(raw: unknown): HsmePackDescriptorV
     roots,
     routing,
     resources: Object.freeze({ peakMemoryBytes, maxResidentBytes, maxPrefetchBytes }),
+  });
+}
+
+export function normalizeHsmeCoreAdmissionV1(raw: unknown): HsmeCoreAdmissionV1 {
+  const admission = exactRecord(raw, ADMISSION_KEYS, ADMISSION_KEYS, 'admission');
+  if (!EXECUTION_TARGETS.includes(admission.target as ExecutionTarget)
+      || !EXECUTION_POLICIES.includes(admission.policy as PlanningExecutionPolicy)
+      || typeof admission.localSubgraphAdmitted !== 'boolean') {
+    fail('hsme_core_admission_invalid', 'Canonical Core admission input is invalid');
+  }
+  return Object.freeze({
+    target: admission.target as ExecutionTarget,
+    policy: admission.policy as PlanningExecutionPolicy,
+    localSubgraphAdmitted: admission.localSubgraphAdmitted,
   });
 }
 
@@ -154,6 +169,7 @@ export function evaluateHsmePackReadinessV1(
   runtimes: RuntimeCapabilities,
 ): HsmePackReadinessEvidenceV1 {
   const pack = normalizeHsmePackDescriptorV1(descriptor);
+  const coreAdmission = normalizeHsmeCoreAdmissionV1(admission);
   const reasons: string[] = [];
   let blocked = false;
   let prepareRequired = false;
@@ -161,17 +177,13 @@ export function evaluateHsmePackReadinessV1(
   if (!fleet || fleet.schemaVersion !== 1 || !Number.isSafeInteger(fleet.revision) || fleet.revision < 0) {
     fail('hsme_fleet_state_invalid', 'DurableModelFleet returned an unsupported state');
   }
-  if (!admission || !EXECUTION_TARGETS.includes(admission.target) || !EXECUTION_POLICIES.includes(admission.policy)
-      || typeof admission.localSubgraphAdmitted !== 'boolean') {
-    fail('hsme_core_admission_invalid', 'Canonical Core admission input is invalid');
-  }
 
-  if (admission.target === 'BLOCKED') {
+  if (coreAdmission.target === 'BLOCKED') {
     blocked = true; reasons.push('CORE_TARGET_BLOCKED');
-  } else if (admission.target === 'CLOUD' || !admission.localSubgraphAdmitted) {
+  } else if (coreAdmission.target === 'CLOUD' || !coreAdmission.localSubgraphAdmitted) {
     blocked = true; reasons.push('CORE_LOCAL_SUBGRAPH_NOT_ADMITTED');
   }
-  if (admission.policy === 'LOCAL_ONLY' && admission.target === 'HYBRID') {
+  if (coreAdmission.policy === 'LOCAL_ONLY' && coreAdmission.target === 'HYBRID') {
     blocked = true; reasons.push('CORE_POLICY_TARGET_MISMATCH');
   }
 
@@ -210,8 +222,8 @@ export function evaluateHsmePackReadinessV1(
     schemaVersion: 1,
     descriptorId: `${pack.packId}@${pack.packVersion}`,
     status,
-    coreTarget: admission.target,
-    executionPolicy: admission.policy,
+    coreTarget: coreAdmission.target,
+    executionPolicy: coreAdmission.policy,
     fleetRevision: fleet.revision,
     reasons: Object.freeze([...new Set(reasons)].sort()),
     roots: Object.freeze(rootEvidence),

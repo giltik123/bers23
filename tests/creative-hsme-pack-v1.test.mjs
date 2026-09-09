@@ -7,6 +7,7 @@ import {
   HsmePackV1Error,
   evaluateHsmePackReadinessV1,
   hsmePackDescriptorV1Digest,
+  normalizeHsmeCoreAdmissionV1,
   normalizeHsmePackDescriptorV1,
   serializeHsmePackDescriptorV1,
 } from '../src/platform/creative/local-ai/hsme/HsmePackV1.ts';
@@ -217,6 +218,18 @@ test('Core target/policy remains authoritative for local and hybrid execution', 
   );
   assert.equal(admittedHybrid.status, 'READY');
   assert.equal(admittedHybrid.coreTarget, 'HYBRID');
+});
+
+test('Core admission is exact-schema and rejects provider, billing or model authority injection', () => {
+  for (const injected of [
+    admission({ provider: 'fal' }),
+    admission({ billing: { credits: 100 } }),
+    admission({ modelId: 'untrusted-model' }),
+  ]) {
+    expectCode(() => normalizeHsmeCoreAdmissionV1(injected), 'hsme_pack_exact_schema_violation');
+    expectCode(() => evaluateHsmePackReadinessV1(descriptor(), fleet(), injected, device(), runtimes()), 'hsme_pack_exact_schema_violation');
+  }
+  assert.deepEqual(normalizeHsmeCoreAdmissionV1(admission()), admission());
 });
 
 test('unknown or unsupported device evidence and aggregate memory fail closed', () => {
