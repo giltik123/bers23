@@ -120,7 +120,7 @@ jobs:
           const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-c3b-browser-forensics' });
           const queries = {
             invocations: `SELECT invocation_id::text,tenant_id,user_id,automation_id::text,definition_revision,project_id::text,source_image_storage_id::text,source_role,client_request_id,downstream_client_request_id FROM canonical_automation_invocation_bindings ORDER BY created_at`,
-            continuations: `SELECT execution_id,client_request_id,project_id,plan_id,state,current_step_id,completed_steps_json,outstanding_local_json,terminal_artifact_id,failure_code,revision FROM workflow_continuations ORDER BY created_at`,
+            continuations: `SELECT execution_id,client_request_id,project_id,plan_id,state,current_step_id,completed_steps_json,outstanding_ticket_id,terminal_artifact_id,failure_code,revision FROM workflow_continuations ORDER BY created_at`,
             tickets: `SELECT ticket_id,idempotency_key,request_id,workflow_id,step_id,consumed_at,finalized_status,finalized_at,admitted_result_sha256 FROM local_execution_tickets ORDER BY ticket_id`,
             uploads: `SELECT upload_id,ticket_id,kind,artifact_role,width,height,size_bytes,sha256,consumed_at,expires_at FROM local_execution_uploads ORDER BY created_at`,
             runs: `SELECT run_id::text,capability,authority_kind,authority_ref,parent_run_id::text,status,revision,status_reason_code FROM canonical_execution_runs ORDER BY created_at,run_id`,
