@@ -164,6 +164,7 @@ test('C3b authenticated owner scope is rejected before SQL when it exceeds durab
     clientRequestId: `scope-policy-${randomUUID()}`,
   });
   await expectCode(invocations.bind(Object.freeze({ tenantId: 't'.repeat(257), userId: scope.userId }), command), 'automation_scope_invalid');
+  await expectCode(invocations.bind(Object.freeze({ tenantId: 'é'.repeat(129), userId: scope.userId }), command), 'automation_scope_invalid');
   await expectCode(invocations.bind(Object.freeze({ tenantId: scope.tenantId, userId: 'bad\u0000user' }), command), 'automation_scope_invalid');
 });
 

@@ -231,7 +231,9 @@ function normalizeBindCommand(input: AutomationInvocationBindCommand): Automatio
 function requireScope(scope: AutomationOwnerScope): AutomationOwnerScope {
   const tenantId = typeof scope?.tenantId === 'string' ? scope.tenantId.trim() : '';
   const userId = typeof scope?.userId === 'string' ? scope.userId.trim() : '';
-  if (!tenantId || !userId || tenantId.length > 256 || userId.length > 256 || CONTROL_PATTERN.test(tenantId) || CONTROL_PATTERN.test(userId)) {
+  if (!tenantId || !userId
+    || Buffer.byteLength(tenantId, 'utf8') > 256 || Buffer.byteLength(userId, 'utf8') > 256
+    || CONTROL_PATTERN.test(tenantId) || CONTROL_PATTERN.test(userId)) {
     throw Object.assign(new Error('Authenticated Automation owner scope is required'), { status: 401, code: 'automation_scope_invalid' });
   }
   return Object.freeze({ tenantId, userId });
