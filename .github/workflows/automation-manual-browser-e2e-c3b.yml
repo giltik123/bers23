@@ -71,12 +71,13 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Build immutable Core and apply packaged production migrations through 041
+      - name: Build immutable Core and apply packaged production migrations through 042
         run: |
           npm run server:build
           test -f dist-server/server.mjs
           test -f dist-server/migrations/040_automation_definitions.sql
           test -f dist-server/migrations/041_automation_invocation_bindings.sql
+          test -f dist-server/migrations/042_automation_schedules.sql
           node dist-server/migrate.mjs migrate
           node dist-server/migrate.mjs check
       - name: Generate and mask ephemeral C3b runtime secrets

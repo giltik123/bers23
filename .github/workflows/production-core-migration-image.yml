@@ -56,7 +56,8 @@ jobs:
           test -f dist-server/migrations/039_workflow_continuation_plan_parameters.sql
           test -f dist-server/migrations/040_automation_definitions.sql
           test -f dist-server/migrations/041_automation_invocation_bindings.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 41
+          test -f dist-server/migrations/042_automation_schedules.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 42
           test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.down.sql' | wc -l)" -eq 0
       - name: Prove bundled migrator on a clean PostgreSQL database
         env:
@@ -86,6 +87,8 @@ jobs:
               to_regclass('credit_grants')::text AS credit_grants,
               to_regclass('canonical_automation_definitions')::text AS automation_definitions,
               to_regclass('canonical_automation_invocation_bindings')::text AS automation_invocation_bindings,
+              to_regclass('canonical_automation_schedules')::text AS automation_schedules,
+              to_regclass('canonical_automation_trigger_occurrences')::text AS automation_trigger_occurrences,
               pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('canonical_execution_runs') AND conname='canonical_execution_runs_capability_check')) AS execution_run_capability,
               pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('canonical_execution_runs') AND conname='canonical_execution_runs_authority_kind_check')) AS execution_run_authority,
               pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('canonical_execution_runs') AND conname='canonical_execution_runs_authority_binding_check')) AS execution_run_binding,
@@ -119,6 +122,8 @@ jobs:
             if (result.rows[0]?.credit_grants !== 'credit_grants') throw new Error('migration 038 credit grant journal was not applied');
             if (result.rows[0]?.automation_definitions !== 'canonical_automation_definitions') throw new Error('migration 040 Automation definitions were not applied');
             if (result.rows[0]?.automation_invocation_bindings !== 'canonical_automation_invocation_bindings') throw new Error('migration 041 Automation invocation bindings were not applied');
+            if (result.rows[0]?.automation_schedules !== 'canonical_automation_schedules') throw new Error('migration 042 Automation schedules were not applied');
+            if (result.rows[0]?.automation_trigger_occurrences !== 'canonical_automation_trigger_occurrences') throw new Error('migration 042 Automation trigger occurrences were not applied');
           } finally { await pool.end(); }
           NODE
       - name: Create independent clean database for immutable-image proof

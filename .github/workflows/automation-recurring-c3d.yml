@@ -1,0 +1,194 @@
+name: Stage C3d durable recurring Automation authority
+
+on:
+  push:
+    branches: [ "stage-c3d-durable-recurring-automation" ]
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/core/automation/AutomationSchedulePoller.ts'
+      - 'server/core/automation/AutomationScheduleWorker.ts'
+      - 'server/core/automation/PostgresAutomationScheduleStore.ts'
+      - 'server/core/automation/automationScheduleSchema.ts'
+      - 'server/core/automation/migrations/042_automation_schedules.sql'
+      - 'server/core/composition/createProductionAutomation.ts'
+      - 'server/core/composition/automationProductionComposition.test.mjs'
+      - 'server/core/http/automationScheduleHttpAdapter.ts'
+      - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
+      - 'server/index.ts'
+      - 'tests/automation-schedule-worker.test.ts'
+      - 'tests/automation-schedule-poller.test.ts'
+      - 'tests/automation-schedule-postgres.test.ts'
+      - 'tests/automation-schedule-lease-fairness-postgres.test.ts'
+      - 'tests/automation-schedule-http-postgres.test.ts'
+      - '.github/workflows/automation-definition-c3a.yml'
+      - '.github/workflows/automation-manual-execution-c3b.yml'
+      - '.github/workflows/financial-account-foundation-p0a.yml'
+      - '.github/workflows/financial-account-free-bootstrap-p0b1.yml'
+      - '.github/workflows/production-core-migration-image.yml'
+      - '.github/workflows/automation-recurring-c3d.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automation-recurring-c3d-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  recurring-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Typecheck recurring Core and prove worker/poller unit authority
+        run: |
+          npm run server:typecheck
+          mkdir -p .test-cache/automation-c3d
+          npx esbuild tests/automation-schedule-worker.test.ts tests/automation-schedule-poller.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/automation-c3d --external:node:*
+          node --test .test-cache/automation-c3d/automation-schedule-worker.test.js .test-cache/automation-c3d/automation-schedule-poller.test.js
+      - name: Prove production composition reuses accepted execution authorities
+        run: node --test server/core/composition/automationProductionComposition.test.mjs
+      - name: Preserve LOCAL_ONLY Agent run authority and Project immutability
+        run: node --experimental-strip-types --test server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs
+      - name: Prove C3d authority boundary hygiene
+        run: |
+          set -euo pipefail
+          grep -q 'FOR UPDATE SKIP LOCKED' server/core/automation/PostgresAutomationScheduleStore.ts
+          grep -q "SKIP_WHILE_ACTIVE" server/core/automation/PostgresAutomationScheduleStore.ts
+          grep -q "ONE_CATCH_UP" server/core/automation/PostgresAutomationScheduleStore.ts
+          grep -q 'BEFORE UPDATE OR DELETE ON canonical_automation_trigger_occurrences' server/core/automation/migrations/042_automation_schedules.sql
+          grep -q "ERRCODE = '55000'" server/core/automation/migrations/042_automation_schedules.sql
+          grep -q 'automation-schedule-v1-' server/core/automation/PostgresAutomationScheduleStore.ts
+          ! grep -E -q 'providerSelector|creditsWallet|ExecutionRunRegistry|PostgresWorkflowContinuationStore|SignedArtifactAuthority' \
+            server/core/automation/PostgresAutomationScheduleStore.ts \
+            server/core/automation/AutomationScheduleWorker.ts \
+            server/core/automation/AutomationSchedulePoller.ts
+          ! grep -q 'releaseClaim' server/core/automation/AutomationScheduleWorker.ts
+          grep -q "export const AUTOMATION_SCHEDULE_PATH = '/api/core/automation-schedules'" server/core/http/automationScheduleHttpAdapter.ts
+          grep -q "\['automation_id','definition_revision','project_id','interval_seconds'\]" server/core/http/automationScheduleHttpAdapter.ts
+          grep -q "\['interval_seconds'\]" server/core/http/automationScheduleHttpAdapter.ts
+          grep -q 'authenticatedOwnerScope(principal)' server/core/http/automationScheduleHttpAdapter.ts
+          grep -q 'new AutomationSchedulePoller(automation.scheduleWorker)' server/index.ts
+          grep -q 'automationSchedulePoller.start()' server/index.ts
+          grep -q 'await automationSchedulePoller.stop()' server/index.ts
+          grep -q "policy: 'LOCAL_ONLY'" server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs
+          grep -q 'providerCalls: 0' server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs
+          grep -q 'paidCloudCredits: 0' server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const sql = (await readFile('server/core/automation/migrations/042_automation_schedules.sql', 'utf8'))
+            .replace(/--.*$/gm, '')
+            .toLowerCase();
+          for (const forbidden of ['provider','model','billing','credits','ticket_id','execution_id','run_status','artifact_id']) {
+            if (sql.includes(forbidden)) throw new Error(`migration 042 widened scheduler authority with ${forbidden}`);
+          }
+          NODE
+      - name: Check committed diff whitespace against current main merge-base
+        run: |
+          git fetch origin main --no-tags
+          BASE_SHA="$(git merge-base origin/main HEAD)"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
+
+  recurring-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: automation_c3d_test
+          POSTGRES_USER: automation_c3d_test
+          POSTGRES_PASSWORD: automation_c3d_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U automation_c3d_test -d automation_c3d_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://automation_c3d_test:automation_c3d_test@127.0.0.1:5432/automation_c3d_test
+      TEST_DATABASE_URL: postgresql://automation_c3d_test:automation_c3d_test@127.0.0.1:5432/automation_c3d_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Prove exact global production migration tail and PostgreSQL identifier safety
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.length !== 42) throw new Error(`Expected 42 contiguous migrations, got ${migrations.length}`);
+          const tail = [
+            [37, '038_financial_account_foundation.sql'],
+            [38, '039_workflow_continuation_plan_parameters.sql'],
+            [39, '040_automation_definitions.sql'],
+            [40, '041_automation_invocation_bindings.sql'],
+            [41, '042_automation_schedules.sql'],
+          ];
+          for (const [index, name] of tail) if (migrations[index]?.name !== name) throw new Error(`${name} moved from position ${index + 1}`);
+          const sql = await readFile('server/core/automation/migrations/042_automation_schedules.sql', 'utf8');
+          const patterns = [
+            /\bCONSTRAINT\s+([A-Za-z_][A-Za-z0-9_]*)/gi,
+            /\bCREATE(?:\s+OR\s+REPLACE)?\s+FUNCTION\s+([A-Za-z_][A-Za-z0-9_]*)/gi,
+            /\bCREATE\s+TRIGGER\s+([A-Za-z_][A-Za-z0-9_]*)/gi,
+            /\bCREATE\s+(?:UNIQUE\s+)?INDEX(?:\s+IF\s+NOT\s+EXISTS)?\s+([A-Za-z_][A-Za-z0-9_]*)/gi,
+          ];
+          for (const name of new Set(patterns.flatMap(pattern => [...sql.matchAll(pattern)].map(match => match[1])))) {
+            if (Buffer.byteLength(name, 'utf8') > 63) throw new Error(`PostgreSQL identifier would truncate: ${name}`);
+          }
+          NODE
+      - name: Build and prove packaged migration 042
+        run: |
+          npm run server:typecheck
+          npm run server:build
+          test -f dist-server/migrations/040_automation_definitions.sql
+          test -f dist-server/migrations/041_automation_invocation_bindings.sql
+          test -f dist-server/migrations/042_automation_schedules.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 42
+          npm run db:migrate:transactions
+          npm run db:check:transactions
+      - name: Prove real PostgreSQL lease crash replay fairness immutability and HTTP scope
+        run: |
+          mkdir -p .test-cache/automation-c3d
+          npx esbuild tests/automation-schedule-postgres.test.ts tests/automation-schedule-http-postgres.test.ts tests/automation-schedule-lease-fairness-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/automation-c3d --external:pg --external:sharp --external:node:*
+          node --test .test-cache/automation-c3d/automation-schedule-postgres.test.js .test-cache/automation-c3d/automation-schedule-http-postgres.test.js
+          node --test .test-cache/automation-c3d/automation-schedule-lease-fairness-postgres.test.js
+      - name: Preserve accepted C3a/C3b immutable binding semantics
+        run: |
+          mkdir -p .test-cache/automation-c3d-regression
+          npx esbuild tests/automation-definition-postgres.test.ts tests/automation-invocation-postgres.test.ts tests/automation-manual-execution-service.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/automation-c3d-regression --external:pg --external:sharp --external:node:*
+          node --test .test-cache/automation-c3d-regression/automation-definition-postgres.test.js
+          node --test .test-cache/automation-c3d-regression/automation-invocation-postgres.test.js
+          node --test .test-cache/automation-c3d-regression/automation-manual-execution-service.test.js
