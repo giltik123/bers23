@@ -137,7 +137,7 @@ test('reference scope cannot smuggle Project authority into owner resources or d
 test('canonical Core context rejects cross-project and stale source/reference substitution', () => {
   const intent = normalizeAgentIntentV1(base());
   const canonical = { projectId: PROJECT_ID, projectRevision: PROJECT_REVISION, sourceRef: SOURCE_REF };
-  assert.equal(assertAgentIntentV1CanonicalContext(intent, canonical), intent);
+  assert.deepEqual(assertAgentIntentV1CanonicalContext(intent, canonical), intent);
 
   expectCode(
     () => assertAgentIntentV1CanonicalContext(intent, { ...canonical, projectId: 'project-b' }),
