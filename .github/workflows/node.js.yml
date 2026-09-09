@@ -218,19 +218,9 @@ jobs:
         run: docker build --tag bers-core:${{ env.CANDIDATE_SHA }} .
       - name: Prove sharp loads in the production image
         run: docker run --rm --entrypoint node bers-core:${{ env.CANDIDATE_SHA }} -e "import('sharp').then(() => console.log('sharp production runtime PASS'))"
-      - name: Assert production migration package matches source
+      - name: Assert production migration package matches canonical inventory
         run: |
-          expected="$(
-            find \
-              server/transactions/infrastructure/postgres/migrations \
-              server/core/artifacts/migrations \
-              server/core/projects/migrations \
-              server/core/auth/migrations \
-              server/core/fashion/migrations \
-              server/core/execution/migrations \
-              server/core/automation/migrations \
-              -maxdepth 1 -type f -name '*.sql' ! -name '*.down.sql' -printf '%f\n' | sort
-          )"
+          expected="$(node scripts/ci-print-production-migration-names.mjs)"
           actual="$(
             docker run --rm --entrypoint sh bers-core:${{ env.CANDIDATE_SHA }} -c \
               "find /app/dist-server/migrations -maxdepth 1 -type f -name '*.sql' -exec basename {} \\; | sort"
@@ -242,6 +232,7 @@ jobs:
           printf '%s\n' "$actual" | grep -qx '029_fashion_garment_warp_layers.sql'
           printf '%s\n' "$actual" | grep -qx '034_execution_run_registry.sql'
           printf '%s\n' "$actual" | grep -qx '040_automation_definitions.sql'
+          printf '%s\n' "$actual" | grep -qx '043_aee_admitted_plan_graphs.sql'
       - name: Assert production image contents
         run: |
           docker run --rm --entrypoint sh bers-core:${{ env.CANDIDATE_SHA }} -c '
