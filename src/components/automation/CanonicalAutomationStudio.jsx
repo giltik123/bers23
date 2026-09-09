@@ -21,8 +21,15 @@ export default function CanonicalAutomationStudio() {
   const [error, setError] = useState('');
 
   const selected = useMemo(() => definitions.find(item => item.id === selectedAutomationId), [definitions, selectedAutomationId]);
-  const canRun = Boolean(selected?.status === 'ACTIVE' && selectedProjectId && !busy);
+  const dirty = Boolean(selected && (
+    draft.name.trim() !== selected.name
+    || draft.orthogonal_mode !== selected.plan.orthogonal_mode
+    || draft.target_width !== selected.plan.target_width
+    || draft.target_height !== selected.plan.target_height
+  ));
+  const canRun = Boolean(selected?.status === 'ACTIVE' && selectedProjectId && !dirty && !busy);
   const isTerminal = Boolean(invocation && TERMINAL_STATES.has(invocation.state));
+  const resumePointer = selected && selectedProjectId ? recalledInvocation(selected.id, selectedProjectId) : '';
 
   useEffect(() => { void reload(); }, []);
 
@@ -63,7 +70,7 @@ export default function CanonicalAutomationStudio() {
       const saved = selected
         ? await automationClient.definitions.update({ automationId: selected.id, revision: selected.revision, patch: { name: draft.name.trim(), plan } })
         : await automationClient.definitions.create({ name: draft.name.trim(), plan });
-      await replaceDefinition(saved);
+      replaceDefinition(saved);
       setSelectedAutomationId(saved.id);
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
@@ -76,13 +83,13 @@ export default function CanonicalAutomationStudio() {
       const next = selected.status === 'ACTIVE'
         ? await automationClient.definitions.archive({ automationId: selected.id, revision: selected.revision })
         : await automationClient.definitions.restore({ automationId: selected.id, revision: selected.revision });
-      await replaceDefinition(next);
+      replaceDefinition(next);
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
   }
 
   async function run() {
-    if (!selected || !selectedProjectId) return;
+    if (!selected || !selectedProjectId || dirty) return;
     setBusy(true); setError('');
     try {
       const runner = createAutomationInvocationRunner({ projectId: selectedProjectId });
@@ -94,13 +101,11 @@ export default function CanonicalAutomationStudio() {
   }
 
   async function resumeLatest() {
-    if (!selected || !selectedProjectId) return;
-    const invocationId = recalledInvocation(selected.id, selectedProjectId);
-    if (!invocationId) { setError('No previously started invocation is recorded for this Automation and Project.'); return; }
+    if (!selected || !selectedProjectId || !resumePointer) return;
     setBusy(true); setError('');
     try {
       const runner = createAutomationInvocationRunner({ projectId: selectedProjectId });
-      const result = await runner.resume(invocationId, setInvocation);
+      const result = await runner.resume(resumePointer, setInvocation);
       setInvocation(result.view);
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
@@ -132,11 +137,15 @@ export default function CanonicalAutomationStudio() {
     setBusy(true); setError('');
     try {
       await coreClient.projects.acceptFinal(invocation.projectId, invocation.terminalArtifactId, `Automation: ${selected?.name || invocation.automationId}`);
-      await reload();
-    } catch (cause) { setError(message(cause)); setBusy(false); }
+      if (selected) forgetInvocation(selected.id, invocation.projectId);
+      setInvocation(null);
+      const nextProjects = await coreClient.projects.list();
+      setProjects(Array.isArray(nextProjects) ? nextProjects : []);
+    } catch (cause) { setError(message(cause)); }
+    finally { setBusy(false); }
   }
 
-  async function replaceDefinition(next) {
+  function replaceDefinition(next) {
     setDefinitions(current => {
       const present = current.some(item => item.id === next.id);
       return present ? current.map(item => item.id === next.id ? next : item) : [next, ...current];
@@ -186,6 +195,7 @@ export default function CanonicalAutomationStudio() {
               <label className="grid gap-1 text-sm">Target width<input className="rounded-lg border border-input bg-background p-2" type="number" min="1" step="1" value={draft.target_width} onChange={event => setDraft(current => ({ ...current, target_width: Number(event.target.value) }))} /></label>
               <label className="grid gap-1 text-sm">Target height<input className="rounded-lg border border-input bg-background p-2" type="number" min="1" step="1" value={draft.target_height} onChange={event => setDraft(current => ({ ...current, target_height: Number(event.target.value) }))} /></label>
             </div>
+            {dirty && <p role="status" className="text-xs text-amber-700 dark:text-amber-300">Save this draft to create a new canonical revision before Run.</p>}
           </section>
 
           <section className="space-y-4 rounded-2xl border border-border/60 p-4">
@@ -193,7 +203,7 @@ export default function CanonicalAutomationStudio() {
             <label className="grid gap-1 text-sm">Project<select className="rounded-lg border border-input bg-background p-2" value={selectedProjectId} onChange={event => { setSelectedProjectId(event.target.value); setInvocation(null); }}>{projects.map(project => <option key={project.id} value={project.id}>{project.name || project.id}</option>)}</select></label>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void run()} disabled={!canRun}><Play className="h-4 w-4" />Run</Button>
-              <Button variant="outline" onClick={() => void resumeLatest()} disabled={!selected || !selectedProjectId || busy}><Undo2 className="h-4 w-4" />Resume latest</Button>
+              <Button variant="outline" onClick={() => void resumeLatest()} disabled={!resumePointer || busy}><Undo2 className="h-4 w-4" />Resume latest</Button>
               {invocation?.retryAvailable && <Button variant="outline" onClick={() => void retry()} disabled={busy}><RotateCcw className="h-4 w-4" />Retry</Button>}
               {invocation && !isTerminal && <Button variant="outline" onClick={() => void cancel()} disabled={busy}><Square className="h-4 w-4" />Cancel</Button>}
             </div>
@@ -210,7 +220,7 @@ function InvocationPanel({ invocation, busy, onAccept }) {
   return <div className="space-y-3 rounded-xl bg-secondary/40 p-3">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">Invocation {invocation.invocationId}</p><p className="text-xs text-muted-foreground">Definition r{invocation.definitionRevision} · state {invocation.state}{invocation.attemptStatus ? ` · attempt ${invocation.attemptStatus}` : ''}</p></div>{invocation.failureCode && <span className="text-xs text-destructive">{invocation.failureCode}</span>}</div>
     {invocation.nextAction && <p className="text-xs text-muted-foreground">Core next action: {invocation.nextAction.operation}</p>}
-    {invocation.state === 'SUCCESS' && invocation.terminalImageUrl && <img src={invocation.terminalImageUrl} alt="Automation result preview" className="max-h-[480px] w-full rounded-xl bg-muted object-contain" />}
+    {invocation.state === 'SUCCESS' && invocation.terminalImageUrl && <img src={deliveryUrl(invocation.terminalImageUrl)} alt="Automation result preview" className="max-h-[480px] w-full rounded-xl bg-muted object-contain" />}
     {invocation.state === 'SUCCESS' && invocation.terminalArtifactId && <Button onClick={() => void onAccept()} disabled={busy}>Accept result into Project</Button>}
   </div>;
 }
@@ -220,7 +230,16 @@ function transportPlan(draft) {
   if (!ORTHOGONAL_TRANSFORM_MODES.includes(draft.orthogonal_mode)) throw new Error('Unsupported orthogonal transform mode.');
   return Object.freeze({ kind: PLAN_KIND, orthogonal_mode: draft.orthogonal_mode, target_width: draft.target_width, target_height: draft.target_height });
 }
+function deliveryUrl(value) {
+  if (typeof value !== 'string' || !value) return '';
+  if (/^https?:\/\//i.test(value) || typeof window === 'undefined') return value;
+  try {
+    const apiRoot = new URL((import.meta.env ?? {}).VITE_CORE_API_URL || '/api/core', window.location.origin);
+    return value.startsWith('/') ? `${apiRoot.origin}${value}` : new URL(value, `${apiRoot.toString().replace(/\/?$/, '/')}`).toString();
+  } catch { return value; }
+}
 function storageKey(automationId, projectId) { return `bers:automation-invocation:${automationId}:${projectId}`; }
 function rememberInvocation(automationId, projectId, invocationId) { try { localStorage.setItem(storageKey(automationId, projectId), invocationId); } catch {} }
 function recalledInvocation(automationId, projectId) { try { return localStorage.getItem(storageKey(automationId, projectId)) || ''; } catch { return ''; } }
+function forgetInvocation(automationId, projectId) { try { localStorage.removeItem(storageKey(automationId, projectId)); } catch {} }
 function message(cause) { return cause instanceof Error ? cause.message : 'Automation request failed.'; }
