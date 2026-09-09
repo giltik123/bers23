@@ -1,0 +1,107 @@
+name: AEE AE-1.5 BERS Context Graph V1
+
+on:
+  push:
+    branches: ["aee-ae1-5-context-graph-v1"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'tests/aee-context-graph-postgres.test.ts'
+      - '.github/workflows/aee-ae1-5-context-graph.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'tests/aee-context-graph-postgres.test.ts'
+      - 'server/core/projects/**'
+      - 'server/core/artifacts/**'
+      - 'server/core/fashion/**'
+      - '.github/workflows/aee-ae1-5-context-graph.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  context-graph-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove ContextGraphV1 exact advisory contract and accepted AgentIntent boundary
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/ContextGraphV1.test.mjs \
+            server/core/agentic/AgentIntentV1.test.mjs \
+            server/core/agentic/agentArchitectureBoundary.test.mjs
+      - name: Prove AE-1.5 remains derived read-only Core context
+        run: |
+          set -euo pipefail
+          grep -q 'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY' server/core/agentic/PostgresContextGraphV1Reader.ts
+          ! grep -E -q 'INSERT INTO|UPDATE canonical_|DELETE FROM|providerSelector|creditsWallet|artifactAuthority|projectService' server/core/agentic/PostgresContextGraphV1Reader.ts
+          ! grep -R -E -q "from ['\"].*src/platform/(agent|memory)|from ['\"].*platform/(agent|memory)" server/core/agentic
+          grep -q 'WorkflowContinuation + ExecutionRun' server/core/agentic/ARCHITECTURE.md
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
+
+  context-graph-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: aee_context_graph_test
+          POSTGRES_USER: aee_context_graph_test
+          POSTGRES_PASSWORD: aee_context_graph_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aee_context_graph_test -d aee_context_graph_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://aee_context_graph_test:aee_context_graph_test@127.0.0.1:5432/aee_context_graph_test
+      TEST_DATABASE_URL: postgresql://aee_context_graph_test:aee_context_graph_test@127.0.0.1:5432/aee_context_graph_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Build Core and apply the exact production migration inventory
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/042_automation_schedules.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Prove one-snapshot canonical grounding and scope/staleness rejection
+        run: |
+          mkdir -p .test-cache/aee-context-graph
+          npx esbuild tests/aee-context-graph-postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/aee-context-graph/aee-context-graph-postgres.test.mjs \
+            --external:pg --external:node:*
+          node --test .test-cache/aee-context-graph/aee-context-graph-postgres.test.mjs
