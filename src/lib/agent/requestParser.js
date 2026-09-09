@@ -1,10 +1,9 @@
 // Legacy/advisory parser facade only.
 //
-// The historical implementation sent planning prompts through
-// `coreClient.integrations.Core.InvokeLLM`, which maps to `/creative/execute` and
-// therefore crosses the canonical Creative execution/provider boundary. Planning
-// must never consume that authority. AEE natural-language parsing will be added
-// later behind its own advisory, schema-bound parser transport; until then this
+// The historical implementation routed planning prompts through the production
+// Creative execution transport and therefore crossed the provider/execution
+// authority boundary. A dedicated schema-bound AEE advisory parser transport is
+// required before natural-language parsing is re-enabled. Until then this
 // compatibility parser is deliberately fail-closed.
 class RequestParser {
   async parse() {
