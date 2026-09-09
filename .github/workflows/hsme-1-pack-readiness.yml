@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: hsme-1-pack-readiness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
@@ -41,16 +45,6 @@ jobs:
           npm run server:typecheck
       - name: Prove HSME pack identity and readiness fail closed
         run: node --experimental-strip-types --test tests/creative-hsme-pack-v1.test.mjs
-      - name: Preserve durable fleet trust root
-        run: |
-          npm run test:durable-model-fleet
-          mkdir -p .test-cache/hsme-fleet
-          npx esbuild \
-            tests/creative-durable-model-fleet-hardening.test.ts \
-            tests/creative-durable-model-fleet-authority.test.ts \
-            --bundle --platform=node --format=esm --target=node24 \
-            --outdir=.test-cache/hsme-fleet --external:node:*
-          node --test .test-cache/hsme-fleet/*.js
       - name: HSME authority boundary hygiene
         run: |
           set -euo pipefail
@@ -59,3 +53,37 @@ jobs:
           ! grep -E -q 'fleet\.(install|resume|remove|rollback)|providerSelector|billing|creditsWallet|artifactAuthority|projectService' "$source"
           ! grep -q 'suggestedTarget' "$source"
           git diff --check
+
+  durable-fleet-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+      - run: npm ci
+      - name: Preserve durable lifecycle domain contract
+        run: npm run test:durable-model-fleet
+      - name: Preserve durable prerelease and browser-lock hardening
+        run: |
+          mkdir -p .test-cache/hsme-fleet
+          npx esbuild tests/creative-durable-model-fleet-hardening.test.ts \
+            --bundle --platform=node --format=esm --target=node20 \
+            --outfile=.test-cache/hsme-fleet/creative-durable-model-fleet-hardening.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-fleet/creative-durable-model-fleet-hardening.test.mjs
+      - name: Preserve durable immutable-version and quarantine authority
+        run: |
+          mkdir -p .test-cache/hsme-fleet
+          npx esbuild tests/creative-durable-model-fleet-authority.test.ts \
+            --bundle --platform=node --format=esm --target=node20 \
+            --outfile=.test-cache/hsme-fleet/creative-durable-model-fleet-authority.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-fleet/creative-durable-model-fleet-authority.test.mjs
