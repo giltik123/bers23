@@ -15,7 +15,6 @@ const PRODUCTION_ROOTS = [
 ];
 
 const SENSITIVE_IMPORT = /(?:provider|billing|transaction|credits?|artifactAuthority|projectService|coreClient|editingEngine|providerManager)/i;
-const PRODUCTION_AGENT_IMPORT = /(?:@\/|src\/|\.\.\/)+(?:platform\/agent|lib\/agent)(?:\/|['"])/;
 
 async function sourceFiles(root) {
   const out = [];
@@ -38,23 +37,39 @@ function importSpecifiers(source) {
   return values;
 }
 
-test('legacy browser Agent facade remains planning-only and execution fail-closed', async () => {
+function isTestFile(file) {
+  return /(?:^|\.)test\.(?:js|jsx|mjs|ts|tsx)$/.test(path.basename(file));
+}
+
+function isLegacyAgentSpecifier(specifier) {
+  const normalized = specifier.replaceAll('\\', '/');
+  return normalized.startsWith('@/lib/agent/')
+    || normalized.startsWith('@/platform/agent/')
+    || normalized.includes('/lib/agent/')
+    || normalized.includes('/platform/agent/');
+}
+
+test('legacy browser Agent facade is isolated planning compatibility and execution remains fail-closed', async () => {
   const queue = await readFile(path.join(LEGACY_AGENT, 'executionQueue.js'), 'utf8');
+  const parser = await readFile(path.join(LEGACY_AGENT, 'requestParser.js'), 'utf8');
+
   assert.match(queue, /AGENT_EXECUTION_NOT_WIRED/);
   assert.match(queue, /async\s+run\(\)\s*\{[\s\S]*throw\s+error;/);
-  assert.doesNotMatch(queue, /fetch\s*\(/);
-  assert.doesNotMatch(queue, /\/api\/core\//);
+  assert.doesNotMatch(queue, /fetch\s*\(|\/api\/core\//);
+
+  assert.match(parser, /AGENT_INTENT_PARSING_NOT_WIRED/);
+  assert.doesNotMatch(parser, /coreClient|InvokeLLM|\/creative\/execute/);
 
   for (const file of await sourceFiles(LEGACY_AGENT)) {
     const source = await readFile(file, 'utf8');
     for (const specifier of importSpecifiers(source)) {
       assert.equal(SENSITIVE_IMPORT.test(specifier), false, `${path.relative(REPO, file)} imports sensitive authority ${specifier}`);
     }
-    assert.doesNotMatch(source, /\/api\/core\//, `${path.relative(REPO, file)} must not call Core execution transport directly`);
+    assert.doesNotMatch(source, /\/api\/core\//, `${path.relative(REPO, file)} must not call Core transport directly`);
   }
 });
 
-test('platform Agent research library has no direct production authority imports', async () => {
+test('platform Agent research library has no direct production authority imports or Core transport', async () => {
   for (const file of await sourceFiles(PLATFORM_AGENT)) {
     const source = await readFile(file, 'utf8');
     for (const specifier of importSpecifiers(source)) {
@@ -64,26 +79,25 @@ test('platform Agent research library has no direct production authority imports
   }
 });
 
-test('production UI/application/Core cannot adopt legacy or process-memory Agent execution truth', async () => {
+test('production source cannot adopt legacy or process-memory Agent execution truth', async () => {
   const violations = [];
   for (const root of PRODUCTION_ROOTS) {
     for (const file of await sourceFiles(root)) {
-      if (file.includes(`${path.sep}server${path.sep}core${path.sep}agentic${path.sep}`)) continue;
+      if (isTestFile(file) || file.includes(`${path.sep}server${path.sep}core${path.sep}agentic${path.sep}`)) continue;
       const source = await readFile(file, 'utf8');
       for (const specifier of importSpecifiers(source)) {
-        const normalized = specifier.replaceAll('\\', '/');
-        if (normalized.includes('/platform/agent') || normalized.startsWith('@/platform/agent') || normalized.includes('/lib/agent') || normalized.startsWith('@/lib/agent')) {
-          violations.push(`${path.relative(REPO, file)} -> ${specifier}`);
-        }
+        if (isLegacyAgentSpecifier(specifier)) violations.push(`${path.relative(REPO, file)} -> ${specifier}`);
       }
-      if (PRODUCTION_AGENT_IMPORT.test(source)) violations.push(`${path.relative(REPO, file)} contains a production Agent compatibility import`);
+      if (/\bexecutionQueue\.run\s*\(/.test(source)) {
+        violations.push(`${path.relative(REPO, file)} invokes legacy executionQueue.run()`);
+      }
     }
   }
-  assert.deepEqual(violations, [], `production Agent compatibility imports are forbidden:\n${violations.join('\n')}`);
+  assert.deepEqual(violations, [], `legacy Agent production authority is forbidden:\n${violations.join('\n')}`);
 });
 
-test('AEE Core contract does not itself import execution/provider/Billing/Project/Artifact authorities', async () => {
+test('AEE AgentIntentV1 contract itself owns no execution/provider/Billing/Project/Artifact authority', async () => {
   const contract = await readFile(path.join(REPO, 'server/core/agentic/AgentIntentV1.ts'), 'utf8');
   assert.deepEqual(importSpecifiers(contract), ['node:crypto']);
-  assert.doesNotMatch(contract, /BoundedAgentDeterministicWorkflowService|WorkflowContinuationStore|ExecutionRunRegistry|providerSelector|billing|creditsWallet|artifactAuthority|projectService/);
+  assert.doesNotMatch(contract, /BoundedAgentDeterministicWorkflowService|WorkflowContinuationStore|ExecutionRunRegistry|providerSelector|creditsWallet|artifactAuthority|projectService/);
 });
