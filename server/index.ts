@@ -19,6 +19,7 @@ import { createManagedWardrobeHttpAdapter } from './core/http/managedWardrobeHtt
 import { createManagedGarmentCollectionHttpAdapter } from './core/http/managedGarmentCollectionHttpAdapter.ts';
 import { createManagedOutfitHttpAdapter } from './core/http/managedOutfitHttpAdapter.ts';
 import { AUTOMATION_DEFINITION_PATH, createAutomationDefinitionHttpAdapter } from './core/http/automationDefinitionHttpAdapter.ts';
+import { createAutomationManualExecutionHttpAdapter, isAutomationManualExecutionPath } from './core/http/automationManualExecutionHttpAdapter.ts';
 import { parseCoreRequestTarget } from './core/http/requestTarget.ts';
 import { CanonicalArtifactHydrator } from './core/artifacts/canonicalArtifactHydrator.ts';
 import { LocalCompositeInputDeliveryService } from './core/workflow/LocalCompositeInputDeliveryService.ts';
@@ -78,6 +79,19 @@ export async function startCoreServer() {
   const managedCollectionAdapter = createManagedGarmentCollectionHttpAdapter({ collections, auth: production.auth, config, accepting: () => accepting });
   const managedOutfitAdapter = createManagedOutfitHttpAdapter({ outfits, auth: production.auth, config, accepting: () => accepting });
   const automationDefinitionAdapter = createAutomationDefinitionHttpAdapter({ definitions: automation.definitions, auth: production.auth, config, accepting: () => accepting });
+  const automationManualExecutionAdapter = createAutomationManualExecutionHttpAdapter({
+    execution: automation.manualExecution,
+    terminalPreview: Object.freeze({
+      mint: (scope, artifactId) => {
+        const stored = production.artifacts.external.resolveStoredFinalId(artifactId, scope);
+        const deliveryToken = production.artifacts.external.issueStoredFinalDelivery(stored.storageId, scope, Date.now() + EXECUTION_RESULT_DELIVERY_TTL_MS);
+        return `/api/core/artifacts/results/${encodeURIComponent(deliveryToken)}`;
+      },
+    }),
+    auth: production.auth,
+    config,
+    accepting: () => accepting,
+  });
   const boundedAgentAdapter = createBoundedAgentHttpAdapter({
     workflow: production.agent.boundedDeterministic,
     terminalPreview: Object.freeze({
@@ -155,6 +169,7 @@ export async function startCoreServer() {
     const target = parseCoreRequestTarget(request.url);
     if (target.ok === false) { sendInvalidRequestTarget(response, target); return; }
     const path = target.path;
+    if (isAutomationManualExecutionPath(path)) return void automationManualExecutionAdapter(request, response);
     if (path === AUTOMATION_DEFINITION_PATH || path.startsWith(`${AUTOMATION_DEFINITION_PATH}/`)) return void automationDefinitionAdapter(request, response);
     if (path === '/api/core/wardrobe/outfits' || path.startsWith('/api/core/wardrobe/outfits/')) return void managedOutfitAdapter(request, response);
     if (path === '/api/core/wardrobe/collections' || path.startsWith('/api/core/wardrobe/collections/')) return void managedCollectionAdapter(request, response);

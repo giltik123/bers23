@@ -21,6 +21,8 @@ test('C3b production Automation composition reuses accepted Agent and Artifact a
 
   assert.match(server, /const automation = createProductionAutomation\(\{[\s\S]*pool: production\.transactions\.pool,[\s\S]*boundedAgent: production\.agent\.boundedDeterministic,[\s\S]*artifacts: production\.artifacts\.external,[\s\S]*limits:/);
   assert.match(server, /createAutomationDefinitionHttpAdapter\(\{ definitions: automation\.definitions,/);
+  assert.match(server, /createAutomationManualExecutionHttpAdapter\(\{[\s\S]*execution: automation\.manualExecution,[\s\S]*auth: production\.auth,[\s\S]*accepting: \(\) => accepting/);
+  assert.match(server, /if \(isAutomationManualExecutionPath\(path\)\) return void automationManualExecutionAdapter\(request, response\);[\s\S]*AUTOMATION_DEFINITION_PATH/);
   assert.doesNotMatch(server, /new PostgresAutomationDefinitionStore/);
   assert.match(server, /migrateAutomationInvocationSchema\(production\.transactions\.pool\)/);
   assert.match(server, /checkAutomationInvocationSchema\(production\.transactions\.pool\)/);

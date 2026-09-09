@@ -14,6 +14,7 @@ on:
       - 'server/index.ts'
       - 'tests/automation-invocation-postgres.test.ts'
       - 'tests/automation-manual-execution-service.test.ts'
+      - 'tests/automation-manual-execution-http.test.ts'
       - 'scripts/production-migration-inventory.mjs'
       - '.github/workflows/automation-manual-execution-c3b.yml'
       - '.github/workflows/automation-definition-c3a.yml'
@@ -118,6 +119,14 @@ jobs:
             --outfile=.test-cache/automation-c3b/automation-manual-execution-service.test.mjs \
             --external:node:*
           node --test .test-cache/automation-c3b/automation-manual-execution-service.test.mjs
+      - name: Prove authenticated manual-run HTTP keeps browser authority at invocation boundary
+        run: |
+          mkdir -p .test-cache/automation-c3b
+          npx esbuild tests/automation-manual-execution-http.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/automation-c3b/automation-manual-execution-http.test.mjs \
+            --external:node:*
+          node --test .test-cache/automation-c3b/automation-manual-execution-http.test.mjs
       - name: Prove production Automation composition reuses accepted Agent and Artifact authorities
         run: node --test server/core/composition/automationProductionComposition.test.mjs
       - name: Preserve C3 authority separation and preview-only Studio
@@ -133,5 +142,9 @@ jobs:
           grep -q 'automation-agent-v1-' server/core/automation/PostgresAutomationInvocationStore.ts
           grep -q 'BEFORE UPDATE OR DELETE ON canonical_automation_invocation_bindings' server/core/automation/migrations/041_automation_invocation_bindings.sql
           grep -q "ERRCODE = '55000'" server/core/automation/migrations/041_automation_invocation_bindings.sql
+          grep -q 'execution: automation.manualExecution' server/index.ts
+          grep -q 'isAutomationManualExecutionPath(path)' server/index.ts
+          grep -q "const START_FIELDS = new Set(\['projectId', 'clientRequestId'\])" server/core/http/automationManualExecutionHttpAdapter.ts
+          grep -q 'authenticatedOwnerScope(principal)' server/core/http/automationManualExecutionHttpAdapter.ts
       - name: Check committed diff whitespace
         run: git diff --check "$BASE_SHA"..HEAD
