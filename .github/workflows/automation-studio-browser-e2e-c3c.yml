@@ -1,0 +1,135 @@
+name: Stage C3c Automation Studio browser E2E
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/pages/AutomationStudio.jsx'
+      - 'src/components/automation/CanonicalAutomationStudio.jsx'
+      - 'src/api/automationClient.js'
+      - 'src/application/automation/**'
+      - 'server/core/automation/**'
+      - 'server/core/http/automationDefinitionHttpAdapter.ts'
+      - 'server/core/http/automationManualExecutionHttpAdapter.ts'
+      - 'server/core/localExecution/**'
+      - 'server/core/projects/**'
+      - 'server/core/workflow/**'
+      - 'server/core/artifacts/**'
+      - 'server/core/execution/**'
+      - 'scripts/build-core-server.mjs'
+      - 'scripts/test-automation-c3c-studio-browser-e2e.mjs'
+      - '.github/workflows/automation-studio-browser-e2e-c3c.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automation-c3c-studio-browser-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  automation-studio-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: automation_c3c_studio_test
+          POSTGRES_USER: automation_c3c_studio_test
+          POSTGRES_PASSWORD: automation_c3c_studio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U automation_c3c_studio_test -d automation_c3c_studio_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://automation_c3c_studio_test:automation_c3c_studio_test@127.0.0.1:5432/automation_c3c_studio_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      VITE_CORE_API_URL: http://127.0.0.1:4208/api/core
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Build immutable Core and apply production migrations
+        run: |
+          npm run server:build
+          test -f dist-server/server.mjs
+          test -f dist-server/migrations/040_automation_definitions.sql
+          test -f dist-server/migrations/041_automation_invocation_bindings.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Generate and mask ephemeral C3c runtime secrets
+        run: |
+          set -euo pipefail
+          for name in FAL_KEY JWT_SECRET AUTH_CHALLENGE_SECRET RESEND_API_KEY GOOGLE_OAUTH_CLIENT_SECRET ARTIFACT_SIGNING_SECRET; do
+            value="$(openssl rand -hex 32)"
+            printf '::add-mask::%s\n' "$value"
+            printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+          done
+      - name: Build real SPA against C3c Core origin
+        run: |
+          npm run build
+          test -f dist/index.html
+      - name: Bundle C3c Studio production-composition browser harness
+        run: |
+          mkdir -p .test-cache/automation-c3c-studio
+          npx esbuild scripts/test-automation-c3c-studio-browser-e2e.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/automation-c3c-studio/test-automation-c3c-studio-browser-e2e.mjs \
+            --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove Studio revision start replay reload Preview explicit Accept and zero-cloud authority
+        run: |
+          set -euo pipefail
+          node .test-cache/automation-c3c-studio/test-automation-c3c-studio-browser-e2e.mjs | tee .test-cache/automation-c3c-studio/runtime.log
+          grep -q 'C3C_AUTOMATION_STUDIO_BROWSER_ACCEPTED' .test-cache/automation-c3c-studio/runtime.log
+      - name: Preserve PostgreSQL forensic state after C3c browser failure
+        if: failure()
+        run: |
+          node --input-type=module <<'NODE'
+          import { Pool } from 'pg';
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, application_name: 'bers-c3c-studio-forensics' });
+          const queries = {
+            definitions: `SELECT automation_id::text,tenant_id,user_id,name,revision,status,plan_kind,orthogonal_mode,target_width,target_height FROM canonical_automation_definitions ORDER BY created_at`,
+            invocations: `SELECT invocation_id::text,tenant_id,user_id,automation_id::text,definition_revision,project_id::text,source_image_storage_id::text,source_role,client_request_id,downstream_client_request_id FROM canonical_automation_invocation_bindings ORDER BY created_at`,
+            continuations: `SELECT execution_id,client_request_id,project_id,plan_id,state,current_step_id,completed_steps_json,outstanding_ticket_id,terminal_artifact_id,failure_code,revision FROM workflow_continuations ORDER BY created_at`,
+            tickets: `SELECT ticket_id,idempotency_key,request_id,workflow_id,step_id,consumed_at,finalized_status,admitted_result_sha256 FROM local_execution_tickets ORDER BY ticket_id`,
+            runs: `SELECT run_id::text,capability,authority_kind,authority_ref,parent_run_id::text,status,revision,status_reason_code FROM canonical_execution_runs ORDER BY created_at,run_id`,
+            projects: `SELECT project_id::text,original_image_storage_id::text,current_image_storage_id::text,width,height,history_cursor_id::text FROM canonical_projects ORDER BY created_at`,
+            reservations: `SELECT id,owner_id,project_id,provider,amount,status,provider_state FROM credit_reservations ORDER BY id`,
+          };
+          try {
+            for (const [name, sql] of Object.entries(queries)) {
+              try { console.log(`C3C_STUDIO_FORENSICS_${name.toUpperCase()}`, JSON.stringify((await pool.query(sql)).rows)); }
+              catch (error) { console.log(`C3C_STUDIO_FORENSICS_${name.toUpperCase()}_ERROR`, error instanceof Error ? error.message : String(error)); }
+            }
+          } finally { await pool.end(); }
+          NODE
+      - name: Preserve C3c authority boundaries
+        if: always()
+        run: |
+          set -euo pipefail
+          grep -q 'AUTOMATION_EXECUTION_NOT_WIRED' src/lib/automation/AutomationRunner.js
+          grep -q 'CanonicalAutomationStudio' src/pages/AutomationStudio.jsx
+          ! grep -q 'automationRunner' src/pages/AutomationStudio.jsx
+          ! grep -q '/agent/bounded-deterministic/' src/api/automationClient.js
+          ! grep -q '/agent/bounded-deterministic/' src/application/automation/createAutomationInvocationRunner.ts
+          grep -q 'loadOrCreateStartIntent' src/components/automation/CanonicalAutomationStudio.jsx
+          grep -q 'rememberInvocation' src/components/automation/CanonicalAutomationStudio.jsx
+          grep -q 'coreClient.projects.acceptFinal' src/components/automation/CanonicalAutomationStudio.jsx
+          git diff --check
