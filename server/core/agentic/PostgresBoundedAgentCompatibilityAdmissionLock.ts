@@ -6,8 +6,13 @@ const ADMISSION_LOCK_DOMAIN = 'bers:aee:bounded-compatibility-admission:v1\0';
 
 /**
  * Narrow concurrency primitive for AE-4c.2. It serializes only the same
- * authenticated (Project, clientRequestId) admission key. It owns no workflow,
- * plan, Artifact, Project mutation, provider or Billing state.
+ * authenticated (Project, clientRequestId) admission key, then holds a shared
+ * lock on the canonical Project row while the caller reads currentSourceContext,
+ * persists the admitted graph and creates the durable workflow continuation.
+ *
+ * The row query intentionally reads no revision/source authority; those values
+ * still come only from PostgresProjectStore.currentSourceContext(). This class
+ * owns neither Project mutation nor workflow/plan/Artifact/provider/Billing state.
  */
 export class PostgresBoundedAgentCompatibilityAdmissionLock {
   constructor(private readonly pool: Pool) {}
@@ -20,6 +25,10 @@ export class PostgresBoundedAgentCompatibilityAdmissionLock {
     try {
       await client.query('BEGIN');
       await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [lockKey.toString()]);
+      const project = await client.query(`SELECT project_id FROM canonical_projects
+        WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL
+        FOR SHARE`, [scope.projectId, scope.tenantId, scope.userId]);
+      if (!project.rows[0]) throw notFound('Project not found');
       const result = await work();
       await client.query('COMMIT');
       return result;
@@ -62,4 +71,8 @@ function token(value: unknown, path: string): string {
 
 function lockError(message: string): Error & { status: number; code: string } {
   return Object.assign(new Error(message), { status: 400, code: 'bounded_aee_admission_lock_invalid' });
+}
+
+function notFound(message: string): Error & { status: number; code: string } {
+  return Object.assign(new Error(message), { status: 404, code: 'project_not_found' });
 }
