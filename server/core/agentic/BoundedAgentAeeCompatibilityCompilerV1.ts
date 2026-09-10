@@ -59,11 +59,11 @@ export function compileBoundedAgentAeeCompatibilityV1(
 ): AdmittedPlanGraphV1 {
   const command = normalizeCommand(commandInput, source.width, source.height);
   if (source.kind !== 'image' || (source.role !== 'ORIGINAL' && source.role !== 'COMPOSITE')) {
-    throw compatibilityError('bounded_aee_source_invalid', 'Bounded AEE compatibility source must be a canonical IMAGE');
+    throw conflict('bounded_aee_source_invalid', 'Bounded AEE compatibility source must be a canonical IMAGE');
   }
   if (project.projectId !== command.projectId || source.storageId !== project.currentImageStorageId
     || source.width !== project.width || source.height !== project.height) {
-    throw compatibilityError('bounded_aee_project_source_conflict', 'Bounded AEE source is not the exact current canonical Project IMAGE');
+    throw conflict('bounded_aee_project_source_conflict', 'Bounded AEE source is not the exact current canonical Project IMAGE');
   }
   return compileFromAuthority(command, Object.freeze({
     projectId: project.projectId,
@@ -85,7 +85,7 @@ export function assertBoundedAgentAeeCompatibilityReplayV1(
   commandInput: BoundedAgentStartCommand,
 ): AdmittedPlanGraphV1 {
   if (graph.source.artifactRole !== 'ORIGINAL' && graph.source.artifactRole !== 'COMPOSITE') {
-    throw compatibilityError('bounded_aee_replay_source_invalid', 'Durable compatibility graph has an unsupported source Artifact role');
+    throw conflict('bounded_aee_replay_source_invalid', 'Durable compatibility graph has an unsupported source Artifact role');
   }
   const command = normalizeCommand(commandInput, graph.source.width, graph.source.height);
   const expected = compileFromAuthority(command, Object.freeze({
@@ -97,14 +97,14 @@ export function assertBoundedAgentAeeCompatibilityReplayV1(
     height: graph.source.height,
   }));
   if (expected.digest !== graph.digest) {
-    throw compatibilityError('bounded_aee_replay_mismatch', 'Bounded command differs from the immutable admitted compatibility graph');
+    throw conflict('bounded_aee_replay_mismatch', 'Bounded command differs from the immutable admitted compatibility graph');
   }
   return graph;
 }
 
 function compileFromAuthority(command: BoundedAgentStartCommand, source: CompatibilitySourceAuthority): AdmittedPlanGraphV1 {
   if (command.projectId !== source.projectId || command.sourceArtifactId !== source.sourceRef) {
-    throw compatibilityError('bounded_aee_source_binding_mismatch', 'Bounded command source differs from compatibility source authority');
+    throw conflict('bounded_aee_source_binding_mismatch', 'Bounded command source differs from compatibility source authority');
   }
   const intent = normalizeAgentIntentV1({
     schemaVersion: AGENT_INTENT_V1_SCHEMA,
@@ -159,26 +159,29 @@ function normalizeCommand(command: BoundedAgentStartCommand, sourceWidth: number
   const sourceArtifactId = token(command?.sourceArtifactId, 'sourceArtifactId');
   let mode: OrthogonalTransformMode;
   try { mode = normalizeOrthogonalTransformMode(command.mode); }
-  catch { throw compatibilityError('bounded_aee_mode_invalid', 'Bounded orthogonal-transform mode is invalid'); }
+  catch { throw badRequest('bounded_agent_mode_invalid', 'Bounded orthogonal-transform mode is invalid'); }
   let target;
   try {
     const postOrthogonal = orthogonalTransformOutputGeometry(sourceWidth, sourceHeight, mode);
     target = normalizeResizeDimensions({ width: command.width, height: command.height }, postOrthogonal.width, postOrthogonal.height);
   } catch {
-    throw compatibilityError('bounded_aee_resize_invalid', 'Bounded resize dimensions are invalid');
+    throw badRequest('bounded_agent_resize_invalid', 'Bounded resize dimensions are invalid');
   }
   return Object.freeze({ clientRequestId, projectId, sourceArtifactId, mode, width: target.width, height: target.height });
 }
 
 function token(value: unknown, path: string): string {
-  if (typeof value !== 'string') throw compatibilityError('bounded_aee_command_invalid', `${path} must be a string`);
+  if (typeof value !== 'string') throw badRequest('bounded_agent_request_invalid', `${path} is required`);
   const normalized = value.trim();
-  if (!normalized || normalized !== value || Buffer.byteLength(normalized, 'utf8') > 256 || /[\u0000-\u001f\u007f]/u.test(normalized)) {
-    throw compatibilityError('bounded_aee_command_invalid', `${path} is invalid`);
+  if (!normalized || Buffer.byteLength(normalized, 'utf8') > 256 || /[\u0000-\u001f\u007f]/u.test(normalized)) {
+    throw badRequest('bounded_agent_request_invalid', `${path} is invalid`);
   }
   return normalized;
 }
 
-function compatibilityError(code: string, message: string): Error & { status: number; code: string } {
+function badRequest(code: string, message: string): Error & { status: number; code: string } {
+  return Object.assign(new Error(message), { status: 400, code });
+}
+function conflict(code: string, message: string): Error & { status: number; code: string } {
   return Object.assign(new Error(message), { status: 409, code });
 }
