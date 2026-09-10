@@ -20,7 +20,7 @@ import type { LocalOrthogonalTransformExecutionService } from '../localExecution
 import type { LocalResizeExecutionService } from '../localExecution/LocalResizeExecutionService.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 import {
-  listWorkflowLocalExecutionAttempts,
+  countWorkflowLocalExecutionRetries,
   projectWorkflowLocalExecutionAttempt,
 } from '../workflow/WorkflowLocalExecutionAttemptRunProjection.ts';
 import type { WorkflowBoundLocalExecutionTicketV2Issuer } from '../workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts';
@@ -255,7 +255,7 @@ export class AeeSerialAdmittedGraphDriverV1 {
       throw conflict('aee_serial_retry_not_available', 'Current AEE local attempt is still active');
     }
     if (this.wallClockExceeded(snapshot, authority.graph)) return this.terminalizeBudget(snapshot, authority.graph, 'AEE_WALL_CLOCK_BUDGET_EXCEEDED');
-    if (!await this.retryAvailable(snapshot, authority.graph, node)) return this.terminalizeBudget(snapshot, authority.graph, 'AEE_RETRY_BUDGET_EXHAUSTED');
+    if (!await this.retryAvailable(snapshot, authority.graph)) return this.terminalizeBudget(snapshot, authority.graph, 'AEE_RETRY_BUDGET_EXHAUSTED');
 
     const replacement = await this.prepareNodeTicket(snapshot, node, source, previous.ticketId, auth);
     snapshot = await this.dependencies.continuations.retryLocalResult({
@@ -656,15 +656,14 @@ export class AeeSerialAdmittedGraphDriverV1 {
     else await this.dependencies.runs.fail(parent.scope, parent.runId, reason);
   }
 
-  private async retryAvailable(snapshot: WorkflowContinuationSnapshot, graph: AdmittedPlanGraphV1, node: AeeAdmittedPlanNodeV1): Promise<boolean> {
+  private async retryAvailable(snapshot: WorkflowContinuationSnapshot, graph: AdmittedPlanGraphV1): Promise<boolean> {
     const parent = await this.requireRunningParent(snapshot);
-    const attempts = await listWorkflowLocalExecutionAttempts({
+    const retries = await countWorkflowLocalExecutionRetries({
       runs: this.dependencies.runs,
       parent,
       acceptedStepIds: graph.nodes.map(candidate => candidate.nodeId),
-      stepId: node.nodeId,
     });
-    return Math.max(0, attempts.length - 1) < graph.effectiveExecution.maxRetries;
+    return retries < graph.effectiveExecution.maxRetries;
   }
 
   private async retryOrBudgetTerminal(
@@ -675,7 +674,7 @@ export class AeeSerialAdmittedGraphDriverV1 {
   ): Promise<AeeSerialAdmittedGraphViewV1> {
     await this.reconcileRuns(snapshot, graph);
     if (this.wallClockExceeded(snapshot, graph)) return this.terminalizeBudget(snapshot, graph, 'AEE_WALL_CLOCK_BUDGET_EXCEEDED');
-    if (!await this.retryAvailable(snapshot, graph, node)) return this.terminalizeBudget(snapshot, graph, 'AEE_RETRY_BUDGET_EXHAUSTED');
+    if (!await this.retryAvailable(snapshot, graph)) return this.terminalizeBudget(snapshot, graph, 'AEE_RETRY_BUDGET_EXHAUSTED');
     return retryView(snapshot, status);
   }
 
