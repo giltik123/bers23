@@ -54,7 +54,11 @@ export type BoundedAgentAeeCompatibilityFacadeDependencies = Readonly<{
  * selects the route; immutable WorkflowContinuation.plan identity does.
  */
 export class BoundedAgentAeeCompatibilityFacade implements BoundedAgentExecutionPort {
-  constructor(private readonly dependencies: BoundedAgentAeeCompatibilityFacadeDependencies) {}
+  private readonly dependencies: BoundedAgentAeeCompatibilityFacadeDependencies;
+
+  constructor(dependencies: BoundedAgentAeeCompatibilityFacadeDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async start(commandInput: BoundedAgentStartCommand, authInput: AuthenticatedScope): Promise<BoundedAgentWorkflowView> {
     const auth = normalizeAuth(authInput);
