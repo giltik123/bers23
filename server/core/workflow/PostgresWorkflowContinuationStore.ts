@@ -4,6 +4,7 @@ import {
   assertExpectedRevision,
   isTerminalWorkflowState,
   normalizeArtifactIds,
+  normalizeContinuationStepId,
   normalizeInputArtifactBindings,
   normalizeScope,
   normalizeTicketBinding,
@@ -87,40 +88,53 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
 
   waitForLocalResult(input: WaitForLocalResultInput): Promise<WorkflowContinuationSnapshot> {
     const ticket = normalizeTicketBinding(input.ticket);
+    const continuationStepId = normalizeContinuationStepId(input.continuationStepId, ticket.stepId);
     return this.mutate(input.executionId, input.scope, async (snapshot, client) => {
       if (snapshot.state === 'WAITING_FOR_LOCAL_RESULT') {
-        if (sameTicket(snapshot.outstandingLocal, ticket)) return snapshot;
+        if (sameOutstandingTicket(snapshot.outstandingLocal, ticket, continuationStepId)) return snapshot;
         throw conflict('Workflow is already waiting for a different local execution ticket');
       }
       assertMutable(snapshot);
       if (snapshot.state !== 'READY') throw conflict(`Workflow cannot wait for a local result from state ${snapshot.state}`);
       assertExpectedRevision(snapshot.revision, input.expectedRevision);
-      if (snapshot.completedSteps.some(step => step.stepId === ticket.stepId)) throw conflict('Completed workflow step cannot be reissued as local work');
+      if (snapshot.completedSteps.some(step => step.stepId === continuationStepId)) throw conflict('Completed workflow step cannot be reissued as local work');
       await this.assertOutstandingTicket(client, snapshot, ticket);
-      return Object.freeze({ state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: ticket.stepId, outstandingLocal: ticket, completedSteps: snapshot.completedSteps });
+      return Object.freeze({
+        state: 'WAITING_FOR_LOCAL_RESULT',
+        currentStepId: continuationStepId,
+        outstandingLocal: logicalTicketBinding(continuationStepId, ticket),
+        completedSteps: snapshot.completedSteps,
+      });
     });
   }
 
   retryLocalResult(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot> {
     const previousTicketId = requireToken(input.previousTicketId, 'previousTicketId');
     const ticket = normalizeTicketBinding(input.ticket);
+    const continuationStepId = normalizeContinuationStepId(input.continuationStepId, ticket.stepId);
     return this.mutate(input.executionId, input.scope, async (snapshot, client) => {
       assertMutable(snapshot);
       if (snapshot.state !== 'WAITING_FOR_LOCAL_RESULT' || !snapshot.outstandingLocal || !snapshot.currentStepId) {
         throw conflict('Workflow can retry local work only while waiting for an exact outstanding ticket');
       }
-      if (sameTicket(snapshot.outstandingLocal, ticket) && snapshot.outstandingLocal.ticketId !== previousTicketId) {
+      if (sameOutstandingTicket(snapshot.outstandingLocal, ticket, continuationStepId) && snapshot.outstandingLocal.ticketId !== previousTicketId) {
         return snapshot;
       }
       assertExpectedRevision(snapshot.revision, input.expectedRevision);
       const current = snapshot.outstandingLocal;
       if (current.ticketId !== previousTicketId) throw conflict('Local retry previous ticket does not match the durable outstanding attempt');
       if (ticket.ticketId === previousTicketId) throw conflict('Local retry must use a new Core-issued ticket identity');
-      if (ticket.stepId !== current.stepId || ticket.stepId !== snapshot.currentStepId) throw conflict('Local retry cannot change the durable workflow step');
-      if (snapshot.completedSteps.some(step => step.stepId === ticket.stepId)) throw conflict('Completed workflow step cannot be retried');
-      await this.assertRetryablePreviousTicket(client, snapshot, current);
+      if (continuationStepId !== current.stepId || continuationStepId !== snapshot.currentStepId) throw conflict('Local retry cannot change the durable workflow step');
+      if (snapshot.completedSteps.some(step => step.stepId === continuationStepId)) throw conflict('Completed workflow step cannot be retried');
+      const previousOperationStepId = await this.assertRetryablePreviousTicket(client, snapshot, current);
       await this.assertOutstandingTicket(client, snapshot, ticket);
-      return Object.freeze({ state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: ticket.stepId, outstandingLocal: ticket, completedSteps: snapshot.completedSteps });
+      if (ticket.stepId !== previousOperationStepId) throw conflict('Local retry cannot change the underlying local operation step');
+      return Object.freeze({
+        state: 'WAITING_FOR_LOCAL_RESULT',
+        currentStepId: continuationStepId,
+        outstandingLocal: logicalTicketBinding(continuationStepId, ticket),
+        completedSteps: snapshot.completedSteps,
+      });
     });
   }
 
@@ -215,7 +229,7 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
     if (!row) throw conflict('Outstanding local execution ticket is not durable');
     if (row.consumed_at) throw conflict('Consumed local execution ticket cannot be issued as outstanding work');
     if (row.tenant_id !== snapshot.scope.tenantId || row.user_id !== snapshot.scope.userId || row.project_id !== snapshot.scope.projectId || row.workflow_id !== snapshot.executionId || row.step_id !== ticket.stepId) {
-      throw conflict('Local execution ticket scope/workflow/step binding does not match the continuation');
+      throw conflict('Local execution ticket scope/workflow/operation binding does not match the continuation');
     }
     const durable = row.ticket_json as Record<string, unknown>;
     if (String(durable.version) !== ticket.ticketVersion || durable.nonce !== ticket.nonce || toIsoTimestamp(durable.expiresAt) !== ticket.expiresAt) throw conflict('Local execution ticket identity does not match its durable ledger');
@@ -226,24 +240,26 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
     assertTicketInputsBound(snapshot, durable.inputs);
   }
 
-  private async assertRetryablePreviousTicket(client: PoolClient, snapshot: WorkflowContinuationSnapshot, ticket: WorkflowLocalTicketBinding): Promise<void> {
+  private async assertRetryablePreviousTicket(client: PoolClient, snapshot: WorkflowContinuationSnapshot, ticket: WorkflowLocalTicketBinding): Promise<string> {
     const result = await client.query(`SELECT ticket_id,tenant_id,user_id,project_id,workflow_id,step_id,ticket_json,consumed_at,finalized_status
       FROM local_execution_tickets WHERE ticket_id=$1`, [ticket.ticketId]);
     const row = result.rows[0];
     if (!row) throw conflict('Previous local execution ticket is not durable');
-    if (row.tenant_id !== snapshot.scope.tenantId || row.user_id !== snapshot.scope.userId || row.project_id !== snapshot.scope.projectId || row.workflow_id !== snapshot.executionId || row.step_id !== ticket.stepId) {
-      throw conflict('Previous local execution ticket no longer matches workflow scope/step authority');
+    if (row.tenant_id !== snapshot.scope.tenantId || row.user_id !== snapshot.scope.userId || row.project_id !== snapshot.scope.projectId || row.workflow_id !== snapshot.executionId) {
+      throw conflict('Previous local execution ticket no longer matches workflow scope authority');
     }
+    const operationStepId = requireToken(row.step_id, 'previous ticket operation step');
     const durable = row.ticket_json as Record<string, unknown>;
     if (String(durable.version) !== ticket.ticketVersion || durable.nonce !== ticket.nonce || toIsoTimestamp(durable.expiresAt) !== ticket.expiresAt) {
       throw conflict('Previous local execution ticket identity no longer matches its durable ledger');
     }
     if (row.consumed_at) {
-      if (row.finalized_status === 'FAILED') return;
+      if (row.finalized_status === 'FAILED') return operationStepId;
       if (row.finalized_status === 'SUCCESS') throw conflict('Successful local execution ticket must be reconciled instead of retried');
       throw conflict('Consumed local execution ticket without deterministic FAILED finalization cannot be retried');
     }
     if (Date.parse(ticket.expiresAt) > this.now()) throw conflict('Unexpired outstanding local execution ticket cannot be duplicated by retry');
+    return operationStepId;
   }
 
   private async mutate(executionIdInput: string, scopeInput: Scope, mutation: Mutation): Promise<WorkflowContinuationSnapshot> {
@@ -385,12 +401,27 @@ async function assertTicketFinalizedSuccess(client: PoolClient, ticketId: string
   if (!row?.consumed_at || row.finalized_status !== 'SUCCESS') throw conflict('Local execution ticket must be durably finalized SUCCESS before workflow binding');
 }
 
+function logicalTicketBinding(continuationStepId: string, ticket: WorkflowLocalTicketBinding): WorkflowLocalTicketBinding {
+  return Object.freeze({
+    stepId: continuationStepId,
+    ticketId: ticket.ticketId,
+    ticketVersion: ticket.ticketVersion,
+    nonce: ticket.nonce,
+    expiresAt: ticket.expiresAt,
+  });
+}
+
 function assertMutable(snapshot: WorkflowContinuationSnapshot): void {
   if (isTerminalWorkflowState(snapshot.state)) throw conflict(`Terminal workflow continuation ${snapshot.state} cannot advance`);
 }
 
-function sameTicket(a: WorkflowLocalTicketBinding | undefined, b: WorkflowLocalTicketBinding): boolean {
-  return Boolean(a && a.stepId === b.stepId && a.ticketId === b.ticketId && a.ticketVersion === b.ticketVersion && a.nonce === b.nonce && a.expiresAt === b.expiresAt);
+function sameOutstandingTicket(a: WorkflowLocalTicketBinding | undefined, ticket: WorkflowLocalTicketBinding, continuationStepId: string): boolean {
+  return Boolean(a
+    && a.stepId === continuationStepId
+    && a.ticketId === ticket.ticketId
+    && a.ticketVersion === ticket.ticketVersion
+    && a.nonce === ticket.nonce
+    && a.expiresAt === ticket.expiresAt);
 }
 
 function isSnapshot(value: WorkflowContinuationSnapshot | MutableContinuation): value is WorkflowContinuationSnapshot {

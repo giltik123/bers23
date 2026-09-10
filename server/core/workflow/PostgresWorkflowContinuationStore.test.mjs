@@ -146,7 +146,7 @@ test('foreign, paid, expired and late local work cannot advance a continuation',
   await assert.rejects(() => store.waitForLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 0, ticket: paid }), /forbidden provider or paid-credit authority/);
 
   const foreign = ticket(`${token}-foreign`); pool.addTicket(created, foreign, { workflow_id: 'other-workflow', step_id: foreign.stepId });
-  await assert.rejects(() => store.waitForLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 0, ticket: foreign }), /scope\/workflow\/step binding/);
+  await assert.rejects(() => store.waitForLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 0, ticket: foreign }), /scope\/workflow\/operation binding/);
 
   const expired = Object.freeze({ ...ticket(`${token}-expired`), expiresAt: new Date(NOW - 1).toISOString() }); pool.addTicket(created, expired);
   await assert.rejects(() => store.waitForLocalResult({ executionId: created.executionId, scope: created.scope, expectedRevision: 0, ticket: expired }), /Expired local execution ticket/);
