@@ -25,6 +25,9 @@ export const BOUNDED_AGENT_AEE_PLANNER_VERSION = 'bounded-agent-compatibility-pl
 export const BOUNDED_AGENT_AEE_ORTHOGONAL_NODE_ID = 'bounded-orthogonal' as const;
 export const BOUNDED_AGENT_AEE_RESIZE_NODE_ID = 'bounded-resize' as const;
 
+const MAX_BOUNDED_IDENTIFIER_BYTES = 256;
+const MAX_SOURCE_ARTIFACT_REFERENCE_BYTES = 4096;
+
 export const BOUNDED_AGENT_AEE_EXECUTION = Object.freeze({
   policy: 'LOCAL_ONLY' as const,
   cloudAllowed: false as const,
@@ -156,7 +159,7 @@ function compileFromAuthority(command: BoundedAgentStartCommand, source: Compati
 function normalizeCommand(command: BoundedAgentStartCommand, sourceWidth: number, sourceHeight: number): BoundedAgentStartCommand {
   const clientRequestId = token(command?.clientRequestId, 'clientRequestId');
   const projectId = token(command?.projectId, 'projectId');
-  const sourceArtifactId = token(command?.sourceArtifactId, 'sourceArtifactId');
+  const sourceArtifactId = sourceArtifactReference(command?.sourceArtifactId);
   let mode: OrthogonalTransformMode;
   try { mode = normalizeOrthogonalTransformMode(command.mode); }
   catch { throw badRequest('bounded_agent_mode_invalid', 'Bounded orthogonal-transform mode is invalid'); }
@@ -173,10 +176,20 @@ function normalizeCommand(command: BoundedAgentStartCommand, sourceWidth: number
 function token(value: unknown, path: string): string {
   if (typeof value !== 'string') throw badRequest('bounded_agent_request_invalid', `${path} is required`);
   const normalized = value.trim();
-  if (!normalized || Buffer.byteLength(normalized, 'utf8') > 256 || /[\u0000-\u001f\u007f]/u.test(normalized)) {
+  if (!normalized || Buffer.byteLength(normalized, 'utf8') > MAX_BOUNDED_IDENTIFIER_BYTES || /[\u0000-\u001f\u007f]/u.test(normalized)) {
     throw badRequest('bounded_agent_request_invalid', `${path} is invalid`);
   }
   return normalized;
+}
+
+function sourceArtifactReference(value: unknown): string {
+  if (typeof value !== 'string') throw badRequest('bounded_agent_request_invalid', 'sourceArtifactId is required');
+  const normalized = value.trim();
+  if (!normalized || normalized !== value || Buffer.byteLength(value, 'utf8') > MAX_SOURCE_ARTIFACT_REFERENCE_BYTES
+    || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw badRequest('bounded_agent_request_invalid', 'sourceArtifactId is invalid');
+  }
+  return value;
 }
 
 function badRequest(code: string, message: string): Error & { status: number; code: string } {
