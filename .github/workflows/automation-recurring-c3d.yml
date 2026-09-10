@@ -12,6 +12,7 @@ on:
       - 'server/core/automation/automationScheduleSchema.ts'
       - 'server/core/automation/migrations/042_automation_schedules.sql'
       - 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql'
+      - 'server/core/projects/migrations/044_canonical_project_revision.sql'
       - 'server/core/composition/createProductionAutomation.ts'
       - 'server/core/composition/automationProductionComposition.test.mjs'
       - 'server/core/http/automationScheduleHttpAdapter.ts'
@@ -147,7 +148,7 @@ jobs:
           import { readFile } from 'node:fs/promises';
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 43) throw new Error(`Expected 43 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 44) throw new Error(`Expected 44 contiguous migrations, got ${migrations.length}`);
           const tail = [
             [37, '038_financial_account_foundation.sql'],
             [38, '039_workflow_continuation_plan_parameters.sql'],
@@ -155,6 +156,7 @@ jobs:
             [40, '041_automation_invocation_bindings.sql'],
             [41, '042_automation_schedules.sql'],
             [42, '043_aee_admitted_plan_graphs.sql'],
+            [43, '044_canonical_project_revision.sql'],
           ];
           for (const [index, name] of tail) if (migrations[index]?.name !== name) throw new Error(`${name} moved from position ${index + 1}`);
           const sql = await readFile('server/core/automation/migrations/042_automation_schedules.sql', 'utf8');
@@ -168,7 +170,7 @@ jobs:
             if (Buffer.byteLength(name, 'utf8') > 63) throw new Error(`PostgreSQL identifier would truncate: ${name}`);
           }
           NODE
-      - name: Build and prove packaged migrations through 043
+      - name: Build and prove packaged migrations through 044
         run: |
           npm run server:typecheck
           npm run server:build
@@ -176,7 +178,8 @@ jobs:
           test -f dist-server/migrations/041_automation_invocation_bindings.sql
           test -f dist-server/migrations/042_automation_schedules.sql
           test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 43
+          test -f dist-server/migrations/044_canonical_project_revision.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 44
           npm run db:migrate:transactions
           npm run db:check:transactions
       - name: Prove real PostgreSQL lease crash replay fairness immutability and HTTP scope

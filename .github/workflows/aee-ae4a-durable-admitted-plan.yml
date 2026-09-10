@@ -12,6 +12,7 @@ on:
     branches: ["main"]
     paths:
       - 'server/core/agentic/**'
+      - 'server/core/projects/migrations/044_canonical_project_revision.sql'
       - 'server/core/workflow/**'
       - 'server/core/execution/**'
       - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
@@ -60,15 +61,17 @@ jobs:
             server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs \
             server/core/execution/internalWorkflowAuthorityProducerBoundary.test.mjs \
             server/core/composition/boundedAgentProductionComposition.test.mjs
-      - name: Prove production inventory advances contiguously through 043
+      - name: Prove production inventory advances contiguously through 044
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 43) throw new Error(`Expected 43 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 44) throw new Error(`Expected 44 contiguous migrations, got ${migrations.length}`);
           if (migrations[41]?.name !== '042_automation_schedules.sql') throw new Error('042 Automation schedule migration moved');
-          if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration must be the exact tail');
+          if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration moved');
           if (migrations[42]?.source !== 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE migration moved outside Agentic authority');
+          if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration must be the exact tail');
+          if (migrations[43]?.source !== 'server/core/projects/migrations/044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved outside Project authority');
           NODE
       - name: Build immutable Core
         run: npm run server:build
@@ -122,11 +125,12 @@ jobs:
           node-version: '24.x'
           cache: npm
       - run: npm ci
-      - name: Build Core and prove canonical migration CLI applies exact 043 schema
+      - name: Build Core and prove canonical migration CLI applies exact 043/044 schema
         run: |
           npm run server:build
           test -f dist-server/migrations/042_automation_schedules.sql
           test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
+          test -f dist-server/migrations/044_canonical_project_revision.sql
           node dist-server/migrate.mjs migrate
           node dist-server/migrate.mjs check
           node --input-type=module <<'NODE'
@@ -141,9 +145,14 @@ jobs:
                   AND tgname='aee_admitted_plan_graphs_immutable'
                   AND tgenabled='O'
                   AND NOT tgisinternal
-              ) AS immutable_trigger`);
+              ) AS immutable_trigger,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema() AND table_name='canonical_projects' AND column_name='revision'
+              ) AS project_revision`);
             if (result.rows[0]?.admitted_plan !== 'aee_admitted_plan_graphs') throw new Error('canonical migration CLI did not apply AEE migration 043');
             if (result.rows[0]?.immutable_trigger !== true) throw new Error('canonical migration CLI did not enable AEE immutable trigger');
+            if (result.rows[0]?.project_revision !== true) throw new Error('canonical migration CLI did not apply Project revision migration 044');
           } finally { await pool.end(); }
           NODE
       - name: Prove immutable scoped admitted-plan persistence and strict schema

@@ -252,7 +252,7 @@ function getF4b4PostgresExactPaths() {
   if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B4_POSTGRES_VERTICAL) {
     throw new Error('Invalid F4b.4 PostgreSQL CI closure manifest identity');
   }
-  const expectedCounts = Object.freeze({ bundleInputs: 197, migrationPaths: 38, supportPaths: 17 });
+  const expectedCounts = Object.freeze({ bundleInputs: 197, migrationPaths: 39, supportPaths: 17 });
   for (const [key, expected] of Object.entries(expectedCounts)) {
     if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
       throw new Error(`Invalid F4b.4 PostgreSQL CI closure ${key}: expected ${expected} exact paths`);
@@ -280,7 +280,7 @@ function getF4b5bPostgresExactPaths() {
   if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B5B_TEXTURE_POSTGRES_VERTICAL) {
     throw new Error('Invalid F4b.5b PostgreSQL CI closure manifest identity');
   }
-  const expectedCounts = Object.freeze({ bundleInputs: 81, migrationPaths: 27, supportPaths: 20 });
+  const expectedCounts = Object.freeze({ bundleInputs: 81, migrationPaths: 28, supportPaths: 20 });
   for (const [key, expected] of Object.entries(expectedCounts)) {
     if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
       throw new Error(`Invalid F4b.5b PostgreSQL CI closure ${key}: expected ${expected} exact paths`);
