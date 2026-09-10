@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { checkTransactionSchema } from '../../transactions/infrastructure/postgres/transactionSchemaMigrator.ts';
 import { createPostgresTransactionRuntime } from '../../transactions/infrastructure/postgres/postgresTransactionRuntime.ts';
+import { checkAeeAdmittedPlanSchema, migrateAeeAdmittedPlanSchema } from '../agentic/aeeAdmittedPlanSchema.ts';
 import { SignedArtifactAuthority } from '../artifacts/signedArtifactAuthority.ts';
 import { CanonicalArtifactHydrator } from '../artifacts/canonicalArtifactHydrator.ts';
 import { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
@@ -35,10 +36,10 @@ import { productionExecutionCapabilities } from '../providers/productionExecutio
 import { productionWorkflowVerifier } from '../providers/productionWorkflowVerifier.ts';
 import { productionFashionWorkflowVerifier } from '../providers/productionFashionWorkflowVerifier.ts';
 import { createCreativeCore, type CreativeCoreCompositionInput } from './createCreativeCore.ts';
+import { createProductionBoundedAgentCompatibility } from './createProductionBoundedAgentCompatibility.ts';
 import { createProductionGarmentMeshWarp } from './createProductionGarmentMeshWarp.ts';
 import { checkProjectSchema } from '../projects/projectSchema.ts';
 import { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
-import { BoundedAgentDeterministicWorkflowService } from '../workflow/BoundedAgentDeterministicWorkflowService.ts';
 import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from '../workflow/workflowContinuationSchema.ts';
 import { createProductionLocalCompositeContinuation } from '../workflow/createProductionLocalCompositeContinuation.ts';
 import { createProductionLocalCompositeStartAdmission } from '../workflow/ProductionLocalCompositeStartAdmission.ts';
@@ -79,11 +80,13 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       await migrateLocalExecutionUploadSchema(transactions.pool);
       await migrateLocalExecutionLedgerSchema(transactions.pool);
       await migrateWorkflowContinuationSchema(transactions.pool);
+      await migrateAeeAdmittedPlanSchema(transactions.pool);
     } else {
       await checkAuthSchema(transactions.pool);
       await checkLocalExecutionUploadSchema(transactions.pool);
       await checkLocalExecutionLedgerSchema(transactions.pool);
       await checkWorkflowContinuationSchema(transactions.pool);
+      await checkAeeAdmittedPlanSchema(transactions.pool);
     }
     const now = options.now ?? Date.now;
     const externalArtifacts = new SignedArtifactAuthority(config.artifactSigningSecret, config.trustedAssetHosts, now);
@@ -258,7 +261,8 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       images: imageArtifacts,
       issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
     });
-    const boundedAgent = new BoundedAgentDeterministicWorkflowService({
+    const boundedAgent = createProductionBoundedAgentCompatibility({
+      pool: transactions.pool,
       continuations: workflowContinuations,
       tickets: localExecutionAdmission,
       workflowTickets: workflowBoundLocalExecutionV2,
