@@ -4,6 +4,8 @@ on:
   push:
     branches: ["aee-ae4c2-bounded-compatibility-facade"]
     paths:
+      - 'server/core/agentic/AgentIntentV1*'
+      - 'server/core/agentic/AeeAdmittedPlanCodecV1*'
       - 'server/core/agentic/BoundedAgentAeeCompatibility*'
       - 'server/core/agentic/PostgresBoundedAgentCompatibilityAdmissionLock*'
       - 'server/core/workflow/BoundedAgentExecutionPort.ts'
@@ -16,6 +18,8 @@ on:
   pull_request:
     branches: ["main"]
     paths:
+      - 'server/core/agentic/AgentIntentV1*'
+      - 'server/core/agentic/AeeAdmittedPlanCodecV1*'
       - 'server/core/agentic/BoundedAgentAeeCompatibility*'
       - 'server/core/agentic/PostgresBoundedAgentCompatibilityAdmissionLock*'
       - 'server/core/workflow/BoundedAgentExecutionPort.ts'
@@ -68,9 +72,11 @@ jobs:
       - run: npm ci
       - name: Typecheck Core compatibility boundary
         run: npm run server:typecheck
-      - name: Prove deterministic compatibility compiler and dual-read single-write facade
+      - name: Prove sourceRef, durable codec, compiler and dual-read single-write facade
         run: |
           node --experimental-strip-types --test \
+            server/core/agentic/AgentIntentV1.test.mjs \
+            server/core/agentic/AeeAdmittedPlanCodecV1.test.mjs \
             server/core/agentic/BoundedAgentAeeCompatibilityCompilerV1.test.mjs \
             server/core/agentic/BoundedAgentAeeCompatibilityFacade.test.mjs
       - name: Prove PostgreSQL same-request serialization and Project mutation barrier
@@ -80,6 +86,8 @@ jobs:
           set -euo pipefail
           FACADE=server/core/agentic/BoundedAgentAeeCompatibilityFacade.ts
           COMPILER=server/core/agentic/BoundedAgentAeeCompatibilityCompilerV1.ts
+          INTENT=server/core/agentic/AgentIntentV1.ts
+          CODEC=server/core/agentic/AeeAdmittedPlanCodecV1.ts
           PORT=server/core/workflow/BoundedAgentExecutionPort.ts
           HTTP=server/core/http/boundedAgentHttpAdapter.ts
           AUTO=server/core/automation/AutomationManualExecutionService.ts
@@ -87,6 +95,12 @@ jobs:
           grep -q 'BOUNDED_AGENT_PLAN_ID' "$FACADE"
           grep -q 'getByClientRequestId' "$FACADE"
           grep -q 'assertBoundedAgentAeeCompatibilityReplayV1' "$FACADE"
+          grep -q 'MAX_SOURCE_ARTIFACT_REFERENCE_BYTES = 4096' "$FACADE"
+          grep -q 'MAX_SOURCE_ARTIFACT_REFERENCE_BYTES = 4096' "$COMPILER"
+          grep -q 'MAX_SOURCE_REFERENCE_BYTES = 4096' "$INTENT"
+          grep -q 'MAX_SOURCE_REFERENCE_BYTES = 4096' "$CODEC"
+          grep -q 'sourceRef: sourceReference' "$INTENT"
+          grep -q 'sourceRef: sourceReference' "$CODEC"
           grep -q 'maxRetries: 8' "$COMPILER"
           grep -q 'maxWallClockMs: 86_400_000' "$COMPILER"
           grep -q 'maxMemoryBytes: 137_438_953_472' "$COMPILER"
