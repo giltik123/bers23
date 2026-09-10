@@ -1,0 +1,100 @@
+name: AEE AE-4c.2 Bounded Compatibility Facade
+
+on:
+  push:
+    branches: ["aee-ae4c2-bounded-compatibility-facade"]
+    paths:
+      - 'server/core/agentic/BoundedAgentAeeCompatibility*'
+      - 'server/core/agentic/PostgresBoundedAgentCompatibilityAdmissionLock*'
+      - 'server/core/workflow/BoundedAgentExecutionPort.ts'
+      - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
+      - 'server/core/http/boundedAgentHttpAdapter.ts'
+      - 'server/core/automation/AutomationManualExecutionService.ts'
+      - 'server/core/composition/createProductionBoundedAgentCompatibility.ts'
+      - 'server/core/composition/createProductionCore.ts'
+      - '.github/workflows/aee-ae4c2-bounded-compatibility.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'server/core/agentic/BoundedAgentAeeCompatibility*'
+      - 'server/core/agentic/PostgresBoundedAgentCompatibilityAdmissionLock*'
+      - 'server/core/workflow/BoundedAgentExecutionPort.ts'
+      - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
+      - 'server/core/http/boundedAgentHttpAdapter.ts'
+      - 'server/core/automation/AutomationManualExecutionService.ts'
+      - 'server/core/composition/createProductionBoundedAgentCompatibility.ts'
+      - 'server/core/composition/createProductionCore.ts'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  bounded-compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: aee_bounded_compatibility_test
+          POSTGRES_USER: aee_bounded_compatibility_test
+          POSTGRES_PASSWORD: aee_bounded_compatibility_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aee_bounded_compatibility_test -d aee_bounded_compatibility_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://aee_bounded_compatibility_test:aee_bounded_compatibility_test@127.0.0.1:5432/aee_bounded_compatibility_test
+      TEST_DATABASE_URL: postgresql://aee_bounded_compatibility_test:aee_bounded_compatibility_test@127.0.0.1:5432/aee_bounded_compatibility_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core compatibility boundary
+        run: npm run server:typecheck
+      - name: Prove deterministic compatibility compiler and dual-read single-write facade
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/BoundedAgentAeeCompatibilityCompilerV1.test.mjs \
+            server/core/agentic/BoundedAgentAeeCompatibilityFacade.test.mjs
+      - name: Prove PostgreSQL same-request serialization and Project mutation barrier
+        run: node --experimental-strip-types --test --test-concurrency=1 server/core/agentic/PostgresBoundedAgentCompatibilityAdmissionLock.postgres.test.ts
+      - name: Prove compatibility architecture does not create caller-selected authority
+        run: |
+          set -euo pipefail
+          FACADE=server/core/agentic/BoundedAgentAeeCompatibilityFacade.ts
+          COMPILER=server/core/agentic/BoundedAgentAeeCompatibilityCompilerV1.ts
+          PORT=server/core/workflow/BoundedAgentExecutionPort.ts
+          HTTP=server/core/http/boundedAgentHttpAdapter.ts
+          AUTO=server/core/automation/AutomationManualExecutionService.ts
+          grep -q 'AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID' "$FACADE"
+          grep -q 'BOUNDED_AGENT_PLAN_ID' "$FACADE"
+          grep -q 'getByClientRequestId' "$FACADE"
+          grep -q 'assertBoundedAgentAeeCompatibilityReplayV1' "$FACADE"
+          grep -q 'maxRetries: 8' "$COMPILER"
+          grep -q 'maxWallClockMs: 86_400_000' "$COMPILER"
+          grep -q 'maxMemoryBytes: 137_438_953_472' "$COMPILER"
+          ! grep -E -q 'providerId|modelId|runtimeId|executorId|reserveCredits|spendCredits|ProjectStore.*update|acceptFinal|restoreVersion' "$FACADE"
+          ! grep -E -q 'providerId|modelId|runtimeId|executorId|reserveCredits|spendCredits' "$COMPILER"
+          grep -q 'BoundedAgentExecutionPort' "$HTTP"
+          grep -q 'BoundedAgentExecutionPort' "$AUTO"
+          ! grep -q 'BoundedAgentDeterministicWorkflowService' "$HTTP"
+          ! grep -q 'BoundedAgentDeterministicWorkflowService' "$AUTO"
+          grep -q 'interface BoundedAgentExecutionPort' "$PORT"
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
