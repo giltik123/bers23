@@ -129,13 +129,15 @@ jobs:
           test -f dist/index.html
       - name: Materialize and bundle focused AE-4c.2 R3k browser harness
         run: |
+          set -euo pipefail
           mkdir -p .test-cache/release-r3k
-          node scripts/materialize-aee4c2-bounded-browser-harness.mjs \
-            r3k .test-cache/release-r3k/test-release-r3k-browser-e2e.source.mjs
-          npx esbuild .test-cache/release-r3k/test-release-r3k-browser-e2e.source.mjs \
+          GENERATED=scripts/.test-release-r3k-browser-e2e.aee4c2.mjs
+          node scripts/materialize-aee4c2-bounded-browser-harness.mjs r3k "$GENERATED"
+          npx esbuild "$GENERATED" \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/release-r3k/test-release-r3k-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
+          rm -f "$GENERATED"
       - name: Prove lost-response reload terminal-reload and explicit Accept journey
         run: |
           set -euo pipefail
