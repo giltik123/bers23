@@ -38,6 +38,7 @@ export const AEE_ADMITTED_PLAN_GRAPH_V1_SCHEMA = 'BERS_AEE_ADMITTED_PLAN_GRAPH_V
 export const AEE_PLAN_COMPILER_V1_VERSION = '1' as const;
 export const AEE_ADMITTED_PLAN_GRAPH_V1_DIGEST_VERSION = '1' as const;
 const DIGEST_DOMAIN = `bers:aee:admitted-plan-graph:v${AEE_ADMITTED_PLAN_GRAPH_V1_DIGEST_VERSION}\0`;
+const MAX_SOURCE_REFERENCE_BYTES = 4096;
 
 const ARTIFACT_ROLES: readonly CreativeArtifactRole[] = Object.freeze([
   'ORIGINAL', 'WORKING', 'MASK', 'ROI_INPUT', 'PATCH', 'VERIFIED_PATCH', 'COMPOSITE', 'PREVIEW',
@@ -246,7 +247,7 @@ function normalizeCompileContext(raw: unknown): AeePlanCompileContextV1 {
     canonical: {
       projectId: token(canonicalRaw.projectId, 'compileContext.canonical.projectId'),
       projectRevision: integer(canonicalRaw.projectRevision, 'compileContext.canonical.projectRevision', 0, Number.MAX_SAFE_INTEGER),
-      sourceRef: token(canonicalRaw.sourceRef, 'compileContext.canonical.sourceRef'),
+      sourceRef: sourceReference(canonicalRaw.sourceRef, 'compileContext.canonical.sourceRef'),
     },
     sourceArtifact: {
       role: artifactRole(sourceRaw.role, 'compileContext.sourceArtifact.role'),
@@ -443,6 +444,16 @@ function dimension(raw: unknown, path: string): number {
 
 function integer(raw: unknown, path: string, min: number, max: number): number {
   if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw < min || raw > max) fail('aee_plan_compile_context_invalid', `${path} must be a safe integer in range`);
+  return raw;
+}
+
+function sourceReference(raw: unknown, path: string): string {
+  if (typeof raw !== 'string') fail('aee_plan_compile_context_invalid', `${path} must be a string`);
+  const value = raw.trim();
+  if (!value || value !== raw || Buffer.byteLength(raw, 'utf8') > MAX_SOURCE_REFERENCE_BYTES
+    || /[\u0000-\u001f\u007f]/u.test(raw)) {
+    fail('aee_plan_compile_context_invalid', `${path} is outside the bounded opaque-reference contract`);
+  }
   return raw;
 }
 
