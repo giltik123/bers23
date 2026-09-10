@@ -6,6 +6,14 @@ import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactSt
 
 const MAX_ACCEPT_LINEAGE_DEPTH = 64;
 
+export type CanonicalProjectSourceContext = Readonly<{
+  projectId: string;
+  revision: number;
+  currentImageStorageId: string;
+  width: number;
+  height: number;
+}>;
+
 export class PostgresProjectStore {
   constructor(private readonly pool: Pool) {}
 
@@ -33,6 +41,16 @@ export class PostgresProjectStore {
 
   async list(scope: AuthenticatedScope) { return (await this.pool.query(`SELECT * FROM canonical_projects WHERE tenant_id=$1 AND user_id=$2 AND deleted_at IS NULL ORDER BY updated_at DESC`, [scope.tenantId,scope.userId])).rows; }
   async get(scope: AuthenticatedScope, id: string) { return (await this.pool.query(`SELECT * FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL`, [id,scope.tenantId,scope.userId])).rows[0]; }
+  async currentSourceContext(scope: AuthenticatedScope, id: string): Promise<CanonicalProjectSourceContext | undefined> {
+    const project = await this.get(scope, id);
+    if (!project) return undefined;
+    const revision = projectRevision(project.revision);
+    const width = positiveProjectDimension(project.width, 'width');
+    const height = positiveProjectDimension(project.height, 'height');
+    const projectId = requiredProjectToken(project.project_id, 'projectId');
+    const currentImageStorageId = requiredProjectToken(project.current_image_storage_id, 'currentImageStorageId');
+    return Object.freeze({ projectId, revision, currentImageStorageId, width, height });
+  }
   async state(scope: AuthenticatedScope, id: string) { const project=await this.get(scope,id); if(!project)return undefined; const history=(await this.pool.query(`SELECT * FROM canonical_project_history WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND retired_at IS NULL ORDER BY ordinal`,[id,scope.tenantId,scope.userId])).rows; const versions=(await this.pool.query(`SELECT * FROM canonical_project_versions WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL ORDER BY created_at,version_id`,[id,scope.tenantId,scope.userId])).rows; return {...project,history,versions}; }
 
   /**
@@ -79,7 +97,7 @@ export class PostgresProjectStore {
       await client.query(`UPDATE canonical_project_history SET retired_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND retired_at IS NULL AND ordinal>$4`,[id,scope.tenantId,scope.userId,cursor.ordinal]);
       const historyId=randomUUID();
       await client.query(`INSERT INTO canonical_project_history(history_id,project_id,tenant_id,user_id,ordinal,source_image_storage_id,image_storage_id,kind,instruction,execution_id,operation_id,credits_used) VALUES($1,$2,$3,$4,$5,$6,$7,'ACCEPTED_FINAL',$8,$9,$10,0)`,[historyId,id,scope.tenantId,scope.userId,cursor.ordinal+1,project.current_image_storage_id,storageId,instruction??null,artifact.execution_id,artifact.operation_id]);
-      await client.query(`UPDATE canonical_projects SET current_image_storage_id=$2,history_cursor_id=$3,width=$4,height=$5,status='editing',objects='[]',updated_at=CURRENT_TIMESTAMP WHERE project_id=$1`,[id,storageId,historyId,artifact.width,artifact.height]);
+      await client.query(`UPDATE canonical_projects SET current_image_storage_id=$2,history_cursor_id=$3,width=$4,height=$5,status='editing',objects='[]',revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE project_id=$1`,[id,storageId,historyId,artifact.width,artifact.height]);
     });
   }
 
@@ -90,7 +108,7 @@ export class PostgresProjectStore {
       const params=direction==='original'?[id,scope.tenantId,scope.userId]:[id,scope.tenantId,scope.userId,cursor.ordinal];
       const target=(await client.query(`SELECT h.history_id,h.image_storage_id,a.width,a.height FROM canonical_project_history h JOIN canonical_image_artifacts a ON a.storage_id=h.image_storage_id AND a.tenant_id=h.tenant_id AND a.user_id=h.user_id AND a.project_id=h.project_id::text WHERE h.project_id=$1 AND h.tenant_id=$2 AND h.user_id=$3 AND h.retired_at IS NULL AND a.revoked_at IS NULL AND a.deleted_at IS NULL AND ((a.role='ORIGINAL' AND a.lifecycle='IMMUTABLE') OR (a.role='COMPOSITE' AND a.lifecycle='FINAL')) AND ${clause} LIMIT 1`,params)).rows[0];
       if(!target)throw Object.assign(new Error(`Cannot ${direction}`),{status:409,code:`cannot_${direction}`});
-      await client.query(`UPDATE canonical_projects SET current_image_storage_id=$2,history_cursor_id=$3,width=$4,height=$5,objects='[]',updated_at=CURRENT_TIMESTAMP WHERE project_id=$1`,[id,target.image_storage_id,target.history_id,target.width,target.height]);
+      await client.query(`UPDATE canonical_projects SET current_image_storage_id=$2,history_cursor_id=$3,width=$4,height=$5,objects='[]',revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE project_id=$1`,[id,target.image_storage_id,target.history_id,target.width,target.height]);
     });
   }
 
@@ -109,7 +127,7 @@ export class PostgresProjectStore {
       await client.query(`UPDATE canonical_project_history SET retired_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND retired_at IS NULL AND ordinal>$4`,[id,scope.tenantId,scope.userId,cursor.ordinal]);
       const historyId=randomUUID();
       await client.query(`INSERT INTO canonical_project_history(history_id,project_id,tenant_id,user_id,ordinal,source_image_storage_id,image_storage_id,kind,instruction,credits_used) VALUES($1,$2,$3,$4,$5,$6,$7,'RESTORE_VERSION',$8,0)`,[historyId,id,scope.tenantId,scope.userId,cursor.ordinal+1,project.current_image_storage_id,version.image_storage_id,`Restored version "${version.name}"`]);
-      await client.query(`UPDATE canonical_projects SET current_image_storage_id=$2,history_cursor_id=$3,width=$4,height=$5,objects='[]',updated_at=CURRENT_TIMESTAMP WHERE project_id=$1`,[id,version.image_storage_id,historyId,image.width,image.height]);
+      await client.query(`UPDATE canonical_projects SET current_image_storage_id=$2,history_cursor_id=$3,width=$4,height=$5,objects='[]',revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE project_id=$1`,[id,version.image_storage_id,historyId,image.width,image.height]);
     });
   }
 
@@ -153,6 +171,23 @@ export class PostgresProjectStore {
   }
 
   private async mutate(scope:AuthenticatedScope,id:string,action:(client:any,project:any)=>Promise<void>){const client=await this.pool.connect();try{await client.query('BEGIN');const project=(await client.query(`SELECT * FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL FOR UPDATE`,[id,scope.tenantId,scope.userId])).rows[0];if(!project)throw Object.assign(new Error('Project not found'),{status:404,code:'project_not_found'});await action(client,project);await client.query('COMMIT');return this.state(scope,id);}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}
-  async update(scope: AuthenticatedScope, id: string, patch: Record<string, unknown>) { const allowed = ['name','favorite','archived','status','objects']; const keys = Object.keys(patch); if (!keys.length || keys.some(k => !allowed.includes(k))) throw Object.assign(new Error('Project patch contains unsupported fields'), { status: 400, code: 'invalid_project_patch' }); const values = keys.map(k => k === 'objects' ? JSON.stringify(patch[k]) : patch[k]); const sets = keys.map((k,i) => `${k}=$${i+4}${k === 'objects' ? '::jsonb' : ''}`); return (await this.pool.query(`UPDATE canonical_projects SET ${sets.join(',')},updated_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL RETURNING *`, [id,scope.tenantId,scope.userId,...values])).rows[0]; }
-  async delete(scope: AuthenticatedScope, id: string) { const client=await this.pool.connect(); try { await client.query('BEGIN'); const row=(await client.query(`UPDATE canonical_projects SET deleted_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL RETURNING project_id`,[id,scope.tenantId,scope.userId])).rows[0]; if (row) await client.query(`UPDATE canonical_image_artifacts SET deleted_at=CURRENT_TIMESTAMP WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3`,[scope.tenantId,scope.userId,id]); await client.query('COMMIT'); return Boolean(row); } catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();} }
+  async update(scope: AuthenticatedScope, id: string, patch: Record<string, unknown>) { const allowed = ['name','favorite','archived','status','objects']; const keys = Object.keys(patch); if (!keys.length || keys.some(k => !allowed.includes(k))) throw Object.assign(new Error('Project patch contains unsupported fields'), { status: 400, code: 'invalid_project_patch' }); const values = keys.map(k => k === 'objects' ? JSON.stringify(patch[k]) : patch[k]); const sets = keys.map((k,i) => `${k}=$${i+4}${k === 'objects' ? '::jsonb' : ''}`); return (await this.pool.query(`UPDATE canonical_projects SET ${sets.join(',')},revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL RETURNING *`, [id,scope.tenantId,scope.userId,...values])).rows[0]; }
+  async delete(scope: AuthenticatedScope, id: string) { const client=await this.pool.connect(); try { await client.query('BEGIN'); const row=(await client.query(`UPDATE canonical_projects SET deleted_at=CURRENT_TIMESTAMP,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL RETURNING project_id`,[id,scope.tenantId,scope.userId])).rows[0]; if (row) await client.query(`UPDATE canonical_image_artifacts SET deleted_at=CURRENT_TIMESTAMP WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3`,[scope.tenantId,scope.userId,id]); await client.query('COMMIT'); return Boolean(row); } catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();} }
+}
+
+function projectRevision(value: unknown): number {
+  const revision = typeof value === 'bigint' ? Number(value) : Number(String(value));
+  if (!Number.isSafeInteger(revision) || revision < 0) throw Object.assign(new Error('Canonical Project revision is outside the supported integer range'), { status: 409, code: 'project_revision_invalid' });
+  return revision;
+}
+
+function positiveProjectDimension(value: unknown, field: string): number {
+  const dimension = Number(value);
+  if (!Number.isSafeInteger(dimension) || dimension < 1) throw Object.assign(new Error(`Canonical Project ${field} is invalid`), { status: 409, code: 'project_source_context_invalid' });
+  return dimension;
+}
+
+function requiredProjectToken(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw Object.assign(new Error(`Canonical Project ${field} is invalid`), { status: 409, code: 'project_source_context_invalid' });
+  return value.trim();
 }

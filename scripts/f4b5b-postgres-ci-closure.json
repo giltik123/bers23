@@ -111,7 +111,8 @@
     "server/core/fashion/migrations/030_fashion_garment_texture_final_lineage.sql",
     "server/core/fashion/migrations/031_project_body_anchor_acquisition_sequence.sql",
     "server/core/fashion/migrations/033_manual_parametric_basis_content_uniqueness.sql",
-    "server/core/fashion/migrations/035_project_body_anchor_idempotency.sql"
+    "server/core/fashion/migrations/035_project_body_anchor_idempotency.sql",
+    "server/core/projects/migrations/044_canonical_project_revision.sql"
   ],
   "supportPaths": [
     ".github/workflows/fashion-execution-ci-policy.yml",

@@ -15,6 +15,7 @@ on:
       - 'server/core/automation/migrations/041_automation_invocation_bindings.sql'
       - 'server/core/automation/migrations/042_automation_schedules.sql'
       - 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql'
+      - 'server/core/projects/migrations/044_canonical_project_revision.sql'
       - 'server/core/http/financialAccountHttpAdapter.ts'
       - 'server/core/http/financialAccountHttpAdapter.test.mjs'
       - 'server/index.ts'
@@ -66,22 +67,23 @@ jobs:
           set -euo pipefail
           test -n "$BASE_SHA"
           git diff --exit-code "$BASE_SHA"..HEAD -- server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql
-      - name: Prove global migration inventory reaches 043 contiguously while preserving accepted 038-042 positions
+      - name: Prove global migration inventory reaches 044 contiguously while preserving accepted 038-043 positions
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 43) throw new Error(`Expected 43 contiguous production migrations, got ${migrations.length}`);
+          if (migrations.length !== 44) throw new Error(`Expected 44 contiguous production migrations, got ${migrations.length}`);
           if (migrations[37]?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration moved from its accepted global position');
           if (migrations[38]?.name !== '039_workflow_continuation_plan_parameters.sql') throw new Error('039 workflow plan-parameter migration moved from its accepted global position');
           if (migrations[39]?.name !== '040_automation_definitions.sql') throw new Error('040 Automation definition migration moved from its accepted global position');
           if (migrations[40]?.name !== '041_automation_invocation_bindings.sql') throw new Error('041 Automation invocation binding migration moved');
           if (migrations[41]?.name !== '042_automation_schedules.sql') throw new Error('042 Automation recurring schedule migration moved');
-          if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration must be the global inventory tail');
+          if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration moved');
+          if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration must be the global inventory tail');
           NODE
       - name: Typecheck Core financial contracts
         run: npm run server:typecheck
-      - name: Build Core and package financial/AEE migrations
+      - name: Build Core and package financial/AEE/Project migrations
         run: |
           npm run server:build
           test -f dist-server/migrations/001_transaction_store.sql
@@ -91,6 +93,7 @@ jobs:
           test -f dist-server/migrations/041_automation_invocation_bindings.sql
           test -f dist-server/migrations/042_automation_schedules.sql
           test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
+          test -f dist-server/migrations/044_canonical_project_revision.sql
       - name: Apply and verify ordered transaction migrations
         run: |
           npm run db:migrate:transactions

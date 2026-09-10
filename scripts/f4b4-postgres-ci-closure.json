@@ -238,7 +238,8 @@
     "server/core/execution/migrations/036_execution_run_workflow_continuation.sql",
     "server/core/execution/migrations/037_execution_run_workflow_internal_step.sql",
     "server/transactions/infrastructure/postgres/migrations/038_financial_account_foundation.sql",
-    "server/core/artifacts/migrations/039_workflow_continuation_plan_parameters.sql"
+    "server/core/artifacts/migrations/039_workflow_continuation_plan_parameters.sql",
+    "server/core/projects/migrations/044_canonical_project_revision.sql"
   ],
   "supportPaths": [
     ".github/workflows/fashion-execution-ci-policy.yml",

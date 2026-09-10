@@ -1,0 +1,108 @@
+name: AEE AE-4c.1 Canonical Project Revision
+
+on:
+  push:
+    branches: ["aee-ae4c1-project-revision"]
+    paths:
+      - 'server/core/projects/**'
+      - 'tests/project-revision-postgres.test.ts'
+      - 'tests/project-history-authority-postgres.test.ts'
+      - 'tests/project-dimension-history-postgres.test.ts'
+      - 'scripts/production-migration-inventory.mjs'
+      - '.github/workflows/aee-ae4c1-project-revision.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'server/core/projects/**'
+      - 'tests/project-revision-postgres.test.ts'
+      - 'tests/project-history-authority-postgres.test.ts'
+      - 'tests/project-dimension-history-postgres.test.ts'
+      - 'scripts/production-migration-inventory.mjs'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  project-revision-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: aee_project_revision_test
+          POSTGRES_USER: aee_project_revision_test
+          POSTGRES_PASSWORD: aee_project_revision_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aee_project_revision_test -d aee_project_revision_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://aee_project_revision_test:aee_project_revision_test@127.0.0.1:5432/aee_project_revision_test
+      TEST_DATABASE_URL: postgresql://aee_project_revision_test:aee_project_revision_test@127.0.0.1:5432/aee_project_revision_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck Core revision authority
+        run: npm run server:typecheck
+      - name: Prove migration inventory advances contiguously through 044
+        run: |
+          node --input-type=module <<'NODE'
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.length !== 44) throw new Error(`Expected 44 contiguous migrations, got ${migrations.length}`);
+          if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration moved');
+          if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration is not the exact global tail');
+          if (migrations[43]?.source !== 'server/core/projects/migrations/044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved outside Project authority');
+          NODE
+      - name: Build Core and apply exact production schema
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
+          test -f dist-server/migrations/044_canonical_project_revision.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Prove monotonic Project revision and canonical source context
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/aee-ae4c1
+          for test_file in \
+            project-revision-postgres.test.ts \
+            project-history-authority-postgres.test.ts \
+            project-dimension-history-postgres.test.ts; do
+            stem="${test_file%.test.ts}"
+            npx esbuild "tests/${test_file}" \
+              --bundle --platform=node --format=esm --target=node24 \
+              --outfile=".test-cache/aee-ae4c1/${stem}.test.mjs" \
+              --external:node:* --external:pg --external:sharp
+          done
+          node --test --test-concurrency=1 \
+            .test-cache/aee-ae4c1/project-revision-postgres.test.mjs \
+            .test-cache/aee-ae4c1/project-history-authority-postgres.test.mjs \
+            .test-cache/aee-ae4c1/project-dimension-history-postgres.test.mjs
+      - name: Prove revision remains server-owned and mutation-bound
+        run: |
+          set -euo pipefail
+          FILE=server/core/projects/postgresProjectStore.ts
+          test "$(grep -o 'revision=revision+1' "$FILE" | wc -l)" -eq 5
+          grep -q "const allowed = \['name','favorite','archived','status','objects'\]" "$FILE"
+          ! grep -E -q "providerSelector|modelSelector|reserveCredits|spendCredits|AgentIntent|PlanProposal" "$FILE"
+          grep -q 'currentSourceContext' "$FILE"
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD

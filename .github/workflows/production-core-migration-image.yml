@@ -58,7 +58,8 @@ jobs:
           test -f dist-server/migrations/041_automation_invocation_bindings.sql
           test -f dist-server/migrations/042_automation_schedules.sql
           test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 43
+          test -f dist-server/migrations/044_canonical_project_revision.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 44
           test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.down.sql' | wc -l)" -eq 0
       - name: Prove bundled migrator on a clean PostgreSQL database
         env:
@@ -98,6 +99,15 @@ jobs:
                   AND tgenabled='O'
                   AND NOT tgisinternal
               ) AS aee_admitted_plan_immutable_trigger,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema()
+                  AND table_name='canonical_projects'
+                  AND column_name='revision'
+                  AND udt_name='int8'
+                  AND is_nullable='NO'
+              ) AS canonical_project_revision,
+              pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('canonical_projects') AND conname='canonical_projects_revision_check')) AS canonical_project_revision_check,
               pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('canonical_execution_runs') AND conname='canonical_execution_runs_capability_check')) AS execution_run_capability,
               pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('canonical_execution_runs') AND conname='canonical_execution_runs_authority_kind_check')) AS execution_run_authority,
               pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conrelid=to_regclass('canonical_execution_runs') AND conname='canonical_execution_runs_authority_binding_check')) AS execution_run_binding,
@@ -135,6 +145,9 @@ jobs:
             if (result.rows[0]?.automation_trigger_occurrences !== 'canonical_automation_trigger_occurrences') throw new Error('migration 042 Automation trigger occurrences were not applied');
             if (result.rows[0]?.aee_admitted_plan_graphs !== 'aee_admitted_plan_graphs') throw new Error('migration 043 AEE admitted-plan table was not applied');
             if (result.rows[0]?.aee_admitted_plan_immutable_trigger !== true) throw new Error('migration 043 immutable admitted-plan trigger was not applied');
+            if (result.rows[0]?.canonical_project_revision !== true) throw new Error('migration 044 canonical Project revision was not applied');
+            const revisionCheck = String(result.rows[0]?.canonical_project_revision_check ?? '').replace(/[()\s]+/g, '').toLowerCase();
+            if (revisionCheck !== 'checkrevision>=0') throw new Error('migration 044 canonical Project revision check is missing or widened');
           } finally { await pool.end(); }
           NODE
       - name: Create independent clean database for immutable-image proof
