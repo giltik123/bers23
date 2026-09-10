@@ -19,21 +19,42 @@ export type WorkflowLocalExecutionAttemptQuery = Readonly<{
   acceptedStepIds: readonly string[];
   stepId: string;
 }>;
+export type WorkflowLocalExecutionRetryCountQuery = Readonly<{
+  runs: ExecutionRunRegistry;
+  parent: ExecutionRun;
+  acceptedStepIds: readonly string[];
+}>;
 
 /**
  * Observation-only query over the canonical LOCAL_EXECUTION attempt projection.
- * Retry budgets can therefore be derived from ExecutionRun history without
- * adding a second retry counter to WorkflowContinuation or another state store.
+ * Per-node attempt inspection can therefore be derived from ExecutionRun history
+ * without adding another state store.
  */
 export async function listWorkflowLocalExecutionAttempts(input: WorkflowLocalExecutionAttemptQuery): Promise<readonly ExecutionRun[]> {
   const parent = requireWorkflowParent(input.parent);
   const stepIds = normalizeAcceptedSteps(input.acceptedStepIds);
   const stepId = acceptedStep(input.stepId, stepIds);
-  const children = await input.runs.listChildren(parent.scope, parent.runId, CHILD_LIMIT);
-  if (children.length >= CHILD_LIMIT) throw projectionError('workflow_local_attempt_history_limit', 'Workflow local attempt history reached the projection safety limit');
-  return Object.freeze(children
-    .filter(child => child.capability === 'LOCAL_EXECUTION' && child.parentRunId === parent.runId)
-    .filter(child => localAttemptStep(parent, child, stepIds) === stepId));
+  const children = await localExecutionChildren(input.runs, parent);
+  return Object.freeze(children.filter(child => localAttemptStep(parent, child, stepIds) === stepId));
+}
+
+/**
+ * Counts retries across the complete admitted workflow execution, not per node.
+ * `AdmittedPlanGraphV1.effectiveExecution.maxRetries` is a plan-level autonomy
+ * envelope, so every retry child consumes the same durable execution budget.
+ * First attempts do not consume it. Unknown/foreign LOCAL_EXECUTION children fail
+ * closed through the same exact idempotency binding used by the projection.
+ */
+export async function countWorkflowLocalExecutionRetries(input: WorkflowLocalExecutionRetryCountQuery): Promise<number> {
+  const parent = requireWorkflowParent(input.parent);
+  const stepIds = normalizeAcceptedSteps(input.acceptedStepIds);
+  const children = await localExecutionChildren(input.runs, parent);
+  let retries = 0;
+  for (const child of children) {
+    const stepId = localAttemptStep(parent, child, stepIds);
+    if (child.idempotencyKey === retryAttemptIdempotencyKey(parent.runId, stepId, child.authorityRef)) retries += 1;
+  }
+  return retries;
 }
 
 /**
@@ -69,6 +90,12 @@ export async function projectWorkflowLocalExecutionAttempt(input: WorkflowLocalE
   });
   assertAttemptBinding(parent, issued.run, stepId, ticketId, attempts.length === 0);
   return transitionTarget(input.runs, issued.run, input.target, stepId);
+}
+
+async function localExecutionChildren(runs: ExecutionRunRegistry, parent: ExecutionRun): Promise<readonly ExecutionRun[]> {
+  const children = await runs.listChildren(parent.scope, parent.runId, CHILD_LIMIT);
+  if (children.length >= CHILD_LIMIT) throw projectionError('workflow_local_attempt_history_limit', 'Workflow local attempt history reached the projection safety limit');
+  return Object.freeze(children.filter(child => child.capability === 'LOCAL_EXECUTION' && child.parentRunId === parent.runId));
 }
 
 async function retireSupersededAttempts(runs: ExecutionRunRegistry, attempts: readonly ExecutionRun[], stepId: string): Promise<void> {
