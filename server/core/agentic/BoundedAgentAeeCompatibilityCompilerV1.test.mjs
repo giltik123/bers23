@@ -57,7 +57,10 @@ test('bounded compatibility compiler emits the exact two-node local-only AEE gra
   assert.equal(graph.terminal.nodeId, BOUNDED_AGENT_AEE_RESIZE_NODE_ID);
 
   const serialized = JSON.stringify(graph);
-  assert.doesNotMatch(serialized, /providerId|modelId|runtimeId|executorId|billing|paidCloudCredits\":(?!0)/iu);
+  for (const forbidden of ['providerId', 'modelId', 'runtimeId', 'executorId', 'billing']) {
+    assert.equal(serialized.includes(forbidden), false, `compatibility graph must not carry ${forbidden} authority`);
+  }
+  assert.equal(graph.effectiveExecution.maxPaidCredits, 0);
   assert.match(graph.digest, /^[0-9a-f]{64}$/u);
 });
 
