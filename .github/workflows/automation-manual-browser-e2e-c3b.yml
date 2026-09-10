@@ -99,22 +99,24 @@ jobs:
           test -f dist/index.html
       - name: Materialize and bundle C3b browser harnesses on AE-4c.2 topology
         run: |
+          set -euo pipefail
           mkdir -p .test-cache/automation-c3b-browser
-          node scripts/materialize-aee4c2-bounded-browser-harness.mjs \
-            automation .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs
-          node scripts/materialize-aee4c2-bounded-browser-harness.mjs \
-            automation-retry-cancel .test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.source.mjs
-          grep -q 'AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID' .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs
-          ! grep -q 'BOUNDED_AGENT_VERIFY_STEP_ID' .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs
-          ! grep -q "\['WORKFLOW_STEP', 'SUCCEEDED'\]" .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs
-          npx esbuild .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs \
+          GENERATED_MAIN=scripts/.test-automation-c3b-browser-e2e.aee4c2.mjs
+          GENERATED_RETRY=scripts/.test-automation-c3b-retry-cancel-browser-e2e.aee4c2.mjs
+          node scripts/materialize-aee4c2-bounded-browser-harness.mjs automation "$GENERATED_MAIN"
+          node scripts/materialize-aee4c2-bounded-browser-harness.mjs automation-retry-cancel "$GENERATED_RETRY"
+          grep -q 'AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID' "$GENERATED_MAIN"
+          ! grep -q 'BOUNDED_AGENT_VERIFY_STEP_ID' "$GENERATED_MAIN"
+          ! grep -q "\['WORKFLOW_STEP', 'SUCCEEDED'\]" "$GENERATED_MAIN"
+          npx esbuild "$GENERATED_MAIN" \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
-          npx esbuild .test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.source.mjs \
+          npx esbuild "$GENERATED_RETRY" \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
+          rm -f "$GENERATED_MAIN" "$GENERATED_RETRY"
       - name: Prove Automation lost-response reload Job Center zero-credit terminal Preview and explicit Accept journey
         run: |
           set -euo pipefail
