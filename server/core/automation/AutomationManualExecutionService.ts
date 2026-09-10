@@ -1,8 +1,5 @@
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
-import type {
-  BoundedAgentDeterministicWorkflowService,
-  BoundedAgentWorkflowView,
-} from '../workflow/BoundedAgentDeterministicWorkflowService.ts';
+import type { BoundedAgentExecutionPort, BoundedAgentWorkflowView } from '../workflow/BoundedAgentExecutionPort.ts';
 import type {
   AutomationInvocationBinding,
   AutomationInvocationBindCommand,
@@ -25,7 +22,7 @@ export type AutomationManualExecutionView = Readonly<{
 }>;
 
 type InvocationPort = Pick<PostgresAutomationInvocationStore, 'bind' | 'get'>;
-type AgentPort = Pick<BoundedAgentDeterministicWorkflowService, 'start' | 'submitLocalResult' | 'retry' | 'cancel'>;
+type AgentPort = Pick<BoundedAgentExecutionPort, 'start' | 'submitLocalResult' | 'retry' | 'cancel'>;
 type SourceArtifactAuthority = Readonly<{
   issueStoredOriginal(storageId: string, scope: Readonly<{ tenantId: string; userId: string; projectId: string }>): string;
   issueStoredFinal(storageId: string, scope: Readonly<{ tenantId: string; userId: string; projectId: string }>): string;
