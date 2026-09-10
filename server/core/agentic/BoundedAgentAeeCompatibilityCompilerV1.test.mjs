@@ -15,7 +15,7 @@ import {
 const command = Object.freeze({
   clientRequestId: 'bounded-compat-request',
   projectId: 'project-ae4c2',
-  sourceArtifactId: 'artifact-current-ae4c2',
+  sourceArtifactId: `eyJ2IjoxLCJsb2NhdGlvbiI6IlNUT1JFRF9PUklHSU5BTF9JRCJ9.${'a'.repeat(512)}`,
   mode: 'ROTATE_90_CW',
   width: 320,
   height: 240,
@@ -39,6 +39,7 @@ const source = Object.freeze({
 });
 
 test('bounded compatibility compiler emits the exact two-node local-only AEE graph', () => {
+  assert.ok(command.sourceArtifactId.length > 256, 'fixture must cross the retired generic identifier limit');
   const graph = compileBoundedAgentAeeCompatibilityV1(command, project, source);
   assert.equal(graph.source.projectId, command.projectId);
   assert.equal(graph.source.projectRevision, project.revision);
