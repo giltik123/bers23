@@ -13,7 +13,7 @@ const scope = Object.freeze({ ...auth, projectId: 'project-ae4c2' });
 const command = Object.freeze({
   clientRequestId: 'bounded-client-ae4c2',
   projectId: scope.projectId,
-  sourceArtifactId: 'artifact-current-ae4c2',
+  sourceArtifactId: `eyJ2IjoxLCJsb2NhdGlvbiI6IlNUT1JFRF9PUklHSU5BTF9JRCJ9.${'a'.repeat(512)}`,
   mode: 'ROTATE_90_CW',
   width: 320,
   height: 240,
@@ -162,6 +162,7 @@ function runtime(overrides = {}) {
 }
 
 test('new bounded start is single-write AEE and takes Project barrier only after the second continuation lookup', async () => {
+  assert.ok(command.sourceArtifactId.length > 256, 'fixture must cross the retired facade identifier limit');
   const r = runtime();
   const view = await r.facade.start(command, auth);
   assert.deepEqual(r.calls, ['continuation-by-client', 'admission-lock', 'continuation-by-client', 'project-share-lock', 'project-source', 'artifact-resolve', 'plan-put', 'aee-start']);
