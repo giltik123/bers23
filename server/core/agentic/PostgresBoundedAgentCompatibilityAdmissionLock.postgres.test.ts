@@ -10,7 +10,7 @@ const scope = Object.freeze({ tenantId: 'tenant-ae4c2-lock', userId: 'user-ae4c2
 if (!DATABASE_URL) {
   test('PostgreSQL admission-lock tests require TEST_DATABASE_URL or DATABASE_URL', { skip: true }, () => {});
 } else {
-  test('same clientRequestId is serialized and no second admission enters the critical section early', async () => {
+  test('same clientRequestId is serialized before any optional Project barrier', async () => {
     const pool = await fixturePool();
     try {
       const admission = new PostgresBoundedAgentCompatibilityAdmissionLock(pool);
@@ -41,7 +41,7 @@ if (!DATABASE_URL) {
     }
   });
 
-  test('different clientRequestIds may share one Project admission barrier concurrently', async () => {
+  test('different clientRequestIds may hold Project FOR SHARE concurrently', async () => {
     const pool = await fixturePool();
     try {
       const admission = new PostgresBoundedAgentCompatibilityAdmissionLock(pool);
@@ -52,13 +52,15 @@ if (!DATABASE_URL) {
       let secondEnteredResolve;
       const secondEntered = new Promise(resolve => { secondEnteredResolve = resolve; });
 
-      const first = admission.withClientRequestLock(scope, 'request-one', async () => {
+      const first = admission.withClientRequestLock(scope, 'request-one', async guard => {
+        await guard.lockProjectForShare();
         firstEnteredResolve();
         await firstCanFinish;
         return 'one';
       });
       await firstEntered;
-      const second = admission.withClientRequestLock(scope, 'request-two', async () => {
+      const second = admission.withClientRequestLock(scope, 'request-two', async guard => {
+        await guard.lockProjectForShare();
         secondEnteredResolve();
         return 'two';
       });
@@ -71,7 +73,7 @@ if (!DATABASE_URL) {
     }
   });
 
-  test('Project mutation cannot pass the FOR SHARE barrier while first admission is open', async () => {
+  test('Project mutation cannot pass an explicitly acquired FOR SHARE barrier while new admission is open', async () => {
     const pool = await fixturePool();
     try {
       const admission = new PostgresBoundedAgentCompatibilityAdmissionLock(pool);
@@ -79,7 +81,8 @@ if (!DATABASE_URL) {
       const canFinish = new Promise(resolve => { releaseAdmission = resolve; });
       let enteredResolve;
       const entered = new Promise(resolve => { enteredResolve = resolve; });
-      const held = admission.withClientRequestLock(scope, 'mutation-barrier', async () => {
+      const held = admission.withClientRequestLock(scope, 'mutation-barrier', async guard => {
+        await guard.lockProjectForShare();
         enteredResolve();
         await canFinish;
       });
@@ -105,16 +108,31 @@ if (!DATABASE_URL) {
     }
   });
 
-  test('scope mismatch fails closed before the caller critical section runs', async () => {
+  test('serialized replay path does not depend on a live Project row when it does not request the new-admission barrier', async () => {
+    const pool = await fixturePool();
+    try {
+      await pool.query('UPDATE canonical_projects SET deleted_at=CURRENT_TIMESTAMP WHERE project_id=$1', [PROJECT_ID]);
+      const admission = new PostgresBoundedAgentCompatibilityAdmissionLock(pool);
+      const result = await admission.withClientRequestLock(scope, 'replay-after-project-close', async () => 'replayed');
+      assert.equal(result, 'replayed');
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test('scope mismatch fails closed when a genuinely new admission requests the Project barrier', async () => {
     const pool = await fixturePool();
     try {
       const admission = new PostgresBoundedAgentCompatibilityAdmissionLock(pool);
-      let ran = false;
+      let afterBarrier = false;
       await assert.rejects(
-        () => admission.withClientRequestLock({ ...scope, userId: 'other-user' }, 'request-scope', async () => { ran = true; }),
+        () => admission.withClientRequestLock({ ...scope, userId: 'other-user' }, 'request-scope', async guard => {
+          await guard.lockProjectForShare();
+          afterBarrier = true;
+        }),
         error => hasServiceError(error, 'project_not_found', 404),
       );
-      assert.equal(ran, false);
+      assert.equal(afterBarrier, false);
     } finally {
       await pool.end();
     }
