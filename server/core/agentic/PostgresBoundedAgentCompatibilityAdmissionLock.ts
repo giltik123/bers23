@@ -15,7 +15,11 @@ const ADMISSION_LOCK_DOMAIN = 'bers:aee:bounded-compatibility-admission:v1\0';
  * owns neither Project mutation nor workflow/plan/Artifact/provider/Billing state.
  */
 export class PostgresBoundedAgentCompatibilityAdmissionLock {
-  constructor(private readonly pool: Pool) {}
+  private readonly pool: Pool;
+
+  constructor(pool: Pool) {
+    this.pool = pool;
+  }
 
   async withClientRequestLock<T>(scopeInput: Scope, clientRequestIdInput: string, work: () => Promise<T>): Promise<T> {
     const scope = normalizeScope(scopeInput);
