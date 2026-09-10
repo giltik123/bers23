@@ -5,6 +5,7 @@ on:
     branches: ["aee-ae4c2-bounded-compatibility-facade"]
     paths:
       - 'server/core/agentic/AgentIntentV1*'
+      - 'server/core/agentic/AeePlanCompilerV1*'
       - 'server/core/agentic/AeeAdmittedPlanCodecV1*'
       - 'server/core/agentic/BoundedAgentAeeCompatibility*'
       - 'server/core/agentic/PostgresBoundedAgentCompatibilityAdmissionLock*'
@@ -19,6 +20,7 @@ on:
     branches: ["main"]
     paths:
       - 'server/core/agentic/AgentIntentV1*'
+      - 'server/core/agentic/AeePlanCompilerV1*'
       - 'server/core/agentic/AeeAdmittedPlanCodecV1*'
       - 'server/core/agentic/BoundedAgentAeeCompatibility*'
       - 'server/core/agentic/PostgresBoundedAgentCompatibilityAdmissionLock*'
@@ -87,6 +89,7 @@ jobs:
           FACADE=server/core/agentic/BoundedAgentAeeCompatibilityFacade.ts
           COMPILER=server/core/agentic/BoundedAgentAeeCompatibilityCompilerV1.ts
           INTENT=server/core/agentic/AgentIntentV1.ts
+          PLAN_COMPILER=server/core/agentic/AeePlanCompilerV1.ts
           CODEC=server/core/agentic/AeeAdmittedPlanCodecV1.ts
           PORT=server/core/workflow/BoundedAgentExecutionPort.ts
           HTTP=server/core/http/boundedAgentHttpAdapter.ts
@@ -98,8 +101,10 @@ jobs:
           grep -q 'MAX_SOURCE_ARTIFACT_REFERENCE_BYTES = 4096' "$FACADE"
           grep -q 'MAX_SOURCE_ARTIFACT_REFERENCE_BYTES = 4096' "$COMPILER"
           grep -q 'MAX_SOURCE_REFERENCE_BYTES = 4096' "$INTENT"
+          grep -q 'MAX_SOURCE_REFERENCE_BYTES = 4096' "$PLAN_COMPILER"
           grep -q 'MAX_SOURCE_REFERENCE_BYTES = 4096' "$CODEC"
           grep -q 'sourceRef: sourceReference' "$INTENT"
+          grep -q 'sourceRef: sourceReference' "$PLAN_COMPILER"
           grep -q 'sourceRef: sourceReference' "$CODEC"
           grep -q 'maxRetries: 8' "$COMPILER"
           grep -q 'maxWallClockMs: 86_400_000' "$COMPILER"
