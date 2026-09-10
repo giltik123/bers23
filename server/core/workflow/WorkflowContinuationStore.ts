@@ -29,6 +29,13 @@ export type WorkflowInputArtifactBinding = Readonly<{
   parentArtifactIds: readonly string[];
 }>;
 
+/**
+ * Durable continuation-local binding. `stepId` is the logical workflow step.
+ * For legacy workflows it is also the local ticket operation step. Generalized
+ * AEE workflows may bind an independent graph node through `continuationStepId`
+ * on wait/retry while the authoritative ticket operation step remains in the
+ * local-execution ledger.
+ */
 export type WorkflowLocalTicketBinding = Readonly<{
   stepId: string;
   ticketId: string;
@@ -72,18 +79,24 @@ export type WaitForLocalResultInput = Readonly<{
   executionId: string;
   scope: Scope;
   expectedRevision: number;
+  /** Logical continuation step. Omit for legacy stepId === ticket.stepId behavior. */
+  continuationStepId?: string;
+  /** At the mutation boundary ticket.stepId is the authoritative local operation step. */
   ticket: WorkflowLocalTicketBinding;
 }>;
 
 /**
  * Explicit replacement of one failed/expired outstanding local attempt while
- * preserving the workflow execution identity, immutable plan and step.
+ * preserving the workflow execution identity, immutable plan and logical step.
  */
 export type RetryLocalResultInput = Readonly<{
   executionId: string;
   scope: Scope;
   expectedRevision: number;
   previousTicketId: string;
+  /** Logical continuation step. Omit for legacy stepId === ticket.stepId behavior. */
+  continuationStepId?: string;
+  /** At the mutation boundary ticket.stepId is the replacement local operation step. */
   ticket: WorkflowLocalTicketBinding;
 }>;
 
@@ -202,6 +215,10 @@ export function normalizeTicketBinding(ticket: WorkflowLocalTicketBinding): Work
     nonce: requireToken(ticket?.nonce, 'ticket.nonce'),
     expiresAt,
   });
+}
+
+export function normalizeContinuationStepId(value: unknown, fallbackTicketStepId: string): string {
+  return value === undefined ? requireToken(fallbackTicketStepId, 'ticket.stepId') : requireToken(value, 'continuationStepId');
 }
 
 export function normalizeArtifactIds(values: readonly string[]): readonly string[] {
