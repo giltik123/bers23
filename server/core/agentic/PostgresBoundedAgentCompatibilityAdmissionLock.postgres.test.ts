@@ -90,7 +90,7 @@ if (!DATABASE_URL) {
         await mutation.query("SET lock_timeout = '100ms'");
         await assert.rejects(
           () => mutation.query('UPDATE canonical_projects SET deleted_at=CURRENT_TIMESTAMP WHERE project_id=$1', [PROJECT_ID]),
-          error => error?.code === '55P03',
+          error => hasErrorCode(error, '55P03'),
         );
       } finally {
         mutation.release();
@@ -112,7 +112,7 @@ if (!DATABASE_URL) {
       let ran = false;
       await assert.rejects(
         () => admission.withClientRequestLock({ ...scope, userId: 'other-user' }, 'request-scope', async () => { ran = true; }),
-        error => error?.code === 'project_not_found' && error?.status === 404,
+        error => hasServiceError(error, 'project_not_found', 404),
       );
       assert.equal(ran, false);
     } finally {
@@ -132,6 +132,16 @@ async function fixturePool(): Promise<Pool> {
   )`);
   await pool.query('INSERT INTO canonical_projects(project_id,tenant_id,user_id) VALUES($1,$2,$3)', [PROJECT_ID, scope.tenantId, scope.userId]);
   return pool;
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error
+    && (error as Readonly<{ code?: unknown }>).code === code;
+}
+
+function hasServiceError(error: unknown, code: string, status: number): boolean {
+  return hasErrorCode(error, code) && 'status' in (error as object)
+    && (error as Readonly<{ status?: unknown }>).status === status;
 }
 
 function delay(ms: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, ms)); }
