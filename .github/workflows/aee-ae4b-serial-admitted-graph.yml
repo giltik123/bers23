@@ -1,0 +1,137 @@
+name: AEE AE-4b Serial Admitted Graph Driver
+
+on:
+  push:
+    branches: ["aee-ae4b-serial-admitted-graph-driver"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'server/core/workflow/**'
+      - 'server/core/execution/**'
+      - 'server/core/localExecution/**'
+      - '.github/workflows/aee-ae4b-serial-admitted-graph.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'server/core/workflow/**'
+      - 'server/core/execution/**'
+      - 'server/core/localExecution/**'
+      - 'src/platform/creative/deterministic/**'
+      - '.github/workflows/aee-ae4b-serial-admitted-graph.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  serial-driver-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove AE-4b serial execution, repeated capability identity and retry budgets
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/AeeSerialAdmittedGraphDriverV1.test.mjs \
+            server/core/workflow/PostgresWorkflowContinuationLogicalStep.test.mjs \
+            server/core/workflow/WorkflowLocalExecutionAttemptRunProjection.test.mjs
+      - name: Preserve accepted AE-0 through AE-4a semantic authority
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/AeeAdmittedPlanCodecV1.test.mjs \
+            server/core/agentic/AeePlanCompilerV1.test.mjs \
+            server/core/agentic/AeeCapabilityRegistryV1.test.mjs \
+            server/core/agentic/AgentIntentV1.test.mjs \
+            server/core/agentic/ContextGraphV1.test.mjs \
+            server/core/agentic/agentArchitectureBoundary.test.mjs
+      - name: Preserve fixed bounded Agent until AE-4c compatibility cutover
+        run: |
+          node --experimental-strip-types --test \
+            server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs \
+            server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.test.mjs \
+            server/core/localExecution/DeterministicWorkflowStepFinalRecoveryAuthority.test.mjs
+      - name: Prove AE-4b adds coordination only, not provider Billing or Project mutation authority
+        run: |
+          set -euo pipefail
+          FILE=server/core/agentic/AeeSerialAdmittedGraphDriverV1.ts
+          if grep '^import ' "$FILE" | grep -E -q '/(providers|billing|fashion)/'; then
+            echo "AE-4b driver imports forbidden provider/Billing/Fashion authority" >&2
+            grep '^import ' "$FILE" >&2
+            exit 1
+          fi
+          ! grep -E -q 'acceptFinal|createVersion|restoreVersion|navigate\(|providerSelector|modelSelector|reserveCredits|spendCredits|INSERT INTO|UPDATE canonical_projects|DELETE FROM' "$FILE"
+          grep -q 'requireAeeAdmittedNodeExecutionAdapterV1' "$FILE"
+          grep -q 'WorkflowContinuationStore' "$FILE"
+          grep -q 'ExecutionRunRegistry' "$FILE"
+          grep -q 'listWorkflowLocalExecutionAttempts' "$FILE"
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
+
+  serial-driver-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: aee_serial_driver_test
+          POSTGRES_USER: aee_serial_driver_test
+          POSTGRES_PASSWORD: aee_serial_driver_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aee_serial_driver_test -d aee_serial_driver_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://aee_serial_driver_test:aee_serial_driver_test@127.0.0.1:5432/aee_serial_driver_test
+      TEST_DATABASE_URL: postgresql://aee_serial_driver_test:aee_serial_driver_test@127.0.0.1:5432/aee_serial_driver_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Build Core and apply canonical production schema through accepted 043
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Prove real PostgreSQL logical node versus local operation authority
+        run: |
+          node --experimental-strip-types --test \
+            server/core/workflow/PostgresWorkflowContinuationLogicalStep.integration.test.mjs \
+            server/core/workflow/PostgresWorkflowContinuationStore.integration.test.mjs \
+            server/core/workflow/PostgresWorkflowContinuationPlanParameters.integration.test.mjs
+      - name: Preserve immutable admitted-plan PostgreSQL authority
+        run: |
+          mkdir -p .test-cache/aee-ae4b
+          npx esbuild server/core/agentic/AeeAdmittedPlanStore.postgres.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/aee-ae4b/AeeAdmittedPlanStore.postgres.test.mjs \
+            --external:pg --external:node:*
+          node --test .test-cache/aee-ae4b/AeeAdmittedPlanStore.postgres.test.mjs
