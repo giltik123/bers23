@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
     paths:
       - 'server/index.ts'
+      - 'server/core/agentic/**'
       - 'server/core/artifacts/**'
       - 'server/core/composition/**'
       - 'server/core/execution/**'
@@ -12,6 +13,7 @@ on:
       - 'server/core/localExecution/**'
       - 'server/core/projects/**'
       - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
+      - 'server/core/workflow/BoundedAgentExecutionPort.ts'
       - 'server/core/workflow/PostgresWorkflowContinuationStore.ts'
       - 'server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts'
       - 'server/core/workflow/WorkflowLocalExecutionAttemptRunProjection.ts'
@@ -30,6 +32,7 @@ on:
       - 'src/pages/Editor.jsx'
       - 'src/platform/creative/deterministic/**'
       - 'scripts/build-core-server.mjs'
+      - 'scripts/materialize-aee4c2-bounded-browser-harness.mjs'
       - 'scripts/test-release-r3k-browser-e2e.mjs'
       - 'tests/bounded-agent-browser-runner.test.ts'
       - 'tests/bounded-agent-prepared-local-execution.test.ts'
@@ -108,6 +111,8 @@ jobs:
           npm run server:build
           test -f dist-server/server.mjs
           test -f dist-server/migrations/039_workflow_continuation_plan_parameters.sql
+          test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
+          test -f dist-server/migrations/044_canonical_project_revision.sql
           node dist-server/migrate.mjs migrate
           node dist-server/migrate.mjs check
       - name: Generate and mask ephemeral R3k runtime secrets
@@ -122,10 +127,12 @@ jobs:
         run: |
           npm run build
           test -f dist/index.html
-      - name: Bundle focused R3k browser harness without replacing production stores
+      - name: Materialize and bundle focused AE-4c.2 R3k browser harness
         run: |
           mkdir -p .test-cache/release-r3k
-          npx esbuild scripts/test-release-r3k-browser-e2e.mjs \
+          node scripts/materialize-aee4c2-bounded-browser-harness.mjs \
+            r3k .test-cache/release-r3k/test-release-r3k-browser-e2e.source.mjs
+          npx esbuild .test-cache/release-r3k/test-release-r3k-browser-e2e.source.mjs \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/release-r3k/test-release-r3k-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
