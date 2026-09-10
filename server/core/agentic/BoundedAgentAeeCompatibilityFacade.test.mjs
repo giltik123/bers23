@@ -241,9 +241,12 @@ test('resume/result/retry/cancel route only from immutable continuation plan ide
   r.calls.length = 0;
   r.state.byExecution = snapshot(BOUNDED_AGENT_PLAN_ID, 'b'.repeat(64));
   await r.facade.resume(r.state.byExecution.executionId, scope.projectId, auth);
+  await r.facade.submitLocalResult(r.state.byExecution.executionId, scope.projectId, auth, { ticketId: 'legacy-ticket-ae4c2' });
+  await r.facade.retry(r.state.byExecution.executionId, scope.projectId, auth);
   await r.facade.cancel(r.state.byExecution.executionId, scope.projectId, auth);
-  assert.deepEqual(r.calls.filter(call => call.startsWith('legacy-')), ['legacy-resume', 'legacy-cancel']);
+  assert.deepEqual(r.calls.filter(call => call.startsWith('legacy-')), ['legacy-resume', 'legacy-result', 'legacy-retry', 'legacy-cancel']);
   assert.equal(r.calls.some(call => call.startsWith('aee-')), false);
+  assert.equal(r.calls.includes('plan-put'), false, 'legacy recovery must not create an admitted graph shadow');
 });
 
 test('unknown durable plan identities fail closed without either execution delegate', async () => {
