@@ -72,12 +72,17 @@ export class BoundedAgentAeeCompatibilityFacade implements BoundedAgentExecution
     const existing = await this.dependencies.continuations.getByClientRequestId(scope, clientRequestId);
     if (existing) return this.startExisting(existing, commandInput, auth);
 
-    return this.dependencies.admission.withClientRequestLock(scope, clientRequestId, async () => {
-      // Re-read after acquiring the scoped admission mutex. Two concurrent first
-      // starts may both miss the fast path, but only one may compile/persist.
+    return this.dependencies.admission.withClientRequestLock(scope, clientRequestId, async guard => {
+      // Re-read after acquiring only the scoped advisory mutex. Two concurrent
+      // first starts may both miss the fast path, but the loser replays without
+      // consulting today's Project lifecycle.
       const racedExisting = await this.dependencies.continuations.getByClientRequestId(scope, clientRequestId);
       if (racedExisting) return this.startExisting(racedExisting, commandInput, auth);
 
+      // From this point the request is truly new. Hold the canonical Project row
+      // shared through graph persistence + continuation creation so no Project
+      // mutation can change the revision/source between compilation and binding.
+      await guard.lockProjectForShare();
       const project = await this.dependencies.projects.currentSourceContext(auth, projectId);
       if (!project) throw notFound('bounded_agent_project_not_found', 'Project not found');
       const sourceArtifactId = token(commandInput?.sourceArtifactId, 'sourceArtifactId');
