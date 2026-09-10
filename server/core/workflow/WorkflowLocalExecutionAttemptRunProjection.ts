@@ -13,6 +13,28 @@ export type WorkflowLocalExecutionAttemptProjectionInput = Readonly<{
   ticketId: string;
   target: WorkflowLocalExecutionAttemptTarget;
 }>;
+export type WorkflowLocalExecutionAttemptQuery = Readonly<{
+  runs: ExecutionRunRegistry;
+  parent: ExecutionRun;
+  acceptedStepIds: readonly string[];
+  stepId: string;
+}>;
+
+/**
+ * Observation-only query over the canonical LOCAL_EXECUTION attempt projection.
+ * Retry budgets can therefore be derived from ExecutionRun history without
+ * adding a second retry counter to WorkflowContinuation or another state store.
+ */
+export async function listWorkflowLocalExecutionAttempts(input: WorkflowLocalExecutionAttemptQuery): Promise<readonly ExecutionRun[]> {
+  const parent = requireWorkflowParent(input.parent);
+  const stepIds = normalizeAcceptedSteps(input.acceptedStepIds);
+  const stepId = acceptedStep(input.stepId, stepIds);
+  const children = await input.runs.listChildren(parent.scope, parent.runId, CHILD_LIMIT);
+  if (children.length >= CHILD_LIMIT) throw projectionError('workflow_local_attempt_history_limit', 'Workflow local attempt history reached the projection safety limit');
+  return Object.freeze(children
+    .filter(child => child.capability === 'LOCAL_EXECUTION' && child.parentRunId === parent.runId)
+    .filter(child => localAttemptStep(parent, child, stepIds) === stepId));
+}
 
 /**
  * Observation-only projection for one durable workflow LOCAL_EXECUTION attempt.
@@ -29,10 +51,7 @@ export async function projectWorkflowLocalExecutionAttempt(input: WorkflowLocalE
   const ticketId = token(input.ticketId, 'ticketId');
   if (input.target !== 'RUNNING' && input.target !== 'SUCCEEDED') throw projectionError('workflow_local_attempt_target_invalid', 'Local attempt projection target is invalid');
 
-  const children = await input.runs.listChildren(parent.scope, parent.runId, CHILD_LIMIT);
-  if (children.length >= CHILD_LIMIT) throw projectionError('workflow_local_attempt_history_limit', 'Workflow local attempt history reached the projection safety limit');
-  const attempts = children.filter(child => child.capability === 'LOCAL_EXECUTION' && child.parentRunId === parent.runId)
-    .filter(child => localAttemptStep(parent, child, stepIds) === stepId);
+  const attempts = await listWorkflowLocalExecutionAttempts({ runs: input.runs, parent, acceptedStepIds: [...stepIds], stepId });
   const exact = attempts.find(child => child.authorityKind === 'LOCAL_EXECUTION_TICKET' && child.authorityRef === ticketId);
   if (exact) return transitionTarget(input.runs, exact, input.target, stepId);
 
