@@ -83,7 +83,7 @@ test('R3k proves bounded Agent durable recovery through the real release stack o
   assert.match(workflow, /npm run server:build/);
   assert.match(workflow, /node dist-server\/migrate\.mjs migrate/);
   assert.match(workflow, /materialize-aee4c2-bounded-browser-harness\.mjs/);
-  assert.match(workflow, /test-release-r3k-browser-e2e\.source\.mjs/);
+  assert.match(workflow, /GENERATED=scripts\/\.test-release-r3k-browser-e2e\.aee4c2\.mjs/);
   assert.match(workflow, /R3K_BROWSER_BOUNDED_AGENT_RECOVERY_ACCEPTED/);
 });
 
