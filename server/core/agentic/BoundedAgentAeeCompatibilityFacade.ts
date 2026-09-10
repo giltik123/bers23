@@ -28,6 +28,9 @@ import {
 import type { PostgresAeeAdmittedPlanStore } from './PostgresAeeAdmittedPlanStore.ts';
 import type { PostgresBoundedAgentCompatibilityAdmissionLock } from './PostgresBoundedAgentCompatibilityAdmissionLock.ts';
 
+const MAX_BOUNDED_IDENTIFIER_BYTES = 256;
+const MAX_SOURCE_ARTIFACT_REFERENCE_BYTES = 4096;
+
 type ContinuationReader = Pick<WorkflowContinuationStore, 'get' | 'getByClientRequestId'>;
 type PlanStore = Pick<PostgresAeeAdmittedPlanStore, 'get' | 'put'>;
 type AeeDriver = Pick<AeeSerialAdmittedGraphDriverV1, 'start' | 'resume' | 'submitLocalResult' | 'retry' | 'cancel'>;
@@ -85,7 +88,7 @@ export class BoundedAgentAeeCompatibilityFacade implements BoundedAgentExecution
       await guard.lockProjectForShare();
       const project = await this.dependencies.projects.currentSourceContext(auth, projectId);
       if (!project) throw notFound('bounded_agent_project_not_found', 'Project not found');
-      const sourceArtifactId = token(commandInput?.sourceArtifactId, 'sourceArtifactId');
+      const sourceArtifactId = sourceArtifactReference(commandInput?.sourceArtifactId);
       const source = await this.dependencies.artifacts.resolve(scope, sourceArtifactId);
       const graph = compileBoundedAgentAeeCompatibilityV1(commandInput, project, source);
       const durable = await this.dependencies.plans.put(scope, graph);
@@ -186,10 +189,20 @@ function normalizeAuth(auth: AuthenticatedScope): AuthenticatedScope {
 function token(value: unknown, path: string): string {
   if (typeof value !== 'string') throw badRequest('bounded_agent_invalid_request', `${path} must be a string`);
   const normalized = value.trim();
-  if (!normalized || normalized !== value || Buffer.byteLength(normalized, 'utf8') > 256 || /[\u0000-\u001f\u007f]/u.test(normalized)) {
+  if (!normalized || normalized !== value || Buffer.byteLength(normalized, 'utf8') > MAX_BOUNDED_IDENTIFIER_BYTES || /[\u0000-\u001f\u007f]/u.test(normalized)) {
     throw badRequest('bounded_agent_invalid_request', `${path} is invalid`);
   }
   return normalized;
+}
+
+function sourceArtifactReference(value: unknown): string {
+  if (typeof value !== 'string') throw badRequest('bounded_agent_invalid_request', 'sourceArtifactId must be a string');
+  const normalized = value.trim();
+  if (!normalized || normalized !== value || Buffer.byteLength(value, 'utf8') > MAX_SOURCE_ARTIFACT_REFERENCE_BYTES
+    || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw badRequest('bounded_agent_invalid_request', 'sourceArtifactId is invalid');
+  }
+  return value;
 }
 
 function badRequest(code: string, message: string): Error & { status: number; code: string } {
