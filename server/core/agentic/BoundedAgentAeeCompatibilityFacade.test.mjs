@@ -75,6 +75,7 @@ function runtime(overrides = {}) {
     byClientSequence: [],
     byExecution: undefined,
     projectReads: 0,
+    projectBarriers: 0,
     puts: 0,
     aeeStarts: 0,
     legacyStarts: 0,
@@ -147,7 +148,12 @@ function runtime(overrides = {}) {
       async withClientRequestLock(queryScope, clientRequestId, work) {
         calls.push('admission-lock');
         assert.deepEqual(queryScope, scope); assert.equal(clientRequestId, command.clientRequestId);
-        return work();
+        return work(Object.freeze({
+          lockProjectForShare: async () => {
+            calls.push('project-share-lock');
+            state.projectBarriers += 1;
+          },
+        }));
       },
     },
     ...overrides,
@@ -155,10 +161,11 @@ function runtime(overrides = {}) {
   return { facade: new BoundedAgentAeeCompatibilityFacade(dependencies), calls, state };
 }
 
-test('new bounded start is single-write AEE and strips AEE-only graph/node fields from the compatibility view', async () => {
+test('new bounded start is single-write AEE and takes Project barrier only after the second continuation lookup', async () => {
   const r = runtime();
   const view = await r.facade.start(command, auth);
-  assert.deepEqual(r.calls, ['continuation-by-client', 'admission-lock', 'continuation-by-client', 'project-source', 'artifact-resolve', 'plan-put', 'aee-start']);
+  assert.deepEqual(r.calls, ['continuation-by-client', 'admission-lock', 'continuation-by-client', 'project-share-lock', 'project-source', 'artifact-resolve', 'plan-put', 'aee-start']);
+  assert.equal(r.state.projectBarriers, 1);
   assert.equal(r.state.puts, 1);
   assert.equal(r.state.aeeStarts, 1);
   assert.equal(r.state.legacyStarts, 0);
@@ -174,18 +181,20 @@ test('existing AEE clientRequestId replays immutable graph before any current Pr
   const view = await r.facade.start(command, auth);
   assert.equal(view.executionId, 'aee-execution-ae4c2');
   assert.equal(r.state.projectReads, 0);
+  assert.equal(r.state.projectBarriers, 0);
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.aeeStarts, 1);
   assert.deepEqual(r.calls, ['continuation-by-client', 'plan-get', 'aee-start']);
   assert.equal(r.calls.includes('admission-lock'), false);
 });
 
-test('a raced first start is recovered by the mandatory continuation re-read inside the admission lock', async () => {
+test('a raced first start replays after advisory serialization without touching current Project state', async () => {
   const r = runtime();
   r.state.byClientSequence.push(undefined, snapshot(AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID));
   const view = await r.facade.start(command, auth);
   assert.equal(view.executionId, 'aee-execution-ae4c2');
   assert.equal(r.state.projectReads, 0);
+  assert.equal(r.state.projectBarriers, 0);
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.aeeStarts, 1);
   assert.deepEqual(r.calls, ['continuation-by-client', 'admission-lock', 'continuation-by-client', 'plan-get', 'aee-start']);
@@ -201,6 +210,7 @@ test('existing AEE replay with changed command fails before graph persistence or
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.aeeStarts, 0);
   assert.equal(r.state.projectReads, 0);
+  assert.equal(r.state.projectBarriers, 0);
   assert.equal(r.calls.includes('admission-lock'), false);
 });
 
@@ -213,6 +223,7 @@ test('pre-cutover fixed-plan start remains legacy recovery-only and cannot creat
   assert.equal(r.state.aeeStarts, 0);
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.projectReads, 0);
+  assert.equal(r.state.projectBarriers, 0);
   assert.equal(r.calls.includes('admission-lock'), false);
 });
 
@@ -241,5 +252,6 @@ test('unknown durable plan identities fail closed without either execution deleg
   assert.equal(r.state.aeeStarts, 0);
   assert.equal(r.state.legacyStarts, 0);
   assert.equal(r.state.puts, 0);
+  assert.equal(r.state.projectBarriers, 0);
   assert.equal(r.calls.includes('admission-lock'), false);
 });
