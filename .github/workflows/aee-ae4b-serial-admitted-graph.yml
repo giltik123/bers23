@@ -46,7 +46,7 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Prove AE-4b serial execution, repeated capability identity and retry budgets
+      - name: Prove AE-4b serial execution, repeated capability identity and global retry budget
         run: |
           node --experimental-strip-types --test \
             server/core/agentic/AeeSerialAdmittedGraphDriverV1.test.mjs \
@@ -80,7 +80,8 @@ jobs:
           grep -q 'requireAeeAdmittedNodeExecutionAdapterV1' "$FILE"
           grep -q 'WorkflowContinuationStore' "$FILE"
           grep -q 'ExecutionRunRegistry' "$FILE"
-          grep -q 'listWorkflowLocalExecutionAttempts' "$FILE"
+          grep -q 'countWorkflowLocalExecutionRetries' "$FILE"
+          grep -q 'return retries < graph.effectiveExecution.maxRetries' "$FILE"
           git diff --check "$(git merge-base HEAD origin/main)"..HEAD
 
   serial-driver-postgres:
