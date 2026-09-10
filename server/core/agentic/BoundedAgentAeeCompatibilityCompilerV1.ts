@@ -1,5 +1,6 @@
 import {
   normalizeOrthogonalTransformMode,
+  orthogonalTransformOutputGeometry,
   type OrthogonalTransformMode,
 } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { normalizeResizeDimensions } from '../../../src/platform/creative/deterministic/Resize.ts';
@@ -83,6 +84,9 @@ export function assertBoundedAgentAeeCompatibilityReplayV1(
   graph: AdmittedPlanGraphV1,
   commandInput: BoundedAgentStartCommand,
 ): AdmittedPlanGraphV1 {
+  if (graph.source.artifactRole !== 'ORIGINAL' && graph.source.artifactRole !== 'COMPOSITE') {
+    throw compatibilityError('bounded_aee_replay_source_invalid', 'Durable compatibility graph has an unsupported source Artifact role');
+  }
   const command = normalizeCommand(commandInput, graph.source.width, graph.source.height);
   const expected = compileFromAuthority(command, Object.freeze({
     projectId: graph.source.projectId,
@@ -154,12 +158,12 @@ function normalizeCommand(command: BoundedAgentStartCommand, sourceWidth: number
   const projectId = token(command?.projectId, 'projectId');
   const sourceArtifactId = token(command?.sourceArtifactId, 'sourceArtifactId');
   let mode: OrthogonalTransformMode;
-  try { mode = normalizeOrthogonalTransformMode(command?.mode); }
+  try { mode = normalizeOrthogonalTransformMode(command.mode); }
   catch { throw compatibilityError('bounded_aee_mode_invalid', 'Bounded orthogonal-transform mode is invalid'); }
   let target;
   try {
-    // This validates both target limits and the post-orthogonal source geometry.
-    target = normalizeResizeDimensions({ width: command?.width, height: command?.height }, sourceWidth, sourceHeight);
+    const postOrthogonal = orthogonalTransformOutputGeometry(sourceWidth, sourceHeight, mode);
+    target = normalizeResizeDimensions({ width: command.width, height: command.height }, postOrthogonal.width, postOrthogonal.height);
   } catch {
     throw compatibilityError('bounded_aee_resize_invalid', 'Bounded resize dimensions are invalid');
   }
