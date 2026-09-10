@@ -72,6 +72,7 @@ function runtime(overrides = {}) {
   const calls = [];
   const state = {
     byClient: undefined,
+    byClientSequence: [],
     byExecution: undefined,
     projectReads: 0,
     puts: 0,
@@ -84,7 +85,7 @@ function runtime(overrides = {}) {
         calls.push('continuation-by-client');
         assert.deepEqual(queryScope, scope);
         assert.equal(clientRequestId, command.clientRequestId);
-        return state.byClient;
+        return state.byClientSequence.length ? state.byClientSequence.shift() : state.byClient;
       },
       async get(executionId, queryScope) {
         calls.push('continuation-by-execution');
@@ -157,7 +158,7 @@ function runtime(overrides = {}) {
 test('new bounded start is single-write AEE and strips AEE-only graph/node fields from the compatibility view', async () => {
   const r = runtime();
   const view = await r.facade.start(command, auth);
-  assert.deepEqual(r.calls.slice(0, 6), ['admission-lock', 'continuation-by-client', 'project-source', 'artifact-resolve', 'plan-put', 'aee-start']);
+  assert.deepEqual(r.calls, ['continuation-by-client', 'admission-lock', 'continuation-by-client', 'project-source', 'artifact-resolve', 'plan-put', 'aee-start']);
   assert.equal(r.state.puts, 1);
   assert.equal(r.state.aeeStarts, 1);
   assert.equal(r.state.legacyStarts, 0);
@@ -167,7 +168,7 @@ test('new bounded start is single-write AEE and strips AEE-only graph/node field
   assert.deepEqual(graph.effectiveExecution, BOUNDED_AGENT_AEE_EXECUTION);
 });
 
-test('existing AEE clientRequestId replays immutable graph without consulting today Project revision/source', async () => {
+test('existing AEE clientRequestId replays immutable graph before any current Project admission barrier', async () => {
   const r = runtime();
   r.state.byClient = snapshot(AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID);
   const view = await r.facade.start(command, auth);
@@ -175,7 +176,19 @@ test('existing AEE clientRequestId replays immutable graph without consulting to
   assert.equal(r.state.projectReads, 0);
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.aeeStarts, 1);
-  assert.deepEqual(r.calls, ['admission-lock', 'continuation-by-client', 'plan-get', 'aee-start']);
+  assert.deepEqual(r.calls, ['continuation-by-client', 'plan-get', 'aee-start']);
+  assert.equal(r.calls.includes('admission-lock'), false);
+});
+
+test('a raced first start is recovered by the mandatory continuation re-read inside the admission lock', async () => {
+  const r = runtime();
+  r.state.byClientSequence.push(undefined, snapshot(AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID));
+  const view = await r.facade.start(command, auth);
+  assert.equal(view.executionId, 'aee-execution-ae4c2');
+  assert.equal(r.state.projectReads, 0);
+  assert.equal(r.state.puts, 0);
+  assert.equal(r.state.aeeStarts, 1);
+  assert.deepEqual(r.calls, ['continuation-by-client', 'admission-lock', 'continuation-by-client', 'plan-get', 'aee-start']);
 });
 
 test('existing AEE replay with changed command fails before graph persistence or AEE execution', async () => {
@@ -188,6 +201,7 @@ test('existing AEE replay with changed command fails before graph persistence or
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.aeeStarts, 0);
   assert.equal(r.state.projectReads, 0);
+  assert.equal(r.calls.includes('admission-lock'), false);
 });
 
 test('pre-cutover fixed-plan start remains legacy recovery-only and cannot create an AEE shadow graph', async () => {
@@ -199,6 +213,7 @@ test('pre-cutover fixed-plan start remains legacy recovery-only and cannot creat
   assert.equal(r.state.aeeStarts, 0);
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.projectReads, 0);
+  assert.equal(r.calls.includes('admission-lock'), false);
 });
 
 test('resume/result/retry/cancel route only from immutable continuation plan identity', async () => {
@@ -226,4 +241,5 @@ test('unknown durable plan identities fail closed without either execution deleg
   assert.equal(r.state.aeeStarts, 0);
   assert.equal(r.state.legacyStarts, 0);
   assert.equal(r.state.puts, 0);
+  assert.equal(r.calls.includes('admission-lock'), false);
 });
