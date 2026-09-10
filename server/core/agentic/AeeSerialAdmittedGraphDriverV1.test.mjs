@@ -271,7 +271,7 @@ test('AE-4b serial driver executes repeated capability nodes with independent lo
   assert.equal(r.projectReads(), 1, 'driver must never mutate or re-authorize Project during serial execution');
 });
 
-test('AE-4b derives retry budget from ExecutionRun attempt history and terminalizes after the admitted retry is spent', async () => {
+test('AE-4b spends the admitted retry budget globally across graph nodes from ExecutionRun history', async () => {
   const r = runtime(admittedGraph(1));
   let view = await r.driver().start(command(r.graph), auth);
   view = await r.driver().submitLocalResult(view.executionId, projectId, auth, result(view.nextAction.ticket));
@@ -284,15 +284,21 @@ test('AE-4b derives retry budget from ExecutionRun attempt history and terminali
 
   view = await r.driver().retry(view.executionId, projectId, auth);
   assert.equal(view.nextAction.nodeId, 'resize-one'); assert.notEqual(view.nextAction.ticket.ticketId, firstFailedTicket);
+  r.clearFailSource(rotated.artifactId);
+  view = await r.driver().submitLocalResult(view.executionId, projectId, auth, result(view.nextAction.ticket));
+  assert.equal(view.nextAction.nodeId, 'resize-two', 'successful retry must advance to the next admitted node');
+
+  r.failSource(resizeOne.artifactId);
   view = await r.driver().submitLocalResult(view.executionId, projectId, auth, result(view.nextAction.ticket));
   assert.equal(view.state, 'FAILED'); assert.equal(view.failureCode, 'AEE_RETRY_BUDGET_EXHAUSTED'); assert.equal(view.retryAvailable, undefined);
 
   const parent = await r.runs.getByAuthority(scope, 'WORKFLOW_CONTINUATION', view.executionId);
   assert.equal(parent.status, 'FAILED');
   const attempts = (await r.runs.listChildren(scope, parent.runId, 20)).filter(run => run.capability === 'LOCAL_EXECUTION');
-  const resizeAttempts = attempts.filter(run => run.idempotencyKey.includes(':resize-one'));
-  assert.equal(resizeAttempts.length, 2, 'first attempt plus exactly one admitted retry must exist');
-  assert.equal(resizeAttempts.every(run => run.status === 'FAILED'), true);
+  const retryAttempts = attempts.filter(run => run.idempotencyKey.startsWith('workflow-child-retry:'));
+  assert.equal(retryAttempts.length, 1, 'the whole graph may consume only one admitted retry');
+  assert.equal(attempts.filter(run => run.idempotencyKey.includes(':resize-one')).length, 2, 'resize-one owns first attempt plus the single global retry');
+  assert.equal(attempts.filter(run => run.idempotencyKey.includes(':resize-two')).length, 1, 'resize-two must not receive a second graph-level retry');
 });
 
 test('AE-4b fails closed on graph substitution and terminalizes UNKNOWN recovery without another attempt', async () => {
