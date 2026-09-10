@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
     paths:
       - 'server/index.ts'
+      - 'server/core/agentic/**'
       - 'server/core/automation/**'
       - 'server/core/artifacts/**'
       - 'server/core/composition/createProductionAutomation.ts'
@@ -14,6 +15,7 @@ on:
       - 'server/core/localExecution/**'
       - 'server/core/projects/**'
       - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
+      - 'server/core/workflow/BoundedAgentExecutionPort.ts'
       - 'server/core/workflow/PostgresWorkflowContinuationStore.ts'
       - 'server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts'
       - 'server/transactions/infrastructure/postgres/**'
@@ -21,6 +23,7 @@ on:
       - 'src/application/local-execution/CoreAuthorizedResize.ts'
       - 'src/platform/creative/deterministic/**'
       - 'scripts/build-core-server.mjs'
+      - 'scripts/materialize-aee4c2-bounded-browser-harness.mjs'
       - 'scripts/test-automation-c3b-browser-e2e.mjs'
       - 'scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs'
       - '.github/workflows/automation-manual-browser-e2e-c3b.yml'
@@ -71,13 +74,15 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Build immutable Core and apply packaged production migrations through 042
+      - name: Build immutable Core and apply packaged production migrations through 044
         run: |
           npm run server:build
           test -f dist-server/server.mjs
           test -f dist-server/migrations/040_automation_definitions.sql
           test -f dist-server/migrations/041_automation_invocation_bindings.sql
           test -f dist-server/migrations/042_automation_schedules.sql
+          test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
+          test -f dist-server/migrations/044_canonical_project_revision.sql
           node dist-server/migrate.mjs migrate
           node dist-server/migrate.mjs check
       - name: Generate and mask ephemeral C3b runtime secrets
@@ -92,14 +97,21 @@ jobs:
         run: |
           npm run build
           test -f dist/index.html
-      - name: Bundle focused C3b browser harnesses using production deterministic executors
+      - name: Materialize and bundle C3b browser harnesses on AE-4c.2 topology
         run: |
           mkdir -p .test-cache/automation-c3b-browser
-          npx esbuild scripts/test-automation-c3b-browser-e2e.mjs \
+          node scripts/materialize-aee4c2-bounded-browser-harness.mjs \
+            automation .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs
+          node scripts/materialize-aee4c2-bounded-browser-harness.mjs \
+            automation-retry-cancel .test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.source.mjs
+          grep -q 'AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID' .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs
+          ! grep -q 'BOUNDED_AGENT_VERIFY_STEP_ID' .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs
+          ! grep -q "\['WORKFLOW_STEP', 'SUCCEEDED'\]" .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs
+          npx esbuild .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.source.mjs \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
-          npx esbuild scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs \
+          npx esbuild .test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.source.mjs \
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
