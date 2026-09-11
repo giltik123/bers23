@@ -1,0 +1,38 @@
+name: HSME-2b1.2 teacher acquisition tooling
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/inspect-hsme-teacher-snapshot.py'
+      - 'tests/hsme-teacher-acquisition-security.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherArtifactManifestV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherAdmissionGateV1.ts'
+      - '.github/workflows/hsme-2b1-2-teacher-acquisition.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-acquisition-tooling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact PR head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify Python runtime
+        run: python3 --version
+      - name: Prove pre-deserialization multi-source acquisition security
+        run: node --test tests/hsme-teacher-acquisition-security.test.mjs
+      - name: PR CI must not download teacher model snapshots
+        run: |
+          ! grep -E 'snapshot_download|huggingface-cli download|hf download|curl .*huggingface|wget .*huggingface' \
+            .github/workflows/hsme-2b1-2-teacher-acquisition.yml
+      - name: Acquisition tooling must not deserialize or grant runtime authority
+        run: |
+          ! grep -E 'torch\.load|pickle\.load|from_pretrained|runtimeAuthorityGranted.*True|binaryPayloadPublished.*True' \
+            scripts/inspect-hsme-teacher-snapshot.py
