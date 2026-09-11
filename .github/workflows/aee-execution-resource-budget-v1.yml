@@ -8,6 +8,8 @@ on:
       - 'server/core/localExecution/**'
       - 'server/core/composition/**'
       - 'src/platform/creative/deterministic/**'
+      - 'scripts/capture-aee-resource-budget-browser.mjs'
+      - 'tests/aee-resource-budget-browser.*'
       - '.github/workflows/aee-execution-resource-budget-v1.yml'
   pull_request:
     branches: ["main"]
@@ -16,6 +18,8 @@ on:
       - 'server/core/localExecution/**'
       - 'server/core/composition/**'
       - 'src/platform/creative/deterministic/**'
+      - 'scripts/capture-aee-resource-budget-browser.mjs'
+      - 'tests/aee-resource-budget-browser.*'
       - '.github/workflows/aee-execution-resource-budget-v1.yml'
   workflow_dispatch:
 
@@ -51,6 +55,19 @@ jobs:
           node --experimental-strip-types --test \
             server/core/localExecution/DeterministicExecutionResourceModelV1.test.mjs \
             server/core/agentic/AeeExecutionResourceBudgetV1.test.mjs
+      - name: Prove system Google Chrome is installed
+        run: google-chrome --version
+      - name: Calibrate versioned browser resource profiles against real Chrome
+        run: |
+          node --experimental-strip-types scripts/capture-aee-resource-budget-browser.mjs \
+            .test-cache/aee-resource-budget-browser.json
+      - name: Upload JSON-only browser calibration evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: aee-resource-budget-browser-${{ env.CANDIDATE_SHA }}
+          path: .test-cache/aee-resource-budget-browser.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Preserve AE-4b and AE-4c execution semantics
         run: |
           node --experimental-strip-types --test \
@@ -72,4 +89,5 @@ jobs:
           grep -q 'AeeResourceBudgetedSerialDriverV1' "$COMPOSITION"
           grep -q 'delegate: serial' "$COMPOSITION"
           grep -q 'assertAeeAdmittedGraphMemoryBudgetV1' "$GUARD"
+          grep -q 'admissionAuthority: false' scripts/capture-aee-resource-budget-browser.mjs
           git diff --check "$(git merge-base HEAD origin/main)"..HEAD
