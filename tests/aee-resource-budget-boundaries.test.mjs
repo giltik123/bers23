@@ -17,9 +17,13 @@ test('production installs one AEE resource guard at workflow ticket issuance wit
     .filter(file => !/\.test\.[cm]?[jt]s$/.test(file));
   assert.deepEqual(serialMatches, [COMPOSITION]);
 
+  // Count the actual production installation expression, not every occurrence of
+  // the class-name prefix. The admission module legitimately contains
+  // `new AeeWorkflowTicketResourceAdmissionV1Error(...)`, which is not a second
+  // guard installation site.
   const guardMatches = execFileSync(
     'git',
-    ['grep', '-l', '--fixed-strings', 'new AeeWorkflowTicketResourceAdmissionV1', '--', 'server/core'],
+    ['grep', '-l', '--fixed-strings', 'installIssueGuard(new AeeWorkflowTicketResourceAdmissionV1', '--', 'server/core'],
     { encoding: 'utf8' },
   )
     .trim()
