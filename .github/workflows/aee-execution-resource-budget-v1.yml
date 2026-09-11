@@ -6,6 +6,8 @@ on:
     paths:
       - 'server/core/agentic/**'
       - 'server/core/localExecution/**'
+      - 'server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts'
+      - 'server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.test.mjs'
       - 'server/core/composition/**'
       - 'src/platform/creative/deterministic/**'
       - 'scripts/capture-aee-resource-budget-browser.mjs'
@@ -17,6 +19,8 @@ on:
     paths:
       - 'server/core/agentic/**'
       - 'server/core/localExecution/**'
+      - 'server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts'
+      - 'server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.test.mjs'
       - 'server/core/composition/**'
       - 'src/platform/creative/deterministic/**'
       - 'scripts/capture-aee-resource-budget-browser.mjs'
@@ -52,11 +56,13 @@ jobs:
           npm run typecheck
           npm run server:typecheck
           npm run server:build
-      - name: Prove executor-owned resource model and immutable AEE budget admission
+      - name: Prove executor-owned resource model and exact pre-issuance AEE admission
         run: |
           node --experimental-strip-types --test \
             server/core/localExecution/DeterministicExecutionResourceModelV1.test.mjs \
             server/core/agentic/AeeExecutionResourceBudgetV1.test.mjs \
+            server/core/agentic/AeeWorkflowTicketResourceAdmissionV1.test.mjs \
+            server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.test.mjs \
             tests/aee-resource-budget-boundaries.test.mjs
       - name: Prove system Google Chrome is installed
         run: google-chrome --version
@@ -82,15 +88,18 @@ jobs:
           set -euo pipefail
           MODEL=server/core/localExecution/DeterministicExecutionResourceModelV1.ts
           BUDGET=server/core/agentic/AeeExecutionResourceBudgetV1.ts
-          GUARD=server/core/agentic/AeeResourceBudgetedSerialDriverV1.ts
+          ADMISSION=server/core/agentic/AeeWorkflowTicketResourceAdmissionV1.ts
+          ISSUER=server/core/workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts
           COMPOSITION=server/core/composition/createProductionBoundedAgentCompatibility.ts
 
-          ! grep -E -q 'providerSelector|modelSelector|reserveCredits|spendCredits|acceptFinal|createVersion|restoreVersion|INSERT INTO|UPDATE canonical_projects|DELETE FROM' "$MODEL" "$BUDGET" "$GUARD"
+          ! grep -E -q 'providerSelector|modelSelector|reserveCredits|spendCredits|acceptFinal|createVersion|restoreVersion|INSERT INTO|UPDATE canonical_projects|DELETE FROM' "$MODEL" "$BUDGET" "$ADMISSION"
           ! grep '^import ' "$MODEL" | grep -E -q '/agentic/'
           grep -q 'requireAeeAdmittedNodeExecutionAdapterV1' "$BUDGET"
-          grep -q 'requireDeterministicToolByCapability' "$BUDGET"
-          grep -q 'AeeResourceBudgetedSerialDriverV1' "$COMPOSITION"
-          grep -q 'delegate: serial' "$COMPOSITION"
-          grep -q 'assertAeeAdmittedGraphMemoryBudgetV1' "$GUARD"
+          grep -q 'requireDeterministicToolByCapability' "$ADMISSION"
+          grep -q 'assertAeeAdmittedGraphMemoryBudgetV1' "$ADMISSION"
+          grep -q 'installIssueGuard' "$ISSUER"
+          grep -q 'installIssueGuard(new AeeWorkflowTicketResourceAdmissionV1' "$COMPOSITION"
+          grep -q 'new AeeSerialAdmittedGraphDriverV1' "$COMPOSITION"
+          test ! -e server/core/agentic/AeeResourceBudgetedSerialDriverV1.ts
           grep -q 'admissionAuthority: false' scripts/capture-aee-resource-budget-browser.mjs
           git diff --check "$(git merge-base HEAD origin/main)"..HEAD
