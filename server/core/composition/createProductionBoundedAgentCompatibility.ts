@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { AeeSerialAdmittedGraphDriverV1 } from '../agentic/AeeSerialAdmittedGraphDriverV1.ts';
+import { AeeWorkflowTicketResourceAdmissionV1 } from '../agentic/AeeWorkflowTicketResourceAdmissionV1.ts';
 import { BoundedAgentAeeCompatibilityFacade } from '../agentic/BoundedAgentAeeCompatibilityFacade.ts';
 import { PostgresAeeAdmittedPlanStore } from '../agentic/PostgresAeeAdmittedPlanStore.ts';
 import { PostgresBoundedAgentCompatibilityAdmissionLock } from '../agentic/PostgresBoundedAgentCompatibilityAdmissionLock.ts';
@@ -29,8 +30,11 @@ export type ProductionBoundedAgentCompatibilityInput = Readonly<{
 }>;
 
 /**
- * AE-4c.2 composition only. Policy and route selection live in the compatibility
- * facade; this factory merely wires the already accepted stores/drivers.
+ * AE-4c.2 composition with #548 resource admission. The existing AE-4b driver
+ * remains the sole AEE execution coordinator. #548 is installed at the shared
+ * server-only workflow ticket issuance seam, immediately before a genuinely-new
+ * local ticket can be minted; it owns no execution state and does not re-admit
+ * already durable tickets/results.
  */
 export function createProductionBoundedAgentCompatibility(input: ProductionBoundedAgentCompatibilityInput) {
   const legacy = new BoundedAgentDeterministicWorkflowService({
@@ -46,6 +50,10 @@ export function createProductionBoundedAgentCompatibility(input: ProductionBound
     now: input.now,
   });
   const plans = new PostgresAeeAdmittedPlanStore(input.pool);
+  input.workflowTickets.installIssueGuard(new AeeWorkflowTicketResourceAdmissionV1({
+    continuations: input.continuations,
+    plans,
+  }));
   const aee = new AeeSerialAdmittedGraphDriverV1({
     plans,
     continuations: input.continuations,

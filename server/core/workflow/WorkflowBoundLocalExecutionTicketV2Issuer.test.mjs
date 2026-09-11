@@ -40,6 +40,68 @@ test('server-owned async workflow context changes only workflowId for admitted d
   assert.equal(issued[1].workflowId, 'child-execution', 'binding must disappear after the exact server-owned async call');
 });
 
+test('installed issue guard runs after server workflow binding and before delegate issuance', async () => {
+  const { issuer, issued } = runtime(undefined);
+  const guarded = [];
+  issuer.installIssueGuard(Object.freeze({
+    async beforeIssue(input) {
+      assert.equal(issued.length, 0, 'guard must run before the canonical ticket delegate');
+      guarded.push(input);
+    },
+  }));
+
+  await issuer.withWorkflowBinding({ scope, workflowId: 'agent-workflow', allowedStepIds: ['resize'] }, () => issuer.issue(request()));
+  assert.equal(guarded.length, 1);
+  assert.equal(guarded[0].workflowId, 'agent-workflow');
+  assert.equal(guarded[0].requestId, 'child-execution');
+  assert.equal(issued.length, 1);
+  assert.equal(issued[0].workflowId, 'agent-workflow');
+});
+
+test('issue guard denial fails before ticket delegate and unbound standalone issuance is unchanged', async () => {
+  const { issuer, issued } = runtime(undefined);
+  let guardCalls = 0;
+  issuer.installIssueGuard(Object.freeze({
+    async beforeIssue() {
+      guardCalls += 1;
+      throw Object.assign(new Error('resource denied'), { code: 'RESOURCE_DENIED' });
+    },
+  }));
+
+  await assert.rejects(
+    () => issuer.withWorkflowBinding({ scope, workflowId: 'agent-workflow', allowedStepIds: ['resize'] }, () => issuer.issue(request())),
+    error => error?.code === 'RESOURCE_DENIED',
+  );
+  assert.equal(guardCalls, 1);
+  assert.equal(issued.length, 0);
+
+  await issuer.issue(request({ idempotencyKey: 'standalone:resize:local-v2' }));
+  assert.equal(guardCalls, 1, 'standalone non-workflow issuance must not enter workflow admission guards');
+  assert.equal(issued.length, 1);
+  assert.equal(issued[0].workflowId, 'child-execution');
+});
+
+test('durable ticket replay bypasses a later issue guard because no new attempt is minted', async () => {
+  const durableTicket = Object.freeze({ requestId: 'child-execution', workflowId: 'agent-workflow', stepId: 'resize' });
+  const { issuer, issued } = runtime(durableTicket);
+  let guardCalls = 0;
+  issuer.installIssueGuard(Object.freeze({ beforeIssue() { guardCalls += 1; throw new Error('must not run'); } }));
+
+  await issuer.issue(request());
+  assert.equal(guardCalls, 0);
+  assert.equal(issued.length, 1);
+  assert.equal(issued[0].workflowId, 'agent-workflow');
+});
+
+test('workflow issue guard can be installed only once', () => {
+  const { issuer } = runtime(undefined);
+  issuer.installIssueGuard(Object.freeze({ beforeIssue() {} }));
+  assert.throws(
+    () => issuer.installIssueGuard(Object.freeze({ beforeIssue() {} })),
+    error => error?.code === 'WORKFLOW_LOCAL_TICKET_BINDING_CONFLICT',
+  );
+});
+
 test('workflow binding fails closed for foreign scope or an unadmitted nested step', async () => {
   const scoped = runtime(undefined);
   await scoped.issuer.withWorkflowBinding({ scope, workflowId: 'agent-workflow', allowedStepIds: ['resize'] }, async () => {
