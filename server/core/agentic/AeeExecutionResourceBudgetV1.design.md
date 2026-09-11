@@ -6,9 +6,9 @@ Issue: #548
 
 `maxMemoryBytes` is enforced as a deterministic Core admission envelope for the currently admitted AE-4 browser deterministic executors at the last server-owned seam before a genuinely new local-execution ticket can be minted.
 
-The V1 resource model is intentionally limited to exact reviewed executor/runtime identities for Orthogonal Transform and Resize. Unknown tools, changed executor versions or changed browser realization contracts fail closed until a new versioned profile is reviewed.
+The V1 resource model is intentionally limited to exact reviewed executor/runtime identities for Orthogonal Transform and Resize. Each profile pins an independent SHA-256 fingerprint of the complete recursively key-sorted deterministic tool definition, including inputs, output contract, parameters, browser executor, verifier, pixel contract, resource policy and lineage. A registry semantic change at the same `toolId@version` therefore fails closed; updating the live registry does not silently update the resource profile. Unknown tools, changed executor versions or changed contract fingerprints require an explicit resource-profile review and repin/version bump.
 
-The estimate covers the explicit canonical RGBA source/output working sets, deterministic PNG scanlines, the encoder's explicit CompressionStream input copy, a conservative encoded-payload bound, Core decoded/recomputed output working sets and a deterministic runtime/native reserve.
+The estimate covers the explicit canonical RGBA source/output working sets, deterministic PNG scanlines, the encoder's explicit CompressionStream input copy, conservative encoded-payload bounds covering compressed/IDAT/final representations, Core decoded/recomputed output working sets and a deterministic runtime/native reserve.
 
 The graph-wide admitted budget is immutable and digest-bound. Before issuance, the guard rebinds the local request to the durable AEE continuation and immutable admitted graph, verifies the exact deterministic tool identity, source Artifact, operation parameter surface, single PNG output contract and output geometry, then evaluates the graph resource model against `effectiveExecution.maxMemoryBytes`.
 
@@ -20,9 +20,11 @@ Browser, planner, provider and result telemetry are never accepted as memory aut
 
 ## Calibration evidence
 
-The dedicated exact-head acceptance runs the real Orthogonal Transform and Resize browser kernels plus deterministic PNG encoding in system Google Chrome. It samples `Runtime.getHeapUsage` through CDP, including `usedSize`, `embedderHeapUsedSize` and `backingStorageSize`, and records the baseline-delta peak for each reviewed profile.
+The dedicated exact-head acceptance runs the real Orthogonal Transform and Resize browser kernels plus deterministic PNG encoding in system Google Chrome. It samples `Runtime.getHeapUsage` through CDP, including `usedSize`, `embedderHeapUsedSize` and `backingStorageSize`, and records the sampled baseline-delta peak for each reviewed profile.
 
 The calibration must remain below the profile's modeled browser peak. The resulting artifact is JSON-only and explicitly evidence-only; it does not feed measured values back into production admission. A measurement above the model invalidates the profile and requires a reviewed version increase or disablement.
+
+The CDP value is calibration evidence, not a claim that every transient native allocation is synchronously observable. The production admission bound remains the conservative deterministic model and does not become weaker when telemetry under-samples a short-lived allocation.
 
 ## Non-guarantees
 
