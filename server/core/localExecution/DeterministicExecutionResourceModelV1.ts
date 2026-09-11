@@ -207,7 +207,7 @@ function canonicalJson(value: unknown): string {
   if (value && typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, child]) => child !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right));
+      .sort(([left], [right]) => left === right ? 0 : left < right ? -1 : 1);
     return `{${entries.map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(',')}}`;
   }
   fail('deterministic_resource_profile_contract_invalid', `Deterministic tool contract contains unsupported ${typeof value}`);
