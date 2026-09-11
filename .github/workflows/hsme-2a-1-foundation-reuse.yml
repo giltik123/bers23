@@ -1,0 +1,62 @@
+name: HSME-2a.1 foundation reuse-first gate
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseDecisionV1.ts'
+      - 'tests/creative-hsme-foundation-reuse-decision-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-decision.json'
+      - '.github/workflows/hsme-2a-1-foundation-reuse.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reuse-first-decision-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Browser/Core typecheck
+        run: npm run server:typecheck
+
+      - name: Prove reuse-first quality, full-footprint and escalation gates
+        run: |
+          mkdir -p .test-cache/hsme-2a-1
+          npx esbuild tests/creative-hsme-foundation-reuse-decision-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-1/foundation-reuse.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-1/foundation-reuse.test.mjs
+
+      - name: Preserve accepted HSME-2a historical baseline evidence
+        run: node --experimental-strip-types --test tests/creative-hsme-dense-baseline-evidence-v1.test.mjs tests/creative-hsme-dense-baseline-control-binding-v1.test.mjs
+
+      - name: PR CI must not download or train foundation models
+        run: |
+          if sed '/grep -Ei/d' .github/workflows/hsme-2a-1-foundation-reuse.yml | \
+            grep -Ei 'snapshot_download|hf_hub_download|huggingface-cli download|hf download|curl .*huggingface|wget .*huggingface|accelerate launch|torchrun'; then
+            echo 'ordinary PR CI must not download or train foundation models' >&2
+            exit 1
+          fi
+
+      - name: Reuse decision contract must not widen runtime authority
+        run: |
+          ! grep -E "from .*DurableModelFleet|from .*Billing|from .*Project|from .*Artifact|providerSelector|executionTarget" \
+            src/platform/creative/local-ai/hsme/HsmeFoundationReuseDecisionV1.ts
