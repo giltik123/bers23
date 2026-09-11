@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "BERS_HSME_DENSE_BASELINE_DUAL_BUDGET_EVIDENCE_V1",
+  "policyPath": "BERS_LOCAL_MODEL_EFFICIENCY_POLICY.md",
+  "policyMode": "DUAL_BUDGET_COMPACT_FIRST",
+  "mvmLaw": "MVM_IS_NOT_A_SIZE_WAIVER",
+  "candidates": [
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "installed": {
+        "mandatoryInstalledBytes": 1062108664,
+        "optionalInstalledBytes": "UNKNOWN",
+        "firstUseDownloadBytes": 1062108664,
+        "knownInstalledLowerBoundBytes": 1062108664,
+        "duplicateRepresentationBytes": "UNKNOWN",
+        "cacheHighWaterBytes": "UNKNOWN"
+      },
+      "workingMemory": {
+        "activeWeightsBytes": "UNKNOWN",
+        "peakRamBytes": "UNKNOWN",
+        "peakAcceleratorBytes": "UNKNOWN",
+        "flashBytesMovedPerRun": "UNKNOWN"
+      },
+      "qualityPerInstalledGbStatus": "PENDING",
+      "mvmState": "NOT_EVALUATED",
+      "efficiencyDisposition": "R&D_ONLY",
+      "notes": [
+        "Exact accepted Tiny-SD runtime snapshot provides the current mandatory installed-byte control floor.",
+        "Working-memory evidence is intentionally not inferred from package size; it remains a separate measurement axis.",
+        "Existing Tiny-SD representation and runtime evidence remains control evidence only and grants no HSME-2 promotion."
+      ]
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-reference",
+      "installed": {
+        "mandatoryInstalledBytes": "UNKNOWN",
+        "optionalInstalledBytes": "UNKNOWN",
+        "firstUseDownloadBytes": "UNKNOWN",
+        "knownInstalledLowerBoundBytes": 5228683776,
+        "duplicateRepresentationBytes": "UNKNOWN",
+        "cacheHighWaterBytes": "UNKNOWN"
+      },
+      "workingMemory": {
+        "activeWeightsBytes": "UNKNOWN",
+        "peakRamBytes": "UNKNOWN",
+        "peakAcceleratorBytes": "UNKNOWN",
+        "flashBytesMovedPerRun": "UNKNOWN"
+      },
+      "qualityPerInstalledGbStatus": "PENDING",
+      "mvmState": "NOT_EVALUATED",
+      "efficiencyDisposition": "REJECT",
+      "notes": [
+        "Gemma2-2B-IT text conditioning alone contributes a known 5228683776-byte installed lower bound before denoiser and VAE bytes.",
+        "MVM could reduce residency but cannot erase the multi-gigabyte installed-footprint cost.",
+        "Retain SANA-Sprint as a few-step DiT reference rather than the compact default runtime baseline."
+      ]
+    },
+    {
+      "candidateId": "snapgen-plusplus-reference",
+      "installed": {
+        "mandatoryInstalledBytes": "UNKNOWN",
+        "optionalInstalledBytes": "UNKNOWN",
+        "firstUseDownloadBytes": "UNKNOWN",
+        "knownInstalledLowerBoundBytes": "UNKNOWN",
+        "duplicateRepresentationBytes": "UNKNOWN",
+        "cacheHighWaterBytes": "UNKNOWN"
+      },
+      "workingMemory": {
+        "activeWeightsBytes": "UNKNOWN",
+        "peakRamBytes": "UNKNOWN",
+        "peakAcceleratorBytes": "UNKNOWN",
+        "flashBytesMovedPerRun": "UNKNOWN"
+      },
+      "qualityPerInstalledGbStatus": "PENDING",
+      "mvmState": "NOT_EVALUATED",
+      "efficiencyDisposition": "R&D_ONLY",
+      "notes": [
+        "Paper-level mobile architecture evidence is useful but cannot substitute for exact package and working-memory measurements.",
+        "No BERS-reviewed immutable checkpoint exists for a trustworthy installed-footprint measurement."
+      ]
+    },
+    {
+      "candidateId": "mobile-diffusion-reference",
+      "installed": {
+        "mandatoryInstalledBytes": "UNKNOWN",
+        "optionalInstalledBytes": "UNKNOWN",
+        "firstUseDownloadBytes": "UNKNOWN",
+        "knownInstalledLowerBoundBytes": "UNKNOWN",
+        "duplicateRepresentationBytes": "UNKNOWN",
+        "cacheHighWaterBytes": "UNKNOWN"
+      },
+      "workingMemory": {
+        "activeWeightsBytes": "UNKNOWN",
+        "peakRamBytes": "UNKNOWN",
+        "peakAcceleratorBytes": "UNKNOWN",
+        "flashBytesMovedPerRun": "UNKNOWN"
+      },
+      "qualityPerInstalledGbStatus": "PENDING",
+      "mvmState": "NOT_EVALUATED",
+      "efficiencyDisposition": "R&D_ONLY",
+      "notes": [
+        "Published latency and parameter evidence does not establish an immutable BERS package or independent working-memory budget.",
+        "Use as a mobile architecture reference only until exact bytes and provenance are reproducible."
+      ]
+    },
+    {
+      "candidateId": "bers-dense-core-v1-training-target",
+      "installed": {
+        "mandatoryInstalledBytes": "UNKNOWN",
+        "optionalInstalledBytes": "UNKNOWN",
+        "firstUseDownloadBytes": "UNKNOWN",
+        "knownInstalledLowerBoundBytes": "UNKNOWN",
+        "duplicateRepresentationBytes": "UNKNOWN",
+        "cacheHighWaterBytes": "UNKNOWN"
+      },
+      "workingMemory": {
+        "activeWeightsBytes": "UNKNOWN",
+        "peakRamBytes": "UNKNOWN",
+        "peakAcceleratorBytes": "UNKNOWN",
+        "flashBytesMovedPerRun": "UNKNOWN"
+      },
+      "qualityPerInstalledGbStatus": "PENDING",
+      "mvmState": "NOT_EVALUATED",
+      "efficiencyDisposition": "R&D_ONLY",
+      "notes": [
+        "Training must optimize installed footprint and working memory independently while preserving the required product quality.",
+        "Compact-first work precedes any MVM packaging decision: specialization, distillation, few-step, architecture reduction, shared-core reuse, sparse adapters, precision and packing.",
+        "MVM eligibility may be evaluated later but cannot waive the compact-default quality-per-byte requirement."
+      ]
+    }
+  ],
+  "requiredInstalledMetrics": [
+    "mandatory-installed-bytes",
+    "optional-installed-bytes",
+    "first-use-download-bytes",
+    "known-installed-lower-bound-bytes",
+    "duplicate-representation-bytes",
+    "cache-high-water-bytes",
+    "update-or-delta-download-bytes"
+  ],
+  "requiredWorkingMemoryMetrics": [
+    "active-weights-bytes",
+    "peak-ram-bytes",
+    "peak-accelerator-bytes",
+    "flash-bytes-moved-per-run",
+    "ram-bytes-moved-per-run",
+    "accelerator-bytes-moved-per-run",
+    "io-stall-and-prefetch-efficiency",
+    "energy-thermal-and-battery"
+  ]
+}

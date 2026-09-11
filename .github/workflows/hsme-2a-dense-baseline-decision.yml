@@ -1,0 +1,140 @@
+name: HSME-2a dense baseline decision
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'src/platform/creative/local-ai/hsme/**'
+      - 'src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json'
+      - 'tests/creative-hsme-dense-baseline-evidence-v1.test.mjs'
+      - 'tests/creative-hsme-dense-baseline-control-binding-v1.test.mjs'
+      - 'tests/creative-hsme-pack-v1.test.mjs'
+      - 'tests/creative-hsme-preparation-v1.test.mjs'
+      - '.github/workflows/hsme-2a-dense-baseline-decision.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  dense-baseline-decision:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove fail-closed HSME-2a decision and control binding
+        run: |
+          node --experimental-strip-types --test \
+            tests/creative-hsme-dense-baseline-evidence-v1.test.mjs \
+            tests/creative-hsme-dense-baseline-control-binding-v1.test.mjs
+      - name: Preserve R&D-only authority boundary
+        run: |
+          set -euo pipefail
+          SOURCE=src/platform/creative/local-ai/hsme/HsmeDenseBaselineEvidenceV1.ts
+          DECISION=src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-decision.json
+          grep -Fq "REDESIGN_REQUIRED" "$SOURCE"
+          grep -Fq "BASELINE_PINNED" "$SOURCE"
+          grep -Fq '"decisionStatus": "REDESIGN_REQUIRED"' "$DECISION"
+          grep -Fq '"selectedCandidateId": "bers-dense-core-v1-training-target"' "$DECISION"
+          ! grep -E -q '\.(install|resume|remove|rollback|quarantine|activate)\(' "$SOURCE"
+          ! grep -E -q 'providerSelector|reserveCredits|spendCredits|acceptFinal|createVersion|restoreVersion|projectService|artifactAuthority|downloadUri' "$SOURCE"
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
+
+  hsme-control-plane-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Preserve accepted HSME-1 pack trust root
+        run: node --experimental-strip-types --test tests/creative-hsme-pack-v1.test.mjs
+      - name: Preserve accepted HSME-1b preparation contract
+        run: |
+          mkdir -p .test-cache/hsme-2a
+          npx esbuild tests/creative-hsme-preparation-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a/creative-hsme-preparation-v1.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a/creative-hsme-preparation-v1.test.mjs
+
+  durable-fleet-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+      - run: npm ci
+      - name: Preserve durable model fleet lifecycle
+        run: npm run test:durable-model-fleet
+      - name: Preserve durable fleet hardening and immutable-version authority
+        run: |
+          mkdir -p .test-cache/hsme-2a
+          npx esbuild tests/creative-durable-model-fleet-hardening.test.ts \
+            --bundle --platform=node --format=esm --target=node20 \
+            --outfile=.test-cache/hsme-2a/creative-durable-model-fleet-hardening.test.mjs \
+            --external:node:*
+          npx esbuild tests/creative-durable-model-fleet-authority.test.ts \
+            --bundle --platform=node --format=esm --target=node20 \
+            --outfile=.test-cache/hsme-2a/creative-durable-model-fleet-authority.test.mjs \
+            --external:node:*
+          node --test \
+            .test-cache/hsme-2a/creative-durable-model-fleet-hardening.test.mjs \
+            .test-cache/hsme-2a/creative-durable-model-fleet-authority.test.mjs
+
+  aee-resource-authority-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Preserve AEE resource budget and minimum autonomy laws
+        run: |
+          node --experimental-strip-types --test \
+            server/core/localExecution/DeterministicExecutionResourceModelV1.test.mjs \
+            server/core/agentic/AeeExecutionResourceBudgetV1.test.mjs \
+            server/core/agentic/AeeWorkflowTicketResourceAdmissionV1.test.mjs \
+            server/core/agentic/AeeMinimumAutonomyEnvelopeV1.test.mjs \
+            server/core/agentic/AeeSerialAdmittedGraphDriverV1.test.mjs
