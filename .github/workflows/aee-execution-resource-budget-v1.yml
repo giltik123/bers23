@@ -1,0 +1,75 @@
+name: AEE admitted execution memory budget
+
+on:
+  push:
+    branches: ["aee-execution-resource-budget-v1"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'server/core/localExecution/**'
+      - 'server/core/composition/**'
+      - 'src/platform/creative/deterministic/**'
+      - '.github/workflows/aee-execution-resource-budget-v1.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'server/core/localExecution/**'
+      - 'server/core/composition/**'
+      - 'src/platform/creative/deterministic/**'
+      - '.github/workflows/aee-execution-resource-budget-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  resource-budget-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core resource contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run server:build
+      - name: Prove executor-owned resource model and immutable AEE budget admission
+        run: |
+          node --experimental-strip-types --test \
+            server/core/localExecution/DeterministicExecutionResourceModelV1.test.mjs \
+            server/core/agentic/AeeExecutionResourceBudgetV1.test.mjs
+      - name: Preserve AE-4b and AE-4c execution semantics
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/AeeSerialAdmittedGraphDriverV1.test.mjs \
+            server/core/agentic/BoundedAgentAeeCompatibilityFacade.test.mjs \
+            server/core/composition/boundedAgentProductionComposition.test.mjs
+      - name: Preserve resource authority boundaries
+        run: |
+          set -euo pipefail
+          MODEL=server/core/localExecution/DeterministicExecutionResourceModelV1.ts
+          BUDGET=server/core/agentic/AeeExecutionResourceBudgetV1.ts
+          GUARD=server/core/agentic/AeeResourceBudgetedSerialDriverV1.ts
+          COMPOSITION=server/core/composition/createProductionBoundedAgentCompatibility.ts
+
+          ! grep -E -q 'providerSelector|modelSelector|reserveCredits|spendCredits|acceptFinal|createVersion|restoreVersion|INSERT INTO|UPDATE canonical_projects|DELETE FROM' "$MODEL" "$BUDGET" "$GUARD"
+          ! grep '^import ' "$MODEL" | grep -E -q '/agentic/'
+          grep -q 'requireAeeAdmittedNodeExecutionAdapterV1' "$BUDGET"
+          grep -q 'requireDeterministicToolByCapability' "$BUDGET"
+          grep -q 'AeeResourceBudgetedSerialDriverV1' "$COMPOSITION"
+          grep -q 'delegate: serial' "$COMPOSITION"
+          grep -q 'assertAeeAdmittedGraphMemoryBudgetV1' "$GUARD"
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
