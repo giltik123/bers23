@@ -69,7 +69,7 @@ test('sourceRef is a bounded opaque canonical reference while ordinary identifie
     source: { projectId: PROJECT_ID, projectRevision: PROJECT_REVISION, sourceRef: LONG_SOURCE_REF },
   }));
   assert.equal(intent.source.sourceRef, LONG_SOURCE_REF);
-  assert.equal(assertAgentIntentV1CanonicalContext(intent, {
+  assert.deepEqual(assertAgentIntentV1CanonicalContext(intent, {
     projectId: PROJECT_ID,
     projectRevision: PROJECT_REVISION,
     sourceRef: LONG_SOURCE_REF,
