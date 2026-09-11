@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { requireDeterministicToolByCapability } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { WorkflowBoundLocalExecutionTicketV2Issuer } from '../workflow/WorkflowBoundLocalExecutionTicketV2Issuer.ts';
 import {
   AEE_CAPABILITY_ORTHOGONAL_TRANSFORM_V1,
   AEE_CAPABILITY_RESIZE_V1,
@@ -134,6 +135,43 @@ test('READY AEE issuance accepts only the exact immutable root-node ticket contr
   const snapshot = snapshotFor(graph);
   const admission = admissionFor(graph, snapshot);
   await admission.beforeIssue(issueFor(graph, 0, sourceRef));
+});
+
+test('sufficient budget proceeds through the real workflow-bound issuer without changing child/node authority', async () => {
+  const graph = graphWithBudget(137_438_953_472);
+  const snapshot = snapshotFor(graph);
+  const exact = issueFor(graph, 0, sourceRef);
+  const childWorkflowId = exact.requestId;
+  const raw = Object.freeze({ ...exact, workflowId: childWorkflowId });
+  const delegated = [];
+  const delegate = Object.freeze({
+    async issue(input) {
+      delegated.push(input);
+      return Object.freeze({ ...input, ticketId: 'resource-ticket', version: '2' });
+    },
+  });
+  const durable = Object.freeze({ async getByIdempotencyKeyV2() { return undefined; } });
+  const issuer = new WorkflowBoundLocalExecutionTicketV2Issuer(delegate, durable);
+  issuer.installIssueGuard(admissionFor(graph, snapshot));
+
+  const ticket = await issuer.withWorkflowBinding(
+    { scope, workflowId: executionId, allowedStepIds: [raw.stepId] },
+    () => issuer.issue(raw),
+  );
+
+  assert.equal(delegated.length, 1);
+  const issued = delegated[0];
+  assert.equal(issued.workflowId, executionId);
+  assert.equal(ticket.workflowId, executionId);
+  assert.equal(issued.requestId, raw.requestId);
+  assert.equal(issued.stepId, raw.stepId);
+  assert.equal(issued.idempotencyKey, raw.idempotencyKey);
+  assert.deepEqual(issued.scope, raw.scope);
+  assert.deepEqual(issued.operation, raw.operation);
+  assert.deepEqual(issued.inputs, raw.inputs);
+  assert.deepEqual(issued.expectedOutputs, raw.expectedOutputs);
+  assert.equal(graph.digest, snapshot.plan.planDigest);
+  assert.equal(graph.nodes[0].nodeId, 'rotate');
 });
 
 test('AEE issuance fails closed one byte below the immutable graph peak budget', async () => {
