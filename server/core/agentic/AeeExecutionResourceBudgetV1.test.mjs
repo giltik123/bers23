@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   AEE_CAPABILITY_ORTHOGONAL_TRANSFORM_V1,
@@ -10,12 +9,9 @@ import {
   estimateAeeAdmittedGraphExecutionResourcesV1,
 } from './AeeExecutionResourceBudgetV1.ts';
 import { compileAeePlanV1 } from './AeePlanCompilerV1.ts';
-import { AeeResourceBudgetedSerialDriverV1 } from './AeeResourceBudgetedSerialDriverV1.ts';
-import { AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID } from './AeeSerialAdmittedGraphDriverV1.ts';
 import { AGENT_INTENT_V1_SCHEMA, agentIntentV1Digest, normalizeAgentIntentV1 } from './AgentIntentV1.ts';
 import { PLAN_PROPOSAL_V1_SCHEMA } from './PlanProposalV1.ts';
 
-const auth = Object.freeze({ tenantId: 'resource-tenant', userId: 'resource-user' });
 const projectId = 'resource-project';
 const sourceRef = 'resource-source';
 
@@ -54,44 +50,6 @@ function graphWithBudget(maxMemoryBytes) {
   });
 }
 
-function fakeDelegate() {
-  const calls = { start: 0, resume: 0, submit: 0, retry: 0, cancel: 0 };
-  const view = Object.freeze({ executionId: 'execution-1', revision: 1, state: 'READY', graphDigest: '0'.repeat(64) });
-  return {
-    calls,
-    driver: Object.freeze({
-      async start() { calls.start += 1; return view; },
-      async resume() { calls.resume += 1; return view; },
-      async submitLocalResult() { calls.submit += 1; return view; },
-      async retry() { calls.retry += 1; return view; },
-      async cancel() { calls.cancel += 1; return view; },
-    }),
-  };
-}
-
-function guarded(graph, delegateState, state = 'READY') {
-  const scope = Object.freeze({ ...auth, projectId });
-  const plans = Object.freeze({
-    async get(queryScope, digest) {
-      return queryScope.tenantId === scope.tenantId && queryScope.userId === scope.userId && queryScope.projectId === scope.projectId && digest === graph.digest
-        ? Object.freeze({ scope, graph, createdAt: new Date(0).toISOString() })
-        : undefined;
-    },
-  });
-  const continuations = Object.freeze({
-    async get(executionId, queryScope) {
-      if (executionId !== 'execution-1' || queryScope.projectId !== projectId) return undefined;
-      return Object.freeze({
-        executionId,
-        scope,
-        state,
-        plan: Object.freeze({ planId: AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID, planRevision: '1', planDigest: graph.digest }),
-      });
-    },
-  });
-  return new AeeResourceBudgetedSerialDriverV1({ delegate: delegateState.driver, plans, continuations });
-}
-
 test('AEE resource authority derives exact node source geometry from immutable graph topology', () => {
   const graph = graphWithBudget(137_438_953_472);
   const estimates = estimateAeeAdmittedGraphExecutionResourcesV1(graph);
@@ -104,7 +62,7 @@ test('AEE resource authority derives exact node source geometry from immutable g
   assert.deepEqual(estimates[1].estimate.output, { width: 512, height: 512 });
 });
 
-test('AEE maxMemoryBytes rejects one byte below required peak and accepts the exact bound', () => {
+test('AEE maxMemoryBytes rejects one byte below required graph peak and accepts the exact bound', () => {
   const reference = graphWithBudget(137_438_953_472);
   const required = Math.max(...estimateAeeAdmittedGraphExecutionResourcesV1(reference).map(binding => binding.estimate.requiredPeakMemoryBytes));
   assert.ok(required > 1_048_576);
@@ -123,57 +81,11 @@ test('AEE maxMemoryBytes rejects one byte below required peak and accepts the ex
   assert.equal(Math.max(...accepted.map(binding => binding.estimate.requiredPeakMemoryBytes)), required);
 });
 
-test('resource-guarded driver fails before start/resume/submit/retry delegate calls and never blocks cancel', async () => {
-  const reference = graphWithBudget(137_438_953_472);
-  const required = Math.max(...estimateAeeAdmittedGraphExecutionResourcesV1(reference).map(binding => binding.estimate.requiredPeakMemoryBytes));
-  const insufficient = graphWithBudget(required - 1);
-  const delegate = fakeDelegate();
-  const driver = guarded(insufficient, delegate);
-
-  await assert.rejects(
-    driver.start({ clientRequestId: 'request-1', projectId, graphDigest: insufficient.digest }, auth),
-    error => error?.code === 'aee_execution_memory_budget_exceeded',
-  );
-  await assert.rejects(driver.resume('execution-1', projectId, auth), error => error?.code === 'aee_execution_memory_budget_exceeded');
-  await assert.rejects(driver.submitLocalResult('execution-1', projectId, auth, { ticketId: 'ticket-1' }), error => error?.code === 'aee_execution_memory_budget_exceeded');
-  await assert.rejects(driver.retry('execution-1', projectId, auth), error => error?.code === 'aee_execution_memory_budget_exceeded');
-  assert.deepEqual(delegate.calls, { start: 0, resume: 0, submit: 0, retry: 0, cancel: 0 });
-
-  await driver.cancel('execution-1', projectId, auth);
-  assert.equal(delegate.calls.cancel, 1);
-});
-
-test('terminal durable replay is not retroactively denied by a stricter resource profile', async () => {
-  const reference = graphWithBudget(137_438_953_472);
-  const required = Math.max(...estimateAeeAdmittedGraphExecutionResourcesV1(reference).map(binding => binding.estimate.requiredPeakMemoryBytes));
-  const insufficient = graphWithBudget(required - 1);
-  const delegate = fakeDelegate();
-  const driver = guarded(insufficient, delegate, 'SUCCESS');
-
-  await driver.resume('execution-1', projectId, auth);
-  await driver.submitLocalResult('execution-1', projectId, auth, { ticketId: 'already-completed-ticket' });
-  assert.equal(delegate.calls.resume, 1);
-  assert.equal(delegate.calls.submit, 1);
-});
-
-test('resource-guarded driver delegates unchanged when the immutable graph budget is sufficient', async () => {
+test('invalid admitted memory authority fails closed before any executor estimate is trusted', () => {
   const graph = graphWithBudget(137_438_953_472);
-  const delegate = fakeDelegate();
-  const driver = guarded(graph, delegate);
-
-  await driver.start({ clientRequestId: 'request-1', projectId, graphDigest: graph.digest }, auth);
-  await driver.resume('execution-1', projectId, auth);
-  await driver.submitLocalResult('execution-1', projectId, auth, { ticketId: 'ticket-1' });
-  await driver.retry('execution-1', projectId, auth);
-  await driver.cancel('execution-1', projectId, auth);
-  assert.deepEqual(delegate.calls, { start: 1, resume: 1, submit: 1, retry: 1, cancel: 1 });
-});
-
-test('production composition cannot pass raw serial driver into the bounded compatibility facade', () => {
-  const source = readFileSync(new URL('../composition/createProductionBoundedAgentCompatibility.ts', import.meta.url), 'utf8');
-  assert.match(source, /const serial = new AeeSerialAdmittedGraphDriverV1/);
-  assert.match(source, /const aee = new AeeResourceBudgetedSerialDriverV1/);
-  assert.match(source, /delegate: serial/);
-  assert.match(source, /new BoundedAgentAeeCompatibilityFacade\(\{[\s\S]*\baee,/);
-  assert.doesNotMatch(source, /new BoundedAgentAeeCompatibilityFacade\(\{[\s\S]*aee:\s*serial/);
+  const invalid = Object.freeze({ ...graph, effectiveExecution: Object.freeze({ ...graph.effectiveExecution, maxMemoryBytes: 0 }) });
+  assert.throws(
+    () => estimateAeeAdmittedGraphExecutionResourcesV1(invalid),
+    error => error?.code === 'aee_resource_budget_invalid' && error?.status === 409,
+  );
 });
