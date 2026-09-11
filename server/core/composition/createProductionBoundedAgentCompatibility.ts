@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { AeeResourceBudgetedSerialDriverV1 } from '../agentic/AeeResourceBudgetedSerialDriverV1.ts';
 import { AeeSerialAdmittedGraphDriverV1 } from '../agentic/AeeSerialAdmittedGraphDriverV1.ts';
 import { BoundedAgentAeeCompatibilityFacade } from '../agentic/BoundedAgentAeeCompatibilityFacade.ts';
 import { PostgresAeeAdmittedPlanStore } from '../agentic/PostgresAeeAdmittedPlanStore.ts';
@@ -29,8 +30,9 @@ export type ProductionBoundedAgentCompatibilityInput = Readonly<{
 }>;
 
 /**
- * AE-4c.2 composition only. Policy and route selection live in the compatibility
- * facade; this factory merely wires the already accepted stores/drivers.
+ * AE-4c.2 composition with #548 resource admission. Policy and route selection
+ * remain outside composition; this factory wires one AEE execution path and a
+ * fail-closed Core-owned resource guard around it.
  */
 export function createProductionBoundedAgentCompatibility(input: ProductionBoundedAgentCompatibilityInput) {
   const legacy = new BoundedAgentDeterministicWorkflowService({
@@ -46,7 +48,7 @@ export function createProductionBoundedAgentCompatibility(input: ProductionBound
     now: input.now,
   });
   const plans = new PostgresAeeAdmittedPlanStore(input.pool);
-  const aee = new AeeSerialAdmittedGraphDriverV1({
+  const serial = new AeeSerialAdmittedGraphDriverV1({
     plans,
     continuations: input.continuations,
     tickets: input.tickets,
@@ -58,6 +60,11 @@ export function createProductionBoundedAgentCompatibility(input: ProductionBound
     projects: input.projects,
     runs: input.runs,
     now: input.now,
+  });
+  const aee = new AeeResourceBudgetedSerialDriverV1({
+    delegate: serial,
+    plans,
+    continuations: input.continuations,
   });
   const admission = new PostgresBoundedAgentCompatibilityAdmissionLock(input.pool);
   return new BoundedAgentAeeCompatibilityFacade({
