@@ -145,11 +145,7 @@ export class BoundedAgentAeeCompatibilityFacade implements BoundedAgentExecution
     const durable = await this.dependencies.plans.get(snapshot.scope, snapshot.plan.planDigest);
     if (!durable) throw conflict('bounded_aee_plan_unavailable', 'Durable bounded AEE continuation has no admitted graph authority');
     assertBoundedAgentAeeCompatibilityReplayV1(durable.graph, command);
-    const view = await this.dependencies.aee.start({
-      clientRequestId: snapshot.clientRequestId,
-      projectId: snapshot.scope.projectId,
-      graphDigest: snapshot.plan.planDigest,
-    }, auth);
+    const view = await this.dependencies.aee.resume(snapshot.executionId, snapshot.scope.projectId, auth);
     return boundedView(view);
   }
 
