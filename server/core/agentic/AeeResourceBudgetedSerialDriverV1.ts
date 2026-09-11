@@ -28,7 +28,11 @@ export type AeeResourceBudgetedSerialDriverV1Dependencies = Readonly<{
  * call may create or continue a local attempt. Cancellation is always allowed.
  */
 export class AeeResourceBudgetedSerialDriverV1 {
-  constructor(private readonly dependencies: AeeResourceBudgetedSerialDriverV1Dependencies) {}
+  private readonly dependencies: AeeResourceBudgetedSerialDriverV1Dependencies;
+
+  constructor(dependencies: AeeResourceBudgetedSerialDriverV1Dependencies) {
+    this.dependencies = dependencies;
+  }
 
   async start(command: AeeSerialAdmittedGraphStartCommandV1, auth: AuthenticatedScope): Promise<AeeSerialAdmittedGraphViewV1> {
     const scope = normalizeScope({ ...auth, projectId: command.projectId });
