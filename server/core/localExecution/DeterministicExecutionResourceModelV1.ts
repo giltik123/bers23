@@ -1,8 +1,5 @@
-import {
-  ORTHOGONAL_TRANSFORM_TOOL_DEFINITION,
-  RESIZE_TOOL_DEFINITION,
-  type DeterministicToolDefinition,
-} from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { createHash } from 'node:crypto';
+import type { DeterministicToolDefinition } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 
 export const DETERMINISTIC_EXECUTION_RESOURCE_ESTIMATE_V1_SCHEMA = 'BERS_DETERMINISTIC_EXECUTION_RESOURCE_ESTIMATE_V1' as const;
 export const DETERMINISTIC_EXECUTION_RESOURCE_MODEL_V1_VERSION = 1 as const;
@@ -16,7 +13,9 @@ type Geometry = Readonly<{ width: number; height: number }>;
 type ResourceProfile = Readonly<{
   profileId: string;
   profileVersion: typeof DETERMINISTIC_EXECUTION_RESOURCE_MODEL_V1_VERSION;
-  canonicalTool: DeterministicToolDefinition;
+  executor: Readonly<{ toolId: string; version: string }>;
+  /** SHA-256 of recursively key-sorted JSON for the complete reviewed tool definition. */
+  contractSha256: string;
 }>;
 
 export type DeterministicExecutionResourceEstimateV1 = Readonly<{
@@ -56,16 +55,24 @@ export class DeterministicExecutionResourceModelV1Error extends Error {
   }
 }
 
+/**
+ * These digests are intentionally independent pins, not hashes recomputed from
+ * imported registry constants. A semantic registry change at the same executor
+ * version must fail closed until this resource profile is explicitly reviewed
+ * and repinned/versioned.
+ */
 const PROFILES: readonly ResourceProfile[] = Object.freeze([
   Object.freeze({
     profileId: 'orthogonal-transform-rgba8-browser-core-v1',
     profileVersion: DETERMINISTIC_EXECUTION_RESOURCE_MODEL_V1_VERSION,
-    canonicalTool: ORTHOGONAL_TRANSFORM_TOOL_DEFINITION,
+    executor: Object.freeze({ toolId: 'orthogonal-transform', version: '1' }),
+    contractSha256: 'faeea1fca52360370ff8557c4459c3fabd16aed02bfa70ce28ea0fe79f293790',
   }),
   Object.freeze({
     profileId: 'resize-rgba8-browser-core-v1',
     profileVersion: DETERMINISTIC_EXECUTION_RESOURCE_MODEL_V1_VERSION,
-    canonicalTool: RESIZE_TOOL_DEFINITION,
+    executor: Object.freeze({ toolId: 'resize', version: '1' }),
+    contractSha256: '8c0aa17cfcf55cd1e6fc19fc0737560fba2d5df69716d9af1fc069ad5bf1f0c2',
   }),
 ]);
 
@@ -114,7 +121,9 @@ export function estimateDeterministicExecutionResourcesV1(
   );
 
   // Browser worst accounted phase: source + output remain reachable while the
-  // encoder holds scanlines, its explicit copy, compressed bytes and final PNG.
+  // encoder holds scanlines, its explicit copy, compressed/IDAT/final bytes.
+  // Two 2x encoded bounds conservatively cover the three roughly scanline-sized
+  // encoded representations without pretending to know zlib allocator details.
   const browserPeakBytes = checkedSum([
     sourceRgbaBytes,
     outputRgbaBytes,
@@ -167,28 +176,41 @@ export function estimateDeterministicExecutionResourcesV1(
 }
 
 function requireProfile(tool: DeterministicToolDefinition): ResourceProfile {
-  const profile = PROFILES.find(candidate => sameExecutor(candidate.canonicalTool, tool));
+  const profile = PROFILES.find(candidate =>
+    tool.executor.kind === 'DETERMINISTIC_TOOL'
+    && candidate.executor.toolId === tool.executor.toolId
+    && candidate.executor.version === tool.executor.version);
   if (!profile) {
     fail('deterministic_resource_profile_unavailable', `No V1 memory profile exists for ${tool.executor.toolId}@${tool.executor.version}`);
   }
-  const canonical = profile.canonicalTool;
-  if (tool.capability !== canonical.capability
-    || tool.operation.id !== canonical.operation.id
-    || tool.operation.type !== canonical.operation.type
-    || tool.operation.version !== canonical.operation.version
-    || tool.browser.executorId !== canonical.browser.executorId
-    || tool.browser.runtime !== canonical.browser.runtime
-    || tool.browser.accelerator !== canonical.browser.accelerator
-    || tool.verification.comparison !== canonical.verification.comparison) {
-    fail('deterministic_resource_profile_contract_mismatch', `${tool.executor.toolId}@${tool.executor.version} differs from its reviewed V1 resource profile`);
+  const actualFingerprint = toolContractSha256(tool);
+  if (actualFingerprint !== profile.contractSha256) {
+    fail(
+      'deterministic_resource_profile_contract_mismatch',
+      `${tool.executor.toolId}@${tool.executor.version} contract ${actualFingerprint} differs from reviewed V1 resource profile ${profile.contractSha256}`,
+    );
   }
   return profile;
 }
 
-function sameExecutor(left: DeterministicToolDefinition, right: DeterministicToolDefinition): boolean {
-  return left.executor.kind === right.executor.kind
-    && left.executor.toolId === right.executor.toolId
-    && left.executor.version === right.executor.version;
+function toolContractSha256(tool: DeterministicToolDefinition): string {
+  return createHash('sha256').update(canonicalJson(tool), 'utf8').digest('hex');
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) fail('deterministic_resource_profile_contract_invalid', 'Deterministic tool contract contains a non-finite number');
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, child]) => child !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(',')}}`;
+  }
+  fail('deterministic_resource_profile_contract_invalid', `Deterministic tool contract contains unsupported ${typeof value}`);
 }
 
 function geometry(input: Geometry, label: string): Geometry {
