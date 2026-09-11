@@ -1,0 +1,85 @@
+name: HSME-2b1.1 teacher trust admission
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherArtifactManifestV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherQualityEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherTrustEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherAdmissionGateV1.ts'
+      - 'tests/creative-hsme-teacher-artifact-manifest-v1.test.mjs'
+      - 'tests/creative-hsme-teacher-quality-evidence-v1.test.mjs'
+      - 'tests/creative-hsme-teacher-trust-evidence-v1.test.mjs'
+      - 'tests/creative-hsme-teacher-admission-gate-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeTrainingProvenanceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTrainingReproductionGateV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-2b1-teacher-decision.json'
+      - '.github/workflows/hsme-2b1-1-teacher-admission.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  teacher-trust-admission-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact PR head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Browser/Core typecheck
+        run: npm run server:typecheck
+      - name: Prove canonical teacher artifact manifest and byte binding
+        run: |
+          mkdir -p .test-cache/hsme-2b1-1
+          npx esbuild tests/creative-hsme-teacher-artifact-manifest-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1-1/teacher-artifact-manifest.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1-1/teacher-artifact-manifest.test.mjs
+      - name: Prove quality floor before teacher efficiency
+        run: |
+          mkdir -p .test-cache/hsme-2b1-1
+          npx esbuild tests/creative-hsme-teacher-quality-evidence-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1-1/teacher-quality-evidence.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1-1/teacher-quality-evidence.test.mjs
+      - name: Prove dependency-license and exact toolchain trust roots
+        run: |
+          mkdir -p .test-cache/hsme-2b1-1
+          npx esbuild tests/creative-hsme-teacher-trust-evidence-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1-1/teacher-trust-evidence.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1-1/teacher-trust-evidence.test.mjs
+      - name: Prove canonical quality-qualified selected-teacher evidence set
+        run: |
+          mkdir -p .test-cache/hsme-2b1-1
+          npx esbuild tests/creative-hsme-teacher-admission-gate-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1-1/teacher-admission-gate.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1-1/teacher-admission-gate.test.mjs
+      - name: Preserve HSME-2b1 provenance and bounded reproduction
+        run: |
+          node --experimental-strip-types --test tests/creative-hsme-training-provenance-v1.test.mjs
+          mkdir -p .test-cache/hsme-2b1-1
+          npx esbuild tests/creative-hsme-training-reproduction-gate-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1-1/training-reproduction-gate.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1-1/training-reproduction-gate.test.mjs
+      - name: No teacher-admission authority widening
+        run: |
+          ! grep -E 'DurableModelFleet.*(install|activate|remove)|providerSelector|modelSelector|reserveCredits|spendCredits|acceptFinal|createVersion|restoreVersion' \
+            src/platform/creative/local-ai/hsme/HsmeTeacherArtifactManifestV1.ts \
+            src/platform/creative/local-ai/hsme/HsmeTeacherQualityEvidenceV1.ts \
+            src/platform/creative/local-ai/hsme/HsmeTeacherTrustEvidenceV1.ts \
+            src/platform/creative/local-ai/hsme/HsmeTeacherAdmissionGateV1.ts
