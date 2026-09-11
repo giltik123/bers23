@@ -1,0 +1,84 @@
+name: HSME-2a dual-budget model efficiency
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'BERS_LOCAL_MODEL_EFFICIENCY_POLICY.md'
+      - 'BERS_UNIVERSAL_LOCAL_AI_RUNTIME_ROADMAP.md'
+      - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineDualBudgetEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-dual-budget.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-decision.json'
+      - 'tests/creative-hsme-dense-baseline-dual-budget-v1.test.mjs'
+      - '.github/workflows/hsme-2a-dual-budget-policy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  dual-budget-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove dual-budget compact-first and MVM relationship
+        run: node --experimental-strip-types --test tests/creative-hsme-dense-baseline-dual-budget-v1.test.mjs
+      - name: Preserve R&D-only resource evidence boundary
+        run: |
+          set -euo pipefail
+          SOURCE=src/platform/creative/local-ai/hsme/HsmeDenseBaselineDualBudgetEvidenceV1.ts
+          grep -Fq "DUAL_BUDGET_COMPACT_FIRST" "$SOURCE"
+          grep -Fq "MVM_IS_NOT_A_SIZE_WAIVER" "$SOURCE"
+          ! grep -E -q 'providerSelector|reserveCredits|spendCredits|acceptFinal|createVersion|restoreVersion|projectService|artifactAuthority|DurableModelFleet.*\.(install|promote)' "$SOURCE"
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
+
+  hsme-and-aee-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Preserve HSME baseline and preparation contracts
+        run: |
+          node --experimental-strip-types --test tests/creative-hsme-pack-v1.test.mjs
+          mkdir -p .test-cache/hsme-2a-dual-budget
+          npx esbuild tests/creative-hsme-preparation-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-dual-budget/creative-hsme-preparation-v1.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-dual-budget/creative-hsme-preparation-v1.test.mjs
+      - name: Preserve AEE resource authority and autonomy laws
+        run: |
+          node --experimental-strip-types --test \
+            server/core/localExecution/DeterministicExecutionResourceModelV1.test.mjs \
+            server/core/agentic/AeeExecutionResourceBudgetV1.test.mjs \
+            server/core/agentic/AeeWorkflowTicketResourceAdmissionV1.test.mjs \
+            server/core/agentic/AeeMinimumAutonomyEnvelopeV1.test.mjs \
+            server/core/agentic/AeeSerialAdmittedGraphDriverV1.test.mjs

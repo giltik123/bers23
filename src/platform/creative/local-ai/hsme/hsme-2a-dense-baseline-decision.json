@@ -1,0 +1,210 @@
+{
+  "schemaVersion": "BERS_HSME_DENSE_BASELINE_EVIDENCE_V1",
+  "decisionStatus": "REDESIGN_REQUIRED",
+  "rationale": [
+    "Tiny-SD is the reproducible control floor but its latent UNet is not the long-term HSME dense DiT core.",
+    "SANA-Sprint proves strong few-step DiT quality but its required Gemma2-2B text conditioner alone exceeds the HSME initial useful-pack envelope.",
+    "SnapGen++ and MobileDiffusion provide strong mobile architecture evidence but no reviewed pinnable commercial checkpoint is available to this decision slice.",
+    "The highest-quality path is a BERS-owned compact dense DiT student distilled from separately admitted teacher/reference models, measured against Tiny-SD on identical product evidence."
+  ],
+  "candidates": [
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "strategy": "CONTROL_BASELINE",
+      "architectureFamily": "LATENT_UNET",
+      "verdict": "CONTROL_ONLY",
+      "reasons": [
+        "Existing BERS trust root pins twelve runtime files and exact upstream revision.",
+        "Runtime snapshot is 1062108664 bytes, close enough to serve as the current storage/control floor.",
+        "CreativeML OpenRAIL-M is reviewed with use and redistribution obligations but production approval is not granted.",
+        "UNet architecture is useful as a control but does not satisfy the selected long-term compact dense DiT direction."
+      ],
+      "sources": [
+        {
+          "sourceClass": "PINNED_MODEL_EVIDENCE",
+          "uri": "https://huggingface.co/segmind/tiny-sd",
+          "revision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
+          "license": "creativeml-openrail-m",
+          "licenseState": "COMMERCIAL_REVIEWED_WITH_OBLIGATIONS"
+        }
+      ],
+      "metrics": {
+        "parametersMillions": "UNKNOWN",
+        "fullPipelineBytes": 1062108664,
+        "textConditionerBytes": 246187869,
+        "supportedStepCounts": [],
+        "reportedMobileLatencyMs": "UNKNOWN",
+        "reportedMobileDevice": "UNKNOWN"
+      }
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-reference",
+      "strategy": "OFF_THE_SHELF_DIT",
+      "architectureFamily": "LINEAR_DIT",
+      "verdict": "REJECT_RUNTIME_FOOTPRINT",
+      "reasons": [
+        "The official model is a 0.6B linear diffusion transformer with unified one-to-four-step generation.",
+        "The official diffusers pipeline requires Gemma2-2B-IT as its text encoder.",
+        "The text encoder index reports 5228683776 bytes, over five times the complete HSME initial useful-pack ceiling before denoiser and VAE bytes.",
+        "The model is Apache-2.0 but the mandatory Gemma component carries separate Gemma terms, so the complete pipeline has mixed license obligations.",
+        "Use as few-step distillation and DiT architecture reference, not as the direct mobile runtime baseline."
+      ],
+      "sources": [
+        {
+          "sourceClass": "RESEARCH_REFERENCE",
+          "uri": "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+          "license": "Apache-2.0 plus Gemma terms for Gemma2-2B-IT",
+          "licenseState": "COMMERCIAL_REVIEW_REQUIRED"
+        },
+        {
+          "sourceClass": "RESEARCH_REFERENCE",
+          "uri": "https://huggingface.co/docs/diffusers/api/pipelines/sana_sprint",
+          "license": "documentation-reference",
+          "licenseState": "REFERENCE_ONLY_UNKNOWN"
+        }
+      ],
+      "metrics": {
+        "parametersMillions": 600,
+        "fullPipelineBytes": "UNKNOWN",
+        "textConditionerBytes": 5228683776,
+        "supportedStepCounts": [1, 2, 3, 4],
+        "reportedMobileLatencyMs": "UNKNOWN",
+        "reportedMobileDevice": "UNKNOWN"
+      }
+    },
+    {
+      "candidateId": "snapgen-plusplus-reference",
+      "strategy": "MOBILE_ARCHITECTURE_REFERENCE",
+      "architectureFamily": "COMPACT_DIT",
+      "verdict": "REFERENCE_ONLY_NO_PINNABLE_CHECKPOINT",
+      "reasons": [
+        "SnapGen++ is explicitly designed for mobile and edge DiT execution with adaptive global-local sparse attention.",
+        "The paper reports a small approximately 0.4B four-step variant and on-device deployment evidence.",
+        "No reviewed immutable public checkpoint and commercial redistribution trust root is pinned in BERS for this model.",
+        "Adopt architectural and distillation ideas only until independently reproducible weights and license evidence exist."
+      ],
+      "sources": [
+        {
+          "sourceClass": "RESEARCH_REFERENCE",
+          "uri": "https://arxiv.org/abs/2601.08303",
+          "license": "paper-reference-only",
+          "licenseState": "REFERENCE_ONLY_UNKNOWN"
+        }
+      ],
+      "metrics": {
+        "parametersMillions": 400,
+        "fullPipelineBytes": "UNKNOWN",
+        "textConditionerBytes": "UNKNOWN",
+        "supportedStepCounts": [4],
+        "reportedMobileLatencyMs": 1800,
+        "reportedMobileDevice": "iPhone 16 Pro Max"
+      }
+    },
+    {
+      "candidateId": "mobile-diffusion-reference",
+      "strategy": "MOBILE_ARCHITECTURE_REFERENCE",
+      "architectureFamily": "MOBILE_LATENT_DIFFUSION",
+      "verdict": "REFERENCE_ONLY_NO_PINNABLE_CHECKPOINT",
+      "reasons": [
+        "Google reports a 520M mobile latent-diffusion design with one-step DiffusionGAN sampling.",
+        "The published mobile evidence demonstrates sub-second 512x512 generation on premium iOS and Android devices.",
+        "The research publication does not provide the immutable commercially reviewed model trust root required by HSME-2.",
+        "Use as mobile macro-architecture and hardware-efficiency reference rather than a baseline identity."
+      ],
+      "sources": [
+        {
+          "sourceClass": "RESEARCH_REFERENCE",
+          "uri": "https://research.google/blog/mobilediffusion-rapid-text-to-image-generation-on-device/",
+          "license": "research-publication-reference-only",
+          "licenseState": "REFERENCE_ONLY_UNKNOWN"
+        }
+      ],
+      "metrics": {
+        "parametersMillions": 520,
+        "fullPipelineBytes": "UNKNOWN",
+        "textConditionerBytes": "UNKNOWN",
+        "supportedStepCounts": [1],
+        "reportedMobileLatencyMs": 500,
+        "reportedMobileDevice": "premium iOS and Android devices"
+      }
+    },
+    {
+      "candidateId": "bers-dense-core-v1-training-target",
+      "strategy": "BERS_DISTILLED_CORE",
+      "architectureFamily": "COMPACT_DIT",
+      "verdict": "SELECTED_FOR_TRAINING",
+      "reasons": [
+        "Allows the complete runtime footprint rather than denoiser parameter count to be optimized for the HSME mobile envelope.",
+        "Allows a compact text-conditioning path to be selected and licensed independently instead of inheriting a multi-gigabyte text encoder.",
+        "Preserves the canonical dense shared fallback required before Adapter-MoE specialization.",
+        "Can combine mobile-first architecture, few-step distillation and later hardware-specific representations without inheriting another project's runtime authority."
+      ],
+      "sources": [
+        {
+          "sourceClass": "RESEARCH_REFERENCE",
+          "uri": "https://arxiv.org/abs/2601.08303",
+          "license": "architecture-reference-only",
+          "licenseState": "REFERENCE_ONLY_UNKNOWN"
+        },
+        {
+          "sourceClass": "RESEARCH_REFERENCE",
+          "uri": "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+          "license": "few-step-reference-only",
+          "licenseState": "REFERENCE_ONLY_UNKNOWN"
+        },
+        {
+          "sourceClass": "RESEARCH_REFERENCE",
+          "uri": "https://research.google/blog/mobilediffusion-rapid-text-to-image-generation-on-device/",
+          "license": "mobile-architecture-reference-only",
+          "licenseState": "REFERENCE_ONLY_UNKNOWN"
+        }
+      ],
+      "metrics": {
+        "parametersMillions": "UNKNOWN",
+        "fullPipelineBytes": "UNKNOWN",
+        "textConditionerBytes": "UNKNOWN",
+        "supportedStepCounts": [],
+        "reportedMobileLatencyMs": "UNKNOWN",
+        "reportedMobileDevice": "UNKNOWN"
+      }
+    }
+  ],
+  "selectedCandidateId": "bers-dense-core-v1-training-target",
+  "trainingTarget": {
+    "candidateId": "bers-dense-core-v1-training-target",
+    "architectureFamily": "COMPACT_DIT",
+    "activeParametersMillions": {
+      "min": 500,
+      "max": 800
+    },
+    "initialUsefulPackBytes": {
+      "min": 600000000,
+      "max": 900000000
+    },
+    "activeWeightsMaxBytes": 800000000,
+    "textConditionerMaxBytes": 268435456,
+    "targetStepCounts": [2, 4, 6, 8],
+    "requiredEvidence": [
+      "commercial-license-and-redistribution-review",
+      "immutable-source-revision-and-content-sha256",
+      "reproducible-training-and-export-toolchain",
+      "representative-bers-quality-and-prompt-adherence",
+      "identity-person-garment-logo-and-pattern-preservation",
+      "anatomy-and-artifact-failure-rate",
+      "package-active-and-resident-byte-accounting",
+      "cold-warm-and-per-step-latency",
+      "peak-ram-vram-or-unified-memory",
+      "hsme-flash-ram-accelerator-bytes-moved",
+      "two-four-six-eight-step-quality-latency-matrix",
+      "mixed-precision-and-quantization-sensitivity",
+      "desktop-native-and-mobile-representation-feasibility",
+      "deterministic-replay-envelope",
+      "zero-silent-cloud-fallback-and-zero-hidden-credit-spend"
+    ],
+    "architectureReferences": [
+      "https://arxiv.org/abs/2601.08303",
+      "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+      "https://research.google/blog/mobilediffusion-rapid-text-to-image-generation-on-device/"
+    ]
+  }
+}
