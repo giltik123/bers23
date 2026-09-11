@@ -21,7 +21,7 @@ import { PLAN_PROPOSAL_V1_SCHEMA } from './PlanProposalV1.ts';
 
 const PROJECT_ID = 'project-ae4';
 const PROJECT_REVISION = 17;
-const SOURCE_REF = 'artifact-ae4-current';
+const SOURCE_REF = `eyJ2IjoxLCJsb2NhdGlvbiI6IlNUT1JFRF9PUklHSU5BTF9JRCJ9.${'a'.repeat(512)}`;
 
 function intent() {
   return {
@@ -70,16 +70,24 @@ function expectCodecCode(raw, code) {
   );
 }
 
-test('AE-4 codec exactly reproduces accepted AE-3 graph and stable canonical bytes', () => {
+test('AE-4 codec exactly reproduces accepted AE-3 graph and stable canonical bytes with opaque source authority', () => {
   const admitted = graph();
+  assert.ok(admitted.source.sourceRef.length > 200, 'test source must cross the retired generic token limit');
   const normalized = normalizeAeeAdmittedPlanGraphV1(JSON.parse(JSON.stringify(admitted)));
   assert.deepEqual(normalized, admitted);
+  assert.equal(normalized.source.sourceRef, SOURCE_REF);
   const serialized = serializeAeeAdmittedPlanGraphV1(normalized);
   assert.equal(serialized, serializeAeeAdmittedPlanGraphV1(admitted));
   assert.equal(serialized, serializeAeeAdmittedPlanGraphV1(JSON.parse(serialized)));
   assert.deepEqual(JSON.parse(serialized), JSON.parse(JSON.stringify(admitted)));
   assert.equal(Object.isFrozen(normalized), true);
   assert.equal(Object.isFrozen(normalized.nodes), true);
+});
+
+test('durable codec rejects sourceRef outside the bounded opaque-reference envelope', () => {
+  const admitted = graph();
+  expectCodecCode({ ...admitted, source: { ...admitted.source, sourceRef: 'x'.repeat(4097) } }, 'aee_admitted_plan_source_ref_invalid');
+  expectCodecCode({ ...admitted, source: { ...admitted.source, sourceRef: ` ${SOURCE_REF}` } }, 'aee_admitted_plan_source_ref_invalid');
 });
 
 test('durable codec rejects digest/body, registry and execution widening', () => {

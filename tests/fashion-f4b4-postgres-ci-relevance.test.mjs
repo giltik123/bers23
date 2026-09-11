@@ -63,8 +63,8 @@ test('F4b.4 PostgreSQL closure manifest is exact, normalized and prefix-free', a
   const manifest = await readManifest();
   assert.equal(manifest.version, 1);
   assert.equal(manifest.profile, POSTGRES);
-  assert.equal(manifest.bundleInputs.length, 197);
-  assert.equal(manifest.migrationPaths.length, 39);
+  assert.equal(manifest.bundleInputs.length, 210);
+  assert.equal(manifest.migrationPaths.length, 40);
   assert.equal(manifest.supportPaths.length, 17);
 
   const paths = [...manifest.bundleInputs, ...manifest.migrationPaths, ...manifest.supportPaths];
@@ -87,7 +87,7 @@ test('accepted four-bundle runtime graph exactly equals PostgreSQL classifier bu
   console.log(`F4B4_POSTGRES_CLASSIFIER_BUNDLE_INPUTS=${actual.length}`);
 });
 
-test('bundle-derived migration authority exactly equals the 39-path classifier SQL set', async () => {
+test('bundle-derived migration authority exactly equals the 40-path classifier SQL set', async () => {
   const manifest = await readManifest();
   const metafiles = await buildMetafiles();
   const closure = await collectBundleMigrationReferences(metafiles);
@@ -103,6 +103,8 @@ test('workflow and source-read support dependencies are relevant without widenin
   for (const path of manifest.supportPaths) assert.equal(isFashionExecutionCiRelevant(path, POSTGRES), true, path);
 
   for (const path of [
+    'server/core/agentic/BoundedAgentAeeCompatibilityFacade.ts',
+    'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql',
     'server/core/fashion/garmentAppearanceRefinementFinalLineage.ts',
     'src/platform/creative/local-ai/models/interactive-segmentation.manifest.json',
     'src/platform/creative/providers/fal/FalProvider.ts',

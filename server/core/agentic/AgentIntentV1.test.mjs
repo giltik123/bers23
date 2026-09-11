@@ -13,6 +13,7 @@ import {
 const PROJECT_ID = 'project-a';
 const PROJECT_REVISION = 7;
 const SOURCE_REF = 'artifact-current-a';
+const LONG_SOURCE_REF = `eyJ2IjoxLCJsb2NhdGlvbiI6IlNUT1JFRF9PUklHSU5BTF9JRCJ9.${'a'.repeat(512)}`;
 
 function base(overrides = {}) {
   return {
@@ -61,6 +62,25 @@ test('AgentIntentV1 normalizes bounded set-like fields and is deeply immutable',
   assert.equal(Object.isFrozen(intent.execution), true);
   assert.equal(Object.isFrozen(intent.targets), true);
   assert.equal(Object.isFrozen(intent.targets[0]), true);
+});
+
+test('sourceRef is a bounded opaque canonical reference while ordinary identifiers stay narrow', () => {
+  const intent = normalizeAgentIntentV1(base({
+    source: { projectId: PROJECT_ID, projectRevision: PROJECT_REVISION, sourceRef: LONG_SOURCE_REF },
+  }));
+  assert.equal(intent.source.sourceRef, LONG_SOURCE_REF);
+  assert.deepEqual(assertAgentIntentV1CanonicalContext(intent, {
+    projectId: PROJECT_ID,
+    projectRevision: PROJECT_REVISION,
+    sourceRef: LONG_SOURCE_REF,
+  }), intent);
+
+  expectCode(() => normalizeAgentIntentV1(base({
+    source: { projectId: PROJECT_ID, projectRevision: PROJECT_REVISION, sourceRef: 'x'.repeat(4097) },
+  })), 'agent_intent_source_ref_invalid');
+  expectCode(() => normalizeAgentIntentV1(base({
+    source: { projectId: 'p'.repeat(161), projectRevision: PROJECT_REVISION, sourceRef: SOURCE_REF },
+  })), 'agent_intent_string_bounds');
 });
 
 test('canonical serialization and digest ignore object key insertion order but preserve semantic array order', () => {

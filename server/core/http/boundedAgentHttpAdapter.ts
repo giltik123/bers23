@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
-import type { BoundedAgentDeterministicWorkflowService, BoundedAgentWorkflowView } from '../workflow/BoundedAgentDeterministicWorkflowService.ts';
+import type { BoundedAgentExecutionPort, BoundedAgentWorkflowView } from '../workflow/BoundedAgentExecutionPort.ts';
 import { BROWSER_CSRF_HEADER, assertBrowserMutationAllowed, requestAuthorization } from './browserSessionCookie.ts';
 
 const PREFIX = '/api/core/agent/bounded-deterministic/';
@@ -10,7 +10,7 @@ const RESULT_FIELDS = new Set(['projectId', 'result']);
 const PROJECT_ONLY_FIELDS = new Set(['projectId']);
 const RESUME_QUERY_FIELDS = new Set(['projectId']);
 
-type AgentPort = Pick<BoundedAgentDeterministicWorkflowService, 'start' | 'resume' | 'submitLocalResult' | 'retry' | 'cancel'>;
+type AgentPort = BoundedAgentExecutionPort;
 type AgentAuth = Readonly<{
   verify: (authorization: string | undefined) => AuthenticatedPrincipal | Promise<AuthenticatedPrincipal>;
 }>;

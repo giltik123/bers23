@@ -8,7 +8,10 @@ on:
       - 'src/components/automation/CanonicalAutomationStudio.jsx'
       - 'src/api/automationClient.js'
       - 'src/application/automation/**'
+      - 'server/core/agentic/**'
       - 'server/core/automation/**'
+      - 'server/core/composition/createProductionBoundedAgentCompatibility.ts'
+      - 'server/core/composition/createProductionCore.ts'
       - 'server/core/http/automationDefinitionHttpAdapter.ts'
       - 'server/core/http/automationManualExecutionHttpAdapter.ts'
       - 'server/core/localExecution/**'
@@ -66,13 +69,15 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Build immutable Core and apply production migrations through 042
+      - name: Build immutable Core and apply production migrations through 044
         run: |
           npm run server:build
           test -f dist-server/server.mjs
           test -f dist-server/migrations/040_automation_definitions.sql
           test -f dist-server/migrations/041_automation_invocation_bindings.sql
           test -f dist-server/migrations/042_automation_schedules.sql
+          test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
+          test -f dist-server/migrations/044_canonical_project_revision.sql
           node dist-server/migrate.mjs migrate
           node dist-server/migrate.mjs check
       - name: Generate and mask ephemeral C3c runtime secrets

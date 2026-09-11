@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 export const AGENT_INTENT_V1_SCHEMA = 'BERS_AGENT_INTENT_V1' as const;
 export const AGENT_INTENT_V1_DIGEST_VERSION = '1' as const;
 const DIGEST_DOMAIN = `bers:aee:agent-intent:v${AGENT_INTENT_V1_DIGEST_VERSION}\0`;
+const MAX_SOURCE_REFERENCE_BYTES = 4096;
 
 const MODALITIES = ['TEXT', 'VOICE', 'TOUCH', 'IMAGE'] as const;
 const TARGET_KINDS = ['GARMENT', 'PERSON', 'SELECTED_REGION', 'SELECTED_OBJECT', 'PRIOR_CANDIDATE'] as const;
@@ -128,7 +129,7 @@ export function normalizeAgentIntentV1(raw: unknown): AgentIntentV1 {
   const source = Object.freeze({
     projectId: identifier(sourceRaw.projectId, 'source.projectId'),
     projectRevision: integer(sourceRaw.projectRevision, 'source.projectRevision', 0, Number.MAX_SAFE_INTEGER),
-    sourceRef: identifier(sourceRaw.sourceRef, 'source.sourceRef'),
+    sourceRef: sourceReference(sourceRaw.sourceRef, 'source.sourceRef'),
   });
 
   const policy = enumValue(execution.policy, EXECUTION_POLICIES, 'execution.policy');
@@ -190,7 +191,7 @@ export function assertAgentIntentV1CanonicalContext(
   const normalized = normalizeAgentIntentV1(intent);
   const projectId = identifier(context?.projectId, 'canonicalContext.projectId');
   const projectRevision = integer(context?.projectRevision, 'canonicalContext.projectRevision', 0, Number.MAX_SAFE_INTEGER);
-  const sourceRef = identifier(context?.sourceRef, 'canonicalContext.sourceRef');
+  const sourceRef = sourceReference(context?.sourceRef, 'canonicalContext.sourceRef');
 
   if (normalized.source.projectId !== projectId) fail('agent_intent_cross_project', 'Intent source project differs from canonical Project');
   if (normalized.source.projectRevision !== projectRevision) fail('agent_intent_stale_project', 'Intent Project revision is stale');
@@ -344,6 +345,16 @@ function identifier(value: unknown, path: string): string {
     fail('agent_intent_identifier_invalid', `${path} contains unsupported identifier characters`);
   }
   return normalized;
+}
+
+function sourceReference(value: unknown, path: string): string {
+  if (typeof value !== 'string') fail('agent_intent_source_ref_invalid', `${path} must be a string`);
+  const normalized = value.trim();
+  if (!normalized || normalized !== value || Buffer.byteLength(value, 'utf8') > MAX_SOURCE_REFERENCE_BYTES
+    || /[\u0000-\u001f\u007f]/u.test(value)) {
+    fail('agent_intent_source_ref_invalid', `${path} is outside the bounded opaque-reference contract`);
+  }
+  return value;
 }
 
 function token(value: unknown, path: string, maxLength: number): string {
