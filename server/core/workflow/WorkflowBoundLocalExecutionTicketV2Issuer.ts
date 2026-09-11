@@ -19,6 +19,10 @@ type NormalizedBinding = Readonly<{
   allowedStepIds: ReadonlySet<string>;
 }>;
 
+export type WorkflowBoundLocalExecutionTicketV2IssueGuard = Readonly<{
+  beforeIssue(input: LocalExecutionTicketIssueRequestV2): void | Promise<void>;
+}>;
+
 /**
  * Server-only adapter that lets one already-reviewed local execution remain the
  * ticket authority while a durable workflow owns the ticket's workflowId.
@@ -28,15 +32,28 @@ type NormalizedBinding = Readonly<{
  * issuance is unchanged. After Core restart, an already durable ticket supplies
  * its own workflowId so canonical service reconstruction cannot silently rebind
  * the ticket to a child execution identity.
+ *
+ * A production composition may install exactly one server-owned pre-issuance
+ * guard. It runs only for genuinely new workflow-bound tickets, after scope and
+ * step binding are validated and before the canonical ticket authority mints or
+ * persists anything. Existing durable ticket replay is intentionally not
+ * re-admitted by a later policy/profile version.
  */
 export class WorkflowBoundLocalExecutionTicketV2Issuer implements LocalExecutionTicketV2IssuerPort {
   private readonly context = new AsyncLocalStorage<NormalizedBinding>();
   private readonly delegate: LocalExecutionTicketV2IssuerPort;
   private readonly durable: DurableReader;
+  private issueGuard: WorkflowBoundLocalExecutionTicketV2IssueGuard | undefined;
 
   constructor(delegate: LocalExecutionTicketV2IssuerPort, durable: DurableReader) {
     this.delegate = delegate;
     this.durable = durable;
+  }
+
+  installIssueGuard(guard: WorkflowBoundLocalExecutionTicketV2IssueGuard): void {
+    if (!guard || typeof guard.beforeIssue !== 'function') throw bindingError('Workflow local ticket issue guard is invalid');
+    if (this.issueGuard) throw bindingError('Workflow local ticket issue guard is already installed');
+    this.issueGuard = guard;
   }
 
   async withWorkflowBinding<T>(binding: WorkflowBinding, work: () => Promise<T>): Promise<T> {
@@ -62,7 +79,9 @@ export class WorkflowBoundLocalExecutionTicketV2Issuer implements LocalExecution
     if (!active) return await this.delegate.issue(input);
     if (!sameScope(active.scope, input.scope)) throw bindingError('Active local workflow binding scope does not match ticket scope');
     if (!active.allowedStepIds.has(input.stepId)) throw bindingError(`Local workflow binding does not admit step ${input.stepId}`);
-    return await this.delegate.issue(Object.freeze({ ...input, workflowId: active.workflowId }));
+    const bound = Object.freeze({ ...input, workflowId: active.workflowId });
+    await this.issueGuard?.beforeIssue(bound);
+    return await this.delegate.issue(bound);
   }
 }
 
