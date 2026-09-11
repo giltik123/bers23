@@ -25,7 +25,8 @@ export type AeeResourceBudgetedSerialDriverV1Dependencies = Readonly<{
  * The delegate remains the execution-state coordinator. This guard owns no run,
  * continuation, ticket or Artifact state: it only proves that the immutable
  * admitted graph fits the Core-owned exact executor resource profiles before a
- * call may create or continue a local attempt. Cancellation is always allowed.
+ * call may create or continue local work. Terminal replay and cancellation stay
+ * available because neither can allocate a new admitted execution attempt.
  */
 export class AeeResourceBudgetedSerialDriverV1 {
   private readonly dependencies: AeeResourceBudgetedSerialDriverV1Dependencies;
@@ -68,9 +69,13 @@ export class AeeResourceBudgetedSerialDriverV1 {
   private async assertExistingExecutionBudget(executionId: string, projectId: string, auth: AuthenticatedScope): Promise<void> {
     const scope = normalizeScope({ ...auth, projectId });
     const snapshot = await this.dependencies.continuations.get(executionId, scope);
-    if (!snapshot || snapshot.plan.planId !== AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID) return;
+    if (!snapshot || snapshot.plan.planId !== AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID || isTerminal(snapshot.state)) return;
     const durable = await this.dependencies.plans.get(scope, snapshot.plan.planDigest);
     if (!durable) return;
     assertAeeAdmittedGraphMemoryBudgetV1(durable.graph);
   }
+}
+
+function isTerminal(state: string): boolean {
+  return state === 'SUCCESS' || state === 'FAILED' || state === 'CANCELLED' || state === 'UNKNOWN';
 }
