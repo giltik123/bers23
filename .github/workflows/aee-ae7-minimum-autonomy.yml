@@ -1,0 +1,74 @@
+name: AEE AE-7 Minimum Autonomy Envelope
+
+on:
+  push:
+    branches: ["aee-ae7-minimum-autonomy-policy-v1"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'server/core/workflow/**'
+      - 'server/core/http/boundedAgentHttpAdapter.ts'
+      - '.github/workflows/aee-ae7-minimum-autonomy.yml'
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'server/core/agentic/**'
+      - 'server/core/workflow/**'
+      - 'server/core/http/boundedAgentHttpAdapter.ts'
+      - '.github/workflows/aee-ae7-minimum-autonomy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  minimum-autonomy-envelope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove server-owned AE-7 minimum autonomy envelope
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/AeeMinimumAutonomyEnvelopeV1.test.mjs \
+            server/core/agentic/AeePlanCompilerV1.test.mjs \
+            server/core/agentic/BoundedAgentAeeCompatibilityCompilerV1.test.mjs \
+            server/core/agentic/BoundedAgentAeeCompatibilityFacade.test.mjs \
+            server/core/agentic/AeeSerialAdmittedGraphDriverV1.test.mjs \
+            server/core/workflow/WorkflowLocalExecutionAttemptRunProjection.test.mjs
+      - name: Preserve Agent intent and durable admitted-plan replay contracts
+        run: |
+          node --experimental-strip-types --test \
+            server/core/agentic/AgentIntentV1.test.mjs \
+            server/core/agentic/AeeAdmittedPlanCodecV1.test.mjs
+      - name: Prove minimum envelope adds no new production authority
+        run: |
+          set -euo pipefail
+          TEST=server/core/agentic/AeeMinimumAutonomyEnvelopeV1.test.mjs
+          DESIGN=server/core/agentic/AeeMinimumAutonomyEnvelopeV1.design.md
+          COMPILER=server/core/agentic/BoundedAgentAeeCompatibilityCompilerV1.ts
+          grep -q 'BOUNDED_AGENT_AEE_EXECUTION' "$TEST"
+          grep -q 'L1 PLAN_AND_CONFIRM' "$DESIGN"
+          grep -q '#548' "$DESIGN"
+          grep -q "maxReplans: 0" "$COMPILER"
+          grep -q "maxCandidates: 1" "$COMPILER"
+          grep -q "maxPaidCredits: 0" "$COMPILER"
+          grep -q "cloudAllowed: false" "$COMPILER"
+          test -z "$(git diff --name-only "$(git merge-base HEAD origin/main)"..HEAD | grep -E '(^server/core/.*/migrations/|^server/core/providers/|^server/core/billing/)' || true)"
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
