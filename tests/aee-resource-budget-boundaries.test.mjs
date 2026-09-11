@@ -5,8 +5,8 @@ import test from 'node:test';
 
 const COMPOSITION = 'server/core/composition/createProductionBoundedAgentCompatibility.ts';
 
-test('production cannot instantiate the raw AE-4b serial driver outside the resource-guarded composition seam', () => {
-  const matches = execFileSync(
+test('production installs one AEE resource guard at workflow ticket issuance without wrapping AE-4b state coordination', () => {
+  const serialMatches = execFileSync(
     'git',
     ['grep', '-l', '--fixed-strings', 'new AeeSerialAdmittedGraphDriverV1', '--', 'server/core'],
     { encoding: 'utf8' },
@@ -15,13 +15,25 @@ test('production cannot instantiate the raw AE-4b serial driver outside the reso
     .split('\n')
     .filter(Boolean)
     .filter(file => !/\.test\.[cm]?[jt]s$/.test(file));
+  assert.deepEqual(serialMatches, [COMPOSITION]);
 
-  assert.deepEqual(matches, [COMPOSITION]);
+  const guardMatches = execFileSync(
+    'git',
+    ['grep', '-l', '--fixed-strings', 'new AeeWorkflowTicketResourceAdmissionV1', '--', 'server/core'],
+    { encoding: 'utf8' },
+  )
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .filter(file => !/\.test\.[cm]?[jt]s$/.test(file));
+  assert.deepEqual(guardMatches, [COMPOSITION]);
+
   const composition = readFileSync(COMPOSITION, 'utf8');
-  assert.match(composition, /const serial = new AeeSerialAdmittedGraphDriverV1/);
-  assert.match(composition, /const aee = new AeeResourceBudgetedSerialDriverV1\(\{[\s\S]*delegate: serial/);
-  assert.match(composition, /new BoundedAgentAeeCompatibilityFacade\(\{[\s\S]*\baee,/);
-  assert.doesNotMatch(composition, /new BoundedAgentAeeCompatibilityFacade\(\{[\s\S]*aee:\s*serial/);
+  const install = composition.indexOf('installIssueGuard(new AeeWorkflowTicketResourceAdmissionV1');
+  const serial = composition.indexOf('const aee = new AeeSerialAdmittedGraphDriverV1');
+  const facade = composition.indexOf('new BoundedAgentAeeCompatibilityFacade');
+  assert.ok(install >= 0 && serial > install && facade > serial, 'resource admission must be sealed before the AEE driver is exposed through the facade');
+  assert.doesNotMatch(composition, /AeeResourceBudgetedSerialDriverV1/);
 });
 
 test('resource calibration remains evidence-only and outside production imports', () => {
