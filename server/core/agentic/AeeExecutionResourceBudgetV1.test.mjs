@@ -69,7 +69,7 @@ function fakeDelegate() {
   };
 }
 
-function guarded(graph, delegateState) {
+function guarded(graph, delegateState, state = 'READY') {
   const scope = Object.freeze({ ...auth, projectId });
   const plans = Object.freeze({
     async get(queryScope, digest) {
@@ -84,6 +84,7 @@ function guarded(graph, delegateState) {
       return Object.freeze({
         executionId,
         scope,
+        state,
         plan: Object.freeze({ planId: AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID, planRevision: '1', planDigest: graph.digest }),
       });
     },
@@ -140,6 +141,19 @@ test('resource-guarded driver fails before start/resume/submit/retry delegate ca
 
   await driver.cancel('execution-1', projectId, auth);
   assert.equal(delegate.calls.cancel, 1);
+});
+
+test('terminal durable replay is not retroactively denied by a stricter resource profile', async () => {
+  const reference = graphWithBudget(137_438_953_472);
+  const required = Math.max(...estimateAeeAdmittedGraphExecutionResourcesV1(reference).map(binding => binding.estimate.requiredPeakMemoryBytes));
+  const insufficient = graphWithBudget(required - 1);
+  const delegate = fakeDelegate();
+  const driver = guarded(insufficient, delegate, 'SUCCESS');
+
+  await driver.resume('execution-1', projectId, auth);
+  await driver.submitLocalResult('execution-1', projectId, auth, { ticketId: 'already-completed-ticket' });
+  assert.equal(delegate.calls.resume, 1);
+  assert.equal(delegate.calls.submit, 1);
 });
 
 test('resource-guarded driver delegates unchanged when the immutable graph budget is sufficient', async () => {
