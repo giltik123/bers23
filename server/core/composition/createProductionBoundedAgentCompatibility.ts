@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
-import { AeeResourceBudgetedSerialDriverV1 } from '../agentic/AeeResourceBudgetedSerialDriverV1.ts';
 import { AeeSerialAdmittedGraphDriverV1 } from '../agentic/AeeSerialAdmittedGraphDriverV1.ts';
+import { AeeWorkflowTicketResourceAdmissionV1 } from '../agentic/AeeWorkflowTicketResourceAdmissionV1.ts';
 import { BoundedAgentAeeCompatibilityFacade } from '../agentic/BoundedAgentAeeCompatibilityFacade.ts';
 import { PostgresAeeAdmittedPlanStore } from '../agentic/PostgresAeeAdmittedPlanStore.ts';
 import { PostgresBoundedAgentCompatibilityAdmissionLock } from '../agentic/PostgresBoundedAgentCompatibilityAdmissionLock.ts';
@@ -30,9 +30,11 @@ export type ProductionBoundedAgentCompatibilityInput = Readonly<{
 }>;
 
 /**
- * AE-4c.2 composition with #548 resource admission. Policy and route selection
- * remain outside composition; this factory wires one AEE execution path and a
- * fail-closed Core-owned resource guard around it.
+ * AE-4c.2 composition with #548 resource admission. The existing AE-4b driver
+ * remains the sole AEE execution coordinator. #548 is installed at the shared
+ * server-only workflow ticket issuance seam, immediately before a genuinely-new
+ * local ticket can be minted; it owns no execution state and does not re-admit
+ * already durable tickets/results.
  */
 export function createProductionBoundedAgentCompatibility(input: ProductionBoundedAgentCompatibilityInput) {
   const legacy = new BoundedAgentDeterministicWorkflowService({
@@ -48,7 +50,11 @@ export function createProductionBoundedAgentCompatibility(input: ProductionBound
     now: input.now,
   });
   const plans = new PostgresAeeAdmittedPlanStore(input.pool);
-  const serial = new AeeSerialAdmittedGraphDriverV1({
+  input.workflowTickets.installIssueGuard(new AeeWorkflowTicketResourceAdmissionV1({
+    continuations: input.continuations,
+    plans,
+  }));
+  const aee = new AeeSerialAdmittedGraphDriverV1({
     plans,
     continuations: input.continuations,
     tickets: input.tickets,
@@ -60,11 +66,6 @@ export function createProductionBoundedAgentCompatibility(input: ProductionBound
     projects: input.projects,
     runs: input.runs,
     now: input.now,
-  });
-  const aee = new AeeResourceBudgetedSerialDriverV1({
-    delegate: serial,
-    plans,
-    continuations: input.continuations,
   });
   const admission = new PostgresBoundedAgentCompatibilityAdmissionLock(input.pool);
   return new BoundedAgentAeeCompatibilityFacade({
