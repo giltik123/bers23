@@ -1,0 +1,113 @@
+name: HSME-1b preparation residency placement
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'src/platform/creative/local-ai/hsme/**'
+      - 'src/platform/creative/local-ai/lifecycle/DurableModelFleet.ts'
+      - 'src/platform/creative/local-ai/trust/**'
+      - 'src/platform/creative/local-ai/types.ts'
+      - 'tests/creative-hsme-preparation-v1.test.mjs'
+      - 'tests/creative-hsme-pack-v1.test.mjs'
+      - '.github/workflows/hsme-1b-preparation-residency.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  preparation-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove HSME pack trust root and preparation/residency planning
+        run: |
+          node --experimental-strip-types --test \
+            tests/creative-hsme-pack-v1.test.mjs \
+            tests/creative-hsme-preparation-v1.test.mjs
+      - name: Preserve HSME authority boundaries
+        run: |
+          set -euo pipefail
+          SOURCE=src/platform/creative/local-ai/hsme/HsmePreparationV1.ts
+          grep -Fq 'HsmeCanonicalManifestResolverV1' "$SOURCE"
+          grep -Fq 'networkBytesDuringExecution: 0' "$SOURCE"
+          grep -Fq "lifecycleRequirement: HsmeLifecycleRequirementV1" "$SOURCE"
+          ! grep -E -q '\.(install|resume|remove|rollback|quarantine)\(' "$SOURCE"
+          ! grep -E -q 'providerSelector|modelSelector|reserveCredits|spendCredits|acceptFinal|createVersion|restoreVersion|projectService|artifactAuthority' "$SOURCE"
+          ! grep -q 'downloadUri' "$SOURCE"
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
+
+  durable-fleet-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+      - run: npm ci
+      - name: Preserve durable model fleet lifecycle
+        run: npm run test:durable-model-fleet
+      - name: Preserve durable fleet hardening and immutable-version authority
+        run: |
+          mkdir -p .test-cache/hsme-1b
+          npx esbuild tests/creative-durable-model-fleet-hardening.test.ts \
+            --bundle --platform=node --format=esm --target=node20 \
+            --outfile=.test-cache/hsme-1b/creative-durable-model-fleet-hardening.test.mjs \
+            --external:node:*
+          npx esbuild tests/creative-durable-model-fleet-authority.test.ts \
+            --bundle --platform=node --format=esm --target=node20 \
+            --outfile=.test-cache/hsme-1b/creative-durable-model-fleet-authority.test.mjs \
+            --external:node:*
+          node --test \
+            .test-cache/hsme-1b/creative-durable-model-fleet-hardening.test.mjs \
+            .test-cache/hsme-1b/creative-durable-model-fleet-authority.test.mjs
+
+  aee-resource-authority-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Preserve AEE resource budget and minimum autonomy laws
+        run: |
+          node --experimental-strip-types --test \
+            server/core/localExecution/DeterministicExecutionResourceModelV1.test.mjs \
+            server/core/agentic/AeeExecutionResourceBudgetV1.test.mjs \
+            server/core/agentic/AeeWorkflowTicketResourceAdmissionV1.test.mjs \
+            server/core/agentic/AeeMinimumAutonomyEnvelopeV1.test.mjs \
+            server/core/agentic/AeeSerialAdmittedGraphDriverV1.test.mjs
