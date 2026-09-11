@@ -2,7 +2,7 @@
 
 **Status: CANONICAL R&D COMPANION / NO PRODUCTION AUTHORITY**
 
-This document defines the selected long-term runtime architecture for running model families whose installed size may materially exceed the working RAM available on the device. It is a companion to `BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md`, Stage E of `BERS_V1_DEVELOPMENT_ROADMAP.md`, and the accepted HSME-1/HSME-1b control-plane and preparation/residency contracts.
+This document defines the selected long-term runtime architecture for running model families whose installed size may materially exceed the working RAM available on the device. It is a companion to `BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md`, Stage E of `BERS_V1_DEVELOPMENT_ROADMAP.md`, the accepted HSME-1/HSME-1b control-plane and preparation/residency contracts, `BERS_LOCAL_MODEL_EFFICIENCY_POLICY.md`, and `BERS_MODEL_LAB_BYOM_ROADMAP.md`.
 
 It does **not** replace HSME, Core admission, DurableModelFleet, Artifact authority, Billing authority, AEE, or existing model-specific acceptance programs. It defines a lower-level local model-memory and execution substrate beneath already admitted local work.
 
@@ -10,13 +10,15 @@ The selected design combines BERS-owned architecture with evidence-driven ideas 
 
 ## 1. Canonical decision
 
-BERS will build one **platform-independent Universal Local AI Runtime** with a shared **Model Virtual Memory (MVM)** layer rather than separate Apple, Android, desktop, browser, LLM, and image runtimes.
+BERS will build one **platform-independent Universal Local AI Runtime** with a shared **Model Virtual Memory (MVM)** layer rather than separate Apple, Android, desktop, browser, LLM, image, or BYOM runtimes.
 
-The key product law is:
+Two independent product/resource laws apply:
 
 > **Installed model capacity and peak working memory are separate resources.**
 
-A model family may occupy several gigabytes or more on verified local storage while only a bounded active subset is materialized into RAM and accelerator memory for the current execution stage.
+> **MVM is not permission to make BERS-owned models unnecessarily large. Storage footprint and working-memory footprint are both first-class acceptance budgets.**
+
+A model family may occupy several gigabytes or more on verified local storage while only a bounded active subset is materialized into RAM and accelerator memory for the current execution stage, but BERS-owned models must still follow the compact-first optimization policy in `BERS_LOCAL_MODEL_EFFICIENCY_POLICY.md`.
 
 The canonical layering is:
 
@@ -49,6 +51,8 @@ canonical execution / Artifact authorities remain unchanged
 
 The runtime owns **how trusted model bytes are materialized and executed**. It owns no product, cloud, financial, Project, Artifact, provider, or execution-admission authority.
 
+User-owned models may reach this runtime only through the separate trust/import rules of `BERS_MODEL_LAB_BYOM_ROADMAP.md`; BYOM does not create a parallel runtime.
+
 ## 2. Why this design was selected
 
 Three realistic approaches were considered.
@@ -57,13 +61,13 @@ Three realistic approaches were considered.
 
 Advantages:
 
-- fastest way to reproduce current Apple-Silicon sparse-MoE experiments;
+- fastest way to reproduce current sparse-MoE experiments;
 - existing mmap expert access, cache, prerouter and quantized expert execution.
 
 Rejected as the canonical BERS architecture because:
 
-- the current reference implementation is MLX/Apple-centric;
-- its model/runtime abstractions are autoregressive-MoE-specific;
+- the current reference implementation is materially model/backend-specific;
+- its abstractions are primarily autoregressive-MoE-oriented;
 - it would create a second residency/cache/runtime authority next to HSME;
 - BERS must support image, Agent, multimodal and future local workloads across many platforms.
 
@@ -241,13 +245,15 @@ representation identity
 expected hash-bound parent artifact
 ```
 
-The index is untrusted until bound to a DurableModelFleet-verified representation.
+The index is untrusted until bound to a DurableModelFleet-verified representation or, for user-owned models, a locally validated User Model Vault representation governed by `BERS_MODEL_LAB_BYOM_ROADMAP.md`.
 
 MVM may never accept arbitrary model-generated or browser-generated file paths, offsets, lengths or tensor identities.
 
 ### 6.2 Trust boundary
 
-`DurableModelFleet` remains the authority for:
+`DurableModelFleet` remains the authority for BERS production model identity, lifecycle and promotion.
+
+For BERS-owned models it owns:
 
 - model identity/version;
 - URI/acquisition source;
@@ -256,9 +262,11 @@ MVM may never accept arbitrary model-generated or browser-generated file paths, 
 - lifecycle state;
 - promotion/quarantine evidence.
 
-MVM only performs range access **inside bytes that Fleet/HSME already established as trusted and active**.
+User-owned models remain a distinct trust class in the User Model Vault and cannot be promoted merely by reaching MVM.
 
-For materially different layouts or hardware-specific weight representations, current fleet law continues to require distinct immutable representation identity/version and evidence.
+MVM only performs range access inside bytes that the appropriate upper trust layer already established as immutable and valid for the current local execution.
+
+For materially different layouts or hardware-specific weight representations, current fleet/user-representation identity rules require distinct immutable identity and evidence.
 
 ## 7. Portable storage backend
 
@@ -309,20 +317,7 @@ BersComputeBackend
 
 Backends may internally use existing mature runtimes rather than reimplementing every vendor kernel.
 
-Potential adapters:
-
-- portable CPU / XNNPACK-style path;
-- ExecuTorch backend adapters;
-- ONNX Runtime adapters for existing accepted model families;
-- Apple Metal/MPS/Core ML/ANE;
-- Android Vulkan;
-- Qualcomm QNN;
-- MediaTek NPU runtime;
-- Samsung/Exynos NPU runtime;
-- NVIDIA CUDA;
-- Intel/OpenVINO CPU/GPU/NPU;
-- browser WebGPU/WASM;
-- future AMD, ARM, RISC-V or embedded accelerators where evidence supports them.
+Potential adapters include portable CPU paths, ExecuTorch/ONNX Runtime adapters, Apple Metal/MPS/Core ML, Android Vulkan, Qualcomm QNN, MediaTek/Samsung NPU paths, CUDA, OpenVINO, WebGPU/WASM, and future accepted accelerators.
 
 No backend may become model-provenance or execution-policy authority.
 
@@ -339,9 +334,9 @@ A Rust core with stable C ABI is the preferred first research candidate for byte
 
 This language choice is an implementation default, not architecture authority. If measured integration or binary constraints invalidate it, a C++ portable core may replace it without changing MVM schemas or semantics.
 
-## 10. Working-memory accounting
+## 10. Dual-budget accounting
 
-Every MVM-compatible representation must expose a bounded working-memory model.
+Every MVM-compatible representation must expose both a bounded working-memory model and an installed-storage model.
 
 At minimum:
 
@@ -366,13 +361,13 @@ Installed Model Capacity =
 + backend-specific side artifacts
 ```
 
-A large installed model is useful only if peak working memory and bytes moved remain within device budgets.
+A large installed model is useful only if peak working memory and bytes moved remain within device budgets **and** the added installed/download footprint is justified against smaller alternatives.
+
+BERS-owned model candidates must be evaluated under `BERS_LOCAL_MODEL_EFFICIENCY_POLICY.md` before MVM is treated as justification for a larger representation.
 
 ## 11. Byte-budgeted global cache
 
-Edge0-style slot caches are useful when experts are nearly uniform, but BERS must support heterogeneous image/Agent expert sizes.
-
-The canonical BERS cache is therefore **byte-budgeted**, not only slot-counted.
+The canonical BERS cache is **byte-budgeted**, not only slot-counted.
 
 Maintain independent bounded budgets for:
 
@@ -434,19 +429,15 @@ Predictive prefetch is valuable, but deterministic knowledge must be exploited f
 Canonical priority:
 
 ### Level 1 — deterministic requirements
-
 Known next expert/block/tensor requirements from the admitted execution graph or fixed schedule.
 
 ### Level 2 — schedule-derived prediction
-
 High-confidence next timestep/stage/block requirements based on model structure.
 
 ### Level 3 — learned prerouter
-
 A small predictor estimates future expert demand from bounded runtime features.
 
 ### Level 4 — broader speculation
-
 Only after real-device evidence proves net wall-clock/energy benefit.
 
 Every level is capped by RAM, accelerator, flash-bandwidth, battery and thermal budgets.
@@ -457,47 +448,15 @@ For the first BERS implementation, a learned prerouter is **prefetch advisory on
 
 The authoritative model router still determines which expert actually executes.
 
-Therefore an inaccurate prerouter initially causes only:
-
-- cache miss;
-- wasted prefetch bytes;
-- additional latency.
-
-It must not silently change model semantics or choose a different expert output.
+Therefore an inaccurate prerouter initially causes only cache miss, wasted prefetch bytes, or additional latency. It must not silently change model semantics.
 
 Only a future separately trained/evaluated representation may allow predicted routing to replace authoritative routing, and such promotion requires parity/quality evidence specific to that model family.
 
-Potential image-model prerouter features include:
-
-- capability/task family;
-- diffusion/flow timestep or stage;
-- block/group identity;
-- quality mode;
-- bounded latent/hidden summary;
-- conditioning class;
-- previous routed experts;
-- region/garment/identity preservation class where the model itself is trained to use such signals.
-
-The predictor does not receive product authority or arbitrary private context merely to improve cache hits.
-
 ## 15. Recovery adapters
 
-Adopt the useful idea behind Recover-LoRA without hard-coding LoRA as the only mechanism.
+Define **BERS Recovery Adapters** as compact deltas trained to recover quality lost by storage/compute optimization such as quantization, hardware-specific packing, or distilled compact experts.
 
-Define **BERS Recovery Adapters** as compact deltas trained to recover quality lost by storage/compute optimization, such as:
-
-- INT8/INT4 expert quantization;
-- hardware-specific packing;
-- distilled compact experts;
-- other bounded compression.
-
-Candidate forms:
-
-- LoRA;
-- residual adapters;
-- low-rank FFN deltas;
-- scale/bias corrections;
-- other compact model-specific corrections.
+Candidate forms include LoRA, residual adapters, low-rank FFN deltas, scale/bias corrections, and other compact model-specific corrections.
 
 Recovery adapters remain separately versioned/trusted model bytes. They cannot be silently learned or updated on user devices from live outcomes.
 
@@ -505,16 +464,7 @@ Recovery adapters remain separately versioned/trusted model bytes. They cannot b
 
 Use FreeToken-style system ideas as scheduling mechanisms, not as a literal LLM/CUDA port.
 
-Evaluate:
-
-- storage/RAM/accelerator bandwidth profiling;
-- double buffering;
-- asynchronous movement;
-- hot/warm/cold residency;
-- memory-pressure-aware cache resizing;
-- heterogeneous CPU/GPU/NPU placement;
-- measured overlap of transfer and compute;
-- elastic resource budgets bounded by HSME admission.
+Evaluate storage/RAM/accelerator bandwidth profiling, double buffering, asynchronous movement, hot/warm/cold residency, memory-pressure-aware cache resizing, heterogeneous CPU/GPU/NPU placement, measured overlap of transfer and compute, and elastic resource budgets bounded by HSME admission.
 
 The adaptive scheduler may choose **where and when** already-admitted work is materialized. It may not change **what capability was admitted** or widen LOCAL to CLOUD.
 
@@ -522,23 +472,12 @@ The adaptive scheduler may choose **where and when** already-admitted work is ma
 
 MVM is model-family-neutral.
 
-Initial intended consumers:
+Initial intended consumers include:
 
-### HSME image/runtime path
-
-- shared compact image core;
-- Adapter-MoE;
-- selective internal sparse experts;
-- timestep/block/spatial routing;
-- region-aware refinement experts.
-
-### Local AEE reasoning model
-
-A future sparse local language/reasoning model may reuse the same vault/cache/prefetch substrate, with autoregressive-specific state remaining in the model backend rather than MVM authority.
-
-### Multimodal / voice
-
-Large optional multimodal or voice packs may use MVM where their architecture benefits from range-addressable sparse residency. Compact always-resident voice models do not need to be forced into MVM.
+- HSME image/runtime models;
+- future sparse local AEE reasoning models;
+- suitable multimodal/voice models;
+- safely imported user-owned models admitted through BERS Model Lab/BYOM.
 
 MVM should not make every model sparse. Dense models remain valid when they fit and execute better resident.
 
@@ -546,37 +485,11 @@ MVM should not make every model sparse. Dense models remain valid when they fit 
 
 The runtime should degrade gracefully across hardware.
 
-### P0 — Portable CPU
-
-Mandatory reference/fallback for supported model representations where feasible. This establishes correctness independent of vendor acceleration.
-
-### P1 — Generic GPU
-
-Examples:
-
-- Vulkan;
-- Metal/MPS;
-- CUDA;
-- WebGPU.
-
-### P2 — Vendor NPU / specialized accelerator
-
-Examples:
-
-- Core ML / ANE;
-- Qualcomm QNN;
-- MediaTek NPU;
-- Samsung/Exynos NPU;
-- Intel/OpenVINO NPU;
-- future accepted vendor backends.
-
-### P3 — Browser
-
-MVM semantics over browser storage/chunking with WASM/WebGPU where feasible.
-
-### P4 — Embedded / future devices
-
-Supported only when memory/storage/compute evidence makes a model family meaningful.
+- **P0 — Portable CPU:** correctness/fallback where feasible.
+- **P1 — Generic GPU:** Vulkan, Metal/MPS, CUDA, WebGPU or equivalent accepted paths.
+- **P2 — Vendor NPU/specialized accelerator:** Core ML/ANE, QNN, MediaTek, Samsung/Exynos, OpenVINO NPU and future accepted backends.
+- **P3 — Browser:** MVM semantics over browser storage/chunking with WASM/WebGPU where meaningful.
+- **P4 — Embedded/future devices:** only when memory/storage/compute evidence makes the model family meaningful.
 
 `universal` means one architecture and capability negotiation, **not** a promise that every physical device can execute every model.
 
@@ -588,55 +501,25 @@ For a given model family, runtime policy may classify an execution into internal
 
 ```text
 RESIDENT
-  most/all required weights fit warm/hot
-
 HYBRID_RESIDENT
-  shared core + common experts resident, rare experts streamed
-
 FLASH_SPARSE
-  compact resident core + aggressively bounded active expert working set
 ```
 
 These are internal MVM states only. They must never replace canonical Core targets `LOCAL`, `HYBRID`, `CLOUD`, `BLOCKED`.
 
-A larger-memory laptop may keep far more of the same logical model resident than a phone, while preserving the same model semantics and trusted representation where compatible.
-
 ## 20. Backend and representation selection
 
-The runtime selects only from representations already accepted by DurableModelFleet and compatible with current HSME/Core admission.
+The runtime selects only from representations already accepted by the relevant trust layer and compatible with current HSME/Core admission.
 
-Selection inputs may include:
-
-- architecture/OS capability;
-- available RAM;
-- accelerator type;
-- supported precision/quantization;
-- dynamic gather/scatter support;
-- measured storage bandwidth;
-- memory pressure;
-- thermal/battery state;
-- model-specific evidence.
+Selection inputs may include architecture/OS capability, RAM, accelerator type, supported precision/quantization, dynamic gather/scatter support, measured storage bandwidth, memory pressure, thermal/battery state, and model-specific evidence.
 
 Browser or model output cannot name an arbitrary backend representation and have it trusted.
 
 ## 21. Security and correctness law
 
-Mapped model storage creates a large low-level attack/corruption surface. Required rules:
+Mapped model storage creates a low-level attack/corruption surface. Required rules include read-only mapping, exact range bounds checks, overflow-safe arithmetic, canonical index validation, trusted parent binding, no arbitrary path traversal, no model/browser-controlled raw offsets, alignment/shape validation, hard byte caps, fail-closed stale identity handling, zero execution-time network for admitted LOCAL_ONLY work, deterministic movement evidence, fuzz/property tests, and cross-language golden vectors.
 
-- read-only mapping for immutable model roots;
-- exact range bounds checks before any materialization;
-- overflow-safe offset/length arithmetic;
-- canonical index validation;
-- index/shard identity bound to verified model representation;
-- no arbitrary path traversal;
-- no user/model/browser-controlled raw offsets;
-- alignment and shape validation;
-- hard caps on mapped/prefetched/resident bytes;
-- fail closed on stale fleet revision, mismatched digest or missing representation;
-- zero execution-time network bytes for admitted offline/local-only runs;
-- deterministic evidence for every admitted movement plan;
-- fuzz/property testing for parsers, indices, arithmetic and cache state machines;
-- cross-language golden vectors for canonical serialization/digests.
+User-imported model code is governed by the stricter quarantine/no-remote-code rules in `BERS_MODEL_LAB_BYOM_ROADMAP.md`.
 
 ## 22. Metrics and acceptance law
 
@@ -644,7 +527,8 @@ Low RAM alone is not success.
 
 Every candidate must measure at minimum:
 
-- installed model bytes;
+- first-use/download bytes where applicable;
+- mandatory/optional installed model bytes;
 - peak RAM/unified memory;
 - peak accelerator memory;
 - flash/SSD bytes read per inference;
@@ -652,13 +536,11 @@ Every candidate must measure at minimum:
 - RAM-to-accelerator bytes;
 - cache hit/miss ratio;
 - accelerator cache hit ratio;
-- prefetch submitted bytes;
+- prefetch submitted/wasted bytes;
 - prefetch precision/recall where measurable;
-- wasted-prefetch bytes;
 - I/O stall milliseconds;
 - transfer/compute overlap;
-- cold latency;
-- warm latency;
+- cold/warm latency;
 - energy/joules per successful result where measurable;
 - battery impact;
 - thermal behavior/throttling;
@@ -666,13 +548,9 @@ Every candidate must measure at minimum:
 - failure/corruption rate;
 - model-specific product quality metrics.
 
-A useful derived metric is:
+Useful derived metrics include `bytes moved / useful compute`, `quality / installed GB`, and `capability coverage / installed GB`.
 
-```text
-bytes moved / useful compute
-```
-
-A design that uses 800 MB peak RAM but reads tens of gigabytes per small result may be rejected even if it technically runs.
+A design that uses little RAM but reads excessive flash or occupies excessive user storage without corresponding value may be rejected.
 
 ## 23. Explicit non-goals
 
@@ -683,6 +561,7 @@ Do not make the following default architecture:
 - Apple/MLX-only architecture;
 - Android-only architecture;
 - one independent cache/residency implementation per platform;
+- a separate BYOM runtime;
 - giant dense model streamed almost completely from flash every step;
 - network-backed weights during normal local inference;
 - arbitrary model-generated prefetch ranges;
@@ -695,228 +574,101 @@ Do not make the following default architecture:
 ## 24. Development sequence
 
 ### MVM-0 — Contract and authority boundary
-
-Define the universal runtime contracts without executing model bytes yet.
-
-Required:
-
-- `BERS_MODEL_VAULT_V1`;
-- `BERS_EXPERT_INDEX_V1`;
-- backend capability schema;
-- residency snapshot/plan schema;
-- movement evidence schema;
-- exact binding to HSME-1b preparation/fleet revision;
-- architecture tests proving no provider/Billing/Project/Artifact authority.
-
-Exit: one portable memory-runtime contract exists beneath HSME.
+Define `BERS_MODEL_VAULT_V1`, `BERS_EXPERT_INDEX_V1`, backend capability schema, residency snapshot/plan, movement evidence, exact HSME-1b binding, and authority tests.
 
 ### MVM-1 — Immutable range-addressable vault
-
-Implement:
-
-- verified read-only vault opening;
-- bounds-checked tensor/expert ranges;
-- no full-shard materialization requirement;
-- deterministic index validation;
-- hash/fleet binding;
-- synthetic and real-pack fixtures.
-
-Exit: one expert/tensor can be accessed without loading the full model root.
+Prove bounds-checked exact range access without whole-root materialization.
 
 ### MVM-2 — Portable CPU reference path
-
-Implement the first correctness backend independent of phone-vendor acceleration.
-
-Goals:
-
-- materialize one selected range;
-- execute a bounded real operator/expert path;
-- compare elementwise/metric parity with resident reference;
-- prove exact memory/movement accounting.
-
-Exit: correctness does not depend on Apple/Android vendor APIs.
+Execute one bounded real operator/expert path and prove parity/movement accounting independent of vendor APIs.
 
 ### MVM-3 — Cross-platform physical storage/movement probes
-
-Run at least:
-
-- one physical Apple mobile device;
-- one physical Android device from a materially different vendor/runtime family;
-- one desktop/native environment.
-
-Measure real mapping/range-read latency, bandwidth, page/cache behavior, RAM peaks and thermal/battery signals where available.
-
-This is a storage/materialization probe, not yet proof of a production large model.
-
-Exit: the portable contract is proven on multiple real OS/hardware families.
+Run physical Apple mobile, materially different Android, and desktop/native probes; record latency, bandwidth, page/cache behavior, RAM and thermal/battery observations where available.
 
 ### MVM-4 — Byte-budgeted RAM and accelerator cache
-
-Implement:
-
-- global byte budgets;
-- deterministic LRU baseline;
-- separate prefetch staging budget;
-- hot/warm/cold evidence;
-- exact cache/movement counters;
-- resource-pressure shrink/eviction behavior.
-
-Exit: peak working memory stays bounded under repeated/alternating expert demand.
+Implement global byte budgets, deterministic LRU baseline, separate prefetch staging, hot/warm/cold evidence, exact counters, and pressure shrink/eviction behavior.
 
 ### MVM-5 — Deterministic prefetch and double buffering
-
-Use known graph/stage requirements to overlap storage movement with current compute.
-
-Prove:
-
-- same numerical/model result as no-prefetch reference;
-- reduced I/O stall or wall-clock latency;
-- bounded extra bytes;
-- no budget overrun.
-
-Exit: prefetch benefit exists without learned prediction.
+Overlap known movement with compute without changing model results or exceeding budgets.
 
 ### MVM-6 — Universal compute-backend adapters
-
-Establish a minimum backend matrix rather than one preferred vendor path.
-
-Research/prove as available:
-
-- portable CPU;
-- Apple GPU/NPU path;
-- Android generic GPU path;
-- at least one Android vendor NPU path;
-- desktop accelerator path;
-- browser path where the model representation is meaningful.
-
-Existing frameworks such as ExecuTorch/ONNX Runtime may be adapters, not owners of MVM policy.
-
-Exit: the same logical MVM contracts survive backend substitution.
+Prove the same logical MVM contracts across portable CPU, Apple, Android generic GPU, at least one Android NPU family, desktop accelerator and meaningful browser paths.
 
 ### MVM-7 — HSME sparse image integration
-
-Integrate with Adapter-MoE/selective sparse image blocks.
-
-A/B compare:
-
-- resident baseline;
-- MVM without prefetch;
-- MVM with deterministic prefetch;
-- multiple memory budgets.
-
-Measure quality, RAM, accelerator memory, bytes moved, latency, energy and thermal behavior.
-
-Exit: MVM proves value on the primary BERS image workload rather than only LLM-style experts.
+A/B resident vs MVM no-prefetch vs deterministic-prefetch across multiple memory budgets on primary image workloads.
 
 ### MVM-8 — Learned prerouter
-
-Train/evaluate an advisory prefetch predictor.
-
-Compare:
-
-```text
-A. no prefetch
-B. deterministic/schedule prefetch
-C. deterministic + learned prerouter
-```
-
-Promotion requires measurable net benefit in wall-clock/energy/bytes moved after accounting for wasted speculation.
-
-Exit: learned prediction is retained only if it beats deterministic policy on real devices.
+Compare no prefetch vs deterministic vs deterministic+learned; retain only if wall-clock/energy/bytes evidence improves on real devices.
 
 ### MVM-9 — Quantization recovery adapters
+Accept only recovery mechanisms that improve BERS quality/resource tradeoffs.
 
-Test compact recovery adapters against high-precision/distilled teachers for model families where aggressive quantization is useful.
-
-No universal precision target is assumed.
-
-Exit: a recovery mechanism is accepted only if it improves quality/resource tradeoff on BERS metrics.
-
-### MVM-10 — Local AEE / multimodal reuse
-
-After the image/runtime path is proven, reuse the same MVM substrate for a suitable sparse local reasoning or multimodal model.
-
-Do not introduce a second LLM-specific model-memory authority.
-
-Exit: one MVM substrate serves more than one model family without weakening isolation.
+### MVM-10 — Local AEE / multimodal / BYOM reuse
+Reuse the same MVM substrate across additional model families and safely admitted user models without introducing another memory authority.
 
 ### MVM-11 — Production qualification
-
-For each production model/backend/device class require:
-
-- exact representation identity and license/provenance;
-- real-device quality/performance evidence;
-- memory/storage/movement budgets;
-- thermal/battery qualification;
-- recovery under app restart/background/memory pressure;
-- offline/LOCAL_ONLY no-network proof;
-- rollout/kill-switch compatibility;
-- supported-device class declaration.
-
-No architecture-level success automatically promotes a model to production.
+Require exact identity/provenance, real-device evidence, memory/storage/movement budgets, thermal/battery qualification, restart/memory-pressure recovery, offline proof, rollout/kill-switch compatibility, and supported-device declarations.
 
 ## 25. Pre-RC cut line
 
-Before `BERS_V1_RC`, this companion roadmap should not require every MVM phase to reach production. The minimum architectural/evidence target is:
+Before `BERS_V1_RC`, this companion roadmap should not require every MVM phase to reach production. Minimum architectural/evidence target:
 
-- MVM-0 contract and authority boundary accepted;
-- MVM-1 range-addressable immutable vault proven;
-- MVM-2 portable correctness reference proven;
-- MVM-3 physical Apple + Android storage/materialization evidence recorded, or a precise blocker documented;
+- MVM-0 accepted;
+- MVM-1 proven;
+- MVM-2 portable correctness proven;
+- MVM-3 physical Apple + Android materialization evidence recorded or exact blocker documented;
 - MVM-4 bounded cache/movement accounting implemented far enough to validate the memory model;
-- integration with existing HSME-1b resource/evidence contracts preserved;
+- HSME-1b resource/evidence contracts preserved;
+- local-model storage efficiency policy preserved;
 - no production claim based only on desktop/browser simulation.
 
-Advanced prerouting/recovery/model-family promotion may continue as R&D if the pre-RC evidence above is complete and no enabled product surface falsely advertises unsupported capability.
+Advanced prerouting/recovery/model-family promotion and Model Lab execution may continue as R&D where their separate acceptance tracks are incomplete.
 
 ## 26. Acceptance matrix
 
-Every substantial MVM/runtime expansion must prove the relevant items below:
-
-- same trusted root/index produces deterministic range identities;
-- out-of-bounds/overflow/misaligned range requests fail closed;
-- stale fleet revision or representation digest fails closed;
-- model/browser input cannot choose arbitrary storage ranges;
-- total cache/staging bytes never exceed admitted budget;
-- eviction cannot corrupt an in-flight execution;
-- prefetch buffer cannot evict required active state incorrectly;
-- failed/cancelled execution releases reservations/buffers correctly;
-- `LOCAL_ONLY` has zero execution-time network bytes;
-- unsupported backend falls back only to an already accepted local representation/path or blocks;
-- no backend can create provider/Billing/Project/Artifact authority;
-- portable CPU/reference result and accelerated result meet model-specific parity thresholds;
-- cold/warm/cache-hit accounting matches measured movement;
-- learned prefetch does not change semantic routing in its initial advisory mode;
-- restart/memory-pressure recovery does not reuse stale model/fleet identity;
-- physical mobile evidence includes at least RAM, storage/movement, latency and thermal/battery observations where platform APIs permit.
+Every substantial MVM/runtime expansion must prove relevant items including deterministic range identity, fail-closed bounds/overflow/alignment validation, stale identity rejection, cache/staging byte bounds, safe eviction/cancellation, zero execution-time network for LOCAL_ONLY, backend fallback only to accepted local paths, no provider/Billing/Project/Artifact authority, reference/accelerated parity, accurate movement accounting, advisory prerouter semantic neutrality, restart/memory-pressure freshness, and physical mobile evidence.
 
 ## 27. Long-term product shape
 
-This architecture enables two optional local-AI product profiles without changing Core semantics.
+This architecture enables two optional local-AI profiles without changing Core semantics.
 
 ### Compact Local AI
 
 - small initial AI download;
 - mostly resident compact models;
 - minimal storage commitment;
-- broad device support.
+- broad device support;
+- default for BERS-owned models.
 
 ### Extended Local AI / Expert Vault
 
 - larger optional installed model capacity;
 - sparse/range-addressable execution;
 - bounded RAM/accelerator working set;
-- richer local capabilities on devices with sufficient storage/bandwidth/thermal envelope.
+- richer local capabilities on devices with sufficient storage/bandwidth/thermal envelope;
+- justified only by measurable quality/capability/privacy/cloud-avoidance value.
 
-The user may choose more local model storage without requiring equivalent RAM capacity.
+The user may choose more local model storage without requiring equivalent RAM capacity, but large installed capacity is never the optimization target by itself.
 
-The long-term engineering objective is not a fixed numeric promise such as "20 GB model in 1 GB RAM". The objective is a measurable invariant:
+The engineering invariant is:
 
-> **Total trusted local model capacity may substantially exceed active memory, while working-set size, bytes moved, quality, latency, energy and thermal behavior remain within the declared device-class budget.**
+> **Total trusted local model capacity may substantially exceed active memory, while installed footprint, working-set size, bytes moved, quality, latency, energy and thermal behavior all remain within declared product/device budgets.**
 
-## 28. Final architecture summary
+## 28. Model Lab / BYOM relationship
 
-The selected BERS local runtime stack is:
+BERS Model Lab is a separate branded environment for user-owned models, defined in `BERS_MODEL_LAB_BYOM_ROADMAP.md`.
+
+It reuses MVM rather than creating a new one:
+
+```text
+BERS-owned model ---- DurableModelFleet ----+
+                                          |
+User-owned model ---- User Model Vault -----+--> HSME/Core-admitted local path --> MVM --> backend
+```
+
+The trust classes remain different even though the low-level memory substrate can be shared.
+
+## 29. Final architecture summary
 
 ```text
 BERS Agentic Execution Engine / Product
@@ -953,8 +705,6 @@ byte ranges        + learned advisory prerouter
 Apple / Android / Windows / Linux / Browser / future devices
 ```
 
-Architecture slogan:
+Architecture law:
 
-> **AEE decides what to propose. Core decides what is allowed. HSME decides how admitted local AI is composed. MVM decides where trusted model bytes live and when they move. Backends decide how those bytes execute on the available hardware.**
-
-This separation is mandatory because it lets BERS adopt better model architectures, vendor runtimes and hardware without recreating execution authority or model-memory policy for every platform.
+> **AEE decides what to propose. Core decides what is allowed. HSME decides how admitted local AI is composed. MVM decides where trusted model bytes live and when they move. Model Lab/BYOM safely imports and binds user-owned model bytes without promoting them. Backends decide how accepted bytes execute on available hardware.**
