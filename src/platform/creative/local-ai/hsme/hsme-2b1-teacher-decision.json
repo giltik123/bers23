@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "BERS_HSME_TRAINING_PROVENANCE_V1",
+  "decisionStatus": "REDESIGN_REQUIRED",
+  "candidates": [
+    {
+      "candidateId": "flux1-schnell-teacher-reference",
+      "modelId": "black-forest-labs/FLUX.1-schnell",
+      "architectureFamily": "RECTIFIED_FLOW_TRANSFORMER",
+      "licenseId": "Apache-2.0",
+      "licenseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "distillationOutputUse": "REVIEW_REQUIRED",
+      "installedBytes": 23800000000,
+      "workingMemoryBytes": "UNKNOWN",
+      "qualityDomain": ["high-fidelity-text-to-image", "prompt-adherence", "few-step-generation"],
+      "knownWeaknesses": [
+        "Teacher-scale footprint is far outside the compact runtime target and is acceptable only for offline distillation.",
+        "Repository access is gated and the exact training/distillation output-use conclusion still requires explicit review."
+      ]
+    },
+    {
+      "candidateId": "qwen-image-teacher-reference",
+      "modelId": "Qwen/Qwen-Image",
+      "architectureFamily": "FLOW_MATCHING_DIT",
+      "licenseId": "Apache-2.0",
+      "licenseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "distillationOutputUse": "REVIEW_REQUIRED",
+      "installedBytes": 57700000000,
+      "workingMemoryBytes": "UNKNOWN",
+      "qualityDomain": ["text-rendering", "bilingual-prompt-adherence", "high-fidelity-text-to-image"],
+      "knownWeaknesses": [
+        "The full snapshot is teacher-scale and includes a very large text encoder, so it is not a compact runtime candidate.",
+        "Synthetic distillation output-use and exact immutable training snapshot still require separate admission evidence."
+      ]
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-teacher-reference",
+      "modelId": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+      "architectureFamily": "LINEAR_DIT",
+      "licenseId": "Apache-2.0 plus Gemma terms",
+      "licenseConclusion": "REVIEW_REQUIRED",
+      "distillationOutputUse": "REVIEW_REQUIRED",
+      "installedBytes": "UNKNOWN",
+      "workingMemoryBytes": "UNKNOWN",
+      "qualityDomain": ["few-step-generation", "mobile-oriented-dit-reference", "1024px-text-to-image"],
+      "knownWeaknesses": [
+        "Gemma2-2B-IT text conditioning introduces a separate license chain that must be reviewed as part of the complete teacher pipeline.",
+        "The compact denoiser does not make the complete teacher pipeline compact because text conditioning remains multi-gigabyte."
+      ]
+    }
+  ],
+  "selectedCandidateIds": [],
+  "rationale": [
+    "No teacher is admitted until immutable source/checkpoint identities, exact toolchain evidence and distillation-output rights are content-addressed.",
+    "Teacher size is not a student-size target: a large teacher may be used offline when it improves quality, while the student is optimized separately.",
+    "Student size, latency or memory wins are accepted only after the required generation-quality floor passes; quality cannot be traded away merely to make the model smaller.",
+    "Installed footprint and working memory remain independent evidence axes under the BERS dual-budget law."
+  ]
+}
