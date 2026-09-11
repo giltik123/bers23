@@ -176,7 +176,7 @@ export async function planHsmePreparationV1(
     const readiness = readinessByIdentity.get(rootIdentity)!;
     const manifest = resolveManifest(root, manifests);
     const runtimeCompatible = manifestCompatible(manifest, request.device, request.runtimes);
-    if (!runtimeCompatible.ok) {
+    if (runtimeCompatible.ok === false) {
       hardBlocked = true;
       reasons.add(`${runtimeCompatible.reason}:${rootIdentity}`);
     }
