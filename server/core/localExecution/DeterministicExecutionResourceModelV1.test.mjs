@@ -62,6 +62,41 @@ test('resource estimate grows with admitted geometry and is bound to exact execu
   );
 });
 
+test('reviewed profile pin rejects semantic registry drift at an unchanged executor version', () => {
+  const source = Object.freeze({ width: 64, height: 64 });
+  const output = Object.freeze({ width: 128, height: 128 });
+
+  const changedOutput = Object.freeze({
+    ...RESIZE_TOOL_DEFINITION,
+    output: Object.freeze({ ...RESIZE_TOOL_DEFINITION.output, count: 2 }),
+  });
+  assert.throws(
+    () => estimateDeterministicExecutionResourcesV1(changedOutput, source, output),
+    error => error?.code === 'deterministic_resource_profile_contract_mismatch',
+  );
+
+  const changedParameters = Object.freeze({
+    ...RESIZE_TOOL_DEFINITION,
+    parameters: Object.freeze({
+      ...RESIZE_TOOL_DEFINITION.parameters,
+      exact: Object.freeze({ ...RESIZE_TOOL_DEFINITION.parameters.exact, rounding: 'DIFFERENT_ROUNDING' }),
+    }),
+  });
+  assert.throws(
+    () => estimateDeterministicExecutionResourcesV1(changedParameters, source, output),
+    error => error?.code === 'deterministic_resource_profile_contract_mismatch',
+  );
+
+  const changedPixelContract = Object.freeze({
+    ...ORTHOGONAL_TRANSFORM_TOOL_DEFINITION,
+    pixelContract: Object.freeze({ ...ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.pixelContract, alpha: 'DIFFERENT_ALPHA_POLICY' }),
+  });
+  assert.throws(
+    () => estimateDeterministicExecutionResourcesV1(changedPixelContract, source, source),
+    error => error?.code === 'deterministic_resource_profile_contract_mismatch',
+  );
+});
+
 test('unmodelled deterministic tools and unsafe geometry fail closed', () => {
   assert.throws(
     () => estimateDeterministicExecutionResourcesV1(CROP_TOOL_DEFINITION, { width: 64, height: 64 }, { width: 32, height: 32 }),
