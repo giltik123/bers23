@@ -41,9 +41,13 @@ jobs:
           npm run server:typecheck
       - name: Prove HSME pack trust root and preparation/residency planning
         run: |
-          node --experimental-strip-types --test \
-            tests/creative-hsme-pack-v1.test.mjs \
-            tests/creative-hsme-preparation-v1.test.mjs
+          node --experimental-strip-types --test tests/creative-hsme-pack-v1.test.mjs
+          mkdir -p .test-cache/hsme-1b
+          npx esbuild tests/creative-hsme-preparation-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-1b/creative-hsme-preparation-v1.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-1b/creative-hsme-preparation-v1.test.mjs
       - name: Preserve HSME authority boundaries
         run: |
           set -euo pipefail
