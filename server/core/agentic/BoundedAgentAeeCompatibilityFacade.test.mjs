@@ -78,6 +78,7 @@ function runtime(overrides = {}) {
     projectBarriers: 0,
     puts: 0,
     aeeStarts: 0,
+    aeeResumes: 0,
     legacyStarts: 0,
   };
   const dependencies = {
@@ -118,7 +119,13 @@ function runtime(overrides = {}) {
         assert.equal(input.graphDigest, graph.digest);
         return aeeView();
       },
-      async resume() { calls.push('aee-resume'); return aeeView({ state: 'READY', nextAction: undefined }); },
+      async resume(executionId, projectId, queryAuth) {
+        calls.push('aee-resume'); state.aeeResumes += 1;
+        assert.equal(executionId, 'aee-execution-ae4c2');
+        assert.equal(projectId, scope.projectId);
+        assert.deepEqual(queryAuth, auth);
+        return aeeView({ state: 'READY', nextAction: undefined });
+      },
       async submitLocalResult() { calls.push('aee-result'); return aeeView(); },
       async retry() { calls.push('aee-retry'); return aeeView({ retryAvailable: true, attemptStatus: 'FAILED' }); },
       async cancel() { calls.push('aee-cancel'); return aeeView({ state: 'CANCELLED', nextAction: undefined, failureCode: 'WORKFLOW_CANCELLED' }); },
@@ -169,6 +176,7 @@ test('new bounded start is single-write AEE and takes Project barrier only after
   assert.equal(r.state.projectBarriers, 1);
   assert.equal(r.state.puts, 1);
   assert.equal(r.state.aeeStarts, 1);
+  assert.equal(r.state.aeeResumes, 0);
   assert.equal(r.state.legacyStarts, 0);
   assert.equal(Object.hasOwn(view, 'graphDigest'), false);
   assert.equal(Object.hasOwn(view.nextAction, 'nodeId'), false);
@@ -176,7 +184,7 @@ test('new bounded start is single-write AEE and takes Project barrier only after
   assert.deepEqual(graph.effectiveExecution, BOUNDED_AGENT_AEE_EXECUTION);
 });
 
-test('existing AEE clientRequestId replays immutable graph before any current Project admission barrier', async () => {
+test('existing AEE clientRequestId validates immutable graph then resumes without current Project admission', async () => {
   const r = runtime();
   r.state.byClient = snapshot(AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID);
   const view = await r.facade.start(command, auth);
@@ -184,12 +192,13 @@ test('existing AEE clientRequestId replays immutable graph before any current Pr
   assert.equal(r.state.projectReads, 0);
   assert.equal(r.state.projectBarriers, 0);
   assert.equal(r.state.puts, 0);
-  assert.equal(r.state.aeeStarts, 1);
-  assert.deepEqual(r.calls, ['continuation-by-client', 'plan-get', 'aee-start']);
+  assert.equal(r.state.aeeStarts, 0);
+  assert.equal(r.state.aeeResumes, 1);
+  assert.deepEqual(r.calls, ['continuation-by-client', 'plan-get', 'aee-resume']);
   assert.equal(r.calls.includes('admission-lock'), false);
 });
 
-test('a raced first start replays after advisory serialization without touching current Project state', async () => {
+test('a raced first start resumes the durable winner after advisory serialization without touching current Project state', async () => {
   const r = runtime();
   r.state.byClientSequence.push(undefined, snapshot(AEE_SERIAL_ADMITTED_GRAPH_PLAN_ID));
   const view = await r.facade.start(command, auth);
@@ -197,8 +206,9 @@ test('a raced first start replays after advisory serialization without touching 
   assert.equal(r.state.projectReads, 0);
   assert.equal(r.state.projectBarriers, 0);
   assert.equal(r.state.puts, 0);
-  assert.equal(r.state.aeeStarts, 1);
-  assert.deepEqual(r.calls, ['continuation-by-client', 'admission-lock', 'continuation-by-client', 'plan-get', 'aee-start']);
+  assert.equal(r.state.aeeStarts, 0);
+  assert.equal(r.state.aeeResumes, 1);
+  assert.deepEqual(r.calls, ['continuation-by-client', 'admission-lock', 'continuation-by-client', 'plan-get', 'aee-resume']);
 });
 
 test('existing AEE replay with changed command fails before graph persistence or AEE execution', async () => {
@@ -210,6 +220,7 @@ test('existing AEE replay with changed command fails before graph persistence or
   );
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.aeeStarts, 0);
+  assert.equal(r.state.aeeResumes, 0);
   assert.equal(r.state.projectReads, 0);
   assert.equal(r.state.projectBarriers, 0);
   assert.equal(r.calls.includes('admission-lock'), false);
@@ -222,6 +233,7 @@ test('pre-cutover fixed-plan start remains legacy recovery-only and cannot creat
   assert.equal(view.executionId, 'legacy-execution-ae4c2');
   assert.equal(r.state.legacyStarts, 1);
   assert.equal(r.state.aeeStarts, 0);
+  assert.equal(r.state.aeeResumes, 0);
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.projectReads, 0);
   assert.equal(r.state.projectBarriers, 0);
@@ -254,6 +266,7 @@ test('unknown durable plan identities fail closed without either execution deleg
   r.state.byClient = snapshot('unknown-agent-plan', 'c'.repeat(64));
   await assert.rejects(() => r.facade.start(command, auth), error => error?.code === 'bounded_agent_plan_unsupported');
   assert.equal(r.state.aeeStarts, 0);
+  assert.equal(r.state.aeeResumes, 0);
   assert.equal(r.state.legacyStarts, 0);
   assert.equal(r.state.puts, 0);
   assert.equal(r.state.projectBarriers, 0);
