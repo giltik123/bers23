@@ -1,0 +1,88 @@
+name: HSME-2b1 training provenance
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeTrainingProvenanceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTrainingReproductionGateV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-2b1-teacher-decision.json'
+      - 'tests/creative-hsme-training-provenance-v1.test.mjs'
+      - 'tests/creative-hsme-training-reproduction-gate-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineDualBudgetEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-decision.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-dual-budget.json'
+      - 'BERS_LOCAL_MODEL_EFFICIENCY_POLICY.md'
+      - 'BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md'
+      - 'BERS_UNIVERSAL_LOCAL_AI_RUNTIME_ROADMAP.md'
+      - '.github/workflows/hsme-2b1-training-provenance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  training-provenance-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact PR head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Browser/Core typecheck
+        run: npm run server:typecheck
+      - name: Prove HSME-2b1 training provenance and quality-first law
+        run: node --experimental-strip-types --test tests/creative-hsme-training-provenance-v1.test.mjs
+      - name: Prove bounded training reproduction
+        run: |
+          mkdir -p .test-cache/hsme-2b1
+          npx esbuild tests/creative-hsme-training-reproduction-gate-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1/creative-hsme-training-reproduction-gate-v1.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1/creative-hsme-training-reproduction-gate-v1.test.mjs
+      - name: Preserve HSME-2a baseline decision
+        run: node --experimental-strip-types --test tests/creative-hsme-dense-baseline-evidence-v1.test.mjs tests/creative-hsme-dense-baseline-control-binding-v1.test.mjs
+      - name: Preserve dual-budget model-efficiency law
+        run: node --experimental-strip-types --test tests/creative-hsme-dense-baseline-dual-budget-v1.test.mjs
+
+  authority-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact PR head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Preserve HSME-1 / HSME-1b authority
+        run: |
+          node --experimental-strip-types --test tests/creative-hsme-pack-v1.test.mjs
+          mkdir -p .test-cache/hsme-2b1
+          npx esbuild tests/creative-hsme-preparation-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1/creative-hsme-preparation-v1.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1/creative-hsme-preparation-v1.test.mjs
+      - name: Preserve AEE resource/autonomy boundary
+        run: |
+          node --experimental-strip-types --test \
+            server/core/localExecution/DeterministicExecutionResourceModelV1.test.mjs \
+            server/core/agentic/AeeExecutionResourceBudgetV1.test.mjs \
+            server/core/agentic/AeeWorkflowTicketResourceAdmissionV1.test.mjs \
+            server/core/agentic/AeeMinimumAutonomyEnvelopeV1.test.mjs \
+            server/core/agentic/AeeSerialAdmittedGraphDriverV1.test.mjs
+      - name: No training provenance authority widening
+        run: |
+          ! grep -E 'DurableModelFleet.*(install|activate|remove)|providerSelector|modelSelector|reserveCredits|spendCredits|acceptFinal|createVersion|restoreVersion' \
+            src/platform/creative/local-ai/hsme/HsmeTrainingProvenanceV1.ts \
+            src/platform/creative/local-ai/hsme/HsmeTrainingReproductionGateV1.ts
