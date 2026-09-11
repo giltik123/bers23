@@ -64,9 +64,7 @@ export function estimateAeeAdmittedGraphExecutionResourcesV1(
     } catch (error) {
       throw budgetError('aee_resource_executor_unavailable', `AEE node ${node.nodeId} has no canonical deterministic tool resource authority`, node.nodeId, error);
     }
-    if (tool.capability !== adapter.toolCapability
-      || tool.operation.type !== node.semanticOperation
-      || tool.executor.kind !== adapter.adapterKind) {
+    if (tool.capability !== adapter.toolCapability || tool.operation.type !== node.semanticOperation) {
       throw budgetError('aee_resource_executor_binding_mismatch', `AEE node ${node.nodeId} differs from its deterministic execution adapter`, node.nodeId);
     }
 
