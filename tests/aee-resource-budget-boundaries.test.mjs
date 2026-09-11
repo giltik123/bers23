@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
@@ -25,10 +25,12 @@ test('production cannot instantiate the raw AE-4b serial driver outside the reso
 });
 
 test('resource calibration remains evidence-only and outside production imports', () => {
-  const productionImports = execFileSync(
+  const search = spawnSync(
     'git',
     ['grep', '-l', '--fixed-strings', 'capture-aee-resource-budget-browser', '--', 'server', 'src'],
     { encoding: 'utf8' },
-  ).trim();
-  assert.equal(productionImports, '');
+  );
+  assert.equal(search.error, undefined);
+  assert.equal(search.status, 1, `unexpected production calibration import search status ${search.status}: ${search.stderr}`);
+  assert.equal(search.stdout.trim(), '');
 });
