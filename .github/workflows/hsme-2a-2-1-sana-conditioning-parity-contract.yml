@@ -1,0 +1,67 @@
+name: HSME-2a.2.1 SANA conditioning parity contract
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeSanaConditioningParityEvidenceV1.ts'
+      - 'tests/creative-hsme-sana-conditioning-parity-evidence-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeSanaSplitConditioningEnvelopeV1.ts'
+      - 'tests/creative-hsme-sana-split-conditioning-envelope-v1.test.mjs'
+      - '.github/workflows/hsme-2a-2-1-sana-conditioning-parity-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Browser/Core typecheck
+        run: npm run server:typecheck
+
+      - name: Prove predeclared exact parity and fail-closed evidence contract
+        run: |
+          mkdir -p .test-cache/hsme-2a-2-1
+          npx esbuild tests/creative-hsme-sana-conditioning-parity-evidence-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-2-1/sana-parity.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-2-1/sana-parity.test.mjs
+
+      - name: Preserve accepted Phase-0 conditioning envelope
+        run: |
+          npx esbuild tests/creative-hsme-sana-split-conditioning-envelope-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-2-1/sana-phase0.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-2-1/sana-phase0.test.mjs
+
+      - name: Ordinary PR CI must not download or execute SANA or Gemma
+        run: |
+          if sed '/grep -Ei/d' .github/workflows/hsme-2a-2-1-sana-conditioning-parity-contract.yml | \
+            grep -Ei 'snapshot_download|hf_hub_download|huggingface-cli download|hf download|curl .*huggingface|wget .*huggingface|from_pretrained|accelerate launch|torchrun|pip install torch|pip install diffusers'; then
+            echo 'ordinary parity-contract PR CI must remain synthetic and bounded' >&2
+            exit 1
+          fi
+
+      - name: Parity evidence must not widen execution authority
+        run: |
+          ! grep -E "from .*DurableModelFleet|from .*Billing|from .*Project|from .*Artifact|providerSelector|executionTarget" \
+            src/platform/creative/local-ai/hsme/HsmeSanaConditioningParityEvidenceV1.ts
