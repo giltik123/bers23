@@ -1,0 +1,67 @@
+name: HSME-2a.2 SANA split conditioning contract
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeSanaSplitConditioningEnvelopeV1.ts'
+      - 'tests/creative-hsme-sana-split-conditioning-envelope-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseDecisionV1.ts'
+      - 'tests/creative-hsme-foundation-reuse-decision-v1.test.mjs'
+      - '.github/workflows/hsme-2a-2-sana-split-conditioning.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  split-conditioning-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Browser/Core typecheck
+        run: npm run server:typecheck
+
+      - name: Prove canonical conditioning bytes and fail-closed envelope
+        run: |
+          mkdir -p .test-cache/hsme-2a-2
+          npx esbuild tests/creative-hsme-sana-split-conditioning-envelope-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-2/sana-split-conditioning.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-2/sana-split-conditioning.test.mjs
+
+      - name: Preserve reuse-first escalation gate
+        run: |
+          npx esbuild tests/creative-hsme-foundation-reuse-decision-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-2/foundation-reuse.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-2/foundation-reuse.test.mjs
+
+      - name: Ordinary PR CI must stay synthetic and bounded
+        run: |
+          if sed '/grep -Ei/d' .github/workflows/hsme-2a-2-sana-split-conditioning.yml | \
+            grep -Ei 'snapshot_download|hf_hub_download|huggingface-cli download|hf download|curl .*huggingface|wget .*huggingface|from_pretrained|accelerate launch|torchrun'; then
+            echo 'ordinary PR CI must not download or execute the multi-GB SANA/Gemma pipeline' >&2
+            exit 1
+          fi
+
+      - name: Split-conditioning evidence must not widen runtime authority
+        run: |
+          ! grep -E "from .*DurableModelFleet|from .*Billing|from .*Project|from .*Artifact|providerSelector|executionTarget" \
+            src/platform/creative/local-ai/hsme/HsmeSanaSplitConditioningEnvelopeV1.ts
