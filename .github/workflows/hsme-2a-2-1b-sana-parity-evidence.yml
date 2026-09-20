@@ -1,0 +1,218 @@
+name: HSME-2a.2.1b manual SANA parity evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Evidence operation
+        required: true
+        type: choice
+        options:
+          - PIN_METADATA
+          - RUN_EXACT_PARITY
+      candidate_sha:
+        description: Exact repository commit to check out
+        required: true
+        type: string
+      plan_path:
+        description: Reviewed parity plan path for RUN_EXACT_PARITY
+        required: false
+        default: src/platform/creative/local-ai/hsme/sana-sprint-parity-plan.v1.json
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hsme-sana-parity-evidence
+  cancel-in-progress: false
+
+env:
+  SANA_REPO: Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers
+  SANA_REVISION: a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97
+  RUNTIME_LOCK: src/platform/creative/local-ai/hsme/sana-parity-runtime-lock.v1.json
+  EVIDENCE_DIR: .test-cache/hsme-sana-parity
+
+jobs:
+  pin-metadata:
+    if: ${{ inputs.operation == 'PIN_METADATA' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: hsme-sana-parity-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable candidate checkout
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" origin/main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install exact metadata/runtime tools
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            huggingface-hub==1.32.0 \
+            torch==2.14.0 \
+            diffusers==0.40.0 \
+            transformers==5.17.0 \
+            safetensors==0.8.0 \
+            accelerate==1.15.0 \
+            sentencepiece==0.2.2 \
+            numpy==2.5.3
+
+      - name: Record immutable metadata pin candidate
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          HF_HUB_DISABLE_TELEMETRY=1 \
+          python scripts/hsme-sana-parity-runner.py PIN_METADATA \
+            --runtime-lock "${RUNTIME_LOCK}" \
+            --out "${EVIDENCE_DIR}/metadata-pin.json"
+
+      - name: Prove metadata operation emitted JSON only
+        run: |
+          set -euo pipefail
+          test -f "${EVIDENCE_DIR}/metadata-pin.json"
+          test "$(find "${EVIDENCE_DIR}" -type f ! -name '*.json' | wc -l)" -eq 0
+          python - <<'PY'
+          import json
+          value = json.load(open('.test-cache/hsme-sana-parity/metadata-pin.json', encoding='utf-8'))
+          assert value['status'] == 'EVIDENCE_PENDING'
+          assert value['rights']['status'] == 'UNRESOLVED'
+          assert value['sanaSnapshot']['immutableRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert value['productionAuthorityGranted'] is False
+          assert value['providerAuthorityGranted'] is False
+          assert value['billingAuthorityGranted'] is False
+          assert value['projectArtifactMutationAllowed'] is False
+          assert value['binaryArtifactsPublished'] is False
+          PY
+
+      - name: Upload JSON-only metadata evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-sana-parity-metadata-pin-${{ inputs.candidate_sha }}
+          path: .test-cache/hsme-sana-parity/metadata-pin.json
+          if-no-files-found: error
+          retention-days: 7
+
+  exact-parity:
+    if: ${{ inputs.operation == 'RUN_EXACT_PARITY' }}
+    runs-on: [self-hosted, linux, x64, gpu, hsme-evidence]
+    timeout-minutes: 180
+    environment: hsme-sana-parity-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable candidate and committed reviewed plan before network work
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PLAN_PATH: ${{ inputs.plan_path }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" origin/main
+          test -f "${PLAN_PATH}"
+          test -f "${RUNTIME_LOCK}"
+          python - <<'PY'
+          import json, os
+          plan = json.load(open(os.environ['PLAN_PATH'], encoding='utf-8'))
+          assert plan['schemaVersion'] == 'BERS_HSME_SANA_CONDITIONING_PARITY_PLAN_V1'
+          assert plan['qualityPolicy'] == 'QUALITY_FLOOR_BEFORE_EFFICIENCY'
+          assert plan['rights']['status'] == 'EVIDENCE_RUN_ALLOWED'
+          assert plan['parityPolicy']['embeddingBytes'] == 'EXACT_SHA256'
+          assert plan['parityPolicy']['attentionMaskBytes'] == 'EXACT_SHA256'
+          assert plan['parityPolicy']['generationConfig'] == 'EXACT_CANONICAL_DIGEST'
+          assert plan['parityPolicy']['imageOutput'] == 'EXACT_SHA256_SAME_BACKEND'
+          assert plan['parityPolicy']['postObservationThresholdChangesAllowed'] is False
+          assert plan['sanaSnapshot']['immutableRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert plan['rawPromptPersisted'] is False
+          assert plan['modelRepositoryCodeExecutionAllowed'] is False
+          assert plan['productionAuthorityGranted'] is False
+          assert plan['providerAuthorityGranted'] is False
+          assert plan['billingAuthorityGranted'] is False
+          assert plan['projectArtifactMutationAllowed'] is False
+          assert plan['binaryArtifactsPublishable'] is False
+          PY
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Require protected prompt secrets and a CUDA runner
+        env:
+          HSME_SANA_PROMPT: ${{ secrets.HSME_SANA_PROMPT }}
+          HSME_SANA_PROMPT_HMAC_KEY: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY }}
+          HSME_SANA_PROMPT_HMAC_KEY_ID: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${HSME_SANA_PROMPT}"
+          test -n "${HSME_SANA_PROMPT_HMAC_KEY}"
+          test -n "${HSME_SANA_PROMPT_HMAC_KEY_ID}"
+          command -v nvidia-smi >/dev/null
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+
+      - name: Install exact evidence runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            huggingface-hub==1.32.0 \
+            torch==2.14.0 \
+            diffusers==0.40.0 \
+            transformers==5.17.0 \
+            safetensors==0.8.0 \
+            accelerate==1.15.0 \
+            sentencepiece==0.2.2 \
+            numpy==2.5.3
+
+      - name: Run exact same-backend split-conditioning parity
+        env:
+          PLAN_PATH: ${{ inputs.plan_path }}
+          HSME_SANA_PROMPT: ${{ secrets.HSME_SANA_PROMPT }}
+          HSME_SANA_PROMPT_HMAC_KEY: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY }}
+          HSME_SANA_PROMPT_HMAC_KEY_ID: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY_ID }}
+          HF_HOME: ${{ runner.temp }}/hsme-sana-hf
+          HF_HUB_CACHE: ${{ runner.temp }}/hsme-sana-hf/hub
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          TRANSFORMERS_OFFLINE: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          python scripts/hsme-sana-parity-runner.py RUN_EXACT_PARITY \
+            --runtime-lock "${RUNTIME_LOCK}" \
+            --plan "${PLAN_PATH}" \
+            --work-root "${RUNNER_TEMP}/hsme-sana-parity-work" \
+            --out "${EVIDENCE_DIR}/exact-parity.json"
+
+      - name: Destroy all model/tensor/image bytes before evidence upload
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${RUNNER_TEMP}/hsme-sana-parity-work" "${RUNNER_TEMP}/hsme-sana-hf"
+          find "${EVIDENCE_DIR}" -type f ! -name '*.json' -delete || true
+          test "$(find "${EVIDENCE_DIR}" -type f ! -name '*.json' | wc -l)" -eq 0
+          test ! -e "${RUNNER_TEMP}/hsme-sana-parity-work"
+          test ! -e "${RUNNER_TEMP}/hsme-sana-hf"
+
+      - name: Upload JSON-only parity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-sana-exact-parity-${{ inputs.candidate_sha }}
+          path: .test-cache/hsme-sana-parity/*.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,60 @@
+name: HSME-2a.2.1b SANA parity runner contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/hsme-sana-parity-runner.py'
+      - 'tests/test-hsme-sana-parity-runner.py'
+      - 'tests/hsme-sana-parity-runner-workflow-policy.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/sana-parity-runtime-lock.v1.json'
+      - '.github/workflows/hsme-2a-2-1b-sana-parity-runner-contract.yml'
+      - '.github/workflows/hsme-2a-2-1b-sana-parity-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Compile runner without importing model runtimes
+        run: python -m py_compile scripts/hsme-sana-parity-runner.py
+
+      - name: Run synthetic runner unit tests
+        run: python -m unittest tests/test-hsme-sana-parity-runner.py
+
+      - name: Prove dispatch-only GPU workflow policy
+        run: node --test tests/hsme-sana-parity-runner-workflow-policy.test.mjs
+
+      - name: Ordinary PR CI must not download or execute model code
+        run: |
+          set -euo pipefail
+          test "$(grep -c '^  pull_request:' .github/workflows/hsme-2a-2-1b-sana-parity-runner-contract.yml)" -eq 1
+          test "$(grep -c '^  workflow_dispatch:' .github/workflows/hsme-2a-2-1b-sana-parity-evidence.yml)" -eq 1
+          ! sed '/grep -E.*snapshot_download/d' .github/workflows/hsme-2a-2-1b-sana-parity-runner-contract.yml | \
+            grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|HSME_SANA_PROMPT'
+          ! grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|HSME_SANA_PROMPT' \
+            tests/test-hsme-sana-parity-runner.py
+
+      - name: Runner source must not import production execution authority
+        run: |
+          ! grep -E 'DurableModelFleet|Billing|Project|Artifact|providerSelector|executionTarget' \
+            scripts/hsme-sana-parity-runner.py
