@@ -12,11 +12,11 @@ import {
 } from '../src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCampaignV1.ts';
 
 const rawCampaign = JSON.parse(await readFile(
-  new URL('../src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json', import.meta.url),
+  'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json',
   'utf8',
 ));
 const tinyManifest = JSON.parse(await readFile(
-  new URL('../src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json', import.meta.url),
+  'src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json',
   'utf8',
 ));
 
