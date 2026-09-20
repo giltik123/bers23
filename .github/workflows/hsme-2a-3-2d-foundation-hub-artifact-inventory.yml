@@ -1,0 +1,98 @@
+name: HSME-2a.3.2d immutable Hub artifact inventory
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/hsme_foundation_candidate_metadata_evidence.py'
+      - 'tests/test_hsme_foundation_candidate_metadata_evidence.py'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-hub-artifact-evidence-index.v1.json'
+      - '.github/workflows/hsme-2a-3-2d-foundation-hub-artifact-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hub-artifact-inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Offline contract tests
+        run: python -m unittest tests/test_hsme_foundation_candidate_metadata_evidence.py
+
+      - name: Install pinned metadata transport only
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          PY
+
+      - name: Collect exact immutable six-candidate artifact identities
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-2d
+          python scripts/hsme_foundation_candidate_metadata_evidence.py \
+            --campaign src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json \
+            --output .test-cache/hsme-2a-3-2d/foundation-candidate-metadata-evidence.json
+
+      - name: Validate bounded JSON-only evidence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('.test-cache/hsme-2a-3-2d/foundation-candidate-metadata-evidence.json')
+          data = json.loads(path.read_text())
+          assert data['schemaVersion'] == 'BERS_HSME_FOUNDATION_HUB_ARTIFACT_EVIDENCE_V1'
+          assert len(data['candidates']) == 6
+          assert data['candidateOutputsObserved'] is False
+          assert data['ordinaryCiModelInferenceExecuted'] is False
+          assert data['largeModelPayloadsDownloaded'] is False
+          assert data['xetStorageIdsUsedAsContentSha256'] is False
+          assert all(len(item['modelContentSha256']) == 64 for item in data['candidates'])
+          campaign = json.loads(Path('src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json').read_text())
+          pinned = {item['candidateId']: item['modelContentSha256'] for item in campaign['candidates']}
+          observed = {item['candidateId']: item['modelContentSha256'] for item in data['candidates']}
+          assert observed == pinned
+          index = json.loads(Path('src/platform/creative/local-ai/hsme/hsme-foundation-hub-artifact-evidence-index.v1.json').read_text())
+          indexed = {item['candidateId']: item['modelContentSha256'] for item in index['candidates']}
+          assert indexed == pinned
+          assert index['candidateOutputsObserved'] is False
+          assert index['ordinaryCiModelInferenceExecuted'] is False
+          assert index['largeModelPayloadsDownloaded'] is False
+          assert index['xetStorageIdsUsedAsContentSha256'] is False
+          assert index['runtimeRepositoryCodeObserved'] is False
+          assert path.stat().st_size < 2 * 1024 * 1024
+          PY
+
+      - name: Upload JSON evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-foundation-hub-artifact-evidence-${{ github.sha }}
+          path: .test-cache/hsme-2a-3-2d/foundation-candidate-metadata-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: No model execution or binary publication authority
+        run: |
+          set -euo pipefail
+          ! grep -E 'from_pretrained\(|torch\.cuda|nvidia-smi|pipeline\(' \
+            scripts/hsme_foundation_candidate_metadata_evidence.py
+          ! find .test-cache/hsme-2a-3-2d -type f ! -name '*.json' -print -quit | grep .

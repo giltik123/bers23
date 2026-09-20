@@ -56,7 +56,8 @@ jobs:
           grep -F '"state": "EVIDENCE_PENDING"' "${TRUST}"
           test "$(grep -c '"thresholdState": "PINNED"' "${PLAN}")" -eq 11
           test "$(grep -c '"maxLossMicrounits":' "${CAMPAIGN}")" -eq 13
-          test "$(grep -c '"modelContentSha256": "UNKNOWN"' "${CAMPAIGN}")" -eq 6
+          test "$(grep -Ec '"modelContentSha256": "[0-9a-f]{64}"' "${CAMPAIGN}")" -eq 6
+          ! grep -F '"modelContentSha256": "UNKNOWN"' "${CAMPAIGN}"
           test "$(grep -c '"executionProfileSha256": "UNKNOWN"' "${CAMPAIGN}")" -eq 6
 
       - name: Ordinary CI still cannot acquire or execute foundation models
