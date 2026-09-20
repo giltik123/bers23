@@ -1,0 +1,57 @@
+name: HSME-2a.3.1 immutable foundation benchmark manifest
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkManifestV1.ts'
+      - 'tests/creative-hsme-foundation-benchmark-manifest-v1.test.mjs'
+      - '.github/workflows/hsme-2a-3-1-foundation-benchmark-manifest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark-manifest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prove immutable pre-observation manifest contract
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-1
+          npx esbuild tests/creative-hsme-foundation-benchmark-manifest-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-1/manifest.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-1/manifest.test.mjs
+
+      - name: Manifest contract must stay evidence-only
+        run: |
+          set -euo pipefail
+          ! grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|torch\.cuda|secrets\.' \
+            src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkManifestV1.ts \
+            tests/creative-hsme-foundation-benchmark-manifest-v1.test.mjs
+          ! grep -E 'installedBytes|workingMemoryBytes|latency|costMicrousd|observedScore|weightedScore' \
+            src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkManifestV1.ts
+
+      - name: No model acquisition or training in ordinary CI
+        run: |
+          set -euo pipefail
+          ! grep -E '^[[:space:]]+(python -m pip install|pip install.*torch|huggingface-cli|hf download|wget|curl)([[:space:]]|$)' \
+            .github/workflows/hsme-2a-3-1-foundation-benchmark-manifest.yml
