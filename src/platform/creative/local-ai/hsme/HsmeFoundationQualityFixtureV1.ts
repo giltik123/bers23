@@ -258,6 +258,19 @@ export function normalizeHsmeFoundationQualityFixtureV1(raw: unknown): HsmeFound
   }
   const candidates = record.candidates.map((value, index) => normalizeCandidate(value, `candidates[${index}]`));
   assertUnique(candidates.map(value => value.candidateId), 'candidateId', 'hsme_foundation_fixture_candidate_duplicate');
+  for (const candidate of candidates) {
+    if (candidate.derivedFromContentSha256 !== 'NONE') {
+      if (candidate.derivedFromContentSha256 === candidate.contentSha256) {
+        fail('hsme_foundation_fixture_derived_self_reference', `${candidate.candidateId} cannot derive from itself`);
+      }
+      if (!candidates.some(parent => parent.contentSha256 === candidate.derivedFromContentSha256)) {
+        fail(
+          'hsme_foundation_fixture_derived_parent_missing',
+          `${candidate.candidateId} derived representation parent is not in the frozen candidate lock`,
+        );
+      }
+    }
+  }
   for (const role of ROLES) {
     if (!candidates.some(candidate => candidate.role === role)) {
       fail('hsme_foundation_fixture_role_missing', `candidate set must contain role ${role}`);
