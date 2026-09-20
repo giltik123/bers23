@@ -1,0 +1,68 @@
+name: HSME-2a.3.2e quality-baseline execution profiles
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-execution-profiles.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json'
+      - 'tests/creative-hsme-foundation-execution-profiles-v1.test.mjs'
+      - '.github/workflows/hsme-2a-3-2e-foundation-execution-profiles.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  execution-profile-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prove six content-addressed quality execution profiles
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-2e
+          npx esbuild tests/creative-hsme-foundation-execution-profiles-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-2e/profiles.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-2e/profiles.test.mjs
+
+      - name: Profiles are pinned while fixture and rights gates remain closed
+        run: |
+          set -euo pipefail
+          PROFILES=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-execution-profiles.v1.json
+          CAMPAIGN=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json
+          TRUST=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json
+          test "$(grep -c '"executionProfileSha256":' "${PROFILES}")" -eq 6
+          test "$(grep -c '"state": "PINNED"' "${TRUST}")" -eq 6
+          test "$(grep -Ec '"executionProfileSha256": "[0-9a-f]{64}"' "${CAMPAIGN}")" -eq 6
+          test "$(grep -c '"rightsState": "REVIEW_REQUIRED"' "${CAMPAIGN}")" -eq 6
+          grep -F '"state": "PIN_REQUIRED"' "${CAMPAIGN}"
+          grep -F '"candidateOutputsObserved": false' "${PROFILES}"
+          grep -F '"efficiencyUsedInQualitySelection": false' "${PROFILES}"
+          grep -F '"productionAuthorityGranted": false' "${PROFILES}"
+          grep -F '"trainingOrDistillationAllowed": false' "${PROFILES}"
+
+      - name: Profile contract cannot execute or optimize foundation models
+        run: |
+          set -euo pipefail
+          ! grep -E 'from_pretrained\(|snapshot_download\(|torch\.cuda|nvidia-smi|secrets\.' \
+            tests/creative-hsme-foundation-execution-profiles-v1.test.mjs
+          ! grep -E 'installedBytes|workingMemoryBytes|latencyMs|costMicrousd|qualityPerInstalledByte' \
+            src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-execution-profiles.v1.json
