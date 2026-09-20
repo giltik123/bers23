@@ -59,8 +59,8 @@ jobs:
           ! grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|torch\.cuda|secrets\.|workflow_dispatch:.*model' \
             tests/creative-hsme-foundation-quality-bakeoff-v1.test.mjs \
             src/platform/creative/local-ai/hsme/HsmeFoundationQualityBakeoffV1.ts
-          ! grep -E 'python -m pip install|pip install.*torch|huggingface-cli|hf download|wget|curl' \
-            .github/workflows/hsme-2a-3-quality-first-foundation-bakeoff.yml
+          ! sed '/grep -E/d' .github/workflows/hsme-2a-3-quality-first-foundation-bakeoff.yml | \
+            grep -E 'python -m pip install|pip install.*torch|huggingface-cli|hf download|wget|curl'
 
       - name: Quality policy cannot depend on efficiency fields
         run: |
