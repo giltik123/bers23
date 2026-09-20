@@ -69,12 +69,12 @@ jobs:
           ! sed '/grep -E/d' .github/workflows/hsme-2a-3-1-foundation-benchmark-campaign.yml | \
             grep -E 'pip install.*torch|huggingface-cli|hf download|wget|curl|snapshot_download|from_pretrained'
 
-      - name: Pending campaign remains fail closed without fabricated evidence
+      - name: Fixture-pinned campaign remains fail closed until rights admission
         run: |
           set -euo pipefail
           CAMPAIGN=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json
-          grep -F '"status": "EVIDENCE_PENDING"' "${CAMPAIGN}"
-          grep -F '"state": "PIN_REQUIRED"' "${CAMPAIGN}"
+          grep -F '"status": "FIXTURES_PINNED"' "${CAMPAIGN}"
+          grep -F '"state": "PINNED"' "${CAMPAIGN}"
           test "$(grep -c '"rightsState": "REVIEW_REQUIRED"' "${CAMPAIGN}")" -eq 6
           test "$(grep -Ec '"modelContentSha256": "[0-9a-f]{64}"' "${CAMPAIGN}")" -eq 6
           ! grep -F '"modelContentSha256": "UNKNOWN"' "${CAMPAIGN}"

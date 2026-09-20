@@ -1,0 +1,362 @@
+{
+  "schemaVersion": "BERS_HSME_FOUNDATION_FIXTURE_PACK_EVIDENCE_V1",
+  "fixturePlanSha256": "d5af7ca8d7dae76916b0f489040e7d4b982306a58d813027196f0a7219e409ac",
+  "sources": {
+    "fixtureSet": {
+      "schemaVersion": "BERS_HSME_FOUNDATION_FIXTURE_SET_V1",
+      "fixturePlanSha256": "d5af7ca8d7dae76916b0f489040e7d4b982306a58d813027196f0a7219e409ac",
+      "reusedT2iCorpusSha256": "ce8bb069c7d3d99b56c97a19c415fca9a4d7643c9d04a1b75e225e3b948199fe",
+      "generatedManifestSha256": "68742feef6695e2acabda18bf34d61e041ea6c8630674af145ce746c614a4853",
+      "assets": [
+        {
+          "fixtureId": "edit-garment-detail-preservation",
+          "capability": "IMAGE_EDITING",
+          "caseClass": "garment-detail-preservation",
+          "contentSha256": "beb4423d919c07d26a9a4ba2142ba8fe748e6ac9306f3fc07ffc8498cc7dfb88",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#asset=editing-garment-reference.png;case=edit-garment-transfer-v1"
+        },
+        {
+          "fixtureId": "edit-identity-preservation",
+          "capability": "IMAGE_EDITING",
+          "caseClass": "identity-preservation",
+          "contentSha256": "746d68c65b94258ed4c7d2ed553e952acb73a9f48af427cc0737d3185fd83387",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#asset=editing-subject-primary.png;case=edit-local-sleeve-color-v1"
+        },
+        {
+          "fixtureId": "edit-localized-edit-compliance",
+          "capability": "IMAGE_EDITING",
+          "caseClass": "localized-edit-compliance",
+          "contentSha256": "746d68c65b94258ed4c7d2ed553e952acb73a9f48af427cc0737d3185fd83387",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#asset=editing-subject-primary.png;case=edit-local-sleeve-color-v1"
+        },
+        {
+          "fixtureId": "edit-logo-text-editing",
+          "capability": "IMAGE_EDITING",
+          "caseClass": "logo-text-editing",
+          "contentSha256": "746d68c65b94258ed4c7d2ed553e952acb73a9f48af427cc0737d3185fd83387",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#asset=editing-subject-primary.png;case=edit-logo-text-v1"
+        },
+        {
+          "fixtureId": "edit-multi-reference-consistency",
+          "capability": "IMAGE_EDITING",
+          "caseClass": "multi-reference-consistency",
+          "contentSha256": "beb4423d919c07d26a9a4ba2142ba8fe748e6ac9306f3fc07ffc8498cc7dfb88",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#asset=editing-garment-reference.png;case=edit-material-reference-v1"
+        },
+        {
+          "fixtureId": "edit-non-target-preservation",
+          "capability": "IMAGE_EDITING",
+          "caseClass": "non-target-preservation",
+          "contentSha256": "0e3ca6bd8bdd8a1f69653b1d7db99ed80847220b623080810320757226126113",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#asset=editing-background-reference.png;case=edit-local-sleeve-color-v1"
+        },
+        {
+          "fixtureId": "edit-pattern-texture-material-preservation",
+          "capability": "IMAGE_EDITING",
+          "caseClass": "pattern-texture-material-preservation",
+          "contentSha256": "57cea422a0ff572cdb73154a0e0c88b672d01029f409fad015842daa7b852066",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#asset=editing-material-reference.png;case=edit-material-reference-v1"
+        },
+        {
+          "fixtureId": "t2i-d6-portrait-natural-light",
+          "capability": "TEXT_TO_IMAGE",
+          "caseClass": "people-anatomy",
+          "contentSha256": "b8ac4b140078f745cdc8109a9dda7d026889765f43a17262f014cc281e1c4f42",
+          "sourceRef": "git:giltik123/bers23@91dfa137973d79122b2977d3ecfe1a5fbf1da52b/tests/fixtures/tiny-sd-d6-quality-corpus-v1.json#prompt=portrait-natural-light"
+        },
+        {
+          "fixtureId": "t2i-d6-single-object-product",
+          "capability": "TEXT_TO_IMAGE",
+          "caseClass": "product-object",
+          "contentSha256": "93f6d79153cc27532cbf081f524125b65e294926b4624d3b4ec5a29c96e58dbb",
+          "sourceRef": "git:giltik123/bers23@91dfa137973d79122b2977d3ecfe1a5fbf1da52b/tests/fixtures/tiny-sd-d6-quality-corpus-v1.json#prompt=single-object-product"
+        },
+        {
+          "fixtureId": "t2i-d6-three-apples-count",
+          "capability": "TEXT_TO_IMAGE",
+          "caseClass": "count-spatial",
+          "contentSha256": "38cae02e6e3ec38dd27c9b3cfb57def85bfc6ec6c09d3daee4575acbb7bffa5d",
+          "sourceRef": "git:giltik123/bers23@91dfa137973d79122b2977d3ecfe1a5fbf1da52b/tests/fixtures/tiny-sd-d6-quality-corpus-v1.json#prompt=three-apples-count"
+        },
+        {
+          "fixtureId": "t2i-difficult-texture-v1",
+          "capability": "TEXT_TO_IMAGE",
+          "caseClass": "difficult-texture",
+          "contentSha256": "d7eda5e098cf0c88556c3e90933e5b4fc7959d37bc109c1c0ff00a6566332c99",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#t2i=t2i-difficult-texture-v1"
+        },
+        {
+          "fixtureId": "t2i-fashion-material-v1",
+          "capability": "TEXT_TO_IMAGE",
+          "caseClass": "fashion-material",
+          "contentSha256": "46df28a0bf1830451ee3aa4807e80555dd81a46aa7fb23ff00550ed2d9571145",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#t2i=t2i-fashion-material-v1"
+        },
+        {
+          "fixtureId": "t2i-text-logo-rendering-v1",
+          "capability": "TEXT_TO_IMAGE",
+          "caseClass": "text-logo-rendering",
+          "contentSha256": "2481f9ca6bfd0f2acd593b7fd5a0571972426f73440baa631a2fc69a0dbbbc76",
+          "sourceRef": "git:giltik123/bers23@a4d1db46116f98a7fb672a42b6a602ed7498167b/scripts/generate_hsme_editing_fixtures.py#t2i=t2i-text-logo-rendering-v1"
+        }
+      ]
+    },
+    "fixturePolicy": {
+      "schemaVersion": "BERS_HSME_FOUNDATION_FIXTURE_POLICY_V1",
+      "qualityPolicy": "QUALITY_FLOOR_BEFORE_EFFICIENCY",
+      "preObservationOnly": true,
+      "candidateOutputsObserved": false,
+      "postObservationMutationAllowed": false,
+      "privateUserDataAllowed": false,
+      "externalThirdPartyFixtureAssetsAllowed": false,
+      "requiredT2iCaseClasses": [
+        "people-anatomy",
+        "fashion-material",
+        "text-logo-rendering",
+        "count-spatial",
+        "product-object",
+        "difficult-texture"
+      ],
+      "requiredEditingCaseClasses": [
+        "identity-preservation",
+        "garment-detail-preservation",
+        "logo-text-editing",
+        "pattern-texture-material-preservation",
+        "non-target-preservation",
+        "localized-edit-compliance",
+        "multi-reference-consistency"
+      ]
+    },
+    "promptInputSet": {
+      "schemaVersion": "BERS_HSME_FOUNDATION_PROMPT_INPUT_SET_V1",
+      "d6Corpus": {
+        "path": "tests/fixtures/tiny-sd-d6-quality-corpus-v1.json",
+        "sha256": "ce8bb069c7d3d99b56c97a19c415fca9a4d7643c9d04a1b75e225e3b948199fe",
+        "selected": [
+          {
+            "caseClass": "people-anatomy",
+            "promptId": "portrait-natural-light",
+            "promptSha256": "b8ac4b140078f745cdc8109a9dda7d026889765f43a17262f014cc281e1c4f42"
+          },
+          {
+            "caseClass": "count-spatial",
+            "promptId": "three-apples-count",
+            "promptSha256": "38cae02e6e3ec38dd27c9b3cfb57def85bfc6ec6c09d3daee4575acbb7bffa5d"
+          },
+          {
+            "caseClass": "product-object",
+            "promptId": "single-object-product",
+            "promptSha256": "93f6d79153cc27532cbf081f524125b65e294926b4624d3b4ec5a29c96e58dbb"
+          }
+        ]
+      },
+      "generatedT2i": [
+        {
+          "fixtureId": "t2i-fashion-material-v1",
+          "caseClass": "fashion-material",
+          "promptSha256": "46df28a0bf1830451ee3aa4807e80555dd81a46aa7fb23ff00550ed2d9571145"
+        },
+        {
+          "fixtureId": "t2i-text-logo-rendering-v1",
+          "caseClass": "text-logo-rendering",
+          "promptSha256": "2481f9ca6bfd0f2acd593b7fd5a0571972426f73440baa631a2fc69a0dbbbc76"
+        },
+        {
+          "fixtureId": "t2i-difficult-texture-v1",
+          "caseClass": "difficult-texture",
+          "promptSha256": "d7eda5e098cf0c88556c3e90933e5b4fc7959d37bc109c1c0ff00a6566332c99"
+        }
+      ],
+      "editingCases": [
+        {
+          "caseId": "edit-local-sleeve-color-v1",
+          "instructionSha256": "78843f256c3fb66c2787b8135836120e53b5fa5fb6df234394b2a81ead57ee5a",
+          "referenceOrder": [
+            "editing-subject-primary.png"
+          ],
+          "referenceOrderingSha256": "57db82a9394b2aabeb791eff705c3ccc7694e833b907b5df944a909b6f14d170"
+        },
+        {
+          "caseId": "edit-garment-transfer-v1",
+          "instructionSha256": "788e2eedb38635848f4086b96ea0ffd46cbecc83da1dcd20abdd572f1006ba38",
+          "referenceOrder": [
+            "editing-subject-primary.png",
+            "editing-garment-reference.png"
+          ],
+          "referenceOrderingSha256": "b13c07c3c6df3efd4b667ca402b17e1b0ca692f15b0e0fe7d554929cc8aa454c"
+        },
+        {
+          "caseId": "edit-logo-text-v1",
+          "instructionSha256": "db68d765168186071cb034260feb85fe90d87293c42b04abd6ec4b81478093e1",
+          "referenceOrder": [
+            "editing-subject-primary.png",
+            "editing-garment-reference.png"
+          ],
+          "referenceOrderingSha256": "b13c07c3c6df3efd4b667ca402b17e1b0ca692f15b0e0fe7d554929cc8aa454c"
+        },
+        {
+          "caseId": "edit-material-reference-v1",
+          "instructionSha256": "6e5186d5e3f83da840c5f8bbbcabaf0a86e446aaf83bda2af291179614c1dffa",
+          "referenceOrder": [
+            "editing-subject-primary.png",
+            "editing-material-reference.png",
+            "editing-background-reference.png"
+          ],
+          "referenceOrderingSha256": "a04c4568649a819efe4a298e53f7e6302b57aa57d5d6c92ad6cc77d8fba2340e"
+        }
+      ]
+    },
+    "blindedReviewRubric": {
+      "schemaVersion": "BERS_HSME_FOUNDATION_BLINDED_REVIEW_BINDING_V1",
+      "lossScale": "LOWER_IS_BETTER_0_TO_1000000",
+      "compensationAcrossDimensionsAllowed": false,
+      "dimensions": [
+        {
+          "dimensionId": "semantic-adherence",
+          "reviewMode": "HYBRID",
+          "rubricSha256": "9d7da6cf3f81f6e2ccf8cd7a3073f164f0abfb1b0bcbc7ef6a27f18b242506ad",
+          "maxLossMicrounits": 50000
+        },
+        {
+          "dimensionId": "identity-preservation",
+          "reviewMode": "BLINDED_HUMAN",
+          "rubricSha256": "e8a4bdad9955a795fa96f670066048ca630b92317a1e17646a1ce3e75a112d9b",
+          "maxLossMicrounits": 25000
+        },
+        {
+          "dimensionId": "garment-logo-pattern-preservation",
+          "reviewMode": "BLINDED_HUMAN",
+          "rubricSha256": "eb2ce41a17970986d09157110e556864cbdde06440708231a873e86791b6cb37",
+          "maxLossMicrounits": 25000
+        },
+        {
+          "dimensionId": "non-target-preservation",
+          "reviewMode": "HYBRID",
+          "rubricSha256": "8619a0089c6b140fa1c618444fd074b8c1cd62d4b5e664c688a34abb051d82bd",
+          "maxLossMicrounits": 20000
+        },
+        {
+          "dimensionId": "anatomy-artifact-rate",
+          "reviewMode": "HYBRID",
+          "rubricSha256": "fcf4cfbc576fbe42ad0d471ddafb156e53c02bb2c855611fb8f77027c54c4f9a",
+          "maxLossMicrounits": 25000
+        },
+        {
+          "dimensionId": "photorealism",
+          "reviewMode": "BLINDED_HUMAN",
+          "rubricSha256": "204e982053b5093364cb5a4033bcf5fefb2fad9872bcee9f75ad0094144c49ad",
+          "maxLossMicrounits": 50000
+        },
+        {
+          "dimensionId": "material-realism",
+          "reviewMode": "BLINDED_HUMAN",
+          "rubricSha256": "226df51f6f4962e30554fa26088f9ab0fe695798a96415ff69cc6bbed008a373",
+          "maxLossMicrounits": 50000
+        },
+        {
+          "dimensionId": "text-fidelity",
+          "reviewMode": "HYBRID",
+          "rubricSha256": "097af5f786a29c4eff4eebb18d5cec8fe6b60f19f448b419d8dbc12b864346b9",
+          "maxLossMicrounits": 25000
+        },
+        {
+          "dimensionId": "edit-compliance",
+          "reviewMode": "HYBRID",
+          "rubricSha256": "52787cd7a92a3fce1a8d91643e739a8c328b7ea88bf394955d3ca5121c6dac40",
+          "maxLossMicrounits": 50000
+        },
+        {
+          "dimensionId": "multi-reference-consistency",
+          "reviewMode": "BLINDED_HUMAN",
+          "rubricSha256": "6bbb70420e911f8b004a6f6dd3224ae08f24f7c18f42d3aa8922afa073ec4ee8",
+          "maxLossMicrounits": 25000
+        },
+        {
+          "dimensionId": "composition-count-spatial-correctness",
+          "reviewMode": "HYBRID",
+          "rubricSha256": "360a396c3dcd7c4f0fa15dd1ba472891aeebbe7595d48f7878215c103c5faba0",
+          "maxLossMicrounits": 50000
+        }
+      ]
+    },
+    "deterministicInputPolicy": {
+      "schemaVersion": "BERS_HSME_FOUNDATION_DETERMINISTIC_INPUT_POLICY_V1",
+      "requiredSeeds": [
+        64205,
+        64206
+      ],
+      "textPreprocessingSha256": "ddaa9fe3565638ee79c2b3e4d03a92a5eceec202536b27a9ec2eaacc11f94caf",
+      "imagePreprocessingSha256": "16c6d5a375cff4c2e9b38e83bcc03d807bf3e9ff65c65f15c71203687d77f4e7",
+      "referenceOrderSha256": {
+        "edit-local-sleeve-color-v1": "57db82a9394b2aabeb791eff705c3ccc7694e833b907b5df944a909b6f14d170",
+        "edit-garment-transfer-v1": "b13c07c3c6df3efd4b667ca402b17e1b0ca692f15b0e0fe7d554929cc8aa454c",
+        "edit-logo-text-v1": "b13c07c3c6df3efd4b667ca402b17e1b0ca692f15b0e0fe7d554929cc8aa454c",
+        "edit-material-reference-v1": "a04c4568649a819efe4a298e53f7e6302b57aa57d5d6c92ad6cc77d8fba2340e"
+      },
+      "randomnessOutsideExplicitSeedAllowed": false,
+      "referenceSortingAllowed": false,
+      "inputMutationAfterFreezeAllowed": false
+    },
+    "outputSetContract": {
+      "schemaVersion": "BERS_HSME_FOUNDATION_OUTPUT_SET_CONTRACT_V1",
+      "outputsPerTextPrompt": 2,
+      "outputsPerEditCase": 2,
+      "seedSource": "D6_REQUIRED_SEEDS",
+      "requiredSeeds": [
+        64205,
+        64206
+      ],
+      "naming": "candidateId/fixtureId/seed.png",
+      "postGenerationSelectionAllowed": false,
+      "missingOutputDisposition": "FAIL_CLOSED",
+      "binaryOutputsPublishableFromOrdinaryCI": false,
+      "candidateOutputsObservedAtFreeze": false
+    },
+    "licenseEvidence": {
+      "schemaVersion": "BERS_HSME_FOUNDATION_FIXTURE_RIGHTS_EVIDENCE_V1",
+      "declarations": [
+        {
+          "schemaVersion": "BERS_HSME_FIXTURE_RIGHTS_DECLARATION_V1",
+          "rightsId": "BERS_REPOSITORY_OWNED_TEST_PROMPT_CORPUS_V1",
+          "owner": "BERS_PROJECT",
+          "sourceKind": "EXISTING_PINNED_CORPUS",
+          "corpusPath": "tests/fixtures/tiny-sd-d6-quality-corpus-v1.json",
+          "corpusSha256": "ce8bb069c7d3d99b56c97a19c415fca9a4d7643c9d04a1b75e225e3b948199fe",
+          "privateUserDataAllowed": false,
+          "thirdPartyContentRequired": false,
+          "benchmarkUseAdmitted": true,
+          "productionAuthorityGranted": false
+        },
+        {
+          "schemaVersion": "BERS_HSME_FIXTURE_RIGHTS_DECLARATION_V1",
+          "rightsId": "BERS_REPOSITORY_OWNED_SYNTHETIC_FIXTURE_V1",
+          "owner": "BERS_PROJECT",
+          "sourceKind": "DETERMINISTIC_REPOSITORY_GENERATED",
+          "generatedFromThirdPartyContent": false,
+          "privateUserDataAllowed": false,
+          "scrapedBiometricDataAllowed": false,
+          "thirdPartyBrandLogoAllowed": false,
+          "syntheticTextLogo": "BERS LAB",
+          "benchmarkUseAdmitted": true,
+          "productionAuthorityGranted": false
+        }
+      ],
+      "privateUserDataAllowed": false,
+      "candidateOutputsObserved": false,
+      "productionAuthorityGranted": false
+    }
+  },
+  "digests": {
+    "fixtureSetSha256": "3469843115558bf672ba1cc3ceacaa1f4ae42e777b03c4da1e5dcbe94e4af07c",
+    "fixturePolicySha256": "abea35ab413f100be3c4e4ade9568a57e0366c7d048199e06c8aa6b81f20d3bc",
+    "promptInputSetSha256": "bdadce3ece2ac42a60025dfdb2b7234dae6cea718e936161eac159b3944c2cc9",
+    "blindedReviewRubricSha256": "3f26be59af5d5c5734bd4bae11210b8d8718d198769f3e4706a04ec35fc22a19",
+    "deterministicInputPolicySha256": "50977ae23088d9622bc0fc813cb485283ceca93707d2acbd9c1c7d18ca99ae74",
+    "outputSetContractSha256": "3953c150ebc55a5854d6eae7cf1988bce96a0e106bea44304d3a3bd046a49035",
+    "licenseEvidenceSha256": "fa4da129488b0913257c12138fa14108b0a26bc38d6499becd93190af3ac4166"
+  },
+  "candidateOutputsObserved": false,
+  "privateUserDataAllowed": false,
+  "productionAuthorityGranted": false,
+  "winnerSelectionAllowed": false
+}

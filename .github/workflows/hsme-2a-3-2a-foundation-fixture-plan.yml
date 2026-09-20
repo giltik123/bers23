@@ -5,6 +5,9 @@ on:
     paths:
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkFixturePlanV1.ts'
       - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-fixture-plan.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-fixture-pack-evidence.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-fixture-rights-evidence.v1.json'
+      - 'tests/fixtures/hsme-foundation-generated-editing-v1/fixture-manifest.json'
       - 'tests/creative-hsme-foundation-benchmark-fixture-plan-v1.test.mjs'
       - 'tests/fixtures/tiny-sd-d6-quality-corpus-v1.json'
       - '.github/workflows/hsme-2a-3-2a-foundation-fixture-plan.yml'
@@ -49,16 +52,20 @@ jobs:
           test "$(sha256sum tests/fixtures/tiny-sd-d6-quality-corpus-v1.json | awk '{print $1}')" = \
             "ce8bb069c7d3d99b56c97a19c415fca9a4d7643c9d04a1b75e225e3b948199fe"
 
-      - name: Pending fixture plan cannot claim evidence or model authority
+      - name: Pinned fixture plan has complete pre-observation evidence and no model authority
         run: |
           set -euo pipefail
           PLAN=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-fixture-plan.v1.json
-          grep -F '"state": "EVIDENCE_PENDING"' "${PLAN}"
-          grep -F '"assets": []' "${PLAN}"
+          PACK=src/platform/creative/local-ai/hsme/hsme-foundation-fixture-pack-evidence.v1.json
+          grep -F '"state": "PINNED"' "${PLAN}"
+          test "$(grep -c '"fixtureId":' "${PLAN}")" -eq 13
           test "$(grep -c '"thresholdState": "PINNED"' "${PLAN}")" -eq 11
           ! grep -F '"scalePolicySha256": "UNKNOWN"' "${PLAN}"
           ! grep -F '"rubricSha256": "UNKNOWN"' "${PLAN}"
           ! grep -F '"maxLossMicrounits": "PIN_REQUIRED"' "${PLAN}"
+          ! grep -F '"contentSha256": "UNKNOWN"' "${PLAN}"
+          ! grep -F '"licenseEvidenceSha256": "UNKNOWN"' "${PLAN}"
+          grep -F '"fixturePlanSha256": "d5af7ca8d7dae76916b0f489040e7d4b982306a58d813027196f0a7219e409ac"' "${PACK}"
           grep -F '"privateUserDataAllowed": false' "${PLAN}"
           grep -F '"candidateOutputsObserved": false' "${PLAN}"
           grep -F '"postObservationMutationAllowed": false' "${PLAN}"
