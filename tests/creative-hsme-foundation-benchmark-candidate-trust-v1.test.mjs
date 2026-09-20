@@ -146,6 +146,8 @@ test('committed trust pack matches all six campaign candidates and remains fail 
   assert.equal(trust.candidates.length, 6);
   assert.equal(trust.campaignDigest, 'UNKNOWN');
   assert.ok(trust.candidates.every(value => value.artifactManifest.artifacts.length === 0));
+  assert.ok(trust.candidates.every(value => value.executionProfile.state === 'PINNED'));
+  assert.ok(trust.candidates.every(value => value.executionProfile.artifactManifestDigest !== 'UNKNOWN'));
   const evidence = await proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, trust, hashPort);
   assert.ok(evidence.entries.every(value => value.benchmarkRunnable === false));
   assert.ok(evidence.entries.every(value => value.modelContentSha256 === 'UNKNOWN'));

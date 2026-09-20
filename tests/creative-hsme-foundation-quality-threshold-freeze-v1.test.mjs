@@ -150,7 +150,7 @@ test('pinned model content still does not make any candidate runnable before fix
   for (const candidate of campaign.candidates) {
     assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(campaign, candidate.candidateId), false);
     assert.match(candidate.modelContentSha256, /^[0-9a-f]{64}$/);
-    assert.equal(candidate.executionProfileSha256, 'UNKNOWN');
+    assert.match(candidate.executionProfileSha256, /^[0-9a-f]{64}$/);
     assert.equal(candidate.rightsState, 'REVIEW_REQUIRED');
   }
 });

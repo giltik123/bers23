@@ -53,7 +53,8 @@ jobs:
           PACK=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json
           grep -F '"state": "EVIDENCE_PENDING"' "${PACK}"
           grep -F '"campaignDigest": "UNKNOWN"' "${PACK}"
-          test "$(grep -c '"state": "EVIDENCE_PENDING"' "${PACK}")" -eq 13
+          test "$(grep -c '"state": "EVIDENCE_PENDING"' "${PACK}")" -eq 7
+          test "$(grep -c '"state": "PINNED"' "${PACK}")" -eq 6
           test "$(grep -c '"reviewState": "REVIEW_REQUIRED"' "${PACK}")" -eq 6
           test "$(grep -c '"artifacts": \[\]' "${PACK}")" -eq 6
           grep -F '"winnerSelectionAllowed": false' "${PACK}"
