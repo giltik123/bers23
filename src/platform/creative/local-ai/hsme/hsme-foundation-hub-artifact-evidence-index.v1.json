@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "BERS_HSME_FOUNDATION_HUB_ARTIFACT_EVIDENCE_INDEX_V1",
+  "qualityPolicy": "QUALITY_FLOOR_BEFORE_EFFICIENCY",
+  "producerContractHeadSha": "02baa4a9221aad0762e6d63813c6cbdb36b76707",
+  "workflowRunId": 35503387446,
+  "workflowArtifactId": 10603341107,
+  "workflowArtifactArchiveSha256": "4d56903e6ee1a1018785117b6a3ecddd027af0873021a16e6bc6aff2b47a547e",
+  "evidenceJsonSha256": "345dbd8d061d2c42eedc906d5d9de87caa3764a780f18f32688d05b12fca6d07",
+  "producerScript": "scripts/hsme_foundation_candidate_metadata_evidence.py",
+  "huggingfaceHubVersion": "0.36.0",
+  "candidateOutputsObserved": false,
+  "ordinaryCiModelInferenceExecuted": false,
+  "largeModelPayloadsDownloaded": false,
+  "xetStorageIdsUsedAsContentSha256": false,
+  "runtimeRepositoryCodeObserved": false,
+  "candidates": [
+    {
+      "candidateId": "flux2-klein-4b-distilled-v1",
+      "sourceRoot": "black-forest-labs/FLUX.2-klein-4B",
+      "immutableRevision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+      "repoFileCount": 25,
+      "runtimeRequiredFileCount": 19,
+      "lfsSha256VerifiedCount": 9,
+      "gitBlobStreamedSha256Count": 16,
+      "smallGitBytesDownloaded": 4517632,
+      "modelContentSha256": "d624201961d95e4e738265087d96d8c61c9677620e760293c70e1d5fe1bad0c4"
+    },
+    {
+      "candidateId": "flux2-klein-base-4b-v1",
+      "sourceRoot": "black-forest-labs/FLUX.2-klein-base-4B",
+      "immutableRevision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+      "repoFileCount": 25,
+      "runtimeRequiredFileCount": 19,
+      "lfsSha256VerifiedCount": 9,
+      "gitBlobStreamedSha256Count": 16,
+      "smallGitBytesDownloaded": 4517691,
+      "modelContentSha256": "03b73b1eb289ec4fda8c8ae734e7f735c7ee4c083a70b43b0d76880a58a9a1e8"
+    },
+    {
+      "candidateId": "qwen-image-edit-2511-reference-v1",
+      "sourceRoot": "Qwen/Qwen-Image-Edit-2511",
+      "immutableRevision": "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9",
+      "repoFileCount": 35,
+      "runtimeRequiredFileCount": 33,
+      "lfsSha256VerifiedCount": 11,
+      "gitBlobStreamedSha256Count": 24,
+      "smallGitBytesDownloaded": 9791759,
+      "modelContentSha256": "e61303b25151cfef7e9ebf39d45efc6c3896b01efff5573a9d468804ff4c77b9"
+    },
+    {
+      "candidateId": "qwen-image-t2i-reference-v1",
+      "sourceRoot": "Qwen/Qwen-Image",
+      "immutableRevision": "0770fddc587fa1795e0a9eb01dd40218fcbdd524",
+      "repoFileCount": 31,
+      "runtimeRequiredFileCount": 28,
+      "lfsSha256VerifiedCount": 14,
+      "gitBlobStreamedSha256Count": 17,
+      "smallGitBytesDownloaded": 5345231,
+      "modelContentSha256": "4bd592a943648c4967957927e1cedd50d70f798a1e308617a8a5118411d3c007"
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-split-v1",
+      "sourceRoot": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+      "immutableRevision": "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97",
+      "repoFileCount": 16,
+      "runtimeRequiredFileCount": 14,
+      "lfsSha256VerifiedCount": 6,
+      "gitBlobStreamedSha256Count": 10,
+      "smallGitBytesDownloaded": 81635,
+      "modelContentSha256": "0223e6bf7988566c11c2833a31685c40f6020fd5f050c9db855c5717ef385002"
+    },
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "sourceRoot": "segmind/tiny-sd",
+      "immutableRevision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
+      "repoFileCount": 18,
+      "runtimeRequiredFileCount": 12,
+      "lfsSha256VerifiedCount": 3,
+      "gitBlobStreamedSha256Count": 15,
+      "smallGitBytesDownloaded": 2643185,
+      "modelContentSha256": "c970d12d38dbc907a0bf5a3856ce83e3b2fb499d1c3b8d5ca4b377c57ed6904a"
+    }
+  ]
+}

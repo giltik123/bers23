@@ -140,7 +140,7 @@ test('strict preservation dimensions cannot be compensated by broader 5 percent 
   ]) assert.equal(byId.get(id), 50_000);
 });
 
-test('threshold freeze does not make any candidate runnable before fixture/model/rights evidence', () => {
+test('pinned model content still does not make any candidate runnable before fixtures/profiles/rights', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(campaignRaw);
   const trust = normalizeHsmeFoundationBenchmarkCandidateTrustV1(trustRaw);
   assert.equal(campaign.status, 'EVIDENCE_PENDING');
@@ -149,7 +149,7 @@ test('threshold freeze does not make any candidate runnable before fixture/model
   assert.equal(trust.campaignDigest, 'UNKNOWN');
   for (const candidate of campaign.candidates) {
     assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(campaign, candidate.candidateId), false);
-    assert.equal(candidate.modelContentSha256, 'UNKNOWN');
+    assert.match(candidate.modelContentSha256, /^[0-9a-f]{64}$/);
     assert.equal(candidate.executionProfileSha256, 'UNKNOWN');
     assert.equal(candidate.rightsState, 'REVIEW_REQUIRED');
   }

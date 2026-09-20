@@ -82,14 +82,14 @@ function expectCode(fn, code) {
   assert.throws(fn, error => error?.code === code, `expected ${code}`);
 }
 
-test('canonical six-candidate campaign is evidence-pending with thresholds frozen before unresolved bytes and rights', () => {
+test('canonical six-candidate campaign is evidence-pending with model bytes and thresholds pinned before profiles and rights', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(rawCampaign);
   assert.equal(campaign.schemaVersion, HSME_FOUNDATION_BENCHMARK_CAMPAIGN_V1_SCHEMA);
   assert.equal(campaign.qualityPolicy, 'QUALITY_FLOOR_BEFORE_EFFICIENCY');
   assert.equal(campaign.status, 'EVIDENCE_PENDING');
   assert.equal(campaign.candidates.length, 6);
   assert.equal(campaign.fixturePack.state, 'PIN_REQUIRED');
-  assert.ok(campaign.candidates.every(value => value.modelContentSha256 === 'UNKNOWN'));
+  assert.ok(campaign.candidates.every(value => /^[0-9a-f]{64}$/.test(value.modelContentSha256)));
   assert.ok(campaign.candidates.every(value => value.executionProfileSha256 === 'UNKNOWN'));
   const thresholds = campaign.slices.flatMap(value =>
     value.dimensions.map(dimension => dimension.maxLossMicrounits),
@@ -120,12 +120,12 @@ test('all mutation, efficiency and execution authorities remain fail closed', ()
   }
 });
 
-test('Tiny-SD control binds the accepted repository trust-root revision without pretending unresolved hashes are pinned', () => {
+test('Tiny-SD control binds the accepted repository trust-root revision and pinned model-content identity', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(rawCampaign);
   const tiny = campaign.candidates.find(value => value.candidateId === 'tiny-sd-control-v1');
   assert.equal(tiny.sourceRoot, 'segmind/tiny-sd');
   assert.equal(tiny.immutableRevision, tinyManifest.upstream.revision);
-  assert.equal(tiny.modelContentSha256, 'UNKNOWN');
+  assert.equal(tiny.modelContentSha256, 'c970d12d38dbc907a0bf5a3856ce83e3b2fb499d1c3b8d5ca4b377c57ed6904a');
   assert.equal(tiny.executionProfileSha256, 'UNKNOWN');
   assert.equal(tiny.trustBinding, 'src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json');
   assert.deepEqual(tiny.roles, ['CONTROL_BASELINE']);
