@@ -51,8 +51,8 @@ jobs:
           CAMPAIGN=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json
           TRUST=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json
           grep -F '"candidateOutputsObserved": false' "${PLAN}"
-          grep -F '"state": "EVIDENCE_PENDING"' "${PLAN}"
-          grep -F '"status": "EVIDENCE_PENDING"' "${CAMPAIGN}"
+          grep -F '"state": "PINNED"' "${PLAN}"
+          grep -F '"status": "FIXTURES_PINNED"' "${CAMPAIGN}"
           grep -F '"state": "EVIDENCE_PENDING"' "${TRUST}"
           test "$(grep -c '"thresholdState": "PINNED"' "${PLAN}")" -eq 11
           test "$(grep -c '"maxLossMicrounits":' "${CAMPAIGN}")" -eq 13

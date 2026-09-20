@@ -1,0 +1,101 @@
+name: HSME-2a.3.2g deterministic generated editing fixtures
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/generate_hsme_editing_fixtures.py'
+      - 'tests/test_generate_hsme_editing_fixtures.py'
+      - 'tests/fixtures/hsme-foundation-generated-editing-v1/fixture-manifest.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-fixture-plan.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-fixture-pack-evidence.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-fixture-rights-evidence.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json'
+      - '.github/workflows/hsme-2a-3-2g-generated-editing-fixtures.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generated-fixtures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Offline deterministic generator tests
+        run: python -m unittest tests/test_generate_hsme_editing_fixtures.py
+
+      - name: Generate exact fixture bytes twice
+        run: |
+          set -euo pipefail
+          rm -rf .test-cache/hsme-2a-3-2g
+          mkdir -p .test-cache/hsme-2a-3-2g/a .test-cache/hsme-2a-3-2g/b
+          python scripts/generate_hsme_editing_fixtures.py --output .test-cache/hsme-2a-3-2g/a
+          python scripts/generate_hsme_editing_fixtures.py --output .test-cache/hsme-2a-3-2g/b
+          diff -qr .test-cache/hsme-2a-3-2g/a .test-cache/hsme-2a-3-2g/b
+
+      - name: Validate generated fixture manifest and committed byte identities
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          root = Path('.test-cache/hsme-2a-3-2g/a')
+          data = json.loads((root / 'fixture-manifest.json').read_text())
+          committed = json.loads(Path('tests/fixtures/hsme-foundation-generated-editing-v1/fixture-manifest.json').read_text())
+          assert data == committed
+          assert data['schemaVersion'] == 'BERS_HSME_GENERATED_EDITING_FIXTURE_V1'
+          assert len(data['assets']) == 4
+          assert len(data['t2iSupplement']) == 3
+          assert {item['caseClass'] for item in data['t2iSupplement']} == {
+              'fashion-material', 'text-logo-rendering', 'difficult-texture'
+          }
+          assert len(data['cases']) == 4
+          assert data['generator']['randomnessUsed'] is False
+          assert data['generator']['networkAccessRequired'] is False
+          assert data['rights']['generatedFromThirdPartyContent'] is False
+          assert data['rights']['privateUserDataAllowed'] is False
+          assert data['candidateOutputsObserved'] is False
+          assert data['productionAuthorityGranted'] is False
+          assert data['trainingOrDistillationAllowed'] is False
+          for item in data['assets']:
+              payload = (root / item['relativePath']).read_bytes()
+              assert hashlib.sha256(payload).hexdigest() == item['contentSha256']
+              assert len(payload) < 1024 * 1024
+          plan = json.loads(Path('src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-fixture-plan.v1.json').read_text())
+          campaign = json.loads(Path('src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json').read_text())
+          pack = json.loads(Path('src/platform/creative/local-ai/hsme/hsme-foundation-fixture-pack-evidence.v1.json').read_text())
+          assert plan['state'] == 'PINNED' and len(plan['assets']) == 13
+          assert campaign['status'] == 'FIXTURES_PINNED'
+          assert campaign['fixturePack']['state'] == 'PINNED'
+          assert pack['candidateOutputsObserved'] is False
+          manifest_sha = hashlib.sha256((root / 'fixture-manifest.json').read_bytes()).hexdigest()
+          assert manifest_sha == pack['sources']['fixtureSet']['generatedManifestSha256']
+          assert campaign['fixturePack']['fixtureSetSha256'] == pack['digests']['fixtureSetSha256']
+          PY
+
+      - name: Upload generated fixture evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-generated-editing-fixtures-${{ github.sha }}
+          path: .test-cache/hsme-2a-3-2g/a/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Generator cannot fetch external images or model outputs
+        run: |
+          set -euo pipefail
+          ! grep -E 'https?://|urlopen|requests|from_pretrained|snapshot_download|torch\.cuda|nvidia-smi' \
+            scripts/generate_hsme_editing_fixtures.py

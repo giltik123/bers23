@@ -62,6 +62,21 @@ function pinFixtures(raw) {
   };
 }
 
+function unpinFixtures(raw) {
+  raw.fixturePack = {
+    state: 'PIN_REQUIRED',
+    fixtureSetSha256: 'UNKNOWN',
+    fixturePolicySha256: 'UNKNOWN',
+    promptInputSetSha256: 'UNKNOWN',
+    blindedReviewRubricSha256: 'UNKNOWN',
+    deterministicInputPolicySha256: 'UNKNOWN',
+    outputSetContractSha256: 'UNKNOWN',
+    licenseEvidenceSha256: 'UNKNOWN',
+    privateUserDataAllowed: false,
+  };
+  raw.status = 'EVIDENCE_PENDING';
+}
+
 function pinThresholds(raw) {
   raw.slices.forEach((qualitySlice, sliceIndex) => {
     qualitySlice.dimensions.forEach((dimension, dimensionIndex) => {
@@ -82,13 +97,13 @@ function expectCode(fn, code) {
   assert.throws(fn, error => error?.code === code, `expected ${code}`);
 }
 
-test('canonical six-candidate campaign is evidence-pending with model bytes and thresholds pinned before profiles and rights', () => {
+test('canonical six-candidate campaign has fixtures/model/profiles pinned while rights remain closed', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(rawCampaign);
   assert.equal(campaign.schemaVersion, HSME_FOUNDATION_BENCHMARK_CAMPAIGN_V1_SCHEMA);
   assert.equal(campaign.qualityPolicy, 'QUALITY_FLOOR_BEFORE_EFFICIENCY');
-  assert.equal(campaign.status, 'EVIDENCE_PENDING');
+  assert.equal(campaign.status, 'FIXTURES_PINNED');
   assert.equal(campaign.candidates.length, 6);
-  assert.equal(campaign.fixturePack.state, 'PIN_REQUIRED');
+  assert.equal(campaign.fixturePack.state, 'PINNED');
   assert.ok(campaign.candidates.every(value => /^[0-9a-f]{64}$/.test(value.modelContentSha256)));
   assert.ok(campaign.candidates.every(value => /^[0-9a-f]{64}$/.test(value.executionProfileSha256)));
   const thresholds = campaign.slices.flatMap(value =>
@@ -246,6 +261,7 @@ test('FIXTURES_PINNED status is rejected if any previously frozen quality thresh
 
 test('partial fixture identity is rejected instead of being treated as pinned evidence', () => {
   const changed = clone(rawCampaign);
+  unpinFixtures(changed);
   changed.fixturePack.fixtureSetSha256 = H('a');
   expectCode(
     () => normalizeHsmeFoundationBenchmarkCampaignV1(changed),
@@ -253,6 +269,7 @@ test('partial fixture identity is rejected instead of being treated as pinned ev
   );
 
   const missing = clone(rawCampaign);
+  unpinFixtures(missing);
   pinFixtures(missing);
   missing.fixturePack.outputSetContractSha256 = 'UNKNOWN';
   expectCode(

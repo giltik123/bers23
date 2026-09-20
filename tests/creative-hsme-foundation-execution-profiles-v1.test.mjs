@@ -183,10 +183,10 @@ test('profile mutation changes digest before any output can be admitted', async 
   );
 });
 
-test('pinned bytes plus profiles still cannot run before fixture and rights admission', () => {
+test('pinned bytes, profiles and fixtures still cannot run before rights admission', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(campaignRaw);
-  assert.equal(campaign.status, 'EVIDENCE_PENDING');
-  assert.equal(campaign.fixturePack.state, 'PIN_REQUIRED');
+  assert.equal(campaign.status, 'FIXTURES_PINNED');
+  assert.equal(campaign.fixturePack.state, 'PINNED');
   for (const item of campaign.candidates) {
     assert.match(item.modelContentSha256, /^[0-9a-f]{64}$/);
     assert.match(item.executionProfileSha256, /^[0-9a-f]{64}$/);

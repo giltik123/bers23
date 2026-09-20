@@ -43,7 +43,7 @@ jobs:
             --external:node:*
           node --test .test-cache/hsme-2a-3-2e/profiles.test.mjs
 
-      - name: Profiles are pinned while fixture and rights gates remain closed
+      - name: Profiles and fixtures are pinned while rights gate remains closed
         run: |
           set -euo pipefail
           PROFILES=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-execution-profiles.v1.json
@@ -53,7 +53,7 @@ jobs:
           test "$(grep -c '"state": "PINNED"' "${TRUST}")" -eq 6
           test "$(grep -Ec '"executionProfileSha256": "[0-9a-f]{64}"' "${CAMPAIGN}")" -eq 6
           test "$(grep -c '"rightsState": "REVIEW_REQUIRED"' "${CAMPAIGN}")" -eq 6
-          grep -F '"state": "PIN_REQUIRED"' "${CAMPAIGN}"
+          grep -F '"state": "PINNED"' "${CAMPAIGN}"
           grep -F '"candidateOutputsObserved": false' "${PROFILES}"
           grep -F '"efficiencyUsedInQualitySelection": false' "${PROFILES}"
           grep -F '"productionAuthorityGranted": false' "${PROFILES}"

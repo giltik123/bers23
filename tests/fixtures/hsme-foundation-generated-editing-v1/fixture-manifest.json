@@ -1,0 +1,246 @@
+{
+  "assets": [
+    {
+      "assetId": "editing-background-reference",
+      "caseClasses": [
+        "NON_TARGET",
+        "LOGO_TEXT"
+      ],
+      "contentSha256": "0e3ca6bd8bdd8a1f69653b1d7db99ed80847220b623080810320757226126113",
+      "height": 512,
+      "mediaType": "image/png",
+      "privateUserData": false,
+      "relativePath": "editing-background-reference.png",
+      "rightsConclusion": "ADMITTED",
+      "rightsId": "BERS_REPOSITORY_OWNED_SYNTHETIC_FIXTURE_V1",
+      "roles": [
+        "NON_TARGET_REFERENCE"
+      ],
+      "sourceKind": "DETERMINISTIC_REPOSITORY_GENERATED",
+      "syntheticTextLogo": "BERS LAB",
+      "thirdPartyBrandOrLogo": false,
+      "width": 512
+    },
+    {
+      "assetId": "editing-garment-reference",
+      "caseClasses": [
+        "GARMENT_CONSTRUCTION",
+        "LOGO_TEXT",
+        "PATTERN_MATERIAL",
+        "MULTI_REFERENCE"
+      ],
+      "contentSha256": "beb4423d919c07d26a9a4ba2142ba8fe748e6ac9306f3fc07ffc8498cc7dfb88",
+      "height": 512,
+      "mediaType": "image/png",
+      "privateUserData": false,
+      "relativePath": "editing-garment-reference.png",
+      "rightsConclusion": "ADMITTED",
+      "rightsId": "BERS_REPOSITORY_OWNED_SYNTHETIC_FIXTURE_V1",
+      "roles": [
+        "GARMENT_REFERENCE",
+        "MULTI_REFERENCE_INPUT_2"
+      ],
+      "sourceKind": "DETERMINISTIC_REPOSITORY_GENERATED",
+      "syntheticTextLogo": "BERS LAB",
+      "thirdPartyBrandOrLogo": false,
+      "width": 512
+    },
+    {
+      "assetId": "editing-material-reference",
+      "caseClasses": [
+        "LOGO_TEXT",
+        "PATTERN_MATERIAL",
+        "MULTI_REFERENCE"
+      ],
+      "contentSha256": "57cea422a0ff572cdb73154a0e0c88b672d01029f409fad015842daa7b852066",
+      "height": 512,
+      "mediaType": "image/png",
+      "privateUserData": false,
+      "relativePath": "editing-material-reference.png",
+      "rightsConclusion": "ADMITTED",
+      "rightsId": "BERS_REPOSITORY_OWNED_SYNTHETIC_FIXTURE_V1",
+      "roles": [
+        "MATERIAL_REFERENCE",
+        "MULTI_REFERENCE_INPUT_3"
+      ],
+      "sourceKind": "DETERMINISTIC_REPOSITORY_GENERATED",
+      "syntheticTextLogo": "BERS LAB",
+      "thirdPartyBrandOrLogo": false,
+      "width": 512
+    },
+    {
+      "assetId": "editing-subject-primary",
+      "caseClasses": [
+        "IDENTITY",
+        "GARMENT_CONSTRUCTION",
+        "LOGO_TEXT",
+        "PATTERN_MATERIAL",
+        "NON_TARGET",
+        "LOCAL_EDIT_TARGET"
+      ],
+      "contentSha256": "746d68c65b94258ed4c7d2ed553e952acb73a9f48af427cc0737d3185fd83387",
+      "height": 512,
+      "mediaType": "image/png",
+      "privateUserData": false,
+      "relativePath": "editing-subject-primary.png",
+      "rightsConclusion": "ADMITTED",
+      "rightsId": "BERS_REPOSITORY_OWNED_SYNTHETIC_FIXTURE_V1",
+      "roles": [
+        "PRIMARY_EDIT_INPUT",
+        "IDENTITY_REFERENCE",
+        "NON_TARGET_PRESERVATION_REFERENCE"
+      ],
+      "sourceKind": "DETERMINISTIC_REPOSITORY_GENERATED",
+      "syntheticTextLogo": "BERS LAB",
+      "thirdPartyBrandOrLogo": false,
+      "width": 512
+    }
+  ],
+  "candidateOutputsObserved": false,
+  "cases": [
+    {
+      "caseId": "edit-local-sleeve-color-v1",
+      "dimensions": [
+        "identity-preservation",
+        "garment-logo-pattern-preservation",
+        "non-target-preservation",
+        "edit-compliance",
+        "anatomy-artifact-rate",
+        "text-fidelity"
+      ],
+      "instruction": "Change only the left sleeve patch from warm red to cool green. Preserve face identity, garment construction, BERS LAB logo/text, plaid pattern, pocket, seams, and every background object.",
+      "instructionSha256": "78843f256c3fb66c2787b8135836120e53b5fa5fb6df234394b2a81ead57ee5a",
+      "referenceOrder": [
+        "editing-subject-primary.png"
+      ],
+      "referenceOrderingSha256": "57db82a9394b2aabeb791eff705c3ccc7694e833b907b5df944a909b6f14d170"
+    },
+    {
+      "caseId": "edit-garment-transfer-v1",
+      "dimensions": [
+        "identity-preservation",
+        "garment-logo-pattern-preservation",
+        "non-target-preservation",
+        "edit-compliance",
+        "text-fidelity",
+        "multi-reference-consistency"
+      ],
+      "instruction": "Use the garment reference to preserve the shirt silhouette, pocket, seam, BERS LAB logo/text, and plaid material while retaining the primary subject identity and protected background.",
+      "instructionSha256": "788e2eedb38635848f4086b96ea0ffd46cbecc83da1dcd20abdd572f1006ba38",
+      "referenceOrder": [
+        "editing-subject-primary.png",
+        "editing-garment-reference.png"
+      ],
+      "referenceOrderingSha256": "b13c07c3c6df3efd4b667ca402b17e1b0ca692f15b0e0fe7d554929cc8aa454c"
+    },
+    {
+      "caseId": "edit-logo-text-v1",
+      "dimensions": [
+        "identity-preservation",
+        "garment-logo-pattern-preservation",
+        "non-target-preservation",
+        "edit-compliance",
+        "text-fidelity",
+        "multi-reference-consistency"
+      ],
+      "instruction": "Change only the chest logo text from BERS LAB to BERS AI. Preserve face identity, shirt silhouette, pocket, seams, plaid geometry, sleeve patch, material cues, and every background object.",
+      "instructionSha256": "db68d765168186071cb034260feb85fe90d87293c42b04abd6ec4b81478093e1",
+      "referenceOrder": [
+        "editing-subject-primary.png",
+        "editing-garment-reference.png"
+      ],
+      "referenceOrderingSha256": "b13c07c3c6df3efd4b667ca402b17e1b0ca692f15b0e0fe7d554929cc8aa454c"
+    },
+    {
+      "caseId": "edit-material-reference-v1",
+      "dimensions": [
+        "identity-preservation",
+        "garment-logo-pattern-preservation",
+        "non-target-preservation",
+        "edit-compliance",
+        "text-fidelity",
+        "multi-reference-consistency"
+      ],
+      "instruction": "Apply the exact plaid/material cues from the material reference to the existing shirt only. Preserve the BERS LAB logo/text, face identity, garment geometry, and all non-target background regions.",
+      "instructionSha256": "6e5186d5e3f83da840c5f8bbbcabaf0a86e446aaf83bda2af291179614c1dffa",
+      "referenceOrder": [
+        "editing-subject-primary.png",
+        "editing-material-reference.png",
+        "editing-background-reference.png"
+      ],
+      "referenceOrderingSha256": "a04c4568649a819efe4a298e53f7e6302b57aa57d5d6c92ad6cc77d8fba2340e"
+    }
+  ],
+  "generator": {
+    "externalFontsRequired": false,
+    "externalImagesRequired": false,
+    "height": 512,
+    "language": "python-stdlib",
+    "networkAccessRequired": false,
+    "pngEncoder": "BERS_MINIMAL_RGB8_PNG_ZLIB9_V1",
+    "randomnessUsed": false,
+    "width": 512
+  },
+  "preprocessing": {
+    "colorProfile": "UNTAGGED_SRGB_SEMANTICS",
+    "crop": "NONE",
+    "decode": "PNG_RGB8_EXACT",
+    "exif": "NONE_GENERATED",
+    "resize": "NONE_SOURCE_512"
+  },
+  "preprocessingSha256": "16c6d5a375cff4c2e9b38e83bcc03d807bf3e9ff65c65f15c71203687d77f4e7",
+  "productionAuthorityGranted": false,
+  "rights": {
+    "generatedFromThirdPartyContent": false,
+    "owner": "BERS_PROJECT",
+    "privateUserDataAllowed": false,
+    "productionAuthorityGranted": false,
+    "rightsId": "BERS_REPOSITORY_OWNED_SYNTHETIC_FIXTURE_V1",
+    "scrapedBiometricDataAllowed": false,
+    "thirdPartyBrandLogoAllowed": false
+  },
+  "schemaVersion": "BERS_HSME_GENERATED_EDITING_FIXTURE_V1",
+  "t2iSupplement": [
+    {
+      "caseClass": "fashion-material",
+      "fixtureId": "t2i-fashion-material-v1",
+      "prompt": "A studio fashion photograph of an adult wearing a navy wool blazer with a clearly visible herringbone weave, realistic fabric fibers, natural folds, neutral gray background, high material realism.",
+      "promptSha256": "46df28a0bf1830451ee3aa4807e80555dd81a46aa7fb23ff00550ed2d9571145",
+      "reviewFocus": [
+        "adult anatomy",
+        "navy blazer",
+        "visible herringbone weave",
+        "fabric fibers",
+        "natural folds"
+      ]
+    },
+    {
+      "caseClass": "text-logo-rendering",
+      "fixtureId": "t2i-text-logo-rendering-v1",
+      "prompt": "A clean studio product photograph of a white cotton T-shirt with the exact centered text BERS LAB in bold black capital letters, no other text or logo, realistic cotton texture.",
+      "promptSha256": "2481f9ca6bfd0f2acd593b7fd5a0571972426f73440baa631a2fc69a0dbbbc76",
+      "reviewFocus": [
+        "exact BERS LAB text",
+        "no extra text",
+        "centered placement",
+        "white cotton T-shirt",
+        "realistic cotton texture"
+      ]
+    },
+    {
+      "caseClass": "difficult-texture",
+      "fixtureId": "t2i-difficult-texture-v1",
+      "prompt": "A macro studio photograph of navy, warm red, and gold woven plaid fabric, clearly resolved crossing threads, repeated check geometry, realistic textile fibers and shallow grazing light.",
+      "promptSha256": "d7eda5e098cf0c88556c3e90933e5b4fc7959d37bc109c1c0ff00a6566332c99",
+      "reviewFocus": [
+        "plaid geometry",
+        "crossing threads",
+        "navy red gold palette",
+        "textile fibers",
+        "grazing light"
+      ]
+    }
+  ],
+  "trainingOrDistillationAllowed": false,
+  "winnerSelectionAllowed": false
+}

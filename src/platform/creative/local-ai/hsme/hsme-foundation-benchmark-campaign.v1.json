@@ -2,7 +2,7 @@
   "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_CAMPAIGN_V1",
   "campaignId": "bers-hsme-foundation-bakeoff-2026q3-v1",
   "qualityPolicy": "QUALITY_FLOOR_BEFORE_EFFICIENCY",
-  "status": "EVIDENCE_PENDING",
+  "status": "FIXTURES_PINNED",
   "requiredCapabilities": [
     "TEXT_TO_IMAGE",
     "IMAGE_EDITING"
@@ -228,14 +228,14 @@
     }
   ],
   "fixturePack": {
-    "state": "PIN_REQUIRED",
-    "fixtureSetSha256": "UNKNOWN",
-    "fixturePolicySha256": "UNKNOWN",
-    "promptInputSetSha256": "UNKNOWN",
-    "blindedReviewRubricSha256": "UNKNOWN",
-    "deterministicInputPolicySha256": "UNKNOWN",
-    "outputSetContractSha256": "UNKNOWN",
-    "licenseEvidenceSha256": "UNKNOWN",
+    "state": "PINNED",
+    "fixtureSetSha256": "3469843115558bf672ba1cc3ceacaa1f4ae42e777b03c4da1e5dcbe94e4af07c",
+    "fixturePolicySha256": "abea35ab413f100be3c4e4ade9568a57e0366c7d048199e06c8aa6b81f20d3bc",
+    "promptInputSetSha256": "bdadce3ece2ac42a60025dfdb2b7234dae6cea718e936161eac159b3944c2cc9",
+    "blindedReviewRubricSha256": "3f26be59af5d5c5734bd4bae11210b8d8718d198769f3e4706a04ec35fc22a19",
+    "deterministicInputPolicySha256": "50977ae23088d9622bc0fc813cb485283ceca93707d2acbd9c1c7d18ca99ae74",
+    "outputSetContractSha256": "3953c150ebc55a5854d6eae7cf1988bce96a0e106bea44304d3a3bd046a49035",
+    "licenseEvidenceSha256": "fa4da129488b0913257c12138fa14108b0a26bc38d6499becd93190af3ac4166",
     "privateUserDataAllowed": false
   },
   "postObservationCandidateChangesAllowed": false,

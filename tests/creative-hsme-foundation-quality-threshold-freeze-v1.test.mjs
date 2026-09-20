@@ -78,11 +78,11 @@ test('every dimension scale and rubric digest matches its exact canonical conten
   }
 });
 
-test('fixture plan binds all 11 dimension digests and numeric ceilings but remains asset-evidence pending', () => {
+test('fixture plan binds all 11 dimension digests, numeric ceilings and 13 pinned cases', () => {
   const plan = normalizeHsmeFoundationFixturePlanV1(fixtureRaw);
   const byId = new Map(rubric.dimensions.map(value => [value.dimensionId, value]));
-  assert.equal(plan.state, 'EVIDENCE_PENDING');
-  assert.equal(plan.assets.length, 0);
+  assert.equal(plan.state, 'PINNED');
+  assert.equal(plan.assets.length, 13);
   assert.equal(plan.candidateOutputsObserved, false);
   assert.equal(plan.dimensions.length, 11);
   for (const dimension of plan.dimensions) {
@@ -140,11 +140,11 @@ test('strict preservation dimensions cannot be compensated by broader 5 percent 
   ]) assert.equal(byId.get(id), 50_000);
 });
 
-test('pinned model content still does not make any candidate runnable before fixtures/profiles/rights', () => {
+test('pinned fixtures plus model/profile evidence still cannot run before rights admission', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(campaignRaw);
   const trust = normalizeHsmeFoundationBenchmarkCandidateTrustV1(trustRaw);
-  assert.equal(campaign.status, 'EVIDENCE_PENDING');
-  assert.equal(campaign.fixturePack.state, 'PIN_REQUIRED');
+  assert.equal(campaign.status, 'FIXTURES_PINNED');
+  assert.equal(campaign.fixturePack.state, 'PINNED');
   assert.equal(trust.state, 'EVIDENCE_PENDING');
   assert.equal(trust.campaignDigest, 'UNKNOWN');
   for (const candidate of campaign.candidates) {
