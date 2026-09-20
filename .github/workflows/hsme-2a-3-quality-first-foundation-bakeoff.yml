@@ -1,0 +1,79 @@
+name: HSME-2a.3 quality-first foundation bakeoff
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationQualityBakeoffV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseDecisionV1.ts'
+      - 'tests/creative-hsme-foundation-quality-bakeoff-v1.test.mjs'
+      - 'tests/creative-hsme-foundation-reuse-decision-v1.test.mjs'
+      - '.github/workflows/hsme-2a-3-quality-first-foundation-bakeoff.yml'
+      - 'BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-first-bakeoff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Preserve accepted reuse-first decision contract
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3
+          npx esbuild tests/creative-hsme-foundation-reuse-decision-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3/reuse.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3/reuse.test.mjs
+
+      - name: Prove quality-first multi-foundation selection
+        run: |
+          set -euo pipefail
+          npx esbuild tests/creative-hsme-foundation-quality-bakeoff-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3/quality.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3/quality.test.mjs
+
+      - name: Ordinary CI cannot execute model benchmark runtimes
+        run: |
+          set -euo pipefail
+          ! grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|torch\.cuda|secrets\.|workflow_dispatch:.*model' \
+            tests/creative-hsme-foundation-quality-bakeoff-v1.test.mjs \
+            src/platform/creative/local-ai/hsme/HsmeFoundationQualityBakeoffV1.ts
+          ! sed '/grep -E/d' .github/workflows/hsme-2a-3-quality-first-foundation-bakeoff.yml | \
+            grep -E 'python -m pip install|pip install.*torch|huggingface-cli|hf download|wget|curl'
+
+      - name: Quality policy cannot depend on efficiency fields
+        run: |
+          set -euo pipefail
+          ! grep -E 'installedBytes|workingMemoryBytes|latency|costMicrousd|checkpointBytes' \
+            src/platform/creative/local-ai/hsme/HsmeFoundationQualityBakeoffV1.ts
+
+      - name: Preserve roadmap quality-before-size law
+        run: |
+          set -euo pipefail
+          grep -F 'Model size is never a goal at the expense of generation/edit quality.' \
+            BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md
+          grep -F 'efficiency may break a genuine quality tie but may not compensate for a worse quality vector' \
+            BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md
+          grep -F 'Do not collapse these dimensions into a post-hoc weighted aggregate score.' \
+            BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md
