@@ -30,6 +30,7 @@ const DIMENSIONS = Object.freeze([
   'text-fidelity',
   'edit-compliance',
   'multi-reference-consistency',
+  'composition-count-spatial-correctness',
 ] as const);
 
 const MANDATORY_DIMENSIONS = Object.freeze([
