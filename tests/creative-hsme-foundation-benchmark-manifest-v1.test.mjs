@@ -49,11 +49,12 @@ function manifest() {
       candidate('tiny-sd-control', ['CONTROL_BASELINE'], 'segmind/tiny-sd', '1', 'a', ['TEXT_TO_IMAGE']),
       candidate('flux2-klein-direct', ['DIRECT_FOUNDATION'], 'black-forest-labs/FLUX.2-klein-4B', '2', 'b', ['TEXT_TO_IMAGE', 'IMAGE_EDITING', 'MULTI_REFERENCE_EDITING']),
       candidate('sana-sprint-mobile-reuse', ['MOBILE_REUSE'], 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers', '3', 'c', ['TEXT_TO_IMAGE']),
-      candidate('qwen-image-edit-reference', ['QUALITY_REFERENCE'], 'Qwen/Qwen-Image-Edit', '4', 'd', ['IMAGE_EDITING', 'MULTI_REFERENCE_EDITING']),
+      candidate('qwen-image-t2i-reference', ['QUALITY_REFERENCE'], 'Qwen/Qwen-Image', '4', 'd', ['TEXT_TO_IMAGE']),
+      candidate('qwen-image-edit-reference', ['QUALITY_REFERENCE'], 'Qwen/Qwen-Image-Edit', '5', 'f', ['IMAGE_EDITING', 'MULTI_REFERENCE_EDITING']),
     ],
     dimensions: dimensions.map((dimensionId, index) => ({
       dimensionId,
-      referenceCandidateId: 'qwen-image-edit-reference',
+      referenceCandidateId: index < 3 ? 'qwen-image-edit-reference' : 'qwen-image-t2i-reference',
       maxLossMicrounits: index === 4 ? 20 : 50,
       reviewMode: index < 3 ? 'BLINDED_HUMAN' : 'HYBRID',
     })),
@@ -80,6 +81,7 @@ test('manifest binds four comparison roles and quality-first policy before outpu
   assert.deepEqual(value.candidates.map(x => x.candidateId), [
     'flux2-klein-direct',
     'qwen-image-edit-reference',
+    'qwen-image-t2i-reference',
     'sana-sprint-mobile-reuse',
     'tiny-sd-control',
   ]);
@@ -111,10 +113,56 @@ test('reference ids must name candidates explicitly marked QUALITY_REFERENCE', (
 
 test('all four candidate roles are structurally required', () => {
   const raw = manifest();
-  raw.candidates[3].roles = ['CONTROL_BASELINE'];
+  raw.candidates[4].roles = ['CONTROL_BASELINE'];
   expectCode(
     () => normalizeHsmeFoundationBenchmarkManifestV1(raw),
     'hsme_foundation_benchmark_manifest_role_missing',
+  );
+});
+
+test('quality references cannot masquerade as selectable reuse and controls stay control-only', () => {
+  const referenceConflict = manifest();
+  referenceConflict.candidates.find(x => x.candidateId === 'qwen-image-edit-reference').roles = [
+    'QUALITY_REFERENCE',
+    'DIRECT_FOUNDATION',
+  ];
+  expectCode(
+    () => normalizeHsmeFoundationBenchmarkManifestV1(referenceConflict),
+    'hsme_foundation_benchmark_manifest_reference_selection_role_conflict',
+  );
+
+  const controlConflict = manifest();
+  controlConflict.candidates.find(x => x.candidateId === 'tiny-sd-control').roles = [
+    'CONTROL_BASELINE',
+    'MOBILE_REUSE',
+  ];
+  expectCode(
+    () => normalizeHsmeFoundationBenchmarkManifestV1(controlConflict),
+    'hsme_foundation_benchmark_manifest_control_role_conflict',
+  );
+});
+
+test('every required capability needs both selectable reuse coverage and a quality reference', () => {
+  const noSelectableEditing = manifest();
+  const flux = noSelectableEditing.candidates.find(x => x.candidateId === 'flux2-klein-direct');
+  flux.capabilities = ['TEXT_TO_IMAGE'];
+  expectCode(
+    () => normalizeHsmeFoundationBenchmarkManifestV1(noSelectableEditing),
+    'hsme_foundation_benchmark_manifest_selectable_capability_uncovered',
+  );
+
+  const noT2iReference = manifest();
+  noT2iReference.candidates = noT2iReference.candidates.filter(
+    x => x.candidateId !== 'qwen-image-t2i-reference',
+  );
+  for (const dimension of noT2iReference.dimensions) {
+    if (dimension.referenceCandidateId === 'qwen-image-t2i-reference') {
+      dimension.referenceCandidateId = 'qwen-image-edit-reference';
+    }
+  }
+  expectCode(
+    () => normalizeHsmeFoundationBenchmarkManifestV1(noT2iReference),
+    'hsme_foundation_benchmark_manifest_reference_capability_uncovered',
   );
 });
 
