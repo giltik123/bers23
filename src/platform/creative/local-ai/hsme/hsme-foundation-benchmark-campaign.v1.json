@@ -10,12 +10,16 @@
   "candidates": [
     {
       "candidateId": "tiny-sd-control-v1",
-      "roles": ["CONTROL_BASELINE"],
+      "roles": [
+        "CONTROL_BASELINE"
+      ],
       "sourceRoot": "segmind/tiny-sd",
       "immutableRevision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
       "modelContentSha256": "UNKNOWN",
       "executionProfileSha256": "UNKNOWN",
-      "capabilities": ["TEXT_TO_IMAGE"],
+      "capabilities": [
+        "TEXT_TO_IMAGE"
+      ],
       "benchmarkMode": "ZERO_TRAINING",
       "rightsState": "REVIEW_REQUIRED",
       "rightsEvidenceSha256": "UNKNOWN",
@@ -23,12 +27,16 @@
     },
     {
       "candidateId": "sana-sprint-0.6b-split-v1",
-      "roles": ["MOBILE_REUSE"],
+      "roles": [
+        "MOBILE_REUSE"
+      ],
       "sourceRoot": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
       "immutableRevision": "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97",
       "modelContentSha256": "UNKNOWN",
       "executionProfileSha256": "UNKNOWN",
-      "capabilities": ["TEXT_TO_IMAGE"],
+      "capabilities": [
+        "TEXT_TO_IMAGE"
+      ],
       "benchmarkMode": "ZERO_TRAINING",
       "rightsState": "REVIEW_REQUIRED",
       "rightsEvidenceSha256": "UNKNOWN",
@@ -36,7 +44,9 @@
     },
     {
       "candidateId": "flux2-klein-4b-distilled-v1",
-      "roles": ["DIRECT_FOUNDATION"],
+      "roles": [
+        "DIRECT_FOUNDATION"
+      ],
       "sourceRoot": "black-forest-labs/FLUX.2-klein-4B",
       "immutableRevision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
       "modelContentSha256": "UNKNOWN",
@@ -53,7 +63,9 @@
     },
     {
       "candidateId": "flux2-klein-base-4b-v1",
-      "roles": ["DIRECT_FOUNDATION"],
+      "roles": [
+        "DIRECT_FOUNDATION"
+      ],
       "sourceRoot": "black-forest-labs/FLUX.2-klein-base-4B",
       "immutableRevision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
       "modelContentSha256": "UNKNOWN",
@@ -70,12 +82,16 @@
     },
     {
       "candidateId": "qwen-image-t2i-reference-v1",
-      "roles": ["QUALITY_REFERENCE"],
+      "roles": [
+        "QUALITY_REFERENCE"
+      ],
       "sourceRoot": "Qwen/Qwen-Image",
       "immutableRevision": "0770fddc587fa1795e0a9eb01dd40218fcbdd524",
       "modelContentSha256": "UNKNOWN",
       "executionProfileSha256": "UNKNOWN",
-      "capabilities": ["TEXT_TO_IMAGE"],
+      "capabilities": [
+        "TEXT_TO_IMAGE"
+      ],
       "benchmarkMode": "ZERO_TRAINING",
       "rightsState": "REVIEW_REQUIRED",
       "rightsEvidenceSha256": "UNKNOWN",
@@ -83,7 +99,9 @@
     },
     {
       "candidateId": "qwen-image-edit-2511-reference-v1",
-      "roles": ["QUALITY_REFERENCE"],
+      "roles": [
+        "QUALITY_REFERENCE"
+      ],
       "sourceRoot": "Qwen/Qwen-Image-Edit-2511",
       "immutableRevision": "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9",
       "modelContentSha256": "UNKNOWN",
@@ -117,37 +135,37 @@
         {
           "dimensionId": "semantic-adherence",
           "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 50000,
           "reviewMode": "HYBRID"
         },
         {
           "dimensionId": "anatomy-artifact-rate",
           "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 25000,
           "reviewMode": "HYBRID"
         },
         {
           "dimensionId": "photorealism",
           "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 50000,
           "reviewMode": "BLINDED_HUMAN"
         },
         {
           "dimensionId": "material-realism",
           "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 50000,
           "reviewMode": "BLINDED_HUMAN"
         },
         {
           "dimensionId": "text-fidelity",
           "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 25000,
           "reviewMode": "HYBRID"
         },
         {
           "dimensionId": "composition-count-spatial-correctness",
           "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 50000,
           "reviewMode": "HYBRID"
         }
       ]
@@ -167,43 +185,43 @@
         {
           "dimensionId": "identity-preservation",
           "referenceCandidateId": "qwen-image-edit-2511-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 25000,
           "reviewMode": "BLINDED_HUMAN"
         },
         {
           "dimensionId": "garment-logo-pattern-preservation",
           "referenceCandidateId": "qwen-image-edit-2511-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 25000,
           "reviewMode": "BLINDED_HUMAN"
         },
         {
           "dimensionId": "non-target-preservation",
           "referenceCandidateId": "qwen-image-edit-2511-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 20000,
           "reviewMode": "HYBRID"
         },
         {
           "dimensionId": "edit-compliance",
           "referenceCandidateId": "qwen-image-edit-2511-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 50000,
           "reviewMode": "HYBRID"
         },
         {
           "dimensionId": "anatomy-artifact-rate",
           "referenceCandidateId": "qwen-image-edit-2511-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 25000,
           "reviewMode": "HYBRID"
         },
         {
           "dimensionId": "text-fidelity",
           "referenceCandidateId": "qwen-image-edit-2511-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 25000,
           "reviewMode": "HYBRID"
         },
         {
           "dimensionId": "multi-reference-consistency",
           "referenceCandidateId": "qwen-image-edit-2511-reference-v1",
-          "maxLossMicrounits": "PIN_REQUIRED",
+          "maxLossMicrounits": 25000,
           "reviewMode": "BLINDED_HUMAN"
         }
       ]

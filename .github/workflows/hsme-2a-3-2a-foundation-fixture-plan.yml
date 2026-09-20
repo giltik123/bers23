@@ -55,7 +55,10 @@ jobs:
           PLAN=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-fixture-plan.v1.json
           grep -F '"state": "EVIDENCE_PENDING"' "${PLAN}"
           grep -F '"assets": []' "${PLAN}"
-          test "$(grep -c '"thresholdState": "PIN_REQUIRED"' "${PLAN}")" -eq 11
+          test "$(grep -c '"thresholdState": "PINNED"' "${PLAN}")" -eq 11
+          ! grep -F '"scalePolicySha256": "UNKNOWN"' "${PLAN}"
+          ! grep -F '"rubricSha256": "UNKNOWN"' "${PLAN}"
+          ! grep -F '"maxLossMicrounits": "PIN_REQUIRED"' "${PLAN}"
           grep -F '"privateUserDataAllowed": false' "${PLAN}"
           grep -F '"candidateOutputsObserved": false' "${PLAN}"
           grep -F '"postObservationMutationAllowed": false' "${PLAN}"

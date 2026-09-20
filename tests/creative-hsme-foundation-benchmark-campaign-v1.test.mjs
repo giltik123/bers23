@@ -82,7 +82,7 @@ function expectCode(fn, code) {
   assert.throws(fn, error => error?.code === code, `expected ${code}`);
 }
 
-test('canonical six-candidate campaign is evidence-pending without inventing bytes or thresholds', () => {
+test('canonical six-candidate campaign is evidence-pending with thresholds frozen before unresolved bytes and rights', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(rawCampaign);
   assert.equal(campaign.schemaVersion, HSME_FOUNDATION_BENCHMARK_CAMPAIGN_V1_SCHEMA);
   assert.equal(campaign.qualityPolicy, 'QUALITY_FLOOR_BEFORE_EFFICIENCY');
@@ -91,9 +91,12 @@ test('canonical six-candidate campaign is evidence-pending without inventing byt
   assert.equal(campaign.fixturePack.state, 'PIN_REQUIRED');
   assert.ok(campaign.candidates.every(value => value.modelContentSha256 === 'UNKNOWN'));
   assert.ok(campaign.candidates.every(value => value.executionProfileSha256 === 'UNKNOWN'));
-  assert.ok(campaign.slices.every(value =>
-    value.dimensions.every(dimension => dimension.maxLossMicrounits === 'PIN_REQUIRED'),
-  ));
+  const thresholds = campaign.slices.flatMap(value =>
+    value.dimensions.map(dimension => dimension.maxLossMicrounits),
+  );
+  assert.equal(thresholds.length, 13);
+  assert.ok(thresholds.every(value => Number.isSafeInteger(value)));
+  assert.ok(thresholds.every(value => value >= 20_000 && value <= 50_000));
   assert.equal(mayFinalizeHsmeFoundationBenchmarkCampaignV1(campaign), false);
 });
 
@@ -230,9 +233,10 @@ test('a candidate cannot run until fixtures, thresholds, exact content, executio
   assert.equal(mayFinalizeHsmeFoundationBenchmarkCampaignV1(runnable), true);
 });
 
-test('FIXTURES_PINNED status is rejected while any quality threshold is still PIN_REQUIRED', () => {
+test('FIXTURES_PINNED status is rejected if any previously frozen quality threshold becomes PIN_REQUIRED', () => {
   const changed = clone(rawCampaign);
   pinFixtures(changed);
+  slice(changed, 'image-editing-v1').dimensions[0].maxLossMicrounits = 'PIN_REQUIRED';
   changed.status = 'FIXTURES_PINNED';
   expectCode(
     () => normalizeHsmeFoundationBenchmarkCampaignV1(changed),
