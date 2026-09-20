@@ -81,6 +81,20 @@ The shared path owns general semantics and provides a safe fallback when special
 
 Initial experiments should prefer an approximately 500–800M active-scale dense/student baseline before adding deep sparse complexity. Parameter counts are not acceptance gates by themselves.
 
+### 4.1 Quality-first foundation selection
+
+Model size is never a goal at the expense of generation/edit quality. HSME-2 must compare multiple realistic foundation/reuse paths on the same pinned BERS fixture before selecting the shared dense core. At minimum keep a byte/runtime control, a direct reusable foundation candidate, a mobile-oriented reuse/adaptation candidate, and a stronger quality-reference candidate where one exists.
+
+The selection order is mandatory:
+
+1. predeclare the quality fixture, hard preservation dimensions, reference outputs/evidence and dimension priority before observing candidate results;
+2. reject any candidate that fails hard identity/person, garment/logo/pattern, non-target preservation, semantic-adherence or anatomy/artifact requirements;
+3. among candidates that pass, prefer the candidate with the smallest predeclared quality-loss vector relative to the strongest measured reference;
+4. use installed bytes, working memory, latency, energy and cost only after the quality-preferred set is known; efficiency may break a genuine quality tie but may not compensate for a worse quality vector;
+5. if no bounded reuse candidate reaches the required quality envelope, record the reuse path as insufficient and only then escalate to broader fine-tuning/distillation.
+
+Do not collapse these dimensions into a post-hoc weighted aggregate score. Do not change quality weights, thresholds or priority after seeing outputs. A larger foundation may remain the desktop/high-end or reference tier when its quality advantage is real, while the mobile tier must prove that any quality loss remains inside the predeclared product envelope.
+
 ## 5. Adapter-MoE first
 
 The first true BERS MoE generation should be **Adapter-MoE**, not a giant conventional expert model.
