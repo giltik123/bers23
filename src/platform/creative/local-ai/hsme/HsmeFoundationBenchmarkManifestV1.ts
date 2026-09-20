@@ -167,8 +167,25 @@ export function normalizeHsmeFoundationBenchmarkManifestV1(raw: unknown): HsmeFo
     }
   }
   for (const capability of requiredCapabilities) {
-    if (!candidates.some(candidate => candidate.capabilities.includes(capability))) {
-      fail('hsme_foundation_benchmark_manifest_capability_uncovered', `required capability has no candidate: ${capability}`);
+    const selectable = candidates.some(candidate =>
+      (candidate.roles.includes('DIRECT_FOUNDATION') || candidate.roles.includes('MOBILE_REUSE'))
+      && candidate.capabilities.includes(capability),
+    );
+    if (!selectable) {
+      fail(
+        'hsme_foundation_benchmark_manifest_selectable_capability_uncovered',
+        `required capability has no selectable reuse candidate: ${capability}`,
+      );
+    }
+    const reference = candidates.some(candidate =>
+      candidate.roles.includes('QUALITY_REFERENCE')
+      && candidate.capabilities.includes(capability),
+    );
+    if (!reference) {
+      fail(
+        'hsme_foundation_benchmark_manifest_reference_capability_uncovered',
+        `required capability has no quality reference: ${capability}`,
+      );
     }
   }
 
@@ -278,10 +295,27 @@ function normalizeCandidate(raw: unknown, path: string): HsmeFoundationBenchmark
   if (!IMMUTABLE_REVISION.test(immutableRevision)) {
     fail('hsme_foundation_benchmark_manifest_revision_invalid', `${path}.immutableRevision must be immutable hex`);
   }
+  const candidateId = identifier(record.candidateId, `${path}.candidateId`);
+  const roles = enumSet(record.roles, ROLES, `${path}.roles`, 1, ROLES.length);
+  if (
+    roles.includes('QUALITY_REFERENCE')
+    && (roles.includes('DIRECT_FOUNDATION') || roles.includes('MOBILE_REUSE'))
+  ) {
+    fail(
+      'hsme_foundation_benchmark_manifest_reference_selection_role_conflict',
+      `${candidateId} quality reference cannot also be selectable reuse`,
+    );
+  }
+  if (roles.includes('CONTROL_BASELINE') && roles.length !== 1) {
+    fail(
+      'hsme_foundation_benchmark_manifest_control_role_conflict',
+      `${candidateId} control baseline must remain control-only`,
+    );
+  }
 
   return Object.freeze({
-    candidateId: identifier(record.candidateId, `${path}.candidateId`),
-    roles: enumSet(record.roles, ROLES, `${path}.roles`, 1, ROLES.length),
+    candidateId,
+    roles,
     sourceRoot,
     immutableRevision,
     modelContentSha256: sha256(record.modelContentSha256, `${path}.modelContentSha256`),
