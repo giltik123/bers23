@@ -1,0 +1,138 @@
+{
+  "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_CAMPAIGN_V1",
+  "campaignId": "bers-hsme-foundation-bakeoff-2026q3-v1",
+  "qualityPolicy": "QUALITY_FLOOR_BEFORE_EFFICIENCY",
+  "status": "EVIDENCE_PENDING",
+  "requiredCapabilities": [
+    "TEXT_TO_IMAGE",
+    "IMAGE_EDITING"
+  ],
+  "candidates": [
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "roles": ["CONTROL_BASELINE"],
+      "sourceRoot": "segmind/tiny-sd",
+      "immutableRevision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
+      "capabilities": ["TEXT_TO_IMAGE"],
+      "rightsState": "REVIEW_REQUIRED",
+      "rightsEvidenceSha256": "UNKNOWN",
+      "trustBinding": "src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json"
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-split-v1",
+      "roles": ["MOBILE_REUSE"],
+      "sourceRoot": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+      "immutableRevision": "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97",
+      "capabilities": ["TEXT_TO_IMAGE"],
+      "rightsState": "REVIEW_REQUIRED",
+      "rightsEvidenceSha256": "UNKNOWN",
+      "trustBinding": "HsmeSanaConditioningParityEvidenceV1"
+    },
+    {
+      "candidateId": "flux2-klein-4b-distilled-v1",
+      "roles": ["DIRECT_FOUNDATION"],
+      "sourceRoot": "black-forest-labs/FLUX.2-klein-4B",
+      "immutableRevision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+      "capabilities": [
+        "TEXT_TO_IMAGE",
+        "IMAGE_EDITING",
+        "MULTI_REFERENCE_EDITING"
+      ],
+      "rightsState": "REVIEW_REQUIRED",
+      "rightsEvidenceSha256": "UNKNOWN",
+      "trustBinding": "NONE"
+    },
+    {
+      "candidateId": "flux2-klein-base-4b-v1",
+      "roles": ["DIRECT_FOUNDATION"],
+      "sourceRoot": "black-forest-labs/FLUX.2-klein-base-4B",
+      "immutableRevision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+      "capabilities": [
+        "TEXT_TO_IMAGE",
+        "IMAGE_EDITING",
+        "MULTI_REFERENCE_EDITING"
+      ],
+      "rightsState": "REVIEW_REQUIRED",
+      "rightsEvidenceSha256": "UNKNOWN",
+      "trustBinding": "NONE"
+    },
+    {
+      "candidateId": "qwen-image-t2i-reference-v1",
+      "roles": ["QUALITY_REFERENCE"],
+      "sourceRoot": "Qwen/Qwen-Image",
+      "immutableRevision": "0770fddc587fa1795e0a9eb01dd40218fcbdd524",
+      "capabilities": ["TEXT_TO_IMAGE"],
+      "rightsState": "REVIEW_REQUIRED",
+      "rightsEvidenceSha256": "UNKNOWN",
+      "trustBinding": "NONE"
+    },
+    {
+      "candidateId": "qwen-image-edit-2511-reference-v1",
+      "roles": ["QUALITY_REFERENCE"],
+      "sourceRoot": "Qwen/Qwen-Image-Edit-2511",
+      "immutableRevision": "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9",
+      "capabilities": [
+        "IMAGE_EDITING",
+        "MULTI_REFERENCE_EDITING"
+      ],
+      "rightsState": "REVIEW_REQUIRED",
+      "rightsEvidenceSha256": "UNKNOWN",
+      "trustBinding": "NONE"
+    }
+  ],
+  "slices": [
+    {
+      "sliceId": "text-to-image-v1",
+      "capability": "TEXT_TO_IMAGE",
+      "selectionCandidateIds": [
+        "sana-sprint-0.6b-split-v1",
+        "flux2-klein-4b-distilled-v1",
+        "flux2-klein-base-4b-v1"
+      ],
+      "controlCandidateIds": [
+        "tiny-sd-control-v1"
+      ],
+      "qualityReferenceCandidateIds": [
+        "qwen-image-t2i-reference-v1"
+      ],
+      "dimensionPriority": [
+        "semantic-adherence",
+        "anatomy-artifact-rate",
+        "photorealism",
+        "material-realism",
+        "text-fidelity",
+        "composition-count-spatial-correctness"
+      ]
+    },
+    {
+      "sliceId": "image-editing-v1",
+      "capability": "IMAGE_EDITING",
+      "selectionCandidateIds": [
+        "flux2-klein-4b-distilled-v1",
+        "flux2-klein-base-4b-v1"
+      ],
+      "controlCandidateIds": [],
+      "qualityReferenceCandidateIds": [
+        "qwen-image-edit-2511-reference-v1"
+      ],
+      "dimensionPriority": [
+        "identity-preservation",
+        "garment-logo-pattern-preservation",
+        "non-target-preservation",
+        "edit-compliance",
+        "anatomy-artifact-rate",
+        "text-fidelity",
+        "multi-reference-consistency"
+      ]
+    }
+  ],
+  "fixturePack": {
+    "state": "PIN_REQUIRED",
+    "manifestSha256": "UNKNOWN",
+    "licenseEvidenceSha256": "UNKNOWN",
+    "privateUserDataAllowed": false
+  },
+  "postObservationMutationAllowed": false,
+  "efficiencyUsedInQualitySelection": false,
+  "ordinaryCiModelExecutionAllowed": false
+}

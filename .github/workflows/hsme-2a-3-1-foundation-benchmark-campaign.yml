@@ -1,0 +1,81 @@
+name: HSME-2a.3.1 foundation benchmark campaign
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCampaignV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationQualityBakeoffV1.ts'
+      - 'src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json'
+      - 'tests/creative-hsme-foundation-benchmark-campaign-v1.test.mjs'
+      - 'tests/creative-hsme-foundation-quality-bakeoff-v1.test.mjs'
+      - '.github/workflows/hsme-2a-3-1-foundation-benchmark-campaign.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  campaign-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Preserve accepted quality-first selection gate
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-1
+          npx esbuild tests/creative-hsme-foundation-quality-bakeoff-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-1/quality.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-1/quality.test.mjs
+
+      - name: Prove pinned capability-sliced campaign
+        run: |
+          set -euo pipefail
+          npx esbuild tests/creative-hsme-foundation-benchmark-campaign-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-1/campaign.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-1/campaign.test.mjs
+
+      - name: Campaign quality ordering cannot import efficiency selection
+        run: |
+          set -euo pipefail
+          ! grep -E 'installedBytes|workingMemoryBytes|latency|costMicrousd|checkpointBytes|qualityPerInstalled' \
+            src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCampaignV1.ts
+
+      - name: Ordinary CI cannot download or execute benchmark models
+        run: |
+          set -euo pipefail
+          ! grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|torch\.cuda|secrets\.' \
+            tests/creative-hsme-foundation-benchmark-campaign-v1.test.mjs \
+            src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCampaignV1.ts
+          ! sed '/grep -E/d' .github/workflows/hsme-2a-3-1-foundation-benchmark-campaign.yml | \
+            grep -E 'pip install.*torch|huggingface-cli|hf download|wget|curl|snapshot_download|from_pretrained'
+
+      - name: Pending campaign remains fail closed
+        run: |
+          set -euo pipefail
+          grep -F '"status": "EVIDENCE_PENDING"' \
+            src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json
+          grep -F '"state": "PIN_REQUIRED"' \
+            src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json
+          test "$(grep -c '"rightsState": "REVIEW_REQUIRED"' src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json)" -eq 6
+          grep -F '"privateUserDataAllowed": false' \
+            src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json
