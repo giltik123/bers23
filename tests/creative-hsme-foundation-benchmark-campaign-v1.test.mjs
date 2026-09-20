@@ -97,7 +97,7 @@ function expectCode(fn, code) {
   assert.throws(fn, error => error?.code === code, `expected ${code}`);
 }
 
-test('canonical six-candidate campaign has fixtures/model/profiles pinned while rights remain closed', () => {
+test('canonical six-candidate campaign has fixtures, model bytes, profiles and reviewed rights pinned', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(rawCampaign);
   assert.equal(campaign.schemaVersion, HSME_FOUNDATION_BENCHMARK_CAMPAIGN_V1_SCHEMA);
   assert.equal(campaign.qualityPolicy, 'QUALITY_FLOOR_BEFORE_EFFICIENCY');
@@ -106,13 +106,15 @@ test('canonical six-candidate campaign has fixtures/model/profiles pinned while 
   assert.equal(campaign.fixturePack.state, 'PINNED');
   assert.ok(campaign.candidates.every(value => /^[0-9a-f]{64}$/.test(value.modelContentSha256)));
   assert.ok(campaign.candidates.every(value => /^[0-9a-f]{64}$/.test(value.executionProfileSha256)));
+  assert.ok(campaign.candidates.every(value => /^[0-9a-f]{64}$/.test(value.rightsEvidenceSha256)));
+  assert.ok(campaign.candidates.every(value => value.rightsState !== 'REVIEW_REQUIRED'));
   const thresholds = campaign.slices.flatMap(value =>
     value.dimensions.map(dimension => dimension.maxLossMicrounits),
   );
   assert.equal(thresholds.length, 13);
   assert.ok(thresholds.every(value => Number.isSafeInteger(value)));
   assert.ok(thresholds.every(value => value >= 20_000 && value <= 50_000));
-  assert.equal(mayFinalizeHsmeFoundationBenchmarkCampaignV1(campaign), false);
+  assert.equal(mayFinalizeHsmeFoundationBenchmarkCampaignV1(campaign), true);
 });
 
 test('all mutation, efficiency and execution authorities remain fail closed', () => {
@@ -225,27 +227,28 @@ test('control and quality references cannot be smuggled into selectable reuse', 
   );
 });
 
-test('a candidate cannot run until fixtures, thresholds, exact content, execution profile and rights are all pinned', () => {
+test('a candidate run gate closes if any previously admitted prerequisite is removed', () => {
   const candidateId = 'flux2-klein-base-4b-v1';
-  assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(rawCampaign, candidateId), false);
+  assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(rawCampaign, candidateId), true);
 
-  const fixtureAndThresholdsOnly = clone(rawCampaign);
-  pinFixtures(fixtureAndThresholdsOnly);
-  pinThresholds(fixtureAndThresholdsOnly);
-  fixtureAndThresholdsOnly.status = 'FIXTURES_PINNED';
-  assert.equal(
-    hsmeFoundationBenchmarkCandidateMayRunV1(fixtureAndThresholdsOnly, candidateId),
-    false,
-  );
-
-  const noRights = clone(fixtureAndThresholdsOnly);
-  resolveCandidateIdentity(noRights);
+  const noRights = clone(rawCampaign);
+  const noRightsCandidate = candidate(noRights, candidateId);
+  noRightsCandidate.rightsState = 'REVIEW_REQUIRED';
+  noRightsCandidate.rightsEvidenceSha256 = 'UNKNOWN';
   assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(noRights, candidateId), false);
+  assert.equal(mayFinalizeHsmeFoundationBenchmarkCampaignV1(noRights), false);
 
-  const runnable = clone(rawCampaign);
-  makeRunnable(runnable);
-  assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(runnable, candidateId), true);
-  assert.equal(mayFinalizeHsmeFoundationBenchmarkCampaignV1(runnable), true);
+  const noFixtures = clone(rawCampaign);
+  unpinFixtures(noFixtures);
+  assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(noFixtures, candidateId), false);
+
+  const noContent = clone(rawCampaign);
+  candidate(noContent, candidateId).modelContentSha256 = 'UNKNOWN';
+  assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(noContent, candidateId), false);
+
+  const noProfile = clone(rawCampaign);
+  candidate(noProfile, candidateId).executionProfileSha256 = 'UNKNOWN';
+  assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(noProfile, candidateId), false);
 });
 
 test('FIXTURES_PINNED status is rejected if any previously frozen quality threshold becomes PIN_REQUIRED', () => {
@@ -405,7 +408,7 @@ test('canonical campaign pins all six reviewed immutable revisions', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(rawCampaign);
   const expected = new Map([
     ['tiny-sd-control-v1', 'cad0bd7495fa6c4bcca01b19a723dc91627fe84f'],
-    ['sana-sprint-0.6b-split-v1', 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'],
+    ['sana-sprint-0.6b-split-v1', 'aa76e7f4f4928f378716b6716a2130fba3caf5b1'],
     ['flux2-klein-4b-distilled-v1', 'e7b7dc27f91deacad38e78976d1f2b499d76a294'],
     ['flux2-klein-base-4b-v1', 'a3b4f4849157f664bdbc776fd7453c2783562f4d'],
     ['qwen-image-t2i-reference-v1', '0770fddc587fa1795e0a9eb01dd40218fcbdd524'],

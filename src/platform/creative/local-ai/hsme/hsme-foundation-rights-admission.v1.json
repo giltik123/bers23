@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "BERS_HSME_FOUNDATION_RIGHTS_ADMISSION_V1",
+  "scope": "BENCHMARK_EVIDENCE_ONLY_NOT_PRODUCTION_APPROVAL",
+  "reviewPolicySha256": "0321069f40c5796a2a7c4d388cc96f43bc7aa1c7b3df3d3fa54ec65342b0f3b7",
+  "rightsSafeRepins": [
+    {
+      "campaignUpdateRequired": true,
+      "candidateId": "sana-sprint-0.6b-split-v1",
+      "candidateOutputsObserved": false,
+      "changedNonRuntimePaths": [
+        "LICENSE",
+        "README.md"
+      ],
+      "newModelContentSha256": "c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4",
+      "newRevision": "aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+      "oldModelContentSha256": "0223e6bf7988566c11c2833a31685c40f6020fd5f050c9db855c5717ef385002",
+      "oldRevision": "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97",
+      "qualitySettingsTransferAllowed": true,
+      "runtimeArtifactCount": 14,
+      "runtimeIdentityPreserved": true,
+      "runtimeSetSha256": "acec847af35037d0e1a90fa9e60610e9360f962fcb5a1c39c393db9243636a69"
+    }
+  ],
+  "candidateOutputsObserved": false,
+  "candidates": [
+    {
+      "candidateId": "flux2-klein-4b-distilled-v1",
+      "sourceRoot": "black-forest-labs/FLUX.2-klein-4B",
+      "immutableRevision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+      "modelContentSha256": "d624201961d95e4e738265087d96d8c61c9677620e760293c70e1d5fe1bad0c4",
+      "executionProfileSha256": "48d028b6a599ae51af69b2e239c46529eb14e3d2ff6f3620ab1b1a83ceeeca3b",
+      "rightsEvidenceSha256": "4e861fbde3ddb2609a75560b4df6fb51f06ffe46175e1b1c7a5726a46df4e608",
+      "aggregateLicenseId": "APACHE-2.0",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "runtimeArtifactCount": 19
+    },
+    {
+      "candidateId": "flux2-klein-base-4b-v1",
+      "sourceRoot": "black-forest-labs/FLUX.2-klein-base-4B",
+      "immutableRevision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+      "modelContentSha256": "03b73b1eb289ec4fda8c8ae734e7f735c7ee4c083a70b43b0d76880a58a9a1e8",
+      "executionProfileSha256": "7293ad8b6a485059c7492d008dce4b632f6c4eb3f57095b72f1d5cf2eaf9dcee",
+      "rightsEvidenceSha256": "4164ff89b8ada6738637eca867117831ec7a7885e0e79e562a23ce8017249be0",
+      "aggregateLicenseId": "APACHE-2.0",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "runtimeArtifactCount": 19
+    },
+    {
+      "candidateId": "qwen-image-edit-2511-reference-v1",
+      "sourceRoot": "Qwen/Qwen-Image-Edit-2511",
+      "immutableRevision": "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9",
+      "modelContentSha256": "e61303b25151cfef7e9ebf39d45efc6c3896b01efff5573a9d468804ff4c77b9",
+      "executionProfileSha256": "e5b7f87f5d8d25633a470c1ee58de63aecf4a47fed89ac83f68814d945318db0",
+      "rightsEvidenceSha256": "a18716eee4e9188b9aeca010979e0d8ff194c3a9f7f6050b87a313311652e5df",
+      "aggregateLicenseId": "APACHE-2.0",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "runtimeArtifactCount": 33
+    },
+    {
+      "candidateId": "qwen-image-t2i-reference-v1",
+      "sourceRoot": "Qwen/Qwen-Image",
+      "immutableRevision": "0770fddc587fa1795e0a9eb01dd40218fcbdd524",
+      "modelContentSha256": "4bd592a943648c4967957927e1cedd50d70f798a1e308617a8a5118411d3c007",
+      "executionProfileSha256": "646c034d39d401a8bd6f627b937eacd8f75c56da530e3e497455d12b6e5e019b",
+      "rightsEvidenceSha256": "96687053f321d2219027e6569f31831a10ec6c46689c91928215fa3ec41a4d8e",
+      "aggregateLicenseId": "APACHE-2.0",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "runtimeArtifactCount": 28
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-split-v1",
+      "sourceRoot": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+      "immutableRevision": "aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+      "modelContentSha256": "c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4",
+      "executionProfileSha256": "8ae59b70a894d42cad78c64e32e3ad4f357f517235b0263299eb247e75a2b004",
+      "rightsEvidenceSha256": "e7dbcfb1c603d32df37c59651302b6c2c1e1272d4a3f37cc056d70f8ecf26c64",
+      "aggregateLicenseId": "APACHE-2.0+GEMMA-TERMS-2026-04-01",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE_WITH_OBLIGATIONS",
+      "runtimeArtifactCount": 14
+    },
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "sourceRoot": "segmind/tiny-sd",
+      "immutableRevision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
+      "modelContentSha256": "c970d12d38dbc907a0bf5a3856ce83e3b2fb499d1c3b8d5ca4b377c57ed6904a",
+      "executionProfileSha256": "8b0a3d160a9e1d9df9678d37dcb7153009dd6ea0965e7e4a400235cfb1bfd233",
+      "rightsEvidenceSha256": "3329c02d925c031cb9b872eae0c8c00f02d960e64ef5e63260beb42b1664905b",
+      "aggregateLicenseId": "CREATIVEML-OPENRAIL-M",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE_WITH_OBLIGATIONS",
+      "runtimeArtifactCount": 12
+    }
+  ],
+  "productionAuthorityGranted": false,
+  "providerAuthorityGranted": false,
+  "billingAuthorityGranted": false,
+  "projectArtifactMutationAllowed": false,
+  "durableModelFleetPromotionAllowed": false,
+  "trainingOrDistillationAllowed": false
+}

@@ -61,13 +61,13 @@
     {
       "candidateId": "sana-sprint-0.6b-split-v1",
       "sourceRoot": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
-      "immutableRevision": "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97",
-      "repoFileCount": 16,
+      "immutableRevision": "aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+      "repoFileCount": 17,
       "runtimeRequiredFileCount": 14,
       "lfsSha256VerifiedCount": 6,
-      "gitBlobStreamedSha256Count": 10,
-      "smallGitBytesDownloaded": 81635,
-      "modelContentSha256": "0223e6bf7988566c11c2833a31685c40f6020fd5f050c9db855c5717ef385002"
+      "gitBlobStreamedSha256Count": 11,
+      "smallGitBytesDownloaded": 92978,
+      "modelContentSha256": "c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4"
     },
     {
       "candidateId": "tiny-sd-control-v1",

@@ -151,14 +151,14 @@
         "sourceEvidence": [
           "src/platform/creative/local-ai/hsme/sana-parity-runtime-lock.v1.json",
           "scripts/hsme-sana-parity-runner.py",
-          "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers@a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97"
+          "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers@aa76e7f4f4928f378716b6716a2130fba3caf5b1"
         ]
       },
       "executionProfile": {
         "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_EXECUTION_PROFILE_V1",
         "candidateId": "sana-sprint-0.6b-split-v1",
         "state": "PINNED",
-        "artifactManifestDigest": "0223e6bf7988566c11c2833a31685c40f6020fd5f050c9db855c5717ef385002",
+        "artifactManifestDigest": "c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4",
         "pipelineClass": "SanaSprintPipeline",
         "toolchainLockSha256": "46dd389d18a14957adc43b6f84eab3659e13d5566d4af8636f7c0c4f05a2f8d3",
         "precisionPolicy": "BF16_TRANSFORMER_TEXT_ENCODER_VAE",
@@ -173,7 +173,7 @@
         "remoteCodePolicy": "NO_MODEL_REPOSITORY_RUNTIME_CODE",
         "hardwareBackendClass": "CUDA_SM80_PLUS_BF16_REFERENCE"
       },
-      "executionProfileSha256": "826ecc263a03a80b7aa6c726e6a949fdfc1c563e6b27af4db13c1630547aa291"
+      "executionProfileSha256": "8ae59b70a894d42cad78c64e32e3ad4f357f517235b0263299eb247e75a2b004"
     },
     {
       "candidateId": "flux2-klein-4b-distilled-v1",

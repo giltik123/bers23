@@ -4,44 +4,10 @@
   "qualityPolicy": "QUALITY_FLOOR_BEFORE_EFFICIENCY",
   "status": "FIXTURES_PINNED",
   "requiredCapabilities": [
-    "TEXT_TO_IMAGE",
-    "IMAGE_EDITING"
+    "IMAGE_EDITING",
+    "TEXT_TO_IMAGE"
   ],
   "candidates": [
-    {
-      "candidateId": "tiny-sd-control-v1",
-      "roles": [
-        "CONTROL_BASELINE"
-      ],
-      "sourceRoot": "segmind/tiny-sd",
-      "immutableRevision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
-      "modelContentSha256": "c970d12d38dbc907a0bf5a3856ce83e3b2fb499d1c3b8d5ca4b377c57ed6904a",
-      "executionProfileSha256": "8b0a3d160a9e1d9df9678d37dcb7153009dd6ea0965e7e4a400235cfb1bfd233",
-      "capabilities": [
-        "TEXT_TO_IMAGE"
-      ],
-      "benchmarkMode": "ZERO_TRAINING",
-      "rightsState": "REVIEW_REQUIRED",
-      "rightsEvidenceSha256": "UNKNOWN",
-      "trustBinding": "src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json"
-    },
-    {
-      "candidateId": "sana-sprint-0.6b-split-v1",
-      "roles": [
-        "MOBILE_REUSE"
-      ],
-      "sourceRoot": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
-      "immutableRevision": "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97",
-      "modelContentSha256": "0223e6bf7988566c11c2833a31685c40f6020fd5f050c9db855c5717ef385002",
-      "executionProfileSha256": "826ecc263a03a80b7aa6c726e6a949fdfc1c563e6b27af4db13c1630547aa291",
-      "capabilities": [
-        "TEXT_TO_IMAGE"
-      ],
-      "benchmarkMode": "ZERO_TRAINING",
-      "rightsState": "REVIEW_REQUIRED",
-      "rightsEvidenceSha256": "UNKNOWN",
-      "trustBinding": "HsmeSanaConditioningParityEvidenceV1"
-    },
     {
       "candidateId": "flux2-klein-4b-distilled-v1",
       "roles": [
@@ -52,13 +18,13 @@
       "modelContentSha256": "d624201961d95e4e738265087d96d8c61c9677620e760293c70e1d5fe1bad0c4",
       "executionProfileSha256": "48d028b6a599ae51af69b2e239c46529eb14e3d2ff6f3620ab1b1a83ceeeca3b",
       "capabilities": [
-        "TEXT_TO_IMAGE",
         "IMAGE_EDITING",
-        "MULTI_REFERENCE_EDITING"
+        "MULTI_REFERENCE_EDITING",
+        "TEXT_TO_IMAGE"
       ],
       "benchmarkMode": "ZERO_TRAINING",
-      "rightsState": "REVIEW_REQUIRED",
-      "rightsEvidenceSha256": "UNKNOWN",
+      "rightsState": "REVIEWED_COMMERCIAL",
+      "rightsEvidenceSha256": "4e861fbde3ddb2609a75560b4df6fb51f06ffe46175e1b1c7a5726a46df4e608",
       "trustBinding": "NONE"
     },
     {
@@ -71,30 +37,13 @@
       "modelContentSha256": "03b73b1eb289ec4fda8c8ae734e7f735c7ee4c083a70b43b0d76880a58a9a1e8",
       "executionProfileSha256": "7293ad8b6a485059c7492d008dce4b632f6c4eb3f57095b72f1d5cf2eaf9dcee",
       "capabilities": [
-        "TEXT_TO_IMAGE",
         "IMAGE_EDITING",
-        "MULTI_REFERENCE_EDITING"
-      ],
-      "benchmarkMode": "ZERO_TRAINING",
-      "rightsState": "REVIEW_REQUIRED",
-      "rightsEvidenceSha256": "UNKNOWN",
-      "trustBinding": "NONE"
-    },
-    {
-      "candidateId": "qwen-image-t2i-reference-v1",
-      "roles": [
-        "QUALITY_REFERENCE"
-      ],
-      "sourceRoot": "Qwen/Qwen-Image",
-      "immutableRevision": "0770fddc587fa1795e0a9eb01dd40218fcbdd524",
-      "modelContentSha256": "4bd592a943648c4967957927e1cedd50d70f798a1e308617a8a5118411d3c007",
-      "executionProfileSha256": "646c034d39d401a8bd6f627b937eacd8f75c56da530e3e497455d12b6e5e019b",
-      "capabilities": [
+        "MULTI_REFERENCE_EDITING",
         "TEXT_TO_IMAGE"
       ],
       "benchmarkMode": "ZERO_TRAINING",
-      "rightsState": "REVIEW_REQUIRED",
-      "rightsEvidenceSha256": "UNKNOWN",
+      "rightsState": "REVIEWED_COMMERCIAL",
+      "rightsEvidenceSha256": "4164ff89b8ada6738637eca867117831ec7a7885e0e79e562a23ce8017249be0",
       "trustBinding": "NONE"
     },
     {
@@ -111,65 +60,63 @@
         "MULTI_REFERENCE_EDITING"
       ],
       "benchmarkMode": "ZERO_TRAINING",
-      "rightsState": "REVIEW_REQUIRED",
-      "rightsEvidenceSha256": "UNKNOWN",
+      "rightsState": "REVIEWED_COMMERCIAL",
+      "rightsEvidenceSha256": "a18716eee4e9188b9aeca010979e0d8ff194c3a9f7f6050b87a313311652e5df",
       "trustBinding": "NONE"
+    },
+    {
+      "candidateId": "qwen-image-t2i-reference-v1",
+      "roles": [
+        "QUALITY_REFERENCE"
+      ],
+      "sourceRoot": "Qwen/Qwen-Image",
+      "immutableRevision": "0770fddc587fa1795e0a9eb01dd40218fcbdd524",
+      "modelContentSha256": "4bd592a943648c4967957927e1cedd50d70f798a1e308617a8a5118411d3c007",
+      "executionProfileSha256": "646c034d39d401a8bd6f627b937eacd8f75c56da530e3e497455d12b6e5e019b",
+      "capabilities": [
+        "TEXT_TO_IMAGE"
+      ],
+      "benchmarkMode": "ZERO_TRAINING",
+      "rightsState": "REVIEWED_COMMERCIAL",
+      "rightsEvidenceSha256": "96687053f321d2219027e6569f31831a10ec6c46689c91928215fa3ec41a4d8e",
+      "trustBinding": "NONE"
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-split-v1",
+      "roles": [
+        "MOBILE_REUSE"
+      ],
+      "sourceRoot": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+      "immutableRevision": "aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+      "modelContentSha256": "c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4",
+      "executionProfileSha256": "8ae59b70a894d42cad78c64e32e3ad4f357f517235b0263299eb247e75a2b004",
+      "capabilities": [
+        "TEXT_TO_IMAGE"
+      ],
+      "benchmarkMode": "ZERO_TRAINING",
+      "rightsState": "REVIEWED_WITH_OBLIGATIONS",
+      "rightsEvidenceSha256": "e7dbcfb1c603d32df37c59651302b6c2c1e1272d4a3f37cc056d70f8ecf26c64",
+      "trustBinding": "HsmeSanaConditioningParityEvidenceV1"
+    },
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "roles": [
+        "CONTROL_BASELINE"
+      ],
+      "sourceRoot": "segmind/tiny-sd",
+      "immutableRevision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
+      "modelContentSha256": "c970d12d38dbc907a0bf5a3856ce83e3b2fb499d1c3b8d5ca4b377c57ed6904a",
+      "executionProfileSha256": "8b0a3d160a9e1d9df9678d37dcb7153009dd6ea0965e7e4a400235cfb1bfd233",
+      "capabilities": [
+        "TEXT_TO_IMAGE"
+      ],
+      "benchmarkMode": "ZERO_TRAINING",
+      "rightsState": "REVIEWED_WITH_OBLIGATIONS",
+      "rightsEvidenceSha256": "3329c02d925c031cb9b872eae0c8c00f02d960e64ef5e63260beb42b1664905b",
+      "trustBinding": "src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json"
     }
   ],
   "slices": [
-    {
-      "sliceId": "text-to-image-v1",
-      "capability": "TEXT_TO_IMAGE",
-      "selectionCandidateIds": [
-        "sana-sprint-0.6b-split-v1",
-        "flux2-klein-4b-distilled-v1",
-        "flux2-klein-base-4b-v1"
-      ],
-      "controlCandidateIds": [
-        "tiny-sd-control-v1"
-      ],
-      "qualityReferenceCandidateIds": [
-        "qwen-image-t2i-reference-v1"
-      ],
-      "dimensions": [
-        {
-          "dimensionId": "semantic-adherence",
-          "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": 50000,
-          "reviewMode": "HYBRID"
-        },
-        {
-          "dimensionId": "anatomy-artifact-rate",
-          "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": 25000,
-          "reviewMode": "HYBRID"
-        },
-        {
-          "dimensionId": "photorealism",
-          "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": 50000,
-          "reviewMode": "BLINDED_HUMAN"
-        },
-        {
-          "dimensionId": "material-realism",
-          "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": 50000,
-          "reviewMode": "BLINDED_HUMAN"
-        },
-        {
-          "dimensionId": "text-fidelity",
-          "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": 25000,
-          "reviewMode": "HYBRID"
-        },
-        {
-          "dimensionId": "composition-count-spatial-correctness",
-          "referenceCandidateId": "qwen-image-t2i-reference-v1",
-          "maxLossMicrounits": 50000,
-          "reviewMode": "HYBRID"
-        }
-      ]
-    },
     {
       "sliceId": "image-editing-v1",
       "capability": "IMAGE_EDITING",
@@ -223,6 +170,59 @@
           "referenceCandidateId": "qwen-image-edit-2511-reference-v1",
           "maxLossMicrounits": 25000,
           "reviewMode": "BLINDED_HUMAN"
+        }
+      ]
+    },
+    {
+      "sliceId": "text-to-image-v1",
+      "capability": "TEXT_TO_IMAGE",
+      "selectionCandidateIds": [
+        "flux2-klein-4b-distilled-v1",
+        "flux2-klein-base-4b-v1",
+        "sana-sprint-0.6b-split-v1"
+      ],
+      "controlCandidateIds": [
+        "tiny-sd-control-v1"
+      ],
+      "qualityReferenceCandidateIds": [
+        "qwen-image-t2i-reference-v1"
+      ],
+      "dimensions": [
+        {
+          "dimensionId": "semantic-adherence",
+          "referenceCandidateId": "qwen-image-t2i-reference-v1",
+          "maxLossMicrounits": 50000,
+          "reviewMode": "HYBRID"
+        },
+        {
+          "dimensionId": "anatomy-artifact-rate",
+          "referenceCandidateId": "qwen-image-t2i-reference-v1",
+          "maxLossMicrounits": 25000,
+          "reviewMode": "HYBRID"
+        },
+        {
+          "dimensionId": "photorealism",
+          "referenceCandidateId": "qwen-image-t2i-reference-v1",
+          "maxLossMicrounits": 50000,
+          "reviewMode": "BLINDED_HUMAN"
+        },
+        {
+          "dimensionId": "material-realism",
+          "referenceCandidateId": "qwen-image-t2i-reference-v1",
+          "maxLossMicrounits": 50000,
+          "reviewMode": "BLINDED_HUMAN"
+        },
+        {
+          "dimensionId": "text-fidelity",
+          "referenceCandidateId": "qwen-image-t2i-reference-v1",
+          "maxLossMicrounits": 25000,
+          "reviewMode": "HYBRID"
+        },
+        {
+          "dimensionId": "composition-count-spatial-correctness",
+          "referenceCandidateId": "qwen-image-t2i-reference-v1",
+          "maxLossMicrounits": 50000,
+          "reviewMode": "HYBRID"
         }
       ]
     }
