@@ -1,0 +1,277 @@
+{
+  "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_CANDIDATE_TRUST_V1",
+  "campaignId": "bers-hsme-foundation-bakeoff-2026q3-v1",
+  "campaignDigest": "UNKNOWN",
+  "state": "EVIDENCE_PENDING",
+  "candidates": [
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "artifactManifest": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_ARTIFACT_MANIFEST_V1",
+        "candidateId": "tiny-sd-control-v1",
+        "state": "EVIDENCE_PENDING",
+        "primarySource": {
+          "sourceRoot": "segmind/tiny-sd",
+          "immutableRevision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f"
+        },
+        "artifacts": []
+      },
+      "executionProfile": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_EXECUTION_PROFILE_V1",
+        "candidateId": "tiny-sd-control-v1",
+        "state": "EVIDENCE_PENDING",
+        "artifactManifestDigest": "UNKNOWN",
+        "pipelineClass": "UNKNOWN",
+        "toolchainLockSha256": "UNKNOWN",
+        "precisionPolicy": "UNKNOWN",
+        "schedulerSampler": "UNKNOWN",
+        "stepCount": "PIN_REQUIRED",
+        "guidancePolicySha256": "UNKNOWN",
+        "resolutionAspectPolicySha256": "UNKNOWN",
+        "deterministicSeedLatentPolicySha256": "UNKNOWN",
+        "imagePreprocessingSha256": "UNKNOWN",
+        "referenceOrderingSha256": "UNKNOWN",
+        "conditioningComponentsSha256": "UNKNOWN",
+        "remoteCodePolicy": "NO_MODEL_REPOSITORY_RUNTIME_CODE",
+        "hardwareBackendClass": "UNKNOWN"
+      },
+      "rightsReview": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_RIGHTS_REVIEW_V1",
+        "candidateId": "tiny-sd-control-v1",
+        "reviewState": "REVIEW_REQUIRED",
+        "artifactManifestDigest": "UNKNOWN",
+        "aggregateLicenseId": "UNKNOWN",
+        "dependencyReviews": [],
+        "commercialUseConclusion": "REVIEW_REQUIRED",
+        "reviewPolicySha256": "UNKNOWN",
+        "rationaleEvidenceSha256": "UNKNOWN"
+      }
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-split-v1",
+      "artifactManifest": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_ARTIFACT_MANIFEST_V1",
+        "candidateId": "sana-sprint-0.6b-split-v1",
+        "state": "EVIDENCE_PENDING",
+        "primarySource": {
+          "sourceRoot": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+          "immutableRevision": "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97"
+        },
+        "artifacts": []
+      },
+      "executionProfile": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_EXECUTION_PROFILE_V1",
+        "candidateId": "sana-sprint-0.6b-split-v1",
+        "state": "EVIDENCE_PENDING",
+        "artifactManifestDigest": "UNKNOWN",
+        "pipelineClass": "UNKNOWN",
+        "toolchainLockSha256": "UNKNOWN",
+        "precisionPolicy": "UNKNOWN",
+        "schedulerSampler": "UNKNOWN",
+        "stepCount": "PIN_REQUIRED",
+        "guidancePolicySha256": "UNKNOWN",
+        "resolutionAspectPolicySha256": "UNKNOWN",
+        "deterministicSeedLatentPolicySha256": "UNKNOWN",
+        "imagePreprocessingSha256": "UNKNOWN",
+        "referenceOrderingSha256": "UNKNOWN",
+        "conditioningComponentsSha256": "UNKNOWN",
+        "remoteCodePolicy": "NO_MODEL_REPOSITORY_RUNTIME_CODE",
+        "hardwareBackendClass": "UNKNOWN"
+      },
+      "rightsReview": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_RIGHTS_REVIEW_V1",
+        "candidateId": "sana-sprint-0.6b-split-v1",
+        "reviewState": "REVIEW_REQUIRED",
+        "artifactManifestDigest": "UNKNOWN",
+        "aggregateLicenseId": "UNKNOWN",
+        "dependencyReviews": [],
+        "commercialUseConclusion": "REVIEW_REQUIRED",
+        "reviewPolicySha256": "UNKNOWN",
+        "rationaleEvidenceSha256": "UNKNOWN"
+      }
+    },
+    {
+      "candidateId": "flux2-klein-4b-distilled-v1",
+      "artifactManifest": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_ARTIFACT_MANIFEST_V1",
+        "candidateId": "flux2-klein-4b-distilled-v1",
+        "state": "EVIDENCE_PENDING",
+        "primarySource": {
+          "sourceRoot": "black-forest-labs/FLUX.2-klein-4B",
+          "immutableRevision": "e7b7dc27f91deacad38e78976d1f2b499d76a294"
+        },
+        "artifacts": []
+      },
+      "executionProfile": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_EXECUTION_PROFILE_V1",
+        "candidateId": "flux2-klein-4b-distilled-v1",
+        "state": "EVIDENCE_PENDING",
+        "artifactManifestDigest": "UNKNOWN",
+        "pipelineClass": "UNKNOWN",
+        "toolchainLockSha256": "UNKNOWN",
+        "precisionPolicy": "UNKNOWN",
+        "schedulerSampler": "UNKNOWN",
+        "stepCount": "PIN_REQUIRED",
+        "guidancePolicySha256": "UNKNOWN",
+        "resolutionAspectPolicySha256": "UNKNOWN",
+        "deterministicSeedLatentPolicySha256": "UNKNOWN",
+        "imagePreprocessingSha256": "UNKNOWN",
+        "referenceOrderingSha256": "UNKNOWN",
+        "conditioningComponentsSha256": "UNKNOWN",
+        "remoteCodePolicy": "NO_MODEL_REPOSITORY_RUNTIME_CODE",
+        "hardwareBackendClass": "UNKNOWN"
+      },
+      "rightsReview": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_RIGHTS_REVIEW_V1",
+        "candidateId": "flux2-klein-4b-distilled-v1",
+        "reviewState": "REVIEW_REQUIRED",
+        "artifactManifestDigest": "UNKNOWN",
+        "aggregateLicenseId": "UNKNOWN",
+        "dependencyReviews": [],
+        "commercialUseConclusion": "REVIEW_REQUIRED",
+        "reviewPolicySha256": "UNKNOWN",
+        "rationaleEvidenceSha256": "UNKNOWN"
+      }
+    },
+    {
+      "candidateId": "flux2-klein-base-4b-v1",
+      "artifactManifest": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_ARTIFACT_MANIFEST_V1",
+        "candidateId": "flux2-klein-base-4b-v1",
+        "state": "EVIDENCE_PENDING",
+        "primarySource": {
+          "sourceRoot": "black-forest-labs/FLUX.2-klein-base-4B",
+          "immutableRevision": "a3b4f4849157f664bdbc776fd7453c2783562f4d"
+        },
+        "artifacts": []
+      },
+      "executionProfile": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_EXECUTION_PROFILE_V1",
+        "candidateId": "flux2-klein-base-4b-v1",
+        "state": "EVIDENCE_PENDING",
+        "artifactManifestDigest": "UNKNOWN",
+        "pipelineClass": "UNKNOWN",
+        "toolchainLockSha256": "UNKNOWN",
+        "precisionPolicy": "UNKNOWN",
+        "schedulerSampler": "UNKNOWN",
+        "stepCount": "PIN_REQUIRED",
+        "guidancePolicySha256": "UNKNOWN",
+        "resolutionAspectPolicySha256": "UNKNOWN",
+        "deterministicSeedLatentPolicySha256": "UNKNOWN",
+        "imagePreprocessingSha256": "UNKNOWN",
+        "referenceOrderingSha256": "UNKNOWN",
+        "conditioningComponentsSha256": "UNKNOWN",
+        "remoteCodePolicy": "NO_MODEL_REPOSITORY_RUNTIME_CODE",
+        "hardwareBackendClass": "UNKNOWN"
+      },
+      "rightsReview": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_RIGHTS_REVIEW_V1",
+        "candidateId": "flux2-klein-base-4b-v1",
+        "reviewState": "REVIEW_REQUIRED",
+        "artifactManifestDigest": "UNKNOWN",
+        "aggregateLicenseId": "UNKNOWN",
+        "dependencyReviews": [],
+        "commercialUseConclusion": "REVIEW_REQUIRED",
+        "reviewPolicySha256": "UNKNOWN",
+        "rationaleEvidenceSha256": "UNKNOWN"
+      }
+    },
+    {
+      "candidateId": "qwen-image-t2i-reference-v1",
+      "artifactManifest": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_ARTIFACT_MANIFEST_V1",
+        "candidateId": "qwen-image-t2i-reference-v1",
+        "state": "EVIDENCE_PENDING",
+        "primarySource": {
+          "sourceRoot": "Qwen/Qwen-Image",
+          "immutableRevision": "0770fddc587fa1795e0a9eb01dd40218fcbdd524"
+        },
+        "artifacts": []
+      },
+      "executionProfile": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_EXECUTION_PROFILE_V1",
+        "candidateId": "qwen-image-t2i-reference-v1",
+        "state": "EVIDENCE_PENDING",
+        "artifactManifestDigest": "UNKNOWN",
+        "pipelineClass": "UNKNOWN",
+        "toolchainLockSha256": "UNKNOWN",
+        "precisionPolicy": "UNKNOWN",
+        "schedulerSampler": "UNKNOWN",
+        "stepCount": "PIN_REQUIRED",
+        "guidancePolicySha256": "UNKNOWN",
+        "resolutionAspectPolicySha256": "UNKNOWN",
+        "deterministicSeedLatentPolicySha256": "UNKNOWN",
+        "imagePreprocessingSha256": "UNKNOWN",
+        "referenceOrderingSha256": "UNKNOWN",
+        "conditioningComponentsSha256": "UNKNOWN",
+        "remoteCodePolicy": "NO_MODEL_REPOSITORY_RUNTIME_CODE",
+        "hardwareBackendClass": "UNKNOWN"
+      },
+      "rightsReview": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_RIGHTS_REVIEW_V1",
+        "candidateId": "qwen-image-t2i-reference-v1",
+        "reviewState": "REVIEW_REQUIRED",
+        "artifactManifestDigest": "UNKNOWN",
+        "aggregateLicenseId": "UNKNOWN",
+        "dependencyReviews": [],
+        "commercialUseConclusion": "REVIEW_REQUIRED",
+        "reviewPolicySha256": "UNKNOWN",
+        "rationaleEvidenceSha256": "UNKNOWN"
+      }
+    },
+    {
+      "candidateId": "qwen-image-edit-2511-reference-v1",
+      "artifactManifest": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_ARTIFACT_MANIFEST_V1",
+        "candidateId": "qwen-image-edit-2511-reference-v1",
+        "state": "EVIDENCE_PENDING",
+        "primarySource": {
+          "sourceRoot": "Qwen/Qwen-Image-Edit-2511",
+          "immutableRevision": "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9"
+        },
+        "artifacts": []
+      },
+      "executionProfile": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_EXECUTION_PROFILE_V1",
+        "candidateId": "qwen-image-edit-2511-reference-v1",
+        "state": "EVIDENCE_PENDING",
+        "artifactManifestDigest": "UNKNOWN",
+        "pipelineClass": "UNKNOWN",
+        "toolchainLockSha256": "UNKNOWN",
+        "precisionPolicy": "UNKNOWN",
+        "schedulerSampler": "UNKNOWN",
+        "stepCount": "PIN_REQUIRED",
+        "guidancePolicySha256": "UNKNOWN",
+        "resolutionAspectPolicySha256": "UNKNOWN",
+        "deterministicSeedLatentPolicySha256": "UNKNOWN",
+        "imagePreprocessingSha256": "UNKNOWN",
+        "referenceOrderingSha256": "UNKNOWN",
+        "conditioningComponentsSha256": "UNKNOWN",
+        "remoteCodePolicy": "NO_MODEL_REPOSITORY_RUNTIME_CODE",
+        "hardwareBackendClass": "UNKNOWN"
+      },
+      "rightsReview": {
+        "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_RIGHTS_REVIEW_V1",
+        "candidateId": "qwen-image-edit-2511-reference-v1",
+        "reviewState": "REVIEW_REQUIRED",
+        "artifactManifestDigest": "UNKNOWN",
+        "aggregateLicenseId": "UNKNOWN",
+        "dependencyReviews": [],
+        "commercialUseConclusion": "REVIEW_REQUIRED",
+        "reviewPolicySha256": "UNKNOWN",
+        "rationaleEvidenceSha256": "UNKNOWN"
+      }
+    }
+  ],
+  "candidateOutputsObserved": false,
+  "winnerSelectionAllowed": false,
+  "efficiencyUsedInQualitySelection": false,
+  "ordinaryCiModelExecutionAllowed": false,
+  "productionAuthorityGranted": false,
+  "providerAuthorityGranted": false,
+  "billingAuthorityGranted": false,
+  "projectArtifactMutationAllowed": false,
+  "aeeExecutionAuthorityGranted": false,
+  "durableModelFleetPromotionAllowed": false,
+  "trainingOrDistillationAllowed": false
+}
