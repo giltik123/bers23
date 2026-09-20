@@ -15,6 +15,8 @@ import {
 } from '../src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCandidateTrustV1.ts';
 import {
   hsmeFoundationBenchmarkCampaignV1Digest,
+  hsmeFoundationBenchmarkCandidateMayRunV1,
+  mayFinalizeHsmeFoundationBenchmarkCampaignV1,
 } from '../src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCampaignV1.ts';
 
 const campaign = JSON.parse(await readFile(
@@ -32,22 +34,21 @@ const clone = value => structuredClone(value);
 function expectCodeAsync(fn, code) {
   return assert.rejects(fn, error => error?.code === code, 'expected ' + code);
 }
-
 function entry(raw, id) {
   return raw.candidates.find(value => value.candidateId === id);
 }
-
 function sourceFor(candidate) {
   return { sourceRoot: candidate.sourceRoot, immutableRevision: candidate.immutableRevision };
 }
 
-async function makePinnedBundle() {
-  const raw = clone(committedTrust);
-  raw.campaignDigest = await hsmeFoundationBenchmarkCampaignV1Digest(campaign, hashPort);
-  raw.state = 'PINNED';
-  for (let index = 0; index < campaign.candidates.length; index += 1) {
-    const candidate = campaign.candidates[index];
-    const trust = entry(raw, candidate.candidateId);
+async function makeSyntheticPinnedPair() {
+  const campaignRaw = clone(campaign);
+  const trustRaw = clone(committedTrust);
+  trustRaw.state = 'PINNED';
+
+  for (let index = 0; index < campaignRaw.candidates.length; index += 1) {
+    const candidate = campaignRaw.candidates[index];
+    const trust = entry(trustRaw, candidate.candidateId);
     const source = sourceFor(candidate);
     trust.artifactManifest = {
       schemaVersion: HSME_FOUNDATION_BENCHMARK_ARTIFACT_MANIFEST_V1_SCHEMA,
@@ -84,8 +85,8 @@ async function makePinnedBundle() {
           role: 'DOCUMENTATION_ONLY',
           bytes: 20 + index,
           runtimeRequired: false,
-          identityMethod: 'GIT_LFS_OID_SHA256_VERIFIED',
-          protocolContentSha256Verified: true,
+          identityMethod: 'CONTENT_SHA256',
+          protocolContentSha256Verified: false,
           contentSha256: H((((index + 2) % 8) + 1).toString()),
         },
       ],
@@ -118,39 +119,76 @@ async function makePinnedBundle() {
       candidateId: candidate.candidateId,
       reviewState: 'REVIEWED',
       artifactManifestDigest: manifestDigest,
-      aggregateLicenseId: candidate.candidateId === 'tiny-sd-control-v1' ? 'OPENRAIL-REVIEWED' : 'LICENSE-REVIEWED',
-      dependencyReviews: [
-        {
-          source,
-          artifactLogicalIds: ['config', 'weights'],
-          licenseId: candidate.candidateId === 'tiny-sd-control-v1' ? 'OPENRAIL-REVIEWED' : 'LICENSE-REVIEWED',
-          licenseEvidenceSha256: H('7'),
-          obligationsEvidenceSha256: H('8'),
-          conclusion: 'ADMITTED',
-        },
-      ],
+      aggregateLicenseId: candidate.candidateId === 'tiny-sd-control-v1'
+        ? 'OPENRAIL-REVIEWED'
+        : 'LICENSE-REVIEWED',
+      dependencyReviews: [{
+        source,
+        artifactLogicalIds: ['config', 'weights'],
+        licenseId: candidate.candidateId === 'tiny-sd-control-v1'
+          ? 'OPENRAIL-REVIEWED'
+          : 'LICENSE-REVIEWED',
+        licenseEvidenceSha256: H('7'),
+        obligationsEvidenceSha256: H('8'),
+        conclusion: 'ADMITTED',
+      }],
       commercialUseConclusion: candidate.candidateId === 'tiny-sd-control-v1'
         ? 'COMMERCIAL_ADMISSIBLE_WITH_OBLIGATIONS'
         : 'COMMERCIAL_ADMISSIBLE',
       reviewPolicySha256: H('6'),
       rationaleEvidenceSha256: H('5'),
     };
+
+    candidate.modelContentSha256 = manifestDigest;
+    candidate.executionProfileSha256 = await hsmeFoundationBenchmarkExecutionProfileDigestV1(
+      trust.executionProfile,
+      hashPort,
+    );
+    candidate.rightsEvidenceSha256 = await hsmeFoundationBenchmarkRightsReviewDigestV1(
+      trust.rightsReview,
+      hashPort,
+    );
+    candidate.rightsState = trust.rightsReview.commercialUseConclusion ===
+      'COMMERCIAL_ADMISSIBLE_WITH_OBLIGATIONS'
+      ? 'REVIEWED_WITH_OBLIGATIONS'
+      : 'REVIEWED_COMMERCIAL';
   }
-  return raw;
+
+  trustRaw.campaignDigest = await hsmeFoundationBenchmarkCampaignV1Digest(campaignRaw, hashPort);
+  return { campaignRaw, trustRaw };
 }
 
-test('committed trust pack matches all six campaign candidates and remains fail closed', async () => {
+test('committed trust pack is PINNED, campaign-bound and benchmark-runnable only', async () => {
   const trust = normalizeHsmeFoundationBenchmarkCandidateTrustV1(committedTrust);
   assert.equal(trust.schemaVersion, HSME_FOUNDATION_BENCHMARK_CANDIDATE_TRUST_V1_SCHEMA);
-  assert.equal(trust.state, 'EVIDENCE_PENDING');
+  assert.equal(trust.state, 'PINNED');
   assert.equal(trust.candidates.length, 6);
-  assert.equal(trust.campaignDigest, 'UNKNOWN');
-  assert.ok(trust.candidates.every(value => value.artifactManifest.artifacts.length === 0));
+  assert.match(trust.campaignDigest, /^[0-9a-f]{64}$/);
+  assert.ok(trust.candidates.every(value => value.artifactManifest.state === 'PINNED'));
+  assert.ok(trust.candidates.every(value => value.artifactManifest.artifacts.length > 0));
   assert.ok(trust.candidates.every(value => value.executionProfile.state === 'PINNED'));
-  assert.ok(trust.candidates.every(value => value.executionProfile.artifactManifestDigest !== 'UNKNOWN'));
-  const evidence = await proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, trust, hashPort);
-  assert.ok(evidence.entries.every(value => value.benchmarkRunnable === false));
-  assert.ok(evidence.entries.every(value => value.modelContentSha256 === 'UNKNOWN'));
+  assert.ok(trust.candidates.every(value => value.rightsReview.reviewState === 'REVIEWED'));
+
+  const evidence = await proveHsmeFoundationBenchmarkCandidateTrustV1(
+    campaign,
+    trust,
+    hashPort,
+  );
+  assert.equal(evidence.state, 'PINNED');
+  assert.equal(evidence.entries.length, 6);
+  assert.ok(evidence.entries.every(value => value.benchmarkRunnable === true));
+  assert.ok(campaign.candidates.every(value =>
+    hsmeFoundationBenchmarkCandidateMayRunV1(campaign, value.candidateId)
+  ));
+  assert.equal(mayFinalizeHsmeFoundationBenchmarkCampaignV1(campaign), true);
+  assert.equal(trust.candidateOutputsObserved, false);
+  assert.equal(trust.ordinaryCiModelExecutionAllowed, false);
+  assert.equal(trust.providerAuthorityGranted, false);
+  assert.equal(trust.billingAuthorityGranted, false);
+  assert.equal(trust.projectArtifactMutationAllowed, false);
+  assert.equal(trust.aeeExecutionAuthorityGranted, false);
+  assert.equal(trust.durableModelFleetPromotionAllowed, false);
+  assert.equal(trust.trainingOrDistillationAllowed, false);
   assert.equal(evidence.productionAuthorityGranted, false);
   assert.equal(evidence.winnerSelectionAllowed, false);
 });
@@ -177,11 +215,18 @@ test('trust roster must exactly match the immutable campaign roster', async () =
 });
 
 test('source root and immutable revision are bound to the accepted campaign', async () => {
-  const changed = clone(committedTrust);
-  entry(changed, 'flux2-klein-base-4b-v1').artifactManifest.primarySource.immutableRevision =
-    '1111111111111111111111111111111111111111';
+  const changedCampaign = clone(campaign);
+  const candidate = changedCampaign.candidates.find(value =>
+    value.candidateId === 'flux2-klein-base-4b-v1'
+  );
+  candidate.immutableRevision = '1'.repeat(40);
+  const changedTrust = clone(committedTrust);
+  changedTrust.campaignDigest = await hsmeFoundationBenchmarkCampaignV1Digest(
+    changedCampaign,
+    hashPort,
+  );
   await expectCodeAsync(
-    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, changed, hashPort),
+    () => proveHsmeFoundationBenchmarkCandidateTrustV1(changedCampaign, changedTrust, hashPort),
     'hsme_foundation_trust_source_mismatch',
   );
 });
@@ -189,17 +234,11 @@ test('source root and immutable revision are bound to the accepted campaign', as
 test('unresolved Xet/storage identity can never masquerade as file SHA-256', () => {
   const changed = clone(committedTrust);
   const item = entry(changed, 'qwen-image-t2i-reference-v1');
-  item.artifactManifest.artifacts.push({
-    logicalId: 'xet-weight',
-    source: item.artifactManifest.primarySource,
-    relativePath: 'transformer/model.safetensors',
-    role: 'DENOISER_TRANSFORMER_UNET',
-    bytes: 'UNKNOWN',
-    runtimeRequired: true,
-    identityMethod: 'UNRESOLVED_XET_OR_STORAGE',
-    protocolContentSha256Verified: false,
-    contentSha256: H('a'),
-  });
+  const artifact = item.artifactManifest.artifacts.find(value => value.runtimeRequired);
+  artifact.bytes = 'UNKNOWN';
+  artifact.identityMethod = 'UNRESOLVED_XET_OR_STORAGE';
+  artifact.protocolContentSha256Verified = false;
+  artifact.contentSha256 = H('a');
   assert.throws(
     () => normalizeHsmeFoundationBenchmarkCandidateTrustV1(changed),
     error => error?.code === 'hsme_foundation_artifact_unresolved_identity_claim',
@@ -209,17 +248,9 @@ test('unresolved Xet/storage identity can never masquerade as file SHA-256', () 
 test('Git LFS oid can be treated as file SHA-256 only after protocol verification', () => {
   const changed = clone(committedTrust);
   const item = entry(changed, 'tiny-sd-control-v1');
-  item.artifactManifest.artifacts.push({
-    logicalId: 'lfs-weight',
-    source: item.artifactManifest.primarySource,
-    relativePath: 'model.safetensors',
-    role: 'DENOISER_TRANSFORMER_UNET',
-    bytes: 100,
-    runtimeRequired: true,
-    identityMethod: 'GIT_LFS_OID_SHA256_VERIFIED',
-    protocolContentSha256Verified: false,
-    contentSha256: H('a'),
-  });
+  const artifact = item.artifactManifest.artifacts.find(value => value.runtimeRequired);
+  artifact.identityMethod = 'GIT_LFS_OID_SHA256_VERIFIED';
+  artifact.protocolContentSha256Verified = false;
   assert.throws(
     () => normalizeHsmeFoundationBenchmarkCandidateTrustV1(changed),
     error => error?.code === 'hsme_foundation_artifact_lfs_identity_unverified',
@@ -227,9 +258,11 @@ test('Git LFS oid can be treated as file SHA-256 only after protocol verificatio
 });
 
 test('modelContentSha256 is the domain-separated normalized artifact manifest digest', async () => {
-  const raw = await makePinnedBundle();
-  const item = entry(raw, 'flux2-klein-4b-distilled-v1');
-  const baseline = await hsmeFoundationBenchmarkArtifactManifestDigestV1(item.artifactManifest, hashPort);
+  const item = entry(committedTrust, 'flux2-klein-4b-distilled-v1');
+  const baseline = await hsmeFoundationBenchmarkArtifactManifestDigestV1(
+    item.artifactManifest,
+    hashPort,
+  );
   const changed = clone(item.artifactManifest);
   changed.artifacts[0].contentSha256 = H('f');
   assert.notEqual(
@@ -239,8 +272,7 @@ test('modelContentSha256 is the domain-separated normalized artifact manifest di
 });
 
 test('execution profile digest changes on quality setting or toolchain changes', async () => {
-  const raw = await makePinnedBundle();
-  const profile = entry(raw, 'flux2-klein-base-4b-v1').executionProfile;
+  const profile = entry(committedTrust, 'flux2-klein-base-4b-v1').executionProfile;
   const baseline = await hsmeFoundationBenchmarkExecutionProfileDigestV1(profile, hashPort);
 
   const quality = clone(profile);
@@ -259,25 +291,29 @@ test('execution profile digest changes on quality setting or toolchain changes',
 });
 
 test('rights review is bound to the same artifact manifest and covers runtime artifacts exactly once', async () => {
-  const raw = await makePinnedBundle();
-  const item = entry(raw, 'qwen-image-edit-2511-reference-v1');
+  const { campaignRaw, trustRaw } = await makeSyntheticPinnedPair();
+  const item = entry(trustRaw, 'qwen-image-edit-2511-reference-v1');
   item.rightsReview.artifactManifestDigest = H('4');
   await expectCodeAsync(
-    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, raw, hashPort),
+    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaignRaw, trustRaw, hashPort),
     'hsme_foundation_rights_manifest_mismatch',
   );
 
-  const missing = await makePinnedBundle();
-  entry(missing, 'qwen-image-edit-2511-reference-v1').rightsReview.dependencyReviews[0].artifactLogicalIds = ['config'];
+  const pair = await makeSyntheticPinnedPair();
+  const missing = entry(pair.trustRaw, 'qwen-image-edit-2511-reference-v1');
+  missing.rightsReview.dependencyReviews[0].artifactLogicalIds = ['config'];
   await expectCodeAsync(
-    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, missing, hashPort),
+    () => proveHsmeFoundationBenchmarkCandidateTrustV1(
+      pair.campaignRaw,
+      pair.trustRaw,
+      hashPort,
+    ),
     'hsme_foundation_rights_coverage_incomplete',
   );
 });
 
 test('review digest changes when obligations or license evidence changes', async () => {
-  const raw = await makePinnedBundle();
-  const review = entry(raw, 'tiny-sd-control-v1').rightsReview;
+  const review = entry(committedTrust, 'tiny-sd-control-v1').rightsReview;
   const baseline = await hsmeFoundationBenchmarkRightsReviewDigestV1(review, hashPort);
   const changed = clone(review);
   changed.dependencyReviews[0].obligationsEvidenceSha256 = H('2');
@@ -288,24 +324,24 @@ test('review digest changes when obligations or license evidence changes', async
 });
 
 test('runtime repository code remains fail closed', async () => {
-  const raw = await makePinnedBundle();
-  const item = entry(raw, 'sana-sprint-0.6b-split-v1');
+  const { campaignRaw, trustRaw } = await makeSyntheticPinnedPair();
+  const item = entry(trustRaw, 'sana-sprint-0.6b-split-v1');
   item.artifactManifest.artifacts[1].role = 'RUNTIME_CODE';
   await expectCodeAsync(
-    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, raw, hashPort),
+    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaignRaw, trustRaw, hashPort),
     'hsme_foundation_remote_code_forbidden',
   );
 });
 
 test('PINNED bundle requires exact campaign digest and every candidate complete', async () => {
-  const raw = await makePinnedBundle();
-  raw.campaignDigest = H('3');
+  const badDigest = clone(committedTrust);
+  badDigest.campaignDigest = H('3');
   await expectCodeAsync(
-    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, raw, hashPort),
+    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, badDigest, hashPort),
     'hsme_foundation_trust_campaign_digest_mismatch',
   );
 
-  const incomplete = await makePinnedBundle();
+  const incomplete = clone(committedTrust);
   const item = entry(incomplete, 'qwen-image-t2i-reference-v1');
   item.executionProfile.state = 'EVIDENCE_PENDING';
   item.executionProfile.artifactManifestDigest = 'UNKNOWN';
@@ -328,23 +364,24 @@ test('PINNED bundle requires exact campaign digest and every candidate complete'
 });
 
 test('fully pinned synthetic evidence makes all six benchmark-runnable without production or winner authority', async () => {
-  const raw = await makePinnedBundle();
-  const evidence = await proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, raw, hashPort);
+  const { campaignRaw, trustRaw } = await makeSyntheticPinnedPair();
+  const evidence = await proveHsmeFoundationBenchmarkCandidateTrustV1(
+    campaignRaw,
+    trustRaw,
+    hashPort,
+  );
   assert.equal(evidence.state, 'PINNED');
   assert.equal(evidence.entries.length, 6);
   assert.ok(evidence.entries.every(value => value.benchmarkRunnable));
-  assert.ok(evidence.entries.every(value => value.modelContentSha256 !== 'UNKNOWN'));
-  assert.ok(evidence.entries.every(value => value.executionProfileSha256 !== 'UNKNOWN'));
-  assert.ok(evidence.entries.every(value => value.rightsEvidenceSha256 !== 'UNKNOWN'));
   assert.equal(evidence.productionAuthorityGranted, false);
   assert.equal(evidence.winnerSelectionAllowed, false);
 });
 
 test('reviewed rejection is evidence but cannot make a PINNED candidate runnable', async () => {
-  const raw = await makePinnedBundle();
-  entry(raw, 'sana-sprint-0.6b-split-v1').rightsReview.commercialUseConclusion = 'REJECTED';
+  const { campaignRaw, trustRaw } = await makeSyntheticPinnedPair();
+  entry(trustRaw, 'sana-sprint-0.6b-split-v1').rightsReview.commercialUseConclusion = 'REJECTED';
   await expectCodeAsync(
-    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaign, raw, hashPort),
+    () => proveHsmeFoundationBenchmarkCandidateTrustV1(campaignRaw, trustRaw, hashPort),
     'hsme_foundation_trust_candidate_not_runnable',
   );
 });

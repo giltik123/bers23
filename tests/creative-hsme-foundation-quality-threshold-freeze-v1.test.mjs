@@ -140,18 +140,19 @@ test('strict preservation dimensions cannot be compensated by broader 5 percent 
   ]) assert.equal(byId.get(id), 50_000);
 });
 
-test('pinned fixtures plus model/profile evidence still cannot run before rights admission', () => {
+test('frozen thresholds remain unchanged after full trust admission', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(campaignRaw);
   const trust = normalizeHsmeFoundationBenchmarkCandidateTrustV1(trustRaw);
   assert.equal(campaign.status, 'FIXTURES_PINNED');
   assert.equal(campaign.fixturePack.state, 'PINNED');
-  assert.equal(trust.state, 'EVIDENCE_PENDING');
-  assert.equal(trust.campaignDigest, 'UNKNOWN');
+  assert.equal(trust.state, 'PINNED');
+  assert.match(trust.campaignDigest, /^[0-9a-f]{64}$/);
   for (const candidate of campaign.candidates) {
-    assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(campaign, candidate.candidateId), false);
+    assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(campaign, candidate.candidateId), true);
     assert.match(candidate.modelContentSha256, /^[0-9a-f]{64}$/);
     assert.match(candidate.executionProfileSha256, /^[0-9a-f]{64}$/);
-    assert.equal(candidate.rightsState, 'REVIEW_REQUIRED');
+    assert.match(candidate.rightsEvidenceSha256, /^[0-9a-f]{64}$/);
+    assert.notEqual(candidate.rightsState, 'REVIEW_REQUIRED');
   }
 });
 

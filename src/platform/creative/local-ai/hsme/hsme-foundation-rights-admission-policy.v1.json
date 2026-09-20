@@ -1,0 +1,410 @@
+{
+  "schemaVersion": "BERS_HSME_FOUNDATION_RIGHTS_ADMISSION_POLICY_V1",
+  "scope": "BENCHMARK_EVIDENCE_ONLY_NOT_PRODUCTION_APPROVAL",
+  "reviewedAtUtc": "2026-09-20T10:58:00Z",
+  "legalReviewRequiredBeforeProductDeployment": true,
+  "privateUserDataAllowed": false,
+  "candidateOutputsObserved": false,
+  "productionAuthorityGranted": false,
+  "providerAuthorityGranted": false,
+  "billingAuthorityGranted": false,
+  "projectArtifactMutationAllowed": false,
+  "durableModelFleetPromotionAllowed": false,
+  "trainingOrDistillationAllowed": false,
+  "reviewPolicy": {
+    "everyRuntimeArtifactCoveredExactlyOnce": true,
+    "documentationMustMatchPinnedArtifactManifest": true,
+    "topLevelLicenseMetadataAloneSufficient": false,
+    "dependencySpecificTermsOverrideAggregatePermissiveLabel": true,
+    "obligationsMayNotBeCompensatedByOtherDependencies": true,
+    "benchmarkAdmissionDoesNotGrantProductionApproval": true
+  },
+  "candidates": [
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "aggregateLicenseId": "CREATIVEML-OPENRAIL-M",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE_WITH_OBLIGATIONS",
+      "documentationEvidence": [
+        {
+          "relativePath": "README.md",
+          "contentSha256": "205a1eccfad2a1999a6d29e8fbe106da1b39028bd1da0936a4a423a288843ef0",
+          "requiredSubstrings": [
+            "license: creativeml-openrail-m",
+            "base_model: SG161222/Realistic_Vision_V4.0"
+          ],
+          "evidenceId": "tiny-sd-readme"
+        }
+      ],
+      "externalEvidence": [
+        {
+          "evidenceId": "creativeml-openrail-m",
+          "url": "https://github.com/CompVis/stable-diffusion/blob/main/LICENSE",
+          "assertion": "Commercial use is permitted subject to CreativeML OpenRAIL-M use restrictions and downstream obligations."
+        },
+        {
+          "evidenceId": "tiny-sd-base-lineage",
+          "url": "https://huggingface.co/SG161222/Realistic_Vision_V4.0_noVAE",
+          "assertion": "Declared Tiny-SD base lineage is also labeled creativeml-openrail-m."
+        }
+      ],
+      "groups": [
+        {
+          "groupId": "tiny-sd-runtime",
+          "selector": {
+            "kind": "ALL_RUNTIME"
+          },
+          "licenseId": "CREATIVEML-OPENRAIL-M",
+          "evidenceIds": [
+            "tiny-sd-readme",
+            "creativeml-openrail-m",
+            "tiny-sd-base-lineage"
+          ],
+          "obligations": {
+            "enforceUseRestrictions": true,
+            "preserveLicenseAndNoticesOnRedistribution": true,
+            "derivativeTermsMustRetainMinimumUseRestrictions": true,
+            "benchmarkSafetyControlsRequired": true
+          },
+          "conclusion": "ADMITTED"
+        }
+      ],
+      "rationale": {
+        "decision": "COMMERCIAL_ADMISSIBLE_WITH_OBLIGATIONS",
+        "reason": "Pinned model card declares CreativeML OpenRAIL-M; commercial benchmark use is admitted only with its use-based restrictions and redistribution/notice obligations. Production approval remains separate."
+      }
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-split-v1",
+      "aggregateLicenseId": "APACHE-2.0+GEMMA-TERMS-2026-04-01",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE_WITH_OBLIGATIONS",
+      "documentationEvidence": [
+        {
+          "evidenceId": "sana-readme",
+          "relativePath": "README.md",
+          "contentSha256": "DISCOVER_AFTER_RUNTIME_IDENTITY_PROOF",
+          "requiredSubstrings": [
+            "license: apache-2.0",
+            "**License:** [Apache License 2.0]",
+            "Gemma Terms of Use",
+            "Gemma Prohibited Use Policy",
+            "Gemma2-2B-IT"
+          ]
+        },
+        {
+          "evidenceId": "sana-license",
+          "relativePath": "LICENSE",
+          "contentSha256": "DISCOVER_AFTER_RUNTIME_IDENTITY_PROOF",
+          "requiredSubstrings": [
+            "Apache License",
+            "Version 2.0"
+          ]
+        }
+      ],
+      "externalEvidence": [
+        {
+          "evidenceId": "gemma-terms-2026-04-01",
+          "url": "https://ai.google.dev/gemma/terms",
+          "assertion": "Gemma terms and incorporated prohibited-use conditions remain a separate dependency obligation for the pinned Gemma2-2B-IT conditioning assets."
+        },
+        {
+          "evidenceId": "gemma-prohibited-use",
+          "url": "https://ai.google.dev/gemma/prohibited_use_policy",
+          "assertion": "Gemma prohibited-use restrictions remain separately binding for the conditioning dependency."
+        }
+      ],
+      "groups": [
+        {
+          "groupId": "sana-gemma-conditioning",
+          "selector": {
+            "kind": "PATH_PREFIXES",
+            "prefixes": [
+              "text_encoder/",
+              "tokenizer/"
+            ]
+          },
+          "licenseId": "GEMMA-TERMS-2026-04-01",
+          "evidenceIds": [
+            "sana-readme",
+            "gemma-terms-2026-04-01",
+            "gemma-prohibited-use"
+          ],
+          "obligations": {
+            "enforceUseRestrictions": true,
+            "provideAgreementOnDistribution": true,
+            "provideDownstreamNoticeOfUseRestrictions": true,
+            "markModifiedFiles": true,
+            "noticeFileRequiredForNonHostedDistribution": true,
+            "complyWithApplicableLaw": true
+          },
+          "conclusion": "ADMITTED"
+        },
+        {
+          "groupId": "sana-apache-runtime",
+          "selector": {
+            "kind": "REMAINDER_RUNTIME"
+          },
+          "licenseId": "APACHE-2.0",
+          "evidenceIds": [
+            "sana-readme",
+            "sana-license"
+          ],
+          "obligations": {
+            "preserveLicenseAndNoticesOnRedistribution": true,
+            "markModifiedFilesWhereRequired": true
+          },
+          "conclusion": "ADMITTED"
+        }
+      ],
+      "rationale": {
+        "decision": "COMMERCIAL_ADMISSIBLE_WITH_OBLIGATIONS",
+        "reason": "Admission is conditional on exact runtime-byte identity between the old NSCL-pinned revision and the later Apache-relicensed immutable revision; Gemma conditioning obligations remain separately binding."
+      },
+      "rightsSafeRepin": {
+        "oldRevision": "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97",
+        "newRevision": "aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+        "runtimeBytesMustRemainIdentical": true,
+        "allowedNonRuntimeChangedPaths": [
+          "README.md",
+          "LICENSE",
+          "LICENSE.txt"
+        ],
+        "oldPinnedLicenseId": "NSCL-V2-CUSTOM",
+        "newPinnedLicenseId": "APACHE-2.0"
+      }
+    },
+    {
+      "candidateId": "flux2-klein-4b-distilled-v1",
+      "aggregateLicenseId": "APACHE-2.0",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "documentationEvidence": [
+        {
+          "relativePath": "LICENSE.md",
+          "contentSha256": "ca02bc51900ab07789d1b70283329e7137f5af98f5161c23a1c81fc38a4af1fe",
+          "requiredSubstrings": [
+            "Apache License",
+            "Version 2.0"
+          ],
+          "evidenceId": "flux-license"
+        },
+        {
+          "relativePath": "README.md",
+          "contentSha256": "bd447051cf2db4bf67b992e563d89c35ebf1123f009c063361a222ab14e1c4f7",
+          "requiredSubstrings": [
+            "apache-2.0"
+          ],
+          "evidenceId": "flux-readme"
+        }
+      ],
+      "externalEvidence": [
+        {
+          "evidenceId": "qwen3-license",
+          "url": "https://huggingface.co/Qwen/Qwen3-4B",
+          "assertion": "Bundled Qwen3-family text encoder lineage is labeled Apache-2.0."
+        }
+      ],
+      "groups": [
+        {
+          "groupId": "flux-klein-distilled-qwen3-conditioning",
+          "selector": {
+            "kind": "PATH_PREFIXES",
+            "prefixes": [
+              "text_encoder/",
+              "tokenizer/"
+            ]
+          },
+          "licenseId": "APACHE-2.0",
+          "evidenceIds": [
+            "flux-license",
+            "flux-readme",
+            "qwen3-license"
+          ],
+          "obligations": {
+            "preserveLicenseAndNoticesOnRedistribution": true,
+            "markModifiedFilesWhereRequired": true
+          },
+          "conclusion": "ADMITTED"
+        },
+        {
+          "groupId": "flux-klein-distilled-runtime",
+          "selector": {
+            "kind": "REMAINDER_RUNTIME"
+          },
+          "licenseId": "APACHE-2.0",
+          "evidenceIds": [
+            "flux-license",
+            "flux-readme"
+          ],
+          "obligations": {
+            "preserveLicenseAndNoticesOnRedistribution": true,
+            "markModifiedFilesWhereRequired": true
+          },
+          "conclusion": "ADMITTED"
+        }
+      ],
+      "rationale": {
+        "decision": "COMMERCIAL_ADMISSIBLE",
+        "reason": "Pinned repository license is Apache-2.0; Qwen3 conditioning lineage is independently screened as Apache-2.0. Benchmark admission does not imply production approval."
+      }
+    },
+    {
+      "candidateId": "flux2-klein-base-4b-v1",
+      "aggregateLicenseId": "APACHE-2.0",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "documentationEvidence": [
+        {
+          "relativePath": "LICENSE.md",
+          "contentSha256": "ca02bc51900ab07789d1b70283329e7137f5af98f5161c23a1c81fc38a4af1fe",
+          "requiredSubstrings": [
+            "Apache License",
+            "Version 2.0"
+          ],
+          "evidenceId": "flux-license"
+        },
+        {
+          "relativePath": "README.md",
+          "contentSha256": "728ef6804ff3f38528c24ab9e3d168d579e77d57342c30ea01310eaa70e95016",
+          "requiredSubstrings": [
+            "apache-2.0"
+          ],
+          "evidenceId": "flux-readme"
+        }
+      ],
+      "externalEvidence": [
+        {
+          "evidenceId": "qwen3-license",
+          "url": "https://huggingface.co/Qwen/Qwen3-4B",
+          "assertion": "Bundled Qwen3-family text encoder lineage is labeled Apache-2.0."
+        }
+      ],
+      "groups": [
+        {
+          "groupId": "flux-klein-base-qwen3-conditioning",
+          "selector": {
+            "kind": "PATH_PREFIXES",
+            "prefixes": [
+              "text_encoder/",
+              "tokenizer/"
+            ]
+          },
+          "licenseId": "APACHE-2.0",
+          "evidenceIds": [
+            "flux-license",
+            "flux-readme",
+            "qwen3-license"
+          ],
+          "obligations": {
+            "preserveLicenseAndNoticesOnRedistribution": true,
+            "markModifiedFilesWhereRequired": true
+          },
+          "conclusion": "ADMITTED"
+        },
+        {
+          "groupId": "flux-klein-base-runtime",
+          "selector": {
+            "kind": "REMAINDER_RUNTIME"
+          },
+          "licenseId": "APACHE-2.0",
+          "evidenceIds": [
+            "flux-license",
+            "flux-readme"
+          ],
+          "obligations": {
+            "preserveLicenseAndNoticesOnRedistribution": true,
+            "markModifiedFilesWhereRequired": true
+          },
+          "conclusion": "ADMITTED"
+        }
+      ],
+      "rationale": {
+        "decision": "COMMERCIAL_ADMISSIBLE",
+        "reason": "Pinned repository license is Apache-2.0; Qwen3 conditioning lineage is independently screened as Apache-2.0. Benchmark admission does not imply production approval."
+      }
+    },
+    {
+      "candidateId": "qwen-image-t2i-reference-v1",
+      "aggregateLicenseId": "APACHE-2.0",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "documentationEvidence": [
+        {
+          "relativePath": "LICENSE",
+          "contentSha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+          "requiredSubstrings": [
+            "Apache License",
+            "Version 2.0"
+          ],
+          "evidenceId": "qwen-license"
+        },
+        {
+          "relativePath": "README.md",
+          "contentSha256": "c70f9851b364e5d6209305d6f07e065086126132ecc24805c652de45d3d92ca8",
+          "requiredSubstrings": [
+            "license: apache-2.0",
+            "Qwen-Image is licensed under Apache 2.0"
+          ],
+          "evidenceId": "qwen-readme"
+        }
+      ],
+      "externalEvidence": [],
+      "groups": [
+        {
+          "groupId": "qwen-image-runtime",
+          "selector": {
+            "kind": "ALL_RUNTIME"
+          },
+          "licenseId": "APACHE-2.0",
+          "evidenceIds": [
+            "qwen-license",
+            "qwen-readme"
+          ],
+          "obligations": {
+            "preserveLicenseAndNoticesOnRedistribution": true,
+            "markModifiedFilesWhereRequired": true
+          },
+          "conclusion": "ADMITTED"
+        }
+      ],
+      "rationale": {
+        "decision": "COMMERCIAL_ADMISSIBLE",
+        "reason": "Pinned repository contains Apache-2.0 license evidence and model-card declaration. Benchmark admission remains non-production authority."
+      }
+    },
+    {
+      "candidateId": "qwen-image-edit-2511-reference-v1",
+      "aggregateLicenseId": "APACHE-2.0",
+      "commercialUseConclusion": "COMMERCIAL_ADMISSIBLE",
+      "documentationEvidence": [
+        {
+          "relativePath": "README.md",
+          "contentSha256": "9724c194bef2a6d821090f0cd65774962e8f77e3acbfb2a7cbbdd58c92049902",
+          "requiredSubstrings": [
+            "license: apache-2.0",
+            "Qwen-Image-Edit-2511"
+          ],
+          "evidenceId": "qwen-edit-readme"
+        }
+      ],
+      "externalEvidence": [],
+      "groups": [
+        {
+          "groupId": "qwen-image-edit-runtime",
+          "selector": {
+            "kind": "ALL_RUNTIME"
+          },
+          "licenseId": "APACHE-2.0",
+          "evidenceIds": [
+            "qwen-edit-readme"
+          ],
+          "obligations": {
+            "preserveLicenseAndNoticesOnRedistribution": true,
+            "markModifiedFilesWhereRequired": true
+          },
+          "conclusion": "ADMITTED"
+        }
+      ],
+      "rationale": {
+        "decision": "COMMERCIAL_ADMISSIBLE",
+        "reason": "Pinned model card declares Apache-2.0. Benchmark admission remains non-production authority."
+      }
+    }
+  ]
+}

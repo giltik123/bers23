@@ -121,17 +121,17 @@ test('executionProfileSha256 is the accepted normalized profile digest and binds
   }
 });
 
-test('trust pack carries the same six PINNED execution profiles without pretending artifact/rights completion', () => {
+test('trust pack carries the same six PINNED execution profiles with complete artifact and rights evidence', () => {
   const trust = normalizeHsmeFoundationBenchmarkCandidateTrustV1(trustRaw);
-  assert.equal(trust.state, 'EVIDENCE_PENDING');
-  assert.equal(trust.campaignDigest, 'UNKNOWN');
+  assert.equal(trust.state, 'PINNED');
+  assert.match(trust.campaignDigest, /^[0-9a-f]{64}$/);
   for (const item of profileSet.profiles) {
     const trustCandidate = trust.candidates.find(value => value.candidateId === item.candidateId);
     assert.ok(trustCandidate);
     assert.deepEqual(trustCandidate.executionProfile, item.executionProfile);
-    assert.equal(trustCandidate.artifactManifest.state, 'EVIDENCE_PENDING');
-    assert.equal(trustCandidate.artifactManifest.artifacts.length, 0);
-    assert.equal(trustCandidate.rightsReview.reviewState, 'REVIEW_REQUIRED');
+    assert.equal(trustCandidate.artifactManifest.state, 'PINNED');
+    assert.ok(trustCandidate.artifactManifest.artifacts.length > 0);
+    assert.equal(trustCandidate.rightsReview.reviewState, 'REVIEWED');
   }
 });
 
@@ -183,15 +183,16 @@ test('profile mutation changes digest before any output can be admitted', async 
   );
 });
 
-test('pinned bytes, profiles and fixtures still cannot run before rights admission', () => {
+test('pinned bytes, profiles, fixtures and reviewed rights open only the benchmark run gate', () => {
   const campaign = normalizeHsmeFoundationBenchmarkCampaignV1(campaignRaw);
   assert.equal(campaign.status, 'FIXTURES_PINNED');
   assert.equal(campaign.fixturePack.state, 'PINNED');
   for (const item of campaign.candidates) {
     assert.match(item.modelContentSha256, /^[0-9a-f]{64}$/);
     assert.match(item.executionProfileSha256, /^[0-9a-f]{64}$/);
-    assert.equal(item.rightsState, 'REVIEW_REQUIRED');
-    assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(campaign, item.candidateId), false);
+    assert.match(item.rightsEvidenceSha256, /^[0-9a-f]{64}$/);
+    assert.notEqual(item.rightsState, 'REVIEW_REQUIRED');
+    assert.equal(hsmeFoundationBenchmarkCandidateMayRunV1(campaign, item.candidateId), true);
   }
 });
 

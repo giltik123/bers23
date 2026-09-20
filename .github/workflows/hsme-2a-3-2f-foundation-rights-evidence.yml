@@ -1,0 +1,192 @@
+name: HSME-2a.3.2f dependency-complete rights evidence
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/hsme_foundation_rights_evidence.py'
+      - 'scripts/hsme_foundation_candidate_metadata_evidence.py'
+      - 'scripts/hsme_finalize_foundation_trust.mjs'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-rights-admission-policy.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-execution-profiles.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-hub-artifact-evidence-index.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json'
+      - 'tests/test_hsme_foundation_rights_evidence.py'
+      - '.github/workflows/hsme-2a-3-2f-foundation-rights-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rights-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Offline rights policy tests
+        run: python -m unittest tests/test_hsme_foundation_rights_evidence.py
+
+      - name: Install pinned metadata transport only
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          PY
+
+      - name: Regenerate exact manifests and prove dependency-complete rights coverage
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-2f
+          python scripts/hsme_foundation_rights_evidence.py \
+            --policy src/platform/creative/local-ai/hsme/hsme-foundation-rights-admission-policy.v1.json \
+            --campaign src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json \
+            --output .test-cache/hsme-2a-3-2f/foundation-rights-evidence.json
+
+      - name: Rights evidence independently reproves reviewed campaign inputs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('.test-cache/hsme-2a-3-2f/foundation-rights-evidence.json')
+          data = json.loads(p.read_text())
+          assert data['schemaVersion'] == 'BERS_HSME_FOUNDATION_RIGHTS_EVIDENCE_V1'
+          assert len(data['candidates']) == 6
+          assert len(data['rightsSafeRepins']) == 1
+          repin = data['rightsSafeRepins'][0]
+          assert repin['candidateId'] == 'sana-sprint-0.6b-split-v1'
+          assert repin['runtimeIdentityPreserved'] is True
+          assert repin['qualitySettingsTransferAllowed'] is True
+          assert repin['oldRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert repin['newRevision'] == 'aa76e7f4f4928f378716b6716a2130fba3caf5b1'
+          assert repin['oldModelContentSha256'] != repin['newModelContentSha256']
+          assert set(repin['changedNonRuntimePaths']).issubset({'README.md', 'LICENSE', 'LICENSE.txt'})
+          assert 'README.md' in repin['changedNonRuntimePaths']
+          assert data['scope'] == 'BENCHMARK_EVIDENCE_ONLY_NOT_PRODUCTION_APPROVAL'
+          assert data['candidateOutputsObserved'] is False
+          assert data['fixturePackPinned'] is True
+          assert all(item['benchmarkRunnable'] is False for item in data['candidates'])
+          assert sum(1 for item in data['candidates'] if item['campaignUpdateRequired']) == 0
+          assert repin['campaignUpdateRequired'] is False
+          sana = next(item for item in data['candidates'] if item['candidateId'] == 'sana-sprint-0.6b-split-v1')
+          assert sana['campaignUpdateRequired'] is False
+          assert sana['modelContentSha256'] == repin['newModelContentSha256']
+          assert sana['rightsReview']['aggregateLicenseId'] == 'APACHE-2.0+GEMMA-TERMS-2026-04-01'
+          assert all(item['runtimeArtifactCount'] > 0 for item in data['candidates'])
+          assert all(item['artifactManifest']['state'] == 'PINNED' for item in data['candidates'])
+          assert all(item['benchmarkRunnableReason'] == 'TRUST_BUNDLE_NOT_PINNED' for item in data['candidates'])
+          assert all(len(item['rightsEvidenceSha256']) == 64 for item in data['candidates'])
+          assert data['productionAuthorityGranted'] is False
+          assert data['durableModelFleetPromotionAllowed'] is False
+          assert data['trainingOrDistillationAllowed'] is False
+          assert p.stat().st_size < 512 * 1024
+          PY
+
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build deterministic trust finalizer
+        run: |
+          set -euo pipefail
+          npx esbuild scripts/hsme_finalize_foundation_trust.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-2f/finalizer.mjs \
+            --external:node:*
+
+      - name: Derive exact final campaign, profiles and PINNED trust bundle
+        run: |
+          set -euo pipefail
+          node .test-cache/hsme-2a-3-2f/finalizer.mjs \
+            --rights=.test-cache/hsme-2a-3-2f/foundation-rights-evidence.json \
+            --output=.test-cache/hsme-2a-3-2f/finalized
+
+      - name: Validate finalization remains benchmark-only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.test-cache/hsme-2a-3-2f/finalized')
+          summary = json.loads((root / 'hsme-foundation-trust-finalization-summary.v1.json').read_text())
+          campaign = json.loads((root / 'hsme-foundation-benchmark-campaign.v1.json').read_text())
+          trust = json.loads((root / 'hsme-foundation-benchmark-candidate-trust.v1.json').read_text())
+          profiles = json.loads((root / 'hsme-foundation-benchmark-execution-profiles.v1.json').read_text())
+          admission = json.loads((root / 'hsme-foundation-rights-admission.v1.json').read_text())
+          assert summary['campaignMayFinalize'] is True
+          assert summary['trustState'] == 'PINNED'
+          assert len(summary['candidates']) == 6
+          assert all(item['benchmarkRunnable'] is True for item in summary['candidates'])
+          assert campaign['status'] == 'FIXTURES_PINNED'
+          assert campaign['fixturePack']['state'] == 'PINNED'
+          assert all(item['rightsState'] != 'REVIEW_REQUIRED' for item in campaign['candidates'])
+          assert all(len(item['rightsEvidenceSha256']) == 64 for item in campaign['candidates'])
+          assert trust['state'] == 'PINNED'
+          assert trust['campaignDigest'] == summary['campaignDigest']
+          assert trust['candidateOutputsObserved'] is False
+          assert trust['ordinaryCiModelExecutionAllowed'] is False
+          assert trust['productionAuthorityGranted'] is False
+          assert trust['providerAuthorityGranted'] is False
+          assert trust['billingAuthorityGranted'] is False
+          assert trust['durableModelFleetPromotionAllowed'] is False
+          assert trust['trainingOrDistillationAllowed'] is False
+          sana = next(item for item in campaign['candidates'] if item['candidateId'] == 'sana-sprint-0.6b-split-v1')
+          sana_profile = next(item for item in profiles['profiles'] if item['candidateId'] == sana['candidateId'])
+          assert sana['immutableRevision'] == 'aa76e7f4f4928f378716b6716a2130fba3caf5b1'
+          assert sana['modelContentSha256'] == 'c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4'
+          assert sana['executionProfileSha256'] == sana_profile['executionProfileSha256']
+          assert admission['productionAuthorityGranted'] is False
+          assert admission['trainingOrDistillationAllowed'] is False
+          PY
+
+      - name: Emit exact commit payloads for reviewed finalization
+        run: |
+          set -euo pipefail
+          for file in .test-cache/hsme-2a-3-2f/finalized/*.json; do
+            printf 'BERS_HSME_COMMIT_PAYLOAD::%s::%s\n' "$(basename "$file")" "$(base64 -w0 "$file")"
+          done
+
+      - name: Upload deterministic trust-finalization evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-foundation-trust-finalization-${{ github.sha }}
+          path: .test-cache/hsme-2a-3-2f/finalized/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload JSON rights evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-foundation-rights-evidence-${{ github.sha }}
+          path: .test-cache/hsme-2a-3-2f/foundation-rights-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Rights proof cannot execute models or grant production authority
+        run: |
+          set -euo pipefail
+          ! grep -E 'from_pretrained\(|torch\.cuda|nvidia-smi|pipeline\(' \
+            scripts/hsme_foundation_rights_evidence.py \
+            scripts/hsme_finalize_foundation_trust.mjs
+          ! grep -E '"productionAuthorityGranted": true|"durableModelFleetPromotionAllowed": true|"trainingOrDistillationAllowed": true' \
+            src/platform/creative/local-ai/hsme/hsme-foundation-rights-admission-policy.v1.json

@@ -47,18 +47,18 @@ jobs:
             --external:node:*
           node --test .test-cache/hsme-2a-3-2b/trust.test.mjs
 
-      - name: Pending trust pack cannot fabricate exact evidence
+      - name: PINNED trust pack is complete but cannot widen authority
         run: |
           set -euo pipefail
           PACK=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json
-          grep -F '"state": "EVIDENCE_PENDING"' "${PACK}"
-          grep -F '"campaignDigest": "UNKNOWN"' "${PACK}"
-          test "$(grep -c '"state": "EVIDENCE_PENDING"' "${PACK}")" -eq 7
-          test "$(grep -c '"state": "PINNED"' "${PACK}")" -eq 6
-          test "$(grep -c '"reviewState": "REVIEW_REQUIRED"' "${PACK}")" -eq 6
-          test "$(grep -c '"artifacts": \[\]' "${PACK}")" -eq 6
+          grep -F '"state": "PINNED"' "${PACK}"
+          grep -E '"campaignDigest": "[0-9a-f]{64}"' "${PACK}"
+          test "$(grep -c '"reviewState": "REVIEWED"' "${PACK}")" -eq 6
+          test "$(grep -c '"state": "PINNED"' "${PACK}")" -ge 13
+          test "$(grep -c '"artifacts": \[\]' "${PACK}")" -eq 0
           grep -F '"winnerSelectionAllowed": false' "${PACK}"
           grep -F '"efficiencyUsedInQualitySelection": false' "${PACK}"
+          grep -F '"ordinaryCiModelExecutionAllowed": false' "${PACK}"
           grep -F '"productionAuthorityGranted": false' "${PACK}"
 
       - name: Ordinary CI cannot acquire or execute benchmark models
