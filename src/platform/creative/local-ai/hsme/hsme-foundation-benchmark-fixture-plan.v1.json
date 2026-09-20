@@ -12,90 +12,90 @@
     {
       "dimensionId": "semantic-adherence",
       "reviewMode": "HYBRID",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "08c24cb2ee15900cc3bc4cec989960fae72af5c66d8a00ec1ddbd6e1f896f9d0",
+      "rubricSha256": "9d7da6cf3f81f6e2ccf8cd7a3073f164f0abfb1b0bcbc7ef6a27f18b242506ad",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 50000
     },
     {
       "dimensionId": "identity-preservation",
       "reviewMode": "BLINDED_HUMAN",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "d204f6490942685a3a9f4b99240d6237a2756eacc86a8c9a57067b220e648a0c",
+      "rubricSha256": "e8a4bdad9955a795fa96f670066048ca630b92317a1e17646a1ce3e75a112d9b",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 25000
     },
     {
       "dimensionId": "garment-logo-pattern-preservation",
       "reviewMode": "BLINDED_HUMAN",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "348211c4c3358beb55ce47515d05a58675c30ce8e59a933b3f4083c459de01d5",
+      "rubricSha256": "eb2ce41a17970986d09157110e556864cbdde06440708231a873e86791b6cb37",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 25000
     },
     {
       "dimensionId": "non-target-preservation",
       "reviewMode": "HYBRID",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "920021e08351b06c94b7e20ae4cf66e745bf1f642e917eb627071efe139a76d3",
+      "rubricSha256": "8619a0089c6b140fa1c618444fd074b8c1cd62d4b5e664c688a34abb051d82bd",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 20000
     },
     {
       "dimensionId": "anatomy-artifact-rate",
       "reviewMode": "HYBRID",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "f66046440c2864e82a455466e099b9406dc4d072674107be1313962540c35155",
+      "rubricSha256": "fcf4cfbc576fbe42ad0d471ddafb156e53c02bb2c855611fb8f77027c54c4f9a",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 25000
     },
     {
       "dimensionId": "photorealism",
       "reviewMode": "BLINDED_HUMAN",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "a759089b5311d4ab105463dfd10415bcbe3491be94b2350a815cbe9b4a41dc6f",
+      "rubricSha256": "204e982053b5093364cb5a4033bcf5fefb2fad9872bcee9f75ad0094144c49ad",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 50000
     },
     {
       "dimensionId": "material-realism",
       "reviewMode": "BLINDED_HUMAN",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "013a646732856c7b212ad06413633348eb28062590ec844b78d0965f240bc0de",
+      "rubricSha256": "226df51f6f4962e30554fa26088f9ab0fe695798a96415ff69cc6bbed008a373",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 50000
     },
     {
       "dimensionId": "text-fidelity",
       "reviewMode": "HYBRID",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "0ad2d66412202c063ed787a0921d46b73875d8d6d64b2f06f439fa257a357262",
+      "rubricSha256": "097af5f786a29c4eff4eebb18d5cec8fe6b60f19f448b419d8dbc12b864346b9",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 25000
     },
     {
       "dimensionId": "edit-compliance",
       "reviewMode": "HYBRID",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "9514a86f0d8dd06bf0216cba1bee04cdcf3792f76be6a434f16ede3986e32feb",
+      "rubricSha256": "52787cd7a92a3fce1a8d91643e739a8c328b7ea88bf394955d3ca5121c6dac40",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 50000
     },
     {
       "dimensionId": "multi-reference-consistency",
       "reviewMode": "BLINDED_HUMAN",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "aadef6d942d13356e4c4b61ae630124623bd8275d97422af6c110f3bf87e29cc",
+      "rubricSha256": "6bbb70420e911f8b004a6f6dd3224ae08f24f7c18f42d3aa8922afa073ec4ee8",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 25000
     },
     {
       "dimensionId": "composition-count-spatial-correctness",
       "reviewMode": "HYBRID",
-      "scalePolicySha256": "UNKNOWN",
-      "rubricSha256": "UNKNOWN",
-      "thresholdState": "PIN_REQUIRED",
-      "maxLossMicrounits": "PIN_REQUIRED"
+      "scalePolicySha256": "093697a3ba75803b1319adc465f2bf38776bd957f74d2a11cf41a484944854f5",
+      "rubricSha256": "360a396c3dcd7c4f0fa15dd1ba472891aeebbe7595d48f7878215c103c5faba0",
+      "thresholdState": "PINNED",
+      "maxLossMicrounits": 50000
     }
   ],
   "privateUserDataAllowed": false,

@@ -1,0 +1,66 @@
+name: HSME-2a.3.2c pre-observation quality threshold freeze
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-quality-rubric.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-fixture-plan.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json'
+      - 'tests/creative-hsme-foundation-quality-threshold-freeze-v1.test.mjs'
+      - '.github/workflows/hsme-2a-3-2c-foundation-quality-threshold-freeze.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-threshold-freeze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prove scale, rubric and 13-threshold freeze
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-2c
+          npx esbuild tests/creative-hsme-foundation-quality-threshold-freeze-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-2c/freeze.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-2c/freeze.test.mjs
+
+      - name: Freeze is pre-observation and does not unlock candidates
+        run: |
+          set -euo pipefail
+          PLAN=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-fixture-plan.v1.json
+          CAMPAIGN=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json
+          TRUST=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json
+          grep -F '"candidateOutputsObserved": false' "${PLAN}"
+          grep -F '"state": "EVIDENCE_PENDING"' "${PLAN}"
+          grep -F '"status": "EVIDENCE_PENDING"' "${CAMPAIGN}"
+          grep -F '"state": "EVIDENCE_PENDING"' "${TRUST}"
+          test "$(grep -c '"thresholdState": "PINNED"' "${PLAN}")" -eq 11
+          test "$(grep -c '"maxLossMicrounits":' "${CAMPAIGN}")" -eq 13
+          test "$(grep -c '"modelContentSha256": "UNKNOWN"' "${CAMPAIGN}")" -eq 6
+          test "$(grep -c '"executionProfileSha256": "UNKNOWN"' "${CAMPAIGN}")" -eq 6
+
+      - name: Ordinary CI still cannot acquire or execute foundation models
+        run: |
+          set -euo pipefail
+          ! grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|torch\.cuda|secrets\.' \
+            tests/creative-hsme-foundation-quality-threshold-freeze-v1.test.mjs

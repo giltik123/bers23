@@ -78,7 +78,8 @@ jobs:
           test "$(grep -c '"rightsState": "REVIEW_REQUIRED"' "${CAMPAIGN}")" -eq 6
           test "$(grep -c '"modelContentSha256": "UNKNOWN"' "${CAMPAIGN}")" -eq 6
           test "$(grep -c '"executionProfileSha256": "UNKNOWN"' "${CAMPAIGN}")" -eq 6
-          test "$(grep -c '"maxLossMicrounits": "PIN_REQUIRED"' "${CAMPAIGN}")" -eq 13
+          test "$(grep -c '"maxLossMicrounits": [0-9]' "${CAMPAIGN}")" -eq 13
+          ! grep -F '"maxLossMicrounits": "PIN_REQUIRED"' "${CAMPAIGN}"
           grep -F '"privateUserDataAllowed": false' "${CAMPAIGN}"
           grep -F '"postObservationThresholdChangesAllowed": false' "${CAMPAIGN}"
           grep -F '"trainingOrDistillationAllowed": false' "${CAMPAIGN}"

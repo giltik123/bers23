@@ -1,0 +1,282 @@
+{
+  "schemaVersion": "BERS_HSME_FOUNDATION_QUALITY_RUBRIC_V1",
+  "lossScaleMicrounits": {
+    "min": 0,
+    "max": 1000000,
+    "direction": "LOWER_IS_BETTER",
+    "anchor": "LOSS_RELATIVE_TO_SLICE_REFERENCE"
+  },
+  "thresholdPolicy": {
+    "state": "FROZEN_BEFORE_OUTPUTS",
+    "candidateOutputsObserved": false,
+    "postObservationMutationAllowed": false,
+    "compensationAcrossDimensionsAllowed": false,
+    "rationale": "Preservation and structural dimensions use 2.0-2.5% loss ceilings; broader semantic/realism/edit-compliance dimensions use 5.0%. These ceilings are frozen before any candidate output is generated or observed."
+  },
+  "dimensions": [
+    {
+      "dimensionId": "semantic-adherence",
+      "reviewMode": "HYBRID",
+      "scalePolicy": {
+        "dimensionId": "semantic-adherence",
+        "scale": "0=no detectable loss vs reference; 1000000=complete semantic failure",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "08c24cb2ee15900cc3bc4cec989960fae72af5c66d8a00ec1ddbd6e1f896f9d0",
+      "rubric": {
+        "dimensionId": "semantic-adherence",
+        "reviewMode": "HYBRID",
+        "criteria": [
+          "all required entities/attributes/relations present",
+          "no contradictory additions",
+          "language/content intent preserved"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "9d7da6cf3f81f6e2ccf8cd7a3073f164f0abfb1b0bcbc7ef6a27f18b242506ad",
+      "globalMaxLossMicrounits": 50000
+    },
+    {
+      "dimensionId": "identity-preservation",
+      "reviewMode": "BLINDED_HUMAN",
+      "scalePolicy": {
+        "dimensionId": "identity-preservation",
+        "scale": "0=no detectable identity drift; 1000000=identity replaced/unrecognizable",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "d204f6490942685a3a9f4b99240d6237a2756eacc86a8c9a57067b220e648a0c",
+      "rubric": {
+        "dimensionId": "identity-preservation",
+        "reviewMode": "BLINDED_HUMAN",
+        "criteria": [
+          "face/subject identity stable",
+          "distinctive geometry stable",
+          "no identity substitution"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "e8a4bdad9955a795fa96f670066048ca630b92317a1e17646a1ce3e75a112d9b",
+      "globalMaxLossMicrounits": 25000
+    },
+    {
+      "dimensionId": "garment-logo-pattern-preservation",
+      "reviewMode": "BLINDED_HUMAN",
+      "scalePolicy": {
+        "dimensionId": "garment-logo-pattern-preservation",
+        "scale": "0=no detectable garment/logo/pattern drift; 1000000=target identity lost",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "348211c4c3358beb55ce47515d05a58675c30ce8e59a933b3f4083c459de01d5",
+      "rubric": {
+        "dimensionId": "garment-logo-pattern-preservation",
+        "reviewMode": "BLINDED_HUMAN",
+        "criteria": [
+          "silhouette/construction retained",
+          "logo/text placement retained",
+          "pattern/material details retained"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "eb2ce41a17970986d09157110e556864cbdde06440708231a873e86791b6cb37",
+      "globalMaxLossMicrounits": 25000
+    },
+    {
+      "dimensionId": "non-target-preservation",
+      "reviewMode": "HYBRID",
+      "scalePolicy": {
+        "dimensionId": "non-target-preservation",
+        "scale": "0=no detectable non-target change; 1000000=major unintended rewrite",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "920021e08351b06c94b7e20ae4cf66e745bf1f642e917eb627071efe139a76d3",
+      "rubric": {
+        "dimensionId": "non-target-preservation",
+        "reviewMode": "HYBRID",
+        "criteria": [
+          "background retained",
+          "untargeted subject regions retained",
+          "no collateral color/geometry changes"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "8619a0089c6b140fa1c618444fd074b8c1cd62d4b5e664c688a34abb051d82bd",
+      "globalMaxLossMicrounits": 20000
+    },
+    {
+      "dimensionId": "anatomy-artifact-rate",
+      "reviewMode": "HYBRID",
+      "scalePolicy": {
+        "dimensionId": "anatomy-artifact-rate",
+        "scale": "0=no new anatomy/artifact defect; 1000000=severe structural corruption",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "f66046440c2864e82a455466e099b9406dc4d072674107be1313962540c35155",
+      "rubric": {
+        "dimensionId": "anatomy-artifact-rate",
+        "reviewMode": "HYBRID",
+        "criteria": [
+          "limb/hand/face integrity",
+          "no duplicate/missing structures",
+          "no severe rendering artifacts"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "fcf4cfbc576fbe42ad0d471ddafb156e53c02bb2c855611fb8f77027c54c4f9a",
+      "globalMaxLossMicrounits": 25000
+    },
+    {
+      "dimensionId": "photorealism",
+      "reviewMode": "BLINDED_HUMAN",
+      "scalePolicy": {
+        "dimensionId": "photorealism",
+        "scale": "0=reference-level or better realism; 1000000=clearly non-photorealistic failure",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "a759089b5311d4ab105463dfd10415bcbe3491be94b2350a815cbe9b4a41dc6f",
+      "rubric": {
+        "dimensionId": "photorealism",
+        "reviewMode": "BLINDED_HUMAN",
+        "criteria": [
+          "lighting/material coherence",
+          "camera/depth plausibility",
+          "surface/skin realism"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "204e982053b5093364cb5a4033bcf5fefb2fad9872bcee9f75ad0094144c49ad",
+      "globalMaxLossMicrounits": 50000
+    },
+    {
+      "dimensionId": "material-realism",
+      "reviewMode": "BLINDED_HUMAN",
+      "scalePolicy": {
+        "dimensionId": "material-realism",
+        "scale": "0=reference-level or better material rendering; 1000000=material identity lost",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "013a646732856c7b212ad06413633348eb28062590ec844b78d0965f240bc0de",
+      "rubric": {
+        "dimensionId": "material-realism",
+        "reviewMode": "BLINDED_HUMAN",
+        "criteria": [
+          "texture scale/coherence",
+          "reflectance/roughness plausibility",
+          "fabric/object material cues"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "226df51f6f4962e30554fa26088f9ab0fe695798a96415ff69cc6bbed008a373",
+      "globalMaxLossMicrounits": 50000
+    },
+    {
+      "dimensionId": "text-fidelity",
+      "reviewMode": "HYBRID",
+      "scalePolicy": {
+        "dimensionId": "text-fidelity",
+        "scale": "0=no text/logo fidelity loss; 1000000=required text unreadable/wrong",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "0ad2d66412202c063ed787a0921d46b73875d8d6d64b2f06f439fa257a357262",
+      "rubric": {
+        "dimensionId": "text-fidelity",
+        "reviewMode": "HYBRID",
+        "criteria": [
+          "exact characters",
+          "layout/order retained",
+          "legibility and logo geometry"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "097af5f786a29c4eff4eebb18d5cec8fe6b60f19f448b419d8dbc12b864346b9",
+      "globalMaxLossMicrounits": 25000
+    },
+    {
+      "dimensionId": "edit-compliance",
+      "reviewMode": "HYBRID",
+      "scalePolicy": {
+        "dimensionId": "edit-compliance",
+        "scale": "0=edit instruction fully satisfied; 1000000=instruction ignored/contradicted",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "9514a86f0d8dd06bf0216cba1bee04cdcf3792f76be6a434f16ede3986e32feb",
+      "rubric": {
+        "dimensionId": "edit-compliance",
+        "reviewMode": "HYBRID",
+        "criteria": [
+          "requested change completed",
+          "scope respected",
+          "no forbidden side effects"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "52787cd7a92a3fce1a8d91643e739a8c328b7ea88bf394955d3ca5121c6dac40",
+      "globalMaxLossMicrounits": 50000
+    },
+    {
+      "dimensionId": "multi-reference-consistency",
+      "reviewMode": "BLINDED_HUMAN",
+      "scalePolicy": {
+        "dimensionId": "multi-reference-consistency",
+        "scale": "0=all reference identities/details reconciled; 1000000=reference consistency lost",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "aadef6d942d13356e4c4b61ae630124623bd8275d97422af6c110f3bf87e29cc",
+      "rubric": {
+        "dimensionId": "multi-reference-consistency",
+        "reviewMode": "BLINDED_HUMAN",
+        "criteria": [
+          "reference roles respected",
+          "cross-reference identity consistency",
+          "no source mixing artifacts"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "6bbb70420e911f8b004a6f6dd3224ae08f24f7c18f42d3aa8922afa073ec4ee8",
+      "globalMaxLossMicrounits": 25000
+    },
+    {
+      "dimensionId": "composition-count-spatial-correctness",
+      "reviewMode": "HYBRID",
+      "scalePolicy": {
+        "dimensionId": "composition-count-spatial-correctness",
+        "scale": "0=no composition/count/spatial loss; 1000000=major count/spatial failure",
+        "min": 0,
+        "max": 1000000,
+        "direction": "LOWER_IS_BETTER"
+      },
+      "scalePolicySha256": "093697a3ba75803b1319adc465f2bf38776bd957f74d2a11cf41a484944854f5",
+      "rubric": {
+        "dimensionId": "composition-count-spatial-correctness",
+        "reviewMode": "HYBRID",
+        "criteria": [
+          "exact counts where requested",
+          "left/right/front/back relations",
+          "framing/composition requirements"
+        ],
+        "aggregation": "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN"
+      },
+      "rubricSha256": "360a396c3dcd7c4f0fa15dd1ba472891aeebbe7595d48f7878215c103c5faba0",
+      "globalMaxLossMicrounits": 50000
+    }
+  ]
+}
