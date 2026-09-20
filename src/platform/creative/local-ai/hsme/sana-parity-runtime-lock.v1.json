@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "BERS_HSME_SANA_PARITY_RUNTIME_LOCK_V1",
+  "python": "3.12",
+  "packages": {
+    "torch": "2.14.0",
+    "diffusers": "0.40.0",
+    "transformers": "5.17.0",
+    "huggingface-hub": "1.32.0",
+    "safetensors": "0.8.0",
+    "accelerate": "1.15.0",
+    "sentencepiece": "0.2.2",
+    "numpy": "2.5.3"
+  },
+  "coreArtifacts": {
+    "torch": {
+      "filename": "torch-2.14.0-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "sha256": "fecffb58f51fd643d213acd68da21cc3fc19bea05a3bc64b4ee55128f47a4963"
+    },
+    "diffusers": {
+      "filename": "diffusers-0.40.0-py3-none-any.whl",
+      "sha256": "5b5da7c3ddb62152fa4afc577f02e050af688c797375c34fb2d01006da3f3541"
+    },
+    "transformers": {
+      "filename": "transformers-5.17.0-py3-none-any.whl",
+      "sha256": "78ec1ce21579b38dfb83950a0658cd119f87212a2fcfdff478096ce9d6c03801"
+    },
+    "huggingface-hub": {
+      "filename": "huggingface_hub-1.32.0-py3-none-any.whl",
+      "sha256": "b0c7c80561969d9cdacdd55fce67ba9584cca0b9d4ea80957a3a5c1445fac5c8"
+    },
+    "safetensors": {
+      "filename": "safetensors-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "sha256": "fd6f3f93c9a0a7cc2788ee63fb763353d4bd2e89b0751bc78fcf7dda00bea774"
+    },
+    "accelerate": {
+      "filename": "accelerate-1.15.0-py3-none-any.whl",
+      "sha256": "97eacca0b73e45cb867dbf8c5d5d4dc32219544300e0c8992c7334dc2ef33cec"
+    },
+    "sentencepiece": {
+      "filename": "sentencepiece-0.2.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "c8a168b040bc61681293f79a949b5d911c8e25086f4260285b8d97ab5f1195da"
+    },
+    "numpy": {
+      "filename": "numpy-2.5.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "b7e18c623bb5c95acb3b3328861272816ba199fb531921c5d6d0b675f1fde9e3"
+    }
+  },
+  "policy": {
+    "qualityPolicy": "QUALITY_FLOOR_BEFORE_EFFICIENCY",
+    "modelRepositoryRuntimeCodeAllowed": false,
+    "binaryArtifactsPublishable": false,
+    "productionAuthorityGranted": false,
+    "providerAuthorityGranted": false,
+    "billingAuthorityGranted": false,
+    "projectArtifactMutationAllowed": false
+  }
+}

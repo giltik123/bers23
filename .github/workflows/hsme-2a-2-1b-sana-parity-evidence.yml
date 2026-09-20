@@ -1,0 +1,497 @@
+name: HSME-2a.2.1b manual SANA parity evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Evidence operation
+        required: true
+        type: choice
+        options:
+          - PIN_METADATA
+          - PIN_CONDITIONING
+          - RUN_EXACT_PARITY
+      candidate_sha:
+        description: Exact main commit to check out
+        required: true
+        type: string
+      conditioning_request_path:
+        description: Reviewed conditioning request path for PIN_CONDITIONING
+        required: false
+        default: src/platform/creative/local-ai/hsme/sana-sprint-conditioning-request.v1.json
+        type: string
+      plan_path:
+        description: Reviewed parity plan path for RUN_EXACT_PARITY
+        required: false
+        default: src/platform/creative/local-ai/hsme/sana-sprint-parity-plan.v1.json
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hsme-sana-parity-evidence
+  cancel-in-progress: false
+
+env:
+  SANA_REPO: Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers
+  SANA_REVISION: a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97
+  RUNTIME_LOCK: src/platform/creative/local-ai/hsme/sana-parity-runtime-lock.v1.json
+  RIGHTS_EVIDENCE: src/platform/creative/local-ai/hsme/sana-sprint-evidence-use-rights.v1.json
+  PHASE0_ENVELOPE: src/platform/creative/local-ai/hsme/sana-sprint-conditioning-envelope.v1.json
+  PHASE0_EVIDENCE: src/platform/creative/local-ai/hsme/sana-sprint-conditioning-evidence.v1.json
+  EVIDENCE_DIR: .test-cache/hsme-sana-parity
+
+jobs:
+  pin-metadata:
+    if: ${{ inputs.operation == 'PIN_METADATA' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable main candidate checkout
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" origin/main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install verified metadata-only Hub client
+        run: |
+          set -euo pipefail
+          HUB_WHEELS="${RUNNER_TEMP}/hsme-metadata-wheel"
+          mkdir -p "${HUB_WHEELS}"
+          python -m pip download --disable-pip-version-check --no-deps --only-binary=:all: \
+            --dest "${HUB_WHEELS}" huggingface-hub==1.32.0
+          python - <<'PY'
+          import hashlib, json, os, pathlib
+          lock = json.load(open(os.environ['RUNTIME_LOCK'], encoding='utf-8'))
+          artifact = lock['coreArtifacts']['huggingface-hub']
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'hsme-metadata-wheel' / artifact['filename']
+          assert path.is_file()
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          assert digest == artifact['sha256']
+          PY
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            "${HUB_WHEELS}/huggingface_hub-1.32.0-py3-none-any.whl"
+          python - <<'PY'
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '1.32.0'
+          PY
+
+      - name: Record immutable metadata pin without model download
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          python -m py_compile scripts/hsme-sana-parity-runner.py
+          HF_HUB_DISABLE_TELEMETRY=1 \
+          python scripts/hsme-sana-parity-runner.py PIN_METADATA \
+            --runtime-lock "${RUNTIME_LOCK}" \
+            --out "${EVIDENCE_DIR}/metadata-pin.json"
+
+      - name: Prove metadata operation remains unresolved and JSON-only
+        run: |
+          set -euo pipefail
+          test -f "${EVIDENCE_DIR}/metadata-pin.json"
+          test "$(find "${EVIDENCE_DIR}" -type f ! -name '*.json' | wc -l)" -eq 0
+          python - <<'PY'
+          import json
+          value = json.load(open('.test-cache/hsme-sana-parity/metadata-pin.json', encoding='utf-8'))
+          assert value['status'] == 'EVIDENCE_PENDING'
+          assert value['rights'] == {'status': 'UNRESOLVED', 'evidenceSha256': 'UNKNOWN'}
+          assert value['sanaSnapshot']['immutableRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert value['rawPromptPersisted'] is False
+          assert value['modelRepositoryCodeExecutionAllowed'] is False
+          assert value['productionAuthorityGranted'] is False
+          assert value['providerAuthorityGranted'] is False
+          assert value['billingAuthorityGranted'] is False
+          assert value['projectArtifactMutationAllowed'] is False
+          assert value['binaryArtifactsPublished'] is False
+          PY
+
+      - name: Upload JSON-only metadata evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-sana-parity-metadata-pin-${{ inputs.candidate_sha }}
+          path: .test-cache/hsme-sana-parity/metadata-pin.json
+          if-no-files-found: error
+          retention-days: 7
+
+  gpu-evidence:
+    if: ${{ inputs.operation == 'PIN_CONDITIONING' || inputs.operation == 'RUN_EXACT_PARITY' }}
+    runs-on: [self-hosted, linux, x64, gpu, bers-hsme-evidence]
+    timeout-minutes: 180
+    environment: hsme-sana-parity-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify immutable main candidate checkout before model network work
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" origin/main
+          test -f "${RUNTIME_LOCK}"
+
+      - name: Verify reviewed conditioning request and evidence-use rights
+        if: ${{ inputs.operation == 'PIN_CONDITIONING' }}
+        env:
+          REQUEST_PATH: ${{ inputs.conditioning_request_path }}
+        run: |
+          set -euo pipefail
+          case "${REQUEST_PATH}" in
+            src/platform/creative/local-ai/hsme/*conditioning-request*.json) ;;
+            *) echo 'conditioning_request_path must be a tracked reviewed HSME conditioning request' >&2; exit 1 ;;
+          esac
+          git ls-files --error-unmatch "${REQUEST_PATH}"
+          git ls-files --error-unmatch "${RIGHTS_EVIDENCE}"
+          python - <<'PY'
+          import hashlib, json, os
+          request = json.load(open(os.environ['REQUEST_PATH'], encoding='utf-8'))
+          lock = json.load(open(os.environ['RUNTIME_LOCK'], encoding='utf-8'))
+          lock_digest = hashlib.sha256(
+              json.dumps(lock, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+          ).hexdigest()
+          assert request['schemaVersion'] == 'BERS_HSME_SANA_CONDITIONING_PIN_REQUEST_V1'
+          assert request['candidateId'] == 'sana-sprint-0.6b-split-conditioning'
+          assert request['qualityPolicy'] == 'QUALITY_FLOOR_BEFORE_EFFICIENCY'
+          assert request['runtimeLockSha256'] == lock_digest
+          assert request['rights']['status'] == 'EVIDENCE_RUN_ALLOWED'
+          assert request['rawPromptPersisted'] is False
+          assert request['modelRepositoryCodeExecutionAllowed'] is False
+          assert request['runtimeAuthorityGranted'] is False
+          assert request['binaryPayloadPublishable'] is False
+          rights_bytes = open(os.environ['RIGHTS_EVIDENCE'], 'rb').read()
+          assert hashlib.sha256(rights_bytes).hexdigest() == request['rights']['evidenceSha256']
+          rights = json.loads(rights_bytes)
+          assert rights['schemaVersion'] == 'BERS_HSME_SANA_EVIDENCE_USE_RIGHTS_V1'
+          assert rights['weightRepository'] == 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers'
+          assert rights['weightRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert rights['gemmaTermsReviewed'] is True
+          assert rights['evidenceUseAllowed'] is True
+          assert rights['trainingOrDistillationAllowed'] is False
+          assert rights['productionUseAllowed'] is False
+          PY
+
+      - name: Verify reviewed parity plan, Phase-0 evidence and evidence-use rights
+        if: ${{ inputs.operation == 'RUN_EXACT_PARITY' }}
+        env:
+          PLAN_PATH: ${{ inputs.plan_path }}
+        run: |
+          set -euo pipefail
+          case "${PLAN_PATH}" in
+            src/platform/creative/local-ai/hsme/*parity-plan*.json) ;;
+            *) echo 'plan_path must be a tracked reviewed HSME parity plan' >&2; exit 1 ;;
+          esac
+          git ls-files --error-unmatch "${PLAN_PATH}"
+          git ls-files --error-unmatch "${PHASE0_ENVELOPE}"
+          git ls-files --error-unmatch "${PHASE0_EVIDENCE}"
+          git ls-files --error-unmatch "${RIGHTS_EVIDENCE}"
+          python - <<'PY'
+          import hashlib, json, os
+          plan = json.load(open(os.environ['PLAN_PATH'], encoding='utf-8'))
+          lock = json.load(open(os.environ['RUNTIME_LOCK'], encoding='utf-8'))
+          lock_digest = hashlib.sha256(
+              json.dumps(lock, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+          ).hexdigest()
+          assert plan['schemaVersion'] == 'BERS_HSME_SANA_CONDITIONING_PARITY_PLAN_V1'
+          assert plan['qualityPolicy'] == 'QUALITY_FLOOR_BEFORE_EFFICIENCY'
+          assert plan['runtimeLockSha256'] == lock_digest
+          assert plan['rights']['status'] == 'EVIDENCE_RUN_ALLOWED'
+          assert plan['parityPolicy'] == {
+              'embeddingBytes': 'EXACT_SHA256',
+              'attentionMaskBytes': 'EXACT_SHA256',
+              'generationConfig': 'EXACT_CANONICAL_DIGEST',
+              'imageOutput': 'EXACT_SHA256_SAME_BACKEND',
+              'postObservationThresholdChangesAllowed': False,
+          }
+          assert plan['sanaSnapshot']['sourceRoot'] == 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers'
+          assert plan['sanaSnapshot']['immutableRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert plan['rawPromptPersisted'] is False
+          assert plan['modelRepositoryCodeExecutionAllowed'] is False
+          assert plan['productionAuthorityGranted'] is False
+          assert plan['providerAuthorityGranted'] is False
+          assert plan['billingAuthorityGranted'] is False
+          assert plan['projectArtifactMutationAllowed'] is False
+          assert plan['binaryArtifactsPublishable'] is False
+          rights_bytes = open(os.environ['RIGHTS_EVIDENCE'], 'rb').read()
+          assert hashlib.sha256(rights_bytes).hexdigest() == plan['rights']['evidenceSha256']
+          rights = json.loads(rights_bytes)
+          assert rights['schemaVersion'] == 'BERS_HSME_SANA_EVIDENCE_USE_RIGHTS_V1'
+          assert rights['weightRepository'] == 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers'
+          assert rights['weightRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert rights['gemmaTermsReviewed'] is True
+          assert rights['evidenceUseAllowed'] is True
+          assert rights['trainingOrDistillationAllowed'] is False
+          assert rights['productionUseAllowed'] is False
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install bounded verifier dependencies
+        run: npm ci
+
+      - name: Compile accepted Phase-0/Phase-1 evidence verifier
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          npx esbuild scripts/finalize-hsme-sana-parity-evidence.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile="${EVIDENCE_DIR}/verify-evidence.mjs" \
+            --external:node:*
+
+      - name: Bind committed Phase-0 evidence to parity plan before model network work
+        if: ${{ inputs.operation == 'RUN_EXACT_PARITY' }}
+        env:
+          PLAN_PATH: ${{ inputs.plan_path }}
+        run: |
+          set -euo pipefail
+          node "${EVIDENCE_DIR}/verify-evidence.mjs" check-phase0-plan \
+            "${PLAN_PATH}" "${PHASE0_ENVELOPE}" "${PHASE0_EVIDENCE}"
+
+      - name: Verify protected conditioning prompt before runtime acquisition
+        if: ${{ inputs.operation == 'PIN_CONDITIONING' }}
+        env:
+          REQUEST_PATH: ${{ inputs.conditioning_request_path }}
+          HSME_SANA_PROMPT: ${{ secrets.HSME_SANA_PROMPT }}
+          HSME_SANA_PROMPT_HMAC_KEY: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY }}
+          HSME_SANA_PROMPT_HMAC_KEY_ID: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${HSME_SANA_PROMPT}"
+          test -n "${HSME_SANA_PROMPT_HMAC_KEY}"
+          test -n "${HSME_SANA_PROMPT_HMAC_KEY_ID}"
+          python - <<'PY'
+          import hashlib, hmac, json, os
+          request = json.load(open(os.environ['REQUEST_PATH'], encoding='utf-8'))
+          assert os.environ['HSME_SANA_PROMPT_HMAC_KEY_ID'] == request['promptCommitmentKeyId']
+          actual = hmac.new(
+              os.environ['HSME_SANA_PROMPT_HMAC_KEY'].encode(),
+              os.environ['HSME_SANA_PROMPT'].encode(),
+              hashlib.sha256,
+          ).hexdigest()
+          assert hmac.compare_digest(actual, request['promptCommitmentHmacSha256'])
+          PY
+          command -v nvidia-smi >/dev/null
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+
+      - name: Verify protected parity prompt before runtime acquisition
+        if: ${{ inputs.operation == 'RUN_EXACT_PARITY' }}
+        env:
+          PLAN_PATH: ${{ inputs.plan_path }}
+          HSME_SANA_PROMPT: ${{ secrets.HSME_SANA_PROMPT }}
+          HSME_SANA_PROMPT_HMAC_KEY: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY }}
+          HSME_SANA_PROMPT_HMAC_KEY_ID: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${HSME_SANA_PROMPT}"
+          test -n "${HSME_SANA_PROMPT_HMAC_KEY}"
+          test -n "${HSME_SANA_PROMPT_HMAC_KEY_ID}"
+          python - <<'PY'
+          import hashlib, hmac, json, os
+          plan = json.load(open(os.environ['PLAN_PATH'], encoding='utf-8'))
+          assert os.environ['HSME_SANA_PROMPT_HMAC_KEY_ID'] == plan['promptCommitmentKeyId']
+          actual = hmac.new(
+              os.environ['HSME_SANA_PROMPT_HMAC_KEY'].encode(),
+              os.environ['HSME_SANA_PROMPT'].encode(),
+              hashlib.sha256,
+          ).hexdigest()
+          assert hmac.compare_digest(actual, plan['promptCommitmentHmacSha256'])
+          PY
+          command -v nvidia-smi >/dev/null
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+
+      - name: Fetch and verify exact direct runtime artifacts
+        run: |
+          set -euo pipefail
+          CORE_WHEELS="${RUNNER_TEMP}/hsme-core-wheels"
+          mkdir -p "${CORE_WHEELS}"
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, sys
+          lock = json.load(open(os.environ['RUNTIME_LOCK'], encoding='utf-8'))
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'hsme-core-wheels'
+          for package, artifact in lock['coreArtifacts'].items():
+              version = lock['packages'][package]
+              subprocess.check_call([
+                  sys.executable, '-m', 'pip', 'download', '--disable-pip-version-check',
+                  '--no-deps', '--only-binary=:all:', '--dest', str(root), f'{package}=={version}',
+              ])
+              path = root / artifact['filename']
+              if not path.is_file():
+                  raise SystemExit(f'expected wheel not downloaded: {path.name}')
+              digest = hashlib.sha256()
+              with path.open('rb') as handle:
+                  for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b''):
+                      digest.update(chunk)
+              if digest.hexdigest() != artifact['sha256']:
+                  raise SystemExit(f'wheel SHA-256 mismatch: {package}')
+          PY
+
+      - name: Install exact evidence runtime from verified direct artifacts
+        run: |
+          set -euo pipefail
+          CORE_WHEELS="${RUNNER_TEMP}/hsme-core-wheels"
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            "${CORE_WHEELS}/torch-2.14.0-cp312-cp312-manylinux_2_28_x86_64.whl" \
+            "${CORE_WHEELS}/diffusers-0.40.0-py3-none-any.whl" \
+            "${CORE_WHEELS}/transformers-5.17.0-py3-none-any.whl" \
+            "${CORE_WHEELS}/huggingface_hub-1.32.0-py3-none-any.whl" \
+            "${CORE_WHEELS}/safetensors-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl" \
+            "${CORE_WHEELS}/accelerate-1.15.0-py3-none-any.whl" \
+            "${CORE_WHEELS}/sentencepiece-0.2.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" \
+            "${CORE_WHEELS}/numpy-2.5.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+          python -m py_compile scripts/hsme-sana-parity-runner.py
+
+      - name: Record complete installed runtime and GPU inventory
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          python - <<'PY'
+          import hashlib, importlib.metadata, json, os, platform, subprocess
+          distributions = sorted(
+              [
+                  {'name': (dist.metadata.get('Name') or '').strip(), 'version': dist.version}
+                  for dist in importlib.metadata.distributions()
+              ],
+              key=lambda item: (item['name'].lower(), item['version']),
+          )
+          distributions = [item for item in distributions if item['name']]
+          canonical = json.dumps(distributions, sort_keys=True, separators=(',', ':')).encode()
+          gpu = subprocess.check_output(
+              ['nvidia-smi', '--query-gpu=name,driver_version,memory.total', '--format=csv,noheader,nounits'],
+              text=True,
+          ).strip().splitlines()
+          value = {
+              'schemaVersion': 'BERS_HSME_SANA_RUNTIME_INVENTORY_V1',
+              'pythonVersion': platform.python_version(),
+              'platform': platform.platform(),
+              'machine': platform.machine(),
+              'distributionInventorySha256': hashlib.sha256(canonical).hexdigest(),
+              'distributions': distributions,
+              'gpus': gpu,
+              'productionAuthorityGranted': False,
+              'providerAuthorityGranted': False,
+          }
+          with open(os.path.join(os.environ['EVIDENCE_DIR'], 'runtime-inventory.json'), 'w', encoding='utf-8') as handle:
+              json.dump(value, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+
+      - name: Capture conditioning-only Phase-0 envelope
+        if: ${{ inputs.operation == 'PIN_CONDITIONING' }}
+        env:
+          REQUEST_PATH: ${{ inputs.conditioning_request_path }}
+          HSME_SANA_PROMPT: ${{ secrets.HSME_SANA_PROMPT }}
+          HSME_SANA_PROMPT_HMAC_KEY: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY }}
+          HSME_SANA_PROMPT_HMAC_KEY_ID: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY_ID }}
+          HF_HOME: ${{ runner.temp }}/hsme-sana-hf
+          HF_HUB_CACHE: ${{ runner.temp }}/hsme-sana-hf/hub
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          set -euo pipefail
+          python scripts/hsme-sana-parity-runner.py PIN_CONDITIONING \
+            --runtime-lock "${RUNTIME_LOCK}" \
+            --request "${REQUEST_PATH}" \
+            --work-root "${RUNNER_TEMP}/hsme-sana-conditioning-work" \
+            --out "${EVIDENCE_DIR}/conditioning-envelope.json"
+
+      - name: Prove conditioning bytes through accepted Phase-0 contract
+        if: ${{ inputs.operation == 'PIN_CONDITIONING' }}
+        run: |
+          set -euo pipefail
+          node "${EVIDENCE_DIR}/verify-evidence.mjs" phase0 \
+            "${EVIDENCE_DIR}/conditioning-envelope.json" \
+            "${RUNNER_TEMP}/hsme-sana-conditioning-work/transport/prompt-embeddings.bf16le" \
+            "${RUNNER_TEMP}/hsme-sana-conditioning-work/transport/prompt-attention-mask.i64le" \
+            "${EVIDENCE_DIR}/conditioning-evidence.json"
+
+      - name: Run exact same-backend split-conditioning parity
+        if: ${{ inputs.operation == 'RUN_EXACT_PARITY' }}
+        env:
+          PLAN_PATH: ${{ inputs.plan_path }}
+          HSME_SANA_PROMPT: ${{ secrets.HSME_SANA_PROMPT }}
+          HSME_SANA_PROMPT_HMAC_KEY: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY }}
+          HSME_SANA_PROMPT_HMAC_KEY_ID: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY_ID }}
+          HF_HOME: ${{ runner.temp }}/hsme-sana-hf
+          HF_HUB_CACHE: ${{ runner.temp }}/hsme-sana-hf/hub
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          set -euo pipefail
+          python scripts/hsme-sana-parity-runner.py RUN_EXACT_PARITY \
+            --runtime-lock "${RUNTIME_LOCK}" \
+            --plan "${PLAN_PATH}" \
+            --phase0-envelope "${PHASE0_ENVELOPE}" \
+            --work-root "${RUNNER_TEMP}/hsme-sana-parity-work" \
+            --out "${EVIDENCE_DIR}/exact-parity.json"
+
+      - name: Validate parity JSON through accepted Phase-1A contract
+        if: ${{ inputs.operation == 'RUN_EXACT_PARITY' }}
+        env:
+          PLAN_PATH: ${{ inputs.plan_path }}
+        run: |
+          set -euo pipefail
+          node "${EVIDENCE_DIR}/verify-evidence.mjs" parity \
+            "${PLAN_PATH}" "${PHASE0_ENVELOPE}" \
+            "${EVIDENCE_DIR}/exact-parity.json" \
+            "${EVIDENCE_DIR}/validated-evidence.json"
+
+      - name: Destroy all model/runtime/tensor/image bytes before evidence upload
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          rm -rf "${RUNNER_TEMP}/hsme-sana-conditioning-work" \
+                 "${RUNNER_TEMP}/hsme-sana-parity-work" \
+                 "${RUNNER_TEMP}/hsme-sana-hf" \
+                 "${RUNNER_TEMP}/hsme-core-wheels"
+          find "${EVIDENCE_DIR}" -type f ! -name '*.json' -delete || true
+          test "$(find "${EVIDENCE_DIR}" -type f ! -name '*.json' | wc -l)" -eq 0
+          test ! -e "${RUNNER_TEMP}/hsme-sana-conditioning-work"
+          test ! -e "${RUNNER_TEMP}/hsme-sana-parity-work"
+          test ! -e "${RUNNER_TEMP}/hsme-sana-hf"
+          test ! -e "${RUNNER_TEMP}/hsme-core-wheels"
+
+      - name: Upload JSON-only conditioning evidence
+        if: ${{ inputs.operation == 'PIN_CONDITIONING' && success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-sana-conditioning-evidence-${{ inputs.candidate_sha }}
+          path: |
+            .test-cache/hsme-sana-parity/conditioning-envelope.json
+            .test-cache/hsme-sana-parity/conditioning-evidence.json
+            .test-cache/hsme-sana-parity/runtime-inventory.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload JSON-only parity evidence
+        if: ${{ inputs.operation == 'RUN_EXACT_PARITY' && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-sana-exact-parity-${{ inputs.candidate_sha }}
+          path: .test-cache/hsme-sana-parity/*.json
+          if-no-files-found: warn
+          retention-days: 7
