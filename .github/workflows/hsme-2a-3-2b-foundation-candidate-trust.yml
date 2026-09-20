@@ -1,0 +1,76 @@
+name: HSME-2a.3.2b benchmark candidate trust binding
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCandidateTrustV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCampaignV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json'
+      - 'tests/creative-hsme-foundation-benchmark-candidate-trust-v1.test.mjs'
+      - '.github/workflows/hsme-2a-3-2b-foundation-candidate-trust.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-trust-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Browser/Core typecheck
+        run: npm run server:typecheck
+
+      - name: Prove artifact, execution-profile and rights binding
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-2b
+          npx esbuild tests/creative-hsme-foundation-benchmark-candidate-trust-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-2b/trust.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-2b/trust.test.mjs
+
+      - name: Pending trust pack cannot fabricate exact evidence
+        run: |
+          set -euo pipefail
+          PACK=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json
+          grep -F '"state": "EVIDENCE_PENDING"' "${PACK}"
+          grep -F '"campaignDigest": "UNKNOWN"' "${PACK}"
+          test "$(grep -c '"state": "EVIDENCE_PENDING"' "${PACK}")" -eq 13
+          test "$(grep -c '"reviewState": "REVIEW_REQUIRED"' "${PACK}")" -eq 6
+          test "$(grep -c '"artifacts": \[\]' "${PACK}")" -eq 6
+          grep -F '"winnerSelectionAllowed": false' "${PACK}"
+          grep -F '"efficiencyUsedInQualitySelection": false' "${PACK}"
+          grep -F '"productionAuthorityGranted": false' "${PACK}"
+
+      - name: Ordinary CI cannot acquire or execute benchmark models
+        run: |
+          set -euo pipefail
+          ! grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|torch\.cuda|secrets\.' \
+            src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCandidateTrustV1.ts \
+            tests/creative-hsme-foundation-benchmark-candidate-trust-v1.test.mjs
+          ! sed '/grep -E/d' .github/workflows/hsme-2a-3-2b-foundation-candidate-trust.yml | \
+            grep -E 'pip install.*torch|huggingface-cli|hf download|wget|curl|snapshot_download|from_pretrained'
+
+      - name: Trust binding cannot widen production authority
+        run: |
+          set -euo pipefail
+          ! grep -E "from .*Billing|from .*Project|from .*Artifact|from .*DurableModelFleet|providerSelector|executionTarget" \
+            src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkCandidateTrustV1.ts
