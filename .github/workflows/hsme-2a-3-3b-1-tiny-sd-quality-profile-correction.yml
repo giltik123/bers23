@@ -1,0 +1,134 @@
+name: HSME-2a.3.3b.1 Tiny-SD quality profile correction
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/hsme_correct_tiny_sd_quality_profile.mjs'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-execution-profiles.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-rights-admission.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-trust-finalization-summary.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-tiny-sd-quality-profile-correction.v1.json'
+      - '.github/workflows/hsme-2a-3-3b-1-tiny-sd-quality-profile-correction.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tiny-sd-quality-profile-correction:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build deterministic correction finalizer
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3b-1
+          npx esbuild scripts/hsme_correct_tiny_sd_quality_profile.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3b-1/correct.mjs \
+            --external:node:*
+
+      - name: Derive corrected profile and trust payloads
+        run: |
+          set -euo pipefail
+          node .test-cache/hsme-2a-3-3b-1/correct.mjs .test-cache/hsme-2a-3-3b-1/finalized
+
+      - name: Prove quality-first correction scope
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.test-cache/hsme-2a-3-3b-1/finalized')
+          correction = json.loads((root / 'hsme-tiny-sd-quality-profile-correction.v1.json').read_text())
+          profiles = json.loads((root / 'hsme-foundation-benchmark-execution-profiles.v1.json').read_text())
+          campaign = json.loads((root / 'hsme-foundation-benchmark-campaign.v1.json').read_text())
+          trust = json.loads((root / 'hsme-foundation-benchmark-candidate-trust.v1.json').read_text())
+          assert correction['schemaVersion'] == 'BERS_HSME_TINY_SD_QUALITY_PROFILE_CORRECTION_V1'
+          assert correction['candidateOutputsObservedBefore'] is False
+          assert correction['candidateOutputsObservedAfter'] is False
+          assert correction['oldTorchVersion'] == '2.0.1+cpu'
+          assert correction['newTorchVersion'] == '2.0.1+cu118'
+          assert correction['oldStepCount'] == 12
+          assert correction['newStepCount'] == 50
+          assert correction['guidanceScale'] == 7.5
+          assert correction['width'] == 512 and correction['height'] == 512
+          assert correction['precisionPolicy'] == 'FP16_MODEL_WEIGHTS_FP32_SCHEDULER_CONTROL'
+          assert correction['hardwareBackendClass'] == 'CUDA_FP16_REFERENCE_GPU'
+          assert correction['schedulerSampler'] == 'DPMSolverMultistepScheduler:dpmsolver++:order2:midpoint'
+          assert correction['fixturePackChanged'] is False
+          assert correction['thresholdsChanged'] is False
+          assert correction['modelBytesChanged'] is False
+          assert correction['rightsChanged'] is False
+          assert correction['efficiencyUsedInQualitySelection'] is False
+          for field in (
+              'productionAuthorityGranted',
+              'providerAuthorityGranted',
+              'billingAuthorityGranted',
+              'projectArtifactMutationAllowed',
+              'aeeExecutionAuthorityGranted',
+              'durableModelFleetPromotionAllowed',
+              'trainingOrDistillationAllowed',
+              'winnerSelectionAllowed',
+          ):
+              assert correction[field] is False, field
+          lock = profiles['runtimeLocks']['tiny-sd-quality-gpu-v1']
+          assert lock['python'] == '3.11'
+          assert lock['platform'] == 'LINUX_X86_64_CUDA_11_8'
+          assert lock['packages']['torch'] == '2.0.1+cu118'
+          tiny = next(item for item in profiles['profiles'] if item['candidateId'] == 'tiny-sd-control-v1')
+          assert tiny['runtimeLockId'] == 'tiny-sd-quality-gpu-v1'
+          assert tiny['sourceSpec']['stepCount'] == 50
+          assert tiny['executionProfile']['stepCount'] == 50
+          assert tiny['executionProfile']['toolchainLockSha256'] == lock['lockSha256']
+          assert not any('d6-accelerated' in value.lower() for value in tiny['sourceSpec']['sourceEvidence'])
+          c = next(item for item in campaign['candidates'] if item['candidateId'] == 'tiny-sd-control-v1')
+          assert c['executionProfileSha256'] == tiny['executionProfileSha256']
+          assert c['modelContentSha256'] == correction['modelContentSha256']
+          assert c['rightsEvidenceSha256'] == correction['rightsEvidenceSha256']
+          assert trust['state'] == 'PINNED'
+          assert trust['campaignDigest'] == correction['newCampaignDigest']
+          assert trust['candidateOutputsObserved'] is False
+          assert trust['ordinaryCiModelExecutionAllowed'] is False
+          assert trust['productionAuthorityGranted'] is False
+          assert trust['trainingOrDistillationAllowed'] is False
+          PY
+
+      - name: Ordinary CI cannot execute or acquire foundation models
+        run: |
+          set -euo pipefail
+          ! grep -E 'from_pretrained\(|snapshot_download\(|torch\.cuda|nvidia-smi|pip install.*torch|hf download|huggingface-cli' \
+            scripts/hsme_correct_tiny_sd_quality_profile.mjs
+          git diff --check "$(git merge-base HEAD origin/main)"..HEAD
+
+      - name: Emit byte-exact corrected payloads
+        run: |
+          set -euo pipefail
+          for file in .test-cache/hsme-2a-3-3b-1/finalized/*.json; do
+            printf 'BERS_HSME_TINY_SD_CORRECTION_PAYLOAD::%s::%s\n' "$(basename "$file")" "$(base64 -w0 "$file")"
+          done
+
+      - name: Upload correction evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-tiny-sd-quality-profile-correction-${{ github.sha }}
+          path: .test-cache/hsme-2a-3-3b-1/finalized/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_CANDIDATE_TRUST_V1",
   "campaignId": "bers-hsme-foundation-bakeoff-2026q3-v1",
-  "campaignDigest": "d7d2ece96c322d4d0d55181b35453343de884ae38b45366313568fb836881100",
+  "campaignDigest": "80cd8a4abf683cd3e165f58896c5f2083065510e539e5e53d929fdfa62d193a6",
   "state": "PINNED",
   "candidates": [
     {
@@ -2571,10 +2571,10 @@
         "state": "PINNED",
         "artifactManifestDigest": "c970d12d38dbc907a0bf5a3856ce83e3b2fb499d1c3b8d5ca4b377c57ed6904a",
         "pipelineClass": "StableDiffusionPipeline",
-        "toolchainLockSha256": "8be51df0dd93579cab16252dc609a63224899bbfe83b5a3403a82a5589222fe9",
+        "toolchainLockSha256": "1beabbef31a7ebff0284f8e6e05c318702b94e65889a28920f85934aa85715ee",
         "precisionPolicy": "FP16_MODEL_WEIGHTS_FP32_SCHEDULER_CONTROL",
         "schedulerSampler": "DPMSolverMultistepScheduler:dpmsolver++:order2:midpoint",
-        "stepCount": 12,
+        "stepCount": 50,
         "guidancePolicySha256": "3dca83cdb670134b7daca8a8b7e418df93267fc4ab8fdd68efbdd0030abda56e",
         "resolutionAspectPolicySha256": "690264ab27eed97b3996fe6e12f320e6475faab893e40cc7c687362ab00e9569",
         "deterministicSeedLatentPolicySha256": "922104221b85ef763d529f2df5e09fe3080d0bd27e81410276dab8c20de07f35",
