@@ -65,3 +65,57 @@ jobs:
           grep -F "'composition-count-spatial-correctness'" src/platform/creative/local-ai/hsme/HsmeFoundationQualityBakeoffV1.ts
           grep -F "productionAuthorityGranted: false" "${CONTRACT}"
           grep -F "winnerSelectionAllowed: false" "${CONTRACT}"
+
+
+  protected-executor-contract:
+    name: HSME-2a.3.3b protected executor synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for protected executor contract
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile protected executor planner and verifier without model runtime
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3b
+          npx esbuild tests/hsme-foundation-benchmark-executor-plan.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3b/planner.test.mjs \
+            --external:node:*
+          npx esbuild scripts/hsme-foundation-benchmark-executor-verify.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3b/verify.mjs \
+            --external:node:*
+
+      - name: Run protected executor synthetic contracts
+        run: |
+          set -euo pipefail
+          node --test .test-cache/hsme-2a-3-3b/planner.test.mjs
+          node --test tests/hsme-foundation-benchmark-executor-workflow-policy.test.mjs
+          python -m py_compile scripts/hsme-foundation-benchmark-executor.py
+          python -m unittest tests/test-hsme-foundation-benchmark-executor.py
+
+      - name: Prove protected executor ordinary CI remains model-free
+        run: |
+          set -euo pipefail
+          ! grep -nE 'secrets\.HSME_FOUNDATION_BLIND_HMAC_KEY|hf_hub_download|from_pretrained|nvidia-smi' tests/hsme-foundation-benchmark-executor-plan.test.mjs
+          ! grep -nE 'latencyMs|workingMemoryBytes|installedBytes|costMicrousd|selectedCandidateId' scripts/hsme-foundation-benchmark-executor-plan.mjs
+          grep -F "ordinaryCiModelExecutionAllowed:false" scripts/hsme-foundation-benchmark-executor-plan.mjs
+          grep -F "winnerSelectionAllowed:false" scripts/hsme-foundation-benchmark-executor-plan.mjs
