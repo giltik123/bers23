@@ -1,0 +1,67 @@
+name: HSME-2a.3.3a foundation benchmark run evidence contract
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkRunEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationQualityBakeoffV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-fixture-plan.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-fixture-pack-evidence.v1.json'
+      - 'tests/creative-hsme-foundation-benchmark-run-evidence-v1.test.mjs'
+      - 'tests/creative-hsme-foundation-quality-bakeoff-v1.test.mjs'
+      - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-evidence-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: github.event_name == 'pull_request'
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prove raw run evidence against frozen campaign/trust/fixtures
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3a
+          npx esbuild tests/creative-hsme-foundation-benchmark-run-evidence-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3a/run-evidence.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3a/run-evidence.test.mjs
+
+      - name: Preserve quality-first bakeoff contract with frozen composition dimension
+        run: |
+          set -euo pipefail
+          npx esbuild tests/creative-hsme-foundation-quality-bakeoff-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3a/quality.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3a/quality.test.mjs
+
+      - name: Raw evidence cannot encode efficiency, scores or winner authority
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkRunEvidenceV1.ts
+          ! grep -E 'latencyMs|workingMemoryBytes|installedBytes|costMicrousd|qualityScore|aggregateScore|selectedCandidateId' "${CONTRACT}"
+          grep -F "'BLOCKED_PARITY_PENDING'" "${CONTRACT}"
+          grep -F "'composition-count-spatial-correctness'" src/platform/creative/local-ai/hsme/HsmeFoundationQualityBakeoffV1.ts
+          grep -F "productionAuthorityGranted: false" "${CONTRACT}"
+          grep -F "winnerSelectionAllowed: false" "${CONTRACT}"
