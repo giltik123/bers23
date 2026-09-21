@@ -11,6 +11,9 @@ on:
       - 'src/platform/creative/local-ai/hsme/hsme-foundation-fixture-pack-evidence.v1.json'
       - 'tests/creative-hsme-foundation-benchmark-run-evidence-v1.test.mjs'
       - 'tests/creative-hsme-foundation-quality-bakeoff-v1.test.mjs'
+      - 'scripts/hsme-foundation-benchmark-evidence-collector.mjs'
+      - 'tests/hsme-foundation-benchmark-evidence-collector.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-dispatch-matrix.v1.json'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -119,3 +122,45 @@ jobs:
           ! grep -nE 'latencyMs|workingMemoryBytes|installedBytes|costMicrousd|selectedCandidateId' scripts/hsme-foundation-benchmark-executor-plan.mjs
           grep -F "ordinaryCiModelExecutionAllowed:false" scripts/hsme-foundation-benchmark-executor-plan.mjs
           grep -F "winnerSelectionAllowed:false" scripts/hsme-foundation-benchmark-executor-plan.mjs
+
+
+  evidence-collector-contract:
+    name: HSME-2a.3.3c evidence collector synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for evidence collector contract
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run evidence collector synthetic contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3c-build
+          npx esbuild tests/hsme-foundation-benchmark-evidence-collector.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3c-build/collector.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3c-build/collector.test.mjs
+
+      - name: Prove collector ordinary CI cannot dispatch models or encode winner/efficiency authority
+        run: |
+          set -euo pipefail
+          COLLECTOR=scripts/hsme-foundation-benchmark-evidence-collector.mjs
+          MATRIX=src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-dispatch-matrix.v1.json
+          ! grep -nE 'hf_hub_download|from_pretrained|nvidia-smi|workflow_dispatch.*curl|gh workflow run|secrets\.' "${COLLECTOR}"
+          ! grep -nE 'qualityScore|aggregateScore|selectedCandidateId|winnerCandidate|latencyMs|workingMemoryBytes|installedBytes|costMicrousd' "${COLLECTOR}"
+          grep -F "ordinaryCiDispatchAllowed" "${MATRIX}"
+          grep -F '"winnerSelectionAllowed": false' "${MATRIX}"
+          grep -F "winnerSelectionAllowed:false" "${COLLECTOR}"

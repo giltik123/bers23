@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "BERS_HSME_FOUNDATION_BENCHMARK_DISPATCH_MATRIX_V1",
+  "acceptedExecutorBaseSha": "5913e2b0975aa4cef17a1a41ede2c5a78f54b95d",
+  "campaignId": "bers-hsme-foundation-bakeoff-2026q3-v1",
+  "candidateShaInput": "5913e2b0975aa4cef17a1a41ede2c5a78f54b95d",
+  "rows": [
+    {
+      "candidateId": "flux2-klein-4b-distilled-v1",
+      "capability": "IMAGE_EDITING",
+      "currentExpectedDisposition": "EXECUTE"
+    },
+    {
+      "candidateId": "flux2-klein-4b-distilled-v1",
+      "capability": "TEXT_TO_IMAGE",
+      "currentExpectedDisposition": "EXECUTE"
+    },
+    {
+      "candidateId": "flux2-klein-base-4b-v1",
+      "capability": "IMAGE_EDITING",
+      "currentExpectedDisposition": "EXECUTE"
+    },
+    {
+      "candidateId": "flux2-klein-base-4b-v1",
+      "capability": "TEXT_TO_IMAGE",
+      "currentExpectedDisposition": "EXECUTE"
+    },
+    {
+      "candidateId": "qwen-image-edit-2511-reference-v1",
+      "capability": "IMAGE_EDITING",
+      "currentExpectedDisposition": "EXECUTE"
+    },
+    {
+      "candidateId": "qwen-image-edit-2511-reference-v1",
+      "capability": "TEXT_TO_IMAGE",
+      "currentExpectedDisposition": "NOT_APPLICABLE"
+    },
+    {
+      "candidateId": "qwen-image-t2i-reference-v1",
+      "capability": "IMAGE_EDITING",
+      "currentExpectedDisposition": "NOT_APPLICABLE"
+    },
+    {
+      "candidateId": "qwen-image-t2i-reference-v1",
+      "capability": "TEXT_TO_IMAGE",
+      "currentExpectedDisposition": "EXECUTE"
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-split-v1",
+      "capability": "IMAGE_EDITING",
+      "currentExpectedDisposition": "NOT_APPLICABLE"
+    },
+    {
+      "candidateId": "sana-sprint-0.6b-split-v1",
+      "capability": "TEXT_TO_IMAGE",
+      "currentExpectedDisposition": "BLOCKED_PARITY_PENDING"
+    },
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "capability": "IMAGE_EDITING",
+      "currentExpectedDisposition": "NOT_APPLICABLE"
+    },
+    {
+      "candidateId": "tiny-sd-control-v1",
+      "capability": "TEXT_TO_IMAGE",
+      "currentExpectedDisposition": "EXECUTE"
+    }
+  ],
+  "manualDispatchOnly": true,
+  "ordinaryCiDispatchAllowed": false,
+  "candidateOutputsObserved": false,
+  "productionAuthorityGranted": false,
+  "providerAuthorityGranted": false,
+  "billingAuthorityGranted": false,
+  "projectArtifactMutationAllowed": false,
+  "aeeExecutionAuthorityGranted": false,
+  "durableModelFleetPromotionAllowed": false,
+  "trainingOrDistillationAllowed": false,
+  "winnerSelectionAllowed": false
+}
