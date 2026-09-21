@@ -137,7 +137,13 @@ test('trust pack carries the same six PINNED execution profiles with complete ar
 
 test('quality baselines keep distilled/Base and T2I/Edit semantics distinct', () => {
   const tiny = profile('tiny-sd-control-v1');
-  assert.equal(tiny.sourceSpec.stepCount, 12);
+  assert.equal(tiny.runtimeLockId, 'tiny-sd-quality-gpu-v1');
+  assert.equal(tiny.sourceSpec.stepCount, 50);
+  assert.equal(tiny.executionProfile.stepCount, 50);
+  assert.equal(profileSet.runtimeLocks['tiny-sd-quality-gpu-v1'].packages.torch, '2.0.1+cu118');
+  assert.equal(profileSet.runtimeLocks['tiny-sd-quality-gpu-v1'].platform, 'LINUX_X86_64_CUDA_11_8');
+  assert.equal(profileSet.runtimeLocks['tiny-sd-historical-v1'].packages.torch, '2.0.1+cpu');
+  assert.equal(tiny.sourceSpec.sourceEvidence.some(value => value.toLowerCase().includes('d6-accelerated')), false);
   assert.equal(tiny.sourceSpec.guidance.guidanceScale, 7.5);
   assert.equal(tiny.sourceSpec.resolutionAspect.textToImage.width, 512);
 

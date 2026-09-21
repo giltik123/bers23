@@ -42,16 +42,40 @@
         "scripts/hsme-sana-parity-runner.py"
       ],
       "lockSha256": "46dd389d18a14957adc43b6f84eab3659e13d5566d4af8636f7c0c4f05a2f8d3"
+    },
+    "tiny-sd-quality-gpu-v1": {
+      "python": "3.11",
+      "platform": "LINUX_X86_64_CUDA_11_8",
+      "packages": {
+        "torch": "2.0.1+cu118",
+        "diffusers": "0.19.0",
+        "transformers": "4.30.2",
+        "huggingface-hub": "0.16.4",
+        "numpy": "1.24.4",
+        "safetensors": "0.3.1"
+      },
+      "packageIndexes": {
+        "torch": "https://download.pytorch.org/whl/cu118",
+        "default": "https://pypi.org/simple"
+      },
+      "sourceEvidence": [
+        "https://huggingface.co/segmind/tiny-sd/blob/cad0bd7495fa6c4bcca01b19a723dc91627fe84f/README.md",
+        "scripts/probe-tiny-sd-d5-control.py",
+        "https://huggingface.co/docs/diffusers/v0.19.0/api/pipelines/stable_diffusion/text2img",
+        "https://docs.pytorch.org/get-started/previous-versions/#v201",
+        "https://download.pytorch.org/whl/cu118/torch/"
+      ],
+      "lockSha256": "1beabbef31a7ebff0284f8e6e05c318702b94e65889a28920f85934aa85715ee"
     }
   },
   "profiles": [
     {
       "candidateId": "tiny-sd-control-v1",
-      "runtimeLockId": "tiny-sd-historical-v1",
+      "runtimeLockId": "tiny-sd-quality-gpu-v1",
       "sourceSpec": {
         "precisionPolicy": "FP16_MODEL_WEIGHTS_FP32_SCHEDULER_CONTROL",
         "schedulerSampler": "DPMSolverMultistepScheduler:dpmsolver++:order2:midpoint",
-        "stepCount": 12,
+        "stepCount": 50,
         "guidance": {
           "mode": "CLASSIFIER_FREE_GUIDANCE",
           "guidanceScale": 7.5,
@@ -84,8 +108,10 @@
         },
         "hardwareBackendClass": "CUDA_FP16_REFERENCE_GPU",
         "sourceEvidence": [
-          "tests/tiny-sd-d6-accelerated-admission-policy.test.mjs",
-          "scripts/probe-tiny-sd-d5-control.py"
+          "segmind/tiny-sd@cad0bd7495fa6c4bcca01b19a723dc91627fe84f/README.md",
+          "scripts/probe-tiny-sd-d5-control.py",
+          "diffusers==0.19.0 StableDiffusionPipeline reference defaults",
+          "pytorch==2.0.1 CUDA 11.8 official wheel index"
         ]
       },
       "executionProfile": {
@@ -94,10 +120,10 @@
         "state": "PINNED",
         "artifactManifestDigest": "c970d12d38dbc907a0bf5a3856ce83e3b2fb499d1c3b8d5ca4b377c57ed6904a",
         "pipelineClass": "StableDiffusionPipeline",
-        "toolchainLockSha256": "8be51df0dd93579cab16252dc609a63224899bbfe83b5a3403a82a5589222fe9",
+        "toolchainLockSha256": "1beabbef31a7ebff0284f8e6e05c318702b94e65889a28920f85934aa85715ee",
         "precisionPolicy": "FP16_MODEL_WEIGHTS_FP32_SCHEDULER_CONTROL",
         "schedulerSampler": "DPMSolverMultistepScheduler:dpmsolver++:order2:midpoint",
-        "stepCount": 12,
+        "stepCount": 50,
         "guidancePolicySha256": "3dca83cdb670134b7daca8a8b7e418df93267fc4ab8fdd68efbdd0030abda56e",
         "resolutionAspectPolicySha256": "690264ab27eed97b3996fe6e12f320e6475faab893e40cc7c687362ab00e9569",
         "deterministicSeedLatentPolicySha256": "922104221b85ef763d529f2df5e09fe3080d0bd27e81410276dab8c20de07f35",
@@ -107,7 +133,7 @@
         "remoteCodePolicy": "NO_MODEL_REPOSITORY_RUNTIME_CODE",
         "hardwareBackendClass": "CUDA_FP16_REFERENCE_GPU"
       },
-      "executionProfileSha256": "8b0a3d160a9e1d9df9678d37dcb7153009dd6ea0965e7e4a400235cfb1bfd233"
+      "executionProfileSha256": "b747a330f49d127bf60eb0975955c9c0e44ed591e3430207ba3e1c0f9a1de062"
     },
     {
       "candidateId": "sana-sprint-0.6b-split-v1",

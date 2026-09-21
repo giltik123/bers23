@@ -1,6 +1,6 @@
 {
   "schemaVersion": "BERS_HSME_FOUNDATION_TRUST_FINALIZATION_SUMMARY_V1",
-  "campaignDigest": "d7d2ece96c322d4d0d55181b35453343de884ae38b45366313568fb836881100",
+  "campaignDigest": "80cd8a4abf683cd3e165f58896c5f2083065510e539e5e53d929fdfa62d193a6",
   "campaignMayFinalize": true,
   "trustState": "PINNED",
   "candidates": [
@@ -42,7 +42,7 @@
     {
       "candidateId": "tiny-sd-control-v1",
       "modelContentSha256": "c970d12d38dbc907a0bf5a3856ce83e3b2fb499d1c3b8d5ca4b377c57ed6904a",
-      "executionProfileSha256": "8b0a3d160a9e1d9df9678d37dcb7153009dd6ea0965e7e4a400235cfb1bfd233",
+      "executionProfileSha256": "b747a330f49d127bf60eb0975955c9c0e44ed591e3430207ba3e1c0f9a1de062",
       "rightsEvidenceSha256": "3329c02d925c031cb9b872eae0c8c00f02d960e64ef5e63260beb42b1664905b",
       "benchmarkRunnable": true
     }

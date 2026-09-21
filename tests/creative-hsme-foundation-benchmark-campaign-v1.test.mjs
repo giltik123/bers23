@@ -143,7 +143,7 @@ test('Tiny-SD control binds the accepted repository trust-root revision and pinn
   assert.equal(tiny.sourceRoot, 'segmind/tiny-sd');
   assert.equal(tiny.immutableRevision, tinyManifest.upstream.revision);
   assert.equal(tiny.modelContentSha256, 'c970d12d38dbc907a0bf5a3856ce83e3b2fb499d1c3b8d5ca4b377c57ed6904a');
-  assert.equal(tiny.executionProfileSha256, '8b0a3d160a9e1d9df9678d37dcb7153009dd6ea0965e7e4a400235cfb1bfd233');
+  assert.equal(tiny.executionProfileSha256, 'b747a330f49d127bf60eb0975955c9c0e44ed591e3430207ba3e1c0f9a1de062');
   assert.equal(tiny.trustBinding, 'src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json');
   assert.deepEqual(tiny.roles, ['CONTROL_BASELINE']);
 });
