@@ -4,10 +4,14 @@ on:
   pull_request:
     paths:
       - 'scripts/hsme-sana-parity-runner.py'
+      - 'scripts/hsme-sana-parity-bootstrap.py'
       - 'scripts/finalize-hsme-sana-parity-evidence.mjs'
       - 'tests/test-hsme-sana-parity-runner.py'
+      - 'tests/test-hsme-sana-parity-bootstrap.py'
       - 'tests/hsme-sana-parity-runner-workflow-policy.test.mjs'
       - 'src/platform/creative/local-ai/hsme/sana-parity-runtime-lock.v1.json'
+      - 'src/platform/creative/local-ai/hsme/sana-sprint-evidence-use-rights.v1.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json'
       - 'src/platform/creative/local-ai/hsme/HsmeSanaSplitConditioningEnvelopeV1.ts'
       - 'src/platform/creative/local-ai/hsme/HsmeSanaConditioningParityEvidenceV1.ts'
       - 'tests/creative-hsme-sana-split-conditioning-envelope-v1.test.mjs'
@@ -43,11 +47,15 @@ jobs:
 
       - run: npm ci
 
-      - name: Compile runner without importing model runtimes
-        run: python -m py_compile scripts/hsme-sana-parity-runner.py
+      - name: Compile runner/bootstrap without importing model runtimes
+        run: |
+          python -m py_compile scripts/hsme-sana-parity-runner.py
+          python -m py_compile scripts/hsme-sana-parity-bootstrap.py
 
-      - name: Run synthetic runner unit tests
-        run: python -m unittest tests/test-hsme-sana-parity-runner.py
+      - name: Run synthetic runner/bootstrap unit tests
+        run: |
+          python -m unittest tests/test-hsme-sana-parity-runner.py
+          python -m unittest tests/test-hsme-sana-parity-bootstrap.py
 
       - name: Prove dispatch-only GPU workflow policy
         run: node --test tests/hsme-sana-parity-runner-workflow-policy.test.mjs
@@ -87,8 +95,10 @@ jobs:
             grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|secrets\.HSME_SANA_PROMPT'
           ! grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi|HSME_SANA_PROMPT' \
             tests/test-hsme-sana-parity-runner.py
+          ! grep -E 'snapshot_download\(|from_pretrained\(|nvidia-smi' \
+            scripts/hsme-sana-parity-bootstrap.py
 
       - name: Runner source must not import production execution authority
         run: |
           ! grep -E '^(from|import) .*DurableModelFleet|^(from|import) .*Billing|^(from|import) .*Project|^(from|import) .*Artifact|providerSelector|executionTarget' \
-            scripts/hsme-sana-parity-runner.py
+            scripts/hsme-sana-parity-runner.py scripts/hsme-sana-parity-bootstrap.py

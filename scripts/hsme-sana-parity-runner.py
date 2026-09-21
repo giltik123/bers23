@@ -15,7 +15,7 @@ import sys
 from typing import Any
 
 SANA_REPO = "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers"
-SANA_REVISION = "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97"
+SANA_REVISION = "aa76e7f4f4928f378716b6716a2130fba3caf5b1"
 DIFFUSERS_REPO = "huggingface/diffusers"
 DIFFUSERS_REVISION = "d035dcd7cc7c88e0a154609b62887d50bba9fdc2"
 TRANSFORMERS_REPO = "huggingface/transformers"
@@ -293,6 +293,81 @@ def verify_local_snapshot(snapshot: Path, inventory: list[dict[str, Any]]) -> No
             raise RunnerError(f"unsupported identity kind: {item['identityKind']}")
 
 
+def accepted_sana_trust(candidate_trust_path: Path) -> tuple[dict[str, Any], dict[str, str]]:
+    trust = read_json(candidate_trust_path)
+    if trust.get("schemaVersion") != "BERS_HSME_FOUNDATION_BENCHMARK_CANDIDATE_TRUST_V1":
+        raise RunnerError("accepted candidate trust schema mismatch")
+    if trust.get("state") != "PINNED":
+        raise RunnerError("accepted candidate trust must be PINNED")
+    if trust.get("candidateOutputsObserved") is not False:
+        raise RunnerError("accepted candidate trust unexpectedly observed outputs")
+    candidate = next(
+        (item for item in trust.get("candidates", []) if item.get("candidateId") == "sana-sprint-0.6b-split-v1"),
+        None,
+    )
+    if candidate is None:
+        raise RunnerError("accepted SANA trust candidate missing")
+    manifest = candidate.get("artifactManifest")
+    if not isinstance(manifest, dict) or manifest.get("state") != "PINNED":
+        raise RunnerError("accepted SANA artifact manifest must be PINNED")
+    if manifest.get("primarySource") != {"sourceRoot": SANA_REPO, "immutableRevision": SANA_REVISION}:
+        raise RunnerError("accepted SANA artifact source mismatch")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise RunnerError("accepted SANA artifact list missing")
+    profile = candidate.get("executionProfile")
+    if not isinstance(profile, dict) or profile.get("state") != "PINNED":
+        raise RunnerError("accepted SANA execution profile must be PINNED")
+    model_content = profile.get("artifactManifestDigest")
+    require_hex(model_content, 64, "accepted SANA model content")
+
+    def projection(prefix: str) -> str:
+        selected = [
+            {
+                "relativePath": item["relativePath"],
+                "bytes": item["bytes"],
+                "contentSha256": item["contentSha256"],
+            }
+            for item in artifacts
+            if item.get("runtimeRequired") is True and str(item.get("relativePath", "")).startswith(prefix)
+        ]
+        selected.sort(key=lambda item: item["relativePath"])
+        if not selected:
+            raise RunnerError(f"accepted SANA component projection is empty: {prefix}")
+        return sha256_json(selected)
+
+    components = {name: projection(prefix) for name, prefix in COMPONENT_PREFIXES.items()}
+    components["sanaSnapshot"] = model_content
+    return candidate, components
+
+
+def verify_local_snapshot_against_trust(
+    snapshot: Path,
+    candidate: dict[str, Any],
+    allowed_prefixes: tuple[str, ...] | None = None,
+) -> None:
+    artifacts = candidate["artifactManifest"]["artifacts"]
+    selected = [
+        item for item in artifacts
+        if item.get("runtimeRequired") is True
+        and (
+            allowed_prefixes is None
+            or item["relativePath"] == "model_index.json"
+            or any(item["relativePath"].startswith(prefix) for prefix in allowed_prefixes)
+        )
+    ]
+    if not selected:
+        raise RunnerError("accepted trust selected zero local snapshot artifacts")
+    for item in selected:
+        path = snapshot / item["relativePath"]
+        if not path.is_file():
+            raise RunnerError(f"accepted-trust snapshot file missing: {item['relativePath']}")
+        if path.stat().st_size != item["bytes"]:
+            raise RunnerError(f"accepted-trust snapshot size mismatch: {item['relativePath']}")
+        if sha256_file(path) != item["contentSha256"]:
+            raise RunnerError(f"accepted-trust snapshot SHA-256 mismatch: {item['relativePath']}")
+
+
 def validate_plan(plan: dict[str, Any], lock: dict[str, Any], runtime_digest: str, require_rights: bool) -> None:
     require_exact_keys(plan, PLAN_KEYS, "plan")
     if plan.get("schemaVersion") != PLAN_SCHEMA:
@@ -419,15 +494,15 @@ def validate_conditioning_request(request: dict[str, Any], lock: dict[str, Any],
         raise RunnerError("conditioning request runtime content digest mismatch")
 
 
-def verify_conditioning_request_against_inventory(
-    request: dict[str, Any], inventory: list[dict[str, Any]], components: dict[str, str]
+def verify_conditioning_request_against_trust(
+    request: dict[str, Any], trust_components: dict[str, str]
 ) -> None:
-    if request["sanaCore"]["contentSha256"] != sha256_json(inventory):
-        raise RunnerError("conditioning request SANA snapshot inventory digest mismatch")
-    if request["textEncoder"]["contentSha256"] != components["textEncoder"]:
-        raise RunnerError("conditioning request textEncoder digest mismatch")
-    if request["tokenizer"]["contentSha256"] != components["tokenizer"]:
-        raise RunnerError("conditioning request tokenizer digest mismatch")
+    if request["sanaCore"]["contentSha256"] != trust_components["sanaSnapshot"]:
+        raise RunnerError("conditioning request SANA accepted model-content digest mismatch")
+    if request["textEncoder"]["contentSha256"] != trust_components["textEncoder"]:
+        raise RunnerError("conditioning request textEncoder accepted-trust digest mismatch")
+    if request["tokenizer"]["contentSha256"] != trust_components["tokenizer"]:
+        raise RunnerError("conditioning request tokenizer accepted-trust digest mismatch")
 
 
 def conditioning_preprocessing_policy(pipeline_class: Any) -> dict[str, Any]:
@@ -448,12 +523,12 @@ def conditioning_preprocessing_policy(pipeline_class: Any) -> dict[str, Any]:
     }
 
 
-def verify_plan_against_inventory(plan: dict[str, Any], inventory: list[dict[str, Any]], components: dict[str, str]) -> None:
-    if plan["sanaSnapshot"]["contentSha256"] != sha256_json(inventory):
-        raise RunnerError("plan SANA snapshot inventory digest mismatch")
+def verify_plan_against_trust(plan: dict[str, Any], trust_components: dict[str, str]) -> None:
+    if plan["sanaSnapshot"]["contentSha256"] != trust_components["sanaSnapshot"]:
+        raise RunnerError("plan SANA accepted model-content digest mismatch")
     for name in ("transformer", "vae", "scheduler", "textEncoder", "tokenizer"):
-        if plan[name]["contentSha256"] != components[name]:
-            raise RunnerError(f"plan component digest mismatch: {name}")
+        if plan[name]["contentSha256"] != trust_components[name]:
+            raise RunnerError(f"plan accepted-trust component digest mismatch: {name}")
 
 
 def prompt_from_environment(plan: dict[str, Any]) -> str:
@@ -659,12 +734,18 @@ def pin_metadata(runtime_lock_path: Path, output: Path) -> None:
 
 
 def pin_conditioning(
-    request_path: Path, runtime_lock_path: Path, output: Path, work_root: Path
+    request_path: Path,
+    runtime_lock_path: Path,
+    candidate_trust_path: Path,
+    output: Path,
+    work_root: Path,
 ) -> None:
     request = read_json(request_path)
     lock, lock_digest = runtime_lock_digest(runtime_lock_path)
     validate_conditioning_request(request, lock, lock_digest)
     installed_runtime_versions(lock)
+    trust_candidate, trust_components = accepted_sana_trust(candidate_trust_path)
+    verify_conditioning_request_against_trust(request, trust_components)
     prompt = prompt_from_environment(request)
 
     try:
@@ -678,8 +759,7 @@ def pin_conditioning(
         if not torch.cuda.is_available():
             raise RunnerError("CUDA GPU runner is required; cloud/API fallback is forbidden")
 
-        inventory, components = collect_hub_inventory()
-        verify_conditioning_request_against_inventory(request, inventory, components)
+        inventory, _metadata_components = collect_hub_inventory()
 
         policy = conditioning_preprocessing_policy(SanaSprintPipeline)
         policy_digest = sha256_json(policy)
@@ -705,6 +785,11 @@ def pin_conditioning(
             or item["path"].startswith("tokenizer/")
         ]
         verify_local_snapshot(snapshot, conditioning_inventory)
+        verify_local_snapshot_against_trust(
+            snapshot,
+            trust_candidate,
+            ("text_encoder/", "tokenizer/"),
+        )
 
         device = torch.device("cuda")
         tokenizer = GemmaTokenizerFast.from_pretrained(
@@ -802,6 +887,7 @@ def run_exact_parity(
     plan_path: Path,
     phase0_envelope_path: Path,
     runtime_lock_path: Path,
+    candidate_trust_path: Path,
     output: Path,
     work_root: Path,
 ) -> None:
@@ -810,6 +896,8 @@ def run_exact_parity(
     lock, lock_digest = runtime_lock_digest(runtime_lock_path)
     validate_plan(plan, lock, lock_digest, require_rights=True)
     installed_runtime_versions(lock)
+    trust_candidate, trust_components = accepted_sana_trust(candidate_trust_path)
+    verify_plan_against_trust(plan, trust_components)
     prompt = prompt_from_environment(plan)
     plan_digest = phase1_plan_digest(plan)
     evidence = evidence_template(plan_digest, plan["phase0EnvelopeDigest"])
@@ -825,8 +913,7 @@ def run_exact_parity(
         if not torch.cuda.is_available():
             raise RunnerError("CUDA GPU runner is required; cloud/API fallback is forbidden")
 
-        inventory, components = collect_hub_inventory()
-        verify_plan_against_inventory(plan, inventory, components)
+        inventory, _metadata_components = collect_hub_inventory()
 
         policy = conditioning_preprocessing_policy(SanaSprintPipeline)
         runtime_policy_digest = sha256_json(policy)
@@ -852,6 +939,7 @@ def run_exact_parity(
             local_dir=str(snapshot),
         )
         verify_local_snapshot(snapshot, inventory)
+        verify_local_snapshot_against_trust(snapshot, trust_candidate)
 
         device = torch.device("cuda")
         pipe = SanaSprintPipeline.from_pretrained(
@@ -1057,6 +1145,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--request", type=Path)
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--phase0-envelope", type=Path)
+    parser.add_argument("--candidate-trust", type=Path)
     parser.add_argument("--work-root", type=Path)
     return parser.parse_args()
 
@@ -1067,23 +1156,24 @@ def main() -> int:
         pin_metadata(args.runtime_lock, args.out)
         return 0
     if args.operation == "PIN_CONDITIONING":
-        if args.request is None or args.work_root is None:
-            raise RunnerError("PIN_CONDITIONING requires --request and --work-root")
+        if args.request is None or args.candidate_trust is None or args.work_root is None:
+            raise RunnerError("PIN_CONDITIONING requires --request, --candidate-trust and --work-root")
         args.work_root.mkdir(parents=True, exist_ok=True)
         try:
-            pin_conditioning(args.request, args.runtime_lock, args.out, args.work_root)
+            pin_conditioning(args.request, args.runtime_lock, args.candidate_trust, args.out, args.work_root)
             return 0
         except Exception:
             shutil.rmtree(args.work_root, ignore_errors=True)
             raise
-    if args.plan is None or args.phase0_envelope is None or args.work_root is None:
-        raise RunnerError("RUN_EXACT_PARITY requires --plan, --phase0-envelope and --work-root")
+    if args.plan is None or args.phase0_envelope is None or args.candidate_trust is None or args.work_root is None:
+        raise RunnerError("RUN_EXACT_PARITY requires --plan, --phase0-envelope, --candidate-trust and --work-root")
     args.work_root.mkdir(parents=True, exist_ok=True)
     try:
         run_exact_parity(
             args.plan,
             args.phase0_envelope,
             args.runtime_lock,
+            args.candidate_trust,
             args.out,
             args.work_root,
         )

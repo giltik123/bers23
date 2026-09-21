@@ -14,13 +14,29 @@ test('real evidence workflow is manual-only and has no automatic trigger', () =>
   assert.doesNotMatch(evidence, /^  schedule:/m);
 });
 
-test('metadata, conditioning pin and exact parity are separate manual operations with fixed source revision', () => {
+test('metadata, protected request, conditioning pin and exact parity are separate manual operations with fixed source revision', () => {
   assert.match(evidence, /operation == 'PIN_METADATA'/);
+  assert.match(evidence, /operation == 'PIN_REQUEST'/);
   assert.match(evidence, /operation == 'PIN_CONDITIONING'/);
   assert.match(evidence, /operation == 'RUN_EXACT_PARITY'/);
   assert.match(evidence, /SANA_REPO: Efficient-Large-Model\/Sana_Sprint_0\.6B_1024px_diffusers/);
-  assert.match(evidence, /SANA_REVISION: a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97/);
-  assert.match(runner, /SANA_REVISION = "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97"/);
+  assert.match(evidence, /SANA_REVISION: aa76e7f4f4928f378716b6716a2130fba3caf5b1/);
+  assert.match(runner, /SANA_REVISION = "aa76e7f4f4928f378716b6716a2130fba3caf5b1"/);
+});
+
+test('protected request bootstrap is JSON-only and performs no model/network acquisition', () => {
+  const start = evidence.indexOf('pin-request:');
+  const end = evidence.indexOf('gpu-evidence:');
+  assert.ok(start >= 0 && end > start);
+  const requestJob = evidence.slice(start, end);
+  assert.match(requestJob, /environment: hsme-sana-parity-evidence/);
+  assert.match(requestJob, /hsme-sana-parity-bootstrap\.py/);
+  assert.match(requestJob, /secrets\.HSME_SANA_PROMPT/);
+  assert.match(requestJob, /secrets\.HSME_SANA_PROMPT_HMAC_KEY/);
+  assert.match(requestJob, /secrets\.HSME_SANA_PROMPT_HMAC_KEY_ID/);
+  assert.match(requestJob, /conditioning-request\.json/);
+  assert.doesNotMatch(requestJob, /pip install|pip download|snapshot_download|from_pretrained|nvidia-smi/);
+  assert.doesNotMatch(requestJob, /echo .*HSME_SANA_PROMPT/);
 });
 
 test('real parity requires a fixed evidence runner and protected environment boundary', () => {
@@ -41,7 +57,12 @@ test('metadata pin stays metadata-only and does not install the heavyweight runt
   assert.doesNotMatch(metadataJob, /torch==|diffusers==|transformers==|nvidia-smi/);
 });
 
-test('conditioning and exact runs require separately tracked evidence-use rights bound by SHA-256', () => {
+test('conditioning and exact runs require separately tracked evidence-use rights and PINNED candidate trust', () => {
+  assert.match(evidence, /CANDIDATE_TRUST: src\/platform\/creative\/local-ai\/hsme\/hsme-foundation-benchmark-candidate-trust\.v1\.json/);
+  assert.match(evidence, /git ls-files --error-unmatch "\$\{CANDIDATE_TRUST\}"/);
+  assert.match(runner, /accepted_sana_trust/);
+  assert.match(runner, /verify_local_snapshot_against_trust/);
+  assert.match(runner, /--candidate-trust/);
   assert.match(evidence, /RIGHTS_EVIDENCE: src\/platform\/creative\/local-ai\/hsme\/sana-sprint-evidence-use-rights\.v1\.json/);
   assert.match(evidence, /git ls-files --error-unmatch "\$\{RIGHTS_EVIDENCE\}"/);
   assert.match(evidence, /hashlib\.sha256\(rights_bytes\)\.hexdigest\(\) == request\['rights'\]\['evidenceSha256'\]/);
@@ -219,7 +240,7 @@ test('runtime lock is exact and quality-first', () => {
 test('ordinary contract workflow stays bounded and synthetic', () => {
   assert.match(contract, /python -m py_compile scripts\/hsme-sana-parity-runner\.py/);
   assert.match(contract, /python -m unittest tests\/test-hsme-sana-parity-runner\.py/);
-  assert.doesNotMatch(contract, /python -m pip install|RUN_EXACT_PARITY|PIN_CONDITIONING|PIN_METADATA|\$\{\{\s*secrets\.HSME_SANA_PROMPT/);
+  assert.doesNotMatch(contract, /python -m pip install|RUN_EXACT_PARITY|PIN_CONDITIONING|PIN_METADATA|PIN_REQUEST|\$\{\{\s*secrets\.HSME_SANA_PROMPT/);
   assert.match(evidence, /Fetch and verify exact direct runtime artifacts/);
   assert.match(evidence, /pip install --disable-pip-version-check --only-binary=:all:/);
   assert.match(evidence, /Validate parity JSON through accepted Phase-1A contract/);
