@@ -388,3 +388,29 @@ test('candidate ordering is canonical but predeclared quality-dimension priority
     await hsmeFoundationQualityBakeoffV1Digest(reorderedDimensions, hashPort),
   );
 });
+
+test('already-frozen composition/count/spatial dimension is accepted without weakening mandatory dimensions', () => {
+  const raw = bakeoff();
+  raw.dimensionPolicies.push({
+    dimensionId: 'composition-count-spatial-correctness',
+    referenceCandidateId: 'qwen-image-edit-reference',
+    maxLossMicrounits: 50,
+    reviewMode: 'HYBRID',
+  });
+  for (const result of raw.candidateResults) {
+    result.dimensionResults.push({
+      dimensionId: 'composition-count-spatial-correctness',
+      lossMicrounits: result.candidateId === 'qwen-image-edit-reference' ? 0 : 10,
+      evidenceSha256: H('8'),
+    });
+  }
+  const normalized = normalizeHsmeFoundationQualityBakeoffV1(raw);
+  assert.equal(
+    normalized.dimensionPolicies.at(-1).dimensionId,
+    'composition-count-spatial-correctness',
+  );
+  assert.deepEqual(
+    normalized.dimensionPolicies.slice(0, 5).map(value => value.dimensionId),
+    dimensions,
+  );
+});
