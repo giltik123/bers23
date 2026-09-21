@@ -1,0 +1,353 @@
+name: HSME-2a.3.3b protected foundation benchmark executor
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/hsme-2a-3-3b-protected-foundation-executor.yml'
+      - 'scripts/hsme-foundation-benchmark-executor-plan.mjs'
+      - 'scripts/hsme-foundation-benchmark-executor.py'
+      - 'scripts/hsme-foundation-benchmark-executor-verify.mjs'
+      - 'tests/hsme-foundation-benchmark-executor-plan.test.mjs'
+      - 'tests/hsme-foundation-benchmark-executor-workflow-policy.test.mjs'
+      - 'tests/test-hsme-foundation-benchmark-executor.py'
+      - 'src/platform/creative/local-ai/hsme/**'
+      - 'tests/fixtures/hsme-foundation-generated-editing-v1/**'
+      - 'tests/fixtures/tiny-sd-d6-quality-corpus-v1.json'
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Accepted immutable commit to benchmark
+        required: true
+        type: string
+      candidate_id:
+        description: Frozen foundation candidate
+        required: true
+        type: choice
+        options:
+          - tiny-sd-control-v1
+          - sana-sprint-0.6b-split-v1
+          - flux2-klein-4b-distilled-v1
+          - flux2-klein-base-4b-v1
+          - qwen-image-t2i-reference-v1
+          - qwen-image-edit-2511-reference-v1
+      capability:
+        description: One frozen candidate capability
+        required: true
+        type: choice
+        options:
+          - TEXT_TO_IMAGE
+          - IMAGE_EDITING
+      sana_plan_path:
+        description: Accepted SANA parity plan path; only used for SANA T2I
+        required: false
+        default: src/platform/creative/local-ai/hsme/sana-sprint-parity-plan.v1.json
+        type: string
+      sana_evidence_path:
+        description: Accepted SANA parity evidence path; only used for SANA T2I
+        required: false
+        default: src/platform/creative/local-ai/hsme/sana-sprint-parity-evidence.v1.json
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hsme-foundation-benchmark-executor-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  synthetic-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile planner contracts without model runtime
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3b
+          npx esbuild tests/hsme-foundation-benchmark-executor-plan.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3b/planner.test.mjs \
+            --external:node:*
+          npx esbuild scripts/hsme-foundation-benchmark-executor-verify.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3b/verify.mjs \
+            --external:node:*
+
+      - name: Run synthetic planner and workflow policy tests
+        run: |
+          set -euo pipefail
+          node --test .test-cache/hsme-2a-3-3b/planner.test.mjs
+          node --test tests/hsme-foundation-benchmark-executor-workflow-policy.test.mjs
+
+      - name: Run synthetic Python runner contract tests
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/hsme-foundation-benchmark-executor.py
+          python -m unittest tests/test-hsme-foundation-benchmark-executor.py
+
+  plan-protected-run:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      disposition: ${{ steps.plan.outputs.disposition }}
+      python_version: ${{ steps.plan.outputs.python_version }}
+      runtime_lock_id: ${{ steps.plan.outputs.runtime_lock_id }}
+      controller_main_sha: ${{ steps.identity.outputs.controller_main_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          path: candidate
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          path: controller
+
+      - name: Verify immutable accepted candidate and current-main controller
+        id: identity
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git -C candidate rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          git -C candidate fetch origin main --depth=1
+          git -C candidate merge-base --is-ancestor "${CANDIDATE_SHA}" origin/main
+          test "$(git -C controller rev-parse HEAD)" = "$(git -C candidate rev-parse origin/main)"
+          CONTROLLER_MAIN_SHA="$(git -C controller rev-parse HEAD)"
+          echo "controller_main_sha=${CONTROLLER_MAIN_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: controller/package-lock.json
+
+      - name: Install bounded planner dependencies
+        working-directory: controller
+        run: npm ci
+
+      - name: Compile accepted planner from current main
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-foundation-executor
+          cd controller
+          npx esbuild scripts/hsme-foundation-benchmark-executor-plan.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile="${GITHUB_WORKSPACE}/.test-cache/hsme-foundation-executor/planner.mjs" \
+            --external:node:*
+
+      - name: Prove frozen substrate and derive one candidate execution disposition
+        id: plan
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROLLER_MAIN_SHA: ${{ steps.identity.outputs.controller_main_sha }}
+          CANDIDATE_ID: ${{ inputs.candidate_id }}
+          CAPABILITY: ${{ inputs.capability }}
+          SANA_PLAN_PATH: ${{ inputs.sana_plan_path }}
+          SANA_EVIDENCE_PATH: ${{ inputs.sana_evidence_path }}
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/.test-cache/hsme-foundation-executor/execution-plan.json"
+          TERMINAL="${GITHUB_WORKSPACE}/.test-cache/hsme-foundation-executor/terminal-row.json"
+          ARGS=(
+            plan
+            --candidate-root "${GITHUB_WORKSPACE}/candidate"
+            --controller-root "${GITHUB_WORKSPACE}/controller"
+            --candidate-sha "${CANDIDATE_SHA}"
+            --controller-main-sha "${CONTROLLER_MAIN_SHA}"
+            --candidate-id "${CANDIDATE_ID}"
+            --capability "${CAPABILITY}"
+            --out "${OUT}"
+            --terminal-row-out "${TERMINAL}"
+          )
+          if [[ -n "${SANA_PLAN_PATH}" ]]; then ARGS+=(--sana-plan "${SANA_PLAN_PATH}"); fi
+          if [[ -n "${SANA_EVIDENCE_PATH}" ]]; then ARGS+=(--sana-evidence "${SANA_EVIDENCE_PATH}"); fi
+          HSME_FOUNDATION_EXECUTOR_CLI=1 node .test-cache/hsme-foundation-executor/planner.mjs "${ARGS[@]}"
+          node -e 'const p=require(process.argv[1]); console.log("disposition="+p.disposition); console.log("python_version="+String(p.runtimeLock.python||"")); console.log("runtime_lock_id="+p.runtimeLockId)' "${OUT}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload JSON-only plan or terminal disposition evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-foundation-execution-plan-${{ github.run_id }}
+          path: |
+            .test-cache/hsme-foundation-executor/execution-plan.json
+            .test-cache/hsme-foundation-executor/terminal-row.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  execute-protected-run:
+    if: ${{ github.event_name == 'workflow_dispatch' && needs.plan-protected-run.outputs.disposition == 'EXECUTE' }}
+    needs:
+      - synthetic-contract
+      - plan-protected-run
+    runs-on: [self-hosted, linux, x64, gpu, bers-hsme-evidence]
+    timeout-minutes: 240
+    environment: hsme-foundation-benchmark-evidence
+    env:
+      HF_HOME: ${{ runner.temp }}/hsme-foundation-hf-cache
+      MODEL_ROOT: ${{ runner.temp }}/hsme-foundation-model
+      EVIDENCE_DIR: ${{ runner.temp }}/hsme-foundation-evidence
+      REVIEW_DIR: ${{ runner.temp }}/hsme-foundation-blind-review
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 1
+          path: candidate
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan-protected-run.outputs.controller_main_sha }}
+          fetch-depth: 1
+          path: controller
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: hsme-foundation-execution-plan-${{ github.run_id }}
+          path: ${{ runner.temp }}/hsme-foundation-plan
+
+      - name: Reverify exact controller and candidate before protected runtime work
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROLLER_MAIN_SHA: ${{ needs.plan-protected-run.outputs.controller_main_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C candidate rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          test "$(git -C controller rev-parse HEAD)" = "${CONTROLLER_MAIN_SHA}"
+          command -v nvidia-smi >/dev/null
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ needs.plan-protected-run.outputs.python_version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: controller/package-lock.json
+
+      - name: Install bounded verifier dependencies
+        working-directory: controller
+        run: npm ci
+
+      - name: Install exact pinned model runtime only inside protected executor
+        env:
+          PLAN_PATH: ${{ runner.temp }}/hsme-foundation-plan/execution-plan.json
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, subprocess, sys
+          plan=json.load(open(os.environ['PLAN_PATH'],encoding='utf-8'))
+          packages=dict(plan['runtimeLock']['packages'])
+          torch_version=packages.pop('torch')
+          cmd=[sys.executable,'-m','pip','install','--disable-pip-version-check']
+          if '+cu118' in torch_version:
+              cmd += ['--extra-index-url','https://download.pytorch.org/whl/cu118']
+          cmd += [f'torch=={torch_version}']
+          cmd += [f'{name}=={version}' for name,version in packages.items()]
+          subprocess.check_call(cmd)
+          PY
+
+      - name: Execute exact frozen candidate and create blinded evidence
+        id: execute
+        env:
+          PLAN_PATH: ${{ runner.temp }}/hsme-foundation-plan/execution-plan.json
+          HSME_FOUNDATION_BLIND_HMAC_KEY: ${{ secrets.HSME_FOUNDATION_BLIND_HMAC_KEY }}
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          set -euo pipefail
+          test -n "${HSME_FOUNDATION_BLIND_HMAC_KEY}"
+          mkdir -p "${EVIDENCE_DIR}"
+          set +e
+          python controller/scripts/hsme-foundation-benchmark-executor.py \
+            --plan "${PLAN_PATH}" \
+            --repo-root "${GITHUB_WORKSPACE}/candidate" \
+            --model-root "${MODEL_ROOT}" \
+            --cache-root "${HF_HOME}" \
+            --review-dir "${REVIEW_DIR}" \
+            --run-out "${EVIDENCE_DIR}/candidate-run.json" \
+            --inventory-out "${EVIDENCE_DIR}/runtime-inventory.json" \
+            --review-package-out "${EVIDENCE_DIR}/review-package.json" \
+            --failure-out "${EVIDENCE_DIR}/failure-evidence.json"
+          RC=$?
+          set -e
+          echo "runner_rc=${RC}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify raw candidate run against accepted contract
+        id: verify
+        env:
+          PLAN_PATH: ${{ runner.temp }}/hsme-foundation-plan/execution-plan.json
+        run: |
+          set -euo pipefail
+          cd controller
+          npx esbuild scripts/hsme-foundation-benchmark-executor-verify.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile="${RUNNER_TEMP}/hsme-foundation-verify.mjs" \
+            --external:node:*
+          cd "${GITHUB_WORKSPACE}"
+          STATUS="$(python -c 'import json,os;print(json.load(open(os.environ["EVIDENCE_DIR"]+"/candidate-run.json"))["status"])')"
+          ARGS=(
+            --plan "${PLAN_PATH}"
+            --run "${EVIDENCE_DIR}/candidate-run.json"
+            --inventory "${EVIDENCE_DIR}/runtime-inventory.json"
+          )
+          if [[ "${STATUS}" == "COMPLETE" ]]; then
+            ARGS+=(--review "${EVIDENCE_DIR}/review-package.json" --review-dir "${REVIEW_DIR}")
+          else
+            ARGS+=(--failure "${EVIDENCE_DIR}/failure-evidence.json")
+          fi
+          node "${RUNNER_TEMP}/hsme-foundation-verify.mjs" "${ARGS[@]}"
+
+      - name: Destroy transient model and Hub cache bytes
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${MODEL_ROOT}" "${HF_HOME}"
+
+      - name: Upload protected benchmark evidence
+        if: always() && steps.execute.outcome == 'success' && steps.verify.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-foundation-blind-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/hsme-foundation-plan/execution-plan.json
+            ${{ runner.temp }}/hsme-foundation-evidence/candidate-run.json
+            ${{ runner.temp }}/hsme-foundation-evidence/runtime-inventory.json
+            ${{ runner.temp }}/hsme-foundation-evidence/review-package.json
+            ${{ runner.temp }}/hsme-foundation-evidence/failure-evidence.json
+            ${{ runner.temp }}/hsme-foundation-blind-review/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Preserve failed candidate state after verified evidence upload
+        if: always()
+        env:
+          RUNNER_RC: ${{ steps.execute.outputs.runner_rc }}
+        run: |
+          set -euo pipefail
+          test "${RUNNER_RC:-1}" = "0"
