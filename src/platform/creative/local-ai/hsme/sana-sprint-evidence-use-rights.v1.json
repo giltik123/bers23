@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "BERS_HSME_SANA_EVIDENCE_USE_RIGHTS_V1",
+  "candidateId": "sana-sprint-0.6b-split-v1",
+  "weightRepository": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+  "weightRevision": "aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+  "modelContentSha256": "c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4",
+  "benchmarkRightsEvidenceSha256": "e7dbcfb1c603d32df37c59651302b6c2c1e1272d4a3f37cc056d70f8ecf26c64",
+  "aggregateLicenseId": "APACHE-2.0+GEMMA-TERMS-2026-04-01",
+  "gemmaTermsReviewed": true,
+  "evidenceUseAllowed": true,
+  "rawPromptRetentionAllowed": false,
+  "binaryEvidencePublishable": false,
+  "trainingOrDistillationAllowed": false,
+  "productionUseAllowed": false,
+  "providerAuthorityGranted": false,
+  "billingAuthorityGranted": false,
+  "projectArtifactMutationAllowed": false,
+  "aeeExecutionAuthorityGranted": false,
+  "durableModelFleetPromotionAllowed": false
+}

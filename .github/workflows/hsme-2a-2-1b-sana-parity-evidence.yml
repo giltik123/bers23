@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - PIN_METADATA
+          - PIN_REQUEST
           - PIN_CONDITIONING
           - RUN_EXACT_PARITY
       candidate_sha:
@@ -35,8 +36,9 @@ concurrency:
 
 env:
   SANA_REPO: Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers
-  SANA_REVISION: a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97
+  SANA_REVISION: aa76e7f4f4928f378716b6716a2130fba3caf5b1
   RUNTIME_LOCK: src/platform/creative/local-ai/hsme/sana-parity-runtime-lock.v1.json
+  CANDIDATE_TRUST: src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json
   RIGHTS_EVIDENCE: src/platform/creative/local-ai/hsme/sana-sprint-evidence-use-rights.v1.json
   PHASE0_ENVELOPE: src/platform/creative/local-ai/hsme/sana-sprint-conditioning-envelope.v1.json
   PHASE0_EVIDENCE: src/platform/creative/local-ai/hsme/sana-sprint-conditioning-evidence.v1.json
@@ -110,7 +112,7 @@ jobs:
           value = json.load(open('.test-cache/hsme-sana-parity/metadata-pin.json', encoding='utf-8'))
           assert value['status'] == 'EVIDENCE_PENDING'
           assert value['rights'] == {'status': 'UNRESOLVED', 'evidenceSha256': 'UNKNOWN'}
-          assert value['sanaSnapshot']['immutableRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert value['sanaSnapshot']['immutableRevision'] == 'aa76e7f4f4928f378716b6716a2130fba3caf5b1'
           assert value['rawPromptPersisted'] is False
           assert value['modelRepositoryCodeExecutionAllowed'] is False
           assert value['productionAuthorityGranted'] is False
@@ -125,6 +127,76 @@ jobs:
         with:
           name: hsme-sana-parity-metadata-pin-${{ inputs.candidate_sha }}
           path: .test-cache/hsme-sana-parity/metadata-pin.json
+          if-no-files-found: error
+          retention-days: 7
+
+  pin-request:
+    if: ${{ inputs.operation == 'PIN_REQUEST' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: hsme-sana-parity-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable main candidate checkout for request bootstrap
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" origin/main
+          git ls-files --error-unmatch "${CANDIDATE_TRUST}"
+          git ls-files --error-unmatch "${RIGHTS_EVIDENCE}"
+          git ls-files --error-unmatch "${RUNTIME_LOCK}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build JSON-only protected prompt commitment request
+        env:
+          HSME_SANA_PROMPT: ${{ secrets.HSME_SANA_PROMPT }}
+          HSME_SANA_PROMPT_HMAC_KEY: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY }}
+          HSME_SANA_PROMPT_HMAC_KEY_ID: ${{ secrets.HSME_SANA_PROMPT_HMAC_KEY_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${HSME_SANA_PROMPT}"
+          test -n "${HSME_SANA_PROMPT_HMAC_KEY}"
+          test -n "${HSME_SANA_PROMPT_HMAC_KEY_ID}"
+          mkdir -p "${EVIDENCE_DIR}"
+          python scripts/hsme-sana-parity-bootstrap.py             --trust "${CANDIDATE_TRUST}"             --rights "${RIGHTS_EVIDENCE}"             --runtime-lock "${RUNTIME_LOCK}"             --out "${EVIDENCE_DIR}/conditioning-request.json"
+
+      - name: Prove request contains commitment only and no runtime authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p = '.test-cache/hsme-sana-parity/conditioning-request.json'
+          value = json.load(open(p, encoding='utf-8'))
+          assert value['schemaVersion'] == 'BERS_HSME_SANA_CONDITIONING_PIN_REQUEST_V1'
+          assert value['sanaCore']['immutableRevision'] == 'aa76e7f4f4928f378716b6716a2130fba3caf5b1'
+          assert value['sanaCore']['contentSha256'] == 'c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4'
+          assert len(value['promptCommitmentHmacSha256']) == 64
+          assert value['rawPromptPersisted'] is False
+          assert value['modelRepositoryCodeExecutionAllowed'] is False
+          assert value['runtimeAuthorityGranted'] is False
+          assert value['binaryPayloadPublishable'] is False
+          serialized = json.dumps(value, sort_keys=True)
+          assert 'HSME_SANA_PROMPT' not in serialized
+          assert 'HSME_SANA_PROMPT_HMAC_KEY' not in serialized
+          PY
+          test "$(find "${EVIDENCE_DIR}" -type f ! -name '*.json' | wc -l)" -eq 0
+
+      - name: Upload JSON-only reviewed request candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-sana-conditioning-request-${{ inputs.candidate_sha }}
+          path: .test-cache/hsme-sana-parity/conditioning-request.json
           if-no-files-found: error
           retention-days: 7
 
@@ -153,6 +225,7 @@ jobs:
           git fetch origin main --depth=1
           git merge-base --is-ancestor "${CANDIDATE_SHA}" origin/main
           test -f "${RUNTIME_LOCK}"
+          git ls-files --error-unmatch "${CANDIDATE_TRUST}"
 
       - name: Verify reviewed conditioning request and evidence-use rights
         if: ${{ inputs.operation == 'PIN_CONDITIONING' }}
@@ -187,7 +260,9 @@ jobs:
           rights = json.loads(rights_bytes)
           assert rights['schemaVersion'] == 'BERS_HSME_SANA_EVIDENCE_USE_RIGHTS_V1'
           assert rights['weightRepository'] == 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers'
-          assert rights['weightRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert rights['weightRevision'] == 'aa76e7f4f4928f378716b6716a2130fba3caf5b1'
+          assert rights['modelContentSha256'] == 'c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4'
+          assert rights['benchmarkRightsEvidenceSha256'] == 'e7dbcfb1c603d32df37c59651302b6c2c1e1272d4a3f37cc056d70f8ecf26c64'
           assert rights['gemmaTermsReviewed'] is True
           assert rights['evidenceUseAllowed'] is True
           assert rights['trainingOrDistillationAllowed'] is False
@@ -227,7 +302,7 @@ jobs:
               'postObservationThresholdChangesAllowed': False,
           }
           assert plan['sanaSnapshot']['sourceRoot'] == 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers'
-          assert plan['sanaSnapshot']['immutableRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert plan['sanaSnapshot']['immutableRevision'] == 'aa76e7f4f4928f378716b6716a2130fba3caf5b1'
           assert plan['rawPromptPersisted'] is False
           assert plan['modelRepositoryCodeExecutionAllowed'] is False
           assert plan['productionAuthorityGranted'] is False
@@ -240,7 +315,9 @@ jobs:
           rights = json.loads(rights_bytes)
           assert rights['schemaVersion'] == 'BERS_HSME_SANA_EVIDENCE_USE_RIGHTS_V1'
           assert rights['weightRepository'] == 'Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers'
-          assert rights['weightRevision'] == 'a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97'
+          assert rights['weightRevision'] == 'aa76e7f4f4928f378716b6716a2130fba3caf5b1'
+          assert rights['modelContentSha256'] == 'c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4'
+          assert rights['benchmarkRightsEvidenceSha256'] == 'e7dbcfb1c603d32df37c59651302b6c2c1e1272d4a3f37cc056d70f8ecf26c64'
           assert rights['gemmaTermsReviewed'] is True
           assert rights['evidenceUseAllowed'] is True
           assert rights['trainingOrDistillationAllowed'] is False

@@ -309,5 +309,51 @@ class HsmeSanaParityRunnerTest(unittest.TestCase):
             runner.validate_plan(plan, self.runtime_lock_fixture(), "d" * 64, require_rights=True)
 
 
+    def test_accepted_sana_trust_binds_relicensed_revision_and_content_sha_components(self):
+        trust_path = ROOT / "src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json"
+        candidate, components = runner.accepted_sana_trust(trust_path)
+        self.assertEqual(
+            candidate["artifactManifest"]["primarySource"],
+            {"sourceRoot": runner.SANA_REPO, "immutableRevision": runner.SANA_REVISION},
+        )
+        self.assertEqual(
+            components["sanaSnapshot"],
+            "c48d41a5479b31cb420b14660da9893555f745ba348f16e47ddd7e69688b4ed4",
+        )
+        for name in ("transformer", "vae", "scheduler", "textEncoder", "tokenizer"):
+            self.assertRegex(components[name], r"^[0-9a-f]{64}$")
+
+    def test_accepted_sana_trust_rejects_old_revision_rebinding(self):
+        source = ROOT / "src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-candidate-trust.v1.json"
+        trust = json.loads(source.read_text())
+        candidate = next(
+            item for item in trust["candidates"]
+            if item["candidateId"] == "sana-sprint-0.6b-split-v1"
+        )
+        candidate["artifactManifest"]["primarySource"]["immutableRevision"] = (
+            "a7d9fc31dd5c3f5e22dbfd78360777ceed56ae97"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trust.json"
+            path.write_text(json.dumps(trust))
+            with self.assertRaisesRegex(runner.RunnerError, "artifact source mismatch"):
+                runner.accepted_sana_trust(path)
+
+    def test_conditioning_request_must_match_accepted_trust_projection(self):
+        request = self.make_conditioning_request()
+        components = {
+            "sanaSnapshot": "1" * 64,
+            "textEncoder": "2" * 64,
+            "tokenizer": "3" * 64,
+        }
+        request["sanaCore"]["contentSha256"] = components["sanaSnapshot"]
+        request["textEncoder"]["contentSha256"] = components["textEncoder"]
+        request["tokenizer"]["contentSha256"] = components["tokenizer"]
+        runner.verify_conditioning_request_against_trust(request, components)
+        request["tokenizer"]["contentSha256"] = "4" * 64
+        with self.assertRaisesRegex(runner.RunnerError, "tokenizer accepted-trust digest mismatch"):
+            runner.verify_conditioning_request_against_trust(request, components)
+
+
 if __name__ == "__main__":
     unittest.main()
