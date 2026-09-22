@@ -140,6 +140,27 @@ test('process, session and source identity drift fail closed',async()=>{
   }
 });
 
+test('phase and sequence must follow the canonical #640 capture order',async()=>{
+  const wrongFirst=adapter('ANDROID',[measured('ANDROID',0)]);
+  await assert.rejects(
+    wrongFirst.sample('POST_LOAD',0),
+    error=>error?.code==='hsme_native_mobile_phase_sequence',
+  );
+
+  const skipped=adapter('ANDROID',[measured('ANDROID',0)]);
+  await assert.rejects(
+    skipped.sample('BASELINE',1),
+    error=>error?.code==='hsme_native_mobile_sequence_drift',
+  );
+
+  const repeated=adapter('ANDROID',[measured('ANDROID',0),measured('ANDROID',1)]);
+  await repeated.sample('BASELINE',0);
+  await assert.rejects(
+    repeated.sample('BASELINE',1),
+    error=>error?.code==='hsme_native_mobile_phase_sequence',
+  );
+});
+
 test('native timestamp regression or duplicate timestamp fails closed',async()=>{
   for(const capturedAtMicros of [1500,1499]){
     const a=adapter('ANDROID',[
