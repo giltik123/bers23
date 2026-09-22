@@ -124,6 +124,25 @@ function unifiedMemory({sourceKind='NATIVE_PROCESS_WORKING_SET',outsideWindow=fa
     },
   };
 }
+function regressingUnifiedMemory(){
+  const host=[100_000_000,200_000_000,300_000_000,250_000_000,280_000_000];
+  const times=[1500,4000,3999,17500,23000];
+  let index=0;
+  return {
+    memoryAccountingMode:'UNIFIED_PROCESS_WORKING_SET',
+    sourceKind:'NATIVE_PROCESS_WORKING_SET',
+    async sample(){
+      const i=index++;
+      return {
+        capturedAtMicros:times[i],
+        hostBytes:host[i],
+        acceleratorBytes:'UNAVAILABLE',
+        sourceEvidenceSha256:H('regressing-native-memory-sample-'+i),
+      };
+    },
+  };
+}
+
 function discreteMemory(){
   const host=[100,120,130,125,128];
   const accel=[10,20,30,25,29];
@@ -308,6 +327,16 @@ test('provider drift and manifest-provider mismatch fail closed',async()=>{
       input(bytes,{manifest:restricted}),execution(),unifiedMemory(),store().store,clock(),hashPort,
     ),
     error=>error?.code==='hsme_target_capture_provider_manifest',
+  );
+});
+
+test('working-set sample timestamps must strictly increase inside the capture boundary',async()=>{
+  const bytes=new TextEncoder().encode('model-bytes-v1');
+  await assert.rejects(
+    captureHsmeFoundationTargetDeviceMeasuredBenchmarkV1(
+      input(bytes),execution(),regressingUnifiedMemory(),store().store,clock(),hashPort,
+    ),
+    error=>error?.code==='hsme_target_capture_sample_time_regression',
   );
 });
 
