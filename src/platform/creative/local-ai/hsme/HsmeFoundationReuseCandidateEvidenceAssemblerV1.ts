@@ -76,6 +76,17 @@ type AnyProof=
 
 type ProofKind='QUALIFICATION'|'REJECTION';
 
+export interface HsmeFoundationReuseCapabilityEvidenceOriginVerifierV1{
+  verifyQualificationProof(
+    proof:HsmeFoundationReuseEvidenceQualificationV1,
+    evidenceSetSha256:string,
+  ):Promise<boolean>;
+  verifyRejectionProof(
+    proof:HsmeFoundationReuseEvidenceRejectionV1,
+    evidenceSetSha256:string,
+  ):Promise<boolean>;
+}
+
 type ValidatedProof=Readonly<{
   kind:ProofKind;
   capability:SupportedCapability;
@@ -100,6 +111,7 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
   rawCampaign:unknown,
   qualificationProofs:readonly HsmeFoundationReuseEvidenceQualificationV1[],
   rejectionProofs:readonly HsmeFoundationReuseEvidenceRejectionV1[],
+  origin:HsmeFoundationReuseCapabilityEvidenceOriginVerifierV1,
   hash:HsmeFoundationBenchmarkRunHashPortV1,
 ):Promise<HsmeFoundationReuseCandidateEvidenceAssemblyV1>{
   const blockers:string[]=[];
@@ -203,6 +215,18 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     }
   }
 
+  if(!digestKnown(sourceDecisionSha256)||!digestKnown(sourceCandidateSha256)){
+    blockers.push('ASSEMBLY_SOURCE_PROVENANCE_DIGEST_MISSING');
+    return invalid(candidateId,blockers,{
+      requiredCapabilities,
+      sourceDecisionSha256,
+      sourceCandidateSha256,
+      structuralCoverageBlockers,
+    });
+  }
+  const trustedSourceDecisionSha256=sourceDecisionSha256;
+  const trustedSourceCandidateSha256=sourceCandidateSha256;
+
   const validated:ValidatedProof[]=[];
   const seen=new Set<string>();
   for(const [kind,proofs] of [
@@ -220,8 +244,8 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
       seen.add(key);
       const validatedProof=await validateProof(
         kind,proof,candidateId,requiredCapabilities,
-        slicesByCapability,sourceDecisionSha256,sourceCandidateSha256,
-        campaignCandidate.executionProfileSha256,hash,blockers,
+        slicesByCapability,trustedSourceDecisionSha256,trustedSourceCandidateSha256,
+        campaignCandidate.executionProfileSha256,origin,hash,blockers,
       );
       if(validatedProof)validated.push(validatedProof);
     }
@@ -285,7 +309,7 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     }
     const capabilityEvidenceSetSha256=await evidenceSetDigest(
       candidateId,requiredCapabilities,qualificationRows,rejectionRows,
-      sourceDecisionSha256,sourceCandidateSha256,
+      trustedSourceDecisionSha256,trustedSourceCandidateSha256,
       structuralCoverageBlockers,hash,
     );
     const assembledCandidateSha256=await digest(
@@ -337,7 +361,7 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
   }
   const capabilityEvidenceSetSha256=await evidenceSetDigest(
     candidateId,requiredCapabilities,qualificationRows,rejectionRows,
-    sourceDecisionSha256,sourceCandidateSha256,
+    trustedSourceDecisionSha256,trustedSourceCandidateSha256,
     structuralCoverageBlockers,hash,
   );
   const assembledCandidateSha256=await digest(
@@ -369,6 +393,7 @@ async function validateProof(
   sourceDecisionSha256:string|'UNKNOWN',
   sourceCandidateSha256:string|'UNKNOWN',
   campaignExecutionProfileSha256:string|'UNKNOWN',
+  origin:HsmeFoundationReuseCapabilityEvidenceOriginVerifierV1,
   hash:HsmeFoundationBenchmarkRunHashPortV1,
   blockers:string[],
 ):Promise<ValidatedProof|null>{
@@ -416,6 +441,16 @@ async function validateProof(
       blockers.push('ASSEMBLY_QUALIFICATION_REHASH_MISMATCH');
       return null;
     }
+    let trusted=false;
+    try{
+      trusted=await origin.verifyQualificationProof(row,row.evidenceSetSha256 as string);
+    }catch{
+      trusted=false;
+    }
+    if(!trusted){
+      blockers.push('ASSEMBLY_QUALIFICATION_ORIGIN_UNVERIFIED');
+      return null;
+    }
     return Object.freeze({
       kind,
       capability,
@@ -459,6 +494,16 @@ async function validateProof(
   );
   if(recomputed!==row.evidenceSetSha256){
     blockers.push('ASSEMBLY_REJECTION_REHASH_MISMATCH');
+    return null;
+  }
+  let trusted=false;
+  try{
+    trusted=await origin.verifyRejectionProof(row,row.evidenceSetSha256 as string);
+  }catch{
+    trusted=false;
+  }
+  if(!trusted){
+    blockers.push('ASSEMBLY_REJECTION_ORIGIN_UNVERIFIED');
     return null;
   }
   return Object.freeze({
