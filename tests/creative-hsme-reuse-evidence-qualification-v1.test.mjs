@@ -340,7 +340,13 @@ for(const config of [
     assert.deepEqual(result.blockers,[]);
     assert.equal(result.candidateId,x.candidateId);
     assert.equal(result.capability,CAPABILITY);
+    assert.equal(result.sourceDecisionSha256,x.application.sourceDecisionSha256);
+    assert.equal(result.sourceCandidateSha256,x.application.sourceCandidateSha256);
+    assert.equal(result.pendingDecisionSha256,x.application.pendingDecisionSha256);
+    assert.equal(result.appliedCandidateSha256,x.application.appliedCandidateSha256);
     assert.equal(result.runtimeEvidenceSha256,x.runtimeOverlay.runtimeEvidenceSha256);
+    assert.notEqual(result.sourceCandidateSha256,result.appliedCandidateSha256);
+    assert.notEqual(result.sourceDecisionSha256,result.pendingDecisionSha256);
     assert.equal(result.licenseEvidenceSha256,x.campaignCandidate.rightsEvidenceSha256);
     assert.equal(result.qualityEvidenceSha256,x.expectedQualityEvidenceSha256);
     assert.equal(result.trainingEvidenceSha256,x.expectedTrainingEvidenceSha256);
