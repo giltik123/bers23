@@ -14,6 +14,8 @@ on:
       - 'scripts/hsme-foundation-benchmark-evidence-collector.mjs'
       - 'tests/hsme-foundation-benchmark-evidence-collector.test.mjs'
       - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-dispatch-matrix.v1.json'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationQualityFinalizationV1.ts'
+      - 'tests/creative-hsme-foundation-quality-finalization-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -164,3 +166,45 @@ jobs:
           grep -F "ordinaryCiDispatchAllowed" "${MATRIX}"
           grep -F '"winnerSelectionAllowed": false' "${MATRIX}"
           grep -F "winnerSelectionAllowed:false" "${COLLECTOR}"
+
+
+  quality-finalization-contract:
+    name: HSME-2a.3.3d quality finalization synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for quality finalization contract
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run quality finalization synthetic contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3d
+          npx esbuild tests/creative-hsme-foundation-quality-finalization-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3d/finalization.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3d/finalization.test.mjs
+
+      - name: Prove finalization CI remains model-free and quality-only
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationQualityFinalizationV1.ts
+          ! grep -nE 'hf_hub_download|from_pretrained|nvidia-smi|secrets\.' "${CONTRACT}"
+          ! grep -nE 'latencyMs|workingMemoryBytes|installedBytes|costMicrousd|selectedCandidateId|winnerCandidate|preferredCandidateIds' "${CONTRACT}"
+          grep -F "efficiencyUsedInQualitySelection: false" "${CONTRACT}"
+          grep -F "winnerSelectionAllowed: false" "${CONTRACT}"
+          grep -F "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN" "${CONTRACT}"
+          grep -F "EVEN_ARITHMETIC_MEAN_HALF_UP" "${CONTRACT}"
