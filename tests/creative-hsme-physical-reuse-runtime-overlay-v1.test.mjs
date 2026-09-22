@@ -343,3 +343,31 @@ test('component role changes alter both component-map and runtime-evidence diges
   assert.equal(first.mandatoryInstalledBytes,second.mandatoryInstalledBytes);
   assert.equal(first.workingMemoryBytes,second.workingMemoryBytes);
 });
+
+test('physical target READY proof cannot carry blockers or widened authority',async()=>{
+  const withBlocker=binding({bindingOverrides:{blockers:['tampered-ready-blocker']}});
+  let result=await prove(withBlocker);
+  assert.equal(result.state,'PHYSICAL_RUNTIME_EVIDENCE_INVALID');
+  assert.ok(result.blockers.includes('PHYSICAL_TARGET_READY_BLOCKERS_PRESENT'));
+
+  for(const field of [
+    'selectedCandidateIdAllowed','reuseAdvanceAllowed','fullStudentEscalationAllowed',
+    'modelFleetPromotionAllowed','installOrDownloadAllowed','productionAuthorityGranted',
+    'providerAuthorityGranted','billingAuthorityGranted','projectArtifactMutationAllowed',
+    'aeeExecutionAuthorityGranted','durableModelFleetPromotionAllowed',
+    'trainingOrDistillationAllowed','winnerSelectionAllowed',
+  ]){
+    const tampered=binding({bindingOverrides:{[field]:true}});
+    result=await prove(tampered);
+    assert.equal(result.state,'PHYSICAL_RUNTIME_EVIDENCE_INVALID',field);
+    assert.ok(result.blockers.includes('PHYSICAL_TARGET_AUTHORITY_WIDENING_REJECTED'),field);
+  }
+});
+
+test('target evidence authority widening is rejected independently of its digest syntax',async()=>{
+  const b=binding({targetOverrides:{productionAuthorityGranted:true}});
+  const result=await prove(b);
+  assert.equal(result.state,'PHYSICAL_RUNTIME_EVIDENCE_INVALID');
+  assert.ok(result.blockers.includes('TARGET_EVIDENCE_AUTHORITY_WIDENING_REJECTED'));
+});
+
