@@ -54,6 +54,8 @@ export type HsmeFoundationReuseTrainingAttestationV1=Readonly<{
   sourceRoot:string;
   immutableRevision:string;
   sourceContentSha256:string;
+  runtimeEvidenceSha256:string;
+  targetEvidenceSha256:string;
   mode:HsmeFoundationReuseTrainingV1['mode'];
   trainableParameters:number|'UNKNOWN';
   frozenParameters:number|'UNKNOWN';
@@ -283,7 +285,7 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
   let trainingAttestation:HsmeFoundationReuseTrainingAttestationV1|null=null;
   try{
     trainingAttestation=normalizeTrainingAttestation(rawTrainingAttestation);
-    validateTrainingAttestation(candidate,capability,trainingAttestation,blockers);
+    validateTrainingAttestation(candidate,capability,overlay,trainingAttestation,blockers);
     trainingEvidenceSha256=await digest(
       HSME_FOUNDATION_REUSE_TRAINING_ATTESTATION_DIGEST_DOMAIN,
       trainingAttestation,
@@ -478,6 +480,7 @@ async function validateQuality(
 function normalizeTrainingAttestation(raw:unknown):HsmeFoundationReuseTrainingAttestationV1{
   const record=exactRecord(raw,[
     'schemaVersion','candidateId','capability','sourceRoot','immutableRevision','sourceContentSha256',
+    'runtimeEvidenceSha256','targetEvidenceSha256',
     'mode','trainableParameters','frozenParameters','trainingExamples','gpuSeconds','trainingCostMicrousd',
     'productionAuthorityGranted','trainingAuthorityGranted','winnerSelectionAllowed',
   ]);
@@ -502,6 +505,8 @@ function normalizeTrainingAttestation(raw:unknown):HsmeFoundationReuseTrainingAt
     sourceRoot:text(record.sourceRoot,240),
     immutableRevision:revision(record.immutableRevision),
     sourceContentSha256:sha256(record.sourceContentSha256),
+    runtimeEvidenceSha256:sha256(record.runtimeEvidenceSha256),
+    targetEvidenceSha256:sha256(record.targetEvidenceSha256),
     mode,
     trainableParameters:unknownOrInteger(record.trainableParameters),
     frozenParameters:unknownOrInteger(record.frozenParameters),
@@ -517,6 +522,7 @@ function normalizeTrainingAttestation(raw:unknown):HsmeFoundationReuseTrainingAt
 function validateTrainingAttestation(
   candidate:HsmeFoundationReuseCandidateV1,
   capability:Capability,
+  overlay:HsmeFoundationPhysicalReuseRuntimeOverlayV1,
   attestation:HsmeFoundationReuseTrainingAttestationV1,
   blockers:string[],
 ):void{
@@ -527,6 +533,10 @@ function validateTrainingAttestation(
     ||attestation.immutableRevision!==candidate.source.immutableRevision
     ||attestation.sourceContentSha256!==candidate.source.contentSha256){
     blockers.push('QUALIFICATION_TRAINING_SOURCE_DRIFT');
+  }
+  if(attestation.runtimeEvidenceSha256!==overlay.runtimeEvidenceSha256
+    ||attestation.targetEvidenceSha256!==overlay.targetEvidenceSha256){
+    blockers.push('QUALIFICATION_TRAINING_TARGET_DRIFT');
   }
   const training=candidate.training;
   if(attestation.mode!==training.mode
