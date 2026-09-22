@@ -35,6 +35,8 @@ on:
       - 'tests/creative-hsme-native-mobile-working-set-adapters-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalMobileValidationEvidenceV1.ts'
       - 'tests/creative-hsme-physical-mobile-validation-evidence-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalTargetEvidenceBindingV1.ts'
+      - 'tests/creative-hsme-physical-target-evidence-binding-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -656,4 +658,54 @@ jobs:
           grep -F "productionAuthorityGranted:false" "$CONTRACT"
           grep -F "modelFleetPromotionAllowed:false" "$CONTRACT"
           grep -F "reuseAdvanceAllowed:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+
+  physical-target-evidence-binding-contract:
+    name: HSME-2a.3.3o physical target-tier evidence binding synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for physical target evidence binding
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run physical target evidence binding contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3o
+          npx esbuild tests/creative-hsme-physical-target-evidence-binding-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3o/physical-target.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3o/physical-target.test.mjs
+
+      - name: Prove readiness cannot become selection or reuse authority
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalTargetEvidenceBindingV1.ts
+          grep -F "assessHsmeFoundationPhysicalMobileValidationEvidenceV1" "$CONTRACT"
+          grep -F "adaptHsmeFoundationTargetDeviceBenchmarkEvidenceV1" "$CONTRACT"
+          grep -F "PHYSICAL_TARGET_EVIDENCE_READY" "$CONTRACT"
+          grep -F "TARGET_REPRESENTATION_BINDING_DRIFT" "$CONTRACT"
+          grep -F "TARGET_RUNTIME_INVENTORY_DRIFT" "$CONTRACT"
+          grep -F "TARGET_MEASUREMENT_METHOD_DRIFT" "$CONTRACT"
+          grep -F "TARGET_MEASUREMENT_EVIDENCE_DRIFT" "$CONTRACT"
+          grep -F "TARGET_EVIDENCE_ROW_DIGEST_MISMATCH" "$CONTRACT"
+          grep -F "selectedCandidateIdAllowed:false" "$CONTRACT"
+          grep -F "reuseAdvanceAllowed:false" "$CONTRACT"
+          grep -F "fullStudentEscalationAllowed:false" "$CONTRACT"
+          grep -F "modelFleetPromotionAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "trainingOrDistillationAllowed:false" "$CONTRACT"
           grep -F "winnerSelectionAllowed:false" "$CONTRACT"
