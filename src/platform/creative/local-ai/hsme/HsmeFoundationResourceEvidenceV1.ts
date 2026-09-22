@@ -55,6 +55,7 @@ export type HsmeFoundationResourceMeasurementV1=Readonly<{
   warmEndToEndLatencyMicros:number;
   acceptedOutputCostMicrousd:number;
   costKind:CostKind;
+  costEvidenceSha256:string;
   measurementEvidenceSha256:string;
 }>;
 
@@ -90,6 +91,7 @@ export type HsmeFoundationResourceEvidenceProofRecordV1=Readonly<{
   warmEndToEndLatencyMicros:number;
   acceptedOutputCostMicrousd:number;
   costKind:CostKind;
+  costEvidenceSha256:string;
   hardwareProfileSha256:string;
   measurementMethodSha256:string;
   measurementEvidenceSha256:string;
@@ -226,6 +228,7 @@ export async function proveHsmeFoundationResourceEvidenceV1(
       warmEndToEndLatencyMicros:record.warmEndToEndLatencyMicros,
       acceptedOutputCostMicrousd:record.acceptedOutputCostMicrousd,
       costKind:record.costKind,
+      costEvidenceSha256:record.costEvidenceSha256,
       hardwareProfileSha256:record.hardwareProfileSha256,
       measurementMethodSha256:record.measurementMethodSha256,
       measurementEvidenceSha256:record.measurementEvidenceSha256,
@@ -301,12 +304,16 @@ function normalizeResourceEvidence(raw:unknown):HsmeFoundationResourceEvidenceV1
   });
 }
 
+export function normalizeHsmeFoundationResourceMeasurementV1(raw:unknown):HsmeFoundationResourceMeasurementV1{
+  return normalizeMeasurement(raw,'resourceMeasurement');
+}
+
 function normalizeMeasurement(raw:unknown,path:string):HsmeFoundationResourceMeasurementV1{
   const record=exactRecord(raw,[
     'candidateId','capability','immutableRevision','modelContentSha256','executionProfileSha256',
     'runtimeInventory','hardwareProfileSha256','measurementMethodSha256','workingMemoryKind','peakWorkingMemoryBytes',
     'coldEndToEndLatencyMicros','warmEndToEndLatencyMicros','acceptedOutputCostMicrousd',
-    'costKind','measurementEvidenceSha256',
+    'costKind','costEvidenceSha256','measurementEvidenceSha256',
   ],path);
   const costKind=enumValue(record.costKind,COST_KINDS,path+'.costKind');
   const cost=safeInteger(record.acceptedOutputCostMicrousd,path+'.acceptedOutputCostMicrousd',0,Number.MAX_SAFE_INTEGER);
@@ -331,6 +338,7 @@ function normalizeMeasurement(raw:unknown,path:string):HsmeFoundationResourceMea
     warmEndToEndLatencyMicros:safeInteger(record.warmEndToEndLatencyMicros,path+'.warmEndToEndLatencyMicros',1,Number.MAX_SAFE_INTEGER),
     acceptedOutputCostMicrousd:cost,
     costKind,
+    costEvidenceSha256:sha256(record.costEvidenceSha256,path+'.costEvidenceSha256'),
     measurementEvidenceSha256:sha256(record.measurementEvidenceSha256,path+'.measurementEvidenceSha256'),
   });
 }

@@ -9,7 +9,9 @@ import importlib.metadata
 import json
 import pathlib
 import shutil
+import subprocess
 import sys
+import time
 import traceback
 import zlib
 import struct
@@ -20,6 +22,10 @@ RUN_SCHEMA="BERS_HSME_FOUNDATION_BENCHMARK_CANDIDATE_RUN_V1"
 INVENTORY_SCHEMA="BERS_HSME_FOUNDATION_RUNTIME_INVENTORY_V1"
 REVIEW_SCHEMA="BERS_HSME_FOUNDATION_BLINDED_REVIEW_PACKAGE_V1"
 FAILURE_SCHEMA="BERS_HSME_FOUNDATION_BENCHMARK_FAILURE_EVIDENCE_V1"
+RESOURCE_FRAGMENT_SCHEMA="BERS_HSME_FOUNDATION_RESOURCE_MEASUREMENT_FRAGMENT_V1"
+HARDWARE_PROFILE_SCHEMA="BERS_HSME_FOUNDATION_RESOURCE_HARDWARE_PROFILE_V1"
+MEASUREMENT_METHOD_SCHEMA="BERS_HSME_FOUNDATION_RESOURCE_MEASUREMENT_METHOD_V1"
+MEASUREMENT_EVIDENCE_SCHEMA="BERS_HSME_FOUNDATION_RESOURCE_MEASUREMENT_EVIDENCE_V1"
 OUTPUT_DOMAIN=b"bers:hsme:foundation-benchmark-output-set:v1\0"
 
 
@@ -36,6 +42,97 @@ def write_json(path: pathlib.Path, value: Any) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
     return hashlib.sha256(payload).hexdigest()
+
+
+def sha256_stable(value: Any) -> str:
+    return hashlib.sha256(stable_bytes(value)).hexdigest()
+
+
+def validate_cost_inputs(kind: str,cost_raw: Any,evidence_sha256: str) -> tuple[str,int,str]:
+    if kind not in ("MEASURED_METERED","PROVEN_UNMETERED_LOCAL"):
+        raise RunnerError("resource cost kind invalid")
+    text=str(cost_raw)
+    if not text.isdigit():
+        raise RunnerError("accepted output cost must be a non-negative integer microusd")
+    cost=int(text)
+    if cost>9_007_199_254_740_991:
+        raise RunnerError("accepted output cost exceeds safe integer range")
+    if len(evidence_sha256)!=64 or any(ch not in "0123456789abcdef" for ch in evidence_sha256):
+        raise RunnerError("cost evidence sha256 must be lowercase SHA-256")
+    if kind=="PROVEN_UNMETERED_LOCAL" and cost!=0:
+        raise RunnerError("PROVEN_UNMETERED_LOCAL requires zero microusd")
+    if kind=="MEASURED_METERED" and cost<1:
+        raise RunnerError("MEASURED_METERED requires positive microusd")
+    return kind,cost,evidence_sha256
+
+
+def median_half_up(values: list[int]) -> int:
+    if not values:
+        raise RunnerError("warm latency sample set must not be empty")
+    ordered=sorted(values)
+    mid=len(ordered)//2
+    if len(ordered)%2:
+        return ordered[mid]
+    return (ordered[mid-1]+ordered[mid]+1)//2
+
+
+def ns_to_positive_micros(elapsed_ns: int) -> int:
+    if elapsed_ns<=0:
+        raise RunnerError("non-positive timing sample")
+    return max(1,(elapsed_ns+999)//1000)
+
+
+def nvidia_driver_version() -> str:
+    try:
+        output=subprocess.check_output(
+            ["nvidia-smi","--query-gpu=driver_version","--format=csv,noheader,nounits"],
+            text=True,
+            timeout=10,
+        )
+    except Exception as exc:
+        raise RunnerError("unable to query NVIDIA driver version") from exc
+    versions={line.strip() for line in output.splitlines() if line.strip()}
+    if len(versions)!=1:
+        raise RunnerError("NVIDIA driver version must be present and identical across visible GPUs")
+    version=next(iter(versions))
+    if len(version)>64 or any(ord(ch)<32 or ord(ch)==127 for ch in version):
+        raise RunnerError("invalid NVIDIA driver version")
+    return version
+
+
+def hardware_profile(torch) -> dict[str,Any]:
+    device=int(torch.cuda.current_device())
+    props=torch.cuda.get_device_properties(device)
+    major,minor=torch.cuda.get_device_capability(device)
+    return {
+        "schemaVersion":HARDWARE_PROFILE_SCHEMA,
+        "deviceIndex":device,
+        "gpuName":str(props.name),
+        "computeCapabilityMajor":int(major),
+        "computeCapabilityMinor":int(minor),
+        "totalMemoryBytes":int(props.total_memory),
+        "nvidiaDriverVersion":nvidia_driver_version(),
+        "torchVersion":str(torch.__version__),
+        "torchCudaVersion":str(torch.version.cuda or "UNKNOWN"),
+        "workingMemoryKind":"CUDA_PEAK_RESERVED_BYTES",
+    }
+
+
+def measurement_method() -> dict[str,Any]:
+    return {
+        "schemaVersion":MEASUREMENT_METHOD_SCHEMA,
+        "clock":"PYTHON_TIME_PERF_COUNTER_NS",
+        "cudaSynchronization":"BEFORE_AND_AFTER_TIMED_INFERENCE",
+        "coldLatencyDefinition":"PIPELINE_LOAD_PLUS_FIRST_FROZEN_INFERENCE",
+        "warmLatencyDefinition":"FROZEN_INFERENCE_AFTER_PIPELINE_LOAD",
+        "warmAggregation":"MEDIAN_EVEN_ARITHMETIC_MEAN_HALF_UP",
+        "nanosecondsToMicroseconds":"POSITIVE_CEILING",
+        "workingMemoryKind":"CUDA_PEAK_RESERVED_BYTES",
+        "workingMemoryMetric":"TORCH_CUDA_MAX_MEMORY_RESERVED",
+        "artifactAcquisitionIncludedInLatency":False,
+        "pngEncodingIncludedInLatency":False,
+        "reviewPackageReceivesResourceMetadata":False,
+    }
 
 
 def sha256_file(path: pathlib.Path) -> tuple[str,int]:
@@ -174,8 +271,9 @@ def require_cuda(plan: dict[str,Any]):
     return torch
 
 
-def load_pipeline(plan: dict[str,Any],model_root: pathlib.Path):
-    torch=require_cuda(plan)
+def load_pipeline(plan: dict[str,Any],model_root: pathlib.Path,torch=None):
+    if torch is None:
+        torch=require_cuda(plan)
     diffusers=importlib.import_module("diffusers")
     pipeline_class=plan["executionProfile"]["pipelineClass"]
     try:
@@ -317,21 +415,63 @@ def execute(plan: dict[str,Any],repo_root: pathlib.Path,model_root: pathlib.Path
     validate_runtime_versions(plan)
     verify_fixture_references(plan,repo_root)
     inventory=acquire_runtime(plan,model_root)
-    pipe,torch=load_pipeline(plan,model_root)
+    tasks=[(fixture,seed) for fixture in plan["fixtures"] for seed in plan["requiredSeeds"]]
+    if len(tasks)<2:
+        raise RunnerError("resource measurement requires at least two frozen outputs for cold/warm evidence")
+
+    torch=require_cuda(plan)
+    torch.cuda.synchronize()
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    method=measurement_method()
+    hardware=hardware_profile(torch)
+    cold_start=time.perf_counter_ns()
+    pipe,_=load_pipeline(plan,model_root,torch)
     outputs=[]
     review_outputs=[]
+    warm_samples=[]
     review_dir.mkdir(parents=True,exist_ok=False)
+
+    def capture(fixture: dict[str,Any],seed: int):
+        image=execute_one(pipe,torch,plan,fixture,seed,repo_root)
+        encoded=png_bytes(image)
+        image_sha=hashlib.sha256(encoded).hexdigest()
+        opaque=blind_id(plan,fixture["fixtureId"],seed,key)
+        rel=opaque+".png"
+        (review_dir/rel).write_bytes(encoded)
+        outputs.append({"fixtureId":fixture["fixtureId"],"seed":seed,"blindId":opaque,"imageSha256":image_sha})
+        review_outputs.append({"fixtureId":fixture["fixtureId"],"seed":seed,"blindId":opaque,"imageSha256":image_sha,"relativePath":rel})
+
     try:
-        for fixture in plan["fixtures"]:
-            for seed in plan["requiredSeeds"]:
-                image=execute_one(pipe,torch,plan,fixture,seed,repo_root)
-                encoded=png_bytes(image)
-                image_sha=hashlib.sha256(encoded).hexdigest()
-                opaque=blind_id(plan,fixture["fixtureId"],seed,key)
-                rel=opaque+".png"
-                (review_dir/rel).write_bytes(encoded)
-                outputs.append({"fixtureId":fixture["fixtureId"],"seed":seed,"blindId":opaque,"imageSha256":image_sha})
-                review_outputs.append({"fixtureId":fixture["fixtureId"],"seed":seed,"blindId":opaque,"imageSha256":image_sha,"relativePath":rel})
+        first_fixture,first_seed=tasks[0]
+        image=execute_one(pipe,torch,plan,first_fixture,first_seed,repo_root)
+        torch.cuda.synchronize()
+        cold_latency=ns_to_positive_micros(time.perf_counter_ns()-cold_start)
+        encoded=png_bytes(image)
+        image_sha=hashlib.sha256(encoded).hexdigest()
+        opaque=blind_id(plan,first_fixture["fixtureId"],first_seed,key)
+        rel=opaque+".png"
+        (review_dir/rel).write_bytes(encoded)
+        outputs.append({"fixtureId":first_fixture["fixtureId"],"seed":first_seed,"blindId":opaque,"imageSha256":image_sha})
+        review_outputs.append({"fixtureId":first_fixture["fixtureId"],"seed":first_seed,"blindId":opaque,"imageSha256":image_sha,"relativePath":rel})
+
+        for fixture,seed in tasks[1:]:
+            torch.cuda.synchronize()
+            started=time.perf_counter_ns()
+            image=execute_one(pipe,torch,plan,fixture,seed,repo_root)
+            torch.cuda.synchronize()
+            warm_samples.append(ns_to_positive_micros(time.perf_counter_ns()-started))
+            encoded=png_bytes(image)
+            image_sha=hashlib.sha256(encoded).hexdigest()
+            opaque=blind_id(plan,fixture["fixtureId"],seed,key)
+            rel=opaque+".png"
+            (review_dir/rel).write_bytes(encoded)
+            outputs.append({"fixtureId":fixture["fixtureId"],"seed":seed,"blindId":opaque,"imageSha256":image_sha})
+            review_outputs.append({"fixtureId":fixture["fixtureId"],"seed":seed,"blindId":opaque,"imageSha256":image_sha,"relativePath":rel})
+
+        peak_working_memory=int(torch.cuda.max_memory_reserved())
+        if peak_working_memory<1:
+            raise RunnerError("CUDA peak reserved memory must be positive")
     finally:
         del pipe
         if torch.cuda.is_available():
@@ -339,9 +479,10 @@ def execute(plan: dict[str,Any],repo_root: pathlib.Path,model_root: pathlib.Path
 
     outputs.sort(key=lambda x:(x["fixtureId"],x["seed"],x["blindId"]))
     review_outputs.sort(key=lambda x:(x["fixtureId"],x["seed"],x["blindId"]))
-    expected=len(plan["fixtures"])*len(plan["requiredSeeds"])
+    expected=len(tasks)
     if len(outputs)!=expected:
         raise RunnerError(f"output cardinality mismatch {len(outputs)}/{expected}")
+    warm_latency=median_half_up(warm_samples)
     review={
         "schemaVersion":REVIEW_SCHEMA,
         "campaignId":plan["campaignId"],
@@ -352,8 +493,15 @@ def execute(plan: dict[str,Any],repo_root: pathlib.Path,model_root: pathlib.Path
         "sizeIncluded":False,
         "costIncluded":False,
     }
-    return inventory,outputs,review
-
+    measurement={
+        "hardwareProfile":hardware,
+        "measurementMethod":method,
+        "coldEndToEndLatencyMicros":cold_latency,
+        "warmEndToEndLatencyMicros":warm_latency,
+        "warmLatencySamplesMicros":warm_samples,
+        "peakWorkingMemoryBytes":peak_working_memory,
+    }
+    return inventory,outputs,review,measurement
 
 def main() -> int:
     parser=argparse.ArgumentParser()
@@ -366,6 +514,13 @@ def main() -> int:
     parser.add_argument("--inventory-out",required=True)
     parser.add_argument("--review-package-out",required=True)
     parser.add_argument("--failure-out",required=True)
+    parser.add_argument("--resource-out",required=True)
+    parser.add_argument("--hardware-profile-out",required=True)
+    parser.add_argument("--measurement-method-out",required=True)
+    parser.add_argument("--measurement-evidence-out",required=True)
+    parser.add_argument("--cost-kind",required=True)
+    parser.add_argument("--accepted-output-cost-microusd",required=True)
+    parser.add_argument("--cost-evidence-sha256",required=True)
     args=parser.parse_args()
 
     plan=json.load(open(args.plan,encoding="utf-8"))
@@ -377,12 +532,19 @@ def main() -> int:
     inventory_out=pathlib.Path(args.inventory_out)
     review_out=pathlib.Path(args.review_package_out)
     failure_out=pathlib.Path(args.failure_out)
+    resource_out=pathlib.Path(args.resource_out)
+    hardware_profile_out=pathlib.Path(args.hardware_profile_out)
+    measurement_method_out=pathlib.Path(args.measurement_method_out)
+    measurement_evidence_out=pathlib.Path(args.measurement_evidence_out)
     key_text=os.environ.get("HSME_FOUNDATION_BLIND_HMAC_KEY","")
     if len(key_text)<32:
         raise RunnerError("HSME_FOUNDATION_BLIND_HMAC_KEY must contain at least 32 characters")
     key=key_text.encode("utf-8")
     try:
-        inventory,outputs,review=execute(plan,repo_root,model_root,review_dir,key)
+        cost_kind,cost_microusd,cost_evidence_sha=validate_cost_inputs(
+            args.cost_kind,args.accepted_output_cost_microusd,args.cost_evidence_sha256
+        )
+        inventory,outputs,review,measurement=execute(plan,repo_root,model_root,review_dir,key)
         inventory_sha=write_json(inventory_out,inventory)
         review_sha=write_json(review_out,review)
         run={
@@ -393,8 +555,58 @@ def main() -> int:
             "reviewPackageSha256":review_sha,"failureEvidenceSha256":"UNKNOWN","outputs":outputs,
         }
         write_json(run_out,run)
+        hardware=measurement["hardwareProfile"]
+        method=measurement["measurementMethod"]
+        hardware_sha=write_json(hardware_profile_out,hardware)
+        method_sha=write_json(measurement_method_out,method)
+        measurement_evidence={
+            "schemaVersion":MEASUREMENT_EVIDENCE_SCHEMA,
+            "candidateId":plan["candidateId"],
+            "capability":plan["capability"],
+            "runtimeInventorySha256":inventory_sha,
+            "hardwareProfileSha256":hardware_sha,
+            "measurementMethodSha256":method_sha,
+            "workingMemoryKind":"CUDA_PEAK_RESERVED_BYTES",
+            "peakWorkingMemoryBytes":measurement["peakWorkingMemoryBytes"],
+            "coldEndToEndLatencyMicros":measurement["coldEndToEndLatencyMicros"],
+            "warmEndToEndLatencyMicros":measurement["warmEndToEndLatencyMicros"],
+            "warmLatencySamplesMicros":measurement["warmLatencySamplesMicros"],
+            "acceptedOutputCostMicrousd":cost_microusd,
+            "costKind":cost_kind,
+            "costEvidenceSha256":cost_evidence_sha,
+            "productionAuthorityGranted":False,
+            "winnerSelectionAllowed":False,
+        }
+        measurement_sha=write_json(measurement_evidence_out,measurement_evidence)
+        resource_fragment={
+            "schemaVersion":RESOURCE_FRAGMENT_SCHEMA,
+            "campaignId":plan["campaignId"],
+            "record":{
+                "candidateId":plan["candidateId"],
+                "capability":plan["capability"],
+                "immutableRevision":plan["immutableRevision"],
+                "modelContentSha256":plan["modelContentSha256"],
+                "executionProfileSha256":plan["executionProfileSha256"],
+                "runtimeInventory":inventory,
+                "hardwareProfileSha256":hardware_sha,
+                "measurementMethodSha256":method_sha,
+                "workingMemoryKind":"CUDA_PEAK_RESERVED_BYTES",
+                "peakWorkingMemoryBytes":measurement["peakWorkingMemoryBytes"],
+                "coldEndToEndLatencyMicros":measurement["coldEndToEndLatencyMicros"],
+                "warmEndToEndLatencyMicros":measurement["warmEndToEndLatencyMicros"],
+                "acceptedOutputCostMicrousd":cost_microusd,
+                "costKind":cost_kind,
+                "costEvidenceSha256":cost_evidence_sha,
+                "measurementEvidenceSha256":measurement_sha,
+            },
+            "productionAuthorityGranted":False,
+            "winnerSelectionAllowed":False,
+        }
+        write_json(resource_out,resource_fragment)
         return 0
     except Exception as exc:
+        for transient in (resource_out,hardware_profile_out,measurement_method_out,measurement_evidence_out):
+            transient.unlink(missing_ok=True)
         inventory=partial_inventory(plan,model_root)
         inventory_sha=write_json(inventory_out,inventory)
         failure={

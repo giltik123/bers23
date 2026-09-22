@@ -172,6 +172,7 @@ async function makeResourceEvidence(runEvidence){
     warmEndToEndLatencyMicros:4_000_000,
     acceptedOutputCostMicrousd:0,
     costKind:'PROVEN_UNMETERED_LOCAL',
+    costEvidenceSha256:H('cost-evidence|'+run.candidateId+'|'+run.capability),
     measurementEvidenceSha256:H('resource|'+run.candidateId+'|'+run.capability),
   }));
   return {

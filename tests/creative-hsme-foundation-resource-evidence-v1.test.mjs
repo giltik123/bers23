@@ -125,6 +125,7 @@ async function makeResourceEvidence(runEvidence){
     warmEndToEndLatencyMicros:4_000_000+index,
     acceptedOutputCostMicrousd:0,
     costKind:'PROVEN_UNMETERED_LOCAL',
+    costEvidenceSha256:H('cost-evidence'),
     measurementEvidenceSha256:H('resource-evidence|'+run.candidateId+'|'+run.capability),
   }));
   return {
@@ -214,6 +215,7 @@ test('missing COMPLETE record or extra blocked record fails exact roster',async(
     warmEndToEndLatencyMicros:1,
     acceptedOutputCostMicrousd:0,
     costKind:'PROVEN_UNMETERED_LOCAL',
+    costEvidenceSha256:H('cost-evidence'),
     measurementEvidenceSha256:H('resource|sana'),
   });
   await assert.rejects(prove(runEvidence,extra),error=>error?.code==='hsme_resource_record_roster');
@@ -238,6 +240,7 @@ test('FAILED run cannot carry resource evidence',async()=>{
     warmEndToEndLatencyMicros:1,
     acceptedOutputCostMicrousd:0,
     costKind:'PROVEN_UNMETERED_LOCAL',
+    costEvidenceSha256:H('cost-evidence'),
     measurementEvidenceSha256:H('resource|failed'),
   });
   await assert.rejects(prove(runEvidence,resource),error=>error?.code==='hsme_resource_record_roster');
@@ -289,6 +292,13 @@ test('working-memory semantics cannot be relabeled as host or estimated memory',
     prove(runEvidence,resource),
     error=>error?.code==='hsme_resource_literal',
   );
+});
+
+test('cost evidence digest is mandatory and content-addressed',async()=>{
+  const runEvidence=makeRunEvidence();
+  const resource=await makeResourceEvidence(runEvidence);
+  resource.records[0].costEvidenceSha256='INVALID';
+  await assert.rejects(prove(runEvidence,resource),error=>error?.code==='hsme_resource_sha256');
 });
 
 test('aggregate score, preferred candidate and authority fields cannot enter resource evidence',async()=>{
