@@ -19,6 +19,7 @@ import {
   type HsmeFoundationReuseEvidenceRejectionV1,
 } from './HsmeFoundationReuseEvidenceRejectionV1';
 import {
+  hsmeFoundationBenchmarkCampaignV1Digest,
   normalizeHsmeFoundationBenchmarkCampaignV1,
 } from './HsmeFoundationBenchmarkCampaignV1';
 import type {HsmeFoundationBenchmarkRunHashPortV1} from './HsmeFoundationBenchmarkRunEvidenceV1';
@@ -47,6 +48,8 @@ export type HsmeFoundationReuseCandidateEvidenceAssemblyV1=Readonly<{
   state:HsmeFoundationReuseCandidateEvidenceAssemblyStateV1;
   blockers:readonly string[];
   requiredCapabilities:readonly string[];
+  campaignId:string|'UNKNOWN';
+  campaignSha256:string|'UNKNOWN';
   sourceDecisionSha256:string|'UNKNOWN';
   sourceCandidateSha256:string|'UNKNOWN';
   capabilityEvidenceSetSha256:string|'UNKNOWN';
@@ -173,10 +176,16 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     });
   }
   if(campaign.status!=='FIXTURES_PINNED')blockers.push('ASSEMBLY_CAMPAIGN_NOT_FROZEN');
+  let campaignSha256:string|'UNKNOWN'='UNKNOWN';
+  try{
+    campaignSha256=await hsmeFoundationBenchmarkCampaignV1Digest(campaign,hash);
+  }catch{
+    blockers.push('ASSEMBLY_CAMPAIGN_DIGEST_INVALID');
+  }
   const campaignMatches=campaign.candidates.filter(value=>value.candidateId===candidateId);
   if(campaignMatches.length!==1){
     blockers.push(campaignMatches.length===0?'ASSEMBLY_CAMPAIGN_CANDIDATE_MISSING':'ASSEMBLY_CAMPAIGN_CANDIDATE_DUPLICATE');
-    return invalid(candidateId,blockers,{sourceDecisionSha256,sourceCandidateSha256});
+    return invalid(candidateId,blockers,{campaignId:campaign.campaignId,campaignSha256,sourceDecisionSha256,sourceCandidateSha256});
   }
   const campaignCandidate=campaignMatches[0];
   if(campaignCandidate.sourceRoot!==sourceCandidate.source.sourceRoot
@@ -219,6 +228,8 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     blockers.push('ASSEMBLY_SOURCE_PROVENANCE_DIGEST_MISSING');
     return invalid(candidateId,blockers,{
       requiredCapabilities,
+      campaignId:campaign.campaignId,
+      campaignSha256,
       sourceDecisionSha256,
       sourceCandidateSha256,
       structuralCoverageBlockers,
@@ -263,6 +274,8 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
   if(blockers.length>0){
     return invalid(candidateId,blockers,{
       requiredCapabilities,
+      campaignId:campaign.campaignId,
+      campaignSha256,
       sourceDecisionSha256,
       sourceCandidateSha256,
       structuralCoverageBlockers,
@@ -273,6 +286,8 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     blockers.push('ASSEMBLY_CANDIDATE_REQUIRED_CAPABILITY_UNSUPPORTED');
     return invalid(candidateId,blockers,{
       requiredCapabilities,
+      campaignId:campaign.campaignId,
+      campaignSha256,
       sourceDecisionSha256,
       sourceCandidateSha256,
       structuralCoverageBlockers,
@@ -317,7 +332,7 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
       });
     }
     const capabilityEvidenceSetSha256=await evidenceSetDigest(
-      candidateId,requiredCapabilities,qualificationRows,rejectionRows,
+      candidateId,campaign.campaignId,campaignSha256,requiredCapabilities,qualificationRows,rejectionRows,
       trustedSourceDecisionSha256,trustedSourceCandidateSha256,
       structuralCoverageBlockers,hash,
     );
@@ -331,6 +346,8 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
       state:'CANDIDATE_EVIDENCE_REJECTED',
       blockers:Object.freeze([]),
       requiredCapabilities,
+      campaignId:campaign.campaignId,
+      campaignSha256,
       sourceDecisionSha256,
       sourceCandidateSha256,
       capabilityEvidenceSetSha256,
@@ -369,7 +386,7 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     });
   }
   const capabilityEvidenceSetSha256=await evidenceSetDigest(
-    candidateId,requiredCapabilities,qualificationRows,rejectionRows,
+    candidateId,campaign.campaignId,campaignSha256,requiredCapabilities,qualificationRows,rejectionRows,
     trustedSourceDecisionSha256,trustedSourceCandidateSha256,
     structuralCoverageBlockers,hash,
   );
@@ -383,6 +400,8 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     state:'CANDIDATE_EVIDENCE_QUALIFIED',
     blockers:Object.freeze([]),
     requiredCapabilities,
+    campaignId:campaign.campaignId,
+    campaignSha256,
     sourceDecisionSha256,
     sourceCandidateSha256,
     capabilityEvidenceSetSha256,
@@ -648,6 +667,8 @@ async function assembleRejectedCandidate(
 
 async function evidenceSetDigest(
   candidateId:string,
+  campaignId:string,
+  campaignSha256:string,
   requiredCapabilities:readonly string[],
   qualificationRows:readonly ValidatedProof[],
   rejectionRows:readonly ValidatedProof[],
@@ -674,6 +695,8 @@ async function evidenceSetDigest(
       schemaVersion:HSME_FOUNDATION_REUSE_CANDIDATE_EVIDENCE_ASSEMBLY_V1_SCHEMA,
       candidateId,
       requiredCapabilities,
+      campaignId:campaign.campaignId,
+      campaignSha256,
       sourceDecisionSha256,
       sourceCandidateSha256,
       rows,
@@ -832,7 +855,7 @@ function invalid(
   blockers:readonly string[],
   values:Partial<Pick<
     HsmeFoundationReuseCandidateEvidenceAssemblyV1,
-    'requiredCapabilities'|'sourceDecisionSha256'|'sourceCandidateSha256'|
+    'requiredCapabilities'|'campaignId'|'campaignSha256'|'sourceDecisionSha256'|'sourceCandidateSha256'|
     'structuralCoverageBlockers'
   >>={},
 ):HsmeFoundationReuseCandidateEvidenceAssemblyV1{
@@ -842,6 +865,8 @@ function invalid(
     state:'CANDIDATE_EVIDENCE_ASSEMBLY_INVALID',
     blockers:Object.freeze([...new Set(blockers)]),
     requiredCapabilities:Object.freeze([...(values.requiredCapabilities??[])]),
+    campaignId:values.campaignId??'UNKNOWN',
+    campaignSha256:values.campaignSha256??'UNKNOWN',
     sourceDecisionSha256:values.sourceDecisionSha256??'UNKNOWN',
     sourceCandidateSha256:values.sourceCandidateSha256??'UNKNOWN',
     capabilityEvidenceSetSha256:'UNKNOWN',
