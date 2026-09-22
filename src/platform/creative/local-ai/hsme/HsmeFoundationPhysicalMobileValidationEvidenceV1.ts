@@ -18,6 +18,8 @@ export const HSME_FOUNDATION_PHYSICAL_MOBILE_LEDGER_DIGEST_DOMAIN =
   'bers:hsme:physical-mobile-source-ledger:v1\0' as const;
 export const HSME_FOUNDATION_PHYSICAL_MOBILE_PAYLOAD_DIGEST_DOMAIN =
   'bers:hsme:physical-mobile-validation-payload:v1\0' as const;
+export const HSME_FOUNDATION_PHYSICAL_MOBILE_DEVICE_SNAPSHOT_DIGEST_DOMAIN =
+  'bers:hsme:physical-mobile-device-snapshot:v1\0' as const;
 export const HSME_FOUNDATION_PHYSICAL_MOBILE_MAX_AGE_MS=30*24*60*60*1000;
 
 const HEX64=/^[0-9a-f]{64}$/;
@@ -73,6 +75,12 @@ const FORBIDDEN_EXPORT_KEYS=new Set([
   'image','imagebytes','modeloutput','password','prompt','secret','sessionidentity','token','usercontent',
   'processidentity',
 ]);
+const DEVICE_SNAPSHOT_KEYS=Object.freeze(['capturedAt','evidence','profile','runtimeCapabilities','schemaVersion'].sort());
+const DEVICE_PROFILE_KEYS=Object.freeze(['deviceClass','platform','ramMb','storageFreeBytes','tier','vramMb'].sort());
+const DEVICE_EVIDENCE_KEYS=Object.freeze(['observedRuntimes','observedSignals','unknownRuntimes','unknownSignals'].sort());
+const POLICY_SIGNAL_KEYS=Object.freeze(['platform','deviceClass','ramMb','vramMb','storageFreeBytes'] as const);
+const RUNTIME_KEYS=Object.freeze(['ONNX_RUNTIME','WEBGPU','WASM','NNAPI','DIRECTML','CUDA','METAL','VULKAN'] as const);
+const RUNTIME_CAPABILITY_KEYS=Object.freeze([...RUNTIME_KEYS].sort());
 
 export type HsmeFoundationPhysicalMobileRunAttestationV1=Readonly<{
   evidenceUrl:string;
@@ -159,11 +167,26 @@ export async function assessHsmeFoundationPhysicalMobileValidationEvidenceV1(
     blockers.push('DEVICE_CAPABILITY_KEY_DRIFT');
   }
 
+  const deviceSnapshotSha256=await digestValue(
+    HSME_FOUNDATION_PHYSICAL_MOBILE_DEVICE_SNAPSHOT_DIGEST_DOMAIN,
+    bundle.deviceSnapshot,
+    hash,
+    blockers,
+    'DEVICE_SNAPSHOT_HASH_INVALID',
+  );
+
   validateMobileBinding(bundle,blockers);
   const ledgerResult=await verifyLedger(bundle,hash,blockers);
-  const canonicalPayload=ledgerResult.sourceEvidenceLedgerSha256===null||deviceCapabilityKey===null
+  const canonicalPayload=ledgerResult.sourceEvidenceLedgerSha256===null
+    ||deviceCapabilityKey===null
+    ||deviceSnapshotSha256===null
     ? null
-    : canonicalPhysicalPayload(bundle,deviceCapabilityKey,ledgerResult.sourceEvidenceLedgerSha256);
+    : canonicalPhysicalPayload(
+      bundle,
+      deviceCapabilityKey,
+      deviceSnapshotSha256,
+      ledgerResult.sourceEvidenceLedgerSha256,
+    );
   let physicalRunPayloadSha256:string|null=null;
   if(canonicalPayload!==null){
     physicalRunPayloadSha256=await digestText(
@@ -287,6 +310,7 @@ function validateRoot(
 ):void{
   if(!exactObjectShape(bundle,BUNDLE_KEYS))blockers.push('BUNDLE_SHAPE_INVALID');
   validateExportSafety(bundle,blockers);
+  validateSanitizedDeviceSnapshot(bundle.deviceSnapshot,blockers);
   if(bundle.schemaVersion!==HSME_FOUNDATION_PHYSICAL_MOBILE_VALIDATION_V1_SCHEMA){
     blockers.push('INVALID_SCHEMA');
   }
@@ -438,6 +462,7 @@ async function sourceEvidenceDigest(
 function canonicalPhysicalPayload(
   bundle:HsmeFoundationPhysicalMobileValidationBundleV1,
   deviceCapabilityKey:string,
+  deviceSnapshotSha256:string,
   sourceEvidenceLedgerSha256:string,
 ):string{
   const raw=bundle.measuredCapture.rawCapture;
@@ -452,6 +477,7 @@ function canonicalPhysicalPayload(
     deviceClass:bundle.deviceSnapshot.profile.deviceClass,
     deviceTier:bundle.deviceSnapshot.profile.tier,
     deviceCapabilityKey,
+    deviceSnapshotSha256,
     applicationBuildSha256:bundle.applicationBuildSha256,
     deviceRunSessionSha256:bundle.deviceRunSessionSha256,
     modelId:raw.modelId,
@@ -526,6 +552,53 @@ function exactObjectShape(value:unknown,expected:readonly string[]):boolean{
   if(value===null||typeof value!=='object'||Array.isArray(value))return false;
   const keys=Object.keys(value as Record<string,unknown>).sort();
   return keys.length===expected.length&&keys.every((key,index)=>key===expected[index]);
+}
+
+function validateSanitizedDeviceSnapshot(snapshot:DeviceCapabilitySnapshot,blockers:string[]):void{
+  if(!exactObjectShape(snapshot,DEVICE_SNAPSHOT_KEYS)){
+    blockers.push('DEVICE_SNAPSHOT_SHAPE_INVALID');
+    return;
+  }
+  if(!exactObjectShape(snapshot.profile,DEVICE_PROFILE_KEYS))blockers.push('DEVICE_PROFILE_SHAPE_INVALID');
+  if(!exactObjectShape(snapshot.runtimeCapabilities,RUNTIME_CAPABILITY_KEYS)){
+    blockers.push('DEVICE_RUNTIME_CAPABILITIES_SHAPE_INVALID');
+  }
+  if(!exactObjectShape(snapshot.evidence,DEVICE_EVIDENCE_KEYS))blockers.push('DEVICE_EVIDENCE_SHAPE_INVALID');
+  if(snapshot.schemaVersion!==1)blockers.push('DEVICE_SNAPSHOT_SCHEMA_INVALID');
+  if(!Number.isSafeInteger(snapshot.capturedAt)||snapshot.capturedAt<0)blockers.push('DEVICE_SNAPSHOT_TIME_INVALID');
+
+  for(const key of ['ramMb','vramMb','storageFreeBytes'] as const){
+    const value=snapshot.profile[key];
+    if(value!=='UNKNOWN'&&(!Number.isSafeInteger(value)||value<0))blockers.push('DEVICE_PROFILE_RESOURCE_INVALID');
+  }
+  for(const runtime of RUNTIME_KEYS){
+    const value=snapshot.runtimeCapabilities[runtime];
+    if(value!==true&&value!==false&&value!=='UNKNOWN')blockers.push('DEVICE_RUNTIME_CAPABILITY_INVALID');
+  }
+
+  const expectedObservedSignals=POLICY_SIGNAL_KEYS
+    .filter(key=>snapshot.profile[key]!=='UNKNOWN')
+    .map(String)
+    .sort();
+  const expectedUnknownSignals=POLICY_SIGNAL_KEYS
+    .filter(key=>snapshot.profile[key]==='UNKNOWN')
+    .map(String)
+    .sort();
+  const expectedObservedRuntimes=RUNTIME_KEYS.filter(kind=>snapshot.runtimeCapabilities[kind]!=='UNKNOWN');
+  const expectedUnknownRuntimes=RUNTIME_KEYS.filter(kind=>snapshot.runtimeCapabilities[kind]==='UNKNOWN');
+
+  if(!sameStringArray(snapshot.evidence.observedSignals,expectedObservedSignals)
+    ||!sameStringArray(snapshot.evidence.unknownSignals,expectedUnknownSignals)
+    ||!sameStringArray(snapshot.evidence.observedRuntimes,expectedObservedRuntimes)
+    ||!sameStringArray(snapshot.evidence.unknownRuntimes,expectedUnknownRuntimes)){
+    blockers.push('DEVICE_SNAPSHOT_EVIDENCE_NOT_CANONICAL');
+  }
+}
+
+function sameStringArray(actual:readonly string[],expected:readonly string[]):boolean{
+  return Array.isArray(actual)
+    &&actual.length===expected.length
+    &&actual.every((value,index)=>value===expected[index]);
 }
 
 function validateExportSafety(value:unknown,blockers:string[],seen=new Set<object>()):void{
