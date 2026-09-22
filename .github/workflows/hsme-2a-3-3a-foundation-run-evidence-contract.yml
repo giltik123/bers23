@@ -22,6 +22,9 @@ on:
       - 'tests/creative-hsme-foundation-resource-evidence-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationParetoEfficiencyV1.ts'
       - 'tests/creative-hsme-foundation-pareto-efficiency-v1.test.mjs'
+      - 'scripts/hsme-foundation-resource-fragment-verify.mjs'
+      - 'scripts/hsme-foundation-resource-evidence-assembler.mjs'
+      - 'tests/hsme-foundation-resource-evidence-assembler.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -349,3 +352,45 @@ jobs:
           grep -F "lowerQualityCandidateAdmissionAllowed:false" "${CONTRACT}"
           grep -F "deploymentTierAdmissionGranted:false" "${CONTRACT}"
           grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
+
+
+  resource-assembler-contract:
+    name: HSME-2a.3.3i resource fragment assembler synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for resource assembler contract
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run resource fragment campaign assembler contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3i
+          npx esbuild tests/hsme-foundation-resource-evidence-assembler.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3i/assembler.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3i/assembler.test.mjs
+
+      - name: Prove assembler remains JSON-only evidence plumbing
+        run: |
+          set -euo pipefail
+          ASSEMBLER=scripts/hsme-foundation-resource-evidence-assembler.mjs
+          ! grep -nE 'hf_hub_download|from_pretrained|nvidia-smi|torch|CUDA|secrets\.|workflow_dispatch|selectedCandidateId|winnerCandidateId|qualityLossVector' "${ASSEMBLER}"
+          grep -F "imageBytesIncluded:false" "${ASSEMBLER}"
+          grep -F "reviewArtifactsIncluded:false" "${ASSEMBLER}"
+          grep -F "modelExecutionAllowed:false" "${ASSEMBLER}"
+          grep -F "winnerSelectionAllowed:false" "${ASSEMBLER}"
+          grep -F "must contain exactly the seven approved JSON files" "${ASSEMBLER}"
