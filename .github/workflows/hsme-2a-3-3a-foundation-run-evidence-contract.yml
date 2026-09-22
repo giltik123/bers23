@@ -37,6 +37,8 @@ on:
       - 'tests/creative-hsme-physical-mobile-validation-evidence-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalTargetEvidenceBindingV1.ts'
       - 'tests/creative-hsme-physical-target-evidence-binding-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalReuseRuntimeOverlayV1.ts'
+      - 'tests/creative-hsme-physical-reuse-runtime-overlay-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -706,6 +708,57 @@ jobs:
           grep -F "reuseAdvanceAllowed:false" "$CONTRACT"
           grep -F "fullStudentEscalationAllowed:false" "$CONTRACT"
           grep -F "modelFleetPromotionAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "trainingOrDistillationAllowed:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+
+  physical-reuse-runtime-overlay-contract:
+    name: HSME-2a.3.3p physical reuse runtime overlay synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for physical runtime overlay
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run physical runtime overlay contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3p
+          npx esbuild tests/creative-hsme-physical-reuse-runtime-overlay-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3p/runtime-overlay.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3p/runtime-overlay.test.mjs
+
+      - name: Prove component roles are explicit evidence only
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalReuseRuntimeOverlayV1.ts
+          ! grep -nE 'inferRole|roleFrom|filename|extension|modelFamily|\.onnx|\.safetensors' "$CONTRACT"
+          grep -F "'BACKBONE','CONDITIONER','VAE','ADAPTER','OTHER_REQUIRED'" "$CONTRACT"
+          grep -F "COMPONENT_MAP_INVENTORY_COUNT_MISMATCH" "$CONTRACT"
+          grep -F "COMPONENT_MAP_BYTE_SUM_OVERFLOW" "$CONTRACT"
+          grep -F "PHYSICAL_TARGET_BINDING_REHASH_MISMATCH" "$CONTRACT"
+          grep -F "TARGET_EVIDENCE_REHASH_MISMATCH" "$CONTRACT"
+          grep -F "licenseMutationAllowed:false" "$CONTRACT"
+          grep -F "qualityMutationAllowed:false" "$CONTRACT"
+          grep -F "trainingEvidenceMutationAllowed:false" "$CONTRACT"
+          grep -F "decisionMutationAllowed:false" "$CONTRACT"
+          grep -F "selectedCandidateIdAllowed:false" "$CONTRACT"
+          grep -F "reuseAdvanceAllowed:false" "$CONTRACT"
+          grep -F "fullStudentEscalationAllowed:false" "$CONTRACT"
           grep -F "productionAuthorityGranted:false" "$CONTRACT"
           grep -F "trainingOrDistillationAllowed:false" "$CONTRACT"
           grep -F "winnerSelectionAllowed:false" "$CONTRACT"
