@@ -296,3 +296,21 @@ test('single-candidate dispatch can validate a fragment without fabricating the 
     error => error?.code === 'hsme_foundation_run_field_unknown',
   );
 });
+
+
+test('run evidence re-proves the trust campaign digest against the exact campaign object', async () => {
+  const changed = clone(campaign);
+  const t2i = changed.slices.find(value => value.capability === 'TEXT_TO_IMAGE');
+  [t2i.dimensions[0], t2i.dimensions[1]] = [t2i.dimensions[1], t2i.dimensions[0]];
+  await expectCodeAsync(
+    () => proveHsmeFoundationBenchmarkRunEvidenceV1(
+      changed,
+      trust,
+      fixturePlan,
+      fixturePack,
+      evidence({ sanaComplete: true }),
+      hashPort,
+    ),
+    'hsme_foundation_trust_campaign_digest_mismatch',
+  );
+});

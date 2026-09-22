@@ -16,6 +16,8 @@ on:
       - 'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-dispatch-matrix.v1.json'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationQualityFinalizationV1.ts'
       - 'tests/creative-hsme-foundation-quality-finalization-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationQualityFrontierV1.ts'
+      - 'tests/creative-hsme-foundation-quality-frontier-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -208,3 +210,45 @@ jobs:
           grep -F "winnerSelectionAllowed: false" "${CONTRACT}"
           grep -F "MAX_NONCOMPENSABLE_CRITICAL_THEN_MEDIAN" "${CONTRACT}"
           grep -F "EVEN_ARITHMETIC_MEAN_HALF_UP" "${CONTRACT}"
+
+
+  quality-frontier-contract:
+    name: HSME-2a.3.3e quality frontier synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for quality frontier contract
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run capability-sliced quality frontier contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3e
+          npx esbuild tests/creative-hsme-foundation-quality-frontier-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3e/frontier.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3e/frontier.test.mjs
+
+      - name: Prove frontier cannot import efficiency or grant final winner authority
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationQualityFrontierV1.ts
+          ! grep -nE 'installedBytes|workingMemoryBytes|latencyMs|costMicrousd|checkpointBytes|qualityPerInstalledByte' "${CONTRACT}"
+          ! grep -nE 'selectedCandidateId|winnerCandidateId|productionSelection' "${CONTRACT}"
+          grep -F "efficiencyMayOnlyUseQualityPreferredSet: true" "${CONTRACT}"
+          grep -F "efficiencyComparisonAllowed" "${CONTRACT}"
+          grep -F "winnerSelectionAllowed: false" "${CONTRACT}"
+          grep -F "PARTIAL_BLOCKED" "${CONTRACT}"
