@@ -43,9 +43,29 @@ test('protected job verifies raw run before upload and destroys transient model/
   assert.ok(verifyIndex>=0&&uploadIndex>verifyIndex);
 });
 
-test('protected secret is scoped only to execution and reviewer artifacts are blind-only',()=>{
+test('protected secret is scoped only to execution and reviewer artifacts remain blind-only',()=>{
   assert.match(workflow,/HSME_FOUNDATION_BLIND_HMAC_KEY: \$\{\{ secrets\.HSME_FOUNDATION_BLIND_HMAC_KEY \}\}/);
   assert.match(workflow,/review-package\.json/);
   assert.match(workflow,/blind-review/);
-  assert.doesNotMatch(workflow,/latencyMs|workingMemoryBytes|installedBytes|costMicrousd|selectedCandidateId/);
+  const synthetic=workflow.slice(workflow.indexOf('  synthetic-contract:'),workflow.indexOf('  plan-protected-run:'));
+  assert.doesNotMatch(synthetic,/accepted_output_cost_microusd|resource-measurement\.json|nvidia-smi/);
+  const blindUpload=workflow.slice(workflow.indexOf('      - name: Upload protected benchmark evidence'),workflow.indexOf('      - name: Upload separately verified resource measurement evidence'));
+  assert.doesNotMatch(blindUpload,/resource-measurement|resource-hardware-profile|resource-measurement-method|resource-measurement-evidence/);
+  assert.doesNotMatch(blindUpload,/accepted_output_cost_microusd|workingMemoryKind|peakWorkingMemoryBytes/);
+});
+
+test('manual protected resource capture requires explicit cost evidence and separate verified artifact',()=>{
+  assert.match(workflow,/cost_kind:/);
+  assert.match(workflow,/accepted_output_cost_microusd:/);
+  assert.match(workflow,/cost_evidence_sha256:/);
+  assert.match(workflow,/Validate explicit resource cost evidence before protected execution/);
+  assert.match(workflow,/hsme-foundation-resource-fragment-verify\.mjs/);
+  assert.match(workflow,/steps\.verify\.outputs\.run_status == 'COMPLETE'/);
+  assert.match(workflow,/hsme-foundation-resource-evidence-/);
+  assert.match(workflow,/if-no-files-found: error/);
+  const resourceUpload=workflow.slice(workflow.indexOf('      - name: Upload separately verified resource measurement evidence'),workflow.indexOf('      - name: Preserve failed candidate state'));
+  assert.match(resourceUpload,/execution-plan\.json/);
+  assert.match(resourceUpload,/candidate-run\.json/);
+  assert.match(resourceUpload,/runtime-inventory\.json/);
+  assert.doesNotMatch(resourceUpload,/review-package\.json|blind-review|\.png/);
 });

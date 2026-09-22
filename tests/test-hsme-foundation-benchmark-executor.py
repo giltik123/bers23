@@ -2,7 +2,9 @@ import hashlib
 import importlib.util
 import pathlib
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 SPEC=importlib.util.spec_from_file_location("hsme_foundation_executor",ROOT/"scripts/hsme-foundation-benchmark-executor.py")
@@ -113,6 +115,78 @@ class ExecutorTests(unittest.TestCase):
             a=runner.write_json(path,{"a":1,"b":False})
             b=hashlib.sha256(path.read_bytes()).hexdigest()
             self.assertEqual(a,b)
+
+
+    def test_resource_cost_inputs_are_explicit_and_fail_closed(self):
+        self.assertEqual(
+            runner.validate_cost_inputs("PROVEN_UNMETERED_LOCAL","0","a"*64),
+            ("PROVEN_UNMETERED_LOCAL",0,"a"*64),
+        )
+        self.assertEqual(
+            runner.validate_cost_inputs("MEASURED_METERED","123","b"*64),
+            ("MEASURED_METERED",123,"b"*64),
+        )
+        for kind,cost,digest in (
+            ("PROVEN_UNMETERED_LOCAL","1","a"*64),
+            ("MEASURED_METERED","0","a"*64),
+            ("UNKNOWN","1","a"*64),
+            ("MEASURED_METERED","abc","a"*64),
+            ("MEASURED_METERED","1","A"*64),
+        ):
+            with self.assertRaises(runner.RunnerError):
+                runner.validate_cost_inputs(kind,cost,digest)
+
+    def test_warm_latency_median_is_integer_half_up(self):
+        self.assertEqual(runner.median_half_up([9,1,5]),5)
+        self.assertEqual(runner.median_half_up([1,2]),2)
+        self.assertEqual(runner.median_half_up([1,2,100,101]),51)
+        with self.assertRaises(runner.RunnerError):
+            runner.median_half_up([])
+
+    def test_measurement_method_freezes_cuda_latency_and_memory_semantics(self):
+        method=runner.measurement_method()
+        self.assertEqual(method["coldLatencyDefinition"],"PIPELINE_LOAD_PLUS_FIRST_FROZEN_INFERENCE")
+        self.assertEqual(method["warmAggregation"],"MEDIAN_EVEN_ARITHMETIC_MEAN_HALF_UP")
+        self.assertEqual(method["workingMemoryKind"],"CUDA_PEAK_RESERVED_BYTES")
+        self.assertFalse(method["artifactAcquisitionIncludedInLatency"])
+        self.assertFalse(method["pngEncodingIncludedInLatency"])
+        self.assertFalse(method["reviewPackageReceivesResourceMetadata"])
+
+    def test_hardware_profile_is_content_addressable_cuda_identity(self):
+        class Props:
+            name="Synthetic GPU"
+            total_memory=12_345
+        class Cuda:
+            @staticmethod
+            def current_device(): return 0
+            @staticmethod
+            def get_device_properties(device):
+                self.assertEqual(device,0)
+                return Props()
+            @staticmethod
+            def get_device_capability(device):
+                self.assertEqual(device,0)
+                return (8,0)
+        fake=types.SimpleNamespace(cuda=Cuda(),__version__="2.0.1+cu118",version=types.SimpleNamespace(cuda="11.8"))
+        with mock.patch.object(runner.subprocess,"check_output",return_value="550.54.15\n"):
+            profile=runner.hardware_profile(fake)
+        self.assertEqual(profile["gpuName"],"Synthetic GPU")
+        self.assertEqual(profile["totalMemoryBytes"],12_345)
+        self.assertEqual(profile["nvidiaDriverVersion"],"550.54.15")
+        self.assertEqual(profile["workingMemoryKind"],"CUDA_PEAK_RESERVED_BYTES")
+        self.assertRegex(runner.sha256_stable(profile),r"^[0-9a-f]{64}$")
+
+    def test_driver_version_query_fails_closed_on_inconsistent_visible_gpus(self):
+        with mock.patch.object(runner.subprocess,"check_output",return_value="550.54.15\n555.42.02\n"):
+            with self.assertRaises(runner.RunnerError):
+                runner.nvidia_driver_version()
+
+    def test_cuda_requirement_fails_closed_without_gpu(self):
+        fake=types.ModuleType("torch")
+        fake.cuda=types.SimpleNamespace(is_available=lambda:False)
+        with mock.patch.dict("sys.modules",{"torch":fake}):
+            with self.assertRaises(runner.RunnerError):
+                runner.require_cuda(base_plan())
 
 
 if __name__=="__main__":
