@@ -235,8 +235,20 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
       structuralCoverageBlockers,
     });
   }
+  if(!digestKnown(campaignSha256)){
+    blockers.push('ASSEMBLY_CAMPAIGN_DIGEST_MISSING');
+    return invalid(candidateId,blockers,{
+      requiredCapabilities,
+      campaignId:campaign.campaignId,
+      campaignSha256,
+      sourceDecisionSha256,
+      sourceCandidateSha256,
+      structuralCoverageBlockers,
+    });
+  }
   const trustedSourceDecisionSha256=sourceDecisionSha256;
   const trustedSourceCandidateSha256=sourceCandidateSha256;
+  const trustedCampaignSha256=campaignSha256;
 
   const validated:ValidatedProof[]=[];
   const seen=new Set<string>();
@@ -332,7 +344,7 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
       });
     }
     const capabilityEvidenceSetSha256=await evidenceSetDigest(
-      candidateId,campaign.campaignId,campaignSha256,requiredCapabilities,qualificationRows,rejectionRows,
+      candidateId,campaign.campaignId,trustedCampaignSha256,requiredCapabilities,qualificationRows,rejectionRows,
       trustedSourceDecisionSha256,trustedSourceCandidateSha256,
       structuralCoverageBlockers,hash,
     );
@@ -386,7 +398,7 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     });
   }
   const capabilityEvidenceSetSha256=await evidenceSetDigest(
-    candidateId,campaign.campaignId,campaignSha256,requiredCapabilities,qualificationRows,rejectionRows,
+    candidateId,campaign.campaignId,trustedCampaignSha256,requiredCapabilities,qualificationRows,rejectionRows,
     trustedSourceDecisionSha256,trustedSourceCandidateSha256,
     structuralCoverageBlockers,hash,
   );
