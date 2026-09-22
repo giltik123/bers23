@@ -269,8 +269,17 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     });
   }
 
-  const structuralUnsupported=structuralCoverageBlockers.length>0;
-  const candidateWideReasons=new Set<string>(structuralCoverageBlockers);
+  if(structuralCoverageBlockers.length>0){
+    blockers.push('ASSEMBLY_CANDIDATE_REQUIRED_CAPABILITY_UNSUPPORTED');
+    return invalid(candidateId,blockers,{
+      requiredCapabilities,
+      sourceDecisionSha256,
+      sourceCandidateSha256,
+      structuralCoverageBlockers,
+    });
+  }
+
+  const candidateWideReasons=new Set<string>();
   for(const row of rejectionRows){
     for(const reason of row.rejectionReasons){
       if(reason==='LICENSE_NON_COMMERCIAL'
@@ -290,7 +299,7 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     );
   if(allQualityFailed)candidateWideReasons.add('QUALITY_FLOOR_FAILED');
 
-  const mayReject=structuralUnsupported||candidateWideReasons.size>0;
+  const mayReject=candidateWideReasons.size>0;
   if(mayReject){
     const assembled=await assembleRejectedCandidate(
       sourceCandidate,
