@@ -860,6 +860,8 @@ jobs:
           grep -F "proveHsmeFoundationBenchmarkCandidateTrustV1" "$CONTRACT"
           grep -F "verifyQualityFinalization" "$CONTRACT"
           grep -F "QUALIFICATION_RUNTIME_REHASH_MISMATCH" "$CONTRACT"
+          grep -F "SOURCE_CANDIDATE_REHASH_MISMATCH" "$CONTRACT"
+          grep -F "SOURCE_DECISION_REHASH_MISMATCH" "$CONTRACT"
           grep -F "QUALIFICATION_TRAINING_TARGET_DRIFT" "$CONTRACT"
           grep -F "QUALIFICATION_EVIDENCE_READY" "$CONTRACT"
           grep -F "resolvedLicenseConclusion:'COMMERCIAL_ADMISSIBLE'" "$CONTRACT"
