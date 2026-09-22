@@ -3,6 +3,7 @@ import {
   normalizeHsmeFoundationReuseCandidateV1,
   normalizeHsmeFoundationReuseDecisionV1,
   type HsmeFoundationReuseCandidateV1,
+  type HsmeFoundationReuseRuntimeV1,
   type HsmeFoundationReuseTrainingV1,
 } from './HsmeFoundationReuseDecisionV1';
 import {
@@ -88,6 +89,9 @@ export type HsmeFoundationReuseEvidenceQualificationV1=Readonly<{
   pendingDecisionSha256:string|'UNKNOWN';
   appliedCandidateSha256:string|'UNKNOWN';
   runtimeEvidenceSha256:string|'UNKNOWN';
+  runtimeComponentMapSha256:string|'UNKNOWN';
+  sourceExecutionProfileSha256:string|'UNKNOWN';
+  runtime:HsmeFoundationReuseRuntimeV1|null;
   licenseEvidenceSha256:string|'UNKNOWN';
   qualityEvidenceSha256:string|'UNKNOWN';
   trainingEvidenceSha256:string|'UNKNOWN';
@@ -274,6 +278,9 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
       pendingDecisionSha256,
       appliedCandidateSha256,
       runtimeEvidenceSha256:valueOrUnknown(overlay.runtimeEvidenceSha256),
+      runtimeComponentMapSha256:valueOrUnknown(overlay.componentMapSha256),
+      sourceExecutionProfileSha256:valueOrUnknown(overlay.sourceExecutionProfileSha256),
+      runtime:candidate.runtime,
     });
   }
 
@@ -350,6 +357,9 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
       pendingDecisionSha256,
       appliedCandidateSha256,
       runtimeEvidenceSha256:valueOrUnknown(overlay.runtimeEvidenceSha256),
+      runtimeComponentMapSha256:valueOrUnknown(overlay.componentMapSha256),
+      sourceExecutionProfileSha256:valueOrUnknown(overlay.sourceExecutionProfileSha256),
+      runtime:candidate.runtime,
       licenseEvidenceSha256:valueOrUnknown(proofEntries[0]?.rightsEvidenceSha256??'UNKNOWN'),
       qualityEvidenceSha256:qualityEvidenceSha256??'UNKNOWN',
       trainingEvidenceSha256,
@@ -368,6 +378,9 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
       pendingDecisionSha256,
       appliedCandidateSha256,
       runtimeEvidenceSha256:overlay.runtimeEvidenceSha256,
+      runtimeComponentMapSha256:overlay.componentMapSha256,
+      sourceExecutionProfileSha256:overlay.sourceExecutionProfileSha256,
+      runtime:candidate.runtime,
       licenseEvidenceSha256,
       qualityEvidenceSha256,
       trainingEvidenceSha256,
@@ -395,6 +408,9 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
     pendingDecisionSha256,
     appliedCandidateSha256,
     runtimeEvidenceSha256:overlay.runtimeEvidenceSha256,
+    runtimeComponentMapSha256:overlay.componentMapSha256,
+    sourceExecutionProfileSha256:overlay.sourceExecutionProfileSha256,
+    runtime:candidate.runtime,
     licenseEvidenceSha256,
     qualityEvidenceSha256,
     trainingEvidenceSha256,
@@ -790,6 +806,7 @@ function invalid(
   values:Partial<Pick<
     HsmeFoundationReuseEvidenceQualificationV1,
     'sourceDecisionSha256'|'sourceCandidateSha256'|'pendingDecisionSha256'|'appliedCandidateSha256'|'runtimeEvidenceSha256'|
+    'runtimeComponentMapSha256'|'sourceExecutionProfileSha256'|'runtime'|
     'licenseEvidenceSha256'|'qualityEvidenceSha256'|'trainingEvidenceSha256'|
     'resolvedLicenseConclusion'|'evidenceSetSha256'
   >>={},
@@ -805,6 +822,9 @@ function invalid(
     pendingDecisionSha256:values.pendingDecisionSha256??'UNKNOWN',
     appliedCandidateSha256:values.appliedCandidateSha256??'UNKNOWN',
     runtimeEvidenceSha256:values.runtimeEvidenceSha256??'UNKNOWN',
+    runtimeComponentMapSha256:values.runtimeComponentMapSha256??'UNKNOWN',
+    sourceExecutionProfileSha256:values.sourceExecutionProfileSha256??'UNKNOWN',
+    runtime:values.runtime??null,
     licenseEvidenceSha256:values.licenseEvidenceSha256??'UNKNOWN',
     qualityEvidenceSha256:values.qualityEvidenceSha256??'UNKNOWN',
     trainingEvidenceSha256:values.trainingEvidenceSha256??'UNKNOWN',
