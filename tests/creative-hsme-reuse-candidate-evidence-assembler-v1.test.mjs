@@ -316,15 +316,15 @@ test('untrusted child proof origin cannot be promoted by matching hashes',async(
   assert.ok(result.blockers.includes('ASSEMBLY_QUALIFICATION_ORIGIN_UNVERIFIED'));
 });
 
-test('candidate missing a frozen required capability gets structural rejection proof only',async()=>{
+test('candidate missing a frozen required capability cannot enter candidate-wide assembly',async()=>{
   const p=await provenance(SANA,'FROZEN_FOUNDATION_ADAPTATION');
   const result=await assembleHsmeFoundationReuseCandidateEvidenceV1(
     p.source,SANA,campaign,[],[],origin(),hashPort,
   );
-  assert.equal(result.state,'CANDIDATE_EVIDENCE_REJECTED');
+  assert.equal(result.state,'CANDIDATE_EVIDENCE_ASSEMBLY_INVALID');
   assert.deepEqual(result.structuralCoverageBlockers,['REQUIRED_CAPABILITY_UNSUPPORTED']);
-  assert.equal(result.assembledCandidate.evidenceState,'REJECTED');
-  assert.deepEqual(result.assembledCandidate.rejectionReasons,['REQUIRED_CAPABILITY_UNSUPPORTED']);
+  assert.ok(result.blockers.includes('ASSEMBLY_CANDIDATE_REQUIRED_CAPABILITY_UNSUPPORTED'));
+  assert.equal(result.assembledCandidate,null);
   assert.equal(result.fullStudentEscalationAllowed,false);
 });
 
