@@ -321,7 +321,7 @@ export async function captureHsmeFoundationTargetDeviceMeasuredBenchmarkV1(
     winnerSelectionAllowed:false,
   });
 
-  const result=deepFreeze({
+  const result:HsmeFoundationTargetDeviceMeasuredCaptureResultV1=deepFreeze({
     rawCapture,
     measurementCaptureSha256,
     benchmarkEvidence,
