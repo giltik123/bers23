@@ -29,6 +29,8 @@ on:
       - 'src/platform/creative/local-ai/benchmark/BenchmarkEvidence.ts'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationTargetDeviceBenchmarkAdapterV1.ts'
       - 'tests/creative-hsme-foundation-target-device-adapter-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationTargetDeviceMeasuredCaptureV1.ts'
+      - 'tests/creative-hsme-foundation-target-device-measured-capture-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -499,5 +501,51 @@ jobs:
           grep -F "UNIFIED_PROCESS_WORKING_SET" "${CONTRACT}"
           grep -F "modelFleetPromotionUsed:false" "${CONTRACT}"
           grep -F "durableModelFleetPromotionAllowed:false" "${CONTRACT}"
+          grep -F "reuseAdvanceAllowed:false" "${CONTRACT}"
+          grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
+
+
+  measured-target-device-capture-contract:
+    name: HSME-2a.3.3l measured target-device capture synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for measured target-device capture
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run measured target-device capture contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3l
+          npx esbuild tests/creative-hsme-foundation-target-device-measured-capture-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3l/capture.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3l/capture.test.mjs
+
+      - name: Prove measured capture cannot fall back to estimates or promotion authority
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationTargetDeviceMeasuredCaptureV1.ts
+          ! grep -nE 'runtime\.estimate|requiredRam|requiredVram|navigator\.deviceMemory|ModelFleetPromotionPolicy|PROMOTED|selectedCandidateId:|DIRECT_FOUNDATION_ADVANCE|BOUNDED_ADAPTATION_ADVANCE|REUSE_PATH_INSUFFICIENT' "${CONTRACT}"
+          grep -F "runtimeEstimateFallbackAllowed:false" "${CONTRACT}"
+          grep -F "manifestResourceFallbackAllowed:false" "${CONTRACT}"
+          grep -F "NATIVE_PROCESS_WORKING_SET" "${CONTRACT}"
+          grep -F "NATIVE_UNIFIED_PROCESS_WORKING_SET" "${CONTRACT}"
+          grep -F "NATIVE_HOST_AND_ACCELERATOR_WORKING_SET" "${CONTRACT}"
+          grep -F "measurementCaptureSha256" "${CONTRACT}"
+          grep -F "modelFleetPromotionAllowed:false" "${CONTRACT}"
           grep -F "reuseAdvanceAllowed:false" "${CONTRACT}"
           grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
