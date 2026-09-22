@@ -20,6 +20,8 @@ on:
       - 'tests/creative-hsme-foundation-quality-frontier-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationResourceEvidenceV1.ts'
       - 'tests/creative-hsme-foundation-resource-evidence-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationParetoEfficiencyV1.ts'
+      - 'tests/creative-hsme-foundation-pareto-efficiency-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -301,3 +303,49 @@ jobs:
           grep -F "CUDA_PEAK_RESERVED_BYTES" "${CONTRACT}"
           grep -F "peakWorkingMemoryBytes" "${CONTRACT}"
           grep -F "acceptedOutputCostMicrousd" "${CONTRACT}"
+
+
+  pareto-efficiency-contract:
+    name: HSME-2a.3.3g quality-gated Pareto efficiency synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for Pareto efficiency contract
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run quality-gated Pareto efficiency contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3g
+          npx esbuild tests/creative-hsme-foundation-pareto-efficiency-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3g/pareto.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3g/pareto.test.mjs
+
+      - name: Prove Pareto comparison has no hidden weighting or production selection
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationParetoEfficiencyV1.ts
+          ! grep -nE 'weightedScore|aggregateScore|scoreWeight|selectedCandidateId|winnerCandidateId|productionSelection|mobileInstalledBudgetBytes|mobileWorkingMemoryBudgetBytes' "${CONTRACT}"
+          grep -F "QUALITY_GATED_PARETO_NO_WEIGHTS" "${CONTRACT}"
+          grep -F "workingMemoryKind" "${CONTRACT}"
+          grep -F "hardwareProfileSha256" "${CONTRACT}"
+          grep -F "measurementMethodSha256" "${CONTRACT}"
+          grep -F "costKind" "${CONTRACT}"
+          grep -F "weightedAggregateScoreAllowed:false" "${CONTRACT}"
+          grep -F "lowerQualityCandidateAdmissionAllowed:false" "${CONTRACT}"
+          grep -F "deploymentTierAdmissionGranted:false" "${CONTRACT}"
+          grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
