@@ -31,6 +31,8 @@ on:
       - 'tests/creative-hsme-foundation-target-device-adapter-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationTargetDeviceMeasuredCaptureV1.ts'
       - 'tests/creative-hsme-foundation-target-device-measured-capture-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationNativeMobileWorkingSetAdaptersV1.ts'
+      - 'tests/creative-hsme-native-mobile-working-set-adapters-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -549,3 +551,53 @@ jobs:
           grep -F "modelFleetPromotionAllowed:false" "${CONTRACT}"
           grep -F "reuseAdvanceAllowed:false" "${CONTRACT}"
           grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
+
+
+  native-mobile-working-set-adapters-contract:
+    name: HSME-2a.3.3m native mobile working-set adapters synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for native mobile working-set adapters
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run native mobile working-set adapter contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3m
+          npx esbuild tests/creative-hsme-native-mobile-working-set-adapters-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3m/native-mobile.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3m/native-mobile.test.mjs
+
+      - name: Prove mobile telemetry cannot fall back to estimates or capacity
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationNativeMobileWorkingSetAdaptersV1.ts
+          ! grep -nE 'performance\.memory|navigator\.deviceMemory|runtime\.estimate|requiredRam|requiredVram' "$CONTRACT"
+          grep -F "PROCESS_RESIDENT_SET_RSS_BYTES" "$CONTRACT"
+          grep -F "TASK_VM_INFO_PHYS_FOOTPRINT_BYTES" "$CONTRACT"
+          grep -F "MEASUREMENT_UNAVAILABLE" "$CONTRACT"
+          grep -F "sourceEvidenceLedger" "$CONTRACT"
+          grep -F "processIdentitySha256" "$CONTRACT"
+          grep -F "sessionIdentitySha256" "$CONTRACT"
+          grep -F "HSME_FOUNDATION_NATIVE_MOBILE_IDENTITY_DIGEST_DOMAIN" "$CONTRACT"
+          grep -F "deviceCapacityUsed:false" "$CONTRACT"
+          grep -F "browserHeapUsed:false" "$CONTRACT"
+          grep -F "runtimeEstimateUsed:false" "$CONTRACT"
+          grep -F "manifestResourceEstimateUsed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
