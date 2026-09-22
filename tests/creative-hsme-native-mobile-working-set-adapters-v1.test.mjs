@@ -134,7 +134,7 @@ test('process, session and source identity drift fail closed',async()=>{
     ]);
     await a.sample('BASELINE',0);
     await assert.rejects(
-      a.sample('POST_LOAD',0),
+      a.sample('POST_LOAD',1),
       error=>error?.code==='hsme_native_mobile_identity_drift',
     );
   }
@@ -169,7 +169,7 @@ test('native timestamp regression or duplicate timestamp fails closed',async()=>
     ]);
     await a.sample('BASELINE',0);
     await assert.rejects(
-      a.sample('POST_LOAD',0),
+      a.sample('POST_LOAD',1),
       error=>error?.code==='hsme_native_mobile_timestamp_regression',
     );
   }
@@ -186,14 +186,16 @@ test('zero, negative and unsafe byte counts reject',async()=>{
 });
 
 test('source evidence binds phase, sequence and exact measured value',async()=>{
-  const sameRaw=measured('ANDROID',0);
-  const baseline=adapter('ANDROID',[sameRaw]);
-  const postLoad=adapter('ANDROID',[sameRaw]);
-  const a=await baseline.sample('BASELINE',0);
-  const b=await postLoad.sample('POST_LOAD',0);
+  const sameBytes=100_000_000;
+  const ordered=adapter('ANDROID',[
+    measured('ANDROID',0,{bytes:sameBytes}),
+    measured('ANDROID',1,{bytes:sameBytes}),
+  ]);
+  const a=await ordered.sample('BASELINE',0);
+  const b=await ordered.sample('POST_LOAD',1);
   assert.notEqual(a.sourceEvidenceSha256,b.sourceEvidenceSha256);
 
-  const changed=adapter('ANDROID',[{...sameRaw,bytes:sameRaw.bytes+1}]);
+  const changed=adapter('ANDROID',[measured('ANDROID',0,{bytes:sameBytes+1})]);
   const c=await changed.sample('BASELINE',0);
   assert.notEqual(a.sourceEvidenceSha256,c.sourceEvidenceSha256);
 });
