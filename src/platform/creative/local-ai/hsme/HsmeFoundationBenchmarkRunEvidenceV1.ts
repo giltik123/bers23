@@ -3,6 +3,7 @@ import {
 } from './HsmeFoundationBenchmarkCampaignV1';
 import {
   normalizeHsmeFoundationBenchmarkCandidateTrustV1,
+  proveHsmeFoundationBenchmarkCandidateTrustV1,
 } from './HsmeFoundationBenchmarkCandidateTrustV1';
 import {
   normalizeHsmeFoundationFixturePlanV1,
@@ -193,6 +194,11 @@ export async function proveHsmeFoundationBenchmarkRunEvidenceV1(
   const trust = normalizeHsmeFoundationBenchmarkCandidateTrustV1(rawTrust);
   const fixturePlan = normalizeHsmeFoundationFixturePlanV1(rawFixturePlan);
   const evidence = normalizeHsmeFoundationBenchmarkRunEvidenceV1(rawRunEvidence);
+
+  // Re-prove the trust bundle against the exact campaign object at the run-evidence
+  // boundary. Comparing evidence.campaignDigest only to caller-supplied trust.campaignDigest
+  // would allow a mutated campaign object to inherit an old accepted digest.
+  await proveHsmeFoundationBenchmarkCandidateTrustV1(rawCampaign, rawTrust, hash);
 
   if (trust.state !== 'PINNED') {
     fail('hsme_foundation_run_trust_not_pinned', 'candidate trust must be PINNED before execution evidence');
