@@ -202,7 +202,6 @@ export async function finalizeHsmeFoundationReuseDecisionV1(
 
   const validatedByCandidate=new Map(validated.map(value=>[value.candidateId,value] as const));
   const qualified=validated.filter(value=>value.state==='CANDIDATE_EVIDENCE_QUALIFIED');
-  const rejected=validated.filter(value=>value.state==='CANDIDATE_EVIDENCE_REJECTED');
 
   if(qualified.length===0){
     if(rejected.length!==validated.length){
