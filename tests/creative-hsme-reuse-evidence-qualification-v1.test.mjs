@@ -345,6 +345,9 @@ for(const config of [
     assert.equal(result.pendingDecisionSha256,x.application.pendingDecisionSha256);
     assert.equal(result.appliedCandidateSha256,x.application.appliedCandidateSha256);
     assert.equal(result.runtimeEvidenceSha256,x.runtimeOverlay.runtimeEvidenceSha256);
+    assert.equal(result.runtimeComponentMapSha256,x.runtimeOverlay.componentMapSha256);
+    assert.equal(result.sourceExecutionProfileSha256,x.runtimeOverlay.sourceExecutionProfileSha256);
+    assert.deepEqual(result.runtime,x.application.candidate.runtime);
     assert.notEqual(result.sourceCandidateSha256,result.appliedCandidateSha256);
     assert.notEqual(result.sourceDecisionSha256,result.pendingDecisionSha256);
     assert.equal(result.licenseEvidenceSha256,x.campaignCandidate.rightsEvidenceSha256);
