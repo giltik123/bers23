@@ -1,6 +1,5 @@
 import {
   hsmeFoundationReuseDecisionV1Digest,
-  normalizeHsmeFoundationReuseCandidateV1,
   type HsmeFoundationReuseCandidateV1,
   type HsmeFoundationReuseTrainingV1,
 } from './HsmeFoundationReuseDecisionV1';
@@ -25,7 +24,6 @@ import {
   HSME_FOUNDATION_QUALITY_FINALIZATION_V1_SCHEMA,
   hsmeFoundationQualityFinalizationV1Digest,
   type HsmeFoundationQualityFinalizationV1,
-  type HsmeFoundationQualityRunFinalizationV1,
 } from './HsmeFoundationQualityFinalizationV1';
 import type {HsmeFoundationBenchmarkRunHashPortV1} from './HsmeFoundationBenchmarkRunEvidenceV1';
 
@@ -37,8 +35,6 @@ export const HSME_FOUNDATION_REUSE_TRAINING_ATTESTATION_DIGEST_DOMAIN =
   'bers:hsme:reuse-training-attestation:v1\0' as const;
 export const HSME_FOUNDATION_REUSE_QUALITY_EVIDENCE_DIGEST_DOMAIN =
   'bers:hsme:reuse-quality-evidence:v1\0' as const;
-export const HSME_FOUNDATION_REUSE_QUALIFIED_CANDIDATE_DIGEST_DOMAIN =
-  'bers:hsme:reuse-qualified-candidate:v1\0' as const;
 export const HSME_FOUNDATION_REUSE_QUALIFICATION_EVIDENCE_DIGEST_DOMAIN =
   'bers:hsme:reuse-qualification-evidence:v1\0' as const;
 
@@ -312,7 +308,7 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
       sourcePendingDecisionSha256:pendingDecisionSha256,
       sourceCandidateSha256:appliedCandidateSha256,
       runtimeEvidenceSha256:valueOrUnknown(overlay.runtimeEvidenceSha256),
-      licenseEvidenceSha256:valueOrUnknown(candidate.licenseEvidenceSha256),
+      licenseEvidenceSha256:valueOrUnknown(proofEntries[0]?.rightsEvidenceSha256??'UNKNOWN'),
       qualityEvidenceSha256:qualityEvidenceSha256??'UNKNOWN',
       trainingEvidenceSha256,
     });
