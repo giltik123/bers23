@@ -260,7 +260,8 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
     if(proofEntry.modelContentSha256!==candidate.source.contentSha256){
       blockers.push('QUALIFICATION_MODEL_CONTENT_DRIFT');
     }
-    if(proofEntry.executionProfileSha256!==overlay.sourceExecutionProfileSha256){
+    if(proofEntry.executionProfileSha256!==overlay.sourceExecutionProfileSha256
+      ||campaignCandidate.executionProfileSha256!==overlay.sourceExecutionProfileSha256){
       blockers.push('QUALIFICATION_EXECUTION_PROFILE_DRIFT');
     }
     if(proofEntry.rightsEvidenceSha256!==candidate.licenseEvidenceSha256
