@@ -18,6 +18,8 @@ on:
       - 'tests/creative-hsme-foundation-quality-finalization-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationQualityFrontierV1.ts'
       - 'tests/creative-hsme-foundation-quality-frontier-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationResourceEvidenceV1.ts'
+      - 'tests/creative-hsme-foundation-resource-evidence-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -252,3 +254,50 @@ jobs:
           grep -F "efficiencyComparisonAllowed" "${CONTRACT}"
           grep -F "winnerSelectionAllowed: false" "${CONTRACT}"
           grep -F "PARTIAL_BLOCKED" "${CONTRACT}"
+
+
+  resource-evidence-contract:
+    name: HSME-2a.3.3f isolated resource evidence synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for resource evidence contract
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run isolated resource evidence contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3f
+          npx esbuild tests/creative-hsme-foundation-resource-evidence-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3f/resource.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3f/resource.test.mjs
+
+      - name: Prove resource evidence remains measurement-only and model-free
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationResourceEvidenceV1.ts
+          ! grep -nE 'hf_hub_download|from_pretrained|nvidia-smi|secrets\.' "${CONTRACT}"
+          ! grep -nE 'aggregateScore|qualityLossVectorMicrounits|preferredCandidateIds|selectedCandidateId|winnerCandidateId|productionSelection' "${CONTRACT}"
+          grep -F "qualityScoringAllowed:false" "${CONTRACT}"
+          grep -F "qualityOrderingMutationAllowed:false" "${CONTRACT}"
+          grep -F "aggregateEfficiencyScoreAllowed:false" "${CONTRACT}"
+          grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
+          grep -F "mandatoryInstalledBytes" "${CONTRACT}"
+          grep -F "workingMemoryKind" "${CONTRACT}"
+          grep -F "CUDA_PEAK_RESERVED_BYTES" "${CONTRACT}"
+          grep -F "peakWorkingMemoryBytes" "${CONTRACT}"
+          grep -F "acceptedOutputCostMicrousd" "${CONTRACT}"
