@@ -5,6 +5,7 @@ import {
   type HsmeFoundationReuseDecisionV1,
 } from './HsmeFoundationReuseDecisionV1';
 import {
+  HSME_FOUNDATION_PHYSICAL_REUSE_RUNTIME_OVERLAY_DIGEST_DOMAIN,
   HSME_FOUNDATION_PHYSICAL_REUSE_RUNTIME_OVERLAY_V1_SCHEMA,
   type HsmeFoundationPhysicalReuseRuntimeOverlayV1,
 } from './HsmeFoundationPhysicalReuseRuntimeOverlayV1';
@@ -109,6 +110,12 @@ export async function applyHsmeFoundationPhysicalReuseRuntimeOverlayV1(
   if(!runtimeFullyUnresolved(candidate))blockers.push('PREEXISTING_RUNTIME_EVIDENCE_CONFLICT');
 
   validateOverlay(overlay,candidateId,capability,expectedRuntimeEvidenceSha256,blockers);
+  const recomputedRuntimeEvidenceSha256=await rehashRuntimeOverlay(overlay,hash,blockers);
+  if(recomputedRuntimeEvidenceSha256!==null
+    &&overlay.runtimeEvidenceSha256!=='UNKNOWN'
+    &&recomputedRuntimeEvidenceSha256!==overlay.runtimeEvidenceSha256){
+    blockers.push('RUNTIME_EVIDENCE_REHASH_MISMATCH');
+  }
 
   const sourceCandidateSha256=await digestCandidate(
     HSME_FOUNDATION_PENDING_REUSE_SOURCE_CANDIDATE_DIGEST_DOMAIN,
@@ -315,6 +322,46 @@ function validateOverlay(
     ||overlay.trainingEvidenceMutationAllowed!==false
     ||overlay.decisionMutationAllowed!==false){
     blockers.push('RUNTIME_OVERLAY_AUTHORITY_WIDENING');
+  }
+}
+
+async function rehashRuntimeOverlay(
+  overlay:HsmeFoundationPhysicalReuseRuntimeOverlayV1,
+  hash:HsmeFoundationBenchmarkRunHashPortV1,
+  blockers:string[],
+):Promise<string|null>{
+  try{
+    const payload={
+      schemaVersion:HSME_FOUNDATION_PHYSICAL_REUSE_RUNTIME_OVERLAY_V1_SCHEMA,
+      candidateId:overlay.candidateId,
+      capability:overlay.capability,
+      targetTier:overlay.targetTier,
+      backboneBytes:overlay.backboneBytes,
+      conditionerBytes:overlay.conditionerBytes,
+      vaeBytes:overlay.vaeBytes,
+      adapterBytes:overlay.adapterBytes,
+      otherRequiredBytes:overlay.otherRequiredBytes,
+      mandatoryInstalledBytes:overlay.mandatoryInstalledBytes,
+      workingMemoryBytes:overlay.workingMemoryBytes,
+      componentMapSha256:overlay.componentMapSha256,
+      physicalTargetBindingSha256:overlay.physicalTargetBindingSha256,
+      targetEvidenceSha256:overlay.targetEvidenceSha256,
+      sourceExecutionProfileSha256:overlay.sourceExecutionProfileSha256,
+      selectedCandidateIdAllowed:false,
+      reuseAdvanceAllowed:false,
+      fullStudentEscalationAllowed:false,
+      productionAuthorityGranted:false,
+      trainingOrDistillationAllowed:false,
+      winnerSelectionAllowed:false,
+    };
+    const result=await hash.sha256(new TextEncoder().encode(
+      HSME_FOUNDATION_PHYSICAL_REUSE_RUNTIME_OVERLAY_DIGEST_DOMAIN+JSON.stringify(payload),
+    ));
+    if(!HEX64.test(result))throw new Error('hash invalid');
+    return result;
+  }catch{
+    blockers.push('RUNTIME_EVIDENCE_REHASH_INVALID');
+    return null;
   }
 }
 
