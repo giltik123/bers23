@@ -7,7 +7,9 @@ on:
       - 'scripts/hsme-foundation-benchmark-executor-plan.mjs'
       - 'scripts/hsme-foundation-benchmark-executor.py'
       - 'scripts/hsme-foundation-benchmark-executor-verify.mjs'
+      - 'scripts/hsme-foundation-resource-fragment-verify.mjs'
       - 'tests/hsme-foundation-benchmark-executor-plan.test.mjs'
+      - 'tests/hsme-foundation-resource-fragment-verify.test.mjs'
       - 'tests/hsme-foundation-benchmark-executor-workflow-policy.test.mjs'
       - 'tests/test-hsme-foundation-benchmark-executor.py'
       - 'src/platform/creative/local-ai/hsme/**'
@@ -46,6 +48,21 @@ on:
         description: Accepted SANA parity evidence path; only used for SANA T2I
         required: false
         default: src/platform/creative/local-ai/hsme/sana-sprint-parity-evidence.v1.json
+        type: string
+      cost_kind:
+        description: Explicit benchmark resource-cost accounting kind
+        required: true
+        type: choice
+        options:
+          - PROVEN_UNMETERED_LOCAL
+          - MEASURED_METERED
+      accepted_output_cost_microusd:
+        description: Integer micro-USD attributed to this accepted output run
+        required: true
+        type: string
+      cost_evidence_sha256:
+        description: Lowercase SHA-256 of external/local cost evidence
+        required: true
         type: string
 
 permissions:
@@ -91,12 +108,17 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/hsme-2a-3-3b/verify.mjs \
             --external:node:*
+          npx esbuild scripts/hsme-foundation-resource-fragment-verify.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3b/resource-verify.mjs \
+            --external:node:*
 
       - name: Run synthetic planner and workflow policy tests
         run: |
           set -euo pipefail
           node --test .test-cache/hsme-2a-3-3b/planner.test.mjs
           node --test tests/hsme-foundation-benchmark-executor-workflow-policy.test.mjs
+          node --test tests/hsme-foundation-resource-fragment-verify.test.mjs
 
       - name: Run synthetic Python runner contract tests
         run: |
@@ -139,6 +161,33 @@ jobs:
           test "$(git -C controller rev-parse HEAD)" = "$(git -C candidate rev-parse origin/main)"
           CONTROLLER_MAIN_SHA="$(git -C controller rev-parse HEAD)"
           echo "controller_main_sha=${CONTROLLER_MAIN_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate explicit resource cost evidence before protected execution
+        env:
+          COST_KIND: ${{ inputs.cost_kind }}
+          ACCEPTED_OUTPUT_COST_MICROUSD: ${{ inputs.accepted_output_cost_microusd }}
+          COST_EVIDENCE_SHA256: ${{ inputs.cost_evidence_sha256 }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,re
+          kind=os.environ["COST_KIND"]
+          raw=os.environ["ACCEPTED_OUTPUT_COST_MICROUSD"]
+          digest=os.environ["COST_EVIDENCE_SHA256"]
+          if kind not in {"PROVEN_UNMETERED_LOCAL","MEASURED_METERED"}:
+              raise SystemExit("invalid cost kind")
+          if not re.fullmatch(r"[0-9]+",raw):
+              raise SystemExit("cost must be integer microusd")
+          cost=int(raw)
+          if cost>9007199254740991:
+              raise SystemExit("cost exceeds safe integer range")
+          if not re.fullmatch(r"[0-9a-f]{64}",digest):
+              raise SystemExit("cost evidence must be lowercase SHA-256")
+          if kind=="PROVEN_UNMETERED_LOCAL" and cost!=0:
+              raise SystemExit("unmetered cost must be zero")
+          if kind=="MEASURED_METERED" and cost<1:
+              raise SystemExit("metered cost must be positive")
+          PY
 
       - uses: actions/setup-node@v4
         with:
@@ -279,6 +328,9 @@ jobs:
           PLAN_PATH: ${{ runner.temp }}/hsme-foundation-plan/execution-plan.json
           HSME_FOUNDATION_BLIND_HMAC_KEY: ${{ secrets.HSME_FOUNDATION_BLIND_HMAC_KEY }}
           HF_HUB_DISABLE_TELEMETRY: '1'
+          COST_KIND: ${{ inputs.cost_kind }}
+          ACCEPTED_OUTPUT_COST_MICROUSD: ${{ inputs.accepted_output_cost_microusd }}
+          COST_EVIDENCE_SHA256: ${{ inputs.cost_evidence_sha256 }}
         run: |
           set -euo pipefail
           test -n "${HSME_FOUNDATION_BLIND_HMAC_KEY}"
@@ -293,7 +345,14 @@ jobs:
             --run-out "${EVIDENCE_DIR}/candidate-run.json" \
             --inventory-out "${EVIDENCE_DIR}/runtime-inventory.json" \
             --review-package-out "${EVIDENCE_DIR}/review-package.json" \
-            --failure-out "${EVIDENCE_DIR}/failure-evidence.json"
+            --failure-out "${EVIDENCE_DIR}/failure-evidence.json" \
+            --resource-out "${EVIDENCE_DIR}/resource-measurement.json" \
+            --hardware-profile-out "${EVIDENCE_DIR}/resource-hardware-profile.json" \
+            --measurement-method-out "${EVIDENCE_DIR}/resource-measurement-method.json" \
+            --measurement-evidence-out "${EVIDENCE_DIR}/resource-measurement-evidence.json" \
+            --cost-kind "${COST_KIND}" \
+            --accepted-output-cost-microusd "${ACCEPTED_OUTPUT_COST_MICROUSD}" \
+            --cost-evidence-sha256 "${COST_EVIDENCE_SHA256}"
           RC=$?
           set -e
           echo "runner_rc=${RC}" >> "${GITHUB_OUTPUT}"
@@ -309,8 +368,13 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile="${RUNNER_TEMP}/hsme-foundation-verify.mjs" \
             --external:node:*
+          npx esbuild scripts/hsme-foundation-resource-fragment-verify.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile="${RUNNER_TEMP}/hsme-foundation-resource-verify.mjs" \
+            --external:node:*
           cd "${GITHUB_WORKSPACE}"
           STATUS="$(python -c 'import json,os;print(json.load(open(os.environ["EVIDENCE_DIR"]+"/candidate-run.json"))["status"])')"
+          echo "run_status=${STATUS}" >> "${GITHUB_OUTPUT}"
           ARGS=(
             --plan "${PLAN_PATH}"
             --run "${EVIDENCE_DIR}/candidate-run.json"
@@ -322,6 +386,21 @@ jobs:
             ARGS+=(--failure "${EVIDENCE_DIR}/failure-evidence.json")
           fi
           node "${RUNNER_TEMP}/hsme-foundation-verify.mjs" "${ARGS[@]}"
+          if [[ "${STATUS}" == "COMPLETE" ]]; then
+            HSME_FOUNDATION_RESOURCE_VERIFY_CLI=1 node "${RUNNER_TEMP}/hsme-foundation-resource-verify.mjs" \
+              --plan "${PLAN_PATH}" \
+              --run "${EVIDENCE_DIR}/candidate-run.json" \
+              --inventory "${EVIDENCE_DIR}/runtime-inventory.json" \
+              --resource "${EVIDENCE_DIR}/resource-measurement.json" \
+              --hardware-profile "${EVIDENCE_DIR}/resource-hardware-profile.json" \
+              --measurement-method "${EVIDENCE_DIR}/resource-measurement-method.json" \
+              --measurement-evidence "${EVIDENCE_DIR}/resource-measurement-evidence.json"
+          else
+            test ! -e "${EVIDENCE_DIR}/resource-measurement.json"
+            test ! -e "${EVIDENCE_DIR}/resource-hardware-profile.json"
+            test ! -e "${EVIDENCE_DIR}/resource-measurement-method.json"
+            test ! -e "${EVIDENCE_DIR}/resource-measurement-evidence.json"
+          fi
 
       - name: Destroy transient model and Hub cache bytes
         if: always()
@@ -342,6 +421,22 @@ jobs:
             ${{ runner.temp }}/hsme-foundation-evidence/failure-evidence.json
             ${{ runner.temp }}/hsme-foundation-blind-review/*.png
           if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload separately verified resource measurement evidence
+        if: always() && steps.execute.outcome == 'success' && steps.verify.outcome == 'success' && steps.verify.outputs.run_status == 'COMPLETE'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-foundation-resource-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/hsme-foundation-plan/execution-plan.json
+            ${{ runner.temp }}/hsme-foundation-evidence/candidate-run.json
+            ${{ runner.temp }}/hsme-foundation-evidence/runtime-inventory.json
+            ${{ runner.temp }}/hsme-foundation-evidence/resource-measurement.json
+            ${{ runner.temp }}/hsme-foundation-evidence/resource-hardware-profile.json
+            ${{ runner.temp }}/hsme-foundation-evidence/resource-measurement-method.json
+            ${{ runner.temp }}/hsme-foundation-evidence/resource-measurement-evidence.json
+          if-no-files-found: error
           retention-days: 7
 
       - name: Preserve failed candidate state after verified evidence upload

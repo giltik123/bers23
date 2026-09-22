@@ -301,6 +301,12 @@ function normalizeResourceEvidence(raw:unknown):HsmeFoundationResourceEvidenceV1
   });
 }
 
+export function normalizeHsmeFoundationResourceMeasurementV1(
+  raw:unknown,
+):HsmeFoundationResourceMeasurementV1{
+  return normalizeMeasurement(raw,'resourceMeasurement');
+}
+
 function normalizeMeasurement(raw:unknown,path:string):HsmeFoundationResourceMeasurementV1{
   const record=exactRecord(raw,[
     'candidateId','capability','immutableRevision','modelContentSha256','executionProfileSha256',
