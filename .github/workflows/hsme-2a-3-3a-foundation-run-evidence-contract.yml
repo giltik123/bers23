@@ -33,6 +33,8 @@ on:
       - 'tests/creative-hsme-foundation-target-device-measured-capture-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationNativeMobileWorkingSetAdaptersV1.ts'
       - 'tests/creative-hsme-native-mobile-working-set-adapters-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalMobileValidationEvidenceV1.ts'
+      - 'tests/creative-hsme-physical-mobile-validation-evidence-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -600,4 +602,58 @@ jobs:
           grep -F "runtimeEstimateUsed:false" "$CONTRACT"
           grep -F "manifestResourceEstimateUsed:false" "$CONTRACT"
           grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+
+
+  physical-mobile-validation-evidence-contract:
+    name: HSME-2a.3.3n physical mobile validation evidence synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for physical mobile validation evidence
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run physical mobile evidence contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3n
+          npx esbuild tests/creative-hsme-physical-mobile-validation-evidence-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3n/physical-mobile.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3n/physical-mobile.test.mjs
+
+      - name: Prove physical origin requires external signed trust
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalMobileValidationEvidenceV1.ts
+          grep -F "verifyPhysicalRunEvidence" "$CONTRACT"
+          grep -F "EVIDENCE_INTEGRITY_VERIFIED" "$CONTRACT"
+          grep -F "REAL_DEVICE_ATTESTATION_REQUIRED" "$CONTRACT"
+          grep -F "REAL_DEVICE_EVIDENCE_VERIFIED" "$CONTRACT"
+          grep -F "PHYSICAL_ATTESTATION_UNVERIFIED" "$CONTRACT"
+          grep -F "sourceEvidenceLedgerSha256" "$CONTRACT"
+          grep -F "RAW_PROCESS_SESSION_IDENTITY_FORBIDDEN" "$CONTRACT"
+          grep -F "BUNDLE_SHAPE_INVALID" "$CONTRACT"
+          grep -F "SOURCE_LEDGER_RECORD_SHAPE_INVALID" "$CONTRACT"
+          grep -F "FORBIDDEN_SENSITIVE_EXPORT_FIELD" "$CONTRACT"
+          grep -F "DEVICE_SNAPSHOT_EVIDENCE_NOT_CANONICAL" "$CONTRACT"
+          grep -F "deviceSnapshotSha256" "$CONTRACT"
+          grep -F "ANDROID_RSS_REQUIRED" "$CONTRACT"
+          grep -F "IOS_PHYSICAL_FOOTPRINT_REQUIRED" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "modelFleetPromotionAllowed:false" "$CONTRACT"
+          grep -F "reuseAdvanceAllowed:false" "$CONTRACT"
           grep -F "winnerSelectionAllowed:false" "$CONTRACT"
