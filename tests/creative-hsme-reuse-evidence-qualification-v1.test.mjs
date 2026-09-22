@@ -270,7 +270,7 @@ async function fixture({
   const runtimeOverlay=overlay(candidateId,campaignCandidate.executionProfileSha256);
   const training=strategy==='DIRECT_FOUNDATION'?zeroTraining():loraTraining();
   const attestation=trainingAttestation(candidateId,source,training,runtimeOverlay);
-  training.evidenceSha256=await hsmeFoundationReuseTrainingAttestationV1Digest(
+  const trainingEvidenceSha256=await hsmeFoundationReuseTrainingAttestationV1Digest(
     attestation,hashPort,
   );
 
@@ -280,11 +280,11 @@ async function fixture({
     targetTier:'MOBILE_DEFAULT',
     evidenceState:'UNRESOLVED',
     source,
-    licenseConclusion:'COMMERCIAL_ADMISSIBLE',
-    licenseEvidenceSha256:campaignCandidate.rightsEvidenceSha256,
-    quality:{status:'PASS',evidenceSha256:qualityEvidenceSha256},
+    licenseConclusion:'REVIEW_REQUIRED',
+    licenseEvidenceSha256:'UNKNOWN',
+    quality:{status:'UNKNOWN',evidenceSha256:'UNKNOWN'},
     runtime:unknownRuntime(),
-    training,
+    training:{...training,evidenceSha256:'UNKNOWN'},
     rejectionReasons:[],
   };
   const otherDirect=placeholderCandidate('other-direct','DIRECT_FOUNDATION');
@@ -305,6 +305,8 @@ async function fixture({
     trainingAttestation:attestation,
     runtimeOverlay,
     application,
+    expectedQualityEvidenceSha256:qualityEvidenceSha256,
+    expectedTrainingEvidenceSha256:trainingEvidenceSha256,
   };
 }
 
@@ -324,7 +326,7 @@ for(const config of [
   {candidateId:'flux2-klein-4b-distilled-v1',strategy:'DIRECT_FOUNDATION'},
   {candidateId:'flux2-klein-base-4b-v1',strategy:'FROZEN_FOUNDATION_ADAPTATION'},
 ]){
-  test(config.strategy+' evidence finalization returns only a qualified candidate proof',async()=>{
+  test(config.strategy+' qualification remains capability-scoped and proof-only',async()=>{
     const x=await fixture(config);
     const beforeDecision=structuredClone(x.application.pendingDecision);
     const verifier=qualityOrigin(true);
@@ -336,18 +338,26 @@ for(const config of [
 
     assert.equal(result.state,'QUALIFICATION_EVIDENCE_READY');
     assert.deepEqual(result.blockers,[]);
-    assert.equal(result.qualifiedCandidate.evidenceState,'QUALIFIED');
-    assert.equal(result.qualifiedCandidate.candidateId,x.candidateId);
-    assert.equal(result.qualifiedCandidate.runtime.evidenceSha256,x.runtimeOverlay.runtimeEvidenceSha256);
-    assert.equal(result.qualifiedCandidate.licenseEvidenceSha256,x.campaignCandidate.rightsEvidenceSha256);
-    assert.equal(result.qualifiedCandidate.training.evidenceSha256,
-      await hsmeFoundationReuseTrainingAttestationV1Digest(x.trainingAttestation,hashPort));
-    assert.match(result.qualifiedCandidateSha256,/^[0-9a-f]{64}$/);
+    assert.equal(result.candidateId,x.candidateId);
+    assert.equal(result.capability,CAPABILITY);
+    assert.equal(result.runtimeEvidenceSha256,x.runtimeOverlay.runtimeEvidenceSha256);
+    assert.equal(result.licenseEvidenceSha256,x.campaignCandidate.rightsEvidenceSha256);
+    assert.equal(result.qualityEvidenceSha256,x.expectedQualityEvidenceSha256);
+    assert.equal(result.trainingEvidenceSha256,x.expectedTrainingEvidenceSha256);
+    assert.equal(result.resolvedLicenseConclusion,'COMMERCIAL_ADMISSIBLE');
     assert.match(result.evidenceSetSha256,/^[0-9a-f]{64}$/);
+    assert.equal('qualifiedCandidate' in result,false);
+    assert.equal('qualifiedCandidateSha256' in result,false);
     assert.equal(verifier.calls.length,1);
     assert.deepEqual(x.application.pendingDecision,beforeDecision);
     assert.equal(x.application.pendingDecision.decisionStatus,'EVALUATION_PENDING');
     assert.equal(x.application.pendingDecision.selectedCandidateId,undefined);
+    const source=x.application.candidate;
+    assert.equal(source.evidenceState,'UNRESOLVED');
+    assert.equal(source.licenseConclusion,'REVIEW_REQUIRED');
+    assert.equal(source.licenseEvidenceSha256,'UNKNOWN');
+    assert.equal(source.quality.status,'UNKNOWN');
+    assert.equal(source.training.evidenceSha256,'UNKNOWN');
 
     for(const field of [
       'decisionMutationAllowed','candidateSelectionAllowed','selectedCandidateIdAllowed',
@@ -449,7 +459,7 @@ test('runtime overlay must be independently rehashed again at qualification boun
     ||result.blockers.includes('QUALIFICATION_CANDIDATE_RUNTIME_DRIFT'));
 });
 
-test('source application authority widening is rejected before candidate qualification',async()=>{
+test('source application authority widening is rejected before capability qualification',async()=>{
   const x=await fixture();
   const application=structuredClone(x.application);
   application.reuseAdvanceAllowed=true;
