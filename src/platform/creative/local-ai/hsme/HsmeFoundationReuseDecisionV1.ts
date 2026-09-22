@@ -475,7 +475,6 @@ function hasHardReuseBlocker(
   mobileInstalledBudgetBytes: number,
   mobileWorkingMemoryBudgetBytes: number,
 ): boolean {
-  if (candidate.rejectionReasons.includes('REQUIRED_CAPABILITY_UNSUPPORTED')) return true;
   if (candidate.licenseConclusion === 'NON_COMMERCIAL' && candidate.licenseEvidenceSha256 !== 'UNKNOWN') return true;
   if (candidate.quality.status === 'FAIL' && candidate.quality.evidenceSha256 !== 'UNKNOWN') return true;
   if (candidate.runtime.evidenceSha256 !== 'UNKNOWN') {
