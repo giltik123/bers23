@@ -370,4 +370,3 @@ test('target evidence authority widening is rejected independently of its digest
   assert.equal(result.state,'PHYSICAL_RUNTIME_EVIDENCE_INVALID');
   assert.ok(result.blockers.includes('TARGET_EVIDENCE_AUTHORITY_WIDENING_REJECTED'));
 });
-
