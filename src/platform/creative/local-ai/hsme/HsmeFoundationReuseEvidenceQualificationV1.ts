@@ -90,9 +90,8 @@ export type HsmeFoundationReuseEvidenceQualificationV1=Readonly<{
   licenseEvidenceSha256:string|'UNKNOWN';
   qualityEvidenceSha256:string|'UNKNOWN';
   trainingEvidenceSha256:string|'UNKNOWN';
-  qualifiedCandidateSha256:string|'UNKNOWN';
+  resolvedLicenseConclusion:'COMMERCIAL_ADMISSIBLE'|'UNKNOWN';
   evidenceSetSha256:string|'UNKNOWN';
-  qualifiedCandidate:HsmeFoundationReuseCandidateV1|null;
   decisionMutationAllowed:false;
   candidateSelectionAllowed:false;
   selectedCandidateIdAllowed:false;
@@ -173,6 +172,15 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
   if(candidate.evidenceState!=='UNRESOLVED')blockers.push('QUALIFICATION_SOURCE_MUST_BE_UNRESOLVED');
   if(candidate.rejectionReasons.length!==0)blockers.push('QUALIFICATION_SOURCE_REJECTION_FORBIDDEN');
   if(candidate.candidateId!==candidateId)blockers.push('QUALIFICATION_SOURCE_CANDIDATE_DRIFT');
+  if(candidate.licenseConclusion!=='REVIEW_REQUIRED'||candidate.licenseEvidenceSha256!=='UNKNOWN'){
+    blockers.push('QUALIFICATION_SOURCE_LICENSE_MUST_BE_UNRESOLVED');
+  }
+  if(candidate.quality.status!=='UNKNOWN'||candidate.quality.evidenceSha256!=='UNKNOWN'){
+    blockers.push('QUALIFICATION_SOURCE_QUALITY_MUST_BE_UNRESOLVED');
+  }
+  if(candidate.training.evidenceSha256!=='UNKNOWN'){
+    blockers.push('QUALIFICATION_SOURCE_TRAINING_EVIDENCE_MUST_BE_UNRESOLVED');
+  }
 
   let pendingDecisionSha256:string|'UNKNOWN'='UNKNOWN';
   try{
@@ -264,15 +272,14 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
       ||campaignCandidate.executionProfileSha256!==overlay.sourceExecutionProfileSha256){
       blockers.push('QUALIFICATION_EXECUTION_PROFILE_DRIFT');
     }
-    if(proofEntry.rightsEvidenceSha256!==candidate.licenseEvidenceSha256
-      ||campaignCandidate.rightsEvidenceSha256!==candidate.licenseEvidenceSha256){
+    if(proofEntry.rightsEvidenceSha256==='UNKNOWN'
+      ||campaignCandidate.rightsEvidenceSha256!==proofEntry.rightsEvidenceSha256){
       blockers.push('QUALIFICATION_LICENSE_EVIDENCE_DRIFT');
     }
     if(proofEntry.benchmarkRunnable!==true)blockers.push('QUALIFICATION_TRUST_NOT_RUNNABLE');
     if(trustEntry.rightsReview.reviewState!=='REVIEWED'
       ||trustEntry.rightsReview.commercialUseConclusion!=='COMMERCIAL_ADMISSIBLE'
-      ||campaignCandidate.rightsState!=='REVIEWED_COMMERCIAL'
-      ||candidate.licenseConclusion!=='COMMERCIAL_ADMISSIBLE'){
+      ||campaignCandidate.rightsState!=='REVIEWED_COMMERCIAL'){
       blockers.push('QUALIFICATION_LICENSE_NOT_COMMERCIAL');
     }
   }
@@ -293,8 +300,8 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
       hash,
       'QUALIFICATION_TRAINING_HASH_INVALID',
     );
-    if(candidate.training.evidenceSha256!==trainingEvidenceSha256){
-      blockers.push('QUALIFICATION_TRAINING_EVIDENCE_DRIFT');
+    if(trainingEvidenceSha256==='UNKNOWN'){
+      blockers.push('QUALIFICATION_TRAINING_EVIDENCE_INVALID');
     }
   }catch{
     blockers.push('QUALIFICATION_TRAINING_ATTESTATION_INVALID');
@@ -311,34 +318,7 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
     });
   }
 
-  let qualifiedCandidate:HsmeFoundationReuseCandidateV1;
-  try{
-    qualifiedCandidate=normalizeHsmeFoundationReuseCandidateV1({
-      ...candidate,
-      evidenceState:'QUALIFIED',
-    });
-  }catch{
-    blockers.push('QUALIFIED_CANDIDATE_NORMALIZATION_INVALID');
-    return invalid(candidateId,capability,blockers,{
-      sourcePendingDecisionSha256:pendingDecisionSha256,
-      sourceCandidateSha256:appliedCandidateSha256,
-      runtimeEvidenceSha256:overlay.runtimeEvidenceSha256,
-      licenseEvidenceSha256:candidate.licenseEvidenceSha256,
-      qualityEvidenceSha256,
-      trainingEvidenceSha256,
-    });
-  }
-
-  if(!onlyEvidenceStateChanged(candidate,qualifiedCandidate)){
-    blockers.push('QUALIFIED_CANDIDATE_NON_EVIDENCE_MUTATION');
-  }
-
-  const qualifiedCandidateSha256=await digest(
-    HSME_FOUNDATION_REUSE_QUALIFIED_CANDIDATE_DIGEST_DOMAIN,
-    qualifiedCandidate,
-    hash,
-    'QUALIFIED_CANDIDATE_HASH_INVALID',
-  );
+  const licenseEvidenceSha256=proofEntries[0]?.rightsEvidenceSha256??'UNKNOWN';
   const evidenceSetSha256=await digest(
     HSME_FOUNDATION_REUSE_QUALIFICATION_EVIDENCE_DIGEST_DOMAIN,
     {
@@ -348,10 +328,10 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
       sourcePendingDecisionSha256:pendingDecisionSha256,
       sourceCandidateSha256:appliedCandidateSha256,
       runtimeEvidenceSha256:overlay.runtimeEvidenceSha256,
-      licenseEvidenceSha256:candidate.licenseEvidenceSha256,
+      licenseEvidenceSha256,
       qualityEvidenceSha256,
       trainingEvidenceSha256,
-      qualifiedCandidateSha256,
+      resolvedLicenseConclusion:'COMMERCIAL_ADMISSIBLE',
       decisionMutationAllowed:false,
       candidateSelectionAllowed:false,
       reuseAdvanceAllowed:false,
@@ -364,19 +344,6 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
     'QUALIFICATION_EVIDENCE_SET_HASH_INVALID',
   );
 
-  if(blockers.length>0){
-    return invalid(candidateId,capability,blockers,{
-      sourcePendingDecisionSha256:pendingDecisionSha256,
-      sourceCandidateSha256:appliedCandidateSha256,
-      runtimeEvidenceSha256:overlay.runtimeEvidenceSha256,
-      licenseEvidenceSha256:candidate.licenseEvidenceSha256,
-      qualityEvidenceSha256,
-      trainingEvidenceSha256,
-      qualifiedCandidateSha256,
-      evidenceSetSha256,
-    });
-  }
-
   return Object.freeze({
     schemaVersion:HSME_FOUNDATION_REUSE_EVIDENCE_QUALIFICATION_V1_SCHEMA,
     candidateId,
@@ -386,12 +353,11 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
     sourcePendingDecisionSha256:pendingDecisionSha256,
     sourceCandidateSha256:appliedCandidateSha256,
     runtimeEvidenceSha256:overlay.runtimeEvidenceSha256,
-    licenseEvidenceSha256:candidate.licenseEvidenceSha256,
+    licenseEvidenceSha256,
     qualityEvidenceSha256,
     trainingEvidenceSha256,
-    qualifiedCandidateSha256,
+    resolvedLicenseConclusion:'COMMERCIAL_ADMISSIBLE',
     evidenceSetSha256,
-    qualifiedCandidate,
     ...authorityBoundary(),
   });
 }
@@ -472,9 +438,6 @@ async function validateQuality(
     hash,
     'QUALIFICATION_QUALITY_HASH_INVALID',
   );
-  if(candidate.quality.status!=='PASS'||candidate.quality.evidenceSha256!==qualityEvidenceSha256){
-    blockers.push('QUALIFICATION_CANDIDATE_QUALITY_DRIFT');
-  }
   return qualityEvidenceSha256;
 }
 
@@ -688,14 +651,6 @@ async function rehashRuntimeOverlay(
   }
 }
 
-function onlyEvidenceStateChanged(
-  before:HsmeFoundationReuseCandidateV1,
-  after:HsmeFoundationReuseCandidateV1,
-):boolean{
-  const left={...before,evidenceState:'QUALIFIED'};
-  return JSON.stringify(left)===JSON.stringify(after);
-}
-
 async function digest(
   domain:string,
   value:unknown,
@@ -781,7 +736,7 @@ function invalid(
     HsmeFoundationReuseEvidenceQualificationV1,
     'sourcePendingDecisionSha256'|'sourceCandidateSha256'|'runtimeEvidenceSha256'|
     'licenseEvidenceSha256'|'qualityEvidenceSha256'|'trainingEvidenceSha256'|
-    'qualifiedCandidateSha256'|'evidenceSetSha256'
+    'resolvedLicenseConclusion'|'evidenceSetSha256'
   >>={},
 ):HsmeFoundationReuseEvidenceQualificationV1{
   return Object.freeze({
@@ -796,9 +751,8 @@ function invalid(
     licenseEvidenceSha256:values.licenseEvidenceSha256??'UNKNOWN',
     qualityEvidenceSha256:values.qualityEvidenceSha256??'UNKNOWN',
     trainingEvidenceSha256:values.trainingEvidenceSha256??'UNKNOWN',
-    qualifiedCandidateSha256:values.qualifiedCandidateSha256??'UNKNOWN',
+    resolvedLicenseConclusion:values.resolvedLicenseConclusion??'UNKNOWN',
     evidenceSetSha256:values.evidenceSetSha256??'UNKNOWN',
-    qualifiedCandidate:null,
     ...authorityBoundary(),
   });
 }
