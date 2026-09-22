@@ -198,6 +198,10 @@ export async function captureHsmeFoundationTargetDeviceMeasuredBenchmarkV1(
 
   const takeSample=async(phase:Phase,sequence:number)=>{
     const sample=normalizeSample(await memory.sample(phase,sequence),phase,sequence,memory);
+    const previous=samples[samples.length-1];
+    if(previous&&sample.capturedAtMicros<=previous.capturedAtMicros){
+      fail('hsme_target_capture_sample_time_regression','working-set sample timestamps must strictly increase');
+    }
     samples.push(sample);
   };
 
