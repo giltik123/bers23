@@ -200,6 +200,7 @@ export async function finalizeHsmeFoundationReuseDecisionV1(
     'FINALIZER_ASSEMBLY_SET_HASH_INVALID',
   );
 
+  const validatedByCandidate=new Map(validated.map(value=>[value.candidateId,value] as const));
   const qualified=validated.filter(value=>value.state==='CANDIDATE_EVIDENCE_QUALIFIED');
   const rejected=validated.filter(value=>value.state==='CANDIDATE_EVIDENCE_REJECTED');
 
@@ -214,7 +215,7 @@ export async function finalizeHsmeFoundationReuseDecisionV1(
       decisionStatus:'REUSE_PATH_INSUFFICIENT' as const,
       candidates:sourceDecision.candidates.map(candidate=>{
         if(candidate.strategy==='CONTROL_BASELINE')return candidate;
-        return assemblyByCandidate.get(candidate.candidateId)!.assembledCandidate!;
+        return validatedByCandidate.get(candidate.candidateId)!.assembledCandidate;
       }),
     };
     delete (finalRaw as {selectedCandidateId?:string}).selectedCandidateId;
@@ -366,7 +367,7 @@ export async function finalizeHsmeFoundationReuseDecisionV1(
     selectedCandidateId,
     candidates:sourceDecision.candidates.map(candidate=>{
       if(candidate.strategy==='CONTROL_BASELINE')return candidate;
-      return assemblyByCandidate.get(candidate.candidateId)!.assembledCandidate!;
+      return validatedByCandidate.get(candidate.candidateId)!.assembledCandidate;
     }),
   };
   let finalDecision:HsmeFoundationReuseDecisionV1;
@@ -422,6 +423,10 @@ async function validateAssembly(
   if(assembly.state!=='CANDIDATE_EVIDENCE_QUALIFIED'
     &&assembly.state!=='CANDIDATE_EVIDENCE_REJECTED'){
     blockers.push('FINALIZER_ASSEMBLY_NOT_READY');
+    return null;
+  }
+  if(assembly.structuralCoverageBlockers.length!==0){
+    blockers.push('FINALIZER_STRUCTURAL_COVERAGE_ASSEMBLY_FORBIDDEN');
     return null;
   }
   if(assembly.blockers.length!==0||assembly.assembledCandidate===null){
