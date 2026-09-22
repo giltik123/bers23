@@ -59,8 +59,10 @@ function snapshot(platform){
       DIRECTML:false,CUDA:false,METAL:platform==='IOS',VULKAN:false,
     },
     evidence:{
-      observedSignals:[],unknownSignals:[],
-      observedRuntimes:['ONNX_RUNTIME','WASM'],unknownRuntimes:[],
+      observedSignals:['deviceClass','platform','ramMb','storageFreeBytes','vramMb'],
+      unknownSignals:[],
+      observedRuntimes:['ONNX_RUNTIME','WEBGPU','WASM','NNAPI','DIRECTML','CUDA','METAL','VULKAN'],
+      unknownRuntimes:[],
     },
   };
 }
@@ -244,6 +246,45 @@ test('invalid attestation URLs cannot reach external trust verifier',async()=>{
   assert.equal(result.integrityState,'EVIDENCE_INTEGRITY_VERIFIED');
   assert.equal(result.physicalState,'REAL_DEVICE_ATTESTATION_REQUIRED');
   assert.ok(result.blockers.includes('PHYSICAL_ATTESTATION_INVALID'));
+  assert.equal(verifier.calls.length,0);
+});
+
+test('exported DeviceCapabilitySnapshot must be canonical and fully bound into the physical payload',async()=>{
+  const malformed=structuredClone(await validBundle());
+  malformed.deviceSnapshot.evidence.observedSignals=['deviceSerial=raw-secret'];
+  let verifier=trust(true);
+  let result=await assessHsmeFoundationPhysicalMobileValidationEvidenceV1(
+    malformed,verifier,TESTED_COMMIT,NOW,hashPort,
+  );
+  assert.equal(result.integrityState,'EVIDENCE_INTEGRITY_INVALID');
+  assert.ok(result.blockers.includes('DEVICE_SNAPSHOT_EVIDENCE_NOT_CANONICAL'));
+  assert.equal(verifier.calls.length,0);
+
+  const base=await validBundle();
+  const changed=structuredClone(base);
+  changed.deviceSnapshot.profile.storageFreeBytes-=1;
+  const baseResult=await assessHsmeFoundationPhysicalMobileValidationEvidenceV1(
+    base,trust(true),TESTED_COMMIT,NOW,hashPort,
+  );
+  const changedResult=await assessHsmeFoundationPhysicalMobileValidationEvidenceV1(
+    changed,trust(true),TESTED_COMMIT,NOW,hashPort,
+  );
+  assert.equal(baseResult.integrityState,'EVIDENCE_INTEGRITY_VERIFIED');
+  assert.equal(changedResult.integrityState,'EVIDENCE_INTEGRITY_VERIFIED');
+  assert.notEqual(baseResult.physicalRunPayloadSha256,changedResult.physicalRunPayloadSha256);
+  assert.match(baseResult.canonicalPayload,/"deviceSnapshotSha256":"[0-9a-f]{64}"/);
+});
+
+test('extra DeviceCapabilitySnapshot fields cannot hide outside the capability key',async()=>{
+  const bundle=structuredClone(await validBundle());
+  bundle.deviceSnapshot.deviceSerial='raw-device-serial';
+  const verifier=trust(true);
+  const result=await assessHsmeFoundationPhysicalMobileValidationEvidenceV1(
+    bundle,verifier,TESTED_COMMIT,NOW,hashPort,
+  );
+  assert.equal(result.integrityState,'EVIDENCE_INTEGRITY_INVALID');
+  assert.ok(result.blockers.includes('DEVICE_SNAPSHOT_SHAPE_INVALID'));
+  assert.ok(result.blockers.includes('FORBIDDEN_SENSITIVE_EXPORT_FIELD'));
   assert.equal(verifier.calls.length,0);
 });
 
