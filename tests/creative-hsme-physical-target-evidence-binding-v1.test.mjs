@@ -76,8 +76,10 @@ function snapshot(platform){
       DIRECTML:false,CUDA:false,METAL:platform==='IOS',VULKAN:false,
     },
     evidence:{
-      observedSignals:[],unknownSignals:[],
-      observedRuntimes:['ONNX_RUNTIME','WASM'],unknownRuntimes:[],
+      observedSignals:['deviceClass','platform','ramMb','storageFreeBytes','vramMb'],
+      unknownSignals:[],
+      observedRuntimes:['ONNX_RUNTIME','WEBGPU','WASM','NNAPI','DIRECTML','CUDA','METAL','VULKAN'],
+      unknownRuntimes:[],
     },
   };
 }
