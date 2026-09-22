@@ -1,10 +1,13 @@
 import {
   hsmeFoundationReuseDecisionV1Digest,
+  normalizeHsmeFoundationReuseCandidateV1,
+  normalizeHsmeFoundationReuseDecisionV1,
   type HsmeFoundationReuseCandidateV1,
   type HsmeFoundationReuseTrainingV1,
 } from './HsmeFoundationReuseDecisionV1';
 import {
   HSME_FOUNDATION_PENDING_REUSE_APPLIED_CANDIDATE_DIGEST_DOMAIN,
+  HSME_FOUNDATION_PENDING_REUSE_SOURCE_CANDIDATE_DIGEST_DOMAIN,
   HSME_FOUNDATION_PENDING_REUSE_RUNTIME_APPLICATION_V1_SCHEMA,
   type HsmeFoundationPendingReuseRuntimeApplicationV1,
 } from './HsmeFoundationPendingReuseRuntimeApplicationV1';
@@ -80,8 +83,10 @@ export type HsmeFoundationReuseEvidenceQualificationV1=Readonly<{
   capability:Capability;
   state:HsmeFoundationReuseEvidenceQualificationStateV1;
   blockers:readonly string[];
-  sourcePendingDecisionSha256:string|'UNKNOWN';
+  sourceDecisionSha256:string|'UNKNOWN';
   sourceCandidateSha256:string|'UNKNOWN';
+  pendingDecisionSha256:string|'UNKNOWN';
+  appliedCandidateSha256:string|'UNKNOWN';
   runtimeEvidenceSha256:string|'UNKNOWN';
   licenseEvidenceSha256:string|'UNKNOWN';
   qualityEvidenceSha256:string|'UNKNOWN';
@@ -203,6 +208,39 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
     blockers.push('APPLIED_CANDIDATE_REHASH_MISMATCH');
   }
 
+  let sourceCandidateSha256:string|'UNKNOWN'='UNKNOWN';
+  let sourceDecisionSha256:string|'UNKNOWN'='UNKNOWN';
+  try{
+    const sourceCandidate=normalizeHsmeFoundationReuseCandidateV1({
+      ...candidate,
+      runtime:unresolvedRuntime(),
+    });
+    sourceCandidateSha256=await digest(
+      HSME_FOUNDATION_PENDING_REUSE_SOURCE_CANDIDATE_DIGEST_DOMAIN,
+      sourceCandidate,
+      hash,
+      'SOURCE_CANDIDATE_REHASH_INVALID',
+    );
+    if(sourceCandidateSha256!==application.sourceCandidateSha256){
+      blockers.push('SOURCE_CANDIDATE_REHASH_MISMATCH');
+    }
+    const sourceDecisionRaw={
+      ...application.pendingDecision,
+      decisionStatus:'EVALUATION_PENDING' as const,
+      candidates:application.pendingDecision.candidates.map(value=>
+        value.candidateId===candidateId?sourceCandidate:value
+      ),
+    };
+    delete (sourceDecisionRaw as {selectedCandidateId?:string}).selectedCandidateId;
+    const sourceDecision=normalizeHsmeFoundationReuseDecisionV1(sourceDecisionRaw);
+    sourceDecisionSha256=await hsmeFoundationReuseDecisionV1Digest(sourceDecision,hash);
+    if(sourceDecisionSha256!==application.sourceDecisionSha256){
+      blockers.push('SOURCE_DECISION_REHASH_MISMATCH');
+    }
+  }catch{
+    blockers.push('SOURCE_PROVENANCE_REHASH_INVALID');
+  }
+
   validateOverlay(overlay,candidateId,capability,application.runtimeEvidenceSha256,blockers);
   const runtimeEvidenceSha256=await rehashRuntimeOverlay(overlay,hash,blockers);
   if(runtimeEvidenceSha256!==null&&runtimeEvidenceSha256!==overlay.runtimeEvidenceSha256){
@@ -231,8 +269,10 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
   }catch{
     blockers.push('QUALIFICATION_TRUST_PROOF_INVALID');
     return invalid(candidateId,capability,blockers,{
-      sourcePendingDecisionSha256:pendingDecisionSha256,
-      sourceCandidateSha256:appliedCandidateSha256,
+      sourceDecisionSha256,
+      sourceCandidateSha256,
+      pendingDecisionSha256,
+      appliedCandidateSha256,
       runtimeEvidenceSha256:valueOrUnknown(overlay.runtimeEvidenceSha256),
     });
   }
@@ -305,8 +345,8 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
 
   if(blockers.length>0||qualityEvidenceSha256===null||trainingAttestation===null){
     return invalid(candidateId,capability,blockers,{
-      sourcePendingDecisionSha256:pendingDecisionSha256,
-      sourceCandidateSha256:appliedCandidateSha256,
+      sourceDecisionSha256,
+      sourceCandidateSha256,
       runtimeEvidenceSha256:valueOrUnknown(overlay.runtimeEvidenceSha256),
       licenseEvidenceSha256:valueOrUnknown(proofEntries[0]?.rightsEvidenceSha256??'UNKNOWN'),
       qualityEvidenceSha256:qualityEvidenceSha256??'UNKNOWN',
@@ -321,8 +361,8 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
       schemaVersion:HSME_FOUNDATION_REUSE_EVIDENCE_QUALIFICATION_V1_SCHEMA,
       candidateId,
       capability,
-      sourcePendingDecisionSha256:pendingDecisionSha256,
-      sourceCandidateSha256:appliedCandidateSha256,
+      sourceDecisionSha256,
+      sourceCandidateSha256,
       runtimeEvidenceSha256:overlay.runtimeEvidenceSha256,
       licenseEvidenceSha256,
       qualityEvidenceSha256,
@@ -346,8 +386,8 @@ export async function qualifyHsmeFoundationReuseEvidenceV1(
     capability,
     state:'QUALIFICATION_EVIDENCE_READY',
     blockers:Object.freeze([]),
-    sourcePendingDecisionSha256:pendingDecisionSha256,
-    sourceCandidateSha256:appliedCandidateSha256,
+    sourceDecisionSha256,
+    sourceCandidateSha256,
     runtimeEvidenceSha256:overlay.runtimeEvidenceSha256,
     licenseEvidenceSha256,
     qualityEvidenceSha256,
@@ -527,6 +567,19 @@ function validateTrainingAttestation(
   }else{
     blockers.push('QUALIFICATION_REUSE_STRATEGY_INVALID');
   }
+}
+
+function unresolvedRuntime(){
+  return Object.freeze({
+    backboneBytes:'UNKNOWN' as const,
+    conditionerBytes:'UNKNOWN' as const,
+    vaeBytes:'UNKNOWN' as const,
+    adapterBytes:'UNKNOWN' as const,
+    otherRequiredBytes:'UNKNOWN' as const,
+    mandatoryInstalledBytes:'UNKNOWN' as const,
+    workingMemoryBytes:'UNKNOWN' as const,
+    evidenceSha256:'UNKNOWN' as const,
+  });
 }
 
 function validateApplicationAuthority(
@@ -730,7 +783,7 @@ function invalid(
   blockers:readonly string[],
   values:Partial<Pick<
     HsmeFoundationReuseEvidenceQualificationV1,
-    'sourcePendingDecisionSha256'|'sourceCandidateSha256'|'runtimeEvidenceSha256'|
+    'sourceDecisionSha256'|'sourceCandidateSha256'|'pendingDecisionSha256'|'appliedCandidateSha256'|'runtimeEvidenceSha256'|
     'licenseEvidenceSha256'|'qualityEvidenceSha256'|'trainingEvidenceSha256'|
     'resolvedLicenseConclusion'|'evidenceSetSha256'
   >>={},
@@ -741,8 +794,10 @@ function invalid(
     capability,
     state:'QUALIFICATION_EVIDENCE_INVALID',
     blockers:Object.freeze([...new Set(blockers)]),
-    sourcePendingDecisionSha256:values.sourcePendingDecisionSha256??'UNKNOWN',
+    sourceDecisionSha256:values.sourceDecisionSha256??'UNKNOWN',
     sourceCandidateSha256:values.sourceCandidateSha256??'UNKNOWN',
+    pendingDecisionSha256:values.pendingDecisionSha256??'UNKNOWN',
+    appliedCandidateSha256:values.appliedCandidateSha256??'UNKNOWN',
     runtimeEvidenceSha256:values.runtimeEvidenceSha256??'UNKNOWN',
     licenseEvidenceSha256:values.licenseEvidenceSha256??'UNKNOWN',
     qualityEvidenceSha256:values.qualityEvidenceSha256??'UNKNOWN',
