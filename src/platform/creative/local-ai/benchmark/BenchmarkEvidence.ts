@@ -69,17 +69,7 @@ export class BenchmarkEvidenceStore {
   }
 
   async deviceCapabilityKey(snapshot: DeviceCapabilitySnapshot): Promise<string> {
-    const profile = snapshot.profile;
-    const canonical = JSON.stringify([
-      snapshot.schemaVersion,
-      profile.platform,
-      profile.deviceClass,
-      profile.tier,
-      profile.ramMb,
-      profile.vramMb,
-      RUNTIME_KEYS.map((runtime) => [runtime, snapshot.runtimeCapabilities[runtime]]),
-    ]);
-    return this.hash.sha256(new TextEncoder().encode(canonical));
+    return deviceCapabilityKeyForBenchmarkEvidenceV1(snapshot, this.hash);
   }
 
   async binding(snapshot: DeviceCapabilitySnapshot, manifest: ModelManifest): Promise<BenchmarkEvidenceBinding> {
@@ -148,6 +138,27 @@ export class BenchmarkEvidenceStore {
     const matches = (await this.port.list()).filter((evidence) => evidence.modelId === modelId);
     for (const evidence of matches) await this.port.remove(evidence.evidenceKey);
   }
+}
+
+export async function deviceCapabilityKeyForBenchmarkEvidenceV1(
+  snapshot: DeviceCapabilitySnapshot,
+  hash: HashPort,
+): Promise<string> {
+  const profile = snapshot.profile;
+  const canonical = JSON.stringify([
+    snapshot.schemaVersion,
+    profile.platform,
+    profile.deviceClass,
+    profile.tier,
+    profile.ramMb,
+    profile.vramMb,
+    RUNTIME_KEYS.map((runtime) => [runtime, snapshot.runtimeCapabilities[runtime]]),
+  ]);
+  return hash.sha256(new TextEncoder().encode(canonical));
+}
+
+export function isValidBenchmarkEvidenceV1(evidence: BenchmarkEvidence): boolean {
+  return isValidPersistedEvidence(evidence);
 }
 
 export function evidenceKeyFor(binding: BenchmarkEvidenceBinding, provider: ExecutionProvider): string {

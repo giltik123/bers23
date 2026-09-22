@@ -26,6 +26,9 @@ on:
       - 'tests/hsme-foundation-resource-evidence-collector.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationTierQualificationV1.ts'
       - 'tests/creative-hsme-foundation-tier-qualification-v1.test.mjs'
+      - 'src/platform/creative/local-ai/benchmark/BenchmarkEvidence.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationTargetDeviceBenchmarkAdapterV1.ts'
+      - 'tests/creative-hsme-foundation-target-device-adapter-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -447,4 +450,54 @@ jobs:
           grep -F "TARGET_PEAK_WORKING_SET_BYTES" "${CONTRACT}"
           grep -F "IDENTICAL_REFERENCE_ARTIFACTS" "${CONTRACT}"
           grep -F "budgetPolicySha256" "${CONTRACT}"
+          grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
+
+
+  target-device-benchmark-adapter-contract:
+    name: HSME-2a.3.3k target-device BenchmarkEvidence adapter synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for target-device adapter
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run target-device BenchmarkEvidence adapter contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3k
+          npx esbuild tests/creative-hsme-foundation-target-device-adapter-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3k/adapter.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3k/adapter.test.mjs
+
+      - name: Prove adapter reuses telemetry but owns no fleet or decision authority
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationTargetDeviceBenchmarkAdapterV1.ts
+          ! grep -nE 'ModelFleetPromotionPolicy|PROMOTED|installRecommendedBundle|fetch\(|download|hf_hub_download|from_pretrained|selectedCandidateId:|DIRECT_FOUNDATION_ADVANCE|BOUNDED_ADAPTATION_ADVANCE|REUSE_PATH_INSUFFICIENT' "${CONTRACT}"
+          grep -F "TARGET_MEASUREMENT_INSUFFICIENT" "${CONTRACT}"
+          grep -F "benchmarkEvidenceSha256" "${CONTRACT}"
+          grep -F "measurementCaptureSha256" "${CONTRACT}"
+          grep -F "MEASUREMENT_ATTESTATION_EVIDENCE_DIGEST_MISMATCH" "${CONTRACT}"
+          grep -F "MODEL_MANIFEST_PROVIDER_UNSUPPORTED" "${CONTRACT}"
+          grep -F "MULTI_FILE_REPRESENTATION_BRIDGE_NOT_PROVEN" "${CONTRACT}"
+          grep -F "MOBILE_TARGET_REQUIRES_MOBILE_DEVICE_CLASS" "${CONTRACT}"
+          grep -F "BENCHMARK_STALE" "${CONTRACT}"
+          grep -F "UNIFIED_PROCESS_WORKING_SET" "${CONTRACT}"
+          grep -F "modelFleetPromotionUsed:false" "${CONTRACT}"
+          grep -F "durableModelFleetPromotionAllowed:false" "${CONTRACT}"
+          grep -F "reuseAdvanceAllowed:false" "${CONTRACT}"
           grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
