@@ -39,6 +39,8 @@ on:
       - 'tests/creative-hsme-physical-target-evidence-binding-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalReuseRuntimeOverlayV1.ts'
       - 'tests/creative-hsme-physical-reuse-runtime-overlay-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationPendingReuseRuntimeApplicationV1.ts'
+      - 'tests/creative-hsme-pending-reuse-runtime-application-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -757,6 +759,60 @@ jobs:
           grep -F "trainingEvidenceMutationAllowed:false" "$CONTRACT"
           grep -F "decisionMutationAllowed:false" "$CONTRACT"
           grep -F "selectedCandidateIdAllowed:false" "$CONTRACT"
+          grep -F "reuseAdvanceAllowed:false" "$CONTRACT"
+          grep -F "fullStudentEscalationAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "trainingOrDistillationAllowed:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+
+  pending-reuse-runtime-application-contract:
+    name: HSME-2a.3.3q pending reuse runtime application synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for pending reuse runtime application
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run pending reuse runtime application contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3q
+          npx esbuild tests/creative-hsme-pending-reuse-runtime-application-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3q/pending-runtime.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3q/pending-runtime.test.mjs
+
+      - name: Prove runtime wiring cannot qualify or select a reuse candidate
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationPendingReuseRuntimeApplicationV1.ts
+          grep -F "normalizeHsmeFoundationReuseDecisionV1" "$CONTRACT"
+          grep -F "RUNTIME_OVERLAY_APPLIED_PENDING" "$CONTRACT"
+          grep -F "PREEXISTING_RUNTIME_EVIDENCE_CONFLICT" "$CONTRACT"
+          grep -F "RUNTIME_OVERLAY_SCHEMA_INVALID" "$CONTRACT"
+          grep -F "RUNTIME_OVERLAY_BLOCKERS_PRESENT" "$CONTRACT"
+          grep -F "RUNTIME_EVIDENCE_REHASH_MISMATCH" "$CONTRACT"
+          grep -F "NON_RUNTIME_CANDIDATE_MUTATION" "$CONTRACT"
+          grep -F "CANDIDATE_QUALIFICATION_FORBIDDEN" "$CONTRACT"
+          ! grep -F "mayEscalateToFullHsmeStudentDistillationV1" "$CONTRACT"
+          ! grep -F "DIRECT_FOUNDATION_ADVANCE" "$CONTRACT"
+          ! grep -F "BOUNDED_ADAPTATION_ADVANCE" "$CONTRACT"
+          grep -F "candidateQualificationAllowed:false" "$CONTRACT"
+          grep -F "selectedCandidateIdAllowed:false" "$CONTRACT"
+          grep -F "decisionStatusMutationAllowed:false" "$CONTRACT"
           grep -F "reuseAdvanceAllowed:false" "$CONTRACT"
           grep -F "fullStudentEscalationAllowed:false" "$CONTRACT"
           grep -F "productionAuthorityGranted:false" "$CONTRACT"
