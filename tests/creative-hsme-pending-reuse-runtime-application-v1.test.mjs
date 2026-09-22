@@ -5,6 +5,9 @@ import test from 'node:test';
 import {
   applyHsmeFoundationPhysicalReuseRuntimeOverlayV1,
 } from '../src/platform/creative/local-ai/hsme/HsmeFoundationPendingReuseRuntimeApplicationV1.ts';
+import {
+  HSME_FOUNDATION_PHYSICAL_REUSE_RUNTIME_OVERLAY_DIGEST_DOMAIN,
+} from '../src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalReuseRuntimeOverlayV1.ts';
 
 const H=value=>createHash('sha256').update(value).digest('hex');
 const hashPort={sha256:async bytes=>createHash('sha256').update(bytes).digest('hex')};
@@ -84,7 +87,7 @@ function decision(){
 }
 
 function overlay(candidateId,overrides={}){
-  return {
+  const base={
     schemaVersion:'BERS_HSME_FOUNDATION_PHYSICAL_REUSE_RUNTIME_OVERLAY_V1',
     candidateId,
     capability:CAPABILITY,
@@ -98,7 +101,6 @@ function overlay(candidateId,overrides={}){
     otherRequiredBytes:5,
     mandatoryInstalledBytes:165,
     workingMemoryBytes:300_000_000,
-    runtimeEvidenceSha256:H(candidateId+'-runtime-evidence'),
     componentMapSha256:H(candidateId+'-component-map'),
     physicalTargetBindingSha256:H(candidateId+'-physical-target-binding'),
     targetEvidenceSha256:H(candidateId+'-target-evidence'),
@@ -120,6 +122,35 @@ function overlay(candidateId,overrides={}){
     qualityMutationAllowed:false,
     trainingEvidenceMutationAllowed:false,
     decisionMutationAllowed:false,
+  };
+  const payload={
+    schemaVersion:base.schemaVersion,
+    candidateId:base.candidateId,
+    capability:base.capability,
+    targetTier:base.targetTier,
+    backboneBytes:base.backboneBytes,
+    conditionerBytes:base.conditionerBytes,
+    vaeBytes:base.vaeBytes,
+    adapterBytes:base.adapterBytes,
+    otherRequiredBytes:base.otherRequiredBytes,
+    mandatoryInstalledBytes:base.mandatoryInstalledBytes,
+    workingMemoryBytes:base.workingMemoryBytes,
+    componentMapSha256:base.componentMapSha256,
+    physicalTargetBindingSha256:base.physicalTargetBindingSha256,
+    targetEvidenceSha256:base.targetEvidenceSha256,
+    sourceExecutionProfileSha256:base.sourceExecutionProfileSha256,
+    selectedCandidateIdAllowed:false,
+    reuseAdvanceAllowed:false,
+    fullStudentEscalationAllowed:false,
+    productionAuthorityGranted:false,
+    trainingOrDistillationAllowed:false,
+    winnerSelectionAllowed:false,
+  };
+  return {
+    ...base,
+    runtimeEvidenceSha256:H(
+      HSME_FOUNDATION_PHYSICAL_REUSE_RUNTIME_OVERLAY_DIGEST_DOMAIN+JSON.stringify(payload),
+    ),
     ...overrides,
   };
 }
@@ -332,4 +363,14 @@ test('invalid source decision fails before any runtime mutation',async()=>{
   assert.deepEqual(result.blockers,['SOURCE_REUSE_DECISION_INVALID']);
   assert.equal(result.candidate,null);
   assert.equal(result.pendingDecision,null);
+});
+
+test('caller-pinned digest cannot substitute for independent runtime overlay rehash',async()=>{
+  const ov=overlay('direct-mobile');
+  ov.runtimeEvidenceSha256=H('coordinated-fake-runtime-evidence');
+  const result=await applyHsmeFoundationPhysicalReuseRuntimeOverlayV1(
+    decision(),'direct-mobile',CAPABILITY,ov,ov.runtimeEvidenceSha256,hashPort,
+  );
+  assert.equal(result.state,'RUNTIME_OVERLAY_APPLICATION_INVALID');
+  assert.ok(result.blockers.includes('RUNTIME_EVIDENCE_REHASH_MISMATCH'));
 });
