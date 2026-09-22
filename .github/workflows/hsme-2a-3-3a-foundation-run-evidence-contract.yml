@@ -649,6 +649,8 @@ jobs:
           grep -F "BUNDLE_SHAPE_INVALID" "$CONTRACT"
           grep -F "SOURCE_LEDGER_RECORD_SHAPE_INVALID" "$CONTRACT"
           grep -F "FORBIDDEN_SENSITIVE_EXPORT_FIELD" "$CONTRACT"
+          grep -F "DEVICE_SNAPSHOT_EVIDENCE_NOT_CANONICAL" "$CONTRACT"
+          grep -F "deviceSnapshotSha256" "$CONTRACT"
           grep -F "ANDROID_RSS_REQUIRED" "$CONTRACT"
           grep -F "IOS_PHYSICAL_FOOTPRINT_REQUIRED" "$CONTRACT"
           grep -F "productionAuthorityGranted:false" "$CONTRACT"
