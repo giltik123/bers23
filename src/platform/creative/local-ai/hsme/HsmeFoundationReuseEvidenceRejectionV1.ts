@@ -185,10 +185,12 @@ export async function proveHsmeFoundationReuseEvidenceRejectionV1(
     blockers.push('REJECTION_CANDIDATE_RUNTIME_DRIFT');
   }
 
-  if(overlay.mandatoryInstalledBytes>application.pendingDecision.mobileInstalledBudgetBytes){
+  if(overlay.mandatoryInstalledBytes!=='UNKNOWN'
+    &&overlay.mandatoryInstalledBytes>application.pendingDecision.mobileInstalledBudgetBytes){
     hard.push('MOBILE_INSTALLED_BUDGET_EXCEEDED');
   }
-  if(overlay.workingMemoryBytes>application.pendingDecision.mobileWorkingMemoryBudgetBytes){
+  if(overlay.workingMemoryBytes!=='UNKNOWN'
+    &&overlay.workingMemoryBytes>application.pendingDecision.mobileWorkingMemoryBudgetBytes){
     hard.push('MOBILE_WORKING_MEMORY_BUDGET_EXCEEDED');
   }
 
