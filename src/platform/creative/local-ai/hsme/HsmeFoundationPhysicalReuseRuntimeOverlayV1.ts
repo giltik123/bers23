@@ -104,6 +104,24 @@ export async function proveHsmeFoundationPhysicalReuseRuntimeOverlayV1(
   if(physicalBinding.state!=='PHYSICAL_TARGET_EVIDENCE_READY'){
     blockers.push('PHYSICAL_TARGET_EVIDENCE_NOT_READY');
   }
+  if(!Array.isArray(physicalBinding.blockers)||physicalBinding.blockers.length!==0){
+    blockers.push('PHYSICAL_TARGET_READY_BLOCKERS_PRESENT');
+  }
+  if(physicalBinding.selectedCandidateIdAllowed!==false
+    ||physicalBinding.reuseAdvanceAllowed!==false
+    ||physicalBinding.fullStudentEscalationAllowed!==false
+    ||physicalBinding.modelFleetPromotionAllowed!==false
+    ||physicalBinding.installOrDownloadAllowed!==false
+    ||physicalBinding.productionAuthorityGranted!==false
+    ||physicalBinding.providerAuthorityGranted!==false
+    ||physicalBinding.billingAuthorityGranted!==false
+    ||physicalBinding.projectArtifactMutationAllowed!==false
+    ||physicalBinding.aeeExecutionAuthorityGranted!==false
+    ||physicalBinding.durableModelFleetPromotionAllowed!==false
+    ||physicalBinding.trainingOrDistillationAllowed!==false
+    ||physicalBinding.winnerSelectionAllowed!==false){
+    blockers.push('PHYSICAL_TARGET_AUTHORITY_WIDENING_REJECTED');
+  }
   if(physicalBinding.candidateId!==candidateId)blockers.push('PHYSICAL_TARGET_CANDIDATE_DRIFT');
   if(physicalBinding.capability!==capability)blockers.push('PHYSICAL_TARGET_CAPABILITY_DRIFT');
   if(physicalBinding.physicalTargetBindingSha256==='UNKNOWN'
@@ -135,6 +153,9 @@ export async function proveHsmeFoundationPhysicalReuseRuntimeOverlayV1(
   }
   if(target.candidateId!==candidateId)blockers.push('TARGET_EVIDENCE_CANDIDATE_DRIFT');
   if(target.capability!==capability)blockers.push('TARGET_EVIDENCE_CAPABILITY_DRIFT');
+  if(target.productionAuthorityGranted!==false||target.winnerSelectionAllowed!==false){
+    blockers.push('TARGET_EVIDENCE_AUTHORITY_WIDENING_REJECTED');
+  }
   if(target.targetTier!=='MOBILE_DEFAULT')blockers.push('MOBILE_DEFAULT_TARGET_REQUIRED');
   if(target.workingMemoryKind!=='TARGET_PEAK_WORKING_SET_BYTES'){
     blockers.push('TARGET_WORKING_MEMORY_SEMANTIC_INVALID');
