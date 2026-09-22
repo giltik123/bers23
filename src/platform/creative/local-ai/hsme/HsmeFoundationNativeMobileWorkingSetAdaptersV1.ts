@@ -161,7 +161,7 @@ function createAdapter(
       return Object.freeze([...ledger]);
     },
     async sample(phase:Phase,sequence:number){
-      validateRequest(phase,sequence);
+      validateRequest(phase,sequence,ledger.length);
       const raw=await bridge.sample(phase,sequence);
       if(raw.status==='UNAVAILABLE'){
         const detail=raw.detailCode?': '+boundedText(raw.detailCode,'detailCode'):'';
@@ -222,9 +222,20 @@ function createAdapter(
   });
 }
 
-function validateRequest(phase:Phase,sequence:number):void{
+function validateRequest(phase:Phase,sequence:number,acceptedSampleCount:number):void{
   if(!PHASES.includes(phase))fail('hsme_native_mobile_phase','measurement phase invalid');
   if(!Number.isSafeInteger(sequence)||sequence<0)fail('hsme_native_mobile_sequence','measurement sequence invalid');
+  if(sequence!==acceptedSampleCount){
+    fail('hsme_native_mobile_sequence_drift','measurement sequence must be contiguous and start at zero');
+  }
+  const expectedPhase:Phase=
+    sequence===0?'BASELINE'
+      :sequence===1?'POST_LOAD'
+        :sequence===2?'POST_COLD_INFERENCE'
+          :'POST_WARM_INFERENCE';
+  if(phase!==expectedPhase){
+    fail('hsme_native_mobile_phase_sequence','measurement phase does not match canonical capture sequence');
+  }
 }
 
 function validateMeasuredSample(
