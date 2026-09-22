@@ -22,6 +22,8 @@ on:
       - 'tests/creative-hsme-foundation-resource-evidence-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationParetoEfficiencyV1.ts'
       - 'tests/creative-hsme-foundation-pareto-efficiency-v1.test.mjs'
+      - 'scripts/hsme-foundation-resource-evidence-collector.mjs'
+      - 'tests/hsme-foundation-resource-evidence-collector.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -348,4 +350,53 @@ jobs:
           grep -F "weightedAggregateScoreAllowed:false" "${CONTRACT}"
           grep -F "lowerQualityCandidateAdmissionAllowed:false" "${CONTRACT}"
           grep -F "deploymentTierAdmissionGranted:false" "${CONTRACT}"
+          grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
+
+
+  resource-evidence-collector-contract:
+    name: HSME-2a.3.3i resource evidence collector synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for resource evidence collector
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run resource evidence collector contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3i
+          npx esbuild tests/hsme-foundation-resource-evidence-collector.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3i/collector.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3i/collector.test.mjs
+
+      - name: Prove resource collector remains evidence-only
+        run: |
+          set -euo pipefail
+          CONTRACT=scripts/hsme-foundation-resource-evidence-collector.mjs
+          ! grep -nE 'hf_hub_download|from_pretrained|nvidia-smi|secrets\.|HSME_FOUNDATION_BLIND_HMAC_KEY' "${CONTRACT}"
+          ! grep -nE 'selectedCandidateId|winnerCandidateId|productionSelection|aggregateEfficiencyScore' "${CONTRACT}"
+          grep -F "RESOURCE_EVIDENCE_INCOMPLETE" "${CONTRACT}"
+          grep -F "RESOURCE_EVIDENCE_COMPLETE" "${CONTRACT}"
+          grep -F "FAILED_EVIDENCE" "${CONTRACT}"
+          grep -F "collectionManifestSha256" "${CONTRACT}"
+          grep -F "artifactId" "${CONTRACT}"
+          grep -F "artifactName" "${CONTRACT}"
+          grep -F "bundlePath" "${CONTRACT}"
+          grep -F "execution-plan.json" "${CONTRACT}"
+          grep -F "resource-measurement-evidence.json" "${CONTRACT}"
+          grep -F "proveHsmeFoundationResourceEvidenceV1" "${CONTRACT}"
           grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
