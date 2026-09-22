@@ -865,6 +865,8 @@ jobs:
           grep -F "QUALIFICATION_TRAINING_TARGET_DRIFT" "$CONTRACT"
           grep -F "QUALIFICATION_EVIDENCE_READY" "$CONTRACT"
           grep -F "resolvedLicenseConclusion:'COMMERCIAL_ADMISSIBLE'" "$CONTRACT"
+          grep -F "runtimeComponentMapSha256" "$CONTRACT"
+          grep -F "sourceExecutionProfileSha256" "$CONTRACT"
           ! grep -F "qualifiedCandidate:" "$CONTRACT"
           ! grep -F "qualifiedCandidateSha256" "$CONTRACT"
           ! grep -F "mayEscalateToFullHsmeStudentDistillationV1" "$CONTRACT"
