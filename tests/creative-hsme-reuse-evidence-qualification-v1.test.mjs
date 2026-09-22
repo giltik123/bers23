@@ -134,7 +134,7 @@ function qualityFinalization(candidateId){
   };
 }
 
-function trainingAttestation(candidateId,source,training){
+function trainingAttestation(candidateId,source,training,runtimeOverlay){
   return {
     schemaVersion:HSME_FOUNDATION_REUSE_TRAINING_ATTESTATION_V1_SCHEMA,
     candidateId,
@@ -142,6 +142,8 @@ function trainingAttestation(candidateId,source,training){
     sourceRoot:source.sourceRoot,
     immutableRevision:source.immutableRevision,
     sourceContentSha256:source.contentSha256,
+    runtimeEvidenceSha256:runtimeOverlay.runtimeEvidenceSha256,
+    targetEvidenceSha256:runtimeOverlay.targetEvidenceSha256,
     mode:training.mode,
     trainableParameters:training.trainableParameters,
     frozenParameters:training.frozenParameters,
@@ -265,8 +267,9 @@ async function fixture({
     }),
   );
 
+  const runtimeOverlay=overlay(candidateId,campaignCandidate.executionProfileSha256);
   const training=strategy==='DIRECT_FOUNDATION'?zeroTraining():loraTraining();
-  const attestation=trainingAttestation(candidateId,source,training);
+  const attestation=trainingAttestation(candidateId,source,training,runtimeOverlay);
   training.evidenceSha256=await hsmeFoundationReuseTrainingAttestationV1Digest(
     attestation,hashPort,
   );
@@ -286,7 +289,6 @@ async function fixture({
   };
   const otherDirect=placeholderCandidate('other-direct','DIRECT_FOUNDATION');
   const otherAdapt=placeholderCandidate('other-adapt','FROZEN_FOUNDATION_ADAPTATION');
-  const runtimeOverlay=overlay(candidateId,campaignCandidate.executionProfileSha256);
   const rawDecision=decision(target,otherDirect,otherAdapt);
   const application=await applyHsmeFoundationPhysicalReuseRuntimeOverlayV1(
     rawDecision,candidateId,CAPABILITY,runtimeOverlay,
@@ -403,6 +405,19 @@ test('training source or training block drift fails closed',async()=>{
   );
   assert.equal(result.state,'QUALIFICATION_EVIDENCE_INVALID');
   assert.ok(result.blockers.includes('QUALIFICATION_TRAINING_BLOCK_DRIFT'));
+});
+
+test('training attestation cannot be reused for a different physical runtime target',async()=>{
+  const x=await fixture();
+  const changed=structuredClone(x.trainingAttestation);
+  changed.targetEvidenceSha256=H('different-target-evidence');
+  const result=await qualifyHsmeFoundationReuseEvidenceV1(
+    x.application,x.runtimeOverlay,x.candidateId,CAPABILITY,
+    campaign,trust,x.finalization,x.qualityFinalizationSha256,
+    qualityOrigin(true),changed,hashPort,
+  );
+  assert.equal(result.state,'QUALIFICATION_EVIDENCE_INVALID');
+  assert.ok(result.blockers.includes('QUALIFICATION_TRAINING_TARGET_DRIFT'));
 });
 
 test('campaign or license trust drift cannot qualify the runtime-wired candidate',async()=>{
