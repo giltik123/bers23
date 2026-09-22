@@ -24,6 +24,8 @@ on:
       - 'tests/creative-hsme-foundation-pareto-efficiency-v1.test.mjs'
       - 'scripts/hsme-foundation-resource-evidence-collector.mjs'
       - 'tests/hsme-foundation-resource-evidence-collector.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationTierQualificationV1.ts'
+      - 'tests/creative-hsme-foundation-tier-qualification-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -399,4 +401,50 @@ jobs:
           grep -F "execution-plan.json" "${CONTRACT}"
           grep -F "resource-measurement-evidence.json" "${CONTRACT}"
           grep -F "proveHsmeFoundationResourceEvidenceV1" "${CONTRACT}"
+          grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
+
+
+  tier-qualification-contract:
+    name: HSME-2a.3.3j reference-to-target tier qualification synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for tier qualification contract
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run reference-to-target tier qualification contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3j
+          npx esbuild tests/creative-hsme-foundation-tier-qualification-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3j/tier.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3j/tier.test.mjs
+
+      - name: Prove CUDA/Pareto evidence cannot masquerade as mobile qualification
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationTierQualificationV1.ts
+          ! grep -nE 'selectedCandidateId:|DIRECT_FOUNDATION_ADVANCE|BOUNDED_ADAPTATION_ADVANCE|REUSE_PATH_INSUFFICIENT' "${CONTRACT}"
+          ! grep -nE 'hf_hub_download|from_pretrained|nvidia-smi|secrets\.' "${CONTRACT}"
+          grep -F "cudaReferenceEvidenceMaySatisfyMobileMemoryBudget:false" "${CONTRACT}"
+          grep -F "paretoMayGrantDeploymentTier:false" "${CONTRACT}"
+          grep -F "reuseAdvanceAllowed:false" "${CONTRACT}"
+          grep -F "fullStudentEscalationAllowed:false" "${CONTRACT}"
+          grep -F "TARGET_PEAK_WORKING_SET_BYTES" "${CONTRACT}"
+          grep -F "IDENTICAL_REFERENCE_ARTIFACTS" "${CONTRACT}"
+          grep -F "budgetPolicySha256" "${CONTRACT}"
           grep -F "winnerSelectionAllowed:false" "${CONTRACT}"
