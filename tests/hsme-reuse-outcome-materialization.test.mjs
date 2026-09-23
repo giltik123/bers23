@@ -463,6 +463,8 @@ test('trusted indexed evidence materializes canonical direct-reuse finalization 
 
   const evidence=result.materializationEvidence;
   assert.match(evidence.originIndexSha256,/^[0-9a-f]{64}$/);
+  assert.match(evidence.originIndexFileSha256,/^[0-9a-f]{64}$/);
+  assert.equal(evidence.originIndexFileSha256,input.originIndex.fileSha256);
   assert.match(evidence.materializationEvidenceSha256,/^[0-9a-f]{64}$/);
   assert.match(evidence.finalizationFileSha256,/^[0-9a-f]{64}$/);
   assert.match(evidence.handoffFileSha256,/^[0-9a-f]{64}$/);
