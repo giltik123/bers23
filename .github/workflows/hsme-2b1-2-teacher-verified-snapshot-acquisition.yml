@@ -1,0 +1,200 @@
+name: HSME-2b1.2 verified teacher snapshot acquisition
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/acquire-hsme-teacher-snapshot.py'
+      - 'tests/test_hsme_teacher_verified_snapshot_acquisition.py'
+      - '.github/workflows/hsme-2b1-2-teacher-verified-snapshot-acquisition.yml'
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact accepted main commit to check out
+        required: true
+        type: string
+      teacher_candidate_id:
+        description: Pinned teacher candidate to acquire and verify
+        required: true
+        type: choice
+        options:
+          - qwen-image-2512-quality-teacher
+          - qwen-image-edit-2511-quality-teacher
+          - flux2-klein-4b-comparator-teacher
+      max_download_bytes:
+        description: Explicit hard byte ceiling for this acquisition
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hsme-teacher-verified-snapshot-acquisition
+  cancel-in-progress: false
+
+jobs:
+  offline-contract:
+    name: verified acquisition offline contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run verified acquisition regressions
+        run: python -m unittest tests/test_hsme_teacher_verified_snapshot_acquisition.py
+
+      - name: Prove acquisition code cannot deserialize, execute model code or publish binaries
+        run: |
+          set -euo pipefail
+          RUNNER=scripts/acquire-hsme-teacher-snapshot.py
+          grep -F 'cache_dir=str(cache_dir)' "$RUNNER"
+          grep -F 'HF_XET_CACHE' "$RUNNER"
+          grep -F 'ephemeralModelBytesDestroyed": True' "$RUNNER"
+          grep -F 'cleanupVerifiedBeforeEvidenceWrite": True' "$RUNNER"
+          grep -F 'deserializationPerformed": False' "$RUNNER"
+          grep -F 'modelRepositoryRuntimeCodeExecuted": False' "$RUNNER"
+          grep -F 'binaryPayloadPublished": False' "$RUNNER"
+          grep -F 'teacherAdmissionAllowed": False' "$RUNNER"
+          grep -F 'trainingStartAllowed": False' "$RUNNER"
+          grep -F 'runtimeAuthorityGranted": False' "$RUNNER"
+          grep -F 'productionAuthorityGranted": False' "$RUNNER"
+          ! grep -nE 'from_pretrained|torch\.load|pickle\.load|safe_open|exec\(|eval\(|trust_remote_code[[:space:]]*=[[:space:]]*True|startTraining|runTraining|TEACHER_SET_ADMITTED' "$RUNNER"
+
+  protected-acquisition:
+    name: acquire one exact teacher snapshot and destroy bytes before evidence upload
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: [self-hosted, linux, x64, gpu, bers-hsme-evidence]
+    timeout-minutes: 360
+    environment: hsme-teacher-acquisition-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable accepted main checkout and bounded inputs
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          TEACHER_CANDIDATE_ID: ${{ inputs.teacher_candidate_id }}
+          MAX_DOWNLOAD_BYTES: ${{ inputs.max_download_bytes }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${MAX_DOWNLOAD_BYTES}" =~ ^[0-9]+$ ]]
+          test "${MAX_DOWNLOAD_BYTES}" -gt 0
+          test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "${CANDIDATE_SHA}" origin/main
+          case "${TEACHER_CANDIDATE_ID}" in
+            qwen-image-2512-quality-teacher|qwen-image-edit-2511-quality-teacher|flux2-klein-4b-comparator-teacher) ;;
+            *) echo "teacher candidate is not in the accepted shortlist" >&2; exit 1 ;;
+          esac
+          git ls-files --error-unmatch src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json
+          git ls-files --error-unmatch scripts/resolve-hsme-teacher-remote-manifest.py
+          git ls-files --error-unmatch scripts/materialize-hsme-teacher-acquisition-plans.py
+          git ls-files --error-unmatch scripts/inspect-hsme-teacher-snapshot.py
+          git ls-files --error-unmatch scripts/acquire-hsme-teacher-snapshot.py
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned metadata/download transport only
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import importlib.metadata
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          assert importlib.metadata.version('hf-xet') == '1.1.10'
+          PY
+
+      - name: Resolve exact remote identities and materialize reviewed acquisition plans
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          EVIDENCE_ROOT="${RUNNER_TEMP}/hsme-teacher-json-evidence"
+          rm -rf "${EVIDENCE_ROOT}"
+          mkdir -p "${EVIDENCE_ROOT}"
+          python scripts/resolve-hsme-teacher-remote-manifest.py \
+            --requests src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json \
+            --output "${EVIDENCE_ROOT}/remote-manifest-evidence.json"
+          python scripts/materialize-hsme-teacher-acquisition-plans.py \
+            --remote-evidence "${EVIDENCE_ROOT}/remote-manifest-evidence.json" \
+            --output-dir "${EVIDENCE_ROOT}/acquisition-bundle"
+
+      - name: Acquire exact files, hash before deserialization, destroy bytes, then write evidence
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          TEACHER_CANDIDATE_ID: ${{ inputs.teacher_candidate_id }}
+          MAX_DOWNLOAD_BYTES: ${{ inputs.max_download_bytes }}
+        run: |
+          set -euo pipefail
+          EVIDENCE_ROOT="${RUNNER_TEMP}/hsme-teacher-json-evidence"
+          EPHEMERAL_ROOT="${RUNNER_TEMP}/hsme-teacher-ephemeral/model-bytes"
+          rm -rf "${RUNNER_TEMP}/hsme-teacher-ephemeral"
+          mkdir -p "$(dirname "${EPHEMERAL_ROOT}")"
+          python scripts/acquire-hsme-teacher-snapshot.py \
+            --bundle-dir "${EVIDENCE_ROOT}/acquisition-bundle" \
+            --candidate-id "${TEACHER_CANDIDATE_ID}" \
+            --materialized-root "${EPHEMERAL_ROOT}" \
+            --max-download-bytes "${MAX_DOWNLOAD_BYTES}" \
+            --evidence-output "${EVIDENCE_ROOT}/verified-snapshot-acquisition.json"
+          test ! -e "${EPHEMERAL_ROOT}"
+          test "$(find "${RUNNER_TEMP}/hsme-teacher-ephemeral" -type f 2>/dev/null | wc -l)" -eq 0
+
+      - name: Prove evidence is JSON-only and model bytes were destroyed before publication
+        run: |
+          set -euo pipefail
+          EVIDENCE_ROOT="${RUNNER_TEMP}/hsme-teacher-json-evidence"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'hsme-teacher-json-evidence'
+          evidence = json.loads((root / 'verified-snapshot-acquisition.json').read_text())
+          assert evidence['schemaVersion'] == 'BERS_HSME_TEACHER_VERIFIED_SNAPSHOT_ACQUISITION_V1'
+          assert evidence['hashBeforeDeserialization'] is True
+          assert evidence['deserializationPerformed'] is False
+          assert evidence['modelRepositoryRuntimeCodeExecuted'] is False
+          assert evidence['ephemeralModelBytesDestroyed'] is True
+          assert evidence['cleanupVerifiedBeforeEvidenceWrite'] is True
+          assert evidence['binaryPayloadPublished'] is False
+          assert evidence['teacherAdmissionAllowed'] is False
+          assert evidence['trainingStartAllowed'] is False
+          assert evidence['runtimeAuthorityGranted'] is False
+          assert evidence['productionAuthorityGranted'] is False
+          assert evidence['providerAuthorityGranted'] is False
+          assert evidence['billingAuthorityGranted'] is False
+          assert evidence['projectArtifactMutationAllowed'] is False
+          assert evidence['expectedManifestSha256'] == evidence['observedManifestSha256']
+          assert len(evidence['evidenceSha256']) == 64
+          assert all(path.suffix == '.json' for path in root.rglob('*') if path.is_file())
+          PY
+
+      - name: Upload JSON evidence only after verified cleanup
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-teacher-verified-acquisition-${{ inputs.teacher_candidate_id }}-${{ inputs.candidate_sha }}
+          path: ${{ runner.temp }}/hsme-teacher-json-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Final runner cleanup
+        if: always()
+        run: |
+          rm -rf "${RUNNER_TEMP}/hsme-teacher-ephemeral"
+          test ! -e "${RUNNER_TEMP}/hsme-teacher-ephemeral"
