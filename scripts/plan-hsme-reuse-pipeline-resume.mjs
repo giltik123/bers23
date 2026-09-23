@@ -21,6 +21,11 @@ import {
   validateRepoRuntime,
   validateStageProgram,
 } from './run-hsme-reuse-pipeline-stage.mjs';
+import {
+  HSME_REUSE_PIPELINE_RECEIPT_CONTINUITY_V1_SCHEMA,
+  hsmeReusePipelineReceiptContinuityV1Digest,
+  normalizeHsmeReusePipelineReceiptContinuityV1,
+} from './hsme-reuse-pipeline-receipt-continuity-contract.mjs';
 
 export const HSME_REUSE_PIPELINE_RESUME_PLAN_V1_SCHEMA =
   'BERS_HSME_REUSE_PIPELINE_RESUME_PLAN_V1';
@@ -229,7 +234,7 @@ const RECEIPT_FIELDS=Object.freeze([
   'receiptSha256',
 ]);
 
-function normalizeReceipt(raw){
+export function normalizeReceipt(raw){
   const receipt=exactKeys(raw,RECEIPT_FIELDS,'receipt');
   if(receipt.schemaVersion!==HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V2_SCHEMA){
     fail(
@@ -297,7 +302,7 @@ function normalizeReceipt(raw){
   });
 }
 
-function receiptPayload(receipt){
+export function receiptPayload(receipt){
   const payload={...receipt};
   delete payload.receiptSha256;
   return payload;
@@ -309,6 +314,7 @@ async function verifyReceipt({
   repository,
   repoRoot,
   runtimeCache,
+  continuity,
 }){
   const canonical=canonicalFileBytes(loaded.value);
   if(!canonical.equals(loaded.bytes)){
@@ -329,10 +335,32 @@ async function verifyReceipt({
       'receipt self digest mismatch: '+loaded.path,
     );
   }
-  if(receipt.specFileSha256!==verifiedManifest.manifest.specFileSha256){
+  const currentSpecFileSha256=verifiedManifest.manifest.specFileSha256;
+  if(receipt.specFileSha256!==currentSpecFileSha256){
+    if(!continuity){
+      fail(
+        'hsme_reuse_resume_receipt_spec_drift',
+        'receipt spec digest differs from current manifest',
+      );
+    }
+    if(
+      continuity.sourceSpecFileSha256!==receipt.specFileSha256
+      ||continuity.targetSpecFileSha256!==currentSpecFileSha256
+      ||continuity.receiptSha256!==receipt.receiptSha256
+      ||continuity.sourceReceiptFileSha256!==loaded.fileSha256
+      ||continuity.stageId!==receipt.stageId
+      ||continuity.stageKind!==receipt.stageKind
+      ||continuity.repositoryCommitSha!==repository.repositoryCommitSha
+    ){
+      fail(
+        'hsme_reuse_resume_continuity_binding_drift',
+        'continuity proof does not bridge this exact receipt to current spec',
+      );
+    }
+  }else if(continuity){
     fail(
-      'hsme_reuse_resume_receipt_spec_drift',
-      'receipt spec digest differs from current manifest',
+      'hsme_reuse_resume_continuity_unnecessary',
+      'continuity proof is forbidden when receipt already matches current spec',
     );
   }
   if(receipt.repositoryCommitSha!==repository.repositoryCommitSha){
@@ -414,6 +442,18 @@ async function verifyReceipt({
       'receipt stage definition differs from current re-plan',
     );
   }
+  if(
+    continuity
+    &&(
+      continuity.stageDefinitionSha256!==stageDefinitionSha256
+      ||continuity.argvSha256!==argvSha256
+    )
+  ){
+    fail(
+      'hsme_reuse_resume_continuity_stage_drift',
+      'continuity proof stage definition or argv differs from current re-plan',
+    );
+  }
 
   const stageOutputs=array(stage.outputs,'stage.outputs',64).map(
     (value,index)=>resolve(text(value,'stage.outputs['+index+']')),
@@ -447,6 +487,8 @@ async function verifyReceipt({
     receiptPath:loaded.path,
     receiptFileSha256:loaded.fileSha256,
     receiptSha256:receipt.receiptSha256,
+    receiptSpecFileSha256:receipt.specFileSha256,
+    continuitySha256:continuity?.continuitySha256??null,
     stageDefinitionSha256,
     argvSha256,
     inputs,
@@ -495,21 +537,84 @@ export async function planHsmeReusePipelineResume({
     fail('hsme_reuse_resume_repository_dirty','tracked repository tree is dirty');
   }
 
-  const loadedReceipts=await Promise.all(
-    receiptPaths.map((path,index)=>readJson(path,'receipt '+index)),
+  const loadedArtifacts=await Promise.all(
+    receiptPaths.map((path,index)=>readJson(path,'receipt/continuity '+index)),
   );
+  const executionReceipts=[];
+  const continuityByReceiptSha=new Map();
+  const verifiedContinuities=[];
+
+  for(const loaded of loadedArtifacts){
+    const schema=loaded.value?.schemaVersion;
+    if(schema===HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V2_SCHEMA){
+      executionReceipts.push(loaded);
+      continue;
+    }
+    if(schema===HSME_REUSE_PIPELINE_RECEIPT_CONTINUITY_V1_SCHEMA){
+      const canonical=canonicalFileBytes(loaded.value);
+      if(!canonical.equals(loaded.bytes)){
+        fail(
+          'hsme_reuse_resume_continuity_not_canonical',
+          'continuity proof file bytes are not canonical: '+loaded.path,
+        );
+      }
+      const continuity=normalizeHsmeReusePipelineReceiptContinuityV1(
+        loaded.value,
+      );
+      const digest=hsmeReusePipelineReceiptContinuityV1Digest(continuity);
+      if(digest!==continuity.continuitySha256){
+        fail(
+          'hsme_reuse_resume_continuity_digest_mismatch',
+          'continuity proof self digest mismatch: '+loaded.path,
+        );
+      }
+      if(
+        continuity.targetSpecFileSha256!==verifiedManifest.manifest.specFileSha256
+        ||continuity.repositoryCommitSha!==repository.repositoryCommitSha
+      ){
+        fail(
+          'hsme_reuse_resume_continuity_target_drift',
+          'continuity proof target spec or repository differs from current state',
+        );
+      }
+      if(continuityByReceiptSha.has(continuity.receiptSha256)){
+        fail(
+          'hsme_reuse_resume_continuity_duplicate',
+          'duplicate continuity proof for receipt '+continuity.receiptSha256,
+        );
+      }
+      const record=Object.freeze({
+        ...continuity,
+        continuityPath:loaded.path,
+        continuityFileSha256:loaded.fileSha256,
+      });
+      continuityByReceiptSha.set(continuity.receiptSha256,record);
+      verifiedContinuities.push(record);
+      continue;
+    }
+    fail(
+      'hsme_reuse_resume_receipt_schema_invalid',
+      'resume accepts only V2 execution receipts or V1 continuity proofs',
+    );
+  }
+
   const runtimeCache=new Map();
   const verifiedReceipts=[];
   const receiptByStage=new Map();
+  const usedContinuities=new Set();
 
-  for(const loaded of loadedReceipts){
+  for(const loaded of executionReceipts){
+    const receiptSha256=loaded.value?.receiptSha256;
+    const continuity=continuityByReceiptSha.get(receiptSha256)||null;
     const verified=await verifyReceipt({
       loaded,
       verifiedManifest,
       repository,
       repoRoot:resolve(repoRoot),
       runtimeCache,
+      continuity,
     });
+    if(continuity)usedContinuities.add(continuity.continuitySha256);
     if(receiptByStage.has(verified.stageId)){
       fail(
         'hsme_reuse_resume_receipt_duplicate',
@@ -519,7 +624,16 @@ export async function planHsmeReusePipelineResume({
     receiptByStage.set(verified.stageId,verified);
     verifiedReceipts.push(verified);
   }
+  for(const continuity of verifiedContinuities){
+    if(!usedContinuities.has(continuity.continuitySha256)){
+      fail(
+        'hsme_reuse_resume_continuity_orphan',
+        'continuity proof has no matching carried receipt: '+continuity.stageId,
+      );
+    }
+  }
   verifiedReceipts.sort((a,b)=>lexical(a.stageId,b.stageId));
+  verifiedContinuities.sort((a,b)=>lexical(a.stageId,b.stageId));
 
   const stages=[];
   const completed=new Set(receiptByStage.keys());
@@ -562,6 +676,7 @@ export async function planHsmeReusePipelineResume({
       dependencies:Object.freeze([...array(stage.dependencies,'stage.dependencies',128)]),
       resumeState,
       receiptSha256:receipt?.receiptSha256??null,
+      receiptContinuitySha256:receipt?.continuitySha256??null,
       outputsPresent:Object.freeze(outputPresence),
       outputTrustState:receipt?'OBSERVED_NOT_PIN_AUTHORITY':'NONE',
       externalPinCreated:false,
@@ -599,6 +714,7 @@ export async function planHsmeReusePipelineResume({
     repositoryCommitSha:repository.repositoryCommitSha,
     trackedTreeClean:true,
     verifiedReceipts:Object.freeze(verifiedReceipts),
+    verifiedContinuities:Object.freeze(verifiedContinuities),
     stages:Object.freeze(stages),
     readyStageIds,
     pipelineResumeState:resumePipelineState(
