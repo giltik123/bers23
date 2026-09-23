@@ -9,13 +9,21 @@ import {
 import {
   proveHsmeReuseOutcomeHandoffV1,
 } from '../src/platform/creative/local-ai/hsme/HsmeReuseOutcomeHandoffV1.ts';
+import {
+  HSME_REUSE_OUTCOME_ORIGIN_INDEX_V1_SCHEMA,
+  HSME_REUSE_OUTCOME_ORIGIN_INDEX_DIGEST_DOMAIN,
+  hsmeReuseOutcomeOriginIndexV1Digest,
+  normalizeHsmeReuseOutcomeOriginIndexV1,
+} from '../src/platform/creative/local-ai/hsme/HsmeReuseOutcomeOriginIndexV1.ts';
 
-export const HSME_REUSE_OUTCOME_ORIGIN_INDEX_V1_SCHEMA =
-  'BERS_HSME_REUSE_OUTCOME_ORIGIN_INDEX_V1';
+export {
+  HSME_REUSE_OUTCOME_ORIGIN_INDEX_V1_SCHEMA,
+  HSME_REUSE_OUTCOME_ORIGIN_INDEX_DIGEST_DOMAIN,
+};
+export const normalizeOriginIndex=normalizeHsmeReuseOutcomeOriginIndexV1;
+
 export const HSME_REUSE_OUTCOME_MATERIALIZATION_EVIDENCE_V1_SCHEMA =
   'BERS_HSME_REUSE_OUTCOME_MATERIALIZATION_EVIDENCE_V1';
-export const HSME_REUSE_OUTCOME_ORIGIN_INDEX_DIGEST_DOMAIN =
-  'bers:hsme:reuse-outcome-origin-index:v1\0';
 export const HSME_REUSE_OUTCOME_MATERIALIZATION_DIGEST_DOMAIN =
   'bers:hsme:reuse-outcome-materialization:v1\0';
 
@@ -70,23 +78,6 @@ export function domainDigest(domain,value){
   ]));
 }
 
-function exactRecord(raw,allowed,path){
-  if(raw===null||typeof raw!=='object'||Array.isArray(raw)){
-    fail('hsme_reuse_materialization_record_invalid',path+' must be an object');
-  }
-  for(const key of Object.keys(raw)){
-    if(!allowed.includes(key)){
-      fail('hsme_reuse_materialization_field_unknown',path+'.'+key+' is not allowed');
-    }
-  }
-  for(const key of allowed){
-    if(!Object.hasOwn(raw,key)){
-      fail('hsme_reuse_materialization_field_missing',path+'.'+key+' is required');
-    }
-  }
-  return raw;
-}
-
 function text(value,path,max){
   if(
     typeof value!=='string'
@@ -116,150 +107,9 @@ function sha256(value,path){
   return result;
 }
 
-function falseValue(value,path){
-  if(value!==false){
-    fail('hsme_reuse_materialization_authority_invalid',path+' must remain false');
-  }
-  return false;
-}
-
 function digestOrUnknown(value,path){
   if(value==='UNKNOWN')return value;
   return sha256(value,path);
-}
-
-export function normalizeOriginIndex(raw){
-  const record=exactRecord(raw,[
-    'schemaVersion',
-    'sourceDecisionFileSha256',
-    'campaignFileSha256',
-    'candidateAssemblies',
-    'qualityFrontier',
-    'paretoEfficiency',
-    'trainingRunStartAllowed',
-    'modelInstallAllowed',
-    'modelFleetPromotionAllowed',
-    'productionAuthorityGranted',
-    'providerAuthorityGranted',
-    'billingAuthorityGranted',
-    'projectArtifactMutationAllowed',
-    'aeeExecutionAuthorityGranted',
-    'durableModelFleetPromotionAllowed',
-    'winnerSelectionAllowed',
-  ],'originIndex');
-
-  if(record.schemaVersion!==HSME_REUSE_OUTCOME_ORIGIN_INDEX_V1_SCHEMA){
-    fail('hsme_reuse_materialization_origin_schema_invalid','origin index schema invalid');
-  }
-  if(!Array.isArray(record.candidateAssemblies)||record.candidateAssemblies.length>16){
-    fail(
-      'hsme_reuse_materialization_origin_assembly_count_invalid',
-      'origin index candidateAssemblies must contain 0..16 entries',
-    );
-  }
-
-  const candidateAssemblies=record.candidateAssemblies.map((rawEntry,index)=>{
-    const entry=exactRecord(rawEntry,[
-      'candidateId',
-      'fileSha256',
-      'candidateEvidenceSetSha256',
-    ],'originIndex.candidateAssemblies['+index+']');
-    return Object.freeze({
-      candidateId:identifier(entry.candidateId,'candidateAssemblies['+index+'].candidateId',120),
-      fileSha256:sha256(entry.fileSha256,'candidateAssemblies['+index+'].fileSha256'),
-      candidateEvidenceSetSha256:digestOrUnknown(
-        entry.candidateEvidenceSetSha256,
-        'candidateAssemblies['+index+'].candidateEvidenceSetSha256',
-      ),
-    });
-  }).sort((a,b)=>lexical(a.candidateId,b.candidateId));
-
-  if(new Set(candidateAssemblies.map(value=>value.candidateId)).size!==candidateAssemblies.length){
-    fail(
-      'hsme_reuse_materialization_origin_assembly_duplicate',
-      'origin index candidate ids must be unique',
-    );
-  }
-
-  const frontierRecord=exactRecord(record.qualityFrontier,[
-    'fileSha256','qualityFrontierSha256',
-  ],'originIndex.qualityFrontier');
-  const paretoRecord=exactRecord(record.paretoEfficiency,[
-    'fileSha256','paretoEvidenceSha256',
-  ],'originIndex.paretoEfficiency');
-
-  return Object.freeze({
-    schemaVersion:HSME_REUSE_OUTCOME_ORIGIN_INDEX_V1_SCHEMA,
-    sourceDecisionFileSha256:sha256(
-      record.sourceDecisionFileSha256,
-      'originIndex.sourceDecisionFileSha256',
-    ),
-    campaignFileSha256:sha256(
-      record.campaignFileSha256,
-      'originIndex.campaignFileSha256',
-    ),
-    candidateAssemblies:Object.freeze(candidateAssemblies),
-    qualityFrontier:Object.freeze({
-      fileSha256:sha256(
-        frontierRecord.fileSha256,
-        'originIndex.qualityFrontier.fileSha256',
-      ),
-      qualityFrontierSha256:sha256(
-        frontierRecord.qualityFrontierSha256,
-        'originIndex.qualityFrontier.qualityFrontierSha256',
-      ),
-    }),
-    paretoEfficiency:Object.freeze({
-      fileSha256:sha256(
-        paretoRecord.fileSha256,
-        'originIndex.paretoEfficiency.fileSha256',
-      ),
-      paretoEvidenceSha256:sha256(
-        paretoRecord.paretoEvidenceSha256,
-        'originIndex.paretoEfficiency.paretoEvidenceSha256',
-      ),
-    }),
-    trainingRunStartAllowed:falseValue(
-      record.trainingRunStartAllowed,
-      'originIndex.trainingRunStartAllowed',
-    ),
-    modelInstallAllowed:falseValue(
-      record.modelInstallAllowed,
-      'originIndex.modelInstallAllowed',
-    ),
-    modelFleetPromotionAllowed:falseValue(
-      record.modelFleetPromotionAllowed,
-      'originIndex.modelFleetPromotionAllowed',
-    ),
-    productionAuthorityGranted:falseValue(
-      record.productionAuthorityGranted,
-      'originIndex.productionAuthorityGranted',
-    ),
-    providerAuthorityGranted:falseValue(
-      record.providerAuthorityGranted,
-      'originIndex.providerAuthorityGranted',
-    ),
-    billingAuthorityGranted:falseValue(
-      record.billingAuthorityGranted,
-      'originIndex.billingAuthorityGranted',
-    ),
-    projectArtifactMutationAllowed:falseValue(
-      record.projectArtifactMutationAllowed,
-      'originIndex.projectArtifactMutationAllowed',
-    ),
-    aeeExecutionAuthorityGranted:falseValue(
-      record.aeeExecutionAuthorityGranted,
-      'originIndex.aeeExecutionAuthorityGranted',
-    ),
-    durableModelFleetPromotionAllowed:falseValue(
-      record.durableModelFleetPromotionAllowed,
-      'originIndex.durableModelFleetPromotionAllowed',
-    ),
-    winnerSelectionAllowed:falseValue(
-      record.winnerSelectionAllowed,
-      'originIndex.winnerSelectionAllowed',
-    ),
-  });
 }
 
 function deepFreeze(value){
@@ -387,10 +237,10 @@ export async function materializeHsmeReuseOutcomeEvidence({
     );
   }
 
-  const normalizedIndex=normalizeOriginIndex(originIndex.value);
-  const originIndexSha256=domainDigest(
-    HSME_REUSE_OUTCOME_ORIGIN_INDEX_DIGEST_DOMAIN,
+  const normalizedIndex=normalizeHsmeReuseOutcomeOriginIndexV1(originIndex.value);
+  const originIndexSha256=await hsmeReuseOutcomeOriginIndexV1Digest(
     normalizedIndex,
+    hashPort,
   );
   if(originIndexSha256!==expectedOriginIndexSha256){
     fail(
