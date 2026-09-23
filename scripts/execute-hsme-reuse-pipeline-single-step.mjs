@@ -199,6 +199,7 @@ export async function executeHsmeReusePipelineSingleStep({
   resumePlanPath,
   resumeDigestPath,
   receiptPaths,
+  carryForwardPaths=[],
   stageId,
   repoRoot,
   allowedOutputRoot,
@@ -218,6 +219,7 @@ export async function executeHsmeReusePipelineSingleStep({
     manifestPath,
     digestPath,
     receiptPaths,
+    carryForwardPaths,
     repoRoot,
   });
   if(!fresh.files.plan.equals(suppliedPlan.bytes)){
@@ -267,6 +269,16 @@ export async function executeHsmeReusePipelineSingleStep({
     );
   }
 
+  const carryForwardProofSha256s=Object.freeze(
+    (fresh.plan.verifiedCarryForwards??[])
+      .map(value=>text(
+        value.carryForwardProofSha256,
+        'verifiedCarryForward.carryForwardProofSha256',
+        64,
+      ))
+      .sort(),
+  );
+
   const summaryPayload=Object.freeze({
     schemaVersion:HSME_REUSE_PIPELINE_SINGLE_STEP_EXECUTION_V1_SCHEMA,
     resumePlanSha256:fresh.digest.planSha256,
@@ -279,6 +291,10 @@ export async function executeHsmeReusePipelineSingleStep({
     receiptPath:receiptLoaded.path,
     receiptSha256:receipt.receiptSha256,
     receiptFileSha256:receiptLoaded.fileSha256,
+    ...(carryForwardProofSha256s.length>0?{
+      verifiedCarryForwardCount:carryForwardProofSha256s.length,
+      carryForwardProofSha256s,
+    }:{}),
     replanRequired:true,
     automaticContinuationAllowed:false,
     externalPinCreated:false,
@@ -321,6 +337,7 @@ export async function executeHsmeReusePipelineSingleStep({
 function parseArgs(argv){
   const single=new Map();
   const receipts=[];
+  const carryForwards=[];
   for(let index=0;index<argv.length;index+=1){
     const key=argv[index];
     if(!key?.startsWith('--')||index+1>=argv.length){
@@ -329,6 +346,10 @@ function parseArgs(argv){
     const value=argv[++index];
     if(key==='--receipt-input'){
       receipts.push(value);
+      continue;
+    }
+    if(key==='--carry-forward-input'){
+      carryForwards.push(value);
       continue;
     }
     if(single.has(key)){
@@ -362,6 +383,7 @@ function parseArgs(argv){
     receiptOutput:single.get('--receipt-output'),
     summaryOutput:single.get('--summary-output'),
     receipts:Object.freeze(receipts),
+    carryForwards:Object.freeze(carryForwards),
   });
 }
 
@@ -374,6 +396,7 @@ export async function runCli(argv=process.argv.slice(2)){
     resumePlanPath:args.resumePlan,
     resumeDigestPath:args.resumeDigest,
     receiptPaths:args.receipts,
+    carryForwardPaths:args.carryForwards,
     stageId:args.stageId,
     repoRoot:args.repoRoot,
     allowedOutputRoot:args.allowedOutputRoot,

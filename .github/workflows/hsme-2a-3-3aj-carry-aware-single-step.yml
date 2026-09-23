@@ -1,0 +1,88 @@
+name: HSME-2a.3.3aj carry-aware single-step
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/execute-hsme-reuse-pipeline-single-step.mjs'
+      - 'scripts/plan-hsme-reuse-pipeline-resume.mjs'
+      - 'scripts/verify-hsme-reuse-pipeline-receipt-carry-forward.mjs'
+      - 'tests/hsme-reuse-pipeline-receipt-carry-forward.test.mjs'
+      - 'tests/hsme-reuse-pipeline-single-step-coordinator.test.mjs'
+      - '.github/workflows/hsme-2a-3-3aj-carry-aware-single-step.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  carry-aware-single-step:
+    name: explicit one-stage execution with carry-forward revalidation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run carry-aware end-to-end regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3aj
+          npx esbuild tests/hsme-reuse-pipeline-receipt-carry-forward.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3aj/carry-aware.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3aj/carry-aware.test.mjs
+
+      - name: Re-run legacy single-step coordinator regressions
+        run: |
+          set -euo pipefail
+          npx esbuild tests/hsme-reuse-pipeline-single-step-coordinator.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3aj/single-step.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3aj/single-step.test.mjs
+
+      - name: Prove fresh resume recomputation includes exact carry inputs
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/execute-hsme-reuse-pipeline-single-step.mjs
+          grep -F 'carryForwardPaths=[]' "$SCRIPT"
+          grep -F 'carryForwardPaths,' "$SCRIPT"
+          grep -F -- '--carry-forward-input' "$SCRIPT"
+          grep -F 'verifiedCarryForwardCount:carryForwardProofSha256s.length' "$SCRIPT"
+          grep -F 'carryForwardProofSha256s,' "$SCRIPT"
+
+      - name: Prove stage selection remains explicit and one-shot
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/execute-hsme-reuse-pipeline-single-step.mjs
+          grep -F 'selectExplicitReadyStage(fresh.plan,stageId)' "$SCRIPT"
+          grep -F 'executeHsmeReusePipelineStage({' "$SCRIPT"
+          grep -F 'automaticContinuationAllowed:false' "$SCRIPT"
+          grep -F 'replanRequired:true' "$SCRIPT"
+          ! grep -nE 'for[[:space:]]*\([^)]*readyStageIds|while[[:space:]]*\(|automaticContinuationAllowed:true|setInterval\(|setTimeout\(' "$SCRIPT"
+
+      - name: Prove carry-forward never becomes semantic or production authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/execute-hsme-reuse-pipeline-single-step.mjs
+          grep -F 'externalPinCreated:false' "$SCRIPT"
+          grep -F 'semanticEvidenceAuthorityGranted:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
