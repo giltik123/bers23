@@ -1,0 +1,77 @@
+name: HSME-2a.3.3z candidate assembly materialization
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/materialize-hsme-reuse-candidate-assembly.mjs'
+      - 'tests/hsme-reuse-candidate-assembly-materialization.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseCandidateEvidenceAssemblyV1.ts'
+      - '.github/workflows/hsme-2a-3-3z-candidate-assembly-materialization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  materialization-contract:
+    name: exact-origin candidate assembly materialization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run candidate assembly materialization regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3z
+          npx esbuild tests/hsme-reuse-candidate-assembly-materialization.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3z/materialization.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3z/materialization.test.mjs
+
+      - name: Prove canonical assembler is the only assembly decision logic
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/materialize-hsme-reuse-candidate-assembly.mjs
+          grep -F 'assembleHsmeFoundationReuseCandidateEvidenceV1(' "$SCRIPT"
+          grep -F 'candidateAssemblyOriginIndexDigest(' "$SCRIPT"
+          grep -F 'expectedOriginIndexSha256' "$SCRIPT"
+          grep -F 'proofByObject.get(proof)' "$SCRIPT"
+          ! grep -nE 'qualifyHsmeFoundationReuseEvidenceV1|proveHsmeFoundationReuseEvidenceRejectionV1|finalizeHsmeFoundationReuseDecisionV1|proveHsmeReuseOutcomeHandoffV1' "$SCRIPT"
+
+      - name: Prove no execution or authority widening
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/materialize-hsme-reuse-candidate-assembly.mjs
+          grep -F 'decisionMutationAllowed:false' "$SCRIPT"
+          grep -F 'candidateSelectionAllowed:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'fullStudentEscalationAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'startTraining|runTraining|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
+
+      - name: Prove JSON-only outputs
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/materialize-hsme-reuse-candidate-assembly.mjs
+          grep -F 'hsme-reuse-candidate-assembly.json' "$SCRIPT"
+          grep -F 'hsme-reuse-candidate-assembly-materialization.json' "$SCRIPT"
+          ! grep -nE '\.(safetensors|bin|onnx|gguf|pt|pth|ckpt)' "$SCRIPT"
