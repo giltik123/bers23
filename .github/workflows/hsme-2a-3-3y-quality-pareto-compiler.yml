@@ -1,0 +1,74 @@
+name: HSME-2a.3.3y quality Pareto compiler
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/compile-hsme-foundation-quality-pareto-evidence.mjs'
+      - 'tests/hsme-foundation-quality-pareto-compiler.test.mjs'
+      - '.github/workflows/hsme-2a-3-3y-quality-pareto-compiler.yml'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationQualityFrontierV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationResourceEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationParetoEfficiencyV1.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiler-contract:
+    name: canonical quality resource Pareto materialization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run compiler integration regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3y
+          npx esbuild tests/hsme-foundation-quality-pareto-compiler.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3y/compiler.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3y/compiler.test.mjs
+
+      - name: Prove compiler invokes existing canonical proof functions
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/compile-hsme-foundation-quality-pareto-evidence.mjs
+          grep -F 'proveHsmeFoundationQualityFrontierV1(' "$SCRIPT"
+          grep -F 'proveHsmeFoundationResourceEvidenceV1(' "$SCRIPT"
+          grep -F 'proveHsmeFoundationParetoEfficiencyV1(' "$SCRIPT"
+          grep -F 'hsmeFoundationQualityFrontierV1Digest(' "$SCRIPT"
+          grep -F 'hsmeFoundationResourceEvidenceV1Digest(' "$SCRIPT"
+          grep -F 'hsmeFoundationParetoEfficiencyV1Digest(' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'deploymentTierAdmissionGranted:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'finalizeHsmeFoundationReuseDecisionV1|proveHsmeReuseOutcomeHandoffV1|selectedCandidateId|winnerCandidateId|startTraining|runTraining|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
+
+      - name: Prove JSON-only outputs
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/compile-hsme-foundation-quality-pareto-evidence.mjs
+          grep -F 'hsme-foundation-quality-frontier.json' "$SCRIPT"
+          grep -F 'hsme-foundation-resource-proof.json' "$SCRIPT"
+          grep -F 'hsme-foundation-pareto-efficiency.json' "$SCRIPT"
+          grep -F 'hsme-foundation-quality-pareto-materialization.json' "$SCRIPT"
+          ! grep -nE '\.(safetensors|bin|onnx|gguf|pt|pth|ckpt)' "$SCRIPT"
