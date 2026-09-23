@@ -472,7 +472,7 @@ async function originSemanticDigest(kind,loaded){
   return null;
 }
 
-function stageStatus({missing,predecessorMissing,semanticDigest,expectedPin,kind}){
+function localStageStatus({missing,predecessorMissing,semanticDigest,expectedPin,kind}){
   if(missing.length>0){
     return predecessorMissing.length>0?'BLOCKED_BY_PREDECESSOR':'INPUT_REQUIRED';
   }
@@ -514,34 +514,45 @@ export async function planHsmeReuseEvidencePipeline({
   const loadedByPath=new Map(loadedEntries.map(value=>[value.path,value]));
 
   const stages=[];
+  const statusById=new Map();
   for(const definition of definitions){
     const missing=definition.inputs.filter(path=>!loadedByPath.get(path)?.exists);
     const predecessorMissing=missing
       .filter(path=>producers.has(path))
       .map(path=>Object.freeze({path,producerStageId:producers.get(path)}))
       .sort((a,b)=>lexical(a.path,b.path));
+    const dependencies=[...new Set(definition.inputs
+      .map(path=>producers.get(path))
+      .filter(Boolean)
+      .filter(value=>value!==definition.id))]
+      .sort(lexical);
+    const blockedDependencies=dependencies.filter(
+      id=>statusById.get(id)!=='READY',
+    );
     const originLoaded=definition.originIndex
       ?loadedByPath.get(definition.originIndex)
       :null;
     const semanticDigest=await originSemanticDigest(definition.kind,originLoaded);
-    const status=stageStatus({
+    const localStatus=localStageStatus({
       missing,
       predecessorMissing,
       semanticDigest,
       expectedPin:definition.expectedPin,
       kind:definition.kind,
     });
+    const status=localStatus==='PIN_MISMATCH'
+      ?'PIN_MISMATCH'
+      :blockedDependencies.length>0
+        ?'BLOCKED_BY_PREDECESSOR'
+        :localStatus;
+    statusById.set(definition.id,status);
     stages.push(Object.freeze({
       stageId:definition.id,
       kind:definition.kind,
       status,
-      dependencies:Object.freeze(
-        [...new Set(definition.inputs
-          .map(path=>producers.get(path))
-          .filter(Boolean)
-          .filter(value=>value!==definition.id))]
-          .sort(lexical),
-      ),
+      localStatus,
+      dependencies:Object.freeze(dependencies),
+      blockedDependencies:Object.freeze(blockedDependencies),
       missingInputs:Object.freeze([...missing].sort(lexical)),
       predecessorMissingInputs:Object.freeze(predecessorMissing),
       originIndexSemanticSha256:semanticDigest,
