@@ -1,0 +1,92 @@
+name: HSME-2a.3.3ad receipt-bound safe resume
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/run-hsme-reuse-pipeline-stage.mjs'
+      - 'scripts/plan-hsme-reuse-pipeline-resume.mjs'
+      - 'tests/hsme-reuse-pipeline-stage-runner.test.mjs'
+      - 'tests/hsme-reuse-pipeline-resume-planner.test.mjs'
+      - '.github/workflows/hsme-2a-3-3ad-receipt-bound-resume.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  receipt-v2-and-resume:
+    name: V2 receipt and safe resume planner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Re-run bounded stage runner regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3ad
+          npx esbuild tests/hsme-reuse-pipeline-stage-runner.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ad/stage-runner.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ad/stage-runner.test.mjs
+
+      - name: Run receipt-bound resume regressions
+        run: |
+          set -euo pipefail
+          npx esbuild tests/hsme-reuse-pipeline-resume-planner.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ad/resume.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ad/resume.test.mjs
+
+      - name: Prove V2 receipt binds exact clean repository code
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/run-hsme-reuse-pipeline-stage.mjs
+          grep -F 'BERS_HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V2' "$SCRIPT"
+          grep -F "['rev-parse','HEAD']" "$SCRIPT"
+          grep -F "['diff','--quiet','HEAD','--']" "$SCRIPT"
+          grep -F 'trackedTreeClean:true' "$SCRIPT"
+          grep -F 'repositoryCommitSha:repo.repositoryCommitSha' "$SCRIPT"
+          grep -F 'stageScriptSha256:repo.scriptSha256' "$SCRIPT"
+          grep -F 'nodeResolutionHookSha256:repo.hookSha256' "$SCRIPT"
+
+      - name: Prove resume planner observes only and never executes stages
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-pipeline-resume.mjs
+          grep -F "resumeState='COMPLETED_OBSERVED'" "$SCRIPT"
+          grep -F "resumeState='UNTRACKED_OUTPUTS'" "$SCRIPT"
+          grep -F "resumeState='READY_TO_EXECUTE'" "$SCRIPT"
+          grep -F "resumeState='WAITING_FOR_DEPENDENCY_RECEIPTS'" "$SCRIPT"
+          grep -F 'plannerExecutesStages:false' "$SCRIPT"
+          grep -F 'receiptsGrantSemanticTrust:false' "$SCRIPT"
+          grep -F 'externalPinsAutoTrusted:false' "$SCRIPT"
+          grep -F 'semanticEvidenceAuthorityGranted:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'executeHsmeReusePipelineStage\(|startTraining|runTraining|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
+
+      - name: Prove legacy receipt is not resume authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-pipeline-resume.mjs
+          grep -F 'HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V2_SCHEMA' "$SCRIPT"
+          grep -F 'resume requires exact V2 execution receipt' "$SCRIPT"
+          ! grep -F 'HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V1_SCHEMA' "$SCRIPT"
