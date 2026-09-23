@@ -1,0 +1,100 @@
+name: HSME-2a.3.3ai receipt carry-forward
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-hsme-reuse-pipeline-receipt-carry-forward.mjs'
+      - 'scripts/plan-hsme-reuse-pipeline-resume.mjs'
+      - 'tests/hsme-reuse-pipeline-receipt-carry-forward.test.mjs'
+      - 'tests/hsme-reuse-pipeline-resume.test.mjs'
+      - '.github/workflows/hsme-2a-3-3ai-receipt-carry-forward.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  carry-forward-contract:
+    name: lineage-safe unchanged-stage receipt carry-forward
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run carry-forward integration regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3ai
+          npx esbuild tests/hsme-reuse-pipeline-receipt-carry-forward.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ai/carry-forward.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ai/carry-forward.test.mjs
+
+      - name: Re-run existing resume regressions
+        run: |
+          set -euo pipefail
+          npx esbuild tests/hsme-reuse-pipeline-resume.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ai/resume.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ai/resume.test.mjs
+
+      - name: Prove carry-forward never executes a stage or forges a new receipt
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/verify-hsme-reuse-pipeline-receipt-carry-forward.mjs
+          grep -F "carryForwardState:'UNCHANGED_STAGE_OBSERVED'" "$SCRIPT"
+          grep -F 'sourceReceiptExecutionPreserved:true' "$SCRIPT"
+          grep -F 'stageReexecuted:false' "$SCRIPT"
+          grep -F 'receiptChainDepth:1' "$SCRIPT"
+          grep -F "completionEvidenceKind:'CARRY_FORWARD_PROOF'" "$SCRIPT"
+          grep -F 'source.receipt.stageId===patched.stageId' "$SCRIPT"
+          grep -F 'transitiveDependsOn(currentManifest.manifest,currentStage.stageId,patched.stageId)' "$SCRIPT"
+          ! grep -nE 'executeHsmeReusePipelineStage\(|executeNodeStage\(|spawn\(|receiptSha256[[:space:]]*=' "$SCRIPT"
+
+      - name: Prove old/new spec and current bytes are independently rebound
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/verify-hsme-reuse-pipeline-receipt-carry-forward.mjs
+          grep -F 'sourceManifest.manifest.specFileSha256!==sourceSpec.fileSha256' "$SCRIPT"
+          grep -F 'currentManifest.manifest.specFileSha256!==outputSpec.fileSha256' "$SCRIPT"
+          grep -F 'diff.length!==1||diff[0]!==application.jsonPointer' "$SCRIPT"
+          grep -F 'currentStageDefinitionSha256!==source.receipt.stageDefinitionSha256' "$SCRIPT"
+          grep -F "fail('hsme_reuse_carry_output_drift'" "$SCRIPT"
+
+      - name: Prove resume requires explicit verified carry-forward evidence
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-pipeline-resume.mjs
+          grep -F 'verifyHsmeReusePipelineReceiptCarryForward({' "$SCRIPT"
+          grep -F "'hsme_reuse_resume_completion_evidence_duplicate'" "$SCRIPT"
+          grep -F "completionEvidenceKind:'CARRY_FORWARD_PROOF'" "$SCRIPT"
+          grep -F "completionEvidenceKind:'EXECUTION_RECEIPT'" "$SCRIPT"
+          grep -F 'carryForwardPaths=[]' "$SCRIPT"
+
+      - name: Prove no semantic or production authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/verify-hsme-reuse-pipeline-receipt-carry-forward.mjs
+          grep -F 'semanticEvidenceAuthorityGranted:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'startTraining|runTraining|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
