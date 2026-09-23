@@ -182,7 +182,7 @@ async function planToFiles(spec,specFileSha256,manifestPath,digestPath){
 async function makeReceipt({manifest,stage,receiptPath}){
   const program=validateStageProgram(stage);
   const runtime=await validateRepoRuntime(process.cwd(),program.allowed.script);
-  const inputs=bindStageInputs(manifest,stage);
+  const inputs=bindStageInputs(manifest.manifest,stage);
   const argvSha256=domainDigest(
     HSME_REUSE_PIPELINE_STAGE_ARGV_DIGEST_DOMAIN,
     {stageId:stage.stageId,kind:stage.kind,env:stage.env,argv:stage.argv},
