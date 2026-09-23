@@ -38,6 +38,44 @@ export const HSME_REUSE_PIPELINE_APPROVED_PIN_REPLAN_PACKAGE_DIGEST_DOMAIN =
 const HEX64=/^[0-9a-f]{64}$/;
 const GIT_OID=/^[0-9a-f]{40,64}$/;
 
+const APPLICATION_FIELDS=Object.freeze([
+  'schemaVersion',
+  'applicationState',
+  'sourceSpecPath',
+  'sourceSpecFileSha256',
+  'outputSpecPath',
+  'outputSpecFileSha256',
+  'requestSha256',
+  'approvalSha256',
+  'patchCandidateSha256',
+  'stageId',
+  'stageKind',
+  'jsonPointer',
+  'appliedExternalPinSha256',
+  'sourceSpecMutated',
+  'replanRequired',
+  'automaticContinuationAllowed',
+  'stageExecutionAuthorized',
+  'externalPinCreated',
+  'semanticEvidenceAuthorityGranted',
+  'decisionMutationAllowed',
+  'candidateSelectionAllowed',
+  'winnerSelectionAllowed',
+  'reuseAdvanceAllowed',
+  'fullStudentEscalationAllowed',
+  'trainingRunStartAllowed',
+  'trainingOrDistillationAllowed',
+  'modelInstallAllowed',
+  'modelFleetPromotionAllowed',
+  'productionAuthorityGranted',
+  'providerAuthorityGranted',
+  'billingAuthorityGranted',
+  'projectArtifactMutationAllowed',
+  'aeeExecutionAuthorityGranted',
+  'durableModelFleetPromotionAllowed',
+  'applicationSha256',
+]);
+
 export class HsmeReusePipelineApprovedPinReplanPackageError extends Error{
   constructor(code,message){
     super(message);
@@ -55,6 +93,19 @@ function object(value,path){
     fail('hsme_replan_package_record_invalid',path+' must be an object');
   }
   return value;
+}
+
+function exactRecord(value,fields,path){
+  const record=object(value,path);
+  const actual=Object.keys(record).sort();
+  const expected=[...fields].sort();
+  if(
+    actual.length!==expected.length
+    ||actual.some((key,index)=>key!==expected[index])
+  ){
+    fail('hsme_replan_package_shape_invalid',path+' fields differ from exact schema');
+  }
+  return record;
 }
 
 function text(value,path,max=8192){
@@ -209,7 +260,11 @@ function validateApplication({
   sourceSpec,
   approvedSpec,
 }){
-  const application=object(applicationLoaded.value,'application');
+  const application=exactRecord(
+    applicationLoaded.value,
+    APPLICATION_FIELDS,
+    'application',
+  );
   if(
     application.schemaVersion!==HSME_REUSE_PIPELINE_SPEC_PIN_APPLICATION_V1_SCHEMA
     ||application.applicationState!=='PIN_MATERIALIZED_NEW_SPEC'
@@ -519,6 +574,7 @@ export async function buildHsmeReusePipelineApprovedPinReplanPackage({
       patchedStageKind:application.stageKind,
       sourceManifestPath:sourceManifest.path,
       sourceManifestFileSha256:sourceManifest.fileSha256,
+      sourceManifestSha256:verifiedSourceManifest.manifestSha256,
       sourceManifestDigestPath:sourceDigest.path,
       sourceManifestDigestFileSha256:sourceDigest.fileSha256,
       manifestPath,
