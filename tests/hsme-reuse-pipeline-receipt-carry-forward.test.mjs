@@ -39,10 +39,106 @@ import {
   buildHsmeReusePipelineReceiptCarryForward,
   verifyHsmeReusePipelineReceiptCarryForward,
 } from '../scripts/verify-hsme-reuse-pipeline-receipt-carry-forward.mjs';
+import {
+  executeHsmeReusePipelineSingleStep,
+} from '../scripts/execute-hsme-reuse-pipeline-single-step.mjs';
 
 const APPLICATION_SCHEMA='BERS_HSME_REUSE_PIPELINE_SPEC_PIN_APPLICATION_V1';
 const APPLICATION_DOMAIN='bers:hsme:reuse-pipeline-spec-pin-application:v1\0';
 const H=value=>createHash('sha256').update(value).digest('hex');
+const CANDIDATE='flux2-klein-4b-distilled-v1';
+const campaignPath=
+  'src/platform/creative/local-ai/hsme/hsme-foundation-benchmark-campaign.v1.json';
+const campaign=JSON.parse(await readFile(campaignPath,'utf8'));
+
+function unknownRuntime(){
+  return {
+    backboneBytes:'UNKNOWN',
+    conditionerBytes:'UNKNOWN',
+    vaeBytes:'UNKNOWN',
+    adapterBytes:'UNKNOWN',
+    otherRequiredBytes:'UNKNOWN',
+    mandatoryInstalledBytes:'UNKNOWN',
+    workingMemoryBytes:'UNKNOWN',
+    evidenceSha256:'UNKNOWN',
+  };
+}
+
+function zeroTraining(){
+  return {
+    mode:'ZERO_TRAINING',
+    trainableParameters:0,
+    frozenParameters:'UNKNOWN',
+    trainingExamples:0,
+    gpuSeconds:0,
+    trainingCostMicrousd:0,
+    evidenceSha256:'UNKNOWN',
+  };
+}
+
+function placeholder(id,strategy){
+  return {
+    candidateId:id,
+    strategy,
+    targetTier:'MOBILE_DEFAULT',
+    evidenceState:'UNRESOLVED',
+    source:{
+      sourceRoot:'bers/'+id,
+      immutableRevision:'a'.repeat(40),
+      contentSha256:H(id+'-source'),
+    },
+    licenseConclusion:'REVIEW_REQUIRED',
+    licenseEvidenceSha256:'UNKNOWN',
+    quality:{status:'UNKNOWN',evidenceSha256:'UNKNOWN'},
+    runtime:unknownRuntime(),
+    training:strategy==='DIRECT_FOUNDATION'
+      ?zeroTraining()
+      :{
+        mode:'LORA',
+        trainableParameters:10,
+        frozenParameters:1000,
+        trainingExamples:10,
+        gpuSeconds:10,
+        trainingCostMicrousd:100,
+        evidenceSha256:'UNKNOWN',
+      },
+    rejectionReasons:[],
+  };
+}
+
+function sourceDecision(){
+  const meta=campaign.candidates.find(value=>value.candidateId===CANDIDATE);
+  assert.ok(meta);
+  return {
+    schemaVersion:'BERS_HSME_FOUNDATION_REUSE_DECISION_V1',
+    qualityPolicy:'QUALITY_FLOOR_BEFORE_EFFICIENCY',
+    decisionStatus:'EVALUATION_PENDING',
+    mobileInstalledBudgetBytes:1_000_000_000,
+    mobileWorkingMemoryBudgetBytes:1_000_000_000,
+    rationale:['carry-aware coordinator keeps reuse decision pending'],
+    candidates:[
+      placeholder('control-carry-aware','CONTROL_BASELINE'),
+      {
+        candidateId:CANDIDATE,
+        strategy:'DIRECT_FOUNDATION',
+        targetTier:'MOBILE_DEFAULT',
+        evidenceState:'UNRESOLVED',
+        source:{
+          sourceRoot:meta.sourceRoot,
+          immutableRevision:meta.immutableRevision,
+          contentSha256:meta.modelContentSha256,
+        },
+        licenseConclusion:'REVIEW_REQUIRED',
+        licenseEvidenceSha256:'UNKNOWN',
+        quality:{status:'UNKNOWN',evidenceSha256:'UNKNOWN'},
+        runtime:unknownRuntime(),
+        training:zeroTraining(),
+        rejectionReasons:[],
+      },
+      placeholder('adapt-carry-aware','FROZEN_FOUNDATION_ADAPTATION'),
+    ],
+  };
+}
 
 function authorityFalse(){
   return {
@@ -171,9 +267,9 @@ async function fixture(){
   ]);
 
   const sourcePath=join(inputs,'source.json');
-  const campaignPath=join(inputs,'campaign.json');
-  const source=await writePretty(sourcePath,{scope:'carry-source'});
-  const campaign=await writePretty(campaignPath,{scope:'carry-campaign'});
+  const source=await writePretty(sourcePath,sourceDecision());
+  const campaignInputPath=join(inputs,'campaign.json');
+  const campaignInput=await writePretty(campaignInputPath,campaign);
 
   const qualityInputs={};
   for(const name of [
@@ -189,7 +285,7 @@ async function fixture(){
     schemaVersion:HSME_REUSE_CANDIDATE_ASSEMBLY_ORIGIN_INDEX_V1_SCHEMA,
     candidateId:'flux2-klein-4b-distilled-v1',
     sourceDecisionFileSha256:source.fileSha256,
-    campaignFileSha256:campaign.fileSha256,
+    campaignFileSha256:campaignInput.fileSha256,
     proofs:[],
     decisionMutationAllowed:false,
     candidateSelectionAllowed:false,
@@ -218,7 +314,7 @@ async function fixture(){
   const oldSpec={
     schemaVersion:HSME_REUSE_EVIDENCE_PIPELINE_SPEC_V1_SCHEMA,
     qualityPareto:{
-      campaign:campaignPath,
+      campaign:campaignInputPath,
       trust:qualityInputs.trust,
       fixturePlan:qualityInputs['fixture-plan'],
       fixturePack:qualityInputs['fixture-pack'],
@@ -233,7 +329,7 @@ async function fixture(){
       stageId:'candidate-a',
       candidateId:'flux2-klein-4b-distilled-v1',
       sourceDecision:sourcePath,
-      campaign:campaignPath,
+      campaign:campaignInputPath,
       proofs:[],
       originIndex:originPath,
       expectedOriginIndexSha256:null,
@@ -241,7 +337,7 @@ async function fixture(){
     }],
     outcome:{
       sourceDecision:sourcePath,
-      campaign:campaignPath,
+      campaign:campaignInputPath,
       assemblies:[assemblyPath],
       frontier:frontierPath,
       pareto:paretoPath,
@@ -317,7 +413,9 @@ async function fixture(){
 
   return {
     root,
+    out,
     control,
+    assemblyOut,
     oldSpecPath,
     newSpecPath,
     oldManifestPath,
@@ -437,6 +535,57 @@ test('resume rejects receipt and carry-forward proof for the same stage',async()
       error.code==='hsme_reuse_resume_receipt_spec_drift'
       ||error.code==='hsme_reuse_resume_completion_evidence_duplicate',
   );
+});
+
+test('explicit single-step coordinator revalidates carry-forward evidence before one assembly execution',async()=>{
+  const fx=await fixture();
+  const built=await buildHsmeReusePipelineReceiptCarryForward(buildArgs(fx));
+  const proofPath=join(fx.control,'quality-carry-forward-for-execution.json');
+  await writeFile(proofPath,built.files.proof);
+
+  const resumed=await planHsmeReusePipelineResume({
+    manifestPath:fx.newManifestPath,
+    digestPath:fx.newDigestPath,
+    receiptPaths:[],
+    carryForwardPaths:[proofPath],
+    repoRoot:process.cwd(),
+  });
+  const planPath=join(fx.control,'carry-aware-resume-plan.json');
+  const digestPath=join(fx.control,'carry-aware-resume-digest.json');
+  await writeFile(planPath,resumed.files.plan);
+  await writeFile(digestPath,resumed.files.digest);
+
+  assert.ok(resumed.plan.readyStageIds.includes('assembly:candidate-a'));
+  const receiptPath=join(fx.control,'assembly-execution-receipt.json');
+  const summaryPath=join(fx.control,'assembly-execution-summary.json');
+  const result=await executeHsmeReusePipelineSingleStep({
+    manifestPath:fx.newManifestPath,
+    digestPath:fx.newDigestPath,
+    resumePlanPath:planPath,
+    resumeDigestPath:digestPath,
+    receiptPaths:[],
+    carryForwardPaths:[proofPath],
+    stageId:'assembly:candidate-a',
+    repoRoot:process.cwd(),
+    allowedOutputRoot:fx.root,
+    receiptPath,
+    summaryPath,
+  });
+
+  assert.equal(result.summary.requestedStageId,'assembly:candidate-a');
+  assert.equal(result.summary.verifiedCarryForwardCount,1);
+  assert.deepEqual(
+    result.summary.carryForwardProofSha256s,
+    [built.proof.carryForwardProofSha256],
+  );
+  assert.equal(result.summary.automaticContinuationAllowed,false);
+  assert.equal(result.summary.externalPinCreated,false);
+  assert.equal(result.receipt.stageId,'assembly:candidate-a');
+  const assembly=JSON.parse(await readFile(
+    join(fx.assemblyOut,'hsme-reuse-candidate-assembly.json'),
+    'utf8',
+  ));
+  assert.equal(assembly.state,'CANDIDATE_EVIDENCE_INCOMPLETE');
 });
 
 test('carry-forward proof grants no semantic, execution, training or production authority',async()=>{
