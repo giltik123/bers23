@@ -840,11 +840,11 @@ function exactRecord(
   return record;
 }
 
-function exactPackageVersion(
+function exactPackageVersion<T extends string>(
   raw:unknown,
-  expected:string,
+  expected:T,
   path:string,
-):string{
+):T{
   if(raw!==expected){
     fail('hsme_dense_package_version',path+' must equal exact pinned version '+expected);
   }
