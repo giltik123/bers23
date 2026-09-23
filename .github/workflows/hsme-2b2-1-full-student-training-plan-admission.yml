@@ -1,0 +1,78 @@
+name: HSME-2b2.1 full-student training-plan admission
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingPlanAdmissionV1.ts'
+      - 'tests/creative-hsme-full-student-training-plan-admission-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeReuseOutcomeHandoffV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherAdmissionFinalizationV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTrainingReproductionGateV1.ts'
+      - 'tests/helpers/hsme-teacher-admission-v1-fixture.mjs'
+      - '.github/workflows/hsme-2b2-1-full-student-training-plan-admission.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  training-plan-admission:
+    name: full-student plan evidence without training authority
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run full-student admission regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-1
+          npx esbuild tests/creative-hsme-full-student-training-plan-admission-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-1/training-plan-admission.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-1/training-plan-admission.test.mjs
+
+      - name: Prove canonical reproduction gate and evidence rebinding are required
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingPlanAdmissionV1.ts
+          grep -F 'proveHsmeTrainingReproductionFixtureV1(' "$CONTRACT"
+          grep -F 'HSME_REUSE_OUTCOME_HANDOFF_DIGEST_DOMAIN' "$CONTRACT"
+          grep -F 'HSME_TEACHER_ADMISSION_GATE_EVIDENCE_DIGEST_DOMAIN' "$CONTRACT"
+          grep -F 'HSME_TEACHER_ADMISSION_FINALIZATION_DIGEST_DOMAIN' "$CONTRACT"
+          grep -F 'hsmeTrainingProvenanceDigestV1(' "$CONTRACT"
+          grep -F "FULL_STUDENT_DISTILLATION_HANDOFF_READY" "$CONTRACT"
+          grep -F "TEACHER_SET_ADMITTED_READY" "$CONTRACT"
+          grep -F "TRAINING_PLAN_READY_NOT_AUTHORIZED" "$CONTRACT"
+
+      - name: Prove READY never authorizes training or promotion
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingPlanAdmissionV1.ts
+          grep -F 'trainingRunStartAllowed:false' "$CONTRACT"
+          grep -F 'trainingOrDistillationExecutionAllowed:false' "$CONTRACT"
+          grep -F 'checkpointPromotionAllowed:false' "$CONTRACT"
+          grep -F 'modelInstallAllowed:false' "$CONTRACT"
+          grep -F 'modelFleetPromotionAllowed:false' "$CONTRACT"
+          grep -F 'productionAuthorityGranted:false' "$CONTRACT"
+          grep -F 'providerAuthorityGranted:false' "$CONTRACT"
+          grep -F 'billingAuthorityGranted:false' "$CONTRACT"
+          grep -F 'projectArtifactMutationAllowed:false' "$CONTRACT"
+          grep -F 'aeeExecutionAuthorityGranted:false' "$CONTRACT"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$CONTRACT"
+          grep -F 'winnerSelectionAllowed:false' "$CONTRACT"
+          ! grep -nE 'child_process|spawn\(|exec\(|execFile\(|startTraining|runTraining|promoteCheckpoint|promoteModel|installModel|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://' "$CONTRACT"
