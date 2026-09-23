@@ -20,6 +20,7 @@ import {
 } from './materialize-hsme-reuse-pipeline-approved-pin-spec.mjs';
 import {
   HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V2_SCHEMA,
+  loadVerifiedManifest,
 } from './run-hsme-reuse-pipeline-stage.mjs';
 import {
   buildHsmeReusePipelineReceiptCarryForward,
@@ -359,6 +360,19 @@ export async function buildHsmeReusePipelineApprovedPinReplanPackage({
       sourceSpec,
       approvedSpec,
     });
+    const verifiedSourceManifest=await loadVerifiedManifest(
+      sourceManifest.path,
+      sourceDigest.path,
+    );
+    if(
+      verifiedSourceManifest.manifest.specFileSha256!==sourceSpec.fileSha256
+      ||verifiedSourceManifest.manifestFileSha256!==sourceManifest.fileSha256
+    ){
+      fail(
+        'hsme_replan_package_source_manifest_spec_drift',
+        'source manifest does not bind the source spec bytes',
+      );
+    }
 
     const receiptIdentities=loadedReceipts.map((loaded,index)=>
       receiptIdentity(loaded.value,receiptPaths[index])
