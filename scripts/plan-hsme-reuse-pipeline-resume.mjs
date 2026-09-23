@@ -21,6 +21,9 @@ import {
   validateRepoRuntime,
   validateStageProgram,
 } from './run-hsme-reuse-pipeline-stage.mjs';
+import {
+  verifyHsmeReusePipelineReceiptCarryForward,
+} from './verify-hsme-reuse-pipeline-receipt-carry-forward.mjs';
 
 export const HSME_REUSE_PIPELINE_RESUME_PLAN_V1_SCHEMA =
   'BERS_HSME_REUSE_PIPELINE_RESUME_PLAN_V1';
@@ -484,6 +487,7 @@ export async function planHsmeReusePipelineResume({
   manifestPath,
   digestPath,
   receiptPaths,
+  carryForwardPaths=[],
   repoRoot=process.cwd(),
 }){
   const verifiedManifest=await loadVerifiedManifest(
@@ -521,8 +525,41 @@ export async function planHsmeReusePipelineResume({
   }
   verifiedReceipts.sort((a,b)=>lexical(a.stageId,b.stageId));
 
+  const verifiedCarryForwards=[];
+  const carryByStage=new Map();
+  for(const path of carryForwardPaths){
+    const proof=await verifyHsmeReusePipelineReceiptCarryForward({
+      proofPath:path,
+      currentManifestPath:resolve(manifestPath),
+      currentDigestPath:resolve(digestPath),
+      repoRoot:resolve(repoRoot),
+    });
+    if(receiptByStage.has(proof.stageId)||carryByStage.has(proof.stageId)){
+      fail(
+        'hsme_reuse_resume_completion_evidence_duplicate',
+        'duplicate receipt/carry-forward evidence for stage '+proof.stageId,
+      );
+    }
+    carryByStage.set(proof.stageId,proof);
+    verifiedCarryForwards.push(Object.freeze({
+      stageId:proof.stageId,
+      stageKind:proof.stageKind,
+      carryForwardProofSha256:proof.carryForwardProofSha256,
+      sourceReceiptSha256:proof.sourceReceiptSha256,
+      sourceSpecFileSha256:proof.sourceSpecFileSha256,
+      currentSpecFileSha256:proof.currentSpecFileSha256,
+      stageDefinitionSha256:proof.stageDefinitionSha256,
+      argvSha256:proof.argvSha256,
+      outputs:proof.outputs,
+    }));
+  }
+  verifiedCarryForwards.sort((a,b)=>lexical(a.stageId,b.stageId));
+
   const stages=[];
-  const completed=new Set(receiptByStage.keys());
+  const completed=new Set([
+    ...receiptByStage.keys(),
+    ...carryByStage.keys(),
+  ]);
   for(const rawStage of array(verifiedManifest.manifest.stages,'manifest.stages',128)){
     const stage=object(rawStage,'stage');
     const stageId=text(stage.stageId,'stage.stageId',160);
@@ -533,9 +570,11 @@ export async function planHsmeReusePipelineResume({
     const anyOutput=outputPresence.some(Boolean);
     const allOutput=outputPresence.every(Boolean);
     const receipt=receiptByStage.get(stageId)||null;
+    const carryForward=carryByStage.get(stageId)||null;
+    const completion=receipt||carryForward;
 
     let resumeState;
-    if(receipt){
+    if(completion){
       if(!allOutput){
         fail(
           'hsme_reuse_resume_receipt_output_missing',
@@ -561,9 +600,16 @@ export async function planHsmeReusePipelineResume({
       manifestLocalStatus:text(stage.localStatus,'stage.localStatus',64),
       dependencies:Object.freeze([...array(stage.dependencies,'stage.dependencies',128)]),
       resumeState,
-      receiptSha256:receipt?.receiptSha256??null,
+      receiptSha256:receipt?.receiptSha256??carryForward?.sourceReceiptSha256??null,
+      ...(carryForward?{
+        completionEvidenceKind:'CARRY_FORWARD_PROOF',
+        carryForwardProofSha256:carryForward.carryForwardProofSha256,
+        sourceReceiptSha256:carryForward.sourceReceiptSha256,
+      }:receipt?{
+        completionEvidenceKind:'EXECUTION_RECEIPT',
+      }:{}),
       outputsPresent:Object.freeze(outputPresence),
-      outputTrustState:receipt?'OBSERVED_NOT_PIN_AUTHORITY':'NONE',
+      outputTrustState:completion?'OBSERVED_NOT_PIN_AUTHORITY':'NONE',
       externalPinCreated:false,
       semanticEvidenceAuthorityGranted:false,
       decisionMutationAllowed:false,
@@ -599,6 +645,9 @@ export async function planHsmeReusePipelineResume({
     repositoryCommitSha:repository.repositoryCommitSha,
     trackedTreeClean:true,
     verifiedReceipts:Object.freeze(verifiedReceipts),
+    ...(verifiedCarryForwards.length>0
+      ?{verifiedCarryForwards:Object.freeze(verifiedCarryForwards)}
+      :{}),
     stages:Object.freeze(stages),
     readyStageIds,
     pipelineResumeState:resumePipelineState(
@@ -661,6 +710,7 @@ export async function planHsmeReusePipelineResume({
 function parseArgs(argv){
   const single=new Map();
   const receipts=[];
+  const carryForwards=[];
   for(let index=0;index<argv.length;index+=1){
     const key=argv[index];
     if(!key?.startsWith('--')||index+1>=argv.length){
@@ -669,6 +719,10 @@ function parseArgs(argv){
     const value=argv[++index];
     if(key==='--receipt'){
       receipts.push(value);
+      continue;
+    }
+    if(key==='--carry-forward'){
+      carryForwards.push(value);
       continue;
     }
     if(single.has(key)){
@@ -692,6 +746,7 @@ function parseArgs(argv){
     repoRoot:single.get('--repo-root'),
     outputDir:single.get('--output-dir'),
     receipts:Object.freeze(receipts),
+    carryForwards:Object.freeze(carryForwards),
   });
 }
 
@@ -701,6 +756,7 @@ export async function runCli(argv=process.argv.slice(2)){
     manifestPath:args.manifest,
     digestPath:args.manifestDigest,
     receiptPaths:args.receipts,
+    carryForwardPaths:args.carryForwards,
     repoRoot:args.repoRoot,
   });
   await mkdir(args.outputDir,{recursive:true});
