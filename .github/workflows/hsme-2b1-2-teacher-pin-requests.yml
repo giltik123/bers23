@@ -1,0 +1,63 @@
+name: HSME-2b1.2 teacher acquisition pin requests
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json'
+      - 'scripts/validate-hsme-teacher-acquisition-pin-requests.py'
+      - 'tests/hsme-teacher-acquisition-pin-requests.test.mjs'
+      - '.github/workflows/hsme-2b1-2-teacher-pin-requests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  immutable-pin-request-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify Python runtime
+        run: python3 --version
+
+      - name: Validate immutable request set
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b1-2-pin
+          python3 scripts/validate-hsme-teacher-acquisition-pin-requests.py \
+            --input src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json \
+            --evidence-output .test-cache/hsme-2b1-2-pin/evidence.json
+          test "$(jq -r .requestCount .test-cache/hsme-2b1-2-pin/evidence.json)" = "3"
+          test "$(jq -r .rightsResolved .test-cache/hsme-2b1-2-pin/evidence.json)" = "false"
+          test "$(jq -r .qualityMeasured .test-cache/hsme-2b1-2-pin/evidence.json)" = "false"
+          test "$(jq -r .teacherAdmissionAllowed .test-cache/hsme-2b1-2-pin/evidence.json)" = "false"
+          test "$(jq -r .trainingStartAllowed .test-cache/hsme-2b1-2-pin/evidence.json)" = "false"
+          test "$(jq -r .productionAuthorityGranted .test-cache/hsme-2b1-2-pin/evidence.json)" = "false"
+
+      - name: Run mutation regressions
+        run: node --test tests/hsme-teacher-acquisition-pin-requests.test.mjs
+
+      - name: Pin requests cannot download, deserialize, train or admit
+        run: |
+          set -euo pipefail
+          REQUESTS=src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json
+          VALIDATOR=scripts/validate-hsme-teacher-acquisition-pin-requests.py
+          grep -F '"rightsConclusion": "REVIEW_REQUIRED"' "$REQUESTS"
+          grep -F '"distillationOutputUse": "REVIEW_REQUIRED"' "$REQUESTS"
+          grep -F '"qualityGateStatus": "UNMEASURED"' "$REQUESTS"
+          grep -F '"teacherAdmissionAllowed": false' "$REQUESTS"
+          grep -F '"trainingStartAllowed": false' "$REQUESTS"
+          grep -F '"productionAuthorityGranted": false' "$REQUESTS"
+          ! grep -nE 'snapshot_download|hf_hub_download|from_pretrained|torch\.load|pickle\.load|startTraining|runTraining|TEACHER_SET_ADMITTED' "$VALIDATOR"
