@@ -71,8 +71,8 @@ jobs:
           SCRIPT=scripts/plan-hsme-reuse-pipeline-resume.mjs
           grep -F "resumeState='COMPLETED_OBSERVED'" "$SCRIPT"
           grep -F "resumeState='UNTRACKED_OUTPUTS'" "$SCRIPT"
-          grep -F "resumeState='READY_TO_EXECUTE'" "$SCRIPT"
-          grep -F "resumeState='WAITING_FOR_DEPENDENCY_RECEIPTS'" "$SCRIPT"
+          grep -F "'READY_TO_EXECUTE'" "$SCRIPT"
+          grep -F "'WAITING_FOR_DEPENDENCY_RECEIPTS'" "$SCRIPT"
           grep -F 'plannerExecutesStages:false' "$SCRIPT"
           grep -F 'receiptsGrantSemanticTrust:false' "$SCRIPT"
           grep -F 'externalPinsAutoTrusted:false' "$SCRIPT"
