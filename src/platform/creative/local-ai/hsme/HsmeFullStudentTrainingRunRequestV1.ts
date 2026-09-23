@@ -340,12 +340,7 @@ export async function buildHsmeFullStudentTrainingRunRequestV1(
     return blocked(requestBlockers,common);
   }
 
-  const readyPayload={
-    schemaVersion:HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_V1_SCHEMA,
-    state:'TRAINING_RUN_REQUEST_READY_FOR_CORE_ADMISSION' as const,
-    ...common,
-    ...authorityBoundary(),
-  };
+  const readyPayload=trainingRequestReadyPayload(common);
   let requestEvidenceSha256:string;
   try{
     requestEvidenceSha256=await digest(
@@ -361,6 +356,52 @@ export async function buildHsmeFullStudentTrainingRunRequestV1(
     blockers:Object.freeze([]),
     requestEvidenceSha256,
   });
+}
+
+export async function hsmeFullStudentTrainingRunRequestV1Digest(
+  request:HsmeFullStudentTrainingRunRequestV1,
+  hash:HsmeDenseBaselineHashPortV1,
+):Promise<string>{
+  if(request.state!=='TRAINING_RUN_REQUEST_READY_FOR_CORE_ADMISSION'){
+    throw new HsmeFullStudentTrainingRunRequestV1Error(
+      'hsme_training_run_request_digest_state',
+      'only READY_FOR_CORE_ADMISSION requests are digestible',
+    );
+  }
+  return digest(
+    HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_DIGEST_DOMAIN,
+    trainingRequestReadyPayload(request),
+    hash,
+  );
+}
+
+function trainingRequestReadyPayload(
+  value:Required<OutputValues>|HsmeFullStudentTrainingRunRequestV1,
+){
+  return {
+    schemaVersion:HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_V1_SCHEMA,
+    state:'TRAINING_RUN_REQUEST_READY_FOR_CORE_ADMISSION' as const,
+    trainingPlanEvidenceSha256:value.trainingPlanEvidenceSha256,
+    denseBaselineDecisionSha256:value.denseBaselineDecisionSha256,
+    denseDualBudgetEvidenceSha256:value.denseDualBudgetEvidenceSha256,
+    candidateId:value.candidateId,
+    architectureFamily:value.architectureFamily,
+    activeParametersMillions:value.activeParametersMillions,
+    targetStepCount:value.targetStepCount,
+    maxTrainingExamples:value.maxTrainingExamples,
+    maxGpuSeconds:value.maxGpuSeconds,
+    maxTrainingCostMicrousd:value.maxTrainingCostMicrousd,
+    toolchainLockSha256:value.toolchainLockSha256,
+    outputStagingPolicySha256:value.outputStagingPolicySha256,
+    teacherDecisionSha256:value.teacherDecisionSha256,
+    reproductionEvidenceSha256:value.reproductionEvidenceSha256,
+    corpusRootDigest:value.corpusRootDigest,
+    recipeDigest:value.recipeDigest,
+    checkpointSha256:value.checkpointSha256,
+    resumeCheckpointSha256:value.resumeCheckpointSha256,
+    dualBudgetSnapshot:value.dualBudgetSnapshot,
+    ...authorityBoundary(),
+  };
 }
 
 function validateDenseTarget(decision:HsmeDenseBaselineDecisionV1):{
