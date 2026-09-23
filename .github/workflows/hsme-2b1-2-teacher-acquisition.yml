@@ -30,7 +30,7 @@ jobs:
         run: node --test tests/hsme-teacher-acquisition-security.test.mjs
       - name: PR CI must not download teacher model snapshots
         run: |
-          ! grep -E 'snapshot_download|huggingface-cli download|hf download|curl .*huggingface|wget .*huggingface' \
+          ! grep -nE '^[[:space:]]*(snapshot_download|huggingface-cli download|hf download|curl .*huggingface|wget .*huggingface)' \
             .github/workflows/hsme-2b1-2-teacher-acquisition.yml
       - name: Acquisition tooling must not deserialize or grant runtime authority
         run: |
