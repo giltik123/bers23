@@ -30,6 +30,8 @@ export const HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_DIGEST_DOMAIN =
   'bers:hsme:reuse-pipeline-stage-execution-receipt:v1\0';
 export const HSME_REUSE_PIPELINE_STAGE_ARGV_DIGEST_DOMAIN =
   'bers:hsme:reuse-pipeline-stage-argv:v1\0';
+export const HSME_REUSE_PIPELINE_STAGE_DEFINITION_DIGEST_DOMAIN =
+  'bers:hsme:reuse-pipeline-stage-definition:v1\0';
 
 const MAX_CAPTURE_BYTES=1_048_576;
 const DEFAULT_TIMEOUT_MS=300_000;
@@ -513,6 +515,42 @@ function executeNodeStage({
   });
 }
 
+function bindStageInputs(manifest,stage){
+  const manifestInputs=array(manifest.inputs,'manifest.inputs',512);
+  const byPath=new Map();
+  for(const entry of manifestInputs){
+    const value=object(entry,'manifest.input');
+    const path=text(value.path,'manifest.input.path');
+    if(byPath.has(path)){
+      fail(
+        'hsme_reuse_stage_runner_manifest_input_duplicate',
+        'manifest contains duplicate input path '+path,
+      );
+    }
+    byPath.set(path,value);
+  }
+
+  return Object.freeze(array(stage.inputs,'stage.inputs',128).map((path,index)=>{
+    const normalized=text(path,'stage.inputs['+index+']');
+    const entry=byPath.get(normalized);
+    if(
+      !entry
+      ||entry.state!=='PRESENT'
+      ||typeof entry.fileSha256!=='string'
+      ||!/^[0-9a-f]{64}$/.test(entry.fileSha256)
+    ){
+      fail(
+        'hsme_reuse_stage_runner_stage_input_binding_invalid',
+        'READY stage input is not PRESENT with raw SHA-256: '+normalized,
+      );
+    }
+    return Object.freeze({
+      path:normalized,
+      fileSha256:entry.fileSha256,
+    });
+  }));
+}
+
 async function loadOutputFiles(outputs){
   const observed=[];
   for(const path of outputs){
@@ -606,6 +644,7 @@ export async function executeHsmeReusePipelineStage({
   }
 
   const outputs=await loadOutputFiles(program.outputs);
+  const inputs=bindStageInputs(verified.manifest,stage);
   const argvSha256=domainDigest(
     HSME_REUSE_PIPELINE_STAGE_ARGV_DIGEST_DOMAIN,
     {
@@ -613,6 +652,17 @@ export async function executeHsmeReusePipelineStage({
       kind:stage.kind,
       env:stage.env,
       argv:stage.argv,
+    },
+  );
+  const stageDefinitionSha256=domainDigest(
+    HSME_REUSE_PIPELINE_STAGE_DEFINITION_DIGEST_DOMAIN,
+    {
+      stageId:stage.stageId,
+      kind:stage.kind,
+      env:stage.env,
+      argv:stage.argv,
+      inputs,
+      outputs:stage.outputs,
     },
   );
 
@@ -624,6 +674,8 @@ export async function executeHsmeReusePipelineStage({
     stageId:stage.stageId,
     stageKind:stage.kind,
     argvSha256,
+    stageDefinitionSha256,
+    inputs,
     stdoutSha256:sha256Bytes(execution.stdout),
     stderrSha256:sha256Bytes(execution.stderr),
     stdoutBytes:execution.stdout.length,
