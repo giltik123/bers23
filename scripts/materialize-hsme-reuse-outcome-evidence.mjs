@@ -2,6 +2,7 @@
 import {createHash} from 'node:crypto';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 
 import {
   finalizeHsmeFoundationReuseDecisionV1,
@@ -680,7 +681,7 @@ export async function runCli(argv=process.argv.slice(2)){
   })+'\n');
 }
 
-if(import.meta.url===new URL('file://'+process.argv[1]).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   runCli().catch(error=>{
     process.stderr.write(
       (error.code||'hsme_reuse_outcome_materialization_failed')
