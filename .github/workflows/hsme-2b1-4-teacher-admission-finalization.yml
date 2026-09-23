@@ -1,0 +1,66 @@
+name: HSME-2b1.4 teacher admission finalization
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherDecisionRosterRefreshV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherAdmissionEligibilityV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherAdmissionFinalizationV1.ts'
+      - 'tests/helpers/hsme-teacher-admission-v1-fixture.mjs'
+      - 'tests/creative-hsme-teacher-admission-finalization-v1.test.mjs'
+      - '.github/workflows/hsme-2b1-4-teacher-admission-finalization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  finalization-contract:
+    name: atomic teacher admission finalization contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run admission-finalization vertical
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b1-4-finalization
+          npx esbuild tests/creative-hsme-teacher-admission-finalization-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1-4-finalization/finalization.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1-4-finalization/finalization.test.mjs
+
+      - name: Prove finalization is canonical admission proof, never training execution
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeTeacherAdmissionFinalizationV1.ts
+          grep -F "proveHsmeTeacherAdmissionGateV1(" "$CONTRACT"
+          grep -F "decisionStatus:'TEACHER_SET_ADMITTED'" "$CONTRACT"
+          grep -F "FINALIZATION_REQUIRED_CAPABILITY_UNCOVERED" "$CONTRACT"
+          grep -F "FINALIZATION_SELECTED_TEACHER_NOT_ELIGIBLE" "$CONTRACT"
+          grep -F "FINALIZATION_SELECTED_LICENSE_DIGEST_DRIFT" "$CONTRACT"
+          grep -F "FINALIZATION_ELIGIBILITY_ORIGIN_UNVERIFIED" "$CONTRACT"
+          grep -F "trainingStartAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "providerAuthorityGranted:false" "$CONTRACT"
+          grep -F "billingAuthorityGranted:false" "$CONTRACT"
+          grep -F "projectArtifactMutationAllowed:false" "$CONTRACT"
+          grep -F "aeeExecutionAuthorityGranted:false" "$CONTRACT"
+          grep -F "durableModelFleetPromotionAllowed:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+          ! grep -nE "startTraining|runTraining|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|promoteModel|installModel|downloadModel|reserveCredits|spendCredits" "$CONTRACT"
