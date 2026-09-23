@@ -1,0 +1,97 @@
+name: HSME-2a.3.3ag external pin approval verifier
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-hsme-reuse-pipeline-external-pin-approval.mjs'
+      - 'scripts/build-hsme-reuse-pipeline-external-pin-request.mjs'
+      - 'tests/hsme-reuse-pipeline-external-pin-approval.test.mjs'
+      - '.github/workflows/hsme-2a-3-3ag-external-pin-approval.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-pin-approval:
+    name: independently pinned approval and patch candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run external approval verifier regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3ag
+          npx esbuild tests/hsme-reuse-pipeline-external-pin-approval.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ag/approval.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ag/approval.test.mjs
+
+      - name: Re-run external pin request regressions
+        run: |
+          set -euo pipefail
+          npx esbuild tests/hsme-reuse-pipeline-external-pin-request.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ag/request.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ag/request.test.mjs
+
+      - name: Prove local approval JSON is not self-authorizing
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/verify-hsme-reuse-pipeline-external-pin-approval.mjs
+          grep -F 'expectedApprovalSha256 is required' "$SCRIPT"
+          grep -F 'approvalSha256!==expectedApprovalSha256' "$SCRIPT"
+          grep -F 'external approval file must use canonical JSON bytes' "$SCRIPT"
+          grep -F "record.semanticEvidenceReviewed!==true" "$SCRIPT"
+          grep -F "decision!=='APPROVED'&&record.decision!=='REJECTED'" "$SCRIPT"
+
+      - name: Prove patch candidate is explicit and non-mutating
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/verify-hsme-reuse-pipeline-external-pin-approval.mjs
+          grep -F "patchState:'READY_FOR_EXPLICIT_APPLICATION'" "$SCRIPT"
+          grep -F 'specMutationPerformed:false' "$SCRIPT"
+          grep -F 'automaticApplicationAllowed:false' "$SCRIPT"
+          grep -F 'stageExecutionAuthorized:false' "$SCRIPT"
+          grep -F 'externalPinCreated:false' "$SCRIPT"
+          grep -F 'semanticEvidenceAuthorityGranted:false' "$SCRIPT"
+          grep -F "old value must remain null" "$SCRIPT"
+          ! grep -nE 'executeHsmeReusePipelineStage\(|expectedOriginIndexSha256[[:space:]]*=|automaticApplicationAllowed:true|externalPinCreated:true' "$SCRIPT"
+
+      - name: Prove verifier revalidates current deterministic request
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/verify-hsme-reuse-pipeline-external-pin-approval.mjs
+          grep -F 'buildHsmeReusePipelineExternalPinRequest({' "$SCRIPT"
+          grep -F 'rebuilt.files.request.equals(requestLoaded.bytes)' "$SCRIPT"
+          grep -F 'request.specFileSha256!==specLoaded.fileSha256' "$SCRIPT"
+          grep -F 'approval.requestSha256!==request.requestSha256' "$SCRIPT"
+          grep -F 'approval.requestedExternalPinSha256!==request.requestedExternalPinSha256' "$SCRIPT"
+
+      - name: Prove no decision training install or production authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/verify-hsme-reuse-pipeline-external-pin-approval.mjs
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'startTraining|runTraining|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
