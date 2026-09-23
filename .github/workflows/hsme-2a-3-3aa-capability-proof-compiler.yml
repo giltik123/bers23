@@ -1,0 +1,80 @@
+name: HSME-2a.3.3aa capability proof compiler
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/compile-hsme-reuse-capability-proof.mjs'
+      - 'tests/hsme-reuse-capability-proof-compiler.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationPendingReuseRuntimeApplicationV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseEvidenceQualificationV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseEvidenceRejectionV1.ts'
+      - '.github/workflows/hsme-2a-3-3aa-capability-proof-compiler.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiler-contract:
+    name: canonical capability reuse proof compiler
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run capability proof compiler regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3aa
+          npx esbuild tests/hsme-reuse-capability-proof-compiler.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3aa/compiler.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3aa/compiler.test.mjs
+
+      - name: Prove existing canonical proof functions are invoked
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/compile-hsme-reuse-capability-proof.mjs
+          grep -F 'applyHsmeFoundationPhysicalReuseRuntimeOverlayV1(' "$SCRIPT"
+          grep -F 'qualifyHsmeFoundationReuseEvidenceV1(' "$SCRIPT"
+          grep -F 'proveHsmeFoundationReuseEvidenceRejectionV1(' "$SCRIPT"
+          grep -F 'hsmeFoundationQualityFinalizationV1Digest(' "$SCRIPT"
+          grep -F 'candidate===qualityFinalization.value' "$SCRIPT"
+          grep -F 'expectedOriginIndexSha256' "$SCRIPT"
+
+      - name: Prove wrapper grants no execution or decision authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/compile-hsme-reuse-capability-proof.mjs
+          grep -F 'decisionMutationAllowed:false' "$SCRIPT"
+          grep -F 'candidateSelectionAllowed:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'fullStudentEscalationAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'selectedCandidateId\s*:|winnerCandidateId|startTraining|runTraining|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
+
+      - name: Prove JSON-only outputs
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/compile-hsme-reuse-capability-proof.mjs
+          grep -F 'hsme-reuse-capability-proof.json' "$SCRIPT"
+          grep -F 'hsme-reuse-capability-proof-materialization.json' "$SCRIPT"
+          ! grep -nE '\.(safetensors|bin|onnx|gguf|pt|pth|ckpt)' "$SCRIPT"
