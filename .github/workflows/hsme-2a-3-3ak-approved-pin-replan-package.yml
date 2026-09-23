@@ -1,0 +1,83 @@
+name: HSME-2a.3.3ak approved-pin replan package
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/build-hsme-reuse-pipeline-approved-pin-replan-package.mjs'
+      - 'scripts/verify-hsme-reuse-pipeline-receipt-carry-forward.mjs'
+      - 'scripts/plan-hsme-reuse-pipeline-resume.mjs'
+      - 'tests/hsme-reuse-pipeline-approved-pin-replan-package.test.mjs'
+      - '.github/workflows/hsme-2a-3-3ak-approved-pin-replan-package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  approved-pin-replan-package:
+    name: deterministic non-executing approved-pin replan package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run approved-pin replan package regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3ak
+          npx esbuild tests/hsme-reuse-pipeline-approved-pin-replan-package.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ak/replan-package.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ak/replan-package.test.mjs
+
+      - name: Prove package only plans, carries and resumes
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/build-hsme-reuse-pipeline-approved-pin-replan-package.mjs
+          grep -F 'planHsmeReuseEvidencePipeline({' "$SCRIPT"
+          grep -F 'buildHsmeReusePipelineReceiptCarryForward({' "$SCRIPT"
+          grep -F 'verifyHsmeReusePipelineReceiptCarryForward({' "$SCRIPT"
+          grep -F 'planHsmeReusePipelineResume({' "$SCRIPT"
+          grep -F "packageState:'REPLAN_READY_NO_EXECUTION'" "$SCRIPT"
+          grep -F 'packageExecutesStages:false' "$SCRIPT"
+          grep -F 'automaticContinuationAllowed:false' "$SCRIPT"
+          ! grep -nE 'executeHsmeReusePipelineStage|executeHsmeReusePipelineSingleStep|executeNodeStage|spawn\(' "$SCRIPT"
+
+      - name: Prove fail-clean final package publication
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/build-hsme-reuse-pipeline-approved-pin-replan-package.mjs
+          grep -F "fail('hsme_replan_package_output_exists'" "$SCRIPT"
+          grep -F "await rm(root,{recursive:true,force:true})" "$SCRIPT"
+          grep -F "await writeExclusive(packagePath,packageBytes)" "$SCRIPT"
+          grep -F "published=true" "$SCRIPT"
+          grep -F 'verifyHsmeReusePipelineReceiptCarryForward({' "$SCRIPT"
+          grep -F 'resumedAgain.files.plan.equals(resumed.files.plan)' "$SCRIPT"
+
+      - name: Prove package never grants trust or production authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/build-hsme-reuse-pipeline-approved-pin-replan-package.mjs
+          grep -F 'externalPinsAutoTrusted:false' "$SCRIPT"
+          grep -F 'semanticEvidenceAuthorityGranted:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'startTraining|runTraining|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
