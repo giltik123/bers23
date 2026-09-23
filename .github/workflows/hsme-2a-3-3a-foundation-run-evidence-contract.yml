@@ -46,6 +46,8 @@ on:
       - 'tests/creative-hsme-reuse-evidence-qualification-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseEvidenceRejectionV1.ts'
       - 'tests/creative-hsme-reuse-evidence-rejection-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseCandidateEvidenceAssemblyV1.ts'
+      - 'tests/creative-hsme-reuse-candidate-evidence-assembly-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -930,6 +932,60 @@ jobs:
           ! grep -F "rejectedCandidate:" "$CONTRACT"
           ! grep -F "rejectedCandidateSha256" "$CONTRACT"
           ! grep -F "mayEscalateToFullHsmeStudentDistillationV1" "$CONTRACT"
+          grep -F "decisionMutationAllowed:false" "$CONTRACT"
+          grep -F "candidateSelectionAllowed:false" "$CONTRACT"
+          grep -F "reuseAdvanceAllowed:false" "$CONTRACT"
+          grep -F "fullStudentEscalationAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "trainingOrDistillationAllowed:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+
+  candidate-evidence-assembly-contract:
+    name: HSME-2a.3.3t candidate evidence assembly synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for candidate evidence assembly
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run candidate evidence assembly contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3t
+          npx esbuild tests/creative-hsme-reuse-candidate-evidence-assembly-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3t/assembly.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3t/assembly.test.mjs
+
+      - name: Prove assembly is evidence-only and fail-closed
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationReuseCandidateEvidenceAssemblyV1.ts
+          grep -F "CANDIDATE_EVIDENCE_INCOMPLETE" "$CONTRACT"
+          grep -F "CANDIDATE_EVIDENCE_QUALIFIED" "$CONTRACT"
+          grep -F "CANDIDATE_EVIDENCE_REJECTED" "$CONTRACT"
+          grep -F "verifyQualificationEvidence" "$CONTRACT"
+          grep -F "verifyRejectionEvidence" "$CONTRACT"
+          grep -F "proofEvidenceRefs" "$CONTRACT"
+          grep -F "ASSEMBLY_QUALIFICATION_SOURCE_BINDING_DRIFT" "$CONTRACT"
+          grep -F "ASSEMBLY_QUALIFICATION_COMPONENT_MAP_DRIFT" "$CONTRACT"
+          grep -F "MOBILE_WORKING_MEMORY_BUDGET_EXCEEDED" "$CONTRACT"
+          ! grep -F "mayEscalateToFullHsmeStudentDistillationV1" "$CONTRACT"
+          ! grep -F "DIRECT_FOUNDATION_ADVANCE" "$CONTRACT"
+          ! grep -F "BOUNDED_ADAPTATION_ADVANCE" "$CONTRACT"
           grep -F "decisionMutationAllowed:false" "$CONTRACT"
           grep -F "candidateSelectionAllowed:false" "$CONTRACT"
           grep -F "reuseAdvanceAllowed:false" "$CONTRACT"
