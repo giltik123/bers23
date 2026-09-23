@@ -1,0 +1,84 @@
+name: HSME-2b2.2 dense training-run request
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingRunRequestV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingPlanAdmissionV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineDualBudgetEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-decision.json'
+      - 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-dual-budget.json'
+      - 'tests/creative-hsme-full-student-training-run-request-v1.test.mjs'
+      - '.github/workflows/hsme-2b2-2-dense-training-run-request.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  training-run-request:
+    name: explicit request requires separate Core admission
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run dense training request regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-2
+          npx esbuild tests/creative-hsme-full-student-training-run-request-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-2/training-run-request.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-2/training-run-request.test.mjs
+
+      - name: Prove request binds canonical plan and dense R&D target
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingRunRequestV1.ts
+          grep -F 'HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_DIGEST_DOMAIN' "$CONTRACT"
+          grep -F 'normalizeHsmeDenseBaselineDecisionV1(' "$CONTRACT"
+          grep -F 'hsmeDenseBaselineDecisionV1Digest(' "$CONTRACT"
+          grep -F 'normalizeHsmeDenseDualBudgetEvidenceV1(' "$CONTRACT"
+          grep -F "decisionStatus!=='REDESIGN_REQUIRED'" "$CONTRACT"
+          grep -F "selected.strategy!=='BERS_DISTILLED_CORE'" "$CONTRACT"
+          grep -F "selected.verdict!=='SELECTED_FOR_TRAINING'" "$CONTRACT"
+          grep -F "architectureFamily!=='COMPACT_DIT'" "$CONTRACT"
+          grep -F "efficiencyDisposition!=='R&D_ONLY'" "$CONTRACT"
+          grep -F "TRAINING_RUN_REQUEST_READY_FOR_CORE_ADMISSION" "$CONTRACT"
+
+      - name: Prove HSME request cannot mint or execute Core authority
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingRunRequestV1.ts
+          grep -F 'coreAdmissionRequired:true' "$CONTRACT"
+          grep -F 'coreExecutionTicketPresent:false' "$CONTRACT"
+          grep -F 'providerSelectionAllowed:false' "$CONTRACT"
+          grep -F 'executionTargetSelectionAllowed:false' "$CONTRACT"
+          grep -F 'trainingRunStartAllowed:false' "$CONTRACT"
+          grep -F 'trainingOrDistillationExecutionAllowed:false' "$CONTRACT"
+          grep -F 'checkpointPromotionAllowed:false' "$CONTRACT"
+          grep -F 'modelInstallAllowed:false' "$CONTRACT"
+          grep -F 'modelFleetPromotionAllowed:false' "$CONTRACT"
+          grep -F 'productionAuthorityGranted:false' "$CONTRACT"
+          grep -F 'providerAuthorityGranted:false' "$CONTRACT"
+          grep -F 'billingAuthorityGranted:false' "$CONTRACT"
+          grep -F 'projectArtifactMutationAllowed:false' "$CONTRACT"
+          grep -F 'aeeExecutionAuthorityGranted:false' "$CONTRACT"
+          grep -F 'winnerSelectionAllowed:false' "$CONTRACT"
+          ! grep -nE 'LocalExecutionTicketAuthority|LocalExecutionTicket(V2)?|ExecutionRunRegistry|child_process|spawn\(|exec\(|execFile\(|startTraining|runTraining|resumeTraining|promoteCheckpoint|promoteModel|installModel|ModelFleet(Service|Client)|providerSelector|reserveCredits|spendCredits|fetch\(|https?://' "$CONTRACT"
