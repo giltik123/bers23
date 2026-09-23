@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'scripts/run-hsme-reuse-pipeline-stage.mjs'
+      - 'scripts/hsme-node-typescript-resolution-hook.mjs'
       - 'tests/hsme-reuse-pipeline-stage-runner.test.mjs'
       - 'scripts/plan-hsme-reuse-evidence-pipeline.mjs'
       - '.github/workflows/hsme-2a-3-3ac-ready-stage-runner.yml'
@@ -49,6 +50,7 @@ jobs:
           SCRIPT=scripts/run-hsme-reuse-pipeline-stage.mjs
           grep -F "import {spawn} from 'node:child_process'" "$SCRIPT"
           grep -F 'process.execPath' "$SCRIPT"
+          grep -F "'--import',resolutionHookPath" "$SCRIPT"
           grep -F 'shell:false' "$SCRIPT"
           grep -F "QUALITY_PARETO:Object.freeze" "$SCRIPT"
           grep -F "CAPABILITY_PROOF:Object.freeze" "$SCRIPT"
@@ -56,6 +58,17 @@ jobs:
           grep -F "OUTCOME_ORIGIN_FREEZE:Object.freeze" "$SCRIPT"
           grep -F "OUTCOME_MATERIALIZATION:Object.freeze" "$SCRIPT"
           ! grep -nE 'exec\(|execFile\(|execSync\(|spawnSync\(|fork\(|eval\(|new Function|shell:true' "$SCRIPT"
+
+      - name: Prove TypeScript resolver hook is narrow
+        run: |
+          set -euo pipefail
+          HOOK=scripts/hsme-node-typescript-resolution-hook.mjs
+          grep -F "registerHooks({" "$HOOK"
+          grep -F "specifier.startsWith('./')" "$HOOK"
+          grep -F "specifier.startsWith('../')" "$HOOK"
+          grep -F "extname(specifier)===''" "$HOOK"
+          grep -F "specifier+'.ts'" "$HOOK"
+          ! grep -nE 'https?://|fetch\(|child_process|spawn\(|exec\(|eval\(|new Function' "$HOOK"
 
       - name: Prove manifest, dependency and output-root admission
         run: |
