@@ -64,10 +64,14 @@ jobs:
           set -euo pipefail
           HOOK=scripts/hsme-node-typescript-resolution-hook.mjs
           grep -F "registerHooks({" "$HOOK"
+          grep -F "stripTypeScriptTypes" "$HOOK"
+          grep -F "mode:'transform'" "$HOOK"
+          grep -F "withinRepo(" "$HOOK"
           grep -F "specifier.startsWith('./')" "$HOOK"
           grep -F "specifier.startsWith('../')" "$HOOK"
           grep -F "extname(specifier)===''" "$HOOK"
           grep -F "specifier+'.ts'" "$HOOK"
+          grep -F "url.endsWith('.ts')" "$HOOK"
           ! grep -nE 'https?://|fetch\(|child_process|spawn\(|exec\(|eval\(|new Function' "$HOOK"
 
       - name: Prove manifest, dependency and output-root admission
