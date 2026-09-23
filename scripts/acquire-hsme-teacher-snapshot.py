@@ -312,11 +312,19 @@ def acquire_and_verify(
 def hub_download(repo_id: str, filename: str, revision: str, local_dir: Path) -> Path:
     from huggingface_hub import hf_hub_download
 
+    # Keep every Hub/Xet cache byte underneath the same ephemeral source root
+    # that acquire_and_verify destroys before evidence is written.
+    cache_dir = local_dir / ".bers-hf-cache"
+    hf_home = local_dir / ".bers-hf-home"
+    xet_cache = local_dir / ".bers-xet-cache"
+    os.environ["HF_HOME"] = str(hf_home)
+    os.environ["HF_XET_CACHE"] = str(xet_cache)
     path = hf_hub_download(
         repo_id=repo_id,
         filename=filename,
         revision=revision,
         local_dir=str(local_dir),
+        cache_dir=str(cache_dir),
     )
     return Path(path)
 
