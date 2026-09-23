@@ -1,0 +1,53 @@
+name: HSME-2b1.2 teacher acquisition plan expander
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/expand-hsme-teacher-acquisition-plan.py'
+      - 'scripts/validate-hsme-teacher-acquisition-pin-requests.py'
+      - 'scripts/inspect-hsme-teacher-snapshot.py'
+      - 'src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json'
+      - 'tests/hsme-teacher-acquisition-plan-expander.test.mjs'
+      - '.github/workflows/hsme-2b1-2-teacher-plan-expander.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-materialized-plan-expansion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify Python scripts compile
+        run: |
+          python3 -m py_compile \
+            scripts/validate-hsme-teacher-acquisition-pin-requests.py \
+            scripts/expand-hsme-teacher-acquisition-plan.py \
+            scripts/inspect-hsme-teacher-snapshot.py
+
+      - name: Run materialized-tree expansion chain
+        run: node --test tests/hsme-teacher-acquisition-plan-expander.test.mjs
+
+      - name: Expander must stay local, pre-deserialization and non-authoritative
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/expand-hsme-teacher-acquisition-plan.py
+          grep -F 'networkAccessPerformed": False' "$SCRIPT"
+          grep -F 'deserializationPerformed": False' "$SCRIPT"
+          grep -F 'teacherAdmissionAllowed": False' "$SCRIPT"
+          grep -F 'trainingStartAllowed": False' "$SCRIPT"
+          grep -F 'productionAuthorityGranted": False' "$SCRIPT"
+          ! grep -nE 'snapshot_download|hf_hub_download|from_pretrained|torch\.load|pickle\.load|TEACHER_SET_ADMITTED|DISTILLATION_ALLOWED' "$SCRIPT"
