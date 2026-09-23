@@ -119,8 +119,8 @@ async function makeReceipt({manifest,stage,receiptPath}){
   }
   const payload=Object.freeze({
     schemaVersion:HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V2_SCHEMA,
-    manifestSha256:manifest.manifestSha256,
-    manifestFileSha256:manifest.manifestFileSha256,
+    manifestSha256:manifest.digest.manifestSha256,
+    manifestFileSha256:manifest.digest.manifestFileSha256,
     specFileSha256:manifest.manifest.specFileSha256,
     stageId:stage.stageId,
     stageKind:stage.kind,
