@@ -1,0 +1,90 @@
+name: HSME-2a.3.3af explicit external pin request
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/build-hsme-reuse-pipeline-external-pin-request.mjs'
+      - 'scripts/plan-hsme-reuse-pipeline-resume.mjs'
+      - 'tests/hsme-reuse-pipeline-external-pin-request.test.mjs'
+      - '.github/workflows/hsme-2a-3-3af-external-pin-request.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-pin-request:
+    name: explicit external pin checkpoint request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run external pin request regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3af
+          npx esbuild tests/hsme-reuse-pipeline-external-pin-request.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3af/pin-request.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3af/pin-request.test.mjs
+
+      - name: Re-run receipt-bound resume regressions
+        run: |
+          set -euo pipefail
+          npx esbuild tests/hsme-reuse-pipeline-resume-planner.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3af/resume.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3af/resume.test.mjs
+
+      - name: Prove request is proposal only
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/build-hsme-reuse-pipeline-external-pin-request.mjs
+          grep -F "requestState:'AWAITING_EXTERNAL_APPROVAL'" "$SCRIPT"
+          grep -F 'externalApprovalRequired:true' "$SCRIPT"
+          grep -F 'pinAccepted:false' "$SCRIPT"
+          grep -F 'specMutationAllowed:false' "$SCRIPT"
+          grep -F 'plannerExecutesStages:false' "$SCRIPT"
+          grep -F 'externalPinCreated:false' "$SCRIPT"
+          grep -F 'semanticEvidenceAuthorityGranted:false' "$SCRIPT"
+          grep -F 'requestedExternalPinSha256' "$SCRIPT"
+          ! grep -nE 'executeHsmeReusePipelineStage\(|writeFile\([^,]*(spec|manifest)|expectedExternalPinSha256[[:space:]]*=|pinAccepted:true|externalPinCreated:true' "$SCRIPT"
+
+      - name: Prove exact pin-blocked admission
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/build-hsme-reuse-pipeline-external-pin-request.mjs
+          grep -F "stage.resumeState!=='EXTERNAL_PIN_REQUIRED'" "$SCRIPT"
+          grep -F "stage.status!=='EXTERNAL_PIN_REQUIRED'" "$SCRIPT"
+          grep -F "stage.localStatus!=='EXTERNAL_PIN_REQUIRED'" "$SCRIPT"
+          grep -F 'stage.expectedExternalPinSha256!==null' "$SCRIPT"
+          grep -F 'stage.originIndexSemanticSha256' "$SCRIPT"
+          grep -F 'originIndexFileSha256' "$SCRIPT"
+          grep -F "dependency.resumeState!=='COMPLETED_OBSERVED'" "$SCRIPT"
+
+      - name: Prove no hidden authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/build-hsme-reuse-pipeline-external-pin-request.mjs
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'startTraining|runTraining|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
