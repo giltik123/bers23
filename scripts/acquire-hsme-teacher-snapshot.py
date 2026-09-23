@@ -250,12 +250,17 @@ def acquire_and_verify(
                 revision,
                 source_dir,
             )
-            downloaded_resolved = downloaded.resolve(strict=True)
-            target = (source_dir / artifact["relativePath"]).resolve(strict=True)
-            if downloaded_resolved != target:
+            expected_target = source_dir / artifact["relativePath"]
+            if not expected_target.exists():
                 fail(f"download target path drift: {artifact['relativePath']}")
             if downloaded.is_symlink() or not downloaded.is_file():
                 fail(f"downloaded artifact must be a regular non-symlink file: {artifact['relativePath']}")
+            if expected_target.is_symlink() or not expected_target.is_file():
+                fail(f"expected downloaded target must be a regular non-symlink file: {artifact['relativePath']}")
+            downloaded_resolved = downloaded.resolve(strict=True)
+            target = expected_target.resolve(strict=True)
+            if downloaded_resolved != target:
+                fail(f"download target path drift: {artifact['relativePath']}")
 
             content_sha, byte_count = inspector.hash_regular_file(downloaded)
             if byte_count != expected_artifact["bytes"]:
