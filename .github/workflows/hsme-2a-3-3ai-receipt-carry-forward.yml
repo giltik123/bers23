@@ -6,7 +6,7 @@ on:
       - 'scripts/verify-hsme-reuse-pipeline-receipt-carry-forward.mjs'
       - 'scripts/plan-hsme-reuse-pipeline-resume.mjs'
       - 'tests/hsme-reuse-pipeline-receipt-carry-forward.test.mjs'
-      - 'tests/hsme-reuse-pipeline-resume.test.mjs'
+      - 'tests/hsme-reuse-pipeline-resume-planner.test.mjs'
       - '.github/workflows/hsme-2a-3-3ai-receipt-carry-forward.yml'
   workflow_dispatch:
 
@@ -47,11 +47,11 @@ jobs:
       - name: Re-run existing resume regressions
         run: |
           set -euo pipefail
-          npx esbuild tests/hsme-reuse-pipeline-resume.test.mjs \
+          npx esbuild tests/hsme-reuse-pipeline-resume-planner.test.mjs \
             --bundle --platform=node --format=esm --target=node24 \
-            --outfile=.test-cache/hsme-2a-3-3ai/resume.test.mjs \
+            --outfile=.test-cache/hsme-2a-3-3ai/resume-planner.test.mjs \
             --external:node:*
-          node --test .test-cache/hsme-2a-3-3ai/resume.test.mjs
+          node --test .test-cache/hsme-2a-3-3ai/resume-planner.test.mjs
 
       - name: Prove carry-forward never executes a stage or forges a new receipt
         run: |
