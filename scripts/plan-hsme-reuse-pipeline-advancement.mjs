@@ -254,6 +254,12 @@ async function loadVerifiedReceipt(path){
   });
   const outputs=array(receipt.outputs,'receipt.outputs',64).map((entry,index)=>{
     const value=object(entry,'receipt.outputs['+index+']');
+    if(!Number.isSafeInteger(value.bytes)||value.bytes<1){
+      fail(
+        'hsme_reuse_advancement_receipt_output_size_invalid',
+        'receipt output bytes must be a positive safe integer',
+      );
+    }
     return Object.freeze({
       path:text(value.path,'receipt.outputs['+index+'].path'),
       fileSha256:sha256(
@@ -347,6 +353,7 @@ async function outputsMatchReceipt(stage,receipt){
     }catch{
       return false;
     }
+    if(bytes.length!==expected.bytes)return false;
     if(sha256Bytes(bytes)!==expected.fileSha256)return false;
   }
   return true;
