@@ -1,0 +1,104 @@
+name: HSME-2a.3.3x reuse origin-index builder
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeReuseOutcomeOriginIndexV1.ts'
+      - 'scripts/build-hsme-reuse-outcome-origin-index.mjs'
+      - 'scripts/materialize-hsme-reuse-outcome-evidence.mjs'
+      - 'tests/hsme-reuse-outcome-origin-index-builder.test.mjs'
+      - 'tests/hsme-reuse-outcome-materialization.test.mjs'
+      - '.github/workflows/hsme-2a-3-3x-reuse-origin-index-builder.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  origin-index-builder-contract:
+    name: deterministic FREEZE_CANDIDATE origin-index builder
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run origin-index builder regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3x
+          npx esbuild tests/hsme-reuse-outcome-origin-index-builder.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3x/origin-index-builder.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3x/origin-index-builder.test.mjs
+
+      - name: Prove freeze-only authority boundary
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/build-hsme-reuse-outcome-origin-index.mjs
+          grep -F "trustState:'FREEZE_CANDIDATE'" "$SCRIPT"
+          grep -F "externalPinRequired:true" "$SCRIPT"
+          grep -F "finalizationAllowed:false" "$SCRIPT"
+          grep -F "handoffAllowed:false" "$SCRIPT"
+          grep -F "trainingRunStartAllowed:false" "$SCRIPT"
+          grep -F "modelInstallAllowed:false" "$SCRIPT"
+          grep -F "modelFleetPromotionAllowed:false" "$SCRIPT"
+          grep -F "productionAuthorityGranted:false" "$SCRIPT"
+          grep -F "providerAuthorityGranted:false" "$SCRIPT"
+          grep -F "billingAuthorityGranted:false" "$SCRIPT"
+          grep -F "projectArtifactMutationAllowed:false" "$SCRIPT"
+          grep -F "aeeExecutionAuthorityGranted:false" "$SCRIPT"
+          grep -F "durableModelFleetPromotionAllowed:false" "$SCRIPT"
+          grep -F "winnerSelectionAllowed:false" "$SCRIPT"
+          ! grep -nE 'finalizeHsmeFoundationReuseDecisionV1|proveHsmeReuseOutcomeHandoffV1|startTraining|runTraining|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
+
+      - name: Prove JSON-only outputs
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/build-hsme-reuse-outcome-origin-index.mjs
+          grep -F 'reuse-outcome-origin-index.json' "$SCRIPT"
+          grep -F 'reuse-outcome-origin-index-digest.json' "$SCRIPT"
+          ! grep -nE '\.(safetensors|bin|onnx|gguf|pt|pth|ckpt)' "$SCRIPT"
+
+  materializer-compatibility:
+    name: shared origin-index contract preserves materializer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Re-run materializer regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3x
+          npx esbuild tests/hsme-reuse-outcome-materialization.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3x/materialization.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3x/materialization.test.mjs
