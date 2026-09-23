@@ -35,6 +35,8 @@ export const HSME_REUSE_PIPELINE_STAGE_DEFINITION_DIGEST_DOMAIN =
 
 const MAX_CAPTURE_BYTES=1_048_576;
 const DEFAULT_TIMEOUT_MS=300_000;
+const TYPESCRIPT_RESOLUTION_HOOK =
+  'scripts/hsme-node-typescript-resolution-hook.mjs';
 
 const ALLOWLIST=Object.freeze({
   QUALITY_PARETO:Object.freeze({
@@ -395,7 +397,7 @@ async function validateOutputBoundary({
   return Object.freeze({root,realOutputDir,receipt});
 }
 
-async function validateRepoScript(repoRoot,script){
+async function validateRepoRuntime(repoRoot,script){
   const root=await realpath(resolve(repoRoot)).catch(error=>{
     fail(
       'hsme_reuse_stage_runner_repo_root_invalid',
@@ -408,13 +410,29 @@ async function validateRepoScript(repoRoot,script){
       'allowlisted script missing: '+error.message,
     );
   });
-  if(!isWithin(root,scriptPath)){
+  const hookPath=await realpath(
+    resolve(root,TYPESCRIPT_RESOLUTION_HOOK),
+  ).catch(error=>{
     fail(
-      'hsme_reuse_stage_runner_script_escape',
-      'allowlisted script resolves outside repo root',
+      'hsme_reuse_stage_runner_resolution_hook_missing',
+      'TypeScript resolution hook missing: '+error.message,
     );
+  });
+  for(const [label,path] of [['script',scriptPath],['hook',hookPath]]){
+    if(!isWithin(root,path)){
+      fail(
+        'hsme_reuse_stage_runner_runtime_escape',
+        'allowlisted '+label+' resolves outside repo root',
+      );
+    }
   }
-  return Object.freeze({root,scriptPath});
+  const hookBytes=await readFile(hookPath);
+  return Object.freeze({
+    root,
+    scriptPath,
+    hookPath,
+    hookSha256:sha256Bytes(hookBytes),
+  });
 }
 
 function childEnvironment(envKey){
@@ -431,6 +449,7 @@ function childEnvironment(envKey){
 
 function executeNodeStage({
   scriptPath,
+  resolutionHookPath,
   args,
   cwd,
   envKey,
@@ -440,7 +459,7 @@ function executeNodeStage({
   return new Promise((resolvePromise,rejectPromise)=>{
     const child=spawn(
       process.execPath,
-      [scriptPath,...args],
+      ['--import',resolutionHookPath,scriptPath,...args],
       {
         cwd,
         env:childEnvironment(envKey),
@@ -625,10 +644,11 @@ export async function executeHsmeReusePipelineStage({
     outputs:program.outputs,
     receiptPath,
   });
-  const repo=await validateRepoScript(repoRoot,program.allowed.script);
+  const repo=await validateRepoRuntime(repoRoot,program.allowed.script);
 
   const execution=await executeNodeStage({
     scriptPath:repo.scriptPath,
+    resolutionHookPath:repo.hookPath,
     args:program.argv.slice(2),
     cwd:repo.root,
     envKey:program.allowed.envKey,
@@ -680,6 +700,7 @@ export async function executeHsmeReusePipelineStage({
     stageKind:stage.kind,
     argvSha256,
     stageDefinitionSha256,
+    nodeResolutionHookSha256:repo.hookSha256,
     inputs,
     stdoutSha256:sha256Bytes(execution.stdout),
     stderrSha256:sha256Bytes(execution.stderr),
