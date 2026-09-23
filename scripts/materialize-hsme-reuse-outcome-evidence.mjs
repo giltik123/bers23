@@ -545,7 +545,7 @@ export async function materializeHsmeReuseOutcomeEvidence({
     ),
     handoffFileSha256,
     finalizerOriginVerifierCallCount:finalizerVerifierCallCount,
-    handoffOriginVerifierCallCount,
+    handoffOriginVerifierCallCount:handoffVerifierCallCount,
     trainingRunStartAllowed:false,
     modelInstallAllowed:false,
     modelFleetPromotionAllowed:false,
@@ -682,7 +682,7 @@ export async function runCli(argv=process.argv.slice(2)){
   })+'\n');
 }
 
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+if(process.env.HSME_REUSE_OUTCOME_MATERIALIZER_CLI==='1'){
   runCli().catch(error=>{
     process.stderr.write(
       (error.code||'hsme_reuse_outcome_materialization_failed')
