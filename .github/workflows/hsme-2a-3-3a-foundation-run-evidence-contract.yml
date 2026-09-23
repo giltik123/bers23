@@ -48,6 +48,8 @@ on:
       - 'tests/creative-hsme-reuse-evidence-rejection-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseCandidateEvidenceAssemblyV1.ts'
       - 'tests/creative-hsme-reuse-candidate-evidence-assembly-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseDecisionFinalizationV1.ts'
+      - 'tests/creative-hsme-reuse-decision-finalization-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -993,3 +995,56 @@ jobs:
           grep -F "productionAuthorityGranted:false" "$CONTRACT"
           grep -F "trainingOrDistillationAllowed:false" "$CONTRACT"
           grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+
+  reuse-decision-finalization-contract:
+    name: HSME-2a.3.3u atomic reuse decision finalization synthetic contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for reuse decision finalization
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run atomic reuse decision finalization contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3u
+          npx esbuild tests/creative-hsme-reuse-decision-finalization-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3u/finalization.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3u/finalization.test.mjs
+
+      - name: Prove only the finalization gate may grant reuse or escalation evidence
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeFoundationReuseDecisionFinalizationV1.ts
+          grep -F "DIRECT_FOUNDATION_ADVANCE_READY" "$CONTRACT"
+          grep -F "BOUNDED_ADAPTATION_ADVANCE_READY" "$CONTRACT"
+          grep -F "REUSE_PATH_INSUFFICIENT_READY" "$CONTRACT"
+          grep -F "SELECTION_AMBIGUOUS" "$CONTRACT"
+          grep -F "mayEscalateToFullHsmeStudentDistillationV1" "$CONTRACT"
+          grep -F "FINALIZATION_ASSEMBLY_SOURCE_CANDIDATE_HASH_DRIFT" "$CONTRACT"
+          grep -F "FINALIZATION_QUALITY_DIMENSION_PRIORITY_DRIFT" "$CONTRACT"
+          grep -F "weightedAggregateScoreAllowed!==false" "$CONTRACT"
+          grep -F "reuseAdvanceAllowed:true" "$CONTRACT"
+          grep -F "fullStudentEscalationAllowed:true" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "providerAuthorityGranted:false" "$CONTRACT"
+          grep -F "billingAuthorityGranted:false" "$CONTRACT"
+          grep -F "projectArtifactMutationAllowed:false" "$CONTRACT"
+          grep -F "aeeExecutionAuthorityGranted:false" "$CONTRACT"
+          grep -F "durableModelFleetPromotionAllowed:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+          ! grep -E -q 'providerSelector|reserveCredits|spendCredits|projectService|artifactAuthority' "$CONTRACT"
