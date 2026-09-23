@@ -1,0 +1,69 @@
+name: HSME-2b1.4 teacher admission eligibility
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherDecisionRosterRefreshV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherAdmissionEligibilityV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherQualityBakeoffAssemblyV1.ts'
+      - 'tests/helpers/hsme-teacher-admission-v1-fixture.mjs'
+      - 'tests/creative-hsme-teacher-admission-eligibility-v1.test.mjs'
+      - '.github/workflows/hsme-2b1-4-teacher-admission-eligibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eligibility-contract:
+    name: fail-closed teacher admission eligibility contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run eligibility vertical
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b1-4-eligibility
+          npx esbuild tests/creative-hsme-teacher-admission-eligibility-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1-4-eligibility/eligibility.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1-4-eligibility/eligibility.test.mjs
+
+      - name: Prove eligibility cannot select, admit or start training
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeTeacherAdmissionEligibilityV1.ts
+          grep -F "ELIGIBILITY_BLOCKED" "$CONTRACT"
+          grep -F "CANDIDATE_DISTILLATION_OUTPUT_RIGHTS_NOT_ADMITTED" "$CONTRACT"
+          grep -F "CANDIDATE_RUNTIME_LICENSE_COVERAGE_INCOMPLETE" "$CONTRACT"
+          grep -F "CANDIDATE_QUALITY_GATE_FAILED" "$CONTRACT"
+          grep -F "CANDIDATE_TOOLCHAIN_MISSING" "$CONTRACT"
+          grep -F "ELIGIBILITY_LICENSE_REVIEW_ORIGIN_UNVERIFIED" "$CONTRACT"
+          grep -F "ELIGIBILITY_TOOLCHAIN_ORIGIN_UNVERIFIED" "$CONTRACT"
+          grep -F "teacherSelectionAllowed:false" "$CONTRACT"
+          grep -F "teacherAdmissionAllowed:false" "$CONTRACT"
+          grep -F "trainingStartAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "providerAuthorityGranted:false" "$CONTRACT"
+          grep -F "billingAuthorityGranted:false" "$CONTRACT"
+          grep -F "projectArtifactMutationAllowed:false" "$CONTRACT"
+          grep -F "aeeExecutionAuthorityGranted:false" "$CONTRACT"
+          grep -F "durableModelFleetPromotionAllowed:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+          ! grep -nE "decisionStatus:'TEACHER_SET_ADMITTED'|startTraining|runTraining|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|promoteModel|installModel|downloadModel" "$CONTRACT"

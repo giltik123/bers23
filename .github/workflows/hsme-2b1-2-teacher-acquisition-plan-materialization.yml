@@ -1,0 +1,47 @@
+name: HSME-2b1.2 teacher acquisition plan materialization
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/materialize-hsme-teacher-acquisition-plans.py'
+      - 'scripts/inspect-hsme-teacher-snapshot.py'
+      - 'tests/test_hsme_teacher_acquisition_plan_materialization.py'
+      - '.github/workflows/hsme-2b1-2-teacher-acquisition-plan-materialization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acquisition-plan-bridge:
+    name: remote evidence to exact snapshot inspector plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run bridge and inspector compatibility regressions
+        run: python -m unittest tests/test_hsme_teacher_acquisition_plan_materialization.py
+
+      - name: Prove bridge is offline and non-authoritative
+        run: |
+          set -euo pipefail
+          BRIDGE=scripts/materialize-hsme-teacher-acquisition-plans.py
+          grep -F 'networkAccessPerformed": False' "$BRIDGE"
+          grep -F 'modelPayloadsDownloaded": False' "$BRIDGE"
+          grep -F 'deserializationOccurred": False' "$BRIDGE"
+          grep -F 'teacherAdmissionAllowed": False' "$BRIDGE"
+          grep -F 'trainingStartAllowed": False' "$BRIDGE"
+          grep -F 'runtimeAuthorityGranted": False' "$BRIDGE"
+          grep -F 'productionAuthorityGranted": False' "$BRIDGE"
+          ! grep -nE 'urllib|requests|huggingface_hub|snapshot_download|hf_hub_download|from_pretrained|torch\.load|pickle\.load|safe_open|startTraining|runTraining|TEACHER_SET_ADMITTED' "$BRIDGE"
