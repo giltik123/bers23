@@ -505,7 +505,7 @@ function snapshotBudget(value:HsmeDenseDualBudgetCandidateV1){
     if(metric==='UNKNOWN')unresolvedFields.push(name);
   }
   return Object.freeze({
-    efficiencyDisposition:value.efficiencyDisposition,
+    efficiencyDisposition:'R&D_ONLY' as const,
     qualityPerInstalledGbStatus:value.qualityPerInstalledGbStatus,
     mvmState:value.mvmState,
     mandatoryInstalledBytes:value.installed.mandatoryInstalledBytes,
