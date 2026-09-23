@@ -1,0 +1,74 @@
+name: HSME-2b2.3 Core protected training admission
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeProtectedTrainingAdmissionV1.ts'
+      - 'server/core/training/HsmeProtectedTrainingAdmissionV1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingRunRequestV1.ts'
+      - '.github/workflows/hsme-2b2-3-core-protected-training-admission.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-protected-training-admission:
+    name: Core admission grants no training process or promotion authority
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck and run protected-training admission regressions
+        run: |
+          set -euo pipefail
+          npm run typecheck
+          mkdir -p .test-cache/hsme-2b2-3
+          npx esbuild server/core/training/HsmeProtectedTrainingAdmissionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-3/core-training-admission.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-3/core-training-admission.test.mjs
+
+      - name: Prove Core rebinds exact HSME request and explicit policy ports
+        run: |
+          set -euo pipefail
+          CONTRACT=server/core/training/HsmeProtectedTrainingAdmissionV1.ts
+          grep -F 'HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_DIGEST_DOMAIN' "$CONTRACT"
+          grep -F 'verifyTrainingRunRequest(' "$CONTRACT"
+          grep -F 'verifyProjectTrainingPolicy(' "$CONTRACT"
+          grep -F 'verifyBackendBinding(' "$CONTRACT"
+          grep -F 'verifyBillingAuthorization(' "$CONTRACT"
+          grep -F 'verifyOutputStagingAuthority(' "$CONTRACT"
+          grep -F "TRAINING_ADMISSION_ADMITTED_NOT_STARTED" "$CONTRACT"
+          grep -F 'protectedTrainingExecutionAdmitted:true' "$CONTRACT"
+
+      - name: Prove admission is not a runner, local ticket or promotion authority
+        run: |
+          set -euo pipefail
+          CONTRACT=server/core/training/HsmeProtectedTrainingAdmissionV1.ts
+          grep -F 'trainingStarted:false' "$CONTRACT"
+          grep -F 'checkpointPromotionAllowed:false' "$CONTRACT"
+          grep -F 'modelInstallAllowed:false' "$CONTRACT"
+          grep -F 'modelFleetPromotionAllowed:false' "$CONTRACT"
+          grep -F 'productionAuthorityGranted:false' "$CONTRACT"
+          grep -F 'providerAuthorityGranted:false' "$CONTRACT"
+          grep -F 'billingAuthorityGranted:false' "$CONTRACT"
+          grep -F 'projectArtifactMutationAllowed:false' "$CONTRACT"
+          grep -F 'aeeExecutionAuthorityGranted:false' "$CONTRACT"
+          grep -F 'winnerSelectionAllowed:false' "$CONTRACT"
+          ! grep -nE 'LocalExecutionTicketAuthority|LocalExecutionTicket(V2)?|ExecutionRunRegistry|child_process|spawn\(|exec\(|execFile\(|startTraining|runTraining|resumeTraining|torch\.load|pickle\.load|safe_open|from_pretrained|downloadModel|promoteCheckpoint|promoteModel|installModel|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://' "$CONTRACT"
