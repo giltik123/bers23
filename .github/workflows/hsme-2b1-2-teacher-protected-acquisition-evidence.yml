@@ -1,0 +1,308 @@
+name: HSME-2b1.2 protected teacher acquisition evidence
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/acquire-hsme-teacher-snapshot.py'
+      - 'scripts/inspect-hsme-teacher-snapshot.py'
+      - 'scripts/resolve-hsme-teacher-remote-manifest.py'
+      - 'scripts/materialize-hsme-teacher-acquisition-plans.py'
+      - 'tests/test_hsme_teacher_protected_acquisition.py'
+      - 'tests/hsme-teacher-protected-acquisition-workflow-policy.test.mjs'
+      - '.github/workflows/hsme-2b1-2-teacher-protected-acquisition-evidence.yml'
+  workflow_dispatch:
+    inputs:
+      teacher_candidate_id:
+        description: Exact pinned teacher candidate to acquire
+        required: true
+        type: choice
+        options:
+          - qwen-image-2512-quality-teacher
+          - qwen-image-edit-2511-quality-teacher
+          - flux2-klein-4b-comparator-teacher
+      max_download_bytes:
+        description: Explicit hard byte ceiling for this acquisition
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Run protected acquisition security contracts
+        run: |
+          set -euo pipefail
+          python -m unittest tests/test_hsme_teacher_protected_acquisition.py
+          node --test tests/hsme-teacher-protected-acquisition-workflow-policy.test.mjs
+
+      - name: Acquisition runner must not deserialize or grant authority
+        run: |
+          set -euo pipefail
+          RUNNER=scripts/acquire-hsme-teacher-snapshot.py
+          grep -F '"hashBeforeDeserialization": True' "$RUNNER"
+          grep -F '"deserializationPerformed": False' "$RUNNER"
+          grep -F '"modelRepositoryRuntimeCodeExecuted": False' "$RUNNER"
+          grep -F '"binaryPayloadPublished": False' "$RUNNER"
+          grep -F '"teacherAdmissionAllowed": False' "$RUNNER"
+          grep -F '"trainingStartAllowed": False' "$RUNNER"
+          grep -F '"runtimeAuthorityGranted": False' "$RUNNER"
+          grep -F '"productionAuthorityGranted": False' "$RUNNER"
+          grep -F 'maxDownloadBytes' "$RUNNER"
+          grep -F 'cache_dir=cache_dir' "$RUNNER"
+          ! grep -nE 'torch\.load|pickle\.load|from_pretrained|safe_open|TEACHER_SET_ADMITTED|startTraining|runTraining' "$RUNNER"
+
+  plan-acquisition:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      controller_main_sha: ${{ steps.identity.outputs.controller_main_sha }}
+      expected_download_bytes: ${{ steps.select.outputs.expected_download_bytes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          path: controller
+
+      - name: Bind plan to current main controller
+        id: identity
+        run: |
+          set -euo pipefail
+          CONTROLLER_MAIN_SHA="$(git -C controller rev-parse HEAD)"
+          test "${CONTROLLER_MAIN_SHA}" = "${GITHUB_SHA}"
+          echo "controller_main_sha=${CONTROLLER_MAIN_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned metadata transport only
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import importlib.metadata
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          assert importlib.metadata.version('hf-xet') == '1.1.10'
+          PY
+
+      - name: Resolve exact remote metadata and materialize acquisition plans
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/teacher-acquisition/remote
+          python controller/scripts/resolve-hsme-teacher-remote-manifest.py \
+            --requests controller/src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json \
+            --output .test-cache/teacher-acquisition/remote/remote-evidence.json
+          python controller/scripts/materialize-hsme-teacher-acquisition-plans.py \
+            --remote-evidence .test-cache/teacher-acquisition/remote/remote-evidence.json \
+            --output-dir .test-cache/teacher-acquisition/plan-bundle
+
+      - name: Select exact requested candidate plan
+        id: select
+        env:
+          TEACHER_CANDIDATE_ID: ${{ inputs.teacher_candidate_id }}
+          MAX_DOWNLOAD_BYTES: ${{ inputs.max_download_bytes }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, shutil
+          from pathlib import Path
+          root=Path('.test-cache/teacher-acquisition')
+          bundle=json.loads((root/'plan-bundle/acquisition-plan-bundle.json').read_text())
+          cid=os.environ['TEACHER_CANDIDATE_ID']
+          rows=[row for row in bundle['entries'] if row['teacherCandidateId']==cid]
+          if len(rows)!=1:
+              raise SystemExit('selected teacher candidate not uniquely planned')
+          row=rows[0]
+          selected=root/'selected'
+          selected.mkdir(parents=True,exist_ok=False)
+          shutil.copy2(root/'plan-bundle'/row['planPath'],selected/'plan.json')
+          shutil.copy2(root/'plan-bundle'/row['expectedManifestPath'],selected/'expected-manifest.json')
+          expected=json.loads((selected/'expected-manifest.json').read_text())
+          total=sum(int(item['bytes']) for item in expected['artifacts'])
+          if total < 1 or total > 9007199254740991:
+              raise SystemExit('expected byte total invalid')
+          raw_limit=os.environ['MAX_DOWNLOAD_BYTES']
+          if not raw_limit.isdigit():
+              raise SystemExit('max_download_bytes must be a positive decimal integer')
+          limit=int(raw_limit)
+          if limit < 1 or limit > 9007199254740991:
+              raise SystemExit('max_download_bytes is outside JSON-safe bounds')
+          if total > limit:
+              raise SystemExit(f'expected download bytes {total} exceed explicit max_download_bytes {limit}')
+          (selected/'selection.json').write_text(json.dumps({
+              'teacherCandidateId':cid,
+              'planSha256':row['planSha256'],
+              'expectedManifestSha256':row['expectedManifestSha256'],
+              'remoteArtifactManifestSha256':row['remoteArtifactManifestSha256'],
+              'expectedDownloadBytes':total,
+          },sort_keys=True,indent=2)+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as out:
+              out.write(f'expected_download_bytes={total}\n')
+          PY
+
+      - name: Upload JSON-only protected acquisition plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-teacher-acquisition-plan-${{ github.run_id }}
+          path: |
+            .test-cache/teacher-acquisition/remote/remote-evidence.json
+            .test-cache/teacher-acquisition/plan-bundle/acquisition-plan-bundle.json
+            .test-cache/teacher-acquisition/selected/plan.json
+            .test-cache/teacher-acquisition/selected/expected-manifest.json
+            .test-cache/teacher-acquisition/selected/selection.json
+          if-no-files-found: error
+          retention-days: 7
+
+  acquire-protected:
+    if: ${{ github.event_name == 'workflow_dispatch' && needs.plan-acquisition.result == 'success' }}
+    needs:
+      - synthetic-contract
+      - plan-acquisition
+    runs-on: [self-hosted, linux, x64, gpu, bers-hsme-evidence]
+    timeout-minutes: 480
+    environment: hsme-teacher-acquisition-evidence
+    env:
+      HF_HOME: ${{ runner.temp }}/hsme-teacher-acquisition-hf-cache
+      HF_HUB_CACHE: ${{ runner.temp }}/hsme-teacher-acquisition-hf-cache/hub
+      HF_XET_CACHE: ${{ runner.temp }}/hsme-teacher-acquisition-hf-cache/xet
+      MODEL_ROOT: ${{ runner.temp }}/hsme-teacher-acquisition-model
+      EVIDENCE_DIR: ${{ runner.temp }}/hsme-teacher-acquisition-evidence
+      PLAN_DIR: ${{ runner.temp }}/hsme-teacher-acquisition-plan
+      EXPECTED_DOWNLOAD_BYTES: ${{ needs.plan-acquisition.outputs.expected_download_bytes }}
+      MAX_DOWNLOAD_BYTES: ${{ inputs.max_download_bytes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan-acquisition.outputs.controller_main_sha }}
+          fetch-depth: 1
+          path: controller
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: hsme-teacher-acquisition-plan-${{ github.run_id }}
+          path: ${{ runner.temp }}/hsme-teacher-acquisition-plan
+
+      - name: Reverify exact controller and protected runner
+        env:
+          CONTROLLER_MAIN_SHA: ${{ needs.plan-acquisition.outputs.controller_main_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C controller rev-parse HEAD)" = "${CONTROLLER_MAIN_SHA}"
+          command -v nvidia-smi >/dev/null
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Require adequate ephemeral disk before teacher acquisition
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          expected=int(os.environ['EXPECTED_DOWNLOAD_BYTES'])
+          required=max(expected*2, expected+20*1024*1024*1024)
+          stat=os.statvfs(os.environ['RUNNER_TEMP'])
+          available=stat.f_bavail*stat.f_frsize
+          print({'expectedDownloadBytes':expected,'requiredFreeBytes':required,'availableFreeBytes':available})
+          if available < required:
+              raise SystemExit('protected acquisition runner has insufficient ephemeral disk')
+          PY
+
+      - name: Install pinned acquisition transport only
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+
+      - name: Acquire exact planned files and verify bytes before deserialization
+        id: acquire
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVIDENCE_DIR}"
+          python controller/scripts/acquire-hsme-teacher-snapshot.py acquire \
+            --plan "${PLAN_DIR}/selected/plan.json" \
+            --expected-manifest "${PLAN_DIR}/selected/expected-manifest.json" \
+            --materialized-root "${MODEL_ROOT}" \
+            --manifest-output "${EVIDENCE_DIR}/observed-manifest.json" \
+            --evidence-output "${EVIDENCE_DIR}/acquisition-evidence.json" \
+            --max-download-bytes "${MAX_DOWNLOAD_BYTES}"
+          python - <<'PY'
+          import json, os
+          p=os.path.join(os.environ['EVIDENCE_DIR'],'acquisition-evidence.json')
+          data=json.load(open(p,encoding='utf-8'))
+          assert data['matchesExpectedManifest'] is True
+          assert data['hashBeforeDeserialization'] is True
+          assert data['deserializationPerformed'] is False
+          assert data['modelRepositoryRuntimeCodeExecuted'] is False
+          assert data['binaryPayloadPublished'] is False
+          assert data['teacherAdmissionAllowed'] is False
+          assert data['trainingStartAllowed'] is False
+          assert data['runtimeAuthorityGranted'] is False
+          assert data['productionAuthorityGranted'] is False
+          PY
+
+      - name: Destroy transient teacher model and Hub cache bytes
+        id: destroy
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -rf "${MODEL_ROOT}" "${HF_HOME}"
+          test ! -e "${MODEL_ROOT}"
+          test ! -e "${HF_HOME}"
+
+      - name: Prove transient model/cache deletion
+        id: cleanup
+        if: ${{ always() && steps.acquire.outcome == 'success' && steps.destroy.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python controller/scripts/acquire-hsme-teacher-snapshot.py prove-cleanup \
+            --materialized-root "${MODEL_ROOT}" \
+            --hf-home "${HF_HOME}" \
+            --acquisition-evidence "${EVIDENCE_DIR}/acquisition-evidence.json" \
+            --output "${EVIDENCE_DIR}/cleanup-evidence.json"
+
+      - name: Upload JSON-only teacher acquisition evidence
+        if: ${{ steps.acquire.outcome == 'success' && steps.destroy.outcome == 'success' && steps.cleanup.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-teacher-acquisition-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/hsme-teacher-acquisition-plan/remote/remote-evidence.json
+            ${{ runner.temp }}/hsme-teacher-acquisition-plan/plan-bundle/acquisition-plan-bundle.json
+            ${{ runner.temp }}/hsme-teacher-acquisition-plan/selected/plan.json
+            ${{ runner.temp }}/hsme-teacher-acquisition-plan/selected/expected-manifest.json
+            ${{ runner.temp }}/hsme-teacher-acquisition-plan/selected/selection.json
+            ${{ runner.temp }}/hsme-teacher-acquisition-evidence/observed-manifest.json
+            ${{ runner.temp }}/hsme-teacher-acquisition-evidence/acquisition-evidence.json
+            ${{ runner.temp }}/hsme-teacher-acquisition-evidence/cleanup-evidence.json
+          if-no-files-found: error
+          retention-days: 14
