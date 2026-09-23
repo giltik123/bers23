@@ -614,6 +614,116 @@ export async function preflightHsmeDenseStudentTrainingV1(
   });
 }
 
+export async function hsmeDenseStudentLaunchSpecV1Digest(
+  launchSpec:HsmeDenseStudentLaunchSpecV1,
+  hash:HsmeDenseStudentTrainingHashPortV1,
+):Promise<string>{
+  if(
+    launchSpec.schemaVersion!==HSME_DENSE_STUDENT_LAUNCH_SPEC_V1_SCHEMA
+    ||launchSpec.state!=='LAUNCH_SPEC_READY_NOT_EXECUTED'
+  ){
+    throw new HsmeDenseStudentTrainingToolchainV1Error(
+      'hsme_dense_launch_digest_state',
+      'only READY_NOT_EXECUTED launch specs are digestible',
+    );
+  }
+  return digest(
+    HSME_DENSE_STUDENT_LAUNCH_SPEC_DIGEST_DOMAIN,
+    launchSpecDigestPayload(launchSpec),
+    hash,
+  );
+}
+
+export async function hsmeDenseStudentTrainingPreflightV1Digest(
+  preflight:HsmeDenseStudentTrainingPreflightV1,
+  hash:HsmeDenseStudentTrainingHashPortV1,
+):Promise<string>{
+  if(
+    preflight.schemaVersion!==HSME_DENSE_STUDENT_TRAINING_PREFLIGHT_V1_SCHEMA
+    ||preflight.state!=='TRAINING_PREFLIGHT_READY_NOT_EXECUTED'
+    ||preflight.launchSpec===null
+  ){
+    throw new HsmeDenseStudentTrainingToolchainV1Error(
+      'hsme_dense_preflight_digest_state',
+      'only READY_NOT_EXECUTED preflight evidence is digestible',
+    );
+  }
+  return digest(
+    HSME_DENSE_STUDENT_TRAINING_PREFLIGHT_DIGEST_DOMAIN,
+    preflightDigestPayload(preflight),
+    hash,
+  );
+}
+
+function launchSpecDigestPayload(
+  value:HsmeDenseStudentLaunchSpecV1,
+):Omit<HsmeDenseStudentLaunchSpecV1,'launchSpecSha256'>{
+  return {
+    schemaVersion:HSME_DENSE_STUDENT_LAUNCH_SPEC_V1_SCHEMA,
+    state:'LAUNCH_SPEC_READY_NOT_EXECUTED',
+    requestEvidenceSha256:value.requestEvidenceSha256,
+    admissionEvidenceSha256:value.admissionEvidenceSha256,
+    toolchainManifestSha256:value.toolchainManifestSha256,
+    candidateId:value.candidateId,
+    backend:value.backend,
+    repositoryCommitSha:value.repositoryCommitSha,
+    interpreter:'python3.12',
+    entrypointRelativePath:HSME_DENSE_STUDENT_ENTRYPOINT_V1,
+    entrypointFileSha256:value.entrypointFileSha256,
+    dependencyLockRelativePath:HSME_DENSE_STUDENT_DEPENDENCY_LOCK_V1,
+    dependencyLockFileSha256:value.dependencyLockFileSha256,
+    immutableEnvironmentSha256:value.immutableEnvironmentSha256,
+    acceleratorRuntimeIdentity:value.acceleratorRuntimeIdentity,
+    teacherDecisionSha256:value.teacherDecisionSha256,
+    reproductionEvidenceSha256:value.reproductionEvidenceSha256,
+    corpusRootDigest:value.corpusRootDigest,
+    recipeDigest:value.recipeDigest,
+    checkpointSha256:value.checkpointSha256,
+    resumeCheckpointSha256:value.resumeCheckpointSha256,
+    outputStagingAuthorityId:value.outputStagingAuthorityId,
+    outputStagingPolicySha256:value.outputStagingPolicySha256,
+    resourceCeilings:value.resourceCeilings,
+    targetStepCount:value.targetStepCount,
+    activeParametersMillions:value.activeParametersMillions,
+    networkPolicy:'SEALED_INPUTS_ONLY',
+    cacheModelInputPolicy:'READ_ONLY_CONTENT_ADDRESSED_SEALED_INPUTS',
+    argv:value.argv,
+    processSpawned:false,
+    trainingStarted:false,
+    checkpointWritten:false,
+    checkpointPromotionAllowed:false,
+    modelInstallAllowed:false,
+    modelFleetPromotionAllowed:false,
+    productionAuthorityGranted:false,
+    projectArtifactMutationAllowed:false,
+    winnerSelectionAllowed:false,
+  };
+}
+
+function preflightDigestPayload(
+  value:HsmeDenseStudentTrainingPreflightV1,
+):Omit<HsmeDenseStudentTrainingPreflightV1,'preflightEvidenceSha256'>{
+  return {
+    schemaVersion:HSME_DENSE_STUDENT_TRAINING_PREFLIGHT_V1_SCHEMA,
+    state:'TRAINING_PREFLIGHT_READY_NOT_EXECUTED',
+    blockers:Object.freeze([]),
+    requestEvidenceSha256:value.requestEvidenceSha256,
+    admissionEvidenceSha256:value.admissionEvidenceSha256,
+    toolchainManifestSha256:value.toolchainManifestSha256,
+    launchSpecSha256:value.launchSpecSha256,
+    launchSpec:value.launchSpec,
+    processSpawned:false,
+    trainingStarted:false,
+    checkpointWritten:false,
+    checkpointPromotionAllowed:false,
+    modelInstallAllowed:false,
+    modelFleetPromotionAllowed:false,
+    productionAuthorityGranted:false,
+    projectArtifactMutationAllowed:false,
+    winnerSelectionAllowed:false,
+  };
+}
+
 function buildLaunchPayload(
   request:HsmeFullStudentTrainingRunRequestV1,
   admission:CoreHsmeProtectedTrainingAdmissionV1,
