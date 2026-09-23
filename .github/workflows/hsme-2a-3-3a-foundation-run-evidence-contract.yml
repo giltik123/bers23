@@ -50,6 +50,8 @@ on:
       - 'tests/creative-hsme-reuse-candidate-evidence-assembly-v1.test.mjs'
       - 'src/platform/creative/local-ai/hsme/HsmeFoundationReuseDecisionFinalizationV1.ts'
       - 'tests/creative-hsme-reuse-decision-finalization-v1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeReuseOutcomeHandoffV1.ts'
+      - 'tests/creative-hsme-reuse-outcome-handoff-v1.test.mjs'
       - '.github/workflows/hsme-2a-3-3a-foundation-run-evidence-contract.yml'
   workflow_dispatch:
 
@@ -1048,3 +1050,54 @@ jobs:
           grep -F "durableModelFleetPromotionAllowed:false" "$CONTRACT"
           grep -F "winnerSelectionAllowed:false" "$CONTRACT"
           ! grep -E -q 'providerSelector|reserveCredits|spendCredits|projectService|artifactAuthority' "$CONTRACT"
+
+  reuse-outcome-handoff-contract:
+    name: HSME-2a.3.3v reuse outcome orchestration handoff contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head for reuse outcome handoff
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run reuse outcome handoff contracts
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3v
+          npx esbuild tests/creative-hsme-reuse-outcome-handoff-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3v/handoff.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3v/handoff.test.mjs
+
+      - name: Prove handoff cannot execute training, install models or widen production authority
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeReuseOutcomeHandoffV1.ts
+          grep -F "verifyFinalization" "$CONTRACT"
+          grep -F "HSME_FOUNDATION_REUSE_DECISION_FINALIZATION_DIGEST_DOMAIN" "$CONTRACT"
+          grep -F "mayEscalateToFullHsmeStudentDistillationV1" "$CONTRACT"
+          grep -F "DIRECT_REUSE_HANDOFF_READY" "$CONTRACT"
+          grep -F "BOUNDED_ADAPTATION_HANDOFF_READY" "$CONTRACT"
+          grep -F "FULL_STUDENT_DISTILLATION_HANDOFF_READY" "$CONTRACT"
+          grep -F "trainingRunStartAllowed:false" "$CONTRACT"
+          grep -F "modelInstallAllowed:false" "$CONTRACT"
+          grep -F "modelFleetPromotionAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "providerAuthorityGranted:false" "$CONTRACT"
+          grep -F "billingAuthorityGranted:false" "$CONTRACT"
+          grep -F "projectArtifactMutationAllowed:false" "$CONTRACT"
+          grep -F "aeeExecutionAuthorityGranted:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+          ! grep -nE "from .*ModelFleet|import .*ModelFleet|ModelFleet\\.|reserveCredits|spendCredits|providerSelector|startTraining|runTraining|downloadModel|installModel" "$CONTRACT"
