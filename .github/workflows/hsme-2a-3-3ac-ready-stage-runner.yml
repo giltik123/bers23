@@ -1,0 +1,86 @@
+name: HSME-2a.3.3ac READY stage runner
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/run-hsme-reuse-pipeline-stage.mjs'
+      - 'tests/hsme-reuse-pipeline-stage-runner.test.mjs'
+      - 'scripts/plan-hsme-reuse-evidence-pipeline.mjs'
+      - '.github/workflows/hsme-2a-3-3ac-ready-stage-runner.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ready-stage-runner:
+    name: bounded READY-stage execution receipt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run bounded runner regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3ac
+          npx esbuild tests/hsme-reuse-pipeline-stage-runner.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ac/runner.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ac/runner.test.mjs
+
+      - name: Prove execution allowlist and shell-free spawn
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/run-hsme-reuse-pipeline-stage.mjs
+          grep -F "import {spawn} from 'node:child_process'" "$SCRIPT"
+          grep -F 'process.execPath' "$SCRIPT"
+          grep -F 'shell:false' "$SCRIPT"
+          grep -F "QUALITY_PARETO:Object.freeze" "$SCRIPT"
+          grep -F "CAPABILITY_PROOF:Object.freeze" "$SCRIPT"
+          grep -F "CANDIDATE_ASSEMBLY:Object.freeze" "$SCRIPT"
+          grep -F "OUTCOME_ORIGIN_FREEZE:Object.freeze" "$SCRIPT"
+          grep -F "OUTCOME_MATERIALIZATION:Object.freeze" "$SCRIPT"
+          ! grep -nE 'exec\(|execFile\(|execSync\(|spawnSync\(|fork\(|eval\(|new Function|shell:true' "$SCRIPT"
+
+      - name: Prove manifest, dependency and output-root admission
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/run-hsme-reuse-pipeline-stage.mjs
+          grep -F "stage.status!=='READY'" "$SCRIPT"
+          grep -F "stage.localStatus!=='READY'" "$SCRIPT"
+          grep -F 'dependency.status' "$SCRIPT"
+          grep -F 'manifest_not_canonical' "$SCRIPT"
+          grep -F 'manifest_semantic_digest_mismatch' "$SCRIPT"
+          grep -F 'output_root_escape' "$SCRIPT"
+          grep -F 'output_exists' "$SCRIPT"
+          grep -F "key.startsWith('HSME_')" "$SCRIPT"
+          grep -F "key==='NODE_OPTIONS'" "$SCRIPT"
+
+      - name: Prove receipt is observation, not pin authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/run-hsme-reuse-pipeline-stage.mjs
+          grep -F "outputTrustState:'OBSERVED_NOT_PIN_AUTHORITY'" "$SCRIPT"
+          grep -F 'externalPinCreated:false' "$SCRIPT"
+          grep -F 'semanticEvidenceAuthorityGranted:false' "$SCRIPT"
+          grep -F 'candidateSelectionAllowed:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
