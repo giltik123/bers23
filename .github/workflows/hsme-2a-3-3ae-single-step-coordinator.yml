@@ -1,0 +1,89 @@
+name: HSME-2a.3.3ae explicit single-step coordinator
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/execute-hsme-reuse-pipeline-single-step.mjs'
+      - 'scripts/plan-hsme-reuse-pipeline-resume.mjs'
+      - 'scripts/run-hsme-reuse-pipeline-stage.mjs'
+      - 'tests/hsme-reuse-pipeline-single-step-coordinator.test.mjs'
+      - '.github/workflows/hsme-2a-3-3ae-single-step-coordinator.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  single-step-coordinator:
+    name: explicit verified single-stage execution
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run single-step coordinator regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3ae
+          npx esbuild tests/hsme-reuse-pipeline-single-step-coordinator.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ae/single-step.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ae/single-step.test.mjs
+
+      - name: Re-run receipt-bound resume regressions
+        run: |
+          set -euo pipefail
+          npx esbuild tests/hsme-reuse-pipeline-resume-planner.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ae/resume.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ae/resume.test.mjs
+
+      - name: Prove explicit stage selection and exactly one runner call site
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/execute-hsme-reuse-pipeline-single-step.mjs
+          grep -F "explicit stageId is absent from verified readyStageIds" "$SCRIPT"
+          grep -F "stage.resumeState!=='READY_TO_EXECUTE'" "$SCRIPT"
+          grep -F "dependency.resumeState!=='COMPLETED_OBSERVED'" "$SCRIPT"
+          test "$(grep -Fc 'executeHsmeReusePipelineStage({' "$SCRIPT")" = "1"
+          grep -F 'replanRequired:true' "$SCRIPT"
+          grep -F 'automaticContinuationAllowed:false' "$SCRIPT"
+          grep -F 'externalPinCreated:false' "$SCRIPT"
+          grep -F 'semanticEvidenceAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'for[[:space:]]*\([^)]*readyStageIds|while[[:space:]]*\(|setInterval|setTimeout|externalPinCreated:true|externalPinsAutoTrusted:true' "$SCRIPT"
+
+      - name: Prove stale resume state is recomputed before execution
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/execute-hsme-reuse-pipeline-single-step.mjs
+          grep -F 'planHsmeReusePipelineResume({' "$SCRIPT"
+          grep -F 'fresh.files.plan.equals(suppliedPlan.bytes)' "$SCRIPT"
+          grep -F 'fresh.files.digest.equals(suppliedDigest.bytes)' "$SCRIPT"
+          grep -F 'hsme_reuse_single_step_resume_plan_stale' "$SCRIPT"
+          grep -F 'hsme_reuse_single_step_resume_digest_stale' "$SCRIPT"
+
+      - name: Prove coordinator grants no authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/execute-hsme-reuse-pipeline-single-step.mjs
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'startTraining|runTraining|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
