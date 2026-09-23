@@ -1,0 +1,123 @@
+name: HSME-2b1.2 teacher remote manifest resolution
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json'
+      - 'scripts/validate-hsme-teacher-acquisition-pin-requests.py'
+      - 'scripts/resolve-hsme-teacher-remote-manifest.py'
+      - 'tests/test_hsme_teacher_remote_manifest_resolution.py'
+      - '.github/workflows/hsme-2b1-2-teacher-remote-manifest-resolution.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contract:
+    name: teacher remote manifest offline contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run offline resolver regressions
+        run: python -m unittest tests/test_hsme_teacher_remote_manifest_resolution.py
+
+      - name: Prove resolver cannot download model snapshots or widen teacher authority
+        run: |
+          set -euo pipefail
+          RESOLVER=scripts/resolve-hsme-teacher-remote-manifest.py
+          grep -F 'largeModelPayloadsDownloaded": False' "$RESOLVER"
+          grep -F 'modelRepositoryCodeExecutionAllowed": False' "$RESOLVER"
+          grep -F 'deserializationOccurred": False' "$RESOLVER"
+          grep -F 'teacherAdmissionAllowed": False' "$RESOLVER"
+          grep -F 'trainingStartAllowed": False' "$RESOLVER"
+          grep -F 'productionAuthorityGranted": False' "$RESOLVER"
+          grep -F 'Xet chunk/storage identifiers are never treated as content SHA-256' "$RESOLVER"
+          ! grep -nE 'snapshot_download|from_pretrained|torch\.load|pickle\.load|safetensors\.safe_open|startTraining|runTraining|TEACHER_SET_ADMITTED' "$RESOLVER"
+
+  remote-metadata-resolution:
+    name: resolve exact pinned teacher remote metadata
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned metadata transport only
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface_hub==0.36.0 hf_xet==1.1.10
+          python - <<'PY'
+          import importlib.metadata
+          import huggingface_hub
+          assert huggingface_hub.__version__ == '0.36.0'
+          assert importlib.metadata.version('hf-xet') == '1.1.10'
+          PY
+
+      - name: Resolve pinned remote artifact manifests without model payload download
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b1-2-remote
+          python scripts/resolve-hsme-teacher-remote-manifest.py \
+            --requests src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json \
+            --output .test-cache/hsme-2b1-2-remote/teacher-remote-manifest-evidence.json
+
+      - name: Verify evidence remains metadata-only and non-authoritative
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('.test-cache/hsme-2b1-2-remote/teacher-remote-manifest-evidence.json')
+          data = json.loads(p.read_text())
+          assert data['schemaVersion'] == 'BERS_HSME_TEACHER_REMOTE_MANIFEST_EVIDENCE_V1'
+          assert data['teacherCount'] == 3
+          assert data['largeModelPayloadsDownloaded'] is False
+          assert data['modelRepositoryCodeExecutionAllowed'] is False
+          assert data['deserializationOccurred'] is False
+          assert data['rightsResolved'] is False
+          assert data['qualityMeasured'] is False
+          assert data['teacherAdmissionAllowed'] is False
+          assert data['trainingStartAllowed'] is False
+          assert data['productionAuthorityGranted'] is False
+          assert len(data['evidenceSha256']) == 64
+          for teacher in data['teachers']:
+              assert teacher['artifactCount'] > 0
+              assert teacher['largeModelPayloadsDownloaded'] is False
+              assert teacher['xetStorageIdsUsedAsContentSha256'] is False
+              assert len(teacher['artifactManifestSha256']) == 64
+              manifest = teacher['artifactManifest']
+              assert manifest['state'] == 'REMOTE_METADATA_RESOLVED'
+              assert manifest['modelRepositoryCodeExecutionAllowed'] is False
+              assert manifest['deserializationOccurred'] is False
+              assert manifest['teacherAdmissionAllowed'] is False
+              assert manifest['trainingStartAllowed'] is False
+              assert manifest['artifacts']
+              assert all(len(item['contentSha256']) == 64 for item in manifest['artifacts'])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hsme-2b1-2-teacher-remote-manifest-evidence-${{ github.sha }}
+          path: .test-cache/hsme-2b1-2-remote/teacher-remote-manifest-evidence.json
+          if-no-files-found: error
+          retention-days: 14
