@@ -125,8 +125,6 @@ async function fixture(){
     trainingAttestationFileSha256:'NONE',
     ...noAuthority(),
   };
-  delete capabilityOrigin.reuseAdvanceAllowed;
-  delete capabilityOrigin.fullStudentEscalationAllowed;
   await writeJson(paths.capabilityOrigin,capabilityOrigin);
   const capabilityPin=capabilityProofOriginIndexDigest(capabilityOrigin);
 
