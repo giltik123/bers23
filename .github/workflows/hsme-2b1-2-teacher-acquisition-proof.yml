@@ -1,0 +1,71 @@
+name: HSME-2b1.2 teacher acquisition proof
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherAcquisitionProofV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherArtifactManifestV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-teacher-acquisition-pin-requests.v1.json'
+      - 'scripts/validate-hsme-teacher-acquisition-pin-requests.py'
+      - 'scripts/expand-hsme-teacher-acquisition-plan.py'
+      - 'scripts/inspect-hsme-teacher-snapshot.py'
+      - 'tests/creative-hsme-teacher-acquisition-proof-v1.test.mjs'
+      - '.github/workflows/hsme-2b1-2-teacher-acquisition-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  end-to-end-acquisition-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run real Python-stage acquisition proof chain
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/validate-hsme-teacher-acquisition-pin-requests.py \
+            scripts/expand-hsme-teacher-acquisition-plan.py \
+            scripts/inspect-hsme-teacher-snapshot.py
+          mkdir -p .test-cache/hsme-2b1-2-acquisition-proof
+          npx esbuild tests/creative-hsme-teacher-acquisition-proof-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1-2-acquisition-proof/proof.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1-2-acquisition-proof/proof.test.mjs
+
+      - name: Acquisition proof cannot become rights quality admission or training authority
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeTeacherAcquisitionProofV1.ts
+          grep -F "verifyPlanExpansionEvidence" "$CONTRACT"
+          grep -F "verifyByteAcquisitionEvidence" "$CONTRACT"
+          grep -F "ACQUISITION_MANIFEST_DIGEST_DRIFT" "$CONTRACT"
+          grep -F "ACQUISITION_PLAN_DIGEST_DRIFT" "$CONTRACT"
+          grep -F "ACQUISITION_ARTIFACT_ROOT_BINDING_INVALID" "$CONTRACT"
+          grep -F "rightsConclusion:'REVIEW_REQUIRED'" "$CONTRACT"
+          grep -F "distillationOutputUse:'REVIEW_REQUIRED'" "$CONTRACT"
+          grep -F "qualityGateStatus:'UNMEASURED'" "$CONTRACT"
+          grep -F "teacherAdmissionAllowed:false" "$CONTRACT"
+          grep -F "trainingStartAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "providerAuthorityGranted:false" "$CONTRACT"
+          grep -F "billingAuthorityGranted:false" "$CONTRACT"
+          grep -F "modelFleetPromotionAllowed:false" "$CONTRACT"
+          ! grep -nE "TEACHER_SET_ADMITTED|DISTILLATION_ALLOWED|startTraining|runTraining|ModelFleet\\.|reserveCredits|spendCredits" "$CONTRACT"
