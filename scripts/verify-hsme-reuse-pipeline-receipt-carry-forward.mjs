@@ -545,7 +545,7 @@ async function verifySourceReceipt({
   ){
     fail('hsme_reuse_carry_source_definition_drift','source stage definition differs from receipt');
   }
-  const outputPaths=array(stage.outputs,'stage.outputs',64).map(resolve);
+  const outputPaths=array(stage.outputs,'stage.outputs',64).map(value=>resolve(value));
   if(
     outputPaths.length!==receipt.outputs.length
     ||outputPaths.some((path,index)=>path!==receipt.outputs[index].path)
@@ -700,7 +700,7 @@ async function computeCarryForward({
   ){
     fail('hsme_reuse_carry_current_definition_drift','new manifest stage definition/input binding drift');
   }
-  const currentOutputPaths=array(currentStage.outputs,'currentStage.outputs',64).map(resolve);
+  const currentOutputPaths=array(currentStage.outputs,'currentStage.outputs',64).map(value=>resolve(value));
   if(
     currentOutputPaths.length!==source.receipt.outputs.length
     ||currentOutputPaths.some((path,index)=>path!==source.receipt.outputs[index].path)
@@ -713,6 +713,7 @@ async function computeCarryForward({
     schemaVersion:HSME_REUSE_PIPELINE_RECEIPT_CARRY_FORWARD_V1_SCHEMA,
     carryForwardState:'UNCHANGED_STAGE_OBSERVED',
     sourceManifestPath:resolve(sourceManifestPath),
+    sourceManifestDigestPath:resolve(sourceDigestPath),
     sourceManifestSha256:sourceManifest.manifestSha256,
     sourceManifestFileSha256:sourceManifest.manifestFileSha256,
     sourceSpecPath:resolve(sourceSpecPath),
@@ -826,9 +827,9 @@ export async function verifyHsmeReusePipelineReceiptCarryForward({
 
   const recomputed=await computeCarryForward({
     sourceManifestPath:text(proof.sourceManifestPath,'proof.sourceManifestPath'),
-    sourceDigestPath:deriveDigestPath(
-      text(proof.sourceManifestPath,'proof.sourceManifestPath'),
-      proof.sourceManifestFileSha256,
+    sourceDigestPath:text(
+      proof.sourceManifestDigestPath,
+      'proof.sourceManifestDigestPath',
     ),
     sourceReceiptPath:text(proof.sourceReceiptPath,'proof.sourceReceiptPath'),
     pinApplicationPath:text(proof.pinApplicationPath,'proof.pinApplicationPath'),
@@ -843,15 +844,6 @@ export async function verifyHsmeReusePipelineReceiptCarryForward({
     fail('hsme_reuse_carry_proof_stale','carry-forward proof differs from current recomputation');
   }
   return recomputed.proof;
-}
-
-function deriveDigestPath(manifestPath){
-  const path=resolve(manifestPath);
-  const candidates=[
-    path.replace(/manifest\.json$/,'manifest-digest.json'),
-    path.replace(/manifest\.json$/,'digest.json'),
-  ];
-  return candidates[0];
 }
 
 function parseArgs(argv){
