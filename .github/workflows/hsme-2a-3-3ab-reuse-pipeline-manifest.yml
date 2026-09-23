@@ -1,0 +1,88 @@
+name: HSME-2a.3.3ab reuse pipeline manifest
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/plan-hsme-reuse-evidence-pipeline.mjs'
+      - 'tests/hsme-reuse-evidence-pipeline-manifest.test.mjs'
+      - '.github/workflows/hsme-2a-3-3ab-reuse-pipeline-manifest.yml'
+      - 'scripts/compile-hsme-reuse-capability-proof.mjs'
+      - 'scripts/materialize-hsme-reuse-candidate-assembly.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeReuseOutcomeOriginIndexV1.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline-manifest-contract:
+    name: provenance-locked pipeline checkpoint manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run pipeline manifest regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3ab
+          npx esbuild tests/hsme-reuse-evidence-pipeline-manifest.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ab/pipeline-manifest.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ab/pipeline-manifest.test.mjs
+
+      - name: Prove exact canonical origin-index digest reuse
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-evidence-pipeline.mjs
+          grep -F 'capabilityProofOriginIndexDigest(' "$SCRIPT"
+          grep -F 'candidateAssemblyOriginIndexDigest(' "$SCRIPT"
+          grep -F 'hsmeReuseOutcomeOriginIndexV1Digest(' "$SCRIPT"
+          grep -F "EXTERNAL_PIN_REQUIRED" "$SCRIPT"
+          grep -F "PIN_MISMATCH" "$SCRIPT"
+          grep -F "BLOCKED_BY_PREDECESSOR" "$SCRIPT"
+          grep -F "externalPinsAutoTrusted:false" "$SCRIPT"
+          grep -F "plannerExecutesStages:false" "$SCRIPT"
+
+      - name: Prove planner never executes pipeline stages
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-evidence-pipeline.mjs
+          ! grep -nE "node:child_process|child_process|execFile|execSync|spawn\(|spawnSync|fork\(|eval\(|new Function|shell:true" "$SCRIPT"
+          ! grep -nE "startTraining|runTraining|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://" "$SCRIPT"
+
+      - name: Prove manifest grants no authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-evidence-pipeline.mjs
+          grep -F 'decisionMutationAllowed:false' "$SCRIPT"
+          grep -F 'candidateSelectionAllowed:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'fullStudentEscalationAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+
+      - name: Prove JSON-only deterministic outputs
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-evidence-pipeline.mjs
+          grep -F 'hsme-reuse-evidence-pipeline-manifest.json' "$SCRIPT"
+          grep -F 'hsme-reuse-evidence-pipeline-manifest-digest.json' "$SCRIPT"
+          ! grep -nE '\.(safetensors|bin|onnx|gguf|pt|pth|ckpt)' "$SCRIPT"
