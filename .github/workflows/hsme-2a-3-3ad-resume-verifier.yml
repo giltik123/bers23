@@ -1,0 +1,83 @@
+name: HSME-2a.3.3ad resume verifier
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/plan-hsme-reuse-pipeline-advancement.mjs'
+      - 'tests/hsme-reuse-pipeline-advancement.test.mjs'
+      - 'scripts/run-hsme-reuse-pipeline-stage.mjs'
+      - 'scripts/plan-hsme-reuse-evidence-pipeline.mjs'
+      - '.github/workflows/hsme-2a-3-3ad-resume-verifier.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resume-verifier:
+    name: receipt reuse and advancement classification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run resume regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3ad
+          npx esbuild tests/hsme-reuse-pipeline-advancement.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ad/advancement.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ad/advancement.test.mjs
+
+      - name: Prove stage-local receipt reuse law
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-pipeline-advancement.mjs
+          grep -F 'stageDefinitionSha256' "$SCRIPT"
+          grep -F 'sameInputBindings(' "$SCRIPT"
+          grep -F 'outputsMatchReceipt(' "$SCRIPT"
+          grep -F "'VERIFIED_COMPLETE'" "$SCRIPT"
+          grep -F "'RUN_REQUIRED'" "$SCRIPT"
+          grep -F "'RECEIPT_STALE_INPUT_DRIFT'" "$SCRIPT"
+          grep -F "'RECEIPT_OUTPUT_DRIFT'" "$SCRIPT"
+          grep -F "'RECEIPT_STAGE_DEFINITION_DRIFT'" "$SCRIPT"
+          grep -F 'receiptManifestSha256' "$SCRIPT"
+          grep -F 'manifestRegenerationRequired' "$SCRIPT"
+
+      - name: Prove verifier never executes or creates trust authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-pipeline-advancement.mjs
+          grep -F 'executesStages:false' "$SCRIPT"
+          grep -F 'createsExternalPins:false' "$SCRIPT"
+          grep -F 'receiptTrustAuthorityGranted:false' "$SCRIPT"
+          grep -F 'candidateSelectionAllowed:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'node:child_process|child_process|spawn\(|exec\(|execFile\(|execSync\(|fork\(|eval\(|new Function|https?://|fetch\(' "$SCRIPT"
+
+      - name: Prove deterministic JSON-only outputs
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/plan-hsme-reuse-pipeline-advancement.mjs
+          grep -F 'hsme-reuse-pipeline-advancement-plan.json' "$SCRIPT"
+          grep -F 'hsme-reuse-pipeline-advancement-plan-digest.json' "$SCRIPT"
+          ! grep -nE '\.(safetensors|bin|onnx|gguf|pt|pth|ckpt)' "$SCRIPT"
