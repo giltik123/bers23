@@ -596,7 +596,7 @@ export async function runCli(argv=process.argv.slice(2)){
   const inputPaths=[
     resolve(single.get('--manifest')),
     resolve(single.get('--manifest-digest')),
-    ...receipts.map(resolve),
+    ...receipts.map(value=>resolve(value)),
   ];
   if(inputPaths.includes(planPath)||inputPaths.includes(digestPath)){
     fail(
