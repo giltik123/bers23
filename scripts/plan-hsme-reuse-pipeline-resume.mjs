@@ -605,7 +605,7 @@ export async function planHsmeReusePipelineResume({
         completionEvidenceKind:'CARRY_FORWARD_PROOF',
         carryForwardProofSha256:carryForward.carryForwardProofSha256,
         sourceReceiptSha256:carryForward.sourceReceiptSha256,
-      }:receipt?{
+      }:receipt&&carryForwardPaths.length>0?{
         completionEvidenceKind:'EXECUTION_RECEIPT',
       }:{}),
       outputsPresent:Object.freeze(outputPresence),
