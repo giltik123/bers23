@@ -1,0 +1,97 @@
+name: HSME-2a.3.3ah approved pin spec materializer
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/materialize-hsme-reuse-pipeline-approved-pin-spec.mjs'
+      - 'scripts/verify-hsme-reuse-pipeline-external-pin-approval.mjs'
+      - 'tests/hsme-reuse-pipeline-approved-pin-spec-materializer.test.mjs'
+      - '.github/workflows/hsme-2a-3-3ah-approved-pin-spec-materializer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  approved-pin-spec:
+    name: explicit approved pin new-spec materialization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run approved pin spec materialization regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3ah
+          npx esbuild tests/hsme-reuse-pipeline-approved-pin-spec-materializer.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ah/materializer.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ah/materializer.test.mjs
+
+      - name: Re-run approval verifier regressions
+        run: |
+          set -euo pipefail
+          npx esbuild tests/hsme-reuse-pipeline-external-pin-approval.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3ah/approval.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3ah/approval.test.mjs
+
+      - name: Prove current approval is reverified before materialization
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/materialize-hsme-reuse-pipeline-approved-pin-spec.mjs
+          grep -F 'verifyHsmeReusePipelineExternalPinApproval({' "$SCRIPT"
+          grep -F 'reverified.files.verification.equals(suppliedVerification.bytes)' "$SCRIPT"
+          grep -F 'reverified.files.patchCandidate.equals(suppliedPatch.bytes)' "$SCRIPT"
+          grep -F "verificationState!=='APPROVED_EXTERNAL_DIGEST_VERIFIED'" "$SCRIPT"
+          grep -F "patchState!=='READY_FOR_EXPLICIT_APPLICATION'" "$SCRIPT"
+
+      - name: Prove exactly one approved spec field may change
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/materialize-hsme-reuse-pipeline-approved-pin-spec.mjs
+          grep -F 'semanticDiffPaths(sourceSpec.value,outputSpec)' "$SCRIPT"
+          grep -F 'differences.length!==1||differences[0]!==target.pointer' "$SCRIPT"
+          grep -F 'source spec target is no longer null' "$SCRIPT"
+          grep -F "stageId:'" "$SCRIPT" || true
+          grep -F 'expectedOriginIndexSha256=newValue' "$SCRIPT"
+
+      - name: Prove source spec is never overwritten and replan remains required
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/materialize-hsme-reuse-pipeline-approved-pin-spec.mjs
+          grep -F 'output spec path must differ from source spec path' "$SCRIPT"
+          grep -F "{flag:'wx'}" "$SCRIPT"
+          grep -F 'sourceSpecMutated:false' "$SCRIPT"
+          grep -F 'replanRequired:true' "$SCRIPT"
+          grep -F 'automaticContinuationAllowed:false' "$SCRIPT"
+          grep -F 'stageExecutionAuthorized:false' "$SCRIPT"
+          grep -F 'externalPinCreated:true' "$SCRIPT"
+          ! grep -nE 'executeHsmeReusePipelineStage\(|startTraining|runTraining|promoteModel|installModel|downloadModel|reserveCredits|spendCredits|fetch\(|https?://' "$SCRIPT"
+
+      - name: Prove no semantic decision or production authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/materialize-hsme-reuse-pipeline-approved-pin-spec.mjs
+          grep -F 'semanticEvidenceAuthorityGranted:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'reuseAdvanceAllowed:false' "$SCRIPT"
+          grep -F 'trainingRunStartAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
