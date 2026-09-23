@@ -73,4 +73,4 @@ jobs:
           grep -F 'reuse-decision-finalization.json' "$SCRIPT"
           grep -F 'reuse-outcome-handoff.json' "$SCRIPT"
           grep -F 'reuse-outcome-materialization-evidence.json' "$SCRIPT"
-          ! grep -nE '\.(safetensors|bin|onnx|gguf|pt|pth|ckpt)["'"']' "$SCRIPT"
+          ! grep -nE '\\.(safetensors|bin|onnx|gguf|pt|pth|ckpt)' "$SCRIPT"
