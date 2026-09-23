@@ -163,6 +163,14 @@ export async function admitHsmeFullStudentTrainingPlanV1(
     }
   }
 
+  if(invalidBlockers.length>0){
+    return invalid(invalidBlockers,{
+      reuseHandoffEvidenceSha256:handoffEvidenceSha256,
+      reuseSourceDecisionSha256:valueOrUnknown(handoff.sourceDecisionSha256),
+      reuseFinalDecisionSha256:valueOrUnknown(handoff.finalDecisionSha256),
+    });
+  }
+
   if(
     !teacherFinalization
     ||teacherFinalization.schemaVersion!==HSME_TEACHER_ADMISSION_FINALIZATION_V1_SCHEMA
