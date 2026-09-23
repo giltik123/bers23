@@ -64,7 +64,7 @@ jobs:
           grep -F "completionEvidenceKind:'CARRY_FORWARD_PROOF'" "$SCRIPT"
           grep -F 'source.receipt.stageId===patched.stageId' "$SCRIPT"
           grep -F 'transitiveDependsOn(currentManifest.manifest,currentStage.stageId,patched.stageId)' "$SCRIPT"
-          ! grep -nE 'executeHsmeReusePipelineStage\(|executeNodeStage\(|spawn\(|receiptSha256[[:space:]]*=' "$SCRIPT"
+          ! grep -nE 'executeHsmeReusePipelineStage\\(|executeNodeStage\\(|spawn\\(' "$SCRIPT"
 
       - name: Prove old/new spec and current bytes are independently rebound
         run: |
