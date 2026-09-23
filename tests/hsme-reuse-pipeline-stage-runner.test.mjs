@@ -303,6 +303,10 @@ test('READY allowlisted stage executes with shell metacharacters as ordinary arg
   assert.equal(receipt.stageKind,'CANDIDATE_ASSEMBLY');
   assert.equal(receipt.outputTrustState,'OBSERVED_NOT_PIN_AUTHORITY');
   assert.equal(receipt.externalPinCreated,false);
+  assert.match(receipt.stageDefinitionSha256,/^[0-9a-f]{64}$/);
+  assert.ok(receipt.inputs.length>=3);
+  assert.ok(receipt.inputs.some(input=>input.path.includes('source;decision.json')));
+  assert.ok(receipt.inputs.every(input=>/^[0-9a-f]{64}$/.test(input.fileSha256)));
   assert.equal(receipt.outputs.length,2);
   for(const output of receipt.outputs){
     const bytes=await readFile(output.path);
