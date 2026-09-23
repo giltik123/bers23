@@ -636,10 +636,15 @@ export async function executeHsmeReusePipelineStage({
     maxCaptureBytes,
   });
   if(execution.code!==0||execution.signal!==null){
+    const stderrTail=execution.stderr
+      .toString('utf8')
+      .slice(-2048)
+      .replace(/[\u0000\r]/g,'');
     fail(
       'hsme_reuse_stage_runner_child_failed',
       'stage exited with code '+String(execution.code)
-      +' signal '+String(execution.signal),
+      +' signal '+String(execution.signal)
+      +(stderrTail?' stderr='+stderrTail:''),
     );
   }
 
