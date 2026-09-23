@@ -520,6 +520,7 @@ export async function materializeHsmeReuseOutcomeEvidence({
   const evidencePayload={
     schemaVersion:HSME_REUSE_OUTCOME_MATERIALIZATION_EVIDENCE_V1_SCHEMA,
     originIndexSha256,
+    originIndexFileSha256:originIndex.fileSha256,
     sourceDecisionFileSha256:sourceDecision.fileSha256,
     campaignFileSha256:campaign.fileSha256,
     candidateAssemblyFiles:normalizedAssemblies.map(item=>Object.freeze({
