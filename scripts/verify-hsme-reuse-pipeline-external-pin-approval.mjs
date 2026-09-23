@@ -4,7 +4,6 @@ import {resolve} from 'node:path';
 
 import {
   canonicalFileBytes,
-  canonicalValue,
   domainDigest,
   sha256Bytes,
 } from './plan-hsme-reuse-evidence-pipeline.mjs';
@@ -454,6 +453,12 @@ export async function verifyHsmeReusePipelineExternalPinApproval({
   const approval=normalizeHsmeReusePipelineExternalPinApprovalV1(
     approvalLoaded.value,
   );
+  if(!canonicalFileBytes(approval).equals(approvalLoaded.bytes)){
+    fail(
+      'hsme_reuse_pin_approval_not_canonical',
+      'external approval file must use canonical JSON bytes',
+    );
+  }
   const approvalSha256=hsmeReusePipelineExternalPinApprovalV1Digest(approval);
   if(approvalSha256!==expectedApprovalSha256){
     fail(
