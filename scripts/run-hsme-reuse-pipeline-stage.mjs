@@ -26,6 +26,8 @@ import {
 
 export const HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V1_SCHEMA =
   'BERS_HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V1';
+export const HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V2_SCHEMA =
+  'BERS_HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V2';
 export const HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_DIGEST_DOMAIN =
   'bers:hsme:reuse-pipeline-stage-execution-receipt:v1\0';
 export const HSME_REUSE_PIPELINE_STAGE_ARGV_DIGEST_DOMAIN =
@@ -38,7 +40,7 @@ const DEFAULT_TIMEOUT_MS=300_000;
 const TYPESCRIPT_RESOLUTION_HOOK =
   'scripts/hsme-node-typescript-resolution-hook.mjs';
 
-const ALLOWLIST=Object.freeze({
+export const HSME_REUSE_PIPELINE_STAGE_ALLOWLIST=Object.freeze({
   QUALITY_PARETO:Object.freeze({
     script:'scripts/compile-hsme-foundation-quality-pareto-evidence.mjs',
     envKey:'HSME_FOUNDATION_QUALITY_PARETO_COMPILER_CLI',
@@ -145,7 +147,7 @@ async function readJson(path,label){
   return Object.freeze({path,bytes,value});
 }
 
-async function loadVerifiedManifest(manifestPath,digestPath){
+export async function loadVerifiedManifest(manifestPath,digestPath){
   const manifestLoaded=await readJson(manifestPath,'manifest');
   const digestLoaded=await readJson(digestPath,'manifest digest');
   const manifest=object(manifestLoaded.value,'manifest');
@@ -213,7 +215,7 @@ async function loadVerifiedManifest(manifestPath,digestPath){
   });
 }
 
-function findStage(manifest,stageId){
+export function findStage(manifest,stageId){
   const stages=array(manifest.stages,'manifest.stages',128);
   const matches=stages.filter(stage=>stage?.stageId===stageId);
   if(matches.length!==1){
@@ -259,8 +261,8 @@ function validateReadyStage(manifest,stage){
   requireFalseBoundary(stage,'stage');
 }
 
-function validateStageProgram(stage){
-  const allowed=ALLOWLIST[stage.kind];
+export function validateStageProgram(stage){
+  const allowed=HSME_REUSE_PIPELINE_STAGE_ALLOWLIST[stage.kind];
   if(!allowed){
     fail(
       'hsme_reuse_stage_runner_stage_kind_not_allowed',
@@ -397,7 +399,7 @@ async function validateOutputBoundary({
   return Object.freeze({root,realOutputDir,receipt});
 }
 
-async function validateRepoRuntime(repoRoot,script){
+export async function validateRepoRuntime(repoRoot,script){
   const root=await realpath(resolve(repoRoot)).catch(error=>{
     fail(
       'hsme_reuse_stage_runner_repo_root_invalid',
@@ -426,12 +428,92 @@ async function validateRepoRuntime(repoRoot,script){
       );
     }
   }
-  const hookBytes=await readFile(hookPath);
+  const [scriptBytes,hookBytes,repository]=await Promise.all([
+    readFile(scriptPath),
+    readFile(hookPath),
+    readRepositoryIdentity(root),
+  ]);
   return Object.freeze({
     root,
     scriptPath,
     hookPath,
+    scriptSha256:sha256Bytes(scriptBytes),
     hookSha256:sha256Bytes(hookBytes),
+    repositoryCommitSha:repository.repositoryCommitSha,
+    trackedTreeClean:repository.trackedTreeClean,
+  });
+}
+
+function executeGit(args,cwd){
+  return new Promise((resolvePromise,rejectPromise)=>{
+    const child=spawn('git',args,{
+      cwd,
+      env:process.env,
+      shell:false,
+      stdio:['ignore','pipe','pipe'],
+    });
+    let stdout=Buffer.alloc(0);
+    let stderr=Buffer.alloc(0);
+    let settled=false;
+    const append=(current,chunk)=>{
+      const next=Buffer.concat([current,Buffer.from(chunk)]);
+      return next.length>65_536?next.subarray(0,65_536):next;
+    };
+    child.stdout.on('data',chunk=>{stdout=append(stdout,chunk);});
+    child.stderr.on('data',chunk=>{stderr=append(stderr,chunk);});
+    const timer=setTimeout(()=>{
+      try{child.kill('SIGKILL');}catch{}
+    },10_000);
+    child.on('error',error=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(timer);
+      rejectPromise(new HsmeReusePipelineStageRunnerError(
+        'hsme_reuse_stage_runner_git_failed',
+        error.message,
+      ));
+    });
+    child.on('close',(code,signal)=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(timer);
+      resolvePromise(Object.freeze({code,signal,stdout,stderr}));
+    });
+  });
+}
+
+export async function readRepositoryIdentity(repoRoot){
+  const head=await executeGit(['rev-parse','HEAD'],repoRoot);
+  if(head.code!==0||head.signal!==null){
+    fail(
+      'hsme_reuse_stage_runner_git_head_failed',
+      'cannot resolve repository HEAD: '+head.stderr.toString('utf8').slice(-1024),
+    );
+  }
+  const repositoryCommitSha=head.stdout.toString('utf8').trim();
+  if(!/^[0-9a-f]{40,64}$/.test(repositoryCommitSha)){
+    fail(
+      'hsme_reuse_stage_runner_git_head_invalid',
+      'repository HEAD must be lowercase git object id',
+    );
+  }
+
+  const diff=await executeGit(['diff','--quiet','HEAD','--'],repoRoot);
+  if(diff.signal!==null||![0,1].includes(diff.code)){
+    fail(
+      'hsme_reuse_stage_runner_git_diff_failed',
+      'cannot verify tracked working tree cleanliness',
+    );
+  }
+  if(diff.code===1){
+    fail(
+      'hsme_reuse_stage_runner_tracked_tree_dirty',
+      'tracked repository files differ from repository HEAD',
+    );
+  }
+  return Object.freeze({
+    repositoryCommitSha,
+    trackedTreeClean:true,
   });
 }
 
@@ -534,7 +616,7 @@ function executeNodeStage({
   });
 }
 
-function bindStageInputs(manifest,stage){
+export function bindStageInputs(manifest,stage){
   const manifestInputs=array(manifest.inputs,'manifest.inputs',512);
   const byPath=new Map();
   for(const entry of manifestInputs){
@@ -692,7 +774,7 @@ export async function executeHsmeReusePipelineStage({
   );
 
   const receiptPayload=Object.freeze({
-    schemaVersion:HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V1_SCHEMA,
+    schemaVersion:HSME_REUSE_PIPELINE_STAGE_EXECUTION_RECEIPT_V2_SCHEMA,
     manifestSha256:verified.manifestSha256,
     manifestFileSha256:verified.manifestFileSha256,
     specFileSha256:verified.manifest.specFileSha256,
@@ -700,6 +782,9 @@ export async function executeHsmeReusePipelineStage({
     stageKind:stage.kind,
     argvSha256,
     stageDefinitionSha256,
+    repositoryCommitSha:repo.repositoryCommitSha,
+    trackedTreeClean:repo.trackedTreeClean,
+    stageScriptSha256:repo.scriptSha256,
     nodeResolutionHookSha256:repo.hookSha256,
     inputs,
     stdoutSha256:sha256Bytes(execution.stdout),
