@@ -1,0 +1,61 @@
+name: HSME-2b1.3 trusted teacher quality bakeoff assembly
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeTeacherQualityBakeoffAssemblyV1.ts'
+      - 'tests/creative-hsme-teacher-quality-bakeoff-assembly-v1.test.mjs'
+      - '.github/workflows/hsme-2b1-3-teacher-quality-bakeoff-assembly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-bakeoff-assembly-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile and run trusted quality-bakeoff assembly vertical
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b1-3
+          npx esbuild tests/creative-hsme-teacher-quality-bakeoff-assembly-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b1-3/quality-assembly.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b1-3/quality-assembly.test.mjs
+
+      - name: Prove assembler delegates PASS derivation and grants no selection authority
+        run: |
+          set -euo pipefail
+          CONTRACT=src/platform/creative/local-ai/hsme/HsmeTeacherQualityBakeoffAssemblyV1.ts
+          grep -F "normalizeHsmeTeacherQualityBakeoffV1" "$CONTRACT"
+          grep -F "verifyTargetOutput" "$CONTRACT"
+          grep -F "verifyAutomatedMeasurement" "$CONTRACT"
+          grep -F "verifyBlindedHumanReview" "$CONTRACT"
+          grep -F "efficiencyUsedForQualitySelection:false" "$CONTRACT"
+          grep -F "selectedTeacherIdsAllowed:false" "$CONTRACT"
+          grep -F "teacherAdmissionAllowed:false" "$CONTRACT"
+          grep -F "trainingStartAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+          ! grep -F "proveHsmeTeacherQualityAdmissionV1" "$CONTRACT"
+          ! grep -F "TEACHER_SET_ADMITTED" "$CONTRACT"
+          ! grep -F "selectedTeacherIds:" "$CONTRACT"
+          ! grep -nE "reserveCredits|spendCredits|providerSelector|startTraining|runTraining|modelFleet\.promote|durableModelFleet\.promote" "$CONTRACT"
