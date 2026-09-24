@@ -7,6 +7,7 @@ on:
       - 'server/core/training/HsmeDenseStudentProtectedTrainingRunV1.test.mjs'
       - 'server/core/training/HsmeDenseStudentSealedWorkspaceV1.ts'
       - 'server/core/training/HsmeDenseStudentSealedWorkspaceV1.test.mjs'
+      - 'scripts/hsme-dense-student-train.py'
       - 'server/core/training/HsmeDenseStudentTrainingToolchainV1.ts'
       - '.github/workflows/hsme-2b2-5-protected-training-execution-receipt.yml'
   workflow_dispatch:
@@ -66,6 +67,17 @@ jobs:
           grep -F "outputWritableOnly:true" "$SRC"
           grep -F "noSymlinks:true" "$SRC"
           ! grep -nE 'child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|process\.env|fetch\(|https?://' "$SRC"
+
+      - name: Prove Python entrypoint uses only fixed sealed workspace ABI
+        run: |
+          set -euo pipefail
+          PY=scripts/hsme-dense-student-train.py
+          python3 -m py_compile "$PY"
+          grep -F 'Path("/run/bers-hsme/dense-student/v1")' "$PY"
+          grep -F 'SEALED_WORKSPACE_MANIFEST = SEALED_WORKSPACE_ROOT / "workspace.json"' "$PY"
+          grep -F 'SEALED_INPUTS_ROOT = SEALED_WORKSPACE_ROOT / "inputs"' "$PY"
+          grep -F 'SEALED_OUTPUT_ROOT = SEALED_WORKSPACE_ROOT / "output"' "$PY"
+          ! grep -nE 'os\.environ|os\.getenv|--workspace|--manifest|--inputs-root|--output-root' "$PY"
 
       - name: Prove narrow protected execution port
         run: |
