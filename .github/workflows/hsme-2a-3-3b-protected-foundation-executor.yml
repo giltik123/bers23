@@ -444,8 +444,24 @@ jobs:
           else
             ARGS+=(--failure "${EVIDENCE_DIR}/failure-evidence.json")
           fi
-          HSME_FOUNDATION_PROTECTED_PROVENANCE_CLI=1 \
-            node "${RUNNER_TEMP}/hsme-foundation-provenance.mjs" "${ARGS[@]}"
+          RESULT="$(HSME_FOUNDATION_PROTECTED_PROVENANCE_CLI=1 \
+            node "${RUNNER_TEMP}/hsme-foundation-provenance.mjs" "${ARGS[@]}")"
+          printf '%s\n' "${RESULT}"
+          MANIFEST_SHA256="$(node -e '
+            const value=JSON.parse(process.argv[1]);
+            if(!/^[0-9a-f]{64}$/.test(value.manifestSha256))process.exit(2);
+            process.stdout.write(value.manifestSha256);
+          ' "${RESULT}")"
+          echo "manifest_sha256=${MANIFEST_SHA256}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "### HSME protected evidence provenance freeze candidate"
+            echo ""
+            echo "- Candidate: \`${{ inputs.candidate_id }}\`"
+            echo "- Capability: \`${{ inputs.capability }}\`"
+            echo "- Run ID: \`${GITHUB_RUN_ID}\` / attempt \`${GITHUB_RUN_ATTEMPT}\`"
+            echo "- Provenance SHA-256: \`${MANIFEST_SHA256}\`"
+            echo "- Downstream trust: explicit external pin still required"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Destroy transient model and Hub cache bytes
         if: always()
