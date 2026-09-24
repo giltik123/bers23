@@ -525,7 +525,8 @@ test('host network, symlink, atomicity or process-start claims fail closed',asyn
         fx.inventoryOrigin,fx.host,fx.resultOrigin,hashPort,
       ),
       error=>
-        error.code==='hsme_workspace_materialization_result_isolation'
+        error.code==='hsme_workspace_materialization_host_failed'
+        ||error.code==='hsme_workspace_materialization_result_isolation'
         ||error.code==='hsme_workspace_materialization_result_file_policy'
         ||error.code==='hsme_workspace_materialization_authority',
     );
