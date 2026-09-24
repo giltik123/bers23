@@ -64,6 +64,9 @@ jobs:
           grep -F 'kernelDispatchCount' "$SRC"
           grep -F 'peakMemoryBytes' "$SRC"
           grep -F 'qualityPreservationEvidenceSha256' "$SRC"
+          grep -F 'qualityPreservationPass' "$SRC"
+          grep -F 'hardPreservationFailureCount' "$SRC"
+          grep -F 'criticalFailureCount' "$SRC"
           grep -F 'deterministicReplayIdentitySha256' "$SRC"
           grep -F 'networkBytesDuringExecution:0' "$SRC"
       - name: Prove no winner or production authority
