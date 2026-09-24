@@ -94,6 +94,7 @@ export type HsmeStageRouteTableV1=Readonly<{
   hardwareClass:string|'UNKNOWN';
   qualityPreservationContractSha256:string|'UNKNOWN';
   maxActiveExpertsPerStage:1|2|'UNKNOWN';
+  maxStageTransitionPrefetchBytes:number|'UNKNOWN';
   routes:readonly HsmeStageRoutePolicyEntryV1[];
   routeTableEvidenceSha256:string|'UNKNOWN';
   stageRoutingExecutionAllowed:false;
@@ -282,6 +283,7 @@ export async function freezeHsmeStageRouteTableV1(
     qualityPreservationContractSha256:
       plan.qualityPreservationContractSha256,
     maxActiveExpertsPerStage:plan.maxActiveExpertsPerStage,
+    maxStageTransitionPrefetchBytes:plan.maxStageTransitionPrefetchBytes,
     routes:policy.routes,
     ...authorityBoundary(),
   };
@@ -391,6 +393,8 @@ function readyPlan(plan:HsmeStageRoutingExperimentPlanV1):boolean{
     &&plan.hardwareClass!=='UNKNOWN'
     &&plan.qualityPreservationContractSha256!=='UNKNOWN'
     &&typeof plan.maxActiveExpertsPerStage==='number'
+    &&typeof plan.maxStageTransitionPrefetchBytes==='number'
+    &&plan.maxStageTransitionPrefetchBytes>0
     &&plan.profiles.length===HSME_STAGE_KINDS_V1.length
     &&plan.sharedPathRequired===true
     &&plan.fullBackboneExpertAllowed===false
@@ -441,6 +445,7 @@ function terminal(
     hardwareClass:'UNKNOWN',
     qualityPreservationContractSha256:'UNKNOWN',
     maxActiveExpertsPerStage:'UNKNOWN',
+    maxStageTransitionPrefetchBytes:'UNKNOWN',
     routes:Object.freeze([]),
     routeTableEvidenceSha256:'UNKNOWN',
     ...authorityBoundary(),
