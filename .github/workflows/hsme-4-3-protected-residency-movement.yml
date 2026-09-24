@@ -1,0 +1,74 @@
+name: HSME-4.3 protected residency movement telemetry
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts'
+      - 'server/core/training/HsmeDeterministicResidencyScheduleV1.ts'
+      - 'server/core/training/HsmeAdaptiveResidencyMovementReceiptV1.ts'
+      - 'server/core/training/HsmeAdaptiveResidencyMovementReceiptV1.test.mjs'
+      - '.github/workflows/hsme-4-3-protected-residency-movement.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  movement-telemetry:
+    name: protected movement-only residency telemetry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run protected movement regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-4-3
+          npx esbuild server/core/training/HsmeAdaptiveResidencyMovementReceiptV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-4-3/movement.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-4-3/movement.test.mjs
+      - name: Prove exact plan schedule and host origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyMovementReceiptV1.ts
+          grep -F 'hsmeAdaptiveResidencyExperimentPlanV1Digest(' "$SRC"
+          grep -F 'hsmeDeterministicResidencyScheduleV1Digest(' "$SRC"
+          grep -F 'verifyResidencyPlan(' "$SRC"
+          grep -F 'verifyDeterministicSchedule(' "$SRC"
+          grep -F 'verifyMovementResult(' "$SRC"
+      - name: Prove bytes accounting and physical caps
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyMovementReceiptV1.ts
+          grep -F 'ADAPTIVE_RESIDENCY_MOVEMENT_PREFETCH_BYTES_EXCEEDED' "$SRC"
+          grep -F 'ADAPTIVE_RESIDENCY_MOVEMENT_PREFETCH_ACCOUNTING_INVALID' "$SRC"
+          grep -F 'ADAPTIVE_RESIDENCY_MOVEMENT_RESIDENCY_BUDGET_EXCEEDED' "$SRC"
+          grep -F 'network bytes during execution must be zero' "$SRC"
+      - name: Prove movement-only authority boundary
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyMovementReceiptV1.ts
+          grep -F 'ADAPTIVE_RESIDENCY_MOVEMENT_READY_NOT_INFERRED' "$SRC"
+          grep -F 'inferenceExecuted:false' "$SRC"
+          grep -F 'furtherMovementExecutionAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
