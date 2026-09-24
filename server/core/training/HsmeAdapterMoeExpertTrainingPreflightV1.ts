@@ -73,6 +73,13 @@ export interface HsmeAdapterMoeExpertTrainingSpecOriginVerifierV1{
   ):Promise<boolean>;
 }
 
+export interface HsmeAdapterMoeExpertTrainingPreflightOriginVerifierV1{
+  verifyTrainingPreflight(
+    preflight:HsmeAdapterMoeExpertTrainingPreflightV1,
+    expectedPreflightSha256:string,
+  ):Promise<boolean>;
+}
+
 export type HsmeAdapterMoeExpertTrainingPreflightV1=Readonly<{
   schemaVersion:typeof HSME_ADAPTER_MOE_EXPERT_TRAINING_PREFLIGHT_V1_SCHEMA;
   state:
