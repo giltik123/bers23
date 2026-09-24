@@ -1,4 +1,4 @@
-name: HSME-2b2.11 sealed workspace materialization
+# Rebased onto accepted HSME-2b2.10 main; exact-head CI is authoritative.\nname: HSME-2b2.11 sealed workspace materialization
 
 on:
   pull_request:
