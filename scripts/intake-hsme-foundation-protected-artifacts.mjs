@@ -235,10 +235,23 @@ async function outputMustNotExist(path){
   }
 }
 
+function collectorDestination(role,logicalPath){
+  if(role==='BLIND'){
+    if(logicalPath.startsWith('review/')){
+      return 'benchmark-bundle/blind-review/'+basename(logicalPath);
+    }
+    return 'benchmark-bundle/'+basename(logicalPath);
+  }
+  if(role==='RESOURCE'){
+    return 'resource-bundle/'+basename(logicalPath);
+  }
+  fail('hsme_protected_intake_copy_role_invalid','unsupported copy role '+role);
+}
+
 async function copyBoundFiles(outputRoot,role,bound){
   const records=[];
   for(const item of bound){
-    const destinationRelative=role.toLowerCase()+'/'+item.record.logicalPath;
+    const destinationRelative=collectorDestination(role,item.record.logicalPath);
     const destination=join(outputRoot,...destinationRelative.split('/'));
     await mkdir(dirname(destination),{recursive:true});
     await writeFile(destination,item.bytes,{flag:'wx'});
@@ -386,6 +399,8 @@ export async function intakeHsmeFoundationProtectedArtifacts({
       provenancePinVerified:true,
       canonicalBenchmarkVerificationPassed:true,
       canonicalResourceVerificationPassed:manifest.runStatus==='COMPLETE',
+      benchmarkCollectorBundlePath:'benchmark-bundle',
+      resourceCollectorBundlePath:manifest.runStatus==='COMPLETE'?'resource-bundle':null,
       copiedFiles:Object.freeze(copied),
       qualityScoringAllowed:false,
       candidateQualificationAllowed:false,
