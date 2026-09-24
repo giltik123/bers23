@@ -166,6 +166,7 @@ async function matrixResult(request,binding,{
   state='STEP_MATRIX_MEASUREMENT_COMPLETED',
   transformRows=rows=>rows,
   overrides={},
+  raw=false,
 }={}){
   const representationValue=await representation();
   const rows=state==='STEP_MATRIX_MEASUREMENT_COMPLETED'
@@ -184,6 +185,7 @@ async function matrixResult(request,binding,{
     benchmarkResultSha256:H('placeholder-matrix-result'),
     ...overrides,
   };
+  if(raw)return Object.freeze(base);
   const benchmarkResultSha256=await coreHsmeDenseStudentStepMatrixResultV1Digest(
     base,binding,request,hashPort,
   );
@@ -328,7 +330,7 @@ test('missing or duplicate schedule row fails canonical matrix roster',async()=>
     rows=>[...rows.slice(0,7),rows[0]],
   ]){
     const benchmarker=fakeBenchmarker(
-      request=>matrixResult(request,binding,{transformRows}),
+      request=>matrixResult(request,binding,{transformRows,raw:true}),
     );
     const evidence=await proveHsmeDenseStudentStepMatrixV1(
       rep,binding,digest,trustedBindingOrigin(),benchmarker,
@@ -353,6 +355,7 @@ test('quality dimension set drift fails instead of inventing aggregate quality s
         changed[0].qualityDimensions.pop();
         return changed;
       },
+      raw:true,
     }),
   );
   const evidence=await proveHsmeDenseStudentStepMatrixV1(
@@ -382,6 +385,7 @@ test('hardware or measurement-method drift across schedules fails comparability'
           changed[1][field]=value;
           return changed;
         },
+        raw:true,
       }),
     );
     const evidence=await proveHsmeDenseStudentStepMatrixV1(
