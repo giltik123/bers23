@@ -1,0 +1,109 @@
+name: HSME-3.3b sealed expert workspace
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertWorkspaceMaterializationV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertWorkspaceMaterializationV1.test.mjs'
+      - '.github/workflows/hsme-3-3b-sealed-expert-workspace.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sealed-workspace:
+    name: fixed-path sealed expert workspace freeze receipt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run sealed-workspace regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-3b
+          npx esbuild server/core/training/HsmeAdapterMoeExpertWorkspaceMaterializationV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-3b/sealed-workspace.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-3b/sealed-workspace.test.mjs
+
+      - name: Prove exact preflight and inventory trusted origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertWorkspaceMaterializationV1.ts
+          grep -F 'hsmeAdapterMoeExpertTrainingPreflightV1Digest(' "$SRC"
+          grep -F 'verifyTrainingPreflight(' "$SRC"
+          grep -F 'hsmeAdapterMoeExpertWorkspaceInventoryV1Digest(' "$SRC"
+          grep -F 'verifyWorkspaceInventory(' "$SRC"
+          grep -F 'verifyWorkspaceResult(' "$SRC"
+
+      - name: Prove fixed-role fixed-path sealed workspace law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertWorkspaceMaterializationV1.ts
+          grep -F "'DENSE_BASELINE_ARTIFACT'" "$SRC"
+          grep -F "'TRAINING_CORPUS_BUNDLE'" "$SRC"
+          grep -F "'TARGET_MODULE_SET'" "$SRC"
+          grep -F "'ADAPTER_CONFIG'" "$SRC"
+          grep -F "'REPRODUCTION_CONTRACT'" "$SRC"
+          grep -F "'IMMUTABLE_ENVIRONMENT_MANIFEST'" "$SRC"
+          grep -F "'TRAINING_TOOLCHAIN'" "$SRC"
+          grep -F "'TRAINER_ENTRYPOINT'" "$SRC"
+          grep -F "return 'baseline/dense-baseline.safetensors'" "$SRC"
+          grep -F "return 'expert/staged.safetensors'" "$SRC" || grep -F 'HSME_ADAPTER_MOE_EXPERT_STAGED_ARTIFACT_RELATIVE_PATH_V1' "$SRC"
+          grep -F 'networkDisabled:true' "$SRC"
+          grep -F 'inputsReadOnly:true' "$SRC"
+          grep -F 'outputWritableOnly:true' "$SRC"
+          grep -F 'noSymlinks:true' "$SRC"
+          grep -F 'atomicManifestWrite:true' "$SRC"
+
+      - name: Prove materialization never becomes training or promotion authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertWorkspaceMaterializationV1.ts
+          grep -F 'EXPERT_WORKSPACE_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'processSpawned:false' "$SRC"
+          grep -F 'trainingStarted:false' "$SRC"
+          grep -F 'workspaceMaterializationAllowed:false' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'prototypeAssemblyAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove fixed-roster origin and host-drift regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoeExpertWorkspaceMaterializationV1.test.mjs
+          grep -F 'independent' "$TEST" || grep -F 'inventorySha,canonical.inventorySha' "$TEST"
+          grep -F 'untrusted preflight fails before materialization host invocation' "$TEST"
+          grep -F 'untrusted inventory fails before materialization host invocation' "$TEST"
+          grep -F 'role content drift from exact preflight fails closed' "$TEST"
+          grep -F 'missing or duplicate fixed roles are invalid inventory' "$TEST"
+          grep -F 'host input attestation drift is invalid' "$TEST"
+          grep -F 'host exact-origin refusal and result digest drift fail closed' "$TEST"
+          grep -F 'host cannot widen path symlink network or process semantics' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
