@@ -1,7 +1,10 @@
 import {
+  HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_DIGEST_DOMAIN,
   HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_V1_SCHEMA,
-  hsmeFullStudentTrainingRunRequestV1Digest,
-  type HsmeFullStudentTrainingRunRequestV1,
+  hsmeFullStudentTrainingRunRequestReadyPayloadV1,
+} from '../../../src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingRunRequestContractV1.ts';
+import type {
+  HsmeFullStudentTrainingRunRequestV1,
 } from '../../../src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingRunRequestV1.ts';
 import {
   CORE_HSME_PROTECTED_TRAINING_ADMISSION_V1_SCHEMA,
@@ -413,8 +416,9 @@ export async function preflightHsmeDenseStudentTrainingV1(
   let requestEvidenceSha256:string|'UNKNOWN'='UNKNOWN';
   let admissionEvidenceSha256:string|'UNKNOWN'='UNKNOWN';
   try{
-    requestEvidenceSha256=await hsmeFullStudentTrainingRunRequestV1Digest(
-      request,
+    requestEvidenceSha256=await digest(
+      HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_DIGEST_DOMAIN,
+      hsmeFullStudentTrainingRunRequestReadyPayloadV1(request),
       hash,
     );
     if(requestEvidenceSha256!==request.requestEvidenceSha256){
