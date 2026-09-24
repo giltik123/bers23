@@ -20,7 +20,7 @@ const HEX64=/^[0-9a-f]{64}$/;
 const IMMUTABLE_REVISION=/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const IDENTIFIER=/^[A-Za-z0-9][A-Za-z0-9._:@/+/-]*$/;
 
-const ADAPTER_KINDS=Object.freeze([
+export const HSME_ADAPTER_MOE_EXPERT_ADAPTER_KINDS_V1=Object.freeze([
   'LORA_LOW_RANK',
   'DECOMPOSED_FFN_DELTA',
   'RESIDUAL_ADAPTER',
@@ -29,7 +29,7 @@ const ADAPTER_KINDS=Object.freeze([
 ] as const);
 
 export type HsmeAdapterMoeExpertAdapterKindV1=
-  typeof ADAPTER_KINDS[number];
+  typeof HSME_ADAPTER_MOE_EXPERT_ADAPTER_KINDS_V1[number];
 
 export type HsmeAdapterMoeExpertDeltaManifestV1=Readonly<{
   schemaVersion:typeof HSME_ADAPTER_MOE_EXPERT_DELTA_MANIFEST_V1_SCHEMA;
@@ -215,7 +215,7 @@ export function normalizeHsmeAdapterMoeExpertDeltaManifestV1(
     ),
     adapterKind:enumValue(
       record.adapterKind,
-      ADAPTER_KINDS,
+      HSME_ADAPTER_MOE_EXPERT_ADAPTER_KINDS_V1,
       'manifest.adapterKind',
     ),
     experimentPlanSha256:sha256(
