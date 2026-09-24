@@ -69,6 +69,6 @@ jobs:
           grep -F 'modelInstallAllowed:false' "$SRC"
           grep -F 'providerAuthorityGranted:false' "$SRC"
           grep -F 'billingAuthorityGranted:false' "$SRC"
-          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|(^|[^[:alnum:]_])exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|(^|[^[:alnum:]_])fetch\(|https?://" "$SRC"
       - name: Diff hygiene
         run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
