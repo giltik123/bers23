@@ -1,0 +1,110 @@
+name: HSME-3.6 quality-first routing disposition
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExperimentPlanV1.ts'
+      - 'server/core/training/HsmeAdapterMoeRoutingComparisonMatrixV1.ts'
+      - 'server/core/training/HsmeAdapterMoeRoutingDispositionV1.ts'
+      - 'server/core/training/HsmeAdapterMoeRoutingDispositionV1.test.mjs'
+      - '.github/workflows/hsme-3-6-quality-first-routing-disposition.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-first-disposition:
+    name: quality-first Adapter-MoE routing disposition
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run quality-first disposition regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-6
+          npx esbuild server/core/training/HsmeAdapterMoeRoutingDispositionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-6/routing-disposition.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-6/routing-disposition.test.mjs
+
+      - name: Prove exact plan matrix and policy origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeRoutingDispositionV1.ts
+          grep -F 'hsmeAdapterMoeExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifyExperimentPlan(plan,experimentPlanSha256)' "$SRC"
+          grep -F 'hsmeAdapterMoeRoutingComparisonMatrixV1Digest(' "$SRC"
+          grep -F 'verifyRoutingMatrix(matrix,routingMatrixSha256)' "$SRC"
+          grep -F 'hsmeAdapterMoeRoutingDispositionPolicyV1Digest(' "$SRC"
+          grep -F 'verifyDispositionPolicy(policy,dispositionPolicySha256)' "$SRC"
+
+      - name: Prove quality and preservation precede efficiency
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeRoutingDispositionV1.ts
+          grep -F 'absoluteQualityPass(dense,policy)' "$SRC"
+          grep -F 'CRITICAL_FAILURE_COUNT_EXCEEDED' "$SRC"
+          grep -F 'HARD_PRESERVATION_FAILED:' "$SRC"
+          grep -F 'QUALITY_FLOOR_FAILED:' "$SRC"
+          grep -F 'DENSE_QUALITY_REGRESSION_EXCEEDED:' "$SRC"
+          grep -F 'if(qualityEligible)' "$SRC"
+          grep -F 'MATERIAL_EFFICIENCY_IMPROVEMENT_MISSING' "$SRC"
+          grep -F 'EFFICIENCY_REGRESSION_EXCEEDED:' "$SRC"
+
+      - name: Prove quality dominance before lexicographic efficiency
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeRoutingDispositionV1.ts
+          grep -F 'qualityDominates(top1,top2,policy)' "$SRC"
+          grep -F 'qualityDominates(top2,top1,policy)' "$SRC"
+          grep -F 'qualityEquivalent(top1,top2,policy)' "$SRC"
+          grep -F 'compareEfficiencyLexicographically(top1,top2,policy)' "$SRC"
+          grep -F "return 'NONE';" "$SRC"
+          ! grep -nE 'weighted|aggregateScore|fastest|bestVariant' "$SRC"
+
+      - name: Prove disposition has no runtime or promotion authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeRoutingDispositionV1.ts
+          grep -F 'ADAPTER_MOE_ROUTING_DISPOSITION_READY' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'winnerSelectionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove quality-first regression scenarios
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoeRoutingDispositionV1.test.mjs
+          grep -F 'speed cannot rescue sparse variants that fail the frozen quality floor' "$TEST"
+          grep -F 'critical or hard-preservation failure across every sparse variant yields REJECT' "$TEST"
+          grep -F 'quality dominance precedes a faster efficiency result' "$TEST"
+          grep -F 'exact quality and efficiency tie co-advances without inventing a preferred variant' "$TEST"
+          grep -F 'dense control below absolute quality floor forces REDESIGN before sparse efficiency' "$TEST"
+          grep -F 'material efficiency improvement and bounded regression are both required' "$TEST"
+          grep -F 'disposition policy exact origin and digest are mandatory' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

@@ -1,0 +1,102 @@
+name: HSME-3.3b sealed expert workspace materialization
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertSealedWorkspaceV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertSealedWorkspaceV1.test.mjs'
+      - '.github/workflows/hsme-3-3b-expert-sealed-workspace.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sealed-workspace:
+    name: fixed-path sealed expert workspace freeze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run sealed-workspace regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-3b
+          npx esbuild server/core/training/HsmeAdapterMoeExpertSealedWorkspaceV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-3b/sealed-workspace.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-3b/sealed-workspace.test.mjs
+
+      - name: Prove fixed workspace and exact content roles
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertSealedWorkspaceV1.ts
+          grep -F "'.hsme-rd/adapter-moe-expert-v1'" "$SRC"
+          grep -F "'DENSE_BASELINE'" "$SRC"
+          grep -F "'TRAINING_CORPUS'" "$SRC"
+          grep -F "'TARGET_MODULE_SET'" "$SRC"
+          grep -F "'ADAPTER_CONFIG'" "$SRC"
+          grep -F "'REPRODUCTION_CONTRACT'" "$SRC"
+          grep -F "'IMMUTABLE_ENVIRONMENT'" "$SRC"
+          grep -F "'TRAINING_TOOLCHAIN'" "$SRC"
+          grep -F "'TRAINER_ENTRYPOINT'" "$SRC"
+          grep -F "'LICENSE_EVIDENCE'" "$SRC"
+          grep -F 'destination path is not canonical' "$SRC"
+
+      - name: Prove trusted preflight inventory and host result
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertSealedWorkspaceV1.ts
+          grep -F 'hsmeAdapterMoeExpertTrainingPreflightV1Digest(' "$SRC"
+          grep -F 'verifyTrainingPreflight(' "$SRC"
+          grep -F 'hsmeAdapterMoeExpertWorkspaceInventoryV1Digest(' "$SRC"
+          grep -F 'verifyWorkspaceInventory(' "$SRC"
+          grep -F 'coreHsmeAdapterMoeExpertWorkspaceMaterializationResultV1Digest(' "$SRC"
+          grep -F 'verifyMaterializationResult(result,hostResultSha256)' "$SRC"
+
+      - name: Prove no execution network symlink or reusable authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertSealedWorkspaceV1.ts
+          grep -F 'EXPERT_WORKSPACE_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'inputsReadOnly:true' "$SRC"
+          grep -F 'outputWritableOnly:true' "$SRC"
+          grep -F 'networkDisabled:true' "$SRC"
+          grep -F 'noSymlinks:true' "$SRC"
+          grep -F 'processSpawned:false' "$SRC"
+          grep -F 'trainingStarted:false' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'prototypeAssemblyAllowed:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove path origin and host-drift regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoeExpertSealedWorkspaceV1.test.mjs
+          grep -F 'inventory entry order does not change canonical workspace identity' "$TEST"
+          grep -F 'preflight and inventory exact origins are mandatory before host invocation' "$TEST"
+          grep -F 'inventory cannot rebind preflight content or caller-select a destination path' "$TEST"
+          grep -F 'host cannot drift fixed paths inputs or execution boundary' "$TEST"
+          grep -F 'host-result digest drift fails closed' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
