@@ -504,10 +504,26 @@ export async function collectHsmeStageRoutingComparisonMatrixV1(
       outputValues(routeTable,schedule,policy,bound),
     );
   }
-  const output={
-    ...outputValues(routeTable,schedule,policy,bound),
+  const output:ResolvedOutputValues={
+    routeTableEvidenceSha256:routeTableSha,
+    scheduleEvidenceSha256:scheduleSha,
+    campaignPolicySha256:policySha,
     hostResultSha256,
     executionAttemptId:result.executionAttemptId,
+    prototypeSha256:routeTable.prototypeSha256 as string,
+    denseBaselineContentSha256:
+      routeTable.denseBaselineContentSha256 as string,
+    routerContentSha256:routeTable.routerContentSha256 as string,
+    runtimeRepresentationSha256:
+      routeTable.runtimeRepresentationSha256 as string,
+    hardwareClass:routeTable.hardwareClass as string,
+    fixtureSetSha256:policy.fixtureSetSha256,
+    evaluationContractSha256:policy.evaluationContractSha256,
+    deterministicSeedContractSha256:
+      policy.deterministicSeedContractSha256,
+    caseCount:policy.caseCount,
+    qualityDimensions:policy.qualityDimensions,
+    hardPreservationDimensions:policy.hardPreservationDimensions,
   };
   if(hostResultSha256!==result.hostResultSha256){
     return invalid(['STAGE_ROUTING_MATRIX_HOST_RESULT_REHASH_MISMATCH'],output);
@@ -901,14 +917,32 @@ function readySchedule(value:HsmeStageTransitionPrefetchScheduleV1):boolean{
     &&value.inferenceExecutionAllowed===false;
 }
 
+type OutputValueKeys=
+  |'routeTableEvidenceSha256'
+  |'scheduleEvidenceSha256'
+  |'campaignPolicySha256'
+  |'hostResultSha256'
+  |'executionAttemptId'
+  |'prototypeSha256'
+  |'denseBaselineContentSha256'
+  |'routerContentSha256'
+  |'runtimeRepresentationSha256'
+  |'hardwareClass'
+  |'fixtureSetSha256'
+  |'evaluationContractSha256'
+  |'deterministicSeedContractSha256'
+  |'caseCount'
+  |'qualityDimensions'
+  |'hardPreservationDimensions';
+
 type OutputValues=Partial<Pick<
   HsmeStageRoutingComparisonMatrixV1,
-  'routeTableEvidenceSha256'|'scheduleEvidenceSha256'|'campaignPolicySha256'
-  |'hostResultSha256'|'executionAttemptId'|'prototypeSha256'
-  |'denseBaselineContentSha256'|'routerContentSha256'
-  |'runtimeRepresentationSha256'|'hardwareClass'|'fixtureSetSha256'
-  |'evaluationContractSha256'|'deterministicSeedContractSha256'
-  |'caseCount'|'qualityDimensions'|'hardPreservationDimensions'
+  OutputValueKeys
+>>;
+
+type ResolvedOutputValues=Required<Pick<
+  HsmeStageRoutingComparisonMatrixV1,
+  OutputValueKeys
 >>;
 
 function outputValues(
