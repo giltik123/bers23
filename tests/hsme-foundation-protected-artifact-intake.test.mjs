@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {
-  mkdir, mkdtemp, readFile, rm, symlink, writeFile,
+  mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile,
 } from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -362,8 +362,26 @@ test('COMPLETE protected artifacts reverify and intake under an external provena
     assert.equal(result.receipt.provenancePinVerified,true);
     assert.equal(result.receipt.canonicalBenchmarkVerificationPassed,true);
     assert.equal(result.receipt.canonicalResourceVerificationPassed,true);
+    assert.equal(result.receipt.benchmarkCollectorBundlePath,'benchmark-bundle');
+    assert.equal(result.receipt.resourceCollectorBundlePath,'resource-bundle');
     assert.equal(result.receipt.productionAuthorityGranted,false);
     assert.match(result.receiptSha256,/^[0-9a-f]{64}$/);
+    await readFile(join(fx.output,'benchmark-bundle','candidate-run.json'));
+    await readFile(join(fx.output,'benchmark-bundle','review-package.json'));
+    const review=JSON.parse(await readFile(fx.paths.review,'utf8'));
+    await readFile(
+      join(fx.output,'benchmark-bundle','blind-review',review.outputs[0].relativePath),
+    );
+    const resourceRoster=(await readdir(join(fx.output,'resource-bundle'))).sort();
+    assert.deepEqual(resourceRoster,[
+      'candidate-run.json',
+      'execution-plan.json',
+      'resource-hardware-profile.json',
+      'resource-measurement-evidence.json',
+      'resource-measurement-method.json',
+      'resource-measurement.json',
+      'runtime-inventory.json',
+    ]);
     assert.deepEqual(
       await readFile(join(fx.output,'protected-artifact-provenance.json')),
       fx.provenance.bytes,
@@ -382,6 +400,10 @@ test('FAILED protected artifact reverifies without resource evidence',async()=>{
     assert.equal(result.receipt.runStatus,'FAILED');
     assert.equal(result.receipt.canonicalBenchmarkVerificationPassed,true);
     assert.equal(result.receipt.canonicalResourceVerificationPassed,false);
+    assert.equal(result.receipt.benchmarkCollectorBundlePath,'benchmark-bundle');
+    assert.equal(result.receipt.resourceCollectorBundlePath,null);
+    await readFile(join(fx.output,'benchmark-bundle','failure-evidence.json'));
+    await assert.rejects(readdir(join(fx.output,'resource-bundle')));
   }finally{await fx.cleanup();}
 });
 
