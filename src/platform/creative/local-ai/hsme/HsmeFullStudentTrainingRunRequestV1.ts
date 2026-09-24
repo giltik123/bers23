@@ -2,7 +2,7 @@ import {
   HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_DIGEST_DOMAIN,
   HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_V1_SCHEMA,
   type HsmeFullStudentTrainingPlanAdmissionV1,
-} from './HsmeFullStudentTrainingPlanAdmissionV1';
+} from './HsmeFullStudentTrainingPlanAdmissionV1.ts';
 import {
   HSME_DENSE_BASELINE_EVIDENCE_V1_SCHEMA,
   hsmeDenseBaselineDecisionV1Digest,
@@ -10,13 +10,13 @@ import {
   type HsmeDenseBaselineDecisionV1,
   type HsmeDenseBaselineHashPortV1,
   type HsmeDenseTrainingTargetV1,
-} from './HsmeDenseBaselineEvidenceV1';
+} from './HsmeDenseBaselineEvidenceV1.ts';
 import {
   HSME_DENSE_BASELINE_DUAL_BUDGET_EVIDENCE_V1_SCHEMA,
   normalizeHsmeDenseDualBudgetEvidenceV1,
   type HsmeDenseDualBudgetCandidateV1,
   type HsmeDenseDualBudgetEvidenceV1,
-} from './HsmeDenseBaselineDualBudgetEvidenceV1';
+} from './HsmeDenseBaselineDualBudgetEvidenceV1.ts';
 
 export const HSME_FULL_STUDENT_TRAINING_RUN_ENVELOPE_V1_SCHEMA =
   'BERS_HSME_FULL_STUDENT_TRAINING_RUN_ENVELOPE_V1' as const;
