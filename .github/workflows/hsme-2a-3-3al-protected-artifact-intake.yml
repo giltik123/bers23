@@ -58,6 +58,7 @@ jobs:
           grep -F 'verifyBenchmarkEvidence(' "$BUILDER"
           grep -F 'verifyResourceFragment(' "$BUILDER"
           grep -F 'normalizeHsmeFoundationProtectedArtifactProvenance' "$INTAKE"
+          grep -F 'normalizeHsmeFoundationProtectedArtifactIntakeReceipt' "$INTAKE"
           grep -F 'provenanceDigest(manifest)' "$INTAKE"
           grep -F 'verifyBenchmarkEvidence(' "$INTAKE"
           grep -F 'verifyResourceFragment(' "$INTAKE"
