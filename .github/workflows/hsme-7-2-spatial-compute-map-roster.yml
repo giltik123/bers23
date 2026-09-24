@@ -1,0 +1,98 @@
+name: HSME-7.2 immutable spatial compute-map roster
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeSpatialSparsityExperimentPlanV1.ts'
+      - 'server/core/training/HsmeSpatialComputeMapRosterV1.ts'
+      - 'server/core/training/HsmeSpatialComputeMapRosterV1.test.mjs'
+      - '.github/workflows/hsme-7-2-spatial-compute-map-roster.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spatial-map-roster:
+    name: immutable protected-region spatial compute maps
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run spatial compute-map regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-7-2
+          npx esbuild server/core/training/HsmeSpatialComputeMapRosterV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-7-2/spatial-map-roster.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-7-2/spatial-map-roster.test.mjs
+
+      - name: Prove exact plan map-set and immutable map identity
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialComputeMapRosterV1.ts
+          grep -F 'hsmeSpatialSparsityExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifySpatialExperimentPlan(plan,planSha)' "$SRC"
+          grep -F 'hsmeSpatialComputeMapSetV1Digest(' "$SRC"
+          grep -F 'verifySpatialComputeMapSet(mapSet,mapSetSha)' "$SRC"
+          grep -F 'spatialMapSha256' "$SRC"
+          grep -F 'deterministicReplayIdentitySha256' "$SRC"
+
+      - name: Prove protected region and bounded background actions
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialComputeMapRosterV1.ts
+          grep -F "'FULL_SHARED'" "$SRC"
+          grep -F "'CHEAP_SHARED'" "$SRC"
+          grep -F "'PRUNED'" "$SRC"
+          grep -F 'SPATIAL_COMPUTE_MAP_PROTECTED_REGION_ACTION_INVALID' "$SRC"
+          grep -F 'SPATIAL_COMPUTE_MAP_CHEAP_ROLE_INVALID' "$SRC"
+          grep -F 'SPATIAL_COMPUTE_MAP_PRUNED_ROLE_INVALID' "$SRC"
+          grep -F 'SPATIAL_COMPUTE_MAP_AREA_BUDGET_EXCEEDED' "$SRC"
+          grep -F 'SPATIAL_COMPUTE_MAP_FULL_CONTROL_INVALID' "$SRC"
+
+      - name: Prove no runtime Fashion Artifact or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialComputeMapRosterV1.ts
+          grep -F 'SPATIAL_COMPUTE_MAP_ROSTER_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'spatialExecutionAllowed:false' "$SRC"
+          grep -F 'spatialMapMutationAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'fashionGeometryAuthorityGranted:false' "$SRC"
+          grep -F 'artifactAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|spawn\(|exec\(|execFile\(|fork\(|fetch\(|https?://|ModelFleet(Service|Client)|reserveCredits|spendCredits" "$SRC"
+
+      - name: Prove control protection budget and binding regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeSpatialComputeMapRosterV1.test.mjs
+          grep -F 'protected critical region cannot enter cheap or pruned path' "$TEST"
+          grep -F 'full spatial control is exactly 100 percent full shared compute' "$TEST"
+          grep -F 'cheap and pruned area budgets cannot exceed the frozen plan' "$TEST"
+          grep -F 'map set must contain exactly the frozen plan variants' "$TEST"
+          grep -F 'grid prototype fixture and runtime binding drift fail closed' "$TEST"
+          grep -F 'map authority widening and unknown fields fail exact schema' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
