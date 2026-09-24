@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { normalizeHsmeFoundationBenchmarkCandidateRunV1 } from '../src/platform/creative/local-ai/hsme/HsmeFoundationBenchmarkRunEvidenceV1.ts';
 
@@ -90,5 +90,8 @@ async function main(){
   const run=await verify(a);
   process.stdout.write(JSON.stringify({status:run.status,candidateId:run.candidateId,capability:run.capability})+'\n');
 }
-if(import.meta.url==='file://'+process.argv[1])main().catch(e=>{process.stderr.write((e.code||'hsme_executor_verify_error')+': '+e.message+'\n');process.exitCode=1;});
+if(
+  process.argv[1]
+  &&basename(process.argv[1])==='hsme-foundation-benchmark-executor-verify.mjs'
+)main().catch(e=>{process.stderr.write((e.code||'hsme_executor_verify_error')+': '+e.message+'\n');process.exitCode=1;});
 export { outputDigest, verify };
