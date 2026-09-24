@@ -129,6 +129,185 @@ function safeRepository(value){
   return value;
 }
 
+function exactRecord(raw,allowed,path){
+  if(!raw||typeof raw!=='object'||Array.isArray(raw)){
+    fail('hsme_protected_provenance_record_invalid',path+' must be an object');
+  }
+  for(const key of Object.keys(raw)){
+    if(!allowed.includes(key)){
+      fail('hsme_protected_provenance_field_unknown',path+'.'+key+' is not allowed');
+    }
+  }
+  for(const key of allowed){
+    if(!Object.hasOwn(raw,key)){
+      fail('hsme_protected_provenance_field_missing',path+'.'+key+' is required');
+    }
+  }
+  return raw;
+}
+
+function normalizeFileRecord(raw,path){
+  const value=exactRecord(raw,['logicalPath','fileSha256','bytes'],path);
+  if(
+    typeof value.logicalPath!=='string'
+    ||value.logicalPath.length<1
+    ||value.logicalPath.length>512
+    ||value.logicalPath.startsWith('/')
+    ||value.logicalPath.includes('\\')
+    ||value.logicalPath.split('/').some(part=>part===''||part==='.'||part==='..')
+  ){
+    fail('hsme_protected_provenance_logical_path_invalid',path+'.logicalPath invalid');
+  }
+  if(typeof value.fileSha256!=='string'||!HEX64.test(value.fileSha256)){
+    fail('hsme_protected_provenance_file_sha_invalid',path+'.fileSha256 invalid');
+  }
+  if(!Number.isSafeInteger(value.bytes)||value.bytes<1||value.bytes>256_000_000){
+    fail('hsme_protected_provenance_file_bytes_invalid',path+'.bytes invalid');
+  }
+  return Object.freeze({
+    logicalPath:value.logicalPath,
+    fileSha256:value.fileSha256,
+    bytes:value.bytes,
+  });
+}
+
+function normalizeFileList(raw,path,max){
+  if(!Array.isArray(raw)||raw.length>max){
+    fail('hsme_protected_provenance_file_list_invalid',path+' must be a bounded array');
+  }
+  const out=raw.map((value,index)=>normalizeFileRecord(value,path+'['+index+']'))
+    .sort(compareFileRecord);
+  const keys=out.map(value=>value.logicalPath);
+  if(new Set(keys).size!==keys.length){
+    fail('hsme_protected_provenance_file_list_duplicate',path+' contains duplicate logical paths');
+  }
+  return Object.freeze(out);
+}
+
+export function normalizeHsmeFoundationProtectedArtifactProvenance(raw){
+  const allowed=[
+    'schemaVersion','repository','workflowPath','workflowRunId','workflowRunAttempt',
+    'candidateCommitSha','controllerCommitSha','campaignId','candidateId','capability',
+    'runStatus','blindArtifactName','resourceArtifactName','commonFiles','blindFiles',
+    'resourceFiles','externallyPinnedBeforeIntake','qualityScoringAllowed',
+    'candidateQualificationAllowed','candidateRejectionAllowed',
+    'trainingOrDistillationAllowed','modelInstallAllowed','modelFleetPromotionAllowed',
+    'productionAuthorityGranted','providerAuthorityGranted','billingAuthorityGranted',
+    'projectArtifactMutationAllowed','aeeExecutionAuthorityGranted',
+    'durableModelFleetPromotionAllowed','winnerSelectionAllowed',
+  ];
+  const value=exactRecord(raw,allowed,'provenance');
+  if(value.schemaVersion!==HSME_FOUNDATION_PROTECTED_ARTIFACT_PROVENANCE_V1_SCHEMA){
+    fail('hsme_protected_provenance_schema_invalid','provenance schema invalid');
+  }
+  const repository=safeRepository(value.repository);
+  if(value.workflowPath!==HSME_FOUNDATION_PROTECTED_EXECUTOR_WORKFLOW){
+    fail('hsme_protected_provenance_workflow_invalid','workflow path mismatch');
+  }
+  const workflowRunId=positiveIntegerString(value.workflowRunId,'workflowRunId');
+  const workflowRunAttempt=positiveIntegerString(value.workflowRunAttempt,'workflowRunAttempt');
+  if(!HEX40.test(value.candidateCommitSha)||!HEX40.test(value.controllerCommitSha)){
+    fail('hsme_protected_provenance_commit_invalid','commit binding invalid');
+  }
+  if(
+    typeof value.campaignId!=='string'||value.campaignId.length<1||value.campaignId.length>160
+    ||typeof value.candidateId!=='string'||value.candidateId.length<1||value.candidateId.length>120
+    ||!['TEXT_TO_IMAGE','IMAGE_EDITING'].includes(value.capability)
+    ||!['COMPLETE','FAILED'].includes(value.runStatus)
+  ){
+    fail('hsme_protected_provenance_identity_invalid','campaign/candidate/capability/status invalid');
+  }
+  const blindArtifactName='hsme-foundation-blind-evidence-'+workflowRunId;
+  if(value.blindArtifactName!==blindArtifactName){
+    fail('hsme_protected_provenance_blind_name_invalid','blind artifact name mismatch');
+  }
+  const expectedResource=value.runStatus==='COMPLETE'
+    ?'hsme-foundation-resource-evidence-'+workflowRunId
+    :null;
+  if(value.resourceArtifactName!==expectedResource){
+    fail('hsme_protected_provenance_resource_name_invalid','resource artifact name mismatch');
+  }
+
+  const commonFiles=normalizeFileList(value.commonFiles,'provenance.commonFiles',8);
+  const blindFiles=normalizeFileList(value.blindFiles,'provenance.blindFiles',4098);
+  const resourceFiles=normalizeFileList(value.resourceFiles,'provenance.resourceFiles',16);
+  const commonNames=commonFiles.map(x=>x.logicalPath);
+  if(JSON.stringify(commonNames)!==JSON.stringify([
+    'candidate-run.json','execution-plan.json','runtime-inventory.json',
+  ])){
+    fail('hsme_protected_provenance_common_set_invalid','common file set invalid');
+  }
+  if(value.runStatus==='COMPLETE'){
+    if(!blindFiles.some(x=>x.logicalPath==='review-package.json')
+      ||blindFiles.some(x=>x.logicalPath==='failure-evidence.json')
+      ||blindFiles.filter(x=>x.logicalPath.startsWith('review/')).length<1){
+      fail('hsme_protected_provenance_complete_blind_set_invalid','COMPLETE blind file set invalid');
+    }
+    const resourceNames=resourceFiles.map(x=>x.logicalPath);
+    if(JSON.stringify(resourceNames)!==JSON.stringify([
+      'resource-hardware-profile.json',
+      'resource-measurement-evidence.json',
+      'resource-measurement-method.json',
+      'resource-measurement.json',
+    ])){
+      fail('hsme_protected_provenance_resource_set_invalid','COMPLETE resource file set invalid');
+    }
+  }else{
+    if(
+      blindFiles.length!==1
+      ||blindFiles[0].logicalPath!=='failure-evidence.json'
+      ||resourceFiles.length!==0
+    ){
+      fail('hsme_protected_provenance_failed_set_invalid','FAILED artifact file set invalid');
+    }
+  }
+
+  for(const field of [
+    'externallyPinnedBeforeIntake','qualityScoringAllowed','candidateQualificationAllowed',
+    'candidateRejectionAllowed','trainingOrDistillationAllowed','modelInstallAllowed',
+    'modelFleetPromotionAllowed','productionAuthorityGranted','providerAuthorityGranted',
+    'billingAuthorityGranted','projectArtifactMutationAllowed','aeeExecutionAuthorityGranted',
+    'durableModelFleetPromotionAllowed','winnerSelectionAllowed',
+  ]){
+    if(value[field]!==false){
+      fail('hsme_protected_provenance_authority_widening','provenance.'+field+' must remain false');
+    }
+  }
+
+  return Object.freeze({
+    schemaVersion:HSME_FOUNDATION_PROTECTED_ARTIFACT_PROVENANCE_V1_SCHEMA,
+    repository,
+    workflowPath:HSME_FOUNDATION_PROTECTED_EXECUTOR_WORKFLOW,
+    workflowRunId,
+    workflowRunAttempt,
+    candidateCommitSha:value.candidateCommitSha,
+    controllerCommitSha:value.controllerCommitSha,
+    campaignId:value.campaignId,
+    candidateId:value.candidateId,
+    capability:value.capability,
+    runStatus:value.runStatus,
+    blindArtifactName,
+    resourceArtifactName:expectedResource,
+    commonFiles,
+    blindFiles,
+    resourceFiles,
+    externallyPinnedBeforeIntake:false,
+    qualityScoringAllowed:false,
+    candidateQualificationAllowed:false,
+    candidateRejectionAllowed:false,
+    trainingOrDistillationAllowed:false,
+    modelInstallAllowed:false,
+    modelFleetPromotionAllowed:false,
+    productionAuthorityGranted:false,
+    providerAuthorityGranted:false,
+    billingAuthorityGranted:false,
+    projectArtifactMutationAllowed:false,
+    aeeExecutionAuthorityGranted:false,
+    durableModelFleetPromotionAllowed:false,
+    winnerSelectionAllowed:false,
+  });
+}
+
 async function reviewImageRecords(reviewPath,reviewDir){
   const review=(await json(reviewPath,'review package')).value;
   if(!Array.isArray(review.outputs)||review.outputs.length<1||review.outputs.length>4096){
@@ -274,7 +453,7 @@ export async function buildHsmeFoundationProtectedArtifactProvenance({
     fail('hsme_protected_provenance_workflow_invalid','workflow path mismatch');
   }
 
-  const manifest=Object.freeze({
+  const manifest=normalizeHsmeFoundationProtectedArtifactProvenance({
     schemaVersion:HSME_FOUNDATION_PROTECTED_ARTIFACT_PROVENANCE_V1_SCHEMA,
     repository:repo,
     workflowPath,
