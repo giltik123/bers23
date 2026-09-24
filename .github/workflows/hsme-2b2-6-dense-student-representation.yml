@@ -53,7 +53,9 @@ jobs:
           SRC=server/core/training/HsmeDenseStudentRepresentationV1.ts
           grep -F 'exportExactDenseStudentRepresentation(' "$SRC"
           grep -F "BERS_DENSE_STUDENT_SAFETENSORS_BUNDLE_V1" "$SRC"
-          grep -F "precision:'BF16'" "$SRC"
+          grep -F "HSME_DENSE_STUDENT_REPRESENTATION_PRECISION_V1 =" "$SRC"
+          grep -F "'BF16' as const;" "$SRC"
+          grep -F "precision:HSME_DENSE_STUDENT_REPRESENTATION_PRECISION_V1" "$SRC"
           grep -F "architectureFamily:'COMPACT_DIT'" "$SRC"
           grep -F "networkPolicy:'SEALED_INPUTS_ONLY'" "$SRC"
           grep -F "cacheModelInputPolicy:'READ_ONLY_CONTENT_ADDRESSED_SEALED_INPUTS'" "$SRC"
