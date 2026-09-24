@@ -1,0 +1,73 @@
+name: HSME-2b2.5 protected training execution receipt
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentProtectedTrainingRunV1.ts'
+      - 'server/core/training/HsmeDenseStudentProtectedTrainingRunV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentTrainingToolchainV1.ts'
+      - '.github/workflows/hsme-2b2-5-protected-training-execution-receipt.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protected-execution-receipt:
+    name: exact protected execution port and staged-checkpoint receipt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run protected execution receipt regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-5
+          npx esbuild server/core/training/HsmeDenseStudentProtectedTrainingRunV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-5/protected-run.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-5/protected-run.test.mjs
+
+      - name: Prove narrow protected execution port
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentProtectedTrainingRunV1.ts
+          grep -F 'executeExactTrainingLaunch(' "$SRC"
+          grep -F "interpreter:'python3.12'" "$SRC"
+          grep -F "networkPolicy:'SEALED_INPUTS_ONLY'" "$SRC"
+          grep -F "cacheModelInputPolicy:'READ_ONLY_CONTENT_ADDRESSED_SEALED_INPUTS'" "$SRC"
+          grep -F 'outputStagingAuthorityId:launch.outputStagingAuthorityId' "$SRC"
+          grep -F 'resourceCeilings:launch.resourceCeilings' "$SRC"
+          ! grep -nE 'child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|shell:' "$SRC"
+
+      - name: Prove receipt remains staged and non-promoting
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentProtectedTrainingRunV1.ts
+          grep -F "TRAINING_RUN_COMPLETED_CHECKPOINT_STAGED_NOT_PROMOTED" "$SRC"
+          grep -F 'checkpointPromotionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          grep -F 'projectArtifactMutationAllowed:false' "$SRC"
+          grep -F 'aeeExecutionAuthorityGranted:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'winnerSelectionAllowed:false' "$SRC"
+          ! grep -nE 'promoteModel|installModel|ModelFleet(Service|Client)|Project(Service|Repository)|Artifact(Service|Repository)|reserveCredits|spendCredits' "$SRC"

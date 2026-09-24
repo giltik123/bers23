@@ -1,0 +1,86 @@
+name: HSME-2b2.7 dense-student step matrix
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentStepMatrixV1.ts'
+      - 'server/core/training/HsmeDenseStudentStepMatrixV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentRepresentationV1.ts'
+      - '.github/workflows/hsme-2b2-7-dense-student-step-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  step-matrix:
+    name: exact representation-bound 2-4-6-8 quality/resource matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck Core step-matrix contract
+        run: npm run server:typecheck
+
+      - name: Bundle and run step-matrix regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-7
+          npx esbuild server/core/training/HsmeDenseStudentStepMatrixV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-7/step-matrix.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-7/step-matrix.test.mjs
+
+      - name: Prove fixed schedule and sealed benchmark request
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentStepMatrixV1.ts
+          grep -F 'Object.freeze([2,4,6,8] as const)' "$SRC"
+          grep -F 'measureExactDenseStudentStepMatrix(' "$SRC"
+          grep -F "networkPolicy:'SEALED_INPUTS_ONLY'" "$SRC"
+          grep -F 'modelAcquisitionAllowed:false' "$SRC"
+          grep -F 'providerSelectionAllowed:false' "$SRC"
+          grep -F 'scheduleSelectionAllowed:false' "$SRC"
+          ! grep -nE 'modelUri|checkpointUri|child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|extraArgv' "$SRC"
+
+      - name: Prove non-compensable measurement law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentStepMatrixV1.ts
+          grep -F 'qualityDimensions' "$SRC"
+          grep -F 'criticalFailureObserved' "$SRC"
+          grep -F 'weightedAggregateScoreAllowed:false' "$SRC"
+          grep -F 'efficiencyMayOverrideQualityFailure:false' "$SRC"
+          ! grep -nE 'weightedScore|aggregateScore|scoreWeight|selectedStepCount|selectedCandidateId|winnerCandidateId' "$SRC"
+
+      - name: Prove no fleet/provider/production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentStepMatrixV1.ts
+          grep -F 'candidateSelectionAllowed:false' "$SRC"
+          grep -F 'checkpointPromotionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          grep -F 'projectArtifactMutationAllowed:false' "$SRC"
+          grep -F 'aeeExecutionAuthorityGranted:false' "$SRC"
+          grep -F 'winnerSelectionAllowed:false' "$SRC"
+          ! grep -nE 'DurableModelFleet|\.install\(|\.activate\(|\.quarantine\(|\.remove\(|promoteModel|installModel|reserveCredits|spendCredits' "$SRC"

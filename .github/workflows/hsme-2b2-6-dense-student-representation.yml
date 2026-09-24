@@ -1,0 +1,89 @@
+name: HSME-2b2.6 dense-student representation candidate
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentRepresentationV1.ts'
+      - 'server/core/training/HsmeDenseStudentRepresentationV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentProtectedTrainingRunV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmePackV1.ts'
+      - '.github/workflows/hsme-2b2-6-dense-student-representation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  representation-candidate:
+    name: reproducible staged-checkpoint representation and HSME pack candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck Core representation contract
+        run: npm run server:typecheck
+
+      - name: Bundle and run representation regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-6
+          npx esbuild server/core/training/HsmeDenseStudentRepresentationV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-6/representation.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-6/representation.test.mjs
+
+      - name: Prove fixed protected export surface
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentRepresentationV1.ts
+          grep -F 'exportExactDenseStudentRepresentation(' "$SRC"
+          grep -F "BERS_DENSE_STUDENT_SAFETENSORS_BUNDLE_V1" "$SRC"
+          grep -F "HSME_DENSE_STUDENT_REPRESENTATION_PRECISION_V1 =" "$SRC"
+          grep -F "'BF16' as const;" "$SRC"
+          grep -F "precision:HSME_DENSE_STUDENT_REPRESENTATION_PRECISION_V1" "$SRC"
+          grep -F "architectureFamily:'COMPACT_DIT'" "$SRC"
+          grep -F "networkPolicy:'SEALED_INPUTS_ONLY'" "$SRC"
+          grep -F "cacheModelInputPolicy:'READ_ONLY_CONTENT_ADDRESSED_SEALED_INPUTS'" "$SRC"
+          ! grep -nE 'child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|checkpointUri|modelUri|extraArgv' "$SRC"
+
+      - name: Prove HSME pack candidate is content-addressed and non-promoting
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentRepresentationV1.ts
+          grep -F 'normalizeHsmePackDescriptorV1({' "$SRC"
+          grep -F "role:'BASE'" "$SRC"
+          grep -F 'sha256:artifact.representationArtifactSha256' "$SRC"
+          grep -F "mode:'SHARED_ONLY'" "$SRC"
+          grep -F 'maxActiveExperts:0' "$SRC"
+          grep -F "PACK_CANDIDATE_BLOCKED_RESOURCE_EVIDENCE_REQUIRED" "$SRC"
+          ! grep -nE 'DurableModelFleet|\.install\(|\.activate\(|\.quarantine\(|\.remove\(|promoteModel|installModel|ModelFleet(Service|Client)' "$SRC"
+
+      - name: Prove representation grants no runtime or promotion authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentRepresentationV1.ts
+          grep -F 'checkpointPromotionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          grep -F 'projectArtifactMutationAllowed:false' "$SRC"
+          grep -F 'aeeExecutionAuthorityGranted:false' "$SRC"
+          grep -F 'winnerSelectionAllowed:false' "$SRC"
