@@ -4,25 +4,36 @@ export const HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_DIGEST_DOMAIN =
   'bers:hsme:full-student-training-run-request:v1\0' as const;
 
 export type HsmeFullStudentTrainingRunRequestReadyPayloadSourceV1=Readonly<{
-  trainingPlanEvidenceSha256:unknown;
-  denseBaselineDecisionSha256:unknown;
-  denseDualBudgetEvidenceSha256:unknown;
-  candidateId:unknown;
-  architectureFamily:unknown;
-  activeParametersMillions:unknown;
-  targetStepCount:unknown;
-  maxTrainingExamples:unknown;
-  maxGpuSeconds:unknown;
-  maxTrainingCostMicrousd:unknown;
-  toolchainLockSha256:unknown;
-  outputStagingPolicySha256:unknown;
-  teacherDecisionSha256:unknown;
-  reproductionEvidenceSha256:unknown;
-  corpusRootDigest:unknown;
-  recipeDigest:unknown;
-  checkpointSha256:unknown;
-  resumeCheckpointSha256:unknown;
-  dualBudgetSnapshot:unknown;
+  trainingPlanEvidenceSha256:string|'UNKNOWN';
+  denseBaselineDecisionSha256:string|'UNKNOWN';
+  denseDualBudgetEvidenceSha256:string|'UNKNOWN';
+  candidateId:string|'UNKNOWN';
+  architectureFamily:'COMPACT_DIT'|'UNKNOWN';
+  activeParametersMillions:number|'UNKNOWN';
+  targetStepCount:number|'UNKNOWN';
+  maxTrainingExamples:number|'UNKNOWN';
+  maxGpuSeconds:number|'UNKNOWN';
+  maxTrainingCostMicrousd:number|'UNKNOWN';
+  toolchainLockSha256:string|'UNKNOWN';
+  outputStagingPolicySha256:string|'UNKNOWN';
+  teacherDecisionSha256:string|'UNKNOWN';
+  reproductionEvidenceSha256:string|'UNKNOWN';
+  corpusRootDigest:string|'UNKNOWN';
+  recipeDigest:string|'UNKNOWN';
+  checkpointSha256:string|'UNKNOWN';
+  resumeCheckpointSha256:string|'UNKNOWN';
+  dualBudgetSnapshot:Readonly<{
+    efficiencyDisposition:'R&D_ONLY'|'UNKNOWN';
+    qualityPerInstalledGbStatus:'PENDING'|'MEASURED'|'UNKNOWN';
+    mvmState:'NOT_EVALUATED'|'RESIDENT'|'MVM_CANDIDATE'|'UNKNOWN';
+    mandatoryInstalledBytes:number|'UNKNOWN';
+    firstUseDownloadBytes:number|'UNKNOWN';
+    activeWeightsBytes:number|'UNKNOWN';
+    peakRamBytes:number|'UNKNOWN';
+    peakAcceleratorBytes:number|'UNKNOWN';
+    flashBytesMovedPerRun:number|'UNKNOWN';
+    unresolvedFields:readonly string[];
+  }>;
 }>;
 
 export function hsmeFullStudentTrainingRunRequestReadyPayloadV1(
