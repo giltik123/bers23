@@ -1,0 +1,84 @@
+name: HSME-2a.3.3am collector manifest assembler
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/assemble-hsme-foundation-collector-manifests.mjs'
+      - 'scripts/intake-hsme-foundation-protected-artifacts.mjs'
+      - 'scripts/hsme-foundation-benchmark-evidence-collector.mjs'
+      - 'scripts/hsme-foundation-resource-evidence-collector.mjs'
+      - 'tests/hsme-foundation-collector-manifest-assembler.test.mjs'
+      - '.github/workflows/hsme-2a-3-3am-collector-manifest-assembler.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  assembler-contract:
+    name: full 12-row collector manifest assembly
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run 12-row collector assembler regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3am-build
+          npx esbuild tests/hsme-foundation-collector-manifest-assembler.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3am-build/assembler.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3am-build/assembler.test.mjs
+
+      - name: Prove assembler delegates canonical evidence decisions
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/assemble-hsme-foundation-collector-manifests.mjs
+          grep -F 'normalizeHsmeFoundationProtectedArtifactIntakeReceipt(' "$SCRIPT"
+          grep -F 'intakeReceiptDigest(receipt)' "$SCRIPT"
+          grep -F 'collectFoundationEvidence(root,benchmarkManifest)' "$SCRIPT"
+          grep -F 'collectFoundationResourceEvidence(' "$SCRIPT"
+          grep -F "schemaVersion:MANIFEST_SCHEMA" "$SCRIPT"
+          grep -F "schemaVersion:HSME_FOUNDATION_RESOURCE_COLLECTION_MANIFEST_V1_SCHEMA" "$SCRIPT"
+          grep -F "rows.length!==12" "$SCRIPT"
+          grep -F "controllerCommitSha" "$SCRIPT"
+
+      - name: Prove no model, selection or production authority
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/assemble-hsme-foundation-collector-manifests.mjs
+          grep -F 'qualityScoringAllowed:false' "$SCRIPT"
+          grep -F 'candidateQualificationAllowed:false' "$SCRIPT"
+          grep -F 'candidateRejectionAllowed:false' "$SCRIPT"
+          grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+          grep -F 'trainingOrDistillationAllowed:false' "$SCRIPT"
+          grep -F 'modelInstallAllowed:false' "$SCRIPT"
+          grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -nE 'from_pretrained|hf_hub_download|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|reserveCredits|spendCredits|startTraining|runTraining|finalizeHsmeFoundationReuseDecisionV1|qualifyHsmeFoundationReuseEvidenceV1|proveHsmeFoundationReuseEvidenceRejectionV1|fetch\(' "$SCRIPT"
+
+      - name: Prove deterministic JSON-only package outputs
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/assemble-hsme-foundation-collector-manifests.mjs
+          grep -F 'benchmark-dispatch-evidence-manifest.json' "$SCRIPT"
+          grep -F 'foundation-run-evidence.json' "$SCRIPT"
+          grep -F 'foundation-run-collection-proof.json' "$SCRIPT"
+          grep -F 'resource-collection-manifest.json' "$SCRIPT"
+          grep -F 'collection-package-receipt.json' "$SCRIPT"
+          ! grep -nE '\.(safetensors|onnx|gguf|pt|pth|ckpt)' "$SCRIPT"
