@@ -1,0 +1,74 @@
+name: HSME-4.4 bounded predictive prefetch comparison
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts'
+      - 'server/core/training/HsmeDeterministicResidencyScheduleV1.ts'
+      - 'server/core/training/HsmeAdaptiveResidencyMovementReceiptV1.ts'
+      - 'server/core/training/HsmePredictivePrefetchComparisonV1.ts'
+      - 'server/core/training/HsmePredictivePrefetchComparisonV1.test.mjs'
+      - '.github/workflows/hsme-4-4-bounded-predictive-prefetch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  predictive-prefetch:
+    name: bounded predictive prefetch comparison
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run predictive prefetch regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-4-4
+          npx esbuild server/core/training/HsmePredictivePrefetchComparisonV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-4-4/predictive-prefetch.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-4-4/predictive-prefetch.test.mjs
+      - name: Prove exact control and policy binding
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePredictivePrefetchComparisonV1.ts
+          grep -F 'hsmeAdaptiveResidencyMovementReceiptV1Digest(' "$SRC"
+          grep -F 'verifyControlReceipt(' "$SRC"
+          grep -F 'verifyPredictivePolicy(' "$SRC"
+          grep -F 'verifyPredictiveResult(' "$SRC"
+          grep -F 'PREDICTIVE_PREFETCH_POLICY_CAP_ESCALATION' "$SRC"
+      - name: Prove predictive byte accounting and no disposition
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePredictivePrefetchComparisonV1.ts
+          grep -F 'PREDICTIVE_PREFETCH_STAGE_BUDGET_OR_ACCOUNTING_INVALID' "$SRC"
+          grep -F 'PREDICTIVE_PREFETCH_WASTED_RATIO_EXCEEDED' "$SRC"
+          grep -F 'PREDICTIVE_PREFETCH_COMPARISON_READY_NOT_DISPOSED' "$SRC"
+          grep -F 'dispositionAllowed:false' "$SRC"
+          grep -F 'inferenceExecuted:false' "$SRC"
+          grep -F 'network bytes must remain zero' "$SRC"
+      - name: Prove no execution or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePredictivePrefetchComparisonV1.ts
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|(^|[^[:alnum:]_])exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|(^|[^[:alnum:]_])fetch\(|https?://" "$SRC"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
