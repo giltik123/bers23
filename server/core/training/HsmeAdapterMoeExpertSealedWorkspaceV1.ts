@@ -261,6 +261,13 @@ export type HsmeAdapterMoeExpertWorkspaceFreezeReceiptV1=Readonly<{
   receiptEvidenceSha256:string;
 }>;
 
+export interface HsmeAdapterMoeExpertWorkspaceFreezeReceiptOriginVerifierV1{
+  verifyWorkspaceFreezeReceipt(
+    receipt:HsmeAdapterMoeExpertWorkspaceFreezeReceiptV1,
+    expectedReceiptEvidenceSha256:string,
+  ):Promise<boolean>;
+}
+
 export class HsmeAdapterMoeExpertSealedWorkspaceV1Error extends Error{
   readonly code:string;
   constructor(code:string,message:string){
