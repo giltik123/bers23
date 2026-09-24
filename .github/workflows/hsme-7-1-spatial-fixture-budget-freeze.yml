@@ -1,0 +1,102 @@
+name: HSME-7.1 spatial fixture and compute-budget freeze
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeStageRoutingExperimentPlanV1.ts'
+      - 'server/core/training/HsmeSpatialSparsityExperimentPlanV1.ts'
+      - 'server/core/training/HsmeSpatialSparsityExperimentPlanV1.test.mjs'
+      - '.github/workflows/hsme-7-1-spatial-fixture-budget-freeze.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spatial-plan:
+    name: reviewed spatial fixture and compute-budget freeze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run spatial plan regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-7-1
+          npx esbuild server/core/training/HsmeSpatialSparsityExperimentPlanV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-7-1/spatial-plan.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-7-1/spatial-plan.test.mjs
+
+      - name: Prove exact substrate fixture and policy trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialSparsityExperimentPlanV1.ts
+          grep -F 'hsmeStageRoutingExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifyStageRoutingPlan(stagePlan,stagePlanSha)' "$SRC"
+          grep -F 'hsmeSpatialRegionFixtureV1Digest(' "$SRC"
+          grep -F 'verifySpatialRegionFixture(fixture,fixtureSha)' "$SRC"
+          grep -F 'hsmeSpatialSparsityPolicyV1Digest(' "$SRC"
+          grep -F 'verifySpatialSparsityPolicy(policy,policySha)' "$SRC"
+
+      - name: Prove critical-region and measured-metric law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialSparsityExperimentPlanV1.ts
+          grep -F "'CRITICAL_IDENTITY'" "$SRC"
+          grep -F "'CRITICAL_GARMENT_LOGO_PATTERN'" "$SRC"
+          grep -F "'CRITICAL_HANDS_ANATOMY'" "$SRC"
+          grep -F "'CRITICAL_FINE_TEXTURE'" "$SRC"
+          grep -F "'LOW_INFORMATION_BACKGROUND'" "$SRC"
+          grep -F "'IDENTITY_PERSON'" "$SRC"
+          grep -F "'GARMENT_LOGO_PATTERN'" "$SRC"
+          grep -F "'NON_TARGET_PRESERVATION'" "$SRC"
+          grep -F "'ANATOMY_ARTIFACT'" "$SRC"
+          grep -F "'WALL_CLOCK_US'" "$SRC"
+          grep -F "'FLASH_BYTES_MOVED'" "$SRC"
+          grep -F "'ACCELERATOR_BYTES_MOVED'" "$SRC"
+
+      - name: Prove no spatial Fashion Artifact or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialSparsityExperimentPlanV1.ts
+          grep -F 'SPATIAL_SPARSITY_PLAN_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'spatialExecutionAllowed:false' "$SRC"
+          grep -F 'spatialMapMutationAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'fashionGeometryAuthorityGranted:false' "$SRC"
+          grep -F 'projectMutationAllowed:false' "$SRC"
+          grep -F 'artifactAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|spawn\(|exec\(|execFile\(|fork\(|fetch\(|https?://|ModelFleet(Service|Client)|reserveCredits|spendCredits" "$SRC"
+
+      - name: Prove protected-region and anti-post-hoc regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeSpatialSparsityExperimentPlanV1.test.mjs
+          grep -F 'critical roles can never be cheap-path or prunable roles' "$TEST"
+          grep -F 'mandatory identity Fashion non-target and anatomy dimensions cannot be removed' "$TEST"
+          grep -F 'cheap/pruned/full-compute area budgets are frozen and internally consistent' "$TEST"
+          grep -F 'fixture policy prototype runtime and device rebinding fail closed' "$TEST"
+          grep -F 'post-hoc mutation Fashion authority and unknown fields fail exact policy schema' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
