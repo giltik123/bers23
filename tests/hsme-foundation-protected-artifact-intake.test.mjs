@@ -14,6 +14,7 @@ import {
 } from '../scripts/build-hsme-foundation-protected-artifact-provenance.mjs';
 import {
   intakeHsmeFoundationProtectedArtifacts,
+  normalizeHsmeFoundationProtectedArtifactIntakeReceipt,
 } from '../scripts/intake-hsme-foundation-protected-artifacts.mjs';
 import {
   outputDigest,
@@ -539,6 +540,34 @@ test('provenance authority widening is rejected before external pin trust',async
         outputDir:fx.output,
       }),
       error=>error?.code==='hsme_protected_provenance_authority_widening',
+    );
+  }finally{await fx.cleanup();}
+});
+
+test('intake receipt round-trips through one canonical parser and rejects widening',async()=>{
+  const fx=await makeFixture('COMPLETE');
+  try{
+    const result=await intakeHsmeFoundationProtectedArtifacts({
+      blindRoot:fx.paths.blindArtifact,
+      resourceRoot:fx.paths.resourceArtifact,
+      expectedProvenanceSha256:fx.provenance.manifestSha256,
+      outputDir:fx.output,
+    });
+    assert.deepEqual(
+      normalizeHsmeFoundationProtectedArtifactIntakeReceipt(result.receipt),
+      result.receipt,
+    );
+    const forged=structuredClone(result.receipt);
+    forged.winnerSelectionAllowed=true;
+    assert.throws(
+      ()=>normalizeHsmeFoundationProtectedArtifactIntakeReceipt(forged),
+      error=>error?.code==='hsme_protected_intake_receipt_authority_widening',
+    );
+    const misplaced=structuredClone(result.receipt);
+    misplaced.copiedFiles[0].destinationPath='resource-bundle/forged.json';
+    assert.throws(
+      ()=>normalizeHsmeFoundationProtectedArtifactIntakeReceipt(misplaced),
+      error=>error?.code==='hsme_protected_intake_receipt_destination_invalid',
     );
   }finally{await fx.cleanup();}
 });
