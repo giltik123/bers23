@@ -5,6 +5,8 @@ on:
     paths:
       - 'server/core/training/HsmeDenseStudentDualBudgetProjectionV1.ts'
       - 'server/core/training/HsmeDenseStudentDualBudgetProjectionV1.test.mjs'
+      - 'server/core/training/HsmeDenseBaselineFinalizationV1.ts'
+      - 'server/core/training/HsmeDenseBaselineFinalizationV1.test.mjs'
       - 'server/core/training/HsmeDenseStudentRepresentationV1.ts'
       - 'server/core/training/HsmeDenseStudentStepMatrixV1.ts'
       - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineDualBudgetEvidenceV1.ts'
@@ -49,6 +51,26 @@ jobs:
             --outfile=.test-cache/hsme-2b2-8/projection.test.mjs \
             --external:node:*
           node --test .test-cache/hsme-2b2-8/projection.test.mjs
+
+      - name: Bundle and run dense-baseline finalization integration regressions
+        run: |
+          set -euo pipefail
+          npx esbuild server/core/training/HsmeDenseBaselineFinalizationV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-8/finalization.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-8/finalization.test.mjs
+
+      - name: Prove finalization remains non-persisting and externally reviewed
+        run: |
+          set -euo pipefail
+          FINAL=server/core/training/HsmeDenseBaselineFinalizationV1.ts
+          grep -F "DENSE_BASELINE_PIN_CANDIDATE_READY_NOT_PERSISTED" "$FINAL"
+          grep -F "DENSE_FINALIZATION_COMMERCIAL_LICENSE_REVIEW_REQUIRED" "$FINAL"
+          grep -F "canonicalDecisionPersistAllowed:false" "$FINAL"
+          grep -F 'normalizeHsmeDenseBaselineDecisionV1(' "$FINAL"
+          grep -F 'hsmeDenseStudentDualBudgetProjectionV1Digest(' "$FINAL"
+          ! grep -nE 'writeFile|appendFile|rename\(|copyFile|child_process|spawn\(|exec\(|fork\(|DurableModelFleet(Service|Client)|promoteModel|installModel|reserveCredits|spendCredits|fetch\(' "$FINAL"
 
       - name: Prove exact source evidence rehash and one-root law
         run: |
