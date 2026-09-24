@@ -422,7 +422,7 @@ export async function representHsmeDenseStudentCheckpointV1(
 
   const evidenceSha256=await digest(
     HSME_DENSE_STUDENT_REPRESENTATION_EVIDENCE_DIGEST_DOMAIN,
-    readyPayload,
+    representationEvidencePayload(readyPayload),
     hash,
   );
   return deepFreeze({
@@ -441,6 +441,87 @@ export async function coreHsmeDenseStudentRepresentationResultV1Digest(
     representationResultPayload(result),
     hash,
   );
+}
+
+export async function hsmeDenseStudentRepresentationEvidenceV1Digest(
+  evidence:HsmeDenseStudentRepresentationEvidenceV1,
+  hash:HsmeDenseStudentTrainingHashPortV1,
+):Promise<string>{
+  if(
+    evidence.state!=='REPRESENTATION_READY_NOT_ADMITTED'
+    ||evidence.blockers.length!==0
+    ||evidence.representationArtifactSha256==='UNKNOWN'
+    ||evidence.representationBytes==='UNKNOWN'
+    ||evidence.representationMetadataSha256==='UNKNOWN'
+    ||evidence.components===null
+    ||evidence.exportToolchainSha256==='UNKNOWN'
+    ||evidence.exporterResultSha256==='UNKNOWN'
+  ){
+    fail(
+      'hsme_representation_evidence_digest_state',
+      'only complete READY_NOT_ADMITTED representation evidence is digestible',
+    );
+  }
+  return digest(
+    HSME_DENSE_STUDENT_REPRESENTATION_EVIDENCE_DIGEST_DOMAIN,
+    representationEvidencePayload(evidence),
+    hash,
+  );
+}
+
+type RepresentationEvidencePayloadV1=Omit<
+  HsmeDenseStudentRepresentationEvidenceV1,
+  'evidenceSha256'
+>;
+
+function representationEvidencePayload(
+  value:RepresentationEvidencePayloadV1,
+):RepresentationEvidencePayloadV1{
+  return {
+    schemaVersion:HSME_DENSE_STUDENT_REPRESENTATION_EVIDENCE_V1_SCHEMA,
+    state:'REPRESENTATION_READY_NOT_ADMITTED',
+    blockers:value.blockers,
+    receiptEvidenceSha256:value.receiptEvidenceSha256,
+    preflightEvidenceSha256:value.preflightEvidenceSha256,
+    launchSpecSha256:value.launchSpecSha256,
+    candidateId:value.candidateId,
+    architectureFamily:value.architectureFamily,
+    activeParametersMillions:value.activeParametersMillions,
+    targetStepCount:value.targetStepCount,
+    repositoryCommitSha:value.repositoryCommitSha,
+    immutableEnvironmentSha256:value.immutableEnvironmentSha256,
+    stagedCheckpointSha256:value.stagedCheckpointSha256,
+    stagedCheckpointBytes:value.stagedCheckpointBytes,
+    checkpointMetadataSha256:value.checkpointMetadataSha256,
+    teacherDecisionSha256:value.teacherDecisionSha256,
+    reproductionEvidenceSha256:value.reproductionEvidenceSha256,
+    corpusRootDigest:value.corpusRootDigest,
+    recipeDigest:value.recipeDigest,
+    inputCheckpointSha256:value.inputCheckpointSha256,
+    resumeCheckpointSha256:value.resumeCheckpointSha256,
+    exportAttemptId:value.exportAttemptId,
+    exportSpec:value.exportSpec,
+    representationArtifactSha256:value.representationArtifactSha256,
+    representationBytes:value.representationBytes,
+    representationMetadataSha256:value.representationMetadataSha256,
+    components:value.components,
+    exportToolchainSha256:value.exportToolchainSha256,
+    resourceEvidence:value.resourceEvidence,
+    exporterResultSha256:value.exporterResultSha256,
+    packCandidateState:value.packCandidateState,
+    packDescriptor:value.packDescriptor,
+    packDescriptorSha256:value.packDescriptorSha256,
+    checkpointPromotionAllowed:value.checkpointPromotionAllowed,
+    modelInstallAllowed:value.modelInstallAllowed,
+    modelFleetPromotionAllowed:value.modelFleetPromotionAllowed,
+    durableModelFleetPromotionAllowed:value.durableModelFleetPromotionAllowed,
+    productionAuthorityGranted:value.productionAuthorityGranted,
+    providerAuthorityGranted:value.providerAuthorityGranted,
+    billingAuthorityGranted:value.billingAuthorityGranted,
+    projectArtifactMutationAllowed:value.projectArtifactMutationAllowed,
+    aeeExecutionAuthorityGranted:value.aeeExecutionAuthorityGranted,
+    winnerSelectionAllowed:value.winnerSelectionAllowed,
+  };
 }
 
 function buildRepresentationRequest(
