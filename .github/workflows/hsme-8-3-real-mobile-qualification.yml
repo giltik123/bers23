@@ -1,0 +1,97 @@
+name: HSME-8.3 real mobile qualification
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeHardwarePlacementMatrixV1.ts'
+      - 'server/core/training/HsmeRealMobileQualificationV1.ts'
+      - 'server/core/training/HsmeRealMobileQualificationV1.test.mjs'
+      - '.github/workflows/hsme-8-3-real-mobile-qualification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-mobile-contract:
+    name: fail-closed real mobile battery thermal qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run real-mobile contract regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-8-3
+          npx esbuild server/core/training/HsmeRealMobileQualificationV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-8-3/real-mobile-qualification.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-8-3/real-mobile-qualification.test.mjs
+
+      - name: Prove exact matrix policy and external real-device trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeRealMobileQualificationV1.ts
+          grep -F 'hsmeHardwarePlacementMatrixV1Digest(' "$SRC"
+          grep -F 'verifyHardwarePlacementMatrix(' "$SRC"
+          grep -F 'hsmeRealMobileQualificationPolicyV1Digest(' "$SRC"
+          grep -F 'verifyRealMobileQualificationPolicy(' "$SRC"
+          grep -F 'hsmeRealMobileDeviceEvidenceSetV1Digest(' "$SRC"
+          grep -F 'verifyRealMobileDeviceEvidenceSet(' "$SRC"
+          grep -F 'realPhysicalMobileDeviceEvidence must be true' "$SRC"
+
+      - name: Prove physical mobile battery thermal and repeated-run law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeRealMobileQualificationV1.ts
+          grep -F "r.deviceClass!=='MOBILE'" "$SRC"
+          grep -F "r.powerSource!=='BATTERY'" "$SRC"
+          grep -F "evidence.thermalPeakState==='CRITICAL'" "$SRC"
+          grep -F 'REPEATED_RUN_COUNT_INSUFFICIENT' "$SRC"
+          grep -F 'WARM_LATENCY_REGRESSION_EXCEEDED' "$SRC"
+          grep -F 'BATTERY_DRAIN_EXCEEDED' "$SRC"
+          grep -F 'ENERGY_PER_RUN_EXCEEDED' "$SRC"
+          grep -F 'THROTTLED_RUN_COUNT_EXCEEDED' "$SRC"
+          grep -F 'networkBytesDuringExecution:0' "$SRC"
+
+      - name: Prove ordinary CI cannot mint overall real-mobile READY evidence
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeRealMobileQualificationV1.test.mjs
+          grep -F 'synthetic evidence with an untrusted real-device origin cannot become READY' "$TEST"
+          grep -F 'falseEvidenceOrigin' "$TEST"
+          grep -F 'trueEvidenceOriginForInvalidCasesOnly' "$TEST"
+          ! grep -F 'REAL_MOBILE_QUALIFICATION_READY_NOT_ADMITTED' "$TEST"
+
+      - name: Prove no mobile admission fleet lifecycle or paid fallback authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeRealMobileQualificationV1.ts
+          grep -F 'mobileBackendAdmissionAllowed:false' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "weightedScore|aggregateScore|winnerScore|downloadUri|\.install\(|\.remove\(|\.rollback\(|\.quarantine\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

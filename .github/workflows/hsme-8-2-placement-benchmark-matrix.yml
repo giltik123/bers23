@@ -1,0 +1,110 @@
+name: HSME-8.2 protected hardware placement matrix
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeHardwareRepresentationQualificationRosterV1.ts'
+      - 'server/core/training/HsmeHardwarePlacementMatrixV1.ts'
+      - 'server/core/training/HsmeHardwarePlacementMatrixV1.test.mjs'
+      - '.github/workflows/hsme-8-2-placement-benchmark-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  placement-matrix:
+    name: protected CPU GPU NPU placement matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run protected placement regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-8-2
+          npx esbuild server/core/training/HsmeHardwarePlacementMatrixV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-8-2/hardware-placement-matrix.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-8-2/hardware-placement-matrix.test.mjs
+
+      - name: Prove exact roster policy and host-result trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeHardwarePlacementMatrixV1.ts
+          grep -F 'hsmeHardwareRepresentationQualificationRosterV1Digest(' "$SRC"
+          grep -F 'verifyHardwareRepresentationRoster(' "$SRC"
+          grep -F 'hsmeHardwarePlacementCampaignPolicyV1Digest(' "$SRC"
+          grep -F 'verifyHardwarePlacementCampaignPolicy(' "$SRC"
+          grep -F 'coreHsmeHardwarePlacementResultV1Digest(' "$SRC"
+          grep -F 'verifyHardwarePlacementResult(' "$SRC"
+
+      - name: Prove exact placement and no-fallback law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeHardwarePlacementMatrixV1.ts
+          grep -F 'candidate.admissibleBenchmarkPlacements.includes(' "$SRC"
+          grep -F 'row.actualPlacement!==row.requestedPlacement' "$SRC"
+          grep -F 'row.runtimeFallbackUsed' "$SRC"
+          grep -F 'HARDWARE_PLACEMENT_RUNTIME_FALLBACK_INVALID' "$SRC"
+          grep -F 'HARDWARE_PLACEMENT_ROW_SET_INVALID' "$SRC"
+          grep -F 'row.activeRepresentationBytes>candidate.representationBytes' "$SRC"
+
+      - name: Prove measured quality latency memory and bytes law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeHardwarePlacementMatrixV1.ts
+          grep -F 'HARDWARE_PLACEMENT_QUALITY_DIMENSION_MISMATCH' "$SRC"
+          grep -F 'maxColdLatencyUs' "$SRC"
+          grep -F 'maxWarmLatencyUs' "$SRC"
+          grep -F 'maxPeakHostMemoryBytes' "$SRC"
+          grep -F 'maxPeakAcceleratorMemoryBytes' "$SRC"
+          grep -F 'maxFlashBytesMoved' "$SRC"
+          grep -F 'maxRamBytesMoved' "$SRC"
+          grep -F 'maxAcceleratorBytesMoved' "$SRC"
+          grep -F 'networkBytesDuringExecution:0' "$SRC"
+
+      - name: Prove no selection fleet lifecycle or paid fallback authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeHardwarePlacementMatrixV1.ts
+          grep -F 'HARDWARE_PLACEMENT_MATRIX_READY_NOT_DISPOSED' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'benchmarkExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "weightedScore|aggregateScore|winnerScore|downloadUri|\.install\(|\.remove\(|\.rollback\(|\.quarantine\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove fallback identity and resource regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeHardwarePlacementMatrixV1.test.mjs
+          grep -F 'silent CPU fallback cannot satisfy an NPU placement row' "$TEST"
+          grep -F 'every placement row must bind the exact frozen fleet representation' "$TEST"
+          grep -F 'completed campaign requires the exact candidate-placement row set' "$TEST"
+          grep -F 'active representation bytes cannot exceed immutable representation bytes' "$TEST"
+          grep -F 'latency memory and bytes-moved ceilings fail before READY' "$TEST"
+          grep -F 'host digest drift and thrown execution fail closed distinctly' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
