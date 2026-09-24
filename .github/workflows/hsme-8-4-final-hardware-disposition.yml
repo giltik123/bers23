@@ -1,0 +1,112 @@
+name: HSME-8.4 final hardware architecture disposition
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseBaselineFinalizationV1.ts'
+      - 'server/core/training/HsmeHardwareRepresentationQualificationRosterV1.ts'
+      - 'server/core/training/HsmeHardwarePlacementMatrixV1.ts'
+      - 'server/core/training/HsmeRealMobileQualificationV1.ts'
+      - 'server/core/training/HsmeFinalHardwareDispositionV1.ts'
+      - 'server/core/training/HsmeFinalHardwareDispositionV1.test.mjs'
+      - '.github/workflows/hsme-8-4-final-hardware-disposition.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  final-hardware-disposition:
+    name: dense-vs-HSME real-mobile architecture disposition
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run final hardware disposition regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-8-4
+          npx esbuild server/core/training/HsmeFinalHardwareDispositionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-8-4/final-hardware-disposition.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-8-4/final-hardware-disposition.test.mjs
+
+      - name: Prove exact dense roster matrix mobile and policy trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeFinalHardwareDispositionV1.ts
+          grep -F 'hsmeDenseBaselineFinalizationV1Digest(' "$SRC"
+          grep -F 'verifyDenseBaselineFinalization(' "$SRC"
+          grep -F 'hsmeHardwareRepresentationQualificationRosterV1Digest(' "$SRC"
+          grep -F 'verifyHardwareRepresentationRoster(' "$SRC"
+          grep -F 'hsmeHardwarePlacementMatrixV1Digest(' "$SRC"
+          grep -F 'verifyHardwarePlacementMatrix(' "$SRC"
+          grep -F 'hsmeRealMobileQualificationV1Digest(' "$SRC"
+          grep -F 'verifyRealMobileQualification(' "$SRC"
+          grep -F 'verifyFinalHardwareDispositionPolicy(' "$SRC"
+
+      - name: Prove dense-control content lineage and real-mobile prerequisite
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeFinalHardwareDispositionV1.ts
+          grep -F 'denseCandidate.sourceModelContentSha256!==baselinePin.contentSha256' "$SRC"
+          grep -F 'FINAL_HARDWARE_DENSE_LINEAGE_MISMATCH' "$SRC"
+          grep -F 'FINAL_HARDWARE_REAL_MOBILE_QUALIFICATION_REQUIRED' "$SRC"
+          grep -F "denseMobile.qualification!=='QUALIFIED'" "$SRC"
+          grep -F "candidateMobile.qualification==='QUALIFIED'" "$SRC"
+
+      - name: Prove quality-first real-device efficiency law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeFinalHardwareDispositionV1.ts
+          grep -F 'HARD_PRESERVATION_FAILED:' "$SRC"
+          grep -F 'DENSE_QUALITY_REGRESSION_EXCEEDED:' "$SRC"
+          grep -F 'WARM_LATENCY_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'TOTAL_BYTES_MOVED_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'INSTALLED_BYTES_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'ACTIVE_BYTES_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'ENERGY_REGRESSION_EXCEEDED' "$SRC"
+          grep -F 'BATTERY_DRAIN_REGRESSION_EXCEEDED' "$SRC"
+          grep -F 'THERMAL_REGRESSION_EXCEEDED' "$SRC"
+          grep -F 'THROTTLED_RUN_REGRESSION_EXCEEDED' "$SRC"
+
+      - name: Prove synthetic CI cannot mint final READY architecture evidence
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeFinalHardwareDispositionV1.test.mjs
+          grep -F 'top-level final disposition remains BLOCKED without real-mobile READY evidence' "$TEST"
+          grep -F 'FINAL_HARDWARE_REAL_MOBILE_QUALIFICATION_REQUIRED' "$TEST"
+          ! grep -F "'FINAL_HARDWARE_DISPOSITION_READY'" "$TEST"
+
+      - name: Prove no production admission fleet lifecycle or paid authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeFinalHardwareDispositionV1.ts
+          grep -F 'productionAdmissionAllowed:false' "$SRC"
+          grep -F 'candidateSelectionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "weightedScore|aggregateScore|winnerScore|theoreticalSparsity|theoreticalTokenReduction|downloadUri|\.install\(|\.remove\(|\.rollback\(|\.quarantine\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
