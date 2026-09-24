@@ -103,4 +103,7 @@ test('verified protected evidence is provenance-bound before either artifact upl
   assert.match(resourceUpload,/protected-artifact-provenance\.json/);
   assert.match(blindUpload,/steps\.provenance\.outcome == 'success'/);
   assert.match(resourceUpload,/steps\.provenance\.outcome == 'success'/);
+  assert.match(workflow,/manifest_sha256=\$\{MANIFEST_SHA256\}/);
+  assert.match(workflow,/GITHUB_STEP_SUMMARY/);
+  assert.match(workflow,/Downstream trust: explicit external pin still required/);
 });
