@@ -111,6 +111,8 @@ export type HsmeNativeMobileEnergyThermalEvidenceV1=Readonly<{
   processIdentitySha256:string;
   sessionIdentitySha256:string;
   deviceRunSessionSha256:string;
+  deviceCapabilityKey:string;
+  supportedDeviceClass:string;
   runtimeIdentitySha256:string;
   actualPlacement:'CPU'|'GPU'|'NPU';
   nativeTelemetryAttestationSha256:string;
