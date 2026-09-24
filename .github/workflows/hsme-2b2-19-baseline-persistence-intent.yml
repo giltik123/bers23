@@ -1,0 +1,88 @@
+name: HSME-2b2.19 canonical baseline persistence intent
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseBaselinePersistenceIntentV1.ts'
+      - 'server/core/training/HsmeDenseBaselinePersistenceIntentV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentSelectedBaselineFinalizationV1.ts'
+      - 'server/core/training/HsmeDenseBaselineFinalizationV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineEvidenceV1.ts'
+      - '.github/workflows/hsme-2b2-19-baseline-persistence-intent.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  persistence-intent:
+    name: canonical before-after persistence intent without mutation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run persistence-intent regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-19
+          npx esbuild server/core/training/HsmeDenseBaselinePersistenceIntentV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-19/persistence-intent.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-19/persistence-intent.test.mjs
+
+      - name: Prove canonical serializer and exact before-after hashing
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseBaselinePersistenceIntentV1.ts
+          grep -F 'hsmeDenseStudentSelectedBaselineFinalizationV1Digest(' "$SRC"
+          grep -F 'hsmeDenseBaselineFinalizationV1Digest(' "$SRC"
+          grep -F 'normalizeHsmeDenseBaselineDecisionV1(' "$SRC"
+          grep -F 'hsmeDenseBaselineDecisionV1Digest(' "$SRC"
+          grep -F 'serializeHsmeDenseBaselineDecisionV1(' "$SRC"
+          grep -F "new TextEncoder().encode(nextCanonicalJson+'\\n')" "$SRC"
+          grep -F 'PERSISTENCE_INTENT_READY_NOT_COMMITTED' "$SRC"
+
+      - name: Prove no canonical mutation or model authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseBaselinePersistenceIntentV1.ts
+          grep -F 'canonicalDecisionPersistAllowed:false' "$SRC"
+          grep -F 'fileMutationAllowed:false' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'checkpointPromotionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE 'writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://' "$SRC"
+
+      - name: Prove stale-write approval regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeDenseBaselinePersistenceIntentV1.test.mjs
+          grep -F 'PERSISTENCE_INTENT_READY_NOT_COMMITTED' "$TEST"
+          grep -F 'PERSISTENCE_INTENT_CURRENT_FILE_SHA_MISMATCH' "$TEST"
+          grep -F 'PERSISTENCE_INTENT_CURRENT_FILE_SEMANTIC_MISMATCH' "$TEST"
+          grep -F 'PERSISTENCE_INTENT_APPROVAL_BINDING_MISMATCH' "$TEST"
+          grep -F 'verifySelectedBaselineFinalization(){return false;}' "$TEST"
+          grep -F 'PERSISTENCE_INTENT_BLOCKED' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
