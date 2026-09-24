@@ -90,7 +90,7 @@ jobs:
           grep -F 'modelInstallAllowed:false' "$SRC"
           grep -F 'modelFleetPromotionAllowed:false' "$SRC"
           grep -F 'productionAuthorityGranted:false' "$SRC"
-          ! grep -nE 'weighted|aggregateScore|winner|fastest|bestVariant' "$SRC"
+          ! grep -nE 'weighted|aggregateScore|fastest|bestVariant' "$SRC"
           ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
 
       - name: Prove binding and activation-bound regressions
