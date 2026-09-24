@@ -69,3 +69,41 @@ test('manual protected resource capture requires explicit cost evidence and sepa
   assert.match(resourceUpload,/runtime-inventory\.json/);
   assert.doesNotMatch(resourceUpload,/review-package\.json|blind-review|\.png/);
 });
+
+test('verified protected evidence is provenance-bound before either artifact upload',()=>{
+  assert.match(workflow,/Build content-addressed protected artifact provenance/);
+  assert.match(workflow,/build-hsme-foundation-protected-artifact-provenance\.mjs/);
+  assert.match(workflow,/HSME_FOUNDATION_PROTECTED_PROVENANCE_CLI=1/);
+  assert.match(workflow,/--workflow-run-id "\$\{GITHUB_RUN_ID\}"/);
+  assert.match(workflow,/--workflow-run-attempt "\$\{GITHUB_RUN_ATTEMPT\}"/);
+  assert.match(workflow,/--repository "\$\{GITHUB_REPOSITORY\}"/);
+  assert.match(
+    workflow,
+    /--workflow "\.github\/workflows\/hsme-2a-3-3b-protected-foundation-executor\.yml"/,
+  );
+
+  const verifyIndex=workflow.indexOf('Verify raw candidate run against accepted contract');
+  const provenanceIndex=workflow.indexOf('Build content-addressed protected artifact provenance');
+  const blindUploadIndex=workflow.indexOf('Upload protected benchmark evidence');
+  assert.ok(
+    verifyIndex>=0
+    &&provenanceIndex>verifyIndex
+    &&blindUploadIndex>provenanceIndex,
+  );
+
+  const blindUpload=workflow.slice(
+    workflow.indexOf('      - name: Upload protected benchmark evidence'),
+    workflow.indexOf('      - name: Upload separately verified resource measurement evidence'),
+  );
+  const resourceUpload=workflow.slice(
+    workflow.indexOf('      - name: Upload separately verified resource measurement evidence'),
+    workflow.indexOf('      - name: Preserve failed candidate state'),
+  );
+  assert.match(blindUpload,/protected-artifact-provenance\.json/);
+  assert.match(resourceUpload,/protected-artifact-provenance\.json/);
+  assert.match(blindUpload,/steps\.provenance\.outcome == 'success'/);
+  assert.match(resourceUpload,/steps\.provenance\.outcome == 'success'/);
+  assert.match(workflow,/manifest_sha256=\$\{MANIFEST_SHA256\}/);
+  assert.match(workflow,/GITHUB_STEP_SUMMARY/);
+  assert.match(workflow,/Downstream trust: explicit external pin still required/);
+});
