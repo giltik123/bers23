@@ -255,7 +255,7 @@ async function makeFixture(status='COMPLETE'){
         acceptedOutputCostMicrousd:measurementEvidence.acceptedOutputCostMicrousd,
         costKind:measurementEvidence.costKind,
         costEvidenceSha256:measurementEvidence.costEvidenceSha256,
-        measurementEvidenceSha256,
+        measurementEvidenceSha256:measurementEvidenceSha,
       },
       productionAuthorityGranted:false,
       winnerSelectionAllowed:false,
