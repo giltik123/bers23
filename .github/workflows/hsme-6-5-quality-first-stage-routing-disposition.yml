@@ -1,0 +1,99 @@
+name: HSME-6.5 quality-first stage-routing disposition
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeStageRoutingComparisonMatrixV1.ts'
+      - 'server/core/training/HsmeStageRoutingDispositionV1.ts'
+      - 'server/core/training/HsmeStageRoutingDispositionV1.test.mjs'
+      - '.github/workflows/hsme-6-5-quality-first-stage-routing-disposition.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage-routing-disposition:
+    name: quality-first deterministic stage-routing disposition
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run quality-first disposition regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-6-5
+          npx esbuild server/core/training/HsmeStageRoutingDispositionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-6-5/stage-routing-disposition.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-6-5/stage-routing-disposition.test.mjs
+
+      - name: Prove exact matrix and reviewed policy trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingDispositionV1.ts
+          grep -F 'hsmeStageRoutingComparisonMatrixV1Digest(' "$SRC"
+          grep -F 'verifyRoutingMatrix(matrix,matrixSha)' "$SRC"
+          grep -F 'hsmeStageRoutingDispositionPolicyV1Digest(' "$SRC"
+          grep -F 'verifyDispositionPolicy(policy,policySha)' "$SRC"
+          grep -F 'STAGE_ROUTING_DISPOSITION_MATRIX_ORIGIN_UNVERIFIED' "$SRC"
+          grep -F 'STAGE_ROUTING_DISPOSITION_POLICY_ORIGIN_UNVERIFIED' "$SRC"
+
+      - name: Prove quality-first then measured-efficiency law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingDispositionV1.ts
+          grep -F 'STATIC_CONTROL_QUALITY_BASELINE_INVALID' "$SRC"
+          grep -F 'HARD_PRESERVATION_FAILED:' "$SRC"
+          grep -F 'STATIC_QUALITY_REGRESSION_EXCEEDED:' "$SRC"
+          grep -F 'WALL_CLOCK_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'TOTAL_BYTES_MOVED_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'PEAK_MEMORY_REGRESSION_EXCEEDED' "$SRC"
+          grep -F 'ACTIVE_WEIGHTS_REGRESSION_EXCEEDED' "$SRC"
+          grep -F 'TRANSITION_STALL_EXCEEDED' "$SRC"
+
+      - name: Prove no selection execution or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingDispositionV1.ts
+          grep -F 'STAGE_ROUTING_DISPOSITION_READY' "$SRC"
+          grep -F 'routeSelectionAllowed:false' "$SRC"
+          grep -F 'stageRoutingExecutionAllowed:false' "$SRC"
+          grep -F 'routeMutationAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "weightedScore|aggregateScore|theoreticalSparsity|FLOP|from ['\"]node:(fs|fs/promises|child_process)|spawn\(|exec\(|execFile\(|fork\(|fetch\(|https?://|ModelFleet(Service|Client)|reserveCredits|spendCredits" "$SRC"
+
+      - name: Prove quality cannot be rescued by speed
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeStageRoutingDispositionV1.test.mjs
+          grep -F 'static control quality failure forces REDESIGN before routed efficiency is interpreted' "$TEST"
+          grep -F 'speed cannot rescue routed quality regression' "$TEST"
+          grep -F 'hard preservation or critical failure produces REJECT' "$TEST"
+          grep -F 'each real efficiency gate applies only after quality eligibility' "$TEST"
+          grep -F 'quality-eligible stage routing with all real efficiency gates passes ADVANCE' "$TEST"
+          grep -F 'unknown score sparsity provider or authority fields fail exact policy schema' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

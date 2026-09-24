@@ -1,0 +1,99 @@
+name: HSME-6.2 deterministic stage-route table
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeStageRoutingExperimentPlanV1.ts'
+      - 'server/core/training/HsmeStageRouteTableV1.ts'
+      - 'server/core/training/HsmeStageRouteTableV1.test.mjs'
+      - '.github/workflows/hsme-6-2-deterministic-stage-route-table.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage-route-table:
+    name: immutable deterministic stage-route table
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run deterministic stage-route regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-6-2
+          npx esbuild server/core/training/HsmeStageRouteTableV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-6-2/stage-route-table.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-6-2/stage-route-table.test.mjs
+
+      - name: Prove exact plan and reviewed route-policy trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRouteTableV1.ts
+          grep -F 'hsmeStageRoutingExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifyStageRoutingPlan(plan,planSha)' "$SRC"
+          grep -F 'hsmeStageRouteTablePolicyV1Digest(' "$SRC"
+          grep -F 'verifyStageRouteTablePolicy(policy,policySha)' "$SRC"
+          grep -F 'STAGE_ROUTE_TABLE_PLAN_ORIGIN_UNVERIFIED' "$SRC"
+          grep -F 'STAGE_ROUTE_TABLE_POLICY_ORIGIN_UNVERIFIED' "$SRC"
+
+      - name: Prove deterministic bounded route law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRouteTableV1.ts
+          grep -F "'SHARED_ONLY'" "$SRC"
+          grep -F "'SHARED_PLUS_SPECIALISTS'" "$SRC"
+          grep -F 'sharedPathEnabled must be true' "$SRC"
+          grep -F 'STAGE_ROUTE_TABLE_ACTIVE_EXPERT_CAP_EXCEEDED' "$SRC"
+          grep -F 'maxStageTransitionPrefetchBytes:plan.maxStageTransitionPrefetchBytes' "$SRC"
+          grep -F 'STAGE_ROUTE_TABLE_EXPERT_BINDING_MISMATCH' "$SRC"
+          grep -F 'STAGE_ROUTE_TABLE_ROUTER_BINDING_MISMATCH' "$SRC"
+          grep -F 'routes must canonically cover GEOMETRY/APPEARANCE/DETAIL' "$SRC"
+
+      - name: Prove frozen no-runtime authority boundary
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRouteTableV1.ts
+          grep -F 'STAGE_ROUTE_TABLE_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'stageRoutingExecutionAllowed:false' "$SRC"
+          grep -F 'routeSelectionAllowed:false' "$SRC"
+          grep -F 'routeMutationAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|spawn\(|exec\(|execFile\(|fork\(|fetch\(|https?://|ModelFleet(Service|Client)|reserveCredits|spendCredits" "$SRC"
+
+      - name: Prove route binding and anti-post-hoc regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeStageRouteTableV1.test.mjs
+          grep -F 'reviewed routes freeze one canonical deterministic three-stage table' "$TEST"
+          grep -F 'plan and route-policy exact origins are mandatory' "$TEST"
+          grep -F 'stage id progress or router drift fails closed' "$TEST"
+          grep -F 'expert id and content identity must match the exact HSME-6.1 plan pair' "$TEST"
+          grep -F 'active expert cap cannot exceed the frozen HSME-6.1 maximum' "$TEST"
+          grep -F 'unknown stage-route fields cannot become post-hoc routing authority' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

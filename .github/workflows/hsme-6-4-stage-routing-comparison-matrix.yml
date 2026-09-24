@@ -1,0 +1,104 @@
+name: HSME-6.4 protected stage-routing comparison matrix
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeStageRouteTableV1.ts'
+      - 'server/core/training/HsmeStageTransitionPrefetchScheduleV1.ts'
+      - 'server/core/training/HsmeStageRoutingComparisonMatrixV1.ts'
+      - 'server/core/training/HsmeStageRoutingComparisonMatrixV1.test.mjs'
+      - '.github/workflows/hsme-6-4-stage-routing-comparison-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  routing-matrix:
+    name: protected static-vs-stage-routed comparison matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run stage-routing matrix regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-6-4
+          npx esbuild server/core/training/HsmeStageRoutingComparisonMatrixV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-6-4/stage-routing-matrix.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-6-4/stage-routing-matrix.test.mjs
+
+      - name: Prove exact trusted campaign inputs and host result
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingComparisonMatrixV1.ts
+          grep -F 'hsmeStageRouteTableV1Digest(' "$SRC"
+          grep -F 'verifyStageRouteTable(routeTable,routeTableSha)' "$SRC"
+          grep -F 'hsmeStageTransitionPrefetchScheduleV1Digest(' "$SRC"
+          grep -F 'verifyPrefetchSchedule(schedule,scheduleSha)' "$SRC"
+          grep -F 'verifyCampaignPolicy(policy,policySha)' "$SRC"
+          grep -F 'coreHsmeStageRoutingCampaignResultV1Digest(' "$SRC"
+          grep -F 'verifyCampaignResult(result,hostResultSha256)' "$SRC"
+
+      - name: Prove static vs stage-routed exact measurement law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingComparisonMatrixV1.ts
+          grep -F "'STATIC_SHARED_CONTROL'" "$SRC"
+          grep -F "'STAGE_ROUTED'" "$SRC"
+          grep -F 'expertActivationCount' "$SRC"
+          grep -F 'transitionStallUs' "$SRC"
+          grep -F 'flashBytesMoved' "$SRC"
+          grep -F 'ramBytesMoved' "$SRC"
+          grep -F 'acceleratorBytesMoved' "$SRC"
+          grep -F 'STAGE_ROUTING_MATRIX_STATIC_CONTROL_ACTIVITY_INVALID' "$SRC"
+          grep -F 'STAGE_ROUTING_MATRIX_STAGE_ACTIVATION_CAP_EXCEEDED' "$SRC"
+          grep -F 'STAGE_ROUTING_MATRIX_RESOURCE_CEILING_EXCEEDED' "$SRC"
+
+      - name: Prove evidence-only authority boundary
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingComparisonMatrixV1.ts
+          grep -F 'STAGE_ROUTING_COMPARISON_MATRIX_READY_NOT_DISPOSED' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'stageRoutingExecutionAllowed:false' "$SRC"
+          grep -F 'routeMutationAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "weightedScore|aggregateScore|winnerScore|from ['\"]node:(fs|fs/promises|child_process)|spawn\(|exec\(|execFile\(|fork\(|fetch\(|https?://|ModelFleet(Service|Client)|reserveCredits|spendCredits" "$SRC"
+
+      - name: Prove failure and anti-drift regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeStageRoutingComparisonMatrixV1.test.mjs
+          grep -F 'static control cannot activate specialists or transition prefetch' "$TEST"
+          grep -F 'stage-routed expert activations remain bounded' "$TEST"
+          grep -F 'quality dimension drift cannot produce comparable evidence' "$TEST"
+          grep -F 'wall-clock memory bytes and stall ceilings are enforced before READY' "$TEST"
+          grep -F 'failed protected campaign produces FAILED evidence without matrix digest' "$TEST"
+          grep -F 'host rehash drift and thrown execution fail closed distinctly' "$TEST"
+          grep -F 'campaign policy cannot enable network authority or post-hoc fields' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

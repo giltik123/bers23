@@ -1,0 +1,89 @@
+name: HSME-6.1 measured stage topology and routing-policy freeze
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts'
+      - 'server/core/training/HsmeStageRoutingExperimentPlanV1.ts'
+      - 'server/core/training/HsmeStageRoutingExperimentPlanV1.test.mjs'
+      - '.github/workflows/hsme-6-1-stage-topology-freeze.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage-topology-freeze:
+    name: measured GEOMETRY APPEARANCE DETAIL topology freeze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run stage-topology regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-6-1
+          npx esbuild server/core/training/HsmeStageRoutingExperimentPlanV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-6-1/stage-topology.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-6-1/stage-topology.test.mjs
+      - name: Prove exact HSME-4 plan and measured-stage origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingExperimentPlanV1.ts
+          grep -F 'hsmeAdaptiveResidencyExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifyResidencyPlan(residencyPlan,planSha)' "$SRC"
+          grep -F 'hsmeStageProfileRosterV1Digest(' "$SRC"
+          grep -F 'verifyStageProfileRoster(roster,rosterSha)' "$SRC"
+          grep -F 'hsmeStageRoutingPolicyV1Digest(' "$SRC"
+          grep -F 'verifyStageRoutingPolicy(policy,policySha)' "$SRC"
+      - name: Prove deterministic contiguous semantic stage topology
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingExperimentPlanV1.ts
+          grep -F "'GEOMETRY'" "$SRC"
+          grep -F "'APPEARANCE'" "$SRC"
+          grep -F "'DETAIL'" "$SRC"
+          grep -F 'stage bands must be contiguous GEOMETRY/APPEARANCE/DETAIL' "$SRC"
+          grep -F 'stage bands must cover exactly 0..10000' "$SRC"
+          grep -F 'deterministicStageBoundariesRequired:true' "$SRC"
+          grep -F 'deterministicRoutingRequired:true' "$SRC"
+          grep -F 'nextStagePrefetchRequired:true' "$SRC"
+      - name: Prove HSME-4 cap reuse and no routing authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingExperimentPlanV1.ts
+          grep -F 'maxDeterministicPrefetchBytesPerStage' "$SRC"
+          grep -F 'STAGE_ROUTING_POLICY_RESOURCE_ESCALATION' "$SRC"
+          grep -F 'sharedPathRequired:true' "$SRC"
+          grep -F 'fullBackboneExpertAllowed:false' "$SRC"
+          grep -F 'stageRoutingExecutionAllowed:false' "$SRC"
+          grep -F 'routeSelectionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|(^|[^[:alnum:]_])exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|(^|[^[:alnum:]_])fetch\(|https?://" "$SRC"
+      - name: Prove topology and cap regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeStageRoutingExperimentPlanV1.test.mjs
+          grep -F 'independent of caller order' "$TEST"
+          grep -F 'reject gaps overlap empty ranges and wrong semantic order' "$TEST"
+          grep -F 'trusted origins are mandatory' "$TEST"
+          grep -F 'prototype binding drift reaches plan gate while internal runtime/hardware drift is schema-invalid' "$TEST"
+          grep -F 'caps cannot exceed HSME-4 plan' "$TEST"
+          grep -F 'authority boundary cannot widen' "$TEST"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
