@@ -202,9 +202,10 @@ async function fixture(matrixOverrides={}){
 }
 
 async function decide(f,overrides={}){
+  const selectedMatrix=overrides.matrix??f.m;
   return decideHsmeStageRoutingDispositionV1(
-    overrides.matrix??f.m,
-    overrides.matrixSha??f.m.matrixEvidenceSha256,
+    selectedMatrix,
+    overrides.matrixSha??selectedMatrix.matrixEvidenceSha256,
     overrides.matrixOrigin??trueMatrixOrigin,
     overrides.policy??f.policy,
     overrides.policySha??f.policySha,
