@@ -222,7 +222,7 @@ export function normalizeHsmePredictivePrefetchPolicyV1(
   ){
     fail('hsme_predictive_policy_boundary','predictive policy boundary invalid');
   }
-  assertNoAuthority(r);
+  assertPolicyNoAuthority(r);
   return deepFreeze({
     schemaVersion:HSME_PREDICTIVE_PREFETCH_POLICY_V1_SCHEMA,
     residencyPlanSha256:sha256(r.residencyPlanSha256,'policy.residencyPlanSha256'),
@@ -246,7 +246,7 @@ export function normalizeHsmePredictivePrefetchPolicyV1(
     predictivePrefetchAllowed:true,
     predictionMaySuppressDeterministicAssets:false,
     networkDuringExecutionAllowed:false,
-    ...authorityBoundary(),
+    ...policyAuthorityBoundary(),
   });
 }
 
@@ -626,6 +626,25 @@ function terminal(
     comparisonEvidenceSha256:'UNKNOWN',
     ...authorityBoundary(),
   });
+}
+function policyAuthorityBoundary(){
+  return Object.freeze({
+    inferenceExecutionAllowed:false as const,
+    modelInstallAllowed:false as const,
+    modelFleetPromotionAllowed:false as const,
+    durableModelFleetPromotionAllowed:false as const,
+    productionAuthorityGranted:false as const,
+    providerAuthorityGranted:false as const,
+    billingAuthorityGranted:false as const,
+    projectArtifactMutationAllowed:false as const,
+    aeeExecutionAuthorityGranted:false as const,
+    winnerSelectionAllowed:false as const,
+  });
+}
+function assertPolicyNoAuthority(r:Record<string,unknown>):void{
+  for(const key of Object.keys(policyAuthorityBoundary())){
+    if(r[key]!==false) fail('hsme_predictive_policy_authority','policy authority widening');
+  }
 }
 function authorityBoundary(){
   return Object.freeze({
