@@ -1,3 +1,4 @@
+# Rebased onto accepted HSME-2b2.11 main; exact-head PR CI is authoritative.
 name: HSME-2b2.12 frozen workspace run evidence
 
 on:
