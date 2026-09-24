@@ -23,6 +23,8 @@ export const HSME_NATIVE_TELEMETRY_DETACHED_SIGNATURE_MATERIAL_V1_SCHEMA =
   'BERS_HSME_NATIVE_TELEMETRY_DETACHED_SIGNATURE_MATERIAL_V1' as const;
 export const HSME_NATIVE_TELEMETRY_DETACHED_SIGNATURE_MATERIAL_DIGEST_DOMAIN =
   'bers:hsme:native-telemetry-detached-signature-material:v1\0' as const;
+export const HSME_NATIVE_TELEMETRY_ATTESTATION_IDENTITY_DIGEST_DOMAIN =
+  'bers:hsme:native-telemetry-attestation-identity:v1\0' as const;
 
 const HEX64=/^[0-9a-f]{64}$/;
 const IDENTIFIER=/^[A-Za-z0-9][A-Za-z0-9._:@/+\-]*$/;
@@ -49,6 +51,8 @@ export type HsmeNativeTelemetryDetachedSignatureMaterialV1=Readonly<{
   deviceCapabilityKey:string;
   supportedDeviceClass:string;
   actualPlacement:'CPU'|'GPU'|'NPU';
+  runtimeIdentitySha256:string;
+  adapterBuildSha256:string;
   verificationKeyId:string;
   signature:string;
   signatureAlgorithmId:string;
@@ -184,10 +188,15 @@ export class HsmeOfflinePhysicalEvidenceTrustV1
         material,
         this.hash,
       );
+      const attestationIdentitySha256=
+        await nativeAttestationIdentityDigest(
+          material,
+          this.hash,
+        );
       if(
         material.signatureMaterialSha256!==materialSha256
         ||record.evidence.nativeTelemetryAttestationSha256!==
-          materialSha256
+          attestationIdentitySha256
         ||material.telemetryEvidenceSha256!==expectedEvidenceSha256
         ||material.deviceRunSessionSha256!==
           record.evidence.deviceRunSessionSha256
@@ -196,6 +205,10 @@ export class HsmeOfflinePhysicalEvidenceTrustV1
         ||material.supportedDeviceClass!==
           record.evidence.supportedDeviceClass
         ||material.actualPlacement!==record.evidence.actualPlacement
+        ||material.runtimeIdentitySha256!==
+          record.evidence.runtimeIdentitySha256
+        ||material.adapterBuildSha256!==
+          record.evidence.adapterBuildSha256
         ||material.verificationKeyId!==
           this.#config.nativeTelemetryVerificationKeyId
         ||material.signatureAlgorithmId!==
@@ -312,6 +325,8 @@ function normalizeNativeMaterial(
     'deviceCapabilityKey',
     'supportedDeviceClass',
     'actualPlacement',
+    'runtimeIdentitySha256',
+    'adapterBuildSha256',
     'verificationKeyId',
     'signature',
     'signatureAlgorithmId',
@@ -351,6 +366,14 @@ function normalizeNativeMaterial(
       r.actualPlacement,
       ['CPU','GPU','NPU'] as const,
       'nativeMaterial.actualPlacement',
+    ),
+    runtimeIdentitySha256:sha256(
+      r.runtimeIdentitySha256,
+      'nativeMaterial.runtimeIdentitySha256',
+    ),
+    adapterBuildSha256:sha256(
+      r.adapterBuildSha256,
+      'nativeMaterial.adapterBuildSha256',
     ),
     verificationKeyId:identifier(
       r.verificationKeyId,
@@ -400,6 +423,26 @@ async function nativeMaterialDigest(
   return digest(
     HSME_NATIVE_TELEMETRY_DETACHED_SIGNATURE_MATERIAL_DIGEST_DOMAIN,
     payload,
+    hash,
+  );
+}
+
+async function nativeAttestationIdentityDigest(
+  material:HsmeNativeTelemetryDetachedSignatureMaterialV1,
+  hash:HsmeDenseBaselineHashPortV1,
+):Promise<string>{
+  return digest(
+    HSME_NATIVE_TELEMETRY_ATTESTATION_IDENTITY_DIGEST_DOMAIN,
+    {
+      deviceRunSessionSha256:material.deviceRunSessionSha256,
+      deviceCapabilityKey:material.deviceCapabilityKey,
+      supportedDeviceClass:material.supportedDeviceClass,
+      actualPlacement:material.actualPlacement,
+      runtimeIdentitySha256:material.runtimeIdentitySha256,
+      adapterBuildSha256:material.adapterBuildSha256,
+      verificationKeyId:material.verificationKeyId,
+      signatureAlgorithmId:material.signatureAlgorithmId,
+    },
     hash,
   );
 }
