@@ -34,6 +34,7 @@ export type HsmeNativeMobileEnergyThermalRawCaptureV1=Readonly<{
   sessionIdentity:string;
   deviceRunSessionSha256:string;
   runtimeIdentitySha256:string;
+  actualPlacement:'CPU'|'GPU'|'NPU';
   sourceApi:string;
   sourceApiVersion:string;
   bridgeVersion:string;
@@ -72,6 +73,7 @@ export type HsmeNativeMobileEnergyThermalEvidenceV1=Readonly<{
   sessionIdentitySha256:string;
   deviceRunSessionSha256:string;
   runtimeIdentitySha256:string;
+  actualPlacement:'CPU'|'GPU'|'NPU';
   osBuildSha256:string;
   runtimeBuildSha256:string;
   capturedAtMicrosStart:number;
@@ -249,6 +251,7 @@ export async function captureHsmeNativeMobileEnergyThermalEvidenceV1(
     sessionIdentitySha256,
     deviceRunSessionSha256:raw.deviceRunSessionSha256,
     runtimeIdentitySha256:raw.runtimeIdentitySha256,
+    actualPlacement:raw.actualPlacement,
     osBuildSha256:raw.osBuildSha256,
     runtimeBuildSha256:raw.runtimeBuildSha256,
     capturedAtMicrosStart:raw.capturedAtMicrosStart,
@@ -331,6 +334,12 @@ function validateRaw(
   boundedText(raw.bridgeVersion,'bridgeVersion');
   sha256(raw.deviceRunSessionSha256,'deviceRunSessionSha256');
   sha256(raw.runtimeIdentitySha256,'runtimeIdentitySha256');
+  if(!['CPU','GPU','NPU'].includes(raw.actualPlacement)){
+    fail(
+      'hsme_native_mobile_energy_placement',
+      'actualPlacement must be CPU GPU or NPU',
+    );
+  }
   sha256(raw.adapterBuildSha256,'adapterBuildSha256');
   sha256(raw.osBuildSha256,'osBuildSha256');
   sha256(raw.runtimeBuildSha256,'runtimeBuildSha256');
@@ -476,6 +485,12 @@ function validateEvidence(
   sha256(value.sessionIdentitySha256,'sessionIdentitySha256');
   sha256(value.deviceRunSessionSha256,'deviceRunSessionSha256');
   sha256(value.runtimeIdentitySha256,'runtimeIdentitySha256');
+  if(!['CPU','GPU','NPU'].includes(value.actualPlacement)){
+    fail(
+      'hsme_native_mobile_energy_placement',
+      'evidence actualPlacement invalid',
+    );
+  }
   sha256(value.osBuildSha256,'osBuildSha256');
   sha256(value.runtimeBuildSha256,'runtimeBuildSha256');
   sha256(value.measurementMethodSha256,'measurementMethodSha256');
