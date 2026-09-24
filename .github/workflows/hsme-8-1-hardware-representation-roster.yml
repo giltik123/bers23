@@ -1,0 +1,97 @@
+name: HSME-8.1 hardware representation qualification roster
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeHardwareRepresentationQualificationRosterV1.ts'
+      - 'server/core/training/HsmeHardwareRepresentationQualificationRosterV1.test.mjs'
+      - '.github/workflows/hsme-8-1-hardware-representation-roster.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  representation-roster:
+    name: immutable mobile hardware representation roster
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run hardware representation roster regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-8-1
+          npx esbuild server/core/training/HsmeHardwareRepresentationQualificationRosterV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-8-1/hardware-representation-roster.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-8-1/hardware-representation-roster.test.mjs
+
+      - name: Prove distinct fleet identity and immutable representation law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeHardwareRepresentationQualificationRosterV1.ts
+          grep -F "value.fleetModelId+'\\0'+value.fleetVersion" "$SRC"
+          grep -F 'representationContentSha256' "$SRC"
+          grep -F 'representationManifestSha256' "$SRC"
+          grep -F 'immutableFleetManifestEvidenceSha256' "$SRC"
+          grep -F 'sourceModelContentSha256' "$SRC"
+          grep -F 'assertUnique(' "$SRC"
+
+      - name: Prove explicit mobile platform placement and mixed precision scope
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeHardwareRepresentationQualificationRosterV1.ts
+          grep -F "'APPLE'" "$SRC"
+          grep -F "'ANDROID'" "$SRC"
+          grep -F "'CPU'" "$SRC"
+          grep -F "'GPU'" "$SRC"
+          grep -F "'NPU'" "$SRC"
+          grep -F "'MIXED'" "$SRC"
+          grep -F 'admissibleBenchmarkPlacements.includes(hardwareBackend)' "$SRC"
+          grep -F 'runtimeCapabilityEvidenceSha256' "$SRC"
+
+      - name: Prove no fleet lifecycle or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeHardwareRepresentationQualificationRosterV1.ts
+          grep -F 'HARDWARE_REPRESENTATION_ROSTER_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'benchmarkExecutionAllowed:false' "$SRC"
+          grep -F 'representationMutationAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "downloadUri|\.install\(|\.remove\(|\.rollback\(|\.quarantine\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove identity-collision and exact-schema regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeHardwareRepresentationQualificationRosterV1.test.mjs
+          grep -F 'one fleet modelId@version cannot represent multiple hardware binaries' "$TEST"
+          grep -F 'same representation content hash cannot masquerade as conflicting fleet identities' "$TEST"
+          grep -F 'primary backend must be explicitly inside the reviewed benchmark placement scope' "$TEST"
+          grep -F 'canonical qualification roster rejects non-mobile platform families' "$TEST"
+          grep -F 'mutable URI unknown fields and authority widening fail exact schema' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
