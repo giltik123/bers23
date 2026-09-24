@@ -98,6 +98,9 @@ export type HsmeSparseBlockExecutionMeasurementV1=Readonly<{
   peakMemoryBytes:number;
   qualityPreservationContractSha256:string;
   qualityPreservationEvidenceSha256:string;
+  qualityPreservationPass:boolean;
+  hardPreservationFailureCount:number;
+  criticalFailureCount:number;
   deterministicReplayIdentitySha256:string;
   realMeasuredEvidence:true;
   networkBytesDuringExecution:0;
@@ -553,10 +556,16 @@ function normalizeMeasurement(
     'activeWeightsBytes','activationBytes','flashBytesMoved','ramBytesMoved',
     'acceleratorBytesMoved','kernelDispatchCount','peakMemoryBytes',
     'qualityPreservationContractSha256','qualityPreservationEvidenceSha256',
-    'deterministicReplayIdentitySha256','realMeasuredEvidence',
+    'qualityPreservationPass','hardPreservationFailureCount',
+    'criticalFailureCount','deterministicReplayIdentitySha256',
+    'realMeasuredEvidence',
     'networkBytesDuringExecution',
   ],path);
-  if(r.realMeasuredEvidence!==true||r.networkBytesDuringExecution!==0){
+  if(
+    r.realMeasuredEvidence!==true
+    ||r.networkBytesDuringExecution!==0
+    ||typeof r.qualityPreservationPass!=='boolean'
+  ){
     fail('hsme_sparse_exec_measurement_boundary',path+' measurement boundary invalid');
   }
   const weightsBytes=safeInteger(r.weightsBytes,path+'.weightsBytes',1,Number.MAX_SAFE_INTEGER);
@@ -605,6 +614,17 @@ function normalizeMeasurement(
     qualityPreservationEvidenceSha256:sha256(
       r.qualityPreservationEvidenceSha256,
       path+'.qualityPreservationEvidenceSha256',
+    ),
+    qualityPreservationPass:r.qualityPreservationPass,
+    hardPreservationFailureCount:safeInteger(
+      r.hardPreservationFailureCount,
+      path+'.hardPreservationFailureCount',
+      0,Number.MAX_SAFE_INTEGER,
+    ),
+    criticalFailureCount:safeInteger(
+      r.criticalFailureCount,
+      path+'.criticalFailureCount',
+      0,Number.MAX_SAFE_INTEGER,
     ),
     deterministicReplayIdentitySha256:sha256(
       r.deterministicReplayIdentitySha256,
