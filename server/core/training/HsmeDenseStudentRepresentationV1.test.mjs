@@ -213,6 +213,7 @@ async function representationResult(request,{
   state='REPRESENTATION_EXPORT_ATTEMPT_COMPLETED',
   artifactOverrides={},
   resultOverrides={},
+  raw=false,
 }={}){
   const artifact=state==='REPRESENTATION_EXPORT_ATTEMPT_COMPLETED'
     ?{
@@ -255,6 +256,7 @@ async function representationResult(request,{
     exporterResultSha256:H('dense-placeholder-export-result'),
     ...resultOverrides,
   };
+  if(raw)return Object.freeze(base);
   const exporterResultSha256=await coreHsmeDenseStudentRepresentationResultV1Digest(
     base,hashPort,
   );
@@ -440,6 +442,7 @@ test('invalid resource bounds are rejected instead of inventing HSME pack budget
         resourceEvidenceSha256:H('invalid-resource-bounds'),
       },
     },
+    raw:true,
   }));
   const evidence=await representHsmeDenseStudentCheckpointV1(
     receipt,preflight,exporter,trustedOrigin(),hashPort,
