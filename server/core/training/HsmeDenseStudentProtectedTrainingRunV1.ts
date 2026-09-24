@@ -368,9 +368,13 @@ export async function runHsmeDenseStudentProtectedTrainingV1(
     schemaVersion:HSME_DENSE_STUDENT_TRAINING_RUN_RECEIPT_V1_SCHEMA,
     state:'TRAINING_RUN_COMPLETED_CHECKPOINT_STAGED_NOT_PROMOTED' as const,
     blockers:Object.freeze([]) as readonly string[],
-    ...common,
-    ...receiptValuesFromResult(result),
-    ...receiptValuesFromCheckpoint(result.stagedCheckpoint),
+    ...completedReceiptValues(
+      preflight,
+      launchSpec,
+      result,
+      result.stagedCheckpoint,
+      {preflightEvidenceSha256,launchSpecSha256},
+    ),
     ...promotionBoundary(),
   };
   const receiptEvidenceSha256=await digest(
@@ -931,6 +935,59 @@ type PartialReceiptValues=Partial<Omit<
   'projectArtifactMutationAllowed'|'aeeExecutionAuthorityGranted'|
   'durableModelFleetPromotionAllowed'|'winnerSelectionAllowed'
 >>;
+
+type CompletedReceiptValues=Omit<
+  HsmeDenseStudentTrainingRunReceiptV1,
+  'schemaVersion'|'state'|'blockers'|'receiptEvidenceSha256'|
+  'checkpointPromotionAllowed'|'modelInstallAllowed'|'modelFleetPromotionAllowed'|
+  'productionAuthorityGranted'|'providerAuthorityGranted'|'billingAuthorityGranted'|
+  'projectArtifactMutationAllowed'|'aeeExecutionAuthorityGranted'|
+  'durableModelFleetPromotionAllowed'|'winnerSelectionAllowed'
+>;
+
+function completedReceiptValues(
+  preflight:HsmeDenseStudentTrainingPreflightV1,
+  launch:HsmeDenseStudentLaunchSpecV1,
+  result:CoreHsmeDenseStudentExecutionResultV1,
+  checkpoint:CoreHsmeDenseStudentStagedCheckpointV1,
+  digests:{
+    preflightEvidenceSha256:string|'UNKNOWN';
+    launchSpecSha256:string|'UNKNOWN';
+  },
+):CompletedReceiptValues{
+  return {
+    preflightEvidenceSha256:digests.preflightEvidenceSha256,
+    launchSpecSha256:digests.launchSpecSha256,
+    requestEvidenceSha256:valueOrUnknown(preflight.requestEvidenceSha256),
+    admissionEvidenceSha256:valueOrUnknown(preflight.admissionEvidenceSha256),
+    toolchainManifestSha256:valueOrUnknown(preflight.toolchainManifestSha256),
+    executionAttemptId:result.executionAttemptId,
+    backend:result.backend,
+    startedAtMs:result.startedAtMs,
+    finishedAtMs:result.finishedAtMs,
+    exitCode:result.exitCode,
+    processSpawned:result.processSpawned,
+    trainingStarted:result.trainingStarted,
+    consumedTrainingExamples:result.consumedTrainingExamples,
+    consumedGpuSeconds:result.consumedGpuSeconds,
+    consumedTrainingCostMicrousd:result.consumedTrainingCostMicrousd,
+    stdoutEvidenceSha256:result.stdoutEvidenceSha256,
+    stderrEvidenceSha256:result.stderrEvidenceSha256,
+    outputStagingAuthorityId:result.outputStagingAuthorityId,
+    outputStagingPolicySha256:result.outputStagingPolicySha256,
+    stagedCheckpointSha256:checkpoint.checkpointSha256,
+    stagedCheckpointBytes:checkpoint.checkpointBytes,
+    checkpointMetadataSha256:checkpoint.checkpointMetadataSha256,
+    teacherDecisionSha256:launch.teacherDecisionSha256,
+    reproductionEvidenceSha256:launch.reproductionEvidenceSha256,
+    corpusRootDigest:launch.corpusRootDigest,
+    recipeDigest:launch.recipeDigest,
+    inputCheckpointSha256:launch.checkpointSha256,
+    resumeCheckpointSha256:launch.resumeCheckpointSha256,
+    runnerResultSha256:result.runnerResultSha256,
+  };
+}
+
 
 function invalid(
   blockers:readonly string[],
