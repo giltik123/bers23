@@ -344,8 +344,11 @@ function fakeHost(mode='OK'){
           mode==='MAP_DRIFT'
             ?{implementationSha256:h('f')}
             :mode==='DIMENSION_DRIFT'
-              ?{qualityVector:quality({SEMANTIC_ADHERENCE:undefined})
-                  .filter(value=>value.valueBps!==undefined)}
+              ?{
+                qualityVector:quality().filter(
+                  value=>value.dimension!=='SEMANTIC_ADHERENCE',
+                ),
+              }
               :{},
         ),
       ];
