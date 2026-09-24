@@ -1,5 +1,4 @@
 import {
-  HSME_DENSE_STUDENT_LAUNCH_SPEC_V1_SCHEMA,
   HSME_DENSE_STUDENT_TRAINING_PREFLIGHT_V1_SCHEMA,
   hsmeDenseStudentLaunchSpecV1Digest,
   hsmeDenseStudentTrainingPreflightV1Digest,
@@ -39,7 +38,6 @@ export const HSME_DENSE_STUDENT_REPRESENTATION_PRECISION_V1 =
   'BF16' as const;
 
 const HEX64=/^[0-9a-f]{64}$/;
-const COMMIT40=/^[0-9a-f]{40}$/;
 const IDENTIFIER=/^[A-Za-z0-9][A-Za-z0-9._:@/+/-]*$/;
 
 export type HsmeDenseStudentRepresentationExportSpecV1=Readonly<{
@@ -405,11 +403,20 @@ export async function representHsmeDenseStudentCheckpointV1(
     schemaVersion:HSME_DENSE_STUDENT_REPRESENTATION_EVIDENCE_V1_SCHEMA,
     state:'REPRESENTATION_READY_NOT_ADMITTED' as const,
     blockers:Object.freeze([]) as readonly string[],
-    ...common,
-    ...valuesFromResult(result),
-    packCandidateState,
-    packDescriptor,
-    packDescriptorSha256,
+    ...readyEvidenceValues(
+      receipt,
+      launch,
+      result,
+      artifact,
+      {
+        receiptEvidenceSha256,
+        preflightEvidenceSha256,
+        launchSpecSha256,
+      },
+      packCandidateState,
+      packDescriptor,
+      packDescriptorSha256,
+    ),
     ...authorityBoundary(),
   };
 
@@ -984,6 +991,65 @@ function authorityBoundary(){
   });
 }
 
+type ReadyEvidenceValues=Omit<
+  HsmeDenseStudentRepresentationEvidenceV1,
+  'schemaVersion'|'state'|'blockers'|'evidenceSha256'|
+  'checkpointPromotionAllowed'|'modelInstallAllowed'|'modelFleetPromotionAllowed'|
+  'durableModelFleetPromotionAllowed'|'productionAuthorityGranted'|
+  'providerAuthorityGranted'|'billingAuthorityGranted'|
+  'projectArtifactMutationAllowed'|'aeeExecutionAuthorityGranted'|
+  'winnerSelectionAllowed'
+>;
+
+function readyEvidenceValues(
+  receipt:HsmeDenseStudentTrainingRunReceiptV1,
+  launch:HsmeDenseStudentLaunchSpecV1,
+  result:CoreHsmeDenseStudentRepresentationResultV1,
+  artifact:CoreHsmeDenseStudentRepresentationArtifactV1,
+  digests:{
+    receiptEvidenceSha256:string|'UNKNOWN';
+    preflightEvidenceSha256:string|'UNKNOWN';
+    launchSpecSha256:string|'UNKNOWN';
+  },
+  packCandidateState:HsmeDenseStudentPackCandidateStateV1,
+  packDescriptor:HsmePackDescriptorV1|null,
+  packDescriptorSha256:string|'UNKNOWN',
+):ReadyEvidenceValues{
+  return {
+    receiptEvidenceSha256:digests.receiptEvidenceSha256,
+    preflightEvidenceSha256:digests.preflightEvidenceSha256,
+    launchSpecSha256:digests.launchSpecSha256,
+    candidateId:launch.candidateId,
+    architectureFamily:'COMPACT_DIT',
+    activeParametersMillions:launch.activeParametersMillions,
+    targetStepCount:launch.targetStepCount,
+    repositoryCommitSha:launch.repositoryCommitSha,
+    immutableEnvironmentSha256:launch.immutableEnvironmentSha256,
+    stagedCheckpointSha256:valueOrUnknown(receipt.stagedCheckpointSha256),
+    stagedCheckpointBytes:receipt.stagedCheckpointBytes,
+    checkpointMetadataSha256:valueOrUnknown(receipt.checkpointMetadataSha256),
+    teacherDecisionSha256:launch.teacherDecisionSha256,
+    reproductionEvidenceSha256:launch.reproductionEvidenceSha256,
+    corpusRootDigest:launch.corpusRootDigest,
+    recipeDigest:launch.recipeDigest,
+    inputCheckpointSha256:launch.checkpointSha256,
+    resumeCheckpointSha256:launch.resumeCheckpointSha256,
+    exportAttemptId:result.exportAttemptId,
+    exportSpec:result.exportSpec,
+    representationArtifactSha256:artifact.representationArtifactSha256,
+    representationBytes:artifact.representationBytes,
+    representationMetadataSha256:artifact.representationMetadataSha256,
+    components:artifact.components,
+    exportToolchainSha256:artifact.exportToolchainSha256,
+    resourceEvidence:artifact.resourceEvidence,
+    exporterResultSha256:result.exporterResultSha256,
+    packCandidateState,
+    packDescriptor,
+    packDescriptorSha256,
+  };
+}
+
+
 type PartialEvidenceValues=Partial<Omit<
   HsmeDenseStudentRepresentationEvidenceV1,
   'schemaVersion'|'state'|'blockers'|'evidenceSha256'|
@@ -1031,8 +1097,6 @@ function terminal(
     architectureFamily:values.architectureFamily??'UNKNOWN',
     activeParametersMillions:values.activeParametersMillions??'UNKNOWN',
     targetStepCount:values.targetStepCount??'UNKNOWN',
-    repositoryCommitSha256:
-      undefined as never,
     repositoryCommitSha:values.repositoryCommitSha??'UNKNOWN',
     immutableEnvironmentSha256:values.immutableEnvironmentSha256??'UNKNOWN',
     stagedCheckpointSha256:values.stagedCheckpointSha256??'UNKNOWN',
