@@ -1,0 +1,99 @@
+name: HSME-8.3d offline physical signature trust
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeRealMobilePhysicalEvidenceOriginV1.ts'
+      - 'server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.ts'
+      - 'server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.test.mjs'
+      - '.github/workflows/hsme-8-3d-offline-physical-signature-trust.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-signature-trust:
+    name: offline detached signature physical evidence trust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run offline signature trust regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-8-3d
+          npx esbuild server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-8-3d/offline-physical-signature-trust.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-8-3d/offline-physical-signature-trust.test.mjs
+
+      - name: Prove both existing trust ports are implemented
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.ts
+          grep -F 'HsmeFoundationPhysicalMobileRunTrustPortV1' "$SRC"
+          grep -F 'HsmeNativeMobileEnergyThermalOriginVerifierV1' "$SRC"
+          grep -F 'verifyPhysicalRunEvidence(' "$SRC"
+          grep -F 'verifyNativeMobileEnergyThermalEvidence(' "$SRC"
+
+      - name: Prove non-circular native attestation identity
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.ts
+          grep -F 'HSME_NATIVE_TELEMETRY_ATTESTATION_IDENTITY_DIGEST_DOMAIN' "$SRC"
+          grep -F 'deviceRunSessionSha256:material.deviceRunSessionSha256' "$SRC"
+          grep -F 'deviceCapabilityKey:material.deviceCapabilityKey' "$SRC"
+          grep -F 'actualPlacement:material.actualPlacement' "$SRC"
+          grep -F 'runtimeIdentitySha256:material.runtimeIdentitySha256' "$SRC"
+          grep -F 'adapterBuildSha256:material.adapterBuildSha256' "$SRC"
+          grep -F 'record.evidence.nativeTelemetryAttestationSha256!==' "$SRC"
+          grep -F 'material.telemetryEvidenceSha256!==expectedEvidenceSha256' "$SRC"
+
+      - name: Prove content hashing and injected signature verification
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.ts
+          grep -F 'canonicalPayloadSha256=await hashText(' "$SRC"
+          grep -F 'material.canonicalPayloadSha256!==canonicalPayloadSha256' "$SRC"
+          grep -F 'signatures.verify(' "$SRC"
+          grep -F 'signatureMaterialSha256!==materialSha256' "$SRC"
+
+      - name: Prove offline fail-closed boundary
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.ts
+          ! grep -nE "fetch\(|https\.get|http\.get|from ['\"]node:(fs|fs/promises|child_process|https|http)|privateKey|ModelFleet(Service|Client)|reserveCredits|spendCredits" "$SRC"
+          grep -F 'catch{' "$SRC"
+          grep -F 'return false;' "$SRC"
+
+      - name: Prove tamper and verifier failure regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.test.mjs
+          grep -F 'foundation payload url key material digest and signature failures fail closed' "$TEST"
+          grep -F 'valid native detached signature binds attestation identity and final evidence digest' "$TEST"
+          grep -F 'native evidence digest session device placement runtime adapter key and signature drift fail closed' "$TEST"
+          grep -F 'native expected evidence digest and attestation identity cannot be substituted' "$TEST"
+          grep -F 'unknown detached signature material fields fail closed' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
