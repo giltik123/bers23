@@ -30,6 +30,8 @@ const RAW_KEYS=Object.freeze([
   'processIdentity',
   'sessionIdentity',
   'deviceRunSessionSha256',
+  'deviceCapabilityKey',
+  'supportedDeviceClass',
   'runtimeIdentitySha256',
   'actualPlacement',
   'nativeTelemetryAttestationSha256',
@@ -67,6 +69,8 @@ export type HsmeNativeMobileEnergyThermalRawCaptureV1=Readonly<{
   processIdentity:string;
   sessionIdentity:string;
   deviceRunSessionSha256:string;
+  deviceCapabilityKey:string;
+  supportedDeviceClass:string;
   runtimeIdentitySha256:string;
   actualPlacement:'CPU'|'GPU'|'NPU';
   nativeTelemetryAttestationSha256:string;
@@ -286,6 +290,8 @@ export async function captureHsmeNativeMobileEnergyThermalEvidenceV1(
     processIdentitySha256,
     sessionIdentitySha256,
     deviceRunSessionSha256:raw.deviceRunSessionSha256,
+    deviceCapabilityKey:raw.deviceCapabilityKey,
+    supportedDeviceClass:raw.supportedDeviceClass,
     runtimeIdentitySha256:raw.runtimeIdentitySha256,
     actualPlacement:raw.actualPlacement,
     nativeTelemetryAttestationSha256:raw.nativeTelemetryAttestationSha256,
@@ -376,6 +382,8 @@ function validateRaw(
   boundedText(raw.sourceApiVersion,'sourceApiVersion');
   boundedText(raw.bridgeVersion,'bridgeVersion');
   sha256(raw.deviceRunSessionSha256,'deviceRunSessionSha256');
+  sha256(raw.deviceCapabilityKey,'deviceCapabilityKey');
+  boundedText(raw.supportedDeviceClass,'supportedDeviceClass');
   sha256(raw.runtimeIdentitySha256,'runtimeIdentitySha256');
   if(!['CPU','GPU','NPU'].includes(raw.actualPlacement)){
     fail(
@@ -528,6 +536,8 @@ function validateEvidence(
   sha256(value.processIdentitySha256,'processIdentitySha256');
   sha256(value.sessionIdentitySha256,'sessionIdentitySha256');
   sha256(value.deviceRunSessionSha256,'deviceRunSessionSha256');
+  sha256(value.deviceCapabilityKey,'deviceCapabilityKey');
+  boundedText(value.supportedDeviceClass,'supportedDeviceClass');
   sha256(value.runtimeIdentitySha256,'runtimeIdentitySha256');
   if(!['CPU','GPU','NPU'].includes(value.actualPlacement)){
     fail(
