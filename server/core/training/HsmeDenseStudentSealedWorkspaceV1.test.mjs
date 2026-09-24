@@ -451,4 +451,3 @@ test('identical inputs produce byte-structurally identical host requests',async(
   assert.equal(Object.hasOwn(left.captured,'environment'),false);
   assert.equal(Object.hasOwn(left.captured,'executable'),false);
 });
-
