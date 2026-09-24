@@ -89,5 +89,6 @@ jobs:
           WF=.github/workflows/hsme-2a-3-3b-protected-foundation-executor.yml
           grep -F 'Build content-addressed protected artifact provenance' "$WF"
           grep -F 'HSME_FOUNDATION_PROTECTED_PROVENANCE_CLI=1' "$WF"
-          test "$(grep -c 'hsme-foundation-evidence/protected-artifact-provenance.json' "$WF")" -eq 3
+          test "$(grep -c 'hsme-foundation-evidence/protected-artifact-provenance.json' "$WF")" -eq 2
+          grep -F -- '--out "${EVIDENCE_DIR}/protected-artifact-provenance.json"' "$WF"
           test "$(grep -c "steps.provenance.outcome == 'success'" "$WF")" -eq 2
