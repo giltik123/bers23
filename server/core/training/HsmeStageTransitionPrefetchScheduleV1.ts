@@ -262,7 +262,7 @@ export function normalizeHsmeStageTransitionPrefetchPolicyV1(
     ),
     transitions:Object.freeze(transitions),
     reviewState:'STAGE_TRANSITION_PREFETCH_POLICY_REVIEWED',
-    ...authorityBoundary(true),
+    ...scheduleAuthorityBoundary(),
   });
 }
 
