@@ -1,0 +1,96 @@
+name: HSME-6.3 deterministic stage-transition prefetch schedule
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeStageRouteTableV1.ts'
+      - 'server/core/training/HsmeStageTransitionPrefetchScheduleV1.ts'
+      - 'server/core/training/HsmeStageTransitionPrefetchScheduleV1.test.mjs'
+      - '.github/workflows/hsme-6-3-stage-transition-prefetch-schedule.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  transition-prefetch:
+    name: deterministic next-stage expert prefetch schedule
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run transition-prefetch regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-6-3
+          npx esbuild server/core/training/HsmeStageTransitionPrefetchScheduleV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-6-3/stage-prefetch.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-6-3/stage-prefetch.test.mjs
+
+      - name: Prove exact trusted byte sources
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageTransitionPrefetchScheduleV1.ts
+          grep -F 'hsmeStageRouteTableV1Digest(' "$SRC"
+          grep -F 'verifyStageRouteTable(routeTable,routeTableSha)' "$SRC"
+          grep -F 'hsmeStagePrefetchAssetRosterV1Digest(' "$SRC"
+          grep -F 'verifyStagePrefetchAssetRoster(roster,rosterSha)' "$SRC"
+          grep -F 'artifactBytes' "$SRC"
+          grep -F 'realMeasuredOrManifestEvidence must be true' "$SRC"
+
+      - name: Prove deterministic target-minus-source prefetch derivation
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageTransitionPrefetchScheduleV1.ts
+          grep -F "value.expertId+'\\0'+value.expertContentSha256" "$SRC"
+          grep -F 'STAGE_PREFETCH_BYTE_BUDGET_EXCEEDED' "$SRC"
+          grep -F 'maxStageTransitionPrefetchBytes' "$SRC"
+          grep -F "'GEOMETRY_TO_APPEARANCE'" "$SRC"
+          grep -F "'APPEARANCE_TO_DETAIL'" "$SRC"
+          grep -F 'networkAllowed:false' "$SRC"
+
+      - name: Prove no transfer inference or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageTransitionPrefetchScheduleV1.ts
+          grep -F 'STAGE_TRANSITION_PREFETCH_SCHEDULE_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'movementExecutionAllowed:false' "$SRC"
+          grep -F 'stageRoutingExecutionAllowed:false' "$SRC"
+          grep -F 'routeMutationAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|spawn\(|exec\(|execFile\(|fork\(|fetch\(|https?://|ModelFleet(Service|Client)|reserveCredits|spendCredits" "$SRC"
+
+      - name: Prove zero-byte cap and anti-post-hoc regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeStageTransitionPrefetchScheduleV1.test.mjs
+          grep -F 'exact target-minus-source expert sets yield deterministic transition schedule' "$TEST"
+          grep -F 'assert.equal(first.transitions[1].prefetchBytes,0)' "$TEST"
+          grep -F 'asset roster must be the exact used expert set with exact content identities' "$TEST"
+          grep -F 'transition prefetch bytes cannot exceed the frozen HSME-4/6.1 cap' "$TEST"
+          grep -F 'transition trigger must be strictly inside the source stage' "$TEST"
+          grep -F 'network post-hoc fields and authority widening fail exact policy schema' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
