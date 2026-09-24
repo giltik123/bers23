@@ -215,6 +215,10 @@ test('Core can admit one exact bounded request without starting training',async(
   assert.equal(result.candidateId,'bers-dense-core-v1-training-target');
   assert.equal(result.executionClass,'OFFLINE_PROTECTED_TRAINING');
   assert.equal(result.backend.backendClass,'CUDA_GPU');
+  assert.equal(
+    result.outputStagingAuthorityId,
+    'hsme-staging:training-candidate',
+  );
   assert.equal(result.protectedTrainingExecutionAdmitted,true);
   assert.equal(result.trainingStarted,false);
   assert.match(result.admissionEvidenceSha256,/^[0-9a-f]{64}$/);

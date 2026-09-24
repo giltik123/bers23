@@ -108,6 +108,7 @@ export type CoreHsmeProtectedTrainingAdmissionV1=Readonly<{
   resourceCeilings:CoreHsmeProtectedTrainingResourceCeilingsV1|null;
   billingAuthorizationRef:string|'NONE'|'UNKNOWN';
   toolchainLockSha256:string|'UNKNOWN';
+  outputStagingAuthorityId:string|'UNKNOWN';
   outputStagingPolicySha256:string|'UNKNOWN';
   idempotencyKey:string|'UNKNOWN';
   admissionNonce:string|'UNKNOWN';
@@ -533,6 +534,46 @@ function trainingRequestPayload(value:HsmeFullStudentTrainingRunRequestV1){
   };
 }
 
+export async function coreHsmeProtectedTrainingAdmissionV1Digest(
+  admission:CoreHsmeProtectedTrainingAdmissionV1,
+  hash:CoreHsmeProtectedTrainingHashPortV1,
+):Promise<string>{
+  if(
+    admission.state!=='TRAINING_ADMISSION_ADMITTED_NOT_STARTED'
+    ||admission.protectedTrainingExecutionAdmitted!==true
+  ){
+    throw new CoreHsmeProtectedTrainingAdmissionV1Error(
+      'core_training_admission_digest_state',
+      'only ADMITTED_NOT_STARTED admission records are digestible',
+    );
+  }
+  const payload={
+    schemaVersion:CORE_HSME_PROTECTED_TRAINING_ADMISSION_V1_SCHEMA,
+    state:'TRAINING_ADMISSION_ADMITTED_NOT_STARTED' as const,
+    requestEvidenceSha256:admission.requestEvidenceSha256,
+    candidateId:admission.candidateId,
+    scope:admission.scope,
+    executionClass:admission.executionClass,
+    backend:admission.backend,
+    resourceCeilings:admission.resourceCeilings,
+    billingAuthorizationRef:admission.billingAuthorizationRef,
+    toolchainLockSha256:admission.toolchainLockSha256,
+    outputStagingAuthorityId:admission.outputStagingAuthorityId,
+    outputStagingPolicySha256:admission.outputStagingPolicySha256,
+    idempotencyKey:admission.idempotencyKey,
+    admissionNonce:admission.admissionNonce,
+    issuedAtMs:admission.issuedAtMs,
+    expiresAtMs:admission.expiresAtMs,
+    protectedTrainingExecutionAdmitted:true as const,
+    ...authorityBoundary(),
+  };
+  return digest(
+    CORE_HSME_PROTECTED_TRAINING_ADMISSION_DIGEST_DOMAIN,
+    payload,
+    hash,
+  );
+}
+
 function outputValues(
   requestEvidenceSha256:string,
   candidateId:string,
@@ -547,6 +588,7 @@ function outputValues(
     resourceCeilings:input.resourceCeilings,
     billingAuthorizationRef:input.billingAuthorizationRef,
     toolchainLockSha256:input.toolchainLockSha256,
+    outputStagingAuthorityId:input.outputStaging.stagingAuthorityId,
     outputStagingPolicySha256:input.outputStaging.policySha256,
     idempotencyKey:input.idempotencyKey,
     admissionNonce:input.admissionNonce,
@@ -574,7 +616,8 @@ type PartialOutput=Partial<Pick<
   CoreHsmeProtectedTrainingAdmissionV1,
   'requestEvidenceSha256'|'candidateId'|'scope'|'executionClass'|'backend'|
   'resourceCeilings'|'billingAuthorizationRef'|'toolchainLockSha256'|
-  'outputStagingPolicySha256'|'idempotencyKey'|'admissionNonce'|'issuedAtMs'|
+  'outputStagingAuthorityId'|'outputStagingPolicySha256'|'idempotencyKey'|
+  'admissionNonce'|'issuedAtMs'|
   'expiresAtMs'
 >>;
 
@@ -609,6 +652,7 @@ function terminal(
     resourceCeilings:values.resourceCeilings??null,
     billingAuthorizationRef:values.billingAuthorizationRef??'UNKNOWN',
     toolchainLockSha256:values.toolchainLockSha256??'UNKNOWN',
+    outputStagingAuthorityId:values.outputStagingAuthorityId??'UNKNOWN',
     outputStagingPolicySha256:values.outputStagingPolicySha256??'UNKNOWN',
     idempotencyKey:values.idempotencyKey??'UNKNOWN',
     admissionNonce:values.admissionNonce??'UNKNOWN',

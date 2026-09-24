@@ -1,0 +1,122 @@
+name: HSME-2b2.4 dense-student toolchain preflight
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/hsme-dense-student-training.requirements.lock'
+      - 'scripts/hsme-dense-student-train.py'
+      - 'src/platform/creative/local-ai/hsme/HsmeFullStudentTrainingRunRequestV1.ts'
+      - 'server/core/training/HsmeProtectedTrainingAdmissionV1.ts'
+      - 'server/core/training/HsmeProtectedTrainingAdmissionV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentTrainingToolchainV1.ts'
+      - 'server/core/training/HsmeDenseStudentTrainingToolchainV1.test.mjs'
+      - '.github/workflows/hsme-2b2-4-dense-student-toolchain-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  toolchain-preflight:
+    name: exact pinned toolchain and READY_NOT_EXECUTED launch preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run dense-student toolchain preflight regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-4
+          npx esbuild server/core/training/HsmeDenseStudentTrainingToolchainV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-4/toolchain-preflight.test.mjs \
+            --external:node:*
+          TEST_REPOSITORY_COMMIT_SHA="$(git rev-parse HEAD)" \
+            node --test .test-cache/hsme-2b2-4/toolchain-preflight.test.mjs
+
+      - name: Re-run training request and Core admission regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-4
+          npx esbuild tests/creative-hsme-full-student-training-run-request-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-4/request.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-4/request.test.mjs
+
+          npx esbuild server/core/training/HsmeProtectedTrainingAdmissionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-4/admission.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-4/admission.test.mjs
+
+      - name: Validate inert Python entrypoint syntax and fixed argv surface
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/hsme-dense-student-train.py
+          python3 scripts/hsme-dense-student-train.py --help > .test-cache/hsme-2b2-4/entrypoint-help.txt
+          grep -F -- '--candidate-id' .test-cache/hsme-2b2-4/entrypoint-help.txt
+          grep -F -- '--request-evidence-sha256' .test-cache/hsme-2b2-4/entrypoint-help.txt
+          grep -F -- '--admission-evidence-sha256' .test-cache/hsme-2b2-4/entrypoint-help.txt
+          grep -F -- '--network-policy' .test-cache/hsme-2b2-4/entrypoint-help.txt
+          grep -F -- '--cache-model-input-policy' .test-cache/hsme-2b2-4/entrypoint-help.txt
+
+      - name: Prove exact dependency pins
+        run: |
+          set -euo pipefail
+          LOCK=scripts/hsme-dense-student-training.requirements.lock
+          grep -Fx 'torch==2.14.0' "$LOCK"
+          grep -Fx 'diffusers==0.40.0' "$LOCK"
+          grep -Fx 'transformers==5.17.0' "$LOCK"
+          grep -Fx 'accelerate==1.15.0' "$LOCK"
+          grep -Fx 'safetensors==0.8.0' "$LOCK"
+          grep -Fx 'numpy==2.5.3' "$LOCK"
+          grep -Fx 'huggingface-hub==1.32.0' "$LOCK"
+          grep -Fx 'sentencepiece==0.2.2' "$LOCK"
+          ! grep -nEi 'latest|[<>~^*]' "$LOCK"
+
+      - name: Prove preflight-only authority boundary and sealed-input network law
+        run: |
+          set -euo pipefail
+          CONTRACT=server/core/training/HsmeDenseStudentTrainingToolchainV1.ts
+          ENTRY=scripts/hsme-dense-student-train.py
+
+          grep -F "TRAINING_PREFLIGHT_READY_NOT_EXECUTED" "$CONTRACT"
+          grep -F "LAUNCH_SPEC_READY_NOT_EXECUTED" "$CONTRACT"
+          grep -F "SEALED_INPUTS_ONLY" "$CONTRACT"
+          grep -F "READ_ONLY_CONTENT_ADDRESSED_SEALED_INPUTS" "$CONTRACT"
+          grep -F "processSpawned:false" "$CONTRACT"
+          grep -F "trainingStarted:false" "$CONTRACT"
+          grep -F "checkpointWritten:false" "$CONTRACT"
+          grep -F "checkpointPromotionAllowed:false" "$CONTRACT"
+          grep -F "modelInstallAllowed:false" "$CONTRACT"
+          grep -F "modelFleetPromotionAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "projectArtifactMutationAllowed:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+
+          ! grep -nE 'child_process|spawn\(|exec\(|fork\(|LocalExecutionTicket|ExecutionRunRegistry|snapshot_download|from_pretrained|torch\.load|safe_open|fetch\(|https?://' "$CONTRACT"
+          ! grep -nE 'subprocess|os\.system|requests\.|urllib|httpx|snapshot_download|from_pretrained|torch\.load|safetensors|socket\.' "$ENTRY"
+
+      - name: Prove fixed repository-owned entrypoint and lock identities
+        run: |
+          set -euo pipefail
+          CONTRACT=server/core/training/HsmeDenseStudentTrainingToolchainV1.ts
+          grep -F "scripts/hsme-dense-student-train.py" "$CONTRACT"
+          grep -F "scripts/hsme-dense-student-training.requirements.lock" "$CONTRACT"
+          grep -F "interpreter:'python3.12'" "$CONTRACT"
+          ! grep -nE 'callerProvidedExecutable|arbitraryArgv|shellFragment|extraArgs' "$CONTRACT"
