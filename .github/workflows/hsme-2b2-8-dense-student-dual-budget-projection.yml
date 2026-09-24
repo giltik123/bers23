@@ -1,0 +1,109 @@
+name: HSME-2b2.8 dense-student dual-budget projection
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentDualBudgetProjectionV1.ts'
+      - 'server/core/training/HsmeDenseStudentDualBudgetProjectionV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentRepresentationV1.ts'
+      - 'server/core/training/HsmeDenseStudentStepMatrixV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineDualBudgetEvidenceV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmePackV1.ts'
+      - 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-dual-budget.json'
+      - '.github/workflows/hsme-2b2-8-dense-student-dual-budget-projection.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  projection-contract:
+    name: measured dual-budget projection candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck Core projection contract
+        run: npm run server:typecheck
+
+      - name: Bundle and run dual-budget projection regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-8
+          npx esbuild server/core/training/HsmeDenseStudentDualBudgetProjectionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-8/projection.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-8/projection.test.mjs
+
+      - name: Prove exact source evidence rehash and one-root law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentDualBudgetProjectionV1.ts
+          grep -F 'hsmeDenseStudentRepresentationEvidenceV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentStepMatrixEvidenceV1Digest(' "$SRC"
+          grep -F 'hsmePackDescriptorV1Digest(' "$SRC"
+          grep -F 'HSME_DENSE_STUDENT_FIXED_STEP_COUNTS_V1' "$SRC"
+          grep -F 'HSME_DENSE_STUDENT_FIXED_CAPABILITIES_V1' "$SRC"
+          grep -F "pack.roots.length!==1" "$SRC"
+          grep -F "pack.roots[0].role!=='BASE'" "$SRC"
+          grep -F "pack.routing.mode!=='SHARED_ONLY'" "$SRC"
+          grep -F "pack.routing.maxActiveExperts!==0" "$SRC"
+
+      - name: Prove target-only measured projection
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentDualBudgetProjectionV1.ts
+          grep -F "HSME_DENSE_STUDENT_TARGET_CANDIDATE_ID" "$SRC"
+          grep -F "mandatoryInstalledBytes:installedBytes" "$SRC"
+          grep -F "optionalInstalledBytes:0" "$SRC"
+          grep -F "firstUseDownloadBytes:installedBytes" "$SRC"
+          grep -F "knownInstalledLowerBoundBytes:installedBytes" "$SRC"
+          grep -F "activeWeightsBytes:max(rows.map(value=>value.activeRepresentationBytes))" "$SRC"
+          grep -F "peakRamBytes:max(rows.map(value=>value.peakRamBytes))" "$SRC"
+          grep -F "peakAcceleratorBytes:max(rows.map(value=>value.peakAcceleratorBytes))" "$SRC"
+          grep -F "flashBytesMovedPerRun:max(rows.map(value=>value.flashBytesMovedPerRun))" "$SRC"
+          grep -F "qualityPerInstalledGbStatus:'MEASURED'" "$SRC"
+          grep -F "mvmState:'NOT_EVALUATED'" "$SRC"
+          grep -F "efficiencyDisposition:'R&D_ONLY'" "$SRC"
+          grep -F "hsme_dense_projection_non_target_drift" "$SRC"
+          grep -F "hsme_dense_projection_target_measurement_overwrite" "$SRC"
+
+      - name: Prove candidate-only no-authority boundary
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentDualBudgetProjectionV1.ts
+          grep -F 'baselineSelectionAllowed:false' "$SRC"
+          grep -F 'scheduleSelectionAllowed:false' "$SRC"
+          grep -F 'candidateSelectionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          grep -F 'projectArtifactMutationAllowed:false' "$SRC"
+          grep -F 'aeeExecutionAuthorityGranted:false' "$SRC"
+          grep -F 'winnerSelectionAllowed:false' "$SRC"
+          ! grep -nE 'writeFile|appendFile|rename\(|copyFile|child_process|spawn\(|exec\(|execFile\(|fork\(|from_pretrained|torch\.load|safe_open|DurableModelFleet|ModelFleet(Service|Client)|promoteModel|installModel|reserveCredits|spendCredits|fetch\(|https?://' "$SRC"
+
+      - name: Prove canonical baseline is read-only input
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentDualBudgetProjectionV1.ts
+          ! grep -F 'hsme-2a-dense-baseline-dual-budget.json' "$SRC"
+          test -f src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-dual-budget.json
