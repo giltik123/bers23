@@ -1,0 +1,93 @@
+name: HSME-5.4 quality-first sparse-block disposition
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeSelectiveSparseBlockPlanV1.ts'
+      - 'server/core/training/HsmeSparseBlockExecutionMatrixV1.ts'
+      - 'server/core/training/HsmeSparseBlockDispositionV1.ts'
+      - 'server/core/training/HsmeSparseBlockDispositionV1.test.mjs'
+      - '.github/workflows/hsme-5-4-quality-first-block-disposition.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-first-disposition:
+    name: per-block quality-first device-efficiency disposition
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run quality-first disposition regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-5-4
+          npx esbuild server/core/training/HsmeSparseBlockDispositionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-5-4/sparse-block-disposition.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-5-4/sparse-block-disposition.test.mjs
+      - name: Prove exact plan matrix and reviewed policy origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSparseBlockDispositionV1.ts
+          grep -F 'hsmeSelectiveSparseBlockPlanV1Digest(' "$SRC"
+          grep -F 'verifySparseBlockPlan(plan,planSha)' "$SRC"
+          grep -F 'hsmeSparseBlockExecutionMatrixV1Digest(' "$SRC"
+          grep -F 'verifyExecutionMatrix(matrix,matrixSha)' "$SRC"
+          grep -F 'hsmeSparseBlockDispositionPolicyV1Digest(' "$SRC"
+          grep -F 'verifyDispositionPolicy(policy,policySha)' "$SRC"
+      - name: Prove quality before real efficiency
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSparseBlockDispositionV1.ts
+          grep -F 'DENSE_CONTROL_QUALITY_GATE_FAILED' "$SRC"
+          grep -F 'SPARSE_HARD_QUALITY_GATE_FAILED' "$SRC"
+          grep -F 'SPARSE_QUALITY_PRESERVATION_FAILED' "$SRC"
+          grep -F 'WALL_CLOCK_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'BYTES_MOVED_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'PEAK_MEMORY_REGRESSION_EXCEEDED' "$SRC"
+          grep -F 'KERNEL_DISPATCH_REGRESSION_EXCEEDED' "$SRC"
+          grep -F 'totalBytesMoved(' "$SRC"
+      - name: Prove independent block outcomes and no production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSparseBlockDispositionV1.ts
+          grep -F "'ADVANCE'" "$SRC"
+          grep -F "'REDESIGN'" "$SRC"
+          grep -F "'REJECT'" "$SRC"
+          grep -F 'advancedBlockIds' "$SRC"
+          grep -F 'redesignedBlockIds' "$SRC"
+          grep -F 'rejectedBlockIds' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'blockExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -niE 'flop|weighted|aggregate.score|ModelFleet(Service|Client)|reserveCredits|spendCredits|(^|[^[:alnum:]_])fetch\(|https?://' "$SRC"
+      - name: Prove quality-first regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeSparseBlockDispositionV1.test.mjs
+          grep -F 'quality failure cannot be rescued by large speed and traffic improvements' "$TEST"
+          grep -F 'hard preservation or critical failures REJECT a sparse block' "$TEST"
+          grep -F 'insufficient wall-clock improvement REDESIGNs only that block' "$TEST"
+          grep -F 'bytes-moved improvement is an independent mandatory efficiency gate' "$TEST"
+          grep -F 'peak-memory and dispatch regressions are bounded only after quality passes' "$TEST"
+          grep -F 'dense control quality failure forces REDESIGN before sparse efficiency interpretation' "$TEST"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
