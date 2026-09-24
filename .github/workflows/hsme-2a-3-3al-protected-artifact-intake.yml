@@ -63,6 +63,8 @@ jobs:
           grep -F 'verifyResourceFragment(' "$INTAKE"
           grep -F 'provenancePinVerified:true' "$INTAKE"
           grep -F 'canonicalBenchmarkVerificationPassed:true' "$INTAKE"
+          grep -F "benchmarkCollectorBundlePath:'benchmark-bundle'" "$INTAKE"
+          grep -F "resourceCollectorBundlePath:manifest.runStatus==='COMPLETE'?'resource-bundle':null" "$INTAKE"
 
       - name: Prove transfer layer grants no model or decision authority
         run: |
