@@ -1,7 +1,9 @@
 import {
   HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_DIGEST_DOMAIN,
   HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_V1_SCHEMA,
-  type HsmeFullStudentTrainingPlanAdmissionV1,
+} from './HsmeFullStudentTrainingPlanContractV1.ts';
+import type {
+  HsmeFullStudentTrainingPlanAdmissionV1,
 } from './HsmeFullStudentTrainingPlanAdmissionV1.ts';
 import {
   HSME_DENSE_BASELINE_EVIDENCE_V1_SCHEMA,
