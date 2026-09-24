@@ -1,0 +1,99 @@
+name: HSME-7.4 quality-first spatial disposition
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeSpatialExecutionMatrixV1.ts'
+      - 'server/core/training/HsmeSpatialDispositionV1.ts'
+      - 'server/core/training/HsmeSpatialDispositionV1.test.mjs'
+      - '.github/workflows/hsme-7-4-quality-first-spatial-disposition.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spatial-disposition:
+    name: quality-first per-candidate spatial disposition
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run quality-first spatial disposition regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-7-4
+          npx esbuild server/core/training/HsmeSpatialDispositionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-7-4/spatial-disposition.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-7-4/spatial-disposition.test.mjs
+
+      - name: Prove exact matrix and reviewed-policy trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialDispositionV1.ts
+          grep -F 'hsmeSpatialExecutionMatrixV1Digest(' "$SRC"
+          grep -F 'verifySpatialExecutionMatrix(matrix,matrixSha)' "$SRC"
+          grep -F 'hsmeSpatialDispositionPolicyV1Digest(' "$SRC"
+          grep -F 'verifySpatialDispositionPolicy(policy,policySha)' "$SRC"
+          grep -F 'SPATIAL_DISPOSITION_MATRIX_ORIGIN_UNVERIFIED' "$SRC"
+          grep -F 'SPATIAL_DISPOSITION_POLICY_ORIGIN_UNVERIFIED' "$SRC"
+
+      - name: Prove quality-first then real device-efficiency law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialDispositionV1.ts
+          grep -F 'FULL_SPATIAL_CONTROL_QUALITY_BASELINE_INVALID' "$SRC"
+          grep -F 'HARD_PRESERVATION_FAILED:' "$SRC"
+          grep -F 'CONTROL_QUALITY_REGRESSION_EXCEEDED:' "$SRC"
+          grep -F 'WALL_CLOCK_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'TOTAL_BYTES_MOVED_IMPROVEMENT_INSUFFICIENT' "$SRC"
+          grep -F 'PEAK_MEMORY_REGRESSION_EXCEEDED' "$SRC"
+          grep -F 'ACTIVE_WEIGHTS_REGRESSION_EXCEEDED' "$SRC"
+
+      - name: Prove no winner spatial Fashion Artifact or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialDispositionV1.ts
+          grep -F 'SPATIAL_DISPOSITION_READY' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'spatialExecutionAllowed:false' "$SRC"
+          grep -F 'spatialMapMutationAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'fashionGeometryAuthorityGranted:false' "$SRC"
+          grep -F 'artifactAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'winnerSelectionAllowed:false' "$SRC"
+          ! grep -nE "weightedScore|aggregateScore|globalWinner|winnerScore|theoreticalTokenReduction|from ['\"]node:(fs|fs/promises|child_process)|spawn\(|exec\(|execFile\(|fork\(|fetch\(|https?://|ModelFleet(Service|Client)|reserveCredits|spendCredits" "$SRC"
+
+      - name: Prove independence and token-work non-authority
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeSpatialDispositionV1.test.mjs
+          grep -F 'quality-preserving efficient candidates may independently co-advance' "$TEST"
+          grep -F 'control quality failure forces every candidate to REDESIGN before efficiency' "$TEST"
+          grep -F 'speed and bytes moved cannot rescue a candidate quality regression' "$TEST"
+          grep -F 'hard preservation or critical failure rejects only the affected candidate' "$TEST"
+          grep -F 'real wall-clock bytes memory and active-weight gates are independent' "$TEST"
+          grep -F 'token-work reduction alone cannot advance without real device benefit' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

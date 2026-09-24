@@ -1,0 +1,99 @@
+name: HSME-7.3 protected spatial execution matrix
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeSpatialSparsityExperimentPlanV1.ts'
+      - 'server/core/training/HsmeSpatialComputeMapRosterV1.ts'
+      - 'server/core/training/HsmeSpatialExecutionMatrixV1.ts'
+      - 'server/core/training/HsmeSpatialExecutionMatrixV1.test.mjs'
+      - '.github/workflows/hsme-7-3-spatial-execution-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spatial-execution-matrix:
+    name: protected dense-vs-spatial execution matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run protected spatial execution regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-7-3
+          npx esbuild server/core/training/HsmeSpatialExecutionMatrixV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-7-3/spatial-execution-matrix.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-7-3/spatial-execution-matrix.test.mjs
+
+      - name: Prove exact plan roster policy and host-result trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialExecutionMatrixV1.ts
+          grep -F 'hsmeSpatialSparsityExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifySpatialExperimentPlan(plan,planSha)' "$SRC"
+          grep -F 'hsmeSpatialComputeMapRosterV1Digest(' "$SRC"
+          grep -F 'verifySpatialComputeMapRoster(roster,rosterSha)' "$SRC"
+          grep -F 'verifySpatialExecutionCampaignPolicy(' "$SRC"
+          grep -F 'coreHsmeSpatialExecutionResultV1Digest(' "$SRC"
+          grep -F 'verifySpatialExecutionResult(' "$SRC"
+
+      - name: Prove exact map replay and measured-resource law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialExecutionMatrixV1.ts
+          grep -F 'implementationSha256!==candidate.spatialMapSha256' "$SRC"
+          grep -F 'candidate.deterministicReplayIdentitySha256' "$SRC"
+          grep -F 'SPATIAL_EXECUTION_TOKEN_WORK_BINDING_MISMATCH' "$SRC"
+          grep -F 'SPATIAL_EXECUTION_RESOURCE_CEILING_EXCEEDED' "$SRC"
+          grep -F 'FULL_SPATIAL_CONTROL' "$SRC"
+          grep -F 'networkBytesDuringExecution:0' "$SRC"
+
+      - name: Prove no selection Fashion Artifact or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSpatialExecutionMatrixV1.ts
+          grep -F 'SPATIAL_EXECUTION_MATRIX_READY_NOT_DISPOSED' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'spatialExecutionAllowed:false' "$SRC"
+          grep -F 'spatialMapMutationAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'fashionGeometryAuthorityGranted:false' "$SRC"
+          grep -F 'artifactAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          ! grep -nE "weightedScore|aggregateScore|winnerScore|from ['\"]node:(fs|fs/promises|child_process)|spawn\(|exec\(|execFile\(|fork\(|fetch\(|https?://|ModelFleet(Service|Client)|reserveCredits|spendCredits" "$SRC"
+
+      - name: Prove fail-closed host and dimension regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeSpatialExecutionMatrixV1.test.mjs
+          grep -F 'full spatial control cannot report cheap or pruned token work' "$TEST"
+          grep -F 'every row must bind the exact immutable spatial map and replay identity' "$TEST"
+          grep -F 'quality and hard-preservation dimensions must exactly match the frozen plan' "$TEST"
+          grep -F 'wall-clock memory and bytes-moved ceilings fail before READY' "$TEST"
+          grep -F 'failed protected campaign produces FAILED evidence without matrix digest' "$TEST"
+          grep -F 'host rehash drift and thrown execution fail closed distinctly' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
