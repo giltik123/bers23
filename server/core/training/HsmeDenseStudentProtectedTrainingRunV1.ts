@@ -396,6 +396,105 @@ export async function coreHsmeDenseStudentExecutionResultV1Digest(
   );
 }
 
+export async function hsmeDenseStudentTrainingRunReceiptV1Digest(
+  receipt:HsmeDenseStudentTrainingRunReceiptV1,
+  hash:HsmeDenseStudentTrainingHashPortV1,
+):Promise<string>{
+  if(
+    receipt.schemaVersion!==HSME_DENSE_STUDENT_TRAINING_RUN_RECEIPT_V1_SCHEMA
+    ||receipt.state!=='TRAINING_RUN_COMPLETED_CHECKPOINT_STAGED_NOT_PROMOTED'
+    ||receipt.blockers.length!==0
+  ){
+    throw new HsmeDenseStudentProtectedTrainingRunV1Error(
+      'hsme_training_run_receipt_digest_state',
+      'only completed staged-not-promoted receipts are digestible',
+    );
+  }
+  return digest(
+    HSME_DENSE_STUDENT_TRAINING_RUN_RECEIPT_DIGEST_DOMAIN,
+    completedReceiptDigestPayload(receipt),
+    hash,
+  );
+}
+
+function completedReceiptDigestPayload(
+  value:HsmeDenseStudentTrainingRunReceiptV1,
+):Omit<HsmeDenseStudentTrainingRunReceiptV1,'receiptEvidenceSha256'>{
+  if(
+    value.backend===null
+    ||value.executionAttemptId==='UNKNOWN'
+    ||value.startedAtMs==='UNKNOWN'
+    ||value.finishedAtMs==='UNKNOWN'
+    ||value.exitCode==='UNKNOWN'
+    ||value.consumedTrainingExamples==='UNKNOWN'
+    ||value.consumedGpuSeconds==='UNKNOWN'
+    ||value.consumedTrainingCostMicrousd==='UNKNOWN'
+    ||value.stdoutEvidenceSha256==='UNKNOWN'
+    ||value.stderrEvidenceSha256==='UNKNOWN'
+    ||value.outputStagingAuthorityId==='UNKNOWN'
+    ||value.outputStagingPolicySha256==='UNKNOWN'
+    ||value.stagedCheckpointSha256==='UNKNOWN'
+    ||value.stagedCheckpointBytes==='UNKNOWN'
+    ||value.checkpointMetadataSha256==='UNKNOWN'
+    ||value.teacherDecisionSha256==='UNKNOWN'
+    ||value.reproductionEvidenceSha256==='UNKNOWN'
+    ||value.corpusRootDigest==='UNKNOWN'
+    ||value.recipeDigest==='UNKNOWN'
+    ||value.inputCheckpointSha256==='UNKNOWN'
+    ||value.resumeCheckpointSha256==='UNKNOWN'
+    ||value.runnerResultSha256==='UNKNOWN'
+  ){
+    throw new HsmeDenseStudentProtectedTrainingRunV1Error(
+      'hsme_training_run_receipt_digest_incomplete',
+      'completed receipt is missing content-addressed fields',
+    );
+  }
+  return {
+    schemaVersion:HSME_DENSE_STUDENT_TRAINING_RUN_RECEIPT_V1_SCHEMA,
+    state:'TRAINING_RUN_COMPLETED_CHECKPOINT_STAGED_NOT_PROMOTED',
+    blockers:value.blockers,
+    preflightEvidenceSha256:value.preflightEvidenceSha256,
+    launchSpecSha256:value.launchSpecSha256,
+    requestEvidenceSha256:value.requestEvidenceSha256,
+    admissionEvidenceSha256:value.admissionEvidenceSha256,
+    toolchainManifestSha256:value.toolchainManifestSha256,
+    backend:value.backend,
+    outputStagingAuthorityId:value.outputStagingAuthorityId,
+    outputStagingPolicySha256:value.outputStagingPolicySha256,
+    teacherDecisionSha256:value.teacherDecisionSha256,
+    reproductionEvidenceSha256:value.reproductionEvidenceSha256,
+    corpusRootDigest:value.corpusRootDigest,
+    recipeDigest:value.recipeDigest,
+    inputCheckpointSha256:value.inputCheckpointSha256,
+    resumeCheckpointSha256:value.resumeCheckpointSha256,
+    executionAttemptId:value.executionAttemptId,
+    startedAtMs:value.startedAtMs,
+    finishedAtMs:value.finishedAtMs,
+    exitCode:value.exitCode,
+    processSpawned:value.processSpawned,
+    trainingStarted:value.trainingStarted,
+    consumedTrainingExamples:value.consumedTrainingExamples,
+    consumedGpuSeconds:value.consumedGpuSeconds,
+    consumedTrainingCostMicrousd:value.consumedTrainingCostMicrousd,
+    stdoutEvidenceSha256:value.stdoutEvidenceSha256,
+    stderrEvidenceSha256:value.stderrEvidenceSha256,
+    runnerResultSha256:value.runnerResultSha256,
+    stagedCheckpointSha256:value.stagedCheckpointSha256,
+    stagedCheckpointBytes:value.stagedCheckpointBytes,
+    checkpointMetadataSha256:value.checkpointMetadataSha256,
+    checkpointPromotionAllowed:value.checkpointPromotionAllowed,
+    modelInstallAllowed:value.modelInstallAllowed,
+    modelFleetPromotionAllowed:value.modelFleetPromotionAllowed,
+    productionAuthorityGranted:value.productionAuthorityGranted,
+    providerAuthorityGranted:value.providerAuthorityGranted,
+    billingAuthorityGranted:value.billingAuthorityGranted,
+    projectArtifactMutationAllowed:value.projectArtifactMutationAllowed,
+    aeeExecutionAuthorityGranted:value.aeeExecutionAuthorityGranted,
+    durableModelFleetPromotionAllowed:value.durableModelFleetPromotionAllowed,
+    winnerSelectionAllowed:value.winnerSelectionAllowed,
+  };
+}
+
 function buildExecutionRequest(
   launch:HsmeDenseStudentLaunchSpecV1,
   launchSpecSha256:string,
