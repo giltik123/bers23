@@ -195,7 +195,8 @@ async function completedReceipt(preflight){
     preflight,
     {async executeExactTrainingLaunch(){return result;}},
     {async verifyExecutionResult(value,expected){
-      return value===result&&expected===result.runnerResultSha256;
+      return value.runnerResultSha256===result.runnerResultSha256
+        &&expected===result.runnerResultSha256;
     }},
     hashPort,
   );
