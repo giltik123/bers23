@@ -353,7 +353,7 @@ export async function proveHsmeDenseStudentStepMatrixV1(
   };
   const evidenceSha256=await digest(
     HSME_DENSE_STUDENT_STEP_MATRIX_EVIDENCE_DIGEST_DOMAIN,
-    readyPayload,
+    stepMatrixEvidencePayload(readyPayload),
     hash,
   );
   return deepFreeze({...readyPayload,evidenceSha256});
@@ -486,6 +486,71 @@ export async function coreHsmeDenseStudentStepMatrixResultV1Digest(
     resultPayload(normalized),
     hash,
   );
+}
+
+export async function hsmeDenseStudentStepMatrixEvidenceV1Digest(
+  evidence:HsmeDenseStudentStepMatrixEvidenceV1,
+  hash:HsmeDenseStudentTrainingHashPortV1,
+):Promise<string>{
+  if(
+    evidence.state!=='STEP_MATRIX_READY_NOT_SELECTED'
+    ||evidence.blockers.length!==0
+    ||evidence.representationEvidenceSha256==='UNKNOWN'
+    ||evidence.candidateId==='UNKNOWN'
+    ||evidence.representationArtifactSha256==='UNKNOWN'
+    ||evidence.representationBytes==='UNKNOWN'
+    ||evidence.benchmarkBindingSha256==='UNKNOWN'
+    ||evidence.benchmarkResultSha256==='UNKNOWN'
+    ||evidence.benchmarkAttemptId==='UNKNOWN'
+    ||evidence.rows.length!==8
+  ){
+    fail(
+      'hsme_step_matrix_evidence_digest_state',
+      'only complete READY_NOT_SELECTED matrix evidence is digestible',
+    );
+  }
+  return digest(
+    HSME_DENSE_STUDENT_STEP_MATRIX_EVIDENCE_DIGEST_DOMAIN,
+    stepMatrixEvidencePayload(evidence),
+    hash,
+  );
+}
+
+type StepMatrixEvidencePayloadV1=Omit<
+  HsmeDenseStudentStepMatrixEvidenceV1,
+  'evidenceSha256'
+>;
+
+function stepMatrixEvidencePayload(
+  value:StepMatrixEvidencePayloadV1,
+):StepMatrixEvidencePayloadV1{
+  return {
+    schemaVersion:HSME_DENSE_STUDENT_STEP_MATRIX_EVIDENCE_V1_SCHEMA,
+    state:'STEP_MATRIX_READY_NOT_SELECTED',
+    blockers:value.blockers,
+    representationEvidenceSha256:value.representationEvidenceSha256,
+    candidateId:value.candidateId,
+    representationArtifactSha256:value.representationArtifactSha256,
+    representationBytes:value.representationBytes,
+    benchmarkBindingSha256:value.benchmarkBindingSha256,
+    benchmarkResultSha256:value.benchmarkResultSha256,
+    benchmarkAttemptId:value.benchmarkAttemptId,
+    rows:value.rows,
+    weightedAggregateScoreAllowed:value.weightedAggregateScoreAllowed,
+    efficiencyMayOverrideQualityFailure:value.efficiencyMayOverrideQualityFailure,
+    scheduleSelectionAllowed:value.scheduleSelectionAllowed,
+    candidateSelectionAllowed:value.candidateSelectionAllowed,
+    checkpointPromotionAllowed:value.checkpointPromotionAllowed,
+    modelInstallAllowed:value.modelInstallAllowed,
+    modelFleetPromotionAllowed:value.modelFleetPromotionAllowed,
+    durableModelFleetPromotionAllowed:value.durableModelFleetPromotionAllowed,
+    productionAuthorityGranted:value.productionAuthorityGranted,
+    providerAuthorityGranted:value.providerAuthorityGranted,
+    billingAuthorityGranted:value.billingAuthorityGranted,
+    projectArtifactMutationAllowed:value.projectArtifactMutationAllowed,
+    aeeExecutionAuthorityGranted:value.aeeExecutionAuthorityGranted,
+    winnerSelectionAllowed:value.winnerSelectionAllowed,
+  };
 }
 
 function buildRequest(
