@@ -1,0 +1,85 @@
+name: HSME-2b2.17 selection-bound dual-budget projection
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentSelectedDualBudgetProjectionV1.ts'
+      - 'server/core/training/HsmeDenseStudentSelectedDualBudgetProjectionV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentQualityFirstDispositionV1.ts'
+      - 'server/core/training/HsmeDenseStudentDualBudgetProjectionV1.ts'
+      - '.github/workflows/hsme-2b2-17-selection-bound-projection.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selected-projection:
+    name: selection-bound canonical dual-budget projection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run selection-bound projection regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-17
+          npx esbuild server/core/training/HsmeDenseStudentSelectedDualBudgetProjectionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-17/selected-projection.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-17/selected-projection.test.mjs
+
+      - name: Prove exact selected-source and canonical projection reuse
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentSelectedDualBudgetProjectionV1.ts
+          grep -F 'hsmeDenseStudentQualityFirstDispositionV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentRepresentationEvidenceV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentStepMatrixEvidenceV1Digest(' "$SRC"
+          grep -F 'projectHsmeDenseStudentDualBudgetV1(' "$SRC"
+          grep -F 'hsmeDenseStudentDualBudgetProjectionV1Digest(' "$SRC"
+          grep -F 'SELECTED_DUAL_BUDGET_PROJECTION_READY_NOT_FROZEN' "$SRC"
+
+      - name: Prove no reselection, scoring, finalization or execution surface
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentSelectedDualBudgetProjectionV1.ts
+          grep -F 'scheduleSelectionAllowed:false' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'candidateSelectionAllowed:false' "$SRC"
+          grep -F 'baselineSelectionAllowed:false' "$SRC"
+          grep -F 'canonicalDecisionPersistAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE 'weightedScore|aggregateScore|scoreWeight|deriveHsmeDenseStudentQualityFirstDispositionV1|finalizeHsmeDenseBaselineV1|startTraining|runTraining|child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://' "$SRC"
+
+      - name: Prove synthetic wrapper tests do not bypass origin refusal
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeDenseStudentSelectedDualBudgetProjectionV1.test.mjs
+          grep -F 'verifyQualityFirstDisposition(){return false;}' "$TEST"
+          grep -F 'SELECTED_PROJECTION_DISPOSITION_ORIGIN_UNVERIFIED' "$TEST"
+          grep -F 'verifyRepresentationEvidence(){return false;}' "$TEST"
+          grep -F 'verifyStepMatrixEvidence(){return false;}' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
