@@ -1,0 +1,101 @@
+name: HSME-3.1 Adapter-MoE topology freeze
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExperimentPlanV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExperimentPlanV1.test.mjs'
+      - 'src/platform/creative/local-ai/hsme/HsmeDenseBaselineEvidenceV1.ts'
+      - '.github/workflows/hsme-3-1-adapter-moe-topology-freeze.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  topology-freeze:
+    name: pinned-baseline Adapter-MoE experiment-plan freeze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run topology-freeze regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-1
+          npx esbuild server/core/training/HsmeAdapterMoeExperimentPlanV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-1/topology-freeze.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-1/topology-freeze.test.mjs
+
+      - name: Prove pinned baseline and exact-origin gates
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExperimentPlanV1.ts
+          grep -F "decisionStatus!=='BASELINE_PINNED'" "$SRC"
+          grep -F 'hsmeDenseBaselineDecisionV1Digest(' "$SRC"
+          grep -F 'verifyDenseBaselineDecision(' "$SRC"
+          grep -F 'hsmeAdapterMoeTopologyPolicyV1Digest(' "$SRC"
+          grep -F 'verifyTopologyPolicy(' "$SRC"
+          grep -F 'ADAPTER_MOE_BASELINE_PINNED_REQUIRED' "$SRC"
+
+      - name: Prove mandatory dense Top-1 Top-2 and bounded topology
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExperimentPlanV1.ts
+          grep -F "'DENSE_CONTROL'" "$SRC"
+          grep -F "'SHARED_TOP1_ADAPTER'" "$SRC"
+          grep -F "'SHARED_TOP2_ADAPTER'" "$SRC"
+          grep -F 'maxExpertCount' "$SRC"
+          grep -F 'maxExpertArtifactBytes' "$SRC"
+          grep -F 'maxTotalExpertArtifactBytes' "$SRC"
+          grep -F 'ADAPTER_MOE_TOPOLOGY_POLICY_EXPERT_NOT_COMPACT' "$SRC"
+          grep -F 'maxActiveSpecialistsPerDecision must be 1 or 2' "$SRC"
+          grep -F 'sharedPathRequired must be true' "$SRC"
+          grep -F 'fullBackboneExpertAllowed must be false' "$SRC"
+          grep -F "'FLASH_BYTES_MOVED'" "$SRC"
+          grep -F "'ACCELERATOR_BYTES_MOVED'" "$SRC"
+          grep -F "'ROUTER_REPLAY_IDENTITY'" "$SRC"
+
+      - name: Prove frozen plan has no execution or promotion authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExperimentPlanV1.ts
+          grep -F 'ADAPTER_MOE_EXPERIMENT_PLAN_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'prototypeAssemblyAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove real-plan blocker and trust regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoeExperimentPlanV1.test.mjs
+          grep -F 'current REDESIGN_REQUIRED canonical baseline remains BLOCKED' "$TEST"
+          grep -F 'verifyDenseBaselineDecision(){return false;}' "$TEST"
+          grep -F 'verifyTopologyPolicy(){return false;}' "$TEST"
+          grep -F 'policy cannot omit dense Top-1 or Top-2 controls' "$TEST"
+          grep -F 'policy authority widening and baseline rebinding fail closed' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
