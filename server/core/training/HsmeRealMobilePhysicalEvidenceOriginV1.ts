@@ -30,6 +30,8 @@ export const HSME_REAL_MOBILE_PHYSICAL_ORIGIN_ASSEMBLY_V1_SCHEMA =
   'BERS_HSME_REAL_MOBILE_PHYSICAL_ORIGIN_ASSEMBLY_V1' as const;
 export const HSME_REAL_MOBILE_PHYSICAL_ORIGIN_BINDING_DIGEST_DOMAIN =
   'bers:hsme:real-mobile-physical-origin-binding:v1\0' as const;
+export const HSME_REAL_MOBILE_HARDWARE_RUNTIME_IDENTITY_DIGEST_DOMAIN =
+  'bers:hsme:hardware-runtime-identity:v1\0' as const;
 
 const HEX64=/^[0-9a-f]{64}$/;
 
