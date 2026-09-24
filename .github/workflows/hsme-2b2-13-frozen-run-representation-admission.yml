@@ -1,0 +1,82 @@
+name: HSME-2b2.13 frozen-run representation admission
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentFrozenRunRepresentationAdmissionV1.ts'
+      - 'server/core/training/HsmeDenseStudentFrozenRunRepresentationAdmissionV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentFrozenWorkspaceRunEvidenceV1.ts'
+      - 'server/core/training/HsmeDenseStudentRepresentationV1.ts'
+      - '.github/workflows/hsme-2b2-13-frozen-run-representation-admission.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frozen-run-representation-admission:
+    name: trusted real-run gate before existing representation exporter
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Server typecheck
+        run: npm run server:typecheck
+
+      - name: Bundle and run blocked/invalid admission regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-13
+          npx esbuild server/core/training/HsmeDenseStudentFrozenRunRepresentationAdmissionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-13/admission.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-13/admission.test.mjs
+
+      - name: Prove external real-run trust gates precede exporter invocation
+        run: |
+          set -euo pipefail
+          FILE=server/core/training/HsmeDenseStudentFrozenRunRepresentationAdmissionV1.ts
+          REAL=$(grep -n "realProtectedExecution!==true" "$FILE" | head -1 | cut -d: -f1)
+          REHASH=$(grep -n "hsmeDenseStudentFrozenWorkspaceRunEvidenceV1Digest" "$FILE" | tail -1 | cut -d: -f1)
+          ORIGIN=$(grep -n "verifyFrozenRunEvidence(" "$FILE" | tail -1 | cut -d: -f1)
+          RECEIPT=$(grep -n "hsmeDenseStudentTrainingRunReceiptV1Digest" "$FILE" | tail -1 | cut -d: -f1)
+          EXPORT=$(grep -n "representHsmeDenseStudentCheckpointV1(" "$FILE" | tail -1 | cut -d: -f1)
+          test "$REAL" -lt "$EXPORT"
+          test "$REHASH" -lt "$EXPORT"
+          test "$ORIGIN" -lt "$EXPORT"
+          test "$RECEIPT" -lt "$EXPORT"
+
+      - name: Prove existing exporter is reused and no alternate execution surface exists
+        run: |
+          set -euo pipefail
+          FILE=server/core/training/HsmeDenseStudentFrozenRunRepresentationAdmissionV1.ts
+          test "$(grep -c "representHsmeDenseStudentCheckpointV1(" "$FILE")" -eq 1
+          grep -F "FROZEN_RUN_REPRESENTATION_READY_NOT_ADMITTED" "$FILE"
+          grep -F "checkpointPromotionAllowed:false" "$FILE"
+          grep -F "modelInstallAllowed:false" "$FILE"
+          grep -F "modelFleetPromotionAllowed:false" "$FILE"
+          grep -F "productionAuthorityGranted:false" "$FILE"
+          grep -F "winnerSelectionAllowed:false" "$FILE"
+          ! grep -nE 'child_process|spawn\(|exec\(|subprocess|runHsmeDenseStudentProtectedTrainingV1|executeExactTrainingLaunch|startTraining|ModelFleet(Service|Client)|promoteModel|installModel|reserveCredits|spendCredits|fetch\(|https?://' "$FILE"
+
+      - name: Prove ordinary PR fixture cannot mint real protected execution
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeDenseStudentFrozenRunRepresentationAdmissionV1.test.mjs
+          grep -F "realProtectedExecution:false" "$TEST"
+          ! grep -F "realProtectedExecution:true" "$TEST"
