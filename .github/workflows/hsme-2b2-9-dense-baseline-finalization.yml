@@ -1,0 +1,87 @@
+name: HSME-2b2.9 dense-baseline finalization
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseBaselineFinalizationV1.ts'
+      - 'server/core/training/HsmeDenseBaselineFinalizationV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentDualBudgetProjectionV1.ts'
+      - '.github/workflows/hsme-2b2-9-dense-baseline-finalization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dense-baseline-finalization:
+    name: non-promoting dense baseline pin-review finalization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run dense-baseline finalization regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-9
+          npx esbuild server/core/training/HsmeDenseBaselineFinalizationV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-9/finalization.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-9/finalization.test.mjs
+
+      - name: Re-run dense projection regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-9
+          npx esbuild server/core/training/HsmeDenseStudentDualBudgetProjectionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-9/projection.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-9/projection.test.mjs
+
+      - name: Prove external license review and canonical pin candidate boundary
+        run: |
+          set -euo pipefail
+          CONTRACT=server/core/training/HsmeDenseBaselineFinalizationV1.ts
+          grep -F 'normalizeHsmeDenseBaselineDecisionV1(' "$CONTRACT"
+          grep -F 'hsmeDenseBaselineDecisionV1Digest(' "$CONTRACT"
+          grep -F 'hsmeDenseStudentRepresentationEvidenceV1Digest(' "$CONTRACT"
+          grep -F 'hsmeDenseStudentStepMatrixEvidenceV1Digest(' "$CONTRACT"
+          grep -F 'hsmeDenseStudentDualBudgetProjectionV1Digest(' "$CONTRACT"
+          grep -F 'hsmePackDescriptorV1Digest(' "$CONTRACT"
+          grep -F "DENSE_BASELINE_PIN_CANDIDATE_READY_NOT_PERSISTED" "$CONTRACT"
+          grep -F "DENSE_FINALIZATION_COMMERCIAL_LICENSE_REVIEW_REQUIRED" "$CONTRACT"
+          grep -F "canonicalDecisionPersistAllowed:false" "$CONTRACT"
+          grep -F "modelInstallAllowed:false" "$CONTRACT"
+          grep -F "modelFleetPromotionAllowed:false" "$CONTRACT"
+          grep -F "productionAuthorityGranted:false" "$CONTRACT"
+          grep -F "winnerSelectionAllowed:false" "$CONTRACT"
+
+      - name: Prove no execution, persistence or hidden winner APIs
+        run: |
+          set -euo pipefail
+          CONTRACT=server/core/training/HsmeDenseBaselineFinalizationV1.ts
+          ! grep -nE 'child_process|spawn\(|exec\(|fork\(|writeFile|appendFile|rename\(|copyFile|installModel|promoteModel|DurableModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://' "$CONTRACT"
+          ! grep -nE 'weightedScore|aggregateScore|scoreWeight|fastest.*winner|lowest.*winner' "$CONTRACT"
+
+      - name: Prove canonical dense baseline JSON is not modified by this slice
+        run: |
+          set -euo pipefail
+          git diff --name-only ${{ github.event.pull_request.base.sha || github.sha^ }}..HEAD \
+            | grep -Fvx 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-decision.json' >/dev/null
+          ! git diff --name-only ${{ github.event.pull_request.base.sha || github.sha^ }}..HEAD \
+            | grep -Fx 'src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-decision.json'
