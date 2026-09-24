@@ -1,0 +1,74 @@
+name: HSME-4.1 adaptive residency policy freeze
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoePrototypeRosterV1.ts'
+      - 'server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts'
+      - 'server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.test.mjs'
+      - '.github/workflows/hsme-4-1-adaptive-residency-policy-freeze.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  residency-plan:
+    name: measured adaptive residency experiment-plan freeze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run residency-plan regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-4-1
+          npx esbuild server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-4-1/residency-plan.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-4-1/residency-plan.test.mjs
+      - name: Prove exact prototype profile and policy origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts
+          grep -F 'hsmeAdapterMoePrototypeRosterV1Digest(' "$SRC"
+          grep -F 'verifyPrototypeRoster(' "$SRC"
+          grep -F 'verifyDeviceProfile(' "$SRC"
+          grep -F 'verifyResidencyPolicy(' "$SRC"
+          grep -F 'realMeasuredEvidence must be true' "$SRC"
+      - name: Prove physical and predictive caps
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts
+          grep -F 'ADAPTIVE_RESIDENCY_POLICY_PHYSICAL_BUDGET_EXCEEDED' "$SRC"
+          grep -F 'predictive prefetch cap cannot exceed deterministic safety cap' "$SRC"
+          grep -F 'USAGE_AWARE_LRU_BOUNDED' "$SRC"
+          grep -F 'NETWORK_BYTES_DURING_EXECUTION' "$SRC"
+          grep -F 'WASTED_PREFETCH_BYTES' "$SRC"
+      - name: Prove no movement inference or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts
+          grep -F 'ADAPTIVE_RESIDENCY_PLAN_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'movementExecutionAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
