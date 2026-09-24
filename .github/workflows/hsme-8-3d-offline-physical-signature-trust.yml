@@ -3,6 +3,7 @@ name: HSME-8.3d offline physical signature trust
 on:
   pull_request:
     paths:
+      - 'package.json'
       - 'server/core/training/HsmeRealMobilePhysicalEvidenceOriginV1.ts'
       - 'server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.ts'
       - 'server/core/training/HsmePhysicalMobileDetachedSignatureTrustV1.test.mjs'
