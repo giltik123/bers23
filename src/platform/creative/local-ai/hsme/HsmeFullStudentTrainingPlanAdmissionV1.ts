@@ -1,4 +1,15 @@
 import {
+  HSME_FULL_STUDENT_REPRODUCTION_EVIDENCE_DIGEST_DOMAIN,
+  HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_DIGEST_DOMAIN,
+  HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_V1_SCHEMA,
+} from './HsmeFullStudentTrainingPlanContractV1.ts';
+export {
+  HSME_FULL_STUDENT_REPRODUCTION_EVIDENCE_DIGEST_DOMAIN,
+  HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_DIGEST_DOMAIN,
+  HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_V1_SCHEMA,
+} from './HsmeFullStudentTrainingPlanContractV1.ts';
+
+import {
   HSME_REUSE_OUTCOME_HANDOFF_DIGEST_DOMAIN,
   HSME_REUSE_OUTCOME_HANDOFF_V1_SCHEMA,
   type HsmeReuseOutcomeHandoffV1,
@@ -18,13 +29,6 @@ import {
   hsmeTrainingProvenanceDigestV1,
   type HsmeTrainingHashPortV1,
 } from './HsmeTrainingProvenanceV1';
-
-export const HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_V1_SCHEMA =
-  'BERS_HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_V1' as const;
-export const HSME_FULL_STUDENT_REPRODUCTION_EVIDENCE_DIGEST_DOMAIN =
-  'bers:hsme:full-student-reproduction-evidence:v1\0' as const;
-export const HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_DIGEST_DOMAIN =
-  'bers:hsme:full-student-training-plan-admission:v1\0' as const;
 
 const HEX64=/^[0-9a-f]{64}$/;
 
