@@ -237,6 +237,42 @@ export async function projectHsmeDenseStudentDualBudgetV1(
   return deepFreeze({...payload,projectionEvidenceSha256});
 }
 
+export async function hsmeDenseBaselineProjectedDualBudgetEvidenceV1Digest(
+  rawEvidence:unknown,
+  hash:HsmeDenseStudentTrainingHashPortV1,
+):Promise<string>{
+  const evidence=normalizeHsmeDenseDualBudgetEvidenceV1(rawEvidence);
+  return digest(
+    HSME_DENSE_BASELINE_DUAL_BUDGET_PROJECTED_DIGEST_DOMAIN,
+    evidence,
+    hash,
+  );
+}
+
+export async function hsmeDenseStudentDualBudgetProjectionV1Digest(
+  projection:HsmeDenseStudentDualBudgetProjectionV1,
+  hash:HsmeDenseStudentTrainingHashPortV1,
+):Promise<string>{
+  if(
+    projection.schemaVersion!==HSME_DENSE_STUDENT_DUAL_BUDGET_PROJECTION_V1_SCHEMA
+    ||projection.state!=='DUAL_BUDGET_PROJECTION_READY_NOT_FROZEN'
+  ){
+    fail(
+      'hsme_dense_projection_digest_state',
+      'only READY_NOT_FROZEN projection evidence is digestible',
+    );
+  }
+  const {
+    projectionEvidenceSha256:_projectionEvidenceSha256,
+    ...payload
+  }=projection;
+  return digest(
+    HSME_DENSE_STUDENT_DUAL_BUDGET_PROJECTION_DIGEST_DOMAIN,
+    payload,
+    hash,
+  );
+}
+
 export async function hsmeDenseBaselineDualBudgetTemplateV1Digest(
   rawTemplate:unknown,
   hash:HsmeDenseStudentTrainingHashPortV1,
