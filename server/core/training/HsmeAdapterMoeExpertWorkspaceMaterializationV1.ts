@@ -905,6 +905,8 @@ function relativePathForRole(
     case 'TRAINER_ENTRYPOINT':
       return 'toolchain/trainer.entrypoint';
   }
+  const exhaustive:never=role;
+  return exhaustive;
 }
 
 function fixedPaths():HsmeAdapterMoeExpertWorkspaceFixedPathsV1{
