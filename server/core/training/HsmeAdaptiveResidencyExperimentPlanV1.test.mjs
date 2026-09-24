@@ -182,6 +182,11 @@ test('measured device profile and reviewed policy freeze deterministic no-execut
   const second=await freeze(f);
   assert.equal(first.state,'ADAPTIVE_RESIDENCY_PLAN_FROZEN_NOT_EXECUTED');
   assert.equal(first.prototypeVariant,'SHARED_TOP1_ADAPTER');
+  assert.equal(first.denseBaselineContentSha256,f.r.denseBaselineContentSha256);
+  assert.equal(first.routerContentSha256,f.r.prototypes[0].routerContentSha256);
+  assert.deepEqual(first.expertIds,f.r.prototypes[0].expertIds);
+  assert.deepEqual(first.expertContentSha256s,f.r.prototypes[0].expertContentSha256s);
+  assert.equal(first.maxActiveExperts,1);
   assert.equal(first.prototypePackageBytes,810_000_000);
   assert.equal(first.maxRamBudgetBytes,2_000_000_000);
   assert.equal(first.predictivePrefetchAllowed,true);
