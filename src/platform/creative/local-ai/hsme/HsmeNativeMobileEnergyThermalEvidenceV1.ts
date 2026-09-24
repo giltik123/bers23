@@ -589,7 +589,7 @@ async function identityDigest(
   const result=await hash.sha256(
     new TextEncoder().encode(
       HSME_FOUNDATION_NATIVE_MOBILE_IDENTITY_DIGEST_DOMAIN
-      +kind+'\0'+value,
+      +kind+'\\0'+value,
     ),
   );
   if(!HEX64.test(result)){
