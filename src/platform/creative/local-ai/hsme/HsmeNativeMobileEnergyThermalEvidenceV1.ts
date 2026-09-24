@@ -35,6 +35,7 @@ export type HsmeNativeMobileEnergyThermalRawCaptureV1=Readonly<{
   deviceRunSessionSha256:string;
   runtimeIdentitySha256:string;
   actualPlacement:'CPU'|'GPU'|'NPU';
+  nativeTelemetryAttestationSha256:string;
   sourceApi:string;
   sourceApiVersion:string;
   bridgeVersion:string;
@@ -74,6 +75,7 @@ export type HsmeNativeMobileEnergyThermalEvidenceV1=Readonly<{
   deviceRunSessionSha256:string;
   runtimeIdentitySha256:string;
   actualPlacement:'CPU'|'GPU'|'NPU';
+  nativeTelemetryAttestationSha256:string;
   osBuildSha256:string;
   runtimeBuildSha256:string;
   capturedAtMicrosStart:number;
@@ -252,6 +254,7 @@ export async function captureHsmeNativeMobileEnergyThermalEvidenceV1(
     deviceRunSessionSha256:raw.deviceRunSessionSha256,
     runtimeIdentitySha256:raw.runtimeIdentitySha256,
     actualPlacement:raw.actualPlacement,
+    nativeTelemetryAttestationSha256:raw.nativeTelemetryAttestationSha256,
     osBuildSha256:raw.osBuildSha256,
     runtimeBuildSha256:raw.runtimeBuildSha256,
     capturedAtMicrosStart:raw.capturedAtMicrosStart,
@@ -340,6 +343,7 @@ function validateRaw(
       'actualPlacement must be CPU GPU or NPU',
     );
   }
+  sha256(raw.nativeTelemetryAttestationSha256,'nativeTelemetryAttestationSha256');
   sha256(raw.adapterBuildSha256,'adapterBuildSha256');
   sha256(raw.osBuildSha256,'osBuildSha256');
   sha256(raw.runtimeBuildSha256,'runtimeBuildSha256');
@@ -491,6 +495,7 @@ function validateEvidence(
       'evidence actualPlacement invalid',
     );
   }
+  sha256(value.nativeTelemetryAttestationSha256,'nativeTelemetryAttestationSha256');
   sha256(value.osBuildSha256,'osBuildSha256');
   sha256(value.runtimeBuildSha256,'runtimeBuildSha256');
   sha256(value.measurementMethodSha256,'measurementMethodSha256');
