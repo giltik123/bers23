@@ -78,10 +78,9 @@ function finalizationAuthority(){
 }
 
 async function fixture(){
-  const currentBytes=await readFile(new URL(
-    '../../../src/platform/creative/local-ai/hsme/hsme-2a-dense-baseline-decision.json',
-    import.meta.url,
-  ));
+  const currentBytes=await readFile(
+    HSME_DENSE_BASELINE_CANONICAL_DECISION_PATH,
+  );
   const source=normalizeHsmeDenseBaselineDecisionV1(
     JSON.parse(currentBytes.toString('utf8')),
   );
