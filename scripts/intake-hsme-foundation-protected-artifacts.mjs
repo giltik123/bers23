@@ -49,6 +49,183 @@ export function intakeReceiptDigest(value){
   ]));
 }
 
+function exactRecord(raw,allowed,path){
+  if(!raw||typeof raw!=='object'||Array.isArray(raw)){
+    fail('hsme_protected_intake_receipt_record_invalid',path+' must be an object');
+  }
+  for(const key of Object.keys(raw)){
+    if(!allowed.includes(key)){
+      fail('hsme_protected_intake_receipt_field_unknown',path+'.'+key+' is not allowed');
+    }
+  }
+  for(const key of allowed){
+    if(!Object.hasOwn(raw,key)){
+      fail('hsme_protected_intake_receipt_field_missing',path+'.'+key+' is required');
+    }
+  }
+  return raw;
+}
+
+function receiptPath(value,path){
+  if(
+    typeof value!=='string'
+    ||value.length<1
+    ||value.length>520
+    ||value.startsWith('/')
+    ||value.includes('\\')
+    ||value.split('/').some(part=>part===''||part==='.'||part==='..')
+  ){
+    fail('hsme_protected_intake_receipt_path_invalid',path+' invalid');
+  }
+  return value;
+}
+
+function receiptSha(value,path){
+  if(typeof value!=='string'||!HEX64.test(value)){
+    fail('hsme_protected_intake_receipt_sha_invalid',path+' must be lowercase SHA-256');
+  }
+  return value;
+}
+
+export function normalizeHsmeFoundationProtectedArtifactIntakeReceipt(raw){
+  const allowed=[
+    'schemaVersion','provenanceSha256','provenanceFileSha256','repository',
+    'workflowPath','workflowRunId','workflowRunAttempt','candidateCommitSha',
+    'controllerCommitSha','campaignId','candidateId','capability','runStatus',
+    'provenancePinVerified','canonicalBenchmarkVerificationPassed',
+    'canonicalResourceVerificationPassed','benchmarkCollectorBundlePath',
+    'resourceCollectorBundlePath','copiedFiles','qualityScoringAllowed',
+    'candidateQualificationAllowed','candidateRejectionAllowed',
+    'trainingOrDistillationAllowed','modelInstallAllowed','modelFleetPromotionAllowed',
+    'productionAuthorityGranted','providerAuthorityGranted','billingAuthorityGranted',
+    'projectArtifactMutationAllowed','aeeExecutionAuthorityGranted',
+    'durableModelFleetPromotionAllowed','winnerSelectionAllowed',
+  ];
+  const value=exactRecord(raw,allowed,'intakeReceipt');
+  if(value.schemaVersion!==HSME_FOUNDATION_PROTECTED_ARTIFACT_INTAKE_V1_SCHEMA){
+    fail('hsme_protected_intake_receipt_schema_invalid','intake receipt schema invalid');
+  }
+  const provenanceSha256=receiptSha(value.provenanceSha256,'intakeReceipt.provenanceSha256');
+  const provenanceFileSha256=receiptSha(
+    value.provenanceFileSha256,
+    'intakeReceipt.provenanceFileSha256',
+  );
+  if(
+    typeof value.repository!=='string'
+    ||!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.repository)
+    ||typeof value.workflowPath!=='string'
+    ||value.workflowPath!=='.github/workflows/hsme-2a-3-3b-protected-foundation-executor.yml'
+    ||typeof value.workflowRunId!=='string'
+    ||!/^[1-9][0-9]*$/.test(value.workflowRunId)
+    ||typeof value.workflowRunAttempt!=='string'
+    ||!/^[1-9][0-9]*$/.test(value.workflowRunAttempt)
+    ||typeof value.candidateCommitSha!=='string'
+    ||! /^[0-9a-f]{40}$/.test(value.candidateCommitSha)
+    ||typeof value.controllerCommitSha!=='string'
+    ||! /^[0-9a-f]{40}$/.test(value.controllerCommitSha)
+    ||typeof value.campaignId!=='string'||value.campaignId.length<1||value.campaignId.length>160
+    ||typeof value.candidateId!=='string'||value.candidateId.length<1||value.candidateId.length>120
+    ||!['TEXT_TO_IMAGE','IMAGE_EDITING'].includes(value.capability)
+    ||!['COMPLETE','FAILED'].includes(value.runStatus)
+  ){
+    fail('hsme_protected_intake_receipt_identity_invalid','intake receipt identity invalid');
+  }
+  if(
+    value.provenancePinVerified!==true
+    ||value.canonicalBenchmarkVerificationPassed!==true
+    ||value.canonicalResourceVerificationPassed!==(value.runStatus==='COMPLETE')
+    ||value.benchmarkCollectorBundlePath!=='benchmark-bundle'
+    ||value.resourceCollectorBundlePath!==(value.runStatus==='COMPLETE'?'resource-bundle':null)
+  ){
+    fail('hsme_protected_intake_receipt_verification_invalid','intake receipt verification/bundle state invalid');
+  }
+  if(!Array.isArray(value.copiedFiles)||value.copiedFiles.length<4||value.copiedFiles.length>8200){
+    fail('hsme_protected_intake_receipt_files_invalid','intake receipt copiedFiles invalid');
+  }
+  const copied=value.copiedFiles.map((rawFile,index)=>{
+    const file=exactRecord(
+      rawFile,
+      ['role','logicalPath','destinationPath','fileSha256','bytes'],
+      'intakeReceipt.copiedFiles['+index+']',
+    );
+    if(!['BLIND','RESOURCE'].includes(file.role)){
+      fail('hsme_protected_intake_receipt_role_invalid','copied file role invalid');
+    }
+    const logicalPath=receiptPath(file.logicalPath,'copiedFile.logicalPath');
+    const destinationPath=receiptPath(file.destinationPath,'copiedFile.destinationPath');
+    const expectedPrefix=file.role==='BLIND'?'benchmark-bundle/':'resource-bundle/';
+    if(!destinationPath.startsWith(expectedPrefix)){
+      fail('hsme_protected_intake_receipt_destination_invalid','copied file destination/role mismatch');
+    }
+    const fileSha256=receiptSha(file.fileSha256,'copiedFile.fileSha256');
+    if(!Number.isSafeInteger(file.bytes)||file.bytes<1||file.bytes>256_000_000){
+      fail('hsme_protected_intake_receipt_bytes_invalid','copied file bytes invalid');
+    }
+    return Object.freeze({
+      role:file.role,
+      logicalPath,
+      destinationPath,
+      fileSha256,
+      bytes:file.bytes,
+    });
+  }).sort((a,b)=>lexical(a.role,b.role)||lexical(a.logicalPath,b.logicalPath));
+  const copiedKeys=copied.map(x=>x.role+'\0'+x.logicalPath);
+  if(new Set(copiedKeys).size!==copiedKeys.length){
+    fail('hsme_protected_intake_receipt_files_duplicate','duplicate copied file role/logicalPath');
+  }
+  if(value.runStatus==='FAILED'&&copied.some(x=>x.role==='RESOURCE')){
+    fail('hsme_protected_intake_receipt_resource_forbidden','FAILED receipt may not copy resource files');
+  }
+  if(value.runStatus==='COMPLETE'&&!copied.some(x=>x.role==='RESOURCE')){
+    fail('hsme_protected_intake_receipt_resource_missing','COMPLETE receipt requires resource files');
+  }
+  for(const field of [
+    'qualityScoringAllowed','candidateQualificationAllowed','candidateRejectionAllowed',
+    'trainingOrDistillationAllowed','modelInstallAllowed','modelFleetPromotionAllowed',
+    'productionAuthorityGranted','providerAuthorityGranted','billingAuthorityGranted',
+    'projectArtifactMutationAllowed','aeeExecutionAuthorityGranted',
+    'durableModelFleetPromotionAllowed','winnerSelectionAllowed',
+  ]){
+    if(value[field]!==false){
+      fail('hsme_protected_intake_receipt_authority_widening','intakeReceipt.'+field+' must remain false');
+    }
+  }
+  return Object.freeze({
+    schemaVersion:HSME_FOUNDATION_PROTECTED_ARTIFACT_INTAKE_V1_SCHEMA,
+    provenanceSha256,
+    provenanceFileSha256,
+    repository:value.repository,
+    workflowPath:value.workflowPath,
+    workflowRunId:value.workflowRunId,
+    workflowRunAttempt:value.workflowRunAttempt,
+    candidateCommitSha:value.candidateCommitSha,
+    controllerCommitSha:value.controllerCommitSha,
+    campaignId:value.campaignId,
+    candidateId:value.candidateId,
+    capability:value.capability,
+    runStatus:value.runStatus,
+    provenancePinVerified:true,
+    canonicalBenchmarkVerificationPassed:true,
+    canonicalResourceVerificationPassed:value.runStatus==='COMPLETE',
+    benchmarkCollectorBundlePath:'benchmark-bundle',
+    resourceCollectorBundlePath:value.runStatus==='COMPLETE'?'resource-bundle':null,
+    copiedFiles:Object.freeze(copied),
+    qualityScoringAllowed:false,
+    candidateQualificationAllowed:false,
+    candidateRejectionAllowed:false,
+    trainingOrDistillationAllowed:false,
+    modelInstallAllowed:false,
+    modelFleetPromotionAllowed:false,
+    productionAuthorityGranted:false,
+    providerAuthorityGranted:false,
+    billingAuthorityGranted:false,
+    projectArtifactMutationAllowed:false,
+    aeeExecutionAuthorityGranted:false,
+    durableModelFleetPromotionAllowed:false,
+    winnerSelectionAllowed:false,
+  });
+}
+
 function canonicalValue(value){
   if(Array.isArray(value))return value.map(canonicalValue);
   if(value&&typeof value==='object'){
@@ -382,7 +559,7 @@ export async function intakeHsmeFoundationProtectedArtifacts({
         :[]),
     ].sort((a,b)=>lexical(a.role,b.role)||lexical(a.logicalPath,b.logicalPath));
 
-    const receipt=Object.freeze({
+    const receipt=normalizeHsmeFoundationProtectedArtifactIntakeReceipt({
       schemaVersion:HSME_FOUNDATION_PROTECTED_ARTIFACT_INTAKE_V1_SCHEMA,
       provenanceSha256:pinned.semanticSha256,
       provenanceFileSha256:pinned.fileSha256,
