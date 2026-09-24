@@ -5,6 +5,9 @@ on:
     paths:
       - 'server/core/training/HsmeDenseStudentProtectedTrainingRunV1.ts'
       - 'server/core/training/HsmeDenseStudentProtectedTrainingRunV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentSealedWorkspaceV1.ts'
+      - 'server/core/training/HsmeDenseStudentSealedWorkspaceV1.test.mjs'
+      - 'scripts/hsme-dense-student-train.py'
       - 'server/core/training/HsmeDenseStudentTrainingToolchainV1.ts'
       - '.github/workflows/hsme-2b2-5-protected-training-execution-receipt.yml'
   workflow_dispatch:
@@ -42,6 +45,39 @@ jobs:
             --outfile=.test-cache/hsme-2b2-5/protected-run.test.mjs \
             --external:node:*
           node --test .test-cache/hsme-2b2-5/protected-run.test.mjs
+
+      - name: Bundle and run sealed workspace regressions
+        run: |
+          set -euo pipefail
+          npx esbuild server/core/training/HsmeDenseStudentSealedWorkspaceV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-5/sealed-workspace.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-5/sealed-workspace.test.mjs
+
+      - name: Prove fixed sealed workspace before host execution
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentSealedWorkspaceV1.ts
+          grep -F '/run/bers-hsme/dense-student/v1' "$SRC"
+          grep -F 'attestWorkspace(' "$SRC"
+          grep -F 'executeExactSealedWorkspace(' "$SRC"
+          grep -F "networkDisabled:true" "$SRC"
+          grep -F "inputsReadOnly:true" "$SRC"
+          grep -F "outputWritableOnly:true" "$SRC"
+          grep -F "noSymlinks:true" "$SRC"
+          ! grep -nE 'child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|process\.env|fetch\(|https?://' "$SRC"
+
+      - name: Prove Python entrypoint uses only fixed sealed workspace ABI
+        run: |
+          set -euo pipefail
+          PY=scripts/hsme-dense-student-train.py
+          python3 -m py_compile "$PY"
+          grep -F 'Path("/run/bers-hsme/dense-student/v1")' "$PY"
+          grep -F 'SEALED_WORKSPACE_MANIFEST = SEALED_WORKSPACE_ROOT / "workspace.json"' "$PY"
+          grep -F 'SEALED_INPUTS_ROOT = SEALED_WORKSPACE_ROOT / "inputs"' "$PY"
+          grep -F 'SEALED_OUTPUT_ROOT = SEALED_WORKSPACE_ROOT / "output"' "$PY"
+          ! grep -nE 'os\.environ|os\.getenv|--workspace|--manifest|--inputs-root|--output-root' "$PY"
 
       - name: Prove narrow protected execution port
         run: |

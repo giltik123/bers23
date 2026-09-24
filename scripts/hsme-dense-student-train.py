@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import re
 import sys
 
@@ -18,6 +19,11 @@ IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]*$")
 
 NETWORK_POLICY = "SEALED_INPUTS_ONLY"
 CACHE_MODEL_INPUT_POLICY = "READ_ONLY_CONTENT_ADDRESSED_SEALED_INPUTS"
+
+SEALED_WORKSPACE_ROOT = Path("/run/bers-hsme/dense-student/v1")
+SEALED_WORKSPACE_MANIFEST = SEALED_WORKSPACE_ROOT / "workspace.json"
+SEALED_INPUTS_ROOT = SEALED_WORKSPACE_ROOT / "inputs"
+SEALED_OUTPUT_ROOT = SEALED_WORKSPACE_ROOT / "output"
 
 
 def _digest(value: str) -> str:
@@ -86,7 +92,10 @@ def main(argv: list[str] | None = None) -> int:
         _digest(args.resume_checkpoint_sha256)
     sys.stderr.write(json.dumps({
         "schemaVersion": "BERS_HSME_DENSE_STUDENT_TRAINING_ENTRYPOINT_V1",
-        "state": "TRAINING_EXECUTION_NOT_IMPLEMENTED_IN_2B2_4",
+        "state": "TRAINING_EXECUTION_NOT_IMPLEMENTED_IN_2B2_10",
+        "workspaceManifestPath": str(SEALED_WORKSPACE_MANIFEST),
+        "inputsRoot": str(SEALED_INPUTS_ROOT),
+        "outputRoot": str(SEALED_OUTPUT_ROOT),
         "processSpawned": False,
         "trainingStarted": False,
     }, sort_keys=True) + "\n")
