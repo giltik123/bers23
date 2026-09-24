@@ -1,0 +1,93 @@
+name: HSME-2a.3.3al protected artifact intake
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/build-hsme-foundation-protected-artifact-provenance.mjs'
+      - 'scripts/intake-hsme-foundation-protected-artifacts.mjs'
+      - 'scripts/hsme-foundation-benchmark-executor-verify.mjs'
+      - 'scripts/hsme-foundation-resource-fragment-verify.mjs'
+      - 'tests/hsme-foundation-protected-artifact-intake.test.mjs'
+      - 'tests/hsme-foundation-benchmark-executor-workflow-policy.test.mjs'
+      - '.github/workflows/hsme-2a-3-3b-protected-foundation-executor.yml'
+      - '.github/workflows/hsme-2a-3-3al-protected-artifact-intake.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provenance-intake-contract:
+    name: externally pinned protected artifact provenance and intake
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bundle and run protected artifact provenance/intake regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2a-3-3al
+          npx esbuild tests/hsme-foundation-protected-artifact-intake.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2a-3-3al/intake.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2a-3-3al/intake.test.mjs
+
+      - name: Re-run protected workflow policy contract
+        run: node --test tests/hsme-foundation-benchmark-executor-workflow-policy.test.mjs
+
+      - name: Prove canonical verification is repeated on both sides of transfer
+        run: |
+          set -euo pipefail
+          BUILDER=scripts/build-hsme-foundation-protected-artifact-provenance.mjs
+          INTAKE=scripts/intake-hsme-foundation-protected-artifacts.mjs
+          grep -F 'verifyBenchmarkEvidence(' "$BUILDER"
+          grep -F 'verifyResourceFragment(' "$BUILDER"
+          grep -F 'normalizeHsmeFoundationProtectedArtifactProvenance' "$INTAKE"
+          grep -F 'provenanceDigest(manifest)' "$INTAKE"
+          grep -F 'verifyBenchmarkEvidence(' "$INTAKE"
+          grep -F 'verifyResourceFragment(' "$INTAKE"
+          grep -F 'provenancePinVerified:true' "$INTAKE"
+          grep -F 'canonicalBenchmarkVerificationPassed:true' "$INTAKE"
+
+      - name: Prove transfer layer grants no model or decision authority
+        run: |
+          set -euo pipefail
+          for SCRIPT in \
+            scripts/build-hsme-foundation-protected-artifact-provenance.mjs \
+            scripts/intake-hsme-foundation-protected-artifacts.mjs
+          do
+            grep -F 'winnerSelectionAllowed:false' "$SCRIPT"
+            grep -F 'trainingOrDistillationAllowed:false' "$SCRIPT"
+            grep -F 'modelInstallAllowed:false' "$SCRIPT"
+            grep -F 'modelFleetPromotionAllowed:false' "$SCRIPT"
+            grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+            grep -F 'providerAuthorityGranted:false' "$SCRIPT"
+            grep -F 'billingAuthorityGranted:false' "$SCRIPT"
+            grep -F 'projectArtifactMutationAllowed:false' "$SCRIPT"
+            grep -F 'aeeExecutionAuthorityGranted:false' "$SCRIPT"
+            ! grep -nE 'from_pretrained|hf_hub_download|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|reserveCredits|spendCredits|startTraining|runTraining|finalizeHsmeFoundationReuseDecisionV1|qualifyHsmeFoundationReuseEvidenceV1|proveHsmeFoundationReuseEvidenceRejectionV1|fetch\(' "$SCRIPT"
+          done
+
+      - name: Prove protected workflow uploads one provenance manifest into both evidence artifacts
+        run: |
+          set -euo pipefail
+          WF=.github/workflows/hsme-2a-3-3b-protected-foundation-executor.yml
+          grep -F 'Build content-addressed protected artifact provenance' "$WF"
+          grep -F 'HSME_FOUNDATION_PROTECTED_PROVENANCE_CLI=1' "$WF"
+          test "$(grep -c 'hsme-foundation-evidence/protected-artifact-provenance.json' "$WF")" -eq 3
+          test "$(grep -c "steps.provenance.outcome == 'success'" "$WF")" -eq 2
