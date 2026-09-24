@@ -190,6 +190,9 @@ function fakeHost(p,r,c,mode='OK'){
           peakMemoryBytes:profile.densePeakMemoryBytes,
           qualityPreservationContractSha256:p.qualityPreservationContractSha256,
           qualityPreservationEvidenceSha256:h('3'),
+          qualityPreservationPass:true,
+          hardPreservationFailureCount:0,
+          criticalFailureCount:0,
           deterministicReplayIdentitySha256:h('4'),
           realMeasuredEvidence:true,networkBytesDuringExecution:0,
         },{
@@ -210,6 +213,9 @@ function fakeHost(p,r,c,mode='OK'){
           peakMemoryBytes:Math.max(1,profile.densePeakMemoryBytes-10_000_000),
           qualityPreservationContractSha256:p.qualityPreservationContractSha256,
           qualityPreservationEvidenceSha256:h('5'),
+          qualityPreservationPass:true,
+          hardPreservationFailureCount:0,
+          criticalFailureCount:0,
           deterministicReplayIdentitySha256:h('6'),
           realMeasuredEvidence:true,networkBytesDuringExecution:0,
         });
