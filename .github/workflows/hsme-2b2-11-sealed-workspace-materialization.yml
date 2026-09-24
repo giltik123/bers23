@@ -1,0 +1,92 @@
+# Rebased onto accepted HSME-2b2.10 main; exact-head CI is authoritative.\nname: HSME-2b2.11 sealed workspace materialization
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentSealedWorkspaceV1.ts'
+      - 'server/core/training/HsmeDenseStudentSealedWorkspaceV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentSealedWorkspaceMaterializationV1.ts'
+      - 'server/core/training/HsmeDenseStudentSealedWorkspaceMaterializationV1.test.mjs'
+      - '.github/workflows/hsme-2b2-11-sealed-workspace-materialization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workspace-freeze:
+    name: deterministic frozen-not-executed workspace receipt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run workspace materialization regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-11
+          npx esbuild server/core/training/HsmeDenseStudentSealedWorkspaceMaterializationV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-11/materialization.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-11/materialization.test.mjs
+
+      - name: Re-run sealed workspace ABI regressions
+        run: |
+          set -euo pipefail
+          npx esbuild server/core/training/HsmeDenseStudentSealedWorkspaceV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-11/sealed-workspace.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-11/sealed-workspace.test.mjs
+
+      - name: Prove preparation cannot execute training
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentSealedWorkspaceMaterializationV1.ts
+          grep -F 'materializeExactSealedWorkspace(' "$SRC"
+          grep -F "state:'WORKSPACE_FROZEN_NOT_EXECUTED'" "$SRC"
+          grep -F 'processSpawned:false' "$SRC"
+          grep -F 'trainingStarted:false' "$SRC"
+          grep -F 'atomicManifestWrite:true' "$SRC"
+          grep -F 'networkDisabled:true' "$SRC"
+          grep -F 'inputsReadOnly:true' "$SRC"
+          grep -F 'outputWritableOnly:true' "$SRC"
+          ! grep -nE 'executeExactTrainingLaunch|executeExactSealedWorkspace|createHsmeDenseStudentSealedWorkspaceExecutionAdapterV1|child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|process\.env|fetch\(|https?://' "$SRC"
+
+      - name: Prove fixed workspace authority boundary
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentSealedWorkspaceMaterializationV1.ts
+          grep -F 'HSME_DENSE_STUDENT_SEALED_WORKSPACE_ROOT_V1' "$SRC"
+          grep -F 'HSME_DENSE_STUDENT_SEALED_WORKSPACE_MANIFEST_V1' "$SRC"
+          grep -F 'HSME_DENSE_STUDENT_SEALED_INPUTS_ROOT_V1' "$SRC"
+          grep -F 'HSME_DENSE_STUDENT_SEALED_OUTPUT_ROOT_V1' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          grep -F 'projectArtifactMutationAllowed:false' "$SRC"
+          grep -F 'aeeExecutionAuthorityGranted:false' "$SRC"
+          grep -F 'winnerSelectionAllowed:false' "$SRC"
+          ! grep -nE 'promoteModel|installModel|ModelFleet(Service|Client)|Project(Service|Repository)|Artifact(Service|Repository)|reserveCredits|spendCredits' "$SRC"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

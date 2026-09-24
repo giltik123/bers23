@@ -305,6 +305,15 @@ export async function hsmeDenseStudentSealedWorkspaceV1Digest(
   return digest(HSME_DENSE_STUDENT_SEALED_WORKSPACE_DIGEST_DOMAIN,workspace,hash);
 }
 
+export function assertCoreHsmeDenseStudentExecutionRequestMatchesSealedWorkspaceV1(
+  request:CoreHsmeDenseStudentExecutionRequestV1,
+  rawWorkspace:unknown,
+):HsmeDenseStudentSealedWorkspaceV1{
+  const workspace=normalizeHsmeDenseStudentSealedWorkspaceV1(rawWorkspace);
+  validateExecutionBinding(request,workspace);
+  return workspace;
+}
+
 export async function createHsmeDenseStudentSealedWorkspaceExecutionAdapterV1(
   rawWorkspace:unknown,
   expectedWorkspaceSha256:string,
@@ -338,7 +347,10 @@ export async function createHsmeDenseStudentSealedWorkspaceExecutionAdapterV1(
 
   return Object.freeze({
     async executeExactTrainingLaunch(executionRequest){
-      validateExecutionBinding(executionRequest,workspace);
+      assertCoreHsmeDenseStudentExecutionRequestMatchesSealedWorkspaceV1(
+        executionRequest,
+        workspace,
+      );
       const request=deepFreeze({
         executionRequest,
         workspace,
