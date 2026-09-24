@@ -1,0 +1,90 @@
+# Rebased onto accepted HSME-2b2.11 main; exact-head PR CI is authoritative.
+name: HSME-2b2.12 frozen workspace run evidence
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentFrozenWorkspaceRunEvidenceV1.ts'
+      - 'server/core/training/HsmeDenseStudentFrozenWorkspaceRunEvidenceV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentSealedWorkspaceV1.ts'
+      - 'server/core/training/HsmeDenseStudentSealedWorkspaceMaterializationV1.ts'
+      - 'server/core/training/HsmeDenseStudentProtectedTrainingRunV1.ts'
+      - 'server/core/training/HsmeDenseStudentTrainingToolchainV1.ts'
+      - '.github/workflows/hsme-2b2-12-frozen-workspace-run-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frozen-workspace-run-evidence:
+    name: frozen workspace existing-run evidence binding
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run frozen-workspace evidence regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-12
+          npx esbuild server/core/training/HsmeDenseStudentFrozenWorkspaceRunEvidenceV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-12/frozen-run.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-12/frozen-run.test.mjs
+
+      - name: Prove there is no second executor surface
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentFrozenWorkspaceRunEvidenceV1.ts
+          grep -F 'createHsmeDenseStudentSealedWorkspaceExecutionAdapterV1(' "$SRC"
+          grep -F 'runHsmeDenseStudentProtectedTrainingV1(' "$SRC"
+          grep -F 'hsmeDenseStudentTrainingRunReceiptV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentWorkspaceFreezeReceiptV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentSealedWorkspaceV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentTrainingPreflightV1Digest(' "$SRC"
+          ! grep -nE 'child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|process\.env|from_pretrained|torch\.load|safe_open|fetch\(|https?://' "$SRC"
+
+      - name: Prove fake PR CI cannot claim real protected execution
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeDenseStudentFrozenWorkspaceRunEvidenceV1.test.mjs
+          grep -F 'return false;' "$TEST"
+          grep -F 'realProtectedExecution,false' "$TEST"
+          ! grep -nE 'realProtectedExecution[[:space:]]*:[[:space:]]*true|return true;[[:space:]]*//.*real' "$TEST"
+
+      - name: Prove non-promotion authority boundary
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentFrozenWorkspaceRunEvidenceV1.ts
+          grep -F 'checkpointPromotionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          grep -F 'projectArtifactMutationAllowed:false' "$SRC"
+          grep -F 'aeeExecutionAuthorityGranted:false' "$SRC"
+          grep -F 'winnerSelectionAllowed:false' "$SRC"
+          ! grep -nE 'promoteModel|installModel|ModelFleet(Service|Client)|Project(Service|Repository)|Artifact(Service|Repository)|reserveCredits|spendCredits' "$SRC"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
