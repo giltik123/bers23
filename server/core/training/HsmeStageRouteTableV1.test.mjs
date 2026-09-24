@@ -236,6 +236,7 @@ test('reviewed routes freeze one canonical deterministic three-stage table',asyn
   );
   assert.equal(first.routes[0].routeMode,'SHARED_ONLY');
   assert.equal(first.routes[1].activeExperts[0].expertId,'fashion-expert');
+  assert.equal(first.maxStageTransitionPrefetchBytes,80_000_000);
   assert.equal(first.stageRoutingExecutionAllowed,false);
   assert.equal(first.routeSelectionAllowed,false);
   assert.equal(first.routeMutationAllowed,false);
