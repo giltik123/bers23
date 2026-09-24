@@ -1,0 +1,92 @@
+name: HSME-5.3 dense-vs-sparse protected block execution matrix
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeSelectiveSparseBlockPlanV1.ts'
+      - 'server/core/training/HsmeSparseBlockCandidateRosterV1.ts'
+      - 'server/core/training/HsmeSparseBlockExecutionMatrixV1.ts'
+      - 'server/core/training/HsmeSparseBlockExecutionMatrixV1.test.mjs'
+      - '.github/workflows/hsme-5-3-dense-sparse-execution-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dense-sparse-matrix:
+    name: protected dense-vs-sparse block measurement matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run dense-vs-sparse execution regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-5-3
+          npx esbuild server/core/training/HsmeSparseBlockExecutionMatrixV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-5-3/sparse-block-execution.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-5-3/sparse-block-execution.test.mjs
+      - name: Prove exact plan roster and campaign origin gates
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSparseBlockExecutionMatrixV1.ts
+          grep -F 'hsmeSelectiveSparseBlockPlanV1Digest(' "$SRC"
+          grep -F 'verifySparseBlockPlan(plan,planSha)' "$SRC"
+          grep -F 'hsmeSelectiveSparseBlockCandidateRosterV1Digest(' "$SRC"
+          grep -F 'verifyCandidateRoster(roster,rosterSha)' "$SRC"
+          grep -F 'hsmeSparseBlockExecutionCampaignV1Digest(' "$SRC"
+          grep -F 'verifyExecutionCampaign(campaign,campaignSha)' "$SRC"
+      - name: Prove real device measurements and same-input binding
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSparseBlockExecutionMatrixV1.ts
+          grep -F "'DENSE_CONTROL'" "$SRC"
+          grep -F "'SPARSE_CANDIDATE'" "$SRC"
+          grep -F 'wallClockUs' "$SRC"
+          grep -F 'flashBytesMoved' "$SRC"
+          grep -F 'ramBytesMoved' "$SRC"
+          grep -F 'acceleratorBytesMoved' "$SRC"
+          grep -F 'kernelDispatchCount' "$SRC"
+          grep -F 'peakMemoryBytes' "$SRC"
+          grep -F 'qualityPreservationEvidenceSha256' "$SRC"
+          grep -F 'deterministicReplayIdentitySha256' "$SRC"
+          grep -F 'networkBytesDuringExecution:0' "$SRC"
+      - name: Prove no winner or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSparseBlockExecutionMatrixV1.ts
+          grep -F 'SPARSE_BLOCK_EXECUTION_MATRIX_READY_NOT_DISPOSED' "$SRC"
+          grep -F 'furtherBlockExecutionAllowed:false' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|(^|[^[:alnum:]_])exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|(^|[^[:alnum:]_])fetch\(|https?://" "$SRC"
+      - name: Prove fail-closed regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeSparseBlockExecutionMatrixV1.test.mjs
+          grep -F 'independent of host row order' "$TEST"
+          grep -F 'trusted origins are mandatory before host execution' "$TEST"
+          grep -F 'missing dense/sparse pair is rejected' "$TEST"
+          grep -F 'dense source identity drift fails closed' "$TEST"
+          grep -F 'same input runtime and quality contract binding cannot drift' "$TEST"
+          grep -F 'network bytes during protected block execution are forbidden' "$TEST"
+          grep -F 'host result digest and origin are independently enforced' "$TEST"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
