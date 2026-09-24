@@ -3,6 +3,8 @@ import {
   type HsmeDenseStudentRepresentationEvidenceV1,
 } from './HsmeDenseStudentRepresentationV1.ts';
 import {
+  HSME_DENSE_STUDENT_FIXED_CAPABILITIES_V1,
+  HSME_DENSE_STUDENT_FIXED_STEP_COUNTS_V1,
   hsmeDenseStudentStepMatrixEvidenceV1Digest,
   type HsmeDenseStudentStepMatrixEvidenceV1,
 } from './HsmeDenseStudentStepMatrixV1.ts';
@@ -14,6 +16,10 @@ import {
   type HsmeDenseDualBudgetCandidateV1,
   type HsmeDenseDualBudgetEvidenceV1,
 } from '../../../src/platform/creative/local-ai/hsme/HsmeDenseBaselineDualBudgetEvidenceV1.ts';
+import {
+  hsmePackDescriptorV1Digest,
+} from '../../../src/platform/creative/local-ai/hsme/HsmePackV1.ts';
+
 
 export const HSME_DENSE_STUDENT_DUAL_BUDGET_PROJECTION_V1_SCHEMA =
   'BERS_HSME_DENSE_STUDENT_DUAL_BUDGET_PROJECTION_V1' as const;
@@ -113,7 +119,7 @@ export async function projectHsmeDenseStudentDualBudgetV1(
     );
   }
 
-  assertOneRootSelfContainedRepresentation(representation);
+  await assertOneRootSelfContainedRepresentation(representation,hash);
 
   let template:HsmeDenseDualBudgetEvidenceV1;
   try{
@@ -160,15 +166,7 @@ export async function projectHsmeDenseStudentDualBudgetV1(
     );
   }
   const sourceTarget=targetRows[0];
-  if(
-    sourceTarget.efficiencyDisposition!=='R&D_ONLY'
-    ||sourceTarget.mvmState!=='NOT_EVALUATED'
-  ){
-    fail(
-      'hsme_dense_projection_target_authority',
-      'projection source target must remain R&D_ONLY and NOT_EVALUATED',
-    );
-  }
+  assertTargetProjectionSource(sourceTarget);
 
   const installedBytes=representation.representationBytes;
   if(typeof installedBytes!=='number'){
@@ -178,12 +176,7 @@ export async function projectHsmeDenseStudentDualBudgetV1(
     );
   }
   const rows=stepMatrix.rows;
-  if(rows.length!==8){
-    fail(
-      'hsme_dense_projection_matrix_incomplete',
-      'projection requires complete 8-row step matrix',
-    );
-  }
+  validateMatrixCompleteness(rows);
 
   const projectedCandidate:HsmeDenseDualBudgetCandidateV1=deepFreeze({
     candidateId:HSME_DENSE_STUDENT_TARGET_CANDIDATE_ID,
@@ -329,9 +322,10 @@ function validateStepMatrix(value:HsmeDenseStudentStepMatrixEvidenceV1):void{
   }
 }
 
-function assertOneRootSelfContainedRepresentation(
+async function assertOneRootSelfContainedRepresentation(
   value:HsmeDenseStudentRepresentationEvidenceV1,
-):void{
+  hash:HsmeDenseStudentTrainingHashPortV1,
+):Promise<void>{
   const pack=value.packDescriptor;
   if(
     pack===null
@@ -340,11 +334,114 @@ function assertOneRootSelfContainedRepresentation(
     ||pack.roots[0].sha256!==value.representationArtifactSha256
     ||pack.routing.mode!=='SHARED_ONLY'
     ||pack.routing.maxActiveExperts!==0
+    ||value.packDescriptorSha256==='UNKNOWN'
   ){
     fail(
       'hsme_dense_projection_one_root_required',
       'installed-byte projection requires exact one-BASE-root representation',
     );
+  }
+  const packDescriptorSha256=await hsmePackDescriptorV1Digest(pack,hash);
+  if(packDescriptorSha256!==value.packDescriptorSha256){
+    fail(
+      'hsme_dense_projection_pack_rehash',
+      'pack descriptor digest mismatch',
+    );
+  }
+}
+
+function assertTargetProjectionSource(
+  sourceTarget:HsmeDenseDualBudgetCandidateV1,
+):void{
+  if(
+    sourceTarget.efficiencyDisposition!=='R&D_ONLY'
+    ||sourceTarget.mvmState!=='NOT_EVALUATED'
+    ||sourceTarget.qualityPerInstalledGbStatus!=='PENDING'
+  ){
+    fail(
+      'hsme_dense_projection_target_authority',
+      'projection source target must remain pending R&D_ONLY and NOT_EVALUATED',
+    );
+  }
+  const installed=sourceTarget.installed;
+  const working=sourceTarget.workingMemory;
+  if(
+    installed.mandatoryInstalledBytes!=='UNKNOWN'
+    ||installed.optionalInstalledBytes!=='UNKNOWN'
+    ||installed.firstUseDownloadBytes!=='UNKNOWN'
+    ||installed.knownInstalledLowerBoundBytes!=='UNKNOWN'
+    ||working.activeWeightsBytes!=='UNKNOWN'
+    ||working.peakRamBytes!=='UNKNOWN'
+    ||working.peakAcceleratorBytes!=='UNKNOWN'
+    ||working.flashBytesMovedPerRun!=='UNKNOWN'
+  ){
+    fail(
+      'hsme_dense_projection_target_measurement_overwrite',
+      'projection cannot overwrite independently measured target values',
+    );
+  }
+}
+
+function validateMatrixCompleteness(
+  rows:HsmeDenseStudentStepMatrixEvidenceV1['rows'],
+):void{
+  const expectedKeys=HSME_DENSE_STUDENT_FIXED_CAPABILITIES_V1.flatMap(
+    capability=>HSME_DENSE_STUDENT_FIXED_STEP_COUNTS_V1.map(
+      stepCount=>capability+'\0'+stepCount,
+    ),
+  ).sort(lexical);
+  const actualKeys=rows.map(
+    row=>row.capability+'\0'+row.stepCount,
+  ).sort(lexical);
+  if(
+    actualKeys.length!==expectedKeys.length
+    ||actualKeys.some((value,index)=>value!==expectedKeys[index])
+  ){
+    fail(
+      'hsme_dense_projection_matrix_incomplete',
+      'projection requires exact capability x [2,4,6,8] matrix coverage',
+    );
+  }
+  for(const row of rows){
+    if(!Array.isArray(row.qualityDimensions)||row.qualityDimensions.length<1){
+      fail(
+        'hsme_dense_projection_quality_incomplete',
+        'every matrix row requires measured non-compensable quality dimensions',
+      );
+    }
+    const dimensionIds=row.qualityDimensions.map(value=>value.dimensionId);
+    if(new Set(dimensionIds).size!==dimensionIds.length){
+      fail(
+        'hsme_dense_projection_quality_incomplete',
+        'matrix row quality dimension ids must be unique',
+      );
+    }
+    for(const dimension of row.qualityDimensions){
+      if(
+        !Number.isSafeInteger(dimension.lossMicrounits)
+        ||dimension.lossMicrounits<0
+        ||typeof dimension.criticalFailureObserved!=='boolean'
+        ||!HEX64.test(dimension.evidenceSha256)
+      ){
+        fail(
+          'hsme_dense_projection_quality_incomplete',
+          'matrix quality dimensions must contain measured bounded evidence',
+        );
+      }
+    }
+    for(const [name,value,min] of [
+      ['activeRepresentationBytes',row.activeRepresentationBytes,1],
+      ['peakRamBytes',row.peakRamBytes,0],
+      ['peakAcceleratorBytes',row.peakAcceleratorBytes,0],
+      ['flashBytesMovedPerRun',row.flashBytesMovedPerRun,0],
+    ] as const){
+      if(!Number.isSafeInteger(value)||value<min){
+        fail(
+          'hsme_dense_projection_measurements',
+          name+' must be a measured bounded safe integer',
+        );
+      }
+    }
   }
 }
 
@@ -396,6 +493,8 @@ function authorityBoundary(){
     winnerSelectionAllowed:false as const,
   });
 }
+
+function lexical(a:string,b:string):number{return a<b?-1:a>b?1:0;}
 
 function max(values:readonly number[]):number{
   if(values.length<1){
