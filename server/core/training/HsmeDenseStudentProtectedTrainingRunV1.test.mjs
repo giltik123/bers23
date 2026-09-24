@@ -256,8 +256,11 @@ test('exact READY preflight plus protected result yields staged-not-promoted rec
     'modelInstallAllowed',
     'modelFleetPromotionAllowed',
     'productionAuthorityGranted',
+    'providerAuthorityGranted',
+    'billingAuthorityGranted',
     'projectArtifactMutationAllowed',
     'aeeExecutionAuthorityGranted',
+    'durableModelFleetPromotionAllowed',
     'winnerSelectionAllowed',
   ]){
     assert.equal(receipt[field],false,field);
