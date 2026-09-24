@@ -1,0 +1,85 @@
+name: HSME-4.6 quality wall-clock resource disposition
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts'
+      - 'server/core/training/HsmeAdaptiveResidencyMovementReceiptV1.ts'
+      - 'server/core/training/HsmePredictivePrefetchComparisonV1.ts'
+      - 'server/core/training/HsmeDoubleBufferComparisonV1.ts'
+      - 'server/core/training/HsmeAdaptiveResidencyDispositionV1.ts'
+      - 'server/core/training/HsmeAdaptiveResidencyDispositionV1.test.mjs'
+      - '.github/workflows/hsme-4-6-quality-wallclock-resource-disposition.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  residency-disposition:
+    name: quality-preserving wall-clock resource disposition
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run adaptive residency disposition regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-4-6
+          npx esbuild server/core/training/HsmeAdaptiveResidencyDispositionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-4-6/residency-disposition.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-4-6/residency-disposition.test.mjs
+      - name: Prove quality gate before runtime benefit
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyDispositionV1.ts
+          grep -F 'QUALITY_PRESERVATION_REVIEWED' "$SRC"
+          grep -F "quality.preservationState==='PASS'" "$SRC"
+          grep -F ":'REJECT' as const" "$SRC"
+          grep -F 'NO_MATERIAL_FLASH_OR_STALL_IMPROVEMENT' "$SRC"
+          grep -F 'NO_MATERIAL_END_TO_END_IMPROVEMENT' "$SRC"
+      - name: Prove exact input and policy origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyDispositionV1.ts
+          grep -F 'verifyResidencyPlan(' "$SRC"
+          grep -F 'verifyMovementReceipt(' "$SRC"
+          grep -F 'verifyPredictiveComparison(' "$SRC"
+          grep -F 'verifyDoubleBufferComparison(' "$SRC"
+          grep -F 'verifyQualityPreservation(' "$SRC"
+          grep -F 'verifyDispositionPolicy(' "$SRC"
+      - name: Prove independent non-weighted mechanism gates
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyDispositionV1.ts
+          grep -F "'PREDICTIVE_PREFETCH'" "$SRC"
+          grep -F "'DOUBLE_BUFFERING'" "$SRC"
+          grep -F 'PREDICTIVE_RESOURCE_REGRESSION_OR_BUDGET_FAILURE' "$SRC"
+          grep -F 'DOUBLE_BUFFER_RESOURCE_REGRESSION_OR_BUDGET_FAILURE' "$SRC"
+          ! grep -niE 'weighted.?score|aggregate.?score|fastest.?wins' "$SRC"
+      - name: Prove no selection or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdaptiveResidencyDispositionV1.ts
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|(^|[^[:alnum:]_])exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|(^|[^[:alnum:]_])fetch\(|https?://" "$SRC"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
