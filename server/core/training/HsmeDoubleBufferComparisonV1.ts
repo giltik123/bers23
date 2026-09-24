@@ -459,7 +459,7 @@ export async function buildHsmeDoubleBufferComparisonV1(
     state:'DOUBLE_BUFFER_COMPARISON_READY_NOT_DISPOSED' as const,
     blockers:Object.freeze([] as string[]),
     ...common,
-    campaignSha256,
+    campaignSha256:campaignSha,
     rows:Object.freeze(rows),
     serializedMeasurementSha256:digests.get('SERIALIZED_CONTROL') as string,
     doubleBufferedMeasurementSha256:digests.get('DOUBLE_BUFFERED') as string,
