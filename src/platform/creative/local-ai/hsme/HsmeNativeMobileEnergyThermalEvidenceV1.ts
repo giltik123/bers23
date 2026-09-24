@@ -25,6 +25,40 @@ const THERMAL_STATES=Object.freeze([
   'HIGH',
   'CRITICAL',
 ] as const);
+const RAW_KEYS=Object.freeze([
+  'platform',
+  'processIdentity',
+  'sessionIdentity',
+  'deviceRunSessionSha256',
+  'runtimeIdentitySha256',
+  'actualPlacement',
+  'nativeTelemetryAttestationSha256',
+  'sourceApi',
+  'sourceApiVersion',
+  'bridgeVersion',
+  'adapterBuildSha256',
+  'osBuildSha256',
+  'runtimeBuildSha256',
+  'capturedAtMicrosStart',
+  'capturedAtMicrosEnd',
+  'warmLatencyUs',
+  'peakHostMemoryBytes',
+  'peakAcceleratorMemoryBytes',
+  'flashBytesMoved',
+  'ramBytesMoved',
+  'acceleratorBytesMoved',
+  'energyMicroJoulesTotal',
+  'batteryStartBps',
+  'batteryEndBps',
+  'powerSource',
+  'thermalStartState',
+  'thermalPeakState',
+  'thermalEndState',
+  'throttledRunCount',
+  'networkBytesDuringExecution',
+  'energyMeasurementKind',
+  'physicalOriginClaim',
+].sort());
 
 type ThermalState=typeof THERMAL_STATES[number];
 
@@ -321,6 +355,12 @@ export async function hsmeNativeMobileEnergyThermalEvidenceV1Digest(
 function validateRaw(
   raw:HsmeNativeMobileEnergyThermalRawCaptureV1,
 ):void{
+  if(!exactObjectShape(raw,RAW_KEYS)){
+    fail(
+      'hsme_native_mobile_energy_schema',
+      'raw native capture contains unknown or missing fields',
+    );
+  }
   if(
     raw.platform!=='ANDROID'
     &&raw.platform!=='IOS'
@@ -507,6 +547,18 @@ function validateEvidence(
     value.thermalMeasurementEvidenceSha256,
     'thermalMeasurementEvidenceSha256',
   );
+}
+
+function exactObjectShape(
+  value:unknown,
+  expected:readonly string[],
+):boolean{
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const proto=Object.getPrototypeOf(value);
+  if(proto!==Object.prototype&&proto!==null)return false;
+  const keys=Object.keys(value as Record<string,unknown>).sort();
+  return keys.length===expected.length
+    &&keys.every((key,index)=>key===expected[index]);
 }
 
 function percentileNearestRank(
