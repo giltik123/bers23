@@ -1,0 +1,87 @@
+name: HSME-2b2.18 selection-bound dense-baseline finalization
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentSelectedBaselineFinalizationV1.ts'
+      - 'server/core/training/HsmeDenseStudentSelectedBaselineFinalizationV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentSelectedDualBudgetProjectionV1.ts'
+      - 'server/core/training/HsmeDenseBaselineFinalizationV1.ts'
+      - '.github/workflows/hsme-2b2-18-selection-bound-finalization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selected-finalization:
+    name: selection-bound canonical dense-baseline finalization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run selection-bound finalization regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-18
+          npx esbuild server/core/training/HsmeDenseStudentSelectedBaselineFinalizationV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-18/selected-finalization.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-18/selected-finalization.test.mjs
+
+      - name: Prove exact selected-source and canonical finalizer reuse
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentSelectedBaselineFinalizationV1.ts
+          grep -F 'hsmeDenseStudentSelectedDualBudgetProjectionV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentRepresentationEvidenceV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentStepMatrixEvidenceV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentDualBudgetProjectionV1Digest(' "$SRC"
+          grep -F 'finalizeHsmeDenseBaselineV1(' "$SRC"
+          grep -F 'hsmeDenseBaselineFinalizationV1Digest(' "$SRC"
+
+      - name: Prove no reselection, reprojection or persistence
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentSelectedBaselineFinalizationV1.ts
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'baselineSelectionAllowed:false' "$SRC"
+          grep -F 'canonicalDecisionPersistAllowed:false' "$SRC"
+          grep -F 'checkpointPromotionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE 'deriveHsmeDenseStudentQualityFirstDispositionV1|projectHsmeDenseStudentDualBudgetV1|writeFile|appendFile|rename\(|copyFile|weightedScore|aggregateScore|startTraining|runTraining|child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://' "$SRC"
+
+      - name: Prove synthetic wrapper tests preserve canonical states and origin refusal
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeDenseStudentSelectedBaselineFinalizationV1.test.mjs
+          grep -F 'SELECTED_BASELINE_FINALIZATION_BLOCKED' "$TEST"
+          grep -F 'SELECTED_BASELINE_REDESIGN_REQUIRED' "$TEST"
+          grep -F 'SELECTED_BASELINE_REJECTED' "$TEST"
+          grep -F 'SELECTED_BASELINE_PIN_CANDIDATE_READY_NOT_PERSISTED' "$TEST"
+          grep -F 'verifySelectedDualBudgetProjection(){return false;}' "$TEST"
+          grep -F 'verifyRepresentationEvidence(){return false;}' "$TEST"
+          grep -F 'verifyStepMatrixEvidence(){return false;}' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
