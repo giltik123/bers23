@@ -8,8 +8,11 @@ on:
       - 'scripts/hsme-foundation-benchmark-executor.py'
       - 'scripts/hsme-foundation-benchmark-executor-verify.mjs'
       - 'scripts/hsme-foundation-resource-fragment-verify.mjs'
+      - 'scripts/build-hsme-foundation-protected-artifact-provenance.mjs'
+      - 'scripts/intake-hsme-foundation-protected-artifacts.mjs'
       - 'tests/hsme-foundation-benchmark-executor-plan.test.mjs'
       - 'tests/hsme-foundation-resource-fragment-verify.test.mjs'
+      - 'tests/hsme-foundation-protected-artifact-intake.test.mjs'
       - 'tests/hsme-foundation-benchmark-executor-workflow-policy.test.mjs'
       - 'tests/test-hsme-foundation-benchmark-executor.py'
       - 'src/platform/creative/local-ai/hsme/**'
@@ -406,6 +409,44 @@ jobs:
             test ! -e "${EVIDENCE_DIR}/resource-measurement-evidence.json"
           fi
 
+      - name: Build content-addressed protected artifact provenance
+        id: provenance
+        env:
+          PLAN_PATH: ${{ runner.temp }}/hsme-foundation-plan/execution-plan.json
+        run: |
+          set -euo pipefail
+          cd controller
+          npx esbuild scripts/build-hsme-foundation-protected-artifact-provenance.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile="${RUNNER_TEMP}/hsme-foundation-provenance.mjs" \
+            --external:node:*
+          cd "${GITHUB_WORKSPACE}"
+          STATUS="$(python -c 'import json,os;print(json.load(open(os.environ["EVIDENCE_DIR"]+"/candidate-run.json"))["status"])')"
+          ARGS=(
+            --plan "${PLAN_PATH}"
+            --run "${EVIDENCE_DIR}/candidate-run.json"
+            --inventory "${EVIDENCE_DIR}/runtime-inventory.json"
+            --workflow-run-id "${GITHUB_RUN_ID}"
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}"
+            --repository "${GITHUB_REPOSITORY}"
+            --workflow ".github/workflows/hsme-2a-3-3b-protected-foundation-executor.yml"
+            --out "${EVIDENCE_DIR}/protected-artifact-provenance.json"
+          )
+          if [[ "${STATUS}" == "COMPLETE" ]]; then
+            ARGS+=(
+              --review "${EVIDENCE_DIR}/review-package.json"
+              --review-dir "${REVIEW_DIR}"
+              --resource "${EVIDENCE_DIR}/resource-measurement.json"
+              --hardware-profile "${EVIDENCE_DIR}/resource-hardware-profile.json"
+              --measurement-method "${EVIDENCE_DIR}/resource-measurement-method.json"
+              --measurement-evidence "${EVIDENCE_DIR}/resource-measurement-evidence.json"
+            )
+          else
+            ARGS+=(--failure "${EVIDENCE_DIR}/failure-evidence.json")
+          fi
+          HSME_FOUNDATION_PROTECTED_PROVENANCE_CLI=1 \
+            node "${RUNNER_TEMP}/hsme-foundation-provenance.mjs" "${ARGS[@]}"
+
       - name: Destroy transient model and Hub cache bytes
         if: always()
         run: |
@@ -413,7 +454,7 @@ jobs:
           rm -rf "${MODEL_ROOT}" "${HF_HOME}"
 
       - name: Upload protected benchmark evidence
-        if: always() && steps.execute.outcome == 'success' && steps.verify.outcome == 'success'
+        if: always() && steps.execute.outcome == 'success' && steps.verify.outcome == 'success' && steps.provenance.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: hsme-foundation-blind-evidence-${{ github.run_id }}
@@ -423,12 +464,13 @@ jobs:
             ${{ runner.temp }}/hsme-foundation-evidence/runtime-inventory.json
             ${{ runner.temp }}/hsme-foundation-evidence/review-package.json
             ${{ runner.temp }}/hsme-foundation-evidence/failure-evidence.json
+            ${{ runner.temp }}/hsme-foundation-evidence/protected-artifact-provenance.json
             ${{ runner.temp }}/hsme-foundation-blind-review/*.png
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Upload separately verified resource measurement evidence
-        if: always() && steps.execute.outcome == 'success' && steps.verify.outcome == 'success' && steps.verify.outputs.run_status == 'COMPLETE'
+        if: always() && steps.execute.outcome == 'success' && steps.verify.outcome == 'success' && steps.provenance.outcome == 'success' && steps.verify.outputs.run_status == 'COMPLETE'
         uses: actions/upload-artifact@v4
         with:
           name: hsme-foundation-resource-evidence-${{ github.run_id }}
@@ -440,6 +482,7 @@ jobs:
             ${{ runner.temp }}/hsme-foundation-evidence/resource-hardware-profile.json
             ${{ runner.temp }}/hsme-foundation-evidence/resource-measurement-method.json
             ${{ runner.temp }}/hsme-foundation-evidence/resource-measurement-evidence.json
+            ${{ runner.temp }}/hsme-foundation-evidence/protected-artifact-provenance.json
           if-no-files-found: error
           retention-days: 7
 
