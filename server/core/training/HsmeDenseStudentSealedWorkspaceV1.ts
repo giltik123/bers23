@@ -2,9 +2,10 @@ import {
   HSME_DENSE_STUDENT_ENTRYPOINT_V1,
   type HsmeDenseStudentTrainingHashPortV1,
 } from './HsmeDenseStudentTrainingToolchainV1.ts';
-import type {
-  CoreHsmeDenseStudentExecutionRequestV1,
-  CoreHsmeDenseStudentProtectedExecutionPortV1,
+import {
+  CORE_HSME_DENSE_STUDENT_EXECUTION_REQUEST_V1_SCHEMA,
+  type CoreHsmeDenseStudentExecutionRequestV1,
+  type CoreHsmeDenseStudentProtectedExecutionPortV1,
 } from './HsmeDenseStudentProtectedTrainingRunV1.ts';
 
 export const HSME_DENSE_STUDENT_SEALED_WORKSPACE_V1_SCHEMA =
@@ -361,8 +362,23 @@ function validateExecutionBinding(
   request:CoreHsmeDenseStudentExecutionRequestV1,
   workspace:HsmeDenseStudentSealedWorkspaceV1,
 ):void{
+  const record=exactRecord(request,[
+    'schemaVersion',
+    'launchSpecSha256',
+    'interpreter',
+    'argv',
+    'repositoryCommitSha',
+    'immutableEnvironmentSha256',
+    'backend',
+    'outputStagingAuthorityId',
+    'outputStagingPolicySha256',
+    'resourceCeilings',
+    'networkPolicy',
+    'cacheModelInputPolicy',
+  ],'executionRequest');
   if(
-    request.interpreter!=='python3.12'
+    record.schemaVersion!==CORE_HSME_DENSE_STUDENT_EXECUTION_REQUEST_V1_SCHEMA
+    ||request.interpreter!=='python3.12'
     ||request.networkPolicy!=='SEALED_INPUTS_ONLY'
     ||request.cacheModelInputPolicy!==
       'READ_ONLY_CONTENT_ADDRESSED_SEALED_INPUTS'
@@ -378,7 +394,56 @@ function validateExecutionBinding(
     );
   }
 
+  const backend=exactRecord(request.backend,[
+    'backendClass','providerId','accountId','executionEnvironmentId',
+  ],'executionRequest.backend');
+  if(backend.backendClass!=='CUDA_GPU'){
+    fail(
+      'hsme_sealed_workspace_execution_backend',
+      'execution request backend must remain CUDA_GPU',
+    );
+  }
+  identifier(backend.providerId,'executionRequest.backend.providerId',120);
+  identifier(backend.accountId,'executionRequest.backend.accountId',160);
+  identifier(
+    backend.executionEnvironmentId,
+    'executionRequest.backend.executionEnvironmentId',
+    160,
+  );
+
+  const ceilings=exactRecord(request.resourceCeilings,[
+    'maxTrainingExamples','maxGpuSeconds','maxTrainingCostMicrousd',
+  ],'executionRequest.resourceCeilings');
+  const maxTrainingExamples=safeInteger(
+    ceilings.maxTrainingExamples,
+    'executionRequest.resourceCeilings.maxTrainingExamples',
+    1,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const maxGpuSeconds=safeInteger(
+    ceilings.maxGpuSeconds,
+    'executionRequest.resourceCeilings.maxGpuSeconds',
+    1,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const maxTrainingCostMicrousd=safeInteger(
+    ceilings.maxTrainingCostMicrousd,
+    'executionRequest.resourceCeilings.maxTrainingCostMicrousd',
+    0,
+    Number.MAX_SAFE_INTEGER,
+  );
+
   const argv=parseFixedArgv(request.argv);
+  if(
+    argv.maxTrainingExamples!==maxTrainingExamples
+    ||argv.maxGpuSeconds!==maxGpuSeconds
+    ||argv.maxTrainingCostMicrousd!==maxTrainingCostMicrousd
+  ){
+    fail(
+      'hsme_sealed_workspace_resource_ceiling_binding',
+      'argv resource ceilings differ from Core execution request ceilings',
+    );
+  }
   if(
     argv.candidateId!==workspace.candidateId
     ||argv.teacherDecisionSha256!==workspace.teacherDecisionSha256
@@ -407,7 +472,13 @@ function parseFixedArgv(argv:readonly string[]):Readonly<{
   resumeCheckpointSha256:string;
   outputStagingAuthorityId:string;
   outputStagingPolicySha256:string;
+  maxTrainingExamples:number;
+  maxGpuSeconds:number;
+  maxTrainingCostMicrousd:number;
 }>{
+  if(!Array.isArray(argv)||argv.some(value=>typeof value!=='string')){
+    fail('hsme_sealed_workspace_argv_shape','launch argv must be a string array');
+  }
   const expectedFlags=[
     '--candidate-id',
     '--request-evidence-sha256',
@@ -457,6 +528,21 @@ function parseFixedArgv(argv:readonly string[]):Readonly<{
     resumeCheckpointSha256:values.get('--resume-checkpoint-sha256')!,
     outputStagingAuthorityId:values.get('--output-staging-authority-id')!,
     outputStagingPolicySha256:values.get('--output-staging-policy-sha256')!,
+    maxTrainingExamples:argvInteger(
+      values.get('--max-training-examples')!,
+      'argv.maxTrainingExamples',
+      1,
+    ),
+    maxGpuSeconds:argvInteger(
+      values.get('--max-gpu-seconds')!,
+      'argv.maxGpuSeconds',
+      1,
+    ),
+    maxTrainingCostMicrousd:argvInteger(
+      values.get('--max-training-cost-microusd')!,
+      'argv.maxTrainingCostMicrousd',
+      0,
+    ),
   });
 }
 
@@ -749,6 +835,21 @@ function sha256(raw:unknown,path:string):string{
     fail('hsme_sealed_workspace_hash',path+' must be lowercase SHA-256');
   }
   return raw;
+}
+
+function argvInteger(
+  raw:string,
+  path:string,
+  min:number,
+):number{
+  if(!/^(0|[1-9][0-9]*)$/.test(raw)){
+    fail('hsme_sealed_workspace_argv_integer',path+' is not canonical decimal');
+  }
+  const value=Number(raw);
+  if(!Number.isSafeInteger(value)||value<min){
+    fail('hsme_sealed_workspace_argv_integer',path+' is out of bounds');
+  }
+  return value;
 }
 
 function safeInteger(
