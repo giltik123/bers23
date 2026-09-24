@@ -1,0 +1,87 @@
+name: HSME-2b2.16 quality-first real representation disposition
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentQualityFirstDispositionV1.ts'
+      - 'server/core/training/HsmeDenseStudentQualityFirstDispositionV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentRealStepMatrixCampaignV1.ts'
+      - 'server/core/training/HsmeDenseStudentStepMatrixV1.ts'
+      - '.github/workflows/hsme-2b2-16-quality-first-disposition.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-first-disposition:
+    name: quality-first real representation disposition
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run quality-first disposition regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-16
+          npx esbuild server/core/training/HsmeDenseStudentQualityFirstDispositionV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-16/quality-first.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-16/quality-first.test.mjs
+
+      - name: Prove quality-first trusted evidence reuse
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentQualityFirstDispositionV1.ts
+          grep -F 'hsmeDenseStudentRealStepMatrixCampaignV1Digest(' "$SRC"
+          grep -F 'hsmeDenseStudentStepMatrixEvidenceV1Digest(' "$SRC"
+          grep -F 'QUALITY_PASS_THEN_PARETO_LOWER_IS_BETTER' "$SRC"
+          grep -F 'criticalFailureObserved' "$SRC"
+          grep -F 'maxLossMicrounits' "$SRC"
+          grep -F 'REAL_REPRESENTATION_DISPOSITION_AMBIGUOUS' "$SRC"
+          grep -F 'REAL_REPRESENTATION_QUALITY_REDESIGN_REQUIRED' "$SRC"
+          grep -F 'REAL_REPRESENTATION_SELECTED_READY_NOT_PROJECTED' "$SRC"
+
+      - name: Prove no hidden score or later-stage authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseStudentQualityFirstDispositionV1.ts
+          grep -F 'weightedAggregateScoreAllowed:false' "$SRC"
+          grep -F 'efficiencyMayOverrideQualityFailure:false' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'baselineSelectionAllowed:false' "$SRC"
+          grep -F 'canonicalDecisionPersistAllowed:false' "$SRC"
+          grep -F 'checkpointPromotionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE 'weightedScore|aggregateScore|scoreWeight|normalizeScore|projectHsmeDenseStudentDualBudgetV1|finalizeHsmeDenseBaselineV1|startTraining|runTraining|child_process|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|from_pretrained|torch\.load|pickle\.load|safe_open|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://' "$SRC"
+
+      - name: Prove PR synthetic fixtures cannot mint trusted real disposition
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeDenseStudentQualityFirstDispositionV1.test.mjs
+          grep -F 'verifyRealStepMatrixCampaign(){return false;}' "$TEST"
+          grep -F "QUALITY_FIRST_CAMPAIGN_ORIGIN_UNVERIFIED" "$TEST"
+          ! grep -nE 'verifyRealStepMatrixCampaign\(\).*return true|verifyStepMatrixEvidence\(\).*return true' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
