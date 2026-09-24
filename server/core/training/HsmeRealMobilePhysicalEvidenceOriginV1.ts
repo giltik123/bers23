@@ -235,10 +235,17 @@ export async function prepareHsmeRealMobilePhysicalEvidenceOriginV1(
     );
   }
 
+  const expectedHardwareRuntimeIdentitySha256=await digest(
+    HSME_REAL_MOBILE_HARDWARE_RUNTIME_IDENTITY_DIGEST_DOMAIN,
+    row.runtimeIdentity,
+    hash,
+  );
+
   const bindingBlockers=validateSamePhysicalSession(
     row,
     physicalBundle,
     telemetryRecord,
+    expectedHardwareRuntimeIdentitySha256,
   );
   if(bindingBlockers.length>0){
     return invalid(bindingBlockers,withTelemetry);
@@ -323,6 +330,9 @@ export async function prepareHsmeRealMobilePhysicalEvidenceOriginV1(
       nativeTelemetryEvidenceSha256:telemetrySha256,
       nativeTelemetryAttestationSha256:
         t.nativeTelemetryAttestationSha256,
+      expectedHardwareRuntimeIdentitySha256,
+      deviceCapabilityKey:t.deviceCapabilityKey,
+      supportedDeviceClass:t.supportedDeviceClass,
       realMobileEvidenceSetSha256:evidenceSetSha256,
       physicalDeviceAttestationSemantic:
         'FOUNDATION_VERIFIED_PHYSICAL_RUN_PAYLOAD_SHA256',
@@ -380,6 +390,7 @@ function validateSamePhysicalSession(
   row:CoreHsmeHardwarePlacementMeasurementV1,
   bundle:HsmeFoundationPhysicalMobileValidationBundleV1,
   telemetryRecord:HsmeNativeMobileEnergyThermalEvidenceRecordV1,
+  expectedHardwareRuntimeIdentitySha256:string,
 ):string[]{
   const blockers:string[]=[];
   const t=telemetryRecord.evidence;
@@ -405,6 +416,9 @@ function validateSamePhysicalSession(
   if(first.runtimeIdentitySha256!==t.runtimeIdentitySha256){
     blockers.push('REAL_MOBILE_PHYSICAL_NATIVE_RUNTIME_IDENTITY_MISMATCH');
   }
+  if(t.runtimeIdentitySha256!==expectedHardwareRuntimeIdentitySha256){
+    blockers.push('REAL_MOBILE_PHYSICAL_HARDWARE_RUNTIME_IDENTITY_MISMATCH');
+  }
   if(first.adapterBuildSha256!==t.adapterBuildSha256){
     blockers.push('REAL_MOBILE_PHYSICAL_NATIVE_ADAPTER_BUILD_MISMATCH');
   }
@@ -424,6 +438,12 @@ function validateSamePhysicalSession(
     blockers.push('REAL_MOBILE_PHYSICAL_PLATFORM_FAMILY_MISMATCH');
   }
   if(
+    t.deviceCapabilityKey!==raw.deviceCapabilityKey
+    ||t.supportedDeviceClass!==row.supportedDeviceClass
+  ){
+    blockers.push('REAL_MOBILE_PHYSICAL_DEVICE_CLASS_BINDING_MISMATCH');
+  }
+  if(
     profile.deviceClass!=='MOBILE'
     ||(
       t.platform==='ANDROID'
@@ -440,6 +460,13 @@ function validateSamePhysicalSession(
     ||raw.manifestSha256!==row.representationContentSha256
   ){
     blockers.push('REAL_MOBILE_PHYSICAL_FLEET_REPRESENTATION_MISMATCH');
+  }
+  if(!providerCompatibleWithPlacement(
+    raw.provider,
+    row.platformFamily,
+    row.requestedPlacement,
+  )){
+    blockers.push('REAL_MOBILE_PHYSICAL_RUNTIME_PROVIDER_MISMATCH');
   }
   if(
     t.actualPlacement!==row.requestedPlacement
@@ -565,6 +592,25 @@ function assemblyAuthorityBoundary(){
     aeeExecutionAuthorityGranted:false as const,
     winnerSelectionAllowed:false as const,
   });
+}
+
+function providerCompatibleWithPlacement(
+  provider:string,
+  platformFamily:'APPLE'|'ANDROID',
+  placement:'CPU'|'GPU'|'NPU',
+):boolean{
+  if(placement==='CPU'){
+    return provider==='cpu'||provider==='wasm';
+  }
+  if(placement==='GPU'){
+    return provider==='webgpu'
+      ||provider==='cuda'
+      ||provider==='dml'
+      ||(platformFamily==='APPLE'&&provider==='coreml');
+  }
+  return platformFamily==='APPLE'
+    ?provider==='coreml'
+    :provider==='nnapi';
 }
 
 function exactDigest(
