@@ -1,0 +1,93 @@
+name: HSME-2b2.20 protected baseline compare-and-swap commit
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseBaselineCommitReceiptV1.ts'
+      - 'server/core/training/HsmeDenseBaselineCommitReceiptV1.test.mjs'
+      - 'server/core/training/HsmeDenseBaselinePersistenceIntentV1.ts'
+      - '.github/workflows/hsme-2b2-20-protected-baseline-cas-commit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protected-cas-commit:
+    name: protected fixed-path compare-and-swap receipt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run protected compare-and-swap regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-20
+          npx esbuild server/core/training/HsmeDenseBaselineCommitReceiptV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-20/baseline-cas.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-20/baseline-cas.test.mjs
+
+      - name: Prove fixed-path intent-derived request
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseBaselineCommitReceiptV1.ts
+          grep -F 'hsmeDenseBaselinePersistenceIntentV1Digest(' "$SRC"
+          grep -F "const nextCanonicalFileText=intent.nextCanonicalJson+'\\n'" "$SRC"
+          grep -F 'canonicalPath:HSME_DENSE_BASELINE_CANONICAL_DECISION_PATH' "$SRC"
+          grep -F 'commitExactCanonicalBaseline(request)' "$SRC"
+          grep -F 'coreHsmeDenseBaselineCommitResultV1Digest(' "$SRC"
+          grep -F 'verifyCommitResult(hostResult,hostResultSha256)' "$SRC"
+
+      - name: Prove compare-and-swap and no reusable mutation authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseBaselineCommitReceiptV1.ts
+          grep -F 'CANONICAL_BASELINE_COMMIT_APPLIED' "$SRC"
+          grep -F 'CANONICAL_BASELINE_COMMIT_ALREADY_APPLIED' "$SRC"
+          grep -F 'CANONICAL_BASELINE_COMMIT_STALE_BLOCKED' "$SRC"
+          grep -F 'furtherFileMutationAllowed:false' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+          grep -F 'checkpointPromotionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+
+      - name: Prove Core wrapper has no generic file/process/provider write API
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDenseBaselineCommitReceiptV1.ts
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove idempotency stale and origin refusal regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeDenseBaselineCommitReceiptV1.test.mjs
+          grep -F 'CANONICAL_BASELINE_PERSISTED_NOT_PROMOTED' "$TEST"
+          grep -F 'CANONICAL_BASELINE_ALREADY_PERSISTED_NOT_PROMOTED' "$TEST"
+          grep -F 'CANONICAL_BASELINE_PERSISTENCE_STALE_BLOCKED' "$TEST"
+          grep -F 'verifyPersistenceIntent(){return false;}' "$TEST"
+          grep -F 'verifyCommitResult(){return false;}' "$TEST"
+          grep -F 'CANONICAL_BASELINE_COMMIT_APPLIED_RESULT_INCONSISTENT' "$TEST"
+          grep -F 'CANONICAL_BASELINE_COMMIT_HOST_RESULT_INVALID' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

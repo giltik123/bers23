@@ -1,0 +1,77 @@
+name: HSME-2b2.15 real step-matrix campaign
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentRealStepMatrixCampaignV1.ts'
+      - 'server/core/training/HsmeDenseStudentRealStepMatrixCampaignV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentRealRepresentationRosterV1.ts'
+      - 'server/core/training/HsmeDenseStudentStepMatrixV1.ts'
+      - '.github/workflows/hsme-2b2-15-real-step-matrix-campaign.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-step-matrix-campaign:
+    name: trusted four-variant campaign without selection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Server typecheck
+        run: npm run server:typecheck
+
+      - name: Bundle and run non-real campaign regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-15
+          npx esbuild server/core/training/HsmeDenseStudentRealStepMatrixCampaignV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-15/campaign.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-15/campaign.test.mjs
+
+      - name: Prove campaign only consumes canonical existing evidence
+        run: |
+          set -euo pipefail
+          FILE=server/core/training/HsmeDenseStudentRealStepMatrixCampaignV1.ts
+          grep -F 'hsmeDenseStudentRealRepresentationRosterV1Digest' "$FILE"
+          grep -F 'hsmeDenseStudentRepresentationEvidenceV1Digest' "$FILE"
+          grep -F 'hsmeDenseStudentStepMatrixEvidenceV1Digest' "$FILE"
+          grep -F "REAL_STEP_MATRIX_CAMPAIGN_READY_NOT_SELECTED" "$FILE"
+          grep -F "weightedAggregateScoreAllowed:false" "$FILE"
+          grep -F "efficiencyMayOverrideQualityFailure:false" "$FILE"
+          grep -F "scheduleSelectionAllowed:false" "$FILE"
+          grep -F "trainingVariantSelectionAllowed:false" "$FILE"
+          grep -F "baselineSelectionAllowed:false" "$FILE"
+          grep -F "winnerSelectionAllowed:false" "$FILE"
+
+      - name: Prove no new benchmark or execution surface
+        run: |
+          set -euo pipefail
+          FILE=server/core/training/HsmeDenseStudentRealStepMatrixCampaignV1.ts
+          ! grep -nE 'proveHsmeDenseStudentStepMatrixV1|measureExactDenseStudentStepMatrix|CoreHsmeDenseStudentStepMatrixPortV1|child_process|spawn\(|exec\(|subprocess|runHsmeDenseStudentProtectedTrainingV1|executeExactTrainingLaunch|startTraining|ModelFleet(Service|Client)|promoteModel|installModel|reserveCredits|spendCredits|fetch\(|https?://' "$FILE"
+
+      - name: Prove ordinary PR fixtures do not fabricate real READY evidence
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeDenseStudentRealStepMatrixCampaignV1.test.mjs
+          ! grep -F "REAL_REPRESENTATION_ROSTER_READY_NOT_MEASURED" "$TEST"
+          ! grep -F "REPRESENTATION_READY_NOT_ADMITTED" "$TEST"
+          ! grep -F "STEP_MATRIX_READY_NOT_SELECTED" "$TEST"
