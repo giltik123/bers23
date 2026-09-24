@@ -406,8 +406,13 @@ export async function commitHsmeDenseBaselinePersistenceIntentV1(
     );
   }
 
-  const common={
-    ...fromIntent(intent,persistenceIntentSha256),
+  const common:ResolvedOutput={
+    persistenceIntentSha256,
+    approvalEvidenceSha256:intent.approvalEvidenceSha256,
+    expectedCurrentDecisionSha256:intent.expectedCurrentDecisionSha256,
+    expectedCurrentFileSha256:intent.expectedCurrentFileSha256,
+    nextDecisionSha256:intent.nextDecisionSha256,
+    nextFileSha256:intent.nextFileSha256,
     hostResultSha256,
     observedBeforeFileSha256:hostResult.observedBeforeFileSha256,
     observedAfterFileSha256:hostResult.observedAfterFileSha256,
