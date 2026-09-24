@@ -6,6 +6,7 @@ import {
 import {
   HSME_REAL_MOBILE_QUALIFICATION_POLICY_V1_SCHEMA,
   hsmeRealMobileQualificationPolicyV1Digest,
+  normalizeHsmeRealMobileQualificationPolicyV1,
   type HsmeRealMobileQualificationPolicyV1,
 } from './HsmeRealMobileQualificationV1.ts';
 import type {
@@ -405,7 +406,7 @@ export async function freezeHsmePhysicalMobileCapturePlanV1(
     ){
       throw new Error('schema mismatch');
     }
-    policy=await normalizePolicy(rawPolicy);
+    policy=normalizeHsmeRealMobileQualificationPolicyV1(rawPolicy);
     policySha256=await hsmeRealMobileQualificationPolicyV1Digest(
       policy,
       hash,
@@ -605,13 +606,6 @@ export async function hsmePhysicalMobileCapturePlanV1Digest(
     payload,
     hash,
   );
-}
-
-async function normalizePolicy(
-  raw:unknown,
-):Promise<HsmeRealMobileQualificationPolicyV1>{
-  const module=await import('./HsmeRealMobileQualificationV1.ts');
-  return module.normalizeHsmeRealMobileQualificationPolicyV1(raw);
 }
 
 type PartialOutput=Partial<Pick<
