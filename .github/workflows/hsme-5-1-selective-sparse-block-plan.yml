@@ -1,0 +1,73 @@
+name: HSME-5.1 selective sparse block plan freeze
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts'
+      - 'server/core/training/HsmeSelectiveSparseBlockPlanV1.ts'
+      - 'server/core/training/HsmeSelectiveSparseBlockPlanV1.test.mjs'
+      - '.github/workflows/hsme-5-1-selective-sparse-block-plan.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sparse-block-plan:
+    name: measured selective sparse-block candidate freeze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run selective sparse-block regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-5-1
+          npx esbuild server/core/training/HsmeSelectiveSparseBlockPlanV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-5-1/sparse-block-plan.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-5-1/sparse-block-plan.test.mjs
+      - name: Prove measured dense block and exact origin gates
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSelectiveSparseBlockPlanV1.ts
+          grep -F 'realMeasuredEvidence must be true' "$SRC"
+          grep -F 'verifyResidencyPlan(' "$SRC"
+          grep -F 'verifyBlockProfileRoster(' "$SRC"
+          grep -F 'verifySparseBlockPolicy(' "$SRC"
+          grep -F 'qualitySensitivityEvidenceSha256' "$SRC"
+      - name: Prove selective candidate and sparse bounds
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSelectiveSparseBlockPlanV1.ts
+          grep -F 'SELECTIVE_SPARSE_BLOCK_CANDIDATE_NOT_MEASURED' "$SRC"
+          grep -F 'SELECTIVE_SPARSE_BLOCK_CANDIDATE_SHARE_TOO_SMALL' "$SRC"
+          grep -F 'maxExpertsPerConvertedBlock' "$SRC"
+          grep -F 'maxActiveExpertsPerBlock' "$SRC"
+          grep -F 'full backbone experts are forbidden' "$SRC"
+      - name: Prove no conversion execution or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSelectiveSparseBlockPlanV1.ts
+          grep -F 'SELECTIVE_SPARSE_BLOCK_PLAN_FROZEN_NOT_EXECUTED' "$SRC"
+          grep -F 'conversionExecutionAllowed:false' "$SRC"
+          grep -F 'blockExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|(^|[^[:alnum:]_])exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|(^|[^[:alnum:]_])fetch\(|https?://" "$SRC"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD

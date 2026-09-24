@@ -1,0 +1,72 @@
+name: HSME-5.2 immutable sparse-block candidate roster
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeSelectiveSparseBlockPlanV1.ts'
+      - 'server/core/training/HsmeSparseBlockCandidateRosterV1.ts'
+      - 'server/core/training/HsmeSparseBlockCandidateRosterV1.test.mjs'
+      - '.github/workflows/hsme-5-2-sparse-block-candidate-roster.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sparse-block-roster:
+    name: immutable selective sparse-block candidate roster
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run sparse-block roster regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-5-2
+          npx esbuild server/core/training/HsmeSparseBlockCandidateRosterV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-5-2/sparse-block-roster.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-5-2/sparse-block-roster.test.mjs
+      - name: Prove exact dense block and I/O binding
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSparseBlockCandidateRosterV1.ts
+          grep -F 'originalDenseBlockContentSha256' "$SRC"
+          grep -F 'inputOutputContractSha256' "$SRC"
+          grep -F 'qualityPreservationContractSha256' "$SRC"
+          grep -F 'SPARSE_BLOCK_CANDIDATE_MANIFEST_BINDING_MISMATCH' "$SRC"
+      - name: Prove compact expert router package law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSparseBlockCandidateRosterV1.ts
+          grep -F 'package byte accounting mismatch' "$SRC"
+          grep -F 'requiresSharedPath:true' "$SRC"
+          grep -F 'containsFullDenseBlockCopy:false' "$SRC"
+          grep -F 'standaloneExecutionAllowed:false' "$SRC"
+          grep -F 'SPARSE_BLOCK_CANDIDATE_FROZEN_CAP_EXCEEDED' "$SRC"
+      - name: Prove no block execution selection or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeSparseBlockCandidateRosterV1.ts
+          grep -F 'SELECTIVE_SPARSE_BLOCK_CANDIDATE_ROSTER_READY_NOT_EXECUTED' "$SRC"
+          grep -F 'blockExecutionAllowed:false' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|(^|[^[:alnum:]_])exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|(^|[^[:alnum:]_])fetch\(|https?://" "$SRC"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
