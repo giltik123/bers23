@@ -129,6 +129,11 @@ export type HsmeAdaptiveResidencyExperimentPlanV1=Readonly<{
   prototypeRosterSha256:string|'UNKNOWN';
   prototypeSha256:string|'UNKNOWN';
   prototypeVariant:string|'UNKNOWN';
+  denseBaselineContentSha256:string|'UNKNOWN';
+  routerContentSha256:string|'UNKNOWN';
+  expertIds:readonly string[];
+  expertContentSha256s:readonly string[];
+  maxActiveExperts:1|2|'UNKNOWN';
   denseBaselinePackageBytes:number|'UNKNOWN';
   totalExpertArtifactBytes:number|'UNKNOWN';
   routerBytes:number|'UNKNOWN';
@@ -495,6 +500,11 @@ export async function freezeHsmeAdaptiveResidencyExperimentPlanV1(
     prototypeRosterSha256:rosterSha,
     prototypeSha256:prototype.prototypeSha256,
     prototypeVariant:prototype.variant,
+    denseBaselineContentSha256:roster.denseBaselineContentSha256,
+    routerContentSha256:prototype.routerContentSha256,
+    expertIds:prototype.expertIds,
+    expertContentSha256s:prototype.expertContentSha256s,
+    maxActiveExperts:prototype.maxActiveExperts,
     denseBaselinePackageBytes:prototype.denseBaselinePackageBytes,
     totalExpertArtifactBytes:prototype.totalExpertArtifactBytes,
     routerBytes:prototype.routerBytes,
@@ -596,6 +606,11 @@ function terminal(
     prototypeRosterSha256:values.prototypeRosterSha256??'UNKNOWN',
     prototypeSha256:values.prototypeSha256??'UNKNOWN',
     prototypeVariant:values.prototypeVariant??'UNKNOWN',
+    denseBaselineContentSha256:'UNKNOWN',
+    routerContentSha256:'UNKNOWN',
+    expertIds:Object.freeze([]),
+    expertContentSha256s:Object.freeze([]),
+    maxActiveExperts:'UNKNOWN',
     denseBaselinePackageBytes:values.denseBaselinePackageBytes??'UNKNOWN',
     totalExpertArtifactBytes:values.totalExpertArtifactBytes??'UNKNOWN',
     routerBytes:values.routerBytes??'UNKNOWN',
