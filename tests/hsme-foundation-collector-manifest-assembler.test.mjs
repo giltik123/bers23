@@ -322,7 +322,7 @@ async function resourceBundle(dir,plan,run,inv){
     warmLatencySamplesMicros:[3_000_000,4_000_000,5_000_000],
     acceptedOutputCostMicrousd:0,
     costKind:'PROVEN_UNMETERED_LOCAL',
-    costEvidenceSha256,
+    costEvidenceSha256:costEvidenceSha,
     productionAuthorityGranted:false,
     winnerSelectionAllowed:false,
   };
@@ -348,7 +348,7 @@ async function resourceBundle(dir,plan,run,inv){
       warmEndToEndLatencyMicros:evidence.warmEndToEndLatencyMicros,
       acceptedOutputCostMicrousd:0,
       costKind:'PROVEN_UNMETERED_LOCAL',
-      costEvidenceSha256,
+      costEvidenceSha256:costEvidenceSha,
       measurementEvidenceSha256:evidenceSha,
     },
     productionAuthorityGranted:false,
