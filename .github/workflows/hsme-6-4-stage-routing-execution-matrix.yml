@@ -1,0 +1,97 @@
+name: HSME-6.4 protected static-vs-stage-routed execution matrix
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeStageRoutingExperimentPlanV1.ts'
+      - 'server/core/training/HsmeStageRouteTableV1.ts'
+      - 'server/core/training/HsmeStageTransitionPrefetchScheduleV1.ts'
+      - 'server/core/training/HsmeStageRoutingExecutionMatrixV1.ts'
+      - 'server/core/training/HsmeStageRoutingExecutionMatrixV1.test.mjs'
+      - '.github/workflows/hsme-6-4-stage-routing-execution-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage-routing-matrix:
+    name: protected static vs deterministic stage-routed matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run stage-routing execution regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-6-4
+          npx esbuild server/core/training/HsmeStageRoutingExecutionMatrixV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-6-4/stage-routing-matrix.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-6-4/stage-routing-matrix.test.mjs
+      - name: Prove exact plan route-table schedule and campaign trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingExecutionMatrixV1.ts
+          grep -F 'hsmeStageRoutingExperimentPlanV1Digest(' "$SRC"
+          grep -F 'verifyStageRoutingPlan(plan,planSha)' "$SRC"
+          grep -F 'hsmeStageRouteTableV1Digest(' "$SRC"
+          grep -F 'verifyStageRouteTable(table,tableSha)' "$SRC"
+          grep -F 'hsmeStageTransitionPrefetchScheduleV1Digest(' "$SRC"
+          grep -F 'verifyPrefetchSchedule(schedule,scheduleSha)' "$SRC"
+          grep -F 'verifyExecutionCampaign(campaign,campaignSha)' "$SRC"
+      - name: Prove measured comparison evidence
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingExecutionMatrixV1.ts
+          grep -F "'STATIC_SHARED_CONTROL'" "$SRC"
+          grep -F "'DETERMINISTIC_STAGE_ROUTED'" "$SRC"
+          grep -F 'qualityPreservationPass' "$SRC"
+          grep -F 'hardPreservationFailureCount' "$SRC"
+          grep -F 'criticalFailureCount' "$SRC"
+          grep -F 'coldEndToEndLatencyUs' "$SRC"
+          grep -F 'warmEndToEndLatencyUs' "$SRC"
+          grep -F 'activeWeightsBytes' "$SRC"
+          grep -F 'flashBytesMoved' "$SRC"
+          grep -F 'ramBytesMoved' "$SRC"
+          grep -F 'acceleratorBytesMoved' "$SRC"
+          grep -F 'expertActivationCount' "$SRC"
+          grep -F 'transitionStallUs' "$SRC"
+          grep -F 'deterministicReplayIdentitySha256' "$SRC"
+      - name: Prove no selection mutation or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeStageRoutingExecutionMatrixV1.ts
+          grep -F 'STAGE_ROUTING_EXECUTION_MATRIX_READY_NOT_DISPOSED' "$SRC"
+          grep -F 'furtherStageRoutingExecutionAllowed:false' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'routeMutationAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|(^|[^[:alnum:]_])exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|(^|[^[:alnum:]_])fetch\(|https?://" "$SRC"
+      - name: Prove protected comparison regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeStageRoutingExecutionMatrixV1.test.mjs
+          grep -F 'independent of host row order' "$TEST"
+          grep -F 'exact origins are mandatory before protected host execution' "$TEST"
+          grep -F 'control must remain shared-only' "$TEST"
+          grep -F 'routed implementation identity must equal' "$TEST"
+          grep -F 'fixture input runtime hardware and quality contract binding cannot drift' "$TEST"
+          grep -F 'network bytes during execution are rejected' "$TEST"
+          grep -F 'host result digest and origin are independently enforced' "$TEST"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
