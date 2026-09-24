@@ -150,8 +150,11 @@ export type HsmeDenseStudentTrainingRunReceiptV1=Readonly<{
   modelInstallAllowed:false;
   modelFleetPromotionAllowed:false;
   productionAuthorityGranted:false;
+  providerAuthorityGranted:false;
+  billingAuthorityGranted:false;
   projectArtifactMutationAllowed:false;
   aeeExecutionAuthorityGranted:false;
+  durableModelFleetPromotionAllowed:false;
   winnerSelectionAllowed:false;
 }>;
 
@@ -812,8 +815,11 @@ function promotionBoundary(){
     modelInstallAllowed:false as const,
     modelFleetPromotionAllowed:false as const,
     productionAuthorityGranted:false as const,
+    providerAuthorityGranted:false as const,
+    billingAuthorityGranted:false as const,
     projectArtifactMutationAllowed:false as const,
     aeeExecutionAuthorityGranted:false as const,
+    durableModelFleetPromotionAllowed:false as const,
     winnerSelectionAllowed:false as const,
   });
 }
@@ -822,8 +828,9 @@ type PartialReceiptValues=Partial<Omit<
   HsmeDenseStudentTrainingRunReceiptV1,
   'schemaVersion'|'state'|'blockers'|'receiptEvidenceSha256'|
   'checkpointPromotionAllowed'|'modelInstallAllowed'|'modelFleetPromotionAllowed'|
-  'productionAuthorityGranted'|'projectArtifactMutationAllowed'|
-  'aeeExecutionAuthorityGranted'|'winnerSelectionAllowed'
+  'productionAuthorityGranted'|'providerAuthorityGranted'|'billingAuthorityGranted'|
+  'projectArtifactMutationAllowed'|'aeeExecutionAuthorityGranted'|
+  'durableModelFleetPromotionAllowed'|'winnerSelectionAllowed'
 >>;
 
 function invalid(
