@@ -65,6 +65,7 @@ jobs:
           grep -F "'SHARED_PLUS_SPECIALISTS'" "$SRC"
           grep -F 'sharedPathEnabled must be true' "$SRC"
           grep -F 'STAGE_ROUTE_TABLE_ACTIVE_EXPERT_CAP_EXCEEDED' "$SRC"
+          grep -F 'maxStageTransitionPrefetchBytes:plan.maxStageTransitionPrefetchBytes' "$SRC"
           grep -F 'STAGE_ROUTE_TABLE_EXPERT_BINDING_MISMATCH' "$SRC"
           grep -F 'STAGE_ROUTE_TABLE_ROUTER_BINDING_MISMATCH' "$SRC"
           grep -F 'routes must canonically cover GEOMETRY/APPEARANCE/DETAIL' "$SRC"
