@@ -167,6 +167,13 @@ export type HsmeAdapterMoeExpertTrainingRunReceiptV1=Readonly<{
   winnerSelectionAllowed:false;
 }>;
 
+export interface HsmeAdapterMoeExpertTrainingRunReceiptOriginVerifierV1{
+  verifyTrainingRunReceipt(
+    receipt:HsmeAdapterMoeExpertTrainingRunReceiptV1,
+    expectedReceiptEvidenceSha256:string,
+  ):Promise<boolean>;
+}
+
 export class HsmeAdapterMoeExpertProtectedTrainingRunV1Error extends Error{
   readonly code:string;
   constructor(code:string,message:string){
