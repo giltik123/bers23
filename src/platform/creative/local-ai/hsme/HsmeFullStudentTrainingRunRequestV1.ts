@@ -1,10 +1,8 @@
 import {
   HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_DIGEST_DOMAIN,
   HSME_FULL_STUDENT_TRAINING_PLAN_ADMISSION_V1_SCHEMA,
-} from './HsmeFullStudentTrainingPlanContractV1.ts';
-import type {
-  HsmeFullStudentTrainingPlanAdmissionV1,
-} from './HsmeFullStudentTrainingPlanAdmissionV1.ts';
+  type HsmeFullStudentTrainingPlanAdmissionV1,
+} from './HsmeFullStudentTrainingPlanAdmissionV1';
 import {
   HSME_DENSE_BASELINE_EVIDENCE_V1_SCHEMA,
   hsmeDenseBaselineDecisionV1Digest,
@@ -12,23 +10,24 @@ import {
   type HsmeDenseBaselineDecisionV1,
   type HsmeDenseBaselineHashPortV1,
   type HsmeDenseTrainingTargetV1,
-} from './HsmeDenseBaselineEvidenceV1.ts';
+} from './HsmeDenseBaselineEvidenceV1';
 import {
   HSME_DENSE_BASELINE_DUAL_BUDGET_EVIDENCE_V1_SCHEMA,
   normalizeHsmeDenseDualBudgetEvidenceV1,
   type HsmeDenseDualBudgetCandidateV1,
   type HsmeDenseDualBudgetEvidenceV1,
-} from './HsmeDenseBaselineDualBudgetEvidenceV1.ts';
+} from './HsmeDenseBaselineDualBudgetEvidenceV1';
+import {
+  HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_DIGEST_DOMAIN,
+  HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_V1_SCHEMA,
+  hsmeFullStudentTrainingRunRequestReadyPayloadV1,
+} from './HsmeFullStudentTrainingRunRequestContractV1';
 
 export const HSME_FULL_STUDENT_TRAINING_RUN_ENVELOPE_V1_SCHEMA =
   'BERS_HSME_FULL_STUDENT_TRAINING_RUN_ENVELOPE_V1' as const;
-export const HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_V1_SCHEMA =
-  'BERS_HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_V1' as const;
+export {HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_V1_SCHEMA};
 export const HSME_FULL_STUDENT_DUAL_BUDGET_BINDING_DIGEST_DOMAIN =
   'bers:hsme:full-student-dual-budget-binding:v1\0' as const;
-export const HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_DIGEST_DOMAIN =
-  'bers:hsme:full-student-training-run-request:v1\0' as const;
-
 const HEX64=/^[0-9a-f]{64}$/;
 const IDENTIFIER=/^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/;
 
@@ -342,7 +341,7 @@ export async function buildHsmeFullStudentTrainingRunRequestV1(
     return blocked(requestBlockers,common);
   }
 
-  const readyPayload=trainingRequestReadyPayload(common);
+  const readyPayload=hsmeFullStudentTrainingRunRequestReadyPayloadV1(common);
   let requestEvidenceSha256:string;
   try{
     requestEvidenceSha256=await digest(
@@ -372,38 +371,9 @@ export async function hsmeFullStudentTrainingRunRequestV1Digest(
   }
   return digest(
     HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_DIGEST_DOMAIN,
-    trainingRequestReadyPayload(request),
+    hsmeFullStudentTrainingRunRequestReadyPayloadV1(request),
     hash,
   );
-}
-
-function trainingRequestReadyPayload(
-  value:Required<OutputValues>|HsmeFullStudentTrainingRunRequestV1,
-){
-  return {
-    schemaVersion:HSME_FULL_STUDENT_TRAINING_RUN_REQUEST_V1_SCHEMA,
-    state:'TRAINING_RUN_REQUEST_READY_FOR_CORE_ADMISSION' as const,
-    trainingPlanEvidenceSha256:value.trainingPlanEvidenceSha256,
-    denseBaselineDecisionSha256:value.denseBaselineDecisionSha256,
-    denseDualBudgetEvidenceSha256:value.denseDualBudgetEvidenceSha256,
-    candidateId:value.candidateId,
-    architectureFamily:value.architectureFamily,
-    activeParametersMillions:value.activeParametersMillions,
-    targetStepCount:value.targetStepCount,
-    maxTrainingExamples:value.maxTrainingExamples,
-    maxGpuSeconds:value.maxGpuSeconds,
-    maxTrainingCostMicrousd:value.maxTrainingCostMicrousd,
-    toolchainLockSha256:value.toolchainLockSha256,
-    outputStagingPolicySha256:value.outputStagingPolicySha256,
-    teacherDecisionSha256:value.teacherDecisionSha256,
-    reproductionEvidenceSha256:value.reproductionEvidenceSha256,
-    corpusRootDigest:value.corpusRootDigest,
-    recipeDigest:value.recipeDigest,
-    checkpointSha256:value.checkpointSha256,
-    resumeCheckpointSha256:value.resumeCheckpointSha256,
-    dualBudgetSnapshot:value.dualBudgetSnapshot,
-    ...authorityBoundary(),
-  };
 }
 
 function validateDenseTarget(decision:HsmeDenseBaselineDecisionV1):{
