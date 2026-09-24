@@ -815,6 +815,20 @@ function evaluateMeasuredRedesignGates(
     }
   }
 
+  if(
+    representation.activeParametersMillions==='UNKNOWN'
+    ||representation.activeParametersMillions<target.activeParametersMillions.min
+    ||representation.activeParametersMillions>target.activeParametersMillions.max
+  ){
+    blockers.push('DENSE_FINALIZATION_ACTIVE_PARAMETER_TARGET_MISMATCH');
+  }
+  if(
+    representation.targetStepCount==='UNKNOWN'
+    ||!target.targetStepCounts.includes(representation.targetStepCount)
+  ){
+    blockers.push('DENSE_FINALIZATION_TRAINING_STEP_TARGET_MISMATCH');
+  }
+
   const installed=projection.projectedCandidate.installed.mandatoryInstalledBytes;
   if(
     installed==='UNKNOWN'
