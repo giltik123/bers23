@@ -427,7 +427,11 @@ test('synthetic contract fixture assembles exact evidence set but does not run q
   const prepared=await prepare(f);
   const a=prepared.assembly;
 
-  assert.equal(a.state,'REAL_MOBILE_PHYSICAL_ORIGIN_READY');
+  assert.equal(
+    a.state,
+    'REAL_MOBILE_PHYSICAL_ORIGIN_READY',
+    JSON.stringify(a.blockers),
+  );
   assert.deepEqual(a.blockers,[]);
   assert.match(a.physicalRunPayloadSha256,/^[0-9a-f]{64}$/);
   assert.match(a.realMobileEvidenceSetSha256,/^[0-9a-f]{64}$/);
@@ -608,6 +612,11 @@ test('foundation provider must be compatible with the claimed NPU placement',asy
 test('returned evidence origin is pinned to the exact assembled evidence set',async()=>{
   const f=await fixture();
   const prepared=await prepare(f);
+  assert.equal(
+    prepared.assembly.state,
+    'REAL_MOBILE_PHYSICAL_ORIGIN_READY',
+    JSON.stringify(prepared.assembly.blockers),
+  );
   const altered=structuredClone(prepared.assembly.evidenceSet);
   altered.records[0].batteryEndBps-=1;
 
