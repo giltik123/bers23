@@ -407,3 +407,48 @@ test('workspace authority cannot widen',()=>{
     error=>error.code==='hsme_sealed_workspace_authority',
   );
 });
+
+test('extra Core execution request fields fail before host attestation',async()=>{
+  const fx=await setup();
+  const request={
+    ...executionRequest(),
+    environment:{HSME_WORKSPACE_ROOT:'/tmp/override'},
+  };
+  await assert.rejects(
+    fx.adapter.executeExactTrainingLaunch(request),
+    error=>error.code==='hsme_sealed_workspace_record',
+  );
+  assert.equal(fx.attestCalls,0);
+  assert.equal(fx.executeCalls,0);
+});
+
+test('argv resource ceilings must exactly equal Core execution request ceilings',async()=>{
+  const fx=await setup();
+  const argv=[...fixedArgv()];
+  const index=argv.indexOf('--max-gpu-seconds');
+  argv[index+1]='3601';
+  const request={
+    ...executionRequest(),
+    argv,
+  };
+  await assert.rejects(
+    fx.adapter.executeExactTrainingLaunch(request),
+    error=>error.code==='hsme_sealed_workspace_resource_ceiling_binding',
+  );
+  assert.equal(fx.attestCalls,0);
+  assert.equal(fx.executeCalls,0);
+});
+
+test('identical inputs produce byte-structurally identical host requests',async()=>{
+  const left=await setup();
+  const right=await setup();
+  const request=executionRequest();
+  await left.adapter.executeExactTrainingLaunch(request);
+  await right.adapter.executeExactTrainingLaunch(request);
+  assert.deepEqual(left.captured,right.captured);
+  assert.deepEqual(left.captured.executionRequest,request);
+  assert.equal(Object.hasOwn(left.captured,'argv'),false);
+  assert.equal(Object.hasOwn(left.captured,'environment'),false);
+  assert.equal(Object.hasOwn(left.captured,'executable'),false);
+});
+
