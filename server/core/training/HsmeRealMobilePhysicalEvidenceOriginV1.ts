@@ -8,7 +8,7 @@ import {
   HSME_REAL_MOBILE_DEVICE_EVIDENCE_SET_V1_SCHEMA,
   hsmeRealMobileDeviceEvidenceSetV1Digest,
   normalizeHsmeRealMobileDeviceEvidenceSetV1,
-  type HsmeRealMobileDeviceEvidenceOriginVerifierV1,
+  type HsmeRealMobileEvidenceOriginVerifierV1,
   type HsmeRealMobileDeviceEvidenceSetV1,
   type HsmeRealMobileMatrixOriginVerifierV1,
 } from './HsmeRealMobileQualificationV1.ts';
@@ -71,7 +71,7 @@ export type HsmeRealMobilePhysicalOriginAssemblyV1=Readonly<{
 
 export type HsmePreparedRealMobilePhysicalOriginV1=Readonly<{
   assembly:HsmeRealMobilePhysicalOriginAssemblyV1;
-  evidenceOrigin:HsmeRealMobileDeviceEvidenceOriginVerifierV1;
+  evidenceOrigin:HsmeRealMobileEvidenceOriginVerifierV1;
 }>;
 
 export class HsmeRealMobilePhysicalEvidenceOriginV1Error extends Error{
@@ -346,7 +346,7 @@ export async function prepareHsmeRealMobilePhysicalEvidenceOriginV1(
   });
 
   const canonicalEvidenceSet=JSON.stringify(evidenceSet);
-  const evidenceOrigin:HsmeRealMobileDeviceEvidenceOriginVerifierV1=
+  const evidenceOrigin:HsmeRealMobileEvidenceOriginVerifierV1=
     Object.freeze({
       async verifyRealMobileDeviceEvidenceSet(
         candidateSet,
@@ -518,7 +518,7 @@ function terminal(
       'FOUNDATION_VERIFIED_PHYSICAL_RUN_PAYLOAD_SHA256' as const,
     ...assemblyAuthorityBoundary(),
   });
-  const evidenceOrigin:HsmeRealMobileDeviceEvidenceOriginVerifierV1=
+  const evidenceOrigin:HsmeRealMobileEvidenceOriginVerifierV1=
     Object.freeze({
       async verifyRealMobileDeviceEvidenceSet(){
         return false;
