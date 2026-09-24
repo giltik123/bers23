@@ -16,6 +16,8 @@ function raw(overrides={}){
     processIdentity:'android-process-202',
     sessionIdentity:'android-session-a',
     deviceRunSessionSha256:H('device-run-session'),
+    deviceCapabilityKey:H('device-capability'),
+    supportedDeviceClass:'snapdragon-8-gen-3-mobile',
     runtimeIdentitySha256:H('runtime-id'),
     actualPlacement:'NPU',
     nativeTelemetryAttestationSha256:H('native-telemetry-attestation'),
