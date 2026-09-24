@@ -208,7 +208,7 @@ test('expert router and package frozen caps fail closed',async()=>{
       totalWeightsBytes:70_000_000,activeWeightsBytes:50_000_000,
     }),
     manifest(f.p,'block-early',{
-      sharedPathBytes:60_000_000,routerBytes:4_000_000,
+      sharedPathBytes:100_000_000,routerBytes:4_000_000,
       sparseBlockPackageBytes:142_000_000,
       totalWeightsBytes:130_000_000,activeWeightsBytes:90_000_000,
     }),
