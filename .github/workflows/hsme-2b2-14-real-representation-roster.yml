@@ -1,0 +1,71 @@
+name: HSME-2b2.14 real representation roster
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeDenseStudentRealRepresentationRosterV1.ts'
+      - 'server/core/training/HsmeDenseStudentRealRepresentationRosterV1.test.mjs'
+      - 'server/core/training/HsmeDenseStudentFrozenRunRepresentationAdmissionV1.ts'
+      - 'server/core/training/HsmeDenseStudentRepresentationV1.ts'
+      - '.github/workflows/hsme-2b2-14-real-representation-roster.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-representation-roster:
+    name: trusted 2/4/6/8 representation roster without measurement
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Server typecheck
+        run: npm run server:typecheck
+
+      - name: Bundle and run non-real roster regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-2b2-14
+          npx esbuild server/core/training/HsmeDenseStudentRealRepresentationRosterV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-2b2-14/roster.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-2b2-14/roster.test.mjs
+
+      - name: Prove this layer is trust-only and cannot measure or select
+        run: |
+          set -euo pipefail
+          FILE=server/core/training/HsmeDenseStudentRealRepresentationRosterV1.ts
+          grep -F "REAL_REPRESENTATION_ROSTER_READY_NOT_MEASURED" "$FILE"
+          grep -F "requiredStepCounts" "$FILE"
+          grep -F "stepMatrixExecutionGranted:false" "$FILE"
+          grep -F "scheduleSelectionAllowed:false" "$FILE"
+          grep -F "candidateSelectionAllowed:false" "$FILE"
+          grep -F "baselineSelectionAllowed:false" "$FILE"
+          grep -F "checkpointPromotionAllowed:false" "$FILE"
+          grep -F "modelInstallAllowed:false" "$FILE"
+          grep -F "productionAuthorityGranted:false" "$FILE"
+          grep -F "winnerSelectionAllowed:false" "$FILE"
+          ! grep -nE 'HsmeDenseStudentStepMatrixV1|proveHsmeDenseStudentStepMatrixV1|measureExactDenseStudentStepMatrix|child_process|spawn\(|exec\(|subprocess|runHsmeDenseStudentProtectedTrainingV1|executeExactTrainingLaunch|startTraining|ModelFleet(Service|Client)|promoteModel|installModel|reserveCredits|spendCredits|fetch\(|https?://' "$FILE"
+
+      - name: Prove ordinary PR fixtures do not fabricate READY real admissions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeDenseStudentRealRepresentationRosterV1.test.mjs
+          ! grep -F "state:'FROZEN_RUN_REPRESENTATION_READY_NOT_ADMITTED'" "$TEST"
+          ! grep -F "state:'REPRESENTATION_READY_NOT_ADMITTED'" "$TEST"
