@@ -3,6 +3,7 @@ name: HSME-8.3c physical runner handoff
 on:
   pull_request:
     paths:
+      - 'package.json'
       - 'server/core/training/HsmePhysicalMobileCapturePlanV1.ts'
       - 'server/core/training/HsmePhysicalMobileRunHandoffV1.ts'
       - 'server/core/training/HsmePhysicalMobileRunHandoffV1.test.mjs'
