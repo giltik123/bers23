@@ -55,6 +55,10 @@ jobs:
           SRC=server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts
           grep -F 'ADAPTIVE_RESIDENCY_POLICY_PHYSICAL_BUDGET_EXCEEDED' "$SRC"
           grep -F 'predictive prefetch cap cannot exceed deterministic safety cap' "$SRC"
+          grep -F 'denseBaselineContentSha256' "$SRC"
+          grep -F 'routerContentSha256' "$SRC"
+          grep -F 'expertContentSha256s' "$SRC"
+          grep -F 'maxActiveExperts' "$SRC"
           grep -F 'USAGE_AWARE_LRU_BOUNDED' "$SRC"
           grep -F 'NETWORK_BYTES_DURING_EXECUTION' "$SRC"
           grep -F 'WASTED_PREFETCH_BYTES' "$SRC"
