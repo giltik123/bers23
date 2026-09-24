@@ -421,13 +421,13 @@ export async function materializeHsmeAdapterMoeExpertSealedWorkspaceV1(
   }
   validateInventoryBinding(preflight,inventory);
 
-  const fixedPaths=fixedPaths();
+  const paths=fixedPaths();
   const workspace=deriveWorkspace(
     preflight,
     preflightEvidenceSha256,
     inventory,
     inventorySha256,
-    fixedPaths,
+    paths,
   );
   const workspaceSha256=
     await hsmeAdapterMoeExpertWorkspaceV1Digest(workspace,hash);
@@ -441,7 +441,7 @@ export async function materializeHsmeAdapterMoeExpertSealedWorkspaceV1(
       workspaceSha256,
       inventory,
       inventorySha256,
-      fixedPaths,
+      fixedPaths:paths,
     }));
   }catch{
     fail(
@@ -474,7 +474,7 @@ export async function materializeHsmeAdapterMoeExpertSealedWorkspaceV1(
     preflightEvidenceSha256,
     workspaceSha256,
     inventorySha256,
-    fixedPaths,
+    paths,
     inventory,
     result,
   );
@@ -487,7 +487,7 @@ export async function materializeHsmeAdapterMoeExpertSealedWorkspaceV1(
     workspaceSha256,
     inventorySha256,
     expertId:preflight.expertId,
-    fixedPaths,
+    fixedPaths:paths,
     workspaceManifestFileSha256:result.workspaceManifestFileSha256,
     workspaceManifestBytes:result.workspaceManifestBytes,
     inputFiles:result.inputFiles,
