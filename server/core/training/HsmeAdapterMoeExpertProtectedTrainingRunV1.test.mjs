@@ -200,7 +200,7 @@ function fakeExecutor(mode='SUCCESS'){
         raw.exitCode=9;
         raw.stagedExpertDelta=staged;
       }
-      if(mode==='BAD_DIGEST'){
+      if(mode==='BAD_DIGEST'||mode==='BAD_KIND'){
         return raw;
       }
       const hostResultSha256=
