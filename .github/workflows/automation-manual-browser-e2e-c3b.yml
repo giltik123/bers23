@@ -21,6 +21,10 @@ on:
       - 'server/transactions/infrastructure/postgres/**'
       - 'src/application/local-execution/CoreAuthorizedOrthogonalTransform.ts'
       - 'src/application/local-execution/CoreAuthorizedResize.ts'
+      - 'src/application/agent/createBoundedAgentRunner.ts'
+      - 'src/lib/jobs/boundedWorkflowRetryControl.js'
+      - 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx'
+      - 'src/components/editor/jobs/JobCenter.jsx'
       - 'src/platform/creative/deterministic/**'
       - 'scripts/build-core-server.mjs'
       - 'scripts/materialize-aee4c2-bounded-browser-harness.mjs'
@@ -122,11 +126,12 @@ jobs:
           set -euo pipefail
           node .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.mjs | tee .test-cache/automation-c3b-browser/runtime.log
           grep -q 'C3B_BROWSER_AUTOMATION_RECOVERY_ACCEPTED' .test-cache/automation-c3b-browser/runtime.log
-      - name: Prove durable FAILED retry cancel and local-ticket authority separation
+      - name: Prove Automation retry/cancel and Job Center owning Workflow retry
         run: |
           set -euo pipefail
           node .test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.mjs | tee .test-cache/automation-c3b-browser/retry-cancel-runtime.log
           grep -q 'C3B_BROWSER_AUTOMATION_RETRY_CANCEL_ACCEPTED' .test-cache/automation-c3b-browser/retry-cancel-runtime.log
+          grep -q 'P1F_BROWSER_JOB_CENTER_WORKFLOW_RETRY_ACCEPTED' .test-cache/automation-c3b-browser/retry-cancel-runtime.log
       - name: Preserve C3b PostgreSQL forensic state after browser failure
         if: failure()
         run: |
@@ -171,4 +176,8 @@ jobs:
           grep -q '/automation-invocations/' scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
           grep -q "ledger.commit(firstTicket.ticketId, 'FAILED')" scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
           grep -q "replacementAuthority?.cancellation, 'UNSUPPORTED'" scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
+          grep -q 'P1F_BROWSER_JOB_CENTER_WORKFLOW_RETRY_ACCEPTED' scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
+          grep -q 'Retry exact step' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'BoundedWorkflowRetryControlPolicy' src/components/editor/jobs/JobCenter.jsx
+          ! grep -q 'coreClient.creative.execute' src/components/editor/jobs/JobCenter.jsx
           git diff --check
