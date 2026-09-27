@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { SelectionApplicationService, assessMask, chooseAnalysis } from '../src/application/selection';
+import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, SelectionApplicationService, assessMask, chooseAnalysis, morphSelectionMask } from '../src/application/selection';
 import { CoreAuthorizedSegmentation } from '../src/application/selection/CoreAuthorizedSegmentation';
 import { displayToOriginal } from '../src/platform/creative/pipeline/ControlledLocalEdit';
 import { DeviceAnalyzer } from '../src/platform/creative/local-ai/device/DeviceAnalyzer';
@@ -69,6 +69,81 @@ test('invert is an exact bounded manual refinement and undo redo keep quality sy
   const redone = service.redo();
   assert.deepEqual([...redone.alpha], [255, 255, 127, 0]);
   assert.equal(redone.quality?.coverage, .75);
+});
+
+
+test('selection grow and shrink use exact ALPHA_8 square morphology with zero-background edges', () => {
+  const center = new Uint8Array(25);
+  center[12] = 128;
+  const grown = morphSelectionMask(center, 5, 5, 1, 'GROW');
+  assert.deepEqual([...grown], [
+    0,0,0,0,0,
+    0,128,128,128,0,
+    0,128,128,128,0,
+    0,128,128,128,0,
+    0,0,0,0,0,
+  ]);
+
+  const block = new Uint8Array(25);
+  for (let y=1;y<=3;y++) for (let x=1;x<=3;x++) block[y*5+x]=255;
+  const shrunk = morphSelectionMask(block, 5, 5, 1, 'SHRINK');
+  assert.deepEqual([...shrunk], [
+    0,0,0,0,0,
+    0,0,0,0,0,
+    0,0,255,0,0,
+    0,0,0,0,0,
+    0,0,0,0,0,
+  ]);
+
+  const full = new Uint8Array(25).fill(255);
+  const edgeShrunk = morphSelectionMask(full, 5, 5, 1, 'SHRINK');
+  assert.deepEqual([...edgeShrunk], [
+    0,0,0,0,0,
+    0,255,255,255,0,
+    0,255,255,255,0,
+    0,255,255,255,0,
+    0,0,0,0,0,
+  ]);
+});
+
+test('selection morphology bounds radius dimensions and work before mutation', () => {
+  const alpha = new Uint8Array(9).fill(255);
+  assert.throws(() => morphSelectionMask(alpha, 3, 3, 1, 'UNKNOWN' as never), /kind is unsupported/);
+  assert.throws(() => morphSelectionMask(alpha, 3, 3, 0, 'GROW'), /radius exceeds deterministic bounds/);
+  assert.throws(() => morphSelectionMask(alpha, 3, 3, MAX_SELECTION_MORPHOLOGY_RADIUS + 1, 'SHRINK'), /radius exceeds deterministic bounds/);
+  assert.throws(() => morphSelectionMask(new Uint8Array(1), MAX_SELECTION_MORPHOLOGY_DIMENSION + 1, 1, 1, 'GROW'), /dimensions exceed deterministic bounds/);
+  assert.deepEqual([...alpha], new Array(9).fill(255), 'hostile morphology input must not mutate source bytes');
+});
+
+test('grow shrink undo redo stay local and synchronize bytes provenance and quality', async () => {
+  const seed = new Uint8Array(25);
+  seed[12] = 255;
+  const { service } = fixture(async input => ({
+    target: 'LOCAL', modelId: 'm', modelVersion: '1', latencyMs: 1,
+    candidates: [{ alpha: seed, width: input.analysis.analysisWidth, height: input.analysis.analysisHeight, coordinateSpace: 'ANALYSIS', score: .9 }],
+  }));
+  const localView = { displayWidth: 5, displayHeight: 5, originalWidth: 5, originalHeight: 5 };
+  service.start({ imageArtifactId: 'image', width: 5, height: 5 });
+  assert.throws(() => service.grow(1), /not ready for morphology/);
+  await service.smartPoint({ displayPoint: { x: 2, y: 2 }, view: localView, privacyMode: 'LOCAL_ONLY' });
+
+  const grown = service.grow(1);
+  assert.equal(grown.provenance.at(-1), 'OPERATION_EXPANDED');
+  assert.equal(grown.quality?.coverage, 9/25);
+  assert.deepEqual([...grown.alpha], [...morphSelectionMask(seed, 5, 5, 1, 'GROW')]);
+
+  const undone = service.undo();
+  assert.deepEqual([...undone.alpha], [...seed]);
+  assert.equal(undone.provenance.at(-1), 'SEGMENTATION');
+  assert.equal(undone.quality?.coverage, 1/25);
+
+  const redone = service.redo();
+  assert.equal(redone.provenance.at(-1), 'OPERATION_EXPANDED');
+  assert.deepEqual([...redone.alpha], [...grown.alpha]);
+
+  const shrunk = service.shrink(1);
+  assert.equal(shrunk.provenance.at(-1), 'OPERATION_CONTRACTED');
+  assert.deepEqual([...shrunk.alpha], [...seed]);
 });
 
 test('Core-authorized segmentation binds ticket, device admission, local runtime, quarantine upload and canonical result', async () => {
