@@ -291,7 +291,7 @@ async function login(page, email, password) {
     const response = await fetch(url, { credentials: 'include', headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error(`auth context returned HTTP ${response.status}`);
     const token = response.headers.get('X-Bers-CSRF-Token');
-    window.__r3nCsrf = token;
+    if (token) sessionStorage.setItem('r3n.csrf', token);
     return token;
   }, `${coreOrigin}/api/core/auth/context`);
   assert.match(csrf ?? '', /^[A-Za-z0-9_-]{43}$/, 'authenticated context must restore the session-bound CSRF proof');
@@ -305,8 +305,9 @@ async function api(page, pathName, options = {}) {
     let payload;
     if (body !== undefined) {
       headers.set('Content-Type', 'application/json');
-      if (!window.__r3nCsrf) throw new Error('R3n browser mutation is missing CSRF proof');
-      headers.set('X-Bers-CSRF-Token', window.__r3nCsrf);
+      const csrf = sessionStorage.getItem('r3n.csrf');
+      if (!csrf) throw new Error('R3n browser mutation is missing CSRF proof');
+      headers.set('X-Bers-CSRF-Token', csrf);
       payload = JSON.stringify(body);
     }
     const response = await fetch(url, { method, credentials: 'include', headers, body: payload });
