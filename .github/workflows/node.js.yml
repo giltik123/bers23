@@ -84,6 +84,8 @@ jobs:
       - run: npm ci
       - name: Typecheck Core server
         run: npm run server:typecheck
+      - name: Strict typecheck canonical authorities
+        run: npm run server:typecheck:authorities
       - name: Build Core server
         run: npm run server:build
       - name: Apply transaction schema migration
