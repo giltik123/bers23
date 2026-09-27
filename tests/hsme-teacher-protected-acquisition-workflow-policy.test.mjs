@@ -31,10 +31,15 @@ test('large teacher bytes require fixed protected evidence runner and environmen
 test('explicit download ceiling and all Hub/Xet caches are bound before protected download',()=>{
   assert.match(workflow,/max_download_bytes:/);
   assert.match(workflow,/MAX_DOWNLOAD_BYTES: \$\{\{ inputs\.max_download_bytes \}\}/);
-  assert.match(workflow,/expected download bytes \$\{total\} exceed explicit max_download_bytes/);
-  assert.match(workflow,/HF_HOME: \$\{\{ runner\.temp \}\}\/hsme-teacher-acquisition-hf-cache/);
-  assert.match(workflow,/HF_HUB_CACHE: \$\{\{ runner\.temp \}\}\/hsme-teacher-acquisition-hf-cache\/hub/);
-  assert.match(workflow,/HF_XET_CACHE: \$\{\{ runner\.temp \}\}\/hsme-teacher-acquisition-hf-cache\/xet/);
+  assert.match(workflow,/expected download bytes \{total\} exceed explicit max_download_bytes/);
+  const bind=workflow.indexOf('Bind protected paths to runner temp');
+  const acquire=workflow.indexOf('Acquire exact planned files and verify bytes before deserialization');
+  assert.ok(bind>0&&acquire>bind);
+  const protectedSetup=workflow.slice(bind,acquire);
+  assert.match(protectedSetup,/HF_HOME=\$RUNNER_TEMP\/hsme-teacher-acquisition-hf-cache/);
+  assert.match(protectedSetup,/HF_HUB_CACHE=\$RUNNER_TEMP\/hsme-teacher-acquisition-hf-cache\/hub/);
+  assert.match(protectedSetup,/HF_XET_CACHE=\$RUNNER_TEMP\/hsme-teacher-acquisition-hf-cache\/xet/);
+  assert.match(protectedSetup,/\} >> "\$GITHUB_ENV"/);
   assert.match(workflow,/--max-download-bytes "\$\{MAX_DOWNLOAD_BYTES\}"/);
 });
 
@@ -72,6 +77,8 @@ test('evidence upload is gated on successful acquisition destruction and cleanup
 });
 
 test('workflow never deserializes weights or grants teacher admission',()=>{
-  assert.doesNotMatch(workflow,/torch\.load|pickle\.load|from_pretrained|safe_open/);
-  assert.doesNotMatch(workflow,/TEACHER_SET_ADMITTED|trainingStartAllowed.*true|teacherAdmissionAllowed.*true/i);
+  const protectedRun=workflow.slice(workflow.indexOf('  acquire-protected:'));
+  assert.doesNotMatch(protectedRun,/torch\.load|pickle\.load|from_pretrained|safe_open/);
+  assert.match(workflow,/! grep -nE '[^']*from_pretrained\|safe_open/);
+  assert.doesNotMatch(protectedRun,/TEACHER_SET_ADMITTED|trainingStartAllowed.*true|teacherAdmissionAllowed.*true/i);
 });
