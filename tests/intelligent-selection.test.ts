@@ -108,6 +108,7 @@ test('selection grow and shrink use exact ALPHA_8 square morphology with zero-ba
 
 test('selection morphology bounds radius dimensions and work before mutation', () => {
   const alpha = new Uint8Array(9).fill(255);
+  assert.throws(() => morphSelectionMask(alpha, 3, 3, 1, 'UNKNOWN' as never), /kind is unsupported/);
   assert.throws(() => morphSelectionMask(alpha, 3, 3, 0, 'GROW'), /radius exceeds deterministic bounds/);
   assert.throws(() => morphSelectionMask(alpha, 3, 3, MAX_SELECTION_MORPHOLOGY_RADIUS + 1, 'SHRINK'), /radius exceeds deterministic bounds/);
   assert.throws(() => morphSelectionMask(new Uint8Array(1), MAX_SELECTION_MORPHOLOGY_DIMENSION + 1, 1, 1, 'GROW'), /dimensions exceed deterministic bounds/);
