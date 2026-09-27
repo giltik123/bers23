@@ -1,13 +1,18 @@
-import { createOriginalMask, displayToOriginal, type OriginalMask } from '../../platform/creative/pipeline/ControlledLocalEdit';
+import { createOriginalMask, displayToOriginal, type MaskSource, type OriginalMask } from '../../platform/creative/pipeline/ControlledLocalEdit';
 import type { AnalysisTransform, BrushStroke, CanonicalMaskArtifactPort, InteractiveSegmentationPort, MaskQualityResult, PromptPoint, SelectionDraftSnapshot, SelectionMode, SelectionTelemetry } from './contracts';
 import type { PrivacyMode } from '../../platform/creative/local-ai';
 
 const MAX_HISTORY = 30, FULL_WARNING = .97, TINY_WARNING = .0001;
-type Draft = { id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; state: SelectionDraftSnapshot['state']; mode: SelectionMode; points: PromptPoint[]; provenance: string[]; requestId?: string; canonicalArtifactId?: string; refinementParentArtifactId?: string; quality?: MaskQualityResult; warning?: string; history: Uint8Array[]; historyIndex: number; startedAt: number; manualCorrections: number; undoCount: number };
+export const MAX_SELECTION_MORPHOLOGY_RADIUS = 32;
+export const MAX_SELECTION_MORPHOLOGY_DIMENSION = 8192;
+export const MAX_SELECTION_MORPHOLOGY_PIXELS = 16_777_216;
+export const MAX_SELECTION_MORPHOLOGY_WORK = 67_108_864;
+type HistoryEntry = Readonly<{ alpha: Uint8Array; source: MaskSource; provenance: readonly string[] }>;
+type Draft = { id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; source: MaskSource; state: SelectionDraftSnapshot['state']; mode: SelectionMode; points: PromptPoint[]; provenance: string[]; requestId?: string; canonicalArtifactId?: string; refinementParentArtifactId?: string; quality?: MaskQualityResult; warning?: string; history: HistoryEntry[]; historyIndex: number; startedAt: number; manualCorrections: number; undoCount: number };
 export class SelectionApplicationService {
   #draft?: Draft; #sequence = 0;
   constructor(private readonly segmentation: InteractiveSegmentationPort, private readonly artifacts: CanonicalMaskArtifactPort, private readonly telemetry: (event: SelectionTelemetry) => void = () => {}, private readonly now = () => performance.now()) {}
-  start(input: Readonly<{ imageArtifactId: string; width: number; height: number }>): SelectionDraftSnapshot { if (!input.imageArtifactId || input.width < 1 || input.height < 1) throw new Error('Invalid selection source'); this.segmentation.cancel(this.#draft?.requestId ?? ''); this.#draft = { ...input, id: `selection-${++this.#sequence}`, alpha: new Uint8Array(input.width * input.height), state: 'NOTHING_SELECTED', mode: 'SMART_SELECT', points: [], provenance: [], history: [], historyIndex: -1, startedAt: this.now(), manualCorrections: 0, undoCount: 0 }; return this.snapshot(); }
+  start(input: Readonly<{ imageArtifactId: string; width: number; height: number }>): SelectionDraftSnapshot { if (!input.imageArtifactId || input.width < 1 || input.height < 1) throw new Error('Invalid selection source'); this.segmentation.cancel(this.#draft?.requestId ?? ''); this.#draft = { ...input, id: `selection-${++this.#sequence}`, alpha: new Uint8Array(input.width * input.height), source: 'USER', state: 'NOTHING_SELECTED', mode: 'SMART_SELECT', points: [], provenance: [], history: [], historyIndex: -1, startedAt: this.now(), manualCorrections: 0, undoCount: 0 }; return this.snapshot(); }
   setMode(mode: SelectionMode) { this.required().mode = mode; return this.snapshot(); }
   async smartPoint(input: Readonly<{ displayPoint: { x: number; y: number }; view: BrushStroke['view']; negative?: boolean; privacyMode: PrivacyMode; analysisMaxEdge?: number; memoryBudgetBytes?: number }>): Promise<SelectionDraftSnapshot> {
     const d = this.required(), original = displayToOriginal(input.displayPoint, input.view), point: PromptPoint = { x: original.x, y: original.y, label: input.negative ? 'NEGATIVE' : 'POSITIVE', coordinateSpace: 'ORIGINAL' };
@@ -19,17 +24,71 @@ export class SelectionApplicationService {
   }
   brush(stroke: BrushStroke): SelectionDraftSnapshot { const d=this.required(); if (!stroke.points.length || stroke.radius<=0 || stroke.hardness<0 || stroke.hardness>1) throw new Error('Invalid brush stroke'); const alpha=new Uint8Array(d.alpha), subtract=d.mode==='BRUSH_SUBTRACT'; for (const p of stroke.points) paint(alpha,d.width,d.height,displayToOriginal(p,stroke.view),stroke.radius/originalScale(stroke.view),stroke.hardness,subtract); this.commit(d,alpha,subtract?'MANUAL_SUBTRACT':'MANUAL_ADD'); d.canonicalArtifactId=undefined; d.manualCorrections++; d.state='REFINING'; d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1); return this.snapshot(); }
   clear() { const d=this.required(); this.commit(d,new Uint8Array(d.alpha.length),'USER'); d.canonicalArtifactId=undefined; d.state='NOTHING_SELECTED'; return this.snapshot(); }
+  grow(radius: number): SelectionDraftSnapshot { return this.morphology('GROW', radius); }
+  shrink(radius: number): SelectionDraftSnapshot { return this.morphology('SHRINK', radius); }
   invert() { const d=this.required(); if(d.state!=='SELECTED'&&d.state!=='REFINING') throw new Error('Selection is not ready to invert'); this.commit(d,Uint8Array.from(d.alpha,v=>255-v),'USER'); d.canonicalArtifactId=undefined; d.manualCorrections++; d.state='REFINING'; d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1); return this.snapshot(); }
-  undo() { const d=this.required(); if(d.historyIndex>0){d.historyIndex--;d.alpha=new Uint8Array(d.history[d.historyIndex]);d.canonicalArtifactId=undefined;d.undoCount++;d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1);} return this.snapshot(); }
-  redo() { const d=this.required(); if(d.historyIndex<d.history.length-1){d.historyIndex++;d.alpha=new Uint8Array(d.history[d.historyIndex]);d.canonicalArtifactId=undefined;d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1);} return this.snapshot(); }
+  undo() { const d=this.required(); if(d.historyIndex>0){d.historyIndex--;this.restoreHistory(d,d.history[d.historyIndex]);d.canonicalArtifactId=undefined;d.undoCount++;d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1);} return this.snapshot(); }
+  redo() { const d=this.required(); if(d.historyIndex<d.history.length-1){d.historyIndex++;this.restoreHistory(d,d.history[d.historyIndex]);d.canonicalArtifactId=undefined;d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1);} return this.snapshot(); }
   cancel() { const id=this.#draft?.requestId; if(id)this.segmentation.cancel(id); this.#draft=undefined; }
-  async done() { const d=this.required(), quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1); if(quality.empty) throw new Error('Cannot persist an empty selection'); const source = d.provenance.at(-1) as OriginalMask['source'] ?? 'USER'; const mask=createOriginalMask({artifactId:`mask-${d.id}`,width:d.width,height:d.height,alpha:d.alpha,source}); const metadata={coordinateSpace:'ORIGINAL',encoding:'ALPHA_8_LOSSLESS',provenance:[...d.provenance],quality,sourceImageArtifactId:d.imageArtifactId,parentMaskArtifactId:d.refinementParentArtifactId}; const artifact=d.canonicalArtifactId&&this.artifacts.admitted?await this.artifacts.admitted(d.canonicalArtifactId,mask,metadata):await this.artifacts.persist(mask,metadata); d.state='READY'; return artifact; }
-  snapshot(): SelectionDraftSnapshot { const d=this.required(); return Object.freeze({...d,alpha:new Uint8Array(d.alpha),points:Object.freeze([...d.points]),provenance:Object.freeze([...d.provenance]),canUndo:d.historyIndex>0,canRedo:d.historyIndex<d.history.length-1,history:undefined,historyIndex:undefined,startedAt:undefined,manualCorrections:undefined,undoCount:undefined,canonicalArtifactId:undefined,refinementParentArtifactId:undefined}) as SelectionDraftSnapshot; }
-  private required(){if(!this.#draft)throw new Error('No active selection draft');return this.#draft} private commit(d:Draft,alpha:Uint8Array,source:string){d.alpha=alpha;d.provenance.push(source);d.history=d.history.slice(0,d.historyIndex+1);d.history.push(new Uint8Array(alpha));if(d.history.length>MAX_HISTORY)d.history.shift();d.historyIndex=d.history.length-1;}
+  async done() { const d=this.required(), quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1); if(quality.empty) throw new Error('Cannot persist an empty selection'); const mask=createOriginalMask({artifactId:`mask-${d.id}`,width:d.width,height:d.height,alpha:d.alpha,source:d.source}); const metadata={coordinateSpace:'ORIGINAL',encoding:'ALPHA_8_LOSSLESS',provenance:[...d.provenance],quality,sourceImageArtifactId:d.imageArtifactId,parentMaskArtifactId:d.refinementParentArtifactId}; const artifact=d.canonicalArtifactId&&this.artifacts.admitted?await this.artifacts.admitted(d.canonicalArtifactId,mask,metadata):await this.artifacts.persist(mask,metadata); d.state='READY'; return artifact; }
+  snapshot(): SelectionDraftSnapshot { const d=this.required(); return Object.freeze({...d,alpha:new Uint8Array(d.alpha),points:Object.freeze([...d.points]),provenance:Object.freeze([...d.provenance]),canUndo:d.historyIndex>0,canRedo:d.historyIndex<d.history.length-1,history:undefined,historyIndex:undefined,startedAt:undefined,manualCorrections:undefined,undoCount:undefined,canonicalArtifactId:undefined,refinementParentArtifactId:undefined,source:undefined}) as SelectionDraftSnapshot; }
+  private morphology(kind: 'GROW' | 'SHRINK', radius: number): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.state!=='SELECTED'&&d.state!=='REFINING') throw new Error('Selection is not ready for morphology');
+    const alpha=morphSelectionMask(d.alpha,d.width,d.height,radius,kind);
+    const source: MaskSource=kind==='GROW'?'OPERATION_EXPANDED':'OPERATION_CONTRACTED';
+    this.commit(d,alpha,source);
+    d.canonicalArtifactId=undefined;
+    d.manualCorrections++;
+    d.state='REFINING';
+    d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1);
+    return this.snapshot();
+  }
+  private restoreHistory(d: Draft, entry: HistoryEntry) { d.alpha=new Uint8Array(entry.alpha); d.source=entry.source; d.provenance=[...entry.provenance]; }
+  private required(){if(!this.#draft)throw new Error('No active selection draft');return this.#draft}
+  private commit(d:Draft,alpha:Uint8Array,source:MaskSource){d.alpha=alpha;d.source=source;d.provenance.push(source);d.history=d.history.slice(0,d.historyIndex+1);d.history.push(Object.freeze({alpha:new Uint8Array(alpha),source,provenance:Object.freeze([...d.provenance])}));if(d.history.length>MAX_HISTORY)d.history.shift();d.historyIndex=d.history.length-1;}
 }
 export function chooseAnalysis(originalWidth:number,originalHeight:number,maxEdge:number,memoryBudget:number):AnalysisTransform { let edge=Math.max(256,maxEdge); while(edge>256){const scale=Math.min(1,edge/Math.max(originalWidth,originalHeight)),w=Math.max(1,Math.round(originalWidth*scale)),h=Math.max(1,Math.round(originalHeight*scale)); const t={originalWidth,originalHeight,analysisWidth:w,analysisHeight:h,scaleX:w/originalWidth,scaleY:h/originalHeight,offsetX:0,offsetY:0};if(estimateMemory(t,35_000_000)<=memoryBudget)return Object.freeze(t);edge=Math.floor(edge*.75)} const scale=Math.min(1,256/Math.max(originalWidth,originalHeight));return Object.freeze({originalWidth,originalHeight,analysisWidth:Math.max(1,Math.round(originalWidth*scale)),analysisHeight:Math.max(1,Math.round(originalHeight*scale)),scaleX:scale,scaleY:scale,offsetX:0,offsetY:0})}
 export function estimateMemory(t:AnalysisTransform,modelWorkingBytes:number){return t.analysisWidth*t.analysisHeight*(4+3+1)+modelWorkingBytes}
 export function assessMask(alpha:Uint8Array,width:number,height:number,confidence:number):MaskQualityResult { let selected=0,edges=0,components=0;const seen=new Uint8Array(alpha.length);for(let i=0;i<alpha.length;i++){if(alpha[i])selected++;if(alpha[i]&&((i%width&& !alpha[i-1])||(i>=width&&!alpha[i-width])))edges++;if(alpha[i]&&!seen[i]){components++;const q=[i];seen[i]=1;while(q.length){const n=q.pop()!;for(const x of [n-1,n+1,n-width,n+width])if(x>=0&&x<alpha.length&&alpha[x]&&!seen[x]&&Math.abs((x%width)-(n%width))<=1){seen[x]=1;q.push(x)}}}}const coverage=selected/(width*height),warning=selected===0?'EMPTY':coverage<TINY_WARNING?'TINY':coverage>FULL_WARNING?'SUSPICIOUSLY_FULL':undefined;return Object.freeze({coverage,fragmentation:components,edgeComplexity:edges/Math.max(1,selected),confidence,empty:selected===0,full:coverage===1,warning})}
+export function morphSelectionMask(alpha: Uint8Array, width: number, height: number, radius: number, kind: 'GROW' | 'SHRINK'): Uint8Array {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width > MAX_SELECTION_MORPHOLOGY_DIMENSION || height > MAX_SELECTION_MORPHOLOGY_DIMENSION) throw new Error('Selection morphology dimensions exceed deterministic bounds');
+  const pixels = width * height;
+  if (!Number.isSafeInteger(pixels) || pixels !== alpha.length || pixels > MAX_SELECTION_MORPHOLOGY_PIXELS) throw new Error('Selection morphology pixel count exceeds deterministic bounds');
+  if (!Number.isSafeInteger(radius) || radius < 1 || radius > MAX_SELECTION_MORPHOLOGY_RADIUS) throw new Error('Selection morphology radius exceeds deterministic bounds');
+  const work = pixels * 4;
+  if (!Number.isSafeInteger(work) || work > MAX_SELECTION_MORPHOLOGY_WORK) throw new Error('Selection morphology work exceeds deterministic bounds');
+  const intermediate = new Uint8Array(pixels);
+  const output = new Uint8Array(pixels);
+  extremePass(alpha, intermediate, width, height, radius, true, kind === 'GROW');
+  extremePass(intermediate, output, width, height, radius, false, kind === 'GROW');
+  return output;
+}
+function extremePass(input: Uint8Array, output: Uint8Array, width: number, height: number, radius: number, horizontal: boolean, maximum: boolean) {
+  const length = horizontal ? width : height;
+  const lines = horizontal ? height : width;
+  const stride = horizontal ? 1 : width;
+  const queue = new Int32Array(length);
+  for (let line = 0; line < lines; line++) {
+    const base = horizontal ? line * width : line;
+    let head = 0, tail = 0, next = 0;
+    for (let position = 0; position < length; position++) {
+      const right = Math.min(length - 1, position + radius);
+      while (next <= right) {
+        const value = input[base + next * stride];
+        while (tail > head) {
+          const previous = input[base + queue[tail - 1] * stride];
+          if (maximum ? previous > value : previous < value) break;
+          tail--;
+        }
+        queue[tail++] = next++;
+      }
+      const left = position - radius;
+      while (tail > head && queue[head] < left) head++;
+      output[base + position * stride] = input[base + queue[head] * stride];
+    }
+  }
+}
 function upscale(a:Uint8Array,sw:number,sh:number,dw:number,dh:number){const out=new Uint8Array(dw*dh);for(let y=0;y<dh;y++)for(let x=0;x<dw;x++)out[y*dw+x]=a[Math.min(sh-1,Math.floor(y*sh/dh))*sw+Math.min(sw-1,Math.floor(x*sw/dw))];return out}
 function originalScale(v:BrushStroke['view']){return Math.min((v.displayWidth/(v.devicePixelRatio??1))/v.originalWidth,(v.displayHeight/(v.devicePixelRatio??1))/v.originalHeight)*(v.zoom??1)}
 function paint(a:Uint8Array,w:number,h:number,p:{x:number;y:number},r:number,hard:number,sub:boolean){const minX=Math.max(0,Math.floor(p.x-r)),maxX=Math.min(w-1,Math.ceil(p.x+r)),minY=Math.max(0,Math.floor(p.y-r)),maxY=Math.min(h-1,Math.ceil(p.y+r));for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){const d=Math.hypot(x-p.x,y-p.y);if(d>r)continue;const strength=d<=r*hard?255:Math.round(255*(1-(d-r*hard)/Math.max(.001,r*(1-hard))));const i=y*w+x;a[i]=sub?Math.max(0,a[i]-strength):Math.max(a[i],strength)}}
