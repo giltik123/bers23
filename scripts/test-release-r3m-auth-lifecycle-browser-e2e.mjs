@@ -252,6 +252,15 @@ function attachDiagnostics(page) {
   });
 }
 
+async function logout(page) {
+  const responsePromise = page.waitForResponse(response =>
+    response.url() === `${coreOrigin}/api/core/auth/logout` && response.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  const response = await responsePromise;
+  assert.ok(response.status() === 200 || response.status() === 204, `logout returned HTTP ${response.status()}`);
+}
+
 async function login(page, password) {
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
