@@ -8,7 +8,7 @@ export const MAX_SELECTION_MORPHOLOGY_DIMENSION = 8192;
 export const MAX_SELECTION_MORPHOLOGY_PIXELS = 16_777_216;
 export const MAX_SELECTION_MORPHOLOGY_WORK = 67_108_864;
 export const MAX_SELECTION_POLYGON_VERTICES = 256;
-export const MAX_SELECTION_POLYGON_WORK = 18_000_000;
+export const MAX_SELECTION_POLYGON_WORK = 17_000_000;
 const POLYGON_FIXED_SCALE = 256;
 type HistoryEntry = Readonly<{ alpha: Uint8Array; source: MaskSource; provenance: readonly string[] }>;
 type Draft = { id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; source: MaskSource; state: SelectionDraftSnapshot['state']; mode: SelectionMode; points: PromptPoint[]; polygonVertices: PolygonVertex[]; provenance: string[]; requestId?: string; canonicalArtifactId?: string; refinementParentArtifactId?: string; quality?: MaskQualityResult; warning?: string; history: HistoryEntry[]; historyIndex: number; startedAt: number; manualCorrections: number; undoCount: number };
@@ -148,6 +148,7 @@ export function rasterizeSelectionPolygon(vertices: readonly PolygonVertex[],wid
 }
 export function composeSelectionMask(current: Uint8Array,polygon: Uint8Array,composition: PolygonComposition): Uint8Array {
   if(current.length!==polygon.length) throw new Error('Selection polygon composition dimensions mismatch');
+  if(composition!=='REPLACE'&&composition!=='ADD'&&composition!=='SUBTRACT'&&composition!=='INTERSECT') throw new Error('Selection polygon composition is unsupported');
   const output=new Uint8Array(current.length);
   if(composition==='REPLACE') return new Uint8Array(polygon);
   for(let i=0;i<current.length;i++){
