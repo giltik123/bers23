@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": [
+    "./core/auth/**/*.ts",
+    "./core/projects/**/*.ts",
+    "./core/artifacts/**/*.ts",
+    "./core/automation/**/*.ts",
+    "./transactions/**/*.ts"
+  ],
+  "exclude": ["./**/*.test.ts"]
+}
