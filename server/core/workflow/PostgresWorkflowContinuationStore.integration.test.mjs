@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { Pool } from 'pg';
 import { RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { migrateImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
 import { PostgresLocalExecutionLedger } from '../localExecution/PostgresLocalExecutionLedger.ts';
+import { migrateProjectSchema } from '../projects/projectSchema.ts';
 import { PostgresWorkflowContinuationStore } from './PostgresWorkflowContinuationStore.ts';
 import { checkWorkflowContinuationSchema, migrateWorkflowContinuationSchema } from './workflowContinuationSchema.ts';
 
@@ -215,5 +218,109 @@ test('PostgreSQL same-step deterministic v2 retry survives Core restart under on
     if (firstTicket) await thirdPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [firstTicket.ticketId]).catch(() => undefined);
     if (replacementTicket) await thirdPool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [replacementTicket.ticketId]).catch(() => undefined);
     await thirdPool.end();
+  }
+});
+
+
+test('PostgreSQL guarded continuation admission binds the exact current Project source and durable replay wins after cursor movement', { skip: !databaseUrl }, async () => {
+  const token = `workflow-source-guard-${process.pid}-${Date.now()}`;
+  const projectId = randomUUID();
+  const scoped = Object.freeze({ tenantId: `${token}-tenant`, userId: `${token}-user`, projectId });
+  const originalStorageId = randomUUID();
+  const replacementStorageId = randomUUID();
+  const executionId = `${token}-execution`;
+  const clientRequestId = `${token}-client`;
+  const plan = Object.freeze({ planId: `${token}-plan`, planRevision: '1', planDigest: 'f'.repeat(64) });
+  const inputArtifacts = Object.freeze([Object.freeze({
+    artifactId: `${token}-source`, kind: 'image', role: 'ORIGINAL', sha256: '9'.repeat(64), parentArtifactIds: Object.freeze([]),
+  })]);
+  const pool = new Pool({ connectionString: databaseUrl, max: 4, application_name: 'bers-workflow-source-guard' });
+  try {
+    await migrateImageArtifactSchema(pool);
+    await migrateProjectSchema(pool);
+    await migrateWorkflowContinuationSchema(pool);
+    await pool.query(`INSERT INTO canonical_image_artifacts
+      (storage_id,tenant_id,user_id,project_id,role,lifecycle,width,height,encoding,content_type,image_bytes)
+      VALUES ($1,$2,$3,$4,'ORIGINAL','IMMUTABLE',4,3,'PNG_RGBA8_LOSSLESS','image/png',$5)`,
+      [originalStorageId, scoped.tenantId, scoped.userId, projectId, Buffer.from([1])]);
+    await pool.query(`INSERT INTO canonical_projects
+      (project_id,tenant_id,user_id,name,original_image_storage_id,current_image_storage_id,width,height)
+      VALUES ($1,$2,$3,'Workflow source guard',$4,$4,4,3)`,
+      [projectId, scoped.tenantId, scoped.userId, originalStorageId]);
+
+    const store = new PostgresWorkflowContinuationStore(pool, () => NOW);
+    const input = Object.freeze({ executionId, clientRequestId, scope: scoped, plan, inputArtifacts });
+    const source = Object.freeze({ storageId: originalStorageId, width: 4, height: 3 });
+    const created = await store.createWithCurrentProjectSource(input, source);
+    assert.equal(created.state, 'READY');
+
+    await pool.query(`INSERT INTO canonical_image_artifacts
+      (storage_id,tenant_id,user_id,project_id,role,lifecycle,width,height,encoding,content_type,image_bytes)
+      VALUES ($1,$2,$3,$4,'ORIGINAL','IMMUTABLE',5,6,'PNG_RGBA8_LOSSLESS','image/png',$5)`,
+      [replacementStorageId, scoped.tenantId, scoped.userId, projectId, Buffer.from([2])]);
+    await pool.query('UPDATE canonical_projects SET current_image_storage_id=$2,width=5,height=6 WHERE project_id=$1', [projectId, replacementStorageId]);
+
+    const replay = await store.createWithCurrentProjectSource(input, source);
+    assert.deepEqual(replay, created, 'durable replay must not re-authorize against a later Project cursor');
+
+    await assert.rejects(
+      () => store.createWithCurrentProjectSource(
+        { ...input, executionId: `${executionId}-new`, clientRequestId: `${clientRequestId}-new` },
+        source,
+      ),
+      error => error?.code === 'WORKFLOW_CONTINUATION_PROJECT_SOURCE_CONFLICT',
+      'a genuinely-new continuation must reject a stale Project source',
+    );
+  } finally {
+    await pool.query('DELETE FROM workflow_continuations WHERE project_id=$1', [projectId]).catch(() => undefined);
+    await pool.query('DELETE FROM canonical_projects WHERE project_id=$1', [projectId]).catch(() => undefined);
+    await pool.query('DELETE FROM canonical_image_artifacts WHERE project_id=$1', [projectId]).catch(() => undefined);
+    await pool.end();
+  }
+});
+
+test('PostgreSQL recovery can bind the exact expired orphan ticket without weakening normal outstanding-ticket admission', { skip: !databaseUrl }, async () => {
+  const token = `workflow-orphan-recovery-${process.pid}-${Date.now()}`;
+  const scoped = scope(token);
+  const executionId = `${token}-execution`;
+  const clientRequestId = `${token}-client`;
+  const plan = Object.freeze({ planId: `${token}-plan`, planRevision: '1', planDigest: '8'.repeat(64) });
+  const retryRoot = Object.freeze({ ...rootInput(token), role: 'ORIGINAL' });
+  const inputArtifacts = Object.freeze([retryRoot]);
+  const pool = new Pool({ connectionString: databaseUrl, max: 3, application_name: 'bers-workflow-orphan-recovery' });
+  let orphan;
+  try {
+    await migrateWorkflowContinuationSchema(pool);
+    const initial = new PostgresWorkflowContinuationStore(pool, () => NOW);
+    const ledger = new PostgresLocalExecutionLedger(pool);
+    const created = await initial.create({ executionId, clientRequestId, scope: scoped, plan, inputArtifacts });
+    orphan = await ledger.issueV2(retryTicket(`${token}-orphan`, executionId, scoped, retryRoot, NOW + 1_000));
+    const binding = {
+      executionId,
+      scope: scoped,
+      expectedRevision: created.revision,
+      continuationStepId: 'orphan-node',
+      ticket: { stepId: orphan.stepId, ticketId: orphan.ticketId, ticketVersion: orphan.version, nonce: orphan.nonce, expiresAt: new Date(orphan.expiresAt).toISOString() },
+    };
+
+    const restarted = new PostgresWorkflowContinuationStore(pool, () => NOW + 2_000);
+    await assert.rejects(
+      () => restarted.waitForLocalResult(binding),
+      /Expired local execution ticket cannot become outstanding work/,
+      'normal issuance must continue to reject expired tickets',
+    );
+    const recovered = await restarted.bindExpiredLocalTicketForRecovery(binding);
+    assert.equal(recovered.state, 'WAITING_FOR_LOCAL_RESULT');
+    assert.equal(recovered.currentStepId, 'orphan-node');
+    assert.equal(recovered.outstandingLocal.ticketId, orphan.ticketId);
+    assert.equal(recovered.outstandingLocal.ticketVersion, '2');
+
+    const afterRestart = new PostgresWorkflowContinuationStore(pool, () => NOW + 3_000);
+    const durable = await afterRestart.get(executionId, scoped);
+    assert.equal(durable.outstandingLocal.ticketId, orphan.ticketId, 'restart must retain the exact recovered orphan identity');
+  } finally {
+    await pool.query('DELETE FROM workflow_continuations WHERE execution_id=$1', [executionId]).catch(() => undefined);
+    if (orphan) await pool.query('DELETE FROM local_execution_tickets WHERE ticket_id=$1', [orphan.ticketId]).catch(() => undefined);
+    await pool.end();
   }
 });
