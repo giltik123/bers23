@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, SelectionApplicationService, assessMask, chooseAnalysis, featherSelectionMask, morphSelectionMask } from '../src/application/selection';
+import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, MAX_SELECTION_POLYGON_VERTICES, SelectionApplicationService, assessMask, chooseAnalysis, composeSelectionMask, featherSelectionMask, morphSelectionMask, rasterizeSelectionPolygon } from '../src/application/selection';
 import { CoreAuthorizedSegmentation } from '../src/application/selection/CoreAuthorizedSegmentation';
 import { displayToOriginal } from '../src/platform/creative/pipeline/ControlledLocalEdit';
 import { DeviceAnalyzer } from '../src/platform/creative/local-ai/device/DeviceAnalyzer';
@@ -174,6 +174,91 @@ test('grow shrink undo redo stay local and synchronize bytes provenance and qual
   const shrunk = service.shrink(1);
   assert.equal(shrunk.provenance.at(-1), 'OPERATION_CONTRACTED');
   assert.deepEqual([...shrunk.alpha], [...seed]);
+});
+
+
+test('polygon rasterization is fixed-point pixel-center even-odd and composition preserves exact alpha semantics', () => {
+  const vertices = [
+    { x: 1, y: 1, coordinateSpace: 'ORIGINAL' as const },
+    { x: 4, y: 1, coordinateSpace: 'ORIGINAL' as const },
+    { x: 4, y: 4, coordinateSpace: 'ORIGINAL' as const },
+    { x: 1, y: 4, coordinateSpace: 'ORIGINAL' as const },
+  ];
+  const polygon = rasterizeSelectionPolygon(vertices, 5, 5);
+  assert.deepEqual([...polygon], [
+    0,0,0,0,0,
+    0,255,255,255,0,
+    0,255,255,255,0,
+    0,255,255,255,0,
+    0,0,0,0,0,
+  ]);
+
+  const current = new Uint8Array([0,64,128,255]);
+  const shape = new Uint8Array([0,255,255,0]);
+  assert.deepEqual([...composeSelectionMask(current, shape, 'REPLACE')], [0,255,255,0]);
+  assert.deepEqual([...composeSelectionMask(current, shape, 'ADD')], [0,255,255,255]);
+  assert.deepEqual([...composeSelectionMask(current, shape, 'SUBTRACT')], [0,0,0,255]);
+  assert.deepEqual([...composeSelectionMask(current, shape, 'INTERSECT')], [0,64,128,0]);
+  assert.throws(() => composeSelectionMask(current, shape, 'UNKNOWN' as never), /composition is unsupported/);
+});
+
+test('polygon rasterization validates vertex count dimensions and work before allocation', () => {
+  const triangle = [
+    { x: 0, y: 0, coordinateSpace: 'ORIGINAL' as const },
+    { x: 2, y: 0, coordinateSpace: 'ORIGINAL' as const },
+    { x: 1, y: 2, coordinateSpace: 'ORIGINAL' as const },
+  ];
+  assert.throws(() => rasterizeSelectionPolygon(triangle.slice(0,2), 3, 3), /at least three vertices/);
+  assert.throws(() => rasterizeSelectionPolygon(new Array(MAX_SELECTION_POLYGON_VERTICES + 1).fill(triangle[0]), 3, 3), /vertex limit exceeded/);
+  assert.throws(() => rasterizeSelectionPolygon(triangle, MAX_SELECTION_MORPHOLOGY_DIMENSION + 1, 1), /dimensions exceed deterministic bounds/);
+
+  const many = Array.from({ length: MAX_SELECTION_POLYGON_VERTICES }, (_value, index) => ({
+    x: index % 2 ? 8192 : 0,
+    y: (index / MAX_SELECTION_POLYGON_VERTICES) * 2048,
+    coordinateSpace: 'ORIGINAL' as const,
+  }));
+  assert.throws(() => rasterizeSelectionPolygon(many, 8192, 2048), /work exceeds deterministic bounds/);
+});
+
+test('polygon vertices use canonical display transform, survive mode changes, and first apply is undoable from empty state', () => {
+  const { service } = fixture();
+  const identity = { displayWidth: 5, displayHeight: 5, originalWidth: 5, originalHeight: 5 };
+  service.start({ imageArtifactId: 'image', width: 5, height: 5 });
+  service.setMode('POLYGON');
+  for (const point of [{x:1,y:1},{x:4,y:1},{x:4,y:4},{x:1,y:4}]) service.polygonVertex({ displayPoint: point, view: identity });
+  const staged = service.snapshot();
+  assert.deepEqual(staged.polygonVertices.map(({x,y})=>[x,y]), [[1,1],[4,1],[4,4],[1,4]]);
+  service.setMode('BRUSH_ADD');
+  assert.equal(service.snapshot().polygonVertices.length, 4, 'mode changes must not discard staged polygon');
+  service.setMode('POLYGON');
+
+  const applied = service.applyPolygon('REPLACE');
+  assert.equal(applied.polygonVertices.length, 0);
+  assert.equal(applied.canUndo, true);
+  assert.equal(applied.state, 'REFINING');
+  assert.equal(applied.provenance.at(-1), 'POLYGON_REPLACE');
+
+  const undone = service.undo();
+  assert.equal(undone.state, 'NOTHING_SELECTED');
+  assert.deepEqual([...undone.alpha], new Array(25).fill(0));
+
+  const redone = service.redo();
+  assert.equal(redone.state, 'REFINING');
+  assert.deepEqual([...redone.alpha], [...applied.alpha]);
+  assert.equal(redone.provenance.at(-1), 'POLYGON_REPLACE');
+});
+
+test('polygon vertices are quantized to exact 1/256 ORIGINAL pixels', () => {
+  const { service } = fixture();
+  const preciseView = { displayWidth: 100, displayHeight: 100, originalWidth: 10, originalHeight: 10 };
+  service.start({ imageArtifactId: 'image', width: 10, height: 10 });
+  service.setMode('POLYGON');
+  service.polygonVertex({ displayPoint: { x: 12.345, y: 67.891 }, view: preciseView });
+  const vertex = service.snapshot().polygonVertices[0];
+  assert.equal(Number.isInteger(vertex.x * 256), true);
+  assert.equal(Number.isInteger(vertex.y * 256), true);
+  assert.ok(vertex.x >= 0 && vertex.x <= 10);
+  assert.ok(vertex.y >= 0 && vertex.y <= 10);
 });
 
 test('Core-authorized segmentation binds ticket, device admission, local runtime, quarantine upload and canonical result', async () => {
