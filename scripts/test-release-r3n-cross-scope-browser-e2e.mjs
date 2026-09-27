@@ -140,8 +140,6 @@ try {
 
   const ownerContext = await browser.newContext();
   const attackerContext = await browser.newContext();
-  await installCsrfCapture(ownerContext);
-  await installCsrfCapture(attackerContext);
 
   const ownerPage = await ownerContext.newPage();
   const attackerPage = await attackerContext.newPage();
@@ -272,19 +270,6 @@ try {
   await pool.end();
 }
 
-async function installCsrfCapture(context) {
-  await context.addInitScript(() => {
-    const originalFetch = window.fetch.bind(window);
-    window.__r3nCsrf = null;
-    window.fetch = async (...args) => {
-      const response = await originalFetch(...args);
-      const csrf = response.headers.get('X-Bers-CSRF-Token');
-      if (csrf) window.__r3nCsrf = csrf;
-      return response;
-    };
-  });
-}
-
 function attachDiagnostics(page) {
   page.on('pageerror', error => diagnostics.pageErrors.push(error.message));
   page.on('requestfailed', request => diagnostics.requestFailures.push({ url: request.url(), failure: request.failure()?.errorText ?? 'unknown' }));
@@ -301,8 +286,15 @@ async function login(page, email, password) {
   await page.locator('#password').fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/', { timeout: 15_000 });
-  const csrf = await page.evaluate(() => window.__r3nCsrf);
-  assert.equal(typeof csrf, 'string', 'authenticated browser must capture the session-bound CSRF proof');
+
+  const csrf = await page.evaluate(async url => {
+    const response = await fetch(url, { credentials: 'include', headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`auth context returned HTTP ${response.status}`);
+    const token = response.headers.get('X-Bers-CSRF-Token');
+    window.__r3nCsrf = token;
+    return token;
+  }, `${coreOrigin}/api/core/auth/context`);
+  assert.match(csrf ?? '', /^[A-Za-z0-9_-]{43}$/, 'authenticated context must restore the session-bound CSRF proof');
 }
 
 async function api(page, pathName, options = {}) {
