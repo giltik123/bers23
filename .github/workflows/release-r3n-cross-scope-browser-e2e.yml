@@ -1,0 +1,123 @@
+name: R3n Cross-Scope Browser E2E
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/api/coreClient.js'
+      - 'src/pages/Login.jsx'
+      - 'server/core/agentic/BoundedAgentAeeCompatibilityFacade.ts'
+      - 'server/core/agentic/BoundedAgentAeeCompatibilityFacade.test.mjs'
+      - 'server/core/artifacts/**'
+      - 'server/core/auth/**'
+      - 'server/core/projects/**'
+      - 'server/core/fashion/**'
+      - 'server/core/execution/**'
+      - 'server/core/http/**'
+      - 'server/core/composition/createProductionBoundedAgentCompatibility.ts'
+      - 'server/core/composition/createProductionCore.ts'
+      - 'server/core/config.ts'
+      - 'server/index.ts'
+      - 'scripts/build-core-server.mjs'
+      - 'scripts/test-release-r3n-cross-scope-browser-e2e.mjs'
+      - '.github/workflows/release-r3n-cross-scope-browser-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-r3n-cross-scope-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-scope-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: release_r3n_test
+          POSTGRES_USER: release_r3n_test
+          POSTGRES_PASSWORD: release_r3n_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U release_r3n_test -d release_r3n_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://release_r3n_test:release_r3n_test@127.0.0.1:5432/release_r3n_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      VITE_CORE_API_URL: http://127.0.0.1:4222/api/core
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core security surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove bounded Agent source-scope denial contract
+        run: |
+          node --experimental-strip-types --test             server/core/agentic/BoundedAgentAeeCompatibilityFacade.test.mjs
+      - name: Build immutable Core and apply packaged production migrations
+        run: |
+          npm run server:build
+          test -f dist-server/server.mjs
+          test -f dist-server/migrations/037_execution_run_workflow_internal_step.sql
+          test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
+          test -f dist-server/migrations/044_canonical_project_revision.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Generate and mask ephemeral R3n runtime secrets
+        run: |
+          set -euo pipefail
+          for name in FAL_KEY JWT_SECRET AUTH_CHALLENGE_SECRET RESEND_API_KEY GOOGLE_OAUTH_CLIENT_SECRET ARTIFACT_SIGNING_SECRET; do
+            value="$(openssl rand -hex 32)"
+            printf '::add-mask::%s\n' "$value"
+            printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+          done
+      - name: Build real SPA against the built Core origin
+        run: |
+          npm run build
+          test -f dist/index.html
+      - name: Bundle external R3n browser security harness
+        run: |
+          mkdir -p .test-cache/release-r3n
+          npx esbuild scripts/test-release-r3n-cross-scope-browser-e2e.mjs             --bundle --platform=node --format=esm --target=node24             --outfile=.test-cache/release-r3n/test-release-r3n-cross-scope-browser-e2e.mjs             --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove cross-user and cross-project authority substitution fails closed
+        run: |
+          set -euo pipefail
+          node .test-cache/release-r3n/test-release-r3n-cross-scope-browser-e2e.mjs | tee .test-cache/release-r3n/runtime.log
+          grep -q 'R3N_BROWSER_CROSS_SCOPE_ACCEPTED' .test-cache/release-r3n/runtime.log
+      - name: Preserve R3n authority boundaries
+        if: always()
+        run: |
+          set -euo pipefail
+          facade=server/core/agentic/BoundedAgentAeeCompatibilityFacade.ts
+          testfile=server/core/agentic/BoundedAgentAeeCompatibilityFacade.test.mjs
+          harness=scripts/test-release-r3n-cross-scope-browser-e2e.mjs
+          grep -q "durable_artifact_unavailable" "$facade"
+          grep -q "bounded_agent_source_artifact_unavailable" "$facade"
+          grep -q "preserves durable lineage integrity failures as internal errors" "$testfile"
+          grep -q "/api/core/agent/bounded-deterministic/start" "$harness"
+          grep -q "/api/core/garments/" "$harness"
+          grep -q "/api/core/wardrobe/outfits/" "$harness"
+          grep -q "/api/core/execution-runs/" "$harness"
+          grep -q "R3N_BROWSER_CROSS_SCOPE_ACCEPTED" "$harness"
+          grep -q "denied cross-scope requests must not create plans, continuations, tickets or runs" "$harness"
+          ! grep -E -q 'page\.route\(|browserContext\.route\(|context\.route\(|route\.(fulfill|abort|continue|fallback)\(' "$harness"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
