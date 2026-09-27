@@ -3,7 +3,7 @@ import type { DisplayTransform, OriginalMask } from '../../platform/creative/pip
 import type { ExecutionProvider, PrivacyMode, RuntimeKind } from '../../platform/creative/local-ai';
 
 export const INTERACTIVE_SEGMENTATION = 'INTERACTIVE_SEGMENTATION' as const;
-export type SelectionMode = 'SMART_SELECT' | 'BRUSH_ADD' | 'BRUSH_SUBTRACT' | 'POLYGON';
+export type SelectionMode = 'SMART_SELECT' | 'BRUSH_ADD' | 'BRUSH_SUBTRACT' | 'POLYGON' | 'LASSO';
 export type PolygonComposition = 'REPLACE' | 'ADD' | 'SUBTRACT' | 'INTERSECT';
 export type PolygonVertex = Readonly<{ x: number; y: number; coordinateSpace: 'ORIGINAL' }>;
 export type SelectionState = 'NOTHING_SELECTED' | 'DOWNLOADING' | 'LOADING' | 'SELECTING' | 'SELECTED' | 'REFINING' | 'READY' | 'ERROR' | 'LOCAL_UNAVAILABLE';
