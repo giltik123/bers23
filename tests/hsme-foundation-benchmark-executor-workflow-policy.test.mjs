@@ -20,6 +20,14 @@ test('planning happens on unprotected hosted runner before protected GPU executi
   assert.match(workflow,/execute-protected-run:\n    if: \$\{\{ github\.event_name == 'workflow_dispatch' && needs\.plan-protected-run\.outputs\.disposition == 'EXECUTE' \}\}/);
   assert.match(workflow,/runs-on: \[self-hosted, linux, x64, gpu, bers-hsme-evidence\]/);
   assert.match(workflow,/environment: hsme-foundation-benchmark-evidence/);
+  const bind=workflow.indexOf('Bind protected paths to runner temp');
+  const checkout=workflow.indexOf('      - uses: actions/checkout@v4',bind);
+  assert.ok(bind>0&&checkout>bind);
+  const protectedSetup=workflow.slice(bind,checkout);
+  assert.match(protectedSetup,/HF_HOME=\$RUNNER_TEMP\/hsme-foundation-hf-cache/);
+  assert.match(protectedSetup,/MODEL_ROOT=\$RUNNER_TEMP\/hsme-foundation-model/);
+  assert.match(protectedSetup,/EVIDENCE_DIR=\$RUNNER_TEMP\/hsme-foundation-evidence/);
+  assert.match(protectedSetup,/\} >> "\$GITHUB_ENV"/);
 });
 
 test('unsupported and parity-blocked dispositions cannot reach model execution job',()=>{

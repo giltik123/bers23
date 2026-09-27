@@ -188,15 +188,19 @@ jobs:
     timeout-minutes: 480
     environment: hsme-teacher-acquisition-evidence
     env:
-      HF_HOME: ${{ runner.temp }}/hsme-teacher-acquisition-hf-cache
-      HF_HUB_CACHE: ${{ runner.temp }}/hsme-teacher-acquisition-hf-cache/hub
-      HF_XET_CACHE: ${{ runner.temp }}/hsme-teacher-acquisition-hf-cache/xet
-      MODEL_ROOT: ${{ runner.temp }}/hsme-teacher-acquisition-model
-      EVIDENCE_DIR: ${{ runner.temp }}/hsme-teacher-acquisition-evidence
-      PLAN_DIR: ${{ runner.temp }}/hsme-teacher-acquisition-plan
       EXPECTED_DOWNLOAD_BYTES: ${{ needs.plan-acquisition.outputs.expected_download_bytes }}
       MAX_DOWNLOAD_BYTES: ${{ inputs.max_download_bytes }}
     steps:
+      - name: Bind protected paths to runner temp
+        run: |
+          {
+            echo "HF_HOME=$RUNNER_TEMP/hsme-teacher-acquisition-hf-cache"
+            echo "HF_HUB_CACHE=$RUNNER_TEMP/hsme-teacher-acquisition-hf-cache/hub"
+            echo "HF_XET_CACHE=$RUNNER_TEMP/hsme-teacher-acquisition-hf-cache/xet"
+            echo "MODEL_ROOT=$RUNNER_TEMP/hsme-teacher-acquisition-model"
+            echo "EVIDENCE_DIR=$RUNNER_TEMP/hsme-teacher-acquisition-evidence"
+            echo "PLAN_DIR=$RUNNER_TEMP/hsme-teacher-acquisition-plan"
+          } >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan-acquisition.outputs.controller_main_sha }}
