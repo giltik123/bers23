@@ -102,6 +102,7 @@ const diagnostics = {
   invocationResults: [],
   agentRequests: [],
   localExecutionRequests: [],
+  executionRunRequests: [],
   creativeRequests: [],
   financialRequests: [],
   projectMutations: [],
@@ -259,6 +260,35 @@ try {
   assert.equal(Number(binding.target_width), target.width);
   assert.equal(Number(binding.target_height), target.height);
 
+  // #233 R3l: prove the same terminal Automation execution is recovered through
+  // the actual Editor Job Center, then survives a full browser page refresh.
+  // PostgreSQL is a read-only oracle for exact run identity; UI remains the
+  // product recovery surface under test.
+  const topology = await readAutomationExecutionTopology(binding.downstream_client_request_id, projectId);
+  assert.equal(topology.root.status, 'SUCCEEDED');
+  assert.deepEqual(
+    topology.children.map(run => [run.capability, run.status]).sort(),
+    [['LOCAL_EXECUTION', 'SUCCEEDED'], ['LOCAL_EXECUTION', 'SUCCEEDED'], ['WORKFLOW_STEP', 'SUCCEEDED']].sort(),
+  );
+
+  const jobPage = await browserContext.newPage();
+  attachDiagnostics(jobPage);
+  await jobPage.goto(`${frontendOrigin}/editor?id=${encodeURIComponent(projectId)}`, { waitUntil: 'domcontentloaded' });
+  const serverExecutions = jobPage.locator('[data-job-center-canonical-executions]');
+  await serverExecutions.waitFor({ state: 'visible', timeout: 20_000 });
+  await assertJobCenterTopology(serverExecutions, topology);
+
+  const executionRequestsBeforeReload = diagnostics.executionRunRequests.length;
+  await jobPage.reload({ waitUntil: 'domcontentloaded' });
+  const reloadedExecutions = jobPage.locator('[data-job-center-canonical-executions]');
+  await reloadedExecutions.waitFor({ state: 'visible', timeout: 20_000 });
+  await assertJobCenterTopology(reloadedExecutions, topology);
+  assert.ok(
+    diagnostics.executionRunRequests.length > executionRequestsBeforeReload,
+    'Job Center browser refresh must re-read canonical ExecutionRun authority from Core',
+  );
+  await jobPage.close();
+
   await page.getByRole('button', { name: 'Accept result into Project' }).click();
   await assertEventually(async () => {
     const state = await readProjectState(projectId);
@@ -291,7 +321,16 @@ try {
     startRequests: diagnostics.manualStarts,
     invocationResults: diagnostics.invocationResults,
     localExecutionRequests: diagnostics.localExecutionRequests,
+    executionRunRequests: diagnostics.executionRunRequests,
+    jobCenterRootRunId: topology.root.runId,
     projectMutations: diagnostics.projectMutations,
+  }));
+  console.log('R3L_AUTOMATION_JOB_CENTER_RELEASE_ACCEPTED', JSON.stringify({
+    projectId,
+    invocationId,
+    rootRunId: topology.root.runId,
+    childRunIds: topology.children.map(run => run.runId),
+    executionRunRequests: diagnostics.executionRunRequests,
   }));
 
   await browserContext.close();
@@ -332,6 +371,7 @@ function attachDiagnostics(page) {
     if (/^\/api\/core\/automation-invocations\/[^/]+\/result$/.test(pathName) && method === 'POST') diagnostics.invocationResults.push(entry);
     if (pathName.startsWith('/api/core/agent/')) diagnostics.agentRequests.push(entry);
     if (pathName.startsWith('/api/core/local-execution/')) diagnostics.localExecutionRequests.push(entry);
+    if (pathName.startsWith('/api/core/execution-runs')) diagnostics.executionRunRequests.push(entry);
     if (pathName.startsWith('/api/core/creative')) diagnostics.creativeRequests.push(entry);
     if (/financial|billing|credit|subscription/i.test(pathName)) diagnostics.financialRequests.push(entry);
     if (!['GET', 'HEAD'].includes(method) && pathName.startsWith('/api/core/projects/')) diagnostics.projectMutations.push(`${method} ${pathName}`);
@@ -358,6 +398,48 @@ async function readBinding(invocationId) {
     FROM canonical_automation_invocation_bindings WHERE invocation_id=$1 AND tenant_id=$2 AND user_id=$3`, [invocationId, tenantId, userId]);
   assert.equal(result.rowCount, 1, 'exact immutable invocation binding must exist');
   return result.rows[0];
+}
+
+async function readAutomationExecutionTopology(downstreamClientRequestId, projectId) {
+  const continuation = await pool.query(
+    `SELECT execution_id FROM workflow_continuations
+      WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND client_request_id=$4`,
+    [tenantId, userId, projectId, downstreamClientRequestId],
+  );
+  assert.equal(continuation.rowCount, 1, 'Automation downstream continuation must exist exactly once');
+  const executionId = continuation.rows[0].execution_id;
+  const runs = await pool.query(
+    `SELECT run_id::text,capability,authority_kind,authority_ref,parent_run_id::text,status
+       FROM canonical_execution_runs
+      WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3
+      ORDER BY created_at ASC,run_id ASC`,
+    [tenantId, userId, projectId],
+  );
+  const roots = runs.rows.filter(run => run.parent_run_id === null
+    && run.capability === 'WORKFLOW_CONTINUATION'
+    && run.authority_kind === 'WORKFLOW_CONTINUATION'
+    && run.authority_ref === executionId);
+  assert.equal(roots.length, 1, 'Automation must project exactly one canonical workflow root');
+  const root = Object.freeze({ ...roots[0], runId: roots[0].run_id });
+  const children = Object.freeze(runs.rows
+    .filter(run => run.parent_run_id === root.run_id)
+    .map(run => Object.freeze({ ...run, runId: run.run_id })));
+  return Object.freeze({ executionId, root, children });
+}
+
+async function assertJobCenterTopology(serverExecutions, topology) {
+  const root = serverExecutions.locator(`[data-canonical-execution-run="${topology.root.runId}"]`);
+  await root.waitFor({ state: 'visible', timeout: 20_000 });
+  await root.getByText('Workflow execution', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await root.getByText('Succeeded', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
+
+  for (const child of topology.children) {
+    const row = serverExecutions.locator(`[data-canonical-execution-run="${child.runId}"]`);
+    await row.waitFor({ state: 'visible', timeout: 10_000 });
+    const label = child.capability === 'LOCAL_EXECUTION' ? 'Local execution' : 'Internal workflow step';
+    await row.getByText(label, { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+    await row.getByText('Succeeded', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  }
 }
 
 async function readProjectState(projectId) {
