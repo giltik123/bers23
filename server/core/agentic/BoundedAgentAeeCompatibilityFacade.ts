@@ -89,7 +89,15 @@ export class BoundedAgentAeeCompatibilityFacade implements BoundedAgentExecution
       const project = await this.dependencies.projects.currentSourceContext(auth, projectId);
       if (!project) throw notFound('bounded_agent_project_not_found', 'Project not found');
       const sourceArtifactId = sourceArtifactReference(commandInput?.sourceArtifactId);
-      const source = await this.dependencies.artifacts.resolve(scope, sourceArtifactId);
+      let source;
+      try {
+        source = await this.dependencies.artifacts.resolve(scope, sourceArtifactId);
+      } catch (error) {
+        if ((error as { code?: unknown })?.code === 'durable_artifact_unavailable') {
+          throw notFound('bounded_agent_source_artifact_unavailable', 'Source Artifact is unavailable in this scope');
+        }
+        throw error;
+      }
       const graph = compileBoundedAgentAeeCompatibilityV1(commandInput, project, source);
       const durable = await this.dependencies.plans.put(scope, graph);
       if (durable.graph.digest !== graph.digest) {
