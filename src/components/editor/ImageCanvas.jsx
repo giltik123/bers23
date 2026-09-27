@@ -24,6 +24,26 @@ function SelectionOverlay({ selection }) {
   return <canvas ref={ref} className="absolute inset-0 size-full pointer-events-none" aria-hidden="true" />;
 }
 
+function PolygonPreview({ selection }) {
+  if (selection?.mode !== 'POLYGON' || !selection.polygonVertices?.length) return null;
+  const points = selection.polygonVertices.map((vertex) => `${vertex.x},${vertex.y}`).join(' ');
+  const closed = selection.polygonVertices.length >= 3;
+  return (
+    <svg
+      className="absolute inset-0 size-full pointer-events-none"
+      viewBox={`0 0 ${selection.width} ${selection.height}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      {closed && <polygon points={points} fill="rgba(16,185,129,0.12)" stroke="none" />}
+      <polyline points={points} fill="none" stroke="rgb(16,185,129)" strokeWidth={Math.max(1, Math.min(selection.width, selection.height) / 300)} vectorEffect="non-scaling-stroke" />
+      {selection.polygonVertices.map((vertex, index) => (
+        <circle key={`${vertex.x}:${vertex.y}:${index}`} cx={vertex.x} cy={vertex.y} r={Math.max(1.5, Math.min(selection.width, selection.height) / 180)} fill="rgb(16,185,129)" vectorEffect="non-scaling-stroke" />
+      ))}
+    </svg>
+  );
+}
+
 function CropOverlay({ crop }) {
   if (!crop) return null;
   const left = crop.x / crop.sourceWidth * 100;
@@ -65,6 +85,7 @@ export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, b
       <div className="relative" style={gestures.style}>
       <img src={imageUrl} alt="Project" decoding={renderer.decoding} fetchPriority="high" style={{ imageRendering: renderer.imageRendering }} onLoad={(event) => { if (event.currentTarget.naturalWidth * event.currentTarget.naturalHeight > 2000000) performanceMonitor.markLargeDecode(); }} className="w-full h-auto block" draggable={false} />
       <SelectionOverlay selection={selection} />
+      <PolygonPreview selection={selection} />
       <CropOverlay crop={crop} />
       {!interactive && objects.map((obj) => {
         const selected = obj.id === selectedId;
