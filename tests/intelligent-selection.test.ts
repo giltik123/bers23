@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, MAX_SELECTION_POLYGON_VERTICES, SelectionApplicationService, assessMask, chooseAnalysis, composeSelectionMask, featherSelectionMask, morphSelectionMask, rasterizeSelectionPolygon } from '../src/application/selection';
+import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, MAX_SELECTION_POLYGON_VERTICES, MIN_SELECTION_LASSO_SAMPLE_PIXELS, SelectionApplicationService, assessMask, chooseAnalysis, composeSelectionMask, featherSelectionMask, morphSelectionMask, rasterizeSelectionPolygon } from '../src/application/selection';
 import { CoreAuthorizedSegmentation } from '../src/application/selection/CoreAuthorizedSegmentation';
 import { displayToOriginal } from '../src/platform/creative/pipeline/ControlledLocalEdit';
 import { DeviceAnalyzer } from '../src/platform/creative/local-ai/device/DeviceAnalyzer';
@@ -259,6 +259,53 @@ test('polygon vertices are quantized to exact 1/256 ORIGINAL pixels', () => {
   assert.equal(Number.isInteger(vertex.y * 256), true);
   assert.ok(vertex.x >= 0 && vertex.x <= 10);
   assert.ok(vertex.y >= 0 && vertex.y <= 10);
+});
+
+
+test('lasso sampling is fixed-point bounded and reuses the exact polygon raster authority', () => {
+  const { service } = fixture();
+  const identity = { displayWidth: 5, displayHeight: 5, originalWidth: 5, originalHeight: 5 };
+  service.start({ imageArtifactId: 'image', width: 5, height: 5 });
+  service.setMode('LASSO');
+  service.lassoStart({ displayPoint: { x: 1, y: 1 }, view: identity });
+  service.lassoVertex({ displayPoint: { x: 1 + MIN_SELECTION_LASSO_SAMPLE_PIXELS / 4, y: 1 }, view: identity });
+  assert.equal(service.snapshot().polygonVertices.length, 1, 'sub-threshold move sample must be ignored');
+  service.lassoVertex({ displayPoint: { x: 4, y: 1 }, view: identity });
+  service.lassoVertex({ displayPoint: { x: 4, y: 4 }, view: identity });
+  service.lassoVertex({ displayPoint: { x: 1, y: 4 }, view: identity }, true);
+
+  const staged = service.snapshot();
+  assert.deepEqual(staged.polygonVertices.map(({x,y}) => [x,y]), [[1,1],[4,1],[4,4],[1,4]]);
+  const expected = rasterizeSelectionPolygon(staged.polygonVertices, 5, 5);
+  const applied = service.applyLasso('REPLACE');
+  assert.deepEqual([...applied.alpha], [...expected]);
+  assert.equal(applied.provenance.at(-1), 'LASSO_REPLACE');
+  assert.equal(applied.canUndo, true);
+
+  const undone = service.undo();
+  assert.equal(undone.state, 'NOTHING_SELECTED');
+  assert.deepEqual([...undone.alpha], new Array(25).fill(0));
+  const redone = service.redo();
+  assert.deepEqual([...redone.alpha], [...expected]);
+  assert.equal(redone.provenance.at(-1), 'LASSO_REPLACE');
+});
+
+test('lasso point cap stops visibly instead of silently extending an unbounded path', () => {
+  const { service } = fixture();
+  const identity = { displayWidth: 1000, displayHeight: 1000, originalWidth: 1000, originalHeight: 1000 };
+  service.start({ imageArtifactId: 'image', width: 1000, height: 1000 });
+  service.setMode('LASSO');
+  service.lassoStart({ displayPoint: { x: 0, y: 10 }, view: identity });
+  for (let index = 1; index < MAX_SELECTION_POLYGON_VERTICES; index++) {
+    service.lassoVertex({ displayPoint: { x: index * 3, y: 10 }, view: identity });
+  }
+  assert.equal(service.snapshot().polygonVertices.length, MAX_SELECTION_POLYGON_VERTICES);
+  const capped = service.lassoVertex({ displayPoint: { x: 900, y: 20 }, view: identity }, true);
+  assert.equal(capped.polygonVertices.length, MAX_SELECTION_POLYGON_VERTICES);
+  assert.match(capped.warning ?? '', /Lasso point limit reached/);
+  const cleared = service.clearLasso();
+  assert.equal(cleared.polygonVertices.length, 0);
+  assert.equal(cleared.warning, undefined);
 });
 
 test('Core-authorized segmentation binds ticket, device admission, local runtime, quarantine upload and canonical result', async () => {
