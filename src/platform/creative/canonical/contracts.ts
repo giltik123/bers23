@@ -69,7 +69,7 @@ export const CREATIVE_AUTHORITY = Object.freeze({
 export interface CanonicalDecisionPort { decide(request: CreativeRequest): Promise<CreativeDecision> }
 export interface CanonicalPlanningPort { plan(request: CreativeRequest, decision: CreativeDecision): Promise<CreativePlan> }
 export interface ExecutionRouteSelectorPort { select(operation: CreativeOperation, request: CreativeRequest): ExecutionRoute }
-export interface TargetSelectorPort { select(operation: CreativeOperation, request: CreativeRequest): ExecutionTarget }
+export interface TargetSelectorPort { select(operation: CreativeOperation, request: CreativeRequest, plan: CreativePlan): ExecutionTarget }
 export interface SecurityGatePort { authorize(request: CreativeRequest, operation: CreativeOperation, target: ExecutionTarget): boolean }
 export type ExecutionCapabilityReasonCode = 'CAPABILITY_SUPPORTED' | 'TARGET_BLOCKED' | 'UNSUPPORTED_OPERATION' | 'UNSUPPORTED_TARGET' | 'PROVIDER_REQUIRED' | 'PROVIDER_FORBIDDEN' | 'UNSUPPORTED_PROVIDER' | 'UNSUPPORTED_ROUTE';
 export interface ExecutionCapabilityDecision { readonly allowed: boolean; readonly reasonCode: ExecutionCapabilityReasonCode; readonly capabilityId?: string }
