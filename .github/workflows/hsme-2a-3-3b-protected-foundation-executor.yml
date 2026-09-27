@@ -263,12 +263,15 @@ jobs:
     runs-on: [self-hosted, linux, x64, gpu, bers-hsme-evidence]
     timeout-minutes: 240
     environment: hsme-foundation-benchmark-evidence
-    env:
-      HF_HOME: ${{ runner.temp }}/hsme-foundation-hf-cache
-      MODEL_ROOT: ${{ runner.temp }}/hsme-foundation-model
-      EVIDENCE_DIR: ${{ runner.temp }}/hsme-foundation-evidence
-      REVIEW_DIR: ${{ runner.temp }}/hsme-foundation-blind-review
     steps:
+      - name: Bind protected paths to runner temp
+        run: |
+          {
+            echo "HF_HOME=$RUNNER_TEMP/hsme-foundation-hf-cache"
+            echo "MODEL_ROOT=$RUNNER_TEMP/hsme-foundation-model"
+            echo "EVIDENCE_DIR=$RUNNER_TEMP/hsme-foundation-evidence"
+            echo "REVIEW_DIR=$RUNNER_TEMP/hsme-foundation-blind-review"
+          } >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.candidate_sha }}
