@@ -151,6 +151,7 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
   assert.equal(reloaded.current_image_artifact_id, project.current_image_artifact_id);
   const deliveredOriginal = await fetch(`${baseUrl}${reloaded.current_image_url}`);
   assert.equal(deliveredOriginal.status, 200); assert.equal(deliveredOriginal.headers.get('content-type'), 'image/png');
+  assert.equal(deliveredOriginal.headers.get('cache-control'), 'no-store', 'revocable delivery capabilities must never be browser-cached');
 
   const stableDelivery = await fetch(`${baseUrl}/api/core/artifacts/results/${encodeURIComponent(project.current_image_artifact_id)}`);
   assert.equal(stableDelivery.status, 404, 'stable ORIGINAL identity must not be a delivery credential');
