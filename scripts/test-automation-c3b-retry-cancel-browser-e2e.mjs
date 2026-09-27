@@ -253,6 +253,124 @@ try {
     firstTicketId: firstTicket.ticketId, replacementTicketId: replacementTicket.ticketId,
     automationRequests: diagnostics.automationRequests, localExecutionRequests: diagnostics.localExecutionRequests, executionRunRequests: diagnostics.executionRunRequests,
   }));
+
+  // P1f: a second canonical workflow is failed through the same admitted local
+  // ledger, but recovery is owned by Job Center -> bounded Workflow /retry.
+  const jobCenterStarted = await browserJson(page, 'POST', `/automations/${encodeURIComponent(definition.id)}/manual-runs`,
+    { projectId, clientRequestId: 'c3b-job-center-retry-2' }, { 'X-Expected-Automation-Revision': '1' });
+  assert.equal(jobCenterStarted.status, 202);
+  assert.equal(jobCenterStarted.body.state, 'WAITING_FOR_LOCAL_RESULT');
+  const jobCenterInvocationId = jobCenterStarted.body.invocationId;
+  const jobCenterFirstTicket = jobCenterStarted.body.nextAction.ticket;
+  assertTicket(jobCenterFirstTicket, projectId);
+
+  const jobCenterBinding = await readBinding(jobCenterInvocationId);
+  const jobCenterContinuation = await readContinuationByClientRequest(jobCenterBinding.downstream_client_request_id, projectId);
+  const jobCenterExecutionId = jobCenterContinuation.execution_id;
+  const jobCenterRuns = await readRuns(projectId);
+  const jobCenterRoot = workflowRoot(jobCenterRuns, jobCenterExecutionId);
+  assert.equal(jobCenterRoot.status, 'RUNNING');
+
+  const jobCenterCandidate = await executeOrthogonal(page, projectId, jobCenterFirstTicket);
+  const jobCenterClaim = await ledger.claimV2({
+    ticketId: jobCenterFirstTicket.ticketId,
+    result: jobCenterCandidate.result,
+    callerScope: jobCenterFirstTicket.scope,
+    now: Date.now(),
+  });
+  assert.equal(jobCenterClaim.allowed, true, `P1f candidate must be admitted before controlled FAILED, got ${jobCenterClaim.reasonCode ?? 'unknown'}`);
+  await ledger.commit(jobCenterFirstTicket.ticketId, 'FAILED');
+  assert.equal((await ledger.getFinalization(jobCenterFirstTicket.ticketId))?.status, 'FAILED');
+
+  const jobCenterObservedFailure = await browserJson(page, 'GET', `/automation-invocations/${encodeURIComponent(jobCenterInvocationId)}`);
+  assert.equal(jobCenterObservedFailure.status, 200);
+  assert.equal(jobCenterObservedFailure.body.retryAvailable, true);
+  assert.equal(jobCenterObservedFailure.body.attemptStatus, 'FAILED');
+
+  // Mirror AgentPanel's non-authoritative recovery hint so a later reload can
+  // re-publish the terminal candidate. It carries no ticket/provider authority.
+  await page.evaluate(({ projectId, executionId, sourceArtifactId, mode, width, height }) => {
+    sessionStorage.setItem(`bers:bounded-agent:v1:${projectId}`, JSON.stringify({
+      executionId, sourceArtifactId, mode, width, height,
+    }));
+  }, {
+    projectId,
+    executionId: jobCenterExecutionId,
+    sourceArtifactId: jobCenterFirstTicket.inputs[0].artifactId,
+    mode,
+    width: target.width,
+    height: target.height,
+  });
+
+  resetDiagnostics();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ensureCsrf(page);
+
+  const serverExecutions = page.locator('[data-job-center-canonical-executions]');
+  await serverExecutions.waitFor({ state: 'visible', timeout: 20_000 });
+  const jobCenterRootRow = page.locator(`[data-canonical-execution-run="${jobCenterRoot.run_id}"]`);
+  await jobCenterRootRow.waitFor({ state: 'visible', timeout: 20_000 });
+  const jobCenterRetryButton = jobCenterRootRow.getByRole('button', { name: 'Retry exact step', exact: true });
+  await jobCenterRetryButton.waitFor({ state: 'visible', timeout: 20_000 });
+  assert.deepEqual(await readProject(projectId), baseline, 'Job Center observation must not mutate Project');
+
+  await jobCenterRetryButton.click();
+  await waitForRunStatus(jobCenterRoot.run_id, 'SUCCEEDED', 30_000);
+  await serverExecutions.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await page.waitForFunction((runId) => {
+    const root = document.querySelector(`[data-canonical-execution-run="${runId}"]`);
+    const card = root?.firstElementChild;
+    return [...(card?.querySelectorAll('span') ?? [])].some(span => span.textContent === 'Succeeded');
+  }, jobCenterRoot.run_id, { timeout: 20_000 });
+  await jobCenterRetryButton.waitFor({ state: 'detached', timeout: 20_000 });
+
+  const jobCenterAfterRuns = await readRuns(projectId);
+  const jobCenterAfterRoot = workflowRoot(jobCenterAfterRuns, jobCenterExecutionId);
+  assert.equal(jobCenterAfterRoot.run_id, jobCenterRoot.run_id, 'P1f Retry must preserve one logical WorkflowContinuation root');
+  assert.equal(jobCenterAfterRoot.status, 'SUCCEEDED');
+  const jobCenterLocalAttempts = childrenOf(jobCenterAfterRuns, jobCenterRoot.run_id).filter(run => run.capability === 'LOCAL_EXECUTION');
+  assert.equal(jobCenterLocalAttempts.length, 3, 'failed Orthogonal + replacement Orthogonal + Resize must be distinct attempts');
+  const jobCenterFailedAttempt = jobCenterLocalAttempts.find(run => run.authority_ref === jobCenterFirstTicket.ticketId);
+  assert.equal(jobCenterFailedAttempt?.status, 'FAILED');
+  assert.equal(jobCenterFailedAttempt?.status_reason_code, 'LOCAL_EXECUTION_RETRIED');
+  const jobCenterReplacementAttempts = jobCenterLocalAttempts.filter(run => run.authority_ref !== jobCenterFirstTicket.ticketId);
+  assert.equal(jobCenterReplacementAttempts.length, 2);
+  assert.ok(jobCenterReplacementAttempts.every(run => run.status === 'SUCCEEDED'));
+  assert.equal(childrenOf(jobCenterAfterRuns, jobCenterRoot.run_id).some(run => run.capability === 'WORKFLOW_STEP'), false);
+
+  const jobCenterInvocation = await browserJson(page, 'GET', `/automation-invocations/${encodeURIComponent(jobCenterInvocationId)}`);
+  assert.equal(jobCenterInvocation.status, 200);
+  assert.equal(jobCenterInvocation.body.state, 'SUCCESS');
+  assert.deepEqual(await readProject(projectId), baseline, 'Job Center Retry must not implicitly Accept workflow result');
+  assert.deepEqual(await readFinancial(), financialBefore, 'LOCAL_ONLY Job Center Retry must not mutate financial truth');
+  assert.equal(providerCalls, 0);
+
+  const jobCenterRetryPosts = diagnostics.agentRequests.filter(entry => entry.method === 'POST' && /\/retry$/.test(entry.path));
+  assert.equal(jobCenterRetryPosts.length, 1, 'Job Center must issue exactly one owning Workflow retry request');
+  assert.equal(diagnostics.agentRequests.some(entry => entry.method === 'POST' && /\/result$/.test(entry.path)), true);
+  assert.equal(diagnostics.automationRequests.some(entry => entry.method === 'POST' && /\/retry$/.test(entry.path)), false, 'P1f must not route through Automation retry');
+  assert.equal(diagnostics.localExecutionRequests.some(entry => /\/prepare$|\/result$/.test(entry.path)), false);
+  assert.deepEqual(diagnostics.creativeRequests, []);
+  assert.deepEqual(diagnostics.financialRequests, []);
+  assert.deepEqual(diagnostics.projectMutations, []);
+  assert.deepEqual(diagnostics.externalBrowserRequests, []);
+
+  const localRequestsBeforeTerminalReload = diagnostics.localExecutionRequests.length;
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'visible', timeout: 25_000 });
+  assert.equal(diagnostics.agentRequests.filter(entry => entry.method === 'POST' && /\/retry$/.test(entry.path)).length, 1, 'terminal reload must not retry twice');
+  assert.equal(diagnostics.localExecutionRequests.length, localRequestsBeforeTerminalReload, 'terminal reload must not execute local pixels again');
+  assert.deepEqual(await readProject(projectId), baseline, 'terminal Preview still requires explicit Accept');
+
+  console.log('P1F_BROWSER_JOB_CENTER_WORKFLOW_RETRY_ACCEPTED', JSON.stringify({
+    projectId,
+    invocationId: jobCenterInvocationId,
+    executionId: jobCenterExecutionId,
+    rootRunId: jobCenterRoot.run_id,
+    failedTicketId: jobCenterFirstTicket.ticketId,
+    replacementTicketIds: jobCenterReplacementAttempts.map(run => run.authority_ref),
+    providerCalls,
+  }));
   await context.close();
 } catch (error) {
   throw new Error([
@@ -384,6 +502,21 @@ async function readProject(projectId) {
   const h = await pool.query(`SELECT history_id,ordinal,image_storage_id,source_image_storage_id,kind,instruction FROM canonical_project_history WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND retired_at IS NULL ORDER BY ordinal ASC`, [projectId, tenantId, userId]);
   return Object.freeze({ project: Object.freeze({ project_id: p.rows[0].project_id, original_image_storage_id: p.rows[0].original_image_storage_id, current_image_storage_id: p.rows[0].current_image_storage_id, width: p.rows[0].width, height: p.rows[0].height, history_cursor_id: p.rows[0].history_cursor_id }), cursor: Object.freeze({ ordinal: p.rows[0].cursor_ordinal, kind: p.rows[0].cursor_kind }), history: Object.freeze(h.rows.map(row => Object.freeze({ ...row }))) });
 }
+async function waitForRunStatus(runId, expectedStatus, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let last;
+  while (Date.now() < deadline) {
+    const result = await pool.query(
+      'SELECT status,status_reason_code FROM canonical_execution_runs WHERE run_id=$1 AND tenant_id=$2 AND user_id=$3',
+      [runId, tenantId, userId],
+    );
+    last = result.rows[0];
+    if (last?.status === expectedStatus) return last;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`ExecutionRun ${runId} did not reach ${expectedStatus}: ${JSON.stringify(last)}`);
+}
+
 async function readFinancial() {
   const [wallets,reservations,journal,entitlements,grants] = await Promise.all([
     pool.query('SELECT owner_id,total_credited,lifetime_spent,balance,reserved,version FROM credit_wallets WHERE owner_id=$1 ORDER BY owner_id',[userId]),
