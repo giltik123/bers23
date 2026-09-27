@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
@@ -31,6 +31,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
         </label>
         <Button type="button" size="sm" variant="outline" aria-label="Grow selection" disabled={busy || !editable} onClick={onGrow}>Grow</Button>
         <Button type="button" size="sm" variant="outline" aria-label="Shrink selection" disabled={busy || !editable} onClick={onShrink}>Shrink</Button>
+        <Button type="button" size="sm" variant="outline" aria-label="Feather selection" disabled={busy || !editable} onClick={onFeather}>Feather</Button>
         <Button type="button" size="sm" variant="outline" disabled={busy || !selection.canUndo} onClick={onUndo}>Undo</Button>
         <Button type="button" size="sm" variant="outline" disabled={busy || !selection.canRedo} onClick={onRedo}>Redo</Button>
         <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onClear}>Clear</Button>

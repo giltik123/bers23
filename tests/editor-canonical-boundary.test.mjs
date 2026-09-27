@@ -16,9 +16,11 @@ test('Editor selection grow and shrink stay service-bound and expose bounded acc
   assert.match(editor, /selectionMorphologyRadius, setSelectionMorphologyRadius\] = useState\(2\)/);
   assert.match(editor, /onGrow=\{\(\) => updateSelection\(\(service\) => service\.grow\(selectionMorphologyRadius\)\)\}/);
   assert.match(editor, /onShrink=\{\(\) => updateSelection\(\(service\) => service\.shrink\(selectionMorphologyRadius\)\)\}/);
+  assert.match(editor, /onFeather=\{\(\) => updateSelection\(\(service\) => service\.feather\(selectionMorphologyRadius\)\)\}/);
   assert.match(toolbar, /aria-label="Selection edge radius"[^>]*min="1" max="32"/);
   assert.match(toolbar, /aria-label="Grow selection" disabled=\{busy \|\| !editable\}/);
   assert.match(toolbar, /aria-label="Shrink selection" disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /aria-label="Feather selection" disabled=\{busy \|\| !editable\}/);
 });
 
 test('Editor Crop remains a Core-authorized preview then explicit canonical Accept flow', async () => {

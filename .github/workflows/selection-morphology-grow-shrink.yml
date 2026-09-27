@@ -1,4 +1,4 @@
-name: Selection Morphology Grow Shrink
+name: Selection Morphology
 
 on:
   pull_request:
@@ -63,10 +63,14 @@ jobs:
           grep -q "MAX_SELECTION_MORPHOLOGY_PIXELS = 16_777_216" "$service"
           grep -q "OPERATION_EXPANDED" "$service"
           grep -q "OPERATION_CONTRACTED" "$service"
+          grep -q "OPERATION_FEATHERED" "$service"
+          grep -q "Uint32Array(pixels)" "$service"
           grep -q "service.grow(selectionMorphologyRadius)" "$editor"
           grep -q "service.shrink(selectionMorphologyRadius)" "$editor"
+          grep -q "service.feather(selectionMorphologyRadius)" "$editor"
           grep -q 'aria-label="Grow selection"' "$toolbar"
           grep -q 'aria-label="Shrink selection"' "$toolbar"
+          grep -q 'aria-label="Feather selection"' "$toolbar"
           ! grep -E -q "fetch\(|coreClient|provider|billing|credits" "$service"
           test -n "$BASE_SHA"
           git diff --check "$BASE_SHA"..HEAD
