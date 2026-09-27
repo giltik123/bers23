@@ -2,7 +2,7 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon']];
+const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso']];
 export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
@@ -39,6 +39,21 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
           <Button type="button" size="sm" variant="ghost" aria-label="Clear polygon vertices" disabled={busy || selection.polygonVertices.length === 0} onClick={onClearPolygon}>Clear Points</Button>
         </div>
       )}
+      {selection.mode === 'LASSO' && (
+        <div className="flex flex-wrap items-center gap-2" aria-label="Lasso selection controls">
+          <label className="flex items-center gap-2 text-xs">Composition
+            <select aria-label="Lasso composition" value={polygonComposition} disabled={busy} onChange={(event) => onPolygonComposition(event.target.value)} className="rounded-md border bg-background px-2 py-1">
+              <option value="REPLACE">Replace</option>
+              <option value="ADD">Add</option>
+              <option value="SUBTRACT">Subtract</option>
+              <option value="INTERSECT">Intersect</option>
+            </select>
+          </label>
+          <span className="text-xs text-muted-foreground" role="status">{selection.polygonVertices.length} sampled points</span>
+          <Button type="button" size="sm" variant="outline" aria-label="Apply lasso selection" disabled={busy || selection.polygonVertices.length < 3} onClick={onApplyPolygon}>Apply Lasso</Button>
+          <Button type="button" size="sm" variant="ghost" aria-label="Clear lasso points" disabled={busy || selection.polygonVertices.length === 0} onClick={onClearPolygon}>Clear Points</Button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 px-2 text-xs">Edge Radius
           <input aria-label="Selection edge radius" type="range" min="1" max="32" value={morphologyRadius} disabled={busy || !editable} onChange={(event) => onMorphologyRadius(Number(event.target.value))} />
@@ -56,7 +71,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
         <Button type="button" size="sm" disabled={!canDone} onClick={onDone}>Done</Button>
       </div>
       {selection.state === 'SELECTING' && <p className="text-xs text-muted-foreground" role="status">Preparing Smart Selection…</p>}
-      {selection.warning && <p className="text-xs text-amber-600" role="status">Smart selection is unavailable. Add and Remove remain available.</p>}
+      {selection.warning && <p className="text-xs text-amber-600" role="status">{selection.warning}</p>}
     </section>
   );
 }
