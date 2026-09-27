@@ -233,6 +233,36 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
     });
   }
 
+  bindExpiredRetryLocalTicketForRecovery(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot> {
+    const previousTicketId = requireToken(input.previousTicketId, 'previousTicketId');
+    const ticket = normalizeTicketBinding(input.ticket);
+    const continuationStepId = normalizeContinuationStepId(input.continuationStepId, ticket.stepId);
+    return this.mutate(input.executionId, input.scope, async (snapshot, client) => {
+      assertMutable(snapshot);
+      if (snapshot.state !== 'WAITING_FOR_LOCAL_RESULT' || !snapshot.outstandingLocal || !snapshot.currentStepId) {
+        throw conflict('Workflow can recover a retry ticket only while waiting for the previous exact attempt');
+      }
+      if (sameOutstandingTicket(snapshot.outstandingLocal, ticket, continuationStepId) && snapshot.outstandingLocal.ticketId !== previousTicketId) {
+        return snapshot;
+      }
+      assertExpectedRevision(snapshot.revision, input.expectedRevision);
+      const current = snapshot.outstandingLocal;
+      if (current.ticketId !== previousTicketId) throw conflict('Recovered retry previous ticket does not match the durable outstanding attempt');
+      if (ticket.ticketId === previousTicketId) throw conflict('Recovered retry must use a distinct Core-issued ticket identity');
+      if (continuationStepId !== current.stepId || continuationStepId !== snapshot.currentStepId) throw conflict('Recovered retry cannot change the durable workflow step');
+      if (snapshot.completedSteps.some(step => step.stepId === continuationStepId)) throw conflict('Completed workflow step cannot recover retry work');
+      const previousOperationStepId = await this.assertRetryablePreviousTicket(client, snapshot, current);
+      await this.assertOutstandingTicket(client, snapshot, ticket, 'EXPIRED_RECOVERY');
+      if (ticket.stepId !== previousOperationStepId) throw conflict('Recovered retry cannot change the underlying local operation step');
+      return Object.freeze({
+        state: 'WAITING_FOR_LOCAL_RESULT',
+        currentStepId: continuationStepId,
+        outstandingLocal: logicalTicketBinding(continuationStepId, ticket),
+        completedSteps: snapshot.completedSteps,
+      });
+    });
+  }
+
   completeLocalStep(input: CompleteLocalStepInput): Promise<WorkflowContinuationSnapshot> {
     const stepId = requireToken(input.stepId, 'stepId');
     const ticketId = requireToken(input.ticketId, 'ticketId');
