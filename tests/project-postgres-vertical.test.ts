@@ -109,8 +109,9 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
     throw new Error(`Unexpected external HTTP boundary: ${url}`);
   };
 
-  const production = await createProductionCore(config, { fetcher });
-  const server = createServer(createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready: async () => true, accepting: () => true }));
+  let nowMs = Date.now();
+  const production = await createProductionCore(config, { fetcher, now: () => nowMs });
+  const server = createServer(createCanonicalNodeHttpAdapter({ core: production.core, artifacts: production.artifacts, projects: production.projects, auth: production.auth, config, ready: async () => true, accepting: () => true, now: () => nowMs }));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert(address && typeof address === 'object');
   const baseUrl = `http://127.0.0.1:${address.port}`;
@@ -152,7 +153,22 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
   assert.equal(deliveredOriginal.status, 200); assert.equal(deliveredOriginal.headers.get('content-type'), 'image/png');
 
   const stableDelivery = await fetch(`${baseUrl}/api/core/artifacts/results/${encodeURIComponent(project.current_image_artifact_id)}`);
-  assert.notEqual(stableDelivery.status, 200, 'stable ORIGINAL identity must not be a delivery credential');
+  assert.equal(stableDelivery.status, 404, 'stable ORIGINAL identity must not be a delivery credential');
+  assert.equal((await stableDelivery.json() as any).error, 'result_not_found');
+
+  const shortDelivery = production.artifacts.external.issueStoredOriginalDelivery(
+    originalRow.storage_id,
+    { tenantId, userId, projectId: project.id },
+    nowMs + 1,
+  );
+  nowMs += 2;
+  const expiredDelivery = await fetch(`${baseUrl}/api/core/artifacts/results/${encodeURIComponent(shortDelivery)}`);
+  assert.equal(expiredDelivery.status, 404, 'expired delivery capability must fail closed');
+  assert.equal((await expiredDelivery.json() as any).error, 'result_not_found');
+
+  const malformedDelivery = await fetch(`${baseUrl}/api/core/artifacts/results/%E0%A4%A`);
+  assert.equal(malformedDelivery.status, 404, 'malformed delivery capability must be non-enumerating');
+  assert.equal((await malformedDelivery.json() as any).error, 'result_not_found');
 
   const alpha = new Uint8Array(width * height);
   for (const [x, y] of [[3, 3], [4, 3], [3, 4], [4, 4]]) alpha[y * width + x] = 255;
