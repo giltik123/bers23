@@ -1,10 +1,10 @@
 import React from 'react';
-import { MoreVertical, Pencil, Copy, Star, Archive, ArchiveRestore, Trash2 } from 'lucide-react';
+import { MoreVertical, Pencil, Star, Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 
-export default function ProjectActionsMenu({ project, onRename, onDuplicate, onToggleFavorite, onToggleArchive, onDelete }) {
+export default function ProjectActionsMenu({ project, onRename, onToggleFavorite, onToggleArchive, onDelete }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -18,7 +18,6 @@ export default function ProjectActionsMenu({ project, onRename, onDuplicate, onT
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => onRename(project)}><Pencil className="w-4 h-4 mr-2" /> Rename</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onDuplicate(project)}><Copy className="w-4 h-4 mr-2" /> Duplicate</DropdownMenuItem>
         <DropdownMenuItem onClick={() => onToggleFavorite(project)}>
           <Star className="w-4 h-4 mr-2" /> {project.favorite ? 'Unfavorite' : 'Favorite'}
         </DropdownMenuItem>

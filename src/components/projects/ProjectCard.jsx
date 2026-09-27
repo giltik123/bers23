@@ -5,7 +5,7 @@ import moment from 'moment';
 import ProjectActionsMenu from '@/components/projects/ProjectActionsMenu';
 import { previewCache } from '@/lib/performance/previewCache';
 
-export default function ProjectCard({ project, onRename, onDuplicate, onToggleFavorite, onToggleArchive, onDelete }) {
+export default function ProjectCard({ project, onRename, onToggleFavorite, onToggleArchive, onDelete }) {
   const edits = project.operations?.length || 0;
   const previewUrl = previewCache.gallery(project);
   return (
@@ -41,7 +41,6 @@ export default function ProjectCard({ project, onRename, onDuplicate, onToggleFa
         <ProjectActionsMenu
           project={project}
           onRename={onRename}
-          onDuplicate={onDuplicate}
           onToggleFavorite={onToggleFavorite}
           onToggleArchive={onToggleArchive}
           onDelete={onDelete}
