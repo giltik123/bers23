@@ -92,6 +92,7 @@ const diagnostics = {
   pageErrors: [],
   consoleErrors: [],
   requestFailures: [],
+  httpErrors: [],
   externalBrowserRequests: [],
 };
 
