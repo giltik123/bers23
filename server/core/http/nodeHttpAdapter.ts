@@ -86,9 +86,18 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       const currentAuthorization = () => requestAuthorization(request, input.config);
       const resultMatch = path.match(/^\/api\/core\/artifacts\/results\/([^/]+)$/);
       if (resultMatch && request.method === 'GET') {
-        const token=decodeURIComponent(resultMatch[1]); let claim; try { claim=input.artifacts.external.resolveStoredOriginalDelivery(token); } catch { claim=input.artifacts.external.resolveStoredFinalDelivery(token); }
+        let token;
+        try { token = decodeURIComponent(resultMatch[1]); }
+        catch { return sendError(response, 404, 'result_not_found', 'Image artifact is unavailable', correlationId, false); }
+
+        let claim;
+        try { claim = input.artifacts.external.resolveStoredOriginalDelivery(token); }
+        catch {
+          try { claim = input.artifacts.external.resolveStoredFinalDelivery(token); }
+          catch { return sendError(response, 404, 'result_not_found', 'Image artifact is unavailable', correlationId, false); }
+        }
         const stored = await input.artifacts.images.loadSource(claim.storageId, claim);
-        if (!stored) return sendError(response, 404, 'result_not_found', 'Final image artifact is unavailable', correlationId, false);
+        if (!stored) return sendError(response, 404, 'result_not_found', 'Image artifact is unavailable', correlationId, false);
         response.statusCode = 200; response.setHeader('Content-Type', stored.contentType); response.setHeader('Content-Length', stored.bytes.byteLength); response.setHeader('Cache-Control', 'private, max-age=300'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(stored.bytes); return;
       }
       if (path === '/api/core/auth/register' && request.method === 'POST') {
