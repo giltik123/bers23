@@ -272,3 +272,51 @@ test('unknown durable plan identities fail closed without either execution deleg
   assert.equal(r.state.projectBarriers, 0);
   assert.equal(r.calls.includes('admission-lock'), false);
 });
+
+
+test('new bounded start maps unavailable or wrong-scope durable source identity to non-enumerating 404', async () => {
+  const r = runtime({
+    artifacts: {
+      async resolve(queryScope, artifactId) {
+        r.calls.push('artifact-resolve');
+        assert.deepEqual(queryScope, scope);
+        assert.equal(artifactId, command.sourceArtifactId);
+        throw Object.assign(new Error('Artifact is not a scope-bound durable canonical IMAGE or MASK'), {
+          code: 'durable_artifact_unavailable',
+        });
+      },
+    },
+  });
+  await assert.rejects(
+    () => r.facade.start(command, auth),
+    error => error?.status === 404 && error?.code === 'bounded_agent_source_artifact_unavailable',
+  );
+  assert.equal(r.state.puts, 0);
+  assert.equal(r.state.aeeStarts, 0);
+  assert.equal(r.state.legacyStarts, 0);
+  assert.deepEqual(r.calls, [
+    'continuation-by-client',
+    'admission-lock',
+    'continuation-by-client',
+    'project-share-lock',
+    'project-source',
+    'artifact-resolve',
+  ]);
+});
+
+test('new bounded start preserves durable lineage integrity failures as internal errors', async () => {
+  const integrity = Object.assign(new Error('Canonical FINAL lineage is invalid'), { code: 'durable_lineage_invalid' });
+  const r = runtime({
+    artifacts: {
+      async resolve(queryScope, artifactId) {
+        r.calls.push('artifact-resolve');
+        assert.deepEqual(queryScope, scope);
+        assert.equal(artifactId, command.sourceArtifactId);
+        throw integrity;
+      },
+    },
+  });
+  await assert.rejects(() => r.facade.start(command, auth), error => error === integrity);
+  assert.equal(r.state.puts, 0);
+  assert.equal(r.state.aeeStarts, 0);
+});
