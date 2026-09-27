@@ -2,8 +2,8 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon']];
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
@@ -21,9 +21,24 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
       <div className="flex flex-wrap gap-2">
         {modes.map(([id, label]) => <Button key={id} type="button" size="sm" variant={selection.mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => onMode(id)}>{label}</Button>)}
         <label className="flex items-center gap-2 px-2 text-xs">Brush Size
-          <input aria-label="Brush Size" type="range" min="2" max="96" value={brushSize} disabled={busy} onChange={(event) => onBrushSize(Number(event.target.value))} />
+          <input aria-label="Brush Size" type="range" min="2" max="96" value={brushSize} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushSize(Number(event.target.value))} />
         </label>
       </div>
+      {selection.mode === 'POLYGON' && (
+        <div className="flex flex-wrap items-center gap-2" aria-label="Polygon selection controls">
+          <label className="flex items-center gap-2 text-xs">Composition
+            <select aria-label="Polygon composition" value={polygonComposition} disabled={busy} onChange={(event) => onPolygonComposition(event.target.value)} className="rounded-md border bg-background px-2 py-1">
+              <option value="REPLACE">Replace</option>
+              <option value="ADD">Add</option>
+              <option value="SUBTRACT">Subtract</option>
+              <option value="INTERSECT">Intersect</option>
+            </select>
+          </label>
+          <span className="text-xs text-muted-foreground" role="status">{selection.polygonVertices.length} vertices</span>
+          <Button type="button" size="sm" variant="outline" aria-label="Apply polygon selection" disabled={busy || selection.polygonVertices.length < 3} onClick={onApplyPolygon}>Apply Polygon</Button>
+          <Button type="button" size="sm" variant="ghost" aria-label="Clear polygon vertices" disabled={busy || selection.polygonVertices.length === 0} onClick={onClearPolygon}>Clear Points</Button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 px-2 text-xs">Edge Radius
           <input aria-label="Selection edge radius" type="range" min="1" max="32" value={morphologyRadius} disabled={busy || !editable} onChange={(event) => onMorphologyRadius(Number(event.target.value))} />

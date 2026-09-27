@@ -1,5 +1,5 @@
 import { createOriginalMask, displayToOriginal, type MaskSource } from '../../platform/creative/pipeline/ControlledLocalEdit';
-import type { AnalysisTransform, BrushStroke, CanonicalMaskArtifactPort, InteractiveSegmentationPort, MaskQualityResult, PromptPoint, SelectionDraftSnapshot, SelectionMode, SelectionTelemetry } from './contracts';
+import type { AnalysisTransform, BrushStroke, CanonicalMaskArtifactPort, InteractiveSegmentationPort, MaskQualityResult, PolygonComposition, PolygonVertex, PromptPoint, SelectionDraftSnapshot, SelectionMode, SelectionTelemetry } from './contracts';
 import type { PrivacyMode } from '../../platform/creative/local-ai';
 
 const MAX_HISTORY = 30, FULL_WARNING = .97, TINY_WARNING = .0001;
@@ -7,13 +7,41 @@ export const MAX_SELECTION_MORPHOLOGY_RADIUS = 32;
 export const MAX_SELECTION_MORPHOLOGY_DIMENSION = 8192;
 export const MAX_SELECTION_MORPHOLOGY_PIXELS = 16_777_216;
 export const MAX_SELECTION_MORPHOLOGY_WORK = 67_108_864;
+export const MAX_SELECTION_POLYGON_VERTICES = 256;
+export const MAX_SELECTION_POLYGON_WORK = 17_000_000;
+const POLYGON_FIXED_SCALE = 256;
 type HistoryEntry = Readonly<{ alpha: Uint8Array; source: MaskSource; provenance: readonly string[] }>;
-type Draft = { id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; source: MaskSource; state: SelectionDraftSnapshot['state']; mode: SelectionMode; points: PromptPoint[]; provenance: string[]; requestId?: string; canonicalArtifactId?: string; refinementParentArtifactId?: string; quality?: MaskQualityResult; warning?: string; history: HistoryEntry[]; historyIndex: number; startedAt: number; manualCorrections: number; undoCount: number };
+type Draft = { id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; source: MaskSource; state: SelectionDraftSnapshot['state']; mode: SelectionMode; points: PromptPoint[]; polygonVertices: PolygonVertex[]; provenance: string[]; requestId?: string; canonicalArtifactId?: string; refinementParentArtifactId?: string; quality?: MaskQualityResult; warning?: string; history: HistoryEntry[]; historyIndex: number; startedAt: number; manualCorrections: number; undoCount: number };
 export class SelectionApplicationService {
   #draft?: Draft; #sequence = 0;
   constructor(private readonly segmentation: InteractiveSegmentationPort, private readonly artifacts: CanonicalMaskArtifactPort, private readonly telemetry: (event: SelectionTelemetry) => void = () => {}, private readonly now = () => performance.now()) {}
-  start(input: Readonly<{ imageArtifactId: string; width: number; height: number }>): SelectionDraftSnapshot { if (!input.imageArtifactId || input.width < 1 || input.height < 1) throw new Error('Invalid selection source'); this.segmentation.cancel(this.#draft?.requestId ?? ''); this.#draft = { ...input, id: `selection-${++this.#sequence}`, alpha: new Uint8Array(input.width * input.height), source: 'USER', state: 'NOTHING_SELECTED', mode: 'SMART_SELECT', points: [], provenance: [], history: [], historyIndex: -1, startedAt: this.now(), manualCorrections: 0, undoCount: 0 }; return this.snapshot(); }
+  start(input: Readonly<{ imageArtifactId: string; width: number; height: number }>): SelectionDraftSnapshot { if (!input.imageArtifactId || input.width < 1 || input.height < 1) throw new Error('Invalid selection source'); this.segmentation.cancel(this.#draft?.requestId ?? ''); const alpha = new Uint8Array(input.width * input.height); const initial: HistoryEntry = Object.freeze({ alpha: new Uint8Array(alpha), source: 'USER', provenance: Object.freeze([]) }); this.#draft = { ...input, id: `selection-${++this.#sequence}`, alpha, source: 'USER', state: 'NOTHING_SELECTED', mode: 'SMART_SELECT', points: [], polygonVertices: [], provenance: [], history: [initial], historyIndex: 0, startedAt: this.now(), manualCorrections: 0, undoCount: 0 }; return this.snapshot(); }
   setMode(mode: SelectionMode) { this.required().mode = mode; return this.snapshot(); }
+  polygonVertex(input: Readonly<{ displayPoint: { x: number; y: number }; view: BrushStroke['view'] }>): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='POLYGON') throw new Error('Polygon vertices require POLYGON mode');
+    if(d.polygonVertices.length>=MAX_SELECTION_POLYGON_VERTICES) throw new Error('Selection polygon vertex limit exceeded');
+    const original=displayToOriginal(input.displayPoint,input.view);
+    const vertex=quantizePolygonVertex(original,d.width,d.height);
+    const previous=d.polygonVertices.at(-1);
+    if(!previous||previous.x!==vertex.x||previous.y!==vertex.y)d.polygonVertices.push(vertex);
+    return this.snapshot();
+  }
+  clearPolygon(): SelectionDraftSnapshot { const d=this.required(); d.polygonVertices=[]; return this.snapshot(); }
+  applyPolygon(composition: PolygonComposition): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='POLYGON') throw new Error('Polygon application requires POLYGON mode');
+    const polygon=rasterizeSelectionPolygon(d.polygonVertices,d.width,d.height);
+    const alpha=composeSelectionMask(d.alpha,polygon,composition);
+    const source=polygonSource(composition);
+    this.commit(d,alpha,source);
+    d.polygonVertices=[];
+    d.canonicalArtifactId=undefined;
+    d.manualCorrections++;
+    d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1);
+    d.state=d.quality.empty?'NOTHING_SELECTED':'REFINING';
+    return this.snapshot();
+  }
   async smartPoint(input: Readonly<{ displayPoint: { x: number; y: number }; view: BrushStroke['view']; negative?: boolean; privacyMode: PrivacyMode; analysisMaxEdge?: number; memoryBudgetBytes?: number }>): Promise<SelectionDraftSnapshot> {
     const d = this.required(), original = displayToOriginal(input.displayPoint, input.view), point: PromptPoint = { x: original.x, y: original.y, label: input.negative ? 'NEGATIVE' : 'POSITIVE', coordinateSpace: 'ORIGINAL' };
     if (d.requestId) this.segmentation.cancel(d.requestId);
@@ -42,7 +70,7 @@ export class SelectionApplicationService {
   redo() { const d=this.required(); if(d.historyIndex<d.history.length-1){d.historyIndex++;this.restoreHistory(d,d.history[d.historyIndex]);d.canonicalArtifactId=undefined;d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1);} return this.snapshot(); }
   cancel() { const id=this.#draft?.requestId; if(id)this.segmentation.cancel(id); this.#draft=undefined; }
   async done() { const d=this.required(), quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1); if(quality.empty) throw new Error('Cannot persist an empty selection'); const mask=createOriginalMask({artifactId:`mask-${d.id}`,width:d.width,height:d.height,alpha:d.alpha,source:d.source}); const metadata={coordinateSpace:'ORIGINAL',encoding:'ALPHA_8_LOSSLESS',provenance:[...d.provenance],quality,sourceImageArtifactId:d.imageArtifactId,parentMaskArtifactId:d.refinementParentArtifactId}; const artifact=d.canonicalArtifactId&&this.artifacts.admitted?await this.artifacts.admitted(d.canonicalArtifactId,mask,metadata):await this.artifacts.persist(mask,metadata); d.state='READY'; return artifact; }
-  snapshot(): SelectionDraftSnapshot { const d=this.required(); return Object.freeze({...d,alpha:new Uint8Array(d.alpha),points:Object.freeze([...d.points]),provenance:Object.freeze([...d.provenance]),canUndo:d.historyIndex>0,canRedo:d.historyIndex<d.history.length-1,history:undefined,historyIndex:undefined,startedAt:undefined,manualCorrections:undefined,undoCount:undefined,canonicalArtifactId:undefined,refinementParentArtifactId:undefined,source:undefined}) as SelectionDraftSnapshot; }
+  snapshot(): SelectionDraftSnapshot { const d=this.required(); return Object.freeze({...d,alpha:new Uint8Array(d.alpha),points:Object.freeze([...d.points]),polygonVertices:Object.freeze(d.polygonVertices.map(vertex=>Object.freeze({...vertex}))),provenance:Object.freeze([...d.provenance]),canUndo:d.historyIndex>0,canRedo:d.historyIndex<d.history.length-1,history:undefined,historyIndex:undefined,startedAt:undefined,manualCorrections:undefined,undoCount:undefined,canonicalArtifactId:undefined,refinementParentArtifactId:undefined,source:undefined}) as SelectionDraftSnapshot; }
   private morphology(kind: 'GROW' | 'SHRINK', radius: number): SelectionDraftSnapshot {
     const d=this.required();
     if(d.state!=='SELECTED'&&d.state!=='REFINING') throw new Error('Selection is not ready for morphology');
@@ -55,9 +83,82 @@ export class SelectionApplicationService {
     d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1);
     return this.snapshot();
   }
-  private restoreHistory(d: Draft, entry: HistoryEntry) { d.alpha=new Uint8Array(entry.alpha); d.source=entry.source; d.provenance=[...entry.provenance]; }
+  private restoreHistory(d: Draft, entry: HistoryEntry) { d.alpha=new Uint8Array(entry.alpha); d.source=entry.source; d.provenance=[...entry.provenance]; d.state=historyState(entry); }
   private required(){if(!this.#draft)throw new Error('No active selection draft');return this.#draft}
   private commit(d:Draft,alpha:Uint8Array,source:MaskSource){d.alpha=alpha;d.source=source;d.provenance.push(source);d.history=d.history.slice(0,d.historyIndex+1);d.history.push(Object.freeze({alpha:new Uint8Array(alpha),source,provenance:Object.freeze([...d.provenance])}));if(d.history.length>MAX_HISTORY)d.history.shift();d.historyIndex=d.history.length-1;}
+}
+function historyState(entry: HistoryEntry): SelectionDraftSnapshot['state'] {
+  if(!entry.alpha.some(value=>value!==0)) return 'NOTHING_SELECTED';
+  return entry.source==='SEGMENTATION'?'SELECTED':'REFINING';
+}
+function polygonSource(composition: PolygonComposition): MaskSource {
+  if(composition==='REPLACE') return 'POLYGON_REPLACE';
+  if(composition==='ADD') return 'POLYGON_ADD';
+  if(composition==='SUBTRACT') return 'POLYGON_SUBTRACT';
+  if(composition==='INTERSECT') return 'POLYGON_INTERSECT';
+  throw new Error('Selection polygon composition is unsupported');
+}
+function quantizePolygonVertex(point: Readonly<{x:number;y:number}>,width:number,height:number): PolygonVertex {
+  if(!Number.isFinite(point.x)||!Number.isFinite(point.y)) throw new Error('Selection polygon vertex is invalid');
+  const x=Math.max(0,Math.min(width*POLYGON_FIXED_SCALE,Math.round(point.x*POLYGON_FIXED_SCALE)))/POLYGON_FIXED_SCALE;
+  const y=Math.max(0,Math.min(height*POLYGON_FIXED_SCALE,Math.round(point.y*POLYGON_FIXED_SCALE)))/POLYGON_FIXED_SCALE;
+  return Object.freeze({x,y,coordinateSpace:'ORIGINAL' as const});
+}
+export function rasterizeSelectionPolygon(vertices: readonly PolygonVertex[],width:number,height:number): Uint8Array {
+  if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1||width>MAX_SELECTION_MORPHOLOGY_DIMENSION||height>MAX_SELECTION_MORPHOLOGY_DIMENSION) throw new Error('Selection polygon dimensions exceed deterministic bounds');
+  const pixels=width*height;
+  if(!Number.isSafeInteger(pixels)||pixels>MAX_SELECTION_MORPHOLOGY_PIXELS) throw new Error('Selection polygon pixel count exceeds deterministic bounds');
+  if(vertices.length<3) throw new Error('Selection polygon requires at least three vertices');
+  if(vertices.length>MAX_SELECTION_POLYGON_VERTICES) throw new Error('Selection polygon vertex limit exceeded');
+  const work=pixels+height*vertices.length;
+  if(!Number.isSafeInteger(work)||work>MAX_SELECTION_POLYGON_WORK) throw new Error('Selection polygon work exceeds deterministic bounds');
+  const fixed=vertices.map(vertex=>{
+    if(vertex.coordinateSpace!=='ORIGINAL'||!Number.isFinite(vertex.x)||!Number.isFinite(vertex.y)) throw new Error('Selection polygon vertex is invalid');
+    const x=Math.round(vertex.x*POLYGON_FIXED_SCALE),y=Math.round(vertex.y*POLYGON_FIXED_SCALE);
+    if(x<0||x>width*POLYGON_FIXED_SCALE||y<0||y>height*POLYGON_FIXED_SCALE) throw new Error('Selection polygon vertex is outside source bounds');
+    return Object.freeze({x,y});
+  });
+  const unique=new Set(fixed.map(vertex=>`${vertex.x}:${vertex.y}`));
+  if(unique.size<3) throw new Error('Selection polygon requires three distinct vertices');
+  const output=new Uint8Array(pixels),intersections:number[]=[];
+  for(let y=0;y<height;y++){
+    intersections.length=0;
+    const py=y*POLYGON_FIXED_SCALE+POLYGON_FIXED_SCALE/2;
+    for(let i=0;i<fixed.length;i++){
+      let a=fixed[i],b=fixed[(i+1)%fixed.length];
+      if(a.y===b.y) continue;
+      if(a.y>b.y){const swap=a;a=b;b=swap;}
+      if(py<a.y||py>=b.y) continue;
+      const dy=b.y-a.y,dx=b.x-a.x;
+      const numerator=a.x*dy+(py-a.y)*dx;
+      intersections.push(Math.floor(numerator/dy));
+    }
+    intersections.sort((a,b)=>a-b);
+    if(intersections.length%2!==0) throw new Error('Selection polygon scanline parity is invalid');
+    for(let i=0;i<intersections.length;i+=2){
+      const left=intersections[i],right=intersections[i+1];
+      if(right<=left) continue;
+      const start=Math.max(0,Math.ceil((left-POLYGON_FIXED_SCALE/2)/POLYGON_FIXED_SCALE));
+      const end=Math.min(width,Math.ceil((right-POLYGON_FIXED_SCALE/2)/POLYGON_FIXED_SCALE));
+      if(end>start) output.fill(255,y*width+start,y*width+end);
+    }
+  }
+  if(!output.some(value=>value!==0)) throw new Error('Selection polygon selects no pixels');
+  return output;
+}
+export function composeSelectionMask(current: Uint8Array,polygon: Uint8Array,composition: PolygonComposition): Uint8Array {
+  if(current.length!==polygon.length) throw new Error('Selection polygon composition dimensions mismatch');
+  if(composition!=='REPLACE'&&composition!=='ADD'&&composition!=='SUBTRACT'&&composition!=='INTERSECT') throw new Error('Selection polygon composition is unsupported');
+  const output=new Uint8Array(current.length);
+  if(composition==='REPLACE') return new Uint8Array(polygon);
+  for(let i=0;i<current.length;i++){
+    const inside=polygon[i]!==0;
+    if(composition==='ADD') output[i]=inside?255:current[i];
+    else if(composition==='SUBTRACT') output[i]=inside?0:current[i];
+    else if(composition==='INTERSECT') output[i]=inside?current[i]:0;
+    else throw new Error('Selection polygon composition is unsupported');
+  }
+  return output;
 }
 export function chooseAnalysis(originalWidth:number,originalHeight:number,maxEdge:number,memoryBudget:number):AnalysisTransform { let edge=Math.max(256,maxEdge); while(edge>256){const scale=Math.min(1,edge/Math.max(originalWidth,originalHeight)),w=Math.max(1,Math.round(originalWidth*scale)),h=Math.max(1,Math.round(originalHeight*scale)); const t={originalWidth,originalHeight,analysisWidth:w,analysisHeight:h,scaleX:w/originalWidth,scaleY:h/originalHeight,offsetX:0,offsetY:0};if(estimateMemory(t,35_000_000)<=memoryBudget)return Object.freeze(t);edge=Math.floor(edge*.75)} const scale=Math.min(1,256/Math.max(originalWidth,originalHeight));return Object.freeze({originalWidth,originalHeight,analysisWidth:Math.max(1,Math.round(originalWidth*scale)),analysisHeight:Math.max(1,Math.round(originalHeight*scale)),scaleX:scale,scaleY:scale,offsetX:0,offsetY:0})}
 export function estimateMemory(t:AnalysisTransform,modelWorkingBytes:number){return t.analysisWidth*t.analysisHeight*(4+3+1)+modelWorkingBytes}

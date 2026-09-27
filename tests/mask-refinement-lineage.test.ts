@@ -133,6 +133,24 @@ test('feather persists refined canonical MASK bytes with exact parent lineage', 
   assert.equal(persisted[0].metadata.provenance.at(-1), 'OPERATION_FEATHERED');
 });
 
+
+test('polygon refinement preserves canonical source and admitted parent MASK lineage', async () => {
+  const { service, persisted, admitted } = fixture();
+  await smart(service, 'canonical-source');
+  service.setMode('POLYGON');
+  for (const point of [{x:1,y:1},{x:6,y:1},{x:6,y:6},{x:1,y:6}]) {
+    service.polygonVertex({ displayPoint: point, view });
+  }
+  service.applyPolygon('ADD');
+  const result = await service.done();
+  assert.equal(result.id, 'persisted-1');
+  assert.equal(admitted.length, 0);
+  assert.equal(persisted[0].metadata.sourceImageArtifactId, 'canonical-source');
+  assert.equal(persisted[0].metadata.parentMaskArtifactId, 'core-admitted-mask');
+  assert.equal(persisted[0].mask.source, 'POLYGON_ADD');
+  assert.equal(persisted[0].metadata.provenance.at(-1), 'POLYGON_ADD');
+});
+
 test('manual-only selection has source-image lineage, no parent MASK, and performs zero inference calls', async () => {
   const { service, persisted, segmentationCalls } = fixture();
   service.start({ imageArtifactId: 'manual-source', width: 8, height: 8 });

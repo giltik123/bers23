@@ -23,6 +23,29 @@ test('Editor selection grow and shrink stay service-bound and expose bounded acc
   assert.match(toolbar, /aria-label="Feather selection" disabled=\{busy \|\| !editable\}/);
 });
 
+test('Editor polygon selection keeps raster authority in SelectionApplicationService and preview SVG-only', async () => {
+  const [editor, toolbar, canvas] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'),
+    readFile('src/components/editor/ImageCanvas.jsx', 'utf8'),
+  ]);
+  assert.match(editor, /polygonComposition, setPolygonComposition\] = useState\('REPLACE'\)/);
+  assert.match(editor, /service\.polygonVertex\(\{ displayPoint: point, view \}\)/);
+  assert.match(editor, /service\.applyPolygon\(polygonComposition\)/);
+  assert.match(editor, /service\.clearPolygon\(\)/);
+  assert.match(toolbar, /\['POLYGON', 'Polygon'\]/);
+  assert.match(toolbar, /aria-label="Polygon composition"/);
+  assert.match(toolbar, /aria-label="Apply polygon selection"/);
+  assert.match(toolbar, /aria-label="Clear polygon vertices"/);
+  const previewStart = canvas.indexOf('function PolygonPreview');
+  const previewEnd = canvas.indexOf('function CropOverlay', previewStart);
+  assert(previewStart >= 0 && previewEnd > previewStart);
+  const preview = canvas.slice(previewStart, previewEnd);
+  assert.match(preview, /<svg/);
+  assert.match(preview, /<polyline/);
+  assert.doesNotMatch(preview, /getContext|putImageData|fetch\(|coreClient|persist/);
+});
+
 test('Editor Crop remains a Core-authorized preview then explicit canonical Accept flow', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const crop = await readFile('src/application/createCrop.ts', 'utf8');
