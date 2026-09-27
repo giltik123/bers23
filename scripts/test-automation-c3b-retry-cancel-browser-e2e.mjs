@@ -107,7 +107,7 @@ try {
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/editor' && Boolean(url.searchParams.get('id')), { timeout: 20_000 });
   const projectId = new URL(page.url()).searchParams.get('id');
   assert(projectId);
-  await page.getByText('Object detection is optional. You can edit the whole image now or detect/select an object first.', { exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
+  await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
   await ensureCsrf(page);
 
   const baseline = await readProject(projectId);

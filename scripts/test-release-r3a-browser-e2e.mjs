@@ -157,10 +157,10 @@ try {
   assert(projectId, 'Projects upload must navigate to Editor with canonical project id');
   diagnostics.projectId = projectId;
 
-  await page.getByText('Object detection is optional. You can edit the whole image now or detect/select an object first.', { exact: true })
+  await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
     .waitFor({ state: 'visible', timeout: 20_000 });
   await page.getByText('Prompt', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
-  await page.getByRole('button', { name: /Detect objects/i }).waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByRole('button', { name: 'Smart Select' }).waitFor({ state: 'visible', timeout: 10_000 });
 
   const projectImage = page.getByRole('img', { name: 'Project' });
   await projectImage.waitFor({ state: 'visible', timeout: 15_000 });

@@ -137,7 +137,7 @@ try {
   const projectId = new URL(page.url()).searchParams.get('id');
   assert(projectId, 'Projects upload must navigate to Editor with canonical project id');
 
-  await page.getByText('Object detection is optional. You can edit the whole image now or detect/select an object first.', { exact: true })
+  await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
     .waitFor({ state: 'visible', timeout: 20_000 });
   const projectImage = await waitImage(page, 'Project', 12, 8);
   const initialProjectImageSrc = await projectImage.evaluate(element => element.src);

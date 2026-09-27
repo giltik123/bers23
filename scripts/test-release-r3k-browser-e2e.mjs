@@ -190,7 +190,7 @@ try {
   assert(projectId, 'Projects upload must navigate to Editor with canonical project id');
   const hintKey = `${HINT_PREFIX}${projectId}`;
 
-  await page.getByText('Object detection is optional. You can edit the whole image now or detect/select an object first.', { exact: true })
+  await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
     .waitFor({ state: 'visible', timeout: 20_000 });
   await waitImage(page, 'Project', 12, 8);
   const baseline = await readProjectState(projectId);

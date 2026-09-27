@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useState, useMemo, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ScanSearch, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
@@ -30,7 +30,6 @@ import VersionsPanel from '@/components/editor/VersionsPanel';
 import ErrorBanner from '@/components/editor/ErrorBanner';
 import PlanPreview from '@/components/editor/PlanPreview';
 import { aiPlanner } from '@/lib/planner/aiPlanner';
-import { segmentationService } from '@/lib/segmentation/segmentationService';
 import ObjectPanel from '@/components/editor/ObjectPanel';
 import EditorStatusBar from '@/components/editor/EditorStatusBar';
 import SegmentationProgress from '@/components/editor/SegmentationProgress';
@@ -56,7 +55,6 @@ import AdaptivePanel from '@/components/adaptive/AdaptivePanels';
 import AdaptiveNavigation from '@/components/adaptive/AdaptiveNavigation';
 import { usePlatformProfile } from '@/lib/platform/PlatformManager';
 import CreditsBar from '@/components/editor/credits/CreditsBar';
-import { jobManager } from '@/lib/jobs/jobManager';
 import JobQueuePanel from '@/components/editor/jobs/JobQueuePanel';
 import { notificationCenter } from '@/lib/notifications/notificationCenter';
 import { sessionRecovery } from '@/lib/performance/sessionRecovery';
@@ -118,7 +116,6 @@ export default function Editor() {
   } = useProject(projectId);
 
   const [instruction, setInstruction] = useState('');
-  const [detecting, setDetecting] = useState(false);
   const [applying, setApplying] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [pendingResult, setPendingResult] = useState(null);
@@ -145,7 +142,6 @@ export default function Editor() {
       });
     },
   });
-  const [segMeta, setSegMeta] = useState(null);
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
   const [brushSize, setBrushSize] = useState(24);
@@ -172,7 +168,6 @@ export default function Editor() {
   const editorBusy = localEditorBusy || tryOnActive || agentActive;
   const tryOnBlockedByEditor = localEditorBusy
     || agentActive
-    || detecting
     || committing
     || Boolean(selection)
     || cropInteractionActive
@@ -181,7 +176,6 @@ export default function Editor() {
     || (Boolean(pendingResult) && pendingResult?.kind !== 'FASHION_TRYON');
   const agentBlockedByEditor = localEditorBusy
     || tryOnActive
-    || detecting
     || committing
     || Boolean(selection)
     || cropInteractionActive
@@ -222,7 +216,7 @@ export default function Editor() {
   };
 
   const startSelection = () => {
-    if (orthogonalTransformInFlightRef.current || editorBusy || detecting || committing || pendingResult || cropInteractionActive || resizeInteractionActive) return;
+    if (orthogonalTransformInFlightRef.current || editorBusy || committing || pendingResult || cropInteractionActive || resizeInteractionActive) return;
     const imageArtifactId = project.current_image_artifact_id;
     if (!imageArtifactId) throw new Error('Canonical project image identity is unavailable');
     const segmentation = createSelectionSegmentation({ projectId: project.id, imageArtifactId, source: project.current_image_url });
@@ -389,7 +383,7 @@ export default function Editor() {
     if (orthogonalTransformInFlightRef.current) return;
     if (isOrthogonalTransformStartBlocked({
       editorBusy,
-      detecting,
+      detecting: false,
       committing,
       pendingResult,
       selection,
@@ -448,7 +442,7 @@ export default function Editor() {
   useEffect(() => {
     if (platform.formFactor !== 'desktop') return;
     const shortcut = (event) => {
-      if (editorBusy || detecting || cropInteractionActive || resizeInteractionActive || pendingResult) return;
+      if (editorBusy || cropInteractionActive || resizeInteractionActive || pendingResult) return;
       if (event.target.matches('input, textarea')) return;
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
       event.preventDefault();
@@ -456,7 +450,7 @@ export default function Editor() {
     };
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
-  }, [platform.formFactor, undo, redo, editorBusy, detecting, cropInteractionActive, resizeInteractionActive, pendingResult]);
+  }, [platform.formFactor, undo, redo, editorBusy, cropInteractionActive, resizeInteractionActive, pendingResult]);
 
   const isolateBackground = async (retryContext = null) => {
     const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
@@ -530,26 +524,6 @@ export default function Editor() {
     if (!project || !instruction.trim()) return null;
     return aiPlanner.plan({ project, instruction, objects, selectedObject: selected });
   }, [project, instruction, objects, selected]);
-
-  const detect = async () => {
-    setDetecting(true);
-    setAiError(null);
-    setLastAction(() => detect);
-    try {
-      // All object detection goes through the Segmentation Layer — never a provider directly.
-      const result = await jobManager.submit({
-        type: 'segmentation', label: 'Detect objects', priority: 'high', projectId: project.id,
-        provider: 'sam3', estimatedTime: 12000,
-        run: () => segmentationService.start({ projectId, imageUrl: project.current_image_url }),
-      });
-      setSegMeta({ status: result.status, fromCache: result.fromCache });
-      await saveObjects(result.objects);
-    } catch (e) {
-      setAiError(e.message || 'Object detection failed');
-    } finally {
-      setDetecting(false);
-    }
-  };
 
   // Single AI edits cross the application boundary; the Core canonical platform is execution authority.
   const applyEdit = async (bypassCache = false, { skipDriftCheck = false, instructionOverride = null } = {}) => {
@@ -723,20 +697,20 @@ export default function Editor() {
         </div>
         <AdaptiveToolbar>
           <HistoryControls
-            canUndo={canUndo} canRedo={canRedo} disabled={editorBusy || detecting || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
+            canUndo={canUndo} canRedo={canRedo} disabled={editorBusy || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
             onUndo={undo} onRedo={redo} onRestore={restoreOriginal}
           />
           <VersionsPanel
             versions={project.versions || []}
             onCreate={handleCreateVersion}
             onRestore={restoreVersion}
-            disabled={editorBusy || detecting || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
+            disabled={editorBusy || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
           />
           <Button
             variant="ghost"
             size="sm"
             onClick={() => upscaleImage()}
-            disabled={!SUPER_RESOLUTION_PRODUCTION_AVAILABLE || !project.current_image_artifact_id || editorBusy || detecting || committing || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
+            disabled={!SUPER_RESOLUTION_PRODUCTION_AVAILABLE || !project.current_image_artifact_id || editorBusy || committing || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
             title={SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale the current image 4× on device' : 'Local Real-ESRGAN x4 is a candidate and is not production-approved yet'}
             aria-label={SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4 locally' : 'Upscale x4 local candidate unavailable'}
           >
@@ -819,7 +793,7 @@ export default function Editor() {
       <OrthogonalTransformToolbar
         busy={Boolean(orthogonalTransformingMode)}
         activeMode={orthogonalTransformingMode}
-        disabled={!project.current_image_artifact_id || editorBusy || detecting || committing || Boolean(selection) || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
+        disabled={!project.current_image_artifact_id || editorBusy || committing || Boolean(selection) || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
         onApply={(mode) => applyOrthogonalTransform(mode)}
       />
 
@@ -849,20 +823,14 @@ export default function Editor() {
         selectionCount={objects.filter((o) => o.selected).length}
         selectionMode="single"
         maskedCount={objects.filter((o) => o.mask_url).length}
-        segmentationStatus={segMeta?.status || (objects.length ? 'completed' : 'idle')}
-        cacheStatus={segMeta ? (segMeta.fromCache ? 'hit' : 'miss') : 'empty'}
+        segmentationStatus={objects.length ? 'completed' : 'idle'}
+        cacheStatus="empty"
       />
 
       {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
       {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
-        <div className="space-y-2">
-          <Button onClick={detect} disabled={detecting || editorBusy || committing} className="w-full h-12 rounded-2xl text-base" variant="outline">
-            {detecting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <ScanSearch className="w-5 h-5 mr-2" />}
-            {detecting ? 'Detecting objects…' : 'Detect objects'}
-          </Button>
-          <p className="text-[11px] text-muted-foreground text-center">Object detection is optional. You can edit the whole image now or detect/select an object first.</p>
-        </div>
+        <p className="text-[11px] text-muted-foreground text-center">Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.</p>
       )}
 
       {pendingResult ? (
@@ -948,7 +916,7 @@ export default function Editor() {
                 instruction={instruction}
                 onInstructionChange={setInstruction}
                 onApply={() => applyEdit(false)}
-                applying={editorBusy || detecting || committing}
+                applying={editorBusy || committing}
               />
             </>
           )}

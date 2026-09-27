@@ -62,7 +62,7 @@ test('Rotate/Flip is fail-closed against double submit and competing Editor inte
   assert.match(editor, /const localEditorBusy = applying \|\| isolatingBackground \|\| upscaling \|\| cropping \|\| resizing \|\| Boolean\(orthogonalTransformingMode\)/);
   assert.match(editor, /const tryOnActive = tryOn\.state\.host\.active \|\| tryOn\.busy \|\| pendingResult\?\.kind === 'FASHION_TRYON'/);
   assert.match(editor, /const editorBusy = localEditorBusy \|\| tryOnActive/);
-  assert.match(editor, /disabled=\{!project\.current_image_artifact_id \|\| editorBusy \|\| detecting \|\| committing \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| cropInteractionActive \|\| resizeInteractionActive\}/);
+  assert.match(editor, /disabled=\{!project\.current_image_artifact_id \|\| editorBusy \|\| committing \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| cropInteractionActive \|\| resizeInteractionActive\}/);
   assert.match(editor, /isOrthogonalTransformStartBlocked\(/);
   assert.match(editor, /kind === 'ORTHOGONAL_TRANSFORM'/);
   assert.match(editor, /applyOrthogonalTransform\(pending\.context\?\.mode, pending\.context, \{ allowPendingResult: true \}\)/);
