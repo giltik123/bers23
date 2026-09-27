@@ -241,6 +241,13 @@ export default function Editor() {
       if (phase === 'down') setSelection(service.polygonVertex({ displayPoint: point, view }));
       return;
     }
+    if (selection.mode === 'LASSO') {
+      if (phase === 'down') setSelection(service.lassoStart({ displayPoint: point, view }));
+      else if (phase === 'move') setSelection(service.lassoVertex({ displayPoint: point, view }));
+      else if (phase === 'up') setSelection(service.lassoVertex({ displayPoint: point, view }, true));
+      else if (phase === 'cancel') setSelection(service.clearLasso());
+      return;
+    }
     if (phase === 'down') strokeRef.current = [point];
     else if (phase === 'move') strokeRef.current.push(point);
     else if (phase === 'up' && strokeRef.current.length) {
@@ -807,8 +814,8 @@ export default function Editor() {
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} onStart={startSelection}
         morphologyRadius={selectionMorphologyRadius} onMorphologyRadius={setSelectionMorphologyRadius}
         polygonComposition={polygonComposition} onPolygonComposition={setPolygonComposition}
-        onApplyPolygon={() => updateSelection((service) => service.applyPolygon(polygonComposition))}
-        onClearPolygon={() => updateSelection((service) => service.clearPolygon())}
+        onApplyPolygon={() => updateSelection((service) => selection.mode === 'LASSO' ? service.applyLasso(polygonComposition) : service.applyPolygon(polygonComposition))}
+        onClearPolygon={() => updateSelection((service) => selection.mode === 'LASSO' ? service.clearLasso() : service.clearPolygon())}
         startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}

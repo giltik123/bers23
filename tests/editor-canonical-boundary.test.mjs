@@ -46,6 +46,34 @@ test('Editor polygon selection keeps raster authority in SelectionApplicationSer
   assert.doesNotMatch(preview, /getContext|putImageData|fetch\(|coreClient|persist/);
 });
 
+test('Editor lasso captures pointer path but reuses deterministic polygon raster authority', async () => {
+  const [editor, toolbar, canvas] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'),
+    readFile('src/components/editor/ImageCanvas.jsx', 'utf8'),
+  ]);
+  assert.match(editor, /selection\.mode === 'LASSO'/);
+  assert.match(editor, /phase === 'down'\) setSelection\(service\.lassoStart\(\{ displayPoint: point, view \}\)\)/);
+  assert.match(editor, /phase === 'move'\) setSelection\(service\.lassoVertex\(\{ displayPoint: point, view \}\)\)/);
+  assert.match(editor, /phase === 'up'\) setSelection\(service\.lassoVertex\(\{ displayPoint: point, view \}, true\)\)/);
+  assert.match(editor, /phase === 'cancel'\) setSelection\(service\.clearLasso\(\)\)/);
+  assert.match(editor, /service\.applyLasso\(polygonComposition\)/);
+  assert.match(editor, /service\.clearLasso\(\)/);
+  assert.match(toolbar, /\['LASSO', 'Lasso'\]/);
+  assert.match(toolbar, /aria-label="Lasso composition"/);
+  assert.match(toolbar, /aria-label="Apply lasso selection"/);
+  assert.match(toolbar, /aria-label="Clear lasso points"/);
+  assert.match(toolbar, /\{selection\.warning\}/);
+  assert.match(canvas, /selection\?\.mode !== 'POLYGON' && selection\?\.mode !== 'LASSO'/);
+  assert.match(canvas, /onPointerMove=\{pointer\('move'\)\}/);
+  assert.match(canvas, /onPointerCancel=\{pointer\('cancel'\)\}/);
+  assert.match(canvas, /interactive \? 'touch-none' : ''/);
+  const previewStart = canvas.indexOf('function PolygonPreview');
+  const previewEnd = canvas.indexOf('function CropOverlay', previewStart);
+  const preview = canvas.slice(previewStart, previewEnd);
+  assert.doesNotMatch(preview, /getContext|putImageData|fetch\(|coreClient|persist/);
+});
+
 test('Editor Crop remains a Core-authorized preview then explicit canonical Accept flow', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const crop = await readFile('src/application/createCrop.ts', 'utf8');

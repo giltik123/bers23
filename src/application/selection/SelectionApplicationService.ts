@@ -9,6 +9,7 @@ export const MAX_SELECTION_MORPHOLOGY_PIXELS = 16_777_216;
 export const MAX_SELECTION_MORPHOLOGY_WORK = 67_108_864;
 export const MAX_SELECTION_POLYGON_VERTICES = 256;
 export const MAX_SELECTION_POLYGON_WORK = 17_000_000;
+export const MIN_SELECTION_LASSO_SAMPLE_PIXELS = 2;
 const POLYGON_FIXED_SCALE = 256;
 type HistoryEntry = Readonly<{ alpha: Uint8Array; source: MaskSource; provenance: readonly string[] }>;
 type Draft = { id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; source: MaskSource; state: SelectionDraftSnapshot['state']; mode: SelectionMode; points: PromptPoint[]; polygonVertices: PolygonVertex[]; provenance: string[]; requestId?: string; canonicalArtifactId?: string; refinementParentArtifactId?: string; quality?: MaskQualityResult; warning?: string; history: HistoryEntry[]; historyIndex: number; startedAt: number; manualCorrections: number; undoCount: number };
@@ -36,6 +37,44 @@ export class SelectionApplicationService {
     const source=polygonSource(composition);
     this.commit(d,alpha,source);
     d.polygonVertices=[];
+    d.canonicalArtifactId=undefined;
+    d.manualCorrections++;
+    d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1);
+    d.state=d.quality.empty?'NOTHING_SELECTED':'REFINING';
+    return this.snapshot();
+  }
+  lassoStart(input: Readonly<{ displayPoint: { x: number; y: number }; view: BrushStroke['view'] }>): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='LASSO') throw new Error('Lasso capture requires LASSO mode');
+    d.polygonVertices=[];
+    d.warning=undefined;
+    return this.lassoVertex(input,true);
+  }
+  lassoVertex(input: Readonly<{ displayPoint: { x: number; y: number }; view: BrushStroke['view'] }>,force=false): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='LASSO') throw new Error('Lasso vertices require LASSO mode');
+    const original=displayToOriginal(input.displayPoint,input.view);
+    const vertex=quantizePolygonVertex(original,d.width,d.height);
+    const previous=d.polygonVertices.at(-1);
+    if(previous&&previous.x===vertex.x&&previous.y===vertex.y)return this.snapshot();
+    if(previous&&!force){const dx=(vertex.x-previous.x)*POLYGON_FIXED_SCALE,dy=(vertex.y-previous.y)*POLYGON_FIXED_SCALE,threshold=MIN_SELECTION_LASSO_SAMPLE_PIXELS*POLYGON_FIXED_SCALE;if(dx*dx+dy*dy<threshold*threshold)return this.snapshot();}
+    if(d.polygonVertices.length>=MAX_SELECTION_POLYGON_VERTICES){
+      d.warning=`Lasso point limit reached (${MAX_SELECTION_POLYGON_VERTICES}). Apply or clear the current path.`;
+      return this.snapshot();
+    }
+    d.polygonVertices.push(vertex);
+    return this.snapshot();
+  }
+  clearLasso(): SelectionDraftSnapshot { const d=this.required(); d.polygonVertices=[]; d.warning=undefined; return this.snapshot(); }
+  applyLasso(composition: PolygonComposition): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='LASSO') throw new Error('Lasso application requires LASSO mode');
+    const polygon=rasterizeSelectionPolygon(d.polygonVertices,d.width,d.height);
+    const alpha=composeSelectionMask(d.alpha,polygon,composition);
+    const source=lassoSource(composition);
+    this.commit(d,alpha,source);
+    d.polygonVertices=[];
+    d.warning=undefined;
     d.canonicalArtifactId=undefined;
     d.manualCorrections++;
     d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1);
@@ -97,6 +136,13 @@ function polygonSource(composition: PolygonComposition): MaskSource {
   if(composition==='SUBTRACT') return 'POLYGON_SUBTRACT';
   if(composition==='INTERSECT') return 'POLYGON_INTERSECT';
   throw new Error('Selection polygon composition is unsupported');
+}
+function lassoSource(composition: PolygonComposition): MaskSource {
+  if(composition==='REPLACE') return 'LASSO_REPLACE';
+  if(composition==='ADD') return 'LASSO_ADD';
+  if(composition==='SUBTRACT') return 'LASSO_SUBTRACT';
+  if(composition==='INTERSECT') return 'LASSO_INTERSECT';
+  throw new Error('Selection lasso composition is unsupported');
 }
 function quantizePolygonVertex(point: Readonly<{x:number;y:number}>,width:number,height:number): PolygonVertex {
   if(!Number.isFinite(point.x)||!Number.isFinite(point.y)) throw new Error('Selection polygon vertex is invalid');

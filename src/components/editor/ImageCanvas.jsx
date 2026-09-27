@@ -25,7 +25,7 @@ function SelectionOverlay({ selection }) {
 }
 
 function PolygonPreview({ selection }) {
-  if (selection?.mode !== 'POLYGON' || !selection.polygonVertices?.length) return null;
+  if ((selection?.mode !== 'POLYGON' && selection?.mode !== 'LASSO') || !selection.polygonVertices?.length) return null;
   const points = selection.polygonVertices.map((vertex) => `${vertex.x},${vertex.y}`).join(' ');
   const closed = selection.polygonVertices.length >= 3;
   return (

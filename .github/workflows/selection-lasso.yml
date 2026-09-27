@@ -1,0 +1,74 @@
+name: Selection Lasso
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/application/selection/**'
+      - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/components/editor/ImageCanvas.jsx'
+      - 'src/pages/Editor.jsx'
+      - 'src/platform/creative/pipeline/ControlledLocalEdit.ts'
+      - 'tests/intelligent-selection.test.ts'
+      - 'tests/mask-refinement-lineage.test.ts'
+      - 'tests/editor-canonical-boundary.test.mjs'
+      - '.github/workflows/selection-lasso.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selection-lasso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck lasso selection surfaces
+        run: npm run typecheck
+      - name: Bundle deterministic lasso regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/p191-lasso
+          for file in tests/intelligent-selection.test.ts tests/mask-refinement-lineage.test.ts; do
+            out=".test-cache/p191-lasso/$(basename "${file%.ts}").mjs"
+            npx esbuild "$file" --bundle --platform=node --format=esm --target=node24 --outfile="$out" --external:node:* --external:pg --external:sharp
+          done
+      - name: Prove lasso sampling cap raster reuse history and lineage
+        run: |
+          node --test             .test-cache/p191-lasso/intelligent-selection.test.mjs             .test-cache/p191-lasso/mask-refinement-lineage.test.mjs
+      - name: Prove Editor lasso pointer path has no persisted mask authority
+        run: node --test tests/editor-canonical-boundary.test.mjs
+      - name: Build production browser
+        run: npm run build
+      - name: Preserve deterministic lasso authority
+        run: |
+          set -euo pipefail
+          service=src/application/selection/SelectionApplicationService.ts
+          editor=src/pages/Editor.jsx
+          toolbar=src/components/editor/SelectionToolbar.jsx
+          canvas=src/components/editor/ImageCanvas.jsx
+          grep -q "MIN_SELECTION_LASSO_SAMPLE_PIXELS = 2" "$service"
+          grep -q "MAX_SELECTION_POLYGON_VERTICES" "$service"
+          grep -q "rasterizeSelectionPolygon" "$service"
+          grep -q "service.applyLasso(polygonComposition)" "$editor"
+          grep -q "service.applyPolygon(polygonComposition)" "$editor"
+          grep -q 'aria-label="Lasso composition"' "$toolbar"
+          grep -q 'aria-label="Apply lasso selection"' "$toolbar"
+          grep -q "selection?.mode !== 'LASSO'" "$canvas"
+          ! grep -E -q "fetch\(|coreClient|provider|billing|credits" "$service"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
