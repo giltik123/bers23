@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Fingerprint, Lock, LockOpen, RefreshCw, Trash2, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Fingerprint, Lock, LockOpen, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { sceneMemory } from '@/lib/scene/sceneMemory';
 import { styleLock } from '@/lib/scene/styleLock';
@@ -23,7 +23,6 @@ export default function SceneMemoryPanel({ project }) {
   useEffect(() => consistencyEngine.subscribe(setReport), []);
 
   const memory = state.projectId === project.id ? state.memory : null;
-  const analyzing = state.status === 'analyzing';
 
   const toggleLock = (enabled) => {
     styleLock.setEnabled(project.id, enabled);
@@ -35,7 +34,6 @@ export default function SceneMemoryPanel({ project }) {
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-4 py-2.5">
         <span className="flex items-center gap-2 text-sm font-medium">
           <Fingerprint className="w-4 h-4 text-primary" /> Scene Memory
-          {analyzing && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
         </span>
         <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
           {locked ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
@@ -52,9 +50,7 @@ export default function SceneMemoryPanel({ project }) {
             <Switch checked={locked} onCheckedChange={toggleLock} className="scale-75" />
           </div>
 
-          {analyzing ? (
-            <p className="text-[11px] text-muted-foreground">Analyzing scene: lighting, colors, camera, perspective, style and identity…</p>
-          ) : memory ? (
+          {memory ? (
             <div className="space-y-1">
               {ROWS.map((row) => {
                 const drift = report?.categories?.[row.key] === 'drift';
@@ -74,25 +70,10 @@ export default function SceneMemoryPanel({ project }) {
               </div>
             </div>
           ) : (
-            <p className="text-[11px] text-muted-foreground">{state.status === 'error' ? `Analysis failed: ${state.error}` : 'No scene analysis yet.'}</p>
+            <p className="text-[11px] text-muted-foreground">
+              Scene analysis is unavailable until the server-owned Scene Profile authority is enabled.
+            </p>
           )}
-
-          <div className="flex gap-2">
-            <button
-              disabled={analyzing}
-              onClick={() => sceneMemory.refresh(project).catch(() => {})}
-              className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg border border-border hover:bg-accent disabled:opacity-50"
-            >
-              <RefreshCw className="w-3 h-3" /> Refresh analysis
-            </button>
-            <button
-              disabled={analyzing || !memory}
-              onClick={() => sceneMemory.reset(project).catch(() => {})}
-              className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg border border-border hover:bg-accent disabled:opacity-50 text-destructive"
-            >
-              <Trash2 className="w-3 h-3" /> Reset memory
-            </button>
-          </div>
         </div>
       )}
     </div>
