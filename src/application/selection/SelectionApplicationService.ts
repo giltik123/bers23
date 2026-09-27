@@ -57,7 +57,7 @@ export class SelectionApplicationService {
     const vertex=quantizePolygonVertex(original,d.width,d.height);
     const previous=d.polygonVertices.at(-1);
     if(previous&&previous.x===vertex.x&&previous.y===vertex.y)return this.snapshot();
-    if(previous&&!force&&Math.hypot(vertex.x-previous.x,vertex.y-previous.y)<MIN_SELECTION_LASSO_SAMPLE_PIXELS)return this.snapshot();
+    if(previous&&!force){const dx=(vertex.x-previous.x)*POLYGON_FIXED_SCALE,dy=(vertex.y-previous.y)*POLYGON_FIXED_SCALE,threshold=MIN_SELECTION_LASSO_SAMPLE_PIXELS*POLYGON_FIXED_SCALE;if(dx*dx+dy*dy<threshold*threshold)return this.snapshot();}
     if(d.polygonVertices.length>=MAX_SELECTION_POLYGON_VERTICES){
       d.warning=`Lasso point limit reached (${MAX_SELECTION_POLYGON_VERTICES}). Apply or clear the current path.`;
       return this.snapshot();
