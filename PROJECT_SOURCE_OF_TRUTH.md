@@ -84,18 +84,21 @@ MobileSAM **WebGPU** remains subject to its separate real-device acceptance requ
 
 ### Functional but not yet a production authority
 
-- Automation Studio / recipe/job client orchestration.
+- Automation Studio / recipe/job client orchestration outside the explicit Core Automation routes.
 - Asset Library compatibility surface.
 - Subscription/trial UI and client managers.
 - Observability client surface.
 
 These must migrate through explicit authorities rather than generic CRUD.
 
+### Production mounted, bounded authority; release acceptance still pending
+
+- Server-owned Automation definitions, immutable invocation binding, manual execution and recurring schedules use PostgreSQL stores through `createProductionAutomation.ts`. `server/index.ts` mounts explicit definition, schedule and execution HTTP adapters and starts `AutomationSchedulePoller`. The worker delegates execution to the accepted bounded Agent and Artifact authorities; it does not own a parallel provider, Artifact or financial path. This code and its domain tests establish the mounted implementation, not full v1 browser E2E/release evidence. The enabled v1 subset still requires the Stage C/F acceptance in `BERS_V1_DEVELOPMENT_ROADMAP.md`.
+
 ### Placeholder / future vertical
 
 - Billing/payments checkout and verified provider webhook authority.
 - Team/workspace collaboration and RBAC.
-- Durable server-side automation scheduler/worker.
 
 ## 6. Required future authorities
 
@@ -109,7 +112,7 @@ Assets need owner/tenant/project scope, controlled upload/storage provenance, sa
 
 ### Automation Authority
 
-Automation definitions/revisions and executions should be durable server state. Scheduler/workers must call the same canonical Creative/Artifact/Transaction authorities as interactive edits; automation does not receive a second AI or billing path.
+Automation definitions/revisions, invocations and recurring schedules are durable server state in the mounted bounded implementation. Preserve the scheduler/worker delegation to canonical Agent/Creative/Artifact/Transaction authorities; automation does not receive a second AI or billing path. Complete the Stage C/F browser journeys, recovery and final exact-SHA evidence before declaring the enabled v1 Automation surface production ready.
 
 ### Observability Ingress
 
