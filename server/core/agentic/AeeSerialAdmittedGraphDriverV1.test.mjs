@@ -416,7 +416,9 @@ test('AE-4b recovers an exact orphan ticket after crash and can retry it after e
 });
 
 test('AE-4b recovers an exact orphan retry ticket after crash and expiry without minting a third attempt', async () => {
-  const r = runtime(admittedGraph(2));
+  // Two full ticket-expiry windows are required to reproduce this crash class;
+  // keep the graph wall-clock envelope wider so the test isolates ticket recovery.
+  const r = runtime(admittedGraph(2, 300_000));
   let view = await r.driver().start(command(r.graph), auth);
   const executionId = view.executionId;
   const firstTicket = view.nextAction.ticket;
