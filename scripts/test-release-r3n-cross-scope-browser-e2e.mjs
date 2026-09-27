@@ -145,11 +145,20 @@ try {
 
   const ownerPage = await ownerContext.newPage();
   const attackerPage = await attackerContext.newPage();
-  attachDiagnostics(ownerPage);
-  attachDiagnostics(attackerPage);
 
   await login(ownerPage, ownerEmail, ownerPassword);
   await login(attackerPage, attackerEmail, attackerPassword);
+
+  // Login lands on Projects, whose thumbnail image loads are unrelated to this
+  // cross-scope HTTP vertical. Move both authenticated sessions onto a quiet
+  // protected surface before starting network diagnostics so every captured
+  // failure belongs to an explicit R3n probe.
+  await ownerPage.goto(`${frontendOrigin}/settings`, { waitUntil: 'domcontentloaded' });
+  await attackerPage.goto(`${frontendOrigin}/settings`, { waitUntil: 'domcontentloaded' });
+  await ownerPage.getByRole('button', { name: 'Sign out' }).waitFor({ state: 'visible', timeout: 10_000 });
+  await attackerPage.getByRole('button', { name: 'Sign out' }).waitFor({ state: 'visible', timeout: 10_000 });
+  attachDiagnostics(ownerPage);
+  attachDiagnostics(attackerPage);
 
   const ownerProjectAHttp = await api(ownerPage, `/api/core/projects/${ownerProjectA.project_id}`);
   assert.equal(ownerProjectAHttp.status, 200);
