@@ -3,7 +3,9 @@ import type { DisplayTransform, OriginalMask } from '../../platform/creative/pip
 import type { ExecutionProvider, PrivacyMode, RuntimeKind } from '../../platform/creative/local-ai';
 
 export const INTERACTIVE_SEGMENTATION = 'INTERACTIVE_SEGMENTATION' as const;
-export type SelectionMode = 'SMART_SELECT' | 'BRUSH_ADD' | 'BRUSH_SUBTRACT';
+export type SelectionMode = 'SMART_SELECT' | 'BRUSH_ADD' | 'BRUSH_SUBTRACT' | 'POLYGON';
+export type PolygonComposition = 'REPLACE' | 'ADD' | 'SUBTRACT' | 'INTERSECT';
+export type PolygonVertex = Readonly<{ x: number; y: number; coordinateSpace: 'ORIGINAL' }>;
 export type SelectionState = 'NOTHING_SELECTED' | 'DOWNLOADING' | 'LOADING' | 'SELECTING' | 'SELECTED' | 'REFINING' | 'READY' | 'ERROR' | 'LOCAL_UNAVAILABLE';
 export type PromptPoint = Readonly<{ x: number; y: number; label: 'POSITIVE' | 'NEGATIVE'; coordinateSpace: 'ORIGINAL' }>;
 export type AnalysisTransform = Readonly<{ originalWidth: number; originalHeight: number; analysisWidth: number; analysisHeight: number; scaleX: number; scaleY: number; offsetX: number; offsetY: number }>;
@@ -26,5 +28,5 @@ export interface CanonicalMaskArtifactPort {
   persist(mask: OriginalMask, metadata: Readonly<Record<string, unknown>>): Promise<CreativeArtifact>;
   admitted?(artifactId: string, mask: OriginalMask, metadata: Readonly<Record<string, unknown>>): CreativeArtifact | Promise<CreativeArtifact>;
 }
-export type SelectionDraftSnapshot = Readonly<{ id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; state: SelectionState; mode: SelectionMode; points: readonly PromptPoint[]; provenance: readonly string[]; requestId?: string; quality?: MaskQualityResult; warning?: string; canUndo: boolean; canRedo: boolean }>;
+export type SelectionDraftSnapshot = Readonly<{ id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; state: SelectionState; mode: SelectionMode; points: readonly PromptPoint[]; polygonVertices: readonly PolygonVertex[]; provenance: readonly string[]; requestId?: string; quality?: MaskQualityResult; warning?: string; canUndo: boolean; canRedo: boolean }>;
 export type BrushStroke = Readonly<{ points: readonly Readonly<{ x: number; y: number }>[]; radius: number; hardness: number; view: DisplayTransform }>;
