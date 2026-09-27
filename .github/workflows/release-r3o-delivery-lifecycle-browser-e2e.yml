@@ -1,0 +1,122 @@
+name: R3o Delivery Lifecycle Browser E2E
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/api/coreClient.js'
+      - 'src/pages/Login.jsx'
+      - 'server/core/artifacts/**'
+      - 'server/core/auth/**'
+      - 'server/core/projects/**'
+      - 'server/core/fashion/garmentDeliveryAuthority.ts'
+      - 'server/core/fashion/postgresGarmentStore.ts'
+      - 'server/core/http/nodeHttpAdapter.ts'
+      - 'server/core/http/managedGarmentHttpAdapter.ts'
+      - 'server/core/composition/createProductionCore.ts'
+      - 'server/core/config.ts'
+      - 'server/index.ts'
+      - 'scripts/build-core-server.mjs'
+      - 'scripts/test-release-r3o-delivery-lifecycle-browser-e2e.mjs'
+      - 'tests/project-postgres-vertical.test.ts'
+      - 'tests/managed-garment-postgres.test.ts'
+      - '.github/workflows/release-r3o-delivery-lifecycle-browser-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-r3o-delivery-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  delivery-lifecycle-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: release_r3o_test
+          POSTGRES_USER: release_r3o_test
+          POSTGRES_PASSWORD: release_r3o_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U release_r3o_test -d release_r3o_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://release_r3o_test:release_r3o_test@127.0.0.1:5432/release_r3o_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      VITE_CORE_API_URL: http://127.0.0.1:4232/api/core
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core delivery surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Build immutable Core and apply packaged production migrations
+        run: |
+          npm run server:build
+          test -f dist-server/server.mjs
+          test -f dist-server/migrations/004_canonical_image_artifacts.sql
+          test -f dist-server/migrations/020_managed_garments.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Prove PostgreSQL Artifact delivery identity and expiry contract
+        run: |
+          mkdir -p .test-cache/release-r3o
+          npx esbuild tests/project-postgres-vertical.test.ts             --bundle --platform=node --format=esm --target=node24             --outfile=.test-cache/release-r3o/project-postgres-vertical.test.mjs             --external:node:* --external:pg --external:sharp
+          node --test .test-cache/release-r3o/project-postgres-vertical.test.mjs
+      - name: Generate and mask ephemeral R3o runtime secrets
+        run: |
+          set -euo pipefail
+          for name in FAL_KEY JWT_SECRET AUTH_CHALLENGE_SECRET RESEND_API_KEY GOOGLE_OAUTH_CLIENT_SECRET ARTIFACT_SIGNING_SECRET; do
+            value="$(openssl rand -hex 32)"
+            printf '::add-mask::%s\n' "$value"
+            printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+          done
+      - name: Build real SPA against the built Core origin
+        run: |
+          npm run build
+          test -f dist/index.html
+      - name: Bundle external R3o browser delivery harness
+        run: |
+          npx esbuild scripts/test-release-r3o-delivery-lifecycle-browser-e2e.mjs             --bundle --platform=node --format=esm --target=node24             --outfile=.test-cache/release-r3o/test-release-r3o-delivery-lifecycle-browser-e2e.mjs             --external:node:* --external:pg --external:sharp --external:playwright
+      - name: Prove delivery expiry revocation and durable identity separation
+        run: |
+          set -euo pipefail
+          node .test-cache/release-r3o/test-release-r3o-delivery-lifecycle-browser-e2e.mjs | tee .test-cache/release-r3o/runtime.log
+          grep -q 'R3O_BROWSER_DELIVERY_LIFECYCLE_ACCEPTED' .test-cache/release-r3o/runtime.log
+      - name: Preserve R3o authority boundaries
+        if: always()
+        run: |
+          set -euo pipefail
+          adapter=server/core/http/nodeHttpAdapter.ts
+          harness=scripts/test-release-r3o-delivery-lifecycle-browser-e2e.mjs
+          regression=tests/project-postgres-vertical.test.ts
+          grep -q "result_not_found" "$adapter"
+          grep -q "resolveStoredOriginalDelivery" "$adapter"
+          grep -q "resolveStoredFinalDelivery" "$adapter"
+          grep -q "expired delivery capability must fail closed" "$regression"
+          grep -q "stable ORIGINAL identity must not be a delivery credential" "$regression"
+          grep -q "R3O_BROWSER_DELIVERY_LIFECYCLE_ACCEPTED" "$harness"
+          grep -q "Project durable Artifact identity must survive delivery expiry" "$harness"
+          grep -q "Garment durable view identity must survive delivery expiry" "$harness"
+          ! grep -E -q 'page\.route\(|browserContext\.route\(|context\.route\(|route\.(fulfill|abort|continue|fallback)\(' "$harness"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
