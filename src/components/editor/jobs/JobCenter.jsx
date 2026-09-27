@@ -5,15 +5,21 @@ import { jobManager } from '@/lib/jobs/jobManager';
 import { JOB_EXECUTION_CLASSES } from '@/lib/jobs/jobModel';
 import { createExecutionRunProjection } from '@/lib/jobs/executionRunProjection';
 import { CreativeExecutionControlPolicy } from '@/lib/jobs/creativeExecutionControl';
+import { BoundedWorkflowRetryControlPolicy } from '@/lib/jobs/boundedWorkflowRetryControl';
+import { createBoundedAgentRunner } from '@/application/agent/createBoundedAgentRunner';
 import JobRow from '@/components/editor/jobs/JobRow';
 import CanonicalExecutionRunRow from '@/components/editor/jobs/CanonicalExecutionRunRow';
 
 export default function JobCenter({ projectId = null }) {
   const canonicalProjection = useMemo(() => createExecutionRunProjection(), []);
   const creativeControl = useMemo(() => new CreativeExecutionControlPolicy(coreClient.creative), []);
+  const workflowRetryControl = useMemo(() => new BoundedWorkflowRetryControlPolicy(
+    (workflowProjectId) => createBoundedAgentRunner({ projectId: workflowProjectId }),
+  ), []);
   const [state, setState] = useState(jobManager.snapshot());
   const [canonical, setCanonical] = useState(() => canonicalProjection.snapshot());
   const [canonicalControls, setCanonicalControls] = useState(() => Object.freeze({}));
+  const [canonicalWorkflowControls, setCanonicalWorkflowControls] = useState(() => Object.freeze({}));
 
   useEffect(() => jobManager.subscribe(setState), []);
   useEffect(() => {
@@ -49,6 +55,16 @@ export default function JobCenter({ projectId = null }) {
     return () => { active = false; };
   }, [creativeControl, canonicalScopeMatches, canonical.authoritative, canonical.runs]);
 
+  useEffect(() => {
+    if (!canonicalScopeMatches || !canonical.authoritative) {
+      setCanonicalWorkflowControls(Object.freeze({}));
+      return;
+    }
+    setCanonicalWorkflowControls(Object.freeze(Object.fromEntries(
+      canonical.runs.map((run) => [run.runId, workflowRetryControl.inspect(run)]),
+    )));
+  }, [workflowRetryControl, canonicalScopeMatches, canonical.authoritative, canonical.runs]);
+
   async function cancelCanonicalRun(run) {
     setCanonicalControls((current) => Object.freeze({
       ...current,
@@ -66,6 +82,24 @@ export default function JobCenter({ projectId = null }) {
     }
   }
 
+  async function retryCanonicalWorkflow(run) {
+    if (!normalizedProjectId) return;
+    setCanonicalWorkflowControls((current) => Object.freeze({
+      ...current,
+      [run.runId]: Object.freeze({ state: 'PENDING' }),
+    }));
+    try {
+      await workflowRetryControl.retry(run, normalizedProjectId);
+    } catch {
+      setCanonicalWorkflowControls((current) => Object.freeze({
+        ...current,
+        [run.runId]: Object.freeze({ state: 'UNAVAILABLE', reasonCode: 'RETRY_REQUEST_FAILED' }),
+      }));
+    } finally {
+      await canonicalProjection.refresh();
+    }
+  }
+
   if (!jobs.length && !canonicalVisible) return null;
 
   return <section className="border border-border/60 rounded-2xl p-3 space-y-3">
@@ -77,7 +111,7 @@ export default function JobCenter({ projectId = null }) {
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-[11px] font-medium">Server executions</p>
-          <p className="text-[10px] text-muted-foreground">Canonical recovery state · owning Creative controls only</p>
+          <p className="text-[10px] text-muted-foreground">Canonical recovery state · owning Creative / Workflow controls only</p>
         </div>
         <button
           type="button"
@@ -90,7 +124,14 @@ export default function JobCenter({ projectId = null }) {
       {canonical.error && !canonical.stale && <p className="text-[11px] text-destructive">Server execution recovery is unavailable.</p>}
       {canonical.error && canonical.stale && <p className="text-[11px] text-amber-600">Server refresh failed. Showing the last confirmed state.</p>}
       {!canonical.loading && canonical.authoritative && canonicalRuns.length === 0 && <p className="text-[11px] text-muted-foreground">No canonical server executions for this project.</p>}
-      {canonicalRuns.map((run) => <CanonicalExecutionRunRow key={run.runId} run={run} control={canonicalControls[run.runId]} onCancel={cancelCanonicalRun} />)}
+      {canonicalRuns.map((run) => <CanonicalExecutionRunRow
+        key={run.runId}
+        run={run}
+        control={canonicalControls[run.runId]}
+        workflowControl={canonicalWorkflowControls[run.runId]}
+        onCancel={cancelCanonicalRun}
+        onRetry={retryCanonicalWorkflow}
+      />)}
     </div>}
 
     {jobs.length > 0 && <div className="space-y-2" data-job-center-session-jobs data-execution-class={JOB_EXECUTION_CLASSES.EPHEMERAL_CLIENT_TASK}>
