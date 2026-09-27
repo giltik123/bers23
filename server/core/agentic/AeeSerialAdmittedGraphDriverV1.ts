@@ -49,7 +49,7 @@ const RETRY_REQUEST_DOMAIN = 'bers:aee:serial-retry:v1\0';
 const RUN_CHILD_LIMIT = 200;
 
 type PlanReader = Pick<PostgresAeeAdmittedPlanStore, 'get'>;
-type TicketReader = Pick<LocalExecutionLedgerV2, 'getV2'>;
+type TicketReader = Pick<LocalExecutionLedgerV2, 'getV2' | 'getByIdempotencyKeyV2'>;
 type OrthogonalPort = Pick<LocalOrthogonalTransformExecutionService, 'prepare' | 'submit'>;
 type ResizePort = Pick<LocalResizeExecutionService, 'prepare' | 'submit'>;
 type ArtifactResolver = Readonly<{ resolve(scope: Scope, artifactId: string): Promise<DurableResolvedArtifact> }>;
@@ -257,7 +257,7 @@ export class AeeSerialAdmittedGraphDriverV1 {
     if (!await this.retryAvailable(snapshot, authority.graph)) return this.terminalizeBudget(snapshot, authority.graph, 'AEE_RETRY_BUDGET_EXHAUSTED');
 
     const replacement = await this.prepareNodeTicket(snapshot, node, source, previous.ticketId, auth);
-    snapshot = await this.dependencies.continuations.retryLocalResult({
+    const retryInput = Object.freeze({
       executionId: snapshot.executionId,
       scope: snapshot.scope,
       expectedRevision: snapshot.revision,
@@ -265,6 +265,9 @@ export class AeeSerialAdmittedGraphDriverV1 {
       previousTicketId: previous.ticketId,
       ticket: ticketBinding(replacement),
     });
+    snapshot = this.now() >= replacement.expiresAt
+      ? await this.dependencies.continuations.bindExpiredRetryLocalTicketForRecovery(retryInput)
+      : await this.dependencies.continuations.retryLocalResult(retryInput);
     await this.reconcileRuns(snapshot, authority.graph);
     return this.advance(snapshot, auth);
   }
@@ -474,6 +477,17 @@ export class AeeSerialAdmittedGraphDriverV1 {
   ): Promise<LocalExecutionTicketV2> {
     const execution = executionFor(node);
     const childClientRequestId = childRequestIdFor(snapshot.executionId, node.nodeId, retryOfTicketId);
+    const expectedIdempotencyKey = `${childClientRequestId}:${execution.stepId}:local-v2`;
+    const durable = await this.dependencies.tickets.getByIdempotencyKeyV2(snapshot.scope, expectedIdempotencyKey);
+    if (durable) {
+      await this.assertNodeTicket(snapshot, node, source, durable, childClientRequestId);
+      const recovery = await this.recoverNodeTicket(snapshot, node, source, durable, auth);
+      if (recovery.status !== 'PENDING') {
+        throw conflict('aee_serial_prepared_ticket_not_pending', 'Recovered unbound AEE node ticket is already terminal before continuation binding');
+      }
+      return durable;
+    }
+
     const prepared = await this.dependencies.workflowTickets.withWorkflowBinding({
       scope: snapshot.scope,
       workflowId: snapshot.executionId,
