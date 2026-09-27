@@ -201,10 +201,14 @@ try {
   assert.equal(projectAfterRevocation.body.id, revokedProject.project_id);
   assertDenied(await api(page, projectAfterRevocation.body.current_image_url), 404, 'result_not_found', 'fresh URL for revoked Project Artifact');
 
-  const garmentAfterRevocation = await api(page, `/api/core/garments/${revokedGarment.id}`);
-  assert.equal(garmentAfterRevocation.status, 200, 'Garment durable identity must survive view revocation');
-  assert.equal(garmentAfterRevocation.body.id, revokedGarment.id);
-  assert.deepEqual(garmentAfterRevocation.body.views, [], 'revoked Garment view must disappear from durable aggregate projection');
+  const revokedGarmentRow = await pool.query(
+    'SELECT garment_id,primary_view_id,deleted_at FROM canonical_garments WHERE garment_id=$1 AND tenant_id=$2 AND user_id=$3',
+    [revokedGarment.id, tenantId, userId],
+  );
+  assert.equal(revokedGarmentRow.rowCount, 1, 'revoking a delivery source must not rewrite or delete stable Garment identity');
+  assert.equal(String(revokedGarmentRow.rows[0].garment_id), revokedGarment.id);
+  assert.equal(String(revokedGarmentRow.rows[0].primary_view_id), revokedGarmentView.id);
+  assert.equal(revokedGarmentRow.rows[0].deleted_at, null);
 
   assert.equal(providerCalls, 0, 'delivery lifecycle must never reach provider authority');
   assert.deepEqual(diagnostics.externalBrowserRequests, [], 'R3o browser must not call external origins');
