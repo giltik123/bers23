@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
@@ -24,7 +24,13 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, on
           <input aria-label="Brush Size" type="range" min="2" max="96" value={brushSize} disabled={busy} onChange={(event) => onBrushSize(Number(event.target.value))} />
         </label>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 px-2 text-xs">Edge Radius
+          <input aria-label="Selection edge radius" type="range" min="1" max="32" value={morphologyRadius} disabled={busy || !editable} onChange={(event) => onMorphologyRadius(Number(event.target.value))} />
+          <span aria-hidden="true">{morphologyRadius}px</span>
+        </label>
+        <Button type="button" size="sm" variant="outline" aria-label="Grow selection" disabled={busy || !editable} onClick={onGrow}>Grow</Button>
+        <Button type="button" size="sm" variant="outline" aria-label="Shrink selection" disabled={busy || !editable} onClick={onShrink}>Shrink</Button>
         <Button type="button" size="sm" variant="outline" disabled={busy || !selection.canUndo} onClick={onUndo}>Undo</Button>
         <Button type="button" size="sm" variant="outline" disabled={busy || !selection.canRedo} onClick={onRedo}>Redo</Button>
         <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onClear}>Clear</Button>
