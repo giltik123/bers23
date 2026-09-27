@@ -96,7 +96,7 @@ test('projection recovers canonical roots plus direct workflow children and pres
   assert.equal(state.lastRefreshedAt, '2026-09-06T07:05:00.000Z');
   assert.deepEqual(calls, [
     ['roots', projectA, 10],
-    ['children', workflowId, projectA, 25],
+    ['children', workflowId, projectA, 100],
   ]);
   assert.equal(state.runs.length, 2);
   assert.equal(state.runs[0].runId, workflowId);
