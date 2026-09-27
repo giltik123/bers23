@@ -1,0 +1,50 @@
+name: Project UI Truthfulness
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/pages/Projects.jsx'
+      - 'src/components/projects/ProjectCard.jsx'
+      - 'src/components/projects/ProjectActionsMenu.jsx'
+      - 'src/lib/performance/offlineQueue.js'
+      - 'tests/project-ui-truthfulness.test.mjs'
+      - '.github/workflows/project-ui-truthfulness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  project-ui-truthfulness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Prove Project UI truthfulness contract
+        run: node --test tests/project-ui-truthfulness.test.mjs
+      - name: Typecheck and build browser
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Preserve narrow Project UI scope
+        run: |
+          set -euo pipefail
+          grep -q "Queued to retry while this tab remains open" src/pages/Projects.jsx
+          ! grep -q "Duplicate will be available with server-authoritative project history" src/pages/Projects.jsx
+          ! grep -q "> Duplicate<" src/components/projects/ProjectActionsMenu.jsx
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
