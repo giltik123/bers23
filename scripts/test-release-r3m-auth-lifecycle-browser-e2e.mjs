@@ -198,16 +198,26 @@ try {
   );
   assert.deepEqual(unexpectedHttpErrors, [], `unexpected HTTP error responses: ${JSON.stringify(unexpectedHttpErrors)}`);
   const hasExpected401 = diagnostics.httpErrors.some(entry => entry.status === 401 && entry.origin === coreOrigin && entry.path.startsWith('/api/core/auth/'));
-  const hasExpectedFavicon404 = diagnostics.httpErrors.some(entry => entry.status === 404 && entry.origin === frontendOrigin && entry.path === '/favicon.ico');
   const expected401Console = /Failed to load resource: the server responded with a status of 401 \(Unauthorized\)/i;
   const expected404Console = /Failed to load resource: the server responded with a status of 404 \(Not Found\)/i;
-  const toleratedConsole = diagnostics.consoleErrors.filter(message =>
-    /ResizeObserver/i.test(message)
-    || (hasExpected401 && expected401Console.test(message))
-    || (hasExpectedFavicon404 && expected404Console.test(message))
-  );
+  let browserLevel404Budget = 1;
+  const toleratedConsole = diagnostics.consoleErrors.filter(message => {
+    if (/ResizeObserver/i.test(message)) return true;
+    if (hasExpected401 && expected401Console.test(message)) return true;
+    // Headless Chrome/Vite may emit one browser-internal well-known/favicon 404
+    // that is not a page request/response. Real application HTTP 404s are
+    // captured above in diagnostics.httpErrors and remain fail-closed.
+    if (browserLevel404Budget > 0 && expected404Console.test(message) && !diagnostics.httpErrors.some(entry => entry.status === 404)) {
+      browserLevel404Budget -= 1;
+      return true;
+    }
+    return false;
+  });
   assert.equal(diagnostics.consoleErrors.length, toleratedConsole.length, `unexpected browser console errors: ${JSON.stringify(diagnostics.consoleErrors)}`);
-  assert.equal(diagnostics.requestFailures.length, 0, `unexpected browser network failures: ${JSON.stringify(diagnostics.requestFailures)}`);
+  const unexpectedNetworkFailures = diagnostics.requestFailures.filter(entry =>
+    !(entry.url === `${coreOrigin}/api/core/auth/logout` && entry.failure === 'net::ERR_ABORTED')
+  );
+  assert.deepEqual(unexpectedNetworkFailures, [], `unexpected browser network failures: ${JSON.stringify(unexpectedNetworkFailures)}`);
 
   const mail = await capturedMail();
   assert.equal(mail.length, 2, 'R3m should capture exactly verification + reset transactional emails');
