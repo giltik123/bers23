@@ -192,6 +192,13 @@ try {
   assert.equal(providerCalls, 0, 'auth lifecycle must never reach Creative provider authority');
   assert.deepEqual(diagnostics.externalBrowserRequests, [], 'auth lifecycle browser must not call external origins');
   assert.equal(diagnostics.pageErrors.length, 0, `unexpected browser page errors: ${JSON.stringify(diagnostics.pageErrors)}`);
+  const unexpectedHttpErrors = diagnostics.httpErrors.filter(entry =>
+    !(entry.status === 401 && entry.origin === coreOrigin && entry.path.startsWith('/api/core/auth/'))
+    && !(entry.status === 404 && entry.origin === frontendOrigin && entry.path === '/favicon.ico')
+  );
+  assert.deepEqual(unexpectedHttpErrors, [], `unexpected HTTP error responses: ${JSON.stringify(unexpectedHttpErrors)}`);
+  const hasExpected401 = diagnostics.httpErrors.some(entry => entry.status === 401 && entry.origin === coreOrigin && entry.path.startsWith('/api/core/auth/'));
+  const hasExpectedFavicon404 = diagnostics.httpErrors.some(entry => entry.status === 404 && entry.origin === frontendOrigin && entry.path === '/favicon.ico');
   const expected401Console = /Failed to load resource: the server responded with a status of 401 \(Unauthorized\)/i;
   const toleratedConsole = diagnostics.consoleErrors.filter(message => /favicon|ResizeObserver/i.test(message) || expected401Console.test(message));
   assert.equal(diagnostics.consoleErrors.length, toleratedConsole.length, `unexpected browser console errors: ${JSON.stringify(diagnostics.consoleErrors)}`);
