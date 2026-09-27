@@ -98,7 +98,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         }
         const stored = await input.artifacts.images.loadSource(claim.storageId, claim);
         if (!stored) return sendError(response, 404, 'result_not_found', 'Image artifact is unavailable', correlationId, false);
-        response.statusCode = 200; response.setHeader('Content-Type', stored.contentType); response.setHeader('Content-Length', stored.bytes.byteLength); response.setHeader('Cache-Control', 'private, max-age=300'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(stored.bytes); return;
+        response.statusCode = 200; response.setHeader('Content-Type', stored.contentType); response.setHeader('Content-Length', stored.bytes.byteLength); response.setHeader('Cache-Control', 'no-store'); response.setHeader('X-Content-Type-Options', 'nosniff'); response.end(stored.bytes); return;
       }
       if (path === '/api/core/auth/register' && request.method === 'POST') {
         if (!input.auth.register) return sendError(response,404,'not_found','Route not found',correlationId,false);
