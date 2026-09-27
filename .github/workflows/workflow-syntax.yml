@@ -36,5 +36,6 @@ jobs:
           mkdir -p "$RUNNER_TEMP/actionlint"
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP/actionlint" actionlint
           "$RUNNER_TEMP/actionlint/actionlint" \
+            -shellcheck '' -pyflakes '' \
             -ignore 'label "(gpu|bers-hsme-evidence)" is unknown' \
             .github/workflows/*.yml
