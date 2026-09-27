@@ -6,6 +6,10 @@ on:
     paths:
       - 'src/pages/AutomationStudio.jsx'
       - 'src/components/automation/CanonicalAutomationStudio.jsx'
+      - 'src/components/editor/jobs/**'
+      - 'src/lib/jobs/executionRunProjection.js'
+      - 'src/api/executionRunRecoveryClient.js'
+      - 'src/pages/Editor.jsx'
       - 'src/api/automationClient.js'
       - 'src/application/automation/**'
       - 'server/core/agentic/**'
@@ -99,11 +103,12 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/automation-c3c-studio/test-automation-c3c-studio-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
-      - name: Prove Studio revision start replay reload Preview explicit Accept and zero-cloud authority
+      - name: Prove Studio durable recovery Job Center refresh explicit Accept and zero-cloud authority
         run: |
           set -euo pipefail
           node .test-cache/automation-c3c-studio/test-automation-c3c-studio-browser-e2e.mjs | tee .test-cache/automation-c3c-studio/runtime.log
           grep -q 'C3C_AUTOMATION_STUDIO_BROWSER_ACCEPTED' .test-cache/automation-c3c-studio/runtime.log
+          grep -q 'R3L_AUTOMATION_JOB_CENTER_RELEASE_ACCEPTED' .test-cache/automation-c3c-studio/runtime.log
       - name: Preserve PostgreSQL forensic state after C3c browser failure
         if: failure()
         run: |
@@ -138,4 +143,7 @@ jobs:
           grep -q 'loadOrCreateStartIntent' src/components/automation/CanonicalAutomationStudio.jsx
           grep -q 'rememberInvocation' src/components/automation/CanonicalAutomationStudio.jsx
           grep -q 'coreClient.projects.acceptFinal' src/components/automation/CanonicalAutomationStudio.jsx
+          grep -q 'data-job-center-canonical-executions' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'createExecutionRunProjection' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'R3L_AUTOMATION_JOB_CENTER_RELEASE_ACCEPTED' scripts/test-automation-c3c-studio-browser-e2e.mjs
           git diff --check
