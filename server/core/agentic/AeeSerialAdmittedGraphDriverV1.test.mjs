@@ -70,7 +70,7 @@ function admittedGraph(maxRetries = 1, maxWallClockMs = 120_000) {
 class MemoryContinuationStore {
   constructor(now = () => NOW) {
     this.byExecution = new Map(); this.byClient = new Map(); this.now = now;
-    this.sourceChecks = 0; this.failNextWait = false;
+    this.sourceChecks = 0; this.failNextWait = false; this.failNextRetry = false;
   }
   async create(input) {
     const existing = this.byClient.get(input.clientRequestId);
@@ -118,6 +118,10 @@ class MemoryContinuationStore {
   }
   async retryLocalResult({ executionId, scope: queryScope, expectedRevision, continuationStepId, previousTicketId, ticket }) {
     const current = this.#require(executionId, queryScope); const logical = continuationStepId ?? ticket.stepId;
+    if (this.failNextRetry) {
+      this.failNextRetry = false;
+      throw Object.assign(new Error('simulated crash after durable retry ticket issuance'), { code: 'SIMULATED_RETRY_CRASH' });
+    }
     assert.equal(current.state, 'WAITING_FOR_LOCAL_RESULT'); assert.equal(current.revision, expectedRevision);
     assert.equal(current.currentStepId, logical); assert.equal(current.outstandingLocal.ticketId, previousTicketId); assert.notEqual(ticket.ticketId, previousTicketId);
     assert.ok(Date.parse(ticket.expiresAt) > this.now(), 'normal retry bind must reject an expired replacement');
@@ -276,6 +280,7 @@ function runtime(graph = admittedGraph()) {
     advanceTime(ms) { now += ms; },
     setSubmitDelay(ms) { submitDelayMs = ms; },
     crashAfterNextTicketIssue() { continuations.failNextWait = true; },
+    crashAfterNextRetryTicketIssue() { continuations.failNextRetry = true; },
   };
 }
 
@@ -408,4 +413,34 @@ test('AE-4b recovers an exact orphan ticket after crash and can retry it after e
   assert.equal(view.nextAction.nodeId, 'rotate');
   assert.notEqual(view.nextAction.ticket.ticketId, orphan.ticketId);
   assert.ok(view.nextAction.ticket.expiresAt > orphan.expiresAt);
+});
+
+test('AE-4b recovers an exact orphan retry ticket after crash and expiry without minting a third attempt', async () => {
+  const r = runtime(admittedGraph(2));
+  let view = await r.driver().start(command(r.graph), auth);
+  const executionId = view.executionId;
+  const firstTicket = view.nextAction.ticket;
+
+  r.advanceTime(61_000);
+  view = await r.driver().resume(executionId, projectId, auth);
+  assert.equal(view.retryAvailable, true);
+  assert.equal(view.attemptStatus, 'EXPIRED');
+
+  r.crashAfterNextRetryTicketIssue();
+  await assert.rejects(
+    () => r.driver().retry(executionId, projectId, auth),
+    error => error?.code === 'SIMULATED_RETRY_CRASH',
+  );
+  assert.equal(r.tickets.size, 2, 'retry crash must occur after exactly one durable replacement exists');
+  const replacement = [...r.tickets.values()].find(ticket => ticket.ticketId !== firstTicket.ticketId);
+  assert.ok(replacement);
+
+  r.advanceTime(61_000);
+  view = await r.driver().retry(executionId, projectId, auth);
+  assert.equal(r.tickets.size, 2, 'replay must recover the exact expired replacement rather than mint a third attempt');
+  const durable = await r.continuations.get(executionId, scope);
+  assert.equal(durable.outstandingLocal.ticketId, replacement.ticketId);
+  assert.equal(view.state, 'WAITING_FOR_LOCAL_RESULT');
+  assert.equal(view.retryAvailable, true);
+  assert.equal(view.attemptStatus, 'EXPIRED');
 });
