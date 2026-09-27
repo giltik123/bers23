@@ -18,7 +18,6 @@ import type { DeterministicWorkflowStepFinalRecoveryAuthority } from '../localEx
 import type { LocalExecutionLedgerV2 } from '../localExecution/LocalExecutionLedger.ts';
 import type { LocalOrthogonalTransformExecutionService } from '../localExecution/LocalOrthogonalTransformExecutionService.ts';
 import type { LocalResizeExecutionService } from '../localExecution/LocalResizeExecutionService.ts';
-import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 import {
   countWorkflowLocalExecutionRetries,
   projectWorkflowLocalExecutionAttempt,
@@ -50,10 +49,9 @@ const RETRY_REQUEST_DOMAIN = 'bers:aee:serial-retry:v1\0';
 const RUN_CHILD_LIMIT = 200;
 
 type PlanReader = Pick<PostgresAeeAdmittedPlanStore, 'get'>;
-type TicketReader = Pick<LocalExecutionLedgerV2, 'getV2'>;
+type TicketReader = Pick<LocalExecutionLedgerV2, 'getV2' | 'getByIdempotencyKeyV2'>;
 type OrthogonalPort = Pick<LocalOrthogonalTransformExecutionService, 'prepare' | 'submit'>;
 type ResizePort = Pick<LocalResizeExecutionService, 'prepare' | 'submit'>;
-type ProjectReader = Pick<PostgresProjectStore, 'get'>;
 type ArtifactResolver = Readonly<{ resolve(scope: Scope, artifactId: string): Promise<DurableResolvedArtifact> }>;
 type FinalRecovery = Pick<DeterministicWorkflowStepFinalRecoveryAuthority, 'recover'>;
 
@@ -100,7 +98,6 @@ export type AeeSerialAdmittedGraphDriverV1Dependencies = Readonly<{
   resize: ResizePort;
   finalRecovery: FinalRecovery;
   artifacts: ArtifactResolver;
-  projects: ProjectReader;
   runs: ExecutionRunRegistry;
   now?: () => number;
 }>;
@@ -143,14 +140,16 @@ export class AeeSerialAdmittedGraphDriverV1 {
       inputArtifacts: Object.freeze([workflowBinding(root)]),
     });
 
-    const existing = await this.dependencies.continuations.getByClientRequestId(scope, command.clientRequestId);
-    if (!existing) await this.assertCurrentProjectSource(auth, scope, root);
-
-    // Continuation first: READY is a complete durable state. A crash after this
-    // insert but before ticket preparation is recovered by resume/start replay.
-    // This avoids orphaning a local ticket if a scoped clientRequestId races with
-    // a different admitted graph digest.
-    const snapshot = await this.dependencies.continuations.create(createInput);
+    // The continuation authority performs durable-replay lookup first, then for
+    // a genuinely-new execution validates the exact current Project source while
+    // holding the Project row lock in the same PostgreSQL transaction as INSERT.
+    // This closes the source-check/create TOCTOU without moving Project authority
+    // into the AEE driver.
+    const snapshot = await this.dependencies.continuations.createWithCurrentProjectSource(createInput, Object.freeze({
+      storageId: root.storageId,
+      width: root.width,
+      height: root.height,
+    }));
     await this.ensureParentRunning(snapshot);
     return this.advance(snapshot, auth);
   }
@@ -258,7 +257,7 @@ export class AeeSerialAdmittedGraphDriverV1 {
     if (!await this.retryAvailable(snapshot, authority.graph)) return this.terminalizeBudget(snapshot, authority.graph, 'AEE_RETRY_BUDGET_EXHAUSTED');
 
     const replacement = await this.prepareNodeTicket(snapshot, node, source, previous.ticketId, auth);
-    snapshot = await this.dependencies.continuations.retryLocalResult({
+    const retryInput = Object.freeze({
       executionId: snapshot.executionId,
       scope: snapshot.scope,
       expectedRevision: snapshot.revision,
@@ -266,6 +265,9 @@ export class AeeSerialAdmittedGraphDriverV1 {
       previousTicketId: previous.ticketId,
       ticket: ticketBinding(replacement),
     });
+    snapshot = this.now() >= replacement.expiresAt
+      ? await this.dependencies.continuations.bindExpiredRetryLocalTicketForRecovery(retryInput)
+      : await this.dependencies.continuations.retryLocalResult(retryInput);
     await this.reconcileRuns(snapshot, authority.graph);
     return this.advance(snapshot, auth);
   }
@@ -327,6 +329,11 @@ export class AeeSerialAdmittedGraphDriverV1 {
       }
       if (snapshot.state !== 'READY') throw conflict('aee_serial_state_invalid', `Unsupported AEE continuation state ${snapshot.state}`);
 
+      // A local attempt may have completed canonically while submit/verification/
+      // persistence consumed the remaining wall-clock budget. Keep that SUCCESS
+      // evidence, but fail the parent workflow before it can advance or succeed.
+      if (this.wallClockExceeded(snapshot, graph)) return this.terminalizeBudget(snapshot, graph, 'AEE_WALL_CLOCK_BUDGET_EXCEEDED');
+
       if (snapshot.completedSteps.length === graph.nodes.length) {
         const terminal = snapshot.completedSteps.at(-1);
         if (!terminal || terminal.stepId !== graph.terminal.nodeId || terminal.artifactIds.length !== 1) {
@@ -342,19 +349,21 @@ export class AeeSerialAdmittedGraphDriverV1 {
         continue;
       }
 
-      if (this.wallClockExceeded(snapshot, graph)) return this.terminalizeBudget(snapshot, graph, 'AEE_WALL_CLOCK_BUDGET_EXCEEDED');
       const nodeIndex = snapshot.completedSteps.length;
       const node = graph.nodes[nodeIndex];
       if (!node) throw conflict('aee_serial_step_order_invalid', 'AEE continuation has no admitted next node');
       const source = await this.sourceForNode(graph, snapshot, authority.root, node, nodeIndex);
       const ticket = await this.prepareNodeTicket(snapshot, node, source, undefined, auth);
-      snapshot = await this.dependencies.continuations.waitForLocalResult({
+      const bindInput = Object.freeze({
         executionId: snapshot.executionId,
         scope: snapshot.scope,
         expectedRevision: snapshot.revision,
         continuationStepId: node.nodeId,
         ticket: ticketBinding(ticket),
       });
+      snapshot = this.now() >= ticket.expiresAt
+        ? await this.dependencies.continuations.bindExpiredLocalTicketForRecovery(bindInput)
+        : await this.dependencies.continuations.waitForLocalResult(bindInput);
       await this.reconcileRuns(snapshot, graph);
     }
     throw conflict('aee_serial_advance_guard', 'AEE serial driver exceeded its bounded advance loop');
@@ -468,6 +477,17 @@ export class AeeSerialAdmittedGraphDriverV1 {
   ): Promise<LocalExecutionTicketV2> {
     const execution = executionFor(node);
     const childClientRequestId = childRequestIdFor(snapshot.executionId, node.nodeId, retryOfTicketId);
+    const expectedIdempotencyKey = `${childClientRequestId}:${execution.stepId}:local-v2`;
+    const durable = await this.dependencies.tickets.getByIdempotencyKeyV2(snapshot.scope, expectedIdempotencyKey);
+    if (durable) {
+      await this.assertNodeTicket(snapshot, node, source, durable, childClientRequestId);
+      const recovery = await this.recoverNodeTicket(snapshot, node, source, durable, auth);
+      if (recovery.status !== 'PENDING') {
+        throw conflict('aee_serial_prepared_ticket_not_pending', 'Recovered unbound AEE node ticket is already terminal before continuation binding');
+      }
+      return durable;
+    }
+
     const prepared = await this.dependencies.workflowTickets.withWorkflowBinding({
       scope: snapshot.scope,
       workflowId: snapshot.executionId,
@@ -572,14 +592,6 @@ export class AeeSerialAdmittedGraphDriverV1 {
     }
   }
 
-  private async assertCurrentProjectSource(auth: AuthenticatedScope, scope: Scope, root: DurableResolvedArtifact): Promise<void> {
-    const project = await this.dependencies.projects.get(auth, scope.projectId);
-    if (!project) throw notFound('project_not_found', 'Project not found');
-    if (project.current_image_storage_id !== root.storageId || Number(project.width) !== root.width || Number(project.height) !== root.height) {
-      throw conflict('aee_serial_project_source_conflict', 'New AEE execution source is not the current canonical Project IMAGE');
-    }
-  }
-
   private async requireSnapshot(executionId: string, scope: Scope): Promise<WorkflowContinuationSnapshot> {
     const snapshot = await this.dependencies.continuations.get(executionId, scope);
     if (!snapshot) throw notFound('aee_serial_not_found', 'AEE workflow was not found in authenticated Project scope');
@@ -638,7 +650,7 @@ export class AeeSerialAdmittedGraphDriverV1 {
     }
     if (!isTerminal(snapshot.state)) return;
 
-    const reason = snapshot.failureCode ?? (snapshot.state === 'CANCELLED' ? 'WORKFLOW_CANCELLED' : `AEE_SERIAL_${snapshot.state}`);
+    const reason = executionRunReasonCode(snapshot.failureCode ?? (snapshot.state === 'CANCELLED' ? 'WORKFLOW_CANCELLED' : `AEE_SERIAL_${snapshot.state}`));
     if (snapshot.state !== 'SUCCESS') {
       for (const child of await this.dependencies.runs.listChildren(parent.scope, parent.runId, RUN_CHILD_LIMIT)) {
         if (child.status !== 'QUEUED' && child.status !== 'RUNNING') continue;
@@ -838,6 +850,17 @@ function sha256(value: unknown, field: string): string {
   const normalized = token(value, field).toLowerCase();
   if (!/^[a-f0-9]{64}$/u.test(normalized)) throw requestError('aee_serial_digest_invalid', `${field} must be SHA-256 hex`);
   return normalized;
+}
+
+function executionRunReasonCode(value: string): string {
+  const normalized = value.normalize('NFKC').toUpperCase()
+    .replace(/[^A-Z0-9_]+/gu, '_')
+    .replace(/_+/gu, '_')
+    .replace(/^_+|_+$/gu, '');
+  if (!normalized) return 'AEE_SERIAL_FAILURE';
+  if (normalized.length <= 128) return normalized;
+  const suffix = createHash('sha256').update(value).digest('hex').slice(0, 16).toUpperCase();
+  return `${normalized.slice(0, 111)}_${suffix}`;
 }
 
 function requestError(code: string, message: string): Error & { status: number; code: string } {

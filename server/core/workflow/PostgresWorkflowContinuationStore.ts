@@ -25,6 +25,7 @@ import {
   type WorkflowContinuationSnapshot,
   type WorkflowContinuationState,
   type WorkflowContinuationStore,
+  type WorkflowCurrentProjectSourceBinding,
   type WorkflowInputArtifactBinding,
   type WorkflowLocalTicketBinding,
 } from './WorkflowContinuationStore.ts';
@@ -70,6 +71,78 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
     throw new Error('Workflow continuation persistence conflict could not be reconciled');
   }
 
+  async createWithCurrentProjectSource(
+    input: CreateWorkflowContinuationInput,
+    sourceInput: WorkflowCurrentProjectSourceBinding,
+  ): Promise<WorkflowContinuationSnapshot> {
+    const normalized = normalizeWorkflowContinuationCreate(input);
+    const source = normalizeCurrentProjectSourceBinding(sourceInput);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, $2))', [lockKey(normalized.scope, normalized.executionId), LOCK_SALT]);
+
+      // Durable replay wins before consulting today's Project row. This preserves
+      // immutable workflow replay after the Project has legitimately advanced.
+      const byClient = await client.query(`SELECT ${COLUMNS} FROM workflow_continuations
+        WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND client_request_id=$4`,
+        [normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId, normalized.clientRequestId]);
+      if (byClient.rows[0]) {
+        const replay = reconcileCreate(snapshotFromRow(byClient.rows[0]), normalized);
+        await client.query('COMMIT');
+        return replay;
+      }
+      const byExecution = await client.query(`SELECT ${COLUMNS} FROM workflow_continuations
+        WHERE execution_id=$1 AND tenant_id=$2 AND user_id=$3 AND project_id=$4`,
+        [normalized.executionId, normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId]);
+      if (byExecution.rows[0]) {
+        const replay = reconcileCreate(snapshotFromRow(byExecution.rows[0]), normalized);
+        await client.query('COMMIT');
+        return replay;
+      }
+
+      // A new continuation is admitted only while holding the canonical Project
+      // row SHARE lock. Project mutations use FOR UPDATE, so source validation and
+      // continuation INSERT form one serialization boundary with no TOCTOU gap.
+      const project = await client.query(`SELECT current_image_storage_id,width,height
+        FROM canonical_projects
+        WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL
+        FOR SHARE`, [normalized.scope.projectId, normalized.scope.tenantId, normalized.scope.userId]);
+      const row = project.rows[0];
+      if (!row) throw projectSourceConflict('Canonical Project is unavailable for new workflow admission');
+      if (String(row.current_image_storage_id) !== source.storageId || Number(row.width) !== source.width || Number(row.height) !== source.height) {
+        throw projectSourceConflict('New workflow source is not the current canonical Project IMAGE');
+      }
+
+      const inserted = await client.query(`INSERT INTO workflow_continuations
+        (execution_id,client_request_id,tenant_id,user_id,project_id,plan_id,plan_revision,plan_digest,input_artifacts_json,plan_parameters_json,state,completed_steps_json)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,'READY','[]'::jsonb)
+        ON CONFLICT DO NOTHING RETURNING ${COLUMNS}`,
+        [normalized.executionId, normalized.clientRequestId, normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId,
+          normalized.plan.planId, normalized.plan.planRevision, normalized.plan.planDigest, JSON.stringify(normalized.inputArtifacts), JSON.stringify(normalized.plan.parameters ?? {})]);
+      if (inserted.rows[0]) {
+        const created = snapshotFromRow(inserted.rows[0]);
+        await client.query('COMMIT');
+        return created;
+      }
+
+      // A conflicting writer outside the advisory convention still cannot widen
+      // authority: reconcile exact immutable bytes or fail closed.
+      const raced = await client.query(`SELECT ${COLUMNS} FROM workflow_continuations
+        WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3 AND client_request_id=$4`,
+        [normalized.scope.tenantId, normalized.scope.userId, normalized.scope.projectId, normalized.clientRequestId]);
+      if (!raced.rows[0]) throw new Error('Workflow continuation guarded persistence conflict could not be reconciled');
+      const replay = reconcileCreate(snapshotFromRow(raced.rows[0]), normalized);
+      await client.query('COMMIT');
+      return replay;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async get(executionId: string, scopeInput: Scope): Promise<WorkflowContinuationSnapshot | undefined> {
     const scope = normalizeScope(scopeInput);
     const result = await this.pool.query(`SELECT ${COLUMNS} FROM workflow_continuations
@@ -108,6 +181,28 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
     });
   }
 
+  bindExpiredLocalTicketForRecovery(input: WaitForLocalResultInput): Promise<WorkflowContinuationSnapshot> {
+    const ticket = normalizeTicketBinding(input.ticket);
+    const continuationStepId = normalizeContinuationStepId(input.continuationStepId, ticket.stepId);
+    return this.mutate(input.executionId, input.scope, async (snapshot, client) => {
+      if (snapshot.state === 'WAITING_FOR_LOCAL_RESULT') {
+        if (sameOutstandingTicket(snapshot.outstandingLocal, ticket, continuationStepId)) return snapshot;
+        throw conflict('Workflow is already waiting for a different local execution ticket');
+      }
+      assertMutable(snapshot);
+      if (snapshot.state !== 'READY') throw conflict(`Workflow cannot recover an unbound local ticket from state ${snapshot.state}`);
+      assertExpectedRevision(snapshot.revision, input.expectedRevision);
+      if (snapshot.completedSteps.some(step => step.stepId === continuationStepId)) throw conflict('Completed workflow step cannot recover an unbound local ticket');
+      await this.assertOutstandingTicket(client, snapshot, ticket, 'EXPIRED_RECOVERY');
+      return Object.freeze({
+        state: 'WAITING_FOR_LOCAL_RESULT',
+        currentStepId: continuationStepId,
+        outstandingLocal: logicalTicketBinding(continuationStepId, ticket),
+        completedSteps: snapshot.completedSteps,
+      });
+    });
+  }
+
   retryLocalResult(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot> {
     const previousTicketId = requireToken(input.previousTicketId, 'previousTicketId');
     const ticket = normalizeTicketBinding(input.ticket);
@@ -129,6 +224,36 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
       const previousOperationStepId = await this.assertRetryablePreviousTicket(client, snapshot, current);
       await this.assertOutstandingTicket(client, snapshot, ticket);
       if (ticket.stepId !== previousOperationStepId) throw conflict('Local retry cannot change the underlying local operation step');
+      return Object.freeze({
+        state: 'WAITING_FOR_LOCAL_RESULT',
+        currentStepId: continuationStepId,
+        outstandingLocal: logicalTicketBinding(continuationStepId, ticket),
+        completedSteps: snapshot.completedSteps,
+      });
+    });
+  }
+
+  bindExpiredRetryLocalTicketForRecovery(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot> {
+    const previousTicketId = requireToken(input.previousTicketId, 'previousTicketId');
+    const ticket = normalizeTicketBinding(input.ticket);
+    const continuationStepId = normalizeContinuationStepId(input.continuationStepId, ticket.stepId);
+    return this.mutate(input.executionId, input.scope, async (snapshot, client) => {
+      assertMutable(snapshot);
+      if (snapshot.state !== 'WAITING_FOR_LOCAL_RESULT' || !snapshot.outstandingLocal || !snapshot.currentStepId) {
+        throw conflict('Workflow can recover a retry ticket only while waiting for the previous exact attempt');
+      }
+      if (sameOutstandingTicket(snapshot.outstandingLocal, ticket, continuationStepId) && snapshot.outstandingLocal.ticketId !== previousTicketId) {
+        return snapshot;
+      }
+      assertExpectedRevision(snapshot.revision, input.expectedRevision);
+      const current = snapshot.outstandingLocal;
+      if (current.ticketId !== previousTicketId) throw conflict('Recovered retry previous ticket does not match the durable outstanding attempt');
+      if (ticket.ticketId === previousTicketId) throw conflict('Recovered retry must use a distinct Core-issued ticket identity');
+      if (continuationStepId !== current.stepId || continuationStepId !== snapshot.currentStepId) throw conflict('Recovered retry cannot change the durable workflow step');
+      if (snapshot.completedSteps.some(step => step.stepId === continuationStepId)) throw conflict('Completed workflow step cannot recover retry work');
+      const previousOperationStepId = await this.assertRetryablePreviousTicket(client, snapshot, current);
+      await this.assertOutstandingTicket(client, snapshot, ticket, 'EXPIRED_RECOVERY');
+      if (ticket.stepId !== previousOperationStepId) throw conflict('Recovered retry cannot change the underlying local operation step');
       return Object.freeze({
         state: 'WAITING_FOR_LOCAL_RESULT',
         currentStepId: continuationStepId,
@@ -222,7 +347,12 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
     });
   }
 
-  private async assertOutstandingTicket(client: PoolClient, snapshot: WorkflowContinuationSnapshot, ticket: WorkflowLocalTicketBinding): Promise<void> {
+  private async assertOutstandingTicket(
+    client: PoolClient,
+    snapshot: WorkflowContinuationSnapshot,
+    ticket: WorkflowLocalTicketBinding,
+    expiryRequirement: 'ACTIVE' | 'EXPIRED_RECOVERY' = 'ACTIVE',
+  ): Promise<void> {
     const result = await client.query(`SELECT ticket_id,tenant_id,user_id,project_id,workflow_id,step_id,ticket_json,consumed_at
       FROM local_execution_tickets WHERE ticket_id=$1`, [ticket.ticketId]);
     const row = result.rows[0];
@@ -236,7 +366,9 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
     if (durable.policy !== 'LOCAL_ONLY') throw conflict('Composite continuation only admits LOCAL_ONLY execution tickets');
     const cost = durable.cost as Record<string, unknown> | undefined;
     if (cost?.providerCalls !== 0 || cost?.paidCloudCredits !== 0) throw conflict('Local composite step contains forbidden provider or paid-credit authority');
-    if (Date.parse(ticket.expiresAt) <= this.now()) throw conflict('Expired local execution ticket cannot become outstanding work');
+    const expired = Date.parse(ticket.expiresAt) <= this.now();
+    if (expiryRequirement === 'ACTIVE' && expired) throw conflict('Expired local execution ticket cannot become outstanding work');
+    if (expiryRequirement === 'EXPIRED_RECOVERY' && !expired) throw conflict('Recovery binding requires an already expired durable local execution ticket');
     assertTicketInputsBound(snapshot, durable.inputs);
   }
 
@@ -297,6 +429,16 @@ export class PostgresWorkflowContinuationStore implements WorkflowContinuationSt
       client.release();
     }
   }
+}
+
+function normalizeCurrentProjectSourceBinding(value: WorkflowCurrentProjectSourceBinding): WorkflowCurrentProjectSourceBinding {
+  const storageId = requireToken(value?.storageId, 'currentProjectSource.storageId');
+  const width = Number(value?.width);
+  const height = Number(value?.height);
+  if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) {
+    throw new Error('Current Project source dimensions must be positive safe integers');
+  }
+  return Object.freeze({ storageId, width, height });
 }
 
 function reconcileCreate(stored: WorkflowContinuationSnapshot, candidate: ReturnType<typeof normalizeWorkflowContinuationCreate>): WorkflowContinuationSnapshot {
@@ -434,6 +576,9 @@ function lockKey(scope: Scope, executionId: string): string {
 
 function conflict(message: string): Error {
   return Object.assign(new Error(message), { code: 'WORKFLOW_CONTINUATION_CONFLICT' });
+}
+function projectSourceConflict(message: string): Error {
+  return Object.assign(new Error(message), { code: 'WORKFLOW_CONTINUATION_PROJECT_SOURCE_CONFLICT' });
 }
 
 function requireToken(value: unknown, field: string): string {

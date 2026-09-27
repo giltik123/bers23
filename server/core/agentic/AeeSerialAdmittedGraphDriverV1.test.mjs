@@ -28,7 +28,7 @@ function image(artifactId, storageId, role, hashChar, parents, width, height) {
   return Object.freeze({ artifactId, storageId, kind: 'image', role, sha256: hashChar.repeat(64), parentArtifactIds: Object.freeze(parents), width, height });
 }
 
-function admittedGraph(maxRetries = 1) {
+function admittedGraph(maxRetries = 1, maxWallClockMs = 120_000) {
   const rawIntent = {
     schemaVersion: AGENT_INTENT_V1_SCHEMA,
     parserVersion: 'ae4b-test-parser/1',
@@ -38,7 +38,7 @@ function admittedGraph(maxRetries = 1) {
     constraints: { quality: 'BALANCED', styleTags: [] },
     execution: {
       policy: 'LOCAL_ONLY', cloudAllowed: false, maxNodes: 4, maxRetries, maxReplans: 0,
-      maxCandidates: 1, maxPaidCredits: 0, maxWallClockMs: 120_000, maxMemoryBytes: 64 * 1024 * 1024,
+      maxCandidates: 1, maxPaidCredits: 0, maxWallClockMs, maxMemoryBytes: 64 * 1024 * 1024,
     },
     context: { modalities: ['TEXT'], uiReferences: [] }, ambiguities: [], evidence: [], confidence: 0.99,
   };
@@ -68,7 +68,10 @@ function admittedGraph(maxRetries = 1) {
 }
 
 class MemoryContinuationStore {
-  constructor() { this.byExecution = new Map(); this.byClient = new Map(); }
+  constructor(now = () => NOW) {
+    this.byExecution = new Map(); this.byClient = new Map(); this.now = now;
+    this.sourceChecks = 0; this.failNextWait = false;
+  }
   async create(input) {
     const existing = this.byClient.get(input.clientRequestId);
     if (existing) {
@@ -84,19 +87,47 @@ class MemoryContinuationStore {
       createdAt: new Date(NOW).toISOString(), updatedAt: new Date(NOW).toISOString(),
     }));
   }
+  async createWithCurrentProjectSource(input, source) {
+    const existing = this.byClient.get(input.clientRequestId);
+    if (existing) return this.create(input);
+    this.sourceChecks += 1;
+    assert.deepEqual(source, { storageId: root.storageId, width: root.width, height: root.height });
+    return this.create(input);
+  }
   async get(executionId, queryScope) { const value = this.byExecution.get(executionId); return value && sameScope(value.scope, queryScope) ? value : undefined; }
   async getByClientRequestId(queryScope, clientRequestId) { const value = this.byClient.get(clientRequestId); return value && sameScope(value.scope, queryScope) ? value : undefined; }
   async waitForLocalResult({ executionId, scope: queryScope, expectedRevision, continuationStepId, ticket }) {
     const current = this.#require(executionId, queryScope);
     const logical = continuationStepId ?? ticket.stepId;
     if (current.state === 'WAITING_FOR_LOCAL_RESULT' && current.outstandingLocal?.ticketId === ticket.ticketId && current.currentStepId === logical) return current;
+    if (this.failNextWait) {
+      this.failNextWait = false;
+      throw Object.assign(new Error('simulated crash after durable ticket issuance'), { code: 'SIMULATED_CRASH' });
+    }
     assert.equal(current.state, 'READY'); assert.equal(current.revision, expectedRevision);
+    assert.ok(Date.parse(ticket.expiresAt) > this.now(), 'normal bind must reject an expired ticket');
+    return this.#next(current, { state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: logical, outstandingLocal: Object.freeze({ ...ticket, stepId: logical }), completedSteps: current.completedSteps });
+  }
+  async bindExpiredLocalTicketForRecovery({ executionId, scope: queryScope, expectedRevision, continuationStepId, ticket }) {
+    const current = this.#require(executionId, queryScope);
+    const logical = continuationStepId ?? ticket.stepId;
+    if (current.state === 'WAITING_FOR_LOCAL_RESULT' && current.outstandingLocal?.ticketId === ticket.ticketId && current.currentStepId === logical) return current;
+    assert.equal(current.state, 'READY'); assert.equal(current.revision, expectedRevision);
+    assert.ok(Date.parse(ticket.expiresAt) <= this.now(), 'recovery bind is only for an expired orphan ticket');
     return this.#next(current, { state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: logical, outstandingLocal: Object.freeze({ ...ticket, stepId: logical }), completedSteps: current.completedSteps });
   }
   async retryLocalResult({ executionId, scope: queryScope, expectedRevision, continuationStepId, previousTicketId, ticket }) {
     const current = this.#require(executionId, queryScope); const logical = continuationStepId ?? ticket.stepId;
     assert.equal(current.state, 'WAITING_FOR_LOCAL_RESULT'); assert.equal(current.revision, expectedRevision);
     assert.equal(current.currentStepId, logical); assert.equal(current.outstandingLocal.ticketId, previousTicketId); assert.notEqual(ticket.ticketId, previousTicketId);
+    assert.ok(Date.parse(ticket.expiresAt) > this.now(), 'normal retry bind must reject an expired replacement');
+    return this.#next(current, { state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: logical, outstandingLocal: Object.freeze({ ...ticket, stepId: logical }), completedSteps: current.completedSteps });
+  }
+  async bindExpiredRetryLocalTicketForRecovery({ executionId, scope: queryScope, expectedRevision, continuationStepId, previousTicketId, ticket }) {
+    const current = this.#require(executionId, queryScope); const logical = continuationStepId ?? ticket.stepId;
+    assert.equal(current.state, 'WAITING_FOR_LOCAL_RESULT'); assert.equal(current.revision, expectedRevision);
+    assert.equal(current.currentStepId, logical); assert.equal(current.outstandingLocal.ticketId, previousTicketId); assert.notEqual(ticket.ticketId, previousTicketId);
+    assert.ok(Date.parse(ticket.expiresAt) <= this.now(), 'retry recovery bind is only for an expired replacement');
     return this.#next(current, { state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: logical, outstandingLocal: Object.freeze({ ...ticket, stepId: logical }), completedSteps: current.completedSteps });
   }
   async completeLocalStep({ executionId, scope: queryScope, expectedRevision, stepId, ticketId, artifactIds }) {
@@ -155,6 +186,7 @@ class MemoryRunRegistry {
   async markUnknown(queryScope, runId, reason) { return this.#transition(queryScope, runId, 'UNKNOWN', reason); }
   #transition(queryScope, runId, status, reason) {
     const current = this.runs.get(runId); assert.ok(current); assert.ok(sameScope(current.scope, queryScope));
+    if (reason !== undefined) assert.match(reason, /^[A-Z0-9_]{1,128}$/, 'ExecutionRun reason must satisfy the production PostgreSQL contract');
     if (current.status === status) return current;
     const next = Object.freeze({ ...current, status, revision: current.revision + 1, statusReasonCode: reason, updatedAt: new Date(NOW + current.revision + 1).toISOString(), ...(status === 'RUNNING' ? { startedAt: new Date(NOW).toISOString() } : { finishedAt: new Date(NOW + 1).toISOString() }) });
     this.runs.set(runId, next); return next;
@@ -162,7 +194,9 @@ class MemoryRunRegistry {
 }
 
 function runtime(graph = admittedGraph()) {
-  const continuations = new MemoryContinuationStore();
+  let now = NOW;
+  let submitDelayMs = 0;
+  const continuations = new MemoryContinuationStore(() => now);
   const runs = new MemoryRunRegistry();
   const artifacts = new Map([[root.artifactId, root], [rotated.artifactId, rotated], [resizeOne.artifactId, resizeOne], [resizeTwo.artifactId, resizeTwo]]);
   const tickets = new Map();
@@ -171,7 +205,6 @@ function runtime(graph = admittedGraph()) {
   const unknownSources = new Set();
   let activeWorkflow;
   let sequence = 0;
-  let projectReads = 0;
 
   const plans = Object.freeze({ async get(queryScope, digest) { return sameScope(queryScope, scope) && digest === graph.digest ? { scope, graph, createdAt: new Date(NOW).toISOString() } : undefined; } });
   const workflowTickets = Object.freeze({
@@ -182,7 +215,10 @@ function runtime(graph = admittedGraph()) {
     assert.ok(activeWorkflow); assert.ok(activeWorkflow.allowedStepIds.includes(stepId));
     const key = `${command.clientRequestId}:${stepId}:local-v2`;
     const prior = [...tickets.values()].find(value => value.idempotencyKey === key && sameScope(value.scope, scope));
-    if (prior) return { executionId: prior.requestId, ticket: prior };
+    if (prior) {
+      if (now >= prior.expiresAt) throw Object.assign(new Error('canonical prepare rejects expired durable ticket replay'), { code: 'local_ticket_expired' });
+      return { executionId: prior.requestId, ticket: prior };
+    }
     const source = artifacts.get(command.sourceArtifactId); assert.ok(source);
     const requestId = `local-${stepId}-${createHash('sha256').update(command.clientRequestId).digest('hex').slice(0, 16)}`;
     const ticket = Object.freeze({
@@ -190,7 +226,7 @@ function runtime(graph = admittedGraph()) {
       operation: Object.freeze({ id: stepId, version: '1', type: stepId === RESIZE_STEP_ID ? 'RESIZE' : 'ORTHOGONAL_TRANSFORM', capability }),
       scope, inputs: Object.freeze([{ artifactId: source.artifactId, kind: source.kind, role: source.role, sha256: source.sha256 }]),
       expectedOutputs: Object.freeze([]), allowedExecutors: Object.freeze([]), policy: 'LOCAL_ONLY', cost: Object.freeze({ providerCalls: 0, paidCloudCredits: 0 }),
-      idempotencyKey: key, nonce: `nonce-${sequence}`, expiresAt: NOW + 60_000,
+      idempotencyKey: key, nonce: `nonce-${sequence}`, expiresAt: now + 60_000,
     });
     tickets.set(ticket.ticketId, ticket); recovery.set(ticket.ticketId, { status: 'PENDING', executionId: requestId });
     return { executionId: requestId, ticket };
@@ -206,6 +242,7 @@ function runtime(graph = admittedGraph()) {
 
   async function submit(ticketId) {
     const ticket = tickets.get(ticketId); assert.ok(ticket);
+    now += submitDelayMs;
     const sourceId = ticket.inputs[0].artifactId;
     if (unknownSources.has(sourceId)) { recovery.set(ticketId, { status: 'UNKNOWN', executionId: ticket.requestId }); return { executionId: ticket.requestId, status: 'UNKNOWN', outcome: { status: 'UNKNOWN' } }; }
     if (failSources.has(sourceId)) { recovery.set(ticketId, { status: 'FAILED', executionId: ticket.requestId }); return { executionId: ticket.requestId, status: 'FAILED', outcome: { status: 'FAILED' } }; }
@@ -217,21 +254,28 @@ function runtime(graph = admittedGraph()) {
   const dependencies = {
     plans,
     continuations,
-    tickets: Object.freeze({ async getV2(id) { return tickets.get(id); } }),
+    tickets: Object.freeze({
+      async getV2(id) { return tickets.get(id); },
+      async getByIdempotencyKeyV2(queryScope, key) {
+        return [...tickets.values()].find(value => value.idempotencyKey === key && sameScope(value.scope, queryScope));
+      },
+    }),
     workflowTickets,
     orthogonal: Object.freeze({ async prepare(command) { return issue(ORTHOGONAL_TRANSFORM_STEP_ID, ORTHOGONAL_TRANSFORM_CAPABILITY, command); }, async submit({ ticketId }) { return submit(ticketId); } }),
     resize: Object.freeze({ async prepare(command) { return issue(RESIZE_STEP_ID, RESIZE_CAPABILITY, command); }, async submit({ ticketId }) { return submit(ticketId); } }),
     finalRecovery: Object.freeze({ async recover(binding) { const value = recovery.get(binding.ticket.ticketId); assert.ok(value); return value; } }),
     artifacts: Object.freeze({ async resolve(queryScope, id) { assert.ok(sameScope(queryScope, scope)); const value = artifacts.get(id); if (!value) throw new Error('artifact unavailable'); return value; } }),
-    projects: Object.freeze({ async get(queryAuth, id) { projectReads += 1; assert.deepEqual(queryAuth, auth); return id === projectId ? { current_image_storage_id: root.storageId, width: root.width, height: root.height } : undefined; } }),
     runs,
-    now: () => NOW,
+    now: () => now,
   };
   return {
     graph, continuations, runs, tickets, recovery,
     driver: () => new AeeSerialAdmittedGraphDriverV1(dependencies),
     failSource(id) { failSources.add(id); }, clearFailSource(id) { failSources.delete(id); }, unknownSource(id) { unknownSources.add(id); },
-    projectReads: () => projectReads,
+    sourceChecks: () => continuations.sourceChecks,
+    advanceTime(ms) { now += ms; },
+    setSubmitDelay(ms) { submitDelayMs = ms; },
+    crashAfterNextTicketIssue() { continuations.failNextWait = true; },
   };
 }
 
@@ -244,11 +288,11 @@ test('AE-4b serial driver executes repeated capability nodes with independent lo
   let view = await r.driver().start(command(r.graph), auth);
   assert.equal(view.state, 'WAITING_FOR_LOCAL_RESULT'); assert.equal(view.nextAction.nodeId, 'rotate'); assert.equal(view.nextAction.ticket.stepId, ORTHOGONAL_TRANSFORM_STEP_ID);
   const executionId = view.executionId;
-  assert.equal(r.projectReads(), 1, 'new execution must prove the admitted source is current exactly at admission/start');
+  assert.equal(r.sourceChecks(), 1, 'new execution must atomically prove the admitted source at continuation creation');
 
   const resumed = await r.driver().resume(executionId, projectId, auth);
   assert.equal(resumed.nextAction.ticket.ticketId, view.nextAction.ticket.ticketId, 'restart must recover the same outstanding ticket');
-  assert.equal(r.projectReads(), 1, 'resume must use immutable admitted source instead of re-authorizing against a later Project cursor');
+  assert.equal(r.sourceChecks(), 1, 'resume must use immutable admitted source instead of re-authorizing against a later Project cursor');
 
   view = await r.driver().submitLocalResult(executionId, projectId, auth, result(view.nextAction.ticket));
   assert.equal(view.nextAction.nodeId, 'resize-one'); assert.equal(view.nextAction.ticket.stepId, RESIZE_STEP_ID);
@@ -268,7 +312,7 @@ test('AE-4b serial driver executes repeated capability nodes with independent lo
   assert.equal(parent.status, 'SUCCEEDED');
   const localChildren = (await r.runs.listChildren(scope, parent.runId, 20)).filter(run => run.capability === 'LOCAL_EXECUTION');
   assert.equal(localChildren.length, 3); assert.deepEqual(localChildren.map(run => run.status), ['SUCCEEDED', 'SUCCEEDED', 'SUCCEEDED']);
-  assert.equal(r.projectReads(), 1, 'driver must never mutate or re-authorize Project during serial execution');
+  assert.equal(r.sourceChecks(), 1, 'driver must never re-authorize Project after atomic continuation admission');
 });
 
 test('AE-4b spends the admitted retry budget globally across graph nodes from ExecutionRun history', async () => {
@@ -314,6 +358,54 @@ test('AE-4b fails closed on graph substitution and terminalizes UNKNOWN recovery
   assert.equal(view.state, 'UNKNOWN'); assert.equal(view.failureCode, 'AEE_NODE_rotate_UNKNOWN');
   const parent = await r.runs.getByAuthority(scope, 'WORKFLOW_CONTINUATION', view.executionId);
   assert.equal(parent.status, 'UNKNOWN');
+  assert.equal(parent.statusReasonCode, 'AEE_NODE_ROTATE_UNKNOWN', 'lowercase logical node IDs must normalize to the ExecutionRun reason contract');
   const attempts = (await r.runs.listChildren(scope, parent.runId, 20)).filter(run => run.capability === 'LOCAL_EXECUTION');
   assert.equal(attempts.length, 1); assert.equal(attempts[0].status, 'UNKNOWN');
+  assert.equal(attempts[0].statusReasonCode, 'AEE_NODE_ROTATE_UNKNOWN');
+});
+
+test('AE-4b preserves canonical local SUCCESS but fails wall-clock before advancing the completed node', async () => {
+  const r = runtime(admittedGraph(1, 5_000));
+  r.setSubmitDelay(6_000);
+  let view = await r.driver().start(command(r.graph), auth);
+  const firstTicketId = view.nextAction.ticket.ticketId;
+  view = await r.driver().submitLocalResult(view.executionId, projectId, auth, result(view.nextAction.ticket));
+
+  assert.equal(view.state, 'FAILED');
+  assert.equal(view.failureCode, 'AEE_WALL_CLOCK_BUDGET_EXCEEDED');
+  assert.equal(r.tickets.size, 1, 'budget failure must happen before the next node can mint a ticket');
+  const snapshot = await r.continuations.get(view.executionId, scope);
+  assert.deepEqual(snapshot.completedSteps.map(step => step.stepId), ['rotate'], 'the completed local SUCCESS remains canonical evidence');
+  assert.equal(snapshot.completedSteps[0].ticketId, firstTicketId);
+  const parent = await r.runs.getByAuthority(scope, 'WORKFLOW_CONTINUATION', view.executionId);
+  const attempts = (await r.runs.listChildren(scope, parent.runId, 20)).filter(run => run.capability === 'LOCAL_EXECUTION');
+  assert.equal(parent.status, 'FAILED');
+  assert.equal(parent.statusReasonCode, 'AEE_WALL_CLOCK_BUDGET_EXCEEDED');
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0].status, 'SUCCEEDED', 'local evidence stays SUCCESS even though the parent budget is exceeded');
+});
+
+test('AE-4b recovers an exact orphan ticket after crash and can retry it after expiry without stranding the continuation', async () => {
+  const r = runtime();
+  r.crashAfterNextTicketIssue();
+  await assert.rejects(() => r.driver().start(command(r.graph), auth), error => error?.code === 'SIMULATED_CRASH');
+  assert.equal(r.tickets.size, 1, 'the simulated crash occurs only after the durable ticket exists');
+  const orphan = [...r.tickets.values()][0];
+  const executionId = [...r.continuations.byExecution.keys()][0];
+  assert.ok(executionId, 'READY continuation must exist before local ticket preparation');
+
+  r.advanceTime(61_000);
+  let view = await r.driver().start(command(r.graph), auth);
+  assert.equal(r.tickets.size, 1, 'replay must recover the exact deterministic orphan ticket rather than mint a replacement');
+  const recovered = await r.continuations.get(executionId, scope);
+  assert.equal(recovered.state, 'WAITING_FOR_LOCAL_RESULT');
+  assert.equal(recovered.outstandingLocal.ticketId, orphan.ticketId);
+  assert.equal(view.retryAvailable, true);
+  assert.equal(view.attemptStatus, 'EXPIRED');
+
+  view = await r.driver().retry(executionId, projectId, auth);
+  assert.equal(r.tickets.size, 2, 'explicit retry may mint exactly one replacement after the expired orphan is durably bound');
+  assert.equal(view.nextAction.nodeId, 'rotate');
+  assert.notEqual(view.nextAction.ticket.ticketId, orphan.ticketId);
+  assert.ok(view.nextAction.ticket.expiresAt > orphan.expiresAt);
 });

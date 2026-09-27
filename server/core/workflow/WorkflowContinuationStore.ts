@@ -75,6 +75,18 @@ export type CreateWorkflowContinuationInput = Readonly<{
   inputArtifacts: readonly WorkflowInputArtifactBinding[];
 }>;
 
+/**
+ * Exact canonical Project source expected when a brand-new workflow continuation
+ * is admitted. PostgreSQL implementations must validate this under the same
+ * transaction/serialization boundary that creates the continuation. Durable
+ * replay must win before consulting today's Project cursor.
+ */
+export type WorkflowCurrentProjectSourceBinding = Readonly<{
+  storageId: string;
+  width: number;
+  height: number;
+}>;
+
 export type WaitForLocalResultInput = Readonly<{
   executionId: string;
   scope: Scope;
@@ -132,10 +144,16 @@ export type TerminalWorkflowInput = Readonly<{
 
 export interface WorkflowContinuationStore {
   create(input: CreateWorkflowContinuationInput): Promise<WorkflowContinuationSnapshot>;
+  createWithCurrentProjectSource(
+    input: CreateWorkflowContinuationInput,
+    source: WorkflowCurrentProjectSourceBinding,
+  ): Promise<WorkflowContinuationSnapshot>;
   get(executionId: string, scope: Scope): Promise<WorkflowContinuationSnapshot | undefined>;
   getByClientRequestId(scope: Scope, clientRequestId: string): Promise<WorkflowContinuationSnapshot | undefined>;
   waitForLocalResult(input: WaitForLocalResultInput): Promise<WorkflowContinuationSnapshot>;
+  bindExpiredLocalTicketForRecovery(input: WaitForLocalResultInput): Promise<WorkflowContinuationSnapshot>;
   retryLocalResult(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot>;
+  bindExpiredRetryLocalTicketForRecovery(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot>;
   completeLocalStep(input: CompleteLocalStepInput): Promise<WorkflowContinuationSnapshot>;
   runInternalStep(input: RunInternalStepInput): Promise<WorkflowContinuationSnapshot>;
   completeInternalStep(input: CompleteInternalStepInput): Promise<WorkflowContinuationSnapshot>;
