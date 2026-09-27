@@ -106,10 +106,11 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
                     : composite
                       ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)]
                       : [simpleOperations(request, artifacts, constraints)];
+    const simpleProvider = !garmentMeshWarp && !orthogonalTransform && !resize && !crop && !superResolution && !backgroundIsolation && !interactiveSegmentation && !localComposite && !composite;
     const rawCandidates = strategies.map((operations, index) => candidate(
-      localComposite ? 'local-continuation' : index === 0 ? 'local-efficient' : 'cloud-quality',
+      simpleProvider ? 'cloud-provider' : localComposite ? 'local-continuation' : index === 0 ? 'local-efficient' : 'cloud-quality',
       operations,
-      localComposite ? 'LOCAL' : index === 0 ? 'LOCAL' : 'CLOUD',
+      simpleProvider ? 'CLOUD' : localComposite ? 'LOCAL' : index === 0 ? 'LOCAL' : 'CLOUD',
       localComposite ? 0 : composite ? (index === 0 ? 1 : 5) : 0,
       localComposite ? 180 : composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : crop ? 5 : resize ? 25 : orthogonalTransform ? 5 : garmentMeshWarp ? 20 : superResolution ? 900 : 0,
       localComposite ? 1 : composite ? (index === 0 ? .76 : .94) : backgroundIsolation || crop || resize || orthogonalTransform || garmentMeshWarp ? 1 : superResolution ? .9 : .9,
@@ -382,7 +383,27 @@ function candidate(id: string, operations: readonly CreativeOperation[], targetP
   return { id: `candidate-v1-${id}`, operations, targetPreference, estimatedCredits, estimatedLatencyMs, score, status: 'ACCEPTED', reasonCodes: [] };
 }
 export function scoreCandidate(quality: number, credits: number, latencyMs: number, reliability: number, confidence: number): CreativePlanScore { const costEfficiency = clamp(1 - credits / 10); const latency = clamp(1 - latencyMs / 10000); return immutable({ quality, costEfficiency, latency, reliability, confidence, total: round(quality * .3 + costEfficiency * .2 + latency * .15 + reliability * .15 + confidence * .2) }); }
-export function rankAndFilter(input: readonly CreativePlanCandidate[], constraints: CreativePlanConstraints): readonly CreativePlanCandidate[] { return [...input].map(value => { const reasons: string[] = []; if (constraints.executionPolicy === 'LOCAL_ONLY' && value.targetPreference !== 'LOCAL') reasons.push('EXECUTION_POLICY_LOCAL_ONLY'); if (constraints.forbiddenTargets.includes(value.targetPreference)) reasons.push('FORBIDDEN_TARGET'); if (constraints.maxCredits !== undefined && value.estimatedCredits > constraints.maxCredits) reasons.push('MAX_CREDITS_EXCEEDED'); if (constraints.maxLatencyMs !== undefined && value.estimatedLatencyMs > constraints.maxLatencyMs) reasons.push('MAX_LATENCY_EXCEEDED'); if (constraints.minimumQuality !== undefined && value.score.quality < constraints.minimumQuality) reasons.push('MINIMUM_QUALITY_NOT_MET'); return immutable({ ...value, status: reasons.length ? 'REJECTED' as const : 'ACCEPTED' as const, reasonCodes: immutable(reasons) }); }).sort((a, b) => b.score.total - a.score.total || a.id.localeCompare(b.id)); }
+export function rankAndFilter(input: readonly CreativePlanCandidate[], constraints: CreativePlanConstraints): readonly CreativePlanCandidate[] {
+  const ranked = [...input].map(value => {
+    const reasons: string[] = [];
+    if (constraints.executionPolicy === 'LOCAL_ONLY' && value.targetPreference !== 'LOCAL') reasons.push('EXECUTION_POLICY_LOCAL_ONLY');
+    if (constraints.forbiddenTargets.includes(value.targetPreference)) reasons.push('FORBIDDEN_TARGET');
+    if (constraints.maxCredits !== undefined && value.estimatedCredits > constraints.maxCredits) reasons.push('MAX_CREDITS_EXCEEDED');
+    if (constraints.maxLatencyMs !== undefined && value.estimatedLatencyMs > constraints.maxLatencyMs) reasons.push('MAX_LATENCY_EXCEEDED');
+    if (constraints.minimumQuality !== undefined && value.score.quality < constraints.minimumQuality) reasons.push('MINIMUM_QUALITY_NOT_MET');
+    return immutable({ ...value, status: reasons.length ? 'REJECTED' as const : 'ACCEPTED' as const, reasonCodes: immutable(reasons) });
+  });
+  return ranked.sort((a, b) =>
+    Number(a.status === 'REJECTED') - Number(b.status === 'REJECTED')
+    || targetPolicyRank(a.targetPreference, constraints.executionPolicy) - targetPolicyRank(b.targetPreference, constraints.executionPolicy)
+    || b.score.total - a.score.total
+    || a.id.localeCompare(b.id)
+  );
+}
+function targetPolicyRank(target: Exclude<ExecutionTarget, 'BLOCKED'>, policy: PlanningExecutionPolicy): number {
+  if (policy === 'CLOUD_PREFERRED') return target === 'CLOUD' ? 0 : target === 'HYBRID' ? 1 : 2;
+  return target === 'LOCAL' ? 0 : target === 'HYBRID' ? 1 : 2;
+}
 function readConstraints(request: CreativeRequest, decision: CreativeDecision): CreativePlanConstraints { const source = object(request.metadata?.planningConstraints); const policy = enumValue(source.executionPolicy, ['LOCAL_ONLY', 'CLOUD_ALLOWED', 'CLOUD_PREFERRED', 'AUTO'], 'AUTO') as PlanningExecutionPolicy; return { preserveMode: stringValue(source.preserveMode, stringValue(request.metadata?.preserveMode, 'STRICT')), mustPreserve: strings(source.mustPreserve), mustChange: strings(source.mustChange), forbiddenTargets: strings(source.forbiddenTargets).filter(value => ['LOCAL', 'CLOUD', 'HYBRID'].includes(value)) as Exclude<ExecutionTarget, 'BLOCKED'>[], forbiddenRegions: strings(source.forbiddenRegions), executionPolicy: policy, maxCredits: numberValue(source.maxCredits), maxLatencyMs: numberValue(source.maxLatencyMs), minimumQuality: numberValue(source.minimumQuality), confirmationPolicy: enumValue(source.confirmationPolicy, ['ASK', 'BLOCK', 'ALLOW_PRESERVATION_RISK'], 'ASK') as PlanningConfirmationPolicy }; }
 function readUncertainty(request: CreativeRequest): CreativePlanUncertainty { const source = object(request.metadata?.uncertainty); const intentInterpretation = confidence(source.intentInterpretation, .95); const targetResolution = confidence(source.targetResolution, .95); const feasibilityCapability = confidence(source.feasibilityCapability, .9); const preservationRisk = confidence(source.preservationRisk, .1); return { intentInterpretation, targetResolution, feasibilityCapability, preservationRisk, aggregateConfidence: round((intentInterpretation + targetResolution + feasibilityCapability + (1 - preservationRisk)) / 4) }; }
 function readPlannerCropRect(value: unknown): PlannerCropRect | undefined { const source = object(value); const x = source.x; const y = source.y; const width = source.width; const height = source.height; if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || Number(x) < 0 || Number(y) < 0 || Number(width) < 1 || Number(height) < 1) return undefined; return immutable({ x: Number(x), y: Number(y), width: Number(width), height: Number(height) }); }
