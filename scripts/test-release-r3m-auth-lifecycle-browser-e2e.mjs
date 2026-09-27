@@ -236,6 +236,12 @@ function attachDiagnostics(page) {
   page.on('pageerror', error => diagnostics.pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') diagnostics.consoleErrors.push(message.text()); });
   page.on('requestfailed', request => diagnostics.requestFailures.push({ url: request.url(), failure: request.failure()?.errorText ?? 'unknown' }));
+  page.on('response', response => {
+    if (response.status() < 400) return;
+    let url;
+    try { url = new URL(response.url()); } catch { return; }
+    diagnostics.httpErrors.push({ status: response.status(), origin: url.origin, path: url.pathname });
+  });
   page.on('request', request => {
     let url;
     try { url = new URL(request.url()); } catch { return; }
