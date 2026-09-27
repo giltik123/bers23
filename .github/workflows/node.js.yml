@@ -76,10 +76,10 @@ jobs:
           ref: ${{ env.CANDIDATE_SHA }}
       - name: Assert exact candidate SHA
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
-      - name: Use Node.js 24
+      - name: Use production Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 24.x
+          node-version: 22.x
           cache: npm
       - run: npm ci
       - name: Typecheck Core server
@@ -112,7 +112,7 @@ jobs:
           cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/project-postgres/migrations/007_project_history_source_lineage.sql
           cp server/core/auth/migrations/008_canonical_auth_identity_sessions.sql .test-cache/project-postgres/migrations/008_canonical_auth_identity_sessions.sql
           cp server/core/auth/migrations/009_auth_lifecycle_oauth.sql .test-cache/project-postgres/migrations/009_auth_lifecycle_oauth.sql
-          npx esbuild tests/project-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/project-postgres/project-postgres-vertical.test.mjs --external:pg --external:sharp --external:node:*
+          npx esbuild tests/project-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node22 --outfile=.test-cache/project-postgres/project-postgres-vertical.test.mjs --external:pg --external:sharp --external:node:*
           node --test .test-cache/project-postgres/project-postgres-vertical.test.mjs
       - name: Run canonical Project history PostgreSQL vertical
         run: |
@@ -126,7 +126,7 @@ jobs:
           cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/project-history/migrations/007_project_history_source_lineage.sql
           cp server/core/auth/migrations/008_canonical_auth_identity_sessions.sql .test-cache/project-history/migrations/008_canonical_auth_identity_sessions.sql
           cp server/core/auth/migrations/009_auth_lifecycle_oauth.sql .test-cache/project-history/migrations/009_auth_lifecycle_oauth.sql
-          npx esbuild tests/project-history-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/project-history/project-history-postgres.test.mjs --external:pg --external:sharp --external:node:*
+          npx esbuild tests/project-history-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node22 --outfile=.test-cache/project-history/project-history-postgres.test.mjs --external:pg --external:sharp --external:node:*
           node --test .test-cache/project-history/project-history-postgres.test.mjs
       - name: Run canonical Project history authority PostgreSQL guards
         run: |
@@ -140,7 +140,7 @@ jobs:
           cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/project-history-authority/migrations/007_project_history_source_lineage.sql
           cp server/core/auth/migrations/008_canonical_auth_identity_sessions.sql .test-cache/project-history-authority/migrations/008_canonical_auth_identity_sessions.sql
           cp server/core/auth/migrations/009_auth_lifecycle_oauth.sql .test-cache/project-history-authority/migrations/009_auth_lifecycle_oauth.sql
-          npx esbuild tests/project-history-authority-postgres.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/project-history-authority/project-history-authority-postgres.test.mjs --external:pg --external:sharp --external:node:*
+          npx esbuild tests/project-history-authority-postgres.test.ts --bundle --platform=node --format=esm --target=node22 --outfile=.test-cache/project-history-authority/project-history-authority-postgres.test.mjs --external:pg --external:sharp --external:node:*
           node --test .test-cache/project-history-authority/project-history-authority-postgres.test.mjs
       - name: Run canonical Auth login to Project PostgreSQL vertical
         run: |
@@ -154,7 +154,7 @@ jobs:
           cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/auth-postgres/migrations/007_project_history_source_lineage.sql
           cp server/core/auth/migrations/008_canonical_auth_identity_sessions.sql .test-cache/auth-postgres/migrations/008_canonical_auth_identity_sessions.sql
           cp server/core/auth/migrations/009_auth_lifecycle_oauth.sql .test-cache/auth-postgres/migrations/009_auth_lifecycle_oauth.sql
-          npx esbuild tests/auth-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/auth-postgres/auth-postgres-vertical.test.mjs --external:pg --external:sharp --external:node:*
+          npx esbuild tests/auth-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node22 --outfile=.test-cache/auth-postgres/auth-postgres-vertical.test.mjs --external:pg --external:sharp --external:node:*
           node --test .test-cache/auth-postgres/auth-postgres-vertical.test.mjs
       - name: Run canonical Auth lifecycle and Google OAuth PostgreSQL vertical
         run: |
@@ -168,7 +168,7 @@ jobs:
           cp server/core/projects/migrations/007_project_history_source_lineage.sql .test-cache/auth-lifecycle/migrations/007_project_history_source_lineage.sql
           cp server/core/auth/migrations/008_canonical_auth_identity_sessions.sql .test-cache/auth-lifecycle/migrations/008_canonical_auth_identity_sessions.sql
           cp server/core/auth/migrations/009_auth_lifecycle_oauth.sql .test-cache/auth-lifecycle/migrations/009_auth_lifecycle_oauth.sql
-          npx esbuild tests/auth-lifecycle-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/auth-lifecycle/auth-lifecycle-postgres-vertical.test.mjs --external:pg --external:sharp --external:node:*
+          npx esbuild tests/auth-lifecycle-postgres-vertical.test.ts --bundle --platform=node --format=esm --target=node22 --outfile=.test-cache/auth-lifecycle/auth-lifecycle-postgres-vertical.test.mjs --external:pg --external:sharp --external:node:*
           node --test .test-cache/auth-lifecycle/auth-lifecycle-postgres-vertical.test.mjs
 
   production-image:
