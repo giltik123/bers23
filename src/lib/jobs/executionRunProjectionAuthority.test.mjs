@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const projectionUrl = new URL('./executionRunProjection.js', import.meta.url);
 const controlUrl = new URL('./creativeExecutionControl.js', import.meta.url);
+const workflowRetryUrl = new URL('./boundedWorkflowRetryControl.js', import.meta.url);
 const clientUrl = new URL('../../api/executionRunRecoveryClient.js', import.meta.url);
 const rowUrl = new URL('../../components/editor/jobs/CanonicalExecutionRunRow.jsx', import.meta.url);
 const centerUrl = new URL('../../components/editor/jobs/JobCenter.jsx', import.meta.url);
@@ -49,7 +50,21 @@ test('owning Creative control is separate from recovery and fail-closed on exact
   assert.doesNotMatch(text, /ExecutionRunRegistry|executionRunRecoveryClient|execution-runs|jobManager|jobStorage|subscriptionUsage|subscriptionValidator|Billing|billing|provider|stripe|retry|duplicate/);
 });
 
-test('canonical UI exposes owning Creative cancel, read-only FINAL, and Local ticket truth without Local cancel authority', async () => {
+test('owning Workflow retry control uses only canonical projection evidence and the bounded runner authority', async () => {
+  const text = await source(workflowRetryUrl);
+  assert.match(text, /BoundedWorkflowRetryControlPolicy/);
+  assert.match(text, /WORKFLOW_CONTINUATION/);
+  assert.match(text, /LOCAL_EXECUTION_TICKET/);
+  assert.match(text, /FINALIZED_FAILED/);
+  assert.match(text, /EXPIRED/);
+  assert.match(text, /FINALIZED_UNKNOWN/);
+  assert.match(text, /const latest = attempts\[attempts\.length - 1\]/);
+  assert.match(text, /this\.runnerFactory\(project\)/);
+  assert.match(text, /runner\.retry\(control\.executionId\)/);
+  assert.doesNotMatch(text, /coreClient|executionRunRecoveryClient|ExecutionRunRegistry|execution-runs|creative\.execute|Billing|billing|provider|stripe|jobManager|jobStorage/);
+});
+
+test('canonical UI exposes owning Creative cancel and bounded Workflow retry without generic ExecutionRun mutation', async () => {
   const [row, center] = await Promise.all([source(rowUrl), source(centerUrl)]);
   assert.match(row, /data-canonical-execution-run/);
   assert.match(row, /run\.capability === 'CREATIVE_EXECUTION'/);
@@ -68,7 +83,12 @@ test('canonical UI exposes owning Creative cancel, read-only FINAL, and Local ti
   assert.match(row, /data-local-execution-authority/);
   assert.match(row, /localExecutionAuthorityStateLabel\(localAuthority\.state\)/);
   assert.match(row, /Cancellation unsupported\./);
-  assert.doesNotMatch(row, /jobManager|jobStorage|onRunAgain|onRetry|onDuplicate|onMoveUp|runAgain|retry|duplicate|coreClient|execution-runs/);
+  assert.match(row, /run\.capability === 'WORKFLOW_CONTINUATION'/);
+  assert.match(row, /run\.authorityKind === 'WORKFLOW_CONTINUATION'/);
+  assert.match(row, /workflowControl\?\.state === 'AVAILABLE'/);
+  assert.match(row, /onClick=\{\(\) => onRetry\(run\)\}/);
+  assert.match(row, /Retry exact step/);
+  assert.doesNotMatch(row, /jobManager|jobStorage|onRunAgain|onDuplicate|onMoveUp|runAgain|duplicate|coreClient|execution-runs/);
 
   const cancelButtonIndex = row.indexOf('onClick={() => onCancel(run)}');
   const creativeGateIndex = row.indexOf("const cancelAvailable = creativeRunning");
@@ -76,19 +96,24 @@ test('canonical UI exposes owning Creative cancel, read-only FINAL, and Local ti
 
   assert.match(center, /useMemo\(\(\) => createExecutionRunProjection\(\), \[\]\)/);
   assert.match(center, /new CreativeExecutionControlPolicy\(coreClient\.creative\)/);
+  assert.match(center, /new BoundedWorkflowRetryControlPolicy/);
+  assert.match(center, /createBoundedAgentRunner\(\{ projectId: workflowProjectId \}\)/);
   assert.match(center, /canonicalScopeMatches = Boolean\(normalizedProjectId\) && canonical\.projectId === normalizedProjectId/);
   assert.match(center, /await creativeControl\.cancel\(run\)/);
   assert.match(center, /await canonicalProjection\.refresh\(\)/);
-  assert.match(center, /Canonical recovery state · owning Creative controls only/);
-  assert.match(center, /<CanonicalExecutionRunRow[^>]*control=\{canonicalControls\[run\.runId\]\}[^>]*onCancel=\{cancelCanonicalRun\}/);
-  assert.doesNotMatch(center, /<CanonicalExecutionRunRow[^>]*(onRunAgain|onRetry|onDuplicate|onMoveUp)=/);
+  assert.match(center, /Canonical recovery state · owning Creative \/ Workflow controls only/);
+  assert.match(center, /workflowControl=\{canonicalWorkflowControls\[run\.runId\]\}/);
+  assert.match(center, /onCancel=\{cancelCanonicalRun\}/);
+  assert.match(center, /onRetry=\{retryCanonicalWorkflow\}/);
+  assert.match(center, /await workflowRetryControl\.retry\(run, normalizedProjectId\)/);
+  assert.doesNotMatch(center, /<CanonicalExecutionRunRow[^>]*(onRunAgain|onDuplicate|onMoveUp)=/);
   assert.doesNotMatch(center, /ExecutionRunRegistry|coreClient\.executionRuns|execution-runs\/.*(cancel|retry)|coreClient\.creative\.execute/);
 
   assert.match(center, /data-job-center-session-jobs/);
   assert.match(center, /onCancel=\{\(id\) => jobManager\.cancel\(id\)\}/);
   assert.match(center, /onRunAgain=\{\(id\) => jobManager\.runAgain\(id\)/);
   assert.match(center, /onDuplicate=\{\(id\) => jobManager\.duplicate\(id\)/);
-  assert.doesNotMatch(center, /jobManager\.retry|onRetry=/);
+  assert.doesNotMatch(center, /jobManager\.retry/);
 });
 
 test('JobQueuePanel scopes recovery to the current Editor project route without creating mutation authority', async () => {
