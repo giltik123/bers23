@@ -192,7 +192,7 @@ try {
   assert.equal(providerCalls, 0, 'auth lifecycle must never reach Creative provider authority');
   assert.deepEqual(diagnostics.externalBrowserRequests, [], 'auth lifecycle browser must not call external origins');
   assert.equal(diagnostics.pageErrors.length, 0, `unexpected browser page errors: ${JSON.stringify(diagnostics.pageErrors)}`);
-  const expected401Console = /Failed to load resource: the server responded with a status of 401 \\(Unauthorized\\)/i;
+  const expected401Console = /Failed to load resource: the server responded with a status of 401 \(Unauthorized\)/i;
   const toleratedConsole = diagnostics.consoleErrors.filter(message => /favicon|ResizeObserver/i.test(message) || expected401Console.test(message));
   assert.equal(diagnostics.consoleErrors.length, toleratedConsole.length, `unexpected browser console errors: ${JSON.stringify(diagnostics.consoleErrors)}`);
   assert.equal(diagnostics.requestFailures.length, 0, `unexpected browser network failures: ${JSON.stringify(diagnostics.requestFailures)}`);
