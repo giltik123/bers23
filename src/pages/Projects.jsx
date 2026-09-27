@@ -46,7 +46,7 @@ export default function Projects() {
     } catch (error) {
       console.error('[Projects] Failed to create project', error);
       const retryable = !networkManager.snapshot().online || /network|fetch|timeout/i.test(error?.message || '');
-      if (retryable) { offlineQueue.enqueue({ kind: 'project-upload', file }); setUploadError('This upload will retry when your connection returns.'); }
+      if (retryable) { offlineQueue.enqueue({ kind: 'project-upload', file }); setUploadError('Queued to retry while this tab remains open. If you reload or close it, choose the file again.'); }
       else setUploadError(error?.message || 'Unable to create this project.');
     } finally {
       setUploading(false);
@@ -62,10 +62,6 @@ export default function Projects() {
     catch (error) { console.error('[Projects] Failed to rename project', error); setActionError(error?.message || 'Unable to rename project.'); }
   };
 
-  const handleDuplicate = async () => {
-    setActionError('');
-    setActionError('Duplicate will be available with server-authoritative project history.');
-  };
 
   const handleToggleFavorite = async (project) => {
     setActionError('');
@@ -93,7 +89,6 @@ export default function Projects() {
 
   const cardActions = {
     onRename: handleRename,
-    onDuplicate: handleDuplicate,
     onToggleFavorite: handleToggleFavorite,
     onToggleArchive: handleToggleArchive,
     onDelete: handleDelete,
