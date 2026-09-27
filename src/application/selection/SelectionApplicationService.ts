@@ -1,4 +1,4 @@
-import { createOriginalMask, displayToOriginal, type MaskSource, type OriginalMask } from '../../platform/creative/pipeline/ControlledLocalEdit';
+import { createOriginalMask, displayToOriginal, type MaskSource } from '../../platform/creative/pipeline/ControlledLocalEdit';
 import type { AnalysisTransform, BrushStroke, CanonicalMaskArtifactPort, InteractiveSegmentationPort, MaskQualityResult, PromptPoint, SelectionDraftSnapshot, SelectionMode, SelectionTelemetry } from './contracts';
 import type { PrivacyMode } from '../../platform/creative/local-ai';
 
@@ -52,6 +52,7 @@ export function chooseAnalysis(originalWidth:number,originalHeight:number,maxEdg
 export function estimateMemory(t:AnalysisTransform,modelWorkingBytes:number){return t.analysisWidth*t.analysisHeight*(4+3+1)+modelWorkingBytes}
 export function assessMask(alpha:Uint8Array,width:number,height:number,confidence:number):MaskQualityResult { let selected=0,edges=0,components=0;const seen=new Uint8Array(alpha.length);for(let i=0;i<alpha.length;i++){if(alpha[i])selected++;if(alpha[i]&&((i%width&& !alpha[i-1])||(i>=width&&!alpha[i-width])))edges++;if(alpha[i]&&!seen[i]){components++;const q=[i];seen[i]=1;while(q.length){const n=q.pop()!;for(const x of [n-1,n+1,n-width,n+width])if(x>=0&&x<alpha.length&&alpha[x]&&!seen[x]&&Math.abs((x%width)-(n%width))<=1){seen[x]=1;q.push(x)}}}}const coverage=selected/(width*height),warning=selected===0?'EMPTY':coverage<TINY_WARNING?'TINY':coverage>FULL_WARNING?'SUSPICIOUSLY_FULL':undefined;return Object.freeze({coverage,fragmentation:components,edgeComplexity:edges/Math.max(1,selected),confidence,empty:selected===0,full:coverage===1,warning})}
 export function morphSelectionMask(alpha: Uint8Array, width: number, height: number, radius: number, kind: 'GROW' | 'SHRINK'): Uint8Array {
+  if (kind !== 'GROW' && kind !== 'SHRINK') throw new Error('Selection morphology kind is unsupported');
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width > MAX_SELECTION_MORPHOLOGY_DIMENSION || height > MAX_SELECTION_MORPHOLOGY_DIMENSION) throw new Error('Selection morphology dimensions exceed deterministic bounds');
   const pixels = width * height;
   if (!Number.isSafeInteger(pixels) || pixels !== alpha.length || pixels > MAX_SELECTION_MORPHOLOGY_PIXELS) throw new Error('Selection morphology pixel count exceeds deterministic bounds');
