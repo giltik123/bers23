@@ -26,6 +26,17 @@ export class SelectionApplicationService {
   clear() { const d=this.required(); this.commit(d,new Uint8Array(d.alpha.length),'USER'); d.canonicalArtifactId=undefined; d.state='NOTHING_SELECTED'; return this.snapshot(); }
   grow(radius: number): SelectionDraftSnapshot { return this.morphology('GROW', radius); }
   shrink(radius: number): SelectionDraftSnapshot { return this.morphology('SHRINK', radius); }
+  feather(radius: number): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.state!=='SELECTED'&&d.state!=='REFINING') throw new Error('Selection is not ready to feather');
+    const alpha=featherSelectionMask(d.alpha,d.width,d.height,radius);
+    this.commit(d,alpha,'OPERATION_FEATHERED');
+    d.canonicalArtifactId=undefined;
+    d.manualCorrections++;
+    d.state='REFINING';
+    d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1);
+    return this.snapshot();
+  }
   invert() { const d=this.required(); if(d.state!=='SELECTED'&&d.state!=='REFINING') throw new Error('Selection is not ready to invert'); this.commit(d,Uint8Array.from(d.alpha,v=>255-v),'USER'); d.canonicalArtifactId=undefined; d.manualCorrections++; d.state='REFINING'; d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1); return this.snapshot(); }
   undo() { const d=this.required(); if(d.historyIndex>0){d.historyIndex--;this.restoreHistory(d,d.history[d.historyIndex]);d.canonicalArtifactId=undefined;d.undoCount++;d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1);} return this.snapshot(); }
   redo() { const d=this.required(); if(d.historyIndex<d.history.length-1){d.historyIndex++;this.restoreHistory(d,d.history[d.historyIndex]);d.canonicalArtifactId=undefined;d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1);} return this.snapshot(); }
@@ -63,6 +74,45 @@ export function morphSelectionMask(alpha: Uint8Array, width: number, height: num
   const output = new Uint8Array(pixels);
   extremePass(alpha, intermediate, width, height, radius, true, kind === 'GROW');
   extremePass(intermediate, output, width, height, radius, false, kind === 'GROW');
+  return output;
+}
+export function featherSelectionMask(alpha: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width > MAX_SELECTION_MORPHOLOGY_DIMENSION || height > MAX_SELECTION_MORPHOLOGY_DIMENSION) throw new Error('Selection feather dimensions exceed deterministic bounds');
+  const pixels = width * height;
+  if (!Number.isSafeInteger(pixels) || pixels !== alpha.length || pixels > MAX_SELECTION_MORPHOLOGY_PIXELS) throw new Error('Selection feather pixel count exceeds deterministic bounds');
+  if (!Number.isSafeInteger(radius) || radius < 1 || radius > MAX_SELECTION_MORPHOLOGY_RADIUS) throw new Error('Selection feather radius exceeds deterministic bounds');
+  const work = pixels * 4;
+  if (!Number.isSafeInteger(work) || work > MAX_SELECTION_MORPHOLOGY_WORK) throw new Error('Selection feather work exceeds deterministic bounds');
+  const horizontalSums = new Uint32Array(pixels);
+  const output = new Uint8Array(pixels);
+  const diameter = radius * 2 + 1;
+  const area = diameter * diameter;
+  const halfArea = Math.floor(area / 2);
+
+  for (let y = 0; y < height; y++) {
+    const base = y * width;
+    let sum = 0;
+    for (let x = 0; x <= Math.min(width - 1, radius); x++) sum += alpha[base + x];
+    for (let x = 0; x < width; x++) {
+      horizontalSums[base + x] = sum;
+      const add = x + radius + 1;
+      const remove = x - radius;
+      if (add < width) sum += alpha[base + add];
+      if (remove >= 0) sum -= alpha[base + remove];
+    }
+  }
+
+  for (let x = 0; x < width; x++) {
+    let sum = 0;
+    for (let y = 0; y <= Math.min(height - 1, radius); y++) sum += horizontalSums[y * width + x];
+    for (let y = 0; y < height; y++) {
+      output[y * width + x] = Math.floor((sum + halfArea) / area);
+      const add = y + radius + 1;
+      const remove = y - radius;
+      if (add < height) sum += horizontalSums[add * width + x];
+      if (remove >= 0) sum -= horizontalSums[remove * width + x];
+    }
+  }
   return output;
 }
 function extremePass(input: Uint8Array, output: Uint8Array, width: number, height: number, radius: number, horizontal: boolean, maximum: boolean) {
