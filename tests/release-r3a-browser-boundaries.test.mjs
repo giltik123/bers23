@@ -11,17 +11,19 @@ test('Project service normalizes canonical delivery URLs through the configured 
   assert.match(service, /acceptFinal:\s*async[\s\S]*normalizeProject/);
 });
 
-test('opening Editor restores Scene Memory without initiating fresh creative analysis', async () => {
+test('opening Editor restores browser-local Scene Memory without initiating or borrowing creative analysis', async () => {
   const memory = await readFile('src/lib/scene/sceneMemory.js', 'utf8');
   const ensureStart = memory.indexOf('async ensure(project)');
   const refreshStart = memory.indexOf('async refresh(project)');
   assert(ensureStart >= 0 && refreshStart > ensureStart);
   const ensure = memory.slice(ensureStart, refreshStart);
-  assert.match(ensure, /memoryCache\.get/);
-  assert.match(ensure, /metadata\?\.scene_memory/);
+  assert.match(ensure, /memoryCache\.get\(project\.id, project\.original_image_url\)/);
+  assert.match(ensure, /authority: 'BROWSER_ADVISORY'/);
   assert.match(ensure, /return null/);
-  assert.doesNotMatch(ensure, /InvokeLLM|creative|refresh\(project\)/);
-  assert.match(memory.slice(refreshStart), /InvokeLLM/, 'explicit refresh remains the only vision-analysis path');
+  assert.doesNotMatch(ensure, /metadata\?\.scene_memory|InvokeLLM|creative|coreClient|projectService|refresh\(project\)/);
+  const refresh = memory.slice(refreshStart);
+  assert.match(refresh, /SCENE_MEMORY_ANALYSIS_NOT_WIRED/);
+  assert.doesNotMatch(refresh, /InvokeLLM|creative\/execute|projectService\.update/);
 });
 
 test('baseline notifications do not probe the retired generic Notification entity surface', async () => {
