@@ -809,6 +809,7 @@ export default function Editor() {
         onInvert={() => updateSelection((service) => service.invert())}
         onGrow={() => updateSelection((service) => service.grow(selectionMorphologyRadius))}
         onShrink={() => updateSelection((service) => service.shrink(selectionMorphologyRadius))}
+        onFeather={() => updateSelection((service) => service.feather(selectionMorphologyRadius))}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
         canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
