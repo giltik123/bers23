@@ -134,7 +134,7 @@ try {
   assert.ok(state.activeSessions >= 1, 'OTP verification must issue a durable server session');
 
   await page.goto(`${frontendOrigin}/settings`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await logout(page);
   await assertEventually(async () => (await authState(email)).activeSessions === 0, 'Sign out must revoke the canonical server session');
 
   await page.goto(`${frontendOrigin}/settings`, { waitUntil: 'domcontentloaded' });
@@ -184,7 +184,7 @@ try {
   assert.ok(state.activeSessions >= 1, 'new password must authenticate after reset');
 
   await page.goto(`${frontendOrigin}/settings`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await logout(page);
   await assertEventually(async () => (await authState(email)).activeSessions === 0, 'final logout must revoke the reset-era session');
   await page.goto(`${frontendOrigin}/editor?id=00000000-0000-0000-0000-000000000001`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL(url => url.origin === frontendOrigin && url.pathname === '/login', { timeout: 15_000 });
