@@ -434,10 +434,10 @@ async function assertJobCenterTopology(serverExecutions, topology) {
   await root.getByText('Succeeded', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
 
   for (const child of topology.children) {
+    assert.equal(child.capability, 'LOCAL_EXECUTION', 'R3l Automation Job Center expects only admitted deterministic local children');
     const row = serverExecutions.locator(`[data-canonical-execution-run="${child.runId}"]`);
     await row.waitFor({ state: 'visible', timeout: 10_000 });
-    const label = child.capability === 'LOCAL_EXECUTION' ? 'Local execution' : 'Internal workflow step';
-    await row.getByText(label, { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+    await row.getByText('Local execution', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
     await row.getByText('Succeeded', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
   }
 }
