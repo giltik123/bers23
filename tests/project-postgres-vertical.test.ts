@@ -154,7 +154,7 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
 
   const stableDelivery = await fetch(`${baseUrl}/api/core/artifacts/results/${encodeURIComponent(project.current_image_artifact_id)}`);
   assert.equal(stableDelivery.status, 404, 'stable ORIGINAL identity must not be a delivery credential');
-  assert.equal((await stableDelivery.json() as any).error, 'result_not_found');
+  assert.equal((await stableDelivery.json() as any).code, 'result_not_found');
 
   const shortDelivery = production.artifacts.external.issueStoredOriginalDelivery(
     originalRow.storage_id,
@@ -164,11 +164,11 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
   nowMs += 2;
   const expiredDelivery = await fetch(`${baseUrl}/api/core/artifacts/results/${encodeURIComponent(shortDelivery)}`);
   assert.equal(expiredDelivery.status, 404, 'expired delivery capability must fail closed');
-  assert.equal((await expiredDelivery.json() as any).error, 'result_not_found');
+  assert.equal((await expiredDelivery.json() as any).code, 'result_not_found');
 
   const malformedDelivery = await fetch(`${baseUrl}/api/core/artifacts/results/%E0%A4%A`);
   assert.equal(malformedDelivery.status, 404, 'malformed delivery capability must be non-enumerating');
-  assert.equal((await malformedDelivery.json() as any).error, 'result_not_found');
+  assert.equal((await malformedDelivery.json() as any).code, 'result_not_found');
 
   const alpha = new Uint8Array(width * height);
   for (const [x, y] of [[3, 3], [4, 3], [3, 4], [4, 4]]) alpha[y * width + x] = 255;
