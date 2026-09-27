@@ -14,7 +14,7 @@ BERS has a real Node Core server entrypoint at `server/index.ts`. `startCoreServ
 6. configures request/header/keep-alive timeouts;
 7. stops accepting work and closes HTTP/database resources on SIGTERM/SIGINT.
 
-The repository also contains a production `Dockerfile`, and hosted CI builds the image, verifies required contents/native dependencies, and runs health smoke checks.
+The repository also contains a production `Dockerfile` based on Node 22. The mandatory PostgreSQL/Core CI job runs its server tests on Node 22. A separate hosted job builds the Node 22 image, verifies required contents/native dependencies, and runs health smoke checks. Node 24 in the browser/build matrix is a compatibility signal, not the production server runtime.
 
 This means the old statement that the repository has only a static Vite browser target is obsolete. **It does not mean a specific external cloud deployment is automatically proven by the repository.** Hosting, TLS termination, proxy trust and frontend static-response headers remain deployment concerns that must match the accepted Core contracts.
 
