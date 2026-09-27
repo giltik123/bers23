@@ -120,6 +120,14 @@ class MemoryContinuationStore {
     const current = this.#require(executionId, queryScope); const logical = continuationStepId ?? ticket.stepId;
     assert.equal(current.state, 'WAITING_FOR_LOCAL_RESULT'); assert.equal(current.revision, expectedRevision);
     assert.equal(current.currentStepId, logical); assert.equal(current.outstandingLocal.ticketId, previousTicketId); assert.notEqual(ticket.ticketId, previousTicketId);
+    assert.ok(Date.parse(ticket.expiresAt) > this.now(), 'normal retry bind must reject an expired replacement');
+    return this.#next(current, { state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: logical, outstandingLocal: Object.freeze({ ...ticket, stepId: logical }), completedSteps: current.completedSteps });
+  }
+  async bindExpiredRetryLocalTicketForRecovery({ executionId, scope: queryScope, expectedRevision, continuationStepId, previousTicketId, ticket }) {
+    const current = this.#require(executionId, queryScope); const logical = continuationStepId ?? ticket.stepId;
+    assert.equal(current.state, 'WAITING_FOR_LOCAL_RESULT'); assert.equal(current.revision, expectedRevision);
+    assert.equal(current.currentStepId, logical); assert.equal(current.outstandingLocal.ticketId, previousTicketId); assert.notEqual(ticket.ticketId, previousTicketId);
+    assert.ok(Date.parse(ticket.expiresAt) <= this.now(), 'retry recovery bind is only for an expired replacement');
     return this.#next(current, { state: 'WAITING_FOR_LOCAL_RESULT', currentStepId: logical, outstandingLocal: Object.freeze({ ...ticket, stepId: logical }), completedSteps: current.completedSteps });
   }
   async completeLocalStep({ executionId, scope: queryScope, expectedRevision, stepId, ticketId, artifactIds }) {
@@ -207,7 +215,10 @@ function runtime(graph = admittedGraph()) {
     assert.ok(activeWorkflow); assert.ok(activeWorkflow.allowedStepIds.includes(stepId));
     const key = `${command.clientRequestId}:${stepId}:local-v2`;
     const prior = [...tickets.values()].find(value => value.idempotencyKey === key && sameScope(value.scope, scope));
-    if (prior) return { executionId: prior.requestId, ticket: prior };
+    if (prior) {
+      if (now >= prior.expiresAt) throw Object.assign(new Error('canonical prepare rejects expired durable ticket replay'), { code: 'local_ticket_expired' });
+      return { executionId: prior.requestId, ticket: prior };
+    }
     const source = artifacts.get(command.sourceArtifactId); assert.ok(source);
     const requestId = `local-${stepId}-${createHash('sha256').update(command.clientRequestId).digest('hex').slice(0, 16)}`;
     const ticket = Object.freeze({
@@ -243,7 +254,12 @@ function runtime(graph = admittedGraph()) {
   const dependencies = {
     plans,
     continuations,
-    tickets: Object.freeze({ async getV2(id) { return tickets.get(id); } }),
+    tickets: Object.freeze({
+      async getV2(id) { return tickets.get(id); },
+      async getByIdempotencyKeyV2(queryScope, key) {
+        return [...tickets.values()].find(value => value.idempotencyKey === key && sameScope(value.scope, queryScope));
+      },
+    }),
     workflowTickets,
     orthogonal: Object.freeze({ async prepare(command) { return issue(ORTHOGONAL_TRANSFORM_STEP_ID, ORTHOGONAL_TRANSFORM_CAPABILITY, command); }, async submit({ ticketId }) { return submit(ticketId); } }),
     resize: Object.freeze({ async prepare(command) { return issue(RESIZE_STEP_ID, RESIZE_CAPABILITY, command); }, async submit({ ticketId }) { return submit(ticketId); } }),
