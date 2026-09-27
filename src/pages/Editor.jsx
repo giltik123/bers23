@@ -146,6 +146,7 @@ export default function Editor() {
   const [selection, setSelection] = useState(null);
   const [brushSize, setBrushSize] = useState(24);
   const [selectionMorphologyRadius, setSelectionMorphologyRadius] = useState(2);
+  const [polygonComposition, setPolygonComposition] = useState('REPLACE');
   const [isolatingBackground, setIsolatingBackground] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
   const [cropDraft, setCropDraft] = useState(null);
@@ -236,6 +237,10 @@ export default function Editor() {
       return;
     }
     if (selection.mode === 'SMART_SELECT') return;
+    if (selection.mode === 'POLYGON') {
+      if (phase === 'down') setSelection(service.polygonVertex({ displayPoint: point, view }));
+      return;
+    }
     if (phase === 'down') strokeRef.current = [point];
     else if (phase === 'move') strokeRef.current.push(point);
     else if (phase === 'up' && strokeRef.current.length) {
@@ -801,6 +806,9 @@ export default function Editor() {
       <SelectionToolbar
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} onStart={startSelection}
         morphologyRadius={selectionMorphologyRadius} onMorphologyRadius={setSelectionMorphologyRadius}
+        polygonComposition={polygonComposition} onPolygonComposition={setPolygonComposition}
+        onApplyPolygon={() => updateSelection((service) => service.applyPolygon(polygonComposition))}
+        onClearPolygon={() => updateSelection((service) => service.clearPolygon())}
         startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}
