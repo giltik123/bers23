@@ -35,8 +35,8 @@ test('zero-object Prompt remains a canonical whole-image edit without inventing 
   const modes = editorModeBlock(editor);
 
   assert.match(modes, /allowWholeImage=\{objects\.length === 0\}/);
-  assert.match(modes, /applying=\{editorBusy \|\| detecting \|\| committing\}/);
-  assert.match(editor, /Object detection is optional\. You can edit the whole image now or detect\/select an object first\./);
+  assert.match(modes, /applying=\{editorBusy \|\| committing\}/);
+  assert.match(editor, /Automatic object detection is not available in this version\./);
   assert.doesNotMatch(modes, /objects\.length === 0[\s\S]{0,300}(randomUUID|mask_artifact_id|selected:\s*true)/);
 });
 
@@ -83,12 +83,13 @@ test('reachable Fashion, Outfit and bounded Agent surfaces preserve narrow canon
   assert.match(tryOn, /legacy browser FASHN execution path is disabled/);
 });
 
-test('Detect remains an optional separate action and does not own Fashion, Outfit or Agent reachability', async () => {
+test('unavailable Detect has no action while Fashion, Outfit and Agent remain reachable', async () => {
   const editor = await readFile(EDITOR, 'utf8');
 
   const detectIndex = editor.indexOf("objects.length === 0 && !pendingResult");
   const navigationIndex = editor.indexOf('<AdaptiveNavigation items={EDITOR_TABS}');
-  assert.ok(detectIndex >= 0 && navigationIndex > detectIndex, 'optional Detect CTA should coexist with navigation');
+  assert.ok(detectIndex >= 0 && navigationIndex > detectIndex, 'zero-object guidance should coexist with navigation');
   assert.match(editor, /\{objects\.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && \(/);
+  assert.doesNotMatch(editor, /onClick=\{detect\}|segmentationService\.start/);
   assert.doesNotMatch(editor, /objects\.length > 0[\s\S]{0,250}<AdaptiveNavigation/);
 });
