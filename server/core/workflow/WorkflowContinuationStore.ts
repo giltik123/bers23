@@ -153,6 +153,7 @@ export interface WorkflowContinuationStore {
   waitForLocalResult(input: WaitForLocalResultInput): Promise<WorkflowContinuationSnapshot>;
   bindExpiredLocalTicketForRecovery(input: WaitForLocalResultInput): Promise<WorkflowContinuationSnapshot>;
   retryLocalResult(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot>;
+  bindExpiredRetryLocalTicketForRecovery(input: RetryLocalResultInput): Promise<WorkflowContinuationSnapshot>;
   completeLocalStep(input: CompleteLocalStepInput): Promise<WorkflowContinuationSnapshot>;
   runInternalStep(input: RunInternalStepInput): Promise<WorkflowContinuationSnapshot>;
   completeInternalStep(input: CompleteInternalStepInput): Promise<WorkflowContinuationSnapshot>;
