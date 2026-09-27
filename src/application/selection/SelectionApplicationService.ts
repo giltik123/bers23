@@ -85,7 +85,9 @@ function extremePass(input: Uint8Array, output: Uint8Array, width: number, heigh
       }
       const left = position - radius;
       while (tail > head && queue[head] < left) head++;
-      output[base + position * stride] = input[base + queue[head] * stride];
+      output[base + position * stride] = !maximum && (left < 0 || position + radius >= length)
+        ? 0
+        : input[base + queue[head] * stride];
     }
   }
 }
