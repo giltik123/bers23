@@ -12,6 +12,8 @@ on:
       - 'src/lib/jobs/executionRunProjectionAuthority.test.mjs'
       - 'src/lib/jobs/creativeExecutionControl.js'
       - 'src/lib/jobs/creativeExecutionControl.test.mjs'
+      - 'src/lib/jobs/boundedWorkflowRetryControl.js'
+      - 'src/lib/jobs/boundedWorkflowRetryControl.test.mjs'
       - 'src/lib/jobs/jobModel.js'
       - 'src/lib/jobs/jobModelEphemeral.test.mjs'
       - 'src/lib/jobs/jobRepeatPolicy.js'
@@ -58,8 +60,8 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove GET-only recovery, durable FINAL and Local authority projection, owning Creative cancel and explicit session repeat semantics
-        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
+      - name: Prove GET-only recovery, owning Creative cancel, bounded Workflow retry and explicit session repeat semantics
+        run: node --test src/api/executionRunRecoveryClient.test.mjs src/lib/jobs/executionRunProjection.test.mjs src/lib/jobs/executionRunFinalResultProjection.test.mjs src/lib/jobs/creativeExecutionControl.test.mjs src/lib/jobs/boundedWorkflowRetryControl.test.mjs src/lib/jobs/jobRepeatPolicy.test.mjs src/lib/jobs/executionRunProjectionAuthority.test.mjs src/lib/jobs/jobModelEphemeral.test.mjs src/lib/jobs/jobEphemeralAuthority.test.mjs
       - name: Preserve accepted server recovery HTTP contract
         run: node --experimental-strip-types --test server/core/http/executionRunRecoveryHttpAdapter.test.mjs
       - name: Typecheck browser and Core contracts
@@ -93,11 +95,21 @@ jobs:
           grep -q "run.authorityKind === 'LOCAL_EXECUTION_TICKET'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'data-local-execution-authority' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'Cancellation unsupported.' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
-          ! grep -E -q 'jobManager|jobStorage|onRunAgain|onRetry|onDuplicate|onMoveUp|coreClient|execution-runs|runAgain|retry|duplicate' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "run.capability === 'WORKFLOW_CONTINUATION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "run.authorityKind === 'WORKFLOW_CONTINUATION'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q "workflowControl?.state === 'AVAILABLE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'onClick={() => onRetry(run)}' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q 'Retry exact step' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          ! grep -E -q 'jobManager|jobStorage|onRunAgain|onDuplicate|onMoveUp|coreClient|execution-runs|runAgain|duplicate' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'new CreativeExecutionControlPolicy(coreClient.creative)' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'new BoundedWorkflowRetryControlPolicy' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'createBoundedAgentRunner({ projectId: workflowProjectId })' src/components/editor/jobs/JobCenter.jsx
           grep -q 'await creativeControl.cancel(run)' src/components/editor/jobs/JobCenter.jsx
           grep -q 'await canonicalProjection.refresh()' src/components/editor/jobs/JobCenter.jsx
-          ! grep -E -q 'ExecutionRunRegistry|coreClient\.executionRuns|execution-runs/.*/(cancel|retry)' src/lib/jobs/creativeExecutionControl.js src/components/editor/jobs/JobCenter.jsx
+          grep -q 'await workflowRetryControl.retry(run, normalizedProjectId)' src/components/editor/jobs/JobCenter.jsx
+          grep -q 'runner.retry(control.executionId)' src/lib/jobs/boundedWorkflowRetryControl.js
+          ! grep -E -q 'coreClient|ExecutionRunRegistry|executionRunRecoveryClient|execution-runs|creative\.execute|Billing|billing|provider|stripe' src/lib/jobs/boundedWorkflowRetryControl.js
+          ! grep -E -q 'ExecutionRunRegistry|coreClient\.executionRuns|execution-runs/.*/(cancel|retry)' src/lib/jobs/creativeExecutionControl.js src/lib/jobs/boundedWorkflowRetryControl.js src/components/editor/jobs/JobCenter.jsx
           ! grep -q 'coreClient.creative.execute' src/components/editor/jobs/JobCenter.jsx
           ! grep -E -q 'retry|duplicate|runAgain' src/lib/jobs/creativeExecutionControl.js
           ! grep -E -q 'jobStorage|JobRecord|coreClient\.entities|_persist\(' src/lib/jobs/jobManager.js
@@ -107,7 +119,7 @@ jobs:
           grep -q 'onJobFailure: () => false' src/lib/jobs/jobManager.js
           grep -q 'Run again starts a new operation' src/components/editor/jobs/JobCenter.jsx
           grep -q 'onRunAgain={(id) => jobManager.runAgain(id)}' src/components/editor/jobs/JobCenter.jsx
-          ! grep -E -q 'onRetry|jobManager\.retry' src/components/editor/jobs/JobCenter.jsx src/components/editor/jobs/JobRow.jsx
+          ! grep -q 'jobManager.retry' src/components/editor/jobs/JobCenter.jsx src/components/editor/jobs/JobRow.jsx
           grep -q 'type ExecutionRunResultReader' server/core/http/executionRunRecoveryHttpAdapter.ts
           grep -q 'resolveCreativeFinal(scope: ExecutionRunScope, executionId: string)' server/core/http/executionRunRecoveryHttpAdapter.ts
           grep -q 'results.resolveCreativeFinal(scope, run.authorityRef)' server/core/http/executionRunRecoveryHttpAdapter.ts
