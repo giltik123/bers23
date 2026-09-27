@@ -45,7 +45,6 @@ export function createProductionBoundedAgentCompatibility(input: ProductionBound
     resize: input.resize,
     finalRecovery: input.finalRecovery,
     artifacts: input.artifacts,
-    projects: input.projects,
     runs: input.runs,
     now: input.now,
   });
