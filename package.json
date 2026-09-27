@@ -17,6 +17,7 @@
     "test:postgres": "node --experimental-strip-types --test server/transactions/infrastructure/postgres/postgresTransactionStore.integration.test.mjs",
     "test:transactions-postgres": "node -e \"if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required: PostgreSQL transaction tests cannot be skipped'); process.exit(1) }\" && npm run db:migrate:transactions && npm run test:postgres",
     "typecheck": "tsc -p ./jsconfig.json",
+    "server:typecheck:authorities": "tsc -p server/tsconfig.authorities.json",
     "preview": "vite preview",
     "test:workflow": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/workflow-engine.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/workflow-engine.test.mjs',external:['node:*']});\" && node node_modules/.cache/workflow-engine.test.mjs",
     "test:creative-workflow": "mkdir -p node_modules/.cache && node --input-type=module -e \"import { build } from 'esbuild'; await build({entryPoints:['tests/creative-workflow-engine.test.ts'],bundle:true,platform:'node',format:'esm',target:'node24',outfile:'node_modules/.cache/creative-workflow-engine.test.mjs',external:['node:*']});\" && node node_modules/.cache/creative-workflow-engine.test.mjs",
