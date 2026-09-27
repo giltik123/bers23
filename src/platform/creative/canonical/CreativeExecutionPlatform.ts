@@ -88,7 +88,7 @@ export class CreativeExecutionPlatform {
     const plan = record.plan ?? await this.plan(id);
     validateCreativePlan(plan, (record.request.inputArtifacts ?? []).map(artifact => artifact.id));
     const routes = Object.fromEntries(plan.operations.map(operation => [operation.id, this.dependencies.routeSelector.select(operation, record.request)]));
-    const targets = Object.fromEntries(plan.operations.map(operation => [operation.id, this.dependencies.targetSelector.select(operation, record.request)]));
+    const targets = Object.fromEntries(plan.operations.map(operation => [operation.id, this.dependencies.targetSelector.select(operation, record.request, plan)]));
     validateExecutionTargets(plan, targets);
     const boundOperations: CreativeOperation[] = [];
     const capabilityIds: Record<string, string> = {};
@@ -123,7 +123,13 @@ export class CreativeExecutionPlatform {
     const target = selected.some(x => x === 'CLOUD') && selected.some(x => x === 'LOCAL') ? 'HYBRID' : selected.some(x => x === 'CLOUD' || x === 'HYBRID') ? selected.find(x => x === 'HYBRID') ?? 'CLOUD' : 'LOCAL';
     const credits = target === 'LOCAL' ? 0 : Number(record.request.metadata?.estimatedCredits ?? record.request.budget?.credits ?? 0);
     const operationId = `creative.execution.${id}`;
-    const allowFallback = target !== 'LOCAL';
+    const selectedCandidate = plan.candidates?.find(candidate => candidate.id === plan.selectedCandidateId);
+    const allowFallback = Boolean(selectedCandidate?.fallbackAdvice?.some(advice =>
+      advice.action === 'ALTERNATE_CANDIDATE'
+      && advice.maxAttempts > 0
+      && advice.maxGenerationDepth > 0
+      && advice.alternateCandidateId
+    ));
     record.operation = this.#authority.instantiateOperation({
       identity: { operationId, operationVersion: '1', operationFamily: 'creative-workflow', ...record.request.scope, requestId: id },
       definition: { operationId, version: '1', family: 'creative-workflow', capabilities: [], inputArtifacts: [], outputArtifacts: [], parametersSchema: {}, executionPolicy: {}, verificationPolicy: {}, resourceProfile: {}, costModel: {}, riskProfile: {}, billable: credits > 0 },

@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { CanonicalDecisionService, CanonicalPlanningService, CreativeExecutionPlatform, rankAndFilter, scoreCandidate, validateCreativePlan, type CreativePlan, type CreativePlanCandidate, type CreativePlanConstraints, type CreativeRequest } from '../src/platform/creative/canonical/index.ts';
+import { productionTargetSelection } from '../server/core/providers/productionTargetSelection.ts';
 
 const scope = { tenantId: 'tenant', projectId: 'project', userId: 'user' };
 const base = (metadata: Record<string, unknown> = {}): CreativeRequest => ({ id: 'plan-v2', intent: 'remove subject, replace background, and relight', scope, inputArtifacts: [{ id: 'original', kind: 'image', value: {}, producerOperationId: 'seed', scope, state: 'AVAILABLE', role: 'ORIGINAL' }], metadata });
@@ -114,11 +115,78 @@ test('forged target/cost cannot bypass target/security or cause billing, and non
   }
 });
 
-test('LOCAL_ONLY is revalidated against the actual downstream target before provider selection, security, billing or runtime', async () => {
-  const request = base({ planningConstraints: { executionPolicy: 'LOCAL_ONLY' } }); const ready = await new CanonicalPlanningService().plan(request, await new CanonicalDecisionService().decide(request)); assert.equal(ready.status, 'READY');
+test('LOCAL_ONLY rejects provider-only simple edits in planning and still revalidates legacy downstream targets before provider, security, billing or runtime', async () => {
+  const request = base({ planningConstraints: { executionPolicy: 'LOCAL_ONLY' } });
+  const planned = await new CanonicalPlanningService().plan(request, await new CanonicalDecisionService().decide(request));
+  assert.equal(planned.status, 'NEEDS_CONFIRMATION');
+  assert.ok(planned.confirmationReasons?.includes('NO_FEASIBLE_LOCAL_STRATEGY'));
+  const rejectedCloud = planned.candidates?.find(candidate => candidate.targetPreference === 'CLOUD');
+  assert.ok(rejectedCloud);
+  assert.equal(rejectedCloud.status, 'REJECTED');
+  assert.ok(rejectedCloud.reasonCodes.includes('EXECUTION_POLICY_LOCAL_ONLY'));
+
+  const legacyReady: CreativePlan = {
+    requestId: request.id,
+    status: 'READY',
+    operations: rejectedCloud.operations,
+    planningConstraints: planned.planningConstraints,
+  };
   const calls = { target: 0, provider: 0, security: 0, runtime: 0, reserve: 0 };
-  const platform = new CreativeExecutionPlatform({ decision: { decide: async r => ({ requestId: r.id, goal: r.intent, constraints: [] }) }, planning: { plan: async () => ready }, routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => { calls.target++; return 'CLOUD'; } }, providerSelector: { select: () => { calls.provider++; return testProviderSelection.select(); } }, capabilityAdmission: testCapabilityAdmission, securityGate: { authorize: () => { calls.security++; return true; } }, runtime: { execute: async () => { calls.runtime++; return {}; } }, providers: { isAvailable: () => true, fallback: () => undefined }, recovery: { decide: () => 'ABORT' }, billing: { reserve: async () => { calls.reserve++; }, commit: async () => {}, release: async () => {} } });
-  platform.createExecution(request); await assert.rejects(platform.compile(request.id), /LOCAL_ONLY/); assert.equal(calls.target > 0, true); assert.equal(calls.provider, 0); assert.equal(calls.security, 0); assert.equal(calls.runtime, 0); assert.equal(calls.reserve, 0);
+  const platform = new CreativeExecutionPlatform({ decision: { decide: async r => ({ requestId: r.id, goal: r.intent, constraints: [] }) }, planning: { plan: async () => legacyReady }, routeSelector: { select: () => 'PROVIDER' }, targetSelector: { select: () => { calls.target++; return 'CLOUD'; } }, providerSelector: { select: () => { calls.provider++; return testProviderSelection.select(); } }, capabilityAdmission: testCapabilityAdmission, securityGate: { authorize: () => { calls.security++; return true; } }, runtime: { execute: async () => { calls.runtime++; return {}; } }, providers: { isAvailable: () => true, fallback: () => undefined }, recovery: { decide: () => 'ABORT' }, billing: { reserve: async () => { calls.reserve++; }, commit: async () => {}, release: async () => {} } });
+  platform.createExecution(request);
+  await assert.rejects(platform.compile(request.id), /LOCAL_ONLY/);
+  assert.equal(calls.target > 0, true);
+  assert.equal(calls.provider, 0);
+  assert.equal(calls.security, 0);
+  assert.equal(calls.runtime, 0);
+  assert.equal(calls.reserve, 0);
+});
+
+test('canonical execution policy orders accepted candidates deterministically and simple provider edits are explicitly CLOUD', async () => {
+  const simple = await plan();
+  const simpleSelected = simple.candidates?.find(candidate => candidate.id === simple.selectedCandidateId);
+  assert.ok(simpleSelected);
+  assert.equal(simpleSelected.id, 'candidate-v1-cloud-provider');
+  assert.equal(simpleSelected.targetPreference, 'CLOUD');
+  assert.equal(productionTargetSelection.select(simple.operations[0], base(), simple), 'CLOUD');
+
+  const auto = await plan({ operationIntent: 'COMPOSITE_REPLACE_RELIGHT', planningConstraints: { executionPolicy: 'AUTO' } }, { compositeExecutionEnabled: true });
+  assert.equal(auto.candidates?.find(candidate => candidate.id === auto.selectedCandidateId)?.targetPreference, 'LOCAL');
+
+  const allowed = await plan({ operationIntent: 'COMPOSITE_REPLACE_RELIGHT', planningConstraints: { executionPolicy: 'CLOUD_ALLOWED' } }, { compositeExecutionEnabled: true });
+  assert.equal(allowed.candidates?.find(candidate => candidate.id === allowed.selectedCandidateId)?.targetPreference, 'LOCAL');
+
+  const preferred = await plan({ operationIntent: 'COMPOSITE_REPLACE_RELIGHT', planningConstraints: { executionPolicy: 'CLOUD_PREFERRED' } }, { compositeExecutionEnabled: true });
+  assert.equal(preferred.candidates?.find(candidate => candidate.id === preferred.selectedCandidateId)?.targetPreference, 'CLOUD');
+
+  const syntheticOperation = { id: 'synthetic-provider-op', type: 'image-edit' };
+  const syntheticPlan = {
+    requestId: 'synthetic-plan',
+    status: 'READY',
+    operations: [syntheticOperation],
+    selectedCandidateId: 'selected-local',
+    candidates: [{
+      id: 'selected-local',
+      operations: [syntheticOperation],
+      targetPreference: 'LOCAL',
+      estimatedCredits: 0,
+      estimatedLatencyMs: 1,
+      score: scoreCandidate(1, 0, 1, 1, 1),
+      status: 'ACCEPTED',
+      reasonCodes: [],
+    }],
+  } satisfies CreativePlan;
+  assert.equal(productionTargetSelection.select(syntheticOperation, base(), syntheticPlan), 'LOCAL', 'selected candidate target must override the legacy operation-type map');
+  assert.equal(productionTargetSelection.select({ id: 'missing', type: 'image-edit' }, base(), syntheticPlan), 'BLOCKED', 'operation not present in the selected candidate must fail closed');
+});
+
+test('compile fallback permission comes only from explicit bounded alternate-candidate advice', async () => {
+  const source = await readFile('src/platform/creative/canonical/CreativeExecutionPlatform.ts', 'utf8');
+  assert.doesNotMatch(source, /allowFallback\s*=\s*target\s*!==\s*['"]LOCAL['"]/);
+  assert.match(source, /advice\.action === 'ALTERNATE_CANDIDATE'/);
+  assert.match(source, /advice\.maxAttempts > 0/);
+  assert.match(source, /advice\.maxGenerationDepth > 0/);
+  assert.match(source, /advice\.alternateCandidateId/);
 });
 
 test('planning architecture fitness forbids infrastructure and side-effect imports', async () => { for (const file of await collect('src/platform/creative/canonical/planning')) { const source = await readFile(file, 'utf8'); for (const match of source.matchAll(/from\s+['"]([^'"]+)['"]/g)) assert.doesNotMatch(match[1], /(server\/|\bpg\b|provider|transaction|billing|auth|artifact|http)/i); for (const marker of ['fetch(', 'localStorage', 'sessionStorage', 'document.cookie']) assert.equal(source.includes(marker), false); } });

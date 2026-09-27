@@ -1,0 +1,70 @@
+name: Canonical Local-First Target Policy
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/platform/creative/canonical/contracts.ts'
+      - 'src/platform/creative/canonical/CreativeExecutionPlatform.ts'
+      - 'src/platform/creative/canonical/planning/**'
+      - 'server/core/providers/productionTargetSelection.ts'
+      - 'server/core/providers/productionExecutionRoute.ts'
+      - 'server/core/providers/productionExecutionCapabilities.ts'
+      - 'server/core/providers/productionProviderSelection.ts'
+      - 'tests/creative-planning-v2.test.ts'
+      - '.github/workflows/canonical-local-first-target-policy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-target-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck canonical target policy surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Bundle focused TypeScript policy regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/p218
+          for file in             tests/creative-planning-v2.test.ts             tests/creative-provider-selection.test.ts             tests/creative-internal-verify-route.test.ts             tests/background-isolation-canonical-wiring.test.ts             tests/deterministic-crop-canonical-wiring.test.ts             tests/deterministic-resize-canonical-wiring.test.ts             tests/deterministic-orthogonal-transform-canonical-wiring.test.ts             tests/realesrgan-canonical-wiring.test.ts; do
+            out=".test-cache/p218/$(basename "${file%.ts}").mjs"
+            npx esbuild "$file" --bundle --platform=node --format=esm --target=node24 --outfile="$out" --external:node:* --external:pg --external:sharp
+          done
+      - name: Prove planner target intent provider boundary and local compatibility
+        run: |
+          node --test             .test-cache/p218/creative-planning-v2.test.mjs             .test-cache/p218/creative-provider-selection.test.mjs             .test-cache/p218/creative-internal-verify-route.test.mjs             .test-cache/p218/background-isolation-canonical-wiring.test.mjs             .test-cache/p218/deterministic-crop-canonical-wiring.test.mjs             .test-cache/p218/deterministic-resize-canonical-wiring.test.mjs             .test-cache/p218/deterministic-orthogonal-transform-canonical-wiring.test.mjs             .test-cache/p218/realesrgan-canonical-wiring.test.mjs
+          node --experimental-strip-types --test server/core/providers/productionOnDeviceRoute.test.mjs
+      - name: Preserve single target and fallback authority
+        run: |
+          set -euo pipefail
+          platform=src/platform/creative/canonical/CreativeExecutionPlatform.ts
+          planner=src/platform/creative/canonical/planning/CanonicalPlanningService.ts
+          selector=server/core/providers/productionTargetSelection.ts
+          grep -q "targetSelector.select(operation, record.request, plan)" "$platform"
+          ! grep -E -q "allowFallback[[:space:]]*=[[:space:]]*target[[:space:]]*!==" "$platform"
+          grep -q "advice.action === 'ALTERNATE_CANDIDATE'" "$platform"
+          grep -q "simpleProvider ? 'CLOUD'" "$planner"
+          grep -q "policy === 'CLOUD_PREFERRED'" "$planner"
+          grep -q "selected.targetPreference" "$selector"
+          grep -q "if (!selected || selected.status !== 'ACCEPTED') return 'BLOCKED'" "$selector"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
