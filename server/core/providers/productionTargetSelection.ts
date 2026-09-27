@@ -6,7 +6,7 @@ export const PRODUCTION_TARGET_SELECTION_VERSION = '6.42F4B5B';
 /** Pure target policy; BLOCKED is the fail-closed default. */
 export const productionTargetSelection: TargetSelectorPort = Object.freeze({
   select(operation, _request, plan) {
-    if (plan.candidates?.length) {
+    if (plan?.candidates?.length) {
       const selected = plan.candidates.find(candidate => candidate.id === plan.selectedCandidateId);
       if (!selected || selected.status !== 'ACCEPTED') return 'BLOCKED';
       if (!selected.operations.some(candidateOperation => candidateOperation.id === operation.id)) return 'BLOCKED';
