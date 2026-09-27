@@ -145,6 +145,7 @@ export default function Editor() {
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
   const [brushSize, setBrushSize] = useState(24);
+  const [selectionMorphologyRadius, setSelectionMorphologyRadius] = useState(2);
   const [isolatingBackground, setIsolatingBackground] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
   const [cropDraft, setCropDraft] = useState(null);
@@ -799,12 +800,15 @@ export default function Editor() {
 
       <SelectionToolbar
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} onStart={startSelection}
+        morphologyRadius={selectionMorphologyRadius} onMorphologyRadius={setSelectionMorphologyRadius}
         startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}
         onRedo={() => updateSelection((service) => service.redo())}
         onClear={() => updateSelection((service) => service.clear())}
         onInvert={() => updateSelection((service) => service.invert())}
+        onGrow={() => updateSelection((service) => service.grow(selectionMorphologyRadius))}
+        onShrink={() => updateSelection((service) => service.shrink(selectionMorphologyRadius))}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
         canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
