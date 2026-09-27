@@ -9,6 +9,12 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   build:
 
@@ -20,6 +26,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ env.CANDIDATE_SHA }}
+    - name: Assert exact candidate SHA
+      run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
       with:
@@ -62,6 +72,10 @@ jobs:
       DATABASE_URL: postgresql://transaction_test:transaction_test@127.0.0.1:5432/transaction_test
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - name: Use Node.js 24
         uses: actions/setup-node@v4
         with:
@@ -285,6 +299,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - name: Use Node.js 24
         uses: actions/setup-node@v4
         with:
@@ -295,3 +313,43 @@ jobs:
         run: google-chrome --version
       - name: Run mandatory MobileSAM browser WASM acceptance
         run: npm run test:mobilesam-browser-acceptance
+
+  production-dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Fail on moderate or higher production dependency advisories
+        run: npm audit --omit=dev --audit-level=moderate
+
+  required-acceptance:
+    name: BERS Required Acceptance
+    if: ${{ always() }}
+    needs:
+      - build
+      - postgres-transactions
+      - production-image
+      - mobilesam-browser-wasm
+      - production-dependency-audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every universal gate to finish successfully
+        env:
+          GATE_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'NODE'
+          const gates = JSON.parse(process.env.GATE_RESULTS);
+          for (const [name, { result }] of Object.entries(gates)) {
+            console.log(`${name}: ${result}`);
+            if (result !== 'success') process.exitCode = 1;
+          }
+          if (Object.keys(gates).length !== 5) process.exitCode = 1;
+          NODE
