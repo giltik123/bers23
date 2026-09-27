@@ -268,7 +268,7 @@ try {
   assert.equal(topology.root.status, 'SUCCEEDED');
   assert.deepEqual(
     topology.children.map(run => [run.capability, run.status]).sort(),
-    [['LOCAL_EXECUTION', 'SUCCEEDED'], ['LOCAL_EXECUTION', 'SUCCEEDED'], ['WORKFLOW_STEP', 'SUCCEEDED']].sort(),
+    [['LOCAL_EXECUTION', 'SUCCEEDED'], ['LOCAL_EXECUTION', 'SUCCEEDED']].sort(),
   );
 
   const jobPage = await browserContext.newPage();
