@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, SelectionApplicationService, assessMask, chooseAnalysis, morphSelectionMask } from '../src/application/selection';
+import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, SelectionApplicationService, assessMask, chooseAnalysis, featherSelectionMask, morphSelectionMask } from '../src/application/selection';
 import { CoreAuthorizedSegmentation } from '../src/application/selection/CoreAuthorizedSegmentation';
 import { displayToOriginal } from '../src/platform/creative/pipeline/ControlledLocalEdit';
 import { DeviceAnalyzer } from '../src/platform/creative/local-ai/device/DeviceAnalyzer';
@@ -113,6 +113,36 @@ test('selection morphology bounds radius dimensions and work before mutation', (
   assert.throws(() => morphSelectionMask(alpha, 3, 3, MAX_SELECTION_MORPHOLOGY_RADIUS + 1, 'SHRINK'), /radius exceeds deterministic bounds/);
   assert.throws(() => morphSelectionMask(new Uint8Array(1), MAX_SELECTION_MORPHOLOGY_DIMENSION + 1, 1, 1, 'GROW'), /dimensions exceed deterministic bounds/);
   assert.deepEqual([...alpha], new Array(9).fill(255), 'hostile morphology input must not mutate source bytes');
+});
+
+
+test('selection feather is an exact zero-padded square box blur with one final round-to-nearest', () => {
+  const center = new Uint8Array(25);
+  center[12] = 255;
+  const feathered = featherSelectionMask(center, 5, 5, 1);
+  assert.deepEqual([...feathered], [
+    0,0,0,0,0,
+    0,28,28,28,0,
+    0,28,28,28,0,
+    0,28,28,28,0,
+    0,0,0,0,0,
+  ]);
+
+  const full = new Uint8Array(9).fill(255);
+  assert.deepEqual([...featherSelectionMask(full, 3, 3, 1)], [
+    113,170,113,
+    170,255,170,
+    113,170,113,
+  ]);
+});
+
+test('selection feather bounds radius dimensions and preserves input bytes', () => {
+  const alpha = new Uint8Array([0, 64, 128, 192, 255, 192, 128, 64, 0]);
+  const before = [...alpha];
+  assert.throws(() => featherSelectionMask(alpha, 3, 3, 0), /radius exceeds deterministic bounds/);
+  assert.throws(() => featherSelectionMask(alpha, 3, 3, MAX_SELECTION_MORPHOLOGY_RADIUS + 1), /radius exceeds deterministic bounds/);
+  assert.throws(() => featherSelectionMask(new Uint8Array(1), MAX_SELECTION_MORPHOLOGY_DIMENSION + 1, 1, 1), /dimensions exceed deterministic bounds/);
+  assert.deepEqual([...alpha], before);
 });
 
 test('grow shrink undo redo stay local and synchronize bytes provenance and quality', async () => {
