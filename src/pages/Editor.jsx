@@ -420,7 +420,7 @@ export default function Editor() {
     }
   };
 
-  // Scene Memory restores browser-local advisory state only.
+  // Scene Memory: restores browser-local advisory state only.
   // Server-owned scene analysis is not enabled, so opening a Project never initiates analysis.
   useEffect(() => {
     if (!project) return;
