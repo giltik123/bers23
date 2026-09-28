@@ -1,0 +1,61 @@
+name: Selection Brush Quality UX
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/application/selection/**'
+      - 'tests/intelligent-selection.test.ts'
+      - 'tests/editor-canonical-boundary.test.mjs'
+      - '.github/workflows/selection-brush-quality-ux.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selection-brush-quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck selection UX surfaces
+        run: npm run typecheck
+      - name: Bundle selection regression
+        run: |
+          mkdir -p .test-cache/p191-brush
+          npx esbuild tests/intelligent-selection.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/p191-brush/intelligent-selection.test.mjs --external:node:* --external:pg --external:sharp
+      - name: Prove deterministic hardness and quality semantics
+        run: node --test .test-cache/p191-brush/intelligent-selection.test.mjs
+      - name: Prove Editor brush and warning boundary
+        run: node --test tests/editor-canonical-boundary.test.mjs
+      - name: Build production browser
+        run: npm run build
+      - name: Preserve brush authority and explicit UX
+        run: |
+          set -euo pipefail
+          editor=src/pages/Editor.jsx
+          toolbar=src/components/editor/SelectionToolbar.jsx
+          service=src/application/selection/SelectionApplicationService.ts
+          grep -q "brushHardness / 100" "$editor"
+          ! grep -E -q "hardness:[[:space:]]*\.75" "$editor"
+          grep -q 'aria-label="Brush Hardness"' "$toolbar"
+          grep -q "SUSPICIOUSLY_FULL" "$toolbar"
+          ! grep -E -q "fetch\(|coreClient|provider|billing|credits" "$service"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
