@@ -70,7 +70,7 @@ export type LocalAffineTransformServiceDependencies = Readonly<{
 /**
  * Exact Core authority for deterministic affine-transform v1.
  * Browser PNG bytes are quarantined candidates. Core rehydrates the canonical
- * source, independently repeats the exact RGBA tuple permutation and persists
+ * source, independently repeats the exact Q16.16 affine resampling and persists
  * a FINAL only after byte equality and canonical workflow verification.
  */
 export class LocalAffineTransformExecutionService {
@@ -272,7 +272,7 @@ export class LocalAffineTransformExecutionService {
     if (ticket.inputs.length !== 1 || ticket.inputs[0].kind !== 'image') throw serviceError(409, 'local_input_contract_mismatch', 'Affine transform requires exactly one canonical IMAGE input');
     const sourceBinding = ticket.inputs[0];
     if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical affine-transform source is no longer authorized or available');
-    const parameters = parametersFromTicket(ticket);
+    parametersFromTicket(ticket);
     const artifacts = await this.hydrateExactSource(ticket.scope, sourceBinding.artifactId);
     const decision = admitLocalExecutionInputs(ticket, artifacts);
     if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical affine-transform input revalidation failed: ${decision.reasonCode}`);
