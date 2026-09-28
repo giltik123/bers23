@@ -4,6 +4,7 @@ import { CreativeCostAuthority } from '../cost/contracts';
 import type { CreativeOperationInstance } from '../operations/contracts';
 import { MAX_SUPER_RESOLUTION_OUTPUT_PIXELS, SUPER_RESOLUTION_SCALE } from '../super-resolution/SuperResolutionContract';
 import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS, RESIZE_OPERATION } from '../deterministic/ResizeIdentity.js';
+import { AFFINE_TRANSFORM_OPERATION } from '../deterministic/AffineTransformIdentity.js';
 import { ORTHOGONAL_TRANSFORM_MODES, ORTHOGONAL_TRANSFORM_OPERATION } from '../deterministic/OrthogonalTransformIdentity.js';
 import { GARMENT_MESH_WARP_OPERATION } from '../deterministic/GarmentMeshWarpIdentity.js';
 import type { CreativeArtifact, CreativeDecision, CreativeExecutionPlan, CreativeOperation, CreativePipeline, CreativePlan, CreativeRequest, ProductionOutcome, VerificationResult } from './contracts';
@@ -362,6 +363,9 @@ function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOpera
     const outputPixels = Number(resizeWidth) * Number(resizeHeight);
     if (!Number.isSafeInteger(outputPixels) || outputPixels > RESIZE_MAX_OUTPUT_PIXELS) throw new Error('ON_DEVICE RESIZE exceeds the Resize v1 output pixel limit');
     return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(resizeWidth), height: Number(resizeHeight) }]);
+  }
+  if (operation.type === AFFINE_TRANSFORM_OPERATION) {
+    return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(width), height: Number(height) }]);
   }
   if (operation.type === ORTHOGONAL_TRANSFORM_OPERATION) {
     const input = operation.input && typeof operation.input === 'object' ? operation.input as Readonly<Record<string, unknown>> : undefined;
