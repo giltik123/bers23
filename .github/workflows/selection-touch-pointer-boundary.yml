@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           harness=scripts/test-release-r3e-browser-e2e.mjs
           grep -q "hasTouch: true" "$harness"
-          grep -q "page.touchscreen.tap" "$harness"
+          grep -q "projectImage.tap" "$harness"
           grep -q "pointerType, 'touch'" "$harness"
           ! grep -q "projectImage.click" "$harness"
           ! grep -q "page.mouse." "$harness"
