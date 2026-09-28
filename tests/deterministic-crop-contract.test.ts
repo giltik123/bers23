@@ -39,7 +39,7 @@ test('Crop v1 rejects fractional, empty, negative and out-of-bounds rectangles w
 });
 
 test('Crop registry contract is immutable data and production executor admission stays explicit', () => {
-  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 7, 'Background Isolation, Crop, Resize, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
+  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 8, 'Background Isolation, Masked Exposure, Crop, Resize, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
   assert.equal(requireDeterministicToolByCapability(CROP_CAPABILITY), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor({ kind: 'DETERMINISTIC_TOOL', toolId: CROP_TOOL_ID, version: CROP_TOOL_VERSION }), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(RESIZE_CAPABILITY), RESIZE_TOOL_DEFINITION, 'adding Resize must not weaken Crop identity or registry lookup');
