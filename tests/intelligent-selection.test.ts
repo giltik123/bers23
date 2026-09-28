@@ -129,6 +129,47 @@ test('mode switches preserve exact mask bytes history provenance and quality', (
 });
 
 test('Cancel discards transient history without persistence', () => { const { service, persisted } = fixture(); service.start({ imageArtifactId: 'i', width: 10, height: 10 }); service.setMode('BRUSH_ADD'); service.brush({ points: [{ x: 2, y: 2 }], radius: 2, hardness: 1, view: { displayWidth: 10, displayHeight: 10, originalWidth: 10, originalHeight: 10 } }); service.cancel(); assert.equal(persisted.length, 0); assert.throws(() => service.snapshot(), /No active/); });
+
+test('Cancel during in-flight Smart Select cannot resurrect draft state or reject the stale completion', async () => {
+  let resolveSegment!: (value: any) => void;
+  let seen: any;
+  const cancelled: string[] = [];
+  let persisted = 0;
+  const service = new SelectionApplicationService({
+    segment(input) {
+      seen = input;
+      return new Promise(resolve => { resolveSegment = resolve; });
+    },
+    cancel(requestId) { if (requestId) cancelled.push(requestId); },
+  }, {
+    async persist() { persisted++; throw new Error('cancelled selection must not persist'); },
+  } as any);
+  const localView = { displayWidth: 16, displayHeight: 16, originalWidth: 16, originalHeight: 16 };
+  service.start({ imageArtifactId: 'cancel-source', width: 16, height: 16 });
+  const pending = service.smartPoint({ displayPoint: { x: 8, y: 8 }, view: localView, privacyMode: 'LOCAL_ONLY', analysisMaxEdge: 256 });
+  assert.equal(service.snapshot().state, 'SELECTING');
+  const requestId = seen.requestId;
+  service.cancel();
+  assert.equal(cancelled.at(-1), requestId);
+  assert.throws(() => service.snapshot(), /No active/);
+
+  resolveSegment({
+    target: 'LOCAL',
+    modelId: 'm',
+    modelVersion: '1',
+    latencyMs: 1,
+    candidates: [{
+      alpha: new Uint8Array(seen.analysis.analysisWidth * seen.analysis.analysisHeight).fill(255),
+      width: seen.analysis.analysisWidth,
+      height: seen.analysis.analysisHeight,
+      coordinateSpace: 'ANALYSIS',
+      score: .9,
+    }],
+  });
+  assert.equal(await pending, undefined);
+  assert.equal(persisted, 0);
+  assert.throws(() => service.snapshot(), /No active/);
+});
 test('late A cannot replace B', async () => { let resolveA!: (v: any) => void; const { service } = fixture(i => i.requestId.endsWith(':2') ? new Promise(r => resolveA = r) : Promise.resolve({ target: 'LOCAL', modelId: 'm', modelVersion: '1', latencyMs: 1, candidates: [{ ...candidate(80), width: 256, height: 128, alpha: new Uint8Array(256 * 128).fill(80) }] })); service.start({ imageArtifactId: 'i', width: 1000, height: 500 }); const a = service.smartPoint({ displayPoint: { x: 10, y: 10 }, view: { ...view, zoom: 1, panX: 0, panY: 0 }, privacyMode: 'NORMAL', analysisMaxEdge: 256 }); const b = service.smartPoint({ displayPoint: { x: 20, y: 20 }, view: { ...view, zoom: 1, panX: 0, panY: 0 }, privacyMode: 'NORMAL', analysisMaxEdge: 256 }); await b; resolveA({ target: 'LOCAL', modelId: 'm', modelVersion: '1', latencyMs: 9, candidates: [{ ...candidate(200), width: 256, height: 128, alpha: new Uint8Array(256 * 128).fill(200) }] }); await a; assert.equal(service.snapshot().alpha[0], 80); });
 test('local unavailable preserves manual brush fallback and privacy is passed through', async () => { let privacy = ''; const { service } = fixture(async i => { privacy = i.privacyMode; throw new Error('WASM unavailable'); }); service.start({ imageArtifactId: 'i', width: 20, height: 20 }); const result = await service.smartPoint({ displayPoint: { x: 4, y: 4 }, view: { displayWidth: 20, displayHeight: 20, originalWidth: 20, originalHeight: 20 }, privacyMode: 'LOCAL_ONLY' }); assert.equal(privacy, 'LOCAL_ONLY'); assert.equal(result.state, 'LOCAL_UNAVAILABLE'); service.setMode('BRUSH_ADD'); assert.doesNotThrow(() => service.brush({ points: [{ x: 4, y: 4 }], radius: 3, hardness: .5, view: { displayWidth: 20, displayHeight: 20, originalWidth: 20, originalHeight: 20 } })); });
 test('manual brush hardness maps exactly into deterministic ALPHA_8 falloff', () => {

@@ -272,7 +272,8 @@ export default function Editor() {
     if (!service) return;
     if (selection.mode === 'SMART_SELECT' && phase === 'down') {
       setSelection({ ...service.snapshot(), state: 'SELECTING' });
-      setSelection(await service.smartPoint({ displayPoint: point, view, privacyMode: 'LOCAL_ONLY' }));
+      const next = await service.smartPoint({ displayPoint: point, view, privacyMode: 'LOCAL_ONLY' });
+      if (next && selectionServiceRef.current === service) setSelection(next);
       return;
     }
     if (selection.mode === 'SMART_SELECT') return;
