@@ -75,15 +75,21 @@ test('>2MP Smart Select stays analysis-bounded but persists exact ORIGINAL-resol
   assert.equal(selected.width, width);
   assert.equal(selected.height, height);
   assert.equal(selected.alpha.length, pixels);
-  const centerIndex = Math.floor(height / 2) * width + Math.floor(width / 2);
-  assert.ok(selected.alpha[centerIndex] > 0, 'analysis candidate must upscale into the aligned ORIGINAL center');
+  const analysisCenterX = Math.floor(seen.analysis.analysisWidth / 2);
+  const analysisCenterY = Math.floor(seen.analysis.analysisHeight / 2);
+  const projectedX = Math.ceil(analysisCenterX * width / seen.analysis.analysisWidth);
+  const projectedY = Math.ceil(analysisCenterY * height / seen.analysis.analysisHeight);
+  const projectedIndex = projectedY * width + projectedX;
+  assert.equal(Math.floor(projectedX * seen.analysis.analysisWidth / width), analysisCenterX);
+  assert.equal(Math.floor(projectedY * seen.analysis.analysisHeight / height), analysisCenterY);
+  assert.ok(selected.alpha[projectedIndex] > 0, 'analysis candidate must upscale into its exact ORIGINAL projected cell');
 
   service.setMode('BRUSH_SUBTRACT');
-  const refined = service.brush({ points: [{ x: width / 2, y: height / 2 }], radius: 3, hardness: 1, view: largeView });
+  const refined = service.brush({ points: [{ x: projectedX, y: projectedY }], radius: 3, hardness: 1, view: largeView });
   assert.equal(refined.alpha.length, pixels);
-  assert.equal(refined.alpha[centerIndex], 0, 'manual refinement must address ORIGINAL coordinates on >2MP masks');
-  assert.ok(service.undo().alpha[centerIndex] > 0, 'undo must restore the full-resolution Smart Select bytes');
-  assert.equal(service.redo().alpha[centerIndex], 0, 'redo must restore the full-resolution manual refinement');
+  assert.equal(refined.alpha[projectedIndex], 0, 'manual refinement must address the exact projected ORIGINAL coordinate on >2MP masks');
+  assert.ok(service.undo().alpha[projectedIndex] > 0, 'undo must restore the full-resolution Smart Select bytes');
+  assert.equal(service.redo().alpha[projectedIndex], 0, 'redo must restore the full-resolution manual refinement');
 
   const grown = service.grow(1);
   assert.equal(grown.width, width);
