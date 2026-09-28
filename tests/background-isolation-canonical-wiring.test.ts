@@ -6,11 +6,12 @@ import { BACKGROUND_ISOLATION_CAPABILITY, BACKGROUND_ISOLATION_TOOL_ID, BACKGROU
 import { AFFINE_TRANSFORM_CAPABILITY } from '../src/platform/creative/deterministic/AffineTransform.ts';
 import { CROP_CAPABILITY } from '../src/platform/creative/deterministic/Crop.ts';
 import { EXPOSURE_CAPABILITY } from '../src/platform/creative/deterministic/Exposure.ts';
+import { MASKED_EXPOSURE_CAPABILITY } from '../src/platform/creative/deterministic/MaskedExposure.ts';
 import { RESIZE_CAPABILITY } from '../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { GARMENT_MESH_WARP_CAPABILITY } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
 import { GARMENT_TEXTURE_COMPOSITE_CAPABILITY } from '../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
-import { AFFINE_TRANSFORM_TOOL_DEFINITION, BACKGROUND_ISOLATION_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, EXPOSURE_TOOL_DEFINITION, GARMENT_MESH_WARP_TOOL_DEFINITION, GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { AFFINE_TRANSFORM_TOOL_DEFINITION, BACKGROUND_ISOLATION_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, EXPOSURE_TOOL_DEFINITION, MASKED_EXPOSURE_TOOL_DEFINITION, GARMENT_MESH_WARP_TOOL_DEFINITION, GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { LocalExecutionAdmissionRegistry } from '../server/core/localExecution/LocalExecutionAdmission.ts';
 import { LocalExecutionTicketAuthority } from '../server/core/localExecution/LocalExecutionTicketAuthority.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
@@ -41,7 +42,7 @@ function request(): CreativeRequest {
 }
 
 test('C2 deterministic registry remains data-only while each production capability is explicitly admitted', () => {
-  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 8, 'Background Isolation, Crop, Resize, Exposure candidate, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
+  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 9, 'Background Isolation, Crop, Resize, Exposure candidate, Masked Exposure, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
   const definition = requireDeterministicToolByCapability(BACKGROUND_ISOLATION_CAPABILITY);
   assert.equal(definition, BACKGROUND_ISOLATION_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor(definition.executor), definition);
@@ -64,6 +65,7 @@ test('C2 deterministic registry remains data-only while each production capabili
   assert.equal(requireDeterministicToolByCapability(CROP_CAPABILITY), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(RESIZE_CAPABILITY), RESIZE_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(EXPOSURE_CAPABILITY), EXPOSURE_TOOL_DEFINITION);
+  assert.equal(requireDeterministicToolByCapability(MASKED_EXPOSURE_CAPABILITY), MASKED_EXPOSURE_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(AFFINE_TRANSFORM_CAPABILITY), AFFINE_TRANSFORM_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(ORTHOGONAL_TRANSFORM_CAPABILITY), ORTHOGONAL_TRANSFORM_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(GARMENT_MESH_WARP_CAPABILITY), GARMENT_MESH_WARP_TOOL_DEFINITION);
@@ -74,11 +76,13 @@ test('C2 deterministic registry remains data-only while each production capabili
   assert.equal(requireDeterministicToolByExecutor(GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION.executor), GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION);
   assert.equal(containsFunction(RESIZE_TOOL_DEFINITION), false);
   assert.equal(containsFunction(EXPOSURE_TOOL_DEFINITION), false);
+  assert.equal(containsFunction(MASKED_EXPOSURE_TOOL_DEFINITION), false);
   assert.equal(containsFunction(ORTHOGONAL_TRANSFORM_TOOL_DEFINITION), false);
   assert.equal(containsFunction(GARMENT_MESH_WARP_TOOL_DEFINITION), false);
   assert.equal(containsFunction(GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION), false);
   assert.equal(isDeepFrozen(RESIZE_TOOL_DEFINITION), true);
   assert.equal(isDeepFrozen(EXPOSURE_TOOL_DEFINITION), true);
+  assert.equal(isDeepFrozen(MASKED_EXPOSURE_TOOL_DEFINITION), true);
   assert.equal(isDeepFrozen(AFFINE_TRANSFORM_TOOL_DEFINITION), true);
   assert.equal(isDeepFrozen(ORTHOGONAL_TRANSFORM_TOOL_DEFINITION), true);
   assert.equal(isDeepFrozen(GARMENT_MESH_WARP_TOOL_DEFINITION), true);
@@ -93,6 +97,7 @@ test('C2 deterministic registry remains data-only while each production capabili
     BACKGROUND_ISOLATION_CAPABILITY,
     CROP_CAPABILITY,
     RESIZE_CAPABILITY,
+    MASKED_EXPOSURE_CAPABILITY,
     ORTHOGONAL_TRANSFORM_CAPABILITY,
     GARMENT_MESH_WARP_CAPABILITY,
     GARMENT_TEXTURE_COMPOSITE_CAPABILITY,
@@ -103,6 +108,7 @@ test('C2 deterministic registry remains data-only while each production capabili
   assert.deepEqual(productionLocalExecutorsByCapability[CROP_CAPABILITY], [CROP_TOOL_DEFINITION.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[RESIZE_CAPABILITY], [RESIZE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[EXPOSURE_CAPABILITY], undefined, 'reviewed Exposure candidate is not executable production authority');
+  assert.deepEqual(productionLocalExecutorsByCapability[MASKED_EXPOSURE_CAPABILITY], [MASKED_EXPOSURE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[AFFINE_TRANSFORM_CAPABILITY], undefined, 'reviewed Affine candidate is not executable production authority');
   assert.deepEqual(productionLocalExecutorsByCapability[ORTHOGONAL_TRANSFORM_CAPABILITY], [ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[GARMENT_MESH_WARP_CAPABILITY], [GARMENT_MESH_WARP_TOOL_DEFINITION.executor]);
