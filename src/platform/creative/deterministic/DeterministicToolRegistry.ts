@@ -52,6 +52,17 @@ import {
   EXPOSURE_TOOL_ID,
   EXPOSURE_TOOL_VERSION,
 } from './ExposureIdentity.js';
+import {
+  MASKED_EXPOSURE_CAPABILITY,
+  MASKED_EXPOSURE_OPERATION,
+  MASKED_EXPOSURE_STEP_ID,
+  MASKED_EXPOSURE_TOOL_ID,
+  MASKED_EXPOSURE_TOOL_VERSION,
+} from './MaskedExposureIdentity.js';
+import {
+  MASKED_EXPOSURE_MAX_EIGHTH_STOPS,
+  MASKED_EXPOSURE_MIN_EIGHTH_STOPS,
+} from './MaskedExposure.ts';
 import { GARMENT_MESH_WARP_TOOL_DEFINITION_DATA } from './GarmentMeshWarpRegistryDefinition.js';
 import { GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION_DATA } from './GarmentTextureCompositeRegistryDefinition.js';
 
@@ -125,7 +136,7 @@ export type DeterministicToolDefinition = Readonly<{
     format: 'RGBA8';
     colorSpace: 'srgb';
     orientation: 1;
-    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
+    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16_MASK_ALPHA8_BLEND' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
     alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP' | 'TEXTURE_PRESERVE_WARP_FEATHER_SOURCE_OVER';
     interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_FIXED_16_16_AFFINE_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH' | 'BILINEAR_NORMALIZED_Q16_TEXTURE_AND_MESH';
     rounding?: 'INTEGER_EXACT' | 'ROUND_HALF_UP';
@@ -182,6 +193,54 @@ const backgroundIsolationDefinition: DeterministicToolDefinition = deepFreeze({
     uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
   },
   lineage: { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: 'BACKGROUND_ISOLATION' },
+});
+
+const maskedExposureDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: MASKED_EXPOSURE_CAPABILITY,
+  operation: { id: MASKED_EXPOSURE_STEP_ID, type: MASKED_EXPOSURE_OPERATION, version: '1' },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: MASKED_EXPOSURE_TOOL_ID, version: MASKED_EXPOSURE_TOOL_VERSION },
+  inputs: [
+    { name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+    { name: 'mask', kind: 'mask', roles: ['MASK'], sha256: 'REQUIRED', geometry: 'MATCH_SOURCE' },
+  ],
+  output: { kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: ['image/png'], geometry: 'MATCH_SOURCE' },
+  parameters: {
+    artifactIdBindings: [
+      { parameter: 'sourceArtifactId', input: 'source' },
+      { parameter: 'maskArtifactId', input: 'mask' },
+    ],
+    exact: {
+      deterministicTool: `${MASKED_EXPOSURE_TOOL_ID}@${MASKED_EXPOSURE_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_RGBA8_PLUS_ALPHA8_MASK',
+      transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
+      gainEncoding: 'Q16_16_COMMITTED_EIGHTH_STOP_TABLE',
+      stopDenominator: 8,
+      gainRounding: 'ROUND_HALF_UP',
+      maskBlend: 'SOURCE_ADJUSTED_ALPHA8_ROUND_HALF_UP',
+      alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
+    },
+    integerRanges: [
+      { parameter: 'eighthStops', min: MASKED_EXPOSURE_MIN_EIGHTH_STOPS, max: MASKED_EXPOSURE_MAX_EIGHTH_STOPS },
+    ],
+  },
+  browser: { executorId: 'masked-exposure-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'masked-exposure-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'SRGB_ENCODED_EXPOSURE_GAIN_Q16_MASK_ALPHA8_BLEND',
+    alpha: 'COPY_SOURCE_ALPHA_BYTES',
+    interpolation: 'NONE',
+    rounding: 'ROUND_HALF_UP',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+  },
+  lineage: { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: MASKED_EXPOSURE_OPERATION },
 });
 
 const cropDefinition: DeterministicToolDefinition = deepFreeze({
@@ -429,6 +488,7 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
   cropDefinition,
   resizeDefinition,
   exposureDefinition,
+  maskedExposureDefinition,
   affineTransformDefinition,
   orthogonalTransformDefinition,
   garmentMeshWarpDefinition,
@@ -439,6 +499,7 @@ export const BACKGROUND_ISOLATION_TOOL_DEFINITION = backgroundIsolationDefinitio
 export const CROP_TOOL_DEFINITION = cropDefinition;
 export const RESIZE_TOOL_DEFINITION = resizeDefinition;
 export const EXPOSURE_TOOL_DEFINITION = exposureDefinition;
+export const MASKED_EXPOSURE_TOOL_DEFINITION = maskedExposureDefinition;
 export const AFFINE_TRANSFORM_TOOL_DEFINITION = affineTransformDefinition;
 export const ORTHOGONAL_TRANSFORM_TOOL_DEFINITION = orthogonalTransformDefinition;
 export const GARMENT_MESH_WARP_TOOL_DEFINITION = garmentMeshWarpDefinition;
