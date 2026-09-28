@@ -6,6 +6,9 @@ on:
     paths:
       - 'server/core/projects/**'
       - 'server/core/http/canonicalNodeHttpAdapter.ts'
+      - 'src/hooks/useProject.js'
+      - 'src/lib/projectService.js'
+      - 'tests/project-draft-client-boundary.test.mjs'
       - 'tests/project-status-lifecycle-postgres.test.ts'
       - 'tests/project-postgres-vertical.test.ts'
       - 'scripts/production-migration-inventory.mjs'
@@ -49,8 +52,11 @@ jobs:
           node-version: '24.x'
           cache: npm
       - run: npm ci
-      - name: Typecheck Core Project authority
-        run: npm run server:typecheck
+      - name: Typecheck browser and Core Project authority
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          node --test tests/project-draft-client-boundary.test.mjs
       - name: Prove production migration tail is exact through 045
         run: |
           node --input-type=module <<'NODE'
@@ -83,11 +89,14 @@ jobs:
         run: |
           set -euo pipefail
           store=server/core/projects/postgresProjectStore.ts
+          hook=src/hooks/useProject.js
           schema=server/core/projects/projectSchema.ts
           migration=server/core/projects/migrations/045_canonical_project_status_lifecycle.sql
           grep -q "const allowed = \['name','favorite','archived','objects'\]" "$store"
           ! grep -q "'status'" <(grep "const allowed =" "$store")
           grep -q "status='editing'" "$store"
+          grep -q "save({ objects })" "$hook"
+          ! grep -q "status: 'editing'" "$hook"
           grep -q "canonical_projects_status_check" "$schema"
           grep -q "ACCEPTED_FINAL" "$migration"
           grep -q "CHECK (status IN ('draft', 'editing'))" "$migration"
