@@ -41,6 +41,17 @@ import {
   AFFINE_TRANSFORM_TOOL_ID,
   AFFINE_TRANSFORM_TOOL_VERSION,
 } from './AffineTransformIdentity.js';
+import {
+  EXPOSURE_CAPABILITY,
+  EXPOSURE_GAIN_FIXED_POINT_BITS,
+  EXPOSURE_MAX_EIGHTH_STOPS,
+  EXPOSURE_MIN_EIGHTH_STOPS,
+  EXPOSURE_OPERATION,
+  EXPOSURE_STEP_ID,
+  EXPOSURE_STOP_DENOMINATOR,
+  EXPOSURE_TOOL_ID,
+  EXPOSURE_TOOL_VERSION,
+} from './ExposureIdentity.js';
 import { GARMENT_MESH_WARP_TOOL_DEFINITION_DATA } from './GarmentMeshWarpRegistryDefinition.js';
 import { GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION_DATA } from './GarmentTextureCompositeRegistryDefinition.js';
 
@@ -114,7 +125,7 @@ export type DeterministicToolDefinition = Readonly<{
     format: 'RGBA8';
     colorSpace: 'srgb';
     orientation: 1;
-    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
+    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
     alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP' | 'TEXTURE_PRESERVE_WARP_FEATHER_SOURCE_OVER';
     interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_FIXED_16_16_AFFINE_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH' | 'BILINEAR_NORMALIZED_Q16_TEXTURE_AND_MESH';
     rounding?: 'INTEGER_EXACT' | 'ROUND_HALF_UP';
@@ -266,6 +277,51 @@ const resizeDefinition: DeterministicToolDefinition = deepFreeze({
   lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: RESIZE_OPERATION },
 });
 
+const exposureDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: EXPOSURE_CAPABILITY,
+  operation: { id: EXPOSURE_STEP_ID, type: EXPOSURE_OPERATION, version: '1' },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: EXPOSURE_TOOL_ID, version: EXPOSURE_TOOL_VERSION },
+  inputs: [
+    { name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+  ],
+  output: { kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: ['image/png'], geometry: 'MATCH_SOURCE' },
+  parameters: {
+    artifactIdBindings: [{ parameter: 'sourceArtifactId', input: 'source' }],
+    exact: {
+      deterministicTool: `${EXPOSURE_TOOL_ID}@${EXPOSURE_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_RGBA8',
+      transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
+      gainEncoding: 'Q16_16_COMMITTED_EIGHTH_STOP_TABLE',
+      stopDenominator: EXPOSURE_STOP_DENOMINATOR,
+      fixedPointBits: EXPOSURE_GAIN_FIXED_POINT_BITS,
+      rounding: 'ROUND_HALF_UP',
+      alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
+      outputGeometry: 'MATCH_SOURCE',
+    },
+    integerRanges: [
+      { parameter: 'eighthStops', min: EXPOSURE_MIN_EIGHTH_STOPS, max: EXPOSURE_MAX_EIGHTH_STOPS },
+    ],
+  },
+  browser: { executorId: 'exposure-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'exposure-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'SRGB_ENCODED_EXPOSURE_GAIN_Q16',
+    alpha: 'COPY_SOURCE_ALPHA_BYTES',
+    interpolation: 'NONE',
+    rounding: 'ROUND_HALF_UP',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+  },
+  lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: EXPOSURE_OPERATION },
+});
+
 const affineTransformDefinition: DeterministicToolDefinition = deepFreeze({
   capability: AFFINE_TRANSFORM_CAPABILITY,
   operation: { id: AFFINE_TRANSFORM_STEP_ID, type: AFFINE_TRANSFORM_OPERATION, version: '1' },
@@ -372,6 +428,7 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
   backgroundIsolationDefinition,
   cropDefinition,
   resizeDefinition,
+  exposureDefinition,
   affineTransformDefinition,
   orthogonalTransformDefinition,
   garmentMeshWarpDefinition,
@@ -381,6 +438,7 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
 export const BACKGROUND_ISOLATION_TOOL_DEFINITION = backgroundIsolationDefinition;
 export const CROP_TOOL_DEFINITION = cropDefinition;
 export const RESIZE_TOOL_DEFINITION = resizeDefinition;
+export const EXPOSURE_TOOL_DEFINITION = exposureDefinition;
 export const AFFINE_TRANSFORM_TOOL_DEFINITION = affineTransformDefinition;
 export const ORTHOGONAL_TRANSFORM_TOOL_DEFINITION = orthogonalTransformDefinition;
 export const GARMENT_MESH_WARP_TOOL_DEFINITION = garmentMeshWarpDefinition;
