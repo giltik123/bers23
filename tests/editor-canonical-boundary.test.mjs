@@ -109,6 +109,24 @@ test('Editor rectangle and ellipse keep raster authority in SelectionApplication
   assert.doesNotMatch(preview, /getContext|putImageData|fetch\(|coreClient|persist/);
 });
 
+test('Editor selection brush hardness is explicit and quality warnings are user-visible', async () => {
+  const [editor, toolbar] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'),
+  ]);
+
+  assert.match(editor, /brushHardness, setBrushHardness\] = useState\(75\)/);
+  assert.match(editor, /hardness: brushHardness \/ 100/);
+  assert.doesNotMatch(editor, /hardness:\s*\.75/);
+  assert.match(editor, /brushHardness=\{brushHardness\} onBrushHardness=\{setBrushHardness\}/);
+
+  assert.match(toolbar, /aria-label="Brush Hardness"[^>]*min="0" max="100"/);
+  assert.match(toolbar, /disabled=\{busy \|\| \(selection\.mode !== 'BRUSH_ADD' && selection\.mode !== 'BRUSH_SUBTRACT'\)\}/);
+  assert.match(toolbar, /Selection is empty\. Add pixels before Done\./);
+  assert.match(toolbar, /Selection is extremely small\. Zoom in and verify the mask before Done\./);
+  assert.match(toolbar, /Selection covers almost the entire image\. Verify the mask before Done\./);
+});
+
 test('Editor Crop remains a Core-authorized preview then explicit canonical Accept flow', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const crop = await readFile('src/application/createCrop.ts', 'utf8');
