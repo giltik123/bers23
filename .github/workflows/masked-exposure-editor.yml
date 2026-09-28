@@ -1,0 +1,59 @@
+name: Masked Exposure Editor
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/application/createMaskedExposure.ts'
+      - 'src/application/local-execution/CoreAuthorizedMaskedExposure.ts'
+      - 'tests/editor-canonical-boundary.test.mjs'
+      - '.github/workflows/masked-exposure-editor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  masked-exposure-editor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser authority
+        run: npm run typecheck
+      - name: Prove Editor canonical boundary
+        run: node --test tests/editor-canonical-boundary.test.mjs
+      - name: Build production browser
+        run: npm run build
+      - name: Prove eighth-stop preview and no browser persistence authority
+        run: |
+          set -euo pipefail
+          editor=src/pages/Editor.jsx
+          toolbar=src/components/editor/SelectionToolbar.jsx
+          app=src/application/createMaskedExposure.ts
+          grep -q 'exposureEighthStops' "$editor"
+          grep -q 'eighthStops < -32' "$editor"
+          grep -q "kind: 'MASKED_EXPOSURE'" "$editor"
+          grep -q 'min="-32"' "$toolbar"
+          grep -q 'max="32"' "$toolbar"
+          grep -q 'const ev = eighthStops / 8' "$toolbar"
+          ! grep -q 'quarterStops' "$editor"
+          ! grep -q 'quarterStops' "$toolbar"
+          ! grep -Eq 'persistFinal|acceptFinal|pushEdit' "$app"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
