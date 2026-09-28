@@ -1,0 +1,117 @@
+name: Masked Exposure Authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/platform/creative/deterministic/MaskedExposure.ts'
+      - 'src/platform/creative/deterministic/MaskedExposureIdentity.js'
+      - 'src/platform/creative/deterministic/DeterministicToolRegistry.ts'
+      - 'src/platform/creative/canonical/CreativeExecutionPlatform.ts'
+      - 'src/platform/creative/canonical/planning/CanonicalPlanningService.ts'
+      - 'src/application/local-execution/CoreAuthorizedMaskedExposure.ts'
+      - 'src/application/createMaskedExposure.ts'
+      - 'src/api/coreClient.js'
+      - 'server/core/localExecution/LocalExecutionResultAuthority.ts'
+      - 'server/core/localExecution/LocalMaskedExposureExecutionService.ts'
+      - 'server/core/localExecution/LocalExecutionInputDeliveryService.ts'
+      - 'server/core/localExecution/productionLocalExecutorPolicy.ts'
+      - 'server/core/localExecution/index.ts'
+      - 'server/core/providers/productionExecutionCapabilities.ts'
+      - 'server/core/providers/productionExecutionRoute.ts'
+      - 'server/core/providers/productionTargetSelection.ts'
+      - 'server/core/providers/productionWorkflowVerifier.ts'
+      - 'server/core/artifacts/postgresImageArtifactStore.ts'
+      - 'server/core/artifacts/finalImageLineageSchema.ts'
+      - 'server/core/artifacts/durableArtifactLineageResolver.ts'
+      - 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql'
+      - 'server/core/fashion/garmentTextureFinalLineageSchema.ts'
+      - 'server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts'
+      - 'server/core/composition/createProductionCore.ts'
+      - 'server/core/http/localExecutionHttpAdapter.ts'
+      - 'server/index.ts'
+      - 'tests/masked-exposure-canonical-wiring.test.ts'
+      - 'tests/masked-exposure-postgres-vertical.test.ts'
+      - 'tests/deterministic-crop-contract.test.ts'
+      - 'tests/background-isolation-canonical-wiring.test.ts'
+      - 'scripts/f4b4-postgres-ci-closure.json'
+      - 'scripts/f4b5b-postgres-ci-closure.json'
+      - 'scripts/classify-fashion-execution-ci.mjs'
+      - '.github/workflows/masked-exposure-authority.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  masked-exposure-authority:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: masked_exposure_test
+          POSTGRES_USER: masked_exposure_test
+          POSTGRES_PASSWORD: masked_exposure_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U masked_exposure_test -d masked_exposure_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      DATABASE_URL: postgresql://masked_exposure_test:masked_exposure_test@127.0.0.1:5432/masked_exposure_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core authority surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Bundle focused Masked Exposure regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/p192-masked-exposure
+          for file in \
+            tests/masked-exposure-canonical-wiring.test.ts \
+            tests/masked-exposure-postgres-vertical.test.ts \
+            tests/deterministic-crop-contract.test.ts \
+            tests/background-isolation-canonical-wiring.test.ts; do
+            out=".test-cache/p192-masked-exposure/$(basename "${file%.ts}").mjs"
+            npx esbuild "$file" --bundle --platform=node --format=esm --target=node24 --outfile="$out" --external:node:* --external:pg --external:sharp
+          done
+      - name: Prove contract, ticket, browser and registry authority
+        run: |
+          node --test \
+            .test-cache/p192-masked-exposure/masked-exposure-canonical-wiring.test.mjs \
+            .test-cache/p192-masked-exposure/deterministic-crop-contract.test.mjs \
+            .test-cache/p192-masked-exposure/background-isolation-canonical-wiring.test.mjs
+      - name: Prove PostgreSQL IMAGE+MASK FINAL lineage and restart replay
+        run: node --test --test-concurrency=1 .test-cache/p192-masked-exposure/masked-exposure-postgres-vertical.test.mjs
+      - name: Build production browser
+        run: npm run build
+      - name: Prove bounded authority and no Editor cutover
+        run: |
+          set -euo pipefail
+          registry=src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          policy=server/core/localExecution/productionLocalExecutorPolicy.ts
+          planner=src/platform/creative/canonical/planning/CanonicalPlanningService.ts
+          migration=server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql
+          grep -q "Q16_16_COMMITTED_EIGHTH_STOP_TABLE" "$registry"
+          grep -q "MASKED_EXPOSURE_CAPABILITY" "$policy"
+          grep -q "MASKED_EXPOSURE_OPERATION" "$planner"
+          grep -q "GARMENT_TEXTURE_COMPOSITE" "$migration"
+          grep -q "GARMENT_APPEARANCE_REFINEMENT" "$migration"
+          test -n "$BASE_SHA"
+          ! git diff --name-only "$BASE_SHA"..HEAD | grep -Eq '^src/(pages/Editor\.jsx|components/editor/SelectionToolbar\.jsx)$'
+          git diff --check "$BASE_SHA"..HEAD
