@@ -3,13 +3,31 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, exposureQuarterStops, onExposureQuarterStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
       <Button type="button" variant="outline" disabled={startDisabled || !canIsolateBackground || isolatingBackground} onClick={onIsolateBackground}>
         {isolatingBackground && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         {isolatingBackground ? 'Removing background…' : 'Remove background'}
+      </Button>
+      <label className="flex items-center gap-2 rounded-md border px-2 py-1 text-xs">
+        Exposure
+        <input
+          aria-label="Masked exposure"
+          type="range"
+          min="-8"
+          max="8"
+          step="1"
+          value={exposureQuarterStops}
+          disabled={startDisabled || !canApplyExposure || applyingExposure}
+          onChange={(event) => onExposureQuarterStops(Number(event.target.value))}
+        />
+        <span aria-live="polite">{formatExposure(exposureQuarterStops)}</span>
+      </label>
+      <Button type="button" variant="outline" aria-label="Preview masked exposure" disabled={startDisabled || !canApplyExposure || applyingExposure || exposureQuarterStops === 0} onClick={onApplyExposure}>
+        {applyingExposure && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+        {applyingExposure ? 'Applying exposure…' : 'Preview exposure'}
       </Button>
     </div>
   );
@@ -89,4 +107,9 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
       {selection.warning && <p className="text-xs text-amber-600" role="status">{selection.warning}</p>}
     </section>
   );
+}
+
+function formatExposure(quarterStops) {
+  const ev = quarterStops / 4;
+  return `${ev > 0 ? '+' : ''}${Number.isInteger(ev) ? ev.toFixed(0) : ev.toFixed(2).replace(/0$/, '')} EV`;
 }
