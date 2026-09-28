@@ -10,6 +10,7 @@ import { PostgresMaskArtifactStore } from '../artifacts/postgresMaskArtifactStor
 import { checkMaskArtifactSchema } from '../artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema } from '../artifacts/imageArtifactSchema.ts';
 import { checkFinalImageLineageSchema, migrateFinalImageLineageSchema } from '../artifacts/finalImageLineageSchema.ts';
+import { checkAffineFinalImageLineageSchema, migrateAffineFinalImageLineageSchema } from '../artifacts/affineFinalImageLineageSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../artifacts/localExecutionUploadSchema.ts';
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
 import type { LocalExecutionExecutorBinding, LocalExecutionModelBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
@@ -25,7 +26,7 @@ import type { CoreServerConfig } from '../config.ts';
 import { checkExecutionRunSchema, migrateExecutionRunSchema } from '../execution/executionRunSchema.ts';
 import { PostgresExecutionRunRegistry } from '../execution/PostgresExecutionRunRegistry.ts';
 import { DeterministicWorkflowStepFinalRecoveryAuthority } from '../localExecution/DeterministicWorkflowStepFinalRecoveryAuthority.ts';
-import { LocalCropExecutionService, LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalOrthogonalTransformExecutionService, LocalResizeExecutionService, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, OrthogonalTransformInputDeliveryService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
+import { AffineTransformInputDeliveryService, LocalAffineTransformExecutionService, LocalCropExecutionService, LocalDeterministicImageExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalOrthogonalTransformExecutionService, LocalResizeExecutionService, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, OrthogonalTransformInputDeliveryService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../localExecution/productionLocalExecutorPolicy.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
@@ -66,11 +67,12 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
   try {
     await transactions.pool.query('SELECT 1');
     await checkTransactionSchema(transactions.pool);
-    if (config.nodeEnv === 'test') await migrateFinalImageLineageSchema(transactions.pool);
+    if (config.nodeEnv === 'test') { await migrateFinalImageLineageSchema(transactions.pool); await migrateAffineFinalImageLineageSchema(transactions.pool); }
     else {
       await checkMaskArtifactSchema(transactions.pool);
       await checkImageArtifactSchema(transactions.pool);
       await checkFinalImageLineageSchema(transactions.pool);
+      await checkAffineFinalImageLineageSchema(transactions.pool);
     }
     await checkProjectSchema(transactions.pool);
     if (config.nodeEnv === 'test') await migrateExecutionRunSchema(transactions.pool);
@@ -243,6 +245,23 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       now,
     });
     const orthogonalTransformInputDelivery = new OrthogonalTransformInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
+    const localAffineTransform = new LocalAffineTransformExecutionService({
+      platform: canonical,
+      ownsArtifacts,
+      hydrateArtifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels, maxUploadBytes: config.imageUploadLimitBytes }),
+      persistFinal: (scope, executionId, operationId, image, lineage) => {
+        const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
+        if (!sourceImageStorageId || lineage.producerOperation !== 'AFFINE_TRANSFORM') throw new Error('Affine-transform FINAL requires one stored canonical IMAGE parent');
+        return artifacts.images.persistFinal(scope, executionId, operationId, image, { sourceImageStorageId, producerOperation: 'AFFINE_TRANSFORM' });
+      },
+      loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
+      issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
+      now,
+    });
+    const affineTransformInputDelivery = new AffineTransformInputDeliveryService({ admission: localExecutionAdmission, ownsArtifacts, hydrateArtifacts, now });
     const localSuperResolution = new LocalSuperResolutionExecutionService({
       platform: canonical,
       ownsArtifacts,
@@ -332,6 +351,8 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
         resize: localResize,
         orthogonalTransform: localOrthogonalTransform,
         orthogonalTransformInputDelivery,
+        affineTransform: localAffineTransform,
+        affineTransformInputDelivery,
         garmentMeshWarp: garmentMeshWarp.execution,
         garmentMeshWarpInputDelivery: garmentMeshWarp.inputDelivery,
         garmentTextureComposite: garmentMeshWarp.textureComposite.execution,
