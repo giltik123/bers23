@@ -7,7 +7,8 @@ import {
   normalizeOrthogonalTransformMode,
   orthogonalTransformOutputGeometry,
 } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
-import { ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { MASKED_EXPOSURE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { MASKED_EXPOSURE_OPERATION, MASKED_EXPOSURE_TOOL_ID, MASKED_EXPOSURE_TOOL_VERSION, normalizeMaskedExposureQuarterStops } from '../../../src/platform/creative/deterministic/MaskedExposure.ts';
 import { SUPER_RESOLUTION_ALPHA_POLICY, SUPER_RESOLUTION_SCALE } from '../../../src/platform/creative/super-resolution/SuperResolutionContract.ts';
 
 export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C3.2';
@@ -70,6 +71,14 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
       const parents = artifacts[0].metadata?.parentArtifactIds;
       if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels]);
       return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicPixels, CHECKS.localLineage], errors: [] });
+    }
+    if (operation.type === MASKED_EXPOSURE_OPERATION) {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalMaskedExposureImage(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicSemantics, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage], errors: [] });
     }
     if (operation.type === 'CROP') {
       if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
@@ -159,6 +168,26 @@ function hasValidCropGeometry(operation: WorkflowOperation, artifact: Artifact):
   if (x === undefined || y === undefined || width === undefined || height === undefined) return false;
   if (input.x !== x || input.y !== y || input.width !== width || input.height !== height) return false;
   return artifact.value.width === width && artifact.value.height === height;
+}
+
+function isCanonicalMaskedExposureImage(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  if (!metadata || metadata.artifactRole !== 'COMPOSITE' || metadata.localExecutionAdmission !== 'ADMITTED') return false;
+  if (metadata.admissionClass !== 'DETERMINISTIC_BYTE_EXACT' || metadata.verificationScope !== 'BYTE_EXACT_CORE_RECOMPUTE') return false;
+  if (metadata.executorKind !== 'DETERMINISTIC_TOOL' || metadata.toolId !== MASKED_EXPOSURE_TOOL_ID || metadata.toolVersion !== MASKED_EXPOSURE_TOOL_VERSION) return false;
+  if (metadata.runtime !== 'BROWSER_JS' || metadata.accelerator !== 'cpu') return false;
+  if (!sha256(metadata.candidateSha256) || !sha256(metadata.verifiedPixelSha256)) return false;
+  const exact = MASKED_EXPOSURE_TOOL_DEFINITION.parameters.exact;
+  if (metadata.gainEncoding !== exact.gainEncoding || metadata.rgbSpace !== exact.rgbSpace || metadata.gainRounding !== exact.gainRounding || metadata.maskBlend !== exact.maskBlend || metadata.alphaPolicy !== exact.alphaPolicy) return false;
+  const integrity = metadata.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  if (integrity?.verificationOutcome !== 'PASS' || integrity.pixelComparison !== 'BYTE_EXACT') return false;
+  const input = operation.input;
+  if (!input || input.deterministicTool !== exact.deterministicTool || input.gainEncoding !== exact.gainEncoding || input.rgbSpace !== exact.rgbSpace || input.gainRounding !== exact.gainRounding || input.maskBlend !== exact.maskBlend || input.alphaPolicy !== exact.alphaPolicy) return false;
+  try {
+    const quarterStops = normalizeMaskedExposureQuarterStops(Number(input.quarterStops));
+    return metadata.quarterStops === quarterStops;
+  } catch { return false; }
 }
 
 function isCanonicalResizeImage(operation: WorkflowOperation, artifact: Artifact): boolean {

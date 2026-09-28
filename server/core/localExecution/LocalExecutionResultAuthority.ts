@@ -14,6 +14,13 @@ import {
   BACKGROUND_ISOLATION_TOOL_VERSION,
   isolateBackgroundRgba,
 } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
+import {
+  MASKED_EXPOSURE_OPERATION,
+  MASKED_EXPOSURE_TOOL_ID,
+  MASKED_EXPOSURE_TOOL_VERSION,
+  maskedExposureRgba8,
+  normalizeMaskedExposureQuarterStops,
+} from '../../../src/platform/creative/deterministic/MaskedExposure.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { admitLocalExecutionInputs } from './LocalExecutionInputAdmission.ts';
@@ -46,11 +53,24 @@ type BackgroundIsolationArtifactLineage = Readonly<{
   maskArtifactId: string;
   producerOperation: 'BACKGROUND_ISOLATION';
 }>;
+type MaskedExposureArtifactLineage = Readonly<{
+  sourceArtifactId: string;
+  maskArtifactId: string;
+  producerOperation: 'MASKED_EXPOSURE';
+}>;
 
 type DeterministicDependencies = ScopeArtifactAccess & Readonly<{
   admission: LocalExecutionLedgerV2;
   uploads: UploadReader;
   persistFinal: (scope: Scope, executionId: string, operationId: string, image: PixelImage, lineage?: BackgroundIsolationArtifactLineage) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
+  loadPersistedFinal: (executionId: string, scope: Scope) => Promise<Readonly<{ storageId: string; width: number; height: number }> | undefined>;
+  issueFinalId: (storageId: string, scope: Scope) => string;
+  now?: () => number;
+}>;
+type MaskedExposureDependencies = ScopeArtifactAccess & Readonly<{
+  admission: LocalExecutionLedgerV2;
+  uploads: UploadReader;
+  persistFinal: (scope: Scope, executionId: string, operationId: string, image: PixelImage, lineage?: MaskedExposureArtifactLineage) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
   loadPersistedFinal: (executionId: string, scope: Scope) => Promise<Readonly<{ storageId: string; width: number; height: number }> | undefined>;
   issueFinalId: (storageId: string, scope: Scope) => string;
   now?: () => number;
@@ -294,6 +314,143 @@ export class BackgroundIsolationResultAuthority {
     if (finalization.status === 'FAILED') return failedReplay(ticket.workflowId);
     const stored = await this.dependencies.loadPersistedFinal(ticket.workflowId, ticket.scope);
     if (!stored) throw serviceError(409, 'local_finalization_artifact_unavailable', 'Committed deterministic FINAL is unavailable');
+    const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
+    return successReplay(ticket.workflowId, artifactId);
+  }
+}
+
+
+/**
+ * Accepted Masked Exposure result authority. Candidate bytes remain quarantined
+ * until Core rehydrates the exact IMAGE + MASK, recomputes the fixed-point
+ * exposure law and verifies byte equality.
+ */
+export class MaskedExposureResultAuthority {
+  private readonly dependencies: MaskedExposureDependencies;
+  private readonly contract: ExactLocalContract;
+  private readonly now: () => number;
+
+  constructor(dependencies: MaskedExposureDependencies, contract: ExactLocalContract) {
+    this.dependencies = dependencies;
+    this.contract = requireContract(contract);
+    this.now = dependencies.now ?? Date.now;
+  }
+
+  async submit(input: Readonly<{ ticket: LocalExecutionTicketV2; result: unknown; verify: DeterministicVerificationPort }>): Promise<LocalResultAuthoritySubmission> {
+    const ticket = input.ticket;
+    this.assertTicket(ticket);
+    const claim = await this.dependencies.admission.claimV2({ ticketId: ticket.ticketId, result: input.result, callerScope: ticket.scope, now: this.now() });
+    if (!claim.allowed) {
+      if (claim.reasonCode === 'REPLAYED_TICKET') return this.replayFinalized(ticket);
+      throw admissionError(claim.reasonCode);
+    }
+
+    try {
+      const artifacts = await this.revalidateCanonicalInputs(ticket);
+      const result = claim.result;
+      if (result.executor.kind !== 'DETERMINISTIC_TOOL' || result.executor.toolId !== MASKED_EXPOSURE_TOOL_ID || result.executor.version !== MASKED_EXPOSURE_TOOL_VERSION) throw serviceError(400, 'local_executor_mismatch', 'Result is not the authorized Masked Exposure executor');
+      if (result.outputs.length !== 1) throw serviceError(400, 'local_result_output_count', 'Masked Exposure requires exactly one output');
+      const evidence = result.outputs[0];
+      const upload = await loadExactEvidence(this.dependencies.uploads, ticket, evidence, this.now());
+      if (upload.kind !== 'image' || upload.role !== 'COMPOSITE' || upload.mimeType !== 'image/png') throw serviceError(400, 'local_upload_contract_mismatch', 'Quarantined output is not a deterministic PNG COMPOSITE candidate');
+
+      const source = requireSource(artifacts, ticket);
+      const mask = requireMask(artifacts, ticket);
+      const sourcePixels = source.value as Readonly<{ width: number; height: number; data: Uint8ClampedArray }>;
+      const maskPixels = mask.value as Readonly<{ width: number; height: number; alpha: Uint8Array }>;
+      if (maskPixels.width !== sourcePixels.width || maskPixels.height !== sourcePixels.height) throw serviceError(409, 'local_input_geometry_mismatch', 'Masked Exposure IMAGE and MASK geometry mismatch');
+      const parameters = ticket.operation.parameters as Readonly<Record<string, unknown>> | undefined;
+      const quarterStops = normalizeMaskedExposureQuarterStops(Number(parameters?.quarterStops));
+      const candidate = await decodePngRgba(upload.bytes);
+      if (candidate.width !== sourcePixels.width || candidate.height !== sourcePixels.height) throw serviceError(400, 'local_image_dimensions_mismatch', 'Masked Exposure candidate geometry does not match canonical inputs');
+      const expected = maskedExposureRgba8(sourcePixels.data, maskPixels.alpha, sourcePixels.width, sourcePixels.height, quarterStops);
+      assertExactPixels(expected, candidate.data);
+
+      const artifact: CreativeArtifact = Object.freeze({
+        id: `core-verified-masked-exposure:${ticket.ticketId}`,
+        kind: 'image',
+        value: Object.freeze({ width: sourcePixels.width, height: sourcePixels.height, data: expected, format: 'RGBA8', orientation: 1 as const, colorSpace: 'srgb' }),
+        producerOperationId: ticket.stepId,
+        scope: ticket.scope,
+        state: 'FINAL',
+        role: 'COMPOSITE',
+        image: Object.freeze({ width: sourcePixels.width, height: sourcePixels.height, format: 'RGBA8', orientation: 1 as const, colorSpace: 'srgb', alpha: true }),
+        metadata: Object.freeze({
+          artifactRole: 'COMPOSITE',
+          localExecutionAdmission: 'ADMITTED',
+          admissionClass: 'DETERMINISTIC_BYTE_EXACT',
+          verificationScope: 'BYTE_EXACT_CORE_RECOMPUTE',
+          ticketId: ticket.ticketId,
+          executorKind: result.executor.kind,
+          toolId: result.executor.toolId,
+          toolVersion: result.executor.version,
+          runtime: result.runtime,
+          accelerator: result.accelerator,
+          quarterStops,
+          gainEncoding: 'Q16_IMMUTABLE_QUARTER_STOP_LOOKUP',
+          rgbSpace: 'SRGB_ENCODED_CODE_VALUE',
+          gainRounding: 'ROUND_HALF_UP',
+          maskBlend: 'SOURCE_ADJUSTED_ALPHA8_ROUND_HALF_UP',
+          alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
+          candidateSha256: upload.sha256,
+          verifiedPixelSha256: createHash('sha256').update(expected).digest('hex'),
+          integrityMetrics: Object.freeze({ verificationOutcome: 'PASS', pixelComparison: 'BYTE_EXACT' }),
+          parentArtifactIds: Object.freeze(ticket.inputs.map(binding => binding.artifactId)),
+        }),
+      });
+
+      const outcome = await input.verify({ ticket, result, artifact });
+      if (outcome.status !== 'SUCCESS') throw serviceError(422, 'local_execution_verification_failed', 'Canonical Masked Exposure execution did not pass workflow verification');
+      const stored = await this.dependencies.persistFinal(
+        ticket.scope,
+        ticket.workflowId,
+        ticket.stepId,
+        { width: sourcePixels.width, height: sourcePixels.height, data: expected },
+        { sourceArtifactId: source.id, maskArtifactId: mask.id, producerOperation: 'MASKED_EXPOSURE' },
+      );
+      const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
+      await this.dependencies.admission.commit(ticket.ticketId, 'SUCCESS');
+      await this.dependencies.uploads.consume(upload.uploadId, ticket.ticketId, ticket.scope, this.now());
+      return Object.freeze({ executionId: ticket.workflowId, status: 'SUCCESS', artifactId, outcome });
+    } catch (error) {
+      await this.dependencies.admission.release(ticket.ticketId).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private assertTicket(ticket: LocalExecutionTicketV2): void {
+    if (ticket.version !== '2' || ticket.operation.capability !== this.contract.capability || ticket.operation.type !== MASKED_EXPOSURE_OPERATION || ticket.operation.id !== this.contract.stepId || ticket.stepId !== this.contract.stepId || ticket.policy !== 'LOCAL_ONLY') {
+      throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not the exact accepted Masked Exposure result contract');
+    }
+    if (ticket.allowedExecutors.length !== 1) throw serviceError(409, 'local_ticket_executor_mismatch', 'Masked Exposure must bind exactly one executor');
+    const executor = ticket.allowedExecutors[0];
+    if (executor.kind !== 'DETERMINISTIC_TOOL' || executor.toolId !== MASKED_EXPOSURE_TOOL_ID || executor.version !== MASKED_EXPOSURE_TOOL_VERSION) throw serviceError(409, 'local_ticket_executor_mismatch', 'Masked Exposure executor binding is invalid');
+    const parameters = ticket.operation.parameters as Readonly<Record<string, unknown>> | undefined;
+    normalizeMaskedExposureQuarterStops(Number(parameters?.quarterStops));
+  }
+
+  private async revalidateCanonicalInputs(ticket: LocalExecutionTicketV2): Promise<readonly CreativeArtifact[]> {
+    if (ticket.inputs.length !== 2) throw serviceError(409, 'local_input_contract_mismatch', 'Masked Exposure requires exactly two canonical inputs');
+    const sourceBinding = ticket.inputs.find(binding => binding.kind === 'image');
+    const maskBinding = ticket.inputs.find(binding => binding.kind === 'mask');
+    if (!sourceBinding?.sha256 || !maskBinding?.sha256) throw serviceError(409, 'local_input_contract_mismatch', 'Masked Exposure requires SHA-bound IMAGE + MASK inputs');
+    if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId, maskBinding.artifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked Exposure inputs are no longer authorized or available');
+    const artifacts = await this.dependencies.hydrateArtifacts(ticket.scope, sourceBinding.artifactId, [maskBinding.artifactId]);
+    const source = artifacts.find(artifact => artifact.id === sourceBinding.artifactId && artifact.kind === 'image');
+    const mask = artifacts.find(artifact => artifact.id === maskBinding.artifactId && artifact.kind === 'mask' && artifact.role === 'MASK');
+    if (!source || !mask) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked Exposure source or MASK was not hydrated');
+    if (!source.image?.width || !source.image.height || source.image.width !== mask.image?.width || source.image.height !== mask.image?.height) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked Exposure input geometry mismatch');
+    const decision = admitLocalExecutionInputs(ticket, artifacts);
+    if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical Masked Exposure input revalidation failed: ${decision.reasonCode}`);
+    return artifacts;
+  }
+
+  private async replayFinalized(ticket: LocalExecutionTicketV2): Promise<LocalResultAuthoritySubmission> {
+    const finalization = await this.dependencies.admission.getFinalization(ticket.ticketId);
+    if (!finalization || finalization.status === 'UNKNOWN') throw serviceError(409, 'local_finalization_unknown', 'Masked Exposure was consumed without a recoverable terminal status');
+    if (finalization.status === 'FAILED') return failedReplay(ticket.workflowId);
+    const stored = await this.dependencies.loadPersistedFinal(ticket.workflowId, ticket.scope);
+    if (!stored) throw serviceError(409, 'local_finalization_artifact_unavailable', 'Committed Masked Exposure FINAL is unavailable');
     const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
     return successReplay(ticket.workflowId, artifactId);
   }

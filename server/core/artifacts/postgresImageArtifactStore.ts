@@ -18,6 +18,12 @@ export type BackgroundIsolationFinalImageLineage = Readonly<{
   producerOperation: 'BACKGROUND_ISOLATION';
 }>;
 
+export type MaskedExposureFinalImageLineage = Readonly<{
+  sourceImageStorageId: string;
+  maskStorageId: string;
+  producerOperation: 'MASKED_EXPOSURE';
+}>;
+
 export type CropFinalImageLineage = Readonly<{
   sourceImageStorageId: string;
   maskStorageId?: undefined;
@@ -49,6 +55,7 @@ export type GarmentAppearanceRefinementFinalImageLineage = GarmentAppearanceRefi
 
 export type FinalImageLineage =
   | BackgroundIsolationFinalImageLineage
+  | MaskedExposureFinalImageLineage
   | CropFinalImageLineage
   | ResizeFinalImageLineage
   | OrthogonalTransformFinalImageLineage
@@ -61,6 +68,7 @@ type NormalizedGarmentTextureCompositeFinalImageLineage = GarmentTextureComposit
 
 type NormalizedFinalImageLineage =
   | BackgroundIsolationFinalImageLineage
+  | MaskedExposureFinalImageLineage
   | CropFinalImageLineage
   | ResizeFinalImageLineage
   | OrthogonalTransformFinalImageLineage
@@ -83,7 +91,7 @@ export type StoredFinalImage = Readonly<{
   bytes: Uint8Array;
   sourceImageStorageId?: string;
   maskStorageId?: string;
-  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'GARMENT_TEXTURE_COMPOSITE' | 'GARMENT_APPEARANCE_REFINEMENT';
+  producerOperation?: 'BACKGROUND_ISOLATION' | 'MASKED_EXPOSURE' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'GARMENT_TEXTURE_COMPOSITE' | 'GARMENT_APPEARANCE_REFINEMENT';
   garmentWarpLayerId?: string;
   garmentWarpLayerSha256?: string;
   producerParameters?: GarmentTextureCompositeProducerParametersV1;
@@ -198,7 +206,7 @@ export class PostgresImageArtifactStore {
                 storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId,
                 image.width, image.height, bytes,
                 normalizedLineage.sourceImageStorageId,
-                normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' ? normalizedLineage.maskStorageId : null,
+                normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' || normalizedLineage.producerOperation === 'MASKED_EXPOSURE' ? normalizedLineage.maskStorageId : null,
                 normalizedLineage.producerOperation,
               ])
           : await this.pool.query(`INSERT INTO canonical_image_artifacts
@@ -344,6 +352,12 @@ function normalizeLineage(value: FinalImageLineage): NormalizedFinalImageLineage
     if (sourceImageStorageId === maskStorageId) throw new Error('Canonical Background Isolation source and MASK storage identities must differ');
     return Object.freeze({ sourceImageStorageId, maskStorageId, producerOperation: 'BACKGROUND_ISOLATION' as const });
   }
+  if (value.producerOperation === 'MASKED_EXPOSURE') {
+    const maskStorageId = value.maskStorageId?.trim();
+    if (!maskStorageId) throw new Error('Canonical Masked Exposure FINAL MASK lineage is incomplete');
+    if (sourceImageStorageId === maskStorageId) throw new Error('Canonical Masked Exposure source and MASK storage identities must differ');
+    return Object.freeze({ sourceImageStorageId, maskStorageId, producerOperation: 'MASKED_EXPOSURE' as const });
+  }
   if (value.producerOperation === 'CROP') {
     if (value.maskStorageId !== undefined) throw new Error('Canonical Crop FINAL must not carry MASK lineage');
     return Object.freeze({ sourceImageStorageId, producerOperation: 'CROP' as const });
@@ -390,7 +404,7 @@ function assertExactLineagedReplay(
   lineage: NormalizedFinalImageLineage,
 ): void {
   const storedBytes = Buffer.from(row.image_bytes ?? []);
-  const expectedMaskStorageId = lineage.producerOperation === 'BACKGROUND_ISOLATION' ? lineage.maskStorageId : null;
+  const expectedMaskStorageId = lineage.producerOperation === 'BACKGROUND_ISOLATION' || lineage.producerOperation === 'MASKED_EXPOSURE' ? lineage.maskStorageId : null;
   const expectedLayerId = lineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? lineage.garmentWarpLayerId : null;
   const expectedLayerSha = lineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? lineage.garmentWarpLayerSha256 : null;
   const expectedParametersSha = lineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? lineage.producerParametersSha256 : null;
