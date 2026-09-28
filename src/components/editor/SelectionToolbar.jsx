@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
@@ -35,6 +35,10 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
         {modes.map(([id, label]) => <Button key={id} type="button" size="sm" variant={selection.mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => onMode(id)}>{label}</Button>)}
         <label className="flex items-center gap-2 px-2 text-xs">Brush Size
           <input aria-label="Brush Size" type="range" min="2" max="96" value={brushSize} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushSize(Number(event.target.value))} />
+        </label>
+        <label className="flex items-center gap-2 px-2 text-xs">Hardness
+          <input aria-label="Brush Hardness" type="range" min="0" max="100" value={brushHardness} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushHardness(Number(event.target.value))} />
+          <span aria-hidden="true">{brushHardness}%</span>
         </label>
       </div>
       {selection.mode === 'POLYGON' && (
@@ -110,6 +114,9 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
       </div>
       {selection.state === 'SELECTING' && <p className="text-xs text-muted-foreground" role="status">Preparing Smart Selection…</p>}
       {selection.warning && <p className="text-xs text-amber-600" role="status">{selection.warning}</p>}
+      {selection.quality?.warning === 'EMPTY' && <p className="text-xs text-amber-600" role="status">Selection is empty. Add pixels before Done.</p>}
+      {selection.quality?.warning === 'TINY' && <p className="text-xs text-amber-600" role="status">Selection is extremely small. Zoom in and verify the mask before Done.</p>}
+      {selection.quality?.warning === 'SUSPICIOUSLY_FULL' && <p className="text-xs text-amber-600" role="status">Selection covers almost the entire image. Verify the mask before Done.</p>}
     </section>
   );
 }
