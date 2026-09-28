@@ -201,6 +201,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       hydrateArtifacts,
       admission: localExecutionAdmission,
       uploads: localUploads,
+      limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels, maxUploadBytes: config.imageUploadLimitBytes }),
       persistFinal: (scope, executionId, operationId, image, lineage) => {
         if (!lineage || lineage.producerOperation !== 'MASKED_EXPOSURE') throw new Error('Masked Exposure FINAL requires explicit IMAGE + MASK lineage');
         const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
