@@ -40,6 +40,10 @@ export async function migrateFinalImageLineageSchema(pool: Pool): Promise<void> 
   await pool.query(await readMigration('019_canonical_crop_final_lineage.sql'));
   await pool.query(await readMigration('020_canonical_resize_final_lineage.sql'));
   await pool.query(await readMigration('021_canonical_orthogonal_transform_final_lineage.sql'));
+  await migrateMaskedExposureFinalLineageSchema(pool);
+}
+
+export async function migrateMaskedExposureFinalLineageSchema(pool: Pool): Promise<void> {
   await pool.query(await readMigration('046_canonical_masked_exposure_final_lineage.sql'));
   await checkFinalImageLineageSchema(pool);
 }
