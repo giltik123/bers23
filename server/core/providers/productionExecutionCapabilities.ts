@@ -2,6 +2,7 @@ import type { ExecutionCapabilityDecision, ExecutionCapabilityPort, ExecutionRou
 import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES, LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT } from '../../../src/platform/creative/canonical/localComposite.ts';
 import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
+import { AFFINE_TRANSFORM_CAPABILITY, AFFINE_TRANSFORM_OPERATION } from '../../../src/platform/creative/deterministic/AffineTransform.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY, ORTHOGONAL_TRANSFORM_OPERATION } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { GARMENT_TEXTURE_COMPOSITE_CAPABILITY, GARMENT_TEXTURE_COMPOSITE_OPERATION } from '../../../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
 import { GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE } from './productionGarmentMeshWarpExecutionPolicy.ts';
@@ -19,6 +20,7 @@ const RULES: readonly CapabilityRule[] = Object.freeze([
   Object.freeze({ capabilityId: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation, route: 'ON_DEVICE', operationType: 'BACKGROUND_ISOLATION', target: 'LOCAL', operationIntent: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT }),
   Object.freeze({ capabilityId: CROP_CAPABILITY, route: 'ON_DEVICE', operationType: 'CROP', target: 'LOCAL', operationIntent: 'CROP' }),
   Object.freeze({ capabilityId: RESIZE_CAPABILITY, route: 'ON_DEVICE', operationType: 'RESIZE', target: 'LOCAL', operationIntent: 'RESIZE' }),
+  Object.freeze({ capabilityId: AFFINE_TRANSFORM_CAPABILITY, route: 'ON_DEVICE', operationType: AFFINE_TRANSFORM_OPERATION, target: 'LOCAL', operationIntent: AFFINE_TRANSFORM_OPERATION }),
   Object.freeze({ capabilityId: ORTHOGONAL_TRANSFORM_CAPABILITY, route: 'ON_DEVICE', operationType: ORTHOGONAL_TRANSFORM_OPERATION, target: 'LOCAL', operationIntent: ORTHOGONAL_TRANSFORM_OPERATION }),
   GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE,
   Object.freeze({ capabilityId: GARMENT_TEXTURE_COMPOSITE_CAPABILITY, route: 'ON_DEVICE', operationType: GARMENT_TEXTURE_COMPOSITE_OPERATION, target: 'LOCAL', operationIntent: GARMENT_TEXTURE_COMPOSITE_OPERATION }),
