@@ -44,18 +44,58 @@ function PolygonPreview({ selection }) {
   );
 }
 
-function ShapePreview({ selection }) {
+function ShapePreview({ selection, onHandlePointer }) {
   if ((selection?.mode !== 'RECTANGLE' && selection?.mode !== 'ELLIPSE') || selection.shapeVertices?.length !== 2) return null;
   const [a,b] = selection.shapeVertices;
   const x = Math.min(a.x,b.x), y = Math.min(a.y,b.y), width = Math.abs(b.x-a.x), height = Math.abs(b.y-a.y);
   if (!(width > 0 && height > 0)) return null;
   const common = { fill: 'rgba(16,185,129,0.12)', stroke: 'rgb(16,185,129)', strokeWidth: Math.max(1, Math.min(selection.width, selection.height) / 300), vectorEffect: 'non-scaling-stroke' };
+  const handles = [
+    ['NW', x, y, 'northwest'],
+    ['NE', x + width, y, 'northeast'],
+    ['SW', x, y + height, 'southwest'],
+    ['SE', x + width, y + height, 'southeast'],
+  ];
+  const pointer = (handle, phase) => (event) => {
+    if (!onHandlePointer) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (phase === 'down') event.currentTarget.setPointerCapture?.(event.pointerId);
+    const host = event.currentTarget.parentElement;
+    const rect = host?.getBoundingClientRect();
+    if (rect?.width && rect?.height) {
+      onHandlePointer(
+        handle,
+        phase,
+        { x: event.clientX - rect.left, y: event.clientY - rect.top },
+        { displayWidth: rect.width, displayHeight: rect.height, originalWidth: selection.width, originalHeight: selection.height },
+      );
+    }
+    if ((phase === 'up' || phase === 'cancel') && event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+  };
   return (
-    <svg className="absolute inset-0 size-full pointer-events-none" viewBox={`0 0 ${selection.width} ${selection.height}`} preserveAspectRatio="none" aria-hidden="true">
-      {selection.mode === 'RECTANGLE'
-        ? <rect x={x} y={y} width={width} height={height} {...common} />
-        : <ellipse cx={x + width / 2} cy={y + height / 2} rx={width / 2} ry={height / 2} {...common} />}
-    </svg>
+    <div className="absolute inset-0 pointer-events-none">
+      <svg className="absolute inset-0 size-full pointer-events-none" viewBox={`0 0 ${selection.width} ${selection.height}`} preserveAspectRatio="none" aria-hidden="true">
+        {selection.mode === 'RECTANGLE'
+          ? <rect x={x} y={y} width={width} height={height} {...common} />
+          : <ellipse cx={x + width / 2} cy={y + height / 2} rx={width / 2} ry={height / 2} {...common} />}
+      </svg>
+      {handles.map(([handle, handleX, handleY, label]) => (
+        <button
+          key={handle}
+          type="button"
+          aria-label={`Resize selection from ${label} handle`}
+          className="absolute w-4 h-4 rounded-full border-2 border-white bg-emerald-500 shadow pointer-events-auto -translate-x-1/2 -translate-y-1/2 touch-none"
+          style={{ left: `${handleX / selection.width * 100}%`, top: `${handleY / selection.height * 100}%` }}
+          onPointerDown={pointer(handle, 'down')}
+          onPointerMove={pointer(handle, 'move')}
+          onPointerUp={pointer(handle, 'up')}
+          onPointerCancel={pointer(handle, 'cancel')}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -75,7 +115,7 @@ function CropOverlay({ crop }) {
   );
 }
 
-export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, crop, cropSource, onCropPointer }) {
+export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer }) {
   const gestures = useAdaptiveGestures({ onSwipeLeft: onRedo, onSwipeRight: onUndo });
   const renderer = adaptiveRenderer(usePlatformProfile());
   const drawing = useRef(false);
@@ -101,7 +141,7 @@ export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, b
       <img src={imageUrl} alt="Project" decoding={renderer.decoding} fetchPriority="high" style={{ imageRendering: renderer.imageRendering }} onLoad={(event) => { if (event.currentTarget.naturalWidth * event.currentTarget.naturalHeight > 2000000) performanceMonitor.markLargeDecode(); }} className="w-full h-auto block" draggable={false} />
       <SelectionOverlay selection={selection} />
       <PolygonPreview selection={selection} />
-      <ShapePreview selection={selection} />
+      <ShapePreview selection={selection} onHandlePointer={onShapeHandlePointer} />
       <CropOverlay crop={crop} />
       {!interactive && objects.map((obj) => {
         const selected = obj.id === selectedId;
