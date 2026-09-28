@@ -113,6 +113,18 @@ test('Editor rectangle and ellipse keep raster authority in SelectionApplication
   assert.doesNotMatch(preview, /getContext|putImageData|fetch\(|coreClient|persist/);
 });
 
+test('Editor Smart Select completion cannot resurrect a cancelled Selection service', async () => {
+  const [editor, service] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/application/selection/SelectionApplicationService.ts', 'utf8'),
+  ]);
+  assert.match(service, /Promise<SelectionDraftSnapshot \| undefined>/);
+  assert.match(service, /if \(this\.#draft !== d\) return undefined/);
+  assert.match(editor, /const next = await service\.smartPoint/);
+  assert.match(editor, /if \(next && selectionServiceRef\.current === service\) setSelection\(next\)/);
+  assert.match(editor, /selectionServiceRef\.current\.cancel\(\); selectionServiceRef\.current = null; setSelection\(null\);/);
+});
+
 test('Editor selection keyboard history and mode state are explicit without hijacking form inputs', async () => {
   const [editor, toolbar] = await Promise.all([
     readFile('src/pages/Editor.jsx', 'utf8'),
