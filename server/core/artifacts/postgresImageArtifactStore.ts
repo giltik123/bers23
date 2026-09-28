@@ -36,6 +36,12 @@ export type OrthogonalTransformFinalImageLineage = Readonly<{
   producerOperation: 'ORTHOGONAL_TRANSFORM';
 }>;
 
+export type AffineTransformFinalImageLineage = Readonly<{
+  sourceImageStorageId: string;
+  maskStorageId?: undefined;
+  producerOperation: 'AFFINE_TRANSFORM';
+}>;
+
 export type GarmentTextureCompositeFinalImageLineage = Readonly<{
   sourceImageStorageId: string;
   maskStorageId?: undefined;
@@ -83,7 +89,7 @@ export type StoredFinalImage = Readonly<{
   bytes: Uint8Array;
   sourceImageStorageId?: string;
   maskStorageId?: string;
-  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'GARMENT_TEXTURE_COMPOSITE' | 'GARMENT_APPEARANCE_REFINEMENT';
+  producerOperation?: 'BACKGROUND_ISOLATION' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'AFFINE_TRANSFORM' | 'GARMENT_TEXTURE_COMPOSITE' | 'GARMENT_APPEARANCE_REFINEMENT';
   garmentWarpLayerId?: string;
   garmentWarpLayerSha256?: string;
   producerParameters?: GarmentTextureCompositeProducerParametersV1;
@@ -356,6 +362,10 @@ function normalizeLineage(value: FinalImageLineage): NormalizedFinalImageLineage
     if (value.maskStorageId !== undefined) throw new Error('Canonical orthogonal-transform FINAL must not carry MASK lineage');
     return Object.freeze({ sourceImageStorageId, producerOperation: 'ORTHOGONAL_TRANSFORM' as const });
   }
+  if (value.producerOperation === 'AFFINE_TRANSFORM') {
+    if (value.maskStorageId !== undefined) throw new Error('Canonical Affine-transform FINAL must not carry MASK lineage');
+    return Object.freeze({ sourceImageStorageId, producerOperation: 'AFFINE_TRANSFORM' as const });
+  }
   if (value.producerOperation === 'GARMENT_TEXTURE_COMPOSITE') {
     if (value.maskStorageId !== undefined) throw new Error('Canonical Garment Texture Composite FINAL must not carry MASK lineage');
     const garmentWarpLayerId = canonicalUuid(value.garmentWarpLayerId, 'Canonical Garment Texture Composite layer id');
@@ -523,7 +533,7 @@ function lineageFieldsFromRow(row: any): Pick<
     return { sourceImageStorageId, maskStorageId, producerOperation };
   }
   if (maskStorageId) throw new Error('Canonical deterministic FINAL unexpectedly carries MASK lineage');
-  if (producerOperation === 'CROP' || producerOperation === 'RESIZE' || producerOperation === 'ORTHOGONAL_TRANSFORM') {
+  if (producerOperation === 'CROP' || producerOperation === 'RESIZE' || producerOperation === 'ORTHOGONAL_TRANSFORM' || producerOperation === 'AFFINE_TRANSFORM') {
     return { sourceImageStorageId, producerOperation };
   }
   throw new Error('Canonical FINAL producer operation is unsupported');
