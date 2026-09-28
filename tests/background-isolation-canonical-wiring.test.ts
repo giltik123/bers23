@@ -9,7 +9,8 @@ import { RESIZE_CAPABILITY } from '../src/platform/creative/deterministic/Resize
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { GARMENT_MESH_WARP_CAPABILITY } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
 import { GARMENT_TEXTURE_COMPOSITE_CAPABILITY } from '../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
-import { AFFINE_TRANSFORM_TOOL_DEFINITION, BACKGROUND_ISOLATION_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, GARMENT_MESH_WARP_TOOL_DEFINITION, GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { MASKED_EXPOSURE_CAPABILITY } from '../src/platform/creative/deterministic/MaskedExposure.ts';
+import { AFFINE_TRANSFORM_TOOL_DEFINITION, BACKGROUND_ISOLATION_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, GARMENT_MESH_WARP_TOOL_DEFINITION, GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION, MASKED_EXPOSURE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { LocalExecutionAdmissionRegistry } from '../server/core/localExecution/LocalExecutionAdmission.ts';
 import { LocalExecutionTicketAuthority } from '../server/core/localExecution/LocalExecutionTicketAuthority.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
@@ -40,7 +41,7 @@ function request(): CreativeRequest {
 }
 
 test('C2 deterministic registry remains data-only while each production capability is explicitly admitted', () => {
-  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 7, 'Background Isolation, Crop, Resize, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
+  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 8, 'Background Isolation, Masked Exposure, Crop, Resize, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
   const definition = requireDeterministicToolByCapability(BACKGROUND_ISOLATION_CAPABILITY);
   assert.equal(definition, BACKGROUND_ISOLATION_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor(definition.executor), definition);
@@ -60,6 +61,7 @@ test('C2 deterministic registry remains data-only while each production capabili
   assert.deepEqual(definition.lineage, { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: 'BACKGROUND_ISOLATION' });
   assert.equal(containsFunction(definition), false, 'registry definitions must not contain executable callbacks');
   assert.equal(isDeepFrozen(definition), true, 'registry contracts must be immutable');
+  assert.equal(requireDeterministicToolByCapability(MASKED_EXPOSURE_CAPABILITY), MASKED_EXPOSURE_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(CROP_CAPABILITY), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(RESIZE_CAPABILITY), RESIZE_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(AFFINE_TRANSFORM_CAPABILITY), AFFINE_TRANSFORM_TOOL_DEFINITION);
@@ -87,6 +89,7 @@ test('C2 deterministic registry remains data-only while each production capabili
     .sort();
   assert.deepEqual(deterministicCapabilities, [
     BACKGROUND_ISOLATION_CAPABILITY,
+    MASKED_EXPOSURE_CAPABILITY,
     CROP_CAPABILITY,
     RESIZE_CAPABILITY,
     ORTHOGONAL_TRANSFORM_CAPABILITY,
@@ -95,6 +98,7 @@ test('C2 deterministic registry remains data-only while each production capabili
     LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation,
   ].sort(), 'registry presence alone must not create any capability beyond explicit server policy keys');
   assert.deepEqual(productionLocalExecutorsByCapability[BACKGROUND_ISOLATION_CAPABILITY], [definition.executor]);
+  assert.deepEqual(productionLocalExecutorsByCapability[MASKED_EXPOSURE_CAPABILITY], [MASKED_EXPOSURE_TOOL_DEFINITION.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation], [definition.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[CROP_CAPABILITY], [CROP_TOOL_DEFINITION.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[RESIZE_CAPABILITY], [RESIZE_TOOL_DEFINITION.executor]);
