@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, MAX_SELECTION_POLYGON_VERTICES, MAX_SELECTION_SHAPE_NUDGE_PIXELS, MIN_SELECTION_LASSO_SAMPLE_PIXELS, SelectionApplicationService, assessMask, chooseAnalysis, composeSelectionMask, featherSelectionMask, morphSelectionMask, rasterizeSelectionEllipse, rasterizeSelectionPolygon, rasterizeSelectionRectangle } from '../src/application/selection';
+import { MAX_SELECTION_MORPHOLOGY_COMPOUND_WORK, MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, MAX_SELECTION_POLYGON_VERTICES, MAX_SELECTION_SHAPE_NUDGE_PIXELS, MIN_SELECTION_LASSO_SAMPLE_PIXELS, SelectionApplicationService, assessMask, chooseAnalysis, composeSelectionMask, compoundMorphSelectionMask, featherSelectionMask, morphSelectionMask, rasterizeSelectionEllipse, rasterizeSelectionPolygon, rasterizeSelectionRectangle } from '../src/application/selection';
 import { CoreAuthorizedSegmentation } from '../src/application/selection/CoreAuthorizedSegmentation';
 import { displayToOriginal } from '../src/platform/creative/pipeline/ControlledLocalEdit';
 import { DeviceAnalyzer } from '../src/platform/creative/local-ai/device/DeviceAnalyzer';
@@ -200,6 +200,65 @@ test('selection morphology bounds radius dimensions and work before mutation', (
   assert.throws(() => morphSelectionMask(alpha, 3, 3, MAX_SELECTION_MORPHOLOGY_RADIUS + 1, 'SHRINK'), /radius exceeds deterministic bounds/);
   assert.throws(() => morphSelectionMask(new Uint8Array(1), MAX_SELECTION_MORPHOLOGY_DIMENSION + 1, 1, 1, 'GROW'), /dimensions exceed deterministic bounds/);
   assert.deepEqual([...alpha], new Array(9).fill(255), 'hostile morphology input must not mutate source bytes');
+});
+
+
+test('selection open and close compose exact square morphology without mutating the source', () => {
+  assert.equal(MAX_SELECTION_MORPHOLOGY_COMPOUND_WORK, 134_217_728);
+
+  const noisy = new Uint8Array(49);
+  for (let y=2;y<=4;y++) for (let x=2;x<=4;x++) noisy[y*7+x]=255;
+  noisy[0]=255;
+  const noisyBefore=[...noisy];
+  const opened=compoundMorphSelectionMask(noisy,7,7,1,'OPEN');
+  const expectedOpen=new Uint8Array(49);
+  for (let y=2;y<=4;y++) for (let x=2;x<=4;x++) expectedOpen[y*7+x]=255;
+  assert.deepEqual([...opened],[...expectedOpen]);
+  assert.deepEqual([...noisy],noisyBefore);
+
+  const holed=new Uint8Array(49);
+  for (let y=1;y<=5;y++) for (let x=1;x<=5;x++) holed[y*7+x]=255;
+  holed[3*7+3]=0;
+  const closed=compoundMorphSelectionMask(holed,7,7,1,'CLOSE');
+  const expectedClose=new Uint8Array(49);
+  for (let y=1;y<=5;y++) for (let x=1;x<=5;x++) expectedClose[y*7+x]=255;
+  assert.deepEqual([...closed],[...expectedClose]);
+});
+
+test('selection open close validate compound bounds and remain atomic in history provenance', async () => {
+  const hostile=new Uint8Array(9).fill(255);
+  const hostileBefore=[...hostile];
+  assert.throws(() => compoundMorphSelectionMask(hostile,3,3,1,'UNKNOWN' as never), /kind is unsupported/);
+  assert.throws(() => compoundMorphSelectionMask(hostile,3,3,0,'OPEN'), /radius exceeds deterministic bounds/);
+  assert.throws(() => compoundMorphSelectionMask(new Uint8Array(1),MAX_SELECTION_MORPHOLOGY_DIMENSION+1,1,1,'CLOSE'), /dimensions exceed deterministic bounds/);
+  assert.deepEqual([...hostile],hostileBefore);
+
+  const seed=new Uint8Array(49);
+  for (let y=1;y<=5;y++) for (let x=1;x<=5;x++) seed[y*7+x]=255;
+  seed[3*7+3]=0;
+  const {service}=fixture(async input => ({
+    target:'LOCAL', modelId:'m', modelVersion:'1', latencyMs:1,
+    candidates:[{alpha:seed,width:input.analysis.analysisWidth,height:input.analysis.analysisHeight,coordinateSpace:'ANALYSIS',score:.9}],
+  }));
+  const localView={displayWidth:7,displayHeight:7,originalWidth:7,originalHeight:7};
+  service.start({imageArtifactId:'image',width:7,height:7});
+  assert.throws(() => service.open(1), /not ready for compound morphology/);
+  await service.smartPoint({displayPoint:{x:3,y:3},view:localView,privacyMode:'LOCAL_ONLY'});
+
+  const closed=service.close(1);
+  assert.equal(closed.provenance.at(-1),'OPERATION_CLOSED');
+  assert.deepEqual([...closed.alpha],[...compoundMorphSelectionMask(seed,7,7,1,'CLOSE')]);
+  const undone=service.undo();
+  assert.deepEqual([...undone.alpha],[...seed]);
+  assert.equal(undone.provenance.at(-1),'SEGMENTATION');
+  const redone=service.redo();
+  assert.deepEqual([...redone.alpha],[...closed.alpha]);
+  assert.equal(redone.provenance.at(-1),'OPERATION_CLOSED');
+
+  const opened=service.open(1);
+  assert.equal(opened.provenance.at(-1),'OPERATION_OPENED');
+  const undoOpen=service.undo();
+  assert.deepEqual([...undoOpen.alpha],[...closed.alpha], 'compound open must occupy exactly one history entry');
 });
 
 
