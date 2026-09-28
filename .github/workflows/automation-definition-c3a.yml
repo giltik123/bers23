@@ -7,6 +7,7 @@ on:
       - 'server/core/automation/**'
       - 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql'
       - 'server/core/projects/migrations/044_canonical_project_revision.sql'
+      - 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'
       - 'server/core/http/automationDefinitionHttpAdapter.ts'
       - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
       - 'server/index.ts'
@@ -69,7 +70,7 @@ jobs:
           if (migrations[40]?.name !== '041_automation_invocation_bindings.sql') throw new Error('041 Automation invocation migration moved');
           if (migrations[41]?.name !== '042_automation_schedules.sql') throw new Error('042 Automation recurring schedule migration moved');
           if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration moved');
-          if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration is not the exact tail');
+          if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved');
           if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle migration must be the exact global tail');
           NODE
       - name: Typecheck Core authority
