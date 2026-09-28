@@ -154,15 +154,16 @@ try {
   const projectImage = page.getByRole('img', { name: 'Project', exact: true });
   const box = await projectImage.boundingBox();
   assert(box && box.width > 4 && box.height > 4, 'Project image must expose a real browser pointer surface');
-  await projectImage.evaluate((element) => {
+  await page.evaluate(() => {
     window.__r3eSelectionPointer = null;
-    element.addEventListener('pointerdown', (event) => {
+    window.addEventListener('pointerdown', (event) => {
       window.__r3eSelectionPointer = {
         pointerType: event.pointerType,
         clientX: event.clientX,
         clientY: event.clientY,
+        targetTag: event.target instanceof Element ? event.target.tagName : null,
       };
-    }, { once: true });
+    }, { once: true, capture: true });
   });
   const touchX = box.x + box.width * 0.5;
   const touchY = box.y + box.height * 0.5;
