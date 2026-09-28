@@ -42,6 +42,70 @@ test('smart points are ORIGINAL, candidates use score, and Done persists one can
   const artifact = await service.done();
   assert.equal(artifact.role, 'MASK'); assert.equal((artifact.value as any).coordinateSpace, 'ORIGINAL'); assert.equal((artifact.value as any).alpha.length, 500000); assert.equal(persisted.length, 1);
 });
+
+test('>2MP Smart Select stays analysis-bounded but persists exact ORIGINAL-resolution aligned MASK bytes', async () => {
+  const width = 2048, height = 1025, pixels = width * height;
+  assert.ok(pixels > 2_000_000);
+  let seen: any;
+  const { service, persisted } = fixture(async input => {
+    seen = input;
+    const alpha = new Uint8Array(input.analysis.analysisWidth * input.analysis.analysisHeight);
+    const cx = Math.floor(input.analysis.analysisWidth / 2);
+    const cy = Math.floor(input.analysis.analysisHeight / 2);
+    alpha[cy * input.analysis.analysisWidth + cx] = 255;
+    return {
+      target: 'LOCAL',
+      modelId: 'm',
+      modelVersion: '1',
+      latencyMs: 1,
+      candidates: [{ alpha, width: input.analysis.analysisWidth, height: input.analysis.analysisHeight, coordinateSpace: 'ANALYSIS', score: .99 }],
+    };
+  });
+  const largeView = { displayWidth: width, displayHeight: height, originalWidth: width, originalHeight: height, zoom: 1, panX: 0, panY: 0 };
+  service.start({ imageArtifactId: 'large-source', width, height });
+  const selected = await service.smartPoint({
+    displayPoint: { x: width / 2, y: height / 2 },
+    view: largeView,
+    privacyMode: 'LOCAL_ONLY',
+    analysisMaxEdge: 512,
+  });
+  assert.ok(seen.analysis.analysisWidth <= 512 && seen.analysis.analysisHeight <= 512, 'analysis must remain bounded below ORIGINAL resolution');
+  assert.equal(seen.analysis.originalWidth, width);
+  assert.equal(seen.analysis.originalHeight, height);
+  assert.equal(selected.width, width);
+  assert.equal(selected.height, height);
+  assert.equal(selected.alpha.length, pixels);
+  const analysisCenterX = Math.floor(seen.analysis.analysisWidth / 2);
+  const analysisCenterY = Math.floor(seen.analysis.analysisHeight / 2);
+  const projectedX = Math.ceil(analysisCenterX * width / seen.analysis.analysisWidth);
+  const projectedY = Math.ceil(analysisCenterY * height / seen.analysis.analysisHeight);
+  const projectedIndex = projectedY * width + projectedX;
+  assert.equal(Math.floor(projectedX * seen.analysis.analysisWidth / width), analysisCenterX);
+  assert.equal(Math.floor(projectedY * seen.analysis.analysisHeight / height), analysisCenterY);
+  assert.ok(selected.alpha[projectedIndex] > 0, 'analysis candidate must upscale into its exact ORIGINAL projected cell');
+
+  service.setMode('BRUSH_SUBTRACT');
+  const refined = service.brush({ points: [{ x: projectedX, y: projectedY }], radius: 3, hardness: 1, view: largeView });
+  assert.equal(refined.alpha.length, pixels);
+  assert.equal(refined.alpha[projectedIndex], 0, 'manual refinement must address the exact projected ORIGINAL coordinate on >2MP masks');
+  assert.ok(service.undo().alpha[projectedIndex] > 0, 'undo must restore the full-resolution Smart Select bytes');
+  assert.equal(service.redo().alpha[projectedIndex], 0, 'redo must restore the full-resolution manual refinement');
+
+  const grown = service.grow(1);
+  assert.equal(grown.width, width);
+  assert.equal(grown.height, height);
+  assert.equal(grown.alpha.length, pixels);
+  const artifact = await service.done();
+  assert.equal(artifact.role, 'MASK');
+  assert.equal((artifact.value as any).coordinateSpace, 'ORIGINAL');
+  assert.equal((artifact.value as any).width, width);
+  assert.equal((artifact.value as any).height, height);
+  assert.equal((artifact.value as any).alpha.length, pixels);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].metadata.sourceImageArtifactId, 'large-source');
+  assert.equal(persisted[0].metadata.encoding, 'ALPHA_8_LOSSLESS');
+});
+
 test('Cancel discards transient history without persistence', () => { const { service, persisted } = fixture(); service.start({ imageArtifactId: 'i', width: 10, height: 10 }); service.setMode('BRUSH_ADD'); service.brush({ points: [{ x: 2, y: 2 }], radius: 2, hardness: 1, view: { displayWidth: 10, displayHeight: 10, originalWidth: 10, originalHeight: 10 } }); service.cancel(); assert.equal(persisted.length, 0); assert.throws(() => service.snapshot(), /No active/); });
 test('late A cannot replace B', async () => { let resolveA!: (v: any) => void; const { service } = fixture(i => i.requestId.endsWith(':2') ? new Promise(r => resolveA = r) : Promise.resolve({ target: 'LOCAL', modelId: 'm', modelVersion: '1', latencyMs: 1, candidates: [{ ...candidate(80), width: 256, height: 128, alpha: new Uint8Array(256 * 128).fill(80) }] })); service.start({ imageArtifactId: 'i', width: 1000, height: 500 }); const a = service.smartPoint({ displayPoint: { x: 10, y: 10 }, view: { ...view, zoom: 1, panX: 0, panY: 0 }, privacyMode: 'NORMAL', analysisMaxEdge: 256 }); const b = service.smartPoint({ displayPoint: { x: 20, y: 20 }, view: { ...view, zoom: 1, panX: 0, panY: 0 }, privacyMode: 'NORMAL', analysisMaxEdge: 256 }); await b; resolveA({ target: 'LOCAL', modelId: 'm', modelVersion: '1', latencyMs: 9, candidates: [{ ...candidate(200), width: 256, height: 128, alpha: new Uint8Array(256 * 128).fill(200) }] }); await a; assert.equal(service.snapshot().alpha[0], 80); });
 test('local unavailable preserves manual brush fallback and privacy is passed through', async () => { let privacy = ''; const { service } = fixture(async i => { privacy = i.privacyMode; throw new Error('WASM unavailable'); }); service.start({ imageArtifactId: 'i', width: 20, height: 20 }); const result = await service.smartPoint({ displayPoint: { x: 4, y: 4 }, view: { displayWidth: 20, displayHeight: 20, originalWidth: 20, originalHeight: 20 }, privacyMode: 'LOCAL_ONLY' }); assert.equal(privacy, 'LOCAL_ONLY'); assert.equal(result.state, 'LOCAL_UNAVAILABLE'); service.setMode('BRUSH_ADD'); assert.doesNotThrow(() => service.brush({ points: [{ x: 4, y: 4 }], radius: 3, hardness: .5, view: { displayWidth: 20, displayHeight: 20, originalWidth: 20, originalHeight: 20 } })); });
