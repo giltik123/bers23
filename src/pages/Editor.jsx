@@ -188,6 +188,37 @@ export default function Editor() {
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
   useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
+  useEffect(() => {
+    if (!selection) return undefined;
+    const handleSelectionHistoryShortcut = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target;
+      const tag = target?.tagName;
+      if (target?.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (selection.state === 'DOWNLOADING' || selection.state === 'LOADING' || selection.state === 'SELECTING') return;
+      const service = selectionServiceRef.current;
+      if (!service) return;
+      const key = event.key.toLowerCase();
+      const snapshot = service.snapshot();
+      let next = null;
+      if (key === 'z' && event.shiftKey) {
+        if (!snapshot.canRedo) return;
+        next = service.redo();
+      } else if (key === 'z') {
+        if (!snapshot.canUndo) return;
+        next = service.undo();
+      } else if (key === 'y' && !event.shiftKey) {
+        if (!snapshot.canRedo) return;
+        next = service.redo();
+      } else {
+        return;
+      }
+      event.preventDefault();
+      setSelection(next);
+    };
+    window.addEventListener('keydown', handleSelectionHistoryShortcut);
+    return () => window.removeEventListener('keydown', handleSelectionHistoryShortcut);
+  }, [selection]);
 
   const runTryOnAction = async (name, context) => {
     if (tryOnBlockedByEditor || pendingResult) return;

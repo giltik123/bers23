@@ -113,6 +113,27 @@ test('Editor rectangle and ellipse keep raster authority in SelectionApplication
   assert.doesNotMatch(preview, /getContext|putImageData|fetch\(|coreClient|persist/);
 });
 
+test('Editor selection keyboard history and mode state are explicit without hijacking form inputs', async () => {
+  const [editor, toolbar] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'),
+  ]);
+  assert.match(editor, /handleSelectionHistoryShortcut/);
+  assert.match(editor, /event\.ctrlKey \|\| event\.metaKey/);
+  assert.match(editor, /target\?\.isContentEditable \|\| tag === 'INPUT' \|\| tag === 'TEXTAREA' \|\| tag === 'SELECT'/);
+  assert.match(editor, /selection\.state === 'DOWNLOADING' \|\| selection\.state === 'LOADING' \|\| selection\.state === 'SELECTING'/);
+  assert.match(editor, /key === 'z' && event\.shiftKey/);
+  assert.match(editor, /key === 'y' && !event\.shiftKey/);
+  assert.match(editor, /window\.addEventListener\('keydown', handleSelectionHistoryShortcut\)/);
+  assert.match(editor, /window\.removeEventListener\('keydown', handleSelectionHistoryShortcut\)/);
+
+  assert.match(toolbar, /aria-pressed=\{selection\.mode === id\}/);
+  assert.match(toolbar, /aria-label="Undo selection edit" aria-keyshortcuts="Control\+Z Meta\+Z"/);
+  assert.match(toolbar, /aria-label="Redo selection edit" aria-keyshortcuts="Control\+Shift\+Z Meta\+Shift\+Z Control\+Y"/);
+  assert.match(toolbar, /aria-label="Brush Size" aria-valuetext=\{\`\$\{brushSize\} pixels\`\}/);
+  assert.match(toolbar, /\{brushSize\}px/);
+});
+
 test('Editor selection brush hardness is explicit and quality warnings are user-visible', async () => {
   const [editor, toolbar] = await Promise.all([
     readFile('src/pages/Editor.jsx', 'utf8'),
