@@ -22,13 +22,12 @@ export async function checkFinalImageLineageSchema(pool: Pool): Promise<void> {
         AND position('CROP' in pg_get_constraintdef(oid)) > 0
         AND position('RESIZE' in pg_get_constraintdef(oid)) > 0
         AND position('ORTHOGONAL_TRANSFORM' in pg_get_constraintdef(oid)) > 0
-        AND position('AFFINE_TRANSFORM' in pg_get_constraintdef(oid)) > 0
     ) AS shape_check,
     to_regclass('canonical_image_artifacts_source_image_idx') IS NOT NULL AS source_idx,
     to_regclass('canonical_image_artifacts_mask_idx') IS NOT NULL AS mask_idx`);
   const row = result.rows[0] ?? {};
   if (!row.image_table || !row.mask_table || !row.lineage_columns || !row.source_fk || !row.mask_fk || !row.shape_check || !row.source_idx || !row.mask_idx) {
-    throw new Error('canonical FINAL image lineage schema is incomplete; apply canonical image lineage migrations through 045_canonical_affine_transform_final_lineage.sql');
+    throw new Error('canonical FINAL image lineage schema is incomplete; apply migrations 018_canonical_final_image_lineage.sql through 021_canonical_orthogonal_transform_final_lineage.sql');
   }
 }
 
@@ -40,8 +39,6 @@ export async function migrateFinalImageLineageSchema(pool: Pool): Promise<void> 
   await pool.query(await readMigration('019_canonical_crop_final_lineage.sql'));
   await pool.query(await readMigration('020_canonical_resize_final_lineage.sql'));
   await pool.query(await readMigration('021_canonical_orthogonal_transform_final_lineage.sql'));
-  // 045 depends on the Fashion lineage columns introduced later in the global migration order.
-  // It is applied by the packaged migrator; this focused helper never fabricates those columns.
   await checkFinalImageLineageSchema(pool);
 }
 
