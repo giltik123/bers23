@@ -14,6 +14,7 @@ on:
       - 'server/core/agentic/**'
       - 'server/core/projects/migrations/044_canonical_project_revision.sql'
       - 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'
+      - 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql'
       - 'server/core/workflow/**'
       - 'server/core/execution/**'
       - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
