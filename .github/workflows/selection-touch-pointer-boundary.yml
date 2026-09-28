@@ -1,0 +1,46 @@
+name: Selection Touch Pointer Boundary
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'scripts/test-release-r3e-browser-e2e.mjs'
+      - 'tests/release-r3e-browser-boundaries.test.mjs'
+      - '.github/workflows/selection-touch-pointer-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selection-touch-pointer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Prove touch PointerEvent release contract
+        run: node --test tests/release-r3e-browser-boundaries.test.mjs
+      - name: Preserve real touch acceptance semantics
+        run: |
+          set -euo pipefail
+          harness=scripts/test-release-r3e-browser-e2e.mjs
+          grep -q "hasTouch: true" "$harness"
+          grep -q "projectImage.tap" "$harness"
+          grep -q "pointerType, 'touch'" "$harness"
+          ! grep -q "projectImage.click" "$harness"
+          ! grep -q "page.mouse." "$harness"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
