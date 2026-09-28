@@ -10,16 +10,20 @@ async function collect(directory) { const entries = await readdir(directory, { w
 test('Editor selection uses the Core mask port and never manufactures a mask UUID', async () => { const source = await readFile('src/pages/Editor.jsx', 'utf8'); assert.match(source, /new CoreMaskArtifactPort\(project\.id\)/); assert.doesNotMatch(source, /persist:\s*async[\s\S]*randomUUID/); assert.match(source, /mask_artifact_id: artifact\.id/); });
 test('Core mask port sends exact alpha and maps the server artifact identity', async () => { const source = await readFile('src/application/selection/CoreMaskArtifactPort.js', 'utf8'); assert.match(source, /alpha: mask\.alpha/); assert.match(source, /id: response\.artifactId/); assert.match(source, /ALPHA_8_LOSSLESS/); });
 test('Editor invert stays bound to SelectionApplicationService and the toolbar exposes only stable editable states', async () => { const editor = await readFile('src/pages/Editor.jsx', 'utf8'); const toolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'); assert.match(editor, /onInvert=\{\(\) => updateSelection\(\(service\) => service\.invert\(\)\)\}/); assert.match(toolbar, /aria-label="Invert selection"/); assert.match(toolbar, /const editable = selection\.state === 'SELECTED' \|\| selection\.state === 'REFINING'/); assert.match(toolbar, /disabled=\{!editable\} onClick=\{onInvert\}/); assert.match(toolbar, /const canDone = editable && !selection\.quality\?\.empty/); assert.match(toolbar, /disabled=\{!canDone\} onClick=\{onDone\}/); });
-test('Editor selection grow and shrink stay service-bound and expose bounded accessible controls', async () => {
+test('Editor selection morphology stays service-bound and exposes bounded accessible controls', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const toolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8');
   assert.match(editor, /selectionMorphologyRadius, setSelectionMorphologyRadius\] = useState\(2\)/);
   assert.match(editor, /onGrow=\{\(\) => updateSelection\(\(service\) => service\.grow\(selectionMorphologyRadius\)\)\}/);
   assert.match(editor, /onShrink=\{\(\) => updateSelection\(\(service\) => service\.shrink\(selectionMorphologyRadius\)\)\}/);
+  assert.match(editor, /onOpen=\{\(\) => updateSelection\(\(service\) => service\.open\(selectionMorphologyRadius\)\)\}/);
+  assert.match(editor, /onClose=\{\(\) => updateSelection\(\(service\) => service\.close\(selectionMorphologyRadius\)\)\}/);
   assert.match(editor, /onFeather=\{\(\) => updateSelection\(\(service\) => service\.feather\(selectionMorphologyRadius\)\)\}/);
   assert.match(toolbar, /aria-label="Selection edge radius"[^>]*min="1" max="32"/);
   assert.match(toolbar, /aria-label="Grow selection" disabled=\{busy \|\| !editable\}/);
   assert.match(toolbar, /aria-label="Shrink selection" disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /aria-label="Open selection" disabled=\{busy \|\| !editable\}/);
+  assert.match(toolbar, /aria-label="Close selection" disabled=\{busy \|\| !editable\}/);
   assert.match(toolbar, /aria-label="Feather selection" disabled=\{busy \|\| !editable\}/);
 });
 
