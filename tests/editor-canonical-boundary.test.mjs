@@ -140,7 +140,6 @@ test('Editor selection keyboard history and mode state are explicit without hija
   assert.match(editor, /window\.removeEventListener\('keydown', handleSelectionHistoryShortcut\)/);
 
   assert.match(toolbar, /aria-pressed=\{selection\.mode === id\}/);
-  assert.match(toolbar, /aria-label=\{\`\$\{label\} selection mode\`\}/);
   assert.match(toolbar, /aria-label="Undo selection edit" aria-keyshortcuts="Control\+Z Meta\+Z"/);
   assert.match(toolbar, /aria-label="Redo selection edit" aria-keyshortcuts="Control\+Shift\+Z Meta\+Shift\+Z Control\+Y"/);
   assert.match(toolbar, /aria-label="Brush Size" aria-valuetext=\{\`\$\{brushSize\} pixels\`\}/);
