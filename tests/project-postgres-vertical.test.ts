@@ -125,6 +125,7 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
   assert.equal(create.status, 201);
   const project = await create.json() as Record<string, any>;
   assert.equal(project.name, 'Canonical Project');
+  assert.equal(project.status, 'draft', 'new Project lifecycle must be server-owned Draft');
   assert.deepEqual([project.width, project.height], [width, height]);
   assert.equal(project.original_image_artifact_id, project.current_image_artifact_id);
   assert.equal(decodeClaim(project.current_image_artifact_id).location, 'STORED_ORIGINAL_ID');
@@ -230,6 +231,11 @@ test('canonical Project upload persists immutable ORIGINAL and drives controlled
 
   const deniedPatch = await fetch(`${baseUrl}/api/core/projects/${project.id}`, { method: 'PATCH', headers: { authorization: auth, 'content-type': 'application/json' }, body: JSON.stringify({ current_image_storage_id: originalRow.storage_id }) });
   assert.equal(deniedPatch.status, 400);
+
+  const deniedStatusPatch = await fetch(`${baseUrl}/api/core/projects/${project.id}`, { method: 'PATCH', headers: { authorization: auth, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'editing' }) });
+  assert.equal(deniedStatusPatch.status, 400, 'public Project PATCH must not own Draft/Editing lifecycle');
+  assert.equal((await deniedStatusPatch.json() as Record<string, any>).code, 'invalid_project_patch');
+  assert.equal((await pool.query('SELECT status FROM canonical_projects WHERE project_id=$1', [project.id])).rows[0].status, 'draft');
 
   const beforeInvalidProjects = Number((await pool.query('SELECT count(*)::int AS count FROM canonical_projects')).rows[0].count);
   const beforeInvalidOriginals = Number((await pool.query("SELECT count(*)::int AS count FROM canonical_image_artifacts WHERE role='ORIGINAL' AND deleted_at IS NULL")).rows[0].count);

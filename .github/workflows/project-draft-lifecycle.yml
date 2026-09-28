@@ -1,0 +1,104 @@
+name: Project Draft Lifecycle Authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'server/core/projects/**'
+      - 'server/core/http/canonicalNodeHttpAdapter.ts'
+      - 'src/hooks/useProject.js'
+      - 'src/lib/projectService.js'
+      - 'tests/project-draft-client-boundary.test.mjs'
+      - 'tests/project-status-lifecycle-postgres.test.ts'
+      - 'tests/project-postgres-vertical.test.ts'
+      - 'scripts/production-migration-inventory.mjs'
+      - '.github/workflows/project-draft-lifecycle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  project-draft-lifecycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: project_draft_test
+          POSTGRES_USER: project_draft_test
+          POSTGRES_PASSWORD: project_draft_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U project_draft_test -d project_draft_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://project_draft_test:project_draft_test@127.0.0.1:5432/project_draft_test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core Project authority
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          node --test tests/project-draft-client-boundary.test.mjs
+      - name: Prove production migration tail is exact through 045
+        run: |
+          node --input-type=module <<'NODE'
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.length !== 45) throw new Error(`Expected 45 contiguous migrations, got ${migrations.length}`);
+          if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved');
+          if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle is not the exact tail');
+          if (migrations[44]?.source !== 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql') throw new Error('045 Project lifecycle migration moved outside Project authority');
+          NODE
+      - name: Build immutable Core and apply exact schema
+        run: |
+          npm run server:build
+          test -f dist-server/migrations/044_canonical_project_revision.sql
+          test -f dist-server/migrations/045_canonical_project_status_lifecycle.sql
+          node dist-server/migrate.mjs migrate
+          node dist-server/migrate.mjs check
+      - name: Bundle Project Draft lifecycle regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/project-draft
+          for file in tests/project-status-lifecycle-postgres.test.ts tests/project-postgres-vertical.test.ts; do
+            out=".test-cache/project-draft/$(basename "${file%.ts}").mjs"
+            npx esbuild "$file" --bundle --platform=node --format=esm --target=node24 --outfile="$out" --external:node:* --external:pg --external:sharp
+          done
+      - name: Prove Draft backfill server ownership and public HTTP denial
+        run: |
+          node --test --test-concurrency=1             .test-cache/project-draft/project-status-lifecycle-postgres.test.mjs             .test-cache/project-draft/project-postgres-vertical.test.mjs
+      - name: Preserve Draft lifecycle authority boundary
+        run: |
+          set -euo pipefail
+          store=server/core/projects/postgresProjectStore.ts
+          hook=src/hooks/useProject.js
+          schema=server/core/projects/projectSchema.ts
+          migration=server/core/projects/migrations/045_canonical_project_status_lifecycle.sql
+          grep -q "const allowed = \['name','favorite','archived','objects'\]" "$store"
+          ! grep -q "'status'" <(grep "const allowed =" "$store")
+          grep -q "status='editing'" "$store"
+          grep -q "save({ objects })" "$hook"
+          ! grep -q "status: 'editing'" "$hook"
+          grep -q "canonical_projects_status_check" "$schema"
+          grep -q "ACCEPTED_FINAL" "$migration"
+          grep -q "CHECK (status IN ('draft', 'editing'))" "$migration"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD

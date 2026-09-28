@@ -41,7 +41,7 @@ export default function useProject(projectId) {
   const rename = (name) => save({ name });
 
   // Auto-save detected objects (object list persists on the project).
-  const saveObjects = (objects) => save({ objects, status: 'editing' });
+  const saveObjects = (objects) => save({ objects });
 
   // Auto-save object selection.
   const selectObject = (objectId) =>

@@ -7,6 +7,7 @@ on:
       - 'server/core/automation/**'
       - 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql'
       - 'server/core/projects/migrations/044_canonical_project_revision.sql'
+      - 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'
       - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
       - 'server/core/composition/createProductionCore.ts'
       - 'server/core/composition/createProductionAutomation.ts'
@@ -62,12 +63,12 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove global migration sequence reaches Project revision 044 tail
+      - name: Prove global migration sequence reaches Project status lifecycle 045 tail
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 44) throw new Error(`Expected 44 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 45) throw new Error(`Expected 45 contiguous migrations, got ${migrations.length}`);
           const expected = [
             [37, '038_financial_account_foundation.sql'],
             [38, '039_workflow_continuation_plan_parameters.sql'],
@@ -76,6 +77,7 @@ jobs:
             [41, '042_automation_schedules.sql'],
             [42, '043_aee_admitted_plan_graphs.sql'],
             [43, '044_canonical_project_revision.sql'],
+            [44, '045_canonical_project_status_lifecycle.sql'],
           ];
           for (const [index, name] of expected) if (migrations[index]?.name !== name) throw new Error(`${name} moved from global migration position ${index + 1}`);
           NODE
@@ -107,6 +109,7 @@ jobs:
           test -f dist-server/migrations/042_automation_schedules.sql
           test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
           test -f dist-server/migrations/044_canonical_project_revision.sql
+          test -f dist-server/migrations/045_canonical_project_status_lifecycle.sql
       - name: Apply and verify canonical schema CLI
         run: |
           npm run db:migrate:transactions

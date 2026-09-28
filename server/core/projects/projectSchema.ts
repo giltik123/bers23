@@ -4,6 +4,8 @@ import type { Pool } from 'pg';
 
 const REVISION_MIGRATION = '044_canonical_project_revision.sql';
 const REVISION_CONSTRAINT = 'canonical_projects_revision_check';
+const STATUS_MIGRATION = '045_canonical_project_status_lifecycle.sql';
+const STATUS_CONSTRAINT = 'canonical_projects_status_check';
 
 async function migration(name: string) {
   try { return await readFile(new URL(`./migrations/${name}`, import.meta.url), 'utf8'); }
@@ -25,6 +27,18 @@ async function revisionColumnExists(pool: Pool): Promise<boolean> {
   return Boolean(result.rows[0]?.present);
 }
 
+async function statusReady(pool: Pool): Promise<boolean> {
+  const [column, constraint] = await Promise.all([
+    pool.query("SELECT is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='canonical_projects' AND column_name='status'"),
+    pool.query(`SELECT convalidated,pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint WHERE conrelid=to_regclass('canonical_projects') AND conname=$1`, [STATUS_CONSTRAINT]),
+  ]);
+  const value = column.rows[0];
+  const check = constraint.rows[0];
+  if (!value || String(value.is_nullable) !== 'NO' || semanticDefault(value.column_default) !== "'draft'") return false;
+  return check?.convalidated === true && semanticStatusConstraint(check.definition) === "checkstatus=anyarray['draft','editing']";
+}
+
 async function revisionReady(pool: Pool): Promise<boolean> {
   const [column, constraint] = await Promise.all([
     pool.query("SELECT udt_name,is_nullable,column_default FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='canonical_projects' AND column_name='revision'"),
@@ -43,6 +57,7 @@ export async function checkProjectSchema(pool: Pool) {
   if (!await hardened(pool)) throw new Error('canonical Project history schema is incomplete; apply migration 006');
   if (!await sourceLineage(pool)) throw new Error('canonical Project history source lineage is incomplete; apply migration 007');
   if (!await revisionReady(pool)) throw new Error('canonical Project revision schema is incomplete or permissive; apply exact migration 044');
+  if (!await statusReady(pool)) throw new Error('canonical Project status schema is incomplete or permissive; apply exact migration 045');
 }
 
 export async function migrateProjectSchema(pool: Pool) {
@@ -56,13 +71,25 @@ export async function migrateProjectSchema(pool: Pool) {
     if (await revisionColumnExists(pool)) throw new Error('canonical Project revision schema is incomplete or permissive; refusing to repair a partial/widened revision authority');
     await pool.query(await migration(REVISION_MIGRATION));
   }
+  if (!await statusReady(pool)) {
+    const existing = await pool.query("SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('canonical_projects') AND conname=$1", [STATUS_CONSTRAINT]);
+    if (existing.rowCount) throw new Error('canonical Project status schema is incomplete or permissive; refusing to repair a widened status authority');
+    await pool.query(await migration(STATUS_MIGRATION));
+  }
   await checkProjectSchema(pool);
 }
 
 function semanticDefault(value: unknown): string {
-  return String(value ?? '').replace(/::(?:bigint|int8|integer)/giu, '').replace(/[()\s]+/gu, '').toLowerCase();
+  return String(value ?? '').replace(/::(?:bigint|int8|integer|text)/giu, '').replace(/[()\s]+/gu, '').toLowerCase();
 }
 
 function semanticConstraint(value: unknown): string {
   return String(value ?? '').replace(/::(?:bigint|int8|integer)/giu, '').replace(/[()\s]+/gu, '').toLowerCase();
+}
+
+function semanticStatusConstraint(value: unknown): string {
+  return String(value ?? '')
+    .replace(/::text/giu, '')
+    .replace(/[()\s]+/gu, '')
+    .toLowerCase();
 }

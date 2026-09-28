@@ -63,8 +63,8 @@ test('F4b.4 PostgreSQL closure manifest is exact, normalized and prefix-free', a
   const manifest = await readManifest();
   assert.equal(manifest.version, 1);
   assert.equal(manifest.profile, POSTGRES);
-  assert.equal(manifest.bundleInputs.length, 213);
-  assert.equal(manifest.migrationPaths.length, 40);
+  assert.equal(manifest.bundleInputs.length, 214);
+  assert.equal(manifest.migrationPaths.length, 41);
   assert.equal(manifest.supportPaths.length, 17);
 
   const paths = [...manifest.bundleInputs, ...manifest.migrationPaths, ...manifest.supportPaths];
@@ -75,6 +75,7 @@ test('F4b.4 PostgreSQL closure manifest is exact, normalized and prefix-free', a
     assert.equal(path.includes('\\'), false, path);
     assert.equal(/[*?\[\]]/.test(path), false, path);
   }
+  assert.equal(manifest.migrationPaths.includes('server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'), true);
   assert.equal(manifest.migrationPaths.includes('server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql'), false);
 });
 
@@ -87,7 +88,7 @@ test('accepted four-bundle runtime graph exactly equals PostgreSQL classifier bu
   console.log(`F4B4_POSTGRES_CLASSIFIER_BUNDLE_INPUTS=${actual.length}`);
 });
 
-test('bundle-derived migration authority exactly equals the 40-path classifier SQL set', async () => {
+test('bundle-derived migration authority exactly equals the 41-path classifier SQL set', async () => {
   const manifest = await readManifest();
   const metafiles = await buildMetafiles();
   const closure = await collectBundleMigrationReferences(metafiles);

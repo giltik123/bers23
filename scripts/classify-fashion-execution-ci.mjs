@@ -252,7 +252,7 @@ function getF4b4PostgresExactPaths() {
   if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B4_POSTGRES_VERTICAL) {
     throw new Error('Invalid F4b.4 PostgreSQL CI closure manifest identity');
   }
-  const expectedCounts = Object.freeze({ bundleInputs: 213, migrationPaths: 40, supportPaths: 17 });
+  const expectedCounts = Object.freeze({ bundleInputs: 214, migrationPaths: 41, supportPaths: 17 });
   for (const [key, expected] of Object.entries(expectedCounts)) {
     if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
       throw new Error(`Invalid F4b.4 PostgreSQL CI closure ${key}: expected ${expected} exact paths`);
@@ -264,6 +264,9 @@ function getF4b4PostgresExactPaths() {
     if (typeof path !== 'string' || !path || path !== normalizeRepoPath(path) || /[*?\[\]]/.test(path)) {
       throw new Error(`Invalid F4b.4 PostgreSQL CI closure path: ${String(path)}`);
     }
+  }
+  if (!manifest.migrationPaths.includes('server/core/projects/migrations/045_canonical_project_status_lifecycle.sql')) {
+    throw new Error('F4b.4 PostgreSQL CI closure must include canonical Project status lifecycle migration 045');
   }
   if (manifest.migrationPaths.includes('server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql')) {
     throw new Error('F5 refinement migration 032 must not enter F4b.4 PostgreSQL CI authority');
@@ -280,7 +283,7 @@ function getF4b5bPostgresExactPaths() {
   if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B5B_TEXTURE_POSTGRES_VERTICAL) {
     throw new Error('Invalid F4b.5b PostgreSQL CI closure manifest identity');
   }
-  const expectedCounts = Object.freeze({ bundleInputs: 81, migrationPaths: 28, supportPaths: 20 });
+  const expectedCounts = Object.freeze({ bundleInputs: 81, migrationPaths: 29, supportPaths: 20 });
   for (const [key, expected] of Object.entries(expectedCounts)) {
     if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
       throw new Error(`Invalid F4b.5b PostgreSQL CI closure ${key}: expected ${expected} exact paths`);
@@ -292,6 +295,9 @@ function getF4b5bPostgresExactPaths() {
     if (typeof path !== 'string' || !path || path !== normalizeRepoPath(path) || /[*?\[\]]/.test(path)) {
       throw new Error(`Invalid F4b.5b PostgreSQL CI closure path: ${String(path)}`);
     }
+  }
+  if (!manifest.migrationPaths.includes('server/core/projects/migrations/045_canonical_project_status_lifecycle.sql')) {
+    throw new Error('F4b.5b PostgreSQL CI closure must include canonical Project status lifecycle migration 045');
   }
   for (const excluded of [
     'server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql',
