@@ -78,6 +78,16 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
+      - name: Prove production migration 046 is the exact global tail
+        run: |
+          node --input-type=module <<'NODE'
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.length !== 46) throw new Error(`Expected 46 contiguous production migrations, got ${migrations.length}`);
+          if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project lifecycle migration moved from its accepted position');
+          if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration is not the exact global tail');
+          if (migrations[45]?.source !== 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved outside Artifact authority');
+          NODE
       - name: Bundle focused Masked Exposure regressions
         run: |
           set -euo pipefail
