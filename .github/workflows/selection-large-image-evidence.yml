@@ -52,7 +52,7 @@ jobs:
           grep -F -q "assert.ok(pixels > 2_000_000)" "$testfile"
           grep -F -q "analysisMaxEdge: 512" "$testfile"
           grep -F -q "analysis must remain bounded below ORIGINAL resolution" "$testfile"
-          grep -F -q "manual refinement must address ORIGINAL coordinates on >2MP masks" "$testfile"
+          grep -F -q "manual refinement must address the exact projected ORIGINAL coordinate on >2MP masks" "$testfile"
           grep -F -q "alpha.length, pixels" "$testfile"
           grep -F -q "ALPHA_8_LOSSLESS" "$testfile"
           test -n "$BASE_SHA"
