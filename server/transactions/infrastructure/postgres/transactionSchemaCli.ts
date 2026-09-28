@@ -4,6 +4,7 @@ import { checkTransactionSchema, migrateTransactionSchema } from './transactionS
 import { checkMaskArtifactSchema, migrateMaskArtifactSchema } from '../../../core/artifacts/maskArtifactSchema.ts';
 import { checkImageArtifactSchema, migrateImageArtifactSchema } from '../../../core/artifacts/imageArtifactSchema.ts';
 import { checkFinalImageLineageSchema, migrateFinalImageLineageSchema } from '../../../core/artifacts/finalImageLineageSchema.ts';
+import { checkAffineFinalImageLineageSchema, migrateAffineFinalImageLineageSchema } from '../../../core/artifacts/affineFinalImageLineageSchema.ts';
 import { checkProjectSchema, migrateProjectSchema } from '../../../core/projects/projectSchema.ts';
 import { checkAuthSchema, migrateAuthSchema } from '../../../core/auth/authSchema.ts';
 import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } from '../../../core/artifacts/localExecutionUploadSchema.ts';
@@ -41,6 +42,7 @@ try {
     await migrateGarmentWarpLayerSchema(pool);
     await migrateGarmentTextureFinalLineageSchema(pool);
     await migrateGarmentAppearanceRefinementFinalLineageSchema(pool);
+    await migrateAffineFinalImageLineageSchema(pool);
     await migrateExecutionRunSchema(pool);
     await migrateAutomationDefinitionSchema(pool);
     await migrateAutomationInvocationSchema(pool);
@@ -62,6 +64,7 @@ try {
     await checkGarmentWarpLayerSchema(pool);
     await checkGarmentTextureFinalLineageSchema(pool);
     await checkGarmentAppearanceRefinementFinalLineageSchema(pool);
+    await checkAffineFinalImageLineageSchema(pool);
     await checkExecutionRunSchema(pool);
     await checkAutomationDefinitionSchema(pool);
     await checkAutomationInvocationSchema(pool);
