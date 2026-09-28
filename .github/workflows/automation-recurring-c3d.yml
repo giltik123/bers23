@@ -148,7 +148,7 @@ jobs:
           import { readFile } from 'node:fs/promises';
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 44) throw new Error(`Expected 44 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 45) throw new Error(`Expected 45 contiguous migrations, got ${migrations.length}`);
           const tail = [
             [37, '038_financial_account_foundation.sql'],
             [38, '039_workflow_continuation_plan_parameters.sql'],
@@ -157,6 +157,7 @@ jobs:
             [41, '042_automation_schedules.sql'],
             [42, '043_aee_admitted_plan_graphs.sql'],
             [43, '044_canonical_project_revision.sql'],
+            [44, '045_canonical_project_status_lifecycle.sql'],
           ];
           for (const [index, name] of tail) if (migrations[index]?.name !== name) throw new Error(`${name} moved from position ${index + 1}`);
           const sql = await readFile('server/core/automation/migrations/042_automation_schedules.sql', 'utf8');
@@ -170,7 +171,7 @@ jobs:
             if (Buffer.byteLength(name, 'utf8') > 63) throw new Error(`PostgreSQL identifier would truncate: ${name}`);
           }
           NODE
-      - name: Build and prove packaged migrations through 044
+      - name: Build and prove packaged migrations through 045
         run: |
           npm run server:typecheck
           npm run server:build
@@ -179,7 +180,8 @@ jobs:
           test -f dist-server/migrations/042_automation_schedules.sql
           test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
           test -f dist-server/migrations/044_canonical_project_revision.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 44
+          test -f dist-server/migrations/045_canonical_project_status_lifecycle.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 45
           npm run db:migrate:transactions
           npm run db:check:transactions
       - name: Prove real PostgreSQL lease crash replay fairness immutability and HTTP scope
