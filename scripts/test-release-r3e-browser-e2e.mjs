@@ -167,7 +167,7 @@ try {
   });
   const touchX = box.x + box.width * 0.5;
   const touchY = box.y + box.height * 0.5;
-  await page.touchscreen.tap(touchX, touchY);
+  await projectImage.tap({ position: { x: box.width * 0.5, y: box.height * 0.5 } });
   const observedPointer = await page.evaluate(() => window.__r3eSelectionPointer);
   assert.equal(observedPointer?.pointerType, 'touch', 'release-floor Selection input must exercise the real touch PointerEvent path');
   assert(Math.abs(observedPointer.clientX - touchX) <= 1, 'touch pointer X must stay on the requested Project-image coordinate');
