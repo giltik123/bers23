@@ -54,15 +54,13 @@ import {
 } from './ExposureIdentity.js';
 import {
   MASKED_EXPOSURE_CAPABILITY,
+  MASKED_EXPOSURE_MAX_EIGHTH_STOPS,
+  MASKED_EXPOSURE_MIN_EIGHTH_STOPS,
   MASKED_EXPOSURE_OPERATION,
   MASKED_EXPOSURE_STEP_ID,
   MASKED_EXPOSURE_TOOL_ID,
   MASKED_EXPOSURE_TOOL_VERSION,
 } from './MaskedExposureIdentity.js';
-import {
-  MASKED_EXPOSURE_MAX_EIGHTH_STOPS,
-  MASKED_EXPOSURE_MIN_EIGHTH_STOPS,
-} from './MaskedExposure.ts';
 import { GARMENT_MESH_WARP_TOOL_DEFINITION_DATA } from './GarmentMeshWarpRegistryDefinition.js';
 import { GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION_DATA } from './GarmentTextureCompositeRegistryDefinition.js';
 
