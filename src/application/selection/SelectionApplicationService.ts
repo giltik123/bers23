@@ -7,6 +7,7 @@ export const MAX_SELECTION_MORPHOLOGY_RADIUS = 32;
 export const MAX_SELECTION_MORPHOLOGY_DIMENSION = 8192;
 export const MAX_SELECTION_MORPHOLOGY_PIXELS = 16_777_216;
 export const MAX_SELECTION_MORPHOLOGY_WORK = 67_108_864;
+export const MAX_SELECTION_MORPHOLOGY_COMPOUND_WORK = 134_217_728;
 export const MAX_SELECTION_POLYGON_VERTICES = 256;
 export const MAX_SELECTION_POLYGON_WORK = 17_000_000;
 export const MIN_SELECTION_LASSO_SAMPLE_PIXELS = 2;
@@ -154,6 +155,8 @@ export class SelectionApplicationService {
   clear() { const d=this.required(); this.commit(d,new Uint8Array(d.alpha.length),'USER'); d.canonicalArtifactId=undefined; d.state='NOTHING_SELECTED'; return this.snapshot(); }
   grow(radius: number): SelectionDraftSnapshot { return this.morphology('GROW', radius); }
   shrink(radius: number): SelectionDraftSnapshot { return this.morphology('SHRINK', radius); }
+  open(radius: number): SelectionDraftSnapshot { return this.compoundMorphology('OPEN', radius); }
+  close(radius: number): SelectionDraftSnapshot { return this.compoundMorphology('CLOSE', radius); }
   feather(radius: number): SelectionDraftSnapshot {
     const d=this.required();
     if(d.state!=='SELECTED'&&d.state!=='REFINING') throw new Error('Selection is not ready to feather');
@@ -176,6 +179,18 @@ export class SelectionApplicationService {
     if(d.state!=='SELECTED'&&d.state!=='REFINING') throw new Error('Selection is not ready for morphology');
     const alpha=morphSelectionMask(d.alpha,d.width,d.height,radius,kind);
     const source: MaskSource=kind==='GROW'?'OPERATION_EXPANDED':'OPERATION_CONTRACTED';
+    this.commit(d,alpha,source);
+    d.canonicalArtifactId=undefined;
+    d.manualCorrections++;
+    d.state='REFINING';
+    d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1);
+    return this.snapshot();
+  }
+  private compoundMorphology(kind: 'OPEN' | 'CLOSE', radius: number): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.state!=='SELECTED'&&d.state!=='REFINING') throw new Error('Selection is not ready for compound morphology');
+    const alpha=compoundMorphSelectionMask(d.alpha,d.width,d.height,radius,kind);
+    const source: MaskSource=kind==='OPEN'?'OPERATION_OPENED':'OPERATION_CLOSED';
     this.commit(d,alpha,source);
     d.canonicalArtifactId=undefined;
     d.manualCorrections++;
@@ -360,6 +375,17 @@ export function morphSelectionMask(alpha: Uint8Array, width: number, height: num
   extremePass(alpha, intermediate, width, height, radius, true, kind === 'GROW');
   extremePass(intermediate, output, width, height, radius, false, kind === 'GROW');
   return output;
+}
+export function compoundMorphSelectionMask(alpha: Uint8Array, width: number, height: number, radius: number, kind: 'OPEN' | 'CLOSE'): Uint8Array {
+  if (kind !== 'OPEN' && kind !== 'CLOSE') throw new Error('Selection compound morphology kind is unsupported');
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width > MAX_SELECTION_MORPHOLOGY_DIMENSION || height > MAX_SELECTION_MORPHOLOGY_DIMENSION) throw new Error('Selection compound morphology dimensions exceed deterministic bounds');
+  const pixels = width * height;
+  if (!Number.isSafeInteger(pixels) || pixels !== alpha.length || pixels > MAX_SELECTION_MORPHOLOGY_PIXELS) throw new Error('Selection compound morphology pixel count exceeds deterministic bounds');
+  if (!Number.isSafeInteger(radius) || radius < 1 || radius > MAX_SELECTION_MORPHOLOGY_RADIUS) throw new Error('Selection compound morphology radius exceeds deterministic bounds');
+  const work = pixels * 8;
+  if (!Number.isSafeInteger(work) || work > MAX_SELECTION_MORPHOLOGY_COMPOUND_WORK) throw new Error('Selection compound morphology work exceeds deterministic bounds');
+  const first = morphSelectionMask(alpha, width, height, radius, kind === 'OPEN' ? 'SHRINK' : 'GROW');
+  return morphSelectionMask(first, width, height, radius, kind === 'OPEN' ? 'GROW' : 'SHRINK');
 }
 export function featherSelectionMask(alpha: Uint8Array, width: number, height: number, radius: number): Uint8Array {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width > MAX_SELECTION_MORPHOLOGY_DIMENSION || height > MAX_SELECTION_MORPHOLOGY_DIMENSION) throw new Error('Selection feather dimensions exceed deterministic bounds');
