@@ -145,6 +145,7 @@ export default function Editor() {
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
   const [brushSize, setBrushSize] = useState(24);
+  const [brushHardness, setBrushHardness] = useState(75);
   const [selectionMorphologyRadius, setSelectionMorphologyRadius] = useState(2);
   const [polygonComposition, setPolygonComposition] = useState('REPLACE');
   const [isolatingBackground, setIsolatingBackground] = useState(false);
@@ -265,7 +266,7 @@ export default function Editor() {
     else if (phase === 'move') strokeRef.current.push(point);
     else if (phase === 'up' && strokeRef.current.length) {
       strokeRef.current.push(point);
-      setSelection(service.brush({ points: strokeRef.current, radius: brushSize, hardness: .75, view }));
+      setSelection(service.brush({ points: strokeRef.current, radius: brushSize, hardness: brushHardness / 100, view }));
       strokeRef.current = [];
     } else if (phase === 'cancel') strokeRef.current = [];
   };
@@ -825,7 +826,7 @@ export default function Editor() {
       />
 
       <SelectionToolbar
-        selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} onStart={startSelection}
+        selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness} onStart={startSelection}
         morphologyRadius={selectionMorphologyRadius} onMorphologyRadius={setSelectionMorphologyRadius}
         polygonComposition={polygonComposition} onPolygonComposition={setPolygonComposition}
         onApplyPolygon={() => updateSelection((service) => selection.mode === 'LASSO' ? service.applyLasso(polygonComposition) : service.applyPolygon(polygonComposition))}
