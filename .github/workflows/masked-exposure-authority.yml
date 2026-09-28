@@ -96,6 +96,16 @@ jobs:
             .test-cache/p192-masked-exposure/masked-exposure-canonical-wiring.test.mjs \
             .test-cache/p192-masked-exposure/deterministic-crop-contract.test.mjs \
             .test-cache/p192-masked-exposure/background-isolation-canonical-wiring.test.mjs
+      - name: Stage SQL migrations beside bundled PostgreSQL test
+        run: |
+          set -euo pipefail
+          runtime=.test-cache/p192-masked-exposure
+          mkdir -p "$runtime/migrations"
+          find server -type f -path '*/migrations/*.sql' ! -name '*.down.sql' -print0 \
+            | while IFS= read -r -d '' migration; do cp "$migration" "$runtime/migrations/$(basename "$migration")"; done
+          test -f "$runtime/migrations/002_canonical_mask_artifacts.sql"
+          test -f "$runtime/migrations/030_fashion_garment_texture_final_lineage.sql"
+          test -f "$runtime/migrations/046_canonical_masked_exposure_final_lineage.sql"
       - name: Prove PostgreSQL IMAGE+MASK FINAL lineage and restart replay
         run: node --test --test-concurrency=1 .test-cache/p192-masked-exposure/masked-exposure-postgres-vertical.test.mjs
       - name: Build production browser
