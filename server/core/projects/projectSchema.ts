@@ -36,7 +36,7 @@ async function statusReady(pool: Pool): Promise<boolean> {
   const value = column.rows[0];
   const check = constraint.rows[0];
   if (!value || String(value.is_nullable) !== 'NO' || semanticDefault(value.column_default) !== "'draft'") return false;
-  return check?.convalidated === true && semanticStatusConstraint(check.definition) === "checkstatus=any(array['draft','editing'])";
+  return check?.convalidated === true && semanticStatusConstraint(check.definition) === "checkstatus=anyarray['draft','editing']";
 }
 
 async function revisionReady(pool: Pool): Promise<boolean> {
@@ -80,7 +80,7 @@ export async function migrateProjectSchema(pool: Pool) {
 }
 
 function semanticDefault(value: unknown): string {
-  return String(value ?? '').replace(/::(?:bigint|int8|integer)/giu, '').replace(/[()\s]+/gu, '').toLowerCase();
+  return String(value ?? '').replace(/::(?:bigint|int8|integer|text)/giu, '').replace(/[()\s]+/gu, '').toLowerCase();
 }
 
 function semanticConstraint(value: unknown): string {
