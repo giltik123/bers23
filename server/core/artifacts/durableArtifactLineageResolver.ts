@@ -158,7 +158,7 @@ export class DurableArtifactLineageResolver {
       return Object.freeze([issueStoredImageId(this.signed, source, scope)]);
     }
 
-    if (stored.producerOperation !== 'BACKGROUND_ISOLATION' || !stored.sourceImageStorageId || !stored.maskStorageId) {
+    if ((stored.producerOperation !== 'BACKGROUND_ISOLATION' && stored.producerOperation !== 'MASKED_EXPOSURE') || !stored.sourceImageStorageId || !stored.maskStorageId) {
       throw resolverError('durable_lineage_invalid', 'Derived FINAL lineage is incomplete or unsupported');
     }
     const source = await this.images.loadSource(stored.sourceImageStorageId, scope);
