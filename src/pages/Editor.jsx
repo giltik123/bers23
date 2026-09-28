@@ -842,6 +842,8 @@ export default function Editor() {
         onInvert={() => updateSelection((service) => service.invert())}
         onGrow={() => updateSelection((service) => service.grow(selectionMorphologyRadius))}
         onShrink={() => updateSelection((service) => service.shrink(selectionMorphologyRadius))}
+        onOpen={() => updateSelection((service) => service.open(selectionMorphologyRadius))}
+        onClose={() => updateSelection((service) => service.close(selectionMorphologyRadius))}
         onFeather={() => updateSelection((service) => service.feather(selectionMorphologyRadius))}
         onCancel={() => { selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null); }}
         onDone={finishSelection}
