@@ -161,6 +161,25 @@ export const coreClient = Object.freeze({
     },
     uploadBackgroundIsolationImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/background-isolation/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
     submitBackgroundIsolation: ({ ticketId, projectId, result }) => request(`/local-execution/background-isolation/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareMaskedExposure: (payload) => request('/local-execution/masked-exposure/prepare', json('POST', payload)),
+    loadMaskedExposureInputs: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/masked-exposure/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
+      const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
+      const pixelCount = width * height;
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 5) throw new Error('Core Masked Exposure input byte length does not match its canonical geometry');
+      const sourceBytes = pixelCount * 4;
+      return Object.freeze({
+        width,
+        height,
+        sourceSha256: requiredShaHeader(delivered.headers, LOCAL_SOURCE_SHA_HEADER),
+        maskSha256: requiredShaHeader(delivered.headers, LOCAL_MASK_SHA_HEADER),
+        sourceRgba: new Uint8ClampedArray(delivered.bytes.slice(0, sourceBytes).buffer),
+        maskAlpha: delivered.bytes.slice(sourceBytes),
+      });
+    },
+    uploadMaskedExposureImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/masked-exposure/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitMaskedExposure: ({ ticketId, projectId, result }) => request(`/local-execution/masked-exposure/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
     prepareCrop: (payload) => request('/local-execution/crop/prepare', json('POST', payload)),
     loadCropInput: async ({ ticketId, projectId }) => {
       const delivered = await requestBytes(`/local-execution/crop/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
