@@ -99,9 +99,10 @@ test('Editor rectangle and ellipse keep raster authority in SelectionApplication
   const preview = canvas.slice(start, end);
   assert.match(preview, /<rect/);
   assert.match(preview, /<ellipse/);
-  for (const label of ['northwest', 'northeast', 'southwest', 'southeast']) {
-    assert.match(preview, new RegExp(`Resize selection from \${label} handle`));
+  for (const handle of ["['NW', x, y, 'northwest']", "['NE', x + width, y, 'northeast']", "['SW', x, y + height, 'southwest']", "['SE', x + width, y + height, 'southeast']"]) {
+    assert.equal(preview.includes(handle), true, handle);
   }
+  assert.equal(preview.includes('aria-label={`Resize selection from ${label} handle`}'), true);
   assert.match(preview, /onPointerDown=\{pointer\(handle, 'down'\)\}/);
   assert.match(preview, /onPointerMove=\{pointer\(handle, 'move'\)\}/);
   assert.match(preview, /onPointerUp=\{pointer\(handle, 'up'\)\}/);
