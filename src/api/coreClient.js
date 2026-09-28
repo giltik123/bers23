@@ -209,6 +209,22 @@ export const coreClient = Object.freeze({
     },
     uploadOrthogonalTransformImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/orthogonal-transform/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
     submitOrthogonalTransform: ({ ticketId, projectId, result }) => request(`/local-execution/orthogonal-transform/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareAffineTransform: (payload) => request('/local-execution/affine-transform/prepare', json('POST', payload)),
+    loadAffineTransformInput: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/affine-transform/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      const width = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_WIDTH_HEADER);
+      const height = requiredPositiveIntegerHeader(delivered.headers, LOCAL_INPUT_HEIGHT_HEADER);
+      const pixelCount = width * height;
+      if (!Number.isSafeInteger(pixelCount) || delivered.bytes.byteLength !== pixelCount * 4) throw new Error('Core affine-transform input byte length does not match its canonical geometry');
+      return Object.freeze({
+        width,
+        height,
+        sourceSha256: requiredShaHeader(delivered.headers, LOCAL_SOURCE_SHA_HEADER),
+        sourceRgba: Uint8ClampedArray.from(delivered.bytes),
+      });
+    },
+    uploadAffineTransformImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/affine-transform/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitAffineTransform: ({ ticketId, projectId, result }) => request(`/local-execution/affine-transform/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
     prepareSuperResolution: (payload) => request('/local-execution/super-resolution/prepare', json('POST', payload)),
     loadSuperResolutionInput: async ({ ticketId, projectId }) => {
       const delivered = await requestBytes(`/local-execution/super-resolution/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
