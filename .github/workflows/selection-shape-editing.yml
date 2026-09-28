@@ -1,0 +1,70 @@
+name: Selection Shape Editing
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/application/selection/**'
+      - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/components/editor/ImageCanvas.jsx'
+      - 'src/pages/Editor.jsx'
+      - 'tests/intelligent-selection.test.ts'
+      - 'tests/editor-canonical-boundary.test.mjs'
+      - '.github/workflows/selection-shape-editing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selection-shape-editing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck staged shape editing surfaces
+        run: npm run typecheck
+      - name: Bundle deterministic selection regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/p191-shape-editing
+          npx esbuild tests/intelligent-selection.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/p191-shape-editing/intelligent-selection.test.mjs \
+            --external:node:* --external:pg --external:sharp
+      - name: Prove handle resize nudge bounds staging and Apply semantics
+        run: node --test .test-cache/p191-shape-editing/intelligent-selection.test.mjs
+      - name: Prove Editor shape handles stay preview-only
+        run: node --test tests/editor-canonical-boundary.test.mjs
+      - name: Build production browser
+        run: npm run build
+      - name: Preserve staged shape authority
+        run: |
+          set -euo pipefail
+          service=src/application/selection/SelectionApplicationService.ts
+          editor=src/pages/Editor.jsx
+          toolbar=src/components/editor/SelectionToolbar.jsx
+          canvas=src/components/editor/ImageCanvas.jsx
+          grep -q "MAX_SELECTION_SHAPE_NUDGE_PIXELS = 64" "$service"
+          grep -q "shapeHandle(input" "$service"
+          grep -q "nudgeShape(deltaX" "$service"
+          grep -q "service.shapeHandle({ handle, displayPoint: point, view })" "$editor"
+          grep -q "service.nudgeShape(deltaX, deltaY)" "$editor"
+          grep -q 'aria-label="Shape keyboard nudging"' "$toolbar"
+          grep -q "Resize selection from" "$canvas"
+          ! grep -E -q "fetch\(|coreClient|provider|billing|credits" "$service"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
