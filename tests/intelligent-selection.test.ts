@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, MAX_SELECTION_POLYGON_VERTICES, MIN_SELECTION_LASSO_SAMPLE_PIXELS, SelectionApplicationService, assessMask, chooseAnalysis, composeSelectionMask, featherSelectionMask, morphSelectionMask, rasterizeSelectionPolygon } from '../src/application/selection';
+import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, MAX_SELECTION_POLYGON_VERTICES, MIN_SELECTION_LASSO_SAMPLE_PIXELS, SelectionApplicationService, assessMask, chooseAnalysis, composeSelectionMask, featherSelectionMask, morphSelectionMask, rasterizeSelectionEllipse, rasterizeSelectionPolygon, rasterizeSelectionRectangle } from '../src/application/selection';
 import { CoreAuthorizedSegmentation } from '../src/application/selection/CoreAuthorizedSegmentation';
 import { displayToOriginal } from '../src/platform/creative/pipeline/ControlledLocalEdit';
 import { DeviceAnalyzer } from '../src/platform/creative/local-ai/device/DeviceAnalyzer';
@@ -306,6 +306,75 @@ test('lasso point cap stops visibly instead of silently extending an unbounded p
   const cleared = service.clearLasso();
   assert.equal(cleared.polygonVertices.length, 0);
   assert.equal(cleared.warning, undefined);
+});
+
+
+test('rectangle and ellipse rasterization use exact ORIGINAL pixel-center geometry', () => {
+  const rect = rasterizeSelectionRectangle([
+    { x: 1, y: 1, coordinateSpace: 'ORIGINAL' },
+    { x: 4, y: 4, coordinateSpace: 'ORIGINAL' },
+  ], 5, 5);
+  assert.deepEqual([...rect], [
+    0,0,0,0,0,
+    0,255,255,255,0,
+    0,255,255,255,0,
+    0,255,255,255,0,
+    0,0,0,0,0,
+  ]);
+
+  const ellipse = rasterizeSelectionEllipse([
+    { x: 0, y: 0, coordinateSpace: 'ORIGINAL' },
+    { x: 5, y: 5, coordinateSpace: 'ORIGINAL' },
+  ], 5, 5);
+  assert.deepEqual([...ellipse], [
+    0,255,255,255,0,
+    255,255,255,255,255,
+    255,255,255,255,255,
+    255,255,255,255,255,
+    0,255,255,255,0,
+  ]);
+});
+
+test('basic shape rasterization rejects degenerate or hostile geometry before mutation', () => {
+  const point = { x: 1, y: 1, coordinateSpace: 'ORIGINAL' as const };
+  assert.throws(() => rasterizeSelectionRectangle([point], 5, 5), /requires two anchors/);
+  assert.throws(() => rasterizeSelectionRectangle([point, point], 5, 5), /zero area/);
+  assert.throws(() => rasterizeSelectionEllipse([point, point], 5, 5), /zero area/);
+  assert.throws(() => rasterizeSelectionEllipse([
+    { x: -1, y: 0, coordinateSpace: 'ORIGINAL' },
+    { x: 2, y: 2, coordinateSpace: 'ORIGINAL' },
+  ], 5, 5), /outside source bounds/);
+  assert.throws(() => rasterizeSelectionRectangle([
+    { x: 0, y: 0, coordinateSpace: 'ORIGINAL' },
+    { x: 1, y: 1, coordinateSpace: 'ORIGINAL' },
+  ], MAX_SELECTION_MORPHOLOGY_DIMENSION + 1, 1), /dimensions exceed deterministic bounds/);
+});
+
+test('rectangle and ellipse drag staging share composition history and first-apply undo semantics', () => {
+  const { service } = fixture();
+  const identity = { displayWidth: 5, displayHeight: 5, originalWidth: 5, originalHeight: 5 };
+  service.start({ imageArtifactId: 'image', width: 5, height: 5 });
+  service.setMode('RECTANGLE');
+  service.shapeStart({ displayPoint: { x: 1, y: 1 }, view: identity });
+  const staged = service.shapeVertex({ displayPoint: { x: 4, y: 4 }, view: identity });
+  assert.equal(staged.shapeVertices.length, 2);
+  const rectangle = service.applyShape('REPLACE');
+  assert.equal(rectangle.provenance.at(-1), 'RECTANGLE_REPLACE');
+  assert.equal(rectangle.canUndo, true);
+  assert.equal(rectangle.shapeVertices.length, 0);
+  assert.equal(rectangle.quality?.coverage, 9/25);
+  const undone = service.undo();
+  assert.equal(undone.state, 'NOTHING_SELECTED');
+  assert.deepEqual([...undone.alpha], new Array(25).fill(0));
+  service.redo();
+
+  service.setMode('ELLIPSE');
+  service.shapeStart({ displayPoint: { x: 0, y: 0 }, view: identity });
+  service.shapeVertex({ displayPoint: { x: 5, y: 5 }, view: identity });
+  const ellipse = service.applyShape('INTERSECT');
+  assert.equal(ellipse.provenance.at(-1), 'ELLIPSE_INTERSECT');
+  assert.equal(ellipse.state, 'REFINING');
+  assert.ok(ellipse.quality?.coverage);
 });
 
 test('Core-authorized segmentation binds ticket, device admission, local runtime, quarantine upload and canonical result', async () => {
