@@ -168,6 +168,7 @@
     "src/platform/creative/canonical/providerSelection.ts",
     "src/platform/creative/composition/CreativeProviderComposition.ts",
     "src/platform/creative/cost/contracts.ts",
+    "src/platform/creative/deterministic/AffineTransformIdentity.js",
     "src/platform/creative/deterministic/BackgroundIsolation.ts",
     "src/platform/creative/deterministic/BackgroundIsolationIdentity.js",
     "src/platform/creative/deterministic/Crop.ts",
