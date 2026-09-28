@@ -32,12 +32,13 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
   return (
     <section className="rounded-xl border bg-card p-3 space-y-3" aria-label="Selection tools">
       <div className="flex flex-wrap gap-2">
-        {modes.map(([id, label]) => <Button key={id} type="button" size="sm" variant={selection.mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => onMode(id)}>{label}</Button>)}
+        {modes.map(([id, label]) => <Button key={id} type="button" size="sm" aria-label={`${label} selection mode`} aria-pressed={selection.mode === id} variant={selection.mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => onMode(id)}>{label}</Button>)}
         <label className="flex items-center gap-2 px-2 text-xs">Brush Size
-          <input aria-label="Brush Size" type="range" min="2" max="96" value={brushSize} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushSize(Number(event.target.value))} />
+          <input aria-label="Brush Size" aria-valuetext={`${brushSize} pixels`} type="range" min="2" max="96" value={brushSize} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushSize(Number(event.target.value))} />
+          <span aria-hidden="true">{brushSize}px</span>
         </label>
         <label className="flex items-center gap-2 px-2 text-xs">Hardness
-          <input aria-label="Brush Hardness" type="range" min="0" max="100" value={brushHardness} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushHardness(Number(event.target.value))} />
+          <input aria-label="Brush Hardness" aria-valuetext={`${brushHardness} percent`} type="range" min="0" max="100" value={brushHardness} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushHardness(Number(event.target.value))} />
           <span aria-hidden="true">{brushHardness}%</span>
         </label>
       </div>
@@ -106,8 +107,8 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
         <Button type="button" size="sm" variant="outline" aria-label="Open selection" disabled={busy || !editable} onClick={onOpen}>Open</Button>
         <Button type="button" size="sm" variant="outline" aria-label="Close selection" disabled={busy || !editable} onClick={onClose}>Close</Button>
         <Button type="button" size="sm" variant="outline" aria-label="Feather selection" disabled={busy || !editable} onClick={onFeather}>Feather</Button>
-        <Button type="button" size="sm" variant="outline" disabled={busy || !selection.canUndo} onClick={onUndo}>Undo</Button>
-        <Button type="button" size="sm" variant="outline" disabled={busy || !selection.canRedo} onClick={onRedo}>Redo</Button>
+        <Button type="button" size="sm" variant="outline" aria-label="Undo selection edit" aria-keyshortcuts="Control+Z Meta+Z" disabled={busy || !selection.canUndo} onClick={onUndo}>Undo</Button>
+        <Button type="button" size="sm" variant="outline" aria-label="Redo selection edit" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" disabled={busy || !selection.canRedo} onClick={onRedo}>Redo</Button>
         <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onClear}>Clear</Button>
         <Button type="button" size="sm" variant="outline" aria-label="Invert selection" disabled={!editable} onClick={onInvert}>Invert</Button>
         <span className="flex-1" />
