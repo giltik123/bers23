@@ -5,6 +5,7 @@ import { BACKGROUND_ISOLATION_CAPABILITY } from '../../../src/platform/creative/
 import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
+import { AFFINE_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/AffineTransform.ts';
 import { GARMENT_TEXTURE_COMPOSITE_CAPABILITY } from '../../../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
 import { requireDeterministicToolByCapability } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { productionGarmentMeshWarpExecutorsByCapability } from './productionGarmentMeshWarpExecutorPolicy.ts';
@@ -18,6 +19,8 @@ const resizeTool = requireDeterministicToolByCapability(RESIZE_CAPABILITY);
 const resizeExecutors = Object.freeze([resizeTool.executor]);
 const orthogonalTransformTool = requireDeterministicToolByCapability(ORTHOGONAL_TRANSFORM_CAPABILITY);
 const orthogonalTransformExecutors = Object.freeze([orthogonalTransformTool.executor]);
+const affineTransformTool = requireDeterministicToolByCapability(AFFINE_TRANSFORM_CAPABILITY);
+const affineTransformExecutors = Object.freeze([affineTransformTool.executor]);
 const garmentTextureCompositeTool = requireDeterministicToolByCapability(GARMENT_TEXTURE_COMPOSITE_CAPABILITY);
 const garmentTextureCompositeExecutors = Object.freeze([garmentTextureCompositeTool.executor]);
 
@@ -41,6 +44,7 @@ export const productionLocalExecutorsByCapability: Readonly<Record<string, reado
   [CROP_CAPABILITY]: cropExecutors,
   [RESIZE_CAPABILITY]: resizeExecutors,
   [ORTHOGONAL_TRANSFORM_CAPABILITY]: orthogonalTransformExecutors,
+  [AFFINE_TRANSFORM_CAPABILITY]: affineTransformExecutors,
   ...productionGarmentMeshWarpExecutorsByCapability,
   [GARMENT_TEXTURE_COMPOSITE_CAPABILITY]: garmentTextureCompositeExecutors,
   [REAL_ESRGAN_LOCAL_CAPABILITY]: realEsrganExecutors,
