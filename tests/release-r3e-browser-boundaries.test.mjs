@@ -32,7 +32,7 @@ test('R3e drives real manual Selection pointer input into Core-issued canonical 
     "getByRole('button', { name: 'Add', exact: true })",
     "getByLabel('Brush Size').fill('96')",
     "browser.newContext({ hasTouch: true, viewport: { width: 1280, height: 900 } })",
-    "page.touchscreen.tap(touchX, touchY)",
+    "projectImage.tap({ position: { x: box.width * 0.5, y: box.height * 0.5 } })",
     "observedPointer?.pointerType, 'touch'",
     "maskAlpha[4 * 12 + 6] > 0",
     "getByRole('button', { name: 'Done', exact: true })",
