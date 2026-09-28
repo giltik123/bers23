@@ -248,6 +248,12 @@ export default function Editor() {
       else if (phase === 'cancel') setSelection(service.clearLasso());
       return;
     }
+    if (selection.mode === 'RECTANGLE' || selection.mode === 'ELLIPSE') {
+      if (phase === 'down') setSelection(service.shapeStart({ displayPoint: point, view }));
+      else if (phase === 'move' || phase === 'up') setSelection(service.shapeVertex({ displayPoint: point, view }));
+      else if (phase === 'cancel') setSelection(service.clearShape());
+      return;
+    }
     if (phase === 'down') strokeRef.current = [point];
     else if (phase === 'move') strokeRef.current.push(point);
     else if (phase === 'up' && strokeRef.current.length) {
@@ -816,6 +822,8 @@ export default function Editor() {
         polygonComposition={polygonComposition} onPolygonComposition={setPolygonComposition}
         onApplyPolygon={() => updateSelection((service) => selection.mode === 'LASSO' ? service.applyLasso(polygonComposition) : service.applyPolygon(polygonComposition))}
         onClearPolygon={() => updateSelection((service) => selection.mode === 'LASSO' ? service.clearLasso() : service.clearPolygon())}
+        onApplyShape={() => updateSelection((service) => service.applyShape(polygonComposition))}
+        onClearShape={() => updateSelection((service) => service.clearShape())}
         startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}

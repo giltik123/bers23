@@ -44,6 +44,21 @@ function PolygonPreview({ selection }) {
   );
 }
 
+function ShapePreview({ selection }) {
+  if ((selection?.mode !== 'RECTANGLE' && selection?.mode !== 'ELLIPSE') || selection.shapeVertices?.length !== 2) return null;
+  const [a,b] = selection.shapeVertices;
+  const x = Math.min(a.x,b.x), y = Math.min(a.y,b.y), width = Math.abs(b.x-a.x), height = Math.abs(b.y-a.y);
+  if (!(width > 0 && height > 0)) return null;
+  const common = { fill: 'rgba(16,185,129,0.12)', stroke: 'rgb(16,185,129)', strokeWidth: Math.max(1, Math.min(selection.width, selection.height) / 300), vectorEffect: 'non-scaling-stroke' };
+  return (
+    <svg className="absolute inset-0 size-full pointer-events-none" viewBox={`0 0 ${selection.width} ${selection.height}`} preserveAspectRatio="none" aria-hidden="true">
+      {selection.mode === 'RECTANGLE'
+        ? <rect x={x} y={y} width={width} height={height} {...common} />
+        : <ellipse cx={x + width / 2} cy={y + height / 2} rx={width / 2} ry={height / 2} {...common} />}
+    </svg>
+  );
+}
+
 function CropOverlay({ crop }) {
   if (!crop) return null;
   const left = crop.x / crop.sourceWidth * 100;
@@ -86,6 +101,7 @@ export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, b
       <img src={imageUrl} alt="Project" decoding={renderer.decoding} fetchPriority="high" style={{ imageRendering: renderer.imageRendering }} onLoad={(event) => { if (event.currentTarget.naturalWidth * event.currentTarget.naturalHeight > 2000000) performanceMonitor.markLargeDecode(); }} className="w-full h-auto block" draggable={false} />
       <SelectionOverlay selection={selection} />
       <PolygonPreview selection={selection} />
+      <ShapePreview selection={selection} />
       <CropOverlay crop={crop} />
       {!interactive && objects.map((obj) => {
         const selected = obj.id === selectedId;
