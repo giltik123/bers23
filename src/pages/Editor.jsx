@@ -228,6 +228,13 @@ export default function Editor() {
     setSelection(service.start({ imageArtifactId, width: project.width, height: project.height }));
   };
   const updateSelection = (action) => { const value = action(selectionServiceRef.current); if (value) setSelection(value); };
+  const selectionShapeHandlePointer = (handle, phase, point, view) => {
+    const service = selectionServiceRef.current;
+    if (!service || (selection?.mode !== 'RECTANGLE' && selection?.mode !== 'ELLIPSE')) return;
+    if (phase === 'down' || phase === 'move' || phase === 'up') {
+      setSelection(service.shapeHandle({ handle, displayPoint: point, view }));
+    }
+  };
   const selectionPointer = async (phase, point, view) => {
     const service = selectionServiceRef.current;
     if (!service) return;
@@ -776,6 +783,7 @@ export default function Editor() {
         onRedo={redo}
         selection={selection}
         onSelectionPointer={selectionPointer}
+        onShapeHandlePointer={selectionShapeHandlePointer}
         crop={cropRect ? { ...cropRect, sourceWidth: project.width, sourceHeight: project.height } : null}
         cropSource={cropInteractionActive ? { sourceWidth: project.width, sourceHeight: project.height } : null}
         onCropPointer={cropPointer}
@@ -824,6 +832,7 @@ export default function Editor() {
         onClearPolygon={() => updateSelection((service) => selection.mode === 'LASSO' ? service.clearLasso() : service.clearPolygon())}
         onApplyShape={() => updateSelection((service) => service.applyShape(polygonComposition))}
         onClearShape={() => updateSelection((service) => service.clearShape())}
+        onNudgeShape={(deltaX, deltaY) => updateSelection((service) => service.nudgeShape(deltaX, deltaY))}
         startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}

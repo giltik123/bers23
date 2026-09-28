@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
@@ -16,6 +16,19 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
   const busy = selection.state === 'DOWNLOADING' || selection.state === 'LOADING' || selection.state === 'SELECTING';
   const editable = selection.state === 'SELECTED' || selection.state === 'REFINING';
   const canDone = editable && !selection.quality?.empty;
+  const shapeReady = (selection.mode === 'RECTANGLE' || selection.mode === 'ELLIPSE') && selection.shapeVertices.length === 2;
+  const shapeKeyDown = (event) => {
+    if (!shapeReady || busy) return;
+    const step = event.shiftKey ? 10 : 1;
+    const movement = event.key === 'ArrowLeft' ? [-step, 0]
+      : event.key === 'ArrowRight' ? [step, 0]
+      : event.key === 'ArrowUp' ? [0, -step]
+      : event.key === 'ArrowDown' ? [0, step]
+      : null;
+    if (!movement) return;
+    event.preventDefault();
+    onNudgeShape(movement[0], movement[1]);
+  };
   return (
     <section className="rounded-xl border bg-card p-3 space-y-3" aria-label="Selection tools">
       <div className="flex flex-wrap gap-2">
@@ -65,6 +78,16 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
             </select>
           </label>
           <span className="text-xs text-muted-foreground" role="status">{selection.shapeVertices.length === 2 ? 'Drag ready' : 'Drag on image'}</span>
+          <div
+            role="group"
+            aria-label="Shape keyboard nudging"
+            aria-disabled={!shapeReady || busy}
+            tabIndex={shapeReady && !busy ? 0 : -1}
+            onKeyDown={shapeKeyDown}
+            className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            Arrow keys move 1px · Shift+Arrow 10px
+          </div>
           <Button type="button" size="sm" variant="outline" aria-label={`Apply ${selection.mode.toLowerCase()} selection`} disabled={busy || selection.shapeVertices.length !== 2} onClick={onApplyShape}>Apply {selection.mode === 'RECTANGLE' ? 'Rectangle' : 'Ellipse'}</Button>
           <Button type="button" size="sm" variant="ghost" aria-label="Clear shape anchors" disabled={busy || selection.shapeVertices.length === 0} onClick={onClearShape}>Clear Shape</Button>
         </div>

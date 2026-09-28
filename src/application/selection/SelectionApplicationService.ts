@@ -1,5 +1,5 @@
 import { createOriginalMask, displayToOriginal, type MaskSource } from '../../platform/creative/pipeline/ControlledLocalEdit';
-import type { AnalysisTransform, BrushStroke, CanonicalMaskArtifactPort, InteractiveSegmentationPort, MaskQualityResult, PolygonComposition, PolygonVertex, PromptPoint, SelectionDraftSnapshot, SelectionMode, SelectionTelemetry } from './contracts';
+import type { AnalysisTransform, BrushStroke, CanonicalMaskArtifactPort, InteractiveSegmentationPort, MaskQualityResult, PolygonComposition, PolygonVertex, PromptPoint, SelectionDraftSnapshot, SelectionMode, SelectionShapeHandle, SelectionTelemetry } from './contracts';
 import type { PrivacyMode } from '../../platform/creative/local-ai';
 
 const MAX_HISTORY = 30, FULL_WARNING = .97, TINY_WARNING = .0001;
@@ -10,6 +10,7 @@ export const MAX_SELECTION_MORPHOLOGY_WORK = 67_108_864;
 export const MAX_SELECTION_POLYGON_VERTICES = 256;
 export const MAX_SELECTION_POLYGON_WORK = 17_000_000;
 export const MIN_SELECTION_LASSO_SAMPLE_PIXELS = 2;
+export const MAX_SELECTION_SHAPE_NUDGE_PIXELS = 64;
 const POLYGON_FIXED_SCALE = 256;
 type HistoryEntry = Readonly<{ alpha: Uint8Array; source: MaskSource; provenance: readonly string[] }>;
 type Draft = { id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; source: MaskSource; state: SelectionDraftSnapshot['state']; mode: SelectionMode; points: PromptPoint[]; polygonVertices: PolygonVertex[]; shapeVertices: PolygonVertex[]; provenance: string[]; requestId?: string; canonicalArtifactId?: string; refinementParentArtifactId?: string; quality?: MaskQualityResult; warning?: string; history: HistoryEntry[]; historyIndex: number; startedAt: number; manualCorrections: number; undoCount: number };
@@ -96,6 +97,33 @@ export class SelectionApplicationService {
     d.shapeVertices=[d.shapeVertices[0],vertex];
     return this.snapshot();
   }
+  shapeHandle(input: Readonly<{ handle: SelectionShapeHandle; displayPoint: { x: number; y: number }; view: BrushStroke['view'] }>): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='RECTANGLE'&&d.mode!=='ELLIPSE') throw new Error('Shape handles require RECTANGLE or ELLIPSE mode');
+    if(d.shapeVertices.length!==2) throw new Error('Selection shape requires two anchors');
+    const pointer=quantizePolygonVertex(displayToOriginal(input.displayPoint,input.view),d.width,d.height);
+    const bounds=selectionShapeBounds(d.shapeVertices);
+    const epsilon=1/POLYGON_FIXED_SCALE;
+    let {left,right,top,bottom}=bounds;
+    if(input.handle==='NW'){left=Math.max(0,Math.min(right-epsilon,pointer.x));top=Math.max(0,Math.min(bottom-epsilon,pointer.y));}
+    else if(input.handle==='NE'){right=Math.min(d.width,Math.max(left+epsilon,pointer.x));top=Math.max(0,Math.min(bottom-epsilon,pointer.y));}
+    else if(input.handle==='SW'){left=Math.max(0,Math.min(right-epsilon,pointer.x));bottom=Math.min(d.height,Math.max(top+epsilon,pointer.y));}
+    else if(input.handle==='SE'){right=Math.min(d.width,Math.max(left+epsilon,pointer.x));bottom=Math.min(d.height,Math.max(top+epsilon,pointer.y));}
+    else throw new Error('Selection shape handle is unsupported');
+    d.shapeVertices=shapeVerticesFromBounds(left,top,right,bottom);
+    return this.snapshot();
+  }
+  nudgeShape(deltaX: number, deltaY: number): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='RECTANGLE'&&d.mode!=='ELLIPSE') throw new Error('Shape nudging requires RECTANGLE or ELLIPSE mode');
+    if(d.shapeVertices.length!==2) throw new Error('Selection shape requires two anchors');
+    if(!Number.isSafeInteger(deltaX)||!Number.isSafeInteger(deltaY)||Math.abs(deltaX)>MAX_SELECTION_SHAPE_NUDGE_PIXELS||Math.abs(deltaY)>MAX_SELECTION_SHAPE_NUDGE_PIXELS) throw new Error('Selection shape nudge exceeds deterministic bounds');
+    const {left,right,top,bottom}=selectionShapeBounds(d.shapeVertices);
+    const appliedX=Math.max(-left,Math.min(d.width-right,deltaX));
+    const appliedY=Math.max(-top,Math.min(d.height-bottom,deltaY));
+    d.shapeVertices=shapeVerticesFromBounds(left+appliedX,top+appliedY,right+appliedX,bottom+appliedY);
+    return this.snapshot();
+  }
   clearShape(): SelectionDraftSnapshot { const d=this.required(); d.shapeVertices=[]; return this.snapshot(); }
   applyShape(composition: PolygonComposition): SelectionDraftSnapshot {
     const d=this.required();
@@ -176,6 +204,18 @@ function lassoSource(composition: PolygonComposition): MaskSource {
   if(composition==='SUBTRACT') return 'LASSO_SUBTRACT';
   if(composition==='INTERSECT') return 'LASSO_INTERSECT';
   throw new Error('Selection lasso composition is unsupported');
+}
+function selectionShapeBounds(vertices: readonly PolygonVertex[]) {
+  if(vertices.length!==2) throw new Error('Selection shape requires two anchors');
+  const [a,b]=vertices;
+  if(a.coordinateSpace!=='ORIGINAL'||b.coordinateSpace!=='ORIGINAL'||![a.x,a.y,b.x,b.y].every(Number.isFinite)) throw new Error('Selection shape anchor is invalid');
+  return Object.freeze({left:Math.min(a.x,b.x),right:Math.max(a.x,b.x),top:Math.min(a.y,b.y),bottom:Math.max(a.y,b.y)});
+}
+function shapeVerticesFromBounds(left:number,top:number,right:number,bottom:number): PolygonVertex[] {
+  return [
+    Object.freeze({x:left,y:top,coordinateSpace:'ORIGINAL' as const}),
+    Object.freeze({x:right,y:bottom,coordinateSpace:'ORIGINAL' as const}),
+  ];
 }
 function shapeSource(mode: 'RECTANGLE'|'ELLIPSE',composition: PolygonComposition): MaskSource {
   const prefix=mode==='RECTANGLE'?'RECTANGLE':'ELLIPSE';

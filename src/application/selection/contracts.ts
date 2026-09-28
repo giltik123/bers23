@@ -6,6 +6,7 @@ export const INTERACTIVE_SEGMENTATION = 'INTERACTIVE_SEGMENTATION' as const;
 export type SelectionMode = 'SMART_SELECT' | 'BRUSH_ADD' | 'BRUSH_SUBTRACT' | 'POLYGON' | 'LASSO' | 'RECTANGLE' | 'ELLIPSE';
 export type PolygonComposition = 'REPLACE' | 'ADD' | 'SUBTRACT' | 'INTERSECT';
 export type PolygonVertex = Readonly<{ x: number; y: number; coordinateSpace: 'ORIGINAL' }>;
+export type SelectionShapeHandle = 'NW' | 'NE' | 'SW' | 'SE';
 export type SelectionState = 'NOTHING_SELECTED' | 'DOWNLOADING' | 'LOADING' | 'SELECTING' | 'SELECTED' | 'REFINING' | 'READY' | 'ERROR' | 'LOCAL_UNAVAILABLE';
 export type PromptPoint = Readonly<{ x: number; y: number; label: 'POSITIVE' | 'NEGATIVE'; coordinateSpace: 'ORIGINAL' }>;
 export type AnalysisTransform = Readonly<{ originalWidth: number; originalHeight: number; analysisWidth: number; analysisHeight: number; scaleX: number; scaleY: number; offsetX: number; offsetY: number }>;

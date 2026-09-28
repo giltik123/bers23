@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, MAX_SELECTION_POLYGON_VERTICES, MIN_SELECTION_LASSO_SAMPLE_PIXELS, SelectionApplicationService, assessMask, chooseAnalysis, composeSelectionMask, featherSelectionMask, morphSelectionMask, rasterizeSelectionEllipse, rasterizeSelectionPolygon, rasterizeSelectionRectangle } from '../src/application/selection';
+import { MAX_SELECTION_MORPHOLOGY_DIMENSION, MAX_SELECTION_MORPHOLOGY_RADIUS, MAX_SELECTION_POLYGON_VERTICES, MAX_SELECTION_SHAPE_NUDGE_PIXELS, MIN_SELECTION_LASSO_SAMPLE_PIXELS, SelectionApplicationService, assessMask, chooseAnalysis, composeSelectionMask, featherSelectionMask, morphSelectionMask, rasterizeSelectionEllipse, rasterizeSelectionPolygon, rasterizeSelectionRectangle } from '../src/application/selection';
 import { CoreAuthorizedSegmentation } from '../src/application/selection/CoreAuthorizedSegmentation';
 import { displayToOriginal } from '../src/platform/creative/pipeline/ControlledLocalEdit';
 import { DeviceAnalyzer } from '../src/platform/creative/local-ai/device/DeviceAnalyzer';
@@ -375,6 +375,61 @@ test('rectangle and ellipse drag staging share composition history and first-app
   assert.equal(ellipse.provenance.at(-1), 'ELLIPSE_INTERSECT');
   assert.equal(ellipse.state, 'REFINING');
   assert.ok(ellipse.quality?.coverage);
+});
+
+
+test('shape handle resize and keyboard nudge stay staged until Apply and clamp in ORIGINAL coordinates', () => {
+  const { service } = fixture();
+  const identity = { displayWidth: 6, displayHeight: 6, originalWidth: 6, originalHeight: 6 };
+  service.start({ imageArtifactId: 'image', width: 6, height: 6 });
+  service.setMode('RECTANGLE');
+  service.shapeStart({ displayPoint: { x: 1, y: 1 }, view: identity });
+  service.shapeVertex({ displayPoint: { x: 4, y: 4 }, view: identity });
+
+  const before = service.snapshot();
+  assert.deepEqual([...before.alpha], new Array(36).fill(0));
+  assert.deepEqual(before.provenance, []);
+  assert.equal(before.canUndo, false);
+
+  const resized = service.shapeHandle({ handle: 'SE', displayPoint: { x: 5, y: 5 }, view: identity });
+  assert.deepEqual(resized.shapeVertices.map(({x,y}) => [x,y]), [[1,1],[5,5]]);
+  assert.deepEqual([...resized.alpha], [...before.alpha]);
+  assert.deepEqual(resized.provenance, []);
+  assert.equal(resized.canUndo, false);
+
+  const clampedTopLeft = service.nudgeShape(-10, -10);
+  assert.deepEqual(clampedTopLeft.shapeVertices.map(({x,y}) => [x,y]), [[0,0],[4,4]]);
+  assert.deepEqual([...clampedTopLeft.alpha], [...before.alpha]);
+  assert.deepEqual(clampedTopLeft.provenance, []);
+  assert.equal(clampedTopLeft.canUndo, false);
+
+  const clampedBottomRight = service.nudgeShape(10, 10);
+  assert.deepEqual(clampedBottomRight.shapeVertices.map(({x,y}) => [x,y]), [[2,2],[6,6]]);
+  assert.throws(() => service.nudgeShape(MAX_SELECTION_SHAPE_NUDGE_PIXELS + 1, 0), /nudge exceeds deterministic bounds/);
+  assert.throws(() => service.shapeHandle({ handle: 'UNKNOWN' as never, displayPoint: { x: 3, y: 3 }, view: identity }), /handle is unsupported/);
+
+  const applied = service.applyShape('REPLACE');
+  assert.equal(applied.quality?.coverage, 16/36);
+  assert.equal(applied.canUndo, true);
+  assert.equal(applied.provenance.at(-1), 'RECTANGLE_REPLACE');
+  const undone = service.undo();
+  assert.deepEqual([...undone.alpha], new Array(36).fill(0));
+});
+
+test('shape handle resize cannot cross its opposite corner and retains 1/256 fixed-point anchors', () => {
+  const { service } = fixture();
+  const view = { displayWidth: 100, displayHeight: 100, originalWidth: 10, originalHeight: 10 };
+  service.start({ imageArtifactId: 'image', width: 10, height: 10 });
+  service.setMode('ELLIPSE');
+  service.shapeStart({ displayPoint: { x: 20, y: 20 }, view });
+  service.shapeVertex({ displayPoint: { x: 80, y: 80 }, view });
+  const resized = service.shapeHandle({ handle: 'NW', displayPoint: { x: 95, y: 95 }, view });
+  const [[left,top],[right,bottom]] = resized.shapeVertices.map(({x,y}) => [x,y]);
+  assert.ok(left < right && top < bottom);
+  assert.equal(Number.isInteger(left * 256), true);
+  assert.equal(Number.isInteger(top * 256), true);
+  assert.equal(Number.isInteger(right * 256), true);
+  assert.equal(Number.isInteger(bottom * 256), true);
 });
 
 test('Core-authorized segmentation binds ticket, device admission, local runtime, quarantine upload and canonical result', async () => {

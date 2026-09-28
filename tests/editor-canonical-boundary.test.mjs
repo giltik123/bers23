@@ -83,16 +83,29 @@ test('Editor rectangle and ellipse keep raster authority in SelectionApplication
   assert.match(editor, /selection\.mode === 'RECTANGLE' \|\| selection\.mode === 'ELLIPSE'/);
   assert.match(editor, /service\.shapeStart\(\{ displayPoint: point, view \}\)/);
   assert.match(editor, /service\.shapeVertex\(\{ displayPoint: point, view \}\)/);
+  assert.match(editor, /service\.shapeHandle\(\{ handle, displayPoint: point, view \}\)/);
+  assert.match(editor, /service\.nudgeShape\(deltaX, deltaY\)/);
   assert.match(editor, /service\.applyShape\(polygonComposition\)/);
+  assert.match(editor, /onShapeHandlePointer=\{selectionShapeHandlePointer\}/);
   assert.match(toolbar, /\['RECTANGLE', 'Rectangle'\]/);
   assert.match(toolbar, /\['ELLIPSE', 'Ellipse'\]/);
   assert.match(toolbar, /aria-label="Shape composition"/);
+  assert.match(toolbar, /aria-label="Shape keyboard nudging"/);
+  assert.match(toolbar, /event\.shiftKey \? 10 : 1/);
+  assert.match(toolbar, /Arrow keys move 1px · Shift\+Arrow 10px/);
   const start = canvas.indexOf('function ShapePreview');
   const end = canvas.indexOf('function CropOverlay', start);
   assert(start >= 0 && end > start);
   const preview = canvas.slice(start, end);
   assert.match(preview, /<rect/);
   assert.match(preview, /<ellipse/);
+  for (const handle of ["['NW', x, y, 'northwest']", "['NE', x + width, y, 'northeast']", "['SW', x, y + height, 'southwest']", "['SE', x + width, y + height, 'southeast']"]) {
+    assert.equal(preview.includes(handle), true, handle);
+  }
+  assert.equal(preview.includes('aria-label={`Resize selection from ${label} handle`}'), true);
+  assert.match(preview, /onPointerDown=\{pointer\(handle, 'down'\)\}/);
+  assert.match(preview, /onPointerMove=\{pointer\(handle, 'move'\)\}/);
+  assert.match(preview, /onPointerUp=\{pointer\(handle, 'up'\)\}/);
   assert.doesNotMatch(preview, /getContext|putImageData|fetch\(|coreClient|persist/);
 });
 
