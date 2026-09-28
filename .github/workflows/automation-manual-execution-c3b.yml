@@ -7,6 +7,7 @@ on:
       - 'server/core/automation/**'
       - 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql'
       - 'server/core/projects/migrations/044_canonical_project_revision.sql'
+      - 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'
       - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
       - 'server/core/composition/createProductionCore.ts'
       - 'server/core/composition/createProductionAutomation.ts'
