@@ -170,6 +170,25 @@ test('lasso refinement preserves canonical source and admitted parent MASK linea
   assert.equal(persisted[0].metadata.provenance.at(-1), 'LASSO_ADD');
 });
 
+
+test('basic shape refinement preserves canonical source and admitted parent MASK lineage', async () => {
+  for (const mode of ['RECTANGLE','ELLIPSE'] as const) {
+    const { service, persisted, admitted } = fixture();
+    await smart(service, 'canonical-source');
+    service.setMode(mode);
+    service.shapeStart({ displayPoint: { x: 1, y: 1 }, view });
+    service.shapeVertex({ displayPoint: { x: 6, y: 6 }, view });
+    service.applyShape('ADD');
+    const result = await service.done();
+    assert.equal(result.id, 'persisted-1');
+    assert.equal(admitted.length, 0);
+    assert.equal(persisted[0].metadata.sourceImageArtifactId, 'canonical-source');
+    assert.equal(persisted[0].metadata.parentMaskArtifactId, 'core-admitted-mask');
+    assert.equal(persisted[0].mask.source, `${mode}_ADD`);
+    assert.equal(persisted[0].metadata.provenance.at(-1), `${mode}_ADD`);
+  }
+});
+
 test('manual-only selection has source-image lineage, no parent MASK, and performs zero inference calls', async () => {
   const { service, persisted, segmentationCalls } = fixture();
   service.start({ imageArtifactId: 'manual-source', width: 8, height: 8 });
