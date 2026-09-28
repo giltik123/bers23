@@ -10,6 +10,16 @@ import {
   RESIZE_TOOL_VERSION,
 } from '../../deterministic/ResizeIdentity.js';
 import {
+  AFFINE_FIXED_POINT_BITS,
+  AFFINE_MAX_LINEAR_COEFFICIENT_ABS,
+  AFFINE_MAX_OUTPUT_PIXELS,
+  AFFINE_MAX_TRANSLATION_ABS,
+  AFFINE_TRANSFORM_OPERATION,
+  AFFINE_TRANSFORM_STEP_ID,
+  AFFINE_TRANSFORM_TOOL_ID,
+  AFFINE_TRANSFORM_TOOL_VERSION,
+} from '../../deterministic/AffineTransformIdentity.js';
+import {
   ORTHOGONAL_TRANSFORM_MODES,
   ORTHOGONAL_TRANSFORM_OPERATION,
   ORTHOGONAL_TRANSFORM_STEP_ID,
@@ -31,6 +41,7 @@ export const CANONICAL_PLANNER_VERSION = '6.42C3.1';
 type Options = Readonly<{ plannerVersion?: string; minimumIntentConfidence?: number; minimumTargetConfidence?: number; maximumPreservationRisk?: number; compositeExecutionEnabled?: boolean; localCompositeContinuationEnabled?: boolean; telemetry?: PlanningTelemetryPort }>;
 type PlannerCropRect = Readonly<{ x: number; y: number; width: number; height: number }>;
 type PlannerResizeDimensions = Readonly<{ width: number; height: number }>;
+type PlannerAffineInverseMatrixQ16 = Readonly<{ m00Q16: number; m01Q16: number; txQ16: number; m10Q16: number; m11Q16: number; tyQ16: number }>;
 type PlannerOrthogonalTransformMode = 'FLIP_HORIZONTAL' | 'FLIP_VERTICAL' | 'ROTATE_90_CW' | 'ROTATE_180' | 'ROTATE_270_CW';
 type PlannerGarmentMeshWarpBinding = Readonly<{
   garmentId: string;
@@ -61,6 +72,7 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const backgroundIsolation = request.metadata?.operationIntent === 'BACKGROUND_ISOLATION';
     const crop = request.metadata?.operationIntent === 'CROP';
     const resize = request.metadata?.operationIntent === RESIZE_OPERATION;
+    const affineTransform = request.metadata?.operationIntent === AFFINE_TRANSFORM_OPERATION;
     const orthogonalTransform = request.metadata?.operationIntent === ORTHOGONAL_TRANSFORM_OPERATION;
     const garmentMeshWarp = request.metadata?.operationIntent === GARMENT_MESH_WARP_OPERATION;
     const superResolution = request.metadata?.operationIntent === 'SUPER_RESOLUTION';
@@ -70,6 +82,7 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const requestedIsolationMaskId = backgroundIsolation && typeof request.metadata?.maskArtifactId === 'string' ? request.metadata.maskArtifactId : undefined;
     const requestedCropSourceId = crop && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedResizeSourceId = resize && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+    const requestedAffineSourceId = affineTransform && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedOrthogonalSourceId = orthogonalTransform && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedGarmentWarpSourceId = garmentMeshWarp && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedSuperResolutionSourceId = superResolution && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
@@ -82,6 +95,8 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const cropRectInvalid = crop && !readPlannerCropRect(request.metadata?.cropRect);
     const resizeSourceUnavailable = resize && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedResizeSourceId || artifact.id === requestedResizeSourceId));
     const resizeDimensionsInvalid = resize && !readPlannerResizeDimensions(request.metadata?.resizeDimensions);
+    const affineSourceUnavailable = affineTransform && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedAffineSourceId || artifact.id === requestedAffineSourceId));
+    const affineMatrixInvalid = affineTransform && !readPlannerAffineInverseMatrixQ16(request.metadata?.affineInverseMatrixQ16);
     const orthogonalSourceUnavailable = orthogonalTransform && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedOrthogonalSourceId || artifact.id === requestedOrthogonalSourceId));
     const orthogonalModeInvalid = orthogonalTransform && !readPlannerOrthogonalTransformMode(request.metadata?.orthogonalTransformMode);
     const garmentWarpSourceUnavailable = garmentMeshWarp && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedGarmentWarpSourceId || artifact.id === requestedGarmentWarpSourceId));
@@ -89,7 +104,9 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const superResolutionSourceUnavailable = superResolution && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedSuperResolutionSourceId || artifact.id === requestedSuperResolutionSourceId));
     const strategies = garmentMeshWarp
       ? [garmentMeshWarpOperations(artifacts, constraints, request)]
-      : orthogonalTransform
+      : affineTransform
+        ? [affineTransformOperations(artifacts, constraints, request)]
+        : orthogonalTransform
         ? [orthogonalTransformOperations(artifacts, constraints, request)]
         : resize
           ? [resizeOperations(artifacts, constraints, request)]
@@ -106,14 +123,14 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
                     : composite
                       ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)]
                       : [simpleOperations(request, artifacts, constraints)];
-    const simpleProvider = !garmentMeshWarp && !orthogonalTransform && !resize && !crop && !superResolution && !backgroundIsolation && !interactiveSegmentation && !localComposite && !composite;
+    const simpleProvider = !garmentMeshWarp && !affineTransform && !orthogonalTransform && !resize && !crop && !superResolution && !backgroundIsolation && !interactiveSegmentation && !localComposite && !composite;
     const rawCandidates = strategies.map((operations, index) => candidate(
       simpleProvider ? 'cloud-provider' : localComposite ? 'local-continuation' : index === 0 ? 'local-efficient' : 'cloud-quality',
       operations,
       simpleProvider ? 'CLOUD' : localComposite ? 'LOCAL' : index === 0 ? 'LOCAL' : 'CLOUD',
       localComposite ? 0 : composite ? (index === 0 ? 1 : 5) : 0,
-      localComposite ? 180 : composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : crop ? 5 : resize ? 25 : orthogonalTransform ? 5 : garmentMeshWarp ? 20 : superResolution ? 900 : 0,
-      localComposite ? 1 : composite ? (index === 0 ? .76 : .94) : backgroundIsolation || crop || resize || orthogonalTransform || garmentMeshWarp ? 1 : superResolution ? .9 : .9,
+      localComposite ? 180 : composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : crop ? 5 : resize ? 25 : affineTransform ? 40 : orthogonalTransform ? 5 : garmentMeshWarp ? 20 : superResolution ? 900 : 0,
+      localComposite ? 1 : composite ? (index === 0 ? .76 : .94) : backgroundIsolation || crop || resize || affineTransform || orthogonalTransform || garmentMeshWarp ? 1 : superResolution ? .9 : .9,
       uncertainty.aggregateConfidence,
     ));
     const ranked = rankAndFilter(rawCandidates, constraints);
@@ -134,6 +151,8 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     if (cropRectInvalid) confirmationReasons.push('INVALID_CROP_RECT');
     if (resizeSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
     if (resizeDimensionsInvalid) confirmationReasons.push('INVALID_RESIZE_DIMENSIONS');
+    if (affineSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
+    if (affineMatrixInvalid) confirmationReasons.push('INVALID_AFFINE_INVERSE_MATRIX');
     if (orthogonalSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
     if (orthogonalModeInvalid) confirmationReasons.push('INVALID_ORTHOGONAL_TRANSFORM_MODE');
     if (garmentWarpSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
@@ -143,12 +162,12 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     if (compositeOriginalUnavailable) confirmationReasons.push('CANONICAL_ORIGINAL_REQUIRED');
     if (localCompositeExecutionUnavailable) confirmationReasons.push('LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED');
     if (compositeExecutionUnavailable) confirmationReasons.push('COMPOSITE_EXECUTION_NOT_WIRED');
-    const hardBlocked = segmentationInputUnavailable || isolationSourceUnavailable || isolationMaskUnavailable || cropSourceUnavailable || cropRectInvalid || resizeSourceUnavailable || resizeDimensionsInvalid || orthogonalSourceUnavailable || orthogonalModeInvalid || garmentWarpSourceUnavailable || garmentWarpBindingInvalid || superResolutionSourceUnavailable || localCompositeExecutionUnavailable || localCompositeOriginalUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK');
+    const hardBlocked = segmentationInputUnavailable || isolationSourceUnavailable || isolationMaskUnavailable || cropSourceUnavailable || cropRectInvalid || resizeSourceUnavailable || resizeDimensionsInvalid || affineSourceUnavailable || affineMatrixInvalid || orthogonalSourceUnavailable || orthogonalModeInvalid || garmentWarpSourceUnavailable || garmentWarpBindingInvalid || superResolutionSourceUnavailable || localCompositeExecutionUnavailable || localCompositeOriginalUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK');
     const status: CreativePlanStatus = hardBlocked ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
     const operations = immutable(status === 'BLOCKED' ? [] : selected?.operations ?? []);
     const rejected = immutable(candidates.filter(item => item.status === 'REJECTED').map(({ id, reasonCodes }) => ({ id, reasonCodes })));
-    const planReason = garmentMeshWarp ? 'GARMENT_MESH_WARP_LOCAL_DETERMINISTIC_V1' : orthogonalTransform ? 'ORTHOGONAL_TRANSFORM_LOCAL_DETERMINISTIC_V1' : resize ? 'RESIZE_LOCAL_DETERMINISTIC_V1' : crop ? 'CROP_LOCAL_DETERMINISTIC_V1' : superResolution ? 'SUPER_RESOLUTION_LOCAL_MODEL_V1' : backgroundIsolation ? 'BACKGROUND_ISOLATION_LOCAL_DETERMINISTIC_V1' : interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : localComposite ? 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
-    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(isolationSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(isolationMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(cropSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(cropRectInvalid ? ['INVALID_CROP_RECT'] : []), ...(resizeSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(resizeDimensionsInvalid ? ['INVALID_RESIZE_DIMENSIONS'] : []), ...(orthogonalSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(orthogonalModeInvalid ? ['INVALID_ORTHOGONAL_TRANSFORM_MODE'] : []), ...(garmentWarpSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(garmentWarpBindingInvalid ? ['INVALID_GARMENT_MESH_WARP_BINDING'] : []), ...(superResolutionSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(localCompositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(localCompositeExecutionUnavailable ? ['LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
+    const planReason = garmentMeshWarp ? 'GARMENT_MESH_WARP_LOCAL_DETERMINISTIC_V1' : affineTransform ? 'AFFINE_TRANSFORM_LOCAL_DETERMINISTIC_V1' : orthogonalTransform ? 'ORTHOGONAL_TRANSFORM_LOCAL_DETERMINISTIC_V1' : resize ? 'RESIZE_LOCAL_DETERMINISTIC_V1' : crop ? 'CROP_LOCAL_DETERMINISTIC_V1' : superResolution ? 'SUPER_RESOLUTION_LOCAL_MODEL_V1' : backgroundIsolation ? 'BACKGROUND_ISOLATION_LOCAL_DETERMINISTIC_V1' : interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : localComposite ? 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
+    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(isolationSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(isolationMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(cropSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(cropRectInvalid ? ['INVALID_CROP_RECT'] : []), ...(resizeSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(resizeDimensionsInvalid ? ['INVALID_RESIZE_DIMENSIONS'] : []), ...(affineSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(affineMatrixInvalid ? ['INVALID_AFFINE_INVERSE_MATRIX'] : []), ...(orthogonalSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(orthogonalModeInvalid ? ['INVALID_ORTHOGONAL_TRANSFORM_MODE'] : []), ...(garmentWarpSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(garmentWarpBindingInvalid ? ['INVALID_GARMENT_MESH_WARP_BINDING'] : []), ...(superResolutionSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(localCompositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(localCompositeExecutionUnavailable ? ['LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
     provenance = immutable({ ...provenance, replay: buildReplay(this.#options.plannerVersion, plannerConfig, { provenance, selectedCandidateId: selected?.id }) });
     const result = immutable({ requestId: request.id, operations, status, planningConstraints: constraints, candidates, selectedCandidateId: selected?.id, uncertainty, confirmationReasons: immutable(confirmationReasons), proposalId: `${this.#options.plannerVersion}:${request.id}`, plannerVersion: this.#options.plannerVersion, goal: decision.goal, assumptions: [], constraints: [...decision.constraints], provenance, explanation: buildExplanation(this.#options.plannerVersion, plannerConfig, selected, candidates, constraints, uncertainty, confirmationReasons) });
     void emitPlanTelemetry(this.#options.telemetry, result);
@@ -231,6 +250,35 @@ function resizeOperations(artifacts: readonly CreativePlanArtifactSnapshot[], co
       borderPolicy: 'CLAMP_TO_EDGE',
       alphaPolicy: 'PREMULTIPLIED_ALPHA_WITH_STRAIGHT_RGB_WHEN_WEIGHTED_ALPHA_ZERO',
       maxOutputPixels: RESIZE_MAX_OUTPUT_PIXELS,
+    }),
+  }]);
+}
+
+function affineTransformOperations(artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints, request: CreativeRequest): readonly CreativeOperation[] {
+  const requestedSourceId = typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+  const source = artifacts.find(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedSourceId || artifact.id === requestedSourceId));
+  const matrix = readPlannerAffineInverseMatrixQ16(request.metadata?.affineInverseMatrixQ16);
+  if (!source || !matrix) return immutable([]);
+  return immutable([{
+    id: AFFINE_TRANSFORM_STEP_ID,
+    type: AFFINE_TRANSFORM_OPERATION,
+    requiredArtifacts: [source.id],
+    produces: ['image'],
+    outputArtifacts: ['affine-transform:composite'],
+    verification: verificationFor(AFFINE_TRANSFORM_STEP_ID, AFFINE_TRANSFORM_OPERATION, constraints, 'image'),
+    input: Object.freeze({
+      sourceArtifactId: source.id,
+      ...matrix,
+      deterministicTool: `${AFFINE_TRANSFORM_TOOL_ID}@${AFFINE_TRANSFORM_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_PIXEL_CENTERS',
+      matrix: 'INVERSE_AFFINE_Q16_16',
+      fixedPointBits: AFFINE_FIXED_POINT_BITS,
+      interpolation: 'BILINEAR_FIXED_16_16_AFFINE_PIXEL_CENTER',
+      rounding: 'ROUND_HALF_UP',
+      borderPolicy: 'TRANSPARENT_BLACK',
+      alphaPolicy: 'PREMULTIPLIED_ALPHA_ZERO_RGB_WHEN_WEIGHTED_ALPHA_ZERO',
+      outputGeometry: 'MATCH_SOURCE',
+      maxOutputPixels: AFFINE_MAX_OUTPUT_PIXELS,
     }),
   }]);
 }
@@ -408,6 +456,21 @@ function readConstraints(request: CreativeRequest, decision: CreativeDecision): 
 function readUncertainty(request: CreativeRequest): CreativePlanUncertainty { const source = object(request.metadata?.uncertainty); const intentInterpretation = confidence(source.intentInterpretation, .95); const targetResolution = confidence(source.targetResolution, .95); const feasibilityCapability = confidence(source.feasibilityCapability, .9); const preservationRisk = confidence(source.preservationRisk, .1); return { intentInterpretation, targetResolution, feasibilityCapability, preservationRisk, aggregateConfidence: round((intentInterpretation + targetResolution + feasibilityCapability + (1 - preservationRisk)) / 4) }; }
 function readPlannerCropRect(value: unknown): PlannerCropRect | undefined { const source = object(value); const x = source.x; const y = source.y; const width = source.width; const height = source.height; if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || Number(x) < 0 || Number(y) < 0 || Number(width) < 1 || Number(height) < 1) return undefined; return immutable({ x: Number(x), y: Number(y), width: Number(width), height: Number(height) }); }
 function readPlannerResizeDimensions(value: unknown): PlannerResizeDimensions | undefined { const source = object(value); const width = source.width; const height = source.height; if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || Number(width) < 1 || Number(height) < 1 || Number(width) > RESIZE_MAX_DIMENSION || Number(height) > RESIZE_MAX_DIMENSION) return undefined; const pixels = Number(width) * Number(height); if (!Number.isSafeInteger(pixels) || pixels > RESIZE_MAX_OUTPUT_PIXELS) return undefined; return immutable({ width: Number(width), height: Number(height) }); }
+function readPlannerAffineInverseMatrixQ16(value: unknown): PlannerAffineInverseMatrixQ16 | undefined {
+  const source = object(value);
+  const keys = ['m00Q16','m01Q16','txQ16','m10Q16','m11Q16','tyQ16'] as const;
+  if (Object.keys(source).sort().join('|') !== [...keys].sort().join('|')) return undefined;
+  for (const key of keys) if (!Number.isSafeInteger(source[key])) return undefined;
+  const matrix = immutable({
+    m00Q16: Number(source.m00Q16), m01Q16: Number(source.m01Q16), txQ16: Number(source.txQ16),
+    m10Q16: Number(source.m10Q16), m11Q16: Number(source.m11Q16), tyQ16: Number(source.tyQ16),
+  });
+  if ([matrix.m00Q16,matrix.m01Q16,matrix.m10Q16,matrix.m11Q16].some(value => Math.abs(value) > AFFINE_MAX_LINEAR_COEFFICIENT_ABS)) return undefined;
+  if ([matrix.txQ16,matrix.tyQ16].some(value => Math.abs(value) > AFFINE_MAX_TRANSLATION_ABS)) return undefined;
+  const determinant = matrix.m00Q16 * matrix.m11Q16 - matrix.m01Q16 * matrix.m10Q16;
+  if (!Number.isSafeInteger(determinant) || determinant === 0) return undefined;
+  return matrix;
+}
 function readPlannerOrthogonalTransformMode(value: unknown): PlannerOrthogonalTransformMode | undefined { return typeof value === 'string' && (ORTHOGONAL_TRANSFORM_MODES as readonly string[]).includes(value) ? value as PlannerOrthogonalTransformMode : undefined; }
 function readPlannerGarmentMeshWarpBinding(value: unknown): PlannerGarmentMeshWarpBinding | undefined {
   const source = object(value);
