@@ -61,7 +61,7 @@ ALTER TABLE canonical_image_artifacts
       AND refinement_profile IS NULL AND refinement_contract_version IS NULL
     )
     OR (
-      producer_operation IN ('CROP','RESIZE','ORTHOGONAL_TRANSFORM')
+      producer_operation IN ('CROP','RESIZE','ORTHOGONAL_TRANSFORM','AFFINE_TRANSFORM')
       AND source_image_storage_id IS NOT NULL AND mask_storage_id IS NULL
       AND garment_warp_layer_id IS NULL AND garment_warp_layer_sha256 IS NULL
       AND producer_parameters IS NULL AND producer_parameters_sha256 IS NULL
