@@ -30,6 +30,17 @@ import {
   ORTHOGONAL_TRANSFORM_TOOL_ID,
   ORTHOGONAL_TRANSFORM_TOOL_VERSION,
 } from './OrthogonalTransformIdentity.js';
+import {
+  AFFINE_FIXED_POINT_BITS,
+  AFFINE_MAX_LINEAR_COEFFICIENT_ABS,
+  AFFINE_MAX_OUTPUT_PIXELS,
+  AFFINE_MAX_TRANSLATION_ABS,
+  AFFINE_TRANSFORM_CAPABILITY,
+  AFFINE_TRANSFORM_OPERATION,
+  AFFINE_TRANSFORM_STEP_ID,
+  AFFINE_TRANSFORM_TOOL_ID,
+  AFFINE_TRANSFORM_TOOL_VERSION,
+} from './AffineTransformIdentity.js';
 import { GARMENT_MESH_WARP_TOOL_DEFINITION_DATA } from './GarmentMeshWarpRegistryDefinition.js';
 import { GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION_DATA } from './GarmentTextureCompositeRegistryDefinition.js';
 import {
@@ -88,7 +99,7 @@ export type DeterministicToolParameterContract = Readonly<{
   managedIdBindings?: readonly Readonly<{ parameter: string; input: string; field: 'garmentId' | 'viewId' | 'representationId' | 'basisViewId' }>[];
   exact: Readonly<Record<string, string | number | boolean>>;
   integerBounds?: readonly DeterministicToolIntegerBound[];
-  integerRanges?: readonly Readonly<{ parameter: string; min: number; max: number }>[]; 
+  integerRanges?: readonly Readonly<{ parameter: string; min: number; max: number }>[];
   enumValues?: readonly Readonly<{ parameter: string; values: readonly string[] }>[];
   relationships?: readonly ('X_PLUS_WIDTH_LE_SOURCE_WIDTH' | 'Y_PLUS_HEIGHT_LE_SOURCE_HEIGHT' | 'TARGET_PIXELS_LE_RESIZE_MAX_OUTPUT_PIXELS' | 'REPRESENTATION_BASIS_VIEW_EQUALS_PIXEL_SOURCE_VIEW')[];
 }>;
@@ -116,10 +127,10 @@ export type DeterministicToolDefinition = Readonly<{
     orientation: 1;
     rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER' | 'MASKED_Q16_GAIN_SRGB_CODE_VALUE_BLEND';
     alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP' | 'TEXTURE_PRESERVE_WARP_FEATHER_SOURCE_OVER';
-    interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH' | 'BILINEAR_NORMALIZED_Q16_TEXTURE_AND_MESH';
+    interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_FIXED_16_16_AFFINE_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH' | 'BILINEAR_NORMALIZED_Q16_TEXTURE_AND_MESH';
     rounding?: 'INTEGER_EXACT' | 'ROUND_HALF_UP';
-    border?: 'REJECT_OUT_OF_BOUNDS' | 'CLAMP_TO_EDGE';
-    transparentRgb?: 'STRAIGHT_BILINEAR_WHEN_WEIGHTED_ALPHA_ZERO' | 'PRESERVE_BASE_RGB_ON_TRANSPARENT_TEXTURE_SAMPLE_AND_ZERO_FINAL_WHEN_ALPHA_ZERO';
+    border?: 'REJECT_OUT_OF_BOUNDS' | 'CLAMP_TO_EDGE' | 'TRANSPARENT_BLACK';
+    transparentRgb?: 'STRAIGHT_BILINEAR_WHEN_WEIGHTED_ALPHA_ZERO' | 'ZERO_WHEN_WEIGHTED_ALPHA_ZERO' | 'PRESERVE_BASE_RGB_ON_TRANSPARENT_TEXTURE_SAMPLE_AND_ZERO_FINAL_WHEN_ALPHA_ZERO';
     uncoveredPixels?: 'TRANSPARENT_BLACK';
     overlapOwnership?: 'DECLARED_TRIANGLE_ORDER_FIRST_OWNER';
   }>;
@@ -128,7 +139,7 @@ export type DeterministicToolDefinition = Readonly<{
     dimensions: 'CORE_IMAGE_MAX_DIMENSION';
     pixels: 'CORE_IMAGE_MAX_PIXELS';
     uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES';
-    hardOutputPixels?: 'RESIZE_V1_MAX_OUTPUT_PIXELS' | 'GARMENT_MESH_WARP_V1_MAX_OUTPUT_PIXELS' | 'GARMENT_TEXTURE_COMPOSITE_V1_MAX_OUTPUT_PIXELS';
+    hardOutputPixels?: 'RESIZE_V1_MAX_OUTPUT_PIXELS' | 'AFFINE_V1_MAX_OUTPUT_PIXELS' | 'GARMENT_MESH_WARP_V1_MAX_OUTPUT_PIXELS' | 'GARMENT_TEXTURE_COMPOSITE_V1_MAX_OUTPUT_PIXELS';
     maxRasterWork?: 'GARMENT_MESH_WARP_V1_MAX_RASTER_WORK';
   }>;
   lineage: Readonly<{
@@ -312,6 +323,60 @@ const resizeDefinition: DeterministicToolDefinition = deepFreeze({
   lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: RESIZE_OPERATION },
 });
 
+const affineTransformDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: AFFINE_TRANSFORM_CAPABILITY,
+  operation: { id: AFFINE_TRANSFORM_STEP_ID, type: AFFINE_TRANSFORM_OPERATION, version: '1' },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: AFFINE_TRANSFORM_TOOL_ID, version: AFFINE_TRANSFORM_TOOL_VERSION },
+  inputs: [
+    { name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+  ],
+  output: { kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: ['image/png'], geometry: 'MATCH_SOURCE' },
+  parameters: {
+    artifactIdBindings: [{ parameter: 'sourceArtifactId', input: 'source' }],
+    exact: {
+      deterministicTool: `${AFFINE_TRANSFORM_TOOL_ID}@${AFFINE_TRANSFORM_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_PIXEL_CENTERS',
+      matrix: 'INVERSE_AFFINE_Q16_16',
+      fixedPointBits: AFFINE_FIXED_POINT_BITS,
+      interpolation: 'BILINEAR_FIXED_16_16_AFFINE_PIXEL_CENTER',
+      rounding: 'ROUND_HALF_UP',
+      borderPolicy: 'TRANSPARENT_BLACK',
+      alphaPolicy: 'PREMULTIPLIED_ALPHA_ZERO_RGB_WHEN_WEIGHTED_ALPHA_ZERO',
+      outputGeometry: 'MATCH_SOURCE',
+      maxOutputPixels: AFFINE_MAX_OUTPUT_PIXELS,
+    },
+    integerRanges: [
+      { parameter: 'm00Q16', min: -AFFINE_MAX_LINEAR_COEFFICIENT_ABS, max: AFFINE_MAX_LINEAR_COEFFICIENT_ABS },
+      { parameter: 'm01Q16', min: -AFFINE_MAX_LINEAR_COEFFICIENT_ABS, max: AFFINE_MAX_LINEAR_COEFFICIENT_ABS },
+      { parameter: 'm10Q16', min: -AFFINE_MAX_LINEAR_COEFFICIENT_ABS, max: AFFINE_MAX_LINEAR_COEFFICIENT_ABS },
+      { parameter: 'm11Q16', min: -AFFINE_MAX_LINEAR_COEFFICIENT_ABS, max: AFFINE_MAX_LINEAR_COEFFICIENT_ABS },
+      { parameter: 'txQ16', min: -AFFINE_MAX_TRANSLATION_ABS, max: AFFINE_MAX_TRANSLATION_ABS },
+      { parameter: 'tyQ16', min: -AFFINE_MAX_TRANSLATION_ABS, max: AFFINE_MAX_TRANSLATION_ABS },
+    ],
+  },
+  browser: { executorId: 'affine-transform-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'affine-transform-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY',
+    alpha: 'BILINEAR_ALPHA_ROUND_HALF_UP',
+    interpolation: 'BILINEAR_FIXED_16_16_AFFINE_PIXEL_CENTER',
+    rounding: 'ROUND_HALF_UP',
+    border: 'TRANSPARENT_BLACK',
+    transparentRgb: 'ZERO_WHEN_WEIGHTED_ALPHA_ZERO',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+    hardOutputPixels: 'AFFINE_V1_MAX_OUTPUT_PIXELS',
+  },
+  lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: AFFINE_TRANSFORM_OPERATION },
+});
+
 const orthogonalTransformDefinition: DeterministicToolDefinition = deepFreeze({
   capability: ORTHOGONAL_TRANSFORM_CAPABILITY,
   operation: { id: ORTHOGONAL_TRANSFORM_STEP_ID, type: ORTHOGONAL_TRANSFORM_OPERATION, version: '1' },
@@ -365,6 +430,7 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
   maskedExposureDefinition,
   cropDefinition,
   resizeDefinition,
+  affineTransformDefinition,
   orthogonalTransformDefinition,
   garmentMeshWarpDefinition,
   garmentTextureCompositeDefinition,
@@ -374,6 +440,7 @@ export const BACKGROUND_ISOLATION_TOOL_DEFINITION = backgroundIsolationDefinitio
 export const MASKED_EXPOSURE_TOOL_DEFINITION = maskedExposureDefinition;
 export const CROP_TOOL_DEFINITION = cropDefinition;
 export const RESIZE_TOOL_DEFINITION = resizeDefinition;
+export const AFFINE_TRANSFORM_TOOL_DEFINITION = affineTransformDefinition;
 export const ORTHOGONAL_TRANSFORM_TOOL_DEFINITION = orthogonalTransformDefinition;
 export const GARMENT_MESH_WARP_TOOL_DEFINITION = garmentMeshWarpDefinition;
 export const GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION = garmentTextureCompositeDefinition;
