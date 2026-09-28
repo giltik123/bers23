@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
+import { migrateMaskedExposureFinalLineageSchema } from '../artifacts/finalImageLineageSchema.ts';
 import { checkGarmentTextureFinalLineageSchema, migrateGarmentTextureFinalLineageSchema } from './garmentTextureFinalLineageSchema.ts';
 
 const MIGRATION = '032_fashion_garment_refinement_final_lineage.sql';
@@ -49,7 +50,7 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
 
   const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
   const shapeDef = canon(shape?.definition);
-  for (const producer of ['BACKGROUND_ISOLATION','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE','GARMENT_APPEARANCE_REFINEMENT']) {
+  for (const producer of ['BACKGROUND_ISOLATION','MASKED_EXPOSURE','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE','GARMENT_APPEARANCE_REFINEMENT']) {
     if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion refinement migration 032');
   }
   for (const field of ['refinement_parent_image_storage_id','refinement_parent_image_sha256','refinement_profile','refinement_contract_version']) {
@@ -90,12 +91,14 @@ export async function migrateGarmentAppearanceRefinementFinalLineageSchema(pool:
   if (extension.rowCount) {
     try { await checkGarmentAppearanceRefinementFinalLineageSchema(pool); return; } catch { /* extension-safe repair below */ }
     await pool.query(await readMigration());
+    await migrateMaskedExposureFinalLineageSchema(pool);
     await checkGarmentAppearanceRefinementFinalLineageSchema(pool);
     return;
   }
   await migrateGarmentTextureFinalLineageSchema(pool);
   try { await checkGarmentAppearanceRefinementFinalLineageSchema(pool); return; } catch { /* fresh extension below */ }
   await pool.query(await readMigration());
+  await migrateMaskedExposureFinalLineageSchema(pool);
   await checkGarmentAppearanceRefinementFinalLineageSchema(pool);
 }
 
