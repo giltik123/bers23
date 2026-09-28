@@ -12,11 +12,11 @@ export const MAX_SELECTION_POLYGON_WORK = 17_000_000;
 export const MIN_SELECTION_LASSO_SAMPLE_PIXELS = 2;
 const POLYGON_FIXED_SCALE = 256;
 type HistoryEntry = Readonly<{ alpha: Uint8Array; source: MaskSource; provenance: readonly string[] }>;
-type Draft = { id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; source: MaskSource; state: SelectionDraftSnapshot['state']; mode: SelectionMode; points: PromptPoint[]; polygonVertices: PolygonVertex[]; provenance: string[]; requestId?: string; canonicalArtifactId?: string; refinementParentArtifactId?: string; quality?: MaskQualityResult; warning?: string; history: HistoryEntry[]; historyIndex: number; startedAt: number; manualCorrections: number; undoCount: number };
+type Draft = { id: string; imageArtifactId: string; width: number; height: number; alpha: Uint8Array; source: MaskSource; state: SelectionDraftSnapshot['state']; mode: SelectionMode; points: PromptPoint[]; polygonVertices: PolygonVertex[]; shapeVertices: PolygonVertex[]; provenance: string[]; requestId?: string; canonicalArtifactId?: string; refinementParentArtifactId?: string; quality?: MaskQualityResult; warning?: string; history: HistoryEntry[]; historyIndex: number; startedAt: number; manualCorrections: number; undoCount: number };
 export class SelectionApplicationService {
   #draft?: Draft; #sequence = 0;
   constructor(private readonly segmentation: InteractiveSegmentationPort, private readonly artifacts: CanonicalMaskArtifactPort, private readonly telemetry: (event: SelectionTelemetry) => void = () => {}, private readonly now = () => performance.now()) {}
-  start(input: Readonly<{ imageArtifactId: string; width: number; height: number }>): SelectionDraftSnapshot { if (!input.imageArtifactId || input.width < 1 || input.height < 1) throw new Error('Invalid selection source'); this.segmentation.cancel(this.#draft?.requestId ?? ''); const alpha = new Uint8Array(input.width * input.height); const initial: HistoryEntry = Object.freeze({ alpha: new Uint8Array(alpha), source: 'USER', provenance: Object.freeze([]) }); this.#draft = { ...input, id: `selection-${++this.#sequence}`, alpha, source: 'USER', state: 'NOTHING_SELECTED', mode: 'SMART_SELECT', points: [], polygonVertices: [], provenance: [], history: [initial], historyIndex: 0, startedAt: this.now(), manualCorrections: 0, undoCount: 0 }; return this.snapshot(); }
+  start(input: Readonly<{ imageArtifactId: string; width: number; height: number }>): SelectionDraftSnapshot { if (!input.imageArtifactId || input.width < 1 || input.height < 1) throw new Error('Invalid selection source'); this.segmentation.cancel(this.#draft?.requestId ?? ''); const alpha = new Uint8Array(input.width * input.height); const initial: HistoryEntry = Object.freeze({ alpha: new Uint8Array(alpha), source: 'USER', provenance: Object.freeze([]) }); this.#draft = { ...input, id: `selection-${++this.#sequence}`, alpha, source: 'USER', state: 'NOTHING_SELECTED', mode: 'SMART_SELECT', points: [], polygonVertices: [], shapeVertices: [], provenance: [], history: [initial], historyIndex: 0, startedAt: this.now(), manualCorrections: 0, undoCount: 0 }; return this.snapshot(); }
   setMode(mode: SelectionMode) { this.required().mode = mode; return this.snapshot(); }
   polygonVertex(input: Readonly<{ displayPoint: { x: number; y: number }; view: BrushStroke['view'] }>): SelectionDraftSnapshot {
     const d=this.required();
@@ -81,6 +81,39 @@ export class SelectionApplicationService {
     d.state=d.quality.empty?'NOTHING_SELECTED':'REFINING';
     return this.snapshot();
   }
+  shapeStart(input: Readonly<{ displayPoint: { x: number; y: number }; view: BrushStroke['view'] }>): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='RECTANGLE'&&d.mode!=='ELLIPSE') throw new Error('Shape capture requires RECTANGLE or ELLIPSE mode');
+    const vertex=quantizePolygonVertex(displayToOriginal(input.displayPoint,input.view),d.width,d.height);
+    d.shapeVertices=[vertex,vertex];
+    return this.snapshot();
+  }
+  shapeVertex(input: Readonly<{ displayPoint: { x: number; y: number }; view: BrushStroke['view'] }>): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='RECTANGLE'&&d.mode!=='ELLIPSE') throw new Error('Shape capture requires RECTANGLE or ELLIPSE mode');
+    if(d.shapeVertices.length<1) return this.shapeStart(input);
+    const vertex=quantizePolygonVertex(displayToOriginal(input.displayPoint,input.view),d.width,d.height);
+    d.shapeVertices=[d.shapeVertices[0],vertex];
+    return this.snapshot();
+  }
+  clearShape(): SelectionDraftSnapshot { const d=this.required(); d.shapeVertices=[]; return this.snapshot(); }
+  applyShape(composition: PolygonComposition): SelectionDraftSnapshot {
+    const d=this.required();
+    if(d.mode!=='RECTANGLE'&&d.mode!=='ELLIPSE') throw new Error('Shape application requires RECTANGLE or ELLIPSE mode');
+    if(d.shapeVertices.length!==2) throw new Error('Selection shape requires two anchors');
+    const shape=d.mode==='RECTANGLE'
+      ? rasterizeSelectionRectangle(d.shapeVertices,d.width,d.height)
+      : rasterizeSelectionEllipse(d.shapeVertices,d.width,d.height);
+    const alpha=composeSelectionMask(d.alpha,shape,composition);
+    const source=shapeSource(d.mode,composition);
+    this.commit(d,alpha,source);
+    d.shapeVertices=[];
+    d.canonicalArtifactId=undefined;
+    d.manualCorrections++;
+    d.quality=assessMask(alpha,d.width,d.height,d.quality?.confidence??1);
+    d.state=d.quality.empty?'NOTHING_SELECTED':'REFINING';
+    return this.snapshot();
+  }
   async smartPoint(input: Readonly<{ displayPoint: { x: number; y: number }; view: BrushStroke['view']; negative?: boolean; privacyMode: PrivacyMode; analysisMaxEdge?: number; memoryBudgetBytes?: number }>): Promise<SelectionDraftSnapshot> {
     const d = this.required(), original = displayToOriginal(input.displayPoint, input.view), point: PromptPoint = { x: original.x, y: original.y, label: input.negative ? 'NEGATIVE' : 'POSITIVE', coordinateSpace: 'ORIGINAL' };
     if (d.requestId) this.segmentation.cancel(d.requestId);
@@ -109,7 +142,7 @@ export class SelectionApplicationService {
   redo() { const d=this.required(); if(d.historyIndex<d.history.length-1){d.historyIndex++;this.restoreHistory(d,d.history[d.historyIndex]);d.canonicalArtifactId=undefined;d.quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1);} return this.snapshot(); }
   cancel() { const id=this.#draft?.requestId; if(id)this.segmentation.cancel(id); this.#draft=undefined; }
   async done() { const d=this.required(), quality=assessMask(d.alpha,d.width,d.height,d.quality?.confidence??1); if(quality.empty) throw new Error('Cannot persist an empty selection'); const mask=createOriginalMask({artifactId:`mask-${d.id}`,width:d.width,height:d.height,alpha:d.alpha,source:d.source}); const metadata={coordinateSpace:'ORIGINAL',encoding:'ALPHA_8_LOSSLESS',provenance:[...d.provenance],quality,sourceImageArtifactId:d.imageArtifactId,parentMaskArtifactId:d.refinementParentArtifactId}; const artifact=d.canonicalArtifactId&&this.artifacts.admitted?await this.artifacts.admitted(d.canonicalArtifactId,mask,metadata):await this.artifacts.persist(mask,metadata); d.state='READY'; return artifact; }
-  snapshot(): SelectionDraftSnapshot { const d=this.required(); return Object.freeze({...d,alpha:new Uint8Array(d.alpha),points:Object.freeze([...d.points]),polygonVertices:Object.freeze(d.polygonVertices.map(vertex=>Object.freeze({...vertex}))),provenance:Object.freeze([...d.provenance]),canUndo:d.historyIndex>0,canRedo:d.historyIndex<d.history.length-1,history:undefined,historyIndex:undefined,startedAt:undefined,manualCorrections:undefined,undoCount:undefined,canonicalArtifactId:undefined,refinementParentArtifactId:undefined,source:undefined}) as SelectionDraftSnapshot; }
+  snapshot(): SelectionDraftSnapshot { const d=this.required(); return Object.freeze({...d,alpha:new Uint8Array(d.alpha),points:Object.freeze([...d.points]),polygonVertices:Object.freeze(d.polygonVertices.map(vertex=>Object.freeze({...vertex}))),shapeVertices:Object.freeze(d.shapeVertices.map(vertex=>Object.freeze({...vertex}))),provenance:Object.freeze([...d.provenance]),canUndo:d.historyIndex>0,canRedo:d.historyIndex<d.history.length-1,history:undefined,historyIndex:undefined,startedAt:undefined,manualCorrections:undefined,undoCount:undefined,canonicalArtifactId:undefined,refinementParentArtifactId:undefined,source:undefined}) as SelectionDraftSnapshot; }
   private morphology(kind: 'GROW' | 'SHRINK', radius: number): SelectionDraftSnapshot {
     const d=this.required();
     if(d.state!=='SELECTED'&&d.state!=='REFINING') throw new Error('Selection is not ready for morphology');
@@ -143,6 +176,71 @@ function lassoSource(composition: PolygonComposition): MaskSource {
   if(composition==='SUBTRACT') return 'LASSO_SUBTRACT';
   if(composition==='INTERSECT') return 'LASSO_INTERSECT';
   throw new Error('Selection lasso composition is unsupported');
+}
+function shapeSource(mode: 'RECTANGLE'|'ELLIPSE',composition: PolygonComposition): MaskSource {
+  const prefix=mode==='RECTANGLE'?'RECTANGLE':'ELLIPSE';
+  if(composition==='REPLACE') return `${prefix}_REPLACE` as MaskSource;
+  if(composition==='ADD') return `${prefix}_ADD` as MaskSource;
+  if(composition==='SUBTRACT') return `${prefix}_SUBTRACT` as MaskSource;
+  if(composition==='INTERSECT') return `${prefix}_INTERSECT` as MaskSource;
+  throw new Error('Selection shape composition is unsupported');
+}
+export function rasterizeSelectionRectangle(vertices: readonly PolygonVertex[],width:number,height:number): Uint8Array {
+  validateShape(vertices,width,height);
+  const a=toFixedVertex(vertices[0],width,height),b=toFixedVertex(vertices[1],width,height);
+  const left=Math.min(a.x,b.x),right=Math.max(a.x,b.x),top=Math.min(a.y,b.y),bottom=Math.max(a.y,b.y);
+  if(right<=left||bottom<=top) throw new Error('Selection rectangle has zero area');
+  const startX=Math.max(0,Math.ceil((left-POLYGON_FIXED_SCALE/2)/POLYGON_FIXED_SCALE));
+  const endX=Math.min(width,Math.ceil((right-POLYGON_FIXED_SCALE/2)/POLYGON_FIXED_SCALE));
+  const startY=Math.max(0,Math.ceil((top-POLYGON_FIXED_SCALE/2)/POLYGON_FIXED_SCALE));
+  const endY=Math.min(height,Math.ceil((bottom-POLYGON_FIXED_SCALE/2)/POLYGON_FIXED_SCALE));
+  if(endX<=startX||endY<=startY) throw new Error('Selection rectangle selects no pixels');
+  const output=new Uint8Array(width*height);
+  for(let y=startY;y<endY;y++)output.fill(255,y*width+startX,y*width+endX);
+  return output;
+}
+export function rasterizeSelectionEllipse(vertices: readonly PolygonVertex[],width:number,height:number): Uint8Array {
+  validateShape(vertices,width,height);
+  const a=toFixedVertex(vertices[0],width,height),b=toFixedVertex(vertices[1],width,height);
+  const left=Math.min(a.x,b.x),right=Math.max(a.x,b.x),top=Math.min(a.y,b.y),bottom=Math.max(a.y,b.y);
+  const rx=right-left,ry=bottom-top;
+  if(rx<=0||ry<=0) throw new Error('Selection ellipse has zero area');
+  const rx2=BigInt(rx)*BigInt(rx),ry2=BigInt(ry)*BigInt(ry),centerX2=BigInt(left+right),centerY2=BigInt(top+bottom);
+  const step2=BigInt(POLYGON_FIXED_SCALE*2),offset=BigInt(POLYGON_FIXED_SCALE);
+  const output=new Uint8Array(width*height);
+  for(let y=0;y<height;y++){
+    const py2=BigInt(y*POLYGON_FIXED_SCALE*2+POLYGON_FIXED_SCALE);
+    const dy2=py2-centerY2,dySquared=dy2*dy2;
+    if(dySquared>ry2)continue;
+    const maxDx=bigintSqrt((rx2*(ry2-dySquared))/ry2);
+    const min2=centerX2-maxDx,max2=centerX2+maxDx;
+    const start=Number(ceilDivBigInt(min2-offset,step2));
+    const endInclusive=Number(floorDivBigInt(max2-offset,step2));
+    const startX=Math.max(0,start),endX=Math.min(width,endInclusive+1);
+    if(endX>startX)output.fill(255,y*width+startX,y*width+endX);
+  }
+  if(!output.some(value=>value!==0)) throw new Error('Selection ellipse selects no pixels');
+  return output;
+}
+function validateShape(vertices: readonly PolygonVertex[],width:number,height:number){
+  if(vertices.length!==2) throw new Error('Selection shape requires two anchors');
+  if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1||width>MAX_SELECTION_MORPHOLOGY_DIMENSION||height>MAX_SELECTION_MORPHOLOGY_DIMENSION) throw new Error('Selection shape dimensions exceed deterministic bounds');
+  const pixels=width*height;
+  if(!Number.isSafeInteger(pixels)||pixels>MAX_SELECTION_MORPHOLOGY_PIXELS) throw new Error('Selection shape pixel count exceeds deterministic bounds');
+}
+function toFixedVertex(vertex: PolygonVertex,width:number,height:number){
+  if(vertex.coordinateSpace!=='ORIGINAL'||!Number.isFinite(vertex.x)||!Number.isFinite(vertex.y)) throw new Error('Selection shape anchor is invalid');
+  const x=Math.round(vertex.x*POLYGON_FIXED_SCALE),y=Math.round(vertex.y*POLYGON_FIXED_SCALE);
+  if(x<0||x>width*POLYGON_FIXED_SCALE||y<0||y>height*POLYGON_FIXED_SCALE) throw new Error('Selection shape anchor is outside source bounds');
+  return Object.freeze({x,y});
+}
+function floorDivBigInt(value: bigint, divisor: bigint): bigint { let q=value/divisor; if(value<0n&&value%divisor!==0n)q-=1n; return q; }
+function ceilDivBigInt(value: bigint, divisor: bigint): bigint { let q=value/divisor; if(value>0n&&value%divisor!==0n)q+=1n; return q; }
+function bigintSqrt(value: bigint): bigint {
+  if(value<0n)throw new Error('Selection ellipse extent is invalid');
+  if(value<2n)return value;
+  let x=1n<<BigInt(Math.ceil(value.toString(2).length/2));
+  while(true){const next=(x+value/x)>>1n;if(next>=x)return x;x=next;}
 }
 function quantizePolygonVertex(point: Readonly<{x:number;y:number}>,width:number,height:number): PolygonVertex {
   if(!Number.isFinite(point.x)||!Number.isFinite(point.y)) throw new Error('Selection polygon vertex is invalid');
