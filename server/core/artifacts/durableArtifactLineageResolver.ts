@@ -16,7 +16,7 @@ export type DurableResolvedArtifact = Readonly<{
   height: number;
 }>;
 
-const SINGLE_PARENT_DETERMINISTIC_OPERATIONS = new Set(['CROP', 'RESIZE', 'ORTHOGONAL_TRANSFORM']);
+const SINGLE_PARENT_DETERMINISTIC_OPERATIONS = new Set(['CROP', 'RESIZE', 'ORTHOGONAL_TRANSFORM', 'AFFINE_TRANSFORM']);
 
 /**
  * Reconstructs canonical integrity + lineage from durable storage authority only.
