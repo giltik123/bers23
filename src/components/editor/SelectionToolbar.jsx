@@ -2,8 +2,8 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
@@ -52,6 +52,21 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, mo
           <span className="text-xs text-muted-foreground" role="status">{selection.polygonVertices.length} sampled points</span>
           <Button type="button" size="sm" variant="outline" aria-label="Apply lasso selection" disabled={busy || selection.polygonVertices.length < 3} onClick={onApplyPolygon}>Apply Lasso</Button>
           <Button type="button" size="sm" variant="ghost" aria-label="Clear lasso points" disabled={busy || selection.polygonVertices.length === 0} onClick={onClearPolygon}>Clear Points</Button>
+        </div>
+      )}
+      {(selection.mode === 'RECTANGLE' || selection.mode === 'ELLIPSE') && (
+        <div className="flex flex-wrap items-center gap-2" aria-label="Shape selection controls">
+          <label className="flex items-center gap-2 text-xs">Composition
+            <select aria-label="Shape composition" value={polygonComposition} disabled={busy} onChange={(event) => onPolygonComposition(event.target.value)} className="rounded-md border bg-background px-2 py-1">
+              <option value="REPLACE">Replace</option>
+              <option value="ADD">Add</option>
+              <option value="SUBTRACT">Subtract</option>
+              <option value="INTERSECT">Intersect</option>
+            </select>
+          </label>
+          <span className="text-xs text-muted-foreground" role="status">{selection.shapeVertices.length === 2 ? 'Drag ready' : 'Drag on image'}</span>
+          <Button type="button" size="sm" variant="outline" aria-label={`Apply ${selection.mode.toLowerCase()} selection`} disabled={busy || selection.shapeVertices.length !== 2} onClick={onApplyShape}>Apply {selection.mode === 'RECTANGLE' ? 'Rectangle' : 'Ellipse'}</Button>
+          <Button type="button" size="sm" variant="ghost" aria-label="Clear shape anchors" disabled={busy || selection.shapeVertices.length === 0} onClick={onClearShape}>Clear Shape</Button>
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
