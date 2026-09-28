@@ -13,6 +13,7 @@ on:
       - 'server/core/automation/migrations/042_automation_schedules.sql'
       - 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql'
       - 'server/core/projects/migrations/044_canonical_project_revision.sql'
+      - 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'
       - 'server/core/composition/createProductionAutomation.ts'
       - 'server/core/composition/automationProductionComposition.test.mjs'
       - 'server/core/http/automationScheduleHttpAdapter.ts'
