@@ -74,6 +74,28 @@ test('Editor lasso captures pointer path but reuses deterministic polygon raster
   assert.doesNotMatch(preview, /getContext|putImageData|fetch\(|coreClient|persist/);
 });
 
+test('Editor rectangle and ellipse keep raster authority in SelectionApplicationService with SVG-only preview', async () => {
+  const [editor, toolbar, canvas] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'),
+    readFile('src/components/editor/ImageCanvas.jsx', 'utf8'),
+  ]);
+  assert.match(editor, /selection\.mode === 'RECTANGLE' \|\| selection\.mode === 'ELLIPSE'/);
+  assert.match(editor, /service\.shapeStart\(\{ displayPoint: point, view \}\)/);
+  assert.match(editor, /service\.shapeVertex\(\{ displayPoint: point, view \}\)/);
+  assert.match(editor, /service\.applyShape\(polygonComposition\)/);
+  assert.match(toolbar, /\['RECTANGLE', 'Rectangle'\]/);
+  assert.match(toolbar, /\['ELLIPSE', 'Ellipse'\]/);
+  assert.match(toolbar, /aria-label="Shape composition"/);
+  const start = canvas.indexOf('function ShapePreview');
+  const end = canvas.indexOf('function CropOverlay', start);
+  assert(start >= 0 && end > start);
+  const preview = canvas.slice(start, end);
+  assert.match(preview, /<rect/);
+  assert.match(preview, /<ellipse/);
+  assert.doesNotMatch(preview, /getContext|putImageData|fetch\(|coreClient|persist/);
+});
+
 test('Editor Crop remains a Core-authorized preview then explicit canonical Accept flow', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const crop = await readFile('src/application/createCrop.ts', 'utf8');
