@@ -4,6 +4,7 @@ import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../../../src/
 import { BACKGROUND_ISOLATION_CAPABILITY } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
 import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
+import { AFFINE_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/AffineTransform.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { GARMENT_TEXTURE_COMPOSITE_CAPABILITY } from '../../../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
 import { requireDeterministicToolByCapability } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
@@ -16,6 +17,8 @@ const cropTool = requireDeterministicToolByCapability(CROP_CAPABILITY);
 const cropExecutors = Object.freeze([cropTool.executor]);
 const resizeTool = requireDeterministicToolByCapability(RESIZE_CAPABILITY);
 const resizeExecutors = Object.freeze([resizeTool.executor]);
+const affineTransformTool = requireDeterministicToolByCapability(AFFINE_TRANSFORM_CAPABILITY);
+const affineTransformExecutors = Object.freeze([affineTransformTool.executor]);
 const orthogonalTransformTool = requireDeterministicToolByCapability(ORTHOGONAL_TRANSFORM_CAPABILITY);
 const orthogonalTransformExecutors = Object.freeze([orthogonalTransformTool.executor]);
 const garmentTextureCompositeTool = requireDeterministicToolByCapability(GARMENT_TEXTURE_COMPOSITE_CAPABILITY);
@@ -40,6 +43,7 @@ export const productionLocalExecutorsByCapability: Readonly<Record<string, reado
   [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation]: backgroundIsolationExecutors,
   [CROP_CAPABILITY]: cropExecutors,
   [RESIZE_CAPABILITY]: resizeExecutors,
+  [AFFINE_TRANSFORM_CAPABILITY]: affineTransformExecutors,
   [ORTHOGONAL_TRANSFORM_CAPABILITY]: orthogonalTransformExecutors,
   ...productionGarmentMeshWarpExecutorsByCapability,
   [GARMENT_TEXTURE_COMPOSITE_CAPABILITY]: garmentTextureCompositeExecutors,
