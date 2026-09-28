@@ -42,12 +42,19 @@ export type LocalMaskedExposureSubmission = Readonly<{
   outcome: ProductionOutcome;
 }>;
 
+export type LocalMaskedExposureResourceLimits = Readonly<{
+  maxDimension: number;
+  maxPixels: number;
+  maxUploadBytes: number;
+}>;
+
 export type LocalMaskedExposureServiceDependencies = Readonly<{
   platform: CreativeExecutionPlatformRuntimeDependencies;
   ownsArtifacts: (scope: AuthenticatedScope & { projectId: string }, artifactIds: readonly string[]) => Promise<boolean>;
   hydrateArtifacts: (scope: AuthenticatedScope & { projectId: string }, sourceId: string, maskIds: readonly string[]) => Promise<readonly CreativeArtifact[]>;
   admission: LocalExecutionLedgerV2;
   uploads: PostgresLocalExecutionUploadStore;
+  limits: LocalMaskedExposureResourceLimits;
   persistFinal: (
     scope: AuthenticatedScope & { projectId: string },
     executionId: string,
@@ -70,10 +77,12 @@ export class LocalMaskedExposureExecutionService {
   readonly #platform: CreativeExecutionPlatform;
   readonly #now: () => number;
   readonly #results: MaskedExposureResultAuthority;
+  readonly #limits: LocalMaskedExposureResourceLimits;
 
   constructor(private readonly dependencies: LocalMaskedExposureServiceDependencies) {
     this.#platform = new CreativeExecutionPlatform(dependencies.platform);
     this.#now = dependencies.now ?? Date.now;
+    this.#limits = normalizeResourceLimits(dependencies.limits);
     this.#results = new MaskedExposureResultAuthority(dependencies, { capability: MASKED_EXPOSURE_CAPABILITY, stepId: STEP_ID });
   }
 
@@ -86,11 +95,13 @@ export class LocalMaskedExposureExecutionService {
     const durable = await this.dependencies.admission.getByIdempotencyKeyV2(scope, idempotencyKey);
     if (durable) {
       await this.validateDurablePrepareTicket(durable, normalized, scope, executionId);
+      assertTicketWithinCoreLimits(durable, this.#limits);
       return Object.freeze({ executionId, ticket: durable });
     }
 
     if (!await this.dependencies.ownsArtifacts(scope, [normalized.sourceArtifactId, normalized.maskArtifactId])) throw serviceError(403, 'artifact_scope_denied', 'Source IMAGE or MASK is outside the authenticated project scope');
     const artifacts = await this.hydrateExactInputs(scope, normalized.sourceArtifactId, normalized.maskArtifactId);
+    assertArtifactsWithinCoreLimits(artifacts, normalized.sourceArtifactId, this.#limits);
     if (!this.#platform.hasExecution(executionId)) this.createPlatformExecution(executionId, scope, artifacts, normalized.clientRequestId, normalized.sourceArtifactId, normalized.maskArtifactId, normalized.eighthStops);
     const plan = await this.#platform.plan(executionId);
     assertReadyPlan(plan.status, plan.operations);
@@ -98,6 +109,7 @@ export class LocalMaskedExposureExecutionService {
     if (tickets.length !== 1) throw serviceError(500, 'local_ticket_contract_error', 'Expected exactly one Masked Exposure local execution ticket');
     const ticket = tickets[0];
     assertMaskedExposureTicket(ticket);
+    assertTicketWithinCoreLimits(ticket, this.#limits);
     if (ticket.idempotencyKey !== idempotencyKey) throw serviceError(500, 'local_ticket_idempotency_contract', 'Canonical deterministic ticket idempotency binding is invalid');
     assertExactCommandBinding(ticket, normalized);
     return Object.freeze({ executionId, ticket });
@@ -106,6 +118,8 @@ export class LocalMaskedExposureExecutionService {
   async uploadImage(input: Readonly<{ ticketId: string; projectId: string; bytes: Uint8Array }>, auth: AuthenticatedScope) {
     const ticket = await this.requireTicket(input.ticketId, auth, input.projectId);
     if (this.#now() >= ticket.expiresAt) throw serviceError(410, 'local_ticket_expired', 'Local execution ticket has expired');
+    assertTicketWithinCoreLimits(ticket, this.#limits);
+    if (input.bytes.byteLength > this.#limits.maxUploadBytes) throw serviceError(413, 'local_image_upload_too_large', 'Local Masked Exposure image upload exceeds the Core image upload limit');
     const expected = ticket.expectedOutputs[0];
     if (ticket.expectedOutputs.length !== 1 || expected.kind !== 'image' || expected.role !== 'COMPOSITE' || expected.mimeTypes?.length !== 1 || expected.mimeTypes[0] !== 'image/png') throw serviceError(409, 'local_output_contract_error', 'Ticket is not a single PNG COMPOSITE output contract');
     const decoded = await decodePngRgba(input.bytes);
@@ -127,6 +141,7 @@ export class LocalMaskedExposureExecutionService {
 
   async submit(input: Readonly<{ ticketId: string; projectId: string; result: unknown }>, auth: AuthenticatedScope): Promise<LocalMaskedExposureSubmission> {
     const ticket = await this.requireTicket(input.ticketId, auth, input.projectId);
+    assertTicketWithinCoreLimits(ticket, this.#limits);
     return this.#results.submit({
       ticket,
       result: input.result,
@@ -164,6 +179,7 @@ export class LocalMaskedExposureExecutionService {
     assertExactCommandBinding(ticket, command);
     if (!await this.dependencies.ownsArtifacts(scope, [command.sourceArtifactId, command.maskArtifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical deterministic inputs are no longer authorized or available');
     const artifacts = await this.hydrateExactInputs(scope, command.sourceArtifactId, command.maskArtifactId);
+    assertArtifactsWithinCoreLimits(artifacts, command.sourceArtifactId, this.#limits);
     const decision = admitLocalExecutionInputs(ticket, artifacts);
     if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical local execution input revalidation failed: ${decision.reasonCode}`);
   }
@@ -226,6 +242,31 @@ function normalizePrepare(command: LocalMaskedExposurePrepareCommand): LocalMask
   try { eighthStops = normalizeMaskedExposureEighthStops(command?.eighthStops); }
   catch (error) { throw serviceError(400, 'invalid_masked_exposure_request', error instanceof Error ? error.message : 'eighthStops is invalid'); }
   return Object.freeze({ projectId, sourceArtifactId, maskArtifactId, eighthStops, clientRequestId });
+}
+function normalizeResourceLimits(value: LocalMaskedExposureResourceLimits): LocalMaskedExposureResourceLimits {
+  if (!Number.isSafeInteger(value?.maxDimension) || value.maxDimension < 1
+    || !Number.isSafeInteger(value?.maxPixels) || value.maxPixels < 1
+    || !Number.isSafeInteger(value?.maxUploadBytes) || value.maxUploadBytes < 1) throw new Error('Masked Exposure Core resource limits are invalid');
+  return Object.freeze({ maxDimension: value.maxDimension, maxPixels: value.maxPixels, maxUploadBytes: value.maxUploadBytes });
+}
+function assertDimensionsWithinCoreLimits(width: number, height: number, limits: LocalMaskedExposureResourceLimits): void {
+  const pixels = width * height;
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1
+    || width > limits.maxDimension || height > limits.maxDimension || !Number.isSafeInteger(pixels) || pixels > limits.maxPixels) {
+    throw serviceError(422, 'masked_exposure_resource_limit_exceeded', 'Masked Exposure source exceeds the current Core image resource limits');
+  }
+}
+function assertArtifactsWithinCoreLimits(artifacts: readonly CreativeArtifact[], sourceArtifactId: string, limits: LocalMaskedExposureResourceLimits): void {
+  const source = artifacts.find(artifact => artifact.id === sourceArtifactId && artifact.kind === 'image');
+  const width = source?.image?.width;
+  const height = source?.image?.height;
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) throw serviceError(409, 'local_input_geometry_mismatch', 'Canonical Masked Exposure source geometry is unavailable');
+  assertDimensionsWithinCoreLimits(Number(width), Number(height), limits);
+}
+function assertTicketWithinCoreLimits(ticket: LocalExecutionTicketV2, limits: LocalMaskedExposureResourceLimits): void {
+  const output = ticket.expectedOutputs[0];
+  if (ticket.expectedOutputs.length !== 1 || !Number.isSafeInteger(output?.width) || !Number.isSafeInteger(output?.height)) throw serviceError(409, 'local_output_contract_error', 'Masked Exposure ticket output geometry is invalid');
+  assertDimensionsWithinCoreLimits(Number(output.width), Number(output.height), limits);
 }
 function assertReadyPlan(status: string | undefined, operations: readonly Readonly<{ type: string; id: string }>[]): void {
   if (status !== 'READY' || operations.length !== 1 || operations[0].type !== MASKED_EXPOSURE_OPERATION || operations[0].id !== STEP_ID) throw serviceError(422, 'masked_exposure_plan_blocked', `Canonical Masked Exposure plan is ${status ?? 'invalid'}`);
