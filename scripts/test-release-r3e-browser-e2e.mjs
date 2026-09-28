@@ -152,6 +152,7 @@ try {
   await page.getByLabel('Brush Size').fill('96');
 
   const projectImage = page.getByRole('img', { name: 'Project', exact: true });
+  await projectImage.scrollIntoViewIfNeeded();
   const box = await projectImage.boundingBox();
   assert(box && box.width > 4 && box.height > 4, 'Project image must expose a real browser pointer surface');
   await page.evaluate(() => {
