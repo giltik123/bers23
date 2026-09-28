@@ -3,13 +3,32 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
       <Button type="button" variant="outline" disabled={startDisabled || !canIsolateBackground || isolatingBackground} onClick={onIsolateBackground}>
         {isolatingBackground && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         {isolatingBackground ? 'Removing background…' : 'Remove background'}
+      </Button>
+      <label className="flex items-center gap-2 rounded-md border px-2 py-1 text-xs">
+        Exposure
+        <input
+          aria-label="Masked exposure"
+          aria-valuetext={formatExposure(exposureEighthStops)}
+          type="range"
+          min="-32"
+          max="32"
+          step="1"
+          value={exposureEighthStops}
+          disabled={startDisabled || !canApplyExposure || applyingExposure}
+          onChange={(event) => onExposureEighthStops(Number(event.target.value))}
+        />
+        <span aria-live="polite">{formatExposure(exposureEighthStops)}</span>
+      </label>
+      <Button type="button" variant="outline" aria-label="Preview masked exposure" disabled={startDisabled || !canApplyExposure || applyingExposure || exposureEighthStops === 0} onClick={onApplyExposure}>
+        {applyingExposure && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+        {applyingExposure ? 'Applying exposure…' : 'Preview exposure'}
       </Button>
     </div>
   );
@@ -122,4 +141,12 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
       {selection.quality?.warning === 'SUSPICIOUSLY_FULL' && <p className="text-xs text-amber-600" role="status">Selection covers almost the entire image. Verify the mask before Done.</p>}
     </section>
   );
+}
+
+
+function formatExposure(eighthStops) {
+  const ev = Number(eighthStops) / 8;
+  if (!Number.isFinite(ev)) return '0 EV';
+  const magnitude = Number.isInteger(ev) ? ev.toFixed(0) : ev.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+  return `${ev > 0 ? '+' : ''}${magnitude} EV`;
 }
