@@ -62,19 +62,21 @@ jobs:
             server/core/workflow/BoundedAgentDeterministicWorkflowService.test.mjs \
             server/core/execution/internalWorkflowAuthorityProducerBoundary.test.mjs \
             server/core/composition/boundedAgentProductionComposition.test.mjs
-      - name: Prove production inventory advances contiguously through 045
+      - name: Prove production inventory advances contiguously through 046
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 45) throw new Error(`Expected 45 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 46) throw new Error(`Expected 46 contiguous migrations, got ${migrations.length}`);
           if (migrations[41]?.name !== '042_automation_schedules.sql') throw new Error('042 Automation schedule migration moved');
           if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration moved');
           if (migrations[42]?.source !== 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE migration moved outside Agentic authority');
           if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved');
-          if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle migration must be the exact global tail');
+          if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle migration moved from its accepted position');
           if (migrations[43]?.source !== 'server/core/projects/migrations/044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved outside Project authority');
           if (migrations[44]?.source !== 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle migration moved outside Project authority');
+          if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration is not the exact global tail');
+          if (migrations[45]?.source !== 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved outside Artifact authority');
           NODE
       - name: Build immutable Core
         run: npm run server:build
@@ -135,6 +137,7 @@ jobs:
           test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
           test -f dist-server/migrations/044_canonical_project_revision.sql
           test -f dist-server/migrations/045_canonical_project_status_lifecycle.sql
+          test -f dist-server/migrations/046_canonical_masked_exposure_final_lineage.sql
           node dist-server/migrate.mjs migrate
           node dist-server/migrate.mjs check
           node --input-type=module <<'NODE'
