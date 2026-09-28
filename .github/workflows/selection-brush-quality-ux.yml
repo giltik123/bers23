@@ -40,9 +40,9 @@ jobs:
         run: |
           mkdir -p .test-cache/p191-brush
           npx esbuild tests/intelligent-selection.test.ts --bundle --platform=node --format=esm --target=node24 --outfile=.test-cache/p191-brush/intelligent-selection.test.mjs --external:node:* --external:pg --external:sharp
-      - name: Prove deterministic hardness and quality semantics
+      - name: Prove deterministic hardness quality and mode-preservation semantics
         run: node --test .test-cache/p191-brush/intelligent-selection.test.mjs
-      - name: Prove Editor brush and warning boundary
+      - name: Prove Editor brush keyboard mode and warning boundary
         run: node --test tests/editor-canonical-boundary.test.mjs
       - name: Build production browser
         run: npm run build
@@ -55,6 +55,11 @@ jobs:
           grep -q "brushHardness / 100" "$editor"
           ! grep -E -q "hardness:[[:space:]]*\.75" "$editor"
           grep -q 'aria-label="Brush Hardness"' "$toolbar"
+          grep -q 'aria-pressed={selection.mode === id}' "$toolbar"
+          grep -q 'aria-keyshortcuts="Control+Z Meta+Z"' "$toolbar"
+          grep -q 'aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"' "$toolbar"
+          grep -q "handleSelectionHistoryShortcut" "$editor"
+          grep -q "window.addEventListener('keydown', handleSelectionHistoryShortcut)" "$editor"
           grep -q "SUSPICIOUSLY_FULL" "$toolbar"
           ! grep -E -q "fetch\(|coreClient|provider|billing|credits" "$service"
           test -n "$BASE_SHA"
