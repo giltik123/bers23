@@ -134,7 +134,7 @@ test('Masked Exposure PostgreSQL vertical persists one exact IMAGE+MASK FINAL wi
       projectId: scope.projectId,
       result: buildResult(wrongPrepared.ticket, wrongEvidence, eighthStops),
     }, auth),
-    (error: any) => /pixel/i.test(String(error?.message ?? '')),
+    (error: any) => /pixel|RGBA byte/i.test(String(error?.message ?? '')),
     'one mismatching pixel byte must block Masked Exposure FINAL publication',
   );
 
