@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
-import { migrateFinalImageLineageSchema } from '../artifacts/finalImageLineageSchema.ts';
+import { migrateFinalImageLineageSchema, migrateMaskedExposureFinalLineageSchema } from '../artifacts/finalImageLineageSchema.ts';
 import { checkGarmentWarpLayerSchema, migrateGarmentWarpLayerSchema } from './garmentWarpLayerSchema.ts';
 
 const MIGRATION = '030_fashion_garment_texture_final_lineage.sql';
@@ -85,7 +85,7 @@ export async function checkGarmentTextureFinalLineageSchema(pool: Pool): Promise
 
   const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
   const shapeDef = canon(shape?.definition);
-  for (const producer of ['BACKGROUND_ISOLATION','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE']) {
+  for (const producer of ['BACKGROUND_ISOLATION','MASKED_EXPOSURE','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE']) {
     if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 030');
   }
   for (const field of ['garment_warp_layer_id','garment_warp_layer_sha256','producer_parameters','producer_parameters_sha256']) {
@@ -131,6 +131,7 @@ export async function migrateGarmentTextureFinalLineageSchema(pool: Pool): Promi
     // Apply the exact idempotent Fashion extension below.
   }
   await pool.query(await readMigration());
+  await migrateMaskedExposureFinalLineageSchema(pool);
   await checkGarmentTextureFinalLineageSchema(pool);
 }
 
