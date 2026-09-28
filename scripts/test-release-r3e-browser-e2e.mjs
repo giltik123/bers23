@@ -112,7 +112,7 @@ try {
   try { browser = await chromium.launch({ channel: 'chrome', headless: true }); }
   catch (error) { throw new Error(`Mandatory system Google Chrome launch failed: ${error instanceof Error ? error.message : String(error)}`); }
 
-  const browserContext = await browser.newContext();
+  const browserContext = await browser.newContext({ hasTouch: true, viewport: { width: 1280, height: 900 } });
   const page = await browserContext.newPage();
   attachDiagnostics(page);
 
@@ -154,7 +154,23 @@ try {
   const projectImage = page.getByRole('img', { name: 'Project', exact: true });
   const box = await projectImage.boundingBox();
   assert(box && box.width > 4 && box.height > 4, 'Project image must expose a real browser pointer surface');
-  await projectImage.click({ position: { x: box.width * 0.5, y: box.height * 0.5 } });
+  await projectImage.evaluate((element) => {
+    window.__r3eSelectionPointer = null;
+    element.addEventListener('pointerdown', (event) => {
+      window.__r3eSelectionPointer = {
+        pointerType: event.pointerType,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      };
+    }, { once: true });
+  });
+  const touchX = box.x + box.width * 0.5;
+  const touchY = box.y + box.height * 0.5;
+  await page.touchscreen.tap(touchX, touchY);
+  const observedPointer = await page.evaluate(() => window.__r3eSelectionPointer);
+  assert.equal(observedPointer?.pointerType, 'touch', 'release-floor Selection input must exercise the real touch PointerEvent path');
+  assert(Math.abs(observedPointer.clientX - touchX) <= 1, 'touch pointer X must stay on the requested Project-image coordinate');
+  assert(Math.abs(observedPointer.clientY - touchY) <= 1, 'touch pointer Y must stay on the requested Project-image coordinate');
 
   const done = page.getByRole('button', { name: 'Done', exact: true });
   await waitForEnabled(done, 'Done');
@@ -201,6 +217,7 @@ try {
   const selectedPixels = [...maskAlpha].filter(value => value > 0).length;
   assert(selectedPixels > 0, 'manual Add must persist a non-empty MASK');
   assert(selectedPixels < 12 * 8, 'manual Add fixture must remain a bounded partial MASK');
+  assert(maskAlpha[4 * 12 + 6] > 0, 'center touch must map through the real pointer/view transform into the center of the ORIGINAL-coordinate MASK');
 
   const selectedState = await readProjectState(projectId);
   assert.equal(selectedState.project.current_image_storage_id, initial.project.current_image_storage_id);
