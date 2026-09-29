@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, whiteBalanceTemperatureQ8, onWhiteBalanceTemperatureQ8, whiteBalanceTintQ8, onWhiteBalanceTintQ8, canApplyWhiteBalance = false, applyingWhiteBalance = false, onApplyWhiteBalance, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
@@ -29,6 +29,40 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
       <Button type="button" variant="outline" aria-label="Preview masked exposure" disabled={startDisabled || !canApplyExposure || applyingExposure || exposureEighthStops === 0} onClick={onApplyExposure}>
         {applyingExposure && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         {applyingExposure ? 'Applying exposure…' : 'Preview exposure'}
+      </Button>
+      <label className="flex items-center gap-2 rounded-md border px-2 py-1 text-xs">
+        Temperature
+        <input
+          aria-label="Masked white balance temperature"
+          aria-valuetext={formatWhiteBalanceQ8(whiteBalanceTemperatureQ8)}
+          type="range"
+          min="-128"
+          max="128"
+          step="1"
+          value={whiteBalanceTemperatureQ8}
+          disabled={startDisabled || !canApplyWhiteBalance || applyingWhiteBalance}
+          onChange={(event) => onWhiteBalanceTemperatureQ8(Number(event.target.value))}
+        />
+        <span aria-live="polite">{formatWhiteBalanceQ8(whiteBalanceTemperatureQ8)}</span>
+      </label>
+      <label className="flex items-center gap-2 rounded-md border px-2 py-1 text-xs">
+        Tint
+        <input
+          aria-label="Masked white balance tint"
+          aria-valuetext={formatWhiteBalanceQ8(whiteBalanceTintQ8)}
+          type="range"
+          min="-64"
+          max="64"
+          step="1"
+          value={whiteBalanceTintQ8}
+          disabled={startDisabled || !canApplyWhiteBalance || applyingWhiteBalance}
+          onChange={(event) => onWhiteBalanceTintQ8(Number(event.target.value))}
+        />
+        <span aria-live="polite">{formatWhiteBalanceQ8(whiteBalanceTintQ8)}</span>
+      </label>
+      <Button type="button" variant="outline" aria-label="Preview masked white balance" disabled={startDisabled || !canApplyWhiteBalance || applyingWhiteBalance || (whiteBalanceTemperatureQ8 === 0 && whiteBalanceTintQ8 === 0)} onClick={onApplyWhiteBalance}>
+        {applyingWhiteBalance && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+        {applyingWhiteBalance ? 'Applying white balance…' : 'Preview white balance'}
       </Button>
     </div>
   );
@@ -143,6 +177,9 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
   );
 }
 
+function formatWhiteBalanceQ8(value) {
+  return `${value > 0 ? '+' : ''}${value} Q8`;
+}
 function formatExposure(eighthStops) {
   const ev = eighthStops / 8;
   return `${ev > 0 ? '+' : ''}${Number.isInteger(ev) ? ev.toFixed(0) : ev.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')} EV`;
