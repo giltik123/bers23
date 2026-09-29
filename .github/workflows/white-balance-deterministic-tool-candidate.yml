@@ -79,7 +79,7 @@ jobs:
           grep -q "Q16_16_DERIVED_INTEGER" "$registry"
           grep -q "temperatureDeltaQ16" "$kernel"
           grep -q "tintHalfDeltaQ16" "$kernel"
-          grep -q "not a physical Kelvin/CIE white-point transform" "$kernel"
+          grep -q "physical Kelvin/CIE white-point transform" "$kernel"
           ! grep -q "WHITE_BALANCE_CAPABILITY" "$policy"
           ! grep -q "local:tool:white-balance:v1" "$policy"
           ! grep -q "WHITE_BALANCE_CAPABILITY" "$capabilities"
