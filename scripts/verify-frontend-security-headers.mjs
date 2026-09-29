@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   assertProductionFrontendResponseCsp,
@@ -39,11 +42,21 @@ export async function verifyFrontendSecurityHeaders(input) {
   const html = await response.text();
   if (!html.trim()) throw new Error('Frontend root returned an empty HTML document');
 
+  const observedHeaders = Object.freeze({
+    'Content-Security-Policy': csp,
+    'X-Content-Type-Options': response.headers.get('x-content-type-options'),
+    'X-Frame-Options': response.headers.get('x-frame-options'),
+    'Referrer-Policy': response.headers.get('referrer-policy'),
+    'Strict-Transport-Security': response.headers.get('strict-transport-security'),
+  });
+
   return Object.freeze({
     frontendUrl: frontendUrl.toString(),
     coreApiUrl,
     status: response.status,
     requiredHeaders: requiredProductionFrontendHeaders(coreApiUrl),
+    observedHeaders,
+    htmlSha256: createHash('sha256').update(html).digest('hex'),
   });
 }
 
@@ -88,8 +101,25 @@ function normalizeFrontendUrl(value) {
 async function main() {
   const frontendUrl = process.argv[2] || process.env.FRONTEND_URL;
   const coreApiUrl = process.argv[3] || process.env.CORE_API_URL || '/api/core';
+  const evidenceOut = process.env.EVIDENCE_OUT?.trim() || null;
   const result = await verifyFrontendSecurityHeaders({ frontendUrl, coreApiUrl });
-  console.log(JSON.stringify({ status: 'PASS', frontendUrl: result.frontendUrl, coreApiUrl: result.coreApiUrl }));
+  const evidence = Object.freeze({
+    schemaVersion: 1,
+    kind: 'BERS_V1_FRONTEND_SECURITY_EVIDENCE',
+    verifiedAt: new Date().toISOString(),
+    ...result,
+  });
+  if (evidenceOut) {
+    await mkdir(dirname(evidenceOut), { recursive: true });
+    await writeFile(evidenceOut, `${JSON.stringify(evidence, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+  }
+  console.log(JSON.stringify({
+    status: 'PASS',
+    frontendUrl: result.frontendUrl,
+    coreApiUrl: result.coreApiUrl,
+    evidenceOut,
+    htmlSha256: result.htmlSha256,
+  }));
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : undefined;
