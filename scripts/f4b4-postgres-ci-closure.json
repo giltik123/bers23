@@ -216,7 +216,11 @@
     "tests/f4b4-postgres-schema-bootstrap.test.ts",
     "tests/garment-mesh-warp-production-composition-closed.test.ts",
     "tests/garment-mesh-warp-service-postgres.test.ts",
-    "tests/local-execution-working-upload-retry-postgres.test.ts"
+    "tests/local-execution-working-upload-retry-postgres.test.ts",
+    "server/core/localExecution/LocalMaskedExposureExecutionService.ts",
+    "src/platform/creative/deterministic/Exposure.ts",
+    "src/platform/creative/deterministic/MaskedExposure.ts",
+    "src/platform/creative/deterministic/MaskedExposureIdentity.js"
   ],
   "migrationPaths": [
     "server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql",
