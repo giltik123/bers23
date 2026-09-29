@@ -62,10 +62,6 @@ const LEGACY_COMMON_EXACT_PATHS = new Set([
   'server/core/providers/productionExecutionRoute.ts',
   'server/core/providers/productionTargetSelection.ts',
   'src/platform/creative/deterministic/DeterministicToolRegistry.ts',
-  'src/platform/creative/deterministic/Exposure.ts',
-  'src/platform/creative/deterministic/ExposureIdentity.js',
-  'src/platform/creative/deterministic/MaskedExposure.ts',
-  'src/platform/creative/deterministic/MaskedExposureIdentity.js',
   'src/lib/tryon/tryonEngine.js',
 ]);
 
@@ -139,6 +135,10 @@ const F4B4_COMMON_EXACT_PATHS = new Set([
   'server/core/providers/productionGarmentMeshWarpExecutionPolicy.ts',
   // Source-read and shell-assertion dependencies of the accepted F4b.4 boundary.
   'src/platform/creative/deterministic/DeterministicToolRegistry.ts',
+  'src/platform/creative/deterministic/Exposure.ts',
+  'src/platform/creative/deterministic/ExposureIdentity.js',
+  'src/platform/creative/deterministic/MaskedExposure.ts',
+  'src/platform/creative/deterministic/MaskedExposureIdentity.js',
   'server/core/localExecution/productionLocalExecutorPolicy.ts',
   'server/core/providers/productionExecutionCapabilities.ts',
   'server/core/providers/productionExecutionRoute.ts',
