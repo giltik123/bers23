@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "program": "BERS_V1_RC_READINESS",
+  "evidenceBaseSha": "8a12b579c5e7d321ba1c667c17c09b56df8232c6",
+  "rcCoordinate": null,
+  "rcSelectable": false,
+  "status": "BERS_V1_RC_NOT_SELECTABLE",
+  "completedGates": [
+    {
+      "id": "STAGE_D_PRODUCT_DECISIONS",
+      "state": "COMPLETE",
+      "evidence": "config/v1-generative-decision-matrix.json"
+    },
+    {
+      "id": "BROWSER_PRODUCT_JOURNEYS_SOFTWARE",
+      "state": "COMPLETE_EXCEPT_EXTERNAL_DEPLOYMENT_TARGET",
+      "evidence": "config/v1-release-journey-matrix.json"
+    },
+    {
+      "id": "CORE_MIGRATION_SECURITY_INTEGRATED",
+      "state": "CONTINUOUS_HOSTED_ACCEPTANCE",
+      "evidence": "hosted exact-head workflows"
+    }
+  ],
+  "blockers": [
+    {
+      "id": "FRONTEND_DEPLOYMENT_HEADERS",
+      "issue": 233,
+      "releaseGate": "R4",
+      "state": "EXTERNAL_DEPLOYMENT_EVIDENCE_PENDING",
+      "evidence": "config/v1-release-journey-matrix.json#journey-22",
+      "resolution": "Run scripts/verify-frontend-security-headers.mjs against the final canonical deployed frontend URL and record the exact deployment evidence."
+    },
+    {
+      "id": "REPOSITORY_MAIN_PROTECTION",
+      "issue": 355,
+      "releaseGate": "R1",
+      "state": "EXTERNAL_GITHUB_ADMIN_REQUIRED",
+      "observation": "Repository rulesets collection returned empty on 2026-09-29; branch-protection read is unavailable to the installed GitHub App because it lacks administration permission.",
+      "resolution": "Enable GitHub-level main protection/ruleset with required immutable acceptance checks, PR-only updates, no force-push/deletion, minimal documented bypass."
+    },
+    {
+      "id": "HSME_REAL_MOBILE_EVIDENCE",
+      "issue": 352,
+      "relatedIssues": [
+        862,
+        871,
+        867
+      ],
+      "releaseGate": "R3",
+      "state": "EXTERNAL_PHYSICAL_DEVICE_EVIDENCE_PENDING",
+      "observation": "Repository software/contracts exist, but the mandatory functioning real-mobile backend plus device battery/thermal/resource evidence has not been recorded.",
+      "resolution": "Complete at least one trusted physical-mobile backend/device evidence path and final HSME architecture disposition, or explicitly change the canonical release roadmap in a reviewed decision."
+    }
+  ],
+  "nonBlockingDeferred": [
+    {
+      "issue": 189,
+      "id": "FINANCIAL_REDESIGN",
+      "state": "DEFERRED_OUT_OF_V1"
+    },
+    {
+      "issue": 192,
+      "id": "EDITOR_TOOL_EXPANSION",
+      "state": "POST_V1_OR_PARALLEL_UNLESS_REQUIRED_BY_RELEASE_JOURNEY"
+    }
+  ],
+  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, and rcCoordinate is one exact accepted main SHA with mandatory release evidence green."
+}
