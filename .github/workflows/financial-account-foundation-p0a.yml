@@ -18,6 +18,7 @@ on:
       - 'server/core/projects/migrations/044_canonical_project_revision.sql'
       - 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'
       - 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql'
+      - 'server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql'
       - 'server/core/http/financialAccountHttpAdapter.ts'
       - 'server/core/http/financialAccountHttpAdapter.test.mjs'
       - 'server/index.ts'
@@ -69,12 +70,12 @@ jobs:
           set -euo pipefail
           test -n "$BASE_SHA"
           git diff --exit-code "$BASE_SHA"..HEAD -- server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql
-      - name: Prove global migration inventory reaches 046 contiguously while preserving accepted 038-045 positions
+      - name: Prove global migration inventory reaches 047 contiguously while preserving accepted 038-045 positions
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 46) throw new Error(`Expected 46 contiguous production migrations, got ${migrations.length}`);
+          if (migrations.length !== 47) throw new Error(`Expected 47 contiguous production migrations, got ${migrations.length}`);
           if (migrations[37]?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration moved from its accepted global position');
           if (migrations[38]?.name !== '039_workflow_continuation_plan_parameters.sql') throw new Error('039 workflow plan-parameter migration moved from its accepted global position');
           if (migrations[39]?.name !== '040_automation_definitions.sql') throw new Error('040 Automation definition migration moved from its accepted global position');
@@ -83,8 +84,10 @@ jobs:
           if (migrations[42]?.name !== '043_aee_admitted_plan_graphs.sql') throw new Error('043 AEE admitted-plan migration moved');
           if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved');
           if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle migration moved from its accepted position');
-          if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration must be the exact global tail');
+          if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved from its accepted position');
           if (migrations[45]?.source !== 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved outside Artifact authority');
+          if (migrations[46]?.name !== '047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration is not the exact global tail');
+          if (migrations[46]?.source !== 'server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration moved outside Artifact authority');
           NODE
       - name: Typecheck Core financial contracts
         run: npm run server:typecheck
@@ -101,6 +104,7 @@ jobs:
           test -f dist-server/migrations/044_canonical_project_revision.sql
           test -f dist-server/migrations/045_canonical_project_status_lifecycle.sql
           test -f dist-server/migrations/046_canonical_masked_exposure_final_lineage.sql
+          test -f dist-server/migrations/047_canonical_masked_white_balance_final_lineage.sql
       - name: Apply and verify ordered transaction migrations
         run: |
           npm run db:migrate:transactions

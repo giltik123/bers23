@@ -21,6 +21,13 @@ import {
   maskedExposureRgba8,
   normalizeMaskedExposureEighthStops,
 } from '../../../src/platform/creative/deterministic/MaskedExposure.ts';
+import {
+  MASKED_WHITE_BALANCE_OPERATION,
+  MASKED_WHITE_BALANCE_TOOL_ID,
+  MASKED_WHITE_BALANCE_TOOL_VERSION,
+  maskedWhiteBalanceRgba8,
+  normalizeMaskedWhiteBalanceParameters,
+} from '../../../src/platform/creative/deterministic/MaskedWhiteBalance.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { admitLocalExecutionInputs } from './LocalExecutionInputAdmission.ts';
@@ -60,6 +67,12 @@ type MaskedExposureArtifactLineage = Readonly<{
   producerOperation: 'MASKED_EXPOSURE';
 }>;
 
+type MaskedWhiteBalanceArtifactLineage = Readonly<{
+  sourceArtifactId: string;
+  maskArtifactId: string;
+  producerOperation: 'MASKED_WHITE_BALANCE';
+}>;
+
 type DeterministicDependencies = ScopeArtifactAccess & Readonly<{
   admission: LocalExecutionLedgerV2;
   uploads: UploadReader;
@@ -73,6 +86,15 @@ type MaskedExposureDependencies = ScopeArtifactAccess & Readonly<{
   admission: LocalExecutionLedgerV2;
   uploads: UploadReader;
   persistFinal: (scope: Scope, executionId: string, operationId: string, image: PixelImage, lineage?: MaskedExposureArtifactLineage) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
+  loadPersistedFinal: (executionId: string, scope: Scope) => Promise<Readonly<{ storageId: string; width: number; height: number }> | undefined>;
+  issueFinalId: (storageId: string, scope: Scope) => string;
+  now?: () => number;
+}>;
+
+type MaskedWhiteBalanceDependencies = ScopeArtifactAccess & Readonly<{
+  admission: LocalExecutionLedgerV2;
+  uploads: UploadReader;
+  persistFinal: (scope: Scope, executionId: string, operationId: string, image: PixelImage, lineage?: MaskedWhiteBalanceArtifactLineage) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
   loadPersistedFinal: (executionId: string, scope: Scope) => Promise<Readonly<{ storageId: string; width: number; height: number }> | undefined>;
   issueFinalId: (storageId: string, scope: Scope) => string;
   now?: () => number;
@@ -457,6 +479,152 @@ export class MaskedExposureResultAuthority {
     if (finalization.status === 'FAILED') return failedReplay(ticket.workflowId);
     const stored = await this.dependencies.loadPersistedFinal(ticket.workflowId, ticket.scope);
     if (!stored) throw serviceError(409, 'local_finalization_artifact_unavailable', 'Committed Masked Exposure FINAL is unavailable');
+    const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
+    return successReplay(ticket.workflowId, artifactId);
+  }
+}
+
+/**
+ * Accepted Masked White Balance result authority. Candidate bytes remain
+ * quarantined until Core rehydrates the exact IMAGE + MASK, recomputes the
+ * accepted Q8 relative channel-balance law with ALPHA8 blending, and verifies
+ * byte equality.
+ */
+export class MaskedWhiteBalanceResultAuthority {
+  private readonly dependencies: MaskedWhiteBalanceDependencies;
+  private readonly contract: ExactLocalContract;
+  private readonly now: () => number;
+
+  constructor(dependencies: MaskedWhiteBalanceDependencies, contract: ExactLocalContract) {
+    this.dependencies = dependencies;
+    this.contract = requireContract(contract);
+    this.now = dependencies.now ?? Date.now;
+  }
+
+  async submit(input: Readonly<{ ticket: LocalExecutionTicketV2; result: unknown; verify: DeterministicVerificationPort }>): Promise<LocalResultAuthoritySubmission> {
+    const ticket = input.ticket;
+    this.assertTicket(ticket);
+    const claim = await this.dependencies.admission.claimV2({ ticketId: ticket.ticketId, result: input.result, callerScope: ticket.scope, now: this.now() });
+    if (!claim.allowed) {
+      if (claim.reasonCode === 'REPLAYED_TICKET') return this.replayFinalized(ticket);
+      throw admissionError(claim.reasonCode);
+    }
+
+    try {
+      const artifacts = await this.revalidateCanonicalInputs(ticket);
+      const result = claim.result;
+      if (result.executor.kind !== 'DETERMINISTIC_TOOL' || result.executor.toolId !== MASKED_WHITE_BALANCE_TOOL_ID || result.executor.version !== MASKED_WHITE_BALANCE_TOOL_VERSION) throw serviceError(400, 'local_executor_mismatch', 'Result is not the authorized Masked White Balance executor');
+      if (result.runtime !== 'BROWSER_JS' || result.accelerator !== 'cpu') throw serviceError(400, 'local_runtime_mismatch', 'Masked White Balance v1 requires exact BROWSER_JS/cpu runtime identity');
+      if (result.outputs.length !== 1) throw serviceError(400, 'local_result_output_count', 'Masked White Balance requires exactly one output');
+      const evidence = result.outputs[0];
+      const upload = await loadExactEvidence(this.dependencies.uploads, ticket, evidence, this.now());
+      if (upload.kind !== 'image' || upload.role !== 'COMPOSITE' || upload.mimeType !== 'image/png') throw serviceError(400, 'local_upload_contract_mismatch', 'Quarantined output is not a deterministic PNG COMPOSITE candidate');
+
+      const source = requireSource(artifacts, ticket);
+      const mask = requireMask(artifacts, ticket);
+      const sourcePixels = source.value as Readonly<{ width: number; height: number; data: Uint8ClampedArray }>;
+      const maskPixels = mask.value as Readonly<{ width: number; height: number; alpha: Uint8Array }>;
+      if (maskPixels.width !== sourcePixels.width || maskPixels.height !== sourcePixels.height) throw serviceError(409, 'local_input_geometry_mismatch', 'Masked White Balance IMAGE and MASK geometry mismatch');
+      const parameters = ticket.operation.parameters as Readonly<Record<string, unknown>> | undefined;
+      const normalized = normalizeMaskedWhiteBalanceParameters(Number(parameters?.temperatureQ8), Number(parameters?.tintQ8));
+      const candidate = await decodePngRgba(upload.bytes);
+      if (candidate.width !== sourcePixels.width || candidate.height !== sourcePixels.height) throw serviceError(400, 'local_image_dimensions_mismatch', 'Masked White Balance candidate geometry does not match canonical inputs');
+      const expected = maskedWhiteBalanceRgba8(sourcePixels.data, maskPixels.alpha, sourcePixels.width, sourcePixels.height, normalized.temperatureQ8, normalized.tintQ8);
+      assertExactPixels(expected, candidate.data);
+
+      const artifact: CreativeArtifact = Object.freeze({
+        id: `core-verified-masked-white-balance:${ticket.ticketId}`,
+        kind: 'image',
+        value: Object.freeze({ width: sourcePixels.width, height: sourcePixels.height, data: expected, format: 'RGBA8', orientation: 1 as const, colorSpace: 'srgb' }),
+        producerOperationId: ticket.stepId,
+        scope: ticket.scope,
+        state: 'FINAL',
+        role: 'COMPOSITE',
+        image: Object.freeze({ width: sourcePixels.width, height: sourcePixels.height, format: 'RGBA8', orientation: 1 as const, colorSpace: 'srgb', alpha: true }),
+        metadata: Object.freeze({
+          artifactRole: 'COMPOSITE',
+          localExecutionAdmission: 'ADMITTED',
+          admissionClass: 'DETERMINISTIC_BYTE_EXACT',
+          verificationScope: 'BYTE_EXACT_CORE_RECOMPUTE',
+          ticketId: ticket.ticketId,
+          executorKind: result.executor.kind,
+          toolId: result.executor.toolId,
+          toolVersion: result.executor.version,
+          runtime: result.runtime,
+          accelerator: result.accelerator,
+          temperatureQ8: normalized.temperatureQ8,
+          tintQ8: normalized.tintQ8,
+          coordinateSpace: 'CANONICAL_ORIENTATION_1_RGBA8_PLUS_ALPHA8_MASK',
+          transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
+          parameterEncoding: 'SIGNED_Q8_RELATIVE_CHANNEL_BALANCE',
+          parameterFractionBits: 8,
+          gainEncoding: 'Q16_16_DERIVED_INTEGER',
+          gainFixedPointBits: 16,
+          temperatureLaw: 'RED_PLUS_BLUE_MINUS_EQUAL_Q8',
+          tintLaw: 'MAGENTA_PLUS_HALF_GREEN_MINUS_FULL_Q8',
+          gainRounding: 'ROUND_HALF_UP',
+          maskBlend: 'SOURCE_ADJUSTED_ALPHA8_ROUND_HALF_UP',
+          alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
+          candidateSha256: upload.sha256,
+          verifiedPixelSha256: createHash('sha256').update(expected).digest('hex'),
+          integrityMetrics: Object.freeze({ verificationOutcome: 'PASS', pixelComparison: 'BYTE_EXACT' }),
+          parentArtifactIds: Object.freeze(ticket.inputs.map(binding => binding.artifactId)),
+        }),
+      });
+
+      const outcome = await input.verify({ ticket, result, artifact });
+      if (outcome.status !== 'SUCCESS') throw serviceError(422, 'local_execution_verification_failed', 'Canonical Masked White Balance execution did not pass workflow verification');
+      const stored = await this.dependencies.persistFinal(
+        ticket.scope,
+        ticket.workflowId,
+        ticket.stepId,
+        { width: sourcePixels.width, height: sourcePixels.height, data: expected },
+        { sourceArtifactId: source.id, maskArtifactId: mask.id, producerOperation: MASKED_WHITE_BALANCE_OPERATION },
+      );
+      const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
+      await this.dependencies.admission.commit(ticket.ticketId, 'SUCCESS');
+      await this.dependencies.uploads.consume(upload.uploadId, ticket.ticketId, ticket.scope, this.now());
+      return Object.freeze({ executionId: ticket.workflowId, status: 'SUCCESS', artifactId, outcome });
+    } catch (error) {
+      await this.dependencies.admission.release(ticket.ticketId).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private assertTicket(ticket: LocalExecutionTicketV2): void {
+    if (ticket.version !== '2' || ticket.issuer !== 'CORE' || ticket.operation.capability !== this.contract.capability || ticket.operation.type !== MASKED_WHITE_BALANCE_OPERATION || ticket.operation.id !== this.contract.stepId || ticket.stepId !== this.contract.stepId || ticket.policy !== 'LOCAL_ONLY') {
+      throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not the exact accepted Masked White Balance result contract');
+    }
+    if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw serviceError(409, 'local_ticket_cost_mismatch', 'Masked White Balance ticket contains forbidden cloud cost authority');
+    if (ticket.allowedExecutors.length !== 1) throw serviceError(409, 'local_ticket_executor_mismatch', 'Masked White Balance must bind exactly one executor');
+    const executor = ticket.allowedExecutors[0];
+    if (executor.kind !== 'DETERMINISTIC_TOOL' || executor.toolId !== MASKED_WHITE_BALANCE_TOOL_ID || executor.version !== MASKED_WHITE_BALANCE_TOOL_VERSION) throw serviceError(409, 'local_ticket_executor_mismatch', 'Masked White Balance executor binding is invalid');
+    const parameters = ticket.operation.parameters as Readonly<Record<string, unknown>> | undefined;
+    normalizeMaskedWhiteBalanceParameters(Number(parameters?.temperatureQ8), Number(parameters?.tintQ8));
+  }
+
+  private async revalidateCanonicalInputs(ticket: LocalExecutionTicketV2): Promise<readonly CreativeArtifact[]> {
+    if (ticket.inputs.length !== 2) throw serviceError(409, 'local_input_contract_mismatch', 'Masked White Balance requires exactly two canonical inputs');
+    const sourceBinding = ticket.inputs.find(binding => binding.kind === 'image');
+    const maskBinding = ticket.inputs.find(binding => binding.kind === 'mask');
+    if (!sourceBinding?.sha256 || !maskBinding?.sha256) throw serviceError(409, 'local_input_contract_mismatch', 'Masked White Balance requires SHA-bound IMAGE + MASK inputs');
+    if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId, maskBinding.artifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked White Balance inputs are no longer authorized or available');
+    const artifacts = await this.dependencies.hydrateArtifacts(ticket.scope, sourceBinding.artifactId, [maskBinding.artifactId]);
+    const source = artifacts.find(artifact => artifact.id === sourceBinding.artifactId && artifact.kind === 'image');
+    const mask = artifacts.find(artifact => artifact.id === maskBinding.artifactId && artifact.kind === 'mask' && artifact.role === 'MASK');
+    if (!source || !mask) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked White Balance source or MASK was not hydrated');
+    if (!source.image?.width || !source.image.height || source.image.width !== mask.image?.width || source.image.height !== mask.image?.height) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked White Balance input geometry mismatch');
+    const decision = admitLocalExecutionInputs(ticket, artifacts);
+    if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical Masked White Balance input revalidation failed: ${decision.reasonCode}`);
+    return artifacts;
+  }
+
+  private async replayFinalized(ticket: LocalExecutionTicketV2): Promise<LocalResultAuthoritySubmission> {
+    const finalization = await this.dependencies.admission.getFinalization(ticket.ticketId);
+    if (!finalization || finalization.status === 'UNKNOWN') throw serviceError(409, 'local_finalization_unknown', 'Masked White Balance was consumed without a recoverable terminal status');
+    if (finalization.status === 'FAILED') return failedReplay(ticket.workflowId);
+    const stored = await this.dependencies.loadPersistedFinal(ticket.workflowId, ticket.scope);
+    if (!stored) throw serviceError(409, 'local_finalization_artifact_unavailable', 'Committed Masked White Balance FINAL is unavailable');
     const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
     return successReplay(ticket.workflowId, artifactId);
   }

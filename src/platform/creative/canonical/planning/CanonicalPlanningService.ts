@@ -25,6 +25,16 @@ import {
   MASKED_EXPOSURE_TOOL_VERSION,
 } from '../../deterministic/MaskedExposure.ts';
 import {
+  MASKED_WHITE_BALANCE_MAX_TEMPERATURE_Q8,
+  MASKED_WHITE_BALANCE_MAX_TINT_Q8,
+  MASKED_WHITE_BALANCE_MIN_TEMPERATURE_Q8,
+  MASKED_WHITE_BALANCE_MIN_TINT_Q8,
+  MASKED_WHITE_BALANCE_OPERATION,
+  MASKED_WHITE_BALANCE_STEP_ID,
+  MASKED_WHITE_BALANCE_TOOL_ID,
+  MASKED_WHITE_BALANCE_TOOL_VERSION,
+} from '../../deterministic/MaskedWhiteBalance.ts';
+import {
   GARMENT_MESH_WARP_FIXED_POINT_BITS,
   GARMENT_MESH_WARP_MAX_OUTPUT_PIXELS,
   GARMENT_MESH_WARP_MAX_RASTER_WORK,
@@ -68,6 +78,7 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const interactiveSegmentation = request.metadata?.operationIntent === 'INTERACTIVE_SEGMENTATION';
     const backgroundIsolation = request.metadata?.operationIntent === 'BACKGROUND_ISOLATION';
     const maskedExposure = request.metadata?.operationIntent === MASKED_EXPOSURE_OPERATION;
+    const maskedWhiteBalance = request.metadata?.operationIntent === MASKED_WHITE_BALANCE_OPERATION;
     const crop = request.metadata?.operationIntent === 'CROP';
     const resize = request.metadata?.operationIntent === RESIZE_OPERATION;
     const orthogonalTransform = request.metadata?.operationIntent === ORTHOGONAL_TRANSFORM_OPERATION;
@@ -79,6 +90,8 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const requestedIsolationMaskId = backgroundIsolation && typeof request.metadata?.maskArtifactId === 'string' ? request.metadata.maskArtifactId : undefined;
     const requestedExposureSourceId = maskedExposure && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedExposureMaskId = maskedExposure && typeof request.metadata?.maskArtifactId === 'string' ? request.metadata.maskArtifactId : undefined;
+    const requestedWhiteBalanceSourceId = maskedWhiteBalance && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+    const requestedWhiteBalanceMaskId = maskedWhiteBalance && typeof request.metadata?.maskArtifactId === 'string' ? request.metadata.maskArtifactId : undefined;
     const requestedCropSourceId = crop && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedResizeSourceId = resize && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
     const requestedOrthogonalSourceId = orthogonalTransform && typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
@@ -92,6 +105,9 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     const exposureSourceUnavailable = maskedExposure && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedExposureSourceId || artifact.id === requestedExposureSourceId));
     const exposureMaskUnavailable = maskedExposure && !artifacts.some(artifact => artifact.kind === 'mask' && artifact.role === 'MASK' && (!requestedExposureMaskId || artifact.id === requestedExposureMaskId));
     const exposureEighthStopsInvalid = maskedExposure && readPlannerMaskedExposureEighthStops(request.metadata?.eighthStops) === undefined;
+    const whiteBalanceSourceUnavailable = maskedWhiteBalance && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedWhiteBalanceSourceId || artifact.id === requestedWhiteBalanceSourceId));
+    const whiteBalanceMaskUnavailable = maskedWhiteBalance && !artifacts.some(artifact => artifact.kind === 'mask' && artifact.role === 'MASK' && (!requestedWhiteBalanceMaskId || artifact.id === requestedWhiteBalanceMaskId));
+    const whiteBalanceParametersInvalid = maskedWhiteBalance && readPlannerMaskedWhiteBalanceParameters(request.metadata?.temperatureQ8, request.metadata?.tintQ8) === undefined;
     const cropSourceUnavailable = crop && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedCropSourceId || artifact.id === requestedCropSourceId));
     const cropRectInvalid = crop && !readPlannerCropRect(request.metadata?.cropRect);
     const resizeSourceUnavailable = resize && !artifacts.some(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedResizeSourceId || artifact.id === requestedResizeSourceId));
@@ -105,6 +121,8 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
       ? [garmentMeshWarpOperations(artifacts, constraints, request)]
       : maskedExposure
         ? [maskedExposureOperations(artifacts, constraints, request)]
+        : maskedWhiteBalance
+          ? [maskedWhiteBalanceOperations(artifacts, constraints, request)]
         : orthogonalTransform
         ? [orthogonalTransformOperations(artifacts, constraints, request)]
         : resize
@@ -122,14 +140,14 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
                     : composite
                       ? [compositeOperations('local-efficient', artifacts, constraints, decision.goal), compositeOperations('cloud-quality', artifacts, constraints, decision.goal)]
                       : [simpleOperations(request, artifacts, constraints)];
-    const simpleProvider = !garmentMeshWarp && !maskedExposure && !orthogonalTransform && !resize && !crop && !superResolution && !backgroundIsolation && !interactiveSegmentation && !localComposite && !composite;
+    const simpleProvider = !garmentMeshWarp && !maskedExposure && !maskedWhiteBalance && !orthogonalTransform && !resize && !crop && !superResolution && !backgroundIsolation && !interactiveSegmentation && !localComposite && !composite;
     const rawCandidates = strategies.map((operations, index) => candidate(
       simpleProvider ? 'cloud-provider' : localComposite ? 'local-continuation' : index === 0 ? 'local-efficient' : 'cloud-quality',
       operations,
       simpleProvider ? 'CLOUD' : localComposite ? 'LOCAL' : index === 0 ? 'LOCAL' : 'CLOUD',
       localComposite ? 0 : composite ? (index === 0 ? 1 : 5) : 0,
-      localComposite ? 180 : composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : maskedExposure ? 12 : crop ? 5 : resize ? 25 : orthogonalTransform ? 5 : garmentMeshWarp ? 20 : superResolution ? 900 : 0,
-      localComposite ? 1 : composite ? (index === 0 ? .76 : .94) : backgroundIsolation || maskedExposure || crop || resize || orthogonalTransform || garmentMeshWarp ? 1 : superResolution ? .9 : .9,
+      localComposite ? 180 : composite ? (index === 0 ? 1200 : 2800) : interactiveSegmentation ? 120 : backgroundIsolation ? 20 : maskedExposure ? 12 : maskedWhiteBalance ? 12 : crop ? 5 : resize ? 25 : orthogonalTransform ? 5 : garmentMeshWarp ? 20 : superResolution ? 900 : 0,
+      localComposite ? 1 : composite ? (index === 0 ? .76 : .94) : backgroundIsolation || maskedExposure || maskedWhiteBalance || crop || resize || orthogonalTransform || garmentMeshWarp ? 1 : superResolution ? .9 : .9,
       uncertainty.aggregateConfidence,
     ));
     const ranked = rankAndFilter(rawCandidates, constraints);
@@ -149,6 +167,9 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     if (exposureSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
     if (exposureMaskUnavailable) confirmationReasons.push('CANONICAL_MASK_REQUIRED');
     if (exposureEighthStopsInvalid) confirmationReasons.push('INVALID_MASKED_EXPOSURE_EIGHTH_STOPS');
+    if (whiteBalanceSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
+    if (whiteBalanceMaskUnavailable) confirmationReasons.push('CANONICAL_MASK_REQUIRED');
+    if (whiteBalanceParametersInvalid) confirmationReasons.push('INVALID_MASKED_WHITE_BALANCE_PARAMETERS');
     if (cropSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
     if (cropRectInvalid) confirmationReasons.push('INVALID_CROP_RECT');
     if (resizeSourceUnavailable) confirmationReasons.push('CANONICAL_SOURCE_IMAGE_REQUIRED');
@@ -162,12 +183,12 @@ export class CanonicalPlanningService implements CanonicalPlanningPort {
     if (compositeOriginalUnavailable) confirmationReasons.push('CANONICAL_ORIGINAL_REQUIRED');
     if (localCompositeExecutionUnavailable) confirmationReasons.push('LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED');
     if (compositeExecutionUnavailable) confirmationReasons.push('COMPOSITE_EXECUTION_NOT_WIRED');
-    const hardBlocked = segmentationInputUnavailable || isolationSourceUnavailable || isolationMaskUnavailable || exposureSourceUnavailable || exposureMaskUnavailable || exposureEighthStopsInvalid || cropSourceUnavailable || cropRectInvalid || resizeSourceUnavailable || resizeDimensionsInvalid || orthogonalSourceUnavailable || orthogonalModeInvalid || garmentWarpSourceUnavailable || garmentWarpBindingInvalid || superResolutionSourceUnavailable || localCompositeExecutionUnavailable || localCompositeOriginalUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK');
+    const hardBlocked = segmentationInputUnavailable || isolationSourceUnavailable || isolationMaskUnavailable || exposureSourceUnavailable || exposureMaskUnavailable || exposureEighthStopsInvalid || whiteBalanceSourceUnavailable || whiteBalanceMaskUnavailable || whiteBalanceParametersInvalid || cropSourceUnavailable || cropRectInvalid || resizeSourceUnavailable || resizeDimensionsInvalid || orthogonalSourceUnavailable || orthogonalModeInvalid || garmentWarpSourceUnavailable || garmentWarpBindingInvalid || superResolutionSourceUnavailable || localCompositeExecutionUnavailable || localCompositeOriginalUnavailable || compositeExecutionUnavailable || compositeOriginalUnavailable || (localUnavailable && constraints.confirmationPolicy === 'BLOCK');
     const status: CreativePlanStatus = hardBlocked ? 'BLOCKED' : confirmationReasons.length || !selected ? 'NEEDS_CONFIRMATION' : 'READY';
     const operations = immutable(status === 'BLOCKED' ? [] : selected?.operations ?? []);
     const rejected = immutable(candidates.filter(item => item.status === 'REJECTED').map(({ id, reasonCodes }) => ({ id, reasonCodes })));
-    const planReason = garmentMeshWarp ? 'GARMENT_MESH_WARP_LOCAL_DETERMINISTIC_V1' : maskedExposure ? 'MASKED_EXPOSURE_LOCAL_DETERMINISTIC_V1' : orthogonalTransform ? 'ORTHOGONAL_TRANSFORM_LOCAL_DETERMINISTIC_V1' : resize ? 'RESIZE_LOCAL_DETERMINISTIC_V1' : crop ? 'CROP_LOCAL_DETERMINISTIC_V1' : superResolution ? 'SUPER_RESOLUTION_LOCAL_MODEL_V1' : backgroundIsolation ? 'BACKGROUND_ISOLATION_LOCAL_DETERMINISTIC_V1' : interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : localComposite ? 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
-    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(isolationSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(isolationMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(exposureSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(exposureMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(exposureEighthStopsInvalid ? ['INVALID_MASKED_EXPOSURE_EIGHTH_STOPS'] : []), ...(cropSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(cropRectInvalid ? ['INVALID_CROP_RECT'] : []), ...(resizeSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(resizeDimensionsInvalid ? ['INVALID_RESIZE_DIMENSIONS'] : []), ...(orthogonalSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(orthogonalModeInvalid ? ['INVALID_ORTHOGONAL_TRANSFORM_MODE'] : []), ...(garmentWarpSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(garmentWarpBindingInvalid ? ['INVALID_GARMENT_MESH_WARP_BINDING'] : []), ...(superResolutionSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(localCompositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(localCompositeExecutionUnavailable ? ['LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
+    const planReason = garmentMeshWarp ? 'GARMENT_MESH_WARP_LOCAL_DETERMINISTIC_V1' : maskedExposure ? 'MASKED_EXPOSURE_LOCAL_DETERMINISTIC_V1' : maskedWhiteBalance ? 'MASKED_WHITE_BALANCE_LOCAL_DETERMINISTIC_V1' : orthogonalTransform ? 'ORTHOGONAL_TRANSFORM_LOCAL_DETERMINISTIC_V1' : resize ? 'RESIZE_LOCAL_DETERMINISTIC_V1' : crop ? 'CROP_LOCAL_DETERMINISTIC_V1' : superResolution ? 'SUPER_RESOLUTION_LOCAL_MODEL_V1' : backgroundIsolation ? 'BACKGROUND_ISOLATION_LOCAL_DETERMINISTIC_V1' : interactiveSegmentation ? 'INTERACTIVE_SEGMENTATION_LOCAL_V1' : localComposite ? 'LOCAL_SEGMENT_BACKGROUND_ISOLATION_COMPOSITE_V1' : composite ? 'COMPOSITE_INTENT_REGISTRY_V2' : 'SIMPLE_EDIT_COMPATIBILITY';
+    let provenance = immutable({ plannerVersion: this.#options.plannerVersion, plannerConfig, decisionGoal: decision.goal, inputArtifacts: artifacts, constraints, chosenCandidateId: selected?.id, rejectedCandidates: rejected, scoringRationale: ['weighted-quality-30', 'weighted-cost-20', 'weighted-latency-15', 'weighted-reliability-15', 'weighted-confidence-20', 'tie-break-candidate-id'], reasons: [planReason, ...(segmentationInputUnavailable ? ['CANONICAL_IMAGE_REQUIRED'] : []), ...(isolationSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(isolationMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(exposureSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(exposureMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(exposureEighthStopsInvalid ? ['INVALID_MASKED_EXPOSURE_EIGHTH_STOPS'] : []), ...(whiteBalanceSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(whiteBalanceMaskUnavailable ? ['CANONICAL_MASK_REQUIRED'] : []), ...(whiteBalanceParametersInvalid ? ['INVALID_MASKED_WHITE_BALANCE_PARAMETERS'] : []), ...(cropSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(cropRectInvalid ? ['INVALID_CROP_RECT'] : []), ...(resizeSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(resizeDimensionsInvalid ? ['INVALID_RESIZE_DIMENSIONS'] : []), ...(orthogonalSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(orthogonalModeInvalid ? ['INVALID_ORTHOGONAL_TRANSFORM_MODE'] : []), ...(garmentWarpSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(garmentWarpBindingInvalid ? ['INVALID_GARMENT_MESH_WARP_BINDING'] : []), ...(superResolutionSourceUnavailable ? ['CANONICAL_SOURCE_IMAGE_REQUIRED'] : []), ...(localCompositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(compositeOriginalUnavailable ? ['CANONICAL_ORIGINAL_REQUIRED'] : []), ...(localCompositeExecutionUnavailable ? ['LOCAL_COMPOSITE_CONTINUATION_NOT_WIRED'] : []), ...(compositeExecutionUnavailable ? ['COMPOSITE_EXECUTION_NOT_WIRED'] : [])] } satisfies CreativePlanProvenance);
     provenance = immutable({ ...provenance, replay: buildReplay(this.#options.plannerVersion, plannerConfig, { provenance, selectedCandidateId: selected?.id }) });
     const result = immutable({ requestId: request.id, operations, status, planningConstraints: constraints, candidates, selectedCandidateId: selected?.id, uncertainty, confirmationReasons: immutable(confirmationReasons), proposalId: `${this.#options.plannerVersion}:${request.id}`, plannerVersion: this.#options.plannerVersion, goal: decision.goal, assumptions: [], constraints: [...decision.constraints], provenance, explanation: buildExplanation(this.#options.plannerVersion, plannerConfig, selected, candidates, constraints, uncertainty, confirmationReasons) });
     void emitPlanTelemetry(this.#options.telemetry, result);
@@ -223,6 +244,41 @@ function maskedExposureOperations(artifacts: readonly CreativePlanArtifactSnapsh
       transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
       gainEncoding: 'Q16_16_COMMITTED_EIGHTH_STOP_TABLE',
       stopDenominator: 8,
+      gainRounding: 'ROUND_HALF_UP',
+      maskBlend: 'SOURCE_ADJUSTED_ALPHA8_ROUND_HALF_UP',
+      alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
+    }),
+  }]);
+}
+
+function maskedWhiteBalanceOperations(artifacts: readonly CreativePlanArtifactSnapshot[], constraints: CreativePlanConstraints, request: CreativeRequest): readonly CreativeOperation[] {
+  const requestedSourceId = typeof request.metadata?.sourceArtifactId === 'string' ? request.metadata.sourceArtifactId : undefined;
+  const requestedMaskId = typeof request.metadata?.maskArtifactId === 'string' ? request.metadata.maskArtifactId : undefined;
+  const source = artifacts.find(artifact => artifact.kind === 'image' && (artifact.role === 'ORIGINAL' || artifact.role === 'COMPOSITE') && (!requestedSourceId || artifact.id === requestedSourceId));
+  const mask = artifacts.find(artifact => artifact.kind === 'mask' && artifact.role === 'MASK' && (!requestedMaskId || artifact.id === requestedMaskId));
+  const parameters = readPlannerMaskedWhiteBalanceParameters(request.metadata?.temperatureQ8, request.metadata?.tintQ8);
+  if (!source || !mask || !parameters) return immutable([]);
+  return immutable([{
+    id: MASKED_WHITE_BALANCE_STEP_ID,
+    type: MASKED_WHITE_BALANCE_OPERATION,
+    requiredArtifacts: [source.id, mask.id],
+    produces: ['image'],
+    outputArtifacts: ['masked-white-balance:composite'],
+    verification: verificationFor(MASKED_WHITE_BALANCE_STEP_ID, MASKED_WHITE_BALANCE_OPERATION, constraints, 'image'),
+    input: Object.freeze({
+      sourceArtifactId: source.id,
+      maskArtifactId: mask.id,
+      temperatureQ8: parameters.temperatureQ8,
+      tintQ8: parameters.tintQ8,
+      deterministicTool: `${MASKED_WHITE_BALANCE_TOOL_ID}@${MASKED_WHITE_BALANCE_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_RGBA8_PLUS_ALPHA8_MASK',
+      transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
+      parameterEncoding: 'SIGNED_Q8_RELATIVE_CHANNEL_BALANCE',
+      parameterFractionBits: 8,
+      gainEncoding: 'Q16_16_DERIVED_INTEGER',
+      gainFixedPointBits: 16,
+      temperatureLaw: 'RED_PLUS_BLUE_MINUS_EQUAL_Q8',
+      tintLaw: 'MAGENTA_PLUS_HALF_GREEN_MINUS_FULL_Q8',
       gainRounding: 'ROUND_HALF_UP',
       maskBlend: 'SOURCE_ADJUSTED_ALPHA8_ROUND_HALF_UP',
       alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
@@ -456,6 +512,11 @@ function targetPolicyRank(target: Exclude<ExecutionTarget, 'BLOCKED'>, policy: P
 function readConstraints(request: CreativeRequest, decision: CreativeDecision): CreativePlanConstraints { const source = object(request.metadata?.planningConstraints); const policy = enumValue(source.executionPolicy, ['LOCAL_ONLY', 'CLOUD_ALLOWED', 'CLOUD_PREFERRED', 'AUTO'], 'AUTO') as PlanningExecutionPolicy; return { preserveMode: stringValue(source.preserveMode, stringValue(request.metadata?.preserveMode, 'STRICT')), mustPreserve: strings(source.mustPreserve), mustChange: strings(source.mustChange), forbiddenTargets: strings(source.forbiddenTargets).filter(value => ['LOCAL', 'CLOUD', 'HYBRID'].includes(value)) as Exclude<ExecutionTarget, 'BLOCKED'>[], forbiddenRegions: strings(source.forbiddenRegions), executionPolicy: policy, maxCredits: numberValue(source.maxCredits), maxLatencyMs: numberValue(source.maxLatencyMs), minimumQuality: numberValue(source.minimumQuality), confirmationPolicy: enumValue(source.confirmationPolicy, ['ASK', 'BLOCK', 'ALLOW_PRESERVATION_RISK'], 'ASK') as PlanningConfirmationPolicy }; }
 function readUncertainty(request: CreativeRequest): CreativePlanUncertainty { const source = object(request.metadata?.uncertainty); const intentInterpretation = confidence(source.intentInterpretation, .95); const targetResolution = confidence(source.targetResolution, .95); const feasibilityCapability = confidence(source.feasibilityCapability, .9); const preservationRisk = confidence(source.preservationRisk, .1); return { intentInterpretation, targetResolution, feasibilityCapability, preservationRisk, aggregateConfidence: round((intentInterpretation + targetResolution + feasibilityCapability + (1 - preservationRisk)) / 4) }; }
 function readPlannerMaskedExposureEighthStops(value: unknown): number | undefined { return Number.isSafeInteger(value) && Number(value) >= MASKED_EXPOSURE_MIN_EIGHTH_STOPS && Number(value) <= MASKED_EXPOSURE_MAX_EIGHTH_STOPS ? Number(value) : undefined; }
+function readPlannerMaskedWhiteBalanceParameters(temperatureQ8: unknown, tintQ8: unknown): Readonly<{ temperatureQ8: number; tintQ8: number }> | undefined {
+  if (!Number.isSafeInteger(temperatureQ8) || Number(temperatureQ8) < MASKED_WHITE_BALANCE_MIN_TEMPERATURE_Q8 || Number(temperatureQ8) > MASKED_WHITE_BALANCE_MAX_TEMPERATURE_Q8) return undefined;
+  if (!Number.isSafeInteger(tintQ8) || Number(tintQ8) < MASKED_WHITE_BALANCE_MIN_TINT_Q8 || Number(tintQ8) > MASKED_WHITE_BALANCE_MAX_TINT_Q8) return undefined;
+  return immutable({ temperatureQ8: Number(temperatureQ8), tintQ8: Number(tintQ8) });
+}
 function readPlannerCropRect(value: unknown): PlannerCropRect | undefined { const source = object(value); const x = source.x; const y = source.y; const width = source.width; const height = source.height; if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || Number(x) < 0 || Number(y) < 0 || Number(width) < 1 || Number(height) < 1) return undefined; return immutable({ x: Number(x), y: Number(y), width: Number(width), height: Number(height) }); }
 function readPlannerResizeDimensions(value: unknown): PlannerResizeDimensions | undefined { const source = object(value); const width = source.width; const height = source.height; if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || Number(width) < 1 || Number(height) < 1 || Number(width) > RESIZE_MAX_DIMENSION || Number(height) > RESIZE_MAX_DIMENSION) return undefined; const pixels = Number(width) * Number(height); if (!Number.isSafeInteger(pixels) || pixels > RESIZE_MAX_OUTPUT_PIXELS) return undefined; return immutable({ width: Number(width), height: Number(height) }); }
 function readPlannerOrthogonalTransformMode(value: unknown): PlannerOrthogonalTransformMode | undefined { return typeof value === 'string' && (ORTHOGONAL_TRANSFORM_MODES as readonly string[]).includes(value) ? value as PlannerOrthogonalTransformMode : undefined; }

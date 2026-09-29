@@ -7,8 +7,9 @@ import {
   normalizeOrthogonalTransformMode,
   orthogonalTransformOutputGeometry,
 } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
-import { MASKED_EXPOSURE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { MASKED_EXPOSURE_TOOL_DEFINITION, MASKED_WHITE_BALANCE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION } from '../../../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { MASKED_EXPOSURE_OPERATION, MASKED_EXPOSURE_TOOL_ID, MASKED_EXPOSURE_TOOL_VERSION, normalizeMaskedExposureEighthStops } from '../../../src/platform/creative/deterministic/MaskedExposure.ts';
+import { MASKED_WHITE_BALANCE_OPERATION, MASKED_WHITE_BALANCE_TOOL_ID, MASKED_WHITE_BALANCE_TOOL_VERSION, normalizeMaskedWhiteBalanceParameters } from '../../../src/platform/creative/deterministic/MaskedWhiteBalance.ts';
 import { SUPER_RESOLUTION_ALPHA_POLICY, SUPER_RESOLUTION_SCALE } from '../../../src/platform/creative/super-resolution/SuperResolutionContract.ts';
 
 export const PRODUCTION_WORKFLOW_VERIFICATION_VERSION = '6.42C3.2';
@@ -76,6 +77,14 @@ export class ProductionWorkflowVerifier implements WorkflowVerifierPort {
       if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
       if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
       if (!isCanonicalMaskedExposureImage(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicSemantics, [CHECKS.supported, CHECKS.imageKind]);
+      const parents = artifacts[0].metadata?.parentArtifactIds;
+      if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
+      return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage], errors: [] });
+    }
+    if (operation.type === MASKED_WHITE_BALANCE_OPERATION) {
+      if (operation.executionRoute !== 'ON_DEVICE' || operation.providerId) return invalid(operation.id, ERRORS.invalidDeterministicSemantics);
+      if (artifacts.length !== 1 || artifacts[0].kind !== 'image') return invalid(operation.id, ERRORS.wrongKind, [CHECKS.supported]);
+      if (!isCanonicalMaskedWhiteBalanceImage(operation, artifacts[0])) return invalid(operation.id, ERRORS.invalidDeterministicSemantics, [CHECKS.supported, CHECKS.imageKind]);
       const parents = artifacts[0].metadata?.parentArtifactIds;
       if (!Array.isArray(parents) || !(operation.requiredArtifacts ?? []).every(id => parents.includes(id))) return invalid(operation.id, ERRORS.invalidLocalImageLineage, [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels]);
       return freezeResult({ stepId: operation.id, valid: true, checks: [CHECKS.supported, CHECKS.imageKind, CHECKS.deterministicContract, CHECKS.deterministicPixels, CHECKS.localLineage], errors: [] });
@@ -201,6 +210,48 @@ function isCanonicalMaskedExposureImage(operation: WorkflowOperation, artifact: 
   try {
     const eighthStops = normalizeMaskedExposureEighthStops(Number(input.eighthStops));
     return metadata.eighthStops === eighthStops;
+  } catch { return false; }
+}
+
+function isCanonicalMaskedWhiteBalanceImage(operation: WorkflowOperation, artifact: Artifact): boolean {
+  if (!isPixelImage(artifact.value)) return false;
+  const metadata = artifact.metadata as Readonly<Record<string, unknown>> | undefined;
+  if (!metadata || metadata.artifactRole !== 'COMPOSITE' || metadata.localExecutionAdmission !== 'ADMITTED') return false;
+  if (metadata.admissionClass !== 'DETERMINISTIC_BYTE_EXACT' || metadata.verificationScope !== 'BYTE_EXACT_CORE_RECOMPUTE') return false;
+  if (metadata.executorKind !== 'DETERMINISTIC_TOOL' || metadata.toolId !== MASKED_WHITE_BALANCE_TOOL_ID || metadata.toolVersion !== MASKED_WHITE_BALANCE_TOOL_VERSION) return false;
+  if (metadata.runtime !== 'BROWSER_JS' || metadata.accelerator !== 'cpu') return false;
+  if (!sha256(metadata.candidateSha256) || !sha256(metadata.verifiedPixelSha256)) return false;
+  const exact = MASKED_WHITE_BALANCE_TOOL_DEFINITION.parameters.exact;
+  if (metadata.coordinateSpace !== exact.coordinateSpace
+    || metadata.transferDomain !== exact.transferDomain
+    || metadata.parameterEncoding !== exact.parameterEncoding
+    || metadata.parameterFractionBits !== exact.parameterFractionBits
+    || metadata.gainEncoding !== exact.gainEncoding
+    || metadata.gainFixedPointBits !== exact.gainFixedPointBits
+    || metadata.temperatureLaw !== exact.temperatureLaw
+    || metadata.tintLaw !== exact.tintLaw
+    || metadata.gainRounding !== exact.gainRounding
+    || metadata.maskBlend !== exact.maskBlend
+    || metadata.alphaPolicy !== exact.alphaPolicy) return false;
+  const integrity = metadata.integrityMetrics as Readonly<Record<string, unknown>> | undefined;
+  if (integrity?.verificationOutcome !== 'PASS' || integrity.pixelComparison !== 'BYTE_EXACT') return false;
+  const input = operation.input;
+  if (!input
+    || input.deterministicTool !== exact.deterministicTool
+    || input.coordinateSpace !== exact.coordinateSpace
+    || input.transferDomain !== exact.transferDomain
+    || input.parameterEncoding !== exact.parameterEncoding
+    || input.parameterFractionBits !== exact.parameterFractionBits
+    || input.gainEncoding !== exact.gainEncoding
+    || input.gainFixedPointBits !== exact.gainFixedPointBits
+    || input.temperatureLaw !== exact.temperatureLaw
+    || input.tintLaw !== exact.tintLaw
+    || input.gainRounding !== exact.gainRounding
+    || input.maskBlend !== exact.maskBlend
+    || input.alphaPolicy !== exact.alphaPolicy) return false;
+  try {
+    const normalized = normalizeMaskedWhiteBalanceParameters(Number(input.temperatureQ8), Number(input.tintQ8));
+    return metadata.temperatureQ8 === normalized.temperatureQ8 && metadata.tintQ8 === normalized.tintQ8;
   } catch { return false; }
 }
 

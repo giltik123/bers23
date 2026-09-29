@@ -7,6 +7,7 @@ import { RESIZE_MAX_DIMENSION, RESIZE_MAX_OUTPUT_PIXELS, RESIZE_OPERATION } from
 import { ORTHOGONAL_TRANSFORM_MODES, ORTHOGONAL_TRANSFORM_OPERATION } from '../deterministic/OrthogonalTransformIdentity.js';
 import { GARMENT_MESH_WARP_OPERATION } from '../deterministic/GarmentMeshWarpIdentity.js';
 import { MASKED_EXPOSURE_OPERATION } from '../deterministic/MaskedExposureIdentity.js';
+import { MASKED_WHITE_BALANCE_OPERATION } from '../deterministic/MaskedWhiteBalanceIdentity.js';
 import type { CreativeArtifact, CreativeDecision, CreativeExecutionPlan, CreativeOperation, CreativePipeline, CreativePlan, CreativeRequest, ProductionOutcome, VerificationResult } from './contracts';
 import type { LocalExecutionInputBinding, LocalExecutionManagedGarmentInputBinding, LocalExecutionTicket, LocalExecutionTicketV2 } from './localExecution';
 import type { CreativeExecutionPlatformRuntimeDependencies } from './providerSelection';
@@ -346,7 +347,7 @@ function expectedLocalOutputs(request: CreativeRequest, operation: CreativeOpera
   const height = source?.image?.height ?? (typeof value?.height === 'number' ? value.height : undefined);
   if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1) throw new Error(`ON_DEVICE ${operation.type} requires canonical source dimensions`);
   if (operation.type === 'segment') return Object.freeze([{ kind: 'mask', role: 'MASK' as const, count: 1, mimeTypes: Object.freeze(['application/octet-stream']), width: Number(width), height: Number(height) }]);
-  if (operation.type === 'BACKGROUND_ISOLATION' || operation.type === MASKED_EXPOSURE_OPERATION) return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(width), height: Number(height) }]);
+  if (operation.type === 'BACKGROUND_ISOLATION' || operation.type === MASKED_EXPOSURE_OPERATION || operation.type === MASKED_WHITE_BALANCE_OPERATION) return Object.freeze([{ kind: 'image', role: 'COMPOSITE' as const, count: 1, mimeTypes: Object.freeze(['image/png']), width: Number(width), height: Number(height) }]);
   if (operation.type === 'CROP') {
     const input = operation.input && typeof operation.input === 'object' ? operation.input as Readonly<Record<string, unknown>> : undefined;
     const x = input?.x; const y = input?.y; const cropWidth = input?.width; const cropHeight = input?.height;

@@ -25,7 +25,7 @@ import type { CoreServerConfig } from '../config.ts';
 import { checkExecutionRunSchema, migrateExecutionRunSchema } from '../execution/executionRunSchema.ts';
 import { PostgresExecutionRunRegistry } from '../execution/PostgresExecutionRunRegistry.ts';
 import { DeterministicWorkflowStepFinalRecoveryAuthority } from '../localExecution/DeterministicWorkflowStepFinalRecoveryAuthority.ts';
-import { LocalCropExecutionService, LocalDeterministicImageExecutionService, LocalMaskedExposureExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalOrthogonalTransformExecutionService, LocalResizeExecutionService, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, OrthogonalTransformInputDeliveryService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
+import { LocalCropExecutionService, LocalDeterministicImageExecutionService, LocalMaskedExposureExecutionService, LocalMaskedWhiteBalanceExecutionService, LocalExecutionInputDeliveryService, LocalExecutionTicketAuthority, LocalOrthogonalTransformExecutionService, LocalResizeExecutionService, LocalSegmentationExecutionService, LocalSuperResolutionExecutionService, OrthogonalTransformInputDeliveryService, PostgresLocalExecutionLedger, PostgresLocalExecutionUploadStore, checkLocalExecutionLedgerSchema, migrateLocalExecutionLedgerSchema } from '../localExecution/index.ts';
 import { productionLocalModelsByCapability } from '../localExecution/productionLocalModelPolicy.ts';
 import { productionLocalExecutorsByCapability } from '../localExecution/productionLocalExecutorPolicy.ts';
 import { productionProviderSelection } from '../providers/productionProviderSelection.ts';
@@ -213,6 +213,24 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
       now,
     });
+    const localMaskedWhiteBalance = new LocalMaskedWhiteBalanceExecutionService({
+      platform: canonical,
+      ownsArtifacts,
+      hydrateArtifacts,
+      admission: localExecutionAdmission,
+      uploads: localUploads,
+      limits: Object.freeze({ maxDimension: config.imageMaxDimension, maxPixels: config.imageMaxPixels, maxUploadBytes: config.imageUploadLimitBytes }),
+      persistFinal: (scope, executionId, operationId, image, lineage) => {
+        if (!lineage || lineage.producerOperation !== 'MASKED_WHITE_BALANCE') throw new Error('Masked White Balance FINAL requires explicit IMAGE + MASK lineage');
+        const sourceImageStorageId = resolveStoredImageStorageId(externalArtifacts, lineage.sourceArtifactId, scope);
+        const maskStorageId = resolveStoredMaskStorageId(externalArtifacts, lineage.maskArtifactId, scope);
+        if (!sourceImageStorageId || !maskStorageId) throw new Error('Masked White Balance FINAL requires stored canonical IMAGE + MASK parents');
+        return artifacts.images.persistFinal(scope, executionId, operationId, image, { sourceImageStorageId, maskStorageId, producerOperation: 'MASKED_WHITE_BALANCE' });
+      },
+      loadPersistedFinal: (executionId, scope) => artifacts.images.loadFinalByExecution(executionId, scope),
+      issueFinalId: (storageId, scope) => externalArtifacts.issueStoredFinal(storageId, scope),
+      now,
+    });
     const localCrop = new LocalCropExecutionService({
       platform: canonical,
       ownsArtifacts,
@@ -347,6 +365,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
         segmentation: localSegmentation,
         deterministicImages: localDeterministicImages,
         maskedExposure: localMaskedExposure,
+        maskedWhiteBalance: localMaskedWhiteBalance,
         crop: localCrop,
         resize: localResize,
         orthogonalTransform: localOrthogonalTransform,

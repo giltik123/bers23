@@ -57,17 +57,19 @@ jobs:
           npm run typecheck
           npm run server:typecheck
           node --test tests/project-draft-client-boundary.test.mjs
-      - name: Prove production migration tail is exact through 046
+      - name: Prove production migration tail is exact through 047
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 46) throw new Error(`Expected 46 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 47) throw new Error(`Expected 47 contiguous migrations, got ${migrations.length}`);
           if (migrations[43]?.name !== '044_canonical_project_revision.sql') throw new Error('044 Project revision migration moved');
           if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle is not the exact tail');
           if (migrations[44]?.source !== 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql') throw new Error('045 Project lifecycle migration moved outside Project authority');
-          if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration is not the exact global tail');
+          if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved from its accepted position');
           if (migrations[45]?.source !== 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved outside Artifact authority');
+          if (migrations[46]?.name !== '047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration is not the exact global tail');
+          if (migrations[46]?.source !== 'server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration moved outside Artifact authority');
           NODE
       - name: Build immutable Core and apply exact schema
         run: |
@@ -75,6 +77,7 @@ jobs:
           test -f dist-server/migrations/044_canonical_project_revision.sql
           test -f dist-server/migrations/045_canonical_project_status_lifecycle.sql
           test -f dist-server/migrations/046_canonical_masked_exposure_final_lineage.sql
+          test -f dist-server/migrations/047_canonical_masked_white_balance_final_lineage.sql
           node dist-server/migrate.mjs migrate
           node dist-server/migrate.mjs check
       - name: Bundle Project Draft lifecycle regressions

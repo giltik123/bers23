@@ -139,7 +139,9 @@ const F4B4_COMMON_EXACT_PATHS = new Set([
   'src/platform/creative/deterministic/ExposureIdentity.js',
   'src/platform/creative/deterministic/MaskedExposure.ts',
   'src/platform/creative/deterministic/MaskedExposureIdentity.js',
+  'src/platform/creative/deterministic/WhiteBalance.ts',
   'src/platform/creative/deterministic/WhiteBalanceIdentity.js',
+  'src/platform/creative/deterministic/MaskedWhiteBalance.ts',
   'src/platform/creative/deterministic/MaskedWhiteBalanceIdentity.js',
   'server/core/localExecution/productionLocalExecutorPolicy.ts',
   'server/core/providers/productionExecutionCapabilities.ts',
@@ -258,7 +260,7 @@ function getF4b4PostgresExactPaths() {
   if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B4_POSTGRES_VERTICAL) {
     throw new Error('Invalid F4b.4 PostgreSQL CI closure manifest identity');
   }
-  const expectedCounts = Object.freeze({ bundleInputs: 221, migrationPaths: 42, supportPaths: 17 });
+  const expectedCounts = Object.freeze({ bundleInputs: 224, migrationPaths: 43, supportPaths: 17 });
   for (const [key, expected] of Object.entries(expectedCounts)) {
     if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
       throw new Error(`Invalid F4b.4 PostgreSQL CI closure ${key}: expected ${expected} exact paths`);
@@ -277,6 +279,9 @@ function getF4b4PostgresExactPaths() {
   if (!manifest.migrationPaths.includes('server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql')) {
     throw new Error('F4b.4 PostgreSQL CI closure must include Masked Exposure lineage migration 046');
   }
+  if (!manifest.migrationPaths.includes('server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql')) {
+    throw new Error('F4b.4 PostgreSQL CI closure must include Masked White Balance lineage migration 047');
+  }
   if (manifest.migrationPaths.includes('server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql')) {
     throw new Error('F5 refinement migration 032 must not enter F4b.4 PostgreSQL CI authority');
   }
@@ -292,7 +297,7 @@ function getF4b5bPostgresExactPaths() {
   if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B5B_TEXTURE_POSTGRES_VERTICAL) {
     throw new Error('Invalid F4b.5b PostgreSQL CI closure manifest identity');
   }
-  const expectedCounts = Object.freeze({ bundleInputs: 85, migrationPaths: 30, supportPaths: 20 });
+  const expectedCounts = Object.freeze({ bundleInputs: 89, migrationPaths: 31, supportPaths: 20 });
   for (const [key, expected] of Object.entries(expectedCounts)) {
     if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
       throw new Error(`Invalid F4b.5b PostgreSQL CI closure ${key}: expected ${expected} exact paths`);
@@ -310,6 +315,9 @@ function getF4b5bPostgresExactPaths() {
   }
   if (!manifest.migrationPaths.includes('server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql')) {
     throw new Error('F4b.5b PostgreSQL CI closure must include Masked Exposure lineage migration 046');
+  }
+  if (!manifest.migrationPaths.includes('server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql')) {
+    throw new Error('F4b.5b PostgreSQL CI closure must include Masked White Balance lineage migration 047');
   }
   for (const excluded of [
     'server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql',
