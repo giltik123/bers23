@@ -1,0 +1,91 @@
+name: Masked White Balance Deterministic Tool Candidate
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/platform/creative/deterministic/MaskedWhiteBalance.ts'
+      - 'src/platform/creative/deterministic/MaskedWhiteBalanceIdentity.js'
+      - 'src/platform/creative/deterministic/WhiteBalance.ts'
+      - 'src/platform/creative/deterministic/WhiteBalanceIdentity.js'
+      - 'src/platform/creative/deterministic/DeterministicToolRegistry.ts'
+      - 'server/core/localExecution/productionLocalExecutorPolicy.ts'
+      - 'server/core/providers/productionExecutionCapabilities.ts'
+      - 'src/platform/creative/canonical/planning/CanonicalPlanningService.ts'
+      - 'scripts/classify-fashion-execution-ci.mjs'
+      - 'scripts/f4b4-postgres-ci-closure.json'
+      - 'tests/deterministic-masked-white-balance-contract.test.ts'
+      - 'tests/deterministic-white-balance-contract.test.ts'
+      - 'tests/deterministic-crop-contract.test.ts'
+      - 'tests/background-isolation-canonical-wiring.test.ts'
+      - 'tests/fashion-f4b4-execution-ci-relevance.test.mjs'
+      - 'tests/fashion-f4b4-postgres-ci-relevance.test.mjs'
+      - '.github/workflows/masked-white-balance-deterministic-tool-candidate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  masked-white-balance-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core registry surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Bundle Masked White Balance and registry regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/p192-masked-white-balance
+          for file in \
+            tests/deterministic-masked-white-balance-contract.test.ts \
+            tests/deterministic-white-balance-contract.test.ts \
+            tests/deterministic-crop-contract.test.ts \
+            tests/background-isolation-canonical-wiring.test.ts; do
+            out=".test-cache/p192-masked-white-balance/$(basename "${file%.ts}").mjs"
+            npx esbuild "$file" --bundle --platform=node --format=esm --target=node24 --outfile="$out" --external:node:* --external:pg --external:sharp
+          done
+      - name: Prove Masked White Balance kernel and data-only registry contract
+        run: |
+          node --test \
+            .test-cache/p192-masked-white-balance/deterministic-masked-white-balance-contract.test.mjs \
+            .test-cache/p192-masked-white-balance/deterministic-white-balance-contract.test.mjs \
+            .test-cache/p192-masked-white-balance/deterministic-crop-contract.test.mjs \
+            .test-cache/p192-masked-white-balance/background-isolation-canonical-wiring.test.mjs
+      - name: Build production browser
+        run: npm run build
+      - name: Prove Masked White Balance candidate remains production fail closed
+        run: |
+          set -euo pipefail
+          kernel=src/platform/creative/deterministic/MaskedWhiteBalance.ts
+          registry=src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          policy=server/core/localExecution/productionLocalExecutorPolicy.ts
+          capabilities=server/core/providers/productionExecutionCapabilities.ts
+          planner=src/platform/creative/canonical/planning/CanonicalPlanningService.ts
+          grep -q "SIGNED_Q8_RELATIVE_CHANNEL_BALANCE" "$registry"
+          grep -q "SOURCE_ADJUSTED_ALPHA8_ROUND_HALF_UP" "$registry"
+          grep -q "whiteBalanceGainsQ16" "$kernel"
+          grep -q "maskAlpha" "$kernel"
+          grep -q "floating-point color-temperature transform" "$kernel"
+          ! grep -q "MASKED_WHITE_BALANCE_CAPABILITY" "$policy"
+          ! grep -q "local:tool:masked-white-balance:v1" "$policy"
+          ! grep -q "MASKED_WHITE_BALANCE_CAPABILITY" "$capabilities"
+          ! grep -q "MASKED_WHITE_BALANCE" "$planner"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD

@@ -66,6 +66,19 @@ import {
   WHITE_BALANCE_TOOL_VERSION,
 } from './WhiteBalanceIdentity.js';
 import {
+  MASKED_WHITE_BALANCE_CAPABILITY,
+  MASKED_WHITE_BALANCE_MAX_TEMPERATURE_Q8,
+  MASKED_WHITE_BALANCE_MAX_TINT_Q8,
+  MASKED_WHITE_BALANCE_PARAMETER_FRACTION_BITS,
+  MASKED_WHITE_BALANCE_GAIN_FIXED_POINT_BITS,
+  MASKED_WHITE_BALANCE_MIN_TEMPERATURE_Q8,
+  MASKED_WHITE_BALANCE_MIN_TINT_Q8,
+  MASKED_WHITE_BALANCE_OPERATION,
+  MASKED_WHITE_BALANCE_STEP_ID,
+  MASKED_WHITE_BALANCE_TOOL_ID,
+  MASKED_WHITE_BALANCE_TOOL_VERSION,
+} from './MaskedWhiteBalanceIdentity.js';
+import {
   MASKED_EXPOSURE_CAPABILITY,
   MASKED_EXPOSURE_MAX_EIGHTH_STOPS,
   MASKED_EXPOSURE_MIN_EIGHTH_STOPS,
@@ -147,7 +160,7 @@ export type DeterministicToolDefinition = Readonly<{
     format: 'RGBA8';
     colorSpace: 'srgb';
     orientation: 1;
-    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16_MASK_ALPHA8_BLEND' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
+    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16_MASK_ALPHA8_BLEND' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16_MASK_ALPHA8_BLEND' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
     alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP' | 'TEXTURE_PRESERVE_WARP_FEATHER_SOURCE_OVER';
     interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_FIXED_16_16_AFFINE_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH' | 'BILINEAR_NORMALIZED_Q16_TEXTURE_AND_MESH';
     rounding?: 'INTEGER_EXACT' | 'ROUND_HALF_UP';
@@ -204,6 +217,59 @@ const backgroundIsolationDefinition: DeterministicToolDefinition = deepFreeze({
     uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
   },
   lineage: { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: 'BACKGROUND_ISOLATION' },
+});
+
+const maskedWhiteBalanceDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: MASKED_WHITE_BALANCE_CAPABILITY,
+  operation: { id: MASKED_WHITE_BALANCE_STEP_ID, type: MASKED_WHITE_BALANCE_OPERATION, version: '1' },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: MASKED_WHITE_BALANCE_TOOL_ID, version: MASKED_WHITE_BALANCE_TOOL_VERSION },
+  inputs: [
+    { name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+    { name: 'mask', kind: 'mask', roles: ['MASK'], sha256: 'REQUIRED', geometry: 'MATCH_SOURCE' },
+  ],
+  output: { kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: ['image/png'], geometry: 'MATCH_SOURCE' },
+  parameters: {
+    artifactIdBindings: [
+      { parameter: 'sourceArtifactId', input: 'source' },
+      { parameter: 'maskArtifactId', input: 'mask' },
+    ],
+    exact: {
+      deterministicTool: `${MASKED_WHITE_BALANCE_TOOL_ID}@${MASKED_WHITE_BALANCE_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_RGBA8_PLUS_ALPHA8_MASK',
+      transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
+      parameterEncoding: 'SIGNED_Q8_RELATIVE_CHANNEL_BALANCE',
+      parameterFractionBits: MASKED_WHITE_BALANCE_PARAMETER_FRACTION_BITS,
+      gainEncoding: 'Q16_16_DERIVED_INTEGER',
+      gainFixedPointBits: MASKED_WHITE_BALANCE_GAIN_FIXED_POINT_BITS,
+      temperatureLaw: 'RED_PLUS_BLUE_MINUS_EQUAL_Q8',
+      tintLaw: 'MAGENTA_PLUS_HALF_GREEN_MINUS_FULL_Q8',
+      gainRounding: 'ROUND_HALF_UP',
+      maskBlend: 'SOURCE_ADJUSTED_ALPHA8_ROUND_HALF_UP',
+      alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
+    },
+    integerRanges: [
+      { parameter: 'temperatureQ8', min: MASKED_WHITE_BALANCE_MIN_TEMPERATURE_Q8, max: MASKED_WHITE_BALANCE_MAX_TEMPERATURE_Q8 },
+      { parameter: 'tintQ8', min: MASKED_WHITE_BALANCE_MIN_TINT_Q8, max: MASKED_WHITE_BALANCE_MAX_TINT_Q8 },
+    ],
+  },
+  browser: { executorId: 'masked-white-balance-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'masked-white-balance-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16_MASK_ALPHA8_BLEND',
+    alpha: 'COPY_SOURCE_ALPHA_BYTES',
+    interpolation: 'NONE',
+    rounding: 'ROUND_HALF_UP',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+  },
+  lineage: { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: MASKED_WHITE_BALANCE_OPERATION },
 });
 
 const maskedExposureDefinition: DeterministicToolDefinition = deepFreeze({
@@ -549,6 +615,7 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
   resizeDefinition,
   exposureDefinition,
   whiteBalanceDefinition,
+  maskedWhiteBalanceDefinition,
   maskedExposureDefinition,
   affineTransformDefinition,
   orthogonalTransformDefinition,
@@ -561,6 +628,7 @@ export const CROP_TOOL_DEFINITION = cropDefinition;
 export const RESIZE_TOOL_DEFINITION = resizeDefinition;
 export const EXPOSURE_TOOL_DEFINITION = exposureDefinition;
 export const WHITE_BALANCE_TOOL_DEFINITION = whiteBalanceDefinition;
+export const MASKED_WHITE_BALANCE_TOOL_DEFINITION = maskedWhiteBalanceDefinition;
 export const MASKED_EXPOSURE_TOOL_DEFINITION = maskedExposureDefinition;
 export const AFFINE_TRANSFORM_TOOL_DEFINITION = affineTransformDefinition;
 export const ORTHOGONAL_TRANSFORM_TOOL_DEFINITION = orthogonalTransformDefinition;

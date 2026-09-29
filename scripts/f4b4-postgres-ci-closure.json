@@ -221,7 +221,8 @@
     "src/platform/creative/deterministic/Exposure.ts",
     "src/platform/creative/deterministic/MaskedExposure.ts",
     "src/platform/creative/deterministic/MaskedExposureIdentity.js",
-    "src/platform/creative/deterministic/WhiteBalanceIdentity.js"
+    "src/platform/creative/deterministic/WhiteBalanceIdentity.js",
+    "src/platform/creative/deterministic/MaskedWhiteBalanceIdentity.js"
   ],
   "migrationPaths": [
     "server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql",

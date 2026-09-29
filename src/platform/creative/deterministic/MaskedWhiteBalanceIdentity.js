@@ -1,0 +1,40 @@
+import {
+  WHITE_BALANCE_MAX_DIMENSION,
+  WHITE_BALANCE_MAX_OUTPUT_PIXELS,
+  WHITE_BALANCE_PARAMETER_FRACTION_BITS,
+  WHITE_BALANCE_GAIN_FIXED_POINT_BITS,
+  WHITE_BALANCE_MAX_TEMPERATURE_Q8,
+  WHITE_BALANCE_MAX_TINT_Q8,
+  WHITE_BALANCE_MIN_TEMPERATURE_Q8,
+  WHITE_BALANCE_MIN_TINT_Q8,
+} from './WhiteBalanceIdentity.js';
+
+/** Node/browser-safe immutable identity leaf for deterministic Masked White Balance v1. */
+/** @type {'masked-white-balance'} */
+export const MASKED_WHITE_BALANCE_TOOL_ID = 'masked-white-balance';
+/** @type {'1'} */
+export const MASKED_WHITE_BALANCE_TOOL_VERSION = '1';
+/** @type {'local:tool:masked-white-balance:v1'} */
+export const MASKED_WHITE_BALANCE_CAPABILITY = 'local:tool:masked-white-balance:v1';
+/** @type {'MASKED_WHITE_BALANCE'} */
+export const MASKED_WHITE_BALANCE_OPERATION = 'MASKED_WHITE_BALANCE';
+/** @type {'masked-white-balance'} */
+export const MASKED_WHITE_BALANCE_STEP_ID = 'masked-white-balance';
+/** @type {-128} */
+export const MASKED_WHITE_BALANCE_MIN_TEMPERATURE_Q8 = WHITE_BALANCE_MIN_TEMPERATURE_Q8;
+/** @type {128} */
+export const MASKED_WHITE_BALANCE_MAX_TEMPERATURE_Q8 = WHITE_BALANCE_MAX_TEMPERATURE_Q8;
+/** @type {-64} */
+export const MASKED_WHITE_BALANCE_MIN_TINT_Q8 = WHITE_BALANCE_MIN_TINT_Q8;
+/** @type {64} */
+export const MASKED_WHITE_BALANCE_MAX_TINT_Q8 = WHITE_BALANCE_MAX_TINT_Q8;
+/** @type {8} */
+export const MASKED_WHITE_BALANCE_PARAMETER_FRACTION_BITS = WHITE_BALANCE_PARAMETER_FRACTION_BITS;
+/** @type {16} */
+export const MASKED_WHITE_BALANCE_GAIN_FIXED_POINT_BITS = WHITE_BALANCE_GAIN_FIXED_POINT_BITS;
+/** @type {16384} */
+export const MASKED_WHITE_BALANCE_MAX_DIMENSION = WHITE_BALANCE_MAX_DIMENSION;
+/** @type {16777216} */
+export const MASKED_WHITE_BALANCE_MAX_PIXELS = WHITE_BALANCE_MAX_OUTPUT_PIXELS;
+/** @type {67108864} */
+export const MASKED_WHITE_BALANCE_MAX_WORK = WHITE_BALANCE_MAX_OUTPUT_PIXELS * 4;
