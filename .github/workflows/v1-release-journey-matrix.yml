@@ -1,0 +1,51 @@
+name: BERS v1 browser release journey matrix
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'config/v1-release-journey-matrix.json'
+      - 'docs/v1-release-journey-matrix.md'
+      - 'tests/v1-release-journey-matrix.test.mjs'
+      - 'scripts/test-release-r3*.mjs'
+      - 'scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs'
+      - 'scripts/test-automation-c3c-studio-browser-e2e.mjs'
+      - 'scripts/verify-frontend-security-headers.mjs'
+      - '.github/workflows/release-r3*.yml'
+      - '.github/workflows/automation-*-browser-e2e-*.yml'
+      - '.github/workflows/security-frontend-deployment-contract.yml'
+      - '.github/workflows/v1-release-journey-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  journey-matrix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Prove #233 journey coverage and remaining external deployment gap
+        run: node --test tests/v1-release-journey-matrix.test.mjs
+      - name: Preserve truthful release status
+        run: |
+          set -euo pipefail
+          test "$(grep -c '"disposition": "PROVEN"' config/v1-release-journey-matrix.json)" -eq 20
+          test "$(grep -c '"disposition": "DEFERRED_OUT_OF_V1"' config/v1-release-journey-matrix.json)" -eq 1
+          test "$(grep -c '"disposition": "DEPLOYMENT_TARGET_PENDING"' config/v1-release-journey-matrix.json)" -eq 1
+          grep -q '"id": 22' config/v1-release-journey-matrix.json
+          grep -q 'final canonical deployed frontend URL' docs/v1-release-journey-matrix.md
+      - name: Check committed diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
