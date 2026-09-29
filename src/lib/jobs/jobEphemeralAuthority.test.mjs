@@ -80,7 +80,7 @@ test('Job Center separates canonical reconciliation from explicit new-operation 
     readFile(rowPath, 'utf8'),
     readFile(canonicalRowPath, 'utf8'),
   ]);
-  assert.match(center, /Canonical recovery state · owning Creative controls only/);
+  assert.match(center, /Canonical recovery state · owning authority controls only/);
   assert.match(center, /Run again starts a new operation/);
   assert.match(center, /job\.executionClass === JOB_EXECUTION_CLASSES\.EPHEMERAL_CLIENT_TASK/);
   assert.match(center, /Unsupported session task classification\. Controls are withheld\./);
@@ -88,10 +88,13 @@ test('Job Center separates canonical reconciliation from explicit new-operation 
   assert.match(center, /data-job-center-session-jobs/);
   assert.match(center, /onRunAgain=\{\(id\) => jobManager\.runAgain\(id\)/);
   assert.match(center, /onDuplicate=\{\(id\) => jobManager\.duplicate\(id\)/);
-  assert.doesNotMatch(center, /jobManager\.retry|onRetry=/);
+  assert.doesNotMatch(center, /jobManager\.retry/);
+  assert.doesNotMatch(center, /<JobRow[^>]*onRetry=/);
   assert.match(row, /onRunAgain/);
   assert.match(row, />Run again</);
   assert.doesNotMatch(row, /onRetry|>Retry<|\bRetry\b/);
-  assert.doesNotMatch(center, /<CanonicalExecutionRunRow[^>]*(onRunAgain|onRetry|onDuplicate|onMoveUp)=/);
-  assert.doesNotMatch(canonicalRow, /onRunAgain|onRetry|onDuplicate|onMoveUp|jobManager|jobStorage/);
+  assert.match(center, /<CanonicalExecutionRunRow[^>]*onRetry=\{retryCanonicalWorkflow\}/);
+  assert.doesNotMatch(center, /<CanonicalExecutionRunRow[^>]*(onRunAgain|onDuplicate|onMoveUp)=/);
+  assert.match(canonicalRow, />Retry workflow</);
+  assert.doesNotMatch(canonicalRow, /onRunAgain|onDuplicate|onMoveUp|jobManager|jobStorage/);
 });
