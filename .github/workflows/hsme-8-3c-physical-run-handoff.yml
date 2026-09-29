@@ -1,0 +1,108 @@
+name: HSME-8.3c physical runner handoff
+
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'server/core/training/HsmePhysicalMobileCapturePlanV1.ts'
+      - 'server/core/training/HsmePhysicalMobileRunHandoffV1.ts'
+      - 'server/core/training/HsmePhysicalMobileRunHandoffV1.test.mjs'
+      - '.github/workflows/hsme-8-3c-physical-run-handoff.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  physical-run-handoff:
+    name: immutable physical runner handoff manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run physical runner handoff regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-8-3c
+          npx esbuild server/core/training/HsmePhysicalMobileRunHandoffV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-8-3c/physical-run-handoff.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-8-3c/physical-run-handoff.test.mjs
+
+      - name: Prove exact plan and runner-binding trust
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePhysicalMobileRunHandoffV1.ts
+          grep -F 'hsmePhysicalMobileCapturePlanV1Digest(' "$SRC"
+          grep -F 'verifyPhysicalMobileCapturePlan(' "$SRC"
+          grep -F 'hsmePhysicalMobileRunnerBindingV1Digest(' "$SRC"
+          grep -F 'verifyPhysicalMobileRunnerBinding(' "$SRC"
+          grep -F 'binding.capturePlanEvidenceSha256!==planSha256' "$SRC"
+
+      - name: Prove platform runner and immutable identity handoff
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePhysicalMobileRunHandoffV1.ts
+          grep -F "'ANDROID_NATIVE'" "$SRC"
+          grep -F "'IOS_NATIVE'" "$SRC"
+          grep -F 'candidateId:plan.candidateId' "$SRC"
+          grep -F 'fleetModelId:plan.fleetModelId' "$SRC"
+          grep -F 'representationContentSha256:' "$SRC"
+          grep -F 'placementMeasurementEvidenceSha256:' "$SRC"
+          grep -F 'runtimeIdentity:plan.runtimeIdentity' "$SRC"
+
+      - name: Prove preinstalled zero-network no-post-hoc law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePhysicalMobileRunHandoffV1.ts
+          grep -F "'CONTENT_ADDRESSED_AFTER_CAPTURE'" "$SRC"
+          grep -F "'PREINSTALLED_VERIFIED_ONLY'" "$SRC"
+          grep -F 'networkDuringExecutionAllowed:false' "$SRC"
+          grep -F 'postHocCandidateSelectionAllowed:false' "$SRC"
+          grep -F 'postHocPlacementSelectionAllowed:false' "$SRC"
+          grep -F 'modelMutationAllowed:false' "$SRC"
+          grep -F 'expectedFoundationPhysicalBundle:true' "$SRC"
+          grep -F 'expectedNativeEnergyThermalEvidence:true' "$SRC"
+
+      - name: Prove no execution phase-exit or model authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmePhysicalMobileRunHandoffV1.ts
+          grep -F 'PHYSICAL_MOBILE_RUN_HANDOFF_READY_NOT_EXECUTED' "$SRC"
+          grep -F 'physicalExecutionAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE 'qualifyHsmeRealMobileEvidenceV1|REAL_MOBILE_QUALIFICATION_READY_NOT_ADMITTED|fetch\(|https?://|\.install\(|\.remove\(|reserveCredits|spendCredits' "$SRC"
+
+      - name: Prove handoff boundary regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmePhysicalMobileRunHandoffV1.test.mjs
+          grep -F 'platform and native runner kind cannot drift' "$TEST"
+          grep -F 'runner binding must pin the exact capture plan digest' "$TEST"
+          grep -F 'preinstalled-only zero-network no-post-hoc laws are immutable' "$TEST"
+          grep -F 'mutable URI account and provider fields fail exact binding schema' "$TEST"
+          grep -F 'non-frozen capture plan remains BLOCKED' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
