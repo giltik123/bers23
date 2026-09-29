@@ -154,7 +154,8 @@ jobs:
           grep -q "NEW_OPERATION: 'NEW_OPERATION'" src/lib/jobs/jobRepeatPolicy.js
           ! grep -E -q 'jobRetryManager|jobScheduler|retry\(jobId\)' src/lib/jobs/jobManager.js
           ! grep -q 'coreClient.creative.execute' src/components/editor/jobs/JobCenter.jsx
-          ! grep -E -q 'onRunAgain|onRetry|onDuplicate' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          ! grep -E -q 'onRunAgain|onDuplicate' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
+          grep -q '>Retry workflow<' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
       - name: Preserve accepted Creative provider Billing and scope semantics
         run: node --test .test-cache/creative-production-binding/canonical-product-vertical-slice.test.mjs
       - name: Prove real HTTP Project scope reaches durable Run then Billing and provider authority

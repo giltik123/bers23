@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Circle, Loader2, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Circle, Loader2, RotateCcw, XCircle } from 'lucide-react';
 import { executionRunCapabilityLabel, executionRunStatusLabel, localExecutionAuthorityStateLabel } from '@/lib/jobs/executionRunProjection';
 
 function StatusIcon({ status }) {
@@ -11,7 +11,7 @@ function StatusIcon({ status }) {
   return <Circle className="w-3.5 h-3.5 text-muted-foreground" />;
 }
 
-export default function CanonicalExecutionRunRow({ run, control, onCancel, depth = 0 }) {
+export default function CanonicalExecutionRunRow({ run, control, retryControl, onCancel, onRetry, depth = 0 }) {
   const creativeRunning = run.capability === 'CREATIVE_EXECUTION' && run.authorityKind === 'CREATIVE_EXECUTION' && run.status === 'RUNNING';
   const recoveredFinal = run.capability === 'CREATIVE_EXECUTION' && run.authorityKind === 'CREATIVE_EXECUTION' && run.status === 'SUCCEEDED' && run.result?.kind === 'FINAL_IMAGE';
   const localRun = run.capability === 'LOCAL_EXECUTION' && run.authorityKind === 'LOCAL_EXECUTION_TICKET';
@@ -19,6 +19,9 @@ export default function CanonicalExecutionRunRow({ run, control, onCancel, depth
   const cancelAvailable = creativeRunning && control?.state === 'AVAILABLE' && typeof onCancel === 'function';
   const cancelPending = creativeRunning && control?.state === 'PENDING';
   const cancelUnavailable = creativeRunning && control?.state === 'UNAVAILABLE';
+  const workflowRoot = run.capability === 'WORKFLOW_CONTINUATION' && run.authorityKind === 'WORKFLOW_CONTINUATION';
+  const retryAvailable = workflowRoot && retryControl?.state === 'AVAILABLE' && typeof onRetry === 'function';
+  const retryPending = workflowRoot && retryControl?.state === 'PENDING';
 
   return <div data-canonical-execution-run={run.runId} className={depth ? 'ml-4 border-l border-border/60 pl-3' : ''}>
     <div className="rounded-xl border border-border/60 p-3 text-xs space-y-1">
@@ -44,6 +47,10 @@ export default function CanonicalExecutionRunRow({ run, control, onCancel, depth
       </div>}
       {cancelPending && <p className="text-[10px] text-muted-foreground text-right">Cancelling through Creative authority…</p>}
       {cancelUnavailable && <p className="text-[10px] text-muted-foreground text-right">Cancellation unavailable.</p>}
+      {retryAvailable && <div className="flex justify-end pt-1">
+        <button type="button" onClick={() => onRetry(run)} className="text-[11px] text-primary hover:underline flex items-center gap-1"><RotateCcw className="w-3 h-3" />Retry workflow</button>
+      </div>}
+      {retryPending && <p className="text-[10px] text-muted-foreground text-right">Retrying through owning workflow authority…</p>}
     </div>
     {run.children?.length > 0 && <div className="mt-1 space-y-1">{run.children.map((child) => <CanonicalExecutionRunRow key={child.runId} run={child} depth={depth + 1} />)}</div>}
   </div>;
