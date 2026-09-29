@@ -174,7 +174,7 @@ test('Editor Masked Exposure uses exact eighth-stops and remains preview-before-
   assert.match(editor, /createMaskedExposure/);
   assert.match(editor, /exposureEighthStops, setExposureEighthStops\] = useState\(8\)/);
   assert.match(editor, /const maskedExposureInFlightRef = useRef\(false\)/);
-  assert.match(editor, /if \(maskedExposureInFlightRef\.current\) return/);
+  assert.match(editor, /if \(maskedExposureInFlightRef\.current \|\| maskedWhiteBalanceInFlightRef\.current \|\| orthogonalTransformInFlightRef\.current\) return/);
   assert.match(editor, /maskedExposureInFlightRef\.current = true/);
   assert.match(editor, /maskedExposureInFlightRef\.current = false/);
   assert.match(editor, /const eighthStops = Number\.isSafeInteger\(retryContext\?\.eighthStops\) \? retryContext\.eighthStops : exposureEighthStops/);
@@ -214,7 +214,7 @@ test('Editor Masked White Balance uses exact signed Q8 controls and remains prev
   assert.match(editor, /whiteBalanceTemperatureQ8, setWhiteBalanceTemperatureQ8\] = useState\(64\)/);
   assert.match(editor, /whiteBalanceTintQ8, setWhiteBalanceTintQ8\] = useState\(0\)/);
   assert.match(editor, /const maskedWhiteBalanceInFlightRef = useRef\(false\)/);
-  assert.match(editor, /if \(maskedExposureInFlightRef\.current \|\| maskedWhiteBalanceInFlightRef\.current\) return/);
+  assert.match(editor, /if \(maskedExposureInFlightRef\.current \|\| maskedWhiteBalanceInFlightRef\.current \|\| orthogonalTransformInFlightRef\.current\) return/);
   assert.match(editor, /maskedWhiteBalanceInFlightRef\.current = true/);
   assert.match(editor, /maskedWhiteBalanceInFlightRef\.current = false/);
   assert.match(editor, /temperatureQ8 < -128 \|\| temperatureQ8 > 128/);
