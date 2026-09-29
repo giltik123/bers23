@@ -173,6 +173,10 @@ test('Editor Masked Exposure uses exact eighth-stops and remains preview-before-
 
   assert.match(editor, /createMaskedExposure/);
   assert.match(editor, /exposureEighthStops, setExposureEighthStops\] = useState\(8\)/);
+  assert.match(editor, /const maskedExposureInFlightRef = useRef\(false\)/);
+  assert.match(editor, /if \(maskedExposureInFlightRef\.current\) return/);
+  assert.match(editor, /maskedExposureInFlightRef\.current = true/);
+  assert.match(editor, /maskedExposureInFlightRef\.current = false/);
   assert.match(editor, /const eighthStops = Number\.isSafeInteger\(retryContext\?\.eighthStops\) \? retryContext\.eighthStops : exposureEighthStops/);
   assert.match(editor, /eighthStops < -32 \|\| eighthStops > 32 \|\| eighthStops === 0/);
   assert.match(editor, /local\.run\(\{ requestId: globalThis\.crypto\.randomUUID\(\), sourceArtifactId, maskArtifactId, eighthStops \}\)/);
