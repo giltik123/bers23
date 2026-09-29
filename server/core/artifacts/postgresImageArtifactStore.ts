@@ -24,6 +24,12 @@ export type MaskedExposureFinalImageLineage = Readonly<{
   producerOperation: 'MASKED_EXPOSURE';
 }>;
 
+export type MaskedWhiteBalanceFinalImageLineage = Readonly<{
+  sourceImageStorageId: string;
+  maskStorageId: string;
+  producerOperation: 'MASKED_WHITE_BALANCE';
+}>;
+
 export type CropFinalImageLineage = Readonly<{
   sourceImageStorageId: string;
   maskStorageId?: undefined;
@@ -56,6 +62,7 @@ export type GarmentAppearanceRefinementFinalImageLineage = GarmentAppearanceRefi
 export type FinalImageLineage =
   | BackgroundIsolationFinalImageLineage
   | MaskedExposureFinalImageLineage
+  | MaskedWhiteBalanceFinalImageLineage
   | CropFinalImageLineage
   | ResizeFinalImageLineage
   | OrthogonalTransformFinalImageLineage
@@ -69,6 +76,7 @@ type NormalizedGarmentTextureCompositeFinalImageLineage = GarmentTextureComposit
 type NormalizedFinalImageLineage =
   | BackgroundIsolationFinalImageLineage
   | MaskedExposureFinalImageLineage
+  | MaskedWhiteBalanceFinalImageLineage
   | CropFinalImageLineage
   | ResizeFinalImageLineage
   | OrthogonalTransformFinalImageLineage
@@ -91,7 +99,7 @@ export type StoredFinalImage = Readonly<{
   bytes: Uint8Array;
   sourceImageStorageId?: string;
   maskStorageId?: string;
-  producerOperation?: 'BACKGROUND_ISOLATION' | 'MASKED_EXPOSURE' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'GARMENT_TEXTURE_COMPOSITE' | 'GARMENT_APPEARANCE_REFINEMENT';
+  producerOperation?: 'BACKGROUND_ISOLATION' | 'MASKED_EXPOSURE' | 'MASKED_WHITE_BALANCE' | 'CROP' | 'RESIZE' | 'ORTHOGONAL_TRANSFORM' | 'GARMENT_TEXTURE_COMPOSITE' | 'GARMENT_APPEARANCE_REFINEMENT';
   garmentWarpLayerId?: string;
   garmentWarpLayerSha256?: string;
   producerParameters?: GarmentTextureCompositeProducerParametersV1;
@@ -206,7 +214,7 @@ export class PostgresImageArtifactStore {
                 storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId,
                 image.width, image.height, bytes,
                 normalizedLineage.sourceImageStorageId,
-                normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' || normalizedLineage.producerOperation === 'MASKED_EXPOSURE' ? normalizedLineage.maskStorageId : null,
+                normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' || normalizedLineage.producerOperation === 'MASKED_EXPOSURE' || normalizedLineage.producerOperation === 'MASKED_WHITE_BALANCE' ? normalizedLineage.maskStorageId : null,
                 normalizedLineage.producerOperation,
               ])
           : await this.pool.query(`INSERT INTO canonical_image_artifacts
@@ -358,6 +366,12 @@ function normalizeLineage(value: FinalImageLineage): NormalizedFinalImageLineage
     if (sourceImageStorageId === maskStorageId) throw new Error('Canonical Masked Exposure source and MASK storage identities must differ');
     return Object.freeze({ sourceImageStorageId, maskStorageId, producerOperation: 'MASKED_EXPOSURE' as const });
   }
+  if (value.producerOperation === 'MASKED_WHITE_BALANCE') {
+    const maskStorageId = value.maskStorageId?.trim();
+    if (!maskStorageId) throw new Error('Canonical Masked White Balance FINAL MASK lineage is incomplete');
+    if (sourceImageStorageId === maskStorageId) throw new Error('Canonical Masked White Balance source and MASK storage identities must differ');
+    return Object.freeze({ sourceImageStorageId, maskStorageId, producerOperation: 'MASKED_WHITE_BALANCE' as const });
+  }
   if (value.producerOperation === 'CROP') {
     if (value.maskStorageId !== undefined) throw new Error('Canonical Crop FINAL must not carry MASK lineage');
     return Object.freeze({ sourceImageStorageId, producerOperation: 'CROP' as const });
@@ -404,7 +418,7 @@ function assertExactLineagedReplay(
   lineage: NormalizedFinalImageLineage,
 ): void {
   const storedBytes = Buffer.from(row.image_bytes ?? []);
-  const expectedMaskStorageId = lineage.producerOperation === 'BACKGROUND_ISOLATION' || lineage.producerOperation === 'MASKED_EXPOSURE' ? lineage.maskStorageId : null;
+  const expectedMaskStorageId = lineage.producerOperation === 'BACKGROUND_ISOLATION' || lineage.producerOperation === 'MASKED_EXPOSURE' || lineage.producerOperation === 'MASKED_WHITE_BALANCE' ? lineage.maskStorageId : null;
   const expectedLayerId = lineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? lineage.garmentWarpLayerId : null;
   const expectedLayerSha = lineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? lineage.garmentWarpLayerSha256 : null;
   const expectedParametersSha = lineage.producerOperation === 'GARMENT_TEXTURE_COMPOSITE' ? lineage.producerParametersSha256 : null;
@@ -532,10 +546,12 @@ function lineageFieldsFromRow(row: any): Pick<
     throw new Error('Non-Fashion canonical FINAL carries Fashion-specific lineage fields');
   }
   if (!sourceImageStorageId) throw new Error('Canonical derived FINAL source lineage is incomplete');
-  if (producerOperation === 'BACKGROUND_ISOLATION' || producerOperation === 'MASKED_EXPOSURE') {
+  if (producerOperation === 'BACKGROUND_ISOLATION' || producerOperation === 'MASKED_EXPOSURE' || producerOperation === 'MASKED_WHITE_BALANCE') {
     if (!maskStorageId) throw new Error(producerOperation === 'MASKED_EXPOSURE'
       ? 'Canonical Masked Exposure FINAL MASK lineage is incomplete'
-      : 'Canonical Background Isolation FINAL MASK lineage is incomplete');
+      : producerOperation === 'MASKED_WHITE_BALANCE'
+        ? 'Canonical Masked White Balance FINAL MASK lineage is incomplete'
+        : 'Canonical Background Isolation FINAL MASK lineage is incomplete');
     return { sourceImageStorageId, maskStorageId, producerOperation };
   }
   if (maskStorageId) throw new Error('Canonical deterministic FINAL unexpectedly carries MASK lineage');
