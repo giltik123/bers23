@@ -59,7 +59,8 @@ test('Rotate/Flip is fail-closed against double submit and competing Editor inte
   assert.match(editor, /if \(orthogonalTransformInFlightRef\.current\) return/);
   assert.match(editor, /orthogonalTransformInFlightRef\.current = true/);
   assert.match(editor, /orthogonalTransformInFlightRef\.current = false/);
-  assert.match(editor, /const localEditorBusy = applying \|\| isolatingBackground \|\| upscaling \|\| cropping \|\| resizing \|\| Boolean\(orthogonalTransformingMode\)/);
+  assert.match(editor, /const localEditorBusy = applying \|\| isolatingBackground \|\| applyingMaskedExposure \|\| upscaling \|\| cropping \|\| resizing \|\| Boolean\(orthogonalTransformingMode\)/);
+  assert.match(editor, /const applyingMaskedExposure, setApplyingMaskedExposure/);
   assert.match(editor, /const tryOnActive = tryOn\.state\.host\.active \|\| tryOn\.busy \|\| pendingResult\?\.kind === 'FASHION_TRYON'/);
   assert.match(editor, /const editorBusy = localEditorBusy \|\| tryOnActive/);
   assert.match(editor, /disabled=\{!project\.current_image_artifact_id \|\| editorBusy \|\| committing \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| cropInteractionActive \|\| resizeInteractionActive\}/);
