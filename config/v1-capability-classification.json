@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "program": "BERS_V1_CAPABILITY_CLASSIFICATION",
+  "targetVersion": "1.0.0",
+  "evidenceBaseSha": "140c688abb4f9b6f8a86e2777940f9bc840ff409",
+  "releaseState": "PRE_RC_EXTERNAL_BLOCKERS_REMAIN",
+  "entries": [
+    {
+      "id": "CORE_PROJECT_ARTIFACT",
+      "classification": "PRODUCTION_READY",
+      "enabled": true,
+      "scope": "canonical auth/session, Project create/open, signed Artifact delivery, explicit Preview/Accept/Discard, history/Undo/Redo/Version/Restore, stale-source recovery, tenant/project isolation",
+      "evidence": [
+        "config/v1-release-journey-matrix.json#1-9",
+        "config/v1-release-journey-matrix.json#20-21"
+      ]
+    },
+    {
+      "id": "DETERMINISTIC_EDITOR_V1",
+      "classification": "PRODUCTION_READY",
+      "enabled": true,
+      "scope": "Crop, Resize, Rotate/Flip, canonical Selection/MASK, Background Isolation, Masked Exposure and Masked White Balance under explicit Core production executor admission",
+      "deliberatelyNotEnabled": [
+        "levels@1",
+        "masked-levels@1",
+        "unreviewed HSL/curves/retouch expansion"
+      ],
+      "evidence": [
+        "config/v1-release-journey-matrix.json#10-12",
+        "server/core/localExecution/productionLocalExecutorPolicy.ts"
+      ]
+    },
+    {
+      "id": "WARDROBE_COLLECTIONS_OUTFITS",
+      "classification": "PRODUCTION_READY",
+      "enabled": true,
+      "scope": "managed garment identity/assets, multi-view metadata, archive/favorite/Collections and canonical ordered Outfit aggregate",
+      "evidence": [
+        "config/v1-release-journey-matrix.json#13-15"
+      ]
+    },
+    {
+      "id": "DETERMINISTIC_TRYON_V1",
+      "classification": "PRODUCTION_READY",
+      "enabled": true,
+      "scope": "one-garment deterministic readiness, PARAMETRIC evidence/body anchors, mesh warp, texture composite, canonical FINAL Preview and explicit Project Accept",
+      "evidence": [
+        "config/v1-release-journey-matrix.json#16"
+      ]
+    },
+    {
+      "id": "BOUNDED_AGENT_AEE_V1",
+      "classification": "PRODUCTION_READY",
+      "enabled": true,
+      "scope": "bounded admitted deterministic Agent subset only; durable WorkflowContinuation/ExecutionRun recovery and explicit Project Accept",
+      "broaderAutonomyEnabled": false,
+      "evidence": [
+        "config/v1-release-journey-matrix.json#18"
+      ]
+    },
+    {
+      "id": "AUTOMATION_V1",
+      "classification": "PRODUCTION_READY",
+      "enabled": true,
+      "scope": "bounded durable canonical Automation subset with saved revision, durable invocation and local execution authority",
+      "evidence": [
+        "config/v1-release-journey-matrix.json#18-19"
+      ]
+    },
+    {
+      "id": "JOB_CENTER_V1",
+      "classification": "PRODUCTION_READY",
+      "enabled": true,
+      "scope": "canonical run refresh/reconciliation plus owning cancel/retry controls where supported",
+      "evidence": [
+        "config/v1-release-journey-matrix.json#19"
+      ]
+    },
+    {
+      "id": "GENERATIVE_LOCAL_MODELS_STAGE_D",
+      "classification": "CANDIDATE",
+      "enabled": false,
+      "scope": "MobileSAM, MODNet, Real-ESRGAN, Big-LaMa, Tiny-SD and Kandinsky remain outside production model authority under explicit v1 reject/fallback decisions",
+      "evidence": [
+        "config/v1-generative-decision-matrix.json"
+      ]
+    },
+    {
+      "id": "HSME_V1_RESEARCH_PROGRAM",
+      "classification": "SOFTWARE_READY_EVIDENCE_PENDING",
+      "enabled": false,
+      "scope": "HSME software/contracts and research evidence exist, but required trusted physical-mobile backend/device evidence and final Stage E disposition remain incomplete",
+      "evidence": [
+        "config/v1-release-readiness.json#HSME_REAL_MOBILE_EVIDENCE"
+      ]
+    },
+    {
+      "id": "BILLING_PAYMENTS_CREDITS",
+      "classification": "BLOCKED",
+      "enabled": false,
+      "scope": "deferred from v1 pending financial architecture redesign; browser release journeys preserve the financial freeze",
+      "evidence": [
+        "config/v1-release-journey-matrix.json#17"
+      ]
+    },
+    {
+      "id": "VOICE_PERSISTENT_AGENT_MEMORY_FEEDBACK",
+      "classification": "BLOCKED",
+      "enabled": false,
+      "scope": "not part of the enabled v1 production surface; no production durable Voice/Agent-memory/user-ranking collection authority is admitted by this release package",
+      "evidence": [
+        "BERS_V1_DEVELOPMENT_ROADMAP.md"
+      ]
+    }
+  ],
+  "privacyRetention": {
+    "voiceInputEnabled": false,
+    "persistentAgentMemoryEnabled": false,
+    "durableUserRankingFeedbackCollectionEnabled": false,
+    "disposition": "NO_NEW_DURABLE_PRIVACY_RETENTION_SURFACE_IN_ENABLED_V1",
+    "law": "A later enablement requires an explicit retention/privacy contract and dedicated release evidence before production admission."
+  },
+  "versioning": {
+    "packageVersionBeforeRc": "0.0.0",
+    "finalVersion": "1.0.0",
+    "bumpLaw": "Do not change package.json to 1.0.0 and do not create the v1.0.0 release/tag until the RC readiness ledger has no blockers and final exact-head evidence is green."
+  }
+}
