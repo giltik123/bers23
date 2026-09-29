@@ -74,7 +74,7 @@ test('Crop registry contract is immutable data and production executor admission
   assert.deepEqual(productionLocalExecutorsByCapability[RESIZE_CAPABILITY], [RESIZE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[EXPOSURE_CAPABILITY], undefined, 'Exposure candidate must remain fail-closed until a dedicated production admission slice');
   assert.equal(productionLocalExecutorsByCapability[WHITE_BALANCE_CAPABILITY], undefined, 'White Balance candidate must remain fail-closed until a dedicated production admission slice');
-  assert.equal(productionLocalExecutorsByCapability[MASKED_WHITE_BALANCE_CAPABILITY], undefined, 'Masked White Balance candidate must remain fail-closed until a dedicated production admission slice');
+  assert.deepEqual(productionLocalExecutorsByCapability[MASKED_WHITE_BALANCE_CAPABILITY], [MASKED_WHITE_BALANCE_TOOL_DEFINITION.executor], 'Masked White Balance must use only its explicit admitted executor');
   assert.deepEqual(productionLocalExecutorsByCapability[MASKED_EXPOSURE_CAPABILITY], [MASKED_EXPOSURE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[AFFINE_TRANSFORM_CAPABILITY], undefined, 'Affine candidate must remain fail-closed until a dedicated production admission slice');
   assert.deepEqual(productionLocalExecutorsByCapability[ORTHOGONAL_TRANSFORM_CAPABILITY], [ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.executor]);
