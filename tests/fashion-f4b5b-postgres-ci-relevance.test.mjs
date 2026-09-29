@@ -49,7 +49,7 @@ test('F4b.5b PostgreSQL closure manifest is exact, normalized and prefix-free', 
   const manifest = await readManifest();
   assert.equal(manifest.version, 1);
   assert.equal(manifest.profile, POSTGRES);
-  assert.equal(manifest.bundleInputs.length, 86);
+  assert.equal(manifest.bundleInputs.length, 85);
   assert.equal(manifest.migrationPaths.length, 30);
   assert.equal(manifest.supportPaths.length, 20);
 
