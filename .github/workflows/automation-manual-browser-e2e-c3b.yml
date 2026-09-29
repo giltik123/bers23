@@ -21,6 +21,11 @@ on:
       - 'server/transactions/infrastructure/postgres/**'
       - 'src/application/local-execution/CoreAuthorizedOrthogonalTransform.ts'
       - 'src/application/local-execution/CoreAuthorizedResize.ts'
+      - 'src/components/editor/jobs/JobCenter.jsx'
+      - 'src/components/editor/jobs/CanonicalExecutionRunRow.jsx'
+      - 'src/lib/jobs/workflowExecutionRetryControl.js'
+      - 'src/lib/jobs/executionRunProjection.js'
+      - 'src/api/coreClient.js'
       - 'src/platform/creative/deterministic/**'
       - 'scripts/build-core-server.mjs'
       - 'scripts/materialize-aee4c2-bounded-browser-harness.mjs'
@@ -122,11 +127,12 @@ jobs:
           set -euo pipefail
           node .test-cache/automation-c3b-browser/test-automation-c3b-browser-e2e.mjs | tee .test-cache/automation-c3b-browser/runtime.log
           grep -q 'C3B_BROWSER_AUTOMATION_RECOVERY_ACCEPTED' .test-cache/automation-c3b-browser/runtime.log
-      - name: Prove durable FAILED retry cancel and local-ticket authority separation
+      - name: Prove Job Center owning workflow Retry durable replacement cancel and local-ticket authority separation
         run: |
           set -euo pipefail
           node .test-cache/automation-c3b-browser/test-automation-c3b-retry-cancel-browser-e2e.mjs | tee .test-cache/automation-c3b-browser/retry-cancel-runtime.log
           grep -q 'C3B_BROWSER_AUTOMATION_RETRY_CANCEL_ACCEPTED' .test-cache/automation-c3b-browser/retry-cancel-runtime.log
+          grep -q 'R3P_JOB_CENTER_WORKFLOW_RETRY_ACCEPTED' .test-cache/automation-c3b-browser/retry-cancel-runtime.log
       - name: Preserve C3b PostgreSQL forensic state after browser failure
         if: failure()
         run: |
@@ -171,4 +177,6 @@ jobs:
           grep -q '/automation-invocations/' scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
           grep -q "ledger.commit(firstTicket.ticketId, 'FAILED')" scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
           grep -q "replacementAuthority?.cancellation, 'UNSUPPORTED'" scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
+          grep -q "getByRole('button', { name: 'Retry workflow', exact: true })" scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
+          grep -q 'R3P_JOB_CENTER_WORKFLOW_RETRY_ACCEPTED' scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs
           git diff --check
