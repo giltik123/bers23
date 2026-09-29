@@ -71,7 +71,7 @@ test('Masked White Balance registry contract is immutable reviewed data and rema
   assert.deepEqual(MASKED_WHITE_BALANCE_TOOL_DEFINITION.lineage, { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: 'MASKED_WHITE_BALANCE' });
   assert.equal(isDeepFrozen(MASKED_WHITE_BALANCE_TOOL_DEFINITION), true);
   assert.equal(containsFunction(MASKED_WHITE_BALANCE_TOOL_DEFINITION), false);
-  assert.equal(productionLocalExecutorsByCapability[MASKED_WHITE_BALANCE_CAPABILITY], undefined, 'reviewed Masked White Balance contract must not auto-admit production execution');
+  assert.deepEqual(productionLocalExecutorsByCapability[MASKED_WHITE_BALANCE_CAPABILITY], [MASKED_WHITE_BALANCE_TOOL_DEFINITION.executor], 'Masked White Balance production authority must bind only its reviewed executor');
   assert.equal(DETERMINISTIC_TOOL_REGISTRY.includes(MASKED_WHITE_BALANCE_TOOL_DEFINITION), true);
 });
 
