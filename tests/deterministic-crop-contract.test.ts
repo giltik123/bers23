@@ -6,13 +6,14 @@ import { CROP_CAPABILITY, CROP_TOOL_ID, CROP_TOOL_VERSION, cropRgba8, normalizeC
 import { EXPOSURE_CAPABILITY } from '../src/platform/creative/deterministic/Exposure.ts';
 import { WHITE_BALANCE_CAPABILITY } from '../src/platform/creative/deterministic/WhiteBalance.ts';
 import { LEVELS_CAPABILITY } from '../src/platform/creative/deterministic/Levels.ts';
+import { MASKED_LEVELS_CAPABILITY } from '../src/platform/creative/deterministic/MaskedLevels.ts';
 import { MASKED_WHITE_BALANCE_CAPABILITY } from '../src/platform/creative/deterministic/MaskedWhiteBalance.ts';
 import { MASKED_EXPOSURE_CAPABILITY } from '../src/platform/creative/deterministic/MaskedExposure.ts';
 import { RESIZE_CAPABILITY } from '../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { GARMENT_MESH_WARP_CAPABILITY } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
 import { GARMENT_TEXTURE_COMPOSITE_CAPABILITY } from '../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
-import { AFFINE_TRANSFORM_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, EXPOSURE_TOOL_DEFINITION, WHITE_BALANCE_TOOL_DEFINITION, LEVELS_TOOL_DEFINITION, MASKED_WHITE_BALANCE_TOOL_DEFINITION, MASKED_EXPOSURE_TOOL_DEFINITION, GARMENT_MESH_WARP_TOOL_DEFINITION, GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { AFFINE_TRANSFORM_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, EXPOSURE_TOOL_DEFINITION, WHITE_BALANCE_TOOL_DEFINITION, LEVELS_TOOL_DEFINITION, MASKED_LEVELS_TOOL_DEFINITION, MASKED_WHITE_BALANCE_TOOL_DEFINITION, MASKED_EXPOSURE_TOOL_DEFINITION, GARMENT_MESH_WARP_TOOL_DEFINITION, GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
 const source = new Uint8ClampedArray([
@@ -44,13 +45,14 @@ test('Crop v1 rejects fractional, empty, negative and out-of-bounds rectangles w
 });
 
 test('Crop registry contract is immutable data and production executor admission stays explicit', () => {
-  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 12, 'Background Isolation, Crop, Resize, Exposure candidate, White Balance candidate, Levels candidate, Masked White Balance, Masked Exposure, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
+  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 13, 'Background Isolation, Crop, Resize, Exposure candidate, White Balance candidate, Levels candidate, Masked Levels candidate, Masked White Balance, Masked Exposure, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
   assert.equal(requireDeterministicToolByCapability(CROP_CAPABILITY), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor({ kind: 'DETERMINISTIC_TOOL', toolId: CROP_TOOL_ID, version: CROP_TOOL_VERSION }), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(RESIZE_CAPABILITY), RESIZE_TOOL_DEFINITION, 'adding Resize must not weaken Crop identity or registry lookup');
   assert.equal(requireDeterministicToolByCapability(EXPOSURE_CAPABILITY), EXPOSURE_TOOL_DEFINITION, 'Exposure candidate is reviewed registry data without production admission');
   assert.equal(requireDeterministicToolByCapability(WHITE_BALANCE_CAPABILITY), WHITE_BALANCE_TOOL_DEFINITION, 'White Balance candidate is reviewed registry data without production admission');
   assert.equal(requireDeterministicToolByCapability(LEVELS_CAPABILITY), LEVELS_TOOL_DEFINITION, 'Levels candidate is reviewed registry data without production admission');
+  assert.equal(requireDeterministicToolByCapability(MASKED_LEVELS_CAPABILITY), MASKED_LEVELS_TOOL_DEFINITION, 'Masked Levels candidate is reviewed registry data without production admission');
   assert.equal(requireDeterministicToolByCapability(MASKED_WHITE_BALANCE_CAPABILITY), MASKED_WHITE_BALANCE_TOOL_DEFINITION, 'Masked White Balance candidate is reviewed registry data without production admission');
   assert.equal(requireDeterministicToolByCapability(MASKED_EXPOSURE_CAPABILITY), MASKED_EXPOSURE_TOOL_DEFINITION, 'Masked Exposure is reviewed registry data with explicit production admission');
   assert.equal(requireDeterministicToolByCapability(AFFINE_TRANSFORM_CAPABILITY), AFFINE_TRANSFORM_TOOL_DEFINITION, 'Affine candidate is reviewed registry data without production admission');
@@ -77,6 +79,7 @@ test('Crop registry contract is immutable data and production executor admission
   assert.equal(productionLocalExecutorsByCapability[EXPOSURE_CAPABILITY], undefined, 'Exposure candidate must remain fail-closed until a dedicated production admission slice');
   assert.equal(productionLocalExecutorsByCapability[WHITE_BALANCE_CAPABILITY], undefined, 'White Balance candidate must remain fail-closed until a dedicated production admission slice');
   assert.equal(productionLocalExecutorsByCapability[LEVELS_CAPABILITY], undefined, 'Levels candidate must remain fail-closed until a dedicated production admission slice');
+  assert.equal(productionLocalExecutorsByCapability[MASKED_LEVELS_CAPABILITY], undefined, 'Masked Levels candidate must remain fail-closed until a dedicated production admission slice');
   assert.deepEqual(productionLocalExecutorsByCapability[MASKED_WHITE_BALANCE_CAPABILITY], [MASKED_WHITE_BALANCE_TOOL_DEFINITION.executor], 'Masked White Balance must use only its explicit admitted executor');
   assert.deepEqual(productionLocalExecutorsByCapability[MASKED_EXPOSURE_CAPABILITY], [MASKED_EXPOSURE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[AFFINE_TRANSFORM_CAPABILITY], undefined, 'Affine candidate must remain fail-closed until a dedicated production admission slice');

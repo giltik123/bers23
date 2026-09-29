@@ -144,6 +144,7 @@ const F4B4_COMMON_EXACT_PATHS = new Set([
   'src/platform/creative/deterministic/MaskedWhiteBalance.ts',
   'src/platform/creative/deterministic/MaskedWhiteBalanceIdentity.js',
   'src/platform/creative/deterministic/LevelsIdentity.js',
+  'src/platform/creative/deterministic/MaskedLevelsIdentity.js',
   'server/core/localExecution/productionLocalExecutorPolicy.ts',
   'server/core/providers/productionExecutionCapabilities.ts',
   'server/core/providers/productionExecutionRoute.ts',
@@ -261,7 +262,7 @@ function getF4b4PostgresExactPaths() {
   if (manifest?.version !== 1 || manifest?.profile !== FASHION_EXECUTION_PROFILES.F4B4_POSTGRES_VERTICAL) {
     throw new Error('Invalid F4b.4 PostgreSQL CI closure manifest identity');
   }
-  const expectedCounts = Object.freeze({ bundleInputs: 225, migrationPaths: 43, supportPaths: 17 });
+  const expectedCounts = Object.freeze({ bundleInputs: 226, migrationPaths: 43, supportPaths: 17 });
   for (const [key, expected] of Object.entries(expectedCounts)) {
     if (!Array.isArray(manifest[key]) || manifest[key].length !== expected) {
       throw new Error(`Invalid F4b.4 PostgreSQL CI closure ${key}: expected ${expected} exact paths`);

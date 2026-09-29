@@ -96,6 +96,23 @@ import {
   LEVELS_TOOL_VERSION,
 } from './LevelsIdentity.js';
 import {
+  MASKED_LEVELS_CAPABILITY,
+  MASKED_LEVELS_MAX_INPUT_BLACK,
+  MASKED_LEVELS_MAX_INPUT_MIDPOINT,
+  MASKED_LEVELS_MAX_INPUT_WHITE,
+  MASKED_LEVELS_MAX_OUTPUT_BLACK,
+  MASKED_LEVELS_MAX_OUTPUT_WHITE,
+  MASKED_LEVELS_MIN_INPUT_BLACK,
+  MASKED_LEVELS_MIN_INPUT_MIDPOINT,
+  MASKED_LEVELS_MIN_INPUT_WHITE,
+  MASKED_LEVELS_MIN_OUTPUT_BLACK,
+  MASKED_LEVELS_MIN_OUTPUT_WHITE,
+  MASKED_LEVELS_OPERATION,
+  MASKED_LEVELS_STEP_ID,
+  MASKED_LEVELS_TOOL_ID,
+  MASKED_LEVELS_TOOL_VERSION,
+} from './MaskedLevelsIdentity.js';
+import {
   MASKED_EXPOSURE_CAPABILITY,
   MASKED_EXPOSURE_MAX_EIGHTH_STOPS,
   MASKED_EXPOSURE_MIN_EIGHTH_STOPS,
@@ -177,7 +194,7 @@ export type DeterministicToolDefinition = Readonly<{
     format: 'RGBA8';
     colorSpace: 'srgb';
     orientation: 1;
-    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16_MASK_ALPHA8_BLEND' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16_MASK_ALPHA8_BLEND' | 'SRGB_ENCODED_LEVELS_PIECEWISE_LINEAR_INTEGER' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
+    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16_MASK_ALPHA8_BLEND' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16_MASK_ALPHA8_BLEND' | 'SRGB_ENCODED_LEVELS_PIECEWISE_LINEAR_INTEGER' | 'SRGB_ENCODED_LEVELS_PIECEWISE_LINEAR_INTEGER_MASK_ALPHA8_BLEND' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
     alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP' | 'TEXTURE_PRESERVE_WARP_FEATHER_SOURCE_OVER';
     interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_FIXED_16_16_AFFINE_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH' | 'BILINEAR_NORMALIZED_Q16_TEXTURE_AND_MESH';
     rounding?: 'INTEGER_EXACT' | 'ROUND_HALF_UP';
@@ -234,6 +251,59 @@ const backgroundIsolationDefinition: DeterministicToolDefinition = deepFreeze({
     uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
   },
   lineage: { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: 'BACKGROUND_ISOLATION' },
+});
+
+const maskedLevelsDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: MASKED_LEVELS_CAPABILITY,
+  operation: { id: MASKED_LEVELS_STEP_ID, type: MASKED_LEVELS_OPERATION, version: '1' },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: MASKED_LEVELS_TOOL_ID, version: MASKED_LEVELS_TOOL_VERSION },
+  inputs: [
+    { name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+    { name: 'mask', kind: 'mask', roles: ['MASK'], sha256: 'REQUIRED', geometry: 'MATCH_SOURCE' },
+  ],
+  output: { kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: ['image/png'], geometry: 'MATCH_SOURCE' },
+  parameters: {
+    artifactIdBindings: [
+      { parameter: 'sourceArtifactId', input: 'source' },
+      { parameter: 'maskArtifactId', input: 'mask' },
+    ],
+    exact: {
+      deterministicTool: `${MASKED_LEVELS_TOOL_ID}@${MASKED_LEVELS_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_RGBA8_PLUS_ALPHA8_MASK',
+      transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
+      toneLaw: 'PIECEWISE_LINEAR_INPUT_MIDPOINT_TO_OUTPUT_MIDPOINT',
+      outputMidpointLaw: 'ROUND_HALF_UP_AVERAGE_OUTPUT_BOUNDS',
+      segmentRounding: 'ROUND_HALF_UP',
+      maskBlend: 'SOURCE_ADJUSTED_ALPHA8_ROUND_HALF_UP',
+      alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
+    },
+    integerRanges: [
+      { parameter: 'inputBlack', min: MASKED_LEVELS_MIN_INPUT_BLACK, max: MASKED_LEVELS_MAX_INPUT_BLACK },
+      { parameter: 'inputMidpoint', min: MASKED_LEVELS_MIN_INPUT_MIDPOINT, max: MASKED_LEVELS_MAX_INPUT_MIDPOINT },
+      { parameter: 'inputWhite', min: MASKED_LEVELS_MIN_INPUT_WHITE, max: MASKED_LEVELS_MAX_INPUT_WHITE },
+      { parameter: 'outputBlack', min: MASKED_LEVELS_MIN_OUTPUT_BLACK, max: MASKED_LEVELS_MAX_OUTPUT_BLACK },
+      { parameter: 'outputWhite', min: MASKED_LEVELS_MIN_OUTPUT_WHITE, max: MASKED_LEVELS_MAX_OUTPUT_WHITE },
+    ],
+    relationships: ['INPUT_BLACK_LT_MIDPOINT_LT_INPUT_WHITE', 'OUTPUT_BLACK_LT_OUTPUT_WHITE'],
+  },
+  browser: { executorId: 'masked-levels-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'masked-levels-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'SRGB_ENCODED_LEVELS_PIECEWISE_LINEAR_INTEGER_MASK_ALPHA8_BLEND',
+    alpha: 'COPY_SOURCE_ALPHA_BYTES',
+    interpolation: 'NONE',
+    rounding: 'ROUND_HALF_UP',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+  },
+  lineage: { parentInputs: ['source', 'mask'], finalRole: 'COMPOSITE', producerOperation: MASKED_LEVELS_OPERATION },
 });
 
 const maskedWhiteBalanceDefinition: DeterministicToolDefinition = deepFreeze({
@@ -682,6 +752,7 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
   exposureDefinition,
   whiteBalanceDefinition,
   levelsDefinition,
+  maskedLevelsDefinition,
   maskedWhiteBalanceDefinition,
   maskedExposureDefinition,
   affineTransformDefinition,
@@ -696,6 +767,7 @@ export const RESIZE_TOOL_DEFINITION = resizeDefinition;
 export const EXPOSURE_TOOL_DEFINITION = exposureDefinition;
 export const WHITE_BALANCE_TOOL_DEFINITION = whiteBalanceDefinition;
 export const LEVELS_TOOL_DEFINITION = levelsDefinition;
+export const MASKED_LEVELS_TOOL_DEFINITION = maskedLevelsDefinition;
 export const MASKED_WHITE_BALANCE_TOOL_DEFINITION = maskedWhiteBalanceDefinition;
 export const MASKED_EXPOSURE_TOOL_DEFINITION = maskedExposureDefinition;
 export const AFFINE_TRANSFORM_TOOL_DEFINITION = affineTransformDefinition;
