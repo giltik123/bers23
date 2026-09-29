@@ -70,7 +70,7 @@ jobs:
             .test-cache/p192-masked-white-balance/background-isolation-canonical-wiring.test.mjs
       - name: Build production browser
         run: npm run build
-      - name: Prove Masked White Balance candidate remains production fail closed
+      - name: Prove Masked White Balance reviewed kernel matches explicit production authority
         run: |
           set -euo pipefail
           kernel=src/platform/creative/deterministic/MaskedWhiteBalance.ts
@@ -83,9 +83,9 @@ jobs:
           grep -q "whiteBalanceGainsQ16" "$kernel"
           grep -q "maskAlpha" "$kernel"
           grep -q "floating-point color-temperature transform" "$kernel"
-          ! grep -q "MASKED_WHITE_BALANCE_CAPABILITY" "$policy"
-          ! grep -q "local:tool:masked-white-balance:v1" "$policy"
-          ! grep -q "MASKED_WHITE_BALANCE_CAPABILITY" "$capabilities"
-          ! grep -q "MASKED_WHITE_BALANCE" "$planner"
+          grep -q "MASKED_WHITE_BALANCE_CAPABILITY" "$policy"
+          grep -q "MASKED_WHITE_BALANCE_CAPABILITY" "$policy"
+          grep -q "MASKED_WHITE_BALANCE_CAPABILITY" "$capabilities"
+          grep -q "MASKED_WHITE_BALANCE" "$planner"
           test -n "$BASE_SHA"
           git diff --check "$BASE_SHA"..HEAD
