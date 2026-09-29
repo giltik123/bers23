@@ -1,0 +1,45 @@
+name: BERS v1 RC readiness guard
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'config/v1-release-readiness.json'
+      - 'config/v1-release-journey-matrix.json'
+      - 'config/v1-generative-decision-matrix.json'
+      - 'scripts/check-v1-release-readiness.mjs'
+      - 'tests/v1-release-readiness.test.mjs'
+      - 'docs/v1-release-readiness.md'
+      - '.github/workflows/v1-release-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rc-readiness:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Prove fail-closed RC readiness ledger
+        run: node --test tests/v1-release-readiness.test.mjs
+      - name: Emit current RC disposition
+        run: |
+          set -euo pipefail
+          node scripts/check-v1-release-readiness.mjs | tee .test-cache-v1-release-readiness.log
+          grep -q 'BERS_V1_RC_NOT_SELECTABLE' .test-cache-v1-release-readiness.log
+          ! grep -q 'BERS_V1_RC_SELECTED' .test-cache-v1-release-readiness.log
+      - name: Check committed diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
