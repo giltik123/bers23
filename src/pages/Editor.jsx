@@ -319,7 +319,7 @@ export default function Editor() {
   };
 
   const startCrop = () => {
-    if (orthogonalTransformInFlightRef.current) return;
+    if (orthogonalTransformInFlightRef.current || maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current) return;
     if (selection || pendingResult || editorBusy || resizeInteractionActive || !project?.current_image_artifact_id) return;
     const rect = defaultCropRect(project.width, project.height);
     setAiError(null);
@@ -525,7 +525,7 @@ export default function Editor() {
     const maskArtifactId = retryContext?.maskArtifactId || selected?.mask_artifact_id;
     const eighthStops = Number.isSafeInteger(retryContext?.eighthStops) ? retryContext.eighthStops : exposureEighthStops;
     if (!project?.id || !sourceArtifactId || !maskArtifactId || !Number.isSafeInteger(eighthStops) || eighthStops < -32 || eighthStops > 32 || eighthStops === 0) return;
-    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current) return;
+    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || orthogonalTransformInFlightRef.current) return;
     maskedExposureInFlightRef.current = true;
     setApplyingMaskedExposure(true);
     setAiError(null);
@@ -567,7 +567,7 @@ export default function Editor() {
       || !Number.isSafeInteger(temperatureQ8) || temperatureQ8 < -128 || temperatureQ8 > 128
       || !Number.isSafeInteger(tintQ8) || tintQ8 < -64 || tintQ8 > 64
       || (temperatureQ8 === 0 && tintQ8 === 0)) return;
-    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current) return;
+    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || orthogonalTransformInFlightRef.current) return;
     maskedWhiteBalanceInFlightRef.current = true;
     setApplyingMaskedWhiteBalance(true);
     setAiError(null);
