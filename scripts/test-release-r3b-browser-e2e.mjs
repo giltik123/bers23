@@ -105,6 +105,7 @@ const diagnostics = {
   legacyRequests: [],
   externalBrowserRequests: [],
   localExecutionRequests: [],
+  projectMutations: [],
   artifactResponses: [],
   lastUrl: undefined,
   projectId: undefined,
@@ -138,6 +139,9 @@ try {
     if (url.pathname.startsWith('/api/core/creative/')) diagnostics.creativeRequests.push({ url: request.url(), method: request.method() });
     if (url.pathname.startsWith('/api/core/local-execution/')) {
       diagnostics.localExecutionRequests.push({ url: request.url(), pathname: url.pathname, method: request.method() });
+    }
+    if (!['GET', 'HEAD'].includes(request.method()) && url.pathname.startsWith('/api/core/projects/')) {
+      diagnostics.projectMutations.push({ pathname: url.pathname, method: request.method() });
     }
     if (url.pathname === '/api/core/observability/events' || url.pathname.startsWith('/api/core/data/Notification')) {
       diagnostics.legacyRequests.push({ url: request.url(), method: request.method() });
@@ -307,6 +311,96 @@ try {
   assert.equal(redoState.history.length, 2);
   assert.equal(redoState.history[1].source_image_storage_id, initialState.project.original_image_storage_id);
 
+  // R3q: after a second valid local Preview, inject a one-shot browser-only failure
+  // into crypto.randomUUID. The first post-Accept caller is NotificationCenter.push,
+  // so this proves an optional side-effect exception cannot keep the already-accepted
+  // FINAL pending or trigger a duplicate deterministic execution.
+  const r3qLocalStart = diagnostics.localExecutionRequests.length;
+  const r3qMutationStart = diagnostics.projectMutations.length;
+  const r3qConsoleStart = diagnostics.consoleErrors.length;
+  const r3qResultResponsePromise = page.waitForResponse(response => {
+    const url = safeUrl(response.url());
+    return response.request().method() === 'POST'
+      && url?.origin === coreOrigin
+      && /^\/api\/core\/local-execution\/orthogonal-transform\/[^/]+\/result$/.test(url.pathname);
+  }, { timeout: 20_000 });
+  await rotate.click();
+  const r3qResultResponse = await r3qResultResponsePromise;
+  assert.equal(r3qResultResponse.status(), 200, 'R3q local result must be Core-verified before fault injection');
+  const r3qCoreResult = await r3qResultResponse.json();
+  assert.equal(r3qCoreResult.status, 'SUCCESS');
+  assert.equal(r3qCoreResult.verification?.valid, true);
+
+  const r3qAccept = page.getByRole('button', { name: 'Accept', exact: true });
+  await r3qAccept.waitFor({ state: 'visible', timeout: 20_000 });
+  const r3qPreviewImage = await loadedImageEvidence(page, 'after', 12, 8, 20_000);
+  assertLocalVerifiedPreview(r3qPreviewImage, [12, 8], 'R3q side-effect-fault Preview');
+  assert.deepEqual(await readProjectState(projectId), redoState, 'R3q Preview must remain non-mutating before Accept');
+
+  const installedFault = await page.evaluate(() => {
+    const cryptoPrototype = Object.getPrototypeOf(window.crypto);
+    const original = cryptoPrototype.randomUUID;
+    if (typeof original !== 'function') return false;
+    Object.defineProperty(cryptoPrototype, 'randomUUID', {
+      configurable: true,
+      value: function randomUUIDWithR3qFault(...args) {
+        if (window.__bersR3qNotificationFaultArmed) {
+          window.__bersR3qNotificationFaultArmed = false;
+          throw new Error('R3Q_NOTIFICATION_SIDE_EFFECT_FAULT');
+        }
+        return original.apply(this, args);
+      },
+    });
+    window.__bersR3qNotificationFaultArmed = true;
+    return true;
+  });
+  assert.equal(installedFault, true, 'R3q must install browser-only one-shot notification fault injection');
+
+  const r3qAcceptResponsePromise = page.waitForResponse(response => {
+    const url = safeUrl(response.url());
+    return response.request().method() === 'POST'
+      && url?.origin === coreOrigin
+      && url.pathname === `/api/core/projects/${projectId}/accept-final`;
+  }, { timeout: 20_000 });
+  await r3qAccept.click();
+  const r3qAcceptResponse = await r3qAcceptResponsePromise;
+  assert.equal(r3qAcceptResponse.status(), 200, 'canonical Project Accept must succeed before the optional side-effect failure');
+  await r3qAccept.waitFor({ state: 'detached', timeout: 20_000 });
+  const r3qAcceptedImage = await loadedImageEvidence(page, 'Project', 12, 8, 20_000);
+  assertSignedCoreImage(r3qAcceptedImage, [12, 8], 'R3q accepted Project image');
+
+  const r3qAcceptedState = await readProjectState(projectId);
+  assert.equal(r3qAcceptedState.project.cursor_ordinal, 2);
+  assert.equal(r3qAcceptedState.project.cursor_kind, 'ACCEPTED_FINAL');
+  assert.equal(r3qAcceptedState.history.length, 3, 'post-commit side-effect failure must not duplicate or suppress accepted history');
+  assert.equal(r3qAcceptedState.history[2].source_image_storage_id, redoState.project.current_image_storage_id);
+  assert.equal(r3qAcceptedState.history[2].instruction, 'Rotate 90° clockwise');
+
+  const r3qLocalCalls = diagnostics.localExecutionRequests.slice(r3qLocalStart);
+  assert.equal(r3qLocalCalls.length, 4, 'R3q must perform exactly one additional deterministic Rotate execution');
+  const r3qMutations = diagnostics.projectMutations.slice(r3qMutationStart);
+  assert.deepEqual(
+    r3qMutations,
+    [{ pathname: `/api/core/projects/${projectId}/accept-final`, method: 'POST' }],
+    'R3q side-effect failure must not trigger duplicate Project mutation',
+  );
+  const r3qConsole = diagnostics.consoleErrors.slice(r3qConsoleStart);
+  assert.equal(
+    r3qConsole.filter(message => /R3Q_NOTIFICATION_SIDE_EFFECT_FAULT/.test(message)).length,
+    1,
+    `R3q must observe exactly one best-effort side-effect error: ${JSON.stringify(r3qConsole)}`,
+  );
+  assert.equal(await page.getByRole('button', { name: 'Accept', exact: true }).count(), 0, 'accepted candidate must not remain pending after side-effect failure');
+
+  console.log('R3Q_ACCEPT_SIDE_EFFECT_ISOLATION_ACCEPTED', JSON.stringify({
+    projectId,
+    acceptedOrdinal: r3qAcceptedState.project.cursor_ordinal,
+    historyLength: r3qAcceptedState.history.length,
+    localExecutionRequestCount: r3qLocalCalls.length,
+    projectMutations: r3qMutations,
+    providerCalls,
+  }));
+
   assert.equal(providerCalls, 0, 'R3 deterministic lifecycle must not invoke an external provider');
   assert.deepEqual(diagnostics.creativeRequests, [], 'R3 deterministic lifecycle must not invoke creative/cloud execution');
   assert.deepEqual(diagnostics.legacyRequests, [], 'R3 deterministic lifecycle must not probe unowned legacy routes');
@@ -318,7 +412,7 @@ try {
 
   const expected401Console = /Failed to load resource: the server responded with a status of 401 \(Unauthorized\)/i;
   const toleratedConsole = diagnostics.consoleErrors.filter(message =>
-    /favicon|ResizeObserver/i.test(message)
+    /favicon|ResizeObserver|R3Q_NOTIFICATION_SIDE_EFFECT_FAULT/i.test(message)
     || (diagnostics.expectedAuthContext401s.length > 0 && expected401Console.test(message))
   );
   assert.equal(diagnostics.consoleErrors.length, toleratedConsole.length, `unexpected browser console errors: ${JSON.stringify(diagnostics.consoleErrors)}`);
@@ -338,6 +432,7 @@ try {
     financialRequestCount: diagnostics.financialRequests.length,
     externalBrowserRequestCount: diagnostics.externalBrowserRequests.length,
     localExecutionRequestCount: diagnostics.localExecutionRequests.length,
+    r3qAcceptSideEffectIsolation: true,
     expectedAuthContext401Count: diagnostics.expectedAuthContext401s.length,
     projectImage: imageEvidence,
     protectedRouteRedirect: '/login',
