@@ -85,8 +85,8 @@ jobs:
           if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle migration moved from its accepted position');
           if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved from its accepted position');
           if (migrations[45]?.source !== 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved outside Artifact authority');
-if (migrations[46]?.name !== '047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration is not the exact global tail');
-if (migrations[46]?.source !== 'server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration moved outside Artifact authority');
+          if (migrations[46]?.name !== '047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration is not the exact global tail');
+          if (migrations[46]?.source !== 'server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration moved outside Artifact authority');
           NODE
       - name: Typecheck and build Core
         run: |
