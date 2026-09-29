@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
+import { createMaskedExposure } from '@/application/createMaskedExposure';
 import { createSuperResolution } from '@/application/createSuperResolution';
 import { createCrop } from '@/application/createCrop';
 import { createResize } from '@/application/createResize';
@@ -149,6 +150,8 @@ export default function Editor() {
   const [selectionMorphologyRadius, setSelectionMorphologyRadius] = useState(2);
   const [polygonComposition, setPolygonComposition] = useState('REPLACE');
   const [isolatingBackground, setIsolatingBackground] = useState(false);
+  const [exposureEighthStops, setExposureEighthStops] = useState(8);
+  const [applyingMaskedExposure, setApplyingMaskedExposure] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
   const [cropDraft, setCropDraft] = useState(null);
   const [cropping, setCropping] = useState(false);
@@ -161,7 +164,7 @@ export default function Editor() {
   const cropAnchorRef = useRef(null);
   const orthogonalTransformInFlightRef = useRef(false);
   const platform = usePlatformProfile();
-  const localEditorBusy = applying || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
+  const localEditorBusy = applying || isolatingBackground || applyingMaskedExposure || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
   const cropRect = exactCropRect(cropDraft, project?.width, project?.height);
   const cropInteractionActive = Boolean(cropDraft);
   const resizeTarget = exactResizeTarget(resizeDraft);
@@ -511,6 +514,41 @@ export default function Editor() {
     return () => window.removeEventListener('keydown', shortcut);
   }, [platform.formFactor, undo, redo, editorBusy, cropInteractionActive, resizeInteractionActive, pendingResult]);
 
+  const applyMaskedExposure = async (retryContext = null) => {
+    const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
+    const maskArtifactId = retryContext?.maskArtifactId || selected?.mask_artifact_id;
+    const eighthStops = Number.isSafeInteger(retryContext?.eighthStops) ? retryContext.eighthStops : exposureEighthStops;
+    if (!project?.id || !sourceArtifactId || !maskArtifactId || !Number.isSafeInteger(eighthStops) || eighthStops < -32 || eighthStops > 32 || eighthStops === 0) return;
+    setApplyingMaskedExposure(true);
+    setAiError(null);
+    setLastAction(() => () => applyMaskedExposure({ sourceArtifactId, maskArtifactId, eighthStops }));
+    try {
+      const local = createMaskedExposure({ projectId: project.id });
+      const result = await local.run({ requestId: globalThis.crypto.randomUUID(), sourceArtifactId, maskArtifactId, eighthStops });
+      const previewBytes = await encodeDeterministicRgbaPng(result.preview);
+      const previewUrl = URL.createObjectURL(new Blob([previewBytes], { type: 'image/png' }));
+      const ev = eighthStops / 8;
+      const label = `Exposure ${ev > 0 ? '+' : ''}${Number.isInteger(ev) ? ev.toFixed(0) : ev.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')} EV`;
+      const editorResult = {
+        finalArtifactId: result.canonicalArtifactId,
+        preview_url: previewUrl,
+        image_url: previewUrl,
+        provider: 'Local deterministic',
+        credits_used: 0,
+        generation_time_ms: result.latencyMs,
+      };
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return { kind: 'MASKED_EXPOSURE', result: editorResult, instruction: label, beforeUrl: project.current_image_url, context: { sourceArtifactId, maskArtifactId, eighthStops } };
+      });
+    } catch (e) {
+      setAiError(e.message || 'Masked Exposure failed');
+      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+    } finally {
+      setApplyingMaskedExposure(false);
+    }
+  };
+
   const isolateBackground = async (retryContext = null) => {
     const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
     const maskArtifactId = retryContext?.maskArtifactId || selected?.mask_artifact_id;
@@ -700,6 +738,10 @@ export default function Editor() {
       void isolateBackground(pending.context);
       return;
     }
+    if (pending?.kind === 'MASKED_EXPOSURE') {
+      void applyMaskedExposure(pending.context);
+      return;
+    }
     if (pending?.kind === 'SUPER_RESOLUTION') {
       void upscaleImage(pending.context);
       return;
@@ -882,6 +924,11 @@ export default function Editor() {
         canIsolateBackground={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
         isolatingBackground={isolatingBackground}
         onIsolateBackground={() => isolateBackground()}
+        exposureEighthStops={exposureEighthStops}
+        onExposureEighthStops={setExposureEighthStops}
+        canApplyExposure={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !isolatingBackground && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
+        applyingExposure={applyingMaskedExposure}
+        onApplyExposure={() => applyMaskedExposure()}
       />
 
       <PipelineStatusBar width={project.width} height={project.height} />
