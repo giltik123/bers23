@@ -158,13 +158,32 @@ try {
   assert.equal(observedFailure.body.nextAction, undefined);
   assert.deepEqual(await readProject(projectId), baseline);
 
-  const retry = await browserJson(page, 'POST', `/automation-invocations/${encodeURIComponent(invocationId)}/retry`, {});
-  assert.equal(retry.status, 202);
-  assert.equal(Object.hasOwn(retry.body, 'executionId'), false);
-  assert.equal(retry.body.invocationId, invocationId);
-  assert.equal(retry.body.state, 'WAITING_FOR_LOCAL_RESULT');
-  assert.equal(retry.body.nextAction?.operation, 'ORTHOGONAL_TRANSFORM');
-  const replacementTicket = retry.body.nextAction.ticket;
+  // R3p: retry only through the real Job Center owning-workflow control. The
+  // browser never mutates ExecutionRun directly and does not reconstruct the
+  // Automation/Agent command from local state.
+  const serverExecutions = page.locator('[data-job-center-canonical-executions]');
+  await serverExecutions.waitFor({ state: 'visible', timeout: 20_000 });
+  await serverExecutions.getByRole('button', { name: 'Refresh', exact: true }).click();
+  const workflowRow = serverExecutions.locator(`[data-canonical-execution-run="${root.run_id}"]`);
+  await workflowRow.waitFor({ state: 'visible', timeout: 20_000 });
+  const retryButton = workflowRow.getByRole('button', { name: 'Retry workflow', exact: true });
+  await retryButton.waitFor({ state: 'visible', timeout: 20_000 });
+
+  const retryResponsePromise = page.waitForResponse(response => {
+    let url;
+    try { url = new URL(response.url()); } catch { return false; }
+    return url.origin === coreOrigin
+      && url.pathname.endsWith(`/${encodeURIComponent(executionId)}/retry`)
+      && response.request().method() === 'POST';
+  });
+  await retryButton.click();
+  const retryResponse = await retryResponsePromise;
+  assert.equal(retryResponse.status(), 202);
+  const retryBody = await retryResponse.json();
+  assert.equal(retryBody.executionId, executionId);
+  assert.equal(retryBody.state, 'WAITING_FOR_LOCAL_RESULT');
+  assert.equal(retryBody.nextAction?.operation, 'ORTHOGONAL_TRANSFORM');
+  const replacementTicket = retryBody.nextAction.ticket;
   assertTicket(replacementTicket, projectId);
   assert.notEqual(replacementTicket.ticketId, firstTicket.ticketId);
   assert.notEqual(replacementTicket.nonce, firstTicket.nonce);
@@ -237,7 +256,9 @@ try {
   assert.deepEqual(await readBinding(invocationId), binding);
   assert.deepEqual(await readFinancial(), financialBefore);
   assert.equal(providerCalls, 0);
-  assert.deepEqual(diagnostics.agentRequests, []);
+  assert.equal(diagnostics.agentRequests.length, 1, 'Job Center Retry must delegate to exactly one owning Agent workflow request');
+  assert.equal(diagnostics.agentRequests[0].method, 'POST');
+  assert.ok(diagnostics.agentRequests[0].path.endsWith(`/${executionId}/retry`), 'Job Center Retry must target the exact durable workflow execution');
   assert.deepEqual(diagnostics.creativeRequests, []);
   assert.deepEqual(diagnostics.financialRequests, []);
   assert.deepEqual(diagnostics.projectMutations, []);
@@ -251,7 +272,13 @@ try {
   console.log('C3B_BROWSER_AUTOMATION_RETRY_CANCEL_ACCEPTED', JSON.stringify({
     projectId, automationId: definition.id, invocationId, executionId, rootRunId: root.run_id,
     firstTicketId: firstTicket.ticketId, replacementTicketId: replacementTicket.ticketId,
-    automationRequests: diagnostics.automationRequests, localExecutionRequests: diagnostics.localExecutionRequests, executionRunRequests: diagnostics.executionRunRequests,
+    automationRequests: diagnostics.automationRequests, agentRequests: diagnostics.agentRequests,
+    localExecutionRequests: diagnostics.localExecutionRequests, executionRunRequests: diagnostics.executionRunRequests,
+  }));
+  console.log('R3P_JOB_CENTER_WORKFLOW_RETRY_ACCEPTED', JSON.stringify({
+    projectId, executionId, rootRunId: root.run_id,
+    failedTicketId: firstTicket.ticketId, replacementTicketId: replacementTicket.ticketId,
+    providerCalls, projectMutations: diagnostics.projectMutations, financialRequests: diagnostics.financialRequests,
   }));
   await context.close();
 } catch (error) {
