@@ -1,0 +1,58 @@
+name: BERS v1 external release evidence tooling
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'scripts/verify-frontend-security-headers.mjs'
+      - 'scripts/verify-github-main-protection.mjs'
+      - 'tests/frontend-security-deployment-contract.test.mjs'
+      - 'tests/v1-external-release-evidence.test.mjs'
+      - 'docs/v1-external-release-evidence.md'
+      - 'package.json'
+      - '.github/workflows/v1-external-release-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-release-evidence:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Prove frontend deployment contract and evidence capture
+        run: node --test tests/frontend-security-deployment-contract.test.mjs tests/v1-external-release-evidence.test.mjs
+      - name: Prove exact required main-protection check set
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { REQUIRED_V1_MAIN_CHECKS } from './scripts/verify-github-main-protection.mjs';
+          assert.deepEqual(REQUIRED_V1_MAIN_CHECKS, [
+            'BERS Required Acceptance',
+            'integrated-contract',
+            'npm-production-audit',
+            'fp16-webgpu-feasibility',
+            'wasm-compact-feasibility',
+            'ort-memory-latency-feasibility',
+            'short-pipeline-measurement',
+          ]);
+          NODE
+          grep -q 'release:evidence:frontend' package.json
+          grep -q 'release:evidence:github' package.json
+          ! grep -E -q '(ghp_|github_pat_|Bearer [A-Za-z0-9])' docs/v1-external-release-evidence.md
+      - name: Check committed diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
