@@ -164,6 +164,45 @@ test('Editor selection brush hardness is explicit and quality warnings are user-
   assert.match(toolbar, /Selection covers almost the entire image\. Verify the mask before Done\./);
 });
 
+test('Editor Masked Exposure uses exact eighth-stops and remains preview-before-Accept', async () => {
+  const [editor, toolbar, application] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/editor/SelectionToolbar.jsx', 'utf8'),
+    readFile('src/application/createMaskedExposure.ts', 'utf8'),
+  ]);
+
+  assert.match(editor, /createMaskedExposure/);
+  assert.match(editor, /exposureEighthStops, setExposureEighthStops\] = useState\(8\)/);
+  assert.match(editor, /const maskedExposureInFlightRef = useRef\(false\)/);
+  assert.match(editor, /if \(maskedExposureInFlightRef\.current\) return/);
+  assert.match(editor, /maskedExposureInFlightRef\.current = true/);
+  assert.match(editor, /maskedExposureInFlightRef\.current = false/);
+  assert.match(editor, /const eighthStops = Number\.isSafeInteger\(retryContext\?\.eighthStops\) \? retryContext\.eighthStops : exposureEighthStops/);
+  assert.match(editor, /eighthStops < -32 \|\| eighthStops > 32 \|\| eighthStops === 0/);
+  assert.match(editor, /local\.run\(\{ requestId: globalThis\.crypto\.randomUUID\(\), sourceArtifactId, maskArtifactId, eighthStops \}\)/);
+  assert.match(editor, /kind: 'MASKED_EXPOSURE'/);
+  assert.match(editor, /finalArtifactId: result\.canonicalArtifactId/);
+  assert.match(editor, /context: \{ sourceArtifactId, maskArtifactId, eighthStops \}/);
+  assert.match(editor, /pending\?\.kind === 'MASKED_EXPOSURE'/);
+  assert.match(editor, /await pushEdit\(result\.finalArtifactId, used\)/);
+  assert.doesNotMatch(editor, /quarterStops|exposureQuarterStops/);
+  assert.doesNotMatch(editor, /applyMaskedExposure[\s\S]{0,900}(persistFinal|issueStoredFinal|acceptFinal)/);
+
+  assert.match(toolbar, /aria-label="Masked exposure"/);
+  assert.match(toolbar, /min="-32"/);
+  assert.match(toolbar, /max="32"/);
+  assert.match(toolbar, /step="1"/);
+  assert.match(toolbar, /const ev = eighthStops \/ 8/);
+  assert.match(toolbar, /aria-label="Preview masked exposure"/);
+  assert.doesNotMatch(toolbar, /quarterStops|\/ 4/);
+
+  assert.match(application, /prepareMaskedExposure/);
+  assert.match(application, /loadMaskedExposureInputs/);
+  assert.match(application, /uploadMaskedExposureImage/);
+  assert.match(application, /submitMaskedExposure/);
+  assert.doesNotMatch(application, /persistFinal|acceptFinal|pushEdit/);
+});
+
 test('Editor Crop remains a Core-authorized preview then explicit canonical Accept flow', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const crop = await readFile('src/application/createCrop.ts', 'utf8');
