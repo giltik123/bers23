@@ -1,0 +1,48 @@
+name: BERS v1 release finalization guard
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'config/v1-release-finalization.json'
+      - 'config/v1-release-readiness.json'
+      - 'config/v1-capability-classification.json'
+      - 'scripts/check-v1-release-finalization.mjs'
+      - 'tests/v1-release-finalization.test.mjs'
+      - 'docs/v1-release-finalization.md'
+      - 'docs/v1-release-notes.md'
+      - 'docs/v1-release-operations.md'
+      - 'package.json'
+      - '.github/workflows/v1-release-finalization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-finalization:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Prove release state transition guard
+        run: node --test tests/v1-release-finalization.test.mjs
+      - name: Emit release finalization disposition
+        run: |
+          set -euo pipefail
+          node scripts/check-v1-release-finalization.mjs | tee .test-cache-v1-release-finalization.log
+          grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .test-cache-v1-release-finalization.log
+          ! grep -q 'BERS_V1_0_RELEASED' .test-cache-v1-release-finalization.log
+      - name: Check committed diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
