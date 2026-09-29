@@ -16,6 +16,8 @@ test('R3 browser harness cumulatively proves baseline plus deterministic Rotate 
     'ACCEPTED_FINAL',
     "name: 'Undo'",
     "name: 'Redo'",
+    'R3Q_ACCEPT_SIDE_EFFECT_ISOLATION_ACCEPTED',
+    'R3Q_NOTIFICATION_SIDE_EFFECT_FAULT',
   ]) {
     assert.equal(harness.includes(required), true, `R3 cumulative harness must contain ${required}`);
   }
@@ -31,6 +33,10 @@ test('R3 browser harness cumulatively proves baseline plus deterministic Rotate 
   assert.match(harness, /coreResult\.status,\s*'SUCCESS'/);
   assert.match(harness, /coreResult\.verification\?\.valid,\s*true/);
   assert.match(harness, /assertLocalVerifiedPreview\(previewImage,\s*\[8,\s*12\]/);
+  assert.match(harness, /Object\.defineProperty\(cryptoPrototype, 'randomUUID'/);
+  assert.match(harness, /r3qAcceptedState\.history\.length,\s*3/);
+  assert.match(harness, /r3qMutations,[\s\S]*accept-final/);
+  assert.match(harness, /r3qLocalCalls\.length,\s*4/);
   assert.doesNotMatch(harness, /assertSignedCoreImage\(previewImage/);
 });
 
@@ -81,4 +87,5 @@ test('R3 workflow keeps exact-head real build PostgreSQL and financial-freeze ga
   assert.match(workflow, /Preserve financial redesign freeze/);
   assert.match(workflow, /release-r3b-browser-boundaries\.test\.mjs/);
   assert.match(workflow, /R3B_BROWSER_DETERMINISTIC_EDIT_ACCEPTED/);
+  assert.match(workflow, /R3Q_ACCEPT_SIDE_EFFECT_ISOLATION_ACCEPTED/);
 });
