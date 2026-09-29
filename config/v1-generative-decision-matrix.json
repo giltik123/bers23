@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "program": "BERS_V1_STAGE_D_GENERATIVE_DECISION_MATRIX",
+  "evidenceBaseSha": "13e85cfb6b3bb9ab2ba2c9f4d10a3e278eb9b59a",
+  "releaseAuthority": "NO_ENTRY_GRANTS_PRODUCTION_AUTHORITY",
+  "decisionLaw": "Missing production-grade device, quality, artifact or runtime evidence is a valid reason to reject a model from the v1 default while retaining its research issue.",
+  "entries": [
+    {
+      "track": "D1_MOBILESAM_SEGMENTATION",
+      "manifestPath": "src/platform/creative/local-ai/models/interactive-segmentation.manifest.json",
+      "modelId": "mobilesam-vit-t",
+      "version": "1.0.2",
+      "manifestStatus": "CANDIDATE",
+      "readiness": "SOFTWARE_READY_EVIDENCE_PENDING",
+      "v1Decision": "EXPLICIT_REJECTION_FOR_V1_DEFAULT",
+      "productFallback": "MANUAL_CANONICAL_SELECTION",
+      "productionEnabled": false,
+      "blockers": [
+        "REAL_SUPPORTED_DEVICE_RUNTIME_EVIDENCE",
+        "REPRESENTATIVE_REAL_IMAGE_MASK_QUALITY_REVIEW"
+      ],
+      "evidence": {
+        "runtimePackageBytes": 44466632,
+        "packageScope": "SIGNED_ENCODER_PLUS_DECODER",
+        "quality": "PENDING_REAL_IMAGE_REVIEW",
+        "latencyMemory": "PENDING_SUPPORTED_DEVICE_MEASUREMENT",
+        "deviceTier": "NO_PRODUCTION_TIER_ADMITTED",
+        "determinismReplay": "MODEL_OUTPUT_NOT_USED_AS_RELEASE_AUTHORITY",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "track": "D2_MODNET_MATTING",
+      "manifestPath": "src/platform/creative/local-ai/models/portrait-matting.manifest.json",
+      "modelId": "modnet-photographic-portrait-matting",
+      "version": "1.0.0-candidate.2",
+      "manifestStatus": "CANDIDATE",
+      "readiness": "SOFTWARE_READY_EVIDENCE_PENDING",
+      "v1Decision": "EXPLICIT_REJECTION_FOR_V1_DEFAULT",
+      "productFallback": "MANUAL_CANONICAL_MASK_PATH",
+      "productionEnabled": false,
+      "blockers": [
+        "SIGNED_RELEASE_ARTIFACT_REQUIRED",
+        "REAL_DEVICE_RUNTIME_EVIDENCE",
+        "REPRESENTATIVE_REAL_IMAGE_MATTING_QUALITY_REVIEW"
+      ],
+      "evidence": {
+        "runtimePackageBytes": 26236047,
+        "packageScope": "PINNED_BERS_ONNX_EXPORT",
+        "quality": "PENDING_REAL_IMAGE_REVIEW",
+        "latencyMemory": "PENDING_REAL_DEVICE_MEASUREMENT",
+        "deviceTier": "NO_PRODUCTION_TIER_ADMITTED",
+        "determinismReplay": "BYTE_IDENTICAL_EXPORT_PROVEN_EXECUTION_EVIDENCE_PENDING",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "track": "D3_REALESRGAN_RESTORATION",
+      "manifestPath": "src/platform/creative/local-ai/models/super-resolution.manifest.json",
+      "modelId": "realesr-general-x4v3",
+      "version": "1.0.0-candidate.1",
+      "manifestStatus": "CANDIDATE",
+      "readiness": "CANDIDATE",
+      "v1Decision": "EXPLICIT_REJECTION_FOR_V1_DEFAULT",
+      "productFallback": "DETERMINISTIC_RESIZE_ONLY_NOT_SUPER_RESOLUTION",
+      "productionEnabled": false,
+      "blockers": [
+        "BERS_ONNX_RELEASE_ARTIFACT_REQUIRED",
+        "REAL_DEVICE_WEB_RUNTIME_EVIDENCE",
+        "REPRESENTATIVE_REAL_IMAGE_QUALITY_REVIEW",
+        "MEMORY_LATENCY_POLICY_EVIDENCE"
+      ],
+      "evidence": {
+        "runtimePackageBytes": null,
+        "packageScope": "EXPORT_REQUIRED",
+        "quality": "PENDING_REAL_IMAGE_REVIEW",
+        "latencyMemory": "PENDING_REAL_DEVICE_MEASUREMENT",
+        "deviceTier": "NO_PRODUCTION_TIER_ADMITTED",
+        "determinismReplay": "MODEL_ADMISSION_ONLY_NO_PIXEL_EQUIVALENCE_CLAIM",
+        "license": "BSD-3-Clause"
+      }
+    },
+    {
+      "track": "D4_LAMA_INPAINTING",
+      "manifestPath": "src/platform/creative/local-ai/models/lama-inpainting.manifest.json",
+      "modelId": "lama-big-places-inpainting",
+      "version": "1.0.0-candidate.1",
+      "manifestStatus": "CANDIDATE",
+      "readiness": "SOFTWARE_READY_EVIDENCE_PENDING",
+      "v1Decision": "DETERMINISTIC_FALLBACK",
+      "productFallback": "DETERMINISTIC_MASKED_EDITING_AND_FASHION_F4",
+      "productionEnabled": false,
+      "blockers": [
+        "SIGNED_RELEASE_ARTIFACT_REQUIRED",
+        "REAL_DEVICE_ACCELERATED_RUNTIME_EVIDENCE",
+        "REPRESENTATIVE_REAL_IMAGE_INPAINTING_AND_FASHION_QUALITY_REVIEW"
+      ],
+      "evidence": {
+        "runtimePackageBytes": 208593659,
+        "packageScope": "PINNED_BERS_ONNX_ARTIFACT",
+        "quality": "PENDING_REAL_IMAGE_REVIEW",
+        "latencyMemory": "HOSTED_CPU_WASM_ONLY_REAL_DEVICE_PENDING",
+        "deviceTier": "NO_PRODUCTION_TIER_ADMITTED",
+        "determinismReplay": "BYTE_IDENTICAL_EXPORT_REPRODUCIBILITY_PROVEN_RUNTIME_PROMOTION_PENDING",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "track": "D5_TINY_SD_GENERATION",
+      "manifestPath": "src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json",
+      "modelId": "segmind-tiny-sd",
+      "version": "1.0.0-candidate.1",
+      "manifestStatus": "CANDIDATE",
+      "readiness": "R&D_ONLY",
+      "v1Decision": "EXPLICIT_REJECTION_FOR_V1_DEFAULT",
+      "productFallback": "NO_LOCAL_TEXT_TO_IMAGE_DEFAULT",
+      "productionEnabled": false,
+      "blockers": [
+        "ACCELERATED_REAL_DEVICE_RUNTIME_REQUIRED",
+        "PRACTICAL_IMAGE_QUALITY_REVIEW_REQUIRED",
+        "PRODUCT_LATENCY_CLASSIFICATION_REQUIRED",
+        "PRODUCTION_RELEASE_BYTES_NOT_APPROVED"
+      ],
+      "evidence": {
+        "runtimePackageBytes": 1062108664,
+        "packageScope": "PINNED_UPSTREAM_RUNTIME_SNAPSHOT",
+        "quality": "PENDING_PRACTICAL_HUMAN_REVIEW",
+        "latencyMemory": "HOSTED_COMPOSITION_FEASIBILITY_ONLY_ACCELERATION_PENDING",
+        "deviceTier": "NO_PRODUCTION_TIER_ADMITTED",
+        "determinismReplay": "COMPOSITION_FEASIBILITY_ONLY_NOT_QUALITY_ADMISSION",
+        "license": "creativeml-openrail-m"
+      }
+    },
+    {
+      "track": "D6_KANDINSKY_REFINEMENT",
+      "manifestPath": "src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json",
+      "modelId": "kandinsky-2-2-decoder-inpaint-refinement",
+      "version": "0.1.0-feasibility.3",
+      "manifestStatus": "CANDIDATE",
+      "readiness": "R&D_ONLY",
+      "v1Decision": "DETERMINISTIC_FALLBACK",
+      "productFallback": "DETERMINISTIC_FASHION_F4",
+      "productionEnabled": false,
+      "blockers": [
+        "CONDITIONING_BUNDLE_UNPROVEN",
+        "DECODER_ONLY_PARITY_UNPROVEN",
+        "RUNTIME_FEASIBILITY_UNPROVEN",
+        "REAL_IMAGE_MATERIAL_GAIN_OVER_F4_UNPROVEN",
+        "PRODUCT_LICENSE_REVIEW_NOT_APPROVED"
+      ],
+      "evidence": {
+        "runtimePackageBytes": 5283759068,
+        "packageScope": "PINNED_DECODER_SAFE_WEIGHTS_ONLY",
+        "quality": "MATERIAL_IMPROVEMENT_OVER_DETERMINISTIC_F4_UNPROVEN",
+        "latencyMemory": "RUNTIME_UNPROVEN",
+        "deviceTier": "NO_PRODUCTION_TIER_ADMITTED",
+        "determinismReplay": "CONDITIONING_AND_DECODER_RUNTIME_NOT_ADMITTED",
+        "license": "apache-2.0"
+      }
+    }
+  ]
+}

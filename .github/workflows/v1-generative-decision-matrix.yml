@@ -1,0 +1,62 @@
+name: BERS v1 Stage D generative decision matrix
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'config/v1-generative-decision-matrix.json'
+      - 'docs/v1-generative-decision-matrix.md'
+      - 'tests/v1-generative-decision-matrix.test.ts'
+      - 'src/platform/creative/local-ai/models/interactive-segmentation.manifest.json'
+      - 'src/platform/creative/local-ai/models/portrait-matting.manifest.json'
+      - 'src/platform/creative/local-ai/models/super-resolution.manifest.json'
+      - 'src/platform/creative/local-ai/models/lama-inpainting.manifest.json'
+      - 'src/platform/creative/local-ai/models/tiny-sd-generation.manifest.json'
+      - 'src/platform/creative/local-ai/models/kandinsky-2-2-refinement-feasibility.manifest.json'
+      - 'server/core/localExecution/productionLocalModelPolicy.ts'
+      - 'server/core/localExecution/productionLocalExecutorPolicy.ts'
+      - '.github/workflows/v1-generative-decision-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage-d-v1-decisions:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Bundle Stage D release decision contract
+        run: |
+          mkdir -p .test-cache/stage-d-v1
+          npx esbuild tests/v1-generative-decision-matrix.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/stage-d-v1/v1-generative-decision-matrix.test.mjs \
+            --external:node:*
+      - name: Prove manifest identity decision and production-authority closure
+        run: node --test .test-cache/stage-d-v1/v1-generative-decision-matrix.test.mjs
+      - name: Preserve fail-closed v1 classification
+        run: |
+          set -euo pipefail
+          grep -q '"releaseAuthority": "NO_ENTRY_GRANTS_PRODUCTION_AUTHORITY"' config/v1-generative-decision-matrix.json
+          test "$(grep -c '"productionEnabled": false' config/v1-generative-decision-matrix.json)" -eq 6
+          ! grep -q '"manifestStatus": "PRODUCTION_APPROVED"' config/v1-generative-decision-matrix.json
+          grep -q 'DETERMINISTIC_FALLBACK' config/v1-generative-decision-matrix.json
+          grep -q 'EXPLICIT_REJECTION_FOR_V1_DEFAULT' config/v1-generative-decision-matrix.json
+          grep -q 'Stage D/D7' docs/v1-generative-decision-matrix.md
+      - name: Typecheck production authority surfaces
+        run: npm run server:typecheck
+      - name: Check committed diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
