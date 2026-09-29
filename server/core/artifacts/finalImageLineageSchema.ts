@@ -42,11 +42,11 @@ export async function migrateFinalImageLineageSchema(pool: Pool): Promise<void> 
   await pool.query(await readMigration('020_canonical_resize_final_lineage.sql'));
   await pool.query(await readMigration('021_canonical_orthogonal_transform_final_lineage.sql'));
   await migrateMaskedExposureFinalLineageSchema(pool);
-  await migrateMaskedWhiteBalanceFinalLineageSchema(pool);
 }
 
 export async function migrateMaskedExposureFinalLineageSchema(pool: Pool): Promise<void> {
   await pool.query(await readMigration('046_canonical_masked_exposure_final_lineage.sql'));
+  await migrateMaskedWhiteBalanceFinalLineageSchema(pool);
 }
 
 export async function migrateMaskedWhiteBalanceFinalLineageSchema(pool: Pool): Promise<void> {
