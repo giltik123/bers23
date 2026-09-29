@@ -82,7 +82,11 @@
     "src/platform/creative/workflow-engine/immutable.ts",
     "src/platform/creative/workflow-engine/index.ts",
     "src/platform/creative/workflow-engine/types.ts",
-    "tests/garment-texture-composite-service-postgres.test.ts"
+    "tests/garment-texture-composite-service-postgres.test.ts",
+    "src/platform/creative/deterministic/Exposure.ts",
+    "src/platform/creative/deterministic/ExposureIdentity.js",
+    "src/platform/creative/deterministic/MaskedExposure.ts",
+    "src/platform/creative/deterministic/MaskedExposureIdentity.js"
   ],
   "migrationPaths": [
     "server/core/artifacts/migrations/002_canonical_mask_artifacts.sql",
