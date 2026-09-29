@@ -162,6 +162,7 @@ export default function Editor() {
   const selectionServiceRef = useRef(null);
   const strokeRef = useRef([]);
   const cropAnchorRef = useRef(null);
+  const maskedExposureInFlightRef = useRef(false);
   const orthogonalTransformInFlightRef = useRef(false);
   const platform = usePlatformProfile();
   const localEditorBusy = applying || isolatingBackground || applyingMaskedExposure || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
@@ -519,6 +520,8 @@ export default function Editor() {
     const maskArtifactId = retryContext?.maskArtifactId || selected?.mask_artifact_id;
     const eighthStops = Number.isSafeInteger(retryContext?.eighthStops) ? retryContext.eighthStops : exposureEighthStops;
     if (!project?.id || !sourceArtifactId || !maskArtifactId || !Number.isSafeInteger(eighthStops) || eighthStops < -32 || eighthStops > 32 || eighthStops === 0) return;
+    if (maskedExposureInFlightRef.current) return;
+    maskedExposureInFlightRef.current = true;
     setApplyingMaskedExposure(true);
     setAiError(null);
     setLastAction(() => () => applyMaskedExposure({ sourceArtifactId, maskArtifactId, eighthStops }));
@@ -545,6 +548,7 @@ export default function Editor() {
       setAiError(e.message || 'Masked Exposure failed');
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
     } finally {
+      maskedExposureInFlightRef.current = false;
       setApplyingMaskedExposure(false);
     }
   };
