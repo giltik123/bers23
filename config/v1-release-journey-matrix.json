@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "program": "BERS_V1_BROWSER_RELEASE_JOURNEY_MATRIX",
+  "evidenceBaseSha": "69c596ba51271ac439d267ae4f8c7aa0e9045f3f",
+  "issue": 233,
+  "topology": "BUILT_SPA_BUILT_CORE_REAL_POSTGRESQL",
+  "entries": [
+    {
+      "id": 1,
+      "name": "register OTP session logout login",
+      "disposition": "PROVEN",
+      "marker": "R3M_BROWSER_AUTH_LIFECYCLE_ACCEPTED",
+      "harness": "scripts/test-release-r3m-auth-lifecycle-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3m-auth-lifecycle-browser-e2e.yml"
+    },
+    {
+      "id": 2,
+      "name": "password reset request consume",
+      "disposition": "PROVEN",
+      "marker": "R3M_BROWSER_AUTH_LIFECYCLE_ACCEPTED",
+      "harness": "scripts/test-release-r3m-auth-lifecycle-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3m-auth-lifecycle-browser-e2e.yml"
+    },
+    {
+      "id": 3,
+      "name": "protected route denial without session",
+      "disposition": "PROVEN",
+      "marker": "R3B_BROWSER_DETERMINISTIC_EDIT_ACCEPTED",
+      "harness": "scripts/test-release-r3b-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 4,
+      "name": "upload image create Project open Editor",
+      "disposition": "PROVEN",
+      "marker": "R3B_BROWSER_DETERMINISTIC_EDIT_ACCEPTED",
+      "harness": "scripts/test-release-r3b-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 5,
+      "name": "whole-image preview Accept updates Project once",
+      "disposition": "PROVEN",
+      "marker": "R3B_BROWSER_DETERMINISTIC_EDIT_ACCEPTED",
+      "harness": "scripts/test-release-r3b-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 6,
+      "name": "Discard leaves Project unchanged",
+      "disposition": "PROVEN",
+      "marker": "R3C_BROWSER_PROJECT_LIFECYCLE_ACCEPTED",
+      "harness": "scripts/test-release-r3c-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 7,
+      "name": "Undo Redo Version Restore",
+      "disposition": "PROVEN",
+      "marker": "R3C_BROWSER_PROJECT_LIFECYCLE_ACCEPTED",
+      "harness": "scripts/test-release-r3c-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 8,
+      "name": "stale FINAL source conflict common recovery",
+      "disposition": "PROVEN",
+      "marker": "R3C_BROWSER_PROJECT_LIFECYCLE_ACCEPTED",
+      "harness": "scripts/test-release-r3c-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 9,
+      "name": "post-Accept optional side-effect failure cannot strand pending UI",
+      "disposition": "PROVEN",
+      "marker": "R3Q_ACCEPT_SIDE_EFFECT_ISOLATION_ACCEPTED",
+      "harness": "scripts/test-release-r3b-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 10,
+      "name": "Crop Resize Rotate Flip deterministic lifecycle",
+      "disposition": "PROVEN",
+      "marker": "R3D_BROWSER_DETERMINISTIC_GEOMETRY_ACCEPTED",
+      "harness": "scripts/test-release-r3d-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 11,
+      "name": "Selection canonical MASK deterministic local operation",
+      "disposition": "PROVEN",
+      "marker": "R3E_BROWSER_SELECTION_MASK_ACCEPTED",
+      "harness": "scripts/test-release-r3e-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 12,
+      "name": "LOCAL_ONLY failure cannot reach provider cloud paid Billing",
+      "disposition": "PROVEN",
+      "marker": "R3F_BROWSER_LOCAL_ONLY_FAILURE_ACCEPTED",
+      "harness": "scripts/test-release-r3f-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 13,
+      "name": "zero-object Project opens Fashion and Outfits",
+      "disposition": "PROVEN",
+      "marker": "R3G_BROWSER_ZERO_OBJECT_FASHION_OUTFITS_ACCEPTED",
+      "harness": "scripts/test-release-r3g-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 14,
+      "name": "managed garment create manage multi-view collection",
+      "disposition": "PROVEN",
+      "marker": "R3H_BROWSER_MANAGED_GARMENT_COLLECTION_ACCEPTED",
+      "harness": "scripts/test-release-r3h-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 15,
+      "name": "Outfit build reorder stable identities",
+      "disposition": "PROVEN",
+      "marker": "R3I_BROWSER_OUTFIT_REORDER_ACCEPTED",
+      "harness": "scripts/test-release-r3i-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 16,
+      "name": "canonical Try-On preview Accept cancel retry UNKNOWN reconciliation",
+      "disposition": "PROVEN",
+      "marker": "R3J_BROWSER_CANONICAL_TRYON_ACCEPTED",
+      "harness": "scripts/test-release-r3j-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3a-browser-e2e.yml"
+    },
+    {
+      "id": 17,
+      "name": "checkout webhook entitlement transition",
+      "disposition": "DEFERRED_OUT_OF_V1",
+      "reason": "Financial/payment redesign explicitly deferred by #189 and #233 scope decision; browser release paths preserve the financial redesign freeze.",
+      "evidence": "tests/release-r3b-browser-boundaries.test.mjs"
+    },
+    {
+      "id": 18,
+      "name": "Automation Agent durable run survives refresh",
+      "disposition": "PROVEN",
+      "marker": "R3K_BROWSER_BOUNDED_AGENT_RECOVERY_ACCEPTED",
+      "additionalMarker": "R3L_AUTOMATION_JOB_CENTER_RELEASE_ACCEPTED",
+      "harness": "scripts/test-release-r3k-browser-e2e.mjs",
+      "additionalHarness": "scripts/test-automation-c3c-studio-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3k-bounded-agent-browser-e2e.yml",
+      "additionalWorkflow": ".github/workflows/automation-studio-browser-e2e-c3c.yml"
+    },
+    {
+      "id": 19,
+      "name": "Job Center canonical refresh reconciliation cancel retry",
+      "disposition": "PROVEN",
+      "marker": "R3L_AUTOMATION_JOB_CENTER_RELEASE_ACCEPTED",
+      "additionalMarker": "R3P_JOB_CENTER_WORKFLOW_RETRY_ACCEPTED",
+      "harness": "scripts/test-automation-c3c-studio-browser-e2e.mjs",
+      "additionalHarness": "scripts/test-automation-c3b-retry-cancel-browser-e2e.mjs",
+      "workflow": ".github/workflows/automation-studio-browser-e2e-c3c.yml",
+      "additionalWorkflow": ".github/workflows/automation-manual-browser-e2e-c3b.yml"
+    },
+    {
+      "id": 20,
+      "name": "cross-user cross-project substitution fails closed",
+      "disposition": "PROVEN",
+      "marker": "R3N_BROWSER_CROSS_SCOPE_ACCEPTED",
+      "harness": "scripts/test-release-r3n-cross-scope-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3n-cross-scope-browser-e2e.yml"
+    },
+    {
+      "id": 21,
+      "name": "expired revoked delivery URL is not durable identity",
+      "disposition": "PROVEN",
+      "marker": "R3O_BROWSER_DELIVERY_LIFECYCLE_ACCEPTED",
+      "harness": "scripts/test-release-r3o-delivery-lifecycle-browser-e2e.mjs",
+      "workflow": ".github/workflows/release-r3o-delivery-lifecycle-browser-e2e.yml"
+    },
+    {
+      "id": 22,
+      "name": "frontend response security headers match deployment contract",
+      "disposition": "DEPLOYMENT_TARGET_PENDING",
+      "reason": "Repository contract and verifier are GREEN, but final canonical deployed frontend URL must still be verified.",
+      "evidence": "tests/frontend-security-deployment-contract.test.mjs",
+      "workflow": ".github/workflows/security-frontend-deployment-contract.yml",
+      "verifier": "scripts/verify-frontend-security-headers.mjs"
+    }
+  ]
+}
