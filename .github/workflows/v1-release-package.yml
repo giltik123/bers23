@@ -1,0 +1,49 @@
+name: BERS v1 release package contract
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'config/v1-capability-classification.json'
+      - 'config/v1-generative-decision-matrix.json'
+      - 'config/v1-release-readiness.json'
+      - 'config/v1-release-journey-matrix.json'
+      - 'docs/v1-release-notes.md'
+      - 'docs/v1-release-operations.md'
+      - 'tests/v1-release-package.test.mjs'
+      - 'package.json'
+      - 'server/core/localExecution/productionLocalExecutorPolicy.ts'
+      - '.github/workflows/v1-release-package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Prove truthful v1 package classification version and rollback contract
+        run: node --test tests/v1-release-package.test.mjs
+      - name: Preserve pre-RC version boundary
+        run: |
+          set -euo pipefail
+          test "$(node -p "require('./package.json').version")" = "0.0.0"
+          grep -q '"targetVersion": "1.0.0"' config/v1-capability-classification.json
+          grep -q '"releaseState": "PRE_RC_EXTERNAL_BLOCKERS_REMAIN"' config/v1-capability-classification.json
+          grep -q 'BERS v1.0 RELEASED' docs/v1-release-operations.md
+      - name: Check committed diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
