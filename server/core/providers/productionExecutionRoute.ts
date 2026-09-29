@@ -1,5 +1,6 @@
 import type { ExecutionRouteSelectorPort } from '../../../src/platform/creative/canonical/contracts.ts';
 import { MASKED_EXPOSURE_OPERATION } from '../../../src/platform/creative/deterministic/MaskedExposure.ts';
+import { MASKED_WHITE_BALANCE_OPERATION } from '../../../src/platform/creative/deterministic/MaskedWhiteBalance.ts';
 import { GARMENT_TEXTURE_COMPOSITE_OPERATION } from '../../../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
 import { GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE } from './productionGarmentMeshWarpExecutionPolicy.ts';
 
@@ -10,7 +11,7 @@ export class ProductionExecutionRouteSelector implements ExecutionRouteSelectorP
   select(operation: Parameters<ExecutionRouteSelectorPort['select']>[0]) {
     if (operation.type === 'image-edit' || operation.type === 'CONTROLLED_LOCAL_EDIT') return 'PROVIDER' as const;
     if (operation.type === 'verify') return 'INTERNAL' as const;
-    if (operation.type === 'segment' || operation.type === 'BACKGROUND_ISOLATION' || operation.type === 'CROP' || operation.type === MASKED_EXPOSURE_OPERATION || operation.type === 'RESIZE' || operation.type === 'ORTHOGONAL_TRANSFORM' || operation.type === GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE.operationType || operation.type === GARMENT_TEXTURE_COMPOSITE_OPERATION || operation.type === 'SUPER_RESOLUTION') return 'ON_DEVICE' as const;
+    if (operation.type === 'segment' || operation.type === 'BACKGROUND_ISOLATION' || operation.type === 'CROP' || operation.type === MASKED_EXPOSURE_OPERATION || operation.type === MASKED_WHITE_BALANCE_OPERATION || operation.type === 'RESIZE' || operation.type === 'ORTHOGONAL_TRANSFORM' || operation.type === GARMENT_MESH_WARP_PRODUCTION_EXECUTION_RULE.operationType || operation.type === GARMENT_TEXTURE_COMPOSITE_OPERATION || operation.type === 'SUPER_RESOLUTION') return 'ON_DEVICE' as const;
     throw new Error(`Unsupported production execution route for ${operation.type}`);
   }
 }
