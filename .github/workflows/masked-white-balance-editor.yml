@@ -1,0 +1,63 @@
+name: Masked White Balance Editor
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/application/createMaskedWhiteBalance.ts'
+      - 'src/application/local-execution/CoreAuthorizedMaskedWhiteBalance.ts'
+      - 'tests/editor-canonical-boundary.test.mjs'
+      - '.github/workflows/masked-white-balance-editor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  masked-white-balance-editor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser authority
+        run: npm run typecheck
+      - name: Prove Editor canonical boundary
+        run: node --test tests/editor-canonical-boundary.test.mjs
+      - name: Build production browser
+        run: npm run build
+      - name: Prove signed-Q8 preview and no browser persistence authority
+        run: |
+          set -euo pipefail
+          editor=src/pages/Editor.jsx
+          toolbar=src/components/editor/SelectionToolbar.jsx
+          app=src/application/createMaskedWhiteBalance.ts
+          grep -q 'whiteBalanceTemperatureQ8' "$editor"
+          grep -q 'temperatureQ8 < -128' "$editor"
+          grep -q 'tintQ8 < -64' "$editor"
+          grep -q "kind: 'MASKED_WHITE_BALANCE'" "$editor"
+          grep -q 'maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current' "$editor"
+          grep -q 'aria-label="Masked white balance temperature"' "$toolbar"
+          grep -q 'min="-128"' "$toolbar"
+          grep -q 'max="128"' "$toolbar"
+          grep -q 'aria-label="Masked white balance tint"' "$toolbar"
+          grep -q 'min="-64"' "$toolbar"
+          grep -q 'max="64"' "$toolbar"
+          grep -q 'aria-label="Preview masked white balance"' "$toolbar"
+          ! grep -Eq 'persistFinal|acceptFinal|pushEdit' "$app"
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD
