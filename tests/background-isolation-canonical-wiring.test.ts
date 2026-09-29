@@ -106,6 +106,7 @@ test('C2 deterministic registry remains data-only while each production capabili
     CROP_CAPABILITY,
     RESIZE_CAPABILITY,
     MASKED_EXPOSURE_CAPABILITY,
+    MASKED_WHITE_BALANCE_CAPABILITY,
     ORTHOGONAL_TRANSFORM_CAPABILITY,
     GARMENT_MESH_WARP_CAPABILITY,
     GARMENT_TEXTURE_COMPOSITE_CAPABILITY,
@@ -117,7 +118,7 @@ test('C2 deterministic registry remains data-only while each production capabili
   assert.deepEqual(productionLocalExecutorsByCapability[RESIZE_CAPABILITY], [RESIZE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[EXPOSURE_CAPABILITY], undefined, 'reviewed Exposure candidate is not executable production authority');
   assert.equal(productionLocalExecutorsByCapability[WHITE_BALANCE_CAPABILITY], undefined, 'reviewed White Balance candidate is not executable production authority');
-  assert.equal(productionLocalExecutorsByCapability[MASKED_WHITE_BALANCE_CAPABILITY], undefined, 'reviewed Masked White Balance candidate is not executable production authority');
+  assert.deepEqual(productionLocalExecutorsByCapability[MASKED_WHITE_BALANCE_CAPABILITY], [MASKED_WHITE_BALANCE_TOOL_DEFINITION.executor], 'Masked White Balance is executable only through explicit reviewed authority');
   assert.deepEqual(productionLocalExecutorsByCapability[MASKED_EXPOSURE_CAPABILITY], [MASKED_EXPOSURE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[AFFINE_TRANSFORM_CAPABILITY], undefined, 'reviewed Affine candidate is not executable production authority');
   assert.deepEqual(productionLocalExecutorsByCapability[ORTHOGONAL_TRANSFORM_CAPABILITY], [ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.executor]);
