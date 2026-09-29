@@ -19,6 +19,8 @@ export {
   MASKED_WHITE_BALANCE_MAX_TEMPERATURE_Q8,
   MASKED_WHITE_BALANCE_MIN_TINT_Q8,
   MASKED_WHITE_BALANCE_MAX_TINT_Q8,
+  MASKED_WHITE_BALANCE_PARAMETER_FRACTION_BITS,
+  MASKED_WHITE_BALANCE_GAIN_FIXED_POINT_BITS,
   MASKED_WHITE_BALANCE_MAX_DIMENSION,
   MASKED_WHITE_BALANCE_MAX_PIXELS,
   MASKED_WHITE_BALANCE_MAX_WORK,
@@ -60,6 +62,7 @@ export function maskedWhiteBalanceRgba8(
   if (maskAlpha.byteLength !== pixels) throw new Error('Masked White Balance MASK alpha length is invalid');
   const normalized = normalizeMaskedWhiteBalanceParameters(temperatureQ8, tintQ8);
   const gains = whiteBalanceGainsQ16(normalized.temperatureQ8, normalized.tintQ8);
+  const channelGains = [gains.red, gains.green, gains.blue] as const;
   const work = pixels * 4;
   if (!Number.isSafeInteger(work) || work > MASKED_WHITE_BALANCE_MAX_WORK) throw new Error('Masked White Balance work exceeds deterministic bounds');
 
@@ -67,7 +70,6 @@ export function maskedWhiteBalanceRgba8(
   for (let pixel = 0; pixel < pixels; pixel += 1) {
     const offset = pixel * 4;
     const mask = maskAlpha[pixel];
-    const channelGains = [gains.red, gains.green, gains.blue] as const;
     for (let channel = 0; channel < 3; channel += 1) {
       const source = sourceRgba[offset + channel];
       const adjusted = Math.min(255, Math.floor((source * channelGains[channel] + WHITE_BALANCE_GAIN_FIXED_POINT_ONE / 2) / WHITE_BALANCE_GAIN_FIXED_POINT_ONE));
