@@ -79,7 +79,7 @@ jobs:
         run: |
           npm run typecheck
           npm run server:typecheck
-      - name: Prove production migration 046 is the exact global tail
+      - name: Prove migration 046 position and 047 global tail
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
