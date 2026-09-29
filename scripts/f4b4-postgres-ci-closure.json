@@ -97,6 +97,8 @@
     "server/core/localExecution/LocalExecutionTicketAuthority.ts",
     "server/core/localExecution/LocalGarmentMeshWarpExecutionService.ts",
     "server/core/localExecution/LocalGarmentTextureCompositeExecutionService.ts",
+    "server/core/localExecution/LocalMaskedExposureExecutionService.ts",
+    "server/core/localExecution/LocalMaskedWhiteBalanceExecutionService.ts",
     "server/core/localExecution/LocalOrthogonalTransformExecutionService.ts",
     "server/core/localExecution/LocalResizeExecutionService.ts",
     "server/core/localExecution/LocalSegmentationExecutionService.ts",
@@ -174,6 +176,7 @@
     "src/platform/creative/deterministic/Crop.ts",
     "src/platform/creative/deterministic/CropIdentity.js",
     "src/platform/creative/deterministic/DeterministicToolRegistry.ts",
+    "src/platform/creative/deterministic/Exposure.ts",
     "src/platform/creative/deterministic/ExposureIdentity.js",
     "src/platform/creative/deterministic/GarmentAppearanceRefinementIdentity.js",
     "src/platform/creative/deterministic/GarmentMeshWarp.ts",
@@ -183,10 +186,16 @@
     "src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js",
     "src/platform/creative/deterministic/GarmentTextureCompositeParameters.ts",
     "src/platform/creative/deterministic/GarmentTextureCompositeRegistryDefinition.js",
+    "src/platform/creative/deterministic/MaskedExposure.ts",
+    "src/platform/creative/deterministic/MaskedExposureIdentity.js",
+    "src/platform/creative/deterministic/MaskedWhiteBalance.ts",
+    "src/platform/creative/deterministic/MaskedWhiteBalanceIdentity.js",
     "src/platform/creative/deterministic/OrthogonalTransform.ts",
     "src/platform/creative/deterministic/OrthogonalTransformIdentity.js",
     "src/platform/creative/deterministic/Resize.ts",
     "src/platform/creative/deterministic/ResizeIdentity.js",
+    "src/platform/creative/deterministic/WhiteBalance.ts",
+    "src/platform/creative/deterministic/WhiteBalanceIdentity.js",
     "src/platform/creative/local-ai/models/interactive-segmentation.manifest.json",
     "src/platform/creative/local-ai/models/super-resolution.manifest.json",
     "src/platform/creative/operations/contracts.ts",
@@ -216,13 +225,7 @@
     "tests/f4b4-postgres-schema-bootstrap.test.ts",
     "tests/garment-mesh-warp-production-composition-closed.test.ts",
     "tests/garment-mesh-warp-service-postgres.test.ts",
-    "tests/local-execution-working-upload-retry-postgres.test.ts",
-    "server/core/localExecution/LocalMaskedExposureExecutionService.ts",
-    "src/platform/creative/deterministic/Exposure.ts",
-    "src/platform/creative/deterministic/MaskedExposure.ts",
-    "src/platform/creative/deterministic/MaskedExposureIdentity.js",
-    "src/platform/creative/deterministic/WhiteBalanceIdentity.js",
-    "src/platform/creative/deterministic/MaskedWhiteBalanceIdentity.js"
+    "tests/local-execution-working-upload-retry-postgres.test.ts"
   ],
   "migrationPaths": [
     "server/transactions/infrastructure/postgres/migrations/001_transaction_store.sql",
@@ -266,7 +269,8 @@
     "server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql",
     "server/core/projects/migrations/044_canonical_project_revision.sql",
     "server/core/projects/migrations/045_canonical_project_status_lifecycle.sql",
-    "server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql"
+    "server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql",
+    "server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql"
   ],
   "supportPaths": [
     ".github/workflows/fashion-execution-ci-policy.yml",
