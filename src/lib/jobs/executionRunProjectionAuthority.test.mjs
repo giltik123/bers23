@@ -60,7 +60,7 @@ test('owning workflow Retry is separate from read-only recovery and delegates on
   assert.match(text, /this\.client\.retryBoundedDeterministic/);
   assert.match(text, /ticket\.workflowId !== executionId \|\| ticket\.scope\?\.projectId !== projectId/);
   assert.match(text, /ticket\.cost\?\.providerCalls !== 0 \|\| ticket\.cost\?\.paidCloudCredits !== 0/);
-  assert.doesNotMatch(text, /ExecutionRunRegistry|executionRunRecoveryClient|execution-runs|jobManager|jobStorage|creative\.execute|Billing|billing|provider|stripe/);
+  assert.doesNotMatch(text, /ExecutionRunRegistry|executionRunRecoveryClient|execution-runs|jobManager|jobStorage|creative\.execute|Billing|billing|providerClient|FalProvider|stripe/);
 });
 
 test('canonical UI exposes owning Creative cancel, owning workflow Retry, read-only FINAL, and Local ticket truth without Local cancel authority', async () => {
