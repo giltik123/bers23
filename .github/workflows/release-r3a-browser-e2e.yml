@@ -212,8 +212,11 @@ jobs:
             --bundle --platform=node --format=esm --target=node24 \
             --outfile=.test-cache/release-r3/test-release-r3b-browser-e2e.mjs \
             --external:node:* --external:pg --external:sharp --external:playwright
-      - name: Prove accepted R3b Auth Project Rotate Accept Undo Redo baseline
-        run: node .test-cache/release-r3/test-release-r3b-browser-e2e.mjs
+      - name: Prove accepted R3b Auth Project Rotate Accept Undo Redo and R3q side-effect isolation
+        run: |
+          set -euo pipefail
+          node .test-cache/release-r3/test-release-r3b-browser-e2e.mjs | tee .test-cache/release-r3/r3b-runtime.log
+          grep -q 'R3Q_ACCEPT_SIDE_EFFECT_ISOLATION_ACCEPTED' .test-cache/release-r3/r3b-runtime.log
       - name: Bundle external cumulative R3c Project lifecycle harness without replacing production stores
         run: |
           npx esbuild scripts/test-release-r3c-browser-e2e.mjs \
