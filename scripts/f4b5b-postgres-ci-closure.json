@@ -86,8 +86,7 @@
     "src/platform/creative/deterministic/Exposure.ts",
     "src/platform/creative/deterministic/ExposureIdentity.js",
     "src/platform/creative/deterministic/MaskedExposure.ts",
-    "src/platform/creative/deterministic/MaskedExposureIdentity.js",
-    "src/platform/creative/deterministic/WhiteBalanceIdentity.js"
+    "src/platform/creative/deterministic/MaskedExposureIdentity.js"
   ],
   "migrationPaths": [
     "server/core/artifacts/migrations/002_canonical_mask_artifacts.sql",
