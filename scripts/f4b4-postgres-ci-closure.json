@@ -186,6 +186,7 @@
     "src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js",
     "src/platform/creative/deterministic/GarmentTextureCompositeParameters.ts",
     "src/platform/creative/deterministic/GarmentTextureCompositeRegistryDefinition.js",
+    "src/platform/creative/deterministic/LevelsIdentity.js",
     "src/platform/creative/deterministic/MaskedExposure.ts",
     "src/platform/creative/deterministic/MaskedExposureIdentity.js",
     "src/platform/creative/deterministic/MaskedWhiteBalance.ts",
