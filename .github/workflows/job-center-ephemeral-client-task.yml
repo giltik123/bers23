@@ -82,7 +82,9 @@ jobs:
           grep -q 'Run again starts a new operation' src/components/editor/jobs/JobCenter.jsx
           grep -q 'onRunAgain={(id) => jobManager.runAgain(id)}' src/components/editor/jobs/JobCenter.jsx
           grep -q '>Run again<' src/components/editor/jobs/JobRow.jsx
-          ! grep -E -q 'onRetry|jobManager\.retry|>Retry<' src/components/editor/jobs/JobCenter.jsx src/components/editor/jobs/JobRow.jsx
+          ! grep -q 'jobManager.retry' src/components/editor/jobs/JobCenter.jsx
+          ! grep -E -q 'onRetry|>Retry<' src/components/editor/jobs/JobRow.jsx
+          grep -q '>Retry workflow<' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           ! grep -E -q '\.(cancel|retry|duplicate|runAgain|reorder)\(' src/components/editor/jobs/CanonicalExecutionRunRow.jsx
           grep -q 'RESULT_PATH' src/lib/jobs/executionRunProjection.js
           grep -q "run.result?.kind === 'FINAL_IMAGE'" src/components/editor/jobs/CanonicalExecutionRunRow.jsx
