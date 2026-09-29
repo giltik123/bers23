@@ -1,0 +1,114 @@
+name: HSME-8.3a physical mobile evidence origin
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/local-ai/hsme/HsmeNativeMobileEnergyThermalEvidenceV1.ts'
+      - 'tests/creative-hsme-native-mobile-energy-thermal-evidence-v1.test.mjs'
+      - 'server/core/training/HsmeRealMobilePhysicalEvidenceOriginV1.ts'
+      - 'server/core/training/HsmeRealMobilePhysicalEvidenceOriginV1.test.mjs'
+      - '.github/workflows/hsme-8-3a-physical-mobile-evidence-origin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  physical-mobile-origin:
+    name: physical mobile energy thermal origin bridge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run native telemetry adapter regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-8-3a
+          npx esbuild tests/creative-hsme-native-mobile-energy-thermal-evidence-v1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-8-3a/native-energy-thermal.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-8-3a/native-energy-thermal.test.mjs
+
+      - name: Run physical-origin bridge regressions
+        run: |
+          set -euo pipefail
+          npx esbuild server/core/training/HsmeRealMobilePhysicalEvidenceOriginV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-8-3a/physical-origin.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-8-3a/physical-origin.test.mjs
+
+      - name: Prove verified foundation and native origin are both mandatory
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeRealMobilePhysicalEvidenceOriginV1.ts
+          grep -F 'assessHsmeFoundationPhysicalMobileValidationEvidenceV1(' "$SRC"
+          grep -F "physical.physicalState!=='REAL_DEVICE_EVIDENCE_VERIFIED'" "$SRC"
+          grep -F 'verifyNativeMobileEnergyThermalEvidence(' "$SRC"
+          grep -F 'REAL_MOBILE_PHYSICAL_NATIVE_TELEMETRY_ORIGIN_UNVERIFIED' "$SRC"
+          grep -F 'FOUNDATION_VERIFIED_PHYSICAL_RUN_PAYLOAD_SHA256' "$SRC"
+
+      - name: Prove same-session runtime device and placement binding
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeRealMobilePhysicalEvidenceOriginV1.ts
+          grep -F 'bundle.deviceRunSessionSha256!==t.deviceRunSessionSha256' "$SRC"
+          grep -F 'first.sessionIdentitySha256!==t.sessionIdentitySha256' "$SRC"
+          grep -F 'first.processIdentitySha256!==t.processIdentitySha256' "$SRC"
+          grep -F 't.runtimeIdentitySha256!==expectedHardwareRuntimeIdentitySha256' "$SRC"
+          grep -F 't.deviceCapabilityKey!==raw.deviceCapabilityKey' "$SRC"
+          grep -F 't.supportedDeviceClass!==row.supportedDeviceClass' "$SRC"
+          grep -F 'raw.manifestSha256!==row.representationContentSha256' "$SRC"
+          grep -F 't.actualPlacement!==row.requestedPlacement' "$SRC"
+
+      - name: Prove no estimated synthetic browser or network evidence
+        run: |
+          set -euo pipefail
+          SRC=src/platform/creative/local-ai/hsme/HsmeNativeMobileEnergyThermalEvidenceV1.ts
+          grep -F "energyMeasurementKind:'MEASURED_TOTAL_MICROJOULES'" "$SRC"
+          grep -F "physicalOriginClaim:'REAL_PHYSICAL_DEVICE'" "$SRC"
+          grep -F 'estimatedEnergyUsed:false' "$SRC"
+          grep -F 'browserTelemetryUsed:false' "$SRC"
+          grep -F 'simulatedDeviceUsed:false' "$SRC"
+          grep -F 'networkBytesDuringExecution:0' "$SRC"
+          ! grep -nE 'navigator\.deviceMemory|performance\.memory|requiredRam|requiredVram|energyEstimate' "$SRC"
+
+      - name: Prove CI cannot mint real-mobile qualification
+        run: |
+          set -euo pipefail
+          TEST1=tests/creative-hsme-native-mobile-energy-thermal-evidence-v1.test.mjs
+          TEST2=server/core/training/HsmeRealMobilePhysicalEvidenceOriginV1.test.mjs
+          ! grep -nF 'qualifyHsmeRealMobileEvidenceV1' "$TEST1" "$TEST2"
+          ! grep -nF 'REAL_MOBILE_QUALIFICATION_READY_NOT_ADMITTED' "$TEST1" "$TEST2"
+
+      - name: Prove no model lifecycle provider Billing or production authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeRealMobilePhysicalEvidenceOriginV1.ts
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'durableModelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE '\.install\(|\.remove\(|\.rollback\(|\.quarantine\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(' "$SRC"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
