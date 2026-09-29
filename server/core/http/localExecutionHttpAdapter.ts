@@ -3,6 +3,7 @@ import type { AuthenticatedPrincipal } from '../auth/hmacJwtVerifier.ts';
 import type { CoreServerConfig } from '../config.ts';
 import type { LocalCropExecutionService } from '../localExecution/LocalCropExecutionService.ts';
 import type { LocalDeterministicImageExecutionService } from '../localExecution/LocalDeterministicImageExecutionService.ts';
+import type { LocalMaskedExposureExecutionService } from '../localExecution/LocalMaskedExposureExecutionService.ts';
 import type { LocalExecutionInputDeliveryService } from '../localExecution/LocalExecutionInputDeliveryService.ts';
 import type { LocalResizeExecutionService } from '../localExecution/LocalResizeExecutionService.ts';
 import type { LocalSegmentationExecutionService } from '../localExecution/LocalSegmentationExecutionService.ts';
@@ -23,6 +24,7 @@ type LocalExecutionAuth = Readonly<{
 type AdapterInput = Readonly<{
   service: LocalSegmentationExecutionService;
   deterministicImages?: LocalDeterministicImageExecutionService;
+  maskedExposure?: LocalMaskedExposureExecutionService;
   crop?: LocalCropExecutionService;
   resize?: LocalResizeExecutionService;
   superResolution?: LocalSuperResolutionExecutionService;
@@ -66,6 +68,20 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
           projectId: string(body.projectId),
           sourceArtifactId: string(body.sourceArtifactId),
           maskArtifactId: string(body.maskArtifactId),
+          clientRequestId: string(body.clientRequestId),
+        }, auth);
+        send(response, 202, prepared); return true;
+      }
+
+      if (url.pathname === `${PREFIX}masked-exposure/prepare` && request.method === 'POST') {
+        const service = requireMaskedExposure(input.maskedExposure);
+        requireJson(request);
+        const body = await readJson(request, input.config.bodyLimitBytes) as Record<string, unknown>;
+        const prepared = await service.prepare({
+          projectId: string(body.projectId),
+          sourceArtifactId: string(body.sourceArtifactId),
+          maskArtifactId: string(body.maskArtifactId),
+          eighthStops: number(body.eighthStops),
           clientRequestId: string(body.clientRequestId),
         }, auth);
         send(response, 202, prepared); return true;
@@ -118,6 +134,19 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
         sendBytes(response, 200, bytes, 'application/octet-stream'); return true;
       }
 
+      const maskedExposureInputMatch = url.pathname.match(/^\/api\/core\/local-execution\/masked-exposure\/([^/]+)\/inputs$/);
+      if (maskedExposureInputMatch && request.method === 'GET') {
+        const delivery = requireInputDelivery(input.inputDelivery);
+        const projectId = requireProjectId(url);
+        const canonical = await delivery.maskedExposure({ ticketId: decodeURIComponent(maskedExposureInputMatch[1]), projectId }, auth);
+        const expectedBytes = canonical.width * canonical.height * 5;
+        if (canonical.sourceRgba.byteLength + canonical.maskAlpha.byteLength !== expectedBytes) throw httpError(500, 'local_input_delivery_contract', 'Canonical Masked Exposure input delivery length is invalid');
+        const bytes = new Uint8Array(expectedBytes);
+        bytes.set(canonical.sourceRgba, 0); bytes.set(canonical.maskAlpha, canonical.sourceRgba.byteLength);
+        setInputHeaders(response, canonical.width, canonical.height, canonical.sourceSha256, canonical.maskSha256);
+        sendBytes(response, 200, bytes, 'application/octet-stream'); return true;
+      }
+
       const cropInputMatch = url.pathname.match(/^\/api\/core\/local-execution\/crop\/([^/]+)\/inputs$/);
       if (cropInputMatch && request.method === 'GET') {
         const delivery = requireInputDelivery(input.inputDelivery);
@@ -157,6 +186,15 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
         assertSafeImageEvidence(evidence, input.config); send(response, 201, evidence); return true;
       }
 
+      const maskedExposureUploadMatch = url.pathname.match(/^\/api\/core\/local-execution\/masked-exposure\/([^/]+)\/image-upload$/);
+      if (maskedExposureUploadMatch && request.method === 'POST') {
+        const service = requireMaskedExposure(input.maskedExposure);
+        const projectId = requirePngUpload(request, url);
+        const bytes = await readBytes(request, input.config.imageUploadLimitBytes);
+        const evidence = await service.uploadImage({ ticketId: decodeURIComponent(maskedExposureUploadMatch[1]), projectId, bytes }, auth);
+        assertSafeImageEvidence(evidence, input.config); send(response, 201, evidence); return true;
+      }
+
       const cropUploadMatch = url.pathname.match(/^\/api\/core\/local-execution\/crop\/([^/]+)\/image-upload$/);
       if (cropUploadMatch && request.method === 'POST') {
         const service = requireCrop(input.crop);
@@ -189,6 +227,14 @@ export function createLocalExecutionHttpAdapter(input: AdapterInput) {
         const service = requireDeterministicImages(input.deterministicImages);
         const body = await readResultBody(request, input.config.bodyLimitBytes);
         const finalized = await service.submit({ ticketId: decodeURIComponent(deterministicResultMatch[1]), projectId: body.projectId, result: body.result }, auth);
+        sendFinalized(response, finalized); return true;
+      }
+
+      const maskedExposureResultMatch = url.pathname.match(/^\/api\/core\/local-execution\/masked-exposure\/([^/]+)\/result$/);
+      if (maskedExposureResultMatch && request.method === 'POST') {
+        const service = requireMaskedExposure(input.maskedExposure);
+        const body = await readResultBody(request, input.config.bodyLimitBytes);
+        const finalized = await service.submit({ ticketId: decodeURIComponent(maskedExposureResultMatch[1]), projectId: body.projectId, result: body.result }, auth);
         sendFinalized(response, finalized); return true;
       }
 
@@ -259,6 +305,7 @@ function assertSafeImageEvidence(evidence: Readonly<{ width?: number; height?: n
   if (!evidence.width || !evidence.height || evidence.width > config.imageMaxDimension || evidence.height > config.imageMaxDimension || evidence.width * evidence.height > config.imageMaxPixels) throw httpError(400, 'invalid_image_dimensions', 'Local image dimensions are invalid or unsafe');
 }
 function requireDeterministicImages(service: LocalDeterministicImageExecutionService | undefined): LocalDeterministicImageExecutionService { if (!service) throw httpError(503, 'deterministic_local_execution_unavailable', 'Deterministic local image execution is unavailable'); return service; }
+function requireMaskedExposure(service: LocalMaskedExposureExecutionService | undefined): LocalMaskedExposureExecutionService { if (!service) throw httpError(503, 'masked_exposure_local_execution_unavailable', 'Deterministic Masked Exposure execution is unavailable'); return service; }
 function requireCrop(service: LocalCropExecutionService | undefined): LocalCropExecutionService { if (!service) throw httpError(503, 'crop_local_execution_unavailable', 'Deterministic Crop execution is unavailable'); return service; }
 function requireResize(service: LocalResizeExecutionService | undefined): LocalResizeExecutionService { if (!service) throw httpError(503, 'resize_local_execution_unavailable', 'Deterministic Resize execution is unavailable'); return service; }
 function requireSuperResolution(service: LocalSuperResolutionExecutionService | undefined): LocalSuperResolutionExecutionService { if (!service) throw httpError(503, 'super_resolution_local_execution_unavailable', 'Local super-resolution execution is unavailable'); return service; }

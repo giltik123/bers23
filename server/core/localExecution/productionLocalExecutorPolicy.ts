@@ -2,6 +2,7 @@ import upscaleManifest from '../../../src/platform/creative/local-ai/models/supe
 import type { LocalExecutionExecutorBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
 import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../../../src/platform/creative/canonical/localComposite.ts';
 import { BACKGROUND_ISOLATION_CAPABILITY } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
+import { MASKED_EXPOSURE_CAPABILITY } from '../../../src/platform/creative/deterministic/MaskedExposure.ts';
 import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
@@ -12,6 +13,8 @@ import { REAL_ESRGAN_LOCAL_CAPABILITY, isExecutableRealEsrganRelease } from './p
 
 const backgroundIsolationTool = requireDeterministicToolByCapability(BACKGROUND_ISOLATION_CAPABILITY);
 const backgroundIsolationExecutors = Object.freeze([backgroundIsolationTool.executor]);
+const maskedExposureTool = requireDeterministicToolByCapability(MASKED_EXPOSURE_CAPABILITY);
+const maskedExposureExecutors = Object.freeze([maskedExposureTool.executor]);
 const cropTool = requireDeterministicToolByCapability(CROP_CAPABILITY);
 const cropExecutors = Object.freeze([cropTool.executor]);
 const resizeTool = requireDeterministicToolByCapability(RESIZE_CAPABILITY);
@@ -37,6 +40,7 @@ const realEsrganExecutors: readonly LocalExecutionExecutorBinding[] = isExecutab
  */
 export const productionLocalExecutorsByCapability: Readonly<Record<string, readonly LocalExecutionExecutorBinding[]>> = Object.freeze({
   [BACKGROUND_ISOLATION_CAPABILITY]: backgroundIsolationExecutors,
+  [MASKED_EXPOSURE_CAPABILITY]: maskedExposureExecutors,
   [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation]: backgroundIsolationExecutors,
   [CROP_CAPABILITY]: cropExecutors,
   [RESIZE_CAPABILITY]: resizeExecutors,

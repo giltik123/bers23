@@ -82,7 +82,11 @@
     "src/platform/creative/workflow-engine/immutable.ts",
     "src/platform/creative/workflow-engine/index.ts",
     "src/platform/creative/workflow-engine/types.ts",
-    "tests/garment-texture-composite-service-postgres.test.ts"
+    "tests/garment-texture-composite-service-postgres.test.ts",
+    "src/platform/creative/deterministic/Exposure.ts",
+    "src/platform/creative/deterministic/ExposureIdentity.js",
+    "src/platform/creative/deterministic/MaskedExposure.ts",
+    "src/platform/creative/deterministic/MaskedExposureIdentity.js"
   ],
   "migrationPaths": [
     "server/core/artifacts/migrations/002_canonical_mask_artifacts.sql",
@@ -113,7 +117,8 @@
     "server/core/fashion/migrations/033_manual_parametric_basis_content_uniqueness.sql",
     "server/core/fashion/migrations/035_project_body_anchor_idempotency.sql",
     "server/core/projects/migrations/044_canonical_project_revision.sql",
-    "server/core/projects/migrations/045_canonical_project_status_lifecycle.sql"
+    "server/core/projects/migrations/045_canonical_project_status_lifecycle.sql",
+    "server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql"
   ],
   "supportPaths": [
     ".github/workflows/fashion-execution-ci-policy.yml",

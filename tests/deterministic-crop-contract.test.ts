@@ -4,11 +4,12 @@ import './deterministic-crop-workflow-verifier.test.ts';
 import { AFFINE_TRANSFORM_CAPABILITY } from '../src/platform/creative/deterministic/AffineTransform.ts';
 import { CROP_CAPABILITY, CROP_TOOL_ID, CROP_TOOL_VERSION, cropRgba8, normalizeCropRect } from '../src/platform/creative/deterministic/Crop.ts';
 import { EXPOSURE_CAPABILITY } from '../src/platform/creative/deterministic/Exposure.ts';
+import { MASKED_EXPOSURE_CAPABILITY } from '../src/platform/creative/deterministic/MaskedExposure.ts';
 import { RESIZE_CAPABILITY } from '../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { GARMENT_MESH_WARP_CAPABILITY } from '../src/platform/creative/deterministic/GarmentMeshWarpIdentity.js';
 import { GARMENT_TEXTURE_COMPOSITE_CAPABILITY } from '../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
-import { AFFINE_TRANSFORM_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, EXPOSURE_TOOL_DEFINITION, GARMENT_MESH_WARP_TOOL_DEFINITION, GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
+import { AFFINE_TRANSFORM_TOOL_DEFINITION, CROP_TOOL_DEFINITION, DETERMINISTIC_TOOL_REGISTRY, EXPOSURE_TOOL_DEFINITION, MASKED_EXPOSURE_TOOL_DEFINITION, GARMENT_MESH_WARP_TOOL_DEFINITION, GARMENT_TEXTURE_COMPOSITE_TOOL_DEFINITION, ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, RESIZE_TOOL_DEFINITION, requireDeterministicToolByCapability, requireDeterministicToolByExecutor } from '../src/platform/creative/deterministic/DeterministicToolRegistry.ts';
 import { productionLocalExecutorsByCapability } from '../server/core/localExecution/productionLocalExecutorPolicy.ts';
 
 const source = new Uint8ClampedArray([
@@ -40,11 +41,12 @@ test('Crop v1 rejects fractional, empty, negative and out-of-bounds rectangles w
 });
 
 test('Crop registry contract is immutable data and production executor admission stays explicit', () => {
-  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 8, 'Background Isolation, Crop, Resize, Exposure candidate, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
+  assert.equal(DETERMINISTIC_TOOL_REGISTRY.length, 9, 'Background Isolation, Crop, Resize, Exposure candidate, Masked Exposure, Affine candidate, Orthogonal Transform, Garment Mesh Warp and Garment Texture Composite are the reviewed deterministic tools');
   assert.equal(requireDeterministicToolByCapability(CROP_CAPABILITY), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByExecutor({ kind: 'DETERMINISTIC_TOOL', toolId: CROP_TOOL_ID, version: CROP_TOOL_VERSION }), CROP_TOOL_DEFINITION);
   assert.equal(requireDeterministicToolByCapability(RESIZE_CAPABILITY), RESIZE_TOOL_DEFINITION, 'adding Resize must not weaken Crop identity or registry lookup');
   assert.equal(requireDeterministicToolByCapability(EXPOSURE_CAPABILITY), EXPOSURE_TOOL_DEFINITION, 'Exposure candidate is reviewed registry data without production admission');
+  assert.equal(requireDeterministicToolByCapability(MASKED_EXPOSURE_CAPABILITY), MASKED_EXPOSURE_TOOL_DEFINITION, 'Masked Exposure is reviewed registry data with explicit production admission');
   assert.equal(requireDeterministicToolByCapability(AFFINE_TRANSFORM_CAPABILITY), AFFINE_TRANSFORM_TOOL_DEFINITION, 'Affine candidate is reviewed registry data without production admission');
   assert.equal(requireDeterministicToolByCapability(ORTHOGONAL_TRANSFORM_CAPABILITY), ORTHOGONAL_TRANSFORM_TOOL_DEFINITION, 'adding Orthogonal Transform must not weaken Crop identity or registry lookup');
   assert.equal(requireDeterministicToolByCapability(GARMENT_MESH_WARP_CAPABILITY), GARMENT_MESH_WARP_TOOL_DEFINITION, 'adding Garment Mesh Warp must not weaken Crop identity or registry lookup');
@@ -67,6 +69,7 @@ test('Crop registry contract is immutable data and production executor admission
   assert.deepEqual(productionLocalExecutorsByCapability[CROP_CAPABILITY], [CROP_TOOL_DEFINITION.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[RESIZE_CAPABILITY], [RESIZE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[EXPOSURE_CAPABILITY], undefined, 'Exposure candidate must remain fail-closed until a dedicated production admission slice');
+  assert.deepEqual(productionLocalExecutorsByCapability[MASKED_EXPOSURE_CAPABILITY], [MASKED_EXPOSURE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[AFFINE_TRANSFORM_CAPABILITY], undefined, 'Affine candidate must remain fail-closed until a dedicated production admission slice');
   assert.deepEqual(productionLocalExecutorsByCapability[ORTHOGONAL_TRANSFORM_CAPABILITY], [ORTHOGONAL_TRANSFORM_TOOL_DEFINITION.executor]);
   assert.deepEqual(productionLocalExecutorsByCapability[GARMENT_MESH_WARP_CAPABILITY], [GARMENT_MESH_WARP_TOOL_DEFINITION.executor]);

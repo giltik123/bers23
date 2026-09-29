@@ -8,6 +8,7 @@ on:
       - 'server/core/agentic/migrations/043_aee_admitted_plan_graphs.sql'
       - 'server/core/projects/migrations/044_canonical_project_revision.sql'
       - 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'
+      - 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql'
       - 'server/core/workflow/BoundedAgentDeterministicWorkflowService.ts'
       - 'server/core/composition/createProductionCore.ts'
       - 'server/core/composition/createProductionAutomation.ts'
@@ -63,12 +64,12 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove global migration sequence reaches Project status lifecycle 045 tail
+      - name: Prove global migration sequence reaches Project status lifecycle 045 plus Artifact lineage 046 tail
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 45) throw new Error(`Expected 45 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 46) throw new Error(`Expected 46 contiguous migrations, got ${migrations.length}`);
           const expected = [
             [37, '038_financial_account_foundation.sql'],
             [38, '039_workflow_continuation_plan_parameters.sql'],
@@ -78,6 +79,7 @@ jobs:
             [42, '043_aee_admitted_plan_graphs.sql'],
             [43, '044_canonical_project_revision.sql'],
             [44, '045_canonical_project_status_lifecycle.sql'],
+            [45, '046_canonical_masked_exposure_final_lineage.sql'],
           ];
           for (const [index, name] of expected) if (migrations[index]?.name !== name) throw new Error(`${name} moved from global migration position ${index + 1}`);
           NODE
@@ -110,6 +112,7 @@ jobs:
           test -f dist-server/migrations/043_aee_admitted_plan_graphs.sql
           test -f dist-server/migrations/044_canonical_project_revision.sql
           test -f dist-server/migrations/045_canonical_project_status_lifecycle.sql
+          test -f dist-server/migrations/046_canonical_masked_exposure_final_lineage.sql
       - name: Apply and verify canonical schema CLI
         run: |
           npm run db:migrate:transactions
