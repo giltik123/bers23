@@ -6,6 +6,7 @@ import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createMaskedExposure } from '@/application/createMaskedExposure';
+import { createMaskedWhiteBalance } from '@/application/createMaskedWhiteBalance';
 import { createSuperResolution } from '@/application/createSuperResolution';
 import { createCrop } from '@/application/createCrop';
 import { createResize } from '@/application/createResize';
@@ -152,6 +153,9 @@ export default function Editor() {
   const [isolatingBackground, setIsolatingBackground] = useState(false);
   const [exposureEighthStops, setExposureEighthStops] = useState(8);
   const [applyingMaskedExposure, setApplyingMaskedExposure] = useState(false);
+  const [whiteBalanceTemperatureQ8, setWhiteBalanceTemperatureQ8] = useState(64);
+  const [whiteBalanceTintQ8, setWhiteBalanceTintQ8] = useState(0);
+  const [applyingMaskedWhiteBalance, setApplyingMaskedWhiteBalance] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
   const [cropDraft, setCropDraft] = useState(null);
   const [cropping, setCropping] = useState(false);
@@ -163,9 +167,10 @@ export default function Editor() {
   const strokeRef = useRef([]);
   const cropAnchorRef = useRef(null);
   const maskedExposureInFlightRef = useRef(false);
+  const maskedWhiteBalanceInFlightRef = useRef(false);
   const orthogonalTransformInFlightRef = useRef(false);
   const platform = usePlatformProfile();
-  const localEditorBusy = applying || isolatingBackground || applyingMaskedExposure || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
+  const localEditorBusy = applying || isolatingBackground || applyingMaskedExposure || applyingMaskedWhiteBalance || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
   const cropRect = exactCropRect(cropDraft, project?.width, project?.height);
   const cropInteractionActive = Boolean(cropDraft);
   const resizeTarget = exactResizeTarget(resizeDraft);
@@ -520,7 +525,7 @@ export default function Editor() {
     const maskArtifactId = retryContext?.maskArtifactId || selected?.mask_artifact_id;
     const eighthStops = Number.isSafeInteger(retryContext?.eighthStops) ? retryContext.eighthStops : exposureEighthStops;
     if (!project?.id || !sourceArtifactId || !maskArtifactId || !Number.isSafeInteger(eighthStops) || eighthStops < -32 || eighthStops > 32 || eighthStops === 0) return;
-    if (maskedExposureInFlightRef.current) return;
+    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current) return;
     maskedExposureInFlightRef.current = true;
     setApplyingMaskedExposure(true);
     setAiError(null);
@@ -550,6 +555,48 @@ export default function Editor() {
     } finally {
       maskedExposureInFlightRef.current = false;
       setApplyingMaskedExposure(false);
+    }
+  };
+
+  const applyMaskedWhiteBalance = async (retryContext = null) => {
+    const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
+    const maskArtifactId = retryContext?.maskArtifactId || selected?.mask_artifact_id;
+    const temperatureQ8 = Number.isSafeInteger(retryContext?.temperatureQ8) ? retryContext.temperatureQ8 : whiteBalanceTemperatureQ8;
+    const tintQ8 = Number.isSafeInteger(retryContext?.tintQ8) ? retryContext.tintQ8 : whiteBalanceTintQ8;
+    if (!project?.id || !sourceArtifactId || !maskArtifactId
+      || !Number.isSafeInteger(temperatureQ8) || temperatureQ8 < -128 || temperatureQ8 > 128
+      || !Number.isSafeInteger(tintQ8) || tintQ8 < -64 || tintQ8 > 64
+      || (temperatureQ8 === 0 && tintQ8 === 0)) return;
+    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current) return;
+    maskedWhiteBalanceInFlightRef.current = true;
+    setApplyingMaskedWhiteBalance(true);
+    setAiError(null);
+    setLastAction(() => () => applyMaskedWhiteBalance({ sourceArtifactId, maskArtifactId, temperatureQ8, tintQ8 }));
+    try {
+      const local = createMaskedWhiteBalance({ projectId: project.id });
+      const result = await local.run({ requestId: globalThis.crypto.randomUUID(), sourceArtifactId, maskArtifactId, temperatureQ8, tintQ8 });
+      const previewBytes = await encodeDeterministicRgbaPng(result.preview);
+      const previewUrl = URL.createObjectURL(new Blob([previewBytes], { type: 'image/png' }));
+      const signed = (value) => `${value > 0 ? '+' : ''}${value}`;
+      const label = `White Balance T ${signed(temperatureQ8)} Q8 / Tint ${signed(tintQ8)} Q8`;
+      const editorResult = {
+        finalArtifactId: result.canonicalArtifactId,
+        preview_url: previewUrl,
+        image_url: previewUrl,
+        provider: 'Local deterministic',
+        credits_used: 0,
+        generation_time_ms: result.latencyMs,
+      };
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return { kind: 'MASKED_WHITE_BALANCE', result: editorResult, instruction: label, beforeUrl: project.current_image_url, context: { sourceArtifactId, maskArtifactId, temperatureQ8, tintQ8 } };
+      });
+    } catch (e) {
+      setAiError(e.message || 'Masked White Balance failed');
+      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+    } finally {
+      maskedWhiteBalanceInFlightRef.current = false;
+      setApplyingMaskedWhiteBalance(false);
     }
   };
 
@@ -746,6 +793,10 @@ export default function Editor() {
       void applyMaskedExposure(pending.context);
       return;
     }
+    if (pending?.kind === 'MASKED_WHITE_BALANCE') {
+      void applyMaskedWhiteBalance(pending.context);
+      return;
+    }
     if (pending?.kind === 'SUPER_RESOLUTION') {
       void upscaleImage(pending.context);
       return;
@@ -933,6 +984,13 @@ export default function Editor() {
         canApplyExposure={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !isolatingBackground && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
         applyingExposure={applyingMaskedExposure}
         onApplyExposure={() => applyMaskedExposure()}
+        whiteBalanceTemperatureQ8={whiteBalanceTemperatureQ8}
+        onWhiteBalanceTemperatureQ8={setWhiteBalanceTemperatureQ8}
+        whiteBalanceTintQ8={whiteBalanceTintQ8}
+        onWhiteBalanceTintQ8={setWhiteBalanceTintQ8}
+        canApplyWhiteBalance={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !isolatingBackground && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
+        applyingWhiteBalance={applyingMaskedWhiteBalance}
+        onApplyWhiteBalance={() => applyMaskedWhiteBalance()}
       />
 
       <PipelineStatusBar width={project.width} height={project.height} />
