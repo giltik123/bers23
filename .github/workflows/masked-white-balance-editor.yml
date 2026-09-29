@@ -9,6 +9,7 @@ on:
       - 'src/application/createMaskedWhiteBalance.ts'
       - 'src/application/local-execution/CoreAuthorizedMaskedWhiteBalance.ts'
       - 'tests/editor-canonical-boundary.test.mjs'
+      - 'tests/editor-orthogonal-transform-ui.test.mjs'
       - '.github/workflows/masked-white-balance-editor.yml'
   workflow_dispatch:
 
@@ -50,7 +51,8 @@ jobs:
           grep -q 'temperatureQ8 < -128' "$editor"
           grep -q 'tintQ8 < -64' "$editor"
           grep -q "kind: 'MASKED_WHITE_BALANCE'" "$editor"
-          grep -q 'maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current' "$editor"
+          grep -q 'maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || orthogonalTransformInFlightRef.current' "$editor"
+          grep -q 'orthogonalTransformInFlightRef.current || maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current' "$editor"
           grep -q 'aria-label="Masked white balance temperature"' "$toolbar"
           grep -q 'min="-128"' "$toolbar"
           grep -q 'max="128"' "$toolbar"
