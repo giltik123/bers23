@@ -79,6 +79,23 @@ import {
   MASKED_WHITE_BALANCE_TOOL_VERSION,
 } from './MaskedWhiteBalanceIdentity.js';
 import {
+  LEVELS_CAPABILITY,
+  LEVELS_MAX_INPUT_BLACK,
+  LEVELS_MAX_INPUT_MIDPOINT,
+  LEVELS_MAX_INPUT_WHITE,
+  LEVELS_MAX_OUTPUT_BLACK,
+  LEVELS_MAX_OUTPUT_WHITE,
+  LEVELS_MIN_INPUT_BLACK,
+  LEVELS_MIN_INPUT_MIDPOINT,
+  LEVELS_MIN_INPUT_WHITE,
+  LEVELS_MIN_OUTPUT_BLACK,
+  LEVELS_MIN_OUTPUT_WHITE,
+  LEVELS_OPERATION,
+  LEVELS_STEP_ID,
+  LEVELS_TOOL_ID,
+  LEVELS_TOOL_VERSION,
+} from './LevelsIdentity.js';
+import {
   MASKED_EXPOSURE_CAPABILITY,
   MASKED_EXPOSURE_MAX_EIGHTH_STOPS,
   MASKED_EXPOSURE_MIN_EIGHTH_STOPS,
@@ -136,7 +153,7 @@ export type DeterministicToolParameterContract = Readonly<{
   integerBounds?: readonly DeterministicToolIntegerBound[];
   integerRanges?: readonly Readonly<{ parameter: string; min: number; max: number }>[];
   enumValues?: readonly Readonly<{ parameter: string; values: readonly string[] }>[];
-  relationships?: readonly ('X_PLUS_WIDTH_LE_SOURCE_WIDTH' | 'Y_PLUS_HEIGHT_LE_SOURCE_HEIGHT' | 'TARGET_PIXELS_LE_RESIZE_MAX_OUTPUT_PIXELS' | 'REPRESENTATION_BASIS_VIEW_EQUALS_PIXEL_SOURCE_VIEW')[];
+  relationships?: readonly ('X_PLUS_WIDTH_LE_SOURCE_WIDTH' | 'Y_PLUS_HEIGHT_LE_SOURCE_HEIGHT' | 'TARGET_PIXELS_LE_RESIZE_MAX_OUTPUT_PIXELS' | 'INPUT_BLACK_LT_MIDPOINT_LT_INPUT_WHITE' | 'OUTPUT_BLACK_LT_OUTPUT_WHITE' | 'REPRESENTATION_BASIS_VIEW_EQUALS_PIXEL_SOURCE_VIEW')[];
 }>;
 
 export type DeterministicToolDefinition = Readonly<{
@@ -160,7 +177,7 @@ export type DeterministicToolDefinition = Readonly<{
     format: 'RGBA8';
     colorSpace: 'srgb';
     orientation: 1;
-    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16_MASK_ALPHA8_BLEND' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16_MASK_ALPHA8_BLEND' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
+    rgb: 'PRESERVE_SOURCE_BYTES' | 'COPY_SOURCE_SUBRECT_BYTES' | 'BILINEAR_PREMULTIPLIED_ALPHA_UNPREMULTIPLY' | 'COPY_SOURCE_RGBA_TUPLE_PERMUTATION' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16' | 'SRGB_ENCODED_EXPOSURE_GAIN_Q16_MASK_ALPHA8_BLEND' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16' | 'SRGB_ENCODED_WHITE_BALANCE_Q8_TO_Q16_MASK_ALPHA8_BLEND' | 'SRGB_ENCODED_LEVELS_PIECEWISE_LINEAR_INTEGER' | 'TEXTURE_MAP_WARP_FEATHER_SOURCE_OVER';
     alpha: 'SOURCE_ALPHA_X_MASK_ALPHA_ROUND_HALF_UP_DIV_255' | 'COPY_SOURCE_ALPHA_BYTES' | 'BILINEAR_ALPHA_ROUND_HALF_UP' | 'TEXTURE_PRESERVE_WARP_FEATHER_SOURCE_OVER';
     interpolation?: 'NONE' | 'BILINEAR_FIXED_16_16_PIXEL_CENTER' | 'BILINEAR_FIXED_16_16_AFFINE_PIXEL_CENTER' | 'BILINEAR_NORMALIZED_Q16_MESH' | 'BILINEAR_NORMALIZED_Q16_TEXTURE_AND_MESH';
     rounding?: 'INTEGER_EXACT' | 'ROUND_HALF_UP';
@@ -507,6 +524,55 @@ const whiteBalanceDefinition: DeterministicToolDefinition = deepFreeze({
   lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: WHITE_BALANCE_OPERATION },
 });
 
+const levelsDefinition: DeterministicToolDefinition = deepFreeze({
+  capability: LEVELS_CAPABILITY,
+  operation: { id: LEVELS_STEP_ID, type: LEVELS_OPERATION, version: '1' },
+  executor: { kind: 'DETERMINISTIC_TOOL', toolId: LEVELS_TOOL_ID, version: LEVELS_TOOL_VERSION },
+  inputs: [
+    { name: 'source', kind: 'image', roles: ['ORIGINAL', 'COMPOSITE'], sha256: 'REQUIRED', geometry: 'SOURCE' },
+  ],
+  output: { kind: 'image', role: 'COMPOSITE', count: 1, mimeTypes: ['image/png'], geometry: 'MATCH_SOURCE' },
+  parameters: {
+    artifactIdBindings: [{ parameter: 'sourceArtifactId', input: 'source' }],
+    exact: {
+      deterministicTool: `${LEVELS_TOOL_ID}@${LEVELS_TOOL_VERSION}`,
+      coordinateSpace: 'CANONICAL_ORIENTATION_1_RGBA8',
+      transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
+      toneLaw: 'PIECEWISE_LINEAR_INPUT_MIDPOINT_TO_OUTPUT_MIDPOINT',
+      outputMidpointLaw: 'ROUND_HALF_UP_AVERAGE_OUTPUT_BOUNDS',
+      segmentRounding: 'ROUND_HALF_UP',
+      alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
+      outputGeometry: 'MATCH_SOURCE',
+    },
+    integerRanges: [
+      { parameter: 'inputBlack', min: LEVELS_MIN_INPUT_BLACK, max: LEVELS_MAX_INPUT_BLACK },
+      { parameter: 'inputMidpoint', min: LEVELS_MIN_INPUT_MIDPOINT, max: LEVELS_MAX_INPUT_MIDPOINT },
+      { parameter: 'inputWhite', min: LEVELS_MIN_INPUT_WHITE, max: LEVELS_MAX_INPUT_WHITE },
+      { parameter: 'outputBlack', min: LEVELS_MIN_OUTPUT_BLACK, max: LEVELS_MAX_OUTPUT_BLACK },
+      { parameter: 'outputWhite', min: LEVELS_MIN_OUTPUT_WHITE, max: LEVELS_MAX_OUTPUT_WHITE },
+    ],
+    relationships: ['INPUT_BLACK_LT_MIDPOINT_LT_INPUT_WHITE', 'OUTPUT_BLACK_LT_OUTPUT_WHITE'],
+  },
+  browser: { executorId: 'levels-rgba8-browser-v1', runtime: 'BROWSER_JS', accelerator: 'cpu' },
+  verification: { verifierId: 'levels-rgba8-core-v1', comparison: 'BYTE_EXACT_CORE_RECOMPUTE' },
+  pixelContract: {
+    format: 'RGBA8',
+    colorSpace: 'srgb',
+    orientation: 1,
+    rgb: 'SRGB_ENCODED_LEVELS_PIECEWISE_LINEAR_INTEGER',
+    alpha: 'COPY_SOURCE_ALPHA_BYTES',
+    interpolation: 'NONE',
+    rounding: 'ROUND_HALF_UP',
+  },
+  resourcePolicy: {
+    enforcement: 'CORE_CONFIG_AND_TICKET',
+    dimensions: 'CORE_IMAGE_MAX_DIMENSION',
+    pixels: 'CORE_IMAGE_MAX_PIXELS',
+    uploadBytes: 'CORE_IMAGE_UPLOAD_LIMIT_BYTES',
+  },
+  lineage: { parentInputs: ['source'], finalRole: 'COMPOSITE', producerOperation: LEVELS_OPERATION },
+});
+
 const affineTransformDefinition: DeterministicToolDefinition = deepFreeze({
   capability: AFFINE_TRANSFORM_CAPABILITY,
   operation: { id: AFFINE_TRANSFORM_STEP_ID, type: AFFINE_TRANSFORM_OPERATION, version: '1' },
@@ -615,6 +681,7 @@ export const DETERMINISTIC_TOOL_REGISTRY: readonly DeterministicToolDefinition[]
   resizeDefinition,
   exposureDefinition,
   whiteBalanceDefinition,
+  levelsDefinition,
   maskedWhiteBalanceDefinition,
   maskedExposureDefinition,
   affineTransformDefinition,
@@ -628,6 +695,7 @@ export const CROP_TOOL_DEFINITION = cropDefinition;
 export const RESIZE_TOOL_DEFINITION = resizeDefinition;
 export const EXPOSURE_TOOL_DEFINITION = exposureDefinition;
 export const WHITE_BALANCE_TOOL_DEFINITION = whiteBalanceDefinition;
+export const LEVELS_TOOL_DEFINITION = levelsDefinition;
 export const MASKED_WHITE_BALANCE_TOOL_DEFINITION = maskedWhiteBalanceDefinition;
 export const MASKED_EXPOSURE_TOOL_DEFINITION = maskedExposureDefinition;
 export const AFFINE_TRANSFORM_TOOL_DEFINITION = affineTransformDefinition;
