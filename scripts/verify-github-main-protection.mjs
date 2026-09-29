@@ -153,8 +153,8 @@ function rulesetTargetsBranch(refName, branch) {
   const include = Array.isArray(refName?.include) ? refName.include : [];
   const exclude = Array.isArray(refName?.exclude) ? refName.exclude : [];
   const accepted = new Set(['~DEFAULT_BRANCH', '~ALL', branch, `refs/heads/${branch}`]);
-  const excluded = new Set(['~DEFAULT_BRANCH', branch, `refs/heads/${branch}`]);
-  return include.some(value => accepted.has(value)) && !exclude.some(value => excluded.has(value));
+  if (exclude.length !== 0) return false;
+  return include.some(value => accepted.has(value));
 }
 
 function requireChecks(actual, required, source) {
