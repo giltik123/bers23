@@ -11,10 +11,13 @@ if (readiness.rcCoordinate !== null) errors.push('RC coordinate must remain null
 if (readiness.status !== 'BERS_V1_RC_NOT_SELECTABLE') errors.push('status must remain NOT_SELECTABLE');
 
 const blockers = new Set(readiness.blockers.map(value => value.id));
-for (const id of ['FRONTEND_DEPLOYMENT_HEADERS','REPOSITORY_MAIN_PROTECTION','HSME_REAL_MOBILE_EVIDENCE']) {
+for (const id of ['FRONTEND_DEPLOYMENT_HEADERS','REPOSITORY_MAIN_PROTECTION']) {
   if (!blockers.has(id)) errors.push('missing blocker '+id);
 }
-if (readiness.blockers.length !== 3) errors.push('unexpected blocker count');
+if (blockers.has('HSME_REAL_MOBILE_EVIDENCE')) errors.push('physical-mobile HSME evidence is deferred post-v1 and must not block RC');
+if (readiness.blockers.length !== 2) errors.push('unexpected blocker count');
+const deferredHsme = readiness.nonBlockingDeferred.find(value => value.id === 'HSME_REAL_MOBILE_EVIDENCE');
+if (deferredHsme?.state !== 'DEFERRED_POST_V1_RESEARCH') errors.push('HSME post-v1 deferral missing');
 
 const journey22 = journeys.entries.find(value => value.id === 22);
 if (journey22?.disposition !== 'DEPLOYMENT_TARGET_PENDING') errors.push('journey 22 must remain deployment pending');
@@ -38,5 +41,6 @@ if (errors.length) {
     deferredBrowserJourneys:1,
     pendingBrowserJourneys:[22],
     stageDDecisions:stageD.entries.length,
+    deferredHsmeState:deferredHsme.state,
   },null,2));
 }
