@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
+import { REQUIRED_V1_MAIN_CHECKS } from './verify-github-main-protection.mjs';
+
 const EXACT_SHA_RE = /^[0-9a-f]{40}$/u;
 const ALLOWED_BLOCKERS = Object.freeze(new Map([
   ['FRONTEND_DEPLOYMENT_HEADERS', Object.freeze({ issue: 233, releaseGate: 'R4' })],
@@ -28,6 +30,15 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
 
   if (blockerIds.includes('HSME_REAL_MOBILE_EVIDENCE')) {
     throw new Error('physical-mobile HSME evidence is deferred post-v1 and must not block RC');
+  }
+
+  const mainProtectionBlocked = blockerIds.includes('REPOSITORY_MAIN_PROTECTION');
+  if (mainProtectionBlocked) {
+    if (readiness.mainProtectionEvidence !== null) {
+      throw new Error('blocked main protection cannot claim accepted evidence');
+    }
+  } else {
+    validateMainProtectionEvidence(readiness.mainProtectionEvidence);
   }
 
   const deferredHsme = readiness.nonBlockingDeferred.find(value => value.id === 'HSME_REAL_MOBILE_EVIDENCE');
@@ -128,6 +139,68 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
       deferredHsmeState: deferredHsme.state,
     }),
   });
+}
+
+function validateMainProtectionEvidence(value) {
+  requireObject(value, 'mainProtectionEvidence');
+  if (value.schemaVersion !== 1) throw new Error('mainProtectionEvidence schemaVersion is invalid');
+  if (value.kind !== 'BERS_V1_GITHUB_MAIN_PROTECTION_EVIDENCE') {
+    throw new Error('mainProtectionEvidence kind mismatch');
+  }
+  if (value.repository !== 'giltik123/bers23') throw new Error('mainProtectionEvidence repository mismatch');
+  if (value.branch !== 'main') throw new Error('mainProtectionEvidence branch mismatch');
+  if (typeof value.verifiedAt !== 'string' || !Number.isFinite(Date.parse(value.verifiedAt))) {
+    throw new Error('mainProtectionEvidence verifiedAt is invalid');
+  }
+  const required = Array.isArray(value.requiredChecks) ? value.requiredChecks : [];
+  if (required.length !== REQUIRED_V1_MAIN_CHECKS.length ||
+      required.some((item,index)=>item !== REQUIRED_V1_MAIN_CHECKS[index])) {
+    throw new Error('mainProtectionEvidence required checks mismatch');
+  }
+  if (value.mode === 'RULESET') {
+    const policy=value.ruleset;
+    requireObject(policy,'mainProtectionEvidence.ruleset');
+    if (policy.enforcement !== 'active' || policy.target !== 'branch') {
+      throw new Error('mainProtectionEvidence ruleset is not active branch enforcement');
+    }
+    if (!Number.isSafeInteger(policy.requiredApprovingReviewCount) || policy.requiredApprovingReviewCount < 1) {
+      throw new Error('mainProtectionEvidence ruleset approval requirement missing');
+    }
+    if (policy.strictRequiredStatusChecks !== true ||
+        policy.forcePushBlocked !== true ||
+        policy.deletionBlocked !== true ||
+        !Array.isArray(policy.bypassActors) ||
+        policy.bypassActors.length !== 0) {
+      throw new Error('mainProtectionEvidence ruleset safety contract mismatch');
+    }
+    requireMainProtectionChecks(policy.requiredStatusChecks);
+    return;
+  }
+  if (value.mode === 'BRANCH_PROTECTION') {
+    const policy=value.branchProtection;
+    requireObject(policy,'mainProtectionEvidence.branchProtection');
+    if (!Number.isSafeInteger(policy.requiredApprovingReviewCount) || policy.requiredApprovingReviewCount < 1) {
+      throw new Error('mainProtectionEvidence branch approval requirement missing');
+    }
+    if (policy.strictRequiredStatusChecks !== true ||
+        policy.enforceAdmins !== true ||
+        policy.forcePushBlocked !== true ||
+        policy.deletionBlocked !== true ||
+        !Array.isArray(policy.bypassActors) ||
+        policy.bypassActors.length !== 0) {
+      throw new Error('mainProtectionEvidence branch safety contract mismatch');
+    }
+    requireMainProtectionChecks(policy.requiredStatusChecks);
+    return;
+  }
+  throw new Error('mainProtectionEvidence mode is invalid');
+}
+
+function requireMainProtectionChecks(value) {
+  if (!Array.isArray(value)) throw new Error('mainProtectionEvidence requiredStatusChecks must be an array');
+  const actual=new Set(value);
+  const missing=REQUIRED_V1_MAIN_CHECKS.filter(name=>!actual.has(name));
+  if (missing.length) throw new Error(`mainProtectionEvidence is missing required checks: ${missing.join(', ')}`);
 }
 
 function validateFrontendLiveEvidence(value) {
