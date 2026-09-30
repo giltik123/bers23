@@ -26,6 +26,7 @@ function classificationFor(releaseState) {
 
 function publicationEvidence(rcCoordinate='c'.repeat(40), releaseSha='d'.repeat(40)) {
   return {
+    schemaVersion:1,
     kind:'BERS_V1_PUBLICATION_EVIDENCE',
     rcCoordinate,
     releaseSha,
