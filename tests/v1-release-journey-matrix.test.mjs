@@ -87,3 +87,13 @@ test('matrix has no fake success for external deployment evidence', () => {
 function escapeRegExp(value) {
   return value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 }
+
+
+test('journey matrix workflow supports pending and proven deployment states and PR-only diff hygiene', async () => {
+  const workflow=await readFile('.github/workflows/v1-release-journey-matrix.yml','utf8');
+  assert.match(workflow,/BERS_V1_FRONTEND_DEPLOYMENT_PENDING/u);
+  assert.match(workflow,/BERS_V1_FRONTEND_DEPLOYMENT_PROVEN/u);
+  assert.match(workflow,/security\?\.disposition === 'DEPLOYMENT_TARGET_PENDING'/u);
+  assert.match(workflow,/security\?\.disposition === 'PROVEN'/u);
+  assert.match(workflow,/Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
+});
