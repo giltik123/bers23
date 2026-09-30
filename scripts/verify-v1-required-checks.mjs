@@ -17,27 +17,39 @@ export async function verifyV1RequiredChecks(input = {}) {
   if (typeof fetcher !== 'function') throw new Error('required-check verifier requires fetch');
   if (requiredChecks.length === 0) throw new Error('requiredChecks must not be empty');
 
-  const url = `https://api.github.com/repos/${repository}/commits/${sha}/check-runs?per_page=100&filter=latest`;
-  const response = await fetcher(url, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token}`,
-      'X-GitHub-Api-Version': API_VERSION,
-      'User-Agent': 'bers-v1-release-check-verifier',
-    },
-    redirect: 'error',
-  });
-  if (!response || typeof response.status !== 'number') {
-    throw new Error('GitHub check-runs verifier received an invalid response');
-  }
-  if (response.status < 200 || response.status >= 300) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`GitHub API ${response.status} while reading exact-SHA check runs${body ? `: ${body.slice(0, 240)}` : ''}`);
-  }
+  const runs = [];
+  let expectedTotal = null;
+  for (let page = 1; page <= 20; page += 1) {
+    const url = `https://api.github.com/repos/${repository}/commits/${sha}/check-runs?per_page=100&filter=latest&page=${page}`;
+    const response = await fetcher(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'X-GitHub-Api-Version': API_VERSION,
+        'User-Agent': 'bers-v1-release-check-verifier',
+      },
+      redirect: 'error',
+    });
+    if (!response || typeof response.status !== 'number') {
+      throw new Error('GitHub check-runs verifier received an invalid response');
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`GitHub API ${response.status} while reading exact-SHA check runs${body ? `: ${body.slice(0, 240)}` : ''}`);
+    }
 
-  const payload = await response.json();
-  const runs = Array.isArray(payload?.check_runs) ? payload.check_runs : [];
+    const payload = await response.json();
+    const batch = Array.isArray(payload?.check_runs) ? payload.check_runs : [];
+    if (expectedTotal === null && Number.isSafeInteger(payload?.total_count) && payload.total_count >= 0) {
+      expectedTotal = payload.total_count;
+    }
+    runs.push(...batch);
+
+    if (batch.length < 100) break;
+    if (expectedTotal !== null && runs.length >= expectedTotal) break;
+    if (page === 20) throw new Error('exact-SHA check-run pagination exceeded 20 pages');
+  }
   const observed = new Map();
   for (const run of runs) {
     if (typeof run?.name !== 'string') continue;
