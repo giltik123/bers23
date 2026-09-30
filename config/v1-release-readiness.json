@@ -63,5 +63,6 @@
       "rationale": "Physical-mobile HSME validation was explicitly removed from the BERS v1 release gate; the work remains open research and gains no production authority."
     }
   ],
-  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, and rcCoordinate is one exact accepted main SHA with mandatory release evidence green. Deferred post-v1 HSME research must remain non-production unless separately promoted by later reviewed evidence."
+  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, and rcCoordinate is one exact accepted main SHA with mandatory release evidence green. Deferred post-v1 HSME research must remain non-production unless separately promoted by later reviewed evidence.",
+  "mainProtectionEvidence": null
 }
