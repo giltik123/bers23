@@ -39,11 +39,17 @@ Application rollback means routing traffic back to the previous immutable Core i
 
 Only after all mandatory evidence is terminal green on the final accepted SHA:
 
-- set the release coordinate in the readiness manifest;
-- bump `package.json` from the pre-release placeholder to `1.0.0`;
-- generate the final release manifest from that exact SHA;
-- create tag/release `v1.0.0` from that SHA only;
-- update #365 with the exact SHA/tag/evidence;
-- declare **BERS v1.0 RELEASED**.
+1. set the exact release coordinate in the readiness/finalization manifests;
+2. bump `package.json` from the pre-release placeholder to `1.0.0`;
+3. update the release notes so they no longer describe a pre-RC or blocked state;
+4. merge the finalization change to `main` and require mandatory CI green on that exact merged SHA;
+5. manually dispatch **BERS v1.0 fail-closed publish** from `main`, supplying that exact SHA and typing `v1.0.0` as the confirmation value;
+6. allow the workflow to re-prove the finalization state, verify the immutable required checks on that SHA, generate the deterministic release manifest, require the tag/release namespace to be unused, and only then create `v1.0.0`;
+7. require the workflow to re-download the published evidence assets byte-identically and verify that the tag resolves to the same SHA;
+8. update #365 with the exact SHA/tag/evidence and declare **BERS v1.0 RELEASED** externally.
+
+The committed `RELEASED` finalization state is necessary publication authorization, but it is not by itself evidence that the GitHub release exists. The external release declaration is valid only after the publish workflow succeeds and the exact-SHA tag/release is observable.
+
+The publish workflow writes only after every preflight passes. If a later step fails, cleanup is allowed only when that run created the release itself; pre-existing release/tag state is never overwritten or deleted.
 
 Any release-affecting fix after RC moves the coordinate to the new accepted `main` SHA and reruns affected evidence.
