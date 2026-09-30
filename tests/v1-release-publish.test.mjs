@@ -26,18 +26,19 @@ function releasedFixture(sha='a'.repeat(40)) {
     releaseGenerated: true,
     packageVersionExpected: '1.0.0',
   };
+  const releasedClassification={...classification,releaseState:'RELEASED'};
   const pkg={name:'bers-core-app',private:true,version:'1.0.0'};
   const sourceContents={
     'config/v1-release-readiness.json': `${JSON.stringify(readiness,null,2)}\n`,
     'config/v1-release-finalization.json': `${JSON.stringify(finalization,null,2)}\n`,
-    'config/v1-capability-classification.json': `${JSON.stringify(classification,null,2)}\n`,
+    'config/v1-capability-classification.json': `${JSON.stringify(releasedClassification,null,2)}\n`,
     'docs/v1-release-notes.md': '# BERS v1.0 release notes\n\nFinal production release.\n',
     'docs/v1-release-operations.md': '# BERS v1 operations\n\nImmutable release procedure.\n',
     'package.json': `${JSON.stringify(pkg,null,2)}\n`,
   };
   return {
     sha,
-    inputs:{readiness,finalization,classification,pkg},
+    inputs:{readiness,finalization,classification:releasedClassification,pkg},
     sourceContents,
   };
 }
