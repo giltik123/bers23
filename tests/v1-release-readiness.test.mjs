@@ -59,6 +59,34 @@ function frontendLiveEvidence(sha) {
   };
 }
 
+function frontendDeploymentBlocker() {
+  return {
+    id:'FRONTEND_DEPLOYMENT_HEADERS',
+    issue:233,
+    releaseGate:'R4',
+    state:'EXTERNAL_DEPLOYMENT_EVIDENCE_PENDING',
+    evidence:'config/v1-release-journey-matrix.json#journey-22',
+    resolution:'Run the live frontend verifier and record exact hosted deployment evidence.',
+  };
+}
+
+function pendingFrontendJourneys() {
+  return {
+    ...journeys,
+    entries:journeys.entries.map(value=>value.id === 22
+      ? {
+          id:22,
+          name:value.name,
+          disposition:'DEPLOYMENT_TARGET_PENDING',
+          reason:'Final canonical deployed frontend evidence remains pending.',
+          evidence:value.evidence,
+          workflow:value.workflow,
+          verifier:value.verifier,
+        }
+      : value),
+  };
+}
+
 test('current RC readiness matches its machine-readable state', () => {
   const result=validateV1ReleaseReadiness({readiness,journeys,stageD});
   const expected=readiness.blockers.length > 0
@@ -202,7 +230,7 @@ test('readiness state machine rejects premature RC selection and frontend blocke
         rcCoordinate:null,
         status:'BERS_V1_RC_NOT_SELECTABLE',
       },
-      journeys,
+      journeys:pendingFrontendJourneys(),
       stageD,
     }),
     /journey 22 must be PROVEN/u,
@@ -240,13 +268,13 @@ test('readiness state machine keeps deployment pending when only frontend blocke
   const result=validateV1ReleaseReadiness({
     readiness:{
       ...readiness,
-      blockers:readiness.blockers.filter(value=>value.id==='FRONTEND_DEPLOYMENT_HEADERS'),
+      blockers:[frontendDeploymentBlocker()],
       rcSelectable:false,
       rcCoordinate:null,
       status:'BERS_V1_RC_NOT_SELECTABLE',
       mainProtectionEvidence:mainProtectionEvidence(),
     },
-    journeys,
+    journeys:pendingFrontendJourneys(),
     stageD,
   });
   assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
