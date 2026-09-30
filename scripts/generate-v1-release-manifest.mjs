@@ -22,13 +22,13 @@ export function buildV1ReleaseManifest({
   }
 
   const disposition = validateV1ReleaseFinalization(inputs);
-  if (disposition.marker !== 'BERS_V1_0_RELEASED') {
-    throw new Error('release manifest generation requires RELEASED finalization state');
+  if (disposition.marker !== 'BERS_V1_RELEASE_AUTHORIZED') {
+    throw new Error('release manifest generation requires RELEASE_AUTHORIZED finalization state');
   }
 
   const { finalization, readiness, classification, pkg } = inputs;
-  if (finalization.releaseSha !== releaseSha || readiness.rcCoordinate !== releaseSha) {
-    throw new Error('requested release SHA does not equal the accepted release coordinate');
+  if (finalization.releaseSha !== null) {
+    throw new Error('release authorization must not predeclare releaseSha');
   }
   if (finalization.releaseTag !== RELEASE_TAG) {
     throw new Error('release manifest requires v1.0.0 releaseTag');
@@ -36,11 +36,15 @@ export function buildV1ReleaseManifest({
   if (pkg.version !== '1.0.0') {
     throw new Error('release manifest requires package version 1.0.0');
   }
+  if (!EXACT_SHA_RE.test(readiness.rcCoordinate ?? '')) {
+    throw new Error('release manifest requires exact RC coordinate');
+  }
 
   const requiredSources = [
     'config/v1-release-readiness.json',
     'config/v1-release-finalization.json',
     'config/v1-capability-classification.json',
+    'config/v1-release-journey-matrix.json',
     'docs/v1-release-notes.md',
     'docs/v1-release-operations.md',
     'package.json',
@@ -63,6 +67,15 @@ export function buildV1ReleaseManifest({
     throw new Error('release notes still contain the blocked pre-release declaration');
   }
 
+  const journeyMatrix = JSON.parse(sourceContents['config/v1-release-journey-matrix.json']);
+  const journey22 = journeyMatrix?.entries?.find?.(value => value?.id === 22);
+  if (journey22?.disposition !== 'PROVEN') {
+    throw new Error('release manifest requires journey 22 PROVEN');
+  }
+  if (journey22?.liveEvidence?.verifiedSha !== readiness.rcCoordinate) {
+    throw new Error('journey 22 live evidence must bind the selected RC coordinate');
+  }
+
   const sources = Object.fromEntries(
     requiredSources.map(path => [
       path,
@@ -74,11 +87,12 @@ export function buildV1ReleaseManifest({
   );
 
   return Object.freeze({
-    schemaVersion: 1,
+    schemaVersion: 2,
     program: 'BERS_V1_RELEASE_MANIFEST',
     targetVersion: '1.0.0',
     releaseTag: RELEASE_TAG,
     releaseSha,
+    rcCoordinate: readiness.rcCoordinate,
     packageVersion: pkg.version,
     readiness: Object.freeze({
       status: readiness.status,
@@ -92,9 +106,20 @@ export function buildV1ReleaseManifest({
       releaseSha: finalization.releaseSha,
       releaseTag: finalization.releaseTag,
       releaseGenerated: finalization.releaseGenerated,
+      publicationEvidence: finalization.publicationEvidence,
     }),
     classification: Object.freeze({
       targetVersion: classification.targetVersion,
+      releaseState: classification.releaseState,
+    }),
+    frontendDeploymentEvidence: Object.freeze({
+      verifiedSha: journey22.liveEvidence.verifiedSha,
+      frontendUrl: journey22.liveEvidence.frontendUrl,
+      coreApiUrl: journey22.liveEvidence.coreApiUrl,
+      htmlSha256: journey22.liveEvidence.htmlSha256,
+      verifiedAt: journey22.liveEvidence.verifiedAt,
+      workflowRunUrl: journey22.liveEvidence.workflowRunUrl,
+      artifactName: journey22.liveEvidence.artifactName,
     }),
     sources: Object.freeze(sources),
   });
@@ -105,6 +130,7 @@ export async function loadV1ReleaseManifestSources() {
     'config/v1-release-readiness.json',
     'config/v1-release-finalization.json',
     'config/v1-capability-classification.json',
+    'config/v1-release-journey-matrix.json',
     'docs/v1-release-notes.md',
     'docs/v1-release-operations.md',
     'package.json',
@@ -128,13 +154,15 @@ async function main() {
       releaseSha,
       sourceContents: await loadV1ReleaseManifestSources(),
     });
+    const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
     await mkdir(dirname(out), { recursive: true });
-    await writeFile(out, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    await writeFile(out, serialized, 'utf8');
     console.log('BERS_V1_RELEASE_MANIFEST_GENERATED', JSON.stringify({
+      rcCoordinate: manifest.rcCoordinate,
       releaseSha: manifest.releaseSha,
       releaseTag: manifest.releaseTag,
       out,
-      sha256: sha256(`${JSON.stringify(manifest, null, 2)}\n`),
+      sha256: sha256(serialized),
     }));
   } catch (error) {
     console.error(
