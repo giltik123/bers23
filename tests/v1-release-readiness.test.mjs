@@ -11,6 +11,40 @@ const stageD = JSON.parse(await readFile('config/v1-generative-decision-matrix.j
 const roadmap = await readFile('BERS_V1_DEVELOPMENT_ROADMAP.md','utf8');
 const hsmeRoadmap = await readFile('BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md','utf8');
 
+function mainProtectionEvidence() {
+  const requiredChecks=[
+    'BERS Required Acceptance',
+    'integrated-contract',
+    'npm-production-audit',
+    'fp16-webgpu-feasibility',
+    'wasm-compact-feasibility',
+    'ort-memory-latency-feasibility',
+    'short-pipeline-measurement',
+  ];
+  return {
+    schemaVersion:1,
+    kind:'BERS_V1_GITHUB_MAIN_PROTECTION_EVIDENCE',
+    verifiedAt:'2026-09-30T12:00:00.000Z',
+    repository:'giltik123/bers23',
+    branch:'main',
+    mode:'RULESET',
+    requiredChecks,
+    ruleset:{
+      id:7,
+      name:'BERS immutable main release authority',
+      enforcement:'active',
+      target:'branch',
+      requiredApprovingReviewCount:1,
+      requiredStatusChecks:[...requiredChecks].sort(),
+      strictRequiredStatusChecks:true,
+      forcePushBlocked:true,
+      deletionBlocked:true,
+      bypassActors:[],
+    },
+    rulesetReadError:null,
+  };
+}
+
 function frontendLiveEvidence(sha) {
   return {
     kind:'BERS_V1_FRONTEND_SECURITY_EVIDENCE',
@@ -136,6 +170,7 @@ test('readiness state machine selects one exact RC only after all blockers are r
       rcSelectable:true,
       rcCoordinate:sha,
       status:'BERS_V1_RC_SELECTED',
+      mainProtectionEvidence:mainProtectionEvidence(),
     },
     journeys:selectedJourneys,
     stageD,
@@ -208,6 +243,7 @@ test('readiness state machine keeps deployment pending when only frontend blocke
       rcSelectable:false,
       rcCoordinate:null,
       status:'BERS_V1_RC_NOT_SELECTABLE',
+      mainProtectionEvidence:mainProtectionEvidence(),
     },
     journeys,
     stageD,
@@ -277,5 +313,55 @@ test('readiness state machine rejects fake or partial journey 22 live evidence',
       stageD,
     }),
     /artifactName does not bind verifiedSha/u,
+  );
+});
+
+
+test('readiness state machine rejects clearing main protection blocker without accepted evidence', () => {
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='REPOSITORY_MAIN_PROTECTION'),
+        mainProtectionEvidence:null,
+      },
+      journeys,
+      stageD,
+    }),
+    /mainProtectionEvidence must be an object/u,
+  );
+});
+
+test('readiness state machine rejects unsafe or incomplete main protection evidence', () => {
+  const evidence=mainProtectionEvidence();
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='REPOSITORY_MAIN_PROTECTION'),
+        mainProtectionEvidence:{
+          ...evidence,
+          ruleset:{...evidence.ruleset,bypassActors:[{actor:'admin'}]},
+        },
+      },
+      journeys,
+      stageD,
+    }),
+    /ruleset safety contract mismatch/u,
+  );
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='REPOSITORY_MAIN_PROTECTION'),
+        mainProtectionEvidence:{
+          ...evidence,
+          requiredChecks:evidence.requiredChecks.slice(0,-1),
+        },
+      },
+      journeys,
+      stageD,
+    }),
+    /required checks mismatch/u,
   );
 });
