@@ -121,7 +121,7 @@ test('state machine accepts a clean RC_SELECTED fixture without final release cl
       releaseGenerated: false,
       packageVersionExpected: '0.0.0',
     },
-    classification,
+    classification: { ...classification, releaseState: 'RC_SELECTED' },
     pkg: { ...pkg, version: '0.0.0' },
   });
   assert.equal(result.marker,'BERS_V1_RC_SELECTED');
@@ -141,7 +141,7 @@ test('state machine accepts RELEASED only when version, tag and every coordinate
       releaseGenerated: true,
       packageVersionExpected: '1.0.0',
     },
-    classification,
+    classification: { ...classification, releaseState: 'RELEASED' },
     pkg: { ...pkg, version: '1.0.0' },
   });
   assert.equal(result.marker,'BERS_V1_0_RELEASED');
@@ -161,7 +161,7 @@ test('RC_SELECTED rejects leaked final release metadata and artifact claims', ()
       releaseGenerated: false,
       packageVersionExpected: '0.0.0',
     },
-    classification,
+    classification: { ...classification, releaseState: 'RC_SELECTED' },
     pkg: { ...pkg, version: '0.0.0' },
   };
 
@@ -202,7 +202,7 @@ test('RELEASED rejects coordinate drift even when releaseSha itself looks valid'
         releaseGenerated: true,
         packageVersionExpected: '1.0.0',
       },
-      classification,
+      classification: { ...classification, releaseState: 'RELEASED' },
       pkg: { ...pkg, version: '1.0.0' },
     }),
     /finalization RC coordinate mismatch/u,
@@ -227,5 +227,66 @@ test('blocked readiness cannot advertise RC selectability or a readiness coordin
       pkg,
     }),
     /blocked readiness cannot declare readiness RC coordinate/u,
+  );
+});
+
+
+test('finalization state machine rejects capability release-state drift', () => {
+  const sha='9'.repeat(40);
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      readiness:{...readiness,blockers:[],rcSelectable:true,rcCoordinate:sha},
+      finalization:{
+        ...finalization,
+        status:'RC_SELECTED',
+        rcCoordinate:sha,
+        releaseSha:null,
+        releaseTag:null,
+        releaseGenerated:false,
+        packageVersionExpected:'0.0.0',
+      },
+      classification,
+      pkg:{...pkg,version:'0.0.0'},
+    }),
+    /classification releaseState must be RC_SELECTED/u,
+  );
+
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      readiness:{...readiness,blockers:[],rcSelectable:true,rcCoordinate:sha},
+      finalization:{
+        ...finalization,
+        status:'RELEASED',
+        rcCoordinate:sha,
+        releaseSha:sha,
+        releaseTag:'v1.0.0',
+        releaseGenerated:true,
+        packageVersionExpected:'1.0.0',
+      },
+      classification:{...classification,releaseState:'RC_SELECTED'},
+      pkg:{...pkg,version:'1.0.0'},
+    }),
+    /classification releaseState must be RELEASED/u,
+  );
+});
+
+test('finalization state machine rejects release-state mapping drift', () => {
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      finalization,
+      readiness,
+      classification:{
+        ...classification,
+        versioning:{
+          ...classification.versioning,
+          releaseStateByFinalizationStatus:{
+            ...classification.versioning.releaseStateByFinalizationStatus,
+            RELEASED:'SOMETHING_ELSE',
+          },
+        },
+      },
+      pkg,
+    }),
+    /classification release-state mapping mismatch for RELEASED/u,
   );
 });
