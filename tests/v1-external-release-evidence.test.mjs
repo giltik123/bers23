@@ -270,3 +270,15 @@ test('owner-only evidence dispatch bridge resolves exact hosted run and reports 
   assert.match(workflow, /workflowRunUrl/u);
   assert.match(workflow, /artifactName/u);
 });
+
+test('evidence dispatch bridge reports the resolved run before waiting and updates the same comment on terminal state', async () => {
+  const workflow = await readFile('.github/workflows/v1-external-release-evidence-dispatch.yml', 'utf8');
+  assert.match(workflow, /run resolved; completion pending/u);
+  assert.match(workflow, /runId:/u);
+  assert.match(workflow, /statusCommentId/u);
+  assert.match(workflow, /issues\.updateComment/u);
+  assert.match(workflow, /RUN_RESOLUTION_FAILED/u);
+  assert.match(workflow, /TIMEOUT/u);
+  assert.match(workflow, /ARTIFACT_MISSING/u);
+  assert.match(workflow, /completed successfully/u);
+});
