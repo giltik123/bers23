@@ -24,13 +24,18 @@ function classificationFor(releaseState) {
   return { ...classification, releaseState };
 }
 
-function publicationEvidence() {
+function publicationEvidence(rcCoordinate='c'.repeat(40), releaseSha='d'.repeat(40)) {
   return {
-    workflowRunUrl: 'https://github.com/giltik123/bers23/actions/runs/123456789',
-    releaseUrl: 'https://github.com/giltik123/bers23/releases/tag/v1.0.0',
-    releaseManifestSha256: '1'.repeat(64),
-    requiredChecksSha256: '2'.repeat(64),
-    publishedAt: '2026-09-30T12:00:00.000Z',
+    kind:'BERS_V1_PUBLICATION_EVIDENCE',
+    rcCoordinate,
+    releaseSha,
+    releaseTag:'v1.0.0',
+    workflowRunUrl:'https://github.com/giltik123/bers23/actions/runs/123456789',
+    releaseUrl:'https://github.com/giltik123/bers23/releases/tag/v1.0.0',
+    releaseManifestSha256:'1'.repeat(64),
+    requiredChecksSha256:'2'.repeat(64),
+    releaseDeltaSha256:'3'.repeat(64),
+    publishedAt:'2026-09-30T12:00:00.000Z',
   };
 }
 
@@ -206,7 +211,7 @@ test('state machine accepts post-publication RELEASED with a distinct published 
       releaseSha,
       releaseTag:'v1.0.0',
       releaseGenerated:true,
-      publicationEvidence:publicationEvidence(),
+      publicationEvidence:publicationEvidence(rcSha,releaseSha),
       packageVersionExpected:'1.0.0',
     },
     classification:classificationFor('RELEASED'),
@@ -286,7 +291,7 @@ test('RELEASED rejects missing or malformed publication evidence', () => {
       releaseSha,
       releaseTag:'v1.0.0',
       releaseGenerated:true,
-      publicationEvidence:publicationEvidence(),
+      publicationEvidence:publicationEvidence(rcSha,releaseSha),
       packageVersionExpected:'1.0.0',
     },
     classification:classificationFor('RELEASED'),
@@ -301,7 +306,7 @@ test('RELEASED rejects missing or malformed publication evidence', () => {
       ...base,
       finalization:{
         ...base.finalization,
-        publicationEvidence:{...publicationEvidence(),releaseManifestSha256:'bad'},
+        publicationEvidence:{...publicationEvidence(rcSha,releaseSha),releaseManifestSha256:'bad'},
       },
     }),
     /releaseManifestSha256 is invalid/u,
@@ -433,5 +438,29 @@ test('finalization state machine rejects cross-manifest program identity drift',
       pkg,
     }),
     /classification program mismatch/u,
+  );
+});
+
+
+test('RELEASED rejects publication evidence for another published SHA', () => {
+  const rcSha='6'.repeat(40);
+  const releaseSha='7'.repeat(40);
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      readiness:selectedReadiness(rcSha),
+      finalization:{
+        ...finalization,
+        status:'RELEASED',
+        rcCoordinate:rcSha,
+        releaseSha,
+        releaseTag:'v1.0.0',
+        releaseGenerated:true,
+        publicationEvidence:publicationEvidence(rcSha,'8'.repeat(40)),
+        packageVersionExpected:'1.0.0',
+      },
+      classification:classificationFor('RELEASED'),
+      pkg:{...pkg,version:'1.0.0'},
+    }),
+    /publicationEvidence releaseSha mismatch/u,
   );
 });
