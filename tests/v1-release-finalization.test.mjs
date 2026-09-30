@@ -52,3 +52,17 @@ test('finalization package points at accepted release-note classification and op
     assert.ok(content.trim(),path);
   }
 });
+
+
+test('release-finalization workflow accepts every manifest state and keeps diff hygiene PR-only', async () => {
+  const workflow = await readFile('.github/workflows/v1-release-finalization.yml','utf8');
+
+  assert.match(workflow,/Emit manifest-matched release finalization disposition/u);
+  assert.match(workflow,/BLOCKED_BEFORE_RC\)/u);
+  assert.match(workflow,/RC_SELECTED\)/u);
+  assert.match(workflow,/RELEASED\)/u);
+  assert.match(workflow,/BERS_V1_RELEASE_FINALIZATION_BLOCKED/u);
+  assert.match(workflow,/BERS_V1_RC_SELECTED/u);
+  assert.match(workflow,/BERS_V1_0_RELEASED/u);
+  assert.match(workflow,/Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
+});
