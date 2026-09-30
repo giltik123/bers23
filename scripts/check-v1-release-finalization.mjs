@@ -23,6 +23,7 @@ export function validateV1ReleaseFinalization(input) {
     if (readiness.rcSelectable !== false) throw new Error('blocked readiness requires rcSelectable=false');
     if (readiness.rcCoordinate !== null) throw new Error('blocked readiness cannot declare readiness RC coordinate');
     if (finalization.status !== 'BLOCKED_BEFORE_RC') throw new Error('blocked readiness requires BLOCKED_BEFORE_RC');
+    requireClassificationReleaseState(classification, 'BLOCKED_BEFORE_RC');
     if (finalization.rcCoordinate !== null || finalization.releaseSha !== null || finalization.releaseTag !== null) {
       throw new Error('blocked readiness cannot declare RC/release coordinate');
     }
@@ -46,6 +47,7 @@ export function validateV1ReleaseFinalization(input) {
   if (finalization.rcCoordinate !== readiness.rcCoordinate) throw new Error('finalization RC coordinate mismatch');
 
   if (finalization.status === 'RC_SELECTED') {
+    requireClassificationReleaseState(classification, 'RC_SELECTED');
     if (finalization.releaseSha !== null || finalization.releaseTag !== null) {
       throw new Error('RC_SELECTED cannot declare final release SHA/tag');
     }
@@ -61,6 +63,7 @@ export function validateV1ReleaseFinalization(input) {
   }
 
   if (finalization.status === 'RELEASED') {
+    requireClassificationReleaseState(classification, 'RELEASED');
     if (finalization.releaseSha !== readiness.rcCoordinate) {
       throw new Error('releaseSha must equal accepted release coordinate');
     }
@@ -77,6 +80,26 @@ export function validateV1ReleaseFinalization(input) {
   }
 
   throw new Error('empty blockers require RC_SELECTED or RELEASED finalization state');
+}
+
+function requireClassificationReleaseState(classification, finalizationStatus) {
+  const expectedMap = Object.freeze({
+    BLOCKED_BEFORE_RC: 'PRE_RC_EXTERNAL_BLOCKERS_REMAIN',
+    RC_SELECTED: 'RC_SELECTED',
+    RELEASED: 'RELEASED',
+  });
+  const configured = classification?.versioning?.releaseStateByFinalizationStatus;
+  requireObject(configured, 'classification.versioning.releaseStateByFinalizationStatus');
+  for (const [status, expected] of Object.entries(expectedMap)) {
+    if (configured[status] !== expected) {
+      throw new Error(`classification release-state mapping mismatch for ${status}`);
+    }
+  }
+  const expected = expectedMap[finalizationStatus];
+  if (!expected) throw new Error(`unsupported finalization status: ${finalizationStatus}`);
+  if (classification.releaseState !== expected) {
+    throw new Error(`classification releaseState must be ${expected} for ${finalizationStatus}`);
+  }
 }
 
 function requireObject(value, name) {
