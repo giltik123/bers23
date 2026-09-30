@@ -13,10 +13,9 @@ test('RC readiness is fail-closed on exactly the verified external blockers', ()
   assert.equal(readiness.status, 'BERS_V1_RC_NOT_SELECTABLE');
   assert.deepEqual(readiness.blockers.map(value=>value.id).sort(), [
     'FRONTEND_DEPLOYMENT_HEADERS',
-    'HSME_REAL_MOBILE_EVIDENCE',
     'REPOSITORY_MAIN_PROTECTION',
   ]);
-  assert.deepEqual(readiness.blockers.map(value=>value.releaseGate).sort(), ['R1','R3','R4']);
+  assert.deepEqual(readiness.blockers.map(value=>value.releaseGate).sort(), ['R1','R4']);
 });
 
 test('RC guard consumes the accepted Stage D and #233 ledgers instead of open-issue counts', () => {
@@ -29,17 +28,22 @@ test('RC guard consumes the accepted Stage D and #233 ledgers instead of open-is
 });
 
 test('optional/deferred work cannot accidentally block RC through this ledger', () => {
-  assert.deepEqual(readiness.nonBlockingDeferred.map(value=>value.issue).sort((a,b)=>a-b), [189,192]);
-  assert.equal(readiness.blockers.some(value=>value.issue === 189 || value.issue === 192), false);
+  assert.deepEqual(readiness.nonBlockingDeferred.map(value=>value.issue).sort((a,b)=>a-b), [189,192,352]);
+  assert.equal(readiness.blockers.some(value=>[189,192,352].includes(value.issue)), false);
+  const hsme = readiness.nonBlockingDeferred.find(value=>value.id==='HSME_REAL_MOBILE_EVIDENCE');
+  assert.equal(hsme.state,'DEFERRED_POST_V1_RESEARCH');
+  assert.deepEqual(hsme.relatedIssues,[862,871,867]);
 });
 
 test('readiness classifier emits the non-selectable coordinate and exact blocker set', () => {
   const result = spawnSync(process.execPath,['scripts/check-v1-release-readiness.mjs'],{encoding:'utf8'});
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /BERS_V1_RC_NOT_SELECTABLE/);
-  for (const id of ['FRONTEND_DEPLOYMENT_HEADERS','REPOSITORY_MAIN_PROTECTION','HSME_REAL_MOBILE_EVIDENCE']) {
+  for (const id of ['FRONTEND_DEPLOYMENT_HEADERS','REPOSITORY_MAIN_PROTECTION']) {
     assert.match(result.stdout, new RegExp(id));
   }
+  assert.match(result.stdout, /DEFERRED_POST_V1_RESEARCH/);
+  assert.doesNotMatch(result.stdout, /"id":"HSME_REAL_MOBILE_EVIDENCE","issue":352,"state":"EXTERNAL_PHYSICAL_DEVICE_EVIDENCE_PENDING"/);
 });
 
 test('selection law forbids an RC SHA while blockers remain', () => {
