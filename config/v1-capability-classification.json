@@ -3,7 +3,7 @@
   "program": "BERS_V1_CAPABILITY_CLASSIFICATION",
   "targetVersion": "1.0.0",
   "evidenceBaseSha": "97c30107e147c0ec5b7c828bfd9e6d82cbf2103e",
-  "releaseState": "PRE_RC_EXTERNAL_BLOCKERS_REMAIN",
+  "releaseState": "RC_SELECTED",
   "entries": [
     {
       "id": "CORE_PROJECT_ARTIFACT",
