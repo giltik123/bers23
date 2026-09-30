@@ -12,6 +12,16 @@ on:
       - 'package.json'
       - '.github/workflows/v1-external-release-evidence.yml'
   workflow_dispatch:
+    inputs:
+      frontend_url:
+        description: Final canonical HTTPS frontend URL
+        required: true
+        type: string
+      core_api_url:
+        description: Canonical Core API URL or same-origin /api/core
+        required: true
+        default: /api/core
+        type: string
 
 permissions:
   contents: read
@@ -55,4 +65,70 @@ jobs:
           grep -q 'release:evidence:github' package.json
           ! grep -E -q '(ghp_|github_pat_|Bearer [A-Za-z0-9])' docs/v1-external-release-evidence.md
       - name: Check committed diff whitespace
+        if: github.event_name == 'pull_request'
         run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
+
+  live-frontend-release-evidence:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Assert exact dispatched SHA
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Require canonical HTTPS frontend target
+        env:
+          FRONTEND_URL: ${{ inputs.frontend_url }}
+        run: |
+          set -euo pipefail
+          case "$FRONTEND_URL" in
+            https://*) ;;
+            *) echo "Manual release evidence requires an HTTPS frontend URL" >&2; exit 1 ;;
+          esac
+      - name: Capture live frontend security evidence
+        env:
+          FRONTEND_URL: ${{ inputs.frontend_url }}
+          CORE_API_URL: ${{ inputs.core_api_url }}
+          EVIDENCE_OUT: release-evidence/v1/frontend-security.json
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence/v1
+          npm run release:evidence:frontend | tee release-evidence/v1/frontend-security.log
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFile } from 'node:fs/promises';
+          const evidence = JSON.parse(await readFile('release-evidence/v1/frontend-security.json', 'utf8'));
+          assert.equal(evidence.kind, 'BERS_V1_FRONTEND_SECURITY_EVIDENCE');
+          assert.equal(evidence.status, undefined);
+          assert.match(evidence.frontendUrl, /^https:\/\//u);
+          assert.equal(evidence.htmlSha256.length, 64);
+          NODE
+      - name: Upload exact-SHA frontend evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: bers-v1-frontend-security-${{ github.sha }}
+          path: |
+            release-evidence/v1/frontend-security.json
+            release-evidence/v1/frontend-security.log
+          if-no-files-found: error
+          retention-days: 90
+      - name: Summarize release evidence
+        env:
+          FRONTEND_URL: ${{ inputs.frontend_url }}
+        run: |
+          {
+            echo "### BERS v1 live frontend security evidence"
+            echo
+            echo "- Candidate SHA: \`${GITHUB_SHA}\`"
+            echo "- Frontend: \`${FRONTEND_URL}\`"
+            echo "- Artifact: \`bers-v1-frontend-security-${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
