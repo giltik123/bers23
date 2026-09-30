@@ -8,6 +8,7 @@ const readiness = JSON.parse(await readFile('config/v1-release-readiness.json','
 const finalization = JSON.parse(await readFile('config/v1-release-finalization.json','utf8'));
 const journeys = JSON.parse(await readFile('config/v1-release-journey-matrix.json','utf8'));
 const packageJson = JSON.parse(await readFile('package.json','utf8'));
+const packageLock = JSON.parse(await readFile('package-lock.json','utf8'));
 const executorPolicy = await readFile('server/core/localExecution/productionLocalExecutorPolicy.ts','utf8');
 const notes = await readFile('docs/v1-release-notes.md','utf8');
 const operations = await readFile('docs/v1-release-operations.md','utf8');
@@ -63,6 +64,10 @@ test('release package version and classification follow the declared finalizatio
     RELEASED:'RELEASED',
   });
   assert.equal(classifications.releaseState,releaseStateMap[finalization.status]);
+  assert.equal(packageLock.name,packageJson.name);
+  assert.equal(packageLock.version,packageJson.version);
+  assert.equal(packageLock.packages?.['']?.name,packageJson.name);
+  assert.equal(packageLock.packages?.['']?.version,packageJson.version);
 
   if (finalization.status === 'BLOCKED_BEFORE_RC') {
     assert.equal(readiness.rcSelectable,false);

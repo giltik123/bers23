@@ -395,3 +395,33 @@ test('runtime release-manifest loader includes every hashed release source', asy
     assert.ok(sources[path].length > 0,path);
   }
 });
+
+
+test('release manifest rejects package-lock identity or version drift', () => {
+  const fixture=authorizedFixture();
+  const lock=JSON.parse(fixture.sourceContents['package-lock.json']);
+
+  assert.throws(
+    () => buildV1ReleaseManifest({
+      inputs:fixture.inputs,
+      releaseSha:fixture.releaseSha,
+      sourceContents:{
+        ...fixture.sourceContents,
+        'package-lock.json':`${JSON.stringify({...lock,version:'0.0.0'},null,2)}\n`,
+      },
+    }),
+    /package-lock root version must match package\.json/u,
+  );
+
+  assert.throws(
+    () => buildV1ReleaseManifest({
+      inputs:fixture.inputs,
+      releaseSha:fixture.releaseSha,
+      sourceContents:{
+        ...fixture.sourceContents,
+        'package-lock.json':`${JSON.stringify({...lock,name:'other-app'},null,2)}\n`,
+      },
+    }),
+    /package-lock root name must match package\.json/u,
+  );
+});

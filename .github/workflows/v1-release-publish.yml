@@ -22,6 +22,7 @@ on:
       - 'docs/v1-release-notes.md'
       - 'docs/v1-release-operations.md'
       - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
     inputs:
       release_sha:

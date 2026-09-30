@@ -57,6 +57,19 @@ export function buildV1ReleaseManifest({
     }
   }
 
+  let packageLock;
+  try {
+    packageLock = JSON.parse(sourceContents['package-lock.json']);
+  } catch {
+    throw new Error('package-lock.json must be valid JSON');
+  }
+  if (packageLock?.name !== pkg.name || packageLock?.packages?.['']?.name !== pkg.name) {
+    throw new Error('package-lock root name must match package.json');
+  }
+  if (packageLock?.version !== pkg.version || packageLock?.packages?.['']?.version !== pkg.version) {
+    throw new Error('package-lock root version must match package.json');
+  }
+
   const releaseNotes = sourceContents['docs/v1-release-notes.md'];
   if (/pre-RC package/iu.test(releaseNotes)) {
     throw new Error('release notes still identify themselves as a pre-RC package');

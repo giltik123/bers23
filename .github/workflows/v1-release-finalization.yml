@@ -13,6 +13,7 @@ on:
       - 'docs/v1-release-notes.md'
       - 'docs/v1-release-operations.md'
       - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/v1-release-finalization.yml'
   workflow_dispatch:
 

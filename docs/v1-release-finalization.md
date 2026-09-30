@@ -45,6 +45,7 @@ This is the only pre-publication state accepted by the `BERS v1.0 fail-closed pu
 - readiness remains selected on the accepted RC SHA;
 - only the finite release-metadata allowlist may differ between the selected RC SHA and the authorization SHA;
 - `package.json.version === 1.0.0` and `packageVersionExpected === 1.0.0`;
+- top-level `package-lock.json` and `packages[""]` name/version must match `package.json`;
 - `releaseTag === v1.0.0`;
 - `releaseSha === null`: the commit must not attempt to predeclare its own SHA;
 - `publicationEvidence === null`;
@@ -57,7 +58,7 @@ The publisher checks the exact current `main` SHA, all immutable required contex
 
 This is a post-publication ledger state.
 
-- `package.json.version === 1.0.0`;
+- `package.json.version === 1.0.0`, with matching top-level/root-package version in `package-lock.json`;
 - `releaseTag === v1.0.0`;
 - `releaseSha` is the exact SHA to which the already-created `v1.0.0` tag resolves;
 - `releaseGenerated=true`;

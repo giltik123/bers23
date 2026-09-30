@@ -9,6 +9,7 @@ const finalization = JSON.parse(await readFile('config/v1-release-finalization.j
 const readiness = JSON.parse(await readFile('config/v1-release-readiness.json','utf8'));
 const classification = JSON.parse(await readFile('config/v1-capability-classification.json','utf8'));
 const pkg = JSON.parse(await readFile('package.json','utf8'));
+const packageLock = JSON.parse(await readFile('package-lock.json','utf8'));
 
 function selectedReadiness(sha) {
   return {
@@ -469,4 +470,12 @@ test('RELEASED rejects publication evidence for another published SHA', () => {
     }),
     /publicationEvidence releaseSha mismatch/u,
   );
+});
+
+
+test('package lock root metadata converges with the package release version', () => {
+  assert.equal(packageLock.name,pkg.name);
+  assert.equal(packageLock.version,pkg.version);
+  assert.equal(packageLock.packages?.['']?.name,pkg.name);
+  assert.equal(packageLock.packages?.['']?.version,pkg.version);
 });
