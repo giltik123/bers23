@@ -11,14 +11,16 @@ Run it manually with:
 - `frontend_url`: the final canonical HTTPS frontend URL;
 - `core_api_url`: the canonical Core API URL, or `/api/core` for same-origin Core.
 
-The manual run checks out the exact dispatched SHA, verifies that checkout, executes the live header verifier, and uploads a 90-day artifact named `bers-v1-frontend-security-<sha>` containing:
+The manual run checks out the exact dispatched SHA, verifies that checkout, executes the live header verifier, and uploads a 90-day artifact named `bers-v1-frontend-security-<sha>` containing promotable evidence bound to that exact SHA and GitHub Actions run:
 
 - `release-evidence/v1/frontend-security.json`;
 - `release-evidence/v1/frontend-security.log`.
 
+The hosted JSON is self-contained for journey 22 promotion: in addition to the observed deployment facts it records `verifiedSha`, the exact `workflowRunUrl`, and the exact `artifactName`. These three provenance fields are validated as one atomic binding.
+
 The dispatch requires HTTPS and the verifier rejects credentials, query strings, fragments, redirects, non-HTML roots, and missing/incorrect production response headers.
 
-The same verifier can also be run locally:
+The same verifier can also be run locally for diagnostic/header capture:
 
 ```sh
 FRONTEND_URL=https://app.example.com \
@@ -28,6 +30,8 @@ npm run release:evidence:frontend
 ```
 
 For same-origin Core use `CORE_API_URL=/api/core`.
+
+A local invocation does not invent hosted GitHub provenance, so its JSON alone cannot promote journey 22 or clear #233. Use the hosted exact-SHA workflow for release-promotable evidence.
 
 The verifier requires a direct 2xx HTML response, the exact production CSP including `frame-ancestors 'none'`, `nosniff`, `DENY`, `no-referrer`, and at least one year of HSTS for HTTPS. Evidence records the canonical URLs, observed headers and SHA-256 of the served HTML. It does not record cookies or credentials.
 

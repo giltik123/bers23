@@ -99,6 +99,9 @@ jobs:
           FRONTEND_URL: ${{ inputs.frontend_url }}
           CORE_API_URL: ${{ inputs.core_api_url }}
           EVIDENCE_OUT: release-evidence/v1/frontend-security.json
+          VERIFIED_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ARTIFACT_NAME: bers-v1-frontend-security-${{ github.sha }}
         run: |
           set -euo pipefail
           mkdir -p release-evidence/v1
@@ -111,6 +114,9 @@ jobs:
           assert.equal(evidence.status, undefined);
           assert.match(evidence.frontendUrl, /^https:\/\//u);
           assert.equal(evidence.htmlSha256.length, 64);
+          assert.equal(evidence.verifiedSha, process.env.GITHUB_SHA);
+          assert.equal(evidence.workflowRunUrl, `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`);
+          assert.equal(evidence.artifactName, `bers-v1-frontend-security-${process.env.GITHUB_SHA}`);
           NODE
       - name: Upload exact-SHA frontend evidence
         uses: actions/upload-artifact@v4
