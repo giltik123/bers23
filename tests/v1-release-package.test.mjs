@@ -59,6 +59,7 @@ test('release package version and classification follow the declared finalizatio
   assert.deepEqual(releaseStateMap,{
     BLOCKED_BEFORE_RC:'PRE_RC_EXTERNAL_BLOCKERS_REMAIN',
     RC_SELECTED:'RC_SELECTED',
+    RELEASE_AUTHORIZED:'RELEASE_AUTHORIZED',
     RELEASED:'RELEASED',
   });
   assert.equal(classifications.releaseState,releaseStateMap[finalization.status]);
@@ -75,11 +76,24 @@ test('release package version and classification follow the declared finalizatio
     assert.equal(readiness.blockers.length,0);
     assert.equal(packageJson.version,classifications.versioning.packageVersionBeforeRc);
     assert.equal(packageJson.version,'0.0.0');
+  } else if (finalization.status === 'RELEASE_AUTHORIZED') {
+    assert.equal(readiness.rcSelectable,true);
+    assert.equal(readiness.blockers.length,0);
+    assert.equal(readiness.status,'BERS_V1_RC_SELECTED');
+    assert.equal(packageJson.version,classifications.versioning.finalVersion);
+    assert.equal(packageJson.version,'1.0.0');
+    assert.equal(finalization.releaseSha,null);
+    assert.equal(finalization.releaseTag,'v1.0.0');
+    assert.equal(finalization.releaseGenerated,false);
   } else if (finalization.status === 'RELEASED') {
     assert.equal(readiness.rcSelectable,true);
     assert.equal(readiness.blockers.length,0);
+    assert.equal(readiness.status,'BERS_V1_RC_SELECTED');
     assert.equal(packageJson.version,classifications.versioning.finalVersion);
     assert.equal(packageJson.version,'1.0.0');
+    assert.match(finalization.releaseSha,/^[0-9a-f]{40}$/u);
+    assert.equal(finalization.releaseTag,'v1.0.0');
+    assert.equal(finalization.releaseGenerated,true);
   } else {
     assert.fail(`unexpected finalization status: ${finalization.status}`);
   }
