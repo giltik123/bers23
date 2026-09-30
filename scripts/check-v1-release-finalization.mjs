@@ -168,6 +168,9 @@ function requireClassificationReleaseState(classification, finalizationStatus) {
 
 function requirePublicationEvidence(value, expected) {
   requireObject(value, 'publicationEvidence');
+  if (value.schemaVersion !== 1) {
+    throw new Error('publicationEvidence schemaVersion is invalid');
+  }
   if (value.kind !== 'BERS_V1_PUBLICATION_EVIDENCE') {
     throw new Error('publicationEvidence kind is invalid');
   }
