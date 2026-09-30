@@ -14,10 +14,13 @@
   "releaseNotesSource": "docs/v1-release-notes.md",
   "operationsSource": "docs/v1-release-operations.md",
   "laws": [
-    "While readiness blockers exist, package.json must remain 0.0.0, readiness rcSelectable must be false, and no readiness/finalization RC or v1.0.0 release coordinate may be declared.",
-    "When blockers are empty, BERS_V1_RC must be one exact accepted main SHA and finalization rcCoordinate must equal that readiness coordinate.",
-    "RC_SELECTED must keep package.json and packageVersionExpected at 0.0.0, releaseSha/releaseTag null, and releaseGenerated false until final affected release evidence closes.",
-    "Final release state requires package.json version 1.0.0, packageVersionExpected 1.0.0, releaseTag v1.0.0, releaseSha equal to the exact accepted release coordinate, and finalization rcCoordinate equal to the same readiness rcCoordinate.",
-    "A release-affecting fix after RC moves the coordinate to the new accepted main SHA and requires rerunning affected evidence before finalization."
-  ]
+    "While readiness blockers exist, package.json must remain 0.0.0, readiness rcSelectable must be false, and no readiness/finalization RC or v1.0.0 publication coordinate may be declared.",
+    "When blockers are empty, BERS_V1_RC may select one exact accepted main SHA; the metadata commits that record RC selection or publication authorization must not silently move product code.",
+    "RC_SELECTED keeps package.json and packageVersionExpected at 0.0.0, releaseSha/releaseTag/publicationEvidence null, and releaseGenerated false.",
+    "RELEASE_AUTHORIZED requires package.json and packageVersionExpected 1.0.0, releaseTag v1.0.0, releaseSha/publicationEvidence null, releaseGenerated false, and an exact release-metadata-only delta from the selected RC coordinate.",
+    "The v1.0.0 publisher creates the tag/release on the exact current RELEASE_AUTHORIZED main SHA and generates the release manifest with that runtime SHA; no commit is required to contain its own SHA.",
+    "RELEASED is a post-publication ledger state: package version remains 1.0.0, releaseTag is v1.0.0, releaseSha is the already-published tag SHA, releaseGenerated is true, and publicationEvidence records the successful workflow/release evidence.",
+    "A release-affecting product fix after RC moves the RC coordinate to a new accepted main SHA and requires rerunning affected evidence before publication authorization."
+  ],
+  "publicationEvidence": null
 }

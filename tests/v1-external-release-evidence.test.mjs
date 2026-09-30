@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { requiredProductionFrontendHeaders } from '../config/frontendSecurityPolicy.mjs';
-import { verifyFrontendSecurityHeaders } from '../scripts/verify-frontend-security-headers.mjs';
+import { buildFrontendSecurityEvidence, verifyFrontendSecurityHeaders } from '../scripts/verify-frontend-security-headers.mjs';
 import {
   REQUIRED_V1_MAIN_CHECKS,
   verifyGithubMainProtection,
@@ -65,6 +65,51 @@ test('frontend verifier returns the exact observed release headers and HTML dige
   assert.equal(result.observedHeaders['Referrer-Policy'], 'no-referrer');
   assert.equal(result.observedHeaders['Strict-Transport-Security'], 'max-age=31536000; includeSubDomains');
   assert.equal(result.htmlSha256, createHash('sha256').update(html).digest('hex'));
+});
+
+
+test('hosted frontend evidence is self-contained and binds exact workflow provenance', () => {
+  const sha='a'.repeat(40);
+  const evidence=buildFrontendSecurityEvidence({
+    frontendUrl:'https://app.example.test/',
+    coreApiUrl:'/api/core',
+    status:200,
+    requiredHeaders:{},
+    observedHeaders:{},
+    htmlSha256:'b'.repeat(64),
+  },{
+    verifiedAt:'2026-09-30T12:00:00.000Z',
+    verifiedSha:sha,
+    workflowRunUrl:'https://github.com/giltik123/bers23/actions/runs/123456789',
+    artifactName:`bers-v1-frontend-security-${sha}`,
+  });
+  assert.equal(evidence.verifiedSha,sha);
+  assert.equal(evidence.workflowRunUrl,'https://github.com/giltik123/bers23/actions/runs/123456789');
+  assert.equal(evidence.artifactName,`bers-v1-frontend-security-${sha}`);
+  assert.equal(evidence.verifiedAt,'2026-09-30T12:00:00.000Z');
+});
+
+test('hosted frontend evidence rejects partial or mismatched provenance', () => {
+  const base={
+    frontendUrl:'https://app.example.test/',
+    coreApiUrl:'/api/core',
+    status:200,
+    requiredHeaders:{},
+    observedHeaders:{},
+    htmlSha256:'c'.repeat(64),
+  };
+  assert.throws(
+    () => buildFrontendSecurityEvidence(base,{verifiedSha:'d'.repeat(40)}),
+    /workflowRunUrl is invalid/u,
+  );
+  assert.throws(
+    () => buildFrontendSecurityEvidence(base,{
+      verifiedSha:'d'.repeat(40),
+      workflowRunUrl:'https://github.com/giltik123/bers23/actions/runs/123',
+      artifactName:'wrong',
+    }),
+    /artifactName must bind verifiedSha/u,
+  );
 });
 
 test('GitHub verifier accepts an active no-bypass main ruleset with the full required release check set', async () => {
@@ -194,5 +239,11 @@ test('external release evidence workflow performs live exact-SHA frontend captur
   assert.match(workflow, /release-evidence\/v1\/frontend-security\.json/u);
   assert.match(workflow, /actions\/upload-artifact@v4/u);
   assert.match(workflow, /bers-v1-frontend-security-\$\{\{ github\.sha \}\}/u);
+  assert.match(workflow, /VERIFIED_SHA:\s*\$\{\{ github\.sha \}\}/u);
+  assert.match(workflow, /WORKFLOW_RUN_URL:\s*https:\/\/github\.com\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/u);
+  assert.match(workflow, /ARTIFACT_NAME:\s*bers-v1-frontend-security-\$\{\{ github\.sha \}\}/u);
+  assert.match(workflow, /evidence\.verifiedSha/u);
+  assert.match(workflow, /evidence\.workflowRunUrl/u);
+  assert.match(workflow, /evidence\.artifactName/u);
   assert.match(workflow, /Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
 });

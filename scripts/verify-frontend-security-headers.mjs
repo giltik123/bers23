@@ -8,6 +8,8 @@ import {
 } from '../config/frontendSecurityPolicy.mjs';
 
 const MIN_PRODUCTION_HSTS_SECONDS = 31_536_000;
+const EXACT_SHA_RE = /^[0-9a-f]{40}$/u;
+const WORKFLOW_RUN_URL_RE = /^https:\/\/github\.com\/giltik123\/bers23\/actions\/runs\/\d+$/u;
 
 export async function verifyFrontendSecurityHeaders(input) {
   const frontendUrl = normalizeFrontendUrl(input?.frontendUrl);
@@ -98,16 +100,51 @@ function normalizeFrontendUrl(value) {
   return url;
 }
 
+export function buildFrontendSecurityEvidence(result, provenance = {}) {
+  const verifiedAt = provenance.verifiedAt ?? new Date().toISOString();
+  if (typeof verifiedAt !== 'string' || !Number.isFinite(Date.parse(verifiedAt))) {
+    throw new Error('Frontend security evidence verifiedAt is invalid');
+  }
+
+  const evidence = {
+    schemaVersion: 1,
+    kind: 'BERS_V1_FRONTEND_SECURITY_EVIDENCE',
+    verifiedAt,
+    ...result,
+  };
+
+  const hosted = [provenance.verifiedSha, provenance.workflowRunUrl, provenance.artifactName];
+  const hasHosted = hosted.some(value => value !== undefined && value !== null && value !== '');
+  if (hasHosted) {
+    const verifiedSha = String(provenance.verifiedSha ?? '');
+    const workflowRunUrl = String(provenance.workflowRunUrl ?? '');
+    const artifactName = String(provenance.artifactName ?? '');
+    if (!EXACT_SHA_RE.test(verifiedSha)) {
+      throw new Error('Hosted frontend evidence verifiedSha must be one exact Git SHA');
+    }
+    if (!WORKFLOW_RUN_URL_RE.test(workflowRunUrl)) {
+      throw new Error('Hosted frontend evidence workflowRunUrl is invalid');
+    }
+    if (artifactName !== `bers-v1-frontend-security-${verifiedSha}`) {
+      throw new Error('Hosted frontend evidence artifactName must bind verifiedSha');
+    }
+    evidence.verifiedSha = verifiedSha;
+    evidence.workflowRunUrl = workflowRunUrl;
+    evidence.artifactName = artifactName;
+  }
+
+  return Object.freeze(evidence);
+}
+
 async function main() {
   const frontendUrl = process.argv[2] || process.env.FRONTEND_URL;
   const coreApiUrl = process.argv[3] || process.env.CORE_API_URL || '/api/core';
   const evidenceOut = process.env.EVIDENCE_OUT?.trim() || null;
   const result = await verifyFrontendSecurityHeaders({ frontendUrl, coreApiUrl });
-  const evidence = Object.freeze({
-    schemaVersion: 1,
-    kind: 'BERS_V1_FRONTEND_SECURITY_EVIDENCE',
-    verifiedAt: new Date().toISOString(),
-    ...result,
+  const evidence = buildFrontendSecurityEvidence(result, {
+    verifiedSha: process.env.VERIFIED_SHA,
+    workflowRunUrl: process.env.WORKFLOW_RUN_URL,
+    artifactName: process.env.ARTIFACT_NAME,
   });
   if (evidenceOut) {
     await mkdir(dirname(evidenceOut), { recursive: true });

@@ -8,6 +8,7 @@ const readiness = JSON.parse(await readFile('config/v1-release-readiness.json','
 const finalization = JSON.parse(await readFile('config/v1-release-finalization.json','utf8'));
 const journeys = JSON.parse(await readFile('config/v1-release-journey-matrix.json','utf8'));
 const packageJson = JSON.parse(await readFile('package.json','utf8'));
+const packageLock = JSON.parse(await readFile('package-lock.json','utf8'));
 const executorPolicy = await readFile('server/core/localExecution/productionLocalExecutorPolicy.ts','utf8');
 const notes = await readFile('docs/v1-release-notes.md','utf8');
 const operations = await readFile('docs/v1-release-operations.md','utf8');
@@ -59,9 +60,14 @@ test('release package version and classification follow the declared finalizatio
   assert.deepEqual(releaseStateMap,{
     BLOCKED_BEFORE_RC:'PRE_RC_EXTERNAL_BLOCKERS_REMAIN',
     RC_SELECTED:'RC_SELECTED',
+    RELEASE_AUTHORIZED:'RELEASE_AUTHORIZED',
     RELEASED:'RELEASED',
   });
   assert.equal(classifications.releaseState,releaseStateMap[finalization.status]);
+  assert.equal(packageLock.name,packageJson.name);
+  assert.equal(packageLock.version,packageJson.version);
+  assert.equal(packageLock.packages?.['']?.name,packageJson.name);
+  assert.equal(packageLock.packages?.['']?.version,packageJson.version);
 
   if (finalization.status === 'BLOCKED_BEFORE_RC') {
     assert.equal(readiness.rcSelectable,false);
@@ -75,16 +81,29 @@ test('release package version and classification follow the declared finalizatio
     assert.equal(readiness.blockers.length,0);
     assert.equal(packageJson.version,classifications.versioning.packageVersionBeforeRc);
     assert.equal(packageJson.version,'0.0.0');
+  } else if (finalization.status === 'RELEASE_AUTHORIZED') {
+    assert.equal(readiness.rcSelectable,true);
+    assert.equal(readiness.blockers.length,0);
+    assert.equal(readiness.status,'BERS_V1_RC_SELECTED');
+    assert.equal(packageJson.version,classifications.versioning.finalVersion);
+    assert.equal(packageJson.version,'1.0.0');
+    assert.equal(finalization.releaseSha,null);
+    assert.equal(finalization.releaseTag,'v1.0.0');
+    assert.equal(finalization.releaseGenerated,false);
   } else if (finalization.status === 'RELEASED') {
     assert.equal(readiness.rcSelectable,true);
     assert.equal(readiness.blockers.length,0);
+    assert.equal(readiness.status,'BERS_V1_RC_SELECTED');
     assert.equal(packageJson.version,classifications.versioning.finalVersion);
     assert.equal(packageJson.version,'1.0.0');
+    assert.match(finalization.releaseSha,/^[0-9a-f]{40}$/u);
+    assert.equal(finalization.releaseTag,'v1.0.0');
+    assert.equal(finalization.releaseGenerated,true);
   } else {
     assert.fail(`unexpected finalization status: ${finalization.status}`);
   }
 
-  assert.match(operations,/Only after all mandatory evidence is terminal green/);
+  assert.match(operations,/Only after all mandatory external evidence is accepted/);
 });
 
 test('rollback package preserves forward-migration and exact-image safety law', () => {

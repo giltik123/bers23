@@ -14,3 +14,17 @@ Stage D product decisions are already frozen and fail-closed. The browser releas
 HSME remains non-production. Its physical-device work is explicitly deferred as post-v1 R&D and still requires real-device evidence before any future production admission.
 
 Until the blocker array is empty, the classifier must emit `BERS_V1_RC_NOT_SELECTABLE` and the RC SHA remains null.
+
+
+## State transitions
+
+The readiness guard validates the ledger state rather than assuming the repository will remain blocked forever.
+
+- With one or more accepted external blockers, `rcSelectable=false`, `rcCoordinate=null`, and `status=BERS_V1_RC_NOT_SELECTABLE`.
+- Either external blocker may close independently; the remaining blocker keeps RC fail-closed.
+- The frontend blocker may be removed only when browser journey 22 is promoted from `DEPLOYMENT_TARGET_PENDING` to `PROVEN`.
+- With no blockers, `rcSelectable=true`, `rcCoordinate` must be one exact lowercase 40-character accepted `main` SHA, and `status=BERS_V1_RC_SELECTED`.
+- HSME physical-mobile work remains post-v1 and is rejected if reintroduced into the v1 blocker array.
+- Unknown blocker IDs, duplicate blockers, non-terminal mandatory browser journeys, or coordinate/status drift fail closed.
+
+The GitHub open/closed state of an issue is not itself release evidence. The machine-readable ledger may advance only after the corresponding external evidence has been reviewed and recorded.

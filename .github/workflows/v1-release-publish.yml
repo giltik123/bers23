@@ -6,21 +6,27 @@ on:
     paths:
       - '.github/workflows/v1-release-publish.yml'
       - 'scripts/generate-v1-release-manifest.mjs'
+      - 'scripts/verify-v1-release-delta.mjs'
       - 'scripts/verify-v1-required-checks.mjs'
       - 'scripts/check-v1-release-finalization.mjs'
+      - 'scripts/check-v1-release-readiness.mjs'
       - 'scripts/verify-github-main-protection.mjs'
       - 'tests/v1-release-publish.test.mjs'
       - 'tests/v1-release-finalization.test.mjs'
+      - 'tests/v1-release-readiness.test.mjs'
+      - 'tests/v1-release-journey-matrix.test.mjs'
       - 'config/v1-release-finalization.json'
       - 'config/v1-release-readiness.json'
       - 'config/v1-capability-classification.json'
+      - 'config/v1-release-journey-matrix.json'
       - 'docs/v1-release-notes.md'
       - 'docs/v1-release-operations.md'
       - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
     inputs:
       release_sha:
-        description: Exact accepted main SHA already declared RELEASED
+        description: Exact current main SHA in RELEASE_AUTHORIZED state
         required: true
         type: string
       confirm_release_tag:
@@ -54,7 +60,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Prove publish and finalization contracts
-        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs
+        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs tests/v1-release-readiness.test.mjs tests/v1-release-journey-matrix.test.mjs
       - name: Check committed diff whitespace
         run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
 
@@ -71,7 +77,7 @@ jobs:
           ref: ${{ inputs.release_sha }}
           fetch-depth: 0
 
-      - name: Require exact current main release coordinate
+      - name: Require exact current main publication SHA
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
           CONFIRM_RELEASE_TAG: ${{ inputs.confirm_release_tag }}
@@ -93,18 +99,39 @@ jobs:
       - run: npm ci
 
       - name: Re-prove release transition contracts
-        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs
+        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs tests/v1-release-readiness.test.mjs tests/v1-release-journey-matrix.test.mjs
 
-      - name: Require committed RELEASED disposition
+      - name: Require committed RELEASE_AUTHORIZED disposition
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
         run: |
           set -euo pipefail
           mkdir -p .release-pack
+          node scripts/check-v1-release-readiness.mjs | tee .release-pack/readiness.log
+          grep -q '^BERS_V1_RC_SELECTED ' .release-pack/readiness.log
+          ! grep -q 'BERS_V1_RC_NOT_SELECTABLE' .release-pack/readiness.log
           node scripts/check-v1-release-finalization.mjs | tee .release-pack/finalization.log
-          grep -q '^BERS_V1_0_RELEASED ' .release-pack/finalization.log
+          grep -q '^BERS_V1_RELEASE_AUTHORIZED ' .release-pack/finalization.log
           ! grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .release-pack/finalization.log
           ! grep -q 'BERS_V1_RC_SELECTED' .release-pack/finalization.log
+          ! grep -q 'BERS_V1_0_RELEASED' .release-pack/finalization.log
+          RC_SHA="$(node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const value=JSON.parse(readFileSync('config/v1-release-readiness.json','utf8'));
+          process.stdout.write(String(value.rcCoordinate ?? ''));
+          NODE
+          )"
+          [[ "${RC_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "${RC_SHA}" != "${RELEASE_SHA}"
+          echo "RC_SHA=${RC_SHA}" >> "${GITHUB_ENV}"
 
-      - name: Require mandatory acceptance checks on exact release SHA
+      - name: Require release-metadata-only delta from selected RC
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          EVIDENCE_OUT: .release-pack/release-delta.json
+        run: node scripts/verify-v1-release-delta.mjs
+
+      - name: Require mandatory acceptance checks on exact publication SHA
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ inputs.release_sha }}
@@ -124,6 +151,8 @@ jobs:
           if (manifest.program !== 'BERS_V1_RELEASE_MANIFEST') throw new Error('release manifest program mismatch');
           if (manifest.releaseTag !== 'v1.0.0') throw new Error('release manifest tag mismatch');
           if (manifest.releaseSha !== process.env.RELEASE_SHA) throw new Error('release manifest SHA mismatch');
+          if (manifest.rcCoordinate !== process.env.RC_SHA) throw new Error('release manifest RC mismatch');
+          if (manifest.finalization.status !== 'RELEASE_AUTHORIZED') throw new Error('release manifest authorization mismatch');
           NODE
 
       - name: Require unused final release namespace
@@ -149,6 +178,33 @@ jobs:
             --latest
           touch "${RUNNER_TEMP}/bers-v1-release-created-by-this-run"
 
+      - name: Generate post-publication evidence
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          RELEASE_MANIFEST_SHA256="$(sha256sum .release-pack/bers-v1.0.0-release-manifest.json | cut -d' ' -f1)"
+          REQUIRED_CHECKS_SHA256="$(sha256sum .release-pack/required-checks.json | cut -d' ' -f1)"
+          RELEASE_DELTA_SHA256="$(sha256sum .release-pack/release-delta.json | cut -d' ' -f1)"
+          export RELEASE_MANIFEST_SHA256 REQUIRED_CHECKS_SHA256 RELEASE_DELTA_SHA256
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const value={
+            schemaVersion:1,
+            kind:'BERS_V1_PUBLICATION_EVIDENCE',
+            rcCoordinate:process.env.RC_SHA,
+            releaseSha:process.env.RELEASE_SHA,
+            releaseTag:'v1.0.0',
+            workflowRunUrl:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            releaseUrl:`https://github.com/${process.env.GITHUB_REPOSITORY}/releases/tag/v1.0.0`,
+            releaseManifestSha256:process.env.RELEASE_MANIFEST_SHA256,
+            requiredChecksSha256:process.env.REQUIRED_CHECKS_SHA256,
+            releaseDeltaSha256:process.env.RELEASE_DELTA_SHA256,
+            publishedAt:new Date().toISOString(),
+          };
+          fs.writeFileSync('.release-pack/publication-evidence.json',JSON.stringify(value,null,2)+'\n');
+          NODE
+
       - name: Upload release evidence assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -156,7 +212,9 @@ jobs:
           set -euo pipefail
           gh release upload v1.0.0 \
             .release-pack/bers-v1.0.0-release-manifest.json \
-            .release-pack/required-checks.json
+            .release-pack/required-checks.json \
+            .release-pack/release-delta.json \
+            .release-pack/publication-evidence.json
 
       - name: Re-download and verify published release
         env:
@@ -172,6 +230,8 @@ jobs:
           gh release download v1.0.0 --dir "${published}"
           cmp .release-pack/bers-v1.0.0-release-manifest.json "${published}/bers-v1.0.0-release-manifest.json"
           cmp .release-pack/required-checks.json "${published}/required-checks.json"
+          cmp .release-pack/release-delta.json "${published}/release-delta.json"
+          cmp .release-pack/publication-evidence.json "${published}/publication-evidence.json"
 
       - name: Cleanup release created by this run on failure
         if: ${{ failure() }}
@@ -187,11 +247,14 @@ jobs:
           RELEASE_SHA: ${{ inputs.release_sha }}
         run: |
           {
-            echo '## BERS v1.0.0 released'
+            echo '## BERS v1.0.0 publication complete'
             echo
-            echo "- Exact release SHA: \`${RELEASE_SHA}\`"
+            echo "- Selected RC SHA: \`${RC_SHA}\`"
+            echo "- Exact published SHA: \`${RELEASE_SHA}\`"
             echo '- Tag: `v1.0.0`'
-            echo '- Finalization disposition: RELEASED'
+            echo '- Pre-publication disposition: RELEASE_AUTHORIZED'
             echo '- Required exact-SHA acceptance checks: PASS'
-            echo '- Release manifest generated and re-downloaded byte-identically: PASS'
+            echo '- RC-to-publication delta: metadata-only PASS'
+            echo '- Release evidence re-downloaded byte-identically: PASS'
+            echo '- Next ledger transition: commit post-publication RELEASED evidence without moving the published tag.'
           } >> "${GITHUB_STEP_SUMMARY}"
