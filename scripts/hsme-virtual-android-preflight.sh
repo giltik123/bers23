@@ -59,7 +59,7 @@ if [[ -z "$pid" ]]; then
   echo "Could not resolve an Android process for RSS capture" >&2
   exit 1
 fi
-rss_kb="$(adb shell "awk '/^VmRSS:/ {print \\$2}' /proc/$pid/status" | tr -d '\r')"
+rss_kb="$(adb shell cat /proc/$pid/status | tr -d '\r' | awk '/^VmRSS:/ {print $2}')"
 if ! [[ "$rss_kb" =~ ^[0-9]+$ ]] || (( rss_kb <= 0 )); then
   echo "Invalid VmRSS reading: $rss_kb" >&2
   exit 1
