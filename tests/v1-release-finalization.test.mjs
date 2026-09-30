@@ -154,6 +154,11 @@ test('release-finalization workflow accepts every manifest state and keeps diff 
   assert.match(workflow,/BERS_V1_RC_SELECTED/u);
   assert.match(workflow,/BERS_V1_RELEASE_AUTHORIZED/u);
   assert.match(workflow,/BERS_V1_0_RELEASED/u);
+  assert.match(workflow,/Verify immutable published v1\.0\.0 evidence when RELEASED/u);
+  assert.match(workflow,/git fetch origin tag v1\.0\.0/u);
+  assert.match(workflow,/gh release download v1\.0\.0/u);
+  assert.match(workflow,/published publication evidence does not match committed ledger/u);
+  assert.match(workflow,/published delta coordinate mismatch/u);
   assert.match(workflow,/Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
 });
 
