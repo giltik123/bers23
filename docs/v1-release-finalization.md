@@ -60,3 +60,5 @@ The finalization validator also binds `config/v1-capability-classification.json`
 - the machine-readable `releaseStateByFinalizationStatus` mapping must retain those exact three values.
 
 This prevents a final release from being published while capability classification still describes a pre-RC or RC-only state.
+
+The same guard also requires the canonical program identities for readiness, finalization, and capability classification, and requires readiness status `BERS_V1_RC_NOT_SELECTABLE` while blocked or `BERS_V1_RC_SELECTED` once blockers are empty.
