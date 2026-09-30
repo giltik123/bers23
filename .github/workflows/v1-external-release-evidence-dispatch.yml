@@ -57,6 +57,7 @@ jobs:
             const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
             let run;
+            let statusCommentId = null;
             for (let attempt = 0; attempt < 60; attempt += 1) {
               const listed = await github.rest.actions.listWorkflowRuns({
                 owner,
@@ -75,8 +76,36 @@ jobs:
               await sleep(3000);
             }
             if (!run) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body: [
+                  'BERS v1 hosted frontend evidence dispatch failed before run resolution.',
+                  '',
+                  `- verifiedSha: \`${expectedSha}\``,
+                  '- workflowRunUrl: unresolved',
+                  '- conclusion: `RUN_RESOLUTION_FAILED`',
+                ].join('\n'),
+              });
               throw new Error(`Could not resolve newly dispatched frontend evidence run for ${expectedSha}`);
             }
+
+            const workflowRunUrl = `https://github.com/${owner}/${repo}/actions/runs/${run.id}`;
+            const statusComment = await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: [
+                'BERS v1 hosted frontend evidence run resolved; completion pending.',
+                '',
+                `- verifiedSha: \`${expectedSha}\``,
+                `- workflowRunUrl: \`${workflowRunUrl}\``,
+                `- runId: \`${run.id}\``,
+                `- status: \`${run.status}\``,
+              ].join('\n'),
+            });
+            statusCommentId = statusComment.data.id;
 
             for (let attempt = 0; attempt < 120; attempt += 1) {
               const current = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: run.id });
@@ -84,13 +113,54 @@ jobs:
               if (run.status === 'completed') break;
               await sleep(5000);
             }
+
             if (run.status !== 'completed') {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: statusCommentId,
+                body: [
+                  'BERS v1 hosted frontend evidence run did not complete within the bridge timeout.',
+                  '',
+                  `- verifiedSha: \`${expectedSha}\``,
+                  `- workflowRunUrl: \`${workflowRunUrl}\``,
+                  `- runId: \`${run.id}\``,
+                  `- status: \`${run.status}\``,
+                  '- conclusion: `TIMEOUT`',
+                ].join('\n'),
+              });
               throw new Error(`Frontend evidence run ${run.id} did not complete within the bridge timeout`);
             }
             if (run.conclusion !== 'success') {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: statusCommentId,
+                body: [
+                  'BERS v1 hosted frontend evidence failed.',
+                  '',
+                  `- verifiedSha: \`${expectedSha}\``,
+                  `- workflowRunUrl: \`${workflowRunUrl}\``,
+                  `- runId: \`${run.id}\``,
+                  `- conclusion: \`${run.conclusion}\``,
+                ].join('\n'),
+              });
               throw new Error(`Frontend evidence run ${run.id} concluded ${run.conclusion}`);
             }
             if (run.head_sha !== expectedSha || run.event !== 'workflow_dispatch') {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: statusCommentId,
+                body: [
+                  'BERS v1 hosted frontend evidence provenance mismatch.',
+                  '',
+                  `- expectedSha: \`${expectedSha}\``,
+                  `- observedSha: \`${run.head_sha}\``,
+                  `- workflowRunUrl: \`${workflowRunUrl}\``,
+                  `- event: \`${run.event}\``,
+                ].join('\n'),
+              });
               throw new Error(`Frontend evidence run ${run.id} provenance mismatch`);
             }
 
@@ -106,14 +176,26 @@ jobs:
               candidate.expired === false
             );
             if (!artifact) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: statusCommentId,
+                body: [
+                  'BERS v1 hosted frontend evidence completed but the required artifact is missing.',
+                  '',
+                  `- verifiedSha: \`${expectedSha}\``,
+                  `- workflowRunUrl: \`${workflowRunUrl}\``,
+                  `- expectedArtifactName: \`${expectedArtifactName}\``,
+                  '- conclusion: `ARTIFACT_MISSING`',
+                ].join('\n'),
+              });
               throw new Error(`Frontend evidence run ${run.id} is missing ${expectedArtifactName}`);
             }
 
-            const workflowRunUrl = `https://github.com/${owner}/${repo}/actions/runs/${run.id}`;
-            await github.rest.issues.createComment({
+            await github.rest.issues.updateComment({
               owner,
               repo,
-              issue_number,
+              comment_id: statusCommentId,
               body: [
                 'BERS v1 hosted frontend evidence completed successfully.',
                 '',
