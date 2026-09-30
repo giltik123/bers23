@@ -46,7 +46,7 @@ async function state(pool: Pool) {
     pool.query(`SELECT column_name,udt_name,is_nullable,column_default FROM information_schema.columns
       WHERE table_schema=current_schema() AND table_name=$1`, [TABLE]),
     pool.query(`SELECT conname,contype,convalidated,pg_get_constraintdef(oid) AS definition
-      FROM pg_constraint WHERE conrelid=to_regclass($1)`, [TABLE]),
+      FROM pg_constraint WHERE conrelid=to_regclass($1) AND contype <> 'n'`, [TABLE]),
     pool.query(`SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename=$1`, [TABLE]),
     pool.query(`SELECT t.tgname,t.tgenabled,t.tgtype,p.proname
       FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
