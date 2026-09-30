@@ -38,11 +38,37 @@ jobs:
       - run: npm ci
       - name: Prove release state transition guard
         run: node --test tests/v1-release-finalization.test.mjs
-      - name: Emit release finalization disposition
+      - name: Emit manifest-matched release finalization disposition
         run: |
           set -euo pipefail
           node scripts/check-v1-release-finalization.mjs | tee .test-cache-v1-release-finalization.log
-          grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .test-cache-v1-release-finalization.log
-          ! grep -q 'BERS_V1_0_RELEASED' .test-cache-v1-release-finalization.log
+          status="$(node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const value = JSON.parse(readFileSync('config/v1-release-finalization.json', 'utf8'));
+          process.stdout.write(String(value.status ?? ''));
+          NODE
+          )"
+          case "$status" in
+            BLOCKED_BEFORE_RC)
+              grep -q '^BERS_V1_RELEASE_FINALIZATION_BLOCKED ' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_RC_SELECTED' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_0_RELEASED' .test-cache-v1-release-finalization.log
+              ;;
+            RC_SELECTED)
+              grep -q '^BERS_V1_RC_SELECTED ' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_0_RELEASED' .test-cache-v1-release-finalization.log
+              ;;
+            RELEASED)
+              grep -q '^BERS_V1_0_RELEASED ' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_RC_SELECTED' .test-cache-v1-release-finalization.log
+              ;;
+            *)
+              echo "Unknown release-finalization status: $status" >&2
+              exit 1
+              ;;
+          esac
       - name: Check committed diff whitespace
+        if: github.event_name == 'pull_request'
         run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
