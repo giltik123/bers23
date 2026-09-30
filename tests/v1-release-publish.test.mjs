@@ -171,3 +171,31 @@ test('publish workflow is manual-write, exact-SHA and cleanup guarded', async ()
   assert.match(workflow,/cmp \.release-pack\/bers-v1\.0\.0-release-manifest\.json/u);
   assert.match(workflow,/release delete v1\.0\.0 --yes --cleanup-tag/u);
 });
+
+
+test('every mandatory release context is produced on an exact main push', async () => {
+  const requiredWorkflows=[
+    '.github/workflows/node.js.yml',
+    '.github/workflows/sprint-6.42-integration.yml',
+    '.github/workflows/security-audit.yml',
+    '.github/workflows/sprint-6.42d3-tiny-sd-precision.yml',
+    '.github/workflows/sprint-6.42d3-tiny-sd-wasm-compact.yml',
+    '.github/workflows/sprint-6.42d4-tiny-sd-ort-memory.yml',
+    '.github/workflows/sprint-6.42d5-tiny-sd-pipeline.yml',
+  ];
+  for (const workflowPath of requiredWorkflows) {
+    const source=await readFile(workflowPath,'utf8');
+    assert.match(
+      source,
+      /on:\s*\n(?:[\s\S]*?\n)?\s*push:\s*\n\s*branches:\s*\[(?:\s*)["']main["'](?:\s*)\]/u,
+      `${workflowPath} must run on main push`,
+    );
+  }
+
+  for (const workflowPath of requiredWorkflows.slice(3)) {
+    const source=await readFile(workflowPath,'utf8');
+    assert.match(source,/BASE_SHA: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.base\.sha \|\| github\.event\.before \}\}/u);
+    assert.match(source,/HEAD_SHA: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/u);
+    assert.match(source,/\[ "\$\{EVENT_NAME\}" != "pull_request" \] && \[ "\$\{EVENT_NAME\}" != "push" \]/u);
+  }
+});
