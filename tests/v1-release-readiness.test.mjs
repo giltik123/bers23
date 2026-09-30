@@ -59,6 +59,32 @@ function frontendLiveEvidence(sha) {
   };
 }
 
+function frontendBlocker() {
+  return {
+    id:'FRONTEND_DEPLOYMENT_HEADERS',
+    issue:233,
+    releaseGate:'R4',
+    state:'EXTERNAL_DEPLOYMENT_EVIDENCE_PENDING',
+    evidence:'config/v1-release-journey-matrix.json#journey-22',
+    resolution:'Run the accepted hosted frontend evidence verifier and record exact deployment evidence.',
+  };
+}
+
+function pendingFrontendJourneys() {
+  return {
+    ...journeys,
+    entries:journeys.entries.map(value => {
+      if (value.id !== 22) return value;
+      const { liveEvidence, ...rest } = value;
+      return {
+        ...rest,
+        disposition:'DEPLOYMENT_TARGET_PENDING',
+        reason:'Fixture: final canonical deployed frontend evidence is pending.',
+      };
+    }),
+  };
+}
+
 test('current RC readiness matches its machine-readable state', () => {
   const result=validateV1ReleaseReadiness({readiness,journeys,stageD});
   const expected=readiness.blockers.length > 0
@@ -197,12 +223,12 @@ test('readiness state machine rejects premature RC selection and frontend blocke
     () => validateV1ReleaseReadiness({
       readiness:{
         ...readiness,
-        blockers:readiness.blockers.filter(value=>value.id!=='FRONTEND_DEPLOYMENT_HEADERS'),
+        blockers:[...readiness.blockers.filter(value=>value.id!=='FRONTEND_DEPLOYMENT_HEADERS')],
         rcSelectable:false,
         rcCoordinate:null,
         status:'BERS_V1_RC_NOT_SELECTABLE',
       },
-      journeys,
+      journeys:pendingFrontendJourneys(),
       stageD,
     }),
     /journey 22 must be PROVEN/u,
@@ -240,13 +266,13 @@ test('readiness state machine keeps deployment pending when only frontend blocke
   const result=validateV1ReleaseReadiness({
     readiness:{
       ...readiness,
-      blockers:readiness.blockers.filter(value=>value.id==='FRONTEND_DEPLOYMENT_HEADERS'),
+      blockers:[frontendBlocker()],
       rcSelectable:false,
       rcCoordinate:null,
       status:'BERS_V1_RC_NOT_SELECTABLE',
       mainProtectionEvidence:mainProtectionEvidence(),
     },
-    journeys,
+    journeys:pendingFrontendJourneys(),
     stageD,
   });
   assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
