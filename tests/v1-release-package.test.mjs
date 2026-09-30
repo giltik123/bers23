@@ -75,7 +75,8 @@ test('release package version and classification follow the declared finalizatio
     assert.equal(packageJson.version,classifications.versioning.packageVersionBeforeRc);
     assert.equal(packageJson.version,'0.0.0');
     assert.match(notes,/not.*declaration.*v1\.0.*shipped/is);
-    assert.equal(journeys.entries.find(value=>value.id===22).disposition,'DEPLOYMENT_TARGET_PENDING');
+    const frontendBlocked=readiness.blockers.some(value=>value.id==='FRONTEND_DEPLOYMENT_HEADERS');
+    assert.equal(journeys.entries.find(value=>value.id===22).disposition,frontendBlocked ? 'DEPLOYMENT_TARGET_PENDING' : 'PROVEN');
   } else if (finalization.status === 'RC_SELECTED') {
     assert.equal(readiness.rcSelectable,true);
     assert.equal(readiness.blockers.length,0);
