@@ -103,7 +103,7 @@ test('release package version and classification follow the declared finalizatio
     assert.fail(`unexpected finalization status: ${finalization.status}`);
   }
 
-  assert.match(operations,/Only after all mandatory evidence is terminal green/);
+  assert.match(operations,/Only after all mandatory external evidence is accepted/);
 });
 
 test('rollback package preserves forward-migration and exact-image safety law', () => {

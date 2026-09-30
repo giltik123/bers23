@@ -281,6 +281,7 @@ test('readiness state machine rejects RC selection that is not the reviewed fron
         rcSelectable:true,
         rcCoordinate:rcSha,
         status:'BERS_V1_RC_SELECTED',
+        mainProtectionEvidence:mainProtectionEvidence(),
       },
       journeys:selectedJourneys,
       stageD,
