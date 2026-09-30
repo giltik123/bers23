@@ -1,0 +1,103 @@
+name: HSME virtual Android preflight
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/hsme-virtual-android-preflight.sh'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationNativeMobileWorkingSetAdaptersV1.ts'
+      - 'src/platform/creative/local-ai/hsme/HsmeFoundationPhysicalMobileValidationEvidenceV1.ts'
+      - 'server/core/training/HsmeRealMobileQualificationV1.ts'
+      - 'server/core/training/HsmeRealMobileQualificationV1.test.mjs'
+      - '.github/workflows/hsme-virtual-android-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  virtual-android-preflight:
+    name: virtual Android preflight (non-physical evidence)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Enable KVM for Android Emulator
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+          ls -l /dev/kvm
+
+      - name: Boot Pixel-like Android AVD and capture virtual-device preflight evidence
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash scripts/hsme-virtual-android-preflight.sh
+
+      - name: Prove emulator evidence stays outside the physical-mobile trust boundary
+        run: |
+          set -euo pipefail
+          E=artifacts/hsme-virtual-android-preflight/evidence.json
+          test "$(jq -r '.evidenceClass' "$E")" = "VIRTUAL_ANDROID_PREFLIGHT_ONLY"
+          test "$(jq -r '.virtualDevice' "$E")" = "true"
+          test "$(jq -r '.realPhysicalMobileDeviceMeasurement' "$E")" = "false"
+          test "$(jq -r '.physicalDeviceAttestationSha256' "$E")" = "null"
+          test "$(jq -r '.energyMicroJoulesPerRun' "$E")" = "null"
+          test "$(jq -r '.powerSource' "$E")" = "SIMULATED_BATTERY"
+          test "$(jq -r '.productionAuthorityGranted' "$E")" = "false"
+          test "$(jq -r '.mobileBackendAdmissionAllowed' "$E")" = "false"
+
+      - name: Run HSME real-mobile fail-closed contract regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-virtual-android
+          npx esbuild server/core/training/HsmeRealMobileQualificationV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-virtual-android/real-mobile-qualification.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-virtual-android/real-mobile-qualification.test.mjs
+
+      - name: Prove virtual preflight cannot claim real physical qualification
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/hsme-virtual-android-preflight.sh
+          CONTRACT=server/core/training/HsmeRealMobileQualificationV1.ts
+          grep -F 'VIRTUAL_ANDROID_PREFLIGHT_ONLY' "$SCRIPT"
+          grep -F 'realPhysicalMobileDeviceMeasurement:false' "$SCRIPT"
+          grep -F 'powerSource:"SIMULATED_BATTERY"' "$SCRIPT"
+          grep -F 'mobileBackendAdmissionAllowed:false' "$SCRIPT"
+          grep -F 'realPhysicalMobileDeviceEvidence must be true' "$CONTRACT"
+
+      - name: Upload virtual Android evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsme-virtual-android-preflight
+          path: artifacts/hsme-virtual-android-preflight
+          if-no-files-found: error
+
+      - name: Diff hygiene
+        if: ${{ github.event_name == 'pull_request' }}
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
