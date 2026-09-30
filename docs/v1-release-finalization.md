@@ -35,3 +35,16 @@ Allowed only after final evidence is green on the exact accepted release coordin
 - the GitHub tag/release must be created from that exact SHA only.
 
 A release-affecting fix after RC invalidates the old coordinate for finalization and requires moving to the new accepted `main` SHA.
+
+
+## CI transition guard
+
+The `BERS v1 release finalization guard` workflow validates the disposition declared by `config/v1-release-finalization.json` rather than assuming the repository is permanently blocked.
+
+- `BLOCKED_BEFORE_RC` must emit only the blocked disposition;
+- `RC_SELECTED` must emit `BERS_V1_RC_SELECTED`;
+- `RELEASED` must emit `BERS_V1_0_RELEASED`;
+- unknown states fail closed;
+- manual `workflow_dispatch` runs validate the exact dispatched SHA, while committed-diff hygiene remains PR-only.
+
+This allows the same immutable guard to remain valid when the two external RC blockers are eventually removed.
