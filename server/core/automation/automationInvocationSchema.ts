@@ -67,8 +67,13 @@ async function state(pool: Pool) {
     pool.query("SELECT to_regclass('canonical_automation_invocation_bindings')::text AS table_name"),
     pool.query(`SELECT column_name,udt_name,is_nullable,column_default,character_maximum_length
       FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=$1`, [TABLE]),
+    // PostgreSQL 18 exposes column NOT NULL constraints in pg_constraint as
+    // contype='n'. Nullability is already checked exactly via information_schema
+    // above, so exclude only those system representations from the semantic
+    // table-constraint inventory while keeping unexpected PK/UQ/CHECK/FK rows
+    // fail-closed through the exact-size check below.
     pool.query(`SELECT conname,contype,convalidated,pg_get_constraintdef(oid) AS definition
-      FROM pg_constraint WHERE conrelid=to_regclass($1)`, [TABLE]),
+      FROM pg_constraint WHERE conrelid=to_regclass($1) AND contype <> 'n'`, [TABLE]),
     pool.query(`SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename=$1`, [TABLE]),
     pool.query(`SELECT t.tgname,t.tgtype,t.tgenabled,p.proname,p.prosrc
       FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
