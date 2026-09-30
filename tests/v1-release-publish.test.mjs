@@ -273,6 +273,8 @@ test('publish workflow is manual-write, authorization-gated, delta-guarded and c
   assert.match(workflow,/ref: \$\{\{ inputs\.release_sha \}\}/u);
   assert.match(workflow,/test "\$\{GITHUB_REF_NAME\}" = main/u);
   assert.match(workflow,/git rev-parse origin\/main/u);
+  assert.match(workflow,/check-v1-release-readiness\.mjs/u);
+  assert.match(workflow,/\^BERS_V1_RC_SELECTED /u);
   assert.match(workflow,/\^BERS_V1_RELEASE_AUTHORIZED /u);
   assert.doesNotMatch(workflow,/grep -q '\^BERS_V1_0_RELEASED /u);
   assert.match(workflow,/RC_SHA=/u);
