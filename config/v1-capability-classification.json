@@ -126,6 +126,11 @@
   "versioning": {
     "packageVersionBeforeRc": "0.0.0",
     "finalVersion": "1.0.0",
-    "bumpLaw": "Do not change package.json to 1.0.0 and do not create the v1.0.0 release/tag until the RC readiness ledger has no blockers and final exact-head evidence is green."
+    "bumpLaw": "Do not change package.json to 1.0.0 and do not create the v1.0.0 release/tag until the RC readiness ledger has no blockers and final exact-head evidence is green.",
+    "releaseStateByFinalizationStatus": {
+      "BLOCKED_BEFORE_RC": "PRE_RC_EXTERNAL_BLOCKERS_REMAIN",
+      "RC_SELECTED": "RC_SELECTED",
+      "RELEASED": "RELEASED"
+    }
   }
 }
