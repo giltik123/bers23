@@ -37,19 +37,24 @@ Application rollback means routing traffic back to the previous immutable Core i
 
 ## Final release declaration
 
-Only after all mandatory evidence is terminal green on the final accepted SHA:
+Only after all mandatory external evidence is accepted:
 
-1. set the exact release coordinate in the readiness/finalization manifests;
-2. bump `package.json` from the pre-release placeholder to `1.0.0`;
-3. update the release notes so they no longer describe a pre-RC or blocked state;
-4. merge the finalization change to `main` and require mandatory CI green on that exact merged SHA;
-5. manually dispatch **BERS v1.0 fail-closed publish** from `main`, supplying that exact SHA and typing `v1.0.0` as the confirmation value;
-6. allow the workflow to re-prove the finalization state, verify the immutable required checks on that SHA, generate the deterministic release manifest, require the tag/release namespace to be unused, and only then create `v1.0.0`;
-7. require the workflow to re-download the published evidence assets byte-identically and verify that the tag resolves to the same SHA;
-8. update #365 with the exact SHA/tag/evidence and declare **BERS v1.0 RELEASED** externally.
+1. choose one exact already-existing accepted `main` product SHA as `BERS_V1_RC`;
+2. commit the RC ledger transition: empty blockers, `rcSelectable=true`, readiness `status=BERS_V1_RC_SELECTED`, readiness/finalization `rcCoordinate=<RC SHA>`, journey 22 `PROVEN` with reviewed live evidence, finalization `RC_SELECTED`, and capability classification `RC_SELECTED`;
+3. require the RC-selection metadata PR and resulting `main` state to stay product-code clean;
+4. prepare the publication-authorization metadata change: bump `package.json` and `package-lock.json` to `1.0.0`, make release notes final, set `releaseTag=v1.0.0`, finalization `RELEASE_AUTHORIZED`, classification `RELEASE_AUTHORIZED`, while keeping `releaseSha=null`, `publicationEvidence=null`, and `releaseGenerated=false`;
+5. merge that authorization change to `main` and require all mandatory exact-main checks green on the resulting authorization SHA;
+6. manually dispatch **BERS v1.0 fail-closed publish** from `main`, supplying that exact authorization SHA and typing `v1.0.0` as the confirmation value;
+7. allow the workflow to re-prove `RELEASE_AUTHORIZED`, require the selected RC to be an ancestor, reject every RC-to-publication changed path outside the release-metadata allowlist, verify the mandatory checks on the exact authorization SHA, generate the deterministic release manifest, require the tag/release namespace to be unused, and only then create `v1.0.0`;
+8. require the workflow to upload and re-download byte-identically the release manifest, required-check evidence, release-delta evidence, and post-publication evidence;
+9. verify `v1.0.0` resolves to the exact authorization SHA;
+10. commit the post-publication ledger transition: finalization `RELEASED`, classification `RELEASED`, `releaseSha=<published tag SHA>`, `releaseGenerated=true`, and the exact `publicationEvidence` emitted by the successful publication run;
+11. update #365 with the RC SHA, published SHA, tag, workflow run, release URL and evidence identities, then declare **BERS v1.0 RELEASED** externally.
 
-The committed `RELEASED` finalization state is necessary publication authorization, but it is not by itself evidence that the GitHub release exists. The external release declaration is valid only after the publish workflow succeeds and the exact-SHA tag/release is observable.
+The exact published SHA is discovered at publication time; a tracked file is never required to contain the SHA of the commit that contains that file. This avoids a cryptographic self-reference that cannot be satisfied by ordinary Git commits.
 
-The publish workflow writes only after every preflight passes. If a later step fails, cleanup is allowed only when that run created the release itself; pre-existing release/tag state is never overwritten or deleted.
+The selected RC SHA and the published SHA may therefore differ, but only because reviewed release metadata was committed between them. `scripts/verify-v1-release-delta.mjs` rejects product/runtime/code drift. Any product-affecting fix after RC moves the RC coordinate and reruns affected evidence.
 
-Any release-affecting fix after RC moves the coordinate to the new accepted `main` SHA and reruns affected evidence.
+The post-publication `RELEASED` ledger commit never moves or recreates `v1.0.0`. It records an already-existing immutable publication fact.
+
+The publish workflow writes only after every preflight passes. If a later publication step fails, cleanup is allowed only when that run created the release itself; pre-existing release/tag state is never overwritten or deleted.
