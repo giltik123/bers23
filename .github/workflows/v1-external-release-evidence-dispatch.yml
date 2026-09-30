@@ -1,0 +1,38 @@
+name: BERS v1 external evidence dispatch bridge
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  issues: read
+
+jobs:
+  dispatch-frontend-evidence:
+    if: >-
+      github.event.issue.number == 233 &&
+      github.event.comment.user.login == github.repository_owner &&
+      github.event.comment.author_association == 'OWNER' &&
+      github.event.comment.body == '/bers-v1-dispatch-frontend-evidence'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dispatch canonical BERS v1 frontend evidence workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const ref = context.payload.repository.default_branch;
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: 'v1-external-release-evidence.yml',
+              ref,
+              inputs: {
+                frontend_url: 'https://bers-v1-frontend-production.up.railway.app',
+                core_api_url: 'https://bers-v1-core-production.up.railway.app/api/core',
+              },
+            });
+            core.notice(`Dispatched BERS v1 external release evidence on ${ref}`);
