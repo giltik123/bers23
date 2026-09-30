@@ -10,6 +10,7 @@ on:
       - 'scripts/check-v1-release-readiness.mjs'
       - 'tests/v1-release-readiness.test.mjs'
       - 'docs/v1-release-readiness.md'
+      - 'BERS_V1_DEVELOPMENT_ROADMAP.md'
       - '.github/workflows/v1-release-readiness.yml'
   workflow_dispatch:
 

@@ -7,7 +7,7 @@ This checklist packages the existing Core deployment/security contracts into the
 - `config/v1-release-readiness.json` has an empty blocker array and `rcSelectable=true`.
 - #233 journey 22 is PROVEN against the **final canonical frontend URL** using `scripts/verify-frontend-security-headers.mjs`.
 - GitHub-level `main` protection/ruleset evidence satisfies #355.
-- The mandatory HSME real-mobile evidence gate recorded by #352/#862/#871/#867 is complete.
+- HSME remains non-production and its physical-mobile qualification stays deferred post-v1; no HSME production admission is implied by release.
 - Stage D decisions and capability classifications still match the production policies.
 - Billing remains disabled/deferred unless a separately accepted financial redesign changes the release scope.
 

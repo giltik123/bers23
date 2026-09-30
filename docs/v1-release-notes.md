@@ -22,7 +22,7 @@ The following existing code/research does not gain production authority merely b
 
 - Levels / Masked Levels reviewed kernels are not admitted production Editor executors.
 - MobileSAM, MODNet, Real-ESRGAN, Big-LaMa, Tiny-SD and Kandinsky remain CANDIDATE/R&D under the Stage D v1 decision matrix.
-- HSME remains non-production and still requires trusted physical-mobile evidence before the mandatory Stage E release gate can close.
+- HSME remains non-production. Physical-mobile qualification is explicitly deferred to post-v1 research and grants no v1 production authority.
 - Billing/payments/subscriptions/credits are deferred for redesign and are outside the v1 product floor.
 - Voice input, persistent Agent memory and durable user ranking/feedback collection are not enabled v1 production surfaces.
 - Broader autonomous/multimodal Agent behavior beyond the bounded accepted v1 subset is not enabled.
@@ -32,7 +32,8 @@ The following existing code/research does not gain production authority merely b
 The repository is prepared for RC finalization, but the current release-readiness ledger remains fail-closed on external evidence:
 
 1. final deployed frontend HTTP security-header verification;
-2. GitHub-level protection/ruleset enforcement for `main`;
-3. trusted physical-mobile HSME backend/device evidence required by the canonical roadmap.
+2. GitHub-level protection/ruleset enforcement for `main`.
+
+Physical-mobile HSME qualification remains open post-v1 research and is not a v1 RC blocker.
 
 Until those are removed from `config/v1-release-readiness.json`, no `BERS_V1_RC`, `v1.0.0` tag or release declaration is valid.

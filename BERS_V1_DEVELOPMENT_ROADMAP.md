@@ -749,9 +749,11 @@ Pre-release milestone:
 - at least one clear product decision exists for each enabled generative capability: production candidate, limited supported tier, deterministic fallback, or explicit rejection;
 - unresolved research does not masquerade as enabled product behavior.
 
-### Stage E — BERS Local-First AI Engine: HSME + Hierarchical Adapter-MoE + FreeToken-inspired Runtime
+### Stage E — Post-v1 BERS Local-First AI Engine R&D: HSME + Hierarchical Adapter-MoE + FreeToken-inspired Runtime
 
-Goal: complete a meaningful pre-release implementation/evidence validation of the long-term BERS-owned local-first image AI architecture rather than maintaining separate older `MoE/DiT` and newer HSME roadmaps.
+Goal: continue a meaningful post-v1 implementation/evidence validation of the long-term BERS-owned local-first image AI architecture without making unfinished hardware research a BERS v1 release dependency.
+
+**v1 scope decision:** Stage E/HSME is explicitly non-blocking for `BERS_V1_RC` and `BERS v1.0 RELEASE`. Existing HSME software/research stays fail-closed and non-production. Physical-mobile qualification remains mandatory before any later HSME production admission or HSME-specific supported-device claim, but it is not required to release the current v1 product surface.
 
 The detailed companion authority for this R&D architecture is `BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md` together with #352. The master sequence below intentionally follows the newer HSME architecture:
 
@@ -840,17 +842,17 @@ Desktop/native:
 
 Mobile:
 
-- at least one functioning real mobile backend is required for the pre-RC feasibility gate;
+- at least one functioning real mobile backend remains required before any future HSME mobile production admission or supported-device qualification;
 - Apple Metal/Core ML/ANE and Android Vulkan/GPU/QNN/Hexagon are evaluated only where graph/kernel support is real;
 - materially different hardware/runtime representations receive distinct immutable fleet identity/evidence under the current schema;
 - package, latency, RAM/unified memory, flash/RAM/accelerator bytes moved, battery/energy, thermal and quality evidence;
 - avoid pathological flash traffic, scatter/gather and dynamic-routing overhead that erase sparse benefits.
 
-Browser/WebGPU/WASM evidence is useful but does not by itself satisfy the mobile gate.
+Browser/WebGPU/WASM evidence is useful but does not by itself satisfy the future HSME mobile qualification gate.
 
-#### E7 — Mandatory pre-release HSME milestone
+#### E7 — Post-v1 HSME validation milestone
 
-Before `BERS_V1_RC`, this workstream must reach `R&D_VALIDATED` with:
+This workstream may reach `R&D_VALIDATED` after v1 with:
 
 1. an implemented HSME control plane with signed/hash-verified pack identity/readiness and device/resource evidence;
 2. one pinned compact dense DiT/mobile-student baseline with exact source/toolchain/license identity;
@@ -864,7 +866,7 @@ Before `BERS_V1_RC`, this workstream must reach `R&D_VALIDATED` with:
 10. explicit desktop and mobile feasibility decisions;
 11. a final architecture-level `ADVANCE / REDESIGN / REJECT` decision for the next BERS Local-First AI Engine generation.
 
-Production admission before v1 is optional and evidence-driven. **R&D validation before v1 is mandatory.** A recorded blocker may reject a specific backend/mechanism but does not substitute for the required functioning mobile backend.
+Production admission remains optional and evidence-driven. **HSME R&D validation is deferred beyond v1 and grants no production authority.** A recorded blocker may reject a specific backend/mechanism but does not substitute for the real-mobile evidence required before any future HSME mobile promotion.
 
 ### Stage F — Final product evidence and release
 
@@ -931,7 +933,7 @@ Release only when:
 - no open correctness/security/data-loss blocker affects enabled behavior;
 - required Agent/Automation/Job Center pre-release gates are complete;
 - advanced generative pre-release decision matrix is complete;
-- HSME + Hierarchical Adapter-MoE + FreeToken-inspired runtime workstream has reached `R&D_VALIDATED`;
+- HSME remains explicitly non-production/post-v1 unless separately promoted by later reviewed real-device evidence;
 - enabled intelligent capabilities have trace/evaluation/rollback evidence appropriate to their claim;
 - production configuration/deployment checklist is complete;
 - version/tag/release artifact is generated from that exact accepted SHA.
@@ -1037,7 +1039,7 @@ From current `main`, the preferred execution sequence is:
 6. establish the AEE<->HSME execution/evidence contract before Agent planning begins using HSME resource intelligence for production decisions;
 7. after the compiler/graph/trace substrate is proven, advance failure taxonomy/replanning, result evaluation/repair, golden/shadow evaluation and bounded autonomy before broader multimodal/creative autonomy;
 8. in parallel, complete local model real-device/quality evidence and the F5 Big-LaMa/Kandinsky comparison;
-9. in parallel, continue HSME-1 control-plane work, then establish the dense distilled mobile-student baseline before deeper Adapter-MoE/sparse mechanisms;
+9. continue HSME/mobile work as post-v1 R&D when capacity allows; it does not gate the current v1 RC;
 10. bring #233 browser E2E and unified observability forward incrementally as each Agent/Automation/product journey becomes canonical;
 11. add server-owned staged rollout/kill-switch controls before enabling variable intelligent Agent/model behavior broadly;
 12. close/gate Billing before RC, including bounded financial reservation if paid autonomous Agent execution is enabled;
@@ -1054,7 +1056,7 @@ The pre-release program is complete when BERS has:
 - a bounded durable production Automation path;
 - a durable production Job Center;
 - an evidence-based advanced local generative strategy;
-- a validated BERS Local-First AI Engine direction using HSME + Hierarchical Adapter-MoE + FreeToken-inspired runtime mechanisms;
+- an honest post-v1 HSME/Local-First AI Engine research classification with no implicit production authority;
 - a unified evaluation/observability path capable of distinguishing runtime success, goal success, quality success and user outcome;
 - server-owned staged rollout/kill-switch controls for enabled variable-intelligence capabilities;
 - privacy/retention boundaries for enabled Voice, Agent memory and feedback data;
