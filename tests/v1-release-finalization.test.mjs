@@ -111,7 +111,7 @@ test('release-finalization workflow accepts every manifest state and keeps diff 
 test('state machine accepts a clean RC_SELECTED fixture without final release claims', () => {
   const sha='a'.repeat(40);
   const result=validateV1ReleaseFinalization({
-    readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha },
+    readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha, status: 'BERS_V1_RC_SELECTED' },
     finalization: {
       ...finalization,
       status: 'RC_SELECTED',
@@ -131,7 +131,7 @@ test('state machine accepts a clean RC_SELECTED fixture without final release cl
 test('state machine accepts RELEASED only when version, tag and every coordinate converge', () => {
   const sha='b'.repeat(40);
   const result=validateV1ReleaseFinalization({
-    readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha },
+    readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha, status: 'BERS_V1_RC_SELECTED' },
     finalization: {
       ...finalization,
       status: 'RELEASED',
@@ -151,7 +151,7 @@ test('state machine accepts RELEASED only when version, tag and every coordinate
 test('RC_SELECTED rejects leaked final release metadata and artifact claims', () => {
   const sha='c'.repeat(40);
   const base={
-    readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha },
+    readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha, status: 'BERS_V1_RC_SELECTED' },
     finalization: {
       ...finalization,
       status: 'RC_SELECTED',
@@ -192,7 +192,7 @@ test('RELEASED rejects coordinate drift even when releaseSha itself looks valid'
   const sha='d'.repeat(40);
   assert.throws(
     () => validateV1ReleaseFinalization({
-      readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha },
+      readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha, status: 'BERS_V1_RC_SELECTED' },
       finalization: {
         ...finalization,
         status: 'RELEASED',
@@ -235,7 +235,7 @@ test('finalization state machine rejects capability release-state drift', () => 
   const sha='9'.repeat(40);
   assert.throws(
     () => validateV1ReleaseFinalization({
-      readiness:{...readiness,blockers:[],rcSelectable:true,rcCoordinate:sha},
+      readiness:{...readiness,blockers:[],rcSelectable:true,rcCoordinate:sha,status:'BERS_V1_RC_SELECTED'},
       finalization:{
         ...finalization,
         status:'RC_SELECTED',
@@ -253,7 +253,7 @@ test('finalization state machine rejects capability release-state drift', () => 
 
   assert.throws(
     () => validateV1ReleaseFinalization({
-      readiness:{...readiness,blockers:[],rcSelectable:true,rcCoordinate:sha},
+      readiness:{...readiness,blockers:[],rcSelectable:true,rcCoordinate:sha,status:'BERS_V1_RC_SELECTED'},
       finalization:{
         ...finalization,
         status:'RELEASED',
@@ -288,5 +288,63 @@ test('finalization state machine rejects release-state mapping drift', () => {
       pkg,
     }),
     /classification release-state mapping mismatch for RELEASED/u,
+  );
+});
+
+
+test('finalization state machine rejects readiness status drift', () => {
+  const sha='8'.repeat(40);
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      readiness:{
+        ...readiness,
+        blockers:[],
+        rcSelectable:true,
+        rcCoordinate:sha,
+        status:'BERS_V1_RC_NOT_SELECTABLE',
+      },
+      finalization:{
+        ...finalization,
+        status:'RC_SELECTED',
+        rcCoordinate:sha,
+        releaseSha:null,
+        releaseTag:null,
+        releaseGenerated:false,
+        packageVersionExpected:'0.0.0',
+      },
+      classification:{...classification,releaseState:'RC_SELECTED'},
+      pkg:{...pkg,version:'0.0.0'},
+    }),
+    /empty blockers require BERS_V1_RC_SELECTED readiness status/u,
+  );
+});
+
+test('finalization state machine rejects cross-manifest program identity drift', () => {
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      finalization:{...finalization,program:'WRONG'},
+      readiness,
+      classification,
+      pkg,
+    }),
+    /finalization program mismatch/u,
+  );
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      finalization,
+      readiness:{...readiness,program:'WRONG'},
+      classification,
+      pkg,
+    }),
+    /readiness program mismatch/u,
+  );
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      finalization,
+      readiness,
+      classification:{...classification,program:'WRONG'},
+      pkg,
+    }),
+    /classification program mismatch/u,
   );
 });
