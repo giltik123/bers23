@@ -1,0 +1,197 @@
+name: BERS v1.0 fail-closed publish
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - '.github/workflows/v1-release-publish.yml'
+      - 'scripts/generate-v1-release-manifest.mjs'
+      - 'scripts/verify-v1-required-checks.mjs'
+      - 'scripts/check-v1-release-finalization.mjs'
+      - 'scripts/verify-github-main-protection.mjs'
+      - 'tests/v1-release-publish.test.mjs'
+      - 'tests/v1-release-finalization.test.mjs'
+      - 'config/v1-release-finalization.json'
+      - 'config/v1-release-readiness.json'
+      - 'config/v1-capability-classification.json'
+      - 'docs/v1-release-notes.md'
+      - 'docs/v1-release-operations.md'
+      - 'package.json'
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact accepted main SHA already declared RELEASED
+        required: true
+        type: string
+      confirm_release_tag:
+        description: Type v1.0.0 to authorize publication
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bers-v1.0.0-release
+  cancel-in-progress: false
+
+jobs:
+  release-publish-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Prove publish and finalization contracts
+        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs
+      - name: Check committed diff whitespace
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
+
+  publish-v1:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      checks: read
+    steps:
+      - name: Check out exact requested release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+
+      - name: Require exact current main release coordinate
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          CONFIRM_RELEASE_TAG: ${{ inputs.confirm_release_tag }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_TYPE}" = branch
+          test "${GITHUB_REF_NAME}" = main
+          test "${CONFIRM_RELEASE_TAG}" = v1.0.0
+          test "${RELEASE_SHA}" = "$(git rev-parse HEAD)"
+          test "$(printf '%s' "${RELEASE_SHA}" | grep -Ec '^[0-9a-f]{40}$')" -eq 1
+          git fetch origin main --tags
+          test "$(git rev-parse origin/main)" = "${RELEASE_SHA}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Re-prove release transition contracts
+        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs
+
+      - name: Require committed RELEASED disposition
+        run: |
+          set -euo pipefail
+          mkdir -p .release-pack
+          node scripts/check-v1-release-finalization.mjs | tee .release-pack/finalization.log
+          grep -q '^BERS_V1_0_RELEASED ' .release-pack/finalization.log
+          ! grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .release-pack/finalization.log
+          ! grep -q 'BERS_V1_RC_SELECTED' .release-pack/finalization.log
+
+      - name: Require mandatory acceptance checks on exact release SHA
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          EVIDENCE_OUT: .release-pack/required-checks.json
+        run: node scripts/verify-v1-required-checks.mjs
+
+      - name: Generate deterministic release manifest
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          EVIDENCE_OUT: .release-pack/bers-v1.0.0-release-manifest.json
+        run: |
+          set -euo pipefail
+          node scripts/generate-v1-release-manifest.mjs
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const manifest = JSON.parse(fs.readFileSync('.release-pack/bers-v1.0.0-release-manifest.json','utf8'));
+          if (manifest.program !== 'BERS_V1_RELEASE_MANIFEST') throw new Error('release manifest program mismatch');
+          if (manifest.releaseTag !== 'v1.0.0') throw new Error('release manifest tag mismatch');
+          if (manifest.releaseSha !== process.env.RELEASE_SHA) throw new Error('release manifest SHA mismatch');
+          NODE
+
+      - name: Require unused final release namespace
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ! gh release view v1.0.0 >/dev/null 2>&1
+          ! git ls-remote --exit-code --tags origin 'refs/tags/v1.0.0' >/dev/null 2>&1
+
+      - name: Create exact-SHA GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          test "$(git rev-parse origin/main)" = "${RELEASE_SHA}"
+          gh release create v1.0.0 \
+            --title 'BERS v1.0.0' \
+            --target "${RELEASE_SHA}" \
+            --notes-file docs/v1-release-notes.md \
+            --latest
+          touch "${RUNNER_TEMP}/bers-v1-release-created-by-this-run"
+
+      - name: Upload release evidence assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload v1.0.0 \
+            .release-pack/bers-v1.0.0-release-manifest.json \
+            .release-pack/required-checks.json
+
+      - name: Re-download and verify published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          published="${RUNNER_TEMP}/bers-v1-published"
+          mkdir -p "${published}"
+          git fetch origin tag v1.0.0
+          test "$(git rev-list -n1 v1.0.0)" = "${RELEASE_SHA}"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v1.0.0" --jq '.tag_name')" = v1.0.0
+          gh release download v1.0.0 --dir "${published}"
+          cmp .release-pack/bers-v1.0.0-release-manifest.json "${published}/bers-v1.0.0-release-manifest.json"
+          cmp .release-pack/required-checks.json "${published}/required-checks.json"
+
+      - name: Cleanup release created by this run on failure
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if test -f "${RUNNER_TEMP}/bers-v1-release-created-by-this-run"; then
+            gh release delete v1.0.0 --yes --cleanup-tag >/dev/null 2>&1 || true
+          fi
+
+      - name: Publish release summary
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          {
+            echo '## BERS v1.0.0 released'
+            echo
+            echo "- Exact release SHA: \`${RELEASE_SHA}\`"
+            echo '- Tag: `v1.0.0`'
+            echo '- Finalization disposition: RELEASED'
+            echo '- Required exact-SHA acceptance checks: PASS'
+            echo '- Release manifest generated and re-downloaded byte-identically: PASS'
+          } >> "${GITHUB_STEP_SUMMARY}"
