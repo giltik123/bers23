@@ -199,3 +199,54 @@ test('every mandatory release context is produced on an exact main push', async 
     assert.match(source,/\[ "\$\{EVENT_NAME\}" != "pull_request" \] && \[ "\$\{EVENT_NAME\}" != "push" \]/u);
   }
 });
+
+
+test('required-check verifier paginates exact-SHA check runs beyond the first 100 jobs', async () => {
+  const sha='1'.repeat(40);
+  const requiredChecks=['late-wrapper'];
+  const calls=[];
+  const fetcher=async url => {
+    calls.push(url);
+    const page=new URL(url).searchParams.get('page');
+    if (page === '1') {
+      return {
+        status:200,
+        async json(){
+          return {
+            total_count:101,
+            check_runs:Array.from({length:100},(_,index)=>({
+              id:index+1,
+              name:`noise-${index}`,
+              status:'completed',
+              conclusion:'success',
+              head_sha:sha,
+            })),
+          };
+        },
+      };
+    }
+    return {
+      status:200,
+      async json(){
+        return {
+          total_count:101,
+          check_runs:[
+            {id:101,name:'late-wrapper',status:'completed',conclusion:'success',head_sha:sha},
+          ],
+        };
+      },
+    };
+  };
+
+  const evidence=await verifyV1RequiredChecks({
+    repository:'giltik123/bers23',
+    sha,
+    token:'token',
+    requiredChecks,
+    fetcher,
+  });
+  assert.equal(evidence.checks['late-wrapper'].status,'SUCCESS');
+  assert.equal(calls.length,2);
+  assert.match(calls[0],/[?&]page=1(?:&|$)/u);
+  assert.match(calls[1],/[?&]page=2(?:&|$)/u);
+});
