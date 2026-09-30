@@ -48,6 +48,7 @@ export function buildV1ReleaseManifest({
     'docs/v1-release-notes.md',
     'docs/v1-release-operations.md',
     'package.json',
+    'package-lock.json',
   ];
   for (const path of requiredSources) {
     const value = sourceContents?.[path];
