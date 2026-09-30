@@ -57,12 +57,20 @@ jobs:
             RC_SELECTED)
               grep -q '^BERS_V1_RC_SELECTED ' .test-cache-v1-release-finalization.log
               ! grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_RELEASE_AUTHORIZED' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_0_RELEASED' .test-cache-v1-release-finalization.log
+              ;;
+            RELEASE_AUTHORIZED)
+              grep -q '^BERS_V1_RELEASE_AUTHORIZED ' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_RC_SELECTED' .test-cache-v1-release-finalization.log
               ! grep -q 'BERS_V1_0_RELEASED' .test-cache-v1-release-finalization.log
               ;;
             RELEASED)
               grep -q '^BERS_V1_0_RELEASED ' .test-cache-v1-release-finalization.log
               ! grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .test-cache-v1-release-finalization.log
               ! grep -q 'BERS_V1_RC_SELECTED' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_RELEASE_AUTHORIZED' .test-cache-v1-release-finalization.log
               ;;
             *)
               echo "Unknown release-finalization status: $status" >&2
