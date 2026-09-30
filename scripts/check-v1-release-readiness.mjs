@@ -42,8 +42,14 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
     if (journey22?.disposition !== 'DEPLOYMENT_TARGET_PENDING') {
       throw new Error('journey 22 must remain deployment pending while frontend evidence is blocked');
     }
-  } else if (journey22?.disposition !== 'PROVEN') {
-    throw new Error('journey 22 must be PROVEN before frontend blocker is removed');
+    if (journey22?.liveEvidence != null) {
+      throw new Error('pending journey 22 cannot claim reviewed live evidence');
+    }
+  } else {
+    if (journey22?.disposition !== 'PROVEN') {
+      throw new Error('journey 22 must be PROVEN before frontend blocker is removed');
+    }
+    validateFrontendLiveEvidence(journey22.liveEvidence);
   }
 
   const deferredJourneys = entries.filter(value => value.disposition === 'DEFERRED_OUT_OF_V1');
@@ -107,6 +113,9 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
   if (readiness.status !== 'BERS_V1_RC_SELECTED') {
     throw new Error('empty blockers require BERS_V1_RC_SELECTED status');
   }
+  if (journey22.liveEvidence.verifiedSha !== readiness.rcCoordinate) {
+    throw new Error('selected RC must equal journey 22 verified deployment SHA');
+  }
 
   return Object.freeze({
     marker: 'BERS_V1_RC_SELECTED',
@@ -119,6 +128,34 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
       deferredHsmeState: deferredHsme.state,
     }),
   });
+}
+
+function validateFrontendLiveEvidence(value) {
+  requireObject(value, 'journey 22 liveEvidence');
+  if (value.kind !== 'BERS_V1_FRONTEND_SECURITY_EVIDENCE') {
+    throw new Error('journey 22 live evidence kind mismatch');
+  }
+  if (!EXACT_SHA_RE.test(value.verifiedSha ?? '')) {
+    throw new Error('journey 22 live evidence verifiedSha is invalid');
+  }
+  if (!/^[0-9a-f]{64}$/u.test(value.htmlSha256 ?? '')) {
+    throw new Error('journey 22 live evidence htmlSha256 is invalid');
+  }
+  if (!/^https:\/\//u.test(value.frontendUrl ?? '')) {
+    throw new Error('journey 22 live evidence frontendUrl must be HTTPS');
+  }
+  if (typeof value.coreApiUrl !== 'string' || value.coreApiUrl.length === 0) {
+    throw new Error('journey 22 live evidence coreApiUrl is required');
+  }
+  if (!/^https:\/\/github\.com\/giltik123\/bers23\/actions\/runs\/\d+$/u.test(value.workflowRunUrl ?? '')) {
+    throw new Error('journey 22 live evidence workflowRunUrl is invalid');
+  }
+  if (value.artifactName !== `bers-v1-frontend-security-${value.verifiedSha}`) {
+    throw new Error('journey 22 live evidence artifactName does not bind verifiedSha');
+  }
+  if (typeof value.verifiedAt !== 'string' || !Number.isFinite(Date.parse(value.verifiedAt))) {
+    throw new Error('journey 22 live evidence verifiedAt is invalid');
+  }
 }
 
 function requireObject(value, name) {
