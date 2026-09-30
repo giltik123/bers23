@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { buildV1ReleaseManifest } from '../scripts/generate-v1-release-manifest.mjs';
+import { buildV1ReleaseManifest, loadV1ReleaseManifestSources } from '../scripts/generate-v1-release-manifest.mjs';
 import {
   V1_RELEASE_METADATA_PATHS,
   validateV1ReleaseDeltaPaths,
@@ -376,4 +376,22 @@ test('required-check verifier paginates exact-SHA check runs beyond the first 10
   assert.equal(calls.length,2);
   assert.match(calls[0],/[?&]page=1(?:&|$)/u);
   assert.match(calls[1],/[?&]page=2(?:&|$)/u);
+});
+
+
+test('runtime release-manifest loader includes every hashed release source', async () => {
+  const sources=await loadV1ReleaseManifestSources();
+  for (const path of [
+    'config/v1-release-readiness.json',
+    'config/v1-release-finalization.json',
+    'config/v1-capability-classification.json',
+    'config/v1-release-journey-matrix.json',
+    'docs/v1-release-notes.md',
+    'docs/v1-release-operations.md',
+    'package.json',
+    'package-lock.json',
+  ]) {
+    assert.equal(typeof sources[path],'string',path);
+    assert.ok(sources[path].length > 0,path);
+  }
 });
