@@ -73,7 +73,7 @@ async function tableState(database: Queryable, table: string): Promise<TableStat
   const columns = await database.query(`SELECT column_name,udt_name,is_nullable,column_default FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name=$1`, [table]);
   const constraints = await database.query(`SELECT conname,contype,convalidated,pg_get_constraintdef(oid) AS definition
-    FROM pg_constraint WHERE conrelid=to_regclass($1)`, [table]);
+    FROM pg_constraint WHERE conrelid=to_regclass($1) AND contype <> 'n'`, [table]);
   const indexes = await database.query(`SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename=$1`, [table]);
   const triggers = await database.query(`SELECT t.tgname,t.tgtype,t.tgenabled,p.proname,p.prosrc FROM pg_trigger t
     JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid=to_regclass($1) AND NOT t.tgisinternal`, [table]);
