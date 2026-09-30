@@ -7,7 +7,7 @@ on:
 permissions:
   actions: write
   contents: read
-  issues: read
+  issues: write
 
 jobs:
   dispatch-frontend-evidence:
@@ -18,21 +18,111 @@ jobs:
       github.event.comment.body == '/bers-v1-dispatch-frontend-evidence'
     runs-on: ubuntu-24.04
     steps:
-      - name: Dispatch canonical BERS v1 frontend evidence workflow
+      - name: Dispatch canonical BERS v1 frontend evidence workflow and report provenance
         uses: actions/github-script@v7
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const ref = context.payload.repository.default_branch;
+            const issue_number = context.payload.issue.number;
+            const workflow_id = 'v1-external-release-evidence.yml';
+            const artifactPrefix = 'bers-v1-frontend-security-';
+
+            const branch = await github.rest.repos.getBranch({ owner, repo, branch: ref });
+            const expectedSha = branch.data.commit.sha;
+
+            const before = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id,
+              event: 'workflow_dispatch',
+              branch: ref,
+              per_page: 30,
+            });
+            const knownRunIds = new Set(before.data.workflow_runs.map(run => run.id));
+
             await github.rest.actions.createWorkflowDispatch({
               owner,
               repo,
-              workflow_id: 'v1-external-release-evidence.yml',
+              workflow_id,
               ref,
               inputs: {
                 frontend_url: 'https://bers-v1-frontend-production.up.railway.app',
                 core_api_url: 'https://bers-v1-core-production.up.railway.app/api/core',
               },
             });
-            core.notice(`Dispatched BERS v1 external release evidence on ${ref}`);
+            core.notice(`Dispatched BERS v1 external release evidence on ${ref} at ${expectedSha}`);
+
+            const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+            let run;
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              const listed = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id,
+                event: 'workflow_dispatch',
+                branch: ref,
+                per_page: 30,
+              });
+              run = listed.data.workflow_runs.find(candidate =>
+                !knownRunIds.has(candidate.id) &&
+                candidate.head_sha === expectedSha &&
+                candidate.event === 'workflow_dispatch'
+              );
+              if (run) break;
+              await sleep(3000);
+            }
+            if (!run) {
+              throw new Error(`Could not resolve newly dispatched frontend evidence run for ${expectedSha}`);
+            }
+
+            for (let attempt = 0; attempt < 120; attempt += 1) {
+              const current = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: run.id });
+              run = current.data;
+              if (run.status === 'completed') break;
+              await sleep(5000);
+            }
+            if (run.status !== 'completed') {
+              throw new Error(`Frontend evidence run ${run.id} did not complete within the bridge timeout`);
+            }
+            if (run.conclusion !== 'success') {
+              throw new Error(`Frontend evidence run ${run.id} concluded ${run.conclusion}`);
+            }
+            if (run.head_sha !== expectedSha || run.event !== 'workflow_dispatch') {
+              throw new Error(`Frontend evidence run ${run.id} provenance mismatch`);
+            }
+
+            const expectedArtifactName = `${artifactPrefix}${expectedSha}`;
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner,
+              repo,
+              run_id: run.id,
+              per_page: 100,
+            });
+            const artifact = artifacts.data.artifacts.find(candidate =>
+              candidate.name === expectedArtifactName &&
+              candidate.expired === false
+            );
+            if (!artifact) {
+              throw new Error(`Frontend evidence run ${run.id} is missing ${expectedArtifactName}`);
+            }
+
+            const workflowRunUrl = `https://github.com/${owner}/${repo}/actions/runs/${run.id}`;
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: [
+                'BERS v1 hosted frontend evidence completed successfully.',
+                '',
+                `- verifiedSha: \`${expectedSha}\``,
+                `- workflowRunUrl: \`${workflowRunUrl}\``,
+                `- artifactName: \`${expectedArtifactName}\``,
+                `- artifactId: \`${artifact.id}\``,
+                `- conclusion: \`${run.conclusion}\``,
+              ].join('\n'),
+            });
+
+            core.notice(`Resolved hosted frontend evidence: ${workflowRunUrl} / ${expectedArtifactName}`);
