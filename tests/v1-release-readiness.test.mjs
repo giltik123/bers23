@@ -11,6 +11,19 @@ const stageD = JSON.parse(await readFile('config/v1-generative-decision-matrix.j
 const roadmap = await readFile('BERS_V1_DEVELOPMENT_ROADMAP.md','utf8');
 const hsmeRoadmap = await readFile('BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md','utf8');
 
+function frontendLiveEvidence(sha) {
+  return {
+    kind:'BERS_V1_FRONTEND_SECURITY_EVIDENCE',
+    verifiedSha:sha,
+    frontendUrl:'https://app.example.test',
+    coreApiUrl:'https://api.example.test/api/core',
+    htmlSha256:'1'.repeat(64),
+    verifiedAt:'2026-09-30T12:00:00.000Z',
+    workflowRunUrl:'https://github.com/giltik123/bers23/actions/runs/123456789',
+    artifactName:`bers-v1-frontend-security-${sha}`,
+  };
+}
+
 test('current RC readiness matches its machine-readable state', () => {
   const result=validateV1ReleaseReadiness({readiness,journeys,stageD});
   const expected=readiness.blockers.length > 0
@@ -85,10 +98,11 @@ test('selection law binds RC selection to empty blockers and one exact accepted 
 
 test('readiness state machine permits either external blocker to close independently', () => {
   const oneBlocker=readiness.blockers.filter(value=>value.id==='REPOSITORY_MAIN_PROTECTION');
+  const evidenceSha='7'.repeat(40);
   const promotedJourneys={
     ...journeys,
     entries:journeys.entries.map(value=>value.id === 22
-      ? {...value,disposition:'PROVEN'}
+      ? {...value,disposition:'PROVEN',liveEvidence:frontendLiveEvidence(evidenceSha)}
       : value),
   };
   const result=validateV1ReleaseReadiness({
@@ -112,7 +126,7 @@ test('readiness state machine selects one exact RC only after all blockers are r
   const selectedJourneys={
     ...journeys,
     entries:journeys.entries.map(value=>value.id === 22
-      ? {...value,disposition:'PROVEN'}
+      ? {...value,disposition:'PROVEN',liveEvidence:frontendLiveEvidence(sha)}
       : value),
   };
   const result=validateV1ReleaseReadiness({
@@ -210,4 +224,58 @@ test('RC readiness workflow follows manifest state and keeps diff hygiene PR-onl
   assert.match(workflow,/BERS_V1_RC_SELECTED\)/u);
   assert.match(workflow,/Unknown release-readiness status/u);
   assert.match(workflow,/Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
+});
+
+
+test('readiness state machine rejects RC selection that is not the reviewed frontend deployment SHA', () => {
+  const rcSha='6'.repeat(40);
+  const deploymentSha='7'.repeat(40);
+  const selectedJourneys={
+    ...journeys,
+    entries:journeys.entries.map(value=>value.id === 22
+      ? {...value,disposition:'PROVEN',liveEvidence:frontendLiveEvidence(deploymentSha)}
+      : value),
+  };
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:[],
+        rcSelectable:true,
+        rcCoordinate:rcSha,
+        status:'BERS_V1_RC_SELECTED',
+      },
+      journeys:selectedJourneys,
+      stageD,
+    }),
+    /selected RC must equal journey 22 verified deployment SHA/u,
+  );
+});
+
+test('readiness state machine rejects fake or partial journey 22 live evidence', () => {
+  const sha='8'.repeat(40);
+  const badJourneys={
+    ...journeys,
+    entries:journeys.entries.map(value=>value.id === 22
+      ? {
+          ...value,
+          disposition:'PROVEN',
+          liveEvidence:{...frontendLiveEvidence(sha),artifactName:'wrong'},
+        }
+      : value),
+  };
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='FRONTEND_DEPLOYMENT_HEADERS'),
+        rcSelectable:false,
+        rcCoordinate:null,
+        status:'BERS_V1_RC_NOT_SELECTABLE',
+      },
+      journeys:badJourneys,
+      stageD,
+    }),
+    /artifactName does not bind verifiedSha/u,
+  );
 });
