@@ -14,6 +14,15 @@ export function validateV1ReleaseFinalization(input) {
   requireObject(classification, 'classification');
   requireObject(pkg, 'package');
 
+  if (finalization.program !== 'BERS_V1_RELEASE_FINALIZATION') {
+    throw new Error('finalization program mismatch');
+  }
+  if (readiness.program !== 'BERS_V1_RC_READINESS') {
+    throw new Error('readiness program mismatch');
+  }
+  if (classification.program !== 'BERS_V1_CAPABILITY_CLASSIFICATION') {
+    throw new Error('classification program mismatch');
+  }
   if (finalization.targetVersion !== '1.0.0' || classification.targetVersion !== '1.0.0') {
     throw new Error('target version mismatch');
   }
@@ -22,6 +31,9 @@ export function validateV1ReleaseFinalization(input) {
   if (readiness.blockers.length > 0) {
     if (readiness.rcSelectable !== false) throw new Error('blocked readiness requires rcSelectable=false');
     if (readiness.rcCoordinate !== null) throw new Error('blocked readiness cannot declare readiness RC coordinate');
+    if (readiness.status !== 'BERS_V1_RC_NOT_SELECTABLE') {
+      throw new Error('blocked readiness requires BERS_V1_RC_NOT_SELECTABLE status');
+    }
     if (finalization.status !== 'BLOCKED_BEFORE_RC') throw new Error('blocked readiness requires BLOCKED_BEFORE_RC');
     requireClassificationReleaseState(classification, 'BLOCKED_BEFORE_RC');
     if (finalization.rcCoordinate !== null || finalization.releaseSha !== null || finalization.releaseTag !== null) {
@@ -43,6 +55,9 @@ export function validateV1ReleaseFinalization(input) {
   }
 
   if (readiness.rcSelectable !== true) throw new Error('empty blockers require rcSelectable=true');
+  if (readiness.status !== 'BERS_V1_RC_SELECTED') {
+    throw new Error('empty blockers require BERS_V1_RC_SELECTED readiness status');
+  }
   if (!EXACT_SHA_RE.test(readiness.rcCoordinate ?? '')) throw new Error('RC coordinate must be exact SHA');
   if (finalization.rcCoordinate !== readiness.rcCoordinate) throw new Error('finalization RC coordinate mismatch');
 
