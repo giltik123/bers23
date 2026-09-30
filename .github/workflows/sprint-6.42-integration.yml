@@ -1,6 +1,8 @@
 name: Sprint 6.42 integrated acceptance
 
 on:
+  push:
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:

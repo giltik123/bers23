@@ -60,6 +60,8 @@ It requires these stable final checks:
 
 These are the universal acceptance/security gates plus the Tiny-SD final wrapper gates accepted by the CI hardening program. Internal heavyweight jobs that may legitimately be N/A are not used as required contexts.
 
+All seven required contexts are emitted on both pull-request candidate SHAs and exact pushes to `main`. The final `v1.0.0` publisher verifies the successful contexts again on the exact accepted `main` release SHA before any tag or GitHub Release write is allowed. Tiny-SD wrapper workflows classify `push` relevance from the trusted previous `main` SHA (`github.event.before`) to the pushed SHA; heavyweight work remains conditional, while the stable outward wrapper context remains available for release verification.
+
 ## Evidence handling
 
 Evidence output files contain only public configuration/result facts and timestamps; they do not contain the GitHub token or application secrets. Review the generated JSON, then attach/record it with the relevant release issue/evidence process.

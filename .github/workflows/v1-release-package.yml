@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
     paths:
       - 'config/v1-capability-classification.json'
+      - 'config/v1-release-finalization.json'
       - 'config/v1-generative-decision-matrix.json'
       - 'config/v1-release-readiness.json'
       - 'config/v1-release-journey-matrix.json'
@@ -38,12 +39,12 @@ jobs:
       - run: npm ci
       - name: Prove truthful v1 package classification version and rollback contract
         run: node --test tests/v1-release-package.test.mjs
-      - name: Preserve pre-RC version boundary
+      - name: Prove release-package state transition
         run: |
           set -euo pipefail
-          test "$(node -p "require('./package.json').version")" = "0.0.0"
+          node scripts/check-v1-release-finalization.mjs
           grep -q '"targetVersion": "1.0.0"' config/v1-capability-classification.json
-          grep -q '"releaseState": "PRE_RC_EXTERNAL_BLOCKERS_REMAIN"' config/v1-capability-classification.json
           grep -q 'BERS v1.0 RELEASED' docs/v1-release-operations.md
       - name: Check committed diff whitespace
+        if: github.event_name == 'pull_request'
         run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"

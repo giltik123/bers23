@@ -10,29 +10,67 @@ const readiness = JSON.parse(await readFile('config/v1-release-readiness.json','
 const classification = JSON.parse(await readFile('config/v1-capability-classification.json','utf8'));
 const pkg = JSON.parse(await readFile('package.json','utf8'));
 
-test('current release finalization stays blocked on the verified external blockers', () => {
-  assert.equal(finalization.status,'BLOCKED_BEFORE_RC');
-  assert.equal(readiness.rcSelectable,false);
-  assert.ok(readiness.blockers.length > 0);
-  assert.equal(finalization.rcCoordinate,null);
-  assert.equal(finalization.releaseSha,null);
-  assert.equal(finalization.releaseTag,null);
-  assert.equal(finalization.releaseGenerated,false);
+test('current release finalization matches its machine-readable state', () => {
+  const disposition=validateV1ReleaseFinalization({finalization,readiness,classification,pkg});
+  const expectedMarker={
+    BLOCKED_BEFORE_RC:'BERS_V1_RELEASE_FINALIZATION_BLOCKED',
+    RC_SELECTED:'BERS_V1_RC_SELECTED',
+    RELEASED:'BERS_V1_0_RELEASED',
+  }[finalization.status];
+  assert.ok(expectedMarker,`unexpected finalization status: ${finalization.status}`);
+  assert.equal(disposition.marker,expectedMarker);
 });
 
-test('pre-RC repository cannot claim the final package version or tag', () => {
-  assert.equal(pkg.version,'0.0.0');
-  assert.equal(finalization.packageVersionExpected,'0.0.0');
+test('current package and release metadata match the declared transition state', () => {
   assert.equal(finalization.targetVersion,'1.0.0');
   assert.equal(classification.targetVersion,'1.0.0');
-  assert.notEqual(finalization.releaseTag,'v1.0.0');
+
+  if (finalization.status === 'BLOCKED_BEFORE_RC') {
+    assert.equal(readiness.rcSelectable,false);
+    assert.ok(readiness.blockers.length > 0);
+    assert.equal(pkg.version,'0.0.0');
+    assert.equal(finalization.packageVersionExpected,'0.0.0');
+    assert.equal(finalization.rcCoordinate,null);
+    assert.equal(finalization.releaseSha,null);
+    assert.equal(finalization.releaseTag,null);
+    assert.equal(finalization.releaseGenerated,false);
+  } else if (finalization.status === 'RC_SELECTED') {
+    assert.equal(readiness.blockers.length,0);
+    assert.equal(readiness.rcSelectable,true);
+    assert.equal(pkg.version,'0.0.0');
+    assert.equal(finalization.packageVersionExpected,'0.0.0');
+    assert.equal(finalization.releaseSha,null);
+    assert.equal(finalization.releaseTag,null);
+    assert.equal(finalization.releaseGenerated,false);
+  } else if (finalization.status === 'RELEASED') {
+    assert.equal(readiness.blockers.length,0);
+    assert.equal(readiness.rcSelectable,true);
+    assert.equal(pkg.version,'1.0.0');
+    assert.equal(finalization.packageVersionExpected,'1.0.0');
+    assert.equal(finalization.releaseTag,'v1.0.0');
+    assert.equal(finalization.releaseGenerated,true);
+  } else {
+    assert.fail(`unexpected finalization status: ${finalization.status}`);
+  }
 });
 
-test('finalization checker emits a controlled blocked disposition, not a release claim', () => {
+test('finalization checker emits exactly the disposition declared by the manifest', () => {
   const result=spawnSync(process.execPath,['scripts/check-v1-release-finalization.mjs'],{encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
-  assert.match(result.stdout,/BERS_V1_RELEASE_FINALIZATION_BLOCKED/);
-  assert.doesNotMatch(result.stdout,/BERS_V1_0_RELEASED/);
+  const expectedMarker={
+    BLOCKED_BEFORE_RC:'BERS_V1_RELEASE_FINALIZATION_BLOCKED',
+    RC_SELECTED:'BERS_V1_RC_SELECTED',
+    RELEASED:'BERS_V1_0_RELEASED',
+  }[finalization.status];
+  assert.ok(expectedMarker);
+  assert.match(result.stdout,new RegExp(`^${expectedMarker}(?: |$)`,'m'));
+  for (const marker of [
+    'BERS_V1_RELEASE_FINALIZATION_BLOCKED',
+    'BERS_V1_RC_SELECTED',
+    'BERS_V1_0_RELEASED',
+  ]) {
+    if (marker !== expectedMarker) assert.doesNotMatch(result.stdout,new RegExp(marker));
+  }
 });
 
 test('final release laws bind version tag and exact accepted SHA', () => {

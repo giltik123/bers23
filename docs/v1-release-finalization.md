@@ -1,8 +1,8 @@
 # BERS v1 finalization and tag contract
 
-The repository is prepared for a final `v1.0.0` release, but the current state is intentionally **BLOCKED_BEFORE_RC**.
+The repository uses a fail-closed state machine to move toward the final `v1.0.0` release without hard-coding a permanent pre-RC disposition.
 
-The source of truth is `config/v1-release-finalization.json`; `scripts/check-v1-release-finalization.mjs` enforces the transition.
+The current state is always the value committed in `config/v1-release-finalization.json`; `scripts/check-v1-release-finalization.mjs` enforces the transition and rejects inconsistent readiness, package, coordinate, or tag claims.
 
 ## Allowed states
 
