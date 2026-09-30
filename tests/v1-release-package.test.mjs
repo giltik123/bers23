@@ -5,6 +5,7 @@ import test from 'node:test';
 const classifications = JSON.parse(await readFile('config/v1-capability-classification.json','utf8'));
 const stageD = JSON.parse(await readFile('config/v1-generative-decision-matrix.json','utf8'));
 const readiness = JSON.parse(await readFile('config/v1-release-readiness.json','utf8'));
+const finalization = JSON.parse(await readFile('config/v1-release-finalization.json','utf8'));
 const journeys = JSON.parse(await readFile('config/v1-release-journey-matrix.json','utf8'));
 const packageJson = JSON.parse(await readFile('package.json','utf8'));
 const executorPolicy = await readFile('server/core/localExecution/productionLocalExecutorPolicy.ts','utf8');
@@ -53,14 +54,37 @@ test('privacy/retention disposition introduces no enabled durable Voice memory o
   });
 });
 
-test('pre-RC packaging cannot claim version 1.0.0 while blockers remain', () => {
-  assert.equal(readiness.rcSelectable,false);
-  assert.ok(readiness.blockers.length>0);
-  assert.equal(packageJson.version,classifications.versioning.packageVersionBeforeRc);
-  assert.equal(packageJson.version,'0.0.0');
-  assert.match(notes,/not.*declaration.*v1\.0.*shipped/is);
+test('release package version and classification follow the declared finalization state', () => {
+  const releaseStateMap=classifications.versioning.releaseStateByFinalizationStatus;
+  assert.deepEqual(releaseStateMap,{
+    BLOCKED_BEFORE_RC:'PRE_RC_EXTERNAL_BLOCKERS_REMAIN',
+    RC_SELECTED:'RC_SELECTED',
+    RELEASED:'RELEASED',
+  });
+  assert.equal(classifications.releaseState,releaseStateMap[finalization.status]);
+
+  if (finalization.status === 'BLOCKED_BEFORE_RC') {
+    assert.equal(readiness.rcSelectable,false);
+    assert.ok(readiness.blockers.length>0);
+    assert.equal(packageJson.version,classifications.versioning.packageVersionBeforeRc);
+    assert.equal(packageJson.version,'0.0.0');
+    assert.match(notes,/not.*declaration.*v1\.0.*shipped/is);
+    assert.equal(journeys.entries.find(value=>value.id===22).disposition,'DEPLOYMENT_TARGET_PENDING');
+  } else if (finalization.status === 'RC_SELECTED') {
+    assert.equal(readiness.rcSelectable,true);
+    assert.equal(readiness.blockers.length,0);
+    assert.equal(packageJson.version,classifications.versioning.packageVersionBeforeRc);
+    assert.equal(packageJson.version,'0.0.0');
+  } else if (finalization.status === 'RELEASED') {
+    assert.equal(readiness.rcSelectable,true);
+    assert.equal(readiness.blockers.length,0);
+    assert.equal(packageJson.version,classifications.versioning.finalVersion);
+    assert.equal(packageJson.version,'1.0.0');
+  } else {
+    assert.fail(`unexpected finalization status: ${finalization.status}`);
+  }
+
   assert.match(operations,/Only after all mandatory evidence is terminal green/);
-  assert.equal(journeys.entries.find(value=>value.id===22).disposition,'DEPLOYMENT_TARGET_PENDING');
 });
 
 test('rollback package preserves forward-migration and exact-image safety law', () => {
