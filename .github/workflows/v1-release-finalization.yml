@@ -52,6 +52,7 @@ jobs:
             BLOCKED_BEFORE_RC)
               grep -q '^BERS_V1_RELEASE_FINALIZATION_BLOCKED ' .test-cache-v1-release-finalization.log
               ! grep -q 'BERS_V1_RC_SELECTED' .test-cache-v1-release-finalization.log
+              ! grep -q 'BERS_V1_RELEASE_AUTHORIZED' .test-cache-v1-release-finalization.log
               ! grep -q 'BERS_V1_0_RELEASED' .test-cache-v1-release-finalization.log
               ;;
             RC_SELECTED)
@@ -77,6 +78,59 @@ jobs:
               exit 1
               ;;
           esac
+      - name: Verify immutable published v1.0.0 evidence when RELEASED
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status="$(node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const value=JSON.parse(readFileSync('config/v1-release-finalization.json','utf8'));
+          process.stdout.write(String(value.status ?? ''));
+          NODE
+          )"
+          if [ "$status" != RELEASED ]; then
+            echo "Publication evidence verification is not required for $status."
+            exit 0
+          fi
+          mkdir -p .test-cache-v1-published
+          git fetch origin tag v1.0.0
+          RELEASE_SHA="$(node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const value=JSON.parse(readFileSync('config/v1-release-finalization.json','utf8'));
+          process.stdout.write(String(value.releaseSha ?? ''));
+          NODE
+          )"
+          test "$(git rev-list -n1 v1.0.0)" = "$RELEASE_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v1.0.0" --jq '.tag_name')" = v1.0.0
+          gh release download v1.0.0 --dir .test-cache-v1-published
+          node --input-type=module - <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { readFileSync } from 'node:fs';
+          const finalization=JSON.parse(readFileSync('config/v1-release-finalization.json','utf8'));
+          const readiness=JSON.parse(readFileSync('config/v1-release-readiness.json','utf8'));
+          const evidence=finalization.publicationEvidence;
+          const files={
+            releaseManifest:'bers-v1.0.0-release-manifest.json',
+            requiredChecks:'required-checks.json',
+            releaseDelta:'release-delta.json',
+            publicationEvidence:'publication-evidence.json',
+          };
+          const read=name=>readFileSync(`.test-cache-v1-published/${name}`);
+          const sha=value=>createHash('sha256').update(value).digest('hex');
+          if (sha(read(files.releaseManifest)) !== evidence.releaseManifestSha256) throw new Error('published release manifest SHA mismatch');
+          if (sha(read(files.requiredChecks)) !== evidence.requiredChecksSha256) throw new Error('published required-check evidence SHA mismatch');
+          if (sha(read(files.releaseDelta)) !== evidence.releaseDeltaSha256) throw new Error('published release-delta evidence SHA mismatch');
+          const publishedEvidence=JSON.parse(read(files.publicationEvidence).toString('utf8'));
+          if (JSON.stringify(publishedEvidence) !== JSON.stringify(evidence)) throw new Error('published publication evidence does not match committed ledger');
+          const manifest=JSON.parse(read(files.releaseManifest).toString('utf8'));
+          const checks=JSON.parse(read(files.requiredChecks).toString('utf8'));
+          const delta=JSON.parse(read(files.releaseDelta).toString('utf8'));
+          if (manifest.releaseSha !== finalization.releaseSha) throw new Error('published manifest release SHA mismatch');
+          if (manifest.rcCoordinate !== readiness.rcCoordinate) throw new Error('published manifest RC mismatch');
+          if (checks.sha !== finalization.releaseSha) throw new Error('published required-check SHA mismatch');
+          if (delta.rcSha !== readiness.rcCoordinate || delta.releaseSha !== finalization.releaseSha) throw new Error('published delta coordinate mismatch');
+          NODE
       - name: Check committed diff whitespace
         if: github.event_name == 'pull_request'
         run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
