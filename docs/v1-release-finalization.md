@@ -49,3 +49,14 @@ The `BERS v1 release finalization guard` workflow validates the disposition decl
 - manual `workflow_dispatch` runs validate the exact dispatched SHA, while committed-diff hygiene remains PR-only.
 
 This allows the same immutable guard to remain valid when the two external RC blockers are eventually removed.
+
+## Cross-manifest release-state convergence
+
+The finalization validator also binds `config/v1-capability-classification.json` to the same transition state.
+
+- `BLOCKED_BEFORE_RC` requires classification `releaseState=PRE_RC_EXTERNAL_BLOCKERS_REMAIN`;
+- `RC_SELECTED` requires classification `releaseState=RC_SELECTED`;
+- `RELEASED` requires classification `releaseState=RELEASED`;
+- the machine-readable `releaseStateByFinalizationStatus` mapping must retain those exact three values.
+
+This prevents a final release from being published while capability classification still describes a pre-RC or RC-only state.
