@@ -282,3 +282,12 @@ test('evidence dispatch bridge reports the resolved run before waiting and updat
   assert.match(workflow, /ARTIFACT_MISSING/u);
   assert.match(workflow, /completed successfully/u);
 });
+
+
+test('hosted live evidence workflow requires the captured HTTP status to be a successful 2xx', async () => {
+  const workflow = await readFile('.github/workflows/v1-external-release-evidence.yml', 'utf8');
+  assert.match(workflow, /Number\.isInteger\(evidence\.status\)/u);
+  assert.match(workflow, /evidence\.status >= 200/u);
+  assert.match(workflow, /evidence\.status < 300/u);
+  assert.doesNotMatch(workflow, /assert\.equal\(evidence\.status, undefined\)/u);
+});
