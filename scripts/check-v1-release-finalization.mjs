@@ -127,7 +127,11 @@ export function validateV1ReleaseFinalization(input) {
       throw new Error('RELEASED packageVersionExpected must be 1.0.0');
     }
     if (finalization.releaseGenerated !== true) throw new Error('released state requires releaseGenerated=true');
-    requirePublicationEvidence(finalization.publicationEvidence);
+    requirePublicationEvidence(finalization.publicationEvidence, {
+      rcCoordinate: readiness.rcCoordinate,
+      releaseSha: finalization.releaseSha,
+      releaseTag: finalization.releaseTag,
+    });
     return Object.freeze({
       marker: 'BERS_V1_0_RELEASED',
       payload: Object.freeze({
@@ -162,8 +166,20 @@ function requireClassificationReleaseState(classification, finalizationStatus) {
   }
 }
 
-function requirePublicationEvidence(value) {
+function requirePublicationEvidence(value, expected) {
   requireObject(value, 'publicationEvidence');
+  if (value.kind !== 'BERS_V1_PUBLICATION_EVIDENCE') {
+    throw new Error('publicationEvidence kind is invalid');
+  }
+  if (value.rcCoordinate !== expected.rcCoordinate) {
+    throw new Error('publicationEvidence rcCoordinate mismatch');
+  }
+  if (value.releaseSha !== expected.releaseSha) {
+    throw new Error('publicationEvidence releaseSha mismatch');
+  }
+  if (value.releaseTag !== expected.releaseTag) {
+    throw new Error('publicationEvidence releaseTag mismatch');
+  }
   if (!/^https:\/\/github\.com\/giltik123\/bers23\/actions\/runs\/\d+$/u.test(value.workflowRunUrl ?? '')) {
     throw new Error('publicationEvidence workflowRunUrl is invalid');
   }
@@ -175,6 +191,9 @@ function requirePublicationEvidence(value) {
   }
   if (!SHA256_RE.test(value.requiredChecksSha256 ?? '')) {
     throw new Error('publicationEvidence requiredChecksSha256 is invalid');
+  }
+  if (!SHA256_RE.test(value.releaseDeltaSha256 ?? '')) {
+    throw new Error('publicationEvidence releaseDeltaSha256 is invalid');
   }
   if (typeof value.publishedAt !== 'string' || !Number.isFinite(Date.parse(value.publishedAt))) {
     throw new Error('publicationEvidence publishedAt is invalid');
