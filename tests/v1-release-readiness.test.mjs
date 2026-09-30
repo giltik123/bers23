@@ -184,3 +184,30 @@ test('readiness state machine rejects HSME as a v1 blocker or unknown blocker', 
     /unexpected v1 blocker/u,
   );
 });
+
+
+test('readiness state machine keeps deployment pending when only frontend blocker remains', () => {
+  const result=validateV1ReleaseReadiness({
+    readiness:{
+      ...readiness,
+      blockers:readiness.blockers.filter(value=>value.id==='FRONTEND_DEPLOYMENT_HEADERS'),
+      rcSelectable:false,
+      rcCoordinate:null,
+      status:'BERS_V1_RC_NOT_SELECTABLE',
+    },
+    journeys,
+    stageD,
+  });
+  assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
+  assert.deepEqual(result.payload.blockers.map(value=>value.id),['FRONTEND_DEPLOYMENT_HEADERS']);
+  assert.deepEqual(result.payload.pendingBrowserJourneys,[22]);
+});
+
+test('RC readiness workflow follows manifest state and keeps diff hygiene PR-only', async () => {
+  const workflow=await readFile('.github/workflows/v1-release-readiness.yml','utf8');
+  assert.match(workflow,/Emit manifest-matched RC disposition/u);
+  assert.match(workflow,/BERS_V1_RC_NOT_SELECTABLE\)/u);
+  assert.match(workflow,/BERS_V1_RC_SELECTED\)/u);
+  assert.match(workflow,/Unknown release-readiness status/u);
+  assert.match(workflow,/Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
+});
