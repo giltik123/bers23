@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "program": "BERS_V1_CAPABILITY_CLASSIFICATION",
   "targetVersion": "1.0.0",
-  "evidenceBaseSha": "140c688abb4f9b6f8a86e2777940f9bc840ff409",
+  "evidenceBaseSha": "97c30107e147c0ec5b7c828bfd9e6d82cbf2103e",
   "releaseState": "PRE_RC_EXTERNAL_BLOCKERS_REMAIN",
   "entries": [
     {
@@ -87,12 +87,15 @@
     },
     {
       "id": "HSME_V1_RESEARCH_PROGRAM",
-      "classification": "SOFTWARE_READY_EVIDENCE_PENDING",
+      "classification": "R&D_ONLY",
       "enabled": false,
-      "scope": "HSME software/contracts and research evidence exist, but required trusted physical-mobile backend/device evidence and final Stage E disposition remain incomplete",
+      "scope": "HSME software/contracts and research evidence remain available for post-v1 development; physical-mobile qualification is explicitly deferred and grants no v1 production authority.",
       "evidence": [
-        "config/v1-release-readiness.json#HSME_REAL_MOBILE_EVIDENCE"
-      ]
+        "config/v1-release-readiness.json#HSME_REAL_MOBILE_EVIDENCE",
+        "BERS_V1_DEVELOPMENT_ROADMAP.md#stage-e"
+      ],
+      "v1ReleaseBlocking": false,
+      "postV1Research": true
     },
     {
       "id": "BILLING_PAYMENTS_CREDITS",
