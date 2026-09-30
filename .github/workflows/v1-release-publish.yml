@@ -9,9 +9,12 @@ on:
       - 'scripts/verify-v1-release-delta.mjs'
       - 'scripts/verify-v1-required-checks.mjs'
       - 'scripts/check-v1-release-finalization.mjs'
+      - 'scripts/check-v1-release-readiness.mjs'
       - 'scripts/verify-github-main-protection.mjs'
       - 'tests/v1-release-publish.test.mjs'
       - 'tests/v1-release-finalization.test.mjs'
+      - 'tests/v1-release-readiness.test.mjs'
+      - 'tests/v1-release-journey-matrix.test.mjs'
       - 'config/v1-release-finalization.json'
       - 'config/v1-release-readiness.json'
       - 'config/v1-capability-classification.json'
@@ -56,7 +59,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Prove publish and finalization contracts
-        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs
+        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs tests/v1-release-readiness.test.mjs tests/v1-release-journey-matrix.test.mjs
       - name: Check committed diff whitespace
         run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
 
@@ -95,7 +98,7 @@ jobs:
       - run: npm ci
 
       - name: Re-prove release transition contracts
-        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs
+        run: node --test tests/v1-release-publish.test.mjs tests/v1-release-finalization.test.mjs tests/v1-release-readiness.test.mjs tests/v1-release-journey-matrix.test.mjs
 
       - name: Require committed RELEASE_AUTHORIZED disposition
         env:
@@ -103,6 +106,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .release-pack
+          node scripts/check-v1-release-readiness.mjs | tee .release-pack/readiness.log
+          grep -q '^BERS_V1_RC_SELECTED ' .release-pack/readiness.log
+          ! grep -q 'BERS_V1_RC_NOT_SELECTABLE' .release-pack/readiness.log
           node scripts/check-v1-release-finalization.mjs | tee .release-pack/finalization.log
           grep -q '^BERS_V1_RELEASE_AUTHORIZED ' .release-pack/finalization.log
           ! grep -q 'BERS_V1_RELEASE_FINALIZATION_BLOCKED' .release-pack/finalization.log
