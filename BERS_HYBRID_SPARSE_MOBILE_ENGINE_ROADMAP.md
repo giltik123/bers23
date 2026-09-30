@@ -418,13 +418,13 @@ Reject as default architecture unless later evidence overturns the decision:
 - explicit supported-device classes;
 - promotion only through existing fail-closed model policy.
 
-## 23. Relationship to BERS v1 Stage E
+## 23. Relationship to BERS v1 and post-v1 Stage E
 
-Before `BERS_V1_RC`, HSME is an **implementation/evidence requirement**, not an architecture-document-only or post-v1 workstream. The pre-RC gate follows Stage E, #352 and #365.
+HSME is an explicit **post-v1 R&D workstream**. It is not an implementation/evidence requirement for `BERS_V1_RC` or `BERS v1.0 RELEASE`.
 
-BERS does **not** need to promote every HSME experiment into production before v1, but it must implement enough of the architecture to measure the real system and make evidence-based decisions. Production admission remains a separate fail-closed gate per model/runtime/device tier.
+The current v1 product surface gains no HSME production authority from repository research code. HSME capability/model/runtime/device admission remains fail-closed and requires separate reviewed evidence before any future promotion.
 
-The mandatory pre-v1 implementation/evidence must establish:
+The post-v1 `R&D_VALIDATED` milestone remains meaningful and should establish:
 
 1. one pinned dense DiT/mobile-student baseline with exact source/toolchain/license identity;
 2. a functioning sparse/Adapter-MoE prototype with bounded expert capacity;
@@ -432,15 +432,15 @@ The mandatory pre-v1 implementation/evidence must establish:
 4. implemented FreeToken-derived cache/residency/prefetch/resource mechanisms with hit/miss and bytes-moved telemetry;
 5. few-step, precision and quantization evidence rather than theoretical size claims;
 6. an implemented HSME control plane with signed/hash-verified packs, device profiling, resource admission and heterogeneous placement/runtime contracts;
-7. at least one functioning **real mobile backend** with latency, RAM/unified-memory, storage, bytes-moved, battery/energy, thermal and quality measurements;
+7. at least one functioning **real mobile backend** with latency, RAM/unified-memory, storage, bytes-moved, battery/energy, thermal and quality measurements before any future HSME mobile supported-device claim or production admission;
 8. representative HSME-5/6/7 candidates — selective internal sparse MoE, timestep/stage routing and spatial/token sparsity — implemented/tested sufficiently to receive individual `ADVANCE / REDESIGN / REJECT` decisions;
 9. an integrated dense-vs-HSME comparison for quality, latency, memory, storage and bytes moved;
 10. explicit desktop and mobile feasibility decisions;
 11. a final architecture-level `ADVANCE / REDESIGN / REJECT` decision for the next BERS image-runtime generation.
 
-A recorded blocker may reject a particular device/backend/mechanism, but it does not substitute for the required functioning mobile backend. Browser/WASM capability evidence alone cannot satisfy the mobile gate.
+A recorded blocker may reject a particular device/backend/mechanism, but it does not substitute for the functioning mobile backend required before future HSME mobile qualification. Browser/WASM capability evidence alone cannot satisfy that future mobile gate.
 
-This pre-RC implementation does **not** grant HSME capability admission, provider, Billing, Project, Artifact, model-provenance or cloud-fallback authority.
+Deferring HSME beyond v1 does **not** grant HSME capability admission, provider, Billing, Project, Artifact, model-provenance or cloud-fallback authority.
 
 ## 24. Authority law
 

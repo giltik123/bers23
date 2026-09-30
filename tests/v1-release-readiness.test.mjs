@@ -7,6 +7,7 @@ const readiness = JSON.parse(await readFile('config/v1-release-readiness.json','
 const journeys = JSON.parse(await readFile('config/v1-release-journey-matrix.json','utf8'));
 const stageD = JSON.parse(await readFile('config/v1-generative-decision-matrix.json','utf8'));
 const roadmap = await readFile('BERS_V1_DEVELOPMENT_ROADMAP.md','utf8');
+const hsmeRoadmap = await readFile('BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md','utf8');
 
 test('RC readiness is fail-closed on exactly the verified external blockers', () => {
   assert.equal(readiness.rcSelectable, false);
@@ -53,6 +54,10 @@ test('canonical roadmap keeps HSME physical-mobile work post-v1 and non-blocking
   assert.match(roadmap, /HSME remains explicitly non-production\/post-v1/);
   assert.doesNotMatch(roadmap, /at least one functioning real mobile backend is required for the pre-RC feasibility gate/);
   assert.doesNotMatch(roadmap, /R&D validation before v1 is mandatory/);
+  assert.match(hsmeRoadmap, /HSME is an explicit \*\*post-v1 R&D workstream\*\*/);
+  assert.match(hsmeRoadmap, /not an implementation\/evidence requirement for `BERS_V1_RC` or `BERS v1\.0 RELEASE`/);
+  assert.doesNotMatch(hsmeRoadmap, /Before `BERS_V1_RC`, HSME is an \*\*implementation\/evidence requirement\*\*/);
+  assert.doesNotMatch(hsmeRoadmap, /mandatory pre-v1 implementation\/evidence/);
 });
 
 test('selection law forbids an RC SHA while blockers remain', () => {
