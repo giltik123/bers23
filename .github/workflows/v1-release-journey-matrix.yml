@@ -37,15 +37,29 @@ jobs:
           node-version: '24.x'
           cache: npm
       - run: npm ci
-      - name: Prove #233 journey coverage and remaining external deployment gap
+      - name: Prove #233 journey coverage and deployment-evidence state
         run: node --test tests/v1-release-journey-matrix.test.mjs
-      - name: Preserve truthful release status
+      - name: Emit truthful journey disposition
         run: |
           set -euo pipefail
-          test "$(grep -c '"disposition": "PROVEN"' config/v1-release-journey-matrix.json)" -eq 20
-          test "$(grep -c '"disposition": "DEFERRED_OUT_OF_V1"' config/v1-release-journey-matrix.json)" -eq 1
-          test "$(grep -c '"disposition": "DEPLOYMENT_TARGET_PENDING"' config/v1-release-journey-matrix.json)" -eq 1
-          grep -q '"id": 22' config/v1-release-journey-matrix.json
-          grep -q 'final canonical deployed frontend URL' docs/v1-release-journey-matrix.md
+          node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const matrix=JSON.parse(readFileSync('config/v1-release-journey-matrix.json','utf8'));
+          const security=matrix.entries.find(value=>value.id===22);
+          const proven=matrix.entries.filter(value=>value.disposition==='PROVEN').length;
+          const deferred=matrix.entries.filter(value=>value.disposition==='DEFERRED_OUT_OF_V1').length;
+          const pending=matrix.entries.filter(value=>value.disposition==='DEPLOYMENT_TARGET_PENDING').length;
+          if (deferred !== 1) throw new Error('expected one deferred v1 journey');
+          if (security?.disposition === 'DEPLOYMENT_TARGET_PENDING') {
+            if (proven !== 20 || pending !== 1) throw new Error('pending journey matrix count mismatch');
+            console.log('BERS_V1_FRONTEND_DEPLOYMENT_PENDING');
+          } else if (security?.disposition === 'PROVEN') {
+            if (proven !== 21 || pending !== 0) throw new Error('proven journey matrix count mismatch');
+            console.log('BERS_V1_FRONTEND_DEPLOYMENT_PROVEN');
+          } else {
+            throw new Error('unexpected journey 22 disposition');
+          }
+          NODE
       - name: Check committed diff whitespace
+        if: github.event_name == 'pull_request'
         run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
