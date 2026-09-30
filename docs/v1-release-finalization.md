@@ -94,15 +94,3 @@ The finalization validator binds `config/v1-capability-classification.json` to t
 - the machine-readable `releaseStateByFinalizationStatus` mapping must retain those exact four values.
 
 The guard also requires canonical program identities for readiness, finalization, and capability classification, and requires readiness status `BERS_V1_RC_NOT_SELECTABLE` while blocked or `BERS_V1_RC_SELECTED` once blockers are empty.
-
-
-## Cross-manifest release-state convergence
-
-The finalization validator also binds `config/v1-capability-classification.json` to the same transition state.
-
-- `BLOCKED_BEFORE_RC` requires classification `releaseState=PRE_RC_EXTERNAL_BLOCKERS_REMAIN`;
-- `RC_SELECTED` requires classification `releaseState=RC_SELECTED`;
-- `RELEASED` requires classification `releaseState=RELEASED`;
-- the machine-readable `releaseStateByFinalizationStatus` mapping must retain those exact three values.
-
-This prevents a final release from being published while capability classification still describes a pre-RC or RC-only state.
