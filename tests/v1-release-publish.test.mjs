@@ -163,6 +163,10 @@ test('release delta accepts only the finite release-metadata allowlist', () => {
     () => validateV1ReleaseDeltaPaths(['server/core/server.ts']),
     /product\/non-metadata drift/u,
   );
+  assert.throws(
+    () => validateV1ReleaseDeltaPaths(['.github/workflows/v1-release-publish.yml']),
+    /product\/non-metadata drift/u,
+  );
 });
 
 test('release delta requires RC ancestry and a non-empty metadata transition', () => {
