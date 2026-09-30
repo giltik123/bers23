@@ -4,12 +4,11 @@ The release program now has a fail-closed machine-readable coordinate at `config
 
 It deliberately does **not** use the number of open GitHub issues as release truth. Accepted software can coexist with stale/open parent issues. Instead, RC selection is blocked only by verified mandatory release gaps.
 
-Current blockers:
+Current blocker:
 
-1. **Frontend deployment headers (#233 / R4).** The repository contract and verifier are accepted, but the final canonical deployed frontend URL still needs live response-header evidence.
-2. **Repository main protection (#355 / R1).** The repository ruleset collection is currently empty. The connected GitHub App cannot read or change branch protection requiring administration permission. This is an external GitHub administration action, not a code change.
+1. **Repository main protection (#355 / R1).** The frontend deployment/header gate (#233 / R4) is now cleared by hosted exact-SHA evidence on `c5292b4a65341050d664de715eff2feff0b4b32f`. Repository main protection remains external GitHub administration work: the connected GitHub App cannot create the required ruleset/branch protection.
 
-Stage D product decisions are already frozen and fail-closed. The browser release journey software matrix is complete except for the external deployment target proof. Billing redesign (#189), additional Editor expansion (#192), and physical-mobile HSME qualification (#352/#862/#871/#867) are not RC blockers under the current v1 scope.
+Stage D product decisions are already frozen and fail-closed. The browser release journey matrix is complete, including hosted external deployment proof for journey 22. Billing redesign (#189), additional Editor expansion (#192), and physical-mobile HSME qualification (#352/#862/#871/#867) are not RC blockers under the current v1 scope.
 
 HSME remains non-production. Its physical-device work is explicitly deferred as post-v1 R&D and still requires real-device evidence before any future production admission.
 
