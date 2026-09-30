@@ -205,6 +205,9 @@ function requireMainProtectionChecks(value) {
 
 function validateFrontendLiveEvidence(value) {
   requireObject(value, 'journey 22 liveEvidence');
+  if (value.schemaVersion !== 1) {
+    throw new Error('journey 22 live evidence schemaVersion is invalid');
+  }
   if (value.kind !== 'BERS_V1_FRONTEND_SECURITY_EVIDENCE') {
     throw new Error('journey 22 live evidence kind mismatch');
   }

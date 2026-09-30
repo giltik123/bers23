@@ -47,6 +47,7 @@ function mainProtectionEvidence() {
 
 function frontendLiveEvidence(sha) {
   return {
+    schemaVersion:1,
     kind:'BERS_V1_FRONTEND_SECURITY_EVIDENCE',
     verifiedSha:sha,
     frontendUrl:'https://app.example.test',

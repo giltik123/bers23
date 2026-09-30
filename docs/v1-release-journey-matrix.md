@@ -6,6 +6,8 @@ The matrix binds every numbered journey from #233 to committed exact-head eviden
 
 Journey 22 may move to `PROVEN` only after the live verifier succeeds and the matrix records machine-readable evidence: exact verified SHA, HTTPS frontend URL, Core API coordinate, HTML SHA-256, verification timestamp, workflow-run URL, and the exact `bers-v1-frontend-security-<sha>` artifact name. At that point #233 has no unresolved in-v1 journey; issue closure by itself is not evidence.
 
+When journey 22 is `PROVEN`, hosted CI independently resolves the recorded workflow run, requires a successful `workflow_dispatch` of **BERS v1 external release evidence tooling** on the exact `verifiedSha`, downloads the exact named artifact, and compares its `frontend-security.json` projection to the committed `liveEvidence`. A plausible URL or artifact name without matching hosted evidence fails closed.
+
 This means #233 is no longer ambiguous: the remaining release work inside that issue is the real deployed frontend header proof, not another product feature or browser harness.
 
 The matrix itself grants no runtime, Project, Artifact, provider, Billing, model, or deployment authority. A journey may move to `PROVEN` only when its referenced evidence exists and the dedicated hosted acceptance remains green.

@@ -60,6 +60,7 @@ test('journey 22 is either honestly deployment-pending or bound to recorded live
   } else {
     assert.equal(entry.disposition,'PROVEN');
     const evidence=entry.liveEvidence;
+    assert.equal(evidence?.schemaVersion,1);
     assert.equal(evidence?.kind,'BERS_V1_FRONTEND_SECURITY_EVIDENCE');
     assert.match(evidence?.verifiedSha ?? '',/^[0-9a-f]{40}$/u);
     assert.match(evidence?.htmlSha256 ?? '',/^[0-9a-f]{64}$/u);
@@ -95,5 +96,13 @@ test('journey matrix workflow supports pending and proven deployment states and 
   assert.match(workflow,/BERS_V1_FRONTEND_DEPLOYMENT_PROVEN/u);
   assert.match(workflow,/security\?\.disposition === 'DEPLOYMENT_TARGET_PENDING'/u);
   assert.match(workflow,/security\?\.disposition === 'PROVEN'/u);
+  assert.match(workflow,/actions:\s*read/u);
+  assert.match(workflow,/Verify hosted frontend deployment evidence when PROVEN/u);
+  assert.match(workflow,/gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs\/\$\{RUN_ID\}"/u);
+  assert.match(workflow,/\.head_sha/u);
+  assert.match(workflow,/\.conclusion/u);
+  assert.match(workflow,/workflow_dispatch/u);
+  assert.match(workflow,/gh run download "\$RUN_ID"/u);
+  assert.match(workflow,/hosted artifact does not match committed journey 22 evidence/u);
   assert.match(workflow,/Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
 });

@@ -17,6 +17,7 @@ const baseJourneys = JSON.parse(await readFile('config/v1-release-journey-matrix
 
 function frontendEvidence(sha) {
   return {
+    schemaVersion:1,
     kind:'BERS_V1_FRONTEND_SECURITY_EVIDENCE',
     verifiedSha:sha,
     frontendUrl:'https://app.example.test',

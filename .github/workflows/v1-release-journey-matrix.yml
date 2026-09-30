@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   journey-matrix:
@@ -60,6 +61,80 @@ jobs:
             throw new Error('unexpected journey 22 disposition');
           }
           NODE
+      - name: Verify hosted frontend deployment evidence when PROVEN
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          disposition="$(node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const matrix=JSON.parse(readFileSync('config/v1-release-journey-matrix.json','utf8'));
+          process.stdout.write(String(matrix.entries.find(value=>value.id===22)?.disposition ?? ''));
+          NODE
+          )"
+          if [ "$disposition" != PROVEN ]; then
+            echo "Hosted frontend evidence verification is not required for $disposition."
+            exit 0
+          fi
+
+          RUN_ID="$(node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const matrix=JSON.parse(readFileSync('config/v1-release-journey-matrix.json','utf8'));
+          const evidence=matrix.entries.find(value=>value.id===22)?.liveEvidence;
+          const match=/^https:\/\/github\.com\/giltik123\/bers23\/actions\/runs\/(\d+)$/u.exec(evidence?.workflowRunUrl ?? '');
+          if (!match) throw new Error('journey 22 workflowRunUrl is invalid');
+          process.stdout.write(match[1]);
+          NODE
+          )"
+          VERIFIED_SHA="$(node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const matrix=JSON.parse(readFileSync('config/v1-release-journey-matrix.json','utf8'));
+          process.stdout.write(String(matrix.entries.find(value=>value.id===22)?.liveEvidence?.verifiedSha ?? ''));
+          NODE
+          )"
+          ARTIFACT_NAME="$(node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const matrix=JSON.parse(readFileSync('config/v1-release-journey-matrix.json','utf8'));
+          process.stdout.write(String(matrix.entries.find(value=>value.id===22)?.liveEvidence?.artifactName ?? ''));
+          NODE
+          )"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.conclusion')" = success
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.head_sha')" = "$VERIFIED_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.name')" = 'BERS v1 external release evidence tooling'
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.event')" = workflow_dispatch
+
+          evidence_dir=".test-cache-v1-frontend-evidence"
+          rm -rf "$evidence_dir"
+          mkdir -p "$evidence_dir"
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$ARTIFACT_NAME" --dir "$evidence_dir"
+
+          node --input-type=module - <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, readdirSync, statSync } from 'node:fs';
+          import { join } from 'node:path';
+
+          function collectJson(dir) {
+            const out=[];
+            for (const name of readdirSync(dir)) {
+              const path=join(dir,name);
+              if (statSync(path).isDirectory()) out.push(...collectJson(path));
+              else if (name === 'frontend-security.json') out.push(path);
+            }
+            return out;
+          }
+
+          const matrix=JSON.parse(readFileSync('config/v1-release-journey-matrix.json','utf8'));
+          const committed=matrix.entries.find(value=>value.id===22)?.liveEvidence;
+          const matches=collectJson('.test-cache-v1-frontend-evidence');
+          assert.equal(matches.length,1,'expected exactly one hosted frontend-security.json');
+          const artifact=JSON.parse(readFileSync(matches[0],'utf8'));
+          assert.equal(artifact.schemaVersion,1);
+          assert.equal(artifact.kind,'BERS_V1_FRONTEND_SECURITY_EVIDENCE');
+          assert.ok(Number.isInteger(artifact.status) && artifact.status >= 200 && artifact.status < 300);
+          const projection=Object.fromEntries(Object.keys(committed).map(key=>[key,artifact[key]]));
+          assert.deepEqual(projection,committed,'hosted artifact does not match committed journey 22 evidence');
+          NODE
+
       - name: Check committed diff whitespace
         if: github.event_name == 'pull_request'
         run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
