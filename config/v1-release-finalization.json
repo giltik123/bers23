@@ -14,9 +14,10 @@
   "releaseNotesSource": "docs/v1-release-notes.md",
   "operationsSource": "docs/v1-release-operations.md",
   "laws": [
-    "While readiness blockers exist, package.json must remain 0.0.0 and no v1.0.0 tag/release SHA may be declared.",
-    "When blockers are empty, BERS_V1_RC must be one exact accepted main SHA and affected final release evidence must be terminal green on that coordinate.",
-    "Final release state requires package.json version 1.0.0, releaseTag v1.0.0 and releaseSha equal to the exact accepted release coordinate.",
+    "While readiness blockers exist, package.json must remain 0.0.0, readiness rcSelectable must be false, and no readiness/finalization RC or v1.0.0 release coordinate may be declared.",
+    "When blockers are empty, BERS_V1_RC must be one exact accepted main SHA and finalization rcCoordinate must equal that readiness coordinate.",
+    "RC_SELECTED must keep package.json and packageVersionExpected at 0.0.0, releaseSha/releaseTag null, and releaseGenerated false until final affected release evidence closes.",
+    "Final release state requires package.json version 1.0.0, packageVersionExpected 1.0.0, releaseTag v1.0.0, releaseSha equal to the exact accepted release coordinate, and finalization rcCoordinate equal to the same readiness rcCoordinate.",
     "A release-affecting fix after RC moves the coordinate to the new accepted main SHA and requires rerunning affected evidence before finalization."
   ]
 }

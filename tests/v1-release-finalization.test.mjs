@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+import { validateV1ReleaseFinalization } from '../scripts/check-v1-release-finalization.mjs';
+
 const finalization = JSON.parse(await readFile('config/v1-release-finalization.json','utf8'));
 const readiness = JSON.parse(await readFile('config/v1-release-readiness.json','utf8'));
 const classification = JSON.parse(await readFile('config/v1-capability-classification.json','utf8'));
@@ -65,4 +67,127 @@ test('release-finalization workflow accepts every manifest state and keeps diff 
   assert.match(workflow,/BERS_V1_RC_SELECTED/u);
   assert.match(workflow,/BERS_V1_0_RELEASED/u);
   assert.match(workflow,/Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
+});
+
+
+test('state machine accepts a clean RC_SELECTED fixture without final release claims', () => {
+  const sha='a'.repeat(40);
+  const result=validateV1ReleaseFinalization({
+    readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha },
+    finalization: {
+      ...finalization,
+      status: 'RC_SELECTED',
+      rcCoordinate: sha,
+      releaseSha: null,
+      releaseTag: null,
+      releaseGenerated: false,
+      packageVersionExpected: '0.0.0',
+    },
+    classification,
+    pkg: { ...pkg, version: '0.0.0' },
+  });
+  assert.equal(result.marker,'BERS_V1_RC_SELECTED');
+  assert.equal(result.payload,sha);
+});
+
+test('state machine accepts RELEASED only when version, tag and every coordinate converge', () => {
+  const sha='b'.repeat(40);
+  const result=validateV1ReleaseFinalization({
+    readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha },
+    finalization: {
+      ...finalization,
+      status: 'RELEASED',
+      rcCoordinate: sha,
+      releaseSha: sha,
+      releaseTag: 'v1.0.0',
+      releaseGenerated: true,
+      packageVersionExpected: '1.0.0',
+    },
+    classification,
+    pkg: { ...pkg, version: '1.0.0' },
+  });
+  assert.equal(result.marker,'BERS_V1_0_RELEASED');
+  assert.deepEqual(result.payload,{sha,tag:'v1.0.0'});
+});
+
+test('RC_SELECTED rejects leaked final release metadata and artifact claims', () => {
+  const sha='c'.repeat(40);
+  const base={
+    readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha },
+    finalization: {
+      ...finalization,
+      status: 'RC_SELECTED',
+      rcCoordinate: sha,
+      releaseSha: null,
+      releaseTag: null,
+      releaseGenerated: false,
+      packageVersionExpected: '0.0.0',
+    },
+    classification,
+    pkg: { ...pkg, version: '0.0.0' },
+  };
+
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      ...base,
+      finalization: { ...base.finalization, releaseTag: 'v1.0.0' },
+    }),
+    /cannot declare final release SHA\/tag/u,
+  );
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      ...base,
+      finalization: { ...base.finalization, releaseSha: sha },
+    }),
+    /cannot declare final release SHA\/tag/u,
+  );
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      ...base,
+      finalization: { ...base.finalization, releaseGenerated: true },
+    }),
+    /cannot claim release artifact/u,
+  );
+});
+
+test('RELEASED rejects coordinate drift even when releaseSha itself looks valid', () => {
+  const sha='d'.repeat(40);
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      readiness: { ...readiness, blockers: [], rcSelectable: true, rcCoordinate: sha },
+      finalization: {
+        ...finalization,
+        status: 'RELEASED',
+        rcCoordinate: 'e'.repeat(40),
+        releaseSha: sha,
+        releaseTag: 'v1.0.0',
+        releaseGenerated: true,
+        packageVersionExpected: '1.0.0',
+      },
+      classification,
+      pkg: { ...pkg, version: '1.0.0' },
+    }),
+    /finalization RC coordinate mismatch/u,
+  );
+});
+
+test('blocked readiness cannot advertise RC selectability or a readiness coordinate', () => {
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      readiness: { ...readiness, rcSelectable: true },
+      finalization,
+      classification,
+      pkg,
+    }),
+    /blocked readiness requires rcSelectable=false/u,
+  );
+  assert.throws(
+    () => validateV1ReleaseFinalization({
+      readiness: { ...readiness, rcCoordinate: 'f'.repeat(40) },
+      finalization,
+      classification,
+      pkg,
+    }),
+    /blocked readiness cannot declare readiness RC coordinate/u,
+  );
 });
