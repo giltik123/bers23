@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { requiredProductionFrontendHeaders } from '../config/frontendSecurityPolicy.mjs';
@@ -177,4 +178,21 @@ test('ruleset evidence rejects bypass actors rather than hiding administrator ex
     () => verifyGithubMainProtection({ token: 'admin-read-token', fetcher }),
     /No accepted active ruleset was found/u,
   );
+});
+
+
+test('external release evidence workflow performs live exact-SHA frontend capture on manual dispatch', async () => {
+  const workflow = await readFile('.github/workflows/v1-external-release-evidence.yml', 'utf8');
+
+  assert.match(workflow, /workflow_dispatch:\s*\n\s*inputs:/u);
+  assert.match(workflow, /frontend_url:\s*\n[\s\S]*required:\s*true/u);
+  assert.match(workflow, /core_api_url:\s*\n[\s\S]*default:\s*\/api\/core/u);
+  assert.match(workflow, /live-frontend-release-evidence:/u);
+  assert.match(workflow, /if:\s*github\.event_name == 'workflow_dispatch'/u);
+  assert.match(workflow, /ref:\s*\$\{\{ github\.sha \}\}/u);
+  assert.match(workflow, /npm run release:evidence:frontend/u);
+  assert.match(workflow, /release-evidence\/v1\/frontend-security\.json/u);
+  assert.match(workflow, /actions\/upload-artifact@v4/u);
+  assert.match(workflow, /bers-v1-frontend-security-\$\{\{ github\.sha \}\}/u);
+  assert.match(workflow, /Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
 });
