@@ -11,6 +11,7 @@ on:
       - 'tests/v1-release-readiness.test.mjs'
       - 'docs/v1-release-readiness.md'
       - 'BERS_V1_DEVELOPMENT_ROADMAP.md'
+      - 'BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md'
       - '.github/workflows/v1-release-readiness.yml'
   workflow_dispatch:
 
