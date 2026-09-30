@@ -4,7 +4,21 @@ Two mandatory v1 blockers live outside repository code: the final deployed front
 
 ## Final frontend security evidence
 
-After the canonical frontend is deployed:
+After the canonical frontend is deployed, the preferred evidence path is the GitHub Actions workflow **BERS v1 external release evidence tooling**.
+
+Run it manually with:
+
+- `frontend_url`: the final canonical HTTPS frontend URL;
+- `core_api_url`: the canonical Core API URL, or `/api/core` for same-origin Core.
+
+The manual run checks out the exact dispatched SHA, verifies that checkout, executes the live header verifier, and uploads a 90-day artifact named `bers-v1-frontend-security-<sha>` containing:
+
+- `release-evidence/v1/frontend-security.json`;
+- `release-evidence/v1/frontend-security.log`.
+
+The dispatch requires HTTPS and the verifier rejects credentials, query strings, fragments, redirects, non-HTML roots, and missing/incorrect production response headers.
+
+The same verifier can also be run locally:
 
 ```sh
 FRONTEND_URL=https://app.example.com \
