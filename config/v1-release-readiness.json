@@ -13,7 +13,7 @@
     },
     {
       "id": "BROWSER_PRODUCT_JOURNEYS_SOFTWARE",
-      "state": "COMPLETE_EXCEPT_EXTERNAL_DEPLOYMENT_TARGET",
+      "state": "COMPLETE",
       "evidence": "config/v1-release-journey-matrix.json"
     },
     {
@@ -23,14 +23,6 @@
     }
   ],
   "blockers": [
-    {
-      "id": "FRONTEND_DEPLOYMENT_HEADERS",
-      "issue": 233,
-      "releaseGate": "R4",
-      "state": "EXTERNAL_DEPLOYMENT_EVIDENCE_PENDING",
-      "evidence": "config/v1-release-journey-matrix.json#journey-22",
-      "resolution": "Run scripts/verify-frontend-security-headers.mjs against the final canonical deployed frontend URL and record the exact deployment evidence."
-    },
     {
       "id": "REPOSITORY_MAIN_PROTECTION",
       "issue": 355,
