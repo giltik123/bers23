@@ -65,6 +65,7 @@ function authorizedFixture({
     'docs/v1-release-notes.md':'# BERS v1.0 release notes\n\nFinal production release.\n',
     'docs/v1-release-operations.md':'# BERS v1 operations\n\nImmutable release procedure.\n',
     'package.json':`${JSON.stringify(pkg,null,2)}\n`,
+    'package-lock.json':`${JSON.stringify({name:pkg.name,version:pkg.version,lockfileVersion:3,packages:{'':{name:pkg.name,version:pkg.version}}},null,2)}\n`,
   };
   return {
     rcSha,
@@ -102,6 +103,7 @@ test('release manifest is deterministic and binds selected RC separately from ru
   assert.equal(first.classification.releaseState,'RELEASE_AUTHORIZED');
   assert.equal(first.frontendDeploymentEvidence.verifiedSha,fixture.rcSha);
   assert.match(first.sources['config/v1-release-journey-matrix.json'].sha256,/^[0-9a-f]{64}$/u);
+  assert.match(first.sources['package-lock.json'].sha256,/^[0-9a-f]{64}$/u);
 });
 
 test('release manifest refuses pre-RC notes or frontend evidence bound to another RC', () => {
