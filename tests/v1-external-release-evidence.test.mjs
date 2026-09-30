@@ -247,3 +247,26 @@ test('external release evidence workflow performs live exact-SHA frontend captur
   assert.match(workflow, /evidence\.artifactName/u);
   assert.match(workflow, /Check committed diff whitespace\s*\n\s*if:\s*github\.event_name == 'pull_request'/u);
 });
+
+
+test('owner-only evidence dispatch bridge resolves exact hosted run and reports artifact provenance', async () => {
+  const workflow = await readFile('.github/workflows/v1-external-release-evidence-dispatch.yml', 'utf8');
+
+  assert.match(workflow, /issues:\s*write/u);
+  assert.match(workflow, /github\.event\.issue\.number == 233/u);
+  assert.match(workflow, /github\.event\.comment\.user\.login == github\.repository_owner/u);
+  assert.match(workflow, /github\.event\.comment\.author_association == 'OWNER'/u);
+  assert.match(workflow, /github\.event\.comment\.body == '\/bers-v1-dispatch-frontend-evidence'/u);
+  assert.match(workflow, /getBranch/u);
+  assert.match(workflow, /expectedSha = branch\.data\.commit\.sha/u);
+  assert.match(workflow, /knownRunIds/u);
+  assert.match(workflow, /createWorkflowDispatch/u);
+  assert.match(workflow, /candidate\.head_sha === expectedSha/u);
+  assert.match(workflow, /candidate\.event === 'workflow_dispatch'/u);
+  assert.match(workflow, /run\.conclusion !== 'success'/u);
+  assert.match(workflow, /listWorkflowRunArtifacts/u);
+  assert.match(workflow, /bers-v1-frontend-security-/u);
+  assert.match(workflow, /github\.rest\.issues\.createComment/u);
+  assert.match(workflow, /workflowRunUrl/u);
+  assert.match(workflow, /artifactName/u);
+});
