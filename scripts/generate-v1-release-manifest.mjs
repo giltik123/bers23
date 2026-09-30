@@ -135,6 +135,7 @@ export async function loadV1ReleaseManifestSources() {
     'docs/v1-release-notes.md',
     'docs/v1-release-operations.md',
     'package.json',
+    'package-lock.json',
   ];
   const pairs = await Promise.all(
     paths.map(async path => [path, await readFile(path, 'utf8')]),
