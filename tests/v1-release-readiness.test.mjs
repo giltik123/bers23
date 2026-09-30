@@ -3,29 +3,44 @@ import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+import { validateV1ReleaseReadiness } from '../scripts/check-v1-release-readiness.mjs';
+
 const readiness = JSON.parse(await readFile('config/v1-release-readiness.json','utf8'));
 const journeys = JSON.parse(await readFile('config/v1-release-journey-matrix.json','utf8'));
 const stageD = JSON.parse(await readFile('config/v1-generative-decision-matrix.json','utf8'));
 const roadmap = await readFile('BERS_V1_DEVELOPMENT_ROADMAP.md','utf8');
 const hsmeRoadmap = await readFile('BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md','utf8');
 
-test('RC readiness is fail-closed on exactly the verified external blockers', () => {
-  assert.equal(readiness.rcSelectable, false);
-  assert.equal(readiness.rcCoordinate, null);
-  assert.equal(readiness.status, 'BERS_V1_RC_NOT_SELECTABLE');
-  assert.deepEqual(readiness.blockers.map(value=>value.id).sort(), [
-    'FRONTEND_DEPLOYMENT_HEADERS',
-    'REPOSITORY_MAIN_PROTECTION',
-  ]);
-  assert.deepEqual(readiness.blockers.map(value=>value.releaseGate).sort(), ['R1','R4']);
+test('current RC readiness matches its machine-readable state', () => {
+  const result=validateV1ReleaseReadiness({readiness,journeys,stageD});
+  const expected=readiness.blockers.length > 0
+    ? 'BERS_V1_RC_NOT_SELECTABLE'
+    : 'BERS_V1_RC_SELECTED';
+  assert.equal(result.marker,expected);
+
+  if (readiness.blockers.length > 0) {
+    assert.equal(readiness.rcSelectable,false);
+    assert.equal(readiness.rcCoordinate,null);
+    assert.equal(readiness.status,'BERS_V1_RC_NOT_SELECTABLE');
+  } else {
+    assert.equal(readiness.rcSelectable,true);
+    assert.match(readiness.rcCoordinate,/^[0-9a-f]{40}$/u);
+    assert.equal(readiness.status,'BERS_V1_RC_SELECTED');
+  }
 });
 
-test('RC guard consumes the accepted Stage D and #233 ledgers instead of open-issue counts', () => {
-  assert.equal(stageD.entries.length, 6);
-  assert.equal(stageD.entries.every(value=>value.productionEnabled === false), true);
-  assert.equal(journeys.entries.filter(value=>value.disposition === 'PROVEN').length, 20);
-  assert.equal(journeys.entries.find(value=>value.id === 17).disposition, 'DEFERRED_OUT_OF_V1');
-  assert.equal(journeys.entries.find(value=>value.id === 22).disposition, 'DEPLOYMENT_TARGET_PENDING');
+test('RC guard consumes the accepted Stage D and browser ledgers instead of open-issue counts', () => {
+  assert.equal(stageD.entries.length,6);
+  assert.equal(stageD.entries.every(value=>value.productionEnabled === false),true);
+  assert.equal(journeys.entries.find(value=>value.id === 17).disposition,'DEFERRED_OUT_OF_V1');
+  const journey22=journeys.entries.find(value=>value.id === 22);
+  const frontendBlocked=readiness.blockers.some(value=>value.id==='FRONTEND_DEPLOYMENT_HEADERS');
+  assert.equal(journey22.disposition,frontendBlocked ? 'DEPLOYMENT_TARGET_PENDING' : 'PROVEN');
+  assert.equal(
+    journeys.entries.filter(value=>value.id !== 17 && value.disposition !== 'PROVEN')
+      .every(value=>value.id === 22 && frontendBlocked),
+    true,
+  );
   assert.doesNotMatch(JSON.stringify(readiness.blockers), /192|191|155|180|349/);
 });
 
@@ -37,15 +52,14 @@ test('optional/deferred work cannot accidentally block RC through this ledger', 
   assert.deepEqual(hsme.relatedIssues,[862,871,867]);
 });
 
-test('readiness classifier emits the non-selectable coordinate and exact blocker set', () => {
-  const result = spawnSync(process.execPath,['scripts/check-v1-release-readiness.mjs'],{encoding:'utf8'});
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /BERS_V1_RC_NOT_SELECTABLE/);
-  for (const id of ['FRONTEND_DEPLOYMENT_HEADERS','REPOSITORY_MAIN_PROTECTION']) {
-    assert.match(result.stdout, new RegExp(id));
-  }
-  assert.match(result.stdout, /DEFERRED_POST_V1_RESEARCH/);
-  assert.doesNotMatch(result.stdout, /"id":"HSME_REAL_MOBILE_EVIDENCE","issue":352,"state":"EXTERNAL_PHYSICAL_DEVICE_EVIDENCE_PENDING"/);
+test('readiness classifier emits exactly the disposition declared by the ledger', () => {
+  const result=spawnSync(process.execPath,['scripts/check-v1-release-readiness.mjs'],{encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+  const expected=readiness.blockers.length > 0 ? 'BERS_V1_RC_NOT_SELECTABLE' : 'BERS_V1_RC_SELECTED';
+  assert.match(result.stdout,new RegExp(`^${expected}(?: |$)`,'m'));
+  const other=expected === 'BERS_V1_RC_NOT_SELECTABLE' ? 'BERS_V1_RC_SELECTED' : 'BERS_V1_RC_NOT_SELECTABLE';
+  assert.doesNotMatch(result.stdout,new RegExp(other));
+  assert.match(result.stdout,/DEFERRED_POST_V1_RESEARCH/);
 });
 
 test('canonical roadmap keeps HSME physical-mobile work post-v1 and non-blocking', () => {
@@ -60,8 +74,113 @@ test('canonical roadmap keeps HSME physical-mobile work post-v1 and non-blocking
   assert.doesNotMatch(hsmeRoadmap, /mandatory pre-v1 implementation\/evidence/);
 });
 
-test('selection law forbids an RC SHA while blockers remain', () => {
-  assert.match(readiness.selectionLaw, /blockers is empty/);
-  assert.match(readiness.selectionLaw, /one exact accepted main SHA/);
-  assert.equal(readiness.blockers.length > 0 && readiness.rcSelectable, false);
+test('selection law binds RC selection to empty blockers and one exact accepted SHA', () => {
+  assert.match(readiness.selectionLaw,/blockers is empty/);
+  assert.match(readiness.selectionLaw,/one exact accepted main SHA/);
+  if (readiness.blockers.length > 0) {
+    assert.equal(readiness.rcSelectable,false);
+    assert.equal(readiness.rcCoordinate,null);
+  }
+});
+
+test('readiness state machine permits either external blocker to close independently', () => {
+  const oneBlocker=readiness.blockers.filter(value=>value.id==='REPOSITORY_MAIN_PROTECTION');
+  const promotedJourneys={
+    ...journeys,
+    entries:journeys.entries.map(value=>value.id === 22
+      ? {...value,disposition:'PROVEN'}
+      : value),
+  };
+  const result=validateV1ReleaseReadiness({
+    readiness:{
+      ...readiness,
+      blockers:oneBlocker,
+      rcSelectable:false,
+      rcCoordinate:null,
+      status:'BERS_V1_RC_NOT_SELECTABLE',
+    },
+    journeys:promotedJourneys,
+    stageD,
+  });
+  assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
+  assert.deepEqual(result.payload.blockers.map(value=>value.id),['REPOSITORY_MAIN_PROTECTION']);
+  assert.deepEqual(result.payload.pendingBrowserJourneys,[]);
+});
+
+test('readiness state machine selects one exact RC only after all blockers are removed', () => {
+  const sha='a'.repeat(40);
+  const selectedJourneys={
+    ...journeys,
+    entries:journeys.entries.map(value=>value.id === 22
+      ? {...value,disposition:'PROVEN'}
+      : value),
+  };
+  const result=validateV1ReleaseReadiness({
+    readiness:{
+      ...readiness,
+      blockers:[],
+      rcSelectable:true,
+      rcCoordinate:sha,
+      status:'BERS_V1_RC_SELECTED',
+    },
+    journeys:selectedJourneys,
+    stageD,
+  });
+  assert.equal(result.marker,'BERS_V1_RC_SELECTED');
+  assert.equal(result.payload.rcCoordinate,sha);
+  assert.equal(result.payload.provenBrowserJourneys,21);
+  assert.deepEqual(result.payload.pendingBrowserJourneys,[]);
+});
+
+test('readiness state machine rejects premature RC selection and frontend blocker drift', () => {
+  const sha='b'.repeat(40);
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{...readiness,rcSelectable:true,rcCoordinate:sha,status:'BERS_V1_RC_SELECTED'},
+      journeys,
+      stageD,
+    }),
+    /non-selectable while blockers exist/u,
+  );
+
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='FRONTEND_DEPLOYMENT_HEADERS'),
+        rcSelectable:false,
+        rcCoordinate:null,
+        status:'BERS_V1_RC_NOT_SELECTABLE',
+      },
+      journeys,
+      stageD,
+    }),
+    /journey 22 must be PROVEN/u,
+  );
+});
+
+test('readiness state machine rejects HSME as a v1 blocker or unknown blocker', () => {
+  const hsme=readiness.nonBlockingDeferred.find(value=>value.id==='HSME_REAL_MOBILE_EVIDENCE');
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:[...readiness.blockers,{...hsme,releaseGate:'R5'}],
+      },
+      journeys,
+      stageD,
+    }),
+    /unexpected v1 blocker|physical-mobile HSME/u,
+  );
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:[...readiness.blockers,{id:'UNKNOWN',issue:999,releaseGate:'RX'}],
+      },
+      journeys,
+      stageD,
+    }),
+    /unexpected v1 blocker/u,
+  );
 });
