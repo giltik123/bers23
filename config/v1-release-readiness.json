@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "program": "BERS_V1_RC_READINESS",
   "evidenceBaseSha": "97c30107e147c0ec5b7c828bfd9e6d82cbf2103e",
-  "rcCoordinate": null,
-  "rcSelectable": false,
-  "status": "BERS_V1_RC_NOT_SELECTABLE",
+  "rcCoordinate": "c335ccf93d2f467d6f990d765214c7c10818ef7d",
+  "rcSelectable": true,
+  "status": "BERS_V1_RC_SELECTED",
   "completedGates": [
     {
       "id": "STAGE_D_PRODUCT_DECISIONS",
@@ -20,18 +20,14 @@
       "id": "CORE_MIGRATION_SECURITY_INTEGRATED",
       "state": "CONTINUOUS_HOSTED_ACCEPTANCE",
       "evidence": "hosted exact-head workflows"
-    }
-  ],
-  "blockers": [
+    },
     {
       "id": "REPOSITORY_MAIN_PROTECTION",
-      "issue": 355,
-      "releaseGate": "R1",
-      "state": "EXTERNAL_GITHUB_ADMIN_REQUIRED",
-      "observation": "Repository rulesets collection returned empty on 2026-09-29; branch-protection read is unavailable to the installed GitHub App because it lacks administration permission.",
-      "resolution": "Enable GitHub-level main protection/ruleset with required immutable acceptance checks, PR-only updates, no force-push/deletion, minimal documented bypass."
+      "state": "COMPLETE",
+      "evidence": "config/v1-release-readiness.json#mainProtectionEvidence"
     }
   ],
+  "blockers": [],
   "nonBlockingDeferred": [
     {
       "issue": 189,
@@ -56,5 +52,42 @@
     }
   ],
   "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, and rcCoordinate is one exact accepted main SHA with mandatory release evidence green. Deferred post-v1 HSME research must remain non-production unless separately promoted by later reviewed evidence.",
-  "mainProtectionEvidence": null
+  "mainProtectionEvidence": {
+    "schemaVersion": 1,
+    "kind": "BERS_V1_GITHUB_MAIN_PROTECTION_EVIDENCE",
+    "verifiedAt": "2026-10-01T19:26:15.191+10:00",
+    "repository": "giltik123/bers23",
+    "branch": "main",
+    "mode": "RULESET",
+    "requiredChecks": [
+      "BERS Required Acceptance",
+      "integrated-contract",
+      "npm-production-audit",
+      "fp16-webgpu-feasibility",
+      "wasm-compact-feasibility",
+      "ort-memory-latency-feasibility",
+      "short-pipeline-measurement"
+    ],
+    "ruleset": {
+      "id": 24246282,
+      "name": "BERS v1 main release protection",
+      "enforcement": "active",
+      "target": "branch",
+      "requiredApprovingReviewCount": 0,
+      "requiredStatusChecks": [
+        "BERS Required Acceptance",
+        "fp16-webgpu-feasibility",
+        "integrated-contract",
+        "npm-production-audit",
+        "ort-memory-latency-feasibility",
+        "short-pipeline-measurement",
+        "wasm-compact-feasibility"
+      ],
+      "strictRequiredStatusChecks": true,
+      "forcePushBlocked": true,
+      "deletionBlocked": true,
+      "bypassActors": []
+    },
+    "rulesetReadError": null
+  }
 }
