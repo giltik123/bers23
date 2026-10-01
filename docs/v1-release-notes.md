@@ -1,8 +1,8 @@
-# BERS v1.0 release notes — pre-RC package
+# BERS v1.0 release notes — RC selected package
 
 Target release: **BERS v1.0 / 1.0.0**.
 
-This document is the prepared release-note package. It is intentionally **not** a declaration that v1.0 has shipped. The exact release SHA and tag remain unset until the fail-closed RC readiness guard is clear.
+This document is the prepared release-note package. It is intentionally **not** a declaration that v1.0 has shipped. The selected RC product coordinate is `9faa33345dc674ddd632b0bfc1543c498e46de96`; the final release SHA and `v1.0.0` tag remain unset until the fail-closed publication sequence completes.
 
 ## Included production surface
 
@@ -27,13 +27,13 @@ The following existing code/research does not gain production authority merely b
 - Voice input, persistent Agent memory and durable user ranking/feedback collection are not enabled v1 production surfaces.
 - Broader autonomous/multimodal Agent behavior beyond the bounded accepted v1 subset is not enabled.
 
-## Release evidence still required
+## RC evidence state
 
-The repository is prepared for RC finalization, but the current release-readiness ledger remains fail-closed on external evidence:
+The mandatory pre-RC external evidence is now recorded:
 
-1. final deployed frontend HTTP security-header verification;
-2. GitHub-level protection/ruleset enforcement for `main`.
+1. journey 22 hosted frontend security evidence is bound to exact SHA `9faa33345dc674ddd632b0bfc1543c498e46de96` by workflow run `36845376046` and artifact `11151939222`;
+2. GitHub `main` is protected by active ruleset id `24246282` with PR-only updates, zero mandatory human approvals, strict seven-check enforcement, blocked deletion/non-fast-forward updates, and no bypass actors.
 
 Physical-mobile HSME qualification remains open post-v1 research and is not a v1 RC blocker.
 
-Until those are removed from `config/v1-release-readiness.json`, no `BERS_V1_RC`, `v1.0.0` tag or release declaration is valid.
+RC selection does **not** authorize publication. Before `v1.0.0` is created, the remaining finalization sequence still requires the reviewed release-authorization metadata transition, exact-main mandatory checks, the fail-closed publisher, and immutable publication evidence. Production Core rollout must also satisfy its existing migration, readiness, authentication/provider, and security contracts; RC selection does not waive those requirements.
