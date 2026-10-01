@@ -1,8 +1,8 @@
-# BERS v1.0 release notes — RC selected package
+# BERS v1.0 release notes — publication authorization package
 
 Target release: **BERS v1.0 / 1.0.0**.
 
-This document is the prepared release-note package. It is intentionally **not** a declaration that v1.0 has shipped. The selected RC product coordinate is `6a5c63ed32e8ae82e500e5a1c4fe22409705b174`; the final release SHA and `v1.0.0` tag remain unset until the fail-closed publication sequence completes.
+This is the final publication package for **BERS v1.0 / 1.0.0**. It does **not** claim that the immutable `v1.0.0` tag or GitHub release already exists. The selected RC product coordinate is `6a5c63ed32e8ae82e500e5a1c4fe22409705b174`; the exact published SHA is discovered only by the fail-closed publisher.
 
 ## Included production surface
 
@@ -27,7 +27,7 @@ The following existing code/research does not gain production authority merely b
 - Voice input, persistent Agent memory and durable user ranking/feedback collection are not enabled v1 production surfaces.
 - Broader autonomous/multimodal Agent behavior beyond the bounded accepted v1 subset is not enabled.
 
-## RC evidence state
+## Publication authorization evidence
 
 The mandatory pre-RC external evidence is now recorded:
 
@@ -36,4 +36,4 @@ The mandatory pre-RC external evidence is now recorded:
 
 Physical-mobile HSME qualification remains open post-v1 research and is not a v1 RC blocker.
 
-RC selection does **not** authorize publication. Before `v1.0.0` is created, the remaining finalization sequence still requires the reviewed release-authorization metadata transition, exact-main mandatory checks, the fail-closed publisher, and immutable publication evidence. Production Core rollout must also satisfy its existing migration, readiness, authentication/provider, and security contracts; RC selection does not waive those requirements.
+The repository package is prepared for the `RELEASE_AUTHORIZED` transition: package metadata is `1.0.0`, the intended tag is `v1.0.0`, and `releaseSha`/publication evidence remain unset until the publisher succeeds. Merge and publication remain operationally blocked until production Core satisfies its migration, readiness, authentication/provider, and security contracts. The fail-closed publisher must then re-prove the exact authorization SHA, seven mandatory checks, RC ancestry, metadata-only delta, and unused release namespace before writing the tag/release.
