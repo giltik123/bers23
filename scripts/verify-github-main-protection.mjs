@@ -2,6 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+export const REQUIRED_V1_APPROVING_REVIEWS = 0;
+
 export const REQUIRED_V1_MAIN_CHECKS = Object.freeze([
   'BERS Required Acceptance',
   'integrated-contract',
@@ -91,7 +93,7 @@ function validateRuleset(value, branch, requiredChecks) {
 
   const pullRequest = byType.get('pull_request');
   const approvals = pullRequest?.parameters?.required_approving_review_count;
-  if (!Number.isSafeInteger(approvals) || approvals < 1) return null;
+  if (approvals !== REQUIRED_V1_APPROVING_REVIEWS) return null;
 
   const statusRule = byType.get('required_status_checks');
   const checks = Array.isArray(statusRule?.parameters?.required_status_checks)
@@ -126,8 +128,8 @@ function validateBranchProtection(value, requiredChecks) {
 
   const reviews = value.required_pull_request_reviews;
   const approvals = reviews?.required_approving_review_count;
-  if (!Number.isSafeInteger(approvals) || approvals < 1) {
-    throw new Error('Branch protection must require at least one pull-request approval');
+  if (approvals !== REQUIRED_V1_APPROVING_REVIEWS) {
+    throw new Error('Branch protection pull-request approval count must be zero');
   }
   if (value.enforce_admins?.enabled !== true) throw new Error('Branch protection must enforce rules for administrators');
   if (value.allow_force_pushes?.enabled !== false) throw new Error('Branch protection must block force pushes');

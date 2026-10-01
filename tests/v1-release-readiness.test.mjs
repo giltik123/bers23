@@ -34,7 +34,7 @@ function mainProtectionEvidence() {
       name:'BERS immutable main release authority',
       enforcement:'active',
       target:'branch',
-      requiredApprovingReviewCount:1,
+      requiredApprovingReviewCount:0,
       requiredStatusChecks:[...requiredChecks].sort(),
       strictRequiredStatusChecks:true,
       forcePushBlocked:true,
@@ -378,6 +378,21 @@ test('readiness state machine rejects unsafe or incomplete main protection evide
       stageD,
     }),
     /ruleset safety contract mismatch/u,
+  );
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='REPOSITORY_MAIN_PROTECTION'),
+        mainProtectionEvidence:{
+          ...evidence,
+          ruleset:{...evidence.ruleset,requiredApprovingReviewCount:1},
+        },
+      },
+      journeys,
+      stageD,
+    }),
+    /approval count mismatch/u,
   );
   assert.throws(
     () => validateV1ReleaseReadiness({

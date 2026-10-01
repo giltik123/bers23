@@ -49,8 +49,10 @@ npm run release:evidence:github
 
 The verifier accepts either:
 
-- an active branch ruleset targeting `main`/the default branch with no bypass actors, at least one required approval, strict status checks, deletion protection and non-fast-forward protection; or
-- classic branch protection with at least one required approval, strict required checks, administrator enforcement, force-push disabled, deletion disabled and no PR bypass allowances.
+- an active branch ruleset targeting `main`/the default branch with no bypass actors, exactly zero required approvals, strict status checks, deletion protection and non-fast-forward protection; or
+- classic branch protection with exactly zero required approvals, strict required checks, administrator enforcement, force-push disabled, deletion disabled and no PR bypass allowances.
+
+The v1 repository policy is intentionally CI-only for merge authorization: every change still goes through a pull request, but human approval is not a release requirement. The verifier therefore rejects any approval-count drift from zero as well as any bypass actor.
 
 It requires these stable final checks:
 

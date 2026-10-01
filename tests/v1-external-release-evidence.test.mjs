@@ -6,6 +6,7 @@ import test from 'node:test';
 import { requiredProductionFrontendHeaders } from '../config/frontendSecurityPolicy.mjs';
 import { buildFrontendSecurityEvidence, verifyFrontendSecurityHeaders } from '../scripts/verify-frontend-security-headers.mjs';
 import {
+  REQUIRED_V1_APPROVING_REVIEWS,
   REQUIRED_V1_MAIN_CHECKS,
   verifyGithubMainProtection,
 } from '../scripts/verify-github-main-protection.mjs';
@@ -26,7 +27,7 @@ function acceptedRuleset(id = 7) {
     bypass_actors: [],
     conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
     rules: [
-      { type: 'pull_request', parameters: { required_approving_review_count: 1 } },
+      { type: 'pull_request', parameters: { required_approving_review_count: REQUIRED_V1_APPROVING_REVIEWS } },
       {
         type: 'required_status_checks',
         parameters: {
@@ -131,6 +132,7 @@ test('GitHub verifier accepts an active no-bypass main ruleset with the full req
   });
 
   assert.equal(result.mode, 'RULESET');
+  assert.equal(result.ruleset.requiredApprovingReviewCount, REQUIRED_V1_APPROVING_REVIEWS);
   assert.deepEqual(result.requiredChecks, [...REQUIRED_V1_MAIN_CHECKS]);
   assert.deepEqual(result.ruleset.requiredStatusChecks, [...REQUIRED_V1_MAIN_CHECKS].sort());
   assert.equal(result.ruleset.strictRequiredStatusChecks, true);
@@ -138,6 +140,21 @@ test('GitHub verifier accepts an active no-bypass main ruleset with the full req
   assert.equal(result.ruleset.deletionBlocked, true);
   assert.deepEqual(result.ruleset.bypassActors, []);
   assert.equal(calls.some(url => url.includes('/branches/main/protection')), false);
+});
+
+test('GitHub verifier rejects approval-count drift from the CI-only contract', async () => {
+  const ruleset = acceptedRuleset(8);
+  ruleset.rules[0].parameters.required_approving_review_count = 1;
+  const fetcher = async url => {
+    if (url.endsWith('/rulesets?includes_parents=true')) return responseJson([{ id: 8 }]);
+    if (url.endsWith('/rulesets/8')) return responseJson(ruleset);
+    if (url.endsWith('/branches/main/protection')) return responseJson({ message: 'not protected' }, 404);
+    throw new Error('unexpected URL '+url);
+  };
+  await assert.rejects(
+    () => verifyGithubMainProtection({ token: 'admin-read-token', fetcher }),
+    /No accepted active ruleset was found/u,
+  );
 });
 
 test('GitHub verifier accepts strict branch protection when no active ruleset is present', async () => {
@@ -151,7 +168,7 @@ test('GitHub verifier accepts strict branch protection when no active ruleset is
           checks: [],
         },
         required_pull_request_reviews: {
-          required_approving_review_count: 1,
+          required_approving_review_count: REQUIRED_V1_APPROVING_REVIEWS,
           bypass_pull_request_allowances: { users: [], teams: [], apps: [] },
         },
         enforce_admins: { enabled: true },
@@ -181,7 +198,7 @@ test('GitHub verifier rejects missing release checks and unsafe force-push/delet
       checks: [],
     },
     required_pull_request_reviews: {
-      required_approving_review_count: 1,
+      required_approving_review_count: REQUIRED_V1_APPROVING_REVIEWS,
       bypass_pull_request_allowances: { users: [], teams: [], apps: [] },
     },
     enforce_admins: { enabled: true },
