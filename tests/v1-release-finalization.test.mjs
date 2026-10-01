@@ -321,30 +321,49 @@ test('RELEASED rejects missing or malformed publication evidence', () => {
 });
 
 test('blocked readiness cannot advertise RC selectability, a coordinate or selected status', () => {
+  const blockedReadiness={
+    ...readiness,
+    blockers:[{id:'REPOSITORY_MAIN_PROTECTION'}],
+    rcSelectable:false,
+    rcCoordinate:null,
+    status:'BERS_V1_RC_NOT_SELECTABLE',
+  };
+  const blockedFinalization={
+    ...finalization,
+    status:'BLOCKED_BEFORE_RC',
+    rcCoordinate:null,
+    releaseSha:null,
+    releaseTag:null,
+    releaseGenerated:false,
+    publicationEvidence:null,
+    packageVersionExpected:'0.0.0',
+  };
+  const blockedClassification={...classification,releaseState:'PRE_RC_EXTERNAL_BLOCKERS_REMAIN'};
+
   assert.throws(
     () => validateV1ReleaseFinalization({
-      readiness:{...readiness,rcSelectable:true},
-      finalization,
-      classification,
-      pkg,
+      readiness:{...blockedReadiness,rcSelectable:true},
+      finalization:blockedFinalization,
+      classification:blockedClassification,
+      pkg:{...pkg,version:'0.0.0'},
     }),
     /blocked readiness requires rcSelectable=false/u,
   );
   assert.throws(
     () => validateV1ReleaseFinalization({
-      readiness:{...readiness,rcCoordinate:'3'.repeat(40)},
-      finalization,
-      classification,
-      pkg,
+      readiness:{...blockedReadiness,rcCoordinate:'3'.repeat(40)},
+      finalization:blockedFinalization,
+      classification:blockedClassification,
+      pkg:{...pkg,version:'0.0.0'},
     }),
     /blocked readiness cannot declare readiness RC coordinate/u,
   );
   assert.throws(
     () => validateV1ReleaseFinalization({
-      readiness:{...readiness,status:'BERS_V1_RC_SELECTED'},
-      finalization,
-      classification,
-      pkg,
+      readiness:{...blockedReadiness,status:'BERS_V1_RC_SELECTED'},
+      finalization:blockedFinalization,
+      classification:blockedClassification,
+      pkg:{...pkg,version:'0.0.0'},
     }),
     /blocked readiness requires BERS_V1_RC_NOT_SELECTABLE status/u,
   );
@@ -365,7 +384,7 @@ test('finalization state machine rejects capability release-state drift', () => 
         publicationEvidence:null,
         packageVersionExpected:'0.0.0',
       },
-      classification,
+      classification:{...classification,releaseState:'PRE_RC_EXTERNAL_BLOCKERS_REMAIN'},
       pkg:{...pkg,version:'0.0.0'},
     }),
     /classification releaseState must be RC_SELECTED/u,
