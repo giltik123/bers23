@@ -70,6 +70,26 @@ function frontendDeploymentBlocker() {
   };
 }
 
+function mainProtectionBlocker() {
+  return {
+    id:'REPOSITORY_MAIN_PROTECTION',
+    issue:355,
+    releaseGate:'R1',
+    state:'EXTERNAL_GITHUB_ADMIN_REQUIRED',
+  };
+}
+
+function blockedReadinessWithMainProtection() {
+  return {
+    ...readiness,
+    blockers:[mainProtectionBlocker()],
+    rcSelectable:false,
+    rcCoordinate:null,
+    status:'BERS_V1_RC_NOT_SELECTABLE',
+    mainProtectionEvidence:null,
+  };
+}
+
 function pendingFrontendJourneys() {
   return {
     ...journeys,
@@ -160,7 +180,7 @@ test('selection law binds RC selection to empty blockers and one exact accepted 
 });
 
 test('readiness state machine permits either external blocker to close independently', () => {
-  const oneBlocker=readiness.blockers.filter(value=>value.id==='REPOSITORY_MAIN_PROTECTION');
+  const oneBlocker=[mainProtectionBlocker()];
   const evidenceSha='7'.repeat(40);
   const promotedJourneys={
     ...journeys,
@@ -212,9 +232,10 @@ test('readiness state machine selects one exact RC only after all blockers are r
 
 test('readiness state machine rejects premature RC selection and frontend blocker drift', () => {
   const sha='b'.repeat(40);
+  const blockedReadiness=blockedReadinessWithMainProtection();
   assert.throws(
     () => validateV1ReleaseReadiness({
-      readiness:{...readiness,rcSelectable:true,rcCoordinate:sha,status:'BERS_V1_RC_SELECTED'},
+      readiness:{...blockedReadiness,rcSelectable:true,rcCoordinate:sha,status:'BERS_V1_RC_SELECTED'},
       journeys,
       stageD,
     }),
@@ -223,13 +244,7 @@ test('readiness state machine rejects premature RC selection and frontend blocke
 
   assert.throws(
     () => validateV1ReleaseReadiness({
-      readiness:{
-        ...readiness,
-        blockers:readiness.blockers.filter(value=>value.id!=='FRONTEND_DEPLOYMENT_HEADERS'),
-        rcSelectable:false,
-        rcCoordinate:null,
-        status:'BERS_V1_RC_NOT_SELECTABLE',
-      },
+      readiness:blockedReadiness,
       journeys:pendingFrontendJourneys(),
       stageD,
     }),
