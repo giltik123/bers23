@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-import { REQUIRED_V1_MAIN_CHECKS } from './verify-github-main-protection.mjs';
+import { REQUIRED_V1_APPROVING_REVIEWS, REQUIRED_V1_MAIN_CHECKS } from './verify-github-main-protection.mjs';
 
 const EXACT_SHA_RE = /^[0-9a-f]{40}$/u;
 const ALLOWED_BLOCKERS = Object.freeze(new Map([
@@ -163,8 +163,8 @@ function validateMainProtectionEvidence(value) {
     if (policy.enforcement !== 'active' || policy.target !== 'branch') {
       throw new Error('mainProtectionEvidence ruleset is not active branch enforcement');
     }
-    if (!Number.isSafeInteger(policy.requiredApprovingReviewCount) || policy.requiredApprovingReviewCount < 1) {
-      throw new Error('mainProtectionEvidence ruleset approval requirement missing');
+    if (policy.requiredApprovingReviewCount !== REQUIRED_V1_APPROVING_REVIEWS) {
+      throw new Error('mainProtectionEvidence ruleset approval count mismatch');
     }
     if (policy.strictRequiredStatusChecks !== true ||
         policy.forcePushBlocked !== true ||
@@ -179,8 +179,8 @@ function validateMainProtectionEvidence(value) {
   if (value.mode === 'BRANCH_PROTECTION') {
     const policy=value.branchProtection;
     requireObject(policy,'mainProtectionEvidence.branchProtection');
-    if (!Number.isSafeInteger(policy.requiredApprovingReviewCount) || policy.requiredApprovingReviewCount < 1) {
-      throw new Error('mainProtectionEvidence branch approval requirement missing');
+    if (policy.requiredApprovingReviewCount !== REQUIRED_V1_APPROVING_REVIEWS) {
+      throw new Error('mainProtectionEvidence branch approval count mismatch');
     }
     if (policy.strictRequiredStatusChecks !== true ||
         policy.enforceAdmins !== true ||
