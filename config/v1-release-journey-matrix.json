@@ -188,7 +188,7 @@
       "liveEvidence": {
         "schemaVersion": 1,
         "kind": "BERS_V1_FRONTEND_SECURITY_EVIDENCE",
-        "verifiedAt": "2026-09-30T11:04:41.049Z",
+        "verifiedAt": "2026-10-01T10:05:09.069Z",
         "frontendUrl": "https://bers-v1-frontend-production.up.railway.app/",
         "coreApiUrl": "https://bers-v1-core-production.up.railway.app/api/core",
         "status": 200,
@@ -206,9 +206,9 @@
           "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
         },
         "htmlSha256": "59df961c545b74ddcec87eef689e5e7106e59c22756c4a6934ddc9cf4c5e5f00",
-        "verifiedSha": "c5292b4a65341050d664de715eff2feff0b4b32f",
-        "workflowRunUrl": "https://github.com/giltik123/bers23/actions/runs/36706262805",
-        "artifactName": "bers-v1-frontend-security-c5292b4a65341050d664de715eff2feff0b4b32f"
+        "verifiedSha": "6a5c63ed32e8ae82e500e5a1c4fe22409705b174",
+        "workflowRunUrl": "https://github.com/giltik123/bers23/actions/runs/36846842313",
+        "artifactName": "bers-v1-frontend-security-6a5c63ed32e8ae82e500e5a1c4fe22409705b174"
       }
     }
   ]
