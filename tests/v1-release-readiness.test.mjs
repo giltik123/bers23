@@ -190,11 +190,8 @@ test('readiness state machine permits either external blocker to close independe
   };
   const result=validateV1ReleaseReadiness({
     readiness:{
-      ...readiness,
+      ...blockedReadinessWithMainProtection(),
       blockers:oneBlocker,
-      rcSelectable:false,
-      rcCoordinate:null,
-      status:'BERS_V1_RC_NOT_SELECTABLE',
     },
     journeys:promotedJourneys,
     stageD,
