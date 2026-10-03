@@ -173,7 +173,7 @@ function validateHsmeValidation(value) {
     return 'R&D_VALIDATED';
   }
 
-  if (value.currentClassification !== 'SOFTWARE_READY_EVIDENCE_PENDING') {
+  if (value.currentClassification !== 'RND_IMPLEMENTATION_EVIDENCE_PENDING') {
     throw new Error('HSME pre-RC classification is invalid');
   }
   if (value.state !== 'BLOCKED') throw new Error('pending HSME validation must remain BLOCKED');
@@ -184,7 +184,7 @@ function validateHsmeValidation(value) {
   if (value.finalArchitectureDecision !== null) {
     throw new Error('pending HSME validation cannot claim final architecture disposition');
   }
-  return 'SOFTWARE_READY_EVIDENCE_PENDING';
+  return 'RND_IMPLEMENTATION_EVIDENCE_PENDING';
 }
 
 function validateMainProtectionEvidence(value) {
