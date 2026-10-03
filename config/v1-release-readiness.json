@@ -29,6 +29,14 @@
   ],
   "blockers": [
     {
+      "id": "FASHION_REAL_IMAGE_QUALITY",
+      "issue": 230,
+      "releaseGate": "R2",
+      "state": "REAL_IMAGE_QUALITY_EVIDENCE_PENDING",
+      "evidence": "config/v1-release-readiness.json#fashionQualityEvidence",
+      "resolution": "Run a representative real-image deterministic Try-On quality/resource review covering garment/logo/pattern preservation, failure modes, latency and memory; record immutable reviewed evidence before RC."
+    },
+    {
       "id": "HSME_REAL_MOBILE_EVIDENCE",
       "issue": 352,
       "relatedIssues": [
@@ -54,7 +62,7 @@
       "state": "POST_V1_OR_PARALLEL_UNLESS_REQUIRED_BY_RELEASE_JOURNEY"
     }
   ],
-  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, rcCoordinate is one exact accepted main SHA with mandatory release evidence green, and hsmeValidation.currentClassification is R&D_VALIDATED. HSME R&D validation grants no production authority by itself.",
+  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, rcCoordinate is one exact accepted main SHA with mandatory release evidence green, fashionQualityEvidence is accepted, and hsmeValidation.currentClassification is R&D_VALIDATED. Fashion/HSME evidence gates grant no production authority by themselves.",
   "mainProtectionEvidence": {
     "schemaVersion": 1,
     "kind": "BERS_V1_GITHUB_MAIN_PROTECTION_EVIDENCE",
@@ -144,5 +152,6 @@
     "physicalMobileQualification": null,
     "finalArchitectureDecision": null,
     "productionAuthorityGranted": false
-  }
+  },
+  "fashionQualityEvidence": null
 }
