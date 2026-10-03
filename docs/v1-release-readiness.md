@@ -4,23 +4,31 @@ The release program has a fail-closed machine-readable coordinate at `config/v1-
 
 It deliberately does **not** use the number of open GitHub issues as release truth. RC selection advances only from reviewed mandatory release evidence.
 
+## Owner release-policy override — 2026-10-04
+
+The product owner explicitly accepts the risk of releasing v1 without physical-mobile HSME validation. As a result, HSME physical-device evidence / #352 / #871 is no longer a pre-RC or v1 release blocker.
+
+This override is narrow:
+
+- HSME remains experimental/non-production while its validation classification is pending;
+- virtual Android/WASM evidence may establish preflight and physical-device trial readiness, but is not relabeled as physical evidence;
+- no provider, Billing, Project, Artifact, model-promotion or mobile-backend production authority is granted by the override;
+- Core/PostgreSQL, security, deployment, backup/rollback, tenant isolation, browser/E2E and exact-SHA requirements remain release gates.
+
 ## Current state
 
-`BERS_V1_RC` is **not selectable** on this Masked Levels feature branch.
+`BERS_V1_RC` remains **not selectable** because fresh exact-SHA hosted frontend/deployment evidence is still pending:
 
-The previous coordinate `6a5c63ed32e8ae82e500e5a1c4fe22409705b174` is historical evidence only. Two independent blockers remain:
+- `FRONTEND_DEPLOYMENT_HEADERS` / #233: the final accepted product SHA must be deployed exactly and journey 22 hosted evidence rerun before RC selection.
 
-- `HSME_REAL_MOBILE_EVIDENCE` / #352: the mandatory HSME program must reach `R&D_VALIDATED` with trusted dense-baseline, Adapter-MoE/runtime/sparsity, real physical-mobile qualification and final architecture disposition evidence.
-- `FRONTEND_DEPLOYMENT_HEADERS` / #233: Masked Levels changes the admitted product surface, so the eventual accepted product SHA must be deployed exactly and journey 22 hosted evidence rerun before RC selection.
+HSME is tracked under `nonBlockingDeferred` as `HSME_PHYSICAL_MOBILE_VALIDATION` with state `OWNER_DEFERRED_POST_V1_FIELD_VALIDATION`. Its current R&D validation state may remain pending without blocking RC.
 
-HSME remains non-production. Satisfying its R&D gate grants no provider, Billing, Project, Artifact, model-promotion or cloud-fallback authority.
-
-GitHub repository protection remains proven by active ruleset `BERS v1 main release protection` (id `24246282`) with seven strict required checks, PR-only updates, no bypass actors, and deletion/non-fast-forward updates blocked.
+GitHub repository protection remains an independent release gate/evidence requirement.
 
 ## State transitions
 
-- While HSME is not `R&D_VALIDATED`, `HSME_REAL_MOBILE_EVIDENCE` remains a blocker.
+- Pending HSME physical validation does not block RC after the owner override.
 - After a release-affecting product change, journey 22 remains pending until fresh exact-SHA hosted evidence exists.
 - Main protection remains an independent gate.
-- Only with all blockers cleared may `rcSelectable=true`; the selected RC must equal journey 22's reviewed exact deployed SHA.
-- Package version remains `0.0.0`; no `v1.0.0` publication coordinate exists while either blocker remains.
+- Only with all release blockers cleared may `rcSelectable=true`; the selected RC must equal journey 22's reviewed exact deployed SHA.
+- HSME can graduate later to `R&D_VALIDATED` / production admission only through separate real-device evidence and reviewed promotion.
