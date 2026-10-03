@@ -104,13 +104,15 @@ function validatedHsme() {
     },
     finalArchitectureDecision:'ADVANCE',
     productionAuthorityGranted:false,
+    releaseBlocking:false,
+    releasePolicy:'POST_V1_GRADUATION_ONLY',
   };
 }
 
 function blockedReadinessWithMainProtection() {
   return {
     ...readiness,
-    blockers:[mainProtectionBlocker(),hsmeBlocker()],
+    blockers:[mainProtectionBlocker()],
     rcSelectable:false,
     rcCoordinate:null,
     status:'BERS_V1_RC_NOT_SELECTABLE',
@@ -169,11 +171,17 @@ test('RC guard consumes the accepted Stage D and browser ledgers instead of open
 });
 
 test('optional/deferred work cannot accidentally block RC through this ledger', () => {
-  assert.deepEqual(readiness.nonBlockingDeferred.map(value=>value.issue).sort((a,b)=>a-b), [189,192]);
-  assert.equal(readiness.blockers.some(value=>[189,192].includes(value.issue)), false);
-  assert.equal(readiness.blockers.some(value=>value.id==='HSME_REAL_MOBILE_EVIDENCE'), true);
+  assert.deepEqual(readiness.nonBlockingDeferred.map(value=>value.issue).sort((a,b)=>a-b), [189,192,352]);
+  assert.equal(readiness.blockers.some(value=>[189,192,352].includes(value.issue)), false);
+  assert.equal(readiness.blockers.some(value=>value.id==='HSME_REAL_MOBILE_EVIDENCE'), false);
+  const hsmeDeferred=readiness.nonBlockingDeferred.find(value=>value.id==='HSME_PHYSICAL_MOBILE_VALIDATION');
+  assert.equal(hsmeDeferred.state,'OWNER_DEFERRED_POST_V1_FIELD_VALIDATION');
+  assert.equal(hsmeDeferred.releaseBlocking,false);
+  assert.equal(hsmeDeferred.riskOwner,'PRODUCT_OWNER');
+  assert.equal(readiness.releasePolicyOverride.id,'DEFER_HSME_PHYSICAL_MOBILE_PRE_RC_GATE');
   assert.equal(readiness.hsmeValidation.currentClassification,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
   assert.equal(readiness.hsmeValidation.state,'BLOCKED');
+  assert.equal(readiness.hsmeValidation.releaseBlocking,false);
   assert.equal(readiness.hsmeValidation.productionAuthorityGranted,false);
 });
 
@@ -187,14 +195,15 @@ test('readiness classifier emits exactly the disposition declared by the ledger'
   assert.match(result.stdout,/RND_IMPLEMENTATION_EVIDENCE_PENDING/);
 });
 
-test('canonical roadmap keeps HSME physical-mobile work mandatory before RC without granting production authority', () => {
-  assert.match(roadmap, /Stage E — Mandatory pre-RC BERS Local-First AI Engine R&D/);
-  assert.match(roadmap, /Stage E\/HSME is a mandatory implementation\/evidence gate for `BERS_V1_RC` and `BERS v1\.0 RELEASE`/);
-  assert.match(roadmap, /at least one functioning real mobile backend is required for the pre-RC feasibility gate/);
-  assert.match(roadmap, /R&D validation before v1 is mandatory/);
-  assert.match(hsmeRoadmap, /Before `BERS_V1_RC`, HSME is an \*\*implementation\/evidence requirement\*\*/);
-  assert.match(hsmeRoadmap, /mandatory pre-v1 implementation\/evidence/);
-  assert.doesNotMatch(hsmeRoadmap, /explicit \*\*post-v1 R&D workstream\*\*/);
+test('canonical roadmap records owner deferral of HSME physical-mobile work without granting production authority', () => {
+  assert.match(roadmap, /Stage E — Post-v1 BERS Local-First AI Engine R&D/);
+  assert.match(roadmap, /Stage E\/HSME is \*\*not\*\* a release gate for `BERS_V1_RC` or `BERS v1\.0 RELEASE`/);
+  assert.match(roadmap, /real mobile backend remains required for post-v1 HSME graduation, but not for v1 RC selection/);
+  assert.match(roadmap, /R&D validation is a post-v1 graduation milestone/);
+  assert.match(hsmeRoadmap, /Owner release-policy override — 2026-10-04/);
+  assert.match(hsmeRoadmap, /no longer a prerequisite for `BERS_V1_RC` or `BERS v1\.0 RELEASE`/);
+  assert.match(hsmeRoadmap, /Missing physical evidence no longer blocks v1/);
+  assert.match(hsmeRoadmap, /receives no capability\/model\/runtime\/device admission, provider, Billing, Project, Artifact/);
 });
 
 test('selection law binds RC selection to empty blockers and one exact accepted SHA', () => {
@@ -206,32 +215,26 @@ test('selection law binds RC selection to empty blockers and one exact accepted 
   }
 });
 
-test('readiness state machine permits frontend evidence to remain proven while HSME still blocks RC', () => {
-  const provenFrontendJourneys={
-    ...journeys,
-    entries:journeys.entries.map(value=>value.id === 22
-      ? {...value,disposition:'PROVEN',liveEvidence:frontendLiveEvidence('f'.repeat(40))}
-      : value),
-  };
+test('readiness state machine permits pending HSME while frontend deployment remains the release blocker', () => {
   const result=validateV1ReleaseReadiness({
     readiness:{
       ...readiness,
-      blockers:[hsmeBlocker()],
+      blockers:[frontendDeploymentBlocker()],
       rcSelectable:false,
       rcCoordinate:null,
       status:'BERS_V1_RC_NOT_SELECTABLE',
       mainProtectionEvidence:mainProtectionEvidence(),
     },
-    journeys:provenFrontendJourneys,
+    journeys:pendingFrontendJourneys(),
     stageD,
   });
   assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
-  assert.deepEqual(result.payload.blockers.map(value=>value.id),['HSME_REAL_MOBILE_EVIDENCE']);
-  assert.deepEqual(result.payload.pendingBrowserJourneys,[]);
+  assert.deepEqual(result.payload.blockers.map(value=>value.id),['FRONTEND_DEPLOYMENT_HEADERS']);
+  assert.deepEqual(result.payload.pendingBrowserJourneys,[22]);
   assert.equal(result.payload.hsmeValidationState,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
 });
 
-test('readiness state machine selects one exact RC only after all blockers are removed and HSME is R&D_VALIDATED', () => {
+test('readiness state machine selects one exact RC after release blockers are removed even while HSME physical validation is owner-deferred', () => {
   const sha='a'.repeat(40);
   const selectedJourneys={
     ...journeys,
@@ -247,7 +250,7 @@ test('readiness state machine selects one exact RC only after all blockers are r
       rcCoordinate:sha,
       status:'BERS_V1_RC_SELECTED',
       mainProtectionEvidence:mainProtectionEvidence(),
-      hsmeValidation:validatedHsme(),
+      hsmeValidation:readiness.hsmeValidation,
     },
     journeys:selectedJourneys,
     stageD,
@@ -256,7 +259,7 @@ test('readiness state machine selects one exact RC only after all blockers are r
   assert.equal(result.payload.rcCoordinate,sha);
   assert.equal(result.payload.provenBrowserJourneys,21);
   assert.deepEqual(result.payload.pendingBrowserJourneys,[]);
-  assert.equal(result.payload.hsmeValidationState,'R&D_VALIDATED');
+  assert.equal(result.payload.hsmeValidationState,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
 });
 
 test('readiness state machine rejects premature RC selection and frontend blocker drift', () => {
@@ -287,28 +290,28 @@ test('readiness state machine rejects premature RC selection and frontend blocke
   );
 });
 
-test('readiness state machine requires the exact HSME blocker until R&D_VALIDATED and rejects unknown blockers', () => {
+test('readiness state machine rejects reintroducing HSME as a release blocker or removing the owner deferral contract', () => {
   assert.throws(
     () => validateV1ReleaseReadiness({
       readiness:{
         ...readiness,
-        blockers:readiness.blockers.filter(value=>value.id!=='HSME_REAL_MOBILE_EVIDENCE'),
+        blockers:[...readiness.blockers,hsmeBlocker()],
       },
       journeys,
       stageD,
     }),
-    /HSME must block RC until R&D_VALIDATED/u,
+    /unexpected v1 blocker: HSME_REAL_MOBILE_EVIDENCE/u,
   );
   assert.throws(
     () => validateV1ReleaseReadiness({
       readiness:{
         ...readiness,
-        blockers:[{...hsmeBlocker(),issue:871}],
+        nonBlockingDeferred:readiness.nonBlockingDeferred.filter(value=>value.id!=='HSME_PHYSICAL_MOBILE_VALIDATION'),
       },
       journeys,
       stageD,
     }),
-    /HSME_REAL_MOBILE_EVIDENCE issue mismatch/u,
+    /nonBlockingDeferred HSME physical validation must be an object/u,
   );
   assert.throws(
     () => validateV1ReleaseReadiness({
@@ -323,7 +326,7 @@ test('readiness state machine requires the exact HSME blocker until R&D_VALIDATE
   );
 });
 
-test('readiness state machine keeps deployment pending when frontend evidence is the only remaining blocker after HSME validation', () => {
+test('readiness state machine keeps deployment pending when frontend evidence is the only release blocker and HSME remains pending', () => {
   const result=validateV1ReleaseReadiness({
     readiness:{
       ...readiness,
@@ -332,7 +335,7 @@ test('readiness state machine keeps deployment pending when frontend evidence is
       rcCoordinate:null,
       status:'BERS_V1_RC_NOT_SELECTABLE',
       mainProtectionEvidence:mainProtectionEvidence(),
-      hsmeValidation:validatedHsme(),
+      hsmeValidation:readiness.hsmeValidation,
     },
     journeys:pendingFrontendJourneys(),
     stageD,
@@ -340,7 +343,7 @@ test('readiness state machine keeps deployment pending when frontend evidence is
   assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
   assert.deepEqual(result.payload.blockers.map(value=>value.id),['FRONTEND_DEPLOYMENT_HEADERS']);
   assert.deepEqual(result.payload.pendingBrowserJourneys,[22]);
-  assert.equal(result.payload.hsmeValidationState,'R&D_VALIDATED');
+  assert.equal(result.payload.hsmeValidationState,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
 });
 
 test('RC readiness workflow follows manifest state and keeps diff hygiene PR-only', async () => {
