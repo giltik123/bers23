@@ -71,8 +71,12 @@
     "src/platform/creative/deterministic/GarmentTextureComposite.ts",
     "src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js",
     "src/platform/creative/deterministic/GarmentTextureCompositeParameters.ts",
+    "src/platform/creative/deterministic/Levels.ts",
+    "src/platform/creative/deterministic/LevelsIdentity.js",
     "src/platform/creative/deterministic/MaskedExposure.ts",
     "src/platform/creative/deterministic/MaskedExposureIdentity.js",
+    "src/platform/creative/deterministic/MaskedLevels.ts",
+    "src/platform/creative/deterministic/MaskedLevelsIdentity.js",
     "src/platform/creative/deterministic/MaskedWhiteBalance.ts",
     "src/platform/creative/deterministic/MaskedWhiteBalanceIdentity.js",
     "src/platform/creative/deterministic/OrthogonalTransformIdentity.js",
@@ -123,7 +127,8 @@
     "server/core/projects/migrations/044_canonical_project_revision.sql",
     "server/core/projects/migrations/045_canonical_project_status_lifecycle.sql",
     "server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql",
-    "server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql"
+    "server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql",
+    "server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql"
   ],
   "supportPaths": [
     ".github/workflows/fashion-execution-ci-policy.yml",

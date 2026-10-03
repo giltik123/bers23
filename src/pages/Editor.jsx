@@ -7,6 +7,8 @@ import { creativeEditApplicationService } from '@/application/creative/CreativeE
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createMaskedExposure } from '@/application/createMaskedExposure';
 import { createMaskedWhiteBalance } from '@/application/createMaskedWhiteBalance';
+import { createMaskedLevels } from '@/application/createMaskedLevels';
+import { normalizeMaskedLevelsParameters } from '@/platform/creative/deterministic/MaskedLevels';
 import { createSuperResolution } from '@/application/createSuperResolution';
 import { createCrop } from '@/application/createCrop';
 import { createResize } from '@/application/createResize';
@@ -98,6 +100,11 @@ function exactResizeTarget(draft) {
   return Object.freeze({ width, height });
 }
 
+function exactMaskedLevelsParameters(inputBlack, inputMidpoint, inputWhite, outputBlack, outputWhite) {
+  try { return normalizeMaskedLevelsParameters(inputBlack, inputMidpoint, inputWhite, outputBlack, outputWhite); }
+  catch { return null; }
+}
+
 function proportionalResizeDimension(value, sourceSame, sourceOther) {
   if (![value, sourceSame, sourceOther].every(Number.isSafeInteger) || value < 1 || sourceSame < 1 || sourceOther < 1) return null;
   const same = BigInt(sourceSame);
@@ -156,6 +163,12 @@ export default function Editor() {
   const [whiteBalanceTemperatureQ8, setWhiteBalanceTemperatureQ8] = useState(64);
   const [whiteBalanceTintQ8, setWhiteBalanceTintQ8] = useState(0);
   const [applyingMaskedWhiteBalance, setApplyingMaskedWhiteBalance] = useState(false);
+  const [levelsInputBlack, setLevelsInputBlack] = useState(0);
+  const [levelsInputMidpoint, setLevelsInputMidpoint] = useState(128);
+  const [levelsInputWhite, setLevelsInputWhite] = useState(255);
+  const [levelsOutputBlack, setLevelsOutputBlack] = useState(0);
+  const [levelsOutputWhite, setLevelsOutputWhite] = useState(255);
+  const [applyingMaskedLevels, setApplyingMaskedLevels] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
   const [cropDraft, setCropDraft] = useState(null);
   const [cropping, setCropping] = useState(false);
@@ -168,9 +181,10 @@ export default function Editor() {
   const cropAnchorRef = useRef(null);
   const maskedExposureInFlightRef = useRef(false);
   const maskedWhiteBalanceInFlightRef = useRef(false);
+  const maskedLevelsInFlightRef = useRef(false);
   const orthogonalTransformInFlightRef = useRef(false);
   const platform = usePlatformProfile();
-  const localEditorBusy = applying || isolatingBackground || applyingMaskedExposure || applyingMaskedWhiteBalance || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
+  const localEditorBusy = applying || isolatingBackground || applyingMaskedExposure || applyingMaskedWhiteBalance || applyingMaskedLevels || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode);
   const cropRect = exactCropRect(cropDraft, project?.width, project?.height);
   const cropInteractionActive = Boolean(cropDraft);
   const resizeTarget = exactResizeTarget(resizeDraft);
@@ -319,7 +333,7 @@ export default function Editor() {
   };
 
   const startCrop = () => {
-    if (orthogonalTransformInFlightRef.current || maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current) return;
+    if (orthogonalTransformInFlightRef.current || maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || maskedLevelsInFlightRef.current) return;
     if (selection || pendingResult || editorBusy || resizeInteractionActive || !project?.current_image_artifact_id) return;
     const rect = defaultCropRect(project.width, project.height);
     setAiError(null);
@@ -525,7 +539,7 @@ export default function Editor() {
     const maskArtifactId = retryContext?.maskArtifactId || selected?.mask_artifact_id;
     const eighthStops = Number.isSafeInteger(retryContext?.eighthStops) ? retryContext.eighthStops : exposureEighthStops;
     if (!project?.id || !sourceArtifactId || !maskArtifactId || !Number.isSafeInteger(eighthStops) || eighthStops < -32 || eighthStops > 32 || eighthStops === 0) return;
-    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || orthogonalTransformInFlightRef.current) return;
+    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || maskedLevelsInFlightRef.current || orthogonalTransformInFlightRef.current) return;
     maskedExposureInFlightRef.current = true;
     setApplyingMaskedExposure(true);
     setAiError(null);
@@ -567,7 +581,7 @@ export default function Editor() {
       || !Number.isSafeInteger(temperatureQ8) || temperatureQ8 < -128 || temperatureQ8 > 128
       || !Number.isSafeInteger(tintQ8) || tintQ8 < -64 || tintQ8 > 64
       || (temperatureQ8 === 0 && tintQ8 === 0)) return;
-    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || orthogonalTransformInFlightRef.current) return;
+    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || maskedLevelsInFlightRef.current || orthogonalTransformInFlightRef.current) return;
     maskedWhiteBalanceInFlightRef.current = true;
     setApplyingMaskedWhiteBalance(true);
     setAiError(null);
@@ -597,6 +611,51 @@ export default function Editor() {
     } finally {
       maskedWhiteBalanceInFlightRef.current = false;
       setApplyingMaskedWhiteBalance(false);
+    }
+  };
+
+  const applyMaskedLevels = async (retryContext = null) => {
+    const sourceArtifactId = retryContext?.sourceArtifactId || project?.current_image_artifact_id;
+    const maskArtifactId = retryContext?.maskArtifactId || selected?.mask_artifact_id;
+    const values = {
+      inputBlack: Number.isSafeInteger(retryContext?.inputBlack) ? retryContext.inputBlack : levelsInputBlack,
+      inputMidpoint: Number.isSafeInteger(retryContext?.inputMidpoint) ? retryContext.inputMidpoint : levelsInputMidpoint,
+      inputWhite: Number.isSafeInteger(retryContext?.inputWhite) ? retryContext.inputWhite : levelsInputWhite,
+      outputBlack: Number.isSafeInteger(retryContext?.outputBlack) ? retryContext.outputBlack : levelsOutputBlack,
+      outputWhite: Number.isSafeInteger(retryContext?.outputWhite) ? retryContext.outputWhite : levelsOutputWhite,
+    };
+    const parameters = exactMaskedLevelsParameters(values.inputBlack, values.inputMidpoint, values.inputWhite, values.outputBlack, values.outputWhite);
+    if (!project?.id || !sourceArtifactId || !maskArtifactId || !parameters) return;
+    if (parameters.inputBlack === 0 && parameters.inputMidpoint === 128 && parameters.inputWhite === 255 && parameters.outputBlack === 0 && parameters.outputWhite === 255) return;
+    if (maskedExposureInFlightRef.current || maskedWhiteBalanceInFlightRef.current || maskedLevelsInFlightRef.current || orthogonalTransformInFlightRef.current) return;
+    maskedLevelsInFlightRef.current = true;
+    setApplyingMaskedLevels(true);
+    setAiError(null);
+    setLastAction(() => () => applyMaskedLevels({ sourceArtifactId, maskArtifactId, ...parameters }));
+    try {
+      const local = createMaskedLevels({ projectId: project.id });
+      const result = await local.run({ requestId: globalThis.crypto.randomUUID(), sourceArtifactId, maskArtifactId, ...parameters });
+      const previewBytes = await encodeDeterministicRgbaPng(result.preview);
+      const previewUrl = URL.createObjectURL(new Blob([previewBytes], { type: 'image/png' }));
+      const label = `Levels in ${parameters.inputBlack}/${parameters.inputMidpoint}/${parameters.inputWhite} → out ${parameters.outputBlack}/${parameters.outputWhite}`;
+      const editorResult = {
+        finalArtifactId: result.canonicalArtifactId,
+        preview_url: previewUrl,
+        image_url: previewUrl,
+        provider: 'Local deterministic',
+        credits_used: 0,
+        generation_time_ms: result.latencyMs,
+      };
+      setPendingResult((current) => {
+        disposePendingPreview(current);
+        return { kind: 'MASKED_LEVELS', result: editorResult, instruction: label, beforeUrl: project.current_image_url, context: { sourceArtifactId, maskArtifactId, ...parameters } };
+      });
+    } catch (e) {
+      setAiError(e.message || 'Masked Levels failed');
+      workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+    } finally {
+      maskedLevelsInFlightRef.current = false;
+      setApplyingMaskedLevels(false);
     }
   };
 
@@ -797,6 +856,10 @@ export default function Editor() {
       void applyMaskedWhiteBalance(pending.context);
       return;
     }
+    if (pending?.kind === 'MASKED_LEVELS') {
+      void applyMaskedLevels(pending.context);
+      return;
+    }
     if (pending?.kind === 'SUPER_RESOLUTION') {
       void upscaleImage(pending.context);
       return;
@@ -991,6 +1054,21 @@ export default function Editor() {
         canApplyWhiteBalance={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id) && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !isolatingBackground && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
         applyingWhiteBalance={applyingMaskedWhiteBalance}
         onApplyWhiteBalance={() => applyMaskedWhiteBalance()}
+        levelsInputBlack={levelsInputBlack}
+        onLevelsInputBlack={setLevelsInputBlack}
+        levelsInputMidpoint={levelsInputMidpoint}
+        onLevelsInputMidpoint={setLevelsInputMidpoint}
+        levelsInputWhite={levelsInputWhite}
+        onLevelsInputWhite={setLevelsInputWhite}
+        levelsOutputBlack={levelsOutputBlack}
+        onLevelsOutputBlack={setLevelsOutputBlack}
+        levelsOutputWhite={levelsOutputWhite}
+        onLevelsOutputWhite={setLevelsOutputWhite}
+        canApplyLevels={Boolean(selected?.mask_artifact_id && project.current_image_artifact_id)
+          && Boolean(exactMaskedLevelsParameters(levelsInputBlack, levelsInputMidpoint, levelsInputWhite, levelsOutputBlack, levelsOutputWhite))
+          && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !isolatingBackground && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
+        applyingLevels={applyingMaskedLevels}
+        onApplyLevels={() => applyMaskedLevels()}
       />
 
       <PipelineStatusBar width={project.width} height={project.height} />
@@ -1021,7 +1099,7 @@ export default function Editor() {
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
-          busy={committing || tryOn.busy || boundedAgent.busy || isolatingBackground || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
+          busy={committing || tryOn.busy || boundedAgent.busy || isolatingBackground || applyingMaskedExposure || applyingMaskedWhiteBalance || applyingMaskedLevels || upscaling || cropping || resizing || Boolean(orthogonalTransformingMode)}
         />
       ) : cropInteractionActive ? (
         <p className="rounded-xl border bg-card px-3 py-2 text-sm text-muted-foreground" role="status">Adjust the crop rectangle above, then apply or cancel it before starting another edit.</p>

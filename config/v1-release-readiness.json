@@ -40,6 +40,14 @@
       "state": "HSME_RND_VALIDATION_PENDING",
       "evidence": "config/v1-release-readiness.json#hsmeValidation",
       "resolution": "Reach HSME R&D_VALIDATED with at least one trusted physical-mobile backend/evidence set, integrated dense-vs-HSME comparison, and final ADVANCE/REDESIGN/REJECT architecture decision."
+    },
+    {
+      "id": "FRONTEND_DEPLOYMENT_HEADERS",
+      "issue": 233,
+      "releaseGate": "R4",
+      "state": "EXTERNAL_DEPLOYMENT_EVIDENCE_PENDING",
+      "evidence": "config/v1-release-journey-matrix.json#journey-22",
+      "resolution": "After Masked Levels is accepted on main, deploy that exact product SHA and rerun canonical hosted frontend evidence before selecting a replacement RC."
     }
   ],
   "nonBlockingDeferred": [

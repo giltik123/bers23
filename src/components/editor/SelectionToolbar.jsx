@@ -3,7 +3,8 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, whiteBalanceTemperatureQ8, onWhiteBalanceTemperatureQ8, whiteBalanceTintQ8, onWhiteBalanceTintQ8, canApplyWhiteBalance = false, applyingWhiteBalance = false, onApplyWhiteBalance, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, whiteBalanceTemperatureQ8, onWhiteBalanceTemperatureQ8, whiteBalanceTintQ8, onWhiteBalanceTintQ8, canApplyWhiteBalance = false, applyingWhiteBalance = false, onApplyWhiteBalance, levelsInputBlack, onLevelsInputBlack, levelsInputMidpoint, onLevelsInputMidpoint, levelsInputWhite, onLevelsInputWhite, levelsOutputBlack, onLevelsOutputBlack, levelsOutputWhite, onLevelsOutputWhite, canApplyLevels = false, applyingLevels = false, onApplyLevels, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+  const levelsIdentity = levelsInputBlack === 0 && levelsInputMidpoint === 128 && levelsInputWhite === 255 && levelsOutputBlack === 0 && levelsOutputWhite === 255;
   if (!selection) return (
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
@@ -63,6 +64,34 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
       <Button type="button" variant="outline" aria-label="Preview masked white balance" disabled={startDisabled || !canApplyWhiteBalance || applyingWhiteBalance || (whiteBalanceTemperatureQ8 === 0 && whiteBalanceTintQ8 === 0)} onClick={onApplyWhiteBalance}>
         {applyingWhiteBalance && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         {applyingWhiteBalance ? 'Applying white balance…' : 'Preview white balance'}
+      </Button>
+      <fieldset className="flex flex-wrap items-center gap-2 rounded-md border px-2 py-1 text-xs" disabled={startDisabled || applyingLevels}>
+        <legend className="sr-only">Masked Levels</legend>
+        <span aria-hidden="true">Levels</span>
+        <label className="flex items-center gap-1">
+          <span>Black</span>
+          <input aria-label="Masked Levels input black" type="number" min="0" max={Math.max(0, levelsInputMidpoint - 1)} step="1" value={levelsInputBlack} onChange={(event) => onLevelsInputBlack(Number(event.target.value))} className="w-14 rounded border bg-background px-1 py-0.5" />
+        </label>
+        <label className="flex items-center gap-1">
+          <span>Mid</span>
+          <input aria-label="Masked Levels input midpoint" type="number" min={Math.min(254, levelsInputBlack + 1)} max={Math.max(1, levelsInputWhite - 1)} step="1" value={levelsInputMidpoint} onChange={(event) => onLevelsInputMidpoint(Number(event.target.value))} className="w-14 rounded border bg-background px-1 py-0.5" />
+        </label>
+        <label className="flex items-center gap-1">
+          <span>White</span>
+          <input aria-label="Masked Levels input white" type="number" min={Math.min(255, levelsInputMidpoint + 1)} max="255" step="1" value={levelsInputWhite} onChange={(event) => onLevelsInputWhite(Number(event.target.value))} className="w-14 rounded border bg-background px-1 py-0.5" />
+        </label>
+        <label className="flex items-center gap-1">
+          <span>Out black</span>
+          <input aria-label="Masked Levels output black" type="number" min="0" max={Math.max(0, levelsOutputWhite - 1)} step="1" value={levelsOutputBlack} onChange={(event) => onLevelsOutputBlack(Number(event.target.value))} className="w-14 rounded border bg-background px-1 py-0.5" />
+        </label>
+        <label className="flex items-center gap-1">
+          <span>Out white</span>
+          <input aria-label="Masked Levels output white" type="number" min={Math.min(255, levelsOutputBlack + 1)} max="255" step="1" value={levelsOutputWhite} onChange={(event) => onLevelsOutputWhite(Number(event.target.value))} className="w-14 rounded border bg-background px-1 py-0.5" />
+        </label>
+      </fieldset>
+      <Button type="button" variant="outline" aria-label="Preview masked Levels" disabled={startDisabled || !canApplyLevels || applyingLevels || levelsIdentity} onClick={onApplyLevels}>
+        {applyingLevels && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+        {applyingLevels ? 'Applying Levels…' : 'Preview Levels'}
       </Button>
     </div>
   );
