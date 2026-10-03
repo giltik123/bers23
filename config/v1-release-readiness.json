@@ -29,19 +29,6 @@
   ],
   "blockers": [
     {
-      "id": "HSME_REAL_MOBILE_EVIDENCE",
-      "issue": 352,
-      "relatedIssues": [
-        862,
-        867,
-        871
-      ],
-      "releaseGate": "R5",
-      "state": "HSME_RND_VALIDATION_PENDING",
-      "evidence": "config/v1-release-readiness.json#hsmeValidation",
-      "resolution": "Reach HSME R&D_VALIDATED with at least one trusted physical-mobile backend/evidence set, integrated dense-vs-HSME comparison, and final ADVANCE/REDESIGN/REJECT architecture decision."
-    },
-    {
       "id": "FRONTEND_DEPLOYMENT_HEADERS",
       "issue": 233,
       "releaseGate": "R4",
@@ -60,9 +47,27 @@
       "issue": 192,
       "id": "EDITOR_TOOL_EXPANSION",
       "state": "POST_V1_OR_PARALLEL_UNLESS_REQUIRED_BY_RELEASE_JOURNEY"
+    },
+    {
+      "issue": 352,
+      "relatedIssues": [
+        762,
+        789,
+        812,
+        826,
+        835,
+        851,
+        869,
+        871
+      ],
+      "id": "HSME_PHYSICAL_MOBILE_VALIDATION",
+      "state": "OWNER_DEFERRED_POST_V1_FIELD_VALIDATION",
+      "releaseBlocking": false,
+      "riskOwner": "PRODUCT_OWNER",
+      "consequence": "HSME remains experimental/non-production until separate real-device graduation evidence exists."
     }
   ],
-  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, rcCoordinate is one exact accepted main SHA with mandatory release evidence green, and hsmeValidation.currentClassification is R&D_VALIDATED. HSME R&D validation grants no production authority by itself.",
+  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, and rcCoordinate is one exact accepted main SHA with mandatory release evidence green. HSME physical-mobile validation is owner-deferred post-v1 and does not block RC; pending HSME grants no production/provider/Billing/model/mobile-backend authority.",
   "mainProtectionEvidence": {
     "schemaVersion": 1,
     "kind": "BERS_V1_GITHUB_MAIN_PROTECTION_EVIDENCE",
@@ -151,6 +156,22 @@
     ],
     "physicalMobileQualification": null,
     "finalArchitectureDecision": null,
-    "productionAuthorityGranted": false
+    "productionAuthorityGranted": false,
+    "releaseBlocking": false,
+    "releasePolicy": "POST_V1_GRADUATION_ONLY"
+  },
+  "releasePolicyOverride": {
+    "schemaVersion": 1,
+    "id": "DEFER_HSME_PHYSICAL_MOBILE_PRE_RC_GATE",
+    "authorizedAt": "2026-10-04",
+    "riskOwner": "PRODUCT_OWNER",
+    "scope": "BERS_V1_RC_AND_V1_RELEASE",
+    "acceptedRisk": "Release v1 without physical-mobile HSME validation; users/field testing provide post-release device evidence.",
+    "preserves": [
+      "HSME_NON_PRODUCTION_UNTIL_SEPARATELY_VALIDATED",
+      "NO_PROVIDER_OR_BILLING_AUTHORITY",
+      "NO_MODEL_OR_MOBILE_BACKEND_ADMISSION",
+      "CORE_POSTGRES_SECURITY_DEPLOYMENT_BACKUP_BROWSER_GATES"
+    ]
   }
 }
