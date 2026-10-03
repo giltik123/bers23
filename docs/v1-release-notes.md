@@ -10,7 +10,7 @@ This document is the prepared release-note package. It is intentionally **not** 
 - Explicit Preview -> Accept / Discard with durable history, Undo/Redo/Version/Restore and stale-source recovery.
 - Deterministic Editor v1: Crop, Resize, Rotate/Flip, canonical Selection/MASK, Background Isolation, Masked Exposure and Masked White Balance.
 - Managed Wardrobe, garment multi-view metadata, Collections and canonical ordered Outfits.
-- Deterministic one-garment Try-On through canonical readiness, body anchors, mesh warp, texture composite, FINAL Preview and explicit Project Accept.
+- Deterministic one-garment Try-On software path through canonical readiness, body anchors, mesh warp, texture composite, FINAL Preview and explicit Project Accept. Functional authority/browser acceptance is proven; v1 RC remains blocked until representative real-image quality/resource review is accepted.
 - Bounded Agent/AEE v1 path with durable canonical run recovery.
 - Bounded durable Automation subset.
 - Job Center canonical reconciliation plus owning cancel/retry controls.
@@ -33,6 +33,8 @@ Repository protection and historical hosted frontend evidence are recorded, but 
 
 1. journey 22 hosted frontend security evidence is bound to exact SHA `6a5c63ed32e8ae82e500e5a1c4fe22409705b174` by workflow run `36846842313` and artifact `11153896139`;
 2. GitHub `main` is protected by active ruleset id `24246282` with PR-only updates, zero mandatory human approvals, strict seven-check enforcement, blocked deletion/non-fast-forward updates, and no bypass actors.
+
+Representative real-image deterministic Try-On quality/resource review remains open under #230 and is a mandatory v1 RC blocker. Functional browser success alone does not prove garment/logo/pattern preservation or acceptable latency/memory.
 
 Physical-mobile HSME qualification remains open and is a mandatory v1 RC blocker until the HSME program reaches `R&D_VALIDATED`.
 
