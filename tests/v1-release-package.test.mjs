@@ -28,11 +28,12 @@ test('release package classifies the enabled v1 product floor explicitly', () =>
   assert.equal(byId.BILLING_PAYMENTS_CREDITS.classification,'BLOCKED');
 });
 
-test('deterministic Editor classification does not silently admit Levels candidates', () => {
+test('deterministic Editor classification admits Masked Levels only through explicit production policy', () => {
   const editor = classifications.entries.find(value=>value.id==='DETERMINISTIC_EDITOR_V1');
-  assert.deepEqual(editor.deliberatelyNotEnabled.slice(0,2), ['levels@1','masked-levels@1']);
-  assert.doesNotMatch(executorPolicy, /LEVELS_CAPABILITY|MASKED_LEVELS_CAPABILITY/);
-  for (const expected of ['CROP_CAPABILITY','RESIZE_CAPABILITY','ORTHOGONAL_TRANSFORM_CAPABILITY','MASKED_EXPOSURE_CAPABILITY','MASKED_WHITE_BALANCE_CAPABILITY']) {
+  assert.equal(editor.deliberatelyNotEnabled.includes('levels@1'), true);
+  assert.equal(editor.deliberatelyNotEnabled.includes('masked-levels@1'), false);
+  assert.doesNotMatch(executorPolicy, /\bLEVELS_CAPABILITY\b/);
+  for (const expected of ['CROP_CAPABILITY','RESIZE_CAPABILITY','ORTHOGONAL_TRANSFORM_CAPABILITY','MASKED_EXPOSURE_CAPABILITY','MASKED_WHITE_BALANCE_CAPABILITY','MASKED_LEVELS_CAPABILITY']) {
     assert.match(executorPolicy,new RegExp(expected));
   }
 });
