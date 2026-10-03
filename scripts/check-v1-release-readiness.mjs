@@ -190,7 +190,7 @@ function validateHsmeReleaseOverride(value, nonBlockingDeferred, hsmeState) {
   }
   if (value.riskOwner !== 'PRODUCT_OWNER') throw new Error('releasePolicyOverride risk owner mismatch');
   if (value.scope !== 'BERS_V1_RC_AND_V1_RELEASE') throw new Error('releasePolicyOverride scope mismatch');
-  if (typeof value.authorizedAt !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/u.test(value.authorizedAt)) {
+  if (typeof value.authorizedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value.authorizedAt)) {
     throw new Error('releasePolicyOverride authorizedAt is invalid');
   }
   if (!Array.isArray(value.preserves) ||
