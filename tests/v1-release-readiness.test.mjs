@@ -230,10 +230,16 @@ test('readiness state machine selects one exact RC only after all blockers are r
 test('readiness state machine rejects premature RC selection and frontend blocker drift', () => {
   const sha='b'.repeat(40);
   const blockedReadiness=blockedReadinessWithMainProtection();
+  const provenJourneys={
+    ...journeys,
+    entries:journeys.entries.map(value=>value.id === 22
+      ? {...value,disposition:'PROVEN',liveEvidence:frontendLiveEvidence(sha)}
+      : value),
+  };
   assert.throws(
     () => validateV1ReleaseReadiness({
       readiness:{...blockedReadiness,rcSelectable:true,rcCoordinate:sha,status:'BERS_V1_RC_SELECTED'},
-      journeys,
+      journeys:provenJourneys,
       stageD,
     }),
     /non-selectable while blockers exist/u,
