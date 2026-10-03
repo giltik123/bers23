@@ -3,6 +3,7 @@ import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES, LOCAL_BACKGROUND_ISO
 import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { MASKED_EXPOSURE_CAPABILITY, MASKED_EXPOSURE_OPERATION } from '../../../src/platform/creative/deterministic/MaskedExposure.ts';
 import { MASKED_WHITE_BALANCE_CAPABILITY, MASKED_WHITE_BALANCE_OPERATION } from '../../../src/platform/creative/deterministic/MaskedWhiteBalance.ts';
+import { MASKED_LEVELS_CAPABILITY, MASKED_LEVELS_OPERATION } from '../../../src/platform/creative/deterministic/MaskedLevels.ts';
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY, ORTHOGONAL_TRANSFORM_OPERATION } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
 import { GARMENT_TEXTURE_COMPOSITE_CAPABILITY, GARMENT_TEXTURE_COMPOSITE_OPERATION } from '../../../src/platform/creative/deterministic/GarmentTextureCompositeIdentity.js';
@@ -21,6 +22,7 @@ const RULES: readonly CapabilityRule[] = Object.freeze([
   Object.freeze({ capabilityId: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation, route: 'ON_DEVICE', operationType: 'BACKGROUND_ISOLATION', target: 'LOCAL', operationIntent: LOCAL_BACKGROUND_ISOLATION_COMPOSITE_INTENT }),
   Object.freeze({ capabilityId: MASKED_EXPOSURE_CAPABILITY, route: 'ON_DEVICE', operationType: MASKED_EXPOSURE_OPERATION, target: 'LOCAL', operationIntent: MASKED_EXPOSURE_OPERATION }),
   Object.freeze({ capabilityId: MASKED_WHITE_BALANCE_CAPABILITY, route: 'ON_DEVICE', operationType: MASKED_WHITE_BALANCE_OPERATION, target: 'LOCAL', operationIntent: MASKED_WHITE_BALANCE_OPERATION }),
+  Object.freeze({ capabilityId: MASKED_LEVELS_CAPABILITY, route: 'ON_DEVICE', operationType: MASKED_LEVELS_OPERATION, target: 'LOCAL', operationIntent: MASKED_LEVELS_OPERATION }),
   Object.freeze({ capabilityId: CROP_CAPABILITY, route: 'ON_DEVICE', operationType: 'CROP', target: 'LOCAL', operationIntent: 'CROP' }),
   Object.freeze({ capabilityId: RESIZE_CAPABILITY, route: 'ON_DEVICE', operationType: 'RESIZE', target: 'LOCAL', operationIntent: 'RESIZE' }),
   Object.freeze({ capabilityId: ORTHOGONAL_TRANSFORM_CAPABILITY, route: 'ON_DEVICE', operationType: ORTHOGONAL_TRANSFORM_OPERATION, target: 'LOCAL', operationIntent: ORTHOGONAL_TRANSFORM_OPERATION }),
