@@ -88,6 +88,39 @@ test('Masked Levels PostgreSQL vertical persists one exact IMAGE+MASK FINAL with
   const maskId = production.artifacts.external.issueStoredMask(storedMask.storageId, scope);
   const parameters = Object.freeze({ inputBlack: 16, inputMidpoint: 128, inputWhite: 240, outputBlack: 8, outputWhite: 248 });
 
+  const foreignProjectRow = await production.projects.create(auth, 'Masked Levels Foreign Scope', originalPng, { maxDimension: 256, maxPixels: 65_536 });
+  const foreignScope = Object.freeze({ tenantId, userId, projectId: String(foreignProjectRow.project_id) });
+  const foreignOriginalStorageId = String(foreignProjectRow.original_image_storage_id);
+  const foreignOriginalId = production.artifacts.external.issueStoredOriginal(foreignOriginalStorageId, foreignScope);
+  const foreignMask = await production.artifacts.masks.persistManual(foreignScope, width, height, maskAlpha, {
+    sourceImageStorageId: foreignOriginalStorageId,
+    producerOperation: 'MANUAL_SELECTION',
+  });
+  const foreignMaskId = production.artifacts.external.issueStoredMask(foreignMask.storageId, foreignScope);
+
+  await assert.rejects(
+    () => production.localExecution.maskedLevels.prepare({
+      projectId: scope.projectId,
+      sourceArtifactId: originalId,
+      maskArtifactId: foreignMaskId,
+      ...parameters,
+      clientRequestId: 'masked-levels-foreign-mask',
+    }, auth),
+    undefined,
+    'Masked Levels must reject a MASK issued for another Project scope',
+  );
+  await assert.rejects(
+    () => production.localExecution.maskedLevels.prepare({
+      projectId: foreignScope.projectId,
+      sourceArtifactId: originalId,
+      maskArtifactId: foreignMaskId,
+      ...parameters,
+      clientRequestId: 'masked-levels-foreign-source',
+    }, auth),
+    undefined,
+    'Masked Levels must reject a source IMAGE issued for another Project scope',
+  );
+
   const prepared = await production.localExecution.maskedLevels.prepare({
     projectId: scope.projectId,
     sourceArtifactId: originalId,
