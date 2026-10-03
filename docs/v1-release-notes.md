@@ -2,7 +2,7 @@
 
 Target release: **BERS v1.0 / 1.0.0**.
 
-This document is the prepared release-note package. It is intentionally **not** a declaration that v1.0 has shipped. Masked Levels is now part of the candidate production surface, so the previous RC coordinate has been invalidated; a replacement exact-main RC will be selected only after fresh hosted deployment evidence.
+This document is the prepared release-note package, not a declaration that v1.0 has shipped. No RC is currently selected. Masked Levels is part of the candidate production surface in this branch, while the mandatory HSME R&D gate and fresh hosted frontend evidence remain unresolved.
 
 ## Included production surface
 
@@ -14,31 +14,27 @@ This document is the prepared release-note package. It is intentionally **not** 
 - Bounded Agent/AEE v1 path with durable canonical run recovery.
 - Bounded durable Automation subset.
 - Job Center canonical reconciliation plus owning cancel/retry controls.
-- Built-SPA + built-Core + real-PostgreSQL browser release evidence for the enabled product journeys.
 
 ## Deliberately not enabled
 
-The following existing code/research does not gain production authority merely by shipping in the repository:
-
 - Global Levels remains a reviewed kernel but is not admitted as a standalone production Editor executor.
 - MobileSAM, MODNet, Real-ESRGAN, Big-LaMa, Tiny-SD and Kandinsky remain CANDIDATE/R&D under the Stage D v1 decision matrix.
-- HSME remains non-production. Physical-mobile qualification is explicitly deferred to post-v1 research and grants no v1 production authority.
-- Billing/payments/subscriptions/credits are deferred for redesign and are outside the v1 product floor.
-- Voice input, persistent Agent memory and durable user ranking/feedback collection are not enabled v1 production surfaces.
+- HSME remains non-production, while its `R&D_VALIDATED` milestone is mandatory before v1 RC.
+- Billing/payments/subscriptions/credits remain disabled pending redesign.
+- Voice input, persistent Agent memory and durable user ranking/feedback collection are not enabled.
 - Broader autonomous/multimodal Agent behavior beyond the bounded accepted v1 subset is not enabled.
 
-## RC evidence state
+## Pre-RC evidence state
 
-The previous journey-22 evidence remains historical evidence for the earlier product coordinate only. It is deliberately not attached to this feature branch's readiness ledger.
+Repository protection is proven. Historical journey-22 evidence remains evidence for old SHA `6a5c63ed32e8ae82e500e5a1c4fe22409705b174` only.
 
 Before a replacement RC can be selected:
 
-1. merge the accepted product change to `main`;
-2. deploy the frontend at that exact new main SHA;
-3. rerun canonical hosted frontend security evidence;
-4. bind journey 22 to the new exact SHA;
-5. reselect `BERS_V1_RC`.
+1. complete the mandatory HSME R&D gate, including trusted physical-mobile qualification and final architecture disposition;
+2. merge the accepted product surface to `main`;
+3. deploy the frontend at that exact new `main` SHA;
+4. rerun canonical hosted frontend security evidence;
+5. bind journey 22 to the same exact SHA;
+6. select the replacement `BERS_V1_RC`.
 
-GitHub `main` protection remains enforced by ruleset id `24246282`. Physical-mobile HSME qualification remains post-v1 research and is not a v1 RC blocker.
-
-RC selection does **not** authorize publication. Production Core rollout must also satisfy its existing migration, readiness, authentication/provider, and security contracts.
+Production Core rollout must independently satisfy migration, readiness, authentication/provider and security contracts before publication.

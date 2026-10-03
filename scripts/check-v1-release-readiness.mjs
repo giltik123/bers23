@@ -7,6 +7,7 @@ const EXACT_SHA_RE = /^[0-9a-f]{40}$/u;
 const ALLOWED_BLOCKERS = Object.freeze(new Map([
   ['FRONTEND_DEPLOYMENT_HEADERS', Object.freeze({ issue: 233, releaseGate: 'R4' })],
   ['REPOSITORY_MAIN_PROTECTION', Object.freeze({ issue: 355, releaseGate: 'R1' })],
+  ['HSME_REAL_MOBILE_EVIDENCE', Object.freeze({ issue: 352, releaseGate: 'R5' })],
 ]));
 
 export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
@@ -28,8 +29,13 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
     if (blocker.releaseGate !== accepted.releaseGate) throw new Error(`${blocker.id} release gate mismatch`);
   }
 
-  if (blockerIds.includes('HSME_REAL_MOBILE_EVIDENCE')) {
-    throw new Error('physical-mobile HSME evidence is deferred post-v1 and must not block RC');
+  const hsmeBlocked = blockerIds.includes('HSME_REAL_MOBILE_EVIDENCE');
+  const hsmeState = validateHsmeValidation(readiness.hsmeValidation);
+  if (hsmeState === 'R&D_VALIDATED' && hsmeBlocked) {
+    throw new Error('R&D_VALIDATED HSME cannot remain a release blocker');
+  }
+  if (hsmeState !== 'R&D_VALIDATED' && !hsmeBlocked) {
+    throw new Error('HSME must block RC until R&D_VALIDATED');
   }
 
   const mainProtectionBlocked = blockerIds.includes('REPOSITORY_MAIN_PROTECTION');
@@ -41,9 +47,8 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
     validateMainProtectionEvidence(readiness.mainProtectionEvidence);
   }
 
-  const deferredHsme = readiness.nonBlockingDeferred.find(value => value.id === 'HSME_REAL_MOBILE_EVIDENCE');
-  if (deferredHsme?.state !== 'DEFERRED_POST_V1_RESEARCH') {
-    throw new Error('HSME post-v1 deferral missing');
+  if (readiness.nonBlockingDeferred.some(value => value.id === 'HSME_REAL_MOBILE_EVIDENCE' || value.issue === 352)) {
+    throw new Error('HSME cannot be listed as non-blocking deferred work before v1');
   }
 
   const entries = Array.isArray(journeys.entries) ? journeys.entries : [];
@@ -112,7 +117,7 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
           entries.filter(value => value.disposition === 'DEPLOYMENT_TARGET_PENDING').map(value => value.id)
         ),
         stageDDecisions: stageD.entries.length,
-        deferredHsmeState: deferredHsme.state,
+        hsmeValidationState: hsmeState,
       }),
     });
   }
@@ -136,9 +141,50 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
       deferredBrowserJourneys: 1,
       pendingBrowserJourneys: Object.freeze([]),
       stageDDecisions: stageD.entries.length,
-      deferredHsmeState: deferredHsme.state,
+      hsmeValidationState: hsmeState,
     }),
   });
+}
+
+function validateHsmeValidation(value) {
+  requireObject(value, 'hsmeValidation');
+  if (value.schemaVersion !== 1) throw new Error('hsmeValidation schemaVersion is invalid');
+  if (value.kind !== 'BERS_V1_HSME_RND_VALIDATION') throw new Error('hsmeValidation kind mismatch');
+  if (value.requiredClassification !== 'R&D_VALIDATED') throw new Error('hsmeValidation requiredClassification mismatch');
+  if (value.productionAuthorityGranted !== false) throw new Error('HSME R&D validation cannot grant production authority');
+  if (!Array.isArray(value.blockers)) throw new Error('hsmeValidation blockers must be an array');
+
+  if (value.currentClassification === 'R&D_VALIDATED') {
+    if (value.state !== 'R&D_VALIDATED') throw new Error('R&D_VALIDATED HSME state mismatch');
+    if (value.blockers.length !== 0) throw new Error('R&D_VALIDATED HSME cannot retain blockers');
+    requireObject(value.physicalMobileQualification, 'hsmeValidation.physicalMobileQualification');
+    if (value.physicalMobileQualification.state !== 'REAL_MOBILE_QUALIFICATION_READY_NOT_ADMITTED') {
+      throw new Error('HSME real mobile qualification is not ready');
+    }
+    if (value.physicalMobileQualification.realPhysicalMobileDeviceEvidence !== true) {
+      throw new Error('HSME real mobile qualification lacks physical-device evidence');
+    }
+    if (!/^[0-9a-f]{64}$/u.test(value.physicalMobileQualification.qualificationEvidenceSha256 ?? '')) {
+      throw new Error('HSME qualification evidence digest is invalid');
+    }
+    if (!['ADVANCE','REDESIGN','REJECT'].includes(value.finalArchitectureDecision)) {
+      throw new Error('HSME final architecture decision is missing');
+    }
+    return 'R&D_VALIDATED';
+  }
+
+  if (value.currentClassification !== 'RND_IMPLEMENTATION_EVIDENCE_PENDING') {
+    throw new Error('HSME pre-RC classification is invalid');
+  }
+  if (value.state !== 'BLOCKED') throw new Error('pending HSME validation must remain BLOCKED');
+  if (value.blockers.length === 0) throw new Error('pending HSME validation requires explicit blockers');
+  if (value.physicalMobileQualification !== null) {
+    throw new Error('pending HSME validation cannot claim accepted physical-mobile qualification');
+  }
+  if (value.finalArchitectureDecision !== null) {
+    throw new Error('pending HSME validation cannot claim final architecture disposition');
+  }
+  return 'RND_IMPLEMENTATION_EVIDENCE_PENDING';
 }
 
 function validateMainProtectionEvidence(value) {

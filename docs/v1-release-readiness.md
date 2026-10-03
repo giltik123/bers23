@@ -6,39 +6,21 @@ It deliberately does **not** use the number of open GitHub issues as release tru
 
 ## Current state
 
-The previous selected RC `6a5c63ed32e8ae82e500e5a1c4fe22409705b174` is intentionally invalidated on this feature branch because Masked Levels changes the admitted product surface.
+`BERS_V1_RC` is **not selectable** on this Masked Levels feature branch.
 
-The branch is therefore fail-closed before RC selection:
+The previous coordinate `6a5c63ed32e8ae82e500e5a1c4fe22409705b174` is historical evidence only. Two independent blockers remain:
 
-- `rcSelectable=false`;
-- `rcCoordinate=null`;
-- `status=BERS_V1_RC_NOT_SELECTABLE`;
-- browser journey 22 is `DEPLOYMENT_TARGET_PENDING` with no live evidence attached;
-- the blocker is `FRONTEND_DEPLOYMENT_HEADERS`, which now means: deploy the new accepted product SHA and obtain fresh exact-SHA hosted evidence before selecting the replacement RC.
+- `HSME_REAL_MOBILE_EVIDENCE` / #352: the mandatory HSME program must reach `R&D_VALIDATED` with trusted dense-baseline, Adapter-MoE/runtime/sparsity, real physical-mobile qualification and final architecture disposition evidence.
+- `FRONTEND_DEPLOYMENT_HEADERS` / #233: Masked Levels changes the admitted product surface, so the eventual accepted product SHA must be deployed exactly and journey 22 hosted evidence rerun before RC selection.
 
-GitHub repository protection remains proven by active branch ruleset `BERS v1 main release protection` (id `24246282`) targeting the default branch with:
+HSME remains non-production. Satisfying its R&D gate grants no provider, Billing, Project, Artifact, model-promotion or cloud-fallback authority.
 
-- no bypass actors;
-- pull requests required with zero mandatory human approvals;
-- strict required status checks;
-- the seven stable release contexts;
-- deletion blocked;
-- non-fast-forward/force-push updates blocked.
-
-Masked Levels production promotion is release-affecting product work. It must not inherit hosted evidence from the older RC. After this product change is accepted on `main`, the frontend must be deployed at that exact new SHA and journey 22 evidence rerun before RC selection resumes.
-
-HSME remains non-production. Its physical-device work is explicitly deferred as post-v1 R&D and still requires real-device evidence before any future production admission.
+GitHub repository protection remains proven by active ruleset `BERS v1 main release protection` (id `24246282`) with seven strict required checks, PR-only updates, no bypass actors, and deletion/non-fast-forward updates blocked.
 
 ## State transitions
 
-The readiness guard validates the ledger state rather than issue counts.
-
-- With one or more accepted external blockers, `rcSelectable=false`, `rcCoordinate=null`, and `status=BERS_V1_RC_NOT_SELECTABLE`.
-- The frontend blocker may be removed only when browser journey 22 is `PROVEN` with accepted live evidence.
-- Main protection may be removed only with accepted machine-readable GitHub protection evidence.
-- With no blockers, `rcSelectable=true`, `rcCoordinate` must be one exact lowercase 40-character accepted `main` SHA, and `status=BERS_V1_RC_SELECTED`.
-- The selected RC must equal journey 22's reviewed deployment SHA.
-- HSME physical-mobile work remains post-v1 and is rejected if reintroduced into the v1 blocker array.
-- Unknown blocker IDs, duplicate blockers, non-terminal mandatory browser journeys, or coordinate/status drift fail closed.
-
-Package version remains `0.0.0`; no `v1.0.0` tag, release SHA, or publication evidence is declared while this branch awaits replacement RC evidence.
+- While HSME is not `R&D_VALIDATED`, `HSME_REAL_MOBILE_EVIDENCE` remains a blocker.
+- After a release-affecting product change, journey 22 remains pending until fresh exact-SHA hosted evidence exists.
+- Main protection remains an independent gate.
+- Only with all blockers cleared may `rcSelectable=true`; the selected RC must equal journey 22's reviewed exact deployed SHA.
+- Package version remains `0.0.0`; no `v1.0.0` publication coordinate exists while either blocker remains.
