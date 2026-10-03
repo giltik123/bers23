@@ -79,6 +79,34 @@ function mainProtectionBlocker() {
   };
 }
 
+function fashionQualityBlocker() {
+  return {
+    id:'FASHION_REAL_IMAGE_QUALITY',
+    issue:230,
+    releaseGate:'R2',
+    state:'REAL_IMAGE_QUALITY_EVIDENCE_PENDING',
+  };
+}
+
+function fashionQualityEvidence() {
+  return {
+    schemaVersion:1,
+    kind:'BERS_V1_FASHION_REAL_IMAGE_QUALITY_EVIDENCE',
+    issue:230,
+    productScope:'DETERMINISTIC_TRYON_V1',
+    reviewDecision:'ADVANCE',
+    realImageCaseCount:12,
+    garmentLogoPatternPreservationReviewed:true,
+    failureModesReviewed:true,
+    latencyMeasured:true,
+    memoryMeasured:true,
+    qualityEvidenceSha256:'4'.repeat(64),
+    resourceEvidenceSha256:'5'.repeat(64),
+    reviewedAt:'2026-10-03T12:00:00.000Z',
+    productionAuthorityGranted:false,
+  };
+}
+
 function hsmeBlocker() {
   return {
     id:'HSME_REAL_MOBILE_EVIDENCE',
@@ -110,7 +138,7 @@ function validatedHsme() {
 function blockedReadinessWithMainProtection() {
   return {
     ...readiness,
-    blockers:[mainProtectionBlocker(),hsmeBlocker()],
+    blockers:[mainProtectionBlocker(),fashionQualityBlocker(),hsmeBlocker()],
     rcSelectable:false,
     rcCoordinate:null,
     status:'BERS_V1_RC_NOT_SELECTABLE',
@@ -171,6 +199,8 @@ test('RC guard consumes the accepted Stage D and browser ledgers instead of open
 test('optional/deferred work cannot accidentally block RC through this ledger', () => {
   assert.deepEqual(readiness.nonBlockingDeferred.map(value=>value.issue).sort((a,b)=>a-b), [189,192]);
   assert.equal(readiness.blockers.some(value=>[189,192].includes(value.issue)), false);
+  assert.equal(readiness.blockers.some(value=>value.id==='FASHION_REAL_IMAGE_QUALITY'), true);
+  assert.equal(readiness.fashionQualityEvidence,null);
   assert.equal(readiness.blockers.some(value=>value.id==='HSME_REAL_MOBILE_EVIDENCE'), true);
   assert.equal(readiness.hsmeValidation.currentClassification,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
   assert.equal(readiness.hsmeValidation.state,'BLOCKED');
@@ -215,6 +245,7 @@ test('readiness state machine permits frontend evidence to remain proven while H
       rcCoordinate:null,
       status:'BERS_V1_RC_NOT_SELECTABLE',
       mainProtectionEvidence:mainProtectionEvidence(),
+      fashionQualityEvidence:fashionQualityEvidence(),
     },
     journeys,
     stageD,
@@ -241,6 +272,7 @@ test('readiness state machine selects one exact RC only after all blockers are r
       rcCoordinate:sha,
       status:'BERS_V1_RC_SELECTED',
       mainProtectionEvidence:mainProtectionEvidence(),
+      fashionQualityEvidence:fashionQualityEvidence(),
       hsmeValidation:validatedHsme(),
     },
     journeys:selectedJourneys,
@@ -273,6 +305,46 @@ test('readiness state machine rejects premature RC selection and frontend blocke
     }),
     /journey 22 must be PROVEN/u,
   );
+});
+
+test('readiness state machine requires accepted Fashion quality evidence before its blocker can clear', () => {
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='FASHION_REAL_IMAGE_QUALITY'),
+        fashionQualityEvidence:null,
+      },
+      journeys,
+      stageD,
+    }),
+    /fashionQualityEvidence must be an object/u,
+  );
+
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='FASHION_REAL_IMAGE_QUALITY'),
+        fashionQualityEvidence:{...fashionQualityEvidence(),garmentLogoPatternPreservationReviewed:false},
+      },
+      journeys,
+      stageD,
+    }),
+    /review dimensions are incomplete/u,
+  );
+
+  const result=validateV1ReleaseReadiness({
+    readiness:{
+      ...readiness,
+      blockers:readiness.blockers.filter(value=>value.id!=='FASHION_REAL_IMAGE_QUALITY'),
+      fashionQualityEvidence:fashionQualityEvidence(),
+    },
+    journeys,
+    stageD,
+  });
+  assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
+  assert.equal(result.payload.fashionQualityState,'QUALITY_VALIDATED');
 });
 
 test('readiness state machine requires the exact HSME blocker until R&D_VALIDATED and rejects unknown blockers', () => {
@@ -320,6 +392,7 @@ test('readiness state machine keeps deployment pending when frontend evidence is
       rcCoordinate:null,
       status:'BERS_V1_RC_NOT_SELECTABLE',
       mainProtectionEvidence:mainProtectionEvidence(),
+      fashionQualityEvidence:fashionQualityEvidence(),
       hsmeValidation:validatedHsme(),
     },
     journeys:pendingFrontendJourneys(),
@@ -359,6 +432,7 @@ test('readiness state machine rejects RC selection that is not the reviewed fron
         rcCoordinate:rcSha,
         status:'BERS_V1_RC_SELECTED',
         mainProtectionEvidence:mainProtectionEvidence(),
+        fashionQualityEvidence:fashionQualityEvidence(),
         hsmeValidation:validatedHsme(),
       },
       journeys:selectedJourneys,
