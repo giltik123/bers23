@@ -61,6 +61,10 @@ jobs:
           set -euo pipefail
           E=artifacts/hsme-virtual-android-preflight/evidence.json
           test "$(jq -r '.evidenceClass' "$E")" = "VIRTUAL_ANDROID_PREFLIGHT_ONLY"
+          test "$(jq -r '.trialReadiness' "$E")" = "READY_FOR_PHYSICAL_DEVICE_HSME_TRIAL"
+          test "$(jq -r '.nextStep' "$E")" = "RUN_HSME_ON_PHYSICAL_PHONE"
+          test "$(jq -r '.releaseEvidenceEligible' "$E")" = "false"
+          test "$(jq -r '.physicalMobileEvidenceEligible' "$E")" = "false"
           test "$(jq -r '.virtualDevice' "$E")" = "true"
           test "$(jq -r '.realPhysicalMobileDeviceMeasurement' "$E")" = "false"
           test "$(jq -r '.physicalDeviceAttestationSha256' "$E")" = "null"
@@ -85,6 +89,10 @@ jobs:
           SCRIPT=scripts/hsme-virtual-android-preflight.sh
           CONTRACT=server/core/training/HsmeRealMobileQualificationV1.ts
           grep -F 'VIRTUAL_ANDROID_PREFLIGHT_ONLY' "$SCRIPT"
+          grep -F 'READY_FOR_PHYSICAL_DEVICE_HSME_TRIAL' "$SCRIPT"
+          grep -F 'RUN_HSME_ON_PHYSICAL_PHONE' "$SCRIPT"
+          grep -F 'releaseEvidenceEligible:false' "$SCRIPT"
+          grep -F 'physicalMobileEvidenceEligible:false' "$SCRIPT"
           grep -F 'realPhysicalMobileDeviceMeasurement:false' "$SCRIPT"
           grep -F 'powerSource:"SIMULATED_BATTERY"' "$SCRIPT"
           grep -F 'mobileBackendAdmissionAllowed:false' "$SCRIPT"
