@@ -143,6 +143,6 @@ jobs:
           grep -q "MASKED_LEVELS" server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql
           grep -q "createMaskedLevels" src/pages/Editor.jsx
           grep -q 'aria-label="Preview masked Levels"' src/components/editor/SelectionToolbar.jsx
-          grep -q "masked-levels@1" src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          grep -q "MASKED_LEVELS_TOOL_DEFINITION" src/platform/creative/deterministic/DeterministicToolRegistry.ts
           test -n "$BASE_SHA"
           git diff --check "$BASE_SHA"..HEAD
