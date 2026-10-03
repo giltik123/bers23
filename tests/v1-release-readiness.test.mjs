@@ -88,11 +88,12 @@ function fashionQualityBlocker() {
   };
 }
 
-function fashionQualityEvidence() {
+function fashionQualityEvidence(testedSha='4'.repeat(40)) {
   return {
     schemaVersion:1,
     kind:'BERS_V1_FASHION_REAL_IMAGE_QUALITY_EVIDENCE',
     issue:230,
+    testedSha,
     productScope:'DETERMINISTIC_TRYON_V1',
     reviewDecision:'ADVANCE',
     realImageCaseCount:12,
@@ -102,6 +103,7 @@ function fashionQualityEvidence() {
     memoryMeasured:true,
     qualityEvidenceSha256:'4'.repeat(64),
     resourceEvidenceSha256:'5'.repeat(64),
+    evidenceUrl:'https://github.com/giltik123/bers23/actions/runs/987654321',
     reviewedAt:'2026-10-03T12:00:00.000Z',
     productionAuthorityGranted:false,
   };
@@ -272,7 +274,7 @@ test('readiness state machine selects one exact RC only after Fashion quality an
       rcCoordinate:sha,
       status:'BERS_V1_RC_SELECTED',
       mainProtectionEvidence:mainProtectionEvidence(),
-      fashionQualityEvidence:fashionQualityEvidence(),
+      fashionQualityEvidence:fashionQualityEvidence(sha),
       hsmeValidation:validatedHsme(),
     },
     journeys:selectedJourneys,
@@ -415,6 +417,34 @@ test('RC readiness workflow follows manifest state and keeps diff hygiene PR-onl
 });
 
 
+test('readiness state machine rejects RC selection that does not match Fashion quality evidence SHA', () => {
+  const rcSha='a'.repeat(40);
+  const fashionSha='b'.repeat(40);
+  const selectedJourneys={
+    ...journeys,
+    entries:journeys.entries.map(value=>value.id === 22
+      ? {...value,disposition:'PROVEN',liveEvidence:frontendLiveEvidence(rcSha)}
+      : value),
+  };
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:[],
+        rcSelectable:true,
+        rcCoordinate:rcSha,
+        status:'BERS_V1_RC_SELECTED',
+        mainProtectionEvidence:mainProtectionEvidence(),
+        fashionQualityEvidence:fashionQualityEvidence(fashionSha),
+        hsmeValidation:validatedHsme(),
+      },
+      journeys:selectedJourneys,
+      stageD,
+    }),
+    /selected RC must equal Fashion quality evidence testedSha/u,
+  );
+});
+
 test('readiness state machine rejects RC selection that is not the reviewed frontend deployment SHA', () => {
   const rcSha='6'.repeat(40);
   const deploymentSha='7'.repeat(40);
@@ -433,7 +463,7 @@ test('readiness state machine rejects RC selection that is not the reviewed fron
         rcCoordinate:rcSha,
         status:'BERS_V1_RC_SELECTED',
         mainProtectionEvidence:mainProtectionEvidence(),
-        fashionQualityEvidence:fashionQualityEvidence(),
+        fashionQualityEvidence:fashionQualityEvidence(rcSha),
         hsmeValidation:validatedHsme(),
       },
       journeys:selectedJourneys,
