@@ -207,6 +207,12 @@ test('selection law binds RC selection to empty blockers and one exact accepted 
 });
 
 test('readiness state machine permits frontend evidence to remain proven while HSME still blocks RC', () => {
+  const provenFrontendJourneys={
+    ...journeys,
+    entries:journeys.entries.map(value=>value.id === 22
+      ? {...value,disposition:'PROVEN',liveEvidence:frontendLiveEvidence('f'.repeat(40))}
+      : value),
+  };
   const result=validateV1ReleaseReadiness({
     readiness:{
       ...readiness,
@@ -216,7 +222,7 @@ test('readiness state machine permits frontend evidence to remain proven while H
       status:'BERS_V1_RC_NOT_SELECTABLE',
       mainProtectionEvidence:mainProtectionEvidence(),
     },
-    journeys,
+    journeys:provenFrontendJourneys,
     stageD,
   });
   assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
