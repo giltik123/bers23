@@ -10,6 +10,7 @@ on:
       - 'server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'
       - 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql'
       - 'server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql'
+      - 'server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql'
       - 'server/core/http/automationDefinitionHttpAdapter.ts'
       - 'server/transactions/infrastructure/postgres/transactionSchemaCli.ts'
       - 'server/index.ts'
@@ -60,12 +61,12 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Prove global migration sequence preserves C3a/C3b/C3d, AEE 043 and Project status lifecycle 045 plus Artifact lineage 046/047 tail
+      - name: Prove global migration sequence preserves C3a/C3b/C3d, AEE 043 and Project status lifecycle 045 plus Artifact lineage 046/047/048 tail
         run: |
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 47) throw new Error(`Expected 47 contiguous migrations, got ${migrations.length}`);
+          if (migrations.length !== 48) throw new Error(`Expected 48 contiguous migrations, got ${migrations.length}`);
           if (migrations[37]?.name !== '038_financial_account_foundation.sql') throw new Error('038 financial migration moved');
           if (migrations[38]?.name !== '039_workflow_continuation_plan_parameters.sql') throw new Error('039 workflow migration moved');
           if (migrations[39]?.name !== '040_automation_definitions.sql') throw new Error('040 Automation definition migration moved');
@@ -76,8 +77,10 @@ jobs:
           if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project status lifecycle migration moved from its accepted position');
           if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved from its accepted position');
           if (migrations[45]?.source !== 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved outside Artifact authority');
-          if (migrations[46]?.name !== '047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration is not the exact global tail');
+          if (migrations[46]?.name !== '047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration moved from its accepted position');
           if (migrations[46]?.source !== 'server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration moved outside Artifact authority');
+          if (migrations[47]?.name !== '048_canonical_masked_levels_final_lineage.sql') throw new Error('048 Masked Levels lineage migration is not the exact global tail');
+          if (migrations[47]?.source !== 'server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql') throw new Error('048 Masked Levels lineage migration moved outside Artifact authority');
           NODE
       - name: Typecheck Core authority
         run: npm run server:typecheck
@@ -92,6 +95,7 @@ jobs:
           test -f dist-server/migrations/045_canonical_project_status_lifecycle.sql
           test -f dist-server/migrations/046_canonical_masked_exposure_final_lineage.sql
           test -f dist-server/migrations/047_canonical_masked_white_balance_final_lineage.sql
+          test -f dist-server/migrations/048_canonical_masked_levels_final_lineage.sql
       - name: Apply and verify canonical schema CLI
         run: |
           npm run db:migrate:transactions
