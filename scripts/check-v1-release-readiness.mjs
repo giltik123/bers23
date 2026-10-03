@@ -7,6 +7,7 @@ const EXACT_SHA_RE = /^[0-9a-f]{40}$/u;
 const ALLOWED_BLOCKERS = Object.freeze(new Map([
   ['FRONTEND_DEPLOYMENT_HEADERS', Object.freeze({ issue: 233, releaseGate: 'R4' })],
   ['REPOSITORY_MAIN_PROTECTION', Object.freeze({ issue: 355, releaseGate: 'R1' })],
+  ['FASHION_REAL_IMAGE_QUALITY', Object.freeze({ issue: 230, releaseGate: 'R2' })],
   ['HSME_REAL_MOBILE_EVIDENCE', Object.freeze({ issue: 352, releaseGate: 'R5' })],
 ]));
 
@@ -27,6 +28,15 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
     if (!accepted) throw new Error(`unexpected v1 blocker: ${String(blocker?.id)}`);
     if (blocker.issue !== accepted.issue) throw new Error(`${blocker.id} issue mismatch`);
     if (blocker.releaseGate !== accepted.releaseGate) throw new Error(`${blocker.id} release gate mismatch`);
+  }
+
+  const fashionQualityBlocked = blockerIds.includes('FASHION_REAL_IMAGE_QUALITY');
+  if (fashionQualityBlocked) {
+    if (readiness.fashionQualityEvidence !== null) {
+      throw new Error('blocked Fashion quality gate cannot claim accepted evidence');
+    }
+  } else {
+    validateFashionQualityEvidence(readiness.fashionQualityEvidence);
   }
 
   const hsmeBlocked = blockerIds.includes('HSME_REAL_MOBILE_EVIDENCE');
@@ -117,6 +127,7 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
           entries.filter(value => value.disposition === 'DEPLOYMENT_TARGET_PENDING').map(value => value.id)
         ),
         stageDDecisions: stageD.entries.length,
+        fashionQualityState: fashionQualityBlocked ? 'QUALITY_EVIDENCE_PENDING' : 'QUALITY_VALIDATED',
         hsmeValidationState: hsmeState,
       }),
     });
@@ -141,9 +152,46 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
       deferredBrowserJourneys: 1,
       pendingBrowserJourneys: Object.freeze([]),
       stageDDecisions: stageD.entries.length,
+      fashionQualityState: 'QUALITY_VALIDATED',
       hsmeValidationState: hsmeState,
     }),
   });
+}
+
+function validateFashionQualityEvidence(value) {
+  requireObject(value, 'fashionQualityEvidence');
+  if (value.schemaVersion !== 1) throw new Error('fashionQualityEvidence schemaVersion is invalid');
+  if (value.kind !== 'BERS_V1_FASHION_REAL_IMAGE_QUALITY_EVIDENCE') {
+    throw new Error('fashionQualityEvidence kind mismatch');
+  }
+  if (value.issue !== 230) throw new Error('fashionQualityEvidence issue mismatch');
+  if (value.productScope !== 'DETERMINISTIC_TRYON_V1') {
+    throw new Error('fashionQualityEvidence product scope mismatch');
+  }
+  if (value.reviewDecision !== 'ADVANCE') {
+    throw new Error('fashionQualityEvidence review decision must ADVANCE');
+  }
+  if (!Number.isSafeInteger(value.realImageCaseCount) || value.realImageCaseCount < 1) {
+    throw new Error('fashionQualityEvidence requires representative real-image cases');
+  }
+  if (value.garmentLogoPatternPreservationReviewed !== true ||
+      value.failureModesReviewed !== true ||
+      value.latencyMeasured !== true ||
+      value.memoryMeasured !== true) {
+    throw new Error('fashionQualityEvidence review dimensions are incomplete');
+  }
+  if (!/^[0-9a-f]{64}$/u.test(value.qualityEvidenceSha256 ?? '')) {
+    throw new Error('fashionQualityEvidence quality digest is invalid');
+  }
+  if (!/^[0-9a-f]{64}$/u.test(value.resourceEvidenceSha256 ?? '')) {
+    throw new Error('fashionQualityEvidence resource digest is invalid');
+  }
+  if (typeof value.reviewedAt !== 'string' || !Number.isFinite(Date.parse(value.reviewedAt))) {
+    throw new Error('fashionQualityEvidence reviewedAt is invalid');
+  }
+  if (value.productionAuthorityGranted !== false) {
+    throw new Error('Fashion quality evidence cannot grant production authority by itself');
+  }
 }
 
 function validateHsmeValidation(value) {
