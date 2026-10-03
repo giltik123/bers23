@@ -1,0 +1,126 @@
+name: HSME physical Android preflight contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/hsme-physical-android-preflight.sh'
+      - '.github/workflows/hsme-physical-android-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  physical-android-preflight-contract:
+    name: physical Android preflight contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - name: Syntax check
+        run: bash -n scripts/hsme-physical-android-preflight.sh
+
+      - name: Run positive physical-device contract fixture
+        run: |
+          set -euo pipefail
+          TMP="$(mktemp -d)"
+          mkdir -p "$TMP/bin" "$TMP/out"
+          cat >"$TMP/bin/adb" <<'ADB'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          args=("$@")
+          if [[ "${args[*]}" == "devices -l" ]]; then
+            printf 'List of devices attached\nphysical-001\tdevice product:pixel model:Pixel_8 transport_id:1\n'
+            exit 0
+          fi
+          if [[ "${args[0]:-}" == "-s" ]]; then
+            args=("${args[@]:2}")
+          fi
+          case "${args[*]}" in
+            "wait-for-device") exit 0 ;;
+            "shell getprop sys.boot_completed") echo 1 ;;
+            "shell getprop ro.build.version.sdk") echo 35 ;;
+            "shell getprop ro.product.model") echo "Pixel 8" ;;
+            "shell getprop ro.product.name") echo "shiba" ;;
+            "shell getprop ro.product.manufacturer") echo "Google" ;;
+            "shell getprop ro.product.cpu.abi") echo "arm64-v8a" ;;
+            "shell getprop ro.kernel.qemu") echo 0 ;;
+            "shell getprop ro.boot.qemu") echo 0 ;;
+            "shell dumpsys battery")
+              echo 'AC powered: false'
+              echo 'USB powered: false'
+              echo 'Wireless powered: false'
+              echo '  status: 3'
+              echo '  level: 78'
+              echo '  scale: 100'
+              ;;
+            "shell pidof com.bers.app") echo 4242 ;;
+            "shell cat /proc/4242/status")
+              printf 'Name:\tbers\nVmRSS:\t123456 kB\n'
+              ;;
+            "shell dumpsys thermalservice")
+              echo "Current temperatures from physical fixture"
+              ;;
+            "shell settings get global airplane_mode_on") echo 1 ;;
+            *) echo "unexpected fake adb args: ${args[*]}" >&2; exit 2 ;;
+          esac
+          ADB
+          chmod +x "$TMP/bin/adb"
+          PATH="$TMP/bin:$PATH" HSME_ANDROID_PROCESS=com.bers.app \
+            bash scripts/hsme-physical-android-preflight.sh "$TMP/out" >"$TMP/stdout.json"
+          E="$TMP/out/preflight.json"
+          test "$(jq -r '.state' "$E")" = "PHYSICAL_ANDROID_PREFLIGHT_READY_NOT_EVIDENCE"
+          test "$(jq -r '.physicalDeviceDetected' "$E")" = "true"
+          test "$(jq -r '.virtualDevice' "$E")" = "false"
+          test "$(jq -r '.battery.powerSource' "$E")" = "BATTERY"
+          test "$(jq -r '.battery.startBps' "$E")" = "7800"
+          test "$(jq -r '.workingSetMetricKind' "$E")" = "PROCESS_RESIDENT_SET_RSS_BYTES"
+          test "$(jq -r '.qualificationReady' "$E")" = "false"
+          test "$(jq -r '.realPhysicalMobileDeviceMeasurement' "$E")" = "false"
+          test "$(jq -r '.physicalDeviceAttestationSha256' "$E")" = "null"
+          test "$(jq -r '.nativeTelemetryAttestationSha256' "$E")" = "null"
+          test "$(jq -r '.energyMicroJoulesPerRun' "$E")" = "null"
+          test "$(jq -r '.productionAuthorityGranted' "$E")" = "false"
+
+      - name: Prove emulator and charging devices fail closed
+        run: |
+          set -euo pipefail
+          TMP="$(mktemp -d)"
+          mkdir -p "$TMP/bin"
+          cat >"$TMP/bin/adb" <<'ADB'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ "$*" == "devices -l" ]]; then
+            printf 'List of devices attached\nemulator-5554\tdevice product:sdk_gphone64_arm64 model:sdk_gphone64_arm64\n'
+            exit 0
+          fi
+          exit 0
+          ADB
+          chmod +x "$TMP/bin/adb"
+          if PATH="$TMP/bin:$PATH" HSME_ANDROID_PROCESS=com.bers.app \
+            bash scripts/hsme-physical-android-preflight.sh "$TMP/out"; then
+            echo "emulator preflight unexpectedly succeeded" >&2
+            exit 1
+          fi
+
+      - name: Prove preflight cannot mint trusted physical qualification
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/hsme-physical-android-preflight.sh
+          grep -F 'PHYSICAL_ANDROID_PREFLIGHT_READY_NOT_EVIDENCE' "$SCRIPT"
+          grep -F 'realPhysicalMobileDeviceMeasurement:false' "$SCRIPT"
+          grep -F 'physicalDeviceAttestationSha256:null' "$SCRIPT"
+          grep -F 'nativeTelemetryAttestationSha256:null' "$SCRIPT"
+          grep -F 'energyMicroJoulesPerRun:null' "$SCRIPT"
+          grep -F 'productionAuthorityGranted:false' "$SCRIPT"
+          ! grep -F 'REAL_MOBILE_QUALIFICATION_READY_NOT_ADMITTED' "$SCRIPT"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
