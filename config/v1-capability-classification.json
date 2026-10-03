@@ -88,8 +88,9 @@
       "id": "HSME_V1_RESEARCH_PROGRAM",
       "classification": "RND_IMPLEMENTATION_EVIDENCE_PENDING",
       "enabled": false,
-      "scope": "Mandatory pre-RC HSME R&D program: control-plane substrate exists, but trusted dense-baseline finalization, real Adapter-MoE/runtime/sparsity evidence, physical-mobile qualification and integrated architecture disposition remain incomplete. No production authority.",
+      "scope": "Owner-deferred post-v1 HSME R&D/graduation program: virtual/preflight trial readiness exists, while trusted dense-baseline finalization, real Adapter-MoE/runtime/sparsity evidence, physical-mobile qualification and integrated architecture disposition remain incomplete. No production authority.",
       "evidence": [
+        "docs/BERS_v1_release_plan_2026-10-04_owner_override.md",
         "config/v1-release-readiness.json#hsmeValidation",
         "BERS_V1_DEVELOPMENT_ROADMAP.md#stage-e",
         "BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md#23-relationship-to-bers-v1-stage-e",
@@ -102,8 +103,8 @@
         "https://github.com/giltik123/bers23/issues/871",
         "https://github.com/giltik123/bers23/issues/869"
       ],
-      "v1ReleaseBlocking": true,
-      "postV1Research": false
+      "v1ReleaseBlocking": false,
+      "postV1Research": true
     },
     {
       "id": "BILLING_PAYMENTS_CREDITS",
