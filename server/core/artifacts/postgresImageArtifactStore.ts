@@ -222,7 +222,7 @@ export class PostgresImageArtifactStore {
                 storageId, scope.tenantId, scope.userId, scope.projectId, executionId, operationId,
                 image.width, image.height, bytes,
                 normalizedLineage.sourceImageStorageId,
-                normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' || normalizedLineage.producerOperation === 'MASKED_EXPOSURE' || normalizedLineage.producerOperation === 'MASKED_WHITE_BALANCE' ? normalizedLineage.maskStorageId : null,
+                normalizedLineage.producerOperation === 'BACKGROUND_ISOLATION' || normalizedLineage.producerOperation === 'MASKED_EXPOSURE' || normalizedLineage.producerOperation === 'MASKED_WHITE_BALANCE' || normalizedLineage.producerOperation === 'MASKED_LEVELS' ? normalizedLineage.maskStorageId : null,
                 normalizedLineage.producerOperation,
               ])
           : await this.pool.query(`INSERT INTO canonical_image_artifacts
