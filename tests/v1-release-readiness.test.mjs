@@ -172,7 +172,7 @@ test('optional/deferred work cannot accidentally block RC through this ledger', 
   assert.deepEqual(readiness.nonBlockingDeferred.map(value=>value.issue).sort((a,b)=>a-b), [189,192]);
   assert.equal(readiness.blockers.some(value=>[189,192].includes(value.issue)), false);
   assert.equal(readiness.blockers.some(value=>value.id==='HSME_REAL_MOBILE_EVIDENCE'), true);
-  assert.equal(readiness.hsmeValidation.currentClassification,'SOFTWARE_READY_EVIDENCE_PENDING');
+  assert.equal(readiness.hsmeValidation.currentClassification,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
   assert.equal(readiness.hsmeValidation.state,'BLOCKED');
   assert.equal(readiness.hsmeValidation.productionAuthorityGranted,false);
 });
@@ -184,7 +184,7 @@ test('readiness classifier emits exactly the disposition declared by the ledger'
   assert.match(result.stdout,new RegExp(`^${expected}(?: |$)`,'m'));
   const other=expected === 'BERS_V1_RC_NOT_SELECTABLE' ? 'BERS_V1_RC_SELECTED' : 'BERS_V1_RC_NOT_SELECTABLE';
   assert.doesNotMatch(result.stdout,new RegExp(other));
-  assert.match(result.stdout,/SOFTWARE_READY_EVIDENCE_PENDING/);
+  assert.match(result.stdout,/RND_IMPLEMENTATION_EVIDENCE_PENDING/);
 });
 
 test('canonical roadmap keeps HSME physical-mobile work mandatory before RC without granting production authority', () => {
@@ -222,7 +222,7 @@ test('readiness state machine permits frontend evidence to remain proven while H
   assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
   assert.deepEqual(result.payload.blockers.map(value=>value.id),['HSME_REAL_MOBILE_EVIDENCE']);
   assert.deepEqual(result.payload.pendingBrowserJourneys,[]);
-  assert.equal(result.payload.hsmeValidationState,'SOFTWARE_READY_EVIDENCE_PENDING');
+  assert.equal(result.payload.hsmeValidationState,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
 });
 
 test('readiness state machine selects one exact RC only after all blockers are removed and HSME is R&D_VALIDATED', () => {
