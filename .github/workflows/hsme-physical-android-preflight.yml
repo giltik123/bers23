@@ -54,7 +54,12 @@ jobs:
             "shell getprop ro.kernel.qemu") echo 0 ;;
             "shell getprop ro.boot.qemu") echo 0 ;;
             "shell dumpsys battery")
-              printf 'AC powered: false\\nUSB powered: false\\nWireless powered: false\\n  status: 3\\n  level: 78\\n  scale: 100\\n'
+              echo 'AC powered: false'
+              echo 'USB powered: false'
+              echo 'Wireless powered: false'
+              echo '  status: 3'
+              echo '  level: 78'
+              echo '  scale: 100'
               ;;
             "shell pidof com.bers.app") echo 4242 ;;
             "shell cat /proc/4242/status")
