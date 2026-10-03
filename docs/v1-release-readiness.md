@@ -6,13 +6,17 @@ It deliberately does **not** use the number of open GitHub issues as release tru
 
 ## Current state
 
-All v1 RC blockers are cleared in the machine-readable ledger and `BERS_V1_RC` is selected at:
+The previous selected RC `6a5c63ed32e8ae82e500e5a1c4fe22409705b174` is intentionally invalidated on this feature branch because Masked Levels changes the admitted product surface.
 
-`6a5c63ed32e8ae82e500e5a1c4fe22409705b174`
+The branch is therefore fail-closed before RC selection:
 
-The selected coordinate is the exact accepted product SHA bound to browser journey 22 hosted frontend evidence. Later commits on `main` are release metadata/evidence changes and do not silently move the product coordinate.
+- `rcSelectable=false`;
+- `rcCoordinate=null`;
+- `status=BERS_V1_RC_NOT_SELECTABLE`;
+- browser journey 22 is `DEPLOYMENT_TARGET_PENDING` with no live evidence attached;
+- the blocker is `FRONTEND_DEPLOYMENT_HEADERS`, which now means: deploy the new accepted product SHA and obtain fresh exact-SHA hosted evidence before selecting the replacement RC.
 
-GitHub repository protection is proven by active branch ruleset `BERS v1 main release protection` (id `24246282`) targeting the default branch with:
+GitHub repository protection remains proven by active branch ruleset `BERS v1 main release protection` (id `24246282`) targeting the default branch with:
 
 - no bypass actors;
 - pull requests required with zero mandatory human approvals;
@@ -21,7 +25,7 @@ GitHub repository protection is proven by active branch ruleset `BERS v1 main re
 - deletion blocked;
 - non-fast-forward/force-push updates blocked.
 
-The browser release journey matrix is complete, including hosted exact-SHA deployment proof for journey 22 from workflow run `36846842313` and artifact `bers-v1-frontend-security-6a5c63ed32e8ae82e500e5a1c4fe22409705b174`. Stage D product decisions remain frozen and fail-closed. Billing redesign (#189), additional Editor expansion (#192), and physical-mobile HSME qualification (#352/#862/#871/#867) remain outside the v1 RC blocker set.
+Masked Levels production promotion is release-affecting product work. It must not inherit hosted evidence from the older RC. After this product change is accepted on `main`, the frontend must be deployed at that exact new SHA and journey 22 evidence rerun before RC selection resumes.
 
 HSME remains non-production. Its physical-device work is explicitly deferred as post-v1 R&D and still requires real-device evidence before any future production admission.
 
@@ -37,4 +41,4 @@ The readiness guard validates the ledger state rather than issue counts.
 - HSME physical-mobile work remains post-v1 and is rejected if reintroduced into the v1 blocker array.
 - Unknown blocker IDs, duplicate blockers, non-terminal mandatory browser journeys, or coordinate/status drift fail closed.
 
-RC selection is not final publication authorization. Package version remains `0.0.0`; no `v1.0.0` tag, release SHA, or publication evidence is declared at this state.
+Package version remains `0.0.0`; no `v1.0.0` tag, release SHA, or publication evidence is declared while this branch awaits replacement RC evidence.
