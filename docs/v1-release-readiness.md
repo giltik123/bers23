@@ -12,7 +12,7 @@ The previously selected product coordinate `6a5c63ed32e8ae82e500e5a1c4fe22409705
 
 Current blocker:
 
-- `HSME_REAL_MOBILE_EVIDENCE` / #352 (related #862/#867/#871): HSME remains `SOFTWARE_READY_EVIDENCE_PENDING`. At least one functioning real mobile backend must provide trusted same-session latency, memory, storage/bytes-moved, battery/energy, thermal/throttling and quality evidence; the integrated dense-vs-HSME comparison and final `ADVANCE / REDESIGN / REJECT` architecture decision must also be complete.
+- `HSME_REAL_MOBILE_EVIDENCE` / #352 (related #862/#867/#871): HSME remains `RND_IMPLEMENTATION_EVIDENCE_PENDING`. The remaining debt is broader than device capture: trusted dense-baseline finalization (#762), a real Adapter-MoE prototype/comparison (#789), FreeToken-derived runtime evidence (#812), real HSME-5/6/7 dispositions (#826/#835/#851), trusted physical-mobile evidence (#871), and the final integrated dense-vs-HSME disposition (#869) are all still required.
 
 HSME remains non-production. Satisfying the R&D gate does not grant provider, Billing, Project, Artifact, model-promotion or cloud-fallback authority.
 
