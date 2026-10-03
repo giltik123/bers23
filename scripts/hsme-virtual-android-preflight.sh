@@ -86,6 +86,10 @@ jq -n \
   '{
     schemaVersion:"BERS_HSME_VIRTUAL_ANDROID_PREFLIGHT_V1",
     evidenceClass:"VIRTUAL_ANDROID_PREFLIGHT_ONLY",
+    trialReadiness:"READY_FOR_PHYSICAL_DEVICE_HSME_TRIAL",
+    nextStep:"RUN_HSME_ON_PHYSICAL_PHONE",
+    releaseEvidenceEligible:false,
+    physicalMobileEvidenceEligible:false,
     platform:"ANDROID",
     deviceClass:"MOBILE",
     virtualDevice:true,
@@ -107,6 +111,10 @@ jq -n \
   }' >"$OUT_DIR/evidence.json"
 
 test "$(jq -r '.evidenceClass' "$OUT_DIR/evidence.json")" = "VIRTUAL_ANDROID_PREFLIGHT_ONLY"
+test "$(jq -r '.trialReadiness' "$OUT_DIR/evidence.json")" = "READY_FOR_PHYSICAL_DEVICE_HSME_TRIAL"
+test "$(jq -r '.nextStep' "$OUT_DIR/evidence.json")" = "RUN_HSME_ON_PHYSICAL_PHONE"
+test "$(jq -r '.releaseEvidenceEligible' "$OUT_DIR/evidence.json")" = "false"
+test "$(jq -r '.physicalMobileEvidenceEligible' "$OUT_DIR/evidence.json")" = "false"
 test "$(jq -r '.virtualDevice' "$OUT_DIR/evidence.json")" = "true"
 test "$(jq -r '.realPhysicalMobileDeviceMeasurement' "$OUT_DIR/evidence.json")" = "false"
 test "$(jq -r '.physicalDeviceAttestationSha256' "$OUT_DIR/evidence.json")" = "null"
