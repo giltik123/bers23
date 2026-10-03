@@ -79,7 +79,7 @@ test('Crop registry contract is immutable data and production executor admission
   assert.equal(productionLocalExecutorsByCapability[EXPOSURE_CAPABILITY], undefined, 'Exposure candidate must remain fail-closed until a dedicated production admission slice');
   assert.equal(productionLocalExecutorsByCapability[WHITE_BALANCE_CAPABILITY], undefined, 'White Balance candidate must remain fail-closed until a dedicated production admission slice');
   assert.equal(productionLocalExecutorsByCapability[LEVELS_CAPABILITY], undefined, 'Levels candidate must remain fail-closed until a dedicated production admission slice');
-  assert.equal(productionLocalExecutorsByCapability[MASKED_LEVELS_CAPABILITY], undefined, 'Masked Levels candidate must remain fail-closed until a dedicated production admission slice');
+  assert.deepEqual(productionLocalExecutorsByCapability[MASKED_LEVELS_CAPABILITY], [MASKED_LEVELS_TOOL_DEFINITION.executor], 'Masked Levels must use only its explicit admitted executor');
   assert.deepEqual(productionLocalExecutorsByCapability[MASKED_WHITE_BALANCE_CAPABILITY], [MASKED_WHITE_BALANCE_TOOL_DEFINITION.executor], 'Masked White Balance must use only its explicit admitted executor');
   assert.deepEqual(productionLocalExecutorsByCapability[MASKED_EXPOSURE_CAPABILITY], [MASKED_EXPOSURE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[AFFINE_TRANSFORM_CAPABILITY], undefined, 'Affine candidate must remain fail-closed until a dedicated production admission slice');

@@ -21,6 +21,14 @@ import {
   normalizeMaskedWhiteBalanceParameters,
 } from '../../../src/platform/creative/deterministic/MaskedWhiteBalance.ts';
 import {
+  MASKED_LEVELS_CAPABILITY,
+  MASKED_LEVELS_OPERATION,
+  MASKED_LEVELS_STEP_ID,
+  MASKED_LEVELS_TOOL_ID,
+  MASKED_LEVELS_TOOL_VERSION,
+  normalizeMaskedLevelsParameters,
+} from '../../../src/platform/creative/deterministic/MaskedLevels.ts';
+import {
   CROP_CAPABILITY,
   CROP_OPERATION,
   CROP_STEP_ID,
@@ -62,6 +70,7 @@ export type BackgroundIsolationInputDelivery = Readonly<{
 
 export type MaskedExposureInputDelivery = BackgroundIsolationInputDelivery;
 export type MaskedWhiteBalanceInputDelivery = BackgroundIsolationInputDelivery;
+export type MaskedLevelsInputDelivery = BackgroundIsolationInputDelivery;
 
 export type CropInputDelivery = Readonly<{
   ticketId: string;
@@ -195,6 +204,44 @@ export class LocalExecutionInputDeliveryService {
     if (!Number.isSafeInteger(maskValue?.width) || !Number.isSafeInteger(maskValue?.height) || !(maskValue?.alpha instanceof Uint8Array)) throw serviceError(409, 'canonical_mask_pixels_unavailable', 'Canonical Masked White Balance MASK alpha pixels are unavailable');
     const width = Number(sourceValue.width); const height = Number(sourceValue.height);
     if (width < 1 || height < 1 || Number(maskValue.width) !== width || Number(maskValue.height) !== height || sourceValue.data.length !== width * height * 4 || maskValue.alpha.length !== width * height) throw serviceError(409, 'local_input_geometry_mismatch', 'Canonical Masked White Balance input geometry is invalid');
+
+    return Object.freeze({
+      ticketId: ticket.ticketId,
+      sourceArtifactId: sourceBinding.artifactId,
+      maskArtifactId: maskBinding.artifactId,
+      sourceSha256: sourceBinding.sha256,
+      maskSha256: maskBinding.sha256,
+      width,
+      height,
+      sourceRgba: Uint8Array.from(sourceValue.data),
+      maskAlpha: Uint8Array.from(maskValue.alpha),
+    });
+  }
+
+  async maskedLevels(
+    input: Readonly<{ ticketId: string; projectId: string }>,
+    auth: AuthenticatedScope,
+  ): Promise<MaskedLevelsInputDelivery> {
+    const ticket = await this.requireTicket(input, auth);
+    assertMaskedLevelsTicket(ticket);
+    const sourceBinding = ticket.inputs.find(binding => binding.kind === 'image');
+    const maskBinding = ticket.inputs.find(binding => binding.kind === 'mask');
+    if (ticket.inputs.length !== 2 || !sourceBinding?.sha256 || !maskBinding?.sha256) throw serviceError(409, 'local_input_contract_mismatch', 'Masked Levels requires exact IMAGE + MASK bindings');
+    if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId, maskBinding.artifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked Levels inputs are no longer available for this ticket');
+
+    let artifacts: readonly CreativeArtifact[];
+    try { artifacts = await this.dependencies.hydrateArtifacts(ticket.scope, sourceBinding.artifactId, [maskBinding.artifactId]); }
+    catch { throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked Levels input hydration or lineage validation failed'); }
+    assertInputAdmission(ticket, artifacts);
+
+    const source = artifacts.find(artifact => artifact.id === sourceBinding.artifactId && artifact.kind === 'image');
+    const mask = artifacts.find(artifact => artifact.id === maskBinding.artifactId && artifact.kind === 'mask' && artifact.role === 'MASK');
+    const sourceValue = source?.value as Readonly<{ width?: unknown; height?: unknown; data?: unknown }> | undefined;
+    const maskValue = mask?.value as Readonly<{ width?: unknown; height?: unknown; alpha?: unknown }> | undefined;
+    if (!Number.isSafeInteger(sourceValue?.width) || !Number.isSafeInteger(sourceValue?.height) || !(sourceValue?.data instanceof Uint8ClampedArray)) throw serviceError(409, 'canonical_source_pixels_unavailable', 'Canonical Masked Levels source RGBA pixels are unavailable');
+    if (!Number.isSafeInteger(maskValue?.width) || !Number.isSafeInteger(maskValue?.height) || !(maskValue?.alpha instanceof Uint8Array)) throw serviceError(409, 'canonical_mask_pixels_unavailable', 'Canonical Masked Levels MASK alpha pixels are unavailable');
+    const width = Number(sourceValue.width); const height = Number(sourceValue.height);
+    if (width < 1 || height < 1 || Number(maskValue.width) !== width || Number(maskValue.height) !== height || sourceValue.data.length !== width * height * 4 || maskValue.alpha.length !== width * height) throw serviceError(409, 'local_input_geometry_mismatch', 'Canonical Masked Levels input geometry is invalid');
 
     return Object.freeze({
       ticketId: ticket.ticketId,
@@ -350,6 +397,17 @@ function assertMaskedWhiteBalanceTicket(ticket: LocalExecutionTicketV2): void {
   try { normalizeMaskedWhiteBalanceParameters(Number(parameters?.temperatureQ8), Number(parameters?.tintQ8)); }
   catch { throw serviceError(409, 'local_ticket_parameter_mismatch', 'Masked White Balance temperatureQ8/tintQ8 are invalid'); }
 }
+function assertMaskedLevelsTicket(ticket: LocalExecutionTicketV2): void {
+  if (ticket.version !== '2' || ticket.issuer !== 'CORE' || ticket.policy !== 'LOCAL_ONLY' || ticket.operation.type !== MASKED_LEVELS_OPERATION || ticket.operation.capability !== MASKED_LEVELS_CAPABILITY || ticket.operation.id !== MASKED_LEVELS_STEP_ID || ticket.stepId !== MASKED_LEVELS_STEP_ID) throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not a Masked Levels local-execution contract');
+  if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw serviceError(409, 'local_ticket_cost_mismatch', 'Masked Levels input delivery forbids cloud cost authority');
+  if (ticket.allowedExecutors.length !== 1) throw serviceError(409, 'local_ticket_executor_mismatch', 'Masked Levels ticket must bind exactly one executor');
+  const executor = ticket.allowedExecutors[0];
+  if (executor.kind !== 'DETERMINISTIC_TOOL' || executor.toolId !== MASKED_LEVELS_TOOL_ID || executor.version !== MASKED_LEVELS_TOOL_VERSION) throw serviceError(409, 'local_ticket_executor_mismatch', 'Masked Levels deterministic executor binding is invalid');
+  const parameters = ticket.operation.parameters as Readonly<Record<string, unknown>> | undefined;
+  try { normalizeMaskedLevelsParameters(Number(parameters?.inputBlack), Number(parameters?.inputMidpoint), Number(parameters?.inputWhite), Number(parameters?.outputBlack), Number(parameters?.outputWhite)); }
+  catch { throw serviceError(409, 'local_ticket_parameter_mismatch', 'Masked Levels parameters are invalid'); }
+}
+
 
 function assertCropTicket(ticket: LocalExecutionTicketV2): void {
   if (ticket.version !== '2' || ticket.issuer !== 'CORE' || ticket.policy !== 'LOCAL_ONLY' || ticket.operation.type !== CROP_OPERATION || ticket.operation.capability !== CROP_CAPABILITY || ticket.operation.id !== CROP_STEP_ID || ticket.stepId !== CROP_STEP_ID) throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not a Crop local-execution contract');

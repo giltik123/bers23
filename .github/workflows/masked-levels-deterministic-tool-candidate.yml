@@ -75,9 +75,9 @@ jobs:
           grep -q "levelsChannel" "$kernel"
           grep -q "maskAlpha" "$kernel"
           grep -q "floating-point gamma/power curve" "$kernel"
-          ! grep -q "MASKED_LEVELS_CAPABILITY" "$policy"
-          ! grep -q "local:tool:masked-levels:v1" "$policy"
-          ! grep -q "MASKED_LEVELS_CAPABILITY" "$capabilities"
-          ! grep -q "MASKED_LEVELS_OPERATION" "$planner"
+          grep -q "MASKED_LEVELS_CAPABILITY" "$policy"
+          grep -q "MASKED_LEVELS_CAPABILITY" "$capabilities"
+          grep -q "MASKED_LEVELS_OPERATION" "$planner"
+          grep -q "MASKED_LEVELS_LOCAL_DETERMINISTIC_V1" "$planner"
           test -n "$BASE_SHA"
           git diff --check "$BASE_SHA"..HEAD
