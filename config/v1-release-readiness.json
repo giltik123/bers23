@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "program": "BERS_V1_RC_READINESS",
   "evidenceBaseSha": "97c30107e147c0ec5b7c828bfd9e6d82cbf2103e",
-  "rcCoordinate": "6a5c63ed32e8ae82e500e5a1c4fe22409705b174",
-  "rcSelectable": true,
-  "status": "BERS_V1_RC_SELECTED",
+  "rcCoordinate": null,
+  "rcSelectable": false,
+  "status": "BERS_V1_RC_NOT_SELECTABLE",
   "completedGates": [
     {
       "id": "STAGE_D_PRODUCT_DECISIONS",
@@ -27,7 +27,21 @@
       "evidence": "config/v1-release-readiness.json#mainProtectionEvidence"
     }
   ],
-  "blockers": [],
+  "blockers": [
+    {
+      "id": "HSME_REAL_MOBILE_EVIDENCE",
+      "issue": 352,
+      "relatedIssues": [
+        862,
+        867,
+        871
+      ],
+      "releaseGate": "R5",
+      "state": "HSME_RND_VALIDATION_PENDING",
+      "evidence": "config/v1-release-readiness.json#hsmeValidation",
+      "resolution": "Reach HSME R&D_VALIDATED with at least one trusted physical-mobile backend/evidence set, integrated dense-vs-HSME comparison, and final ADVANCE/REDESIGN/REJECT architecture decision."
+    }
+  ],
   "nonBlockingDeferred": [
     {
       "issue": 189,
@@ -38,20 +52,9 @@
       "issue": 192,
       "id": "EDITOR_TOOL_EXPANSION",
       "state": "POST_V1_OR_PARALLEL_UNLESS_REQUIRED_BY_RELEASE_JOURNEY"
-    },
-    {
-      "issue": 352,
-      "relatedIssues": [
-        862,
-        871,
-        867
-      ],
-      "id": "HSME_REAL_MOBILE_EVIDENCE",
-      "state": "DEFERRED_POST_V1_RESEARCH",
-      "rationale": "Physical-mobile HSME validation was explicitly removed from the BERS v1 release gate; the work remains open research and gains no production authority."
     }
   ],
-  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, and rcCoordinate is one exact accepted main SHA with mandatory release evidence green. Deferred post-v1 HSME research must remain non-production unless separately promoted by later reviewed evidence.",
+  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, rcCoordinate is one exact accepted main SHA with mandatory release evidence green, and hsmeValidation.currentClassification is R&D_VALIDATED. HSME R&D validation grants no production authority by itself.",
   "mainProtectionEvidence": {
     "schemaVersion": 1,
     "kind": "BERS_V1_GITHUB_MAIN_PROTECTION_EVIDENCE",
@@ -89,5 +92,57 @@
       "bypassActors": []
     },
     "rulesetReadError": null
+  },
+  "hsmeValidation": {
+    "schemaVersion": 1,
+    "kind": "BERS_V1_HSME_RND_VALIDATION",
+    "requiredClassification": "R&D_VALIDATED",
+    "currentClassification": "RND_IMPLEMENTATION_EVIDENCE_PENDING",
+    "state": "BLOCKED",
+    "blockers": [
+      {
+        "id": "DENSE_BASELINE_PIN_REQUIRED",
+        "issue": 762,
+        "detail": "The dense mobile/DiT baseline must be finalized from trusted real evidence and reach the reviewed pinned-baseline state; synthetic contract evidence is insufficient."
+      },
+      {
+        "id": "ADAPTER_MOE_REAL_PROTOTYPE_REQUIRED",
+        "issue": 789,
+        "detail": "A functioning compact Adapter-MoE/sparse prototype and same-fixture dense/Top-1/Top-2 comparison are still required."
+      },
+      {
+        "id": "FREETOKEN_RUNTIME_REAL_EVIDENCE_REQUIRED",
+        "issue": 812,
+        "detail": "Adaptive residency/cache/prefetch/bytes-moved mechanisms require real runtime/device evidence and a disposition."
+      },
+      {
+        "id": "HSME5_REAL_DISPOSITION_REQUIRED",
+        "issue": 826,
+        "detail": "Representative selective sparse-block candidates need real target-hardware measurement and ADVANCE/REDESIGN/REJECT dispositions."
+      },
+      {
+        "id": "HSME6_REAL_DISPOSITION_REQUIRED",
+        "issue": 835,
+        "detail": "Stage/timestep routing requires real target-device execution and an explicit disposition."
+      },
+      {
+        "id": "HSME7_REAL_DISPOSITION_REQUIRED",
+        "issue": 851,
+        "detail": "Spatial/token sparsity requires real target-device execution with strict preservation evidence and an explicit disposition."
+      },
+      {
+        "id": "TRUSTED_REAL_MOBILE_EVIDENCE_REQUIRED",
+        "issue": 871,
+        "detail": "At least one real physical mobile backend must provide independently trusted same-session latency, memory, storage/bytes-moved, battery/energy, thermal/throttling and quality evidence."
+      },
+      {
+        "id": "HSME_INTEGRATED_RND_DISPOSITION_REQUIRED",
+        "issue": 869,
+        "detail": "The final integrated dense-vs-HSME hardware comparison and architecture ADVANCE/REDESIGN/REJECT decision are still required."
+      }
+    ],
+    "physicalMobileQualification": null,
+    "finalArchitectureDecision": null,
+    "productionAuthorityGranted": false
   }
 }

@@ -21,10 +21,12 @@ test('release package classifies the enabled v1 product floor explicitly', () =>
     assert.equal(byId[id].enabled,true,id);
   }
   assert.equal(byId.GENERATIVE_LOCAL_MODELS_STAGE_D.enabled,false);
-  assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.classification,'R&D_ONLY');
+  assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.classification,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
   assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.enabled,false);
-  assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.v1ReleaseBlocking,false);
-  assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.postV1Research,true);
+  assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.v1ReleaseBlocking,true);
+  assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.postV1Research,false);
+  assert.equal(readiness.hsmeValidation.requiredClassification,'R&D_VALIDATED');
+  assert.equal(readiness.hsmeValidation.productionAuthorityGranted,false);
   assert.equal(byId.BILLING_PAYMENTS_CREDITS.classification,'BLOCKED');
 });
 

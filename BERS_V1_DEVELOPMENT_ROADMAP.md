@@ -749,11 +749,11 @@ Pre-release milestone:
 - at least one clear product decision exists for each enabled generative capability: production candidate, limited supported tier, deterministic fallback, or explicit rejection;
 - unresolved research does not masquerade as enabled product behavior.
 
-### Stage E — Post-v1 BERS Local-First AI Engine R&D: HSME + Hierarchical Adapter-MoE + FreeToken-inspired Runtime
+### Stage E — Mandatory pre-RC BERS Local-First AI Engine R&D: HSME + Hierarchical Adapter-MoE + FreeToken-inspired Runtime
 
-Goal: continue a meaningful post-v1 implementation/evidence validation of the long-term BERS-owned local-first image AI architecture without making unfinished hardware research a BERS v1 release dependency.
+Goal: complete a meaningful pre-release implementation/evidence validation of the long-term BERS-owned local-first image AI architecture while keeping production admission separate and fail-closed.
 
-**v1 scope decision:** Stage E/HSME is explicitly non-blocking for `BERS_V1_RC` and `BERS v1.0 RELEASE`. Existing HSME software/research stays fail-closed and non-production. Physical-mobile qualification remains mandatory before any later HSME production admission or HSME-specific supported-device claim, but it is not required to release the current v1 product surface.
+**v1 scope decision:** Stage E/HSME is a mandatory implementation/evidence gate for `BERS_V1_RC` and `BERS v1.0 RELEASE`. HSME may satisfy the gate as `R&D_VALIDATED` without gaining production authority. At least one trusted real-mobile backend/evidence set is required before RC.
 
 The detailed companion authority for this R&D architecture is `BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md` together with #352. The master sequence below intentionally follows the newer HSME architecture:
 
@@ -842,17 +842,17 @@ Desktop/native:
 
 Mobile:
 
-- at least one functioning real mobile backend remains required before any future HSME mobile production admission or supported-device qualification;
+- at least one functioning real mobile backend is required for the pre-RC feasibility gate;
 - Apple Metal/Core ML/ANE and Android Vulkan/GPU/QNN/Hexagon are evaluated only where graph/kernel support is real;
 - materially different hardware/runtime representations receive distinct immutable fleet identity/evidence under the current schema;
 - package, latency, RAM/unified memory, flash/RAM/accelerator bytes moved, battery/energy, thermal and quality evidence;
 - avoid pathological flash traffic, scatter/gather and dynamic-routing overhead that erase sparse benefits.
 
-Browser/WebGPU/WASM evidence is useful but does not by itself satisfy the future HSME mobile qualification gate.
+Browser/WebGPU/WASM evidence is useful but does not by itself satisfy the pre-RC HSME mobile evidence gate.
 
-#### E7 — Post-v1 HSME validation milestone
+#### E7 — Pre-RC HSME validation milestone
 
-This workstream may reach `R&D_VALIDATED` after v1 with:
+This workstream must reach `R&D_VALIDATED` before v1 RC with:
 
 1. an implemented HSME control plane with signed/hash-verified pack identity/readiness and device/resource evidence;
 2. one pinned compact dense DiT/mobile-student baseline with exact source/toolchain/license identity;
@@ -866,7 +866,7 @@ This workstream may reach `R&D_VALIDATED` after v1 with:
 10. explicit desktop and mobile feasibility decisions;
 11. a final architecture-level `ADVANCE / REDESIGN / REJECT` decision for the next BERS Local-First AI Engine generation.
 
-Production admission remains optional and evidence-driven. **HSME R&D validation is deferred beyond v1 and grants no production authority.** A recorded blocker may reject a specific backend/mechanism but does not substitute for the real-mobile evidence required before any future HSME mobile promotion.
+Production admission remains optional and evidence-driven. **R&D validation before v1 is mandatory and grants no production authority.** A recorded blocker may reject a specific backend/mechanism, but it does not substitute for the functioning real-mobile backend and trusted device evidence required by the pre-RC gate.
 
 ### Stage F — Final product evidence and release
 

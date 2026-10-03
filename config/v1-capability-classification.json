@@ -3,7 +3,7 @@
   "program": "BERS_V1_CAPABILITY_CLASSIFICATION",
   "targetVersion": "1.0.0",
   "evidenceBaseSha": "97c30107e147c0ec5b7c828bfd9e6d82cbf2103e",
-  "releaseState": "RC_SELECTED",
+  "releaseState": "PRE_RC_EXTERNAL_BLOCKERS_REMAIN",
   "entries": [
     {
       "id": "CORE_PROJECT_ARTIFACT",
@@ -87,15 +87,24 @@
     },
     {
       "id": "HSME_V1_RESEARCH_PROGRAM",
-      "classification": "R&D_ONLY",
+      "classification": "RND_IMPLEMENTATION_EVIDENCE_PENDING",
       "enabled": false,
-      "scope": "HSME software/contracts and research evidence remain available for post-v1 development; physical-mobile qualification is explicitly deferred and grants no v1 production authority.",
+      "scope": "Mandatory pre-RC HSME R&D program: control-plane substrate exists, but trusted dense-baseline finalization, real Adapter-MoE/runtime/sparsity evidence, physical-mobile qualification and integrated architecture disposition remain incomplete. No production authority.",
       "evidence": [
-        "config/v1-release-readiness.json#HSME_REAL_MOBILE_EVIDENCE",
-        "BERS_V1_DEVELOPMENT_ROADMAP.md#stage-e"
+        "config/v1-release-readiness.json#hsmeValidation",
+        "BERS_V1_DEVELOPMENT_ROADMAP.md#stage-e",
+        "BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md#23-relationship-to-bers-v1-stage-e",
+        "https://github.com/giltik123/bers23/issues/762",
+        "https://github.com/giltik123/bers23/issues/789",
+        "https://github.com/giltik123/bers23/issues/812",
+        "https://github.com/giltik123/bers23/issues/826",
+        "https://github.com/giltik123/bers23/issues/835",
+        "https://github.com/giltik123/bers23/issues/851",
+        "https://github.com/giltik123/bers23/issues/871",
+        "https://github.com/giltik123/bers23/issues/869"
       ],
-      "v1ReleaseBlocking": false,
-      "postV1Research": true
+      "v1ReleaseBlocking": true,
+      "postV1Research": false
     },
     {
       "id": "BILLING_PAYMENTS_CREDITS",

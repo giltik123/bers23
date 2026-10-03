@@ -6,35 +6,26 @@ It deliberately does **not** use the number of open GitHub issues as release tru
 
 ## Current state
 
-All v1 RC blockers are cleared in the machine-readable ledger and `BERS_V1_RC` is selected at:
+`BERS_V1_RC` is **not selectable**.
 
-`6a5c63ed32e8ae82e500e5a1c4fe22409705b174`
+The previously selected product coordinate `6a5c63ed32e8ae82e500e5a1c4fe22409705b174` remains useful historical hosted evidence, but it is no longer an active RC because the canonical release plan and #365 require HSME to reach `R&D_VALIDATED` before RC.
 
-The selected coordinate is the exact accepted product SHA bound to browser journey 22 hosted frontend evidence. Later commits on `main` are release metadata/evidence changes and do not silently move the product coordinate.
+Current blocker:
 
-GitHub repository protection is proven by active branch ruleset `BERS v1 main release protection` (id `24246282`) targeting the default branch with:
+- `HSME_REAL_MOBILE_EVIDENCE` / #352 (related #862/#867/#871): HSME remains `RND_IMPLEMENTATION_EVIDENCE_PENDING`. The remaining debt is broader than device capture: trusted dense-baseline finalization (#762), a real Adapter-MoE prototype/comparison (#789), FreeToken-derived runtime evidence (#812), real HSME-5/6/7 dispositions (#826/#835/#851), trusted physical-mobile evidence (#871), and the final integrated dense-vs-HSME disposition (#869) are all still required.
 
-- no bypass actors;
-- pull requests required with zero mandatory human approvals;
-- strict required status checks;
-- the seven stable release contexts;
-- deletion blocked;
-- non-fast-forward/force-push updates blocked.
+HSME remains non-production. Satisfying the R&D gate does not grant provider, Billing, Project, Artifact, model-promotion or cloud-fallback authority.
 
-The browser release journey matrix is complete, including hosted exact-SHA deployment proof for journey 22 from workflow run `36846842313` and artifact `bers-v1-frontend-security-6a5c63ed32e8ae82e500e5a1c4fe22409705b174`. Stage D product decisions remain frozen and fail-closed. Billing redesign (#189), additional Editor expansion (#192), and physical-mobile HSME qualification (#352/#862/#871/#867) remain outside the v1 RC blocker set.
+GitHub repository protection remains proven by active ruleset `BERS v1 main release protection` (id `24246282`) with seven strict required checks, PR-only updates, no bypass actors, and deletion/non-fast-forward updates blocked.
 
-HSME remains non-production. Its physical-device work is explicitly deferred as post-v1 R&D and still requires real-device evidence before any future production admission.
+The existing journey-22 hosted frontend evidence remains valid evidence for its exact historical SHA. If product code changes before the eventual RC, journey 22 must be rerun on the new exact accepted SHA.
 
 ## State transitions
 
-The readiness guard validates the ledger state rather than issue counts.
+- While HSME is not `R&D_VALIDATED`, `HSME_REAL_MOBILE_EVIDENCE` must remain in the blocker array, `rcSelectable=false`, `rcCoordinate=null`, and status `BERS_V1_RC_NOT_SELECTABLE`.
+- `R&D_VALIDATED` requires no HSME blockers, trusted physical-mobile qualification state `REAL_MOBILE_QUALIFICATION_READY_NOT_ADMITTED`, a valid qualification evidence digest, and a final `ADVANCE / REDESIGN / REJECT` architecture decision.
+- Frontend hosted evidence and main protection remain independent gates.
+- With all blockers cleared, the selected RC must still equal journey 22's reviewed exact deployed SHA.
+- Billing redesign (#189) and optional Editor expansion (#192) remain non-blocking unless an enabled release journey makes them mandatory.
 
-- With one or more accepted external blockers, `rcSelectable=false`, `rcCoordinate=null`, and `status=BERS_V1_RC_NOT_SELECTABLE`.
-- The frontend blocker may be removed only when browser journey 22 is `PROVEN` with accepted live evidence.
-- Main protection may be removed only with accepted machine-readable GitHub protection evidence.
-- With no blockers, `rcSelectable=true`, `rcCoordinate` must be one exact lowercase 40-character accepted `main` SHA, and `status=BERS_V1_RC_SELECTED`.
-- The selected RC must equal journey 22's reviewed deployment SHA.
-- HSME physical-mobile work remains post-v1 and is rejected if reintroduced into the v1 blocker array.
-- Unknown blocker IDs, duplicate blockers, non-terminal mandatory browser journeys, or coordinate/status drift fail closed.
-
-RC selection is not final publication authorization. Package version remains `0.0.0`; no `v1.0.0` tag, release SHA, or publication evidence is declared at this state.
+Package version remains `0.0.0`; no `v1.0.0` tag, release SHA, or publication evidence may be declared while this gate is blocked.
