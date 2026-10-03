@@ -49,8 +49,8 @@ test('F4b.5b PostgreSQL closure manifest is exact, normalized and prefix-free', 
   const manifest = await readManifest();
   assert.equal(manifest.version, 1);
   assert.equal(manifest.profile, POSTGRES);
-  assert.equal(manifest.bundleInputs.length, 89);
-  assert.equal(manifest.migrationPaths.length, 31);
+  assert.equal(manifest.bundleInputs.length, 93);
+  assert.equal(manifest.migrationPaths.length, 32);
   assert.equal(manifest.supportPaths.length, 20);
 
   const paths = [...manifest.bundleInputs, ...manifest.migrationPaths, ...manifest.supportPaths];
@@ -87,7 +87,7 @@ test('accepted F4b.5b service bundle exactly equals PostgreSQL classifier bundle
   console.log(`F4B5B_POSTGRES_CLASSIFIER_BUNDLE_INPUTS=${actual.length}`);
 });
 
-test('bundle-derived migration authority exactly equals the 29-path classifier SQL set', async () => {
+test('bundle-derived migration authority exactly equals the 32-path classifier SQL set', async () => {
   const manifest = await readManifest();
   const metafile = await buildMetafile();
   const closure = await collectBundleMigrationReferences([metafile]);
