@@ -218,7 +218,7 @@ export class LocalMaskedLevelsExecutionService {
   private createPlatformExecution(executionId: string, scope: AuthenticatedScope & { projectId: string }, artifacts: readonly CreativeArtifact[], clientRequestId: string, sourceArtifactId: string, maskArtifactId: string, inputBlack: number, inputMidpoint: number, inputWhite: number, outputBlack: number, outputWhite: number): void {
     this.#platform.createExecution({
       id: executionId,
-      intent: 'apply deterministic masked white balance',
+      intent: 'apply deterministic masked levels',
       scope,
       inputArtifacts: artifacts,
       budget: { credits: 0, aiCalls: 0, retries: 0 },
@@ -260,7 +260,7 @@ function assertDimensionsWithinCoreLimits(width: number, height: number, limits:
   const pixels = width * height;
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1
     || width > limits.maxDimension || height > limits.maxDimension || !Number.isSafeInteger(pixels) || pixels > limits.maxPixels) {
-    throw serviceError(422, 'masked_white_balance_resource_limit_exceeded', 'Masked Levels source exceeds the current Core image resource limits');
+    throw serviceError(422, 'masked_levels_resource_limit_exceeded', 'Masked Levels source exceeds the current Core image resource limits');
   }
 }
 function assertArtifactsWithinCoreLimits(artifacts: readonly CreativeArtifact[], sourceArtifactId: string, limits: LocalMaskedLevelsResourceLimits): void {
@@ -276,7 +276,7 @@ function assertTicketWithinCoreLimits(ticket: LocalExecutionTicketV2, limits: Lo
   assertDimensionsWithinCoreLimits(Number(output.width), Number(output.height), limits);
 }
 function assertReadyPlan(status: string | undefined, operations: readonly Readonly<{ type: string; id: string }>[]): void {
-  if (status !== 'READY' || operations.length !== 1 || operations[0].type !== MASKED_LEVELS_OPERATION || operations[0].id !== STEP_ID) throw serviceError(422, 'masked_white_balance_plan_blocked', `Canonical Masked Levels plan is ${status ?? 'invalid'}`);
+  if (status !== 'READY' || operations.length !== 1 || operations[0].type !== MASKED_LEVELS_OPERATION || operations[0].id !== STEP_ID) throw serviceError(422, 'masked_levels_plan_blocked', `Canonical Masked Levels plan is ${status ?? 'invalid'}`);
 }
 function assertMaskedLevelsTicket(ticket: LocalExecutionTicketV2): void {
   if (ticket.version !== '2' || ticket.issuer !== 'CORE' || ticket.operation.capability !== MASKED_LEVELS_CAPABILITY || ticket.operation.type !== MASKED_LEVELS_OPERATION || ticket.operation.id !== STEP_ID || ticket.stepId !== STEP_ID || ticket.policy !== 'LOCAL_ONLY') throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not an accepted Masked Levels contract');
