@@ -78,6 +78,7 @@ test('F4b.4 PostgreSQL closure manifest is exact, normalized and prefix-free', a
   assert.equal(manifest.migrationPaths.includes('server/core/projects/migrations/045_canonical_project_status_lifecycle.sql'), true);
   assert.equal(manifest.migrationPaths.includes('server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql'), true);
   assert.equal(manifest.migrationPaths.includes('server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql'), true);
+  assert.equal(manifest.migrationPaths.includes('server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql'), true);
   assert.equal(manifest.migrationPaths.includes('server/core/fashion/migrations/032_fashion_garment_refinement_final_lineage.sql'), false);
 });
 
