@@ -61,7 +61,7 @@ SQL
 
 pg_restore   --exit-on-error   --no-owner   --no-privileges   --dbname="$RESTORE_DATABASE_URL"   "$DUMP_PATH"
 
-restored_payload="$(psql "$RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -At   -v probe_id="$PROBE_ID"   -c "SELECT payload FROM release_backup_restore_probe WHERE probe_id = :'probe_id'")"
+restored_payload="$(psql "$RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -At -c "SELECT payload FROM release_backup_restore_probe WHERE probe_id = 'bers-v1-backup-restore'")"
 test "$restored_payload" = "$PROBE_PAYLOAD"
 
 # A restored release database must satisfy the exact bundled schema contract,
