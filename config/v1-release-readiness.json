@@ -97,18 +97,48 @@
     "schemaVersion": 1,
     "kind": "BERS_V1_HSME_RND_VALIDATION",
     "requiredClassification": "R&D_VALIDATED",
-    "currentClassification": "SOFTWARE_READY_EVIDENCE_PENDING",
+    "currentClassification": "RND_IMPLEMENTATION_EVIDENCE_PENDING",
     "state": "BLOCKED",
     "blockers": [
       {
+        "id": "DENSE_BASELINE_PIN_REQUIRED",
+        "issue": 762,
+        "detail": "The dense mobile/DiT baseline must be finalized from trusted real evidence and reach the reviewed pinned-baseline state; synthetic contract evidence is insufficient."
+      },
+      {
+        "id": "ADAPTER_MOE_REAL_PROTOTYPE_REQUIRED",
+        "issue": 789,
+        "detail": "A functioning compact Adapter-MoE/sparse prototype and same-fixture dense/Top-1/Top-2 comparison are still required."
+      },
+      {
+        "id": "FREETOKEN_RUNTIME_REAL_EVIDENCE_REQUIRED",
+        "issue": 812,
+        "detail": "Adaptive residency/cache/prefetch/bytes-moved mechanisms require real runtime/device evidence and a disposition."
+      },
+      {
+        "id": "HSME5_REAL_DISPOSITION_REQUIRED",
+        "issue": 826,
+        "detail": "Representative selective sparse-block candidates need real target-hardware measurement and ADVANCE/REDESIGN/REJECT dispositions."
+      },
+      {
+        "id": "HSME6_REAL_DISPOSITION_REQUIRED",
+        "issue": 835,
+        "detail": "Stage/timestep routing requires real target-device execution and an explicit disposition."
+      },
+      {
+        "id": "HSME7_REAL_DISPOSITION_REQUIRED",
+        "issue": 851,
+        "detail": "Spatial/token sparsity requires real target-device execution with strict preservation evidence and an explicit disposition."
+      },
+      {
         "id": "TRUSTED_REAL_MOBILE_EVIDENCE_REQUIRED",
         "issue": 871,
-        "detail": "A real physical mobile backend must provide independently trusted same-session latency, memory, storage/bytes-moved, battery/energy, thermal/throttling and quality evidence."
+        "detail": "At least one real physical mobile backend must provide independently trusted same-session latency, memory, storage/bytes-moved, battery/energy, thermal/throttling and quality evidence."
       },
       {
         "id": "HSME_INTEGRATED_RND_DISPOSITION_REQUIRED",
-        "issue": 352,
-        "detail": "The HSME program must complete the integrated dense-vs-HSME comparison and final architecture ADVANCE/REDESIGN/REJECT decision."
+        "issue": 869,
+        "detail": "The final integrated dense-vs-HSME hardware comparison and architecture ADVANCE/REDESIGN/REJECT decision are still required."
       }
     ],
     "physicalMobileQualification": null,
