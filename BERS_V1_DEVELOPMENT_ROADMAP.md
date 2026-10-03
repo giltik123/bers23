@@ -24,17 +24,17 @@ BERS v1 is not only a Core/Editor/Fashion release.
 
 `main` is the **only long-lived development and release line**. BERS will not create a separate long-lived `release`, `rc`, `stable`, `v1` or equivalent branch. `BERS_V1_RC` and `BERS v1.0 RELEASE` are exact accepted SHAs on continuously improving `main`. Short-lived PR branches are review/CI mechanisms only; they carry no independent product or release authority and are discarded after convergence into `main`.
 
-The following workstreams are part of the **mandatory pre-release development program** and are not deferred to a post-v1 roadmap:
+The following workstreams are part of the **mandatory pre-release development program**:
 
 1. canonical Agent execution through the BERS Agentic Execution Engine (AEE);
 2. durable Automation execution;
 3. durable Job Center reconciliation/control;
-4. advanced local generative/refinement R&D;
-5. BERS Hybrid Sparse Mobile Engine (HSME) / Adapter-MoE sparse image-runtime R&D;
-6. FreeToken-derived expert-memory/cache/prefetch/runtime research;
-7. evaluation, observability and controlled rollout infrastructure required to operate Agent/local-AI capabilities safely.
+4. advanced local generative/refinement product decisions for capabilities actually exposed in v1;
+5. evaluation, observability and controlled rollout infrastructure required to operate enabled Agent/local-AI capabilities safely.
 
-This does **not** mean every research candidate must be promoted to production before v1. Production admission remains evidence-driven and fail-closed. It means the defined pre-release milestone for each mandatory workstream must be completed and recorded before `BERS_V1_RC` is selected.
+**Owner release-policy override — 2026-10-04:** HSME / Adapter-MoE sparse image-runtime R&D and FreeToken-derived expert-memory/cache/prefetch/runtime research continue as a post-v1 field-validation/graduation workstream and do **not** block `BERS_V1_RC` or `BERS v1.0 RELEASE`. The owner accepts the release risk of shipping without physical-mobile HSME validation. This override does not grant HSME production, provider, Billing, Project, Artifact, model-promotion or mobile-backend admission authority.
+
+Research candidates still must not be marked `PRODUCTION_READY` without evidence. Production admission remains evidence-driven and fail-closed.
 
 The release must never obtain a false green result by marking unfinished experimental code `PRODUCTION_READY` merely to satisfy schedule pressure.
 
@@ -749,11 +749,11 @@ Pre-release milestone:
 - at least one clear product decision exists for each enabled generative capability: production candidate, limited supported tier, deterministic fallback, or explicit rejection;
 - unresolved research does not masquerade as enabled product behavior.
 
-### Stage E — Mandatory pre-RC BERS Local-First AI Engine R&D: HSME + Hierarchical Adapter-MoE + FreeToken-inspired Runtime
+### Stage E — Post-v1 BERS Local-First AI Engine R&D: HSME + Hierarchical Adapter-MoE + FreeToken-inspired Runtime
 
-Goal: complete a meaningful pre-release implementation/evidence validation of the long-term BERS-owned local-first image AI architecture while keeping production admission separate and fail-closed.
+Goal: continue implementation/evidence validation of the long-term BERS-owned local-first image AI architecture after the v1 release cut while keeping production admission separate and fail-closed.
 
-**v1 scope decision:** Stage E/HSME is a mandatory implementation/evidence gate for `BERS_V1_RC` and `BERS v1.0 RELEASE`. HSME may satisfy the gate as `R&D_VALIDATED` without gaining production authority. At least one trusted real-mobile backend/evidence set is required before RC.
+**v1 scope decision — owner override 2026-10-04:** Stage E/HSME is **not** a release gate for `BERS_V1_RC` or `BERS v1.0 RELEASE`. Physical-mobile HSME evidence and `R&D_VALIDATED` are post-v1 graduation milestones. Until separately validated, HSME remains experimental/non-production and receives no production authority.
 
 The detailed companion authority for this R&D architecture is `BERS_HYBRID_SPARSE_MOBILE_ENGINE_ROADMAP.md` together with #352. The master sequence below intentionally follows the newer HSME architecture:
 
@@ -842,17 +842,17 @@ Desktop/native:
 
 Mobile:
 
-- at least one functioning real mobile backend is required for the pre-RC feasibility gate;
+- at least one functioning real mobile backend remains required for post-v1 HSME graduation, but not for v1 RC selection;
 - Apple Metal/Core ML/ANE and Android Vulkan/GPU/QNN/Hexagon are evaluated only where graph/kernel support is real;
 - materially different hardware/runtime representations receive distinct immutable fleet identity/evidence under the current schema;
 - package, latency, RAM/unified memory, flash/RAM/accelerator bytes moved, battery/energy, thermal and quality evidence;
 - avoid pathological flash traffic, scatter/gather and dynamic-routing overhead that erase sparse benefits.
 
-Browser/WebGPU/WASM evidence is useful but does not by itself satisfy the pre-RC HSME mobile evidence gate.
+Browser/WebGPU/WASM/Android-AVD evidence is sufficient for preflight and physical-device trial readiness, but it is not reclassified as physical evidence and does not grant HSME production admission.
 
-#### E7 — Pre-RC HSME validation milestone
+#### E7 — Post-v1 HSME graduation milestone
 
-This workstream must reach `R&D_VALIDATED` before v1 RC with:
+This workstream targets `R&D_VALIDATED` after v1 through field/device validation with:
 
 1. an implemented HSME control plane with signed/hash-verified pack identity/readiness and device/resource evidence;
 2. one pinned compact dense DiT/mobile-student baseline with exact source/toolchain/license identity;
@@ -866,7 +866,7 @@ This workstream must reach `R&D_VALIDATED` before v1 RC with:
 10. explicit desktop and mobile feasibility decisions;
 11. a final architecture-level `ADVANCE / REDESIGN / REJECT` decision for the next BERS Local-First AI Engine generation.
 
-Production admission remains optional and evidence-driven. **R&D validation before v1 is mandatory and grants no production authority.** A recorded blocker may reject a specific backend/mechanism, but it does not substitute for the functioning real-mobile backend and trusted device evidence required by the pre-RC gate.
+Production admission remains optional and evidence-driven. **R&D validation is a post-v1 graduation milestone and grants no production authority by itself.** A recorded blocker may reject a specific backend/mechanism; physical-mobile evidence remains required for HSME graduation, but its absence does not block v1 RC/release.
 
 ### Stage F — Final product evidence and release
 
