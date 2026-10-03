@@ -25,6 +25,8 @@ jobs:
     env:
       SOURCE_DATABASE_URL: postgresql://core_migration_test:core_migration_test@127.0.0.1:5432/core_migration_test
       IMAGE_DATABASE_URL: postgresql://core_migration_test:core_migration_test@127.0.0.1:5432/core_migration_image_test
+      RESTORE_DATABASE_URL: postgresql://core_migration_test:core_migration_test@127.0.0.1:5432/core_migration_restore_test
+      ADMIN_DATABASE_URL: postgresql://core_migration_test:core_migration_test@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +41,12 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
+      - name: Install PostgreSQL client for backup/restore proof
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          pg_dump --version
+          pg_restore --version
       - name: Typecheck and build Core distribution
         run: |
           npm run server:typecheck
@@ -167,6 +175,51 @@ jobs:
           NODE
       - name: Build immutable production image
         run: docker build -t bers-core-migration:${{ github.sha }} .
+      - name: Prove logical backup restore and forward-schema compatibility
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RESTORE_DATABASE_NAME: core_migration_restore_test
+        run: bash scripts/test-production-postgres-backup-restore.sh
+      - name: Prove restored database accepts the same immutable Core image
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL="$RESTORE_DATABASE_URL" \
+            bers-core-migration:${{ github.sha }} node dist-server/migrate.mjs check
+          docker run -d --name bers-core-restore-smoke --network host \
+            -e PORT=18082 \
+            -e DATABASE_URL="$RESTORE_DATABASE_URL" \
+            -e FAL_KEY=test-fal-key \
+            -e JWT_SECRET=test-jwt-secret \
+            -e JWT_ISSUER=bers-test \
+            -e JWT_AUDIENCE=bers-core \
+            -e AUTH_CHALLENGE_SECRET=test-auth-challenge-secret \
+            -e AUTH_DEFAULT_TENANT_ID=test-tenant \
+            -e AUTH_PUBLIC_ORIGIN=https://app.example.test \
+            -e RESEND_API_KEY=test-resend-key \
+            -e AUTH_EMAIL_FROM='Bers Test <noreply@example.test>' \
+            -e GOOGLE_OAUTH_CLIENT_ID=test-google-client \
+            -e GOOGLE_OAUTH_CLIENT_SECRET=test-google-secret \
+            -e ARTIFACT_SIGNING_SECRET=test-artifact-signing-secret \
+            -e ALLOWED_WEB_ORIGINS=https://app.example.test \
+            bers-core-migration:${{ github.sha }}
+          diagnose_restore() { docker logs bers-core-restore-smoke || true; }
+          trap diagnose_restore ERR
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18082/health/ready | grep -q '"status":"ready"'; then break; fi
+            if [ "$(docker inspect --format '{{.State.Running}}' bers-core-restore-smoke)" != true ]; then diagnose_restore; exit 1; fi
+            if [ "$attempt" = 30 ]; then diagnose_restore; exit 1; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:18082/health/live | grep -q '"status":"live"'
+          curl --fail --silent http://127.0.0.1:18082/health/ready | grep -q '"status":"ready"'
+          docker rm -f bers-core-restore-smoke
+      - name: Upload backup/restore evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: bers-v1-postgres-backup-restore-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/postgres-backup-restore/evidence.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Prove the production image owns one-shot migration and readiness
         run: |
           docker run --rm --network host \
