@@ -89,6 +89,23 @@ A safe rollout order is:
 
 Application rollback means routing traffic back to the previous immutable image only when that version is compatible with the already-forward-migrated schema. Do not run a rollback SQL migration while either application version is serving traffic. Database reversal is a separate, explicitly planned operation and must not be inferred from application image rollback.
 
+### Backup/restore release drill
+
+The repository's production migration workflow also proves logical restore compatibility on every affected pull request:
+
+1. migrate/check the source PostgreSQL database with the exact built Core distribution;
+2. write one CI-only durable probe row;
+3. create a custom-format `pg_dump` from that forward-migrated database;
+4. restore it into an independent empty PostgreSQL database with `pg_restore --no-owner --no-privileges`;
+5. verify the exact probe row survived;
+6. run the same bundled `migrate check -> migrate -> migrate check` sequence on the restored database;
+7. start the exact same immutable Core image against the restored database and require both `/health/live` and `/health/ready`;
+8. upload only the non-secret drill evidence JSON, not the database dump.
+
+This CI drill proves that the current schema and immutable image survive a logical backup/restore round trip. It does **not** replace the target platform's production backup/snapshot procedure. Before a production migration, operators must still create and verify a target-environment backup according to the database provider's supported mechanism.
+
+A restored database is always restored into an independent database/environment first. Never overwrite the serving production database as a rollback shortcut, and never infer that an older application image is schema-compatible merely because the restore succeeded. Forward schema compatibility with the intended rollback image must be established separately before routing traffic back.
+
 ## Current hardening debt
 
 Creative execution/status snapshots remain process-local. Transaction reservations and their journal are durable, but reconstructing the complete creative status response after a process restart requires a future execution-persistence adapter rather than a second billing or workflow subsystem.
