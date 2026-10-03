@@ -23,7 +23,7 @@ The existing journey-22 hosted frontend evidence remains valid evidence for its 
 
 ## State transitions
 
-- Until accepted Fashion quality/resource evidence exists, `FASHION_REAL_IMAGE_QUALITY` must remain in the blocker array. Removing it requires one reviewed `BERS_V1_FASHION_REAL_IMAGE_QUALITY_EVIDENCE` record with representative real-image cases, garment/logo/pattern preservation review, failure-mode review, measured latency/memory and immutable quality/resource digests.
+- Until accepted Fashion quality/resource evidence exists, `FASHION_REAL_IMAGE_QUALITY` must remain in the blocker array. Removing it requires one reviewed `BERS_V1_FASHION_REAL_IMAGE_QUALITY_EVIDENCE` record bound to the exact intended RC SHA, with representative real-image cases, garment/logo/pattern preservation review, failure-mode review, measured latency/memory, immutable quality/resource digests and a retrievable HTTPS evidence location.
 - While HSME is not `R&D_VALIDATED`, `HSME_REAL_MOBILE_EVIDENCE` must remain in the blocker array, `rcSelectable=false`, `rcCoordinate=null`, and status `BERS_V1_RC_NOT_SELECTABLE`.
 - `R&D_VALIDATED` requires no HSME blockers, trusted physical-mobile qualification state `REAL_MOBILE_QUALIFICATION_READY_NOT_ADMITTED`, a valid qualification evidence digest, and a final `ADVANCE / REDESIGN / REJECT` architecture decision.
 - Frontend hosted evidence and main protection remain independent gates.
