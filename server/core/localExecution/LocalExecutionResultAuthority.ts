@@ -720,6 +720,7 @@ export class MaskedLevelsResultAuthority {
           inputWhite: normalized.inputWhite,
           outputBlack: normalized.outputBlack,
           outputWhite: normalized.outputWhite,
+          deterministicTool: `${MASKED_LEVELS_TOOL_ID}@${MASKED_LEVELS_TOOL_VERSION}`,
           coordinateSpace: 'CANONICAL_ORIENTATION_1_RGBA8_PLUS_ALPHA8_MASK',
           transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
           toneLaw: 'PIECEWISE_LINEAR_INPUT_MIDPOINT_TO_OUTPUT_MIDPOINT',
