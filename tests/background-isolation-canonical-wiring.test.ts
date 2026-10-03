@@ -127,7 +127,7 @@ test('C2 deterministic registry remains data-only while each production capabili
   assert.equal(productionLocalExecutorsByCapability[EXPOSURE_CAPABILITY], undefined, 'reviewed Exposure candidate is not executable production authority');
   assert.equal(productionLocalExecutorsByCapability[WHITE_BALANCE_CAPABILITY], undefined, 'reviewed White Balance candidate is not executable production authority');
   assert.equal(productionLocalExecutorsByCapability[LEVELS_CAPABILITY], undefined, 'reviewed Levels candidate is not executable production authority');
-  assert.equal(productionLocalExecutorsByCapability[MASKED_LEVELS_CAPABILITY], undefined, 'reviewed Masked Levels candidate is not executable production authority');
+  assert.deepEqual(productionLocalExecutorsByCapability[MASKED_LEVELS_CAPABILITY], [MASKED_LEVELS_TOOL_DEFINITION.executor], 'Masked Levels is executable only through explicit reviewed authority');
   assert.deepEqual(productionLocalExecutorsByCapability[MASKED_WHITE_BALANCE_CAPABILITY], [MASKED_WHITE_BALANCE_TOOL_DEFINITION.executor], 'Masked White Balance is executable only through explicit reviewed authority');
   assert.deepEqual(productionLocalExecutorsByCapability[MASKED_EXPOSURE_CAPABILITY], [MASKED_EXPOSURE_TOOL_DEFINITION.executor]);
   assert.equal(productionLocalExecutorsByCapability[AFFINE_TRANSFORM_CAPABILITY], undefined, 'reviewed Affine candidate is not executable production authority');
