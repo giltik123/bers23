@@ -74,12 +74,24 @@ if [[ "$abi" != "arm64-v8a" ]]; then
 fi
 
 "${ADB[@]}" shell dumpsys battery | tr -d '\r' >"$OUT_DIR/battery.txt"
-ac_powered="$(awk -F': ' '/AC powered:/ {print $2}' "$OUT_DIR/battery.txt")"
-usb_powered="$(awk -F': ' '/USB powered:/ {print $2}' "$OUT_DIR/battery.txt")"
-wireless_powered="$(awk -F': ' '/Wireless powered:/ {print $2}' "$OUT_DIR/battery.txt")"
-status_code="$(awk -F': ' '/^[[:space:]]*status:/ {print $2}' "$OUT_DIR/battery.txt")"
-level="$(awk -F': ' '/^[[:space:]]*level:/ {print $2}' "$OUT_DIR/battery.txt")"
-scale="$(awk -F': ' '/^[[:space:]]*scale:/ {print $2}' "$OUT_DIR/battery.txt")"
+battery_value() {
+  local wanted="$1"
+  awk -F: -v wanted="$wanted" '
+    {
+      key=$1
+      value=substr($0,index($0,":")+1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/,"",key)
+      gsub(/^[[:space:]]+|[[:space:]]+$/,"",value)
+      if(key==wanted){print value; exit}
+    }
+  ' "$OUT_DIR/battery.txt"
+}
+ac_powered="$(battery_value 'AC powered')"
+usb_powered="$(battery_value 'USB powered')"
+wireless_powered="$(battery_value 'Wireless powered')"
+status_code="$(battery_value 'status')"
+level="$(battery_value 'level')"
+scale="$(battery_value 'scale')"
 
 for value in "$level" "$scale" "$status_code"; do
   [[ "$value" =~ ^[0-9]+$ ]] || { echo "Invalid battery telemetry" >&2; exit 1; }
