@@ -35,6 +35,13 @@ import {
   maskedLevelsRgba8,
   normalizeMaskedLevelsParameters,
 } from '../../../src/platform/creative/deterministic/MaskedLevels.ts';
+import {
+  MASKED_LEVELS_OPERATION,
+  MASKED_LEVELS_TOOL_ID,
+  MASKED_LEVELS_TOOL_VERSION,
+  maskedLevelsRgba8,
+  normalizeMaskedLevelsParameters,
+} from '../../../src/platform/creative/deterministic/MaskedLevels.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
 import type { Scope } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { admitLocalExecutionInputs } from './LocalExecutionInputAdmission.ts';
@@ -86,6 +93,12 @@ type MaskedLevelsArtifactLineage = Readonly<{
   producerOperation: 'MASKED_LEVELS';
 }>;
 
+type MaskedLevelsArtifactLineage = Readonly<{
+  sourceArtifactId: string;
+  maskArtifactId: string;
+  producerOperation: 'MASKED_LEVELS';
+}>;
+
 type DeterministicDependencies = ScopeArtifactAccess & Readonly<{
   admission: LocalExecutionLedgerV2;
   uploads: UploadReader;
@@ -108,6 +121,15 @@ type MaskedWhiteBalanceDependencies = ScopeArtifactAccess & Readonly<{
   admission: LocalExecutionLedgerV2;
   uploads: UploadReader;
   persistFinal: (scope: Scope, executionId: string, operationId: string, image: PixelImage, lineage?: MaskedWhiteBalanceArtifactLineage) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
+  loadPersistedFinal: (executionId: string, scope: Scope) => Promise<Readonly<{ storageId: string; width: number; height: number }> | undefined>;
+  issueFinalId: (storageId: string, scope: Scope) => string;
+  now?: () => number;
+}>;
+
+type MaskedLevelsDependencies = ScopeArtifactAccess & Readonly<{
+  admission: LocalExecutionLedgerV2;
+  uploads: UploadReader;
+  persistFinal: (scope: Scope, executionId: string, operationId: string, image: PixelImage, lineage?: MaskedLevelsArtifactLineage) => Promise<Readonly<{ storageId: string; width: number; height: number }>>;
   loadPersistedFinal: (executionId: string, scope: Scope) => Promise<Readonly<{ storageId: string; width: number; height: number }> | undefined>;
   issueFinalId: (storageId: string, scope: Scope) => string;
   now?: () => number;
@@ -693,6 +715,166 @@ export class MaskedLevelsResultAuthority {
       const candidate = await decodePngRgba(upload.bytes);
       if (candidate.width !== sourcePixels.width || candidate.height !== sourcePixels.height) throw serviceError(400, 'local_image_dimensions_mismatch', 'Masked Levels candidate geometry does not match canonical inputs');
       const expected = maskedLevelsRgba8(sourcePixels.data, maskPixels.alpha, sourcePixels.width, sourcePixels.height, normalized.inputBlack, normalized.inputMidpoint, normalized.inputWhite, normalized.outputBlack, normalized.outputWhite);
+      assertExactPixels(expected, candidate.data);
+
+      const artifact: CreativeArtifact = Object.freeze({
+        id: `core-verified-masked-levels:${ticket.ticketId}`,
+        kind: 'image',
+        value: Object.freeze({ width: sourcePixels.width, height: sourcePixels.height, data: expected, format: 'RGBA8', orientation: 1 as const, colorSpace: 'srgb' }),
+        producerOperationId: ticket.stepId,
+        scope: ticket.scope,
+        state: 'FINAL',
+        role: 'COMPOSITE',
+        image: Object.freeze({ width: sourcePixels.width, height: sourcePixels.height, format: 'RGBA8', orientation: 1 as const, colorSpace: 'srgb', alpha: true }),
+        metadata: Object.freeze({
+          artifactRole: 'COMPOSITE',
+          localExecutionAdmission: 'ADMITTED',
+          admissionClass: 'DETERMINISTIC_BYTE_EXACT',
+          verificationScope: 'BYTE_EXACT_CORE_RECOMPUTE',
+          ticketId: ticket.ticketId,
+          executorKind: result.executor.kind,
+          toolId: result.executor.toolId,
+          toolVersion: result.executor.version,
+          runtime: result.runtime,
+          accelerator: result.accelerator,
+          inputBlack: normalized.inputBlack,
+          inputMidpoint: normalized.inputMidpoint,
+          inputWhite: normalized.inputWhite,
+          outputBlack: normalized.outputBlack,
+          outputWhite: normalized.outputWhite,
+          coordinateSpace: 'CANONICAL_ORIENTATION_1_RGBA8_PLUS_ALPHA8_MASK',
+          transferDomain: 'SRGB_ENCODED_BYTE_DOMAIN',
+          toneLaw: 'PIECEWISE_LINEAR_INPUT_MIDPOINT_TO_OUTPUT_MIDPOINT',
+          outputMidpointLaw: 'ROUND_HALF_UP_AVERAGE_OUTPUT_BOUNDS',
+          segmentRounding: 'ROUND_HALF_UP',
+          maskBlend: 'SOURCE_ADJUSTED_ALPHA8_ROUND_HALF_UP',
+          alphaPolicy: 'COPY_SOURCE_ALPHA_BYTES',
+          candidateSha256: upload.sha256,
+          verifiedPixelSha256: createHash('sha256').update(expected).digest('hex'),
+          integrityMetrics: Object.freeze({ verificationOutcome: 'PASS', pixelComparison: 'BYTE_EXACT' }),
+          parentArtifactIds: Object.freeze(ticket.inputs.map(binding => binding.artifactId)),
+        }),
+      });
+
+      const outcome = await input.verify({ ticket, result, artifact });
+      if (outcome.status !== 'SUCCESS') throw serviceError(422, 'local_execution_verification_failed', 'Canonical Masked Levels execution did not pass workflow verification');
+      const stored = await this.dependencies.persistFinal(
+        ticket.scope,
+        ticket.workflowId,
+        ticket.stepId,
+        { width: sourcePixels.width, height: sourcePixels.height, data: expected },
+        { sourceArtifactId: source.id, maskArtifactId: mask.id, producerOperation: MASKED_LEVELS_OPERATION },
+      );
+      const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
+      await this.dependencies.admission.commit(ticket.ticketId, 'SUCCESS');
+      await this.dependencies.uploads.consume(upload.uploadId, ticket.ticketId, ticket.scope, this.now());
+      return Object.freeze({ executionId: ticket.workflowId, status: 'SUCCESS', artifactId, outcome });
+    } catch (error) {
+      await this.dependencies.admission.release(ticket.ticketId).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private assertTicket(ticket: LocalExecutionTicketV2): void {
+    if (ticket.version !== '2' || ticket.issuer !== 'CORE' || ticket.operation.capability !== this.contract.capability || ticket.operation.type !== MASKED_LEVELS_OPERATION || ticket.operation.id !== this.contract.stepId || ticket.stepId !== this.contract.stepId || ticket.policy !== 'LOCAL_ONLY') {
+      throw serviceError(409, 'local_ticket_capability_mismatch', 'Ticket is not the exact accepted Masked Levels result contract');
+    }
+    if (ticket.cost.paidCloudCredits !== 0 || ticket.cost.providerCalls !== 0) throw serviceError(409, 'local_ticket_cost_mismatch', 'Masked Levels ticket contains forbidden cloud cost authority');
+    if (ticket.allowedExecutors.length !== 1) throw serviceError(409, 'local_ticket_executor_mismatch', 'Masked Levels must bind exactly one executor');
+    const executor = ticket.allowedExecutors[0];
+    if (executor.kind !== 'DETERMINISTIC_TOOL' || executor.toolId !== MASKED_LEVELS_TOOL_ID || executor.version !== MASKED_LEVELS_TOOL_VERSION) throw serviceError(409, 'local_ticket_executor_mismatch', 'Masked Levels executor binding is invalid');
+    const parameters = ticket.operation.parameters as Readonly<Record<string, unknown>> | undefined;
+    normalizeMaskedLevelsParameters(Number(parameters?.inputBlack), Number(parameters?.inputMidpoint), Number(parameters?.inputWhite), Number(parameters?.outputBlack), Number(parameters?.outputWhite));
+  }
+
+  private async revalidateCanonicalInputs(ticket: LocalExecutionTicketV2): Promise<readonly CreativeArtifact[]> {
+    if (ticket.inputs.length !== 2) throw serviceError(409, 'local_input_contract_mismatch', 'Masked Levels requires exactly two canonical inputs');
+    const sourceBinding = ticket.inputs.find(binding => binding.kind === 'image');
+    const maskBinding = ticket.inputs.find(binding => binding.kind === 'mask');
+    if (!sourceBinding?.sha256 || !maskBinding?.sha256) throw serviceError(409, 'local_input_contract_mismatch', 'Masked Levels requires SHA-bound IMAGE + MASK inputs');
+    if (!await this.dependencies.ownsArtifacts(ticket.scope, [sourceBinding.artifactId, maskBinding.artifactId])) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked Levels inputs are no longer authorized or available');
+    const artifacts = await this.dependencies.hydrateArtifacts(ticket.scope, sourceBinding.artifactId, [maskBinding.artifactId]);
+    const source = artifacts.find(artifact => artifact.id === sourceBinding.artifactId && artifact.kind === 'image');
+    const mask = artifacts.find(artifact => artifact.id === maskBinding.artifactId && artifact.kind === 'mask' && artifact.role === 'MASK');
+    if (!source || !mask) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked Levels source or MASK was not hydrated');
+    if (!source.image?.width || !source.image.height || source.image.width !== mask.image?.width || source.image.height !== mask.image?.height) throw serviceError(409, 'local_input_lineage_unavailable', 'Canonical Masked Levels input geometry mismatch');
+    const decision = admitLocalExecutionInputs(ticket, artifacts);
+    if (!decision.allowed) throw serviceError(409, `local_input_${decision.reasonCode.toLowerCase()}`, `Canonical Masked Levels input revalidation failed: ${decision.reasonCode}`);
+    return artifacts;
+  }
+
+  private async replayFinalized(ticket: LocalExecutionTicketV2): Promise<LocalResultAuthoritySubmission> {
+    const finalization = await this.dependencies.admission.getFinalization(ticket.ticketId);
+    if (!finalization || finalization.status === 'UNKNOWN') throw serviceError(409, 'local_finalization_unknown', 'Masked Levels was consumed without a recoverable terminal status');
+    if (finalization.status === 'FAILED') return failedReplay(ticket.workflowId);
+    const stored = await this.dependencies.loadPersistedFinal(ticket.workflowId, ticket.scope);
+    if (!stored) throw serviceError(409, 'local_finalization_artifact_unavailable', 'Committed Masked Levels FINAL is unavailable');
+    const artifactId = this.dependencies.issueFinalId(stored.storageId, ticket.scope);
+    return successReplay(ticket.workflowId, artifactId);
+  }
+}
+
+/**
+ * Accepted Masked Levels result authority. Candidate bytes remain quarantined
+ * until Core rehydrates the exact IMAGE + MASK, recomputes the reviewed integer
+ * piecewise-linear Levels law with ALPHA8 blending, and verifies byte equality.
+ */
+export class MaskedLevelsResultAuthority {
+  private readonly dependencies: MaskedLevelsDependencies;
+  private readonly contract: ExactLocalContract;
+  private readonly now: () => number;
+
+  constructor(dependencies: MaskedLevelsDependencies, contract: ExactLocalContract) {
+    this.dependencies = dependencies;
+    this.contract = requireContract(contract);
+    this.now = dependencies.now ?? Date.now;
+  }
+
+  async submit(input: Readonly<{ ticket: LocalExecutionTicketV2; result: unknown; verify: DeterministicVerificationPort }>): Promise<LocalResultAuthoritySubmission> {
+    const ticket = input.ticket;
+    this.assertTicket(ticket);
+    const claim = await this.dependencies.admission.claimV2({ ticketId: ticket.ticketId, result: input.result, callerScope: ticket.scope, now: this.now() });
+    if (!claim.allowed) {
+      if (claim.reasonCode === 'REPLAYED_TICKET') return this.replayFinalized(ticket);
+      throw admissionError(claim.reasonCode);
+    }
+
+    try {
+      const artifacts = await this.revalidateCanonicalInputs(ticket);
+      const result = claim.result;
+      if (result.executor.kind !== 'DETERMINISTIC_TOOL' || result.executor.toolId !== MASKED_LEVELS_TOOL_ID || result.executor.version !== MASKED_LEVELS_TOOL_VERSION) throw serviceError(400, 'local_executor_mismatch', 'Result is not the authorized Masked Levels executor');
+      if (result.runtime !== 'BROWSER_JS' || result.accelerator !== 'cpu') throw serviceError(400, 'local_runtime_mismatch', 'Masked Levels v1 requires exact BROWSER_JS/cpu runtime identity');
+      if (result.outputs.length !== 1) throw serviceError(400, 'local_result_output_count', 'Masked Levels requires exactly one output');
+      const evidence = result.outputs[0];
+      const upload = await loadExactEvidence(this.dependencies.uploads, ticket, evidence, this.now());
+      if (upload.kind !== 'image' || upload.role !== 'COMPOSITE' || upload.mimeType !== 'image/png') throw serviceError(400, 'local_upload_contract_mismatch', 'Quarantined output is not a deterministic PNG COMPOSITE candidate');
+
+      const source = requireSource(artifacts, ticket);
+      const mask = requireMask(artifacts, ticket);
+      const sourcePixels = source.value as Readonly<{ width: number; height: number; data: Uint8ClampedArray }>;
+      const maskPixels = mask.value as Readonly<{ width: number; height: number; alpha: Uint8Array }>;
+      if (maskPixels.width !== sourcePixels.width || maskPixels.height !== sourcePixels.height) throw serviceError(409, 'local_input_geometry_mismatch', 'Masked Levels IMAGE and MASK geometry mismatch');
+      const parameters = ticket.operation.parameters as Readonly<Record<string, unknown>> | undefined;
+      const normalized = normalizeMaskedLevelsParameters(
+        Number(parameters?.inputBlack),
+        Number(parameters?.inputMidpoint),
+        Number(parameters?.inputWhite),
+        Number(parameters?.outputBlack),
+        Number(parameters?.outputWhite),
+      );
+      const candidate = await decodePngRgba(upload.bytes);
+      if (candidate.width !== sourcePixels.width || candidate.height !== sourcePixels.height) throw serviceError(400, 'local_image_dimensions_mismatch', 'Masked Levels candidate geometry does not match canonical inputs');
+      const expected = maskedLevelsRgba8(
+        sourcePixels.data,
+        maskPixels.alpha,
+        sourcePixels.width,
+        sourcePixels.height,
+        normalized.inputBlack,
+        normalized.inputMidpoint,
+        normalized.inputWhite,
+        normalized.outputBlack,
+        normalized.outputWhite,
+      );
       assertExactPixels(expected, candidate.data);
 
       const artifact: CreativeArtifact = Object.freeze({
