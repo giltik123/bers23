@@ -140,6 +140,9 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
   if (readiness.status !== 'BERS_V1_RC_SELECTED') {
     throw new Error('empty blockers require BERS_V1_RC_SELECTED status');
   }
+  if (readiness.fashionQualityEvidence.testedSha !== readiness.rcCoordinate) {
+    throw new Error('selected RC must equal Fashion quality evidence testedSha');
+  }
   if (journey22.liveEvidence.verifiedSha !== readiness.rcCoordinate) {
     throw new Error('selected RC must equal journey 22 verified deployment SHA');
   }
@@ -165,6 +168,9 @@ function validateFashionQualityEvidence(value) {
     throw new Error('fashionQualityEvidence kind mismatch');
   }
   if (value.issue !== 230) throw new Error('fashionQualityEvidence issue mismatch');
+  if (!EXACT_SHA_RE.test(value.testedSha ?? '')) {
+    throw new Error('fashionQualityEvidence testedSha is invalid');
+  }
   if (value.productScope !== 'DETERMINISTIC_TRYON_V1') {
     throw new Error('fashionQualityEvidence product scope mismatch');
   }
@@ -185,6 +191,9 @@ function validateFashionQualityEvidence(value) {
   }
   if (!/^[0-9a-f]{64}$/u.test(value.resourceEvidenceSha256 ?? '')) {
     throw new Error('fashionQualityEvidence resource digest is invalid');
+  }
+  if (!/^https:\/\//u.test(value.evidenceUrl ?? '')) {
+    throw new Error('fashionQualityEvidence evidenceUrl must be HTTPS');
   }
   if (typeof value.reviewedAt !== 'string' || !Number.isFinite(Date.parse(value.reviewedAt))) {
     throw new Error('fashionQualityEvidence reviewedAt is invalid');
