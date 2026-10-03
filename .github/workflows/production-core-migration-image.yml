@@ -62,7 +62,8 @@ jobs:
           test -f dist-server/migrations/045_canonical_project_status_lifecycle.sql
           test -f dist-server/migrations/046_canonical_masked_exposure_final_lineage.sql
           test -f dist-server/migrations/047_canonical_masked_white_balance_final_lineage.sql
-          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 47
+          test -f dist-server/migrations/048_canonical_masked_levels_final_lineage.sql
+          test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 48
           test "$(find dist-server/migrations -maxdepth 1 -type f -name '*.down.sql' | wc -l)" -eq 0
       - name: Prove bundled migrator on a clean PostgreSQL database
         env:
