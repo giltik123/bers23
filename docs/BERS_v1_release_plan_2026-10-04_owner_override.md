@@ -1,9 +1,9 @@
 # BERS v1: план работ до релиза
 
-**Срез состояния:** 27 сентября 2026 года, `main` = `7991f3460264859cdc59ff5199540bc1c6cfb044`.  
+**Срез состояния:** 27 сентября 2026 года, `main` = `7991f3460264859cdc59ff5199540bc1c6cfb044`.
 **Owner override от 4 октября 2026:** физические HSME/mobile проверки больше не являются обязательным условием выбора `BERS_V1_RC` или выпуска v1.0. Риск принят владельцем продукта. HSME остается экспериментальным/non-production до отдельной реальной device validation; этот override не ослабляет Core/PostgreSQL, security, deployment, backup/rollback, browser/E2E и exact-SHA gates.
 
-**Основа:** [BERS v1 Development Roadmap](https://github.com/giltik123/bers23/blob/main/BERS_V1_DEVELOPMENT_ROADMAP.md), [Project Source of Truth](https://github.com/giltik123/bers23/blob/main/PROJECT_SOURCE_OF_TRUTH.md), [релизный gate #365](https://github.com/giltik123/bers23/issues/365) и текущее состояние кода.  
+**Основа:** [BERS v1 Development Roadmap](https://github.com/giltik123/bers23/blob/main/BERS_V1_DEVELOPMENT_ROADMAP.md), [Project Source of Truth](https://github.com/giltik123/bers23/blob/main/PROJECT_SOURCE_OF_TRUTH.md), [релизный gate #365](https://github.com/giltik123/bers23/issues/365) и текущее состояние кода.
 **Правило актуальности:** при расхождении старого описания задачи с принятым кодом и тестами на `main` фактический путь исполнения проверяется заново. Закрытая задача означает принятый срез, а не доказанный полный релизный сценарий.
 
 ## 1. Цель и границы v1
