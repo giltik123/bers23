@@ -85,7 +85,7 @@ export async function checkGarmentTextureFinalLineageSchema(pool: Pool): Promise
 
   const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
   const shapeDef = canon(shape?.definition);
-  for (const producer of ['BACKGROUND_ISOLATION','MASKED_EXPOSURE','MASKED_WHITE_BALANCE','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE']) {
+  for (const producer of ['BACKGROUND_ISOLATION','MASKED_EXPOSURE','MASKED_WHITE_BALANCE','MASKED_LEVELS','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE']) {
     if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion migration 030');
   }
   for (const field of ['garment_warp_layer_id','garment_warp_layer_sha256','producer_parameters','producer_parameters_sha256']) {

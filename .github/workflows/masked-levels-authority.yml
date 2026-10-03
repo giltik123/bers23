@@ -1,0 +1,148 @@
+name: Masked Levels Authority
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/platform/creative/deterministic/MaskedLevels.ts'
+      - 'src/platform/creative/deterministic/MaskedLevelsIdentity.js'
+      - 'src/platform/creative/deterministic/Levels.ts'
+      - 'src/platform/creative/deterministic/LevelsIdentity.js'
+      - 'src/platform/creative/deterministic/DeterministicToolRegistry.ts'
+      - 'src/platform/creative/canonical/CreativeExecutionPlatform.ts'
+      - 'src/platform/creative/canonical/planning/CanonicalPlanningService.ts'
+      - 'src/application/local-execution/CoreAuthorizedMaskedLevels.ts'
+      - 'src/application/createMaskedLevels.ts'
+      - 'src/api/coreClient.js'
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/SelectionToolbar.jsx'
+      - 'server/core/localExecution/LocalExecutionResultAuthority.ts'
+      - 'server/core/localExecution/LocalMaskedLevelsExecutionService.ts'
+      - 'server/core/localExecution/LocalExecutionInputDeliveryService.ts'
+      - 'server/core/localExecution/productionLocalExecutorPolicy.ts'
+      - 'server/core/localExecution/index.ts'
+      - 'server/core/providers/productionExecutionCapabilities.ts'
+      - 'server/core/providers/productionExecutionRoute.ts'
+      - 'server/core/providers/productionTargetSelection.ts'
+      - 'server/core/providers/productionWorkflowVerifier.ts'
+      - 'server/core/artifacts/postgresImageArtifactStore.ts'
+      - 'server/core/artifacts/finalImageLineageSchema.ts'
+      - 'server/core/artifacts/durableArtifactLineageResolver.ts'
+      - 'server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql'
+      - 'server/core/fashion/garmentTextureFinalLineageSchema.ts'
+      - 'server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts'
+      - 'server/core/composition/createProductionCore.ts'
+      - 'server/core/http/localExecutionHttpAdapter.ts'
+      - 'server/index.ts'
+      - 'config/v1-capability-classification.json'
+      - 'tests/masked-levels-canonical-wiring.test.ts'
+      - 'tests/masked-levels-postgres-vertical.test.ts'
+      - 'tests/deterministic-masked-levels-contract.test.ts'
+      - 'tests/deterministic-crop-contract.test.ts'
+      - 'tests/background-isolation-canonical-wiring.test.ts'
+      - 'tests/editor-canonical-boundary.test.mjs'
+      - 'tests/editor-orthogonal-transform-ui.test.mjs'
+      - 'tests/v1-release-package.test.mjs'
+      - 'scripts/f4b4-postgres-ci-closure.json'
+      - 'scripts/f4b5b-postgres-ci-closure.json'
+      - 'scripts/classify-fashion-execution-ci.mjs'
+      - '.github/workflows/masked-levels-authority.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  masked-levels-authority:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: masked_levels_test
+          POSTGRES_USER: masked_levels_test
+          POSTGRES_PASSWORD: masked_levels_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U masked_levels_test -d masked_levels_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      DATABASE_URL: postgresql://masked_levels_test:masked_levels_test@127.0.0.1:5432/masked_levels_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck browser and Core authority surfaces
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: Prove migration 048 is the exact global tail
+        run: |
+          node --input-type=module <<'NODE'
+          import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
+          const migrations = await loadProductionMigrationInventory();
+          if (migrations.length !== 48) throw new Error(`Expected 48 contiguous production migrations, got ${migrations.length}`);
+          if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved');
+          if (migrations[46]?.name !== '047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration moved');
+          if (migrations[47]?.name !== '048_canonical_masked_levels_final_lineage.sql') throw new Error('048 Masked Levels lineage migration is not the exact global tail');
+          if (migrations[47]?.source !== 'server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql') throw new Error('048 Masked Levels lineage migration moved outside Artifact authority');
+          NODE
+      - name: Bundle focused Masked Levels regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/p192-masked-levels-authority
+          for file in \
+            tests/masked-levels-canonical-wiring.test.ts \
+            tests/masked-levels-postgres-vertical.test.ts \
+            tests/deterministic-masked-levels-contract.test.ts \
+            tests/deterministic-crop-contract.test.ts \
+            tests/background-isolation-canonical-wiring.test.ts; do
+            out=".test-cache/p192-masked-levels-authority/$(basename "${file%.ts}").mjs"
+            npx esbuild "$file" --bundle --platform=node --format=esm --target=node24 --outfile="$out" --external:node:* --external:pg --external:sharp
+          done
+      - name: Prove contract ticket browser registry and Editor boundaries
+        run: |
+          node --test \
+            .test-cache/p192-masked-levels-authority/masked-levels-canonical-wiring.test.mjs \
+            .test-cache/p192-masked-levels-authority/deterministic-masked-levels-contract.test.mjs \
+            .test-cache/p192-masked-levels-authority/deterministic-crop-contract.test.mjs \
+            .test-cache/p192-masked-levels-authority/background-isolation-canonical-wiring.test.mjs \
+            tests/editor-canonical-boundary.test.mjs \
+            tests/editor-orthogonal-transform-ui.test.mjs \
+            tests/v1-release-package.test.mjs
+      - name: Stage SQL migrations beside bundled PostgreSQL test
+        run: |
+          set -euo pipefail
+          runtime=.test-cache/p192-masked-levels-authority
+          mkdir -p "$runtime/migrations"
+          find server -type f -path '*/migrations/*.sql' ! -name '*.down.sql' -print0 \
+            | while IFS= read -r -d '' migration; do cp "$migration" "$runtime/migrations/$(basename "$migration")"; done
+          test -f "$runtime/migrations/046_canonical_masked_exposure_final_lineage.sql"
+          test -f "$runtime/migrations/047_canonical_masked_white_balance_final_lineage.sql"
+          test -f "$runtime/migrations/048_canonical_masked_levels_final_lineage.sql"
+      - name: Prove PostgreSQL IMAGE+MASK FINAL lineage and restart replay
+        run: node --test --test-concurrency=1 .test-cache/p192-masked-levels-authority/masked-levels-postgres-vertical.test.mjs
+      - name: Build production browser
+        run: npm run build
+      - name: Prove bounded authority and Editor cutover
+        run: |
+          set -euo pipefail
+          grep -q "MASKED_LEVELS_CAPABILITY" server/core/localExecution/productionLocalExecutorPolicy.ts
+          grep -q "MASKED_LEVELS_OPERATION" src/platform/creative/canonical/planning/CanonicalPlanningService.ts
+          grep -q "MASKED_LEVELS" server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql
+          grep -q "createMaskedLevels" src/pages/Editor.jsx
+          grep -q 'aria-label="Preview masked Levels"' src/components/editor/SelectionToolbar.jsx
+          grep -q "MASKED_LEVELS_TOOL_DEFINITION" src/platform/creative/deterministic/DeterministicToolRegistry.ts
+          test -n "$BASE_SHA"
+          git diff --check "$BASE_SHA"..HEAD

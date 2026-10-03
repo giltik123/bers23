@@ -19,10 +19,9 @@
       "id": "DETERMINISTIC_EDITOR_V1",
       "classification": "PRODUCTION_READY",
       "enabled": true,
-      "scope": "Crop, Resize, Rotate/Flip, canonical Selection/MASK, Background Isolation, Masked Exposure and Masked White Balance under explicit Core production executor admission",
+      "scope": "Crop, Resize, Rotate/Flip, canonical Selection/MASK, Background Isolation, Masked Exposure, Masked White Balance and Masked Levels under explicit Core production executor admission",
       "deliberatelyNotEnabled": [
         "levels@1",
-        "masked-levels@1",
         "unreviewed HSL/curves/retouch expansion"
       ],
       "evidence": [

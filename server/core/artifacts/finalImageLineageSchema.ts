@@ -24,12 +24,13 @@ export async function checkFinalImageLineageSchema(pool: Pool): Promise<void> {
         AND position('ORTHOGONAL_TRANSFORM' in pg_get_constraintdef(oid)) > 0
         AND position('MASKED_EXPOSURE' in pg_get_constraintdef(oid)) > 0
         AND position('MASKED_WHITE_BALANCE' in pg_get_constraintdef(oid)) > 0
+        AND position('MASKED_LEVELS' in pg_get_constraintdef(oid)) > 0
     ) AS shape_check,
     to_regclass('canonical_image_artifacts_source_image_idx') IS NOT NULL AS source_idx,
     to_regclass('canonical_image_artifacts_mask_idx') IS NOT NULL AS mask_idx`);
   const row = result.rows[0] ?? {};
   if (!row.image_table || !row.mask_table || !row.lineage_columns || !row.source_fk || !row.mask_fk || !row.shape_check || !row.source_idx || !row.mask_idx) {
-    throw new Error('canonical FINAL image lineage schema is incomplete; apply migrations 018_canonical_final_image_lineage.sql through 021_canonical_orthogonal_transform_final_lineage.sql and 046_canonical_masked_exposure_final_lineage.sql plus 047_canonical_masked_white_balance_final_lineage.sql');
+    throw new Error('canonical FINAL image lineage schema is incomplete; apply migrations 018_canonical_final_image_lineage.sql through 021_canonical_orthogonal_transform_final_lineage.sql and 046_canonical_masked_exposure_final_lineage.sql plus 047_canonical_masked_white_balance_final_lineage.sql and 048_canonical_masked_levels_final_lineage.sql');
   }
 }
 
@@ -51,6 +52,11 @@ export async function migrateMaskedExposureFinalLineageSchema(pool: Pool): Promi
 
 export async function migrateMaskedWhiteBalanceFinalLineageSchema(pool: Pool): Promise<void> {
   await pool.query(await readMigration('047_canonical_masked_white_balance_final_lineage.sql'));
+  await migrateMaskedLevelsFinalLineageSchema(pool);
+}
+
+export async function migrateMaskedLevelsFinalLineageSchema(pool: Pool): Promise<void> {
+  await pool.query(await readMigration('048_canonical_masked_levels_final_lineage.sql'));
   await checkFinalImageLineageSchema(pool);
 }
 

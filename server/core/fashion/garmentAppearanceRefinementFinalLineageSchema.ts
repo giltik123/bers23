@@ -50,7 +50,7 @@ export async function checkGarmentAppearanceRefinementFinalLineageSchema(pool: P
 
   const shape: any = byConstraint.get('canonical_image_artifacts_lineage_shape_check');
   const shapeDef = canon(shape?.definition);
-  for (const producer of ['BACKGROUND_ISOLATION','MASKED_EXPOSURE','MASKED_WHITE_BALANCE','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE','GARMENT_APPEARANCE_REFINEMENT']) {
+  for (const producer of ['BACKGROUND_ISOLATION','MASKED_EXPOSURE','MASKED_WHITE_BALANCE','MASKED_LEVELS','CROP','RESIZE','ORTHOGONAL_TRANSFORM','GARMENT_TEXTURE_COMPOSITE','GARMENT_APPEARANCE_REFINEMENT']) {
     if (!shapeDef.includes(producer)) throw new Error('canonical FINAL image lineage shape policy is incomplete after Fashion refinement migration 032');
   }
   for (const field of ['refinement_parent_image_storage_id','refinement_parent_image_sha256','refinement_profile','refinement_contract_version']) {

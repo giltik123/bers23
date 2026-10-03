@@ -26,6 +26,7 @@ on:
       - 'server/core/artifacts/durableArtifactLineageResolver.ts'
       - 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql'
       - 'server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql'
+      - 'server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql'
       - 'server/core/fashion/garmentTextureFinalLineageSchema.ts'
       - 'server/core/fashion/garmentAppearanceRefinementFinalLineageSchema.ts'
       - 'server/core/composition/createProductionCore.ts'
@@ -84,12 +85,14 @@ jobs:
           node --input-type=module <<'NODE'
           import { loadProductionMigrationInventory } from './scripts/production-migration-inventory.mjs';
           const migrations = await loadProductionMigrationInventory();
-          if (migrations.length !== 47) throw new Error(`Expected 47 contiguous production migrations, got ${migrations.length}`);
+          if (migrations.length !== 48) throw new Error(`Expected 48 contiguous production migrations, got ${migrations.length}`);
           if (migrations[44]?.name !== '045_canonical_project_status_lifecycle.sql') throw new Error('045 Project lifecycle migration moved from its accepted position');
           if (migrations[45]?.name !== '046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved from its accepted position');
           if (migrations[45]?.source !== 'server/core/artifacts/migrations/046_canonical_masked_exposure_final_lineage.sql') throw new Error('046 Masked Exposure lineage migration moved outside Artifact authority');
-          if (migrations[46]?.name !== '047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration is not the exact global tail');
+          if (migrations[46]?.name !== '047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration moved from its accepted position');
           if (migrations[46]?.source !== 'server/core/artifacts/migrations/047_canonical_masked_white_balance_final_lineage.sql') throw new Error('047 Masked White Balance lineage migration moved outside Artifact authority');
+          if (migrations[47]?.name !== '048_canonical_masked_levels_final_lineage.sql') throw new Error('048 Masked Levels lineage migration is not the exact global tail');
+          if (migrations[47]?.source !== 'server/core/artifacts/migrations/048_canonical_masked_levels_final_lineage.sql') throw new Error('048 Masked Levels lineage migration moved outside Artifact authority');
           NODE
       - name: Bundle focused Masked Exposure regressions
         run: |

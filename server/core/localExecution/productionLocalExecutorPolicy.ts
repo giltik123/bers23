@@ -4,6 +4,7 @@ import { LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES } from '../../../src/
 import { BACKGROUND_ISOLATION_CAPABILITY } from '../../../src/platform/creative/deterministic/BackgroundIsolation.ts';
 import { MASKED_EXPOSURE_CAPABILITY } from '../../../src/platform/creative/deterministic/MaskedExposure.ts';
 import { MASKED_WHITE_BALANCE_CAPABILITY } from '../../../src/platform/creative/deterministic/MaskedWhiteBalance.ts';
+import { MASKED_LEVELS_CAPABILITY } from '../../../src/platform/creative/deterministic/MaskedLevels.ts';
 import { CROP_CAPABILITY } from '../../../src/platform/creative/deterministic/Crop.ts';
 import { RESIZE_CAPABILITY } from '../../../src/platform/creative/deterministic/Resize.ts';
 import { ORTHOGONAL_TRANSFORM_CAPABILITY } from '../../../src/platform/creative/deterministic/OrthogonalTransform.ts';
@@ -18,6 +19,8 @@ const maskedExposureTool = requireDeterministicToolByCapability(MASKED_EXPOSURE_
 const maskedExposureExecutors = Object.freeze([maskedExposureTool.executor]);
 const maskedWhiteBalanceTool = requireDeterministicToolByCapability(MASKED_WHITE_BALANCE_CAPABILITY);
 const maskedWhiteBalanceExecutors = Object.freeze([maskedWhiteBalanceTool.executor]);
+const maskedLevelsTool = requireDeterministicToolByCapability(MASKED_LEVELS_CAPABILITY);
+const maskedLevelsExecutors = Object.freeze([maskedLevelsTool.executor]);
 const cropTool = requireDeterministicToolByCapability(CROP_CAPABILITY);
 const cropExecutors = Object.freeze([cropTool.executor]);
 const resizeTool = requireDeterministicToolByCapability(RESIZE_CAPABILITY);
@@ -45,6 +48,7 @@ export const productionLocalExecutorsByCapability: Readonly<Record<string, reado
   [BACKGROUND_ISOLATION_CAPABILITY]: backgroundIsolationExecutors,
   [MASKED_EXPOSURE_CAPABILITY]: maskedExposureExecutors,
   [MASKED_WHITE_BALANCE_CAPABILITY]: maskedWhiteBalanceExecutors,
+  [MASKED_LEVELS_CAPABILITY]: maskedLevelsExecutors,
   [LOCAL_BACKGROUND_ISOLATION_COMPOSITE_CAPABILITIES.backgroundIsolation]: backgroundIsolationExecutors,
   [CROP_CAPABILITY]: cropExecutors,
   [RESIZE_CAPABILITY]: resizeExecutors,

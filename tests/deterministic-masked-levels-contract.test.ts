@@ -105,7 +105,7 @@ test('Masked Levels registry contract is immutable reviewed data and remains pro
   assert.equal(isDeepFrozen(MASKED_LEVELS_TOOL_DEFINITION), true);
   assert.equal(containsFunction(MASKED_LEVELS_TOOL_DEFINITION), false);
   assert.equal(DETERMINISTIC_TOOL_REGISTRY.includes(MASKED_LEVELS_TOOL_DEFINITION), true);
-  assert.equal(productionLocalExecutorsByCapability[MASKED_LEVELS_CAPABILITY], undefined, 'registry presence alone must not make Masked Levels executable');
+  assert.deepEqual(productionLocalExecutorsByCapability[MASKED_LEVELS_CAPABILITY], [MASKED_LEVELS_TOOL_DEFINITION.executor], 'Masked Levels is executable only through explicit reviewed production admission');
 });
 
 function containsFunction(value: unknown): boolean {
