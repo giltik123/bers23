@@ -184,8 +184,7 @@
       "disposition": "DEPLOYMENT_TARGET_PENDING",
       "evidence": "tests/frontend-security-deployment-contract.test.mjs",
       "workflow": ".github/workflows/security-frontend-deployment-contract.yml",
-      "verifier": "scripts/verify-frontend-security-headers.mjs",
-      "liveEvidence": null
+      "verifier": "scripts/verify-frontend-security-headers.mjs"
     }
   ]
 }
