@@ -197,6 +197,23 @@ export const coreClient = Object.freeze({
     },
     uploadMaskedWhiteBalanceImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/masked-white-balance/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
     submitMaskedWhiteBalance: ({ ticketId, projectId, result }) => request(`/local-execution/masked-white-balance/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
+    prepareMaskedLevels: (payload) => request('/local-execution/masked-levels/prepare', json('POST', payload)),
+    loadMaskedLevelsInputs: async ({ ticketId, projectId }) => {
+      const delivered = await requestBytes(`/local-execution/masked-levels/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
+      const width = Number(delivered.headers.get('X-Bers-Local-Input-Width'));
+      const height = Number(delivered.headers.get('X-Bers-Local-Input-Height'));
+      const sourceSha256 = delivered.headers.get('X-Bers-Local-Source-Sha256') || '';
+      const maskSha256 = delivered.headers.get('X-Bers-Local-Mask-Sha256') || '';
+      const pixels = width * height;
+      if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || !Number.isSafeInteger(pixels) || delivered.bytes.byteLength !== pixels * 5) throw new Error('Invalid Masked Levels input delivery');
+      return Object.freeze({
+        width, height, sourceSha256, maskSha256,
+        sourceRgba: delivered.bytes.slice(0, pixels * 4),
+        maskAlpha: delivered.bytes.slice(pixels * 4),
+      });
+    },
+    uploadMaskedLevelsImage: ({ ticketId, projectId, bytes }) => request(`/local-execution/masked-levels/${encodeURIComponent(ticketId)}/image-upload?${new URLSearchParams({ projectId })}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes }),
+    submitMaskedLevels: ({ ticketId, projectId, result }) => request(`/local-execution/masked-levels/${encodeURIComponent(ticketId)}/result`, json('POST', { projectId, result })),
     prepareCrop: (payload) => request('/local-execution/crop/prepare', json('POST', payload)),
     loadCropInput: async ({ ticketId, projectId }) => {
       const delivered = await requestBytes(`/local-execution/crop/${encodeURIComponent(ticketId)}/inputs?${new URLSearchParams({ projectId })}`);
