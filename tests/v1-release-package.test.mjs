@@ -21,7 +21,7 @@ test('release package classifies the enabled v1 product floor explicitly', () =>
     assert.equal(byId[id].enabled,true,id);
   }
   assert.equal(byId.GENERATIVE_LOCAL_MODELS_STAGE_D.enabled,false);
-  assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.classification,'SOFTWARE_READY_EVIDENCE_PENDING');
+  assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.classification,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
   assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.enabled,false);
   assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.v1ReleaseBlocking,true);
   assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.postV1Research,false);
