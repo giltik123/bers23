@@ -1,14 +1,14 @@
-# BERS v1.0 release notes — RC selected package
+# BERS v1.0 release notes — pre-RC package
 
 Target release: **BERS v1.0 / 1.0.0**.
 
-This document is the prepared release-note package. It is intentionally **not** a declaration that v1.0 has shipped. The selected RC product coordinate is `6a5c63ed32e8ae82e500e5a1c4fe22409705b174`; the final release SHA and `v1.0.0` tag remain unset until the fail-closed publication sequence completes.
+This document is the prepared release-note package. It is intentionally **not** a declaration that v1.0 has shipped. Masked Levels is now part of the candidate production surface, so the previous RC coordinate has been invalidated; a replacement exact-main RC will be selected only after fresh hosted deployment evidence.
 
 ## Included production surface
 
 - Canonical Core authentication/session, Project and Artifact authority.
 - Explicit Preview -> Accept / Discard with durable history, Undo/Redo/Version/Restore and stale-source recovery.
-- Deterministic Editor v1: Crop, Resize, Rotate/Flip, canonical Selection/MASK, Background Isolation, Masked Exposure and Masked White Balance.
+- Deterministic Editor v1: Crop, Resize, Rotate/Flip, canonical Selection/MASK, Background Isolation, Masked Exposure, Masked White Balance and Masked Levels.
 - Managed Wardrobe, garment multi-view metadata, Collections and canonical ordered Outfits.
 - Deterministic one-garment Try-On through canonical readiness, body anchors, mesh warp, texture composite, FINAL Preview and explicit Project Accept.
 - Bounded Agent/AEE v1 path with durable canonical run recovery.
@@ -20,7 +20,7 @@ This document is the prepared release-note package. It is intentionally **not** 
 
 The following existing code/research does not gain production authority merely by shipping in the repository:
 
-- Levels / Masked Levels reviewed kernels are not admitted production Editor executors.
+- Global Levels remains a reviewed kernel but is not admitted as a standalone production Editor executor.
 - MobileSAM, MODNet, Real-ESRGAN, Big-LaMa, Tiny-SD and Kandinsky remain CANDIDATE/R&D under the Stage D v1 decision matrix.
 - HSME remains non-production. Physical-mobile qualification is explicitly deferred to post-v1 research and grants no v1 production authority.
 - Billing/payments/subscriptions/credits are deferred for redesign and are outside the v1 product floor.
@@ -29,11 +29,16 @@ The following existing code/research does not gain production authority merely b
 
 ## RC evidence state
 
-The mandatory pre-RC external evidence is now recorded:
+The previous journey-22 evidence remains historical evidence for the earlier product coordinate only. It is deliberately not attached to this feature branch's readiness ledger.
 
-1. journey 22 hosted frontend security evidence is bound to exact SHA `6a5c63ed32e8ae82e500e5a1c4fe22409705b174` by workflow run `36846842313` and artifact `11153896139`;
-2. GitHub `main` is protected by active ruleset id `24246282` with PR-only updates, zero mandatory human approvals, strict seven-check enforcement, blocked deletion/non-fast-forward updates, and no bypass actors.
+Before a replacement RC can be selected:
 
-Physical-mobile HSME qualification remains open post-v1 research and is not a v1 RC blocker.
+1. merge the accepted product change to `main`;
+2. deploy the frontend at that exact new main SHA;
+3. rerun canonical hosted frontend security evidence;
+4. bind journey 22 to the new exact SHA;
+5. reselect `BERS_V1_RC`.
 
-RC selection does **not** authorize publication. Before `v1.0.0` is created, the remaining finalization sequence still requires the reviewed release-authorization metadata transition, exact-main mandatory checks, the fail-closed publisher, and immutable publication evidence. Production Core rollout must also satisfy its existing migration, readiness, authentication/provider, and security contracts; RC selection does not waive those requirements.
+GitHub `main` protection remains enforced by ruleset id `24246282`. Physical-mobile HSME qualification remains post-v1 research and is not a v1 RC blocker.
+
+RC selection does **not** authorize publication. Production Core rollout must also satisfy its existing migration, readiness, authentication/provider, and security contracts.
