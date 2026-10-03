@@ -256,7 +256,7 @@ test('readiness state machine permits frontend evidence to remain proven while H
   assert.equal(result.payload.hsmeValidationState,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
 });
 
-test('readiness state machine selects one exact RC only after all blockers are removed and HSME is R&D_VALIDATED', () => {
+test('readiness state machine selects one exact RC only after Fashion quality and HSME evidence are accepted', () => {
   const sha='a'.repeat(40);
   const selectedJourneys={
     ...journeys,
@@ -282,6 +282,7 @@ test('readiness state machine selects one exact RC only after all blockers are r
   assert.equal(result.payload.rcCoordinate,sha);
   assert.equal(result.payload.provenBrowserJourneys,21);
   assert.deepEqual(result.payload.pendingBrowserJourneys,[]);
+  assert.equal(result.payload.fashionQualityState,'QUALITY_VALIDATED');
   assert.equal(result.payload.hsmeValidationState,'R&D_VALIDATED');
 });
 
@@ -363,7 +364,7 @@ test('readiness state machine requires the exact HSME blocker until R&D_VALIDATE
     () => validateV1ReleaseReadiness({
       readiness:{
         ...readiness,
-        blockers:[{...hsmeBlocker(),issue:871}],
+        blockers:[fashionQualityBlocker(),{...hsmeBlocker(),issue:871}],
       },
       journeys,
       stageD,
