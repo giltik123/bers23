@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
     paths:
       - 'config/v1-release-readiness.json'
+      - 'config/v1-capability-classification.json'
       - 'config/v1-release-journey-matrix.json'
       - 'config/v1-generative-decision-matrix.json'
       - 'scripts/check-v1-release-readiness.mjs'
