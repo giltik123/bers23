@@ -7,7 +7,6 @@ const EXACT_SHA_RE = /^[0-9a-f]{40}$/u;
 const ALLOWED_BLOCKERS = Object.freeze(new Map([
   ['FRONTEND_DEPLOYMENT_HEADERS', Object.freeze({ issue: 233, releaseGate: 'R4' })],
   ['REPOSITORY_MAIN_PROTECTION', Object.freeze({ issue: 355, releaseGate: 'R1' })],
-  ['HSME_REAL_MOBILE_EVIDENCE', Object.freeze({ issue: 352, releaseGate: 'R5' })],
 ]));
 
 export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
@@ -29,14 +28,12 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
     if (blocker.releaseGate !== accepted.releaseGate) throw new Error(`${blocker.id} release gate mismatch`);
   }
 
-  const hsmeBlocked = blockerIds.includes('HSME_REAL_MOBILE_EVIDENCE');
   const hsmeState = validateHsmeValidation(readiness.hsmeValidation);
-  if (hsmeState === 'R&D_VALIDATED' && hsmeBlocked) {
-    throw new Error('R&D_VALIDATED HSME cannot remain a release blocker');
-  }
-  if (hsmeState !== 'R&D_VALIDATED' && !hsmeBlocked) {
-    throw new Error('HSME must block RC until R&D_VALIDATED');
-  }
+  validateHsmeReleaseOverride(
+    readiness.releasePolicyOverride,
+    readiness.nonBlockingDeferred,
+    hsmeState,
+  );
 
   const mainProtectionBlocked = blockerIds.includes('REPOSITORY_MAIN_PROTECTION');
   if (mainProtectionBlocked) {
@@ -45,10 +42,6 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
     }
   } else {
     validateMainProtectionEvidence(readiness.mainProtectionEvidence);
-  }
-
-  if (readiness.nonBlockingDeferred.some(value => value.id === 'HSME_REAL_MOBILE_EVIDENCE' || value.issue === 352)) {
-    throw new Error('HSME cannot be listed as non-blocking deferred work before v1');
   }
 
   const entries = Array.isArray(journeys.entries) ? journeys.entries : [];
@@ -152,6 +145,8 @@ function validateHsmeValidation(value) {
   if (value.kind !== 'BERS_V1_HSME_RND_VALIDATION') throw new Error('hsmeValidation kind mismatch');
   if (value.requiredClassification !== 'R&D_VALIDATED') throw new Error('hsmeValidation requiredClassification mismatch');
   if (value.productionAuthorityGranted !== false) throw new Error('HSME R&D validation cannot grant production authority');
+  if (value.releaseBlocking !== false) throw new Error('HSME physical validation must remain non-blocking for v1 after owner override');
+  if (value.releasePolicy !== 'POST_V1_GRADUATION_ONLY') throw new Error('HSME release policy mismatch');
   if (!Array.isArray(value.blockers)) throw new Error('hsmeValidation blockers must be an array');
 
   if (value.currentClassification === 'R&D_VALIDATED') {
@@ -174,7 +169,7 @@ function validateHsmeValidation(value) {
   }
 
   if (value.currentClassification !== 'RND_IMPLEMENTATION_EVIDENCE_PENDING') {
-    throw new Error('HSME pre-RC classification is invalid');
+    throw new Error('HSME pending classification is invalid');
   }
   if (value.state !== 'BLOCKED') throw new Error('pending HSME validation must remain BLOCKED');
   if (value.blockers.length === 0) throw new Error('pending HSME validation requires explicit blockers');
@@ -185,6 +180,37 @@ function validateHsmeValidation(value) {
     throw new Error('pending HSME validation cannot claim final architecture disposition');
   }
   return 'RND_IMPLEMENTATION_EVIDENCE_PENDING';
+}
+
+function validateHsmeReleaseOverride(value, nonBlockingDeferred, hsmeState) {
+  requireObject(value, 'releasePolicyOverride');
+  if (value.schemaVersion !== 1) throw new Error('releasePolicyOverride schemaVersion is invalid');
+  if (value.id !== 'DEFER_HSME_PHYSICAL_MOBILE_PRE_RC_GATE') {
+    throw new Error('releasePolicyOverride id mismatch');
+  }
+  if (value.riskOwner !== 'PRODUCT_OWNER') throw new Error('releasePolicyOverride risk owner mismatch');
+  if (value.scope !== 'BERS_V1_RC_AND_V1_RELEASE') throw new Error('releasePolicyOverride scope mismatch');
+  if (typeof value.authorizedAt !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/u.test(value.authorizedAt)) {
+    throw new Error('releasePolicyOverride authorizedAt is invalid');
+  }
+  if (!Array.isArray(value.preserves) ||
+      !value.preserves.includes('HSME_NON_PRODUCTION_UNTIL_SEPARATELY_VALIDATED') ||
+      !value.preserves.includes('NO_PROVIDER_OR_BILLING_AUTHORITY') ||
+      !value.preserves.includes('NO_MODEL_OR_MOBILE_BACKEND_ADMISSION') ||
+      !value.preserves.includes('CORE_POSTGRES_SECURITY_DEPLOYMENT_BACKUP_BROWSER_GATES')) {
+    throw new Error('releasePolicyOverride preserved safety/release boundaries are incomplete');
+  }
+
+  const deferred = nonBlockingDeferred.find(item => item?.id === 'HSME_PHYSICAL_MOBILE_VALIDATION');
+  if (hsmeState !== 'R&D_VALIDATED') {
+    requireObject(deferred, 'nonBlockingDeferred HSME physical validation');
+    if (deferred.issue !== 352 ||
+        deferred.state !== 'OWNER_DEFERRED_POST_V1_FIELD_VALIDATION' ||
+        deferred.releaseBlocking !== false ||
+        deferred.riskOwner !== 'PRODUCT_OWNER') {
+      throw new Error('HSME post-v1 deferral contract mismatch');
+    }
+  }
 }
 
 function validateMainProtectionEvidence(value) {
