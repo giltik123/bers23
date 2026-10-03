@@ -54,14 +54,7 @@ jobs:
             "shell getprop ro.kernel.qemu") echo 0 ;;
             "shell getprop ro.boot.qemu") echo 0 ;;
             "shell dumpsys battery")
-              cat <<'EOF'
-AC powered: false
-USB powered: false
-Wireless powered: false
-  status: 3
-  level: 78
-  scale: 100
-EOF
+              printf 'AC powered: false\\nUSB powered: false\\nWireless powered: false\\n  status: 3\\n  level: 78\\n  scale: 100\\n'
               ;;
             "shell pidof com.bers.app") echo 4242 ;;
             "shell cat /proc/4242/status")
