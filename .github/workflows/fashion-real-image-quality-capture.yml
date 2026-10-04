@@ -156,9 +156,8 @@ jobs:
           if git ls-remote --exit-code --heads origin "refs/heads/$EVIDENCE_BRANCH" >/dev/null 2>&1; then
             git fetch --no-tags origin "refs/heads/$EVIDENCE_BRANCH:refs/remotes/origin/$EVIDENCE_BRANCH"
             existing="$(git show "origin/$EVIDENCE_BRANCH:release-evidence/v1/fashion/$CANDIDATE_SHA/capture-metrics.json")"
-            CANDIDATE_SHA="$CANDIDATE_SHA" node --input-type=module <<'NODE' <<<"$existing"
-          import fs from 'node:fs';
-          const value=JSON.parse(fs.readFileSync(0,'utf8'));
+            CANDIDATE_SHA="$CANDIDATE_SHA" EXISTING_JSON="$existing" node --input-type=module <<'NODE'
+          const value=JSON.parse(process.env.EXISTING_JSON);
           if (value.candidateSha !== process.env.CANDIDATE_SHA) throw new Error('Existing evidence branch candidate SHA mismatch');
           if (value.productionAuthorityGranted !== false) throw new Error('Existing evidence branch unexpectedly grants authority');
           NODE
