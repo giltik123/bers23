@@ -14,6 +14,7 @@ const WORKFLOW_RUN_URL_RE = /^https:\/\/github\.com\/giltik123\/bers23\/actions\
 export async function verifyFrontendSecurityHeaders(input) {
   const frontendUrl = normalizeFrontendUrl(input?.frontendUrl);
   const coreApiUrl = input?.coreApiUrl || '/api/core';
+  const expectedSha = normalizeExpectedSha(input?.expectedSha);
   const fetcher = input?.fetcher ?? globalThis.fetch;
   if (typeof fetcher !== 'function') throw new Error('Frontend security verifier requires fetch');
 
@@ -40,6 +41,10 @@ export async function verifyFrontendSecurityHeaders(input) {
   assertExactHeader(response.headers, 'x-frame-options', 'DENY');
   assertExactHeader(response.headers, 'referrer-policy', 'no-referrer');
   if (frontendUrl.protocol === 'https:') assertProductionHsts(response.headers.get('strict-transport-security'));
+  const deployedSha = normalizeObservedDeploymentSha(response.headers.get('x-bers-deployment-sha'));
+  if (expectedSha && deployedSha !== expectedSha) {
+    throw new Error(`Frontend deployment SHA mismatch: expected ${expectedSha}, received ${deployedSha ?? 'missing'}`);
+  }
 
   const html = await response.text();
   if (!html.trim()) throw new Error('Frontend root returned an empty HTML document');
@@ -58,8 +63,23 @@ export async function verifyFrontendSecurityHeaders(input) {
     status: response.status,
     requiredHeaders: requiredProductionFrontendHeaders(coreApiUrl),
     observedHeaders,
+    deployedSha,
     htmlSha256: createHash('sha256').update(html).digest('hex'),
   });
+}
+
+function normalizeExpectedSha(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (!EXACT_SHA_RE.test(normalized)) throw new Error('Expected frontend deployment SHA must be one exact Git SHA');
+  return normalized;
+}
+
+function normalizeObservedDeploymentSha(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (!EXACT_SHA_RE.test(normalized)) throw new Error('Frontend X-BERS-Deployment-SHA header must be one exact Git SHA');
+  return normalized;
 }
 
 function assertExactHeader(headers, name, expected) {
@@ -122,6 +142,12 @@ export function buildFrontendSecurityEvidence(result, provenance = {}) {
     if (!EXACT_SHA_RE.test(verifiedSha)) {
       throw new Error('Hosted frontend evidence verifiedSha must be one exact Git SHA');
     }
+    if (!EXACT_SHA_RE.test(String(result?.deployedSha ?? ''))) {
+      throw new Error('Hosted frontend evidence requires one exact deployedSha from the live frontend');
+    }
+    if (result.deployedSha !== verifiedSha) {
+      throw new Error('Hosted frontend evidence deployedSha must equal verifiedSha');
+    }
     if (!WORKFLOW_RUN_URL_RE.test(workflowRunUrl)) {
       throw new Error('Hosted frontend evidence workflowRunUrl is invalid');
     }
@@ -140,7 +166,7 @@ async function main() {
   const frontendUrl = process.argv[2] || process.env.FRONTEND_URL;
   const coreApiUrl = process.argv[3] || process.env.CORE_API_URL || '/api/core';
   const evidenceOut = process.env.EVIDENCE_OUT?.trim() || null;
-  const result = await verifyFrontendSecurityHeaders({ frontendUrl, coreApiUrl });
+  const result = await verifyFrontendSecurityHeaders({ frontendUrl, coreApiUrl, expectedSha: process.env.VERIFIED_SHA });
   const evidence = buildFrontendSecurityEvidence(result, {
     verifiedSha: process.env.VERIFIED_SHA,
     workflowRunUrl: process.env.WORKFLOW_RUN_URL,
@@ -155,6 +181,7 @@ async function main() {
     frontendUrl: result.frontendUrl,
     coreApiUrl: result.coreApiUrl,
     evidenceOut,
+    deployedSha: result.deployedSha,
     htmlSha256: result.htmlSha256,
   }));
 }
