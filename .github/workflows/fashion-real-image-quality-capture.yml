@@ -1,6 +1,15 @@
 name: Fashion real-image quality capture
 
 on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'config/v1-fashion-real-image-fixtures.json'
+      - 'scripts/capture-fashion-real-image-quality.mjs'
+      - 'tests/fashion-real-image-quality-capture-contract.test.mjs'
+      - 'src/platform/creative/deterministic/GarmentMeshWarp.ts'
+      - 'src/platform/creative/deterministic/GarmentTextureComposite.ts'
+      - '.github/workflows/fashion-real-image-quality-capture.yml'
   pull_request:
     paths:
       - 'config/v1-fashion-real-image-fixtures.json'
