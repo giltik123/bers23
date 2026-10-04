@@ -16,10 +16,16 @@ const operations = await readFile('docs/v1-release-operations.md','utf8');
 test('release package classifies the enabled v1 product floor explicitly', () => {
   assert.equal(classifications.targetVersion, '1.0.0');
   const byId = Object.fromEntries(classifications.entries.map(value=>[value.id,value]));
-  for (const id of ['CORE_PROJECT_ARTIFACT','DETERMINISTIC_EDITOR_V1','WARDROBE_COLLECTIONS_OUTFITS','DETERMINISTIC_TRYON_V1','BOUNDED_AGENT_AEE_V1','AUTOMATION_V1','JOB_CENTER_V1']) {
+  for (const id of ['CORE_PROJECT_ARTIFACT','DETERMINISTIC_EDITOR_V1','WARDROBE_COLLECTIONS_OUTFITS','BOUNDED_AGENT_AEE_V1','AUTOMATION_V1','JOB_CENTER_V1']) {
     assert.equal(byId[id].classification,'PRODUCTION_READY',id);
     assert.equal(byId[id].enabled,true,id);
   }
+  assert.equal(byId.DETERMINISTIC_TRYON_V1.classification,'SOFTWARE_READY_QUALITY_EVIDENCE_PENDING');
+  assert.equal(byId.DETERMINISTIC_TRYON_V1.enabled,true);
+  assert.equal(byId.DETERMINISTIC_TRYON_V1.releaseBlocking,true);
+  assert.equal(readiness.fashionTryOnQualityValidation.currentClassification,'QUALITY_EVIDENCE_PENDING');
+  assert.equal(readiness.fashionTryOnQualityValidation.state,'BLOCKED');
+  assert.equal(readiness.blockers.some(value=>value.id==='FASHION_REAL_IMAGE_QUALITY'),true);
   assert.equal(byId.GENERATIVE_LOCAL_MODELS_STAGE_D.enabled,false);
   assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.classification,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
   assert.equal(byId.HSME_V1_RESEARCH_PROGRAM.enabled,false);
