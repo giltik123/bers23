@@ -40,12 +40,15 @@
     },
     {
       "id": "DETERMINISTIC_TRYON_V1",
-      "classification": "PRODUCTION_READY",
+      "classification": "SOFTWARE_READY_QUALITY_EVIDENCE_PENDING",
       "enabled": true,
-      "scope": "one-garment deterministic readiness, PARAMETRIC evidence/body anchors, mesh warp, texture composite, canonical FINAL Preview and explicit Project Accept",
+      "scope": "one-garment deterministic readiness, PARAMETRIC evidence/body anchors, mesh warp, texture composite, canonical FINAL Preview and explicit Project Accept; software path accepted, representative real-image quality/resource evidence pending",
       "evidence": [
-        "config/v1-release-journey-matrix.json#16"
-      ]
+        "config/v1-release-journey-matrix.json#16",
+        "config/v1-release-readiness.json#fashionTryOnQualityValidation",
+        "https://github.com/giltik123/bers23/issues/230"
+      ],
+      "releaseBlocking": true
     },
     {
       "id": "BOUNDED_AGENT_AEE_V1",
