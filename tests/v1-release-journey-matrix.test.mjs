@@ -56,6 +56,7 @@ test('journey 22 is either honestly deployment-pending or bound to recorded live
     assert.match(workflow,/Prove frontend security policy and live-header verifier/);
     assert.match(verifier,/FRONTEND_URL/);
     assert.match(verifier,/strict-transport-security/);
+    assert.match(verifier,/x-bers-deployment-sha/);
     assert.equal(entry.liveEvidence,undefined);
   } else {
     assert.equal(entry.disposition,'PROVEN');
@@ -63,6 +64,8 @@ test('journey 22 is either honestly deployment-pending or bound to recorded live
     assert.equal(evidence?.schemaVersion,1);
     assert.equal(evidence?.kind,'BERS_V1_FRONTEND_SECURITY_EVIDENCE');
     assert.match(evidence?.verifiedSha ?? '',/^[0-9a-f]{40}$/u);
+    assert.match(evidence?.deployedSha ?? '',/^[0-9a-f]{40}$/u);
+    assert.equal(evidence.deployedSha,evidence.verifiedSha);
     assert.match(evidence?.htmlSha256 ?? '',/^[0-9a-f]{64}$/u);
     assert.match(evidence?.frontendUrl ?? '',/^https:\/\//u);
     assert.equal(typeof evidence?.coreApiUrl,'string');
