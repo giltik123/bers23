@@ -25,7 +25,7 @@
     {
       "id": "project-fashion-model-portrait",
       "sourceKind": "REAL_PHOTOGRAPH",
-      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Fashion_model_portrait.jpg",
+      "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/c/c2/Fashion_model_portrait.jpg",
       "licenseUrl": "https://commons.wikimedia.org/wiki/File:Fashion_model_portrait.jpg",
       "license": "CC0-1.0",
       "torsoQ16Normalized": [
@@ -50,7 +50,7 @@
     {
       "id": "project-ashirt",
       "sourceKind": "REAL_PHOTOGRAPH",
-      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Ashirt.jpg",
+      "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/5/5a/Ashirt.jpg",
       "licenseUrl": "https://commons.wikimedia.org/wiki/File:Ashirt.jpg",
       "license": "PUBLIC_DOMAIN",
       "torsoQ16Normalized": [
@@ -75,7 +75,7 @@
     {
       "id": "project-woman-pink-blue-dress",
       "sourceKind": "REAL_PHOTOGRAPH",
-      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Woman_pink_and_blue_dress_(crop_full_body).jpg",
+      "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/2/2d/Woman_pink_and_blue_dress_%28crop_full_body%29.jpg",
       "licenseUrl": "https://commons.wikimedia.org/wiki/File:Woman_pink_and_blue_dress_(crop_full_body).jpg",
       "license": "CC0-1.0",
       "torsoQ16Normalized": [
@@ -102,7 +102,7 @@
     {
       "id": "garment-vintage-aloha",
       "sourceKind": "REAL_GARMENT_PHOTOGRAPH",
-      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Vintage_aloha_shirt_crop.png",
+      "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Vintage_aloha_shirt_crop.png",
       "licenseUrl": "https://commons.wikimedia.org/wiki/File:Vintage_aloha_shirt_crop.png",
       "license": "PUBLIC_DOMAIN",
       "reviewFocus": [
@@ -113,7 +113,7 @@
     {
       "id": "garment-admin-logo-shirt",
       "sourceKind": "LOGO_PATTERN_REFERENCE",
-      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Admin_T-shirt_again.png",
+      "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/4/43/Admin_T-shirt_again.png",
       "licenseUrl": "https://commons.wikimedia.org/wiki/File:Admin_T-shirt_again.png",
       "license": "CC0-1.0",
       "reviewFocus": [
