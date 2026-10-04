@@ -45,7 +45,7 @@ export class CanonicalAuthService {
   readonly #defaultTenantId: string;
   readonly #publicOrigin: string;
   readonly #email: AuthEmailSender;
-  readonly #google: GoogleOidcClient;
+  readonly #google?: GoogleOidcClient;
 
   constructor(input: Readonly<{
     store: PostgresAuthStore;
@@ -55,7 +55,7 @@ export class CanonicalAuthService {
     defaultTenantId: string;
     publicOrigin: string;
     email: AuthEmailSender;
-    google: GoogleOidcClient;
+    google?: GoogleOidcClient;
     now?: () => number;
     sessionTtlMs?: number;
     sessionIdleTtlMs?: number;
@@ -181,6 +181,7 @@ export class CanonicalAuthService {
   }
 
   async googleStart(returnTo?: string, risk?: AuthRiskContext, previousAuthorization?: string) {
+    if (!this.#google) throw oauthUnavailable();
     const peerBudget = await this.#peerBudget('oauth-start:peer', risk, LIMIT.oauthStartPeer);
     if (!peerBudget.allowed) throw rateLimited(peerBudget.retryAfterMs);
     const state = opaqueToken(32), nonce = opaqueToken(32), now = this.#now();
@@ -201,6 +202,7 @@ export class CanonicalAuthService {
   }
 
   async googleCallback(state: string, code: string, risk?: AuthRiskContext, previousAuthorization?: string) {
+    if (!this.#google) throw oauthUnavailable();
     const peerBudget = await this.#peerBudget('oauth-callback:peer', risk, LIMIT.oauthCallbackPeer);
     if (!peerBudget.allowed) throw rateLimited(peerBudget.retryAfterMs);
     const stateBudget = await this.#subjectBudget('oauth-callback:state', normalizeOpaqueSubject(state), LIMIT.oauthState);
@@ -354,5 +356,6 @@ function invalidCredentials() { return Object.assign(new Error('Invalid email or
 function invalidVerification() { return Object.assign(new Error('Verification code is invalid or expired'), { status: 400, code: 'invalid_verification', retryable: false }); }
 function invalidReset() { return Object.assign(new Error('Password reset token is invalid or expired'), { status: 400, code: 'invalid_reset_token', retryable: false }); }
 function oauthDenied() { return Object.assign(new Error('Google authentication failed'), { status: 401, code: 'oauth_failed', retryable: false }); }
+function oauthUnavailable() { return Object.assign(new Error('Google authentication is not enabled'), { status: 404, code: 'oauth_not_enabled', retryable: false }); }
 function rateLimited(retryAfterMs: number) { return Object.assign(new Error('Too many authentication attempts'), { status: 429, code: 'auth_rate_limited', retryable: true, retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) }); }
 function unauthenticated() { return Object.assign(new Error('Authentication token is invalid'), { status: 401, code: 'unauthenticated', retryable: false }); }
