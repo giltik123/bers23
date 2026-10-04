@@ -55,7 +55,8 @@ function percentile(values, p) {
 
 async function downloadFixture(fixture) {
   let lastError;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const response = await fetch(fixture.sourceUrl, {
         redirect: 'follow',
@@ -65,7 +66,14 @@ async function downloadFixture(fixture) {
         },
         signal: AbortSignal.timeout(60_000),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status} for ${fixture.id}`);
+      if (!response.ok) {
+        const retryAfterSeconds = Number(response.headers.get('retry-after'));
+        const error = new Error(`HTTP ${response.status} for ${fixture.id}`);
+        error.retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? retryAfterSeconds * 1000
+          : null;
+        throw error;
+      }
       const type = response.headers.get('content-type') || '';
       if (!/^image\//i.test(type)) throw new Error(`Non-image content type for ${fixture.id}: ${type}`);
       const buffer = Buffer.from(await response.arrayBuffer());
@@ -79,7 +87,12 @@ async function downloadFixture(fixture) {
       };
     } catch (error) {
       lastError = error;
-      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+      if (attempt < maxAttempts) {
+        const fallbackMs = [2000, 8000, 20000][attempt - 1];
+        const retryAfterMs = Number(error?.retryAfterMs);
+        const delayMs = Math.max(fallbackMs, Number.isFinite(retryAfterMs) ? retryAfterMs : 0);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
     }
   }
   throw lastError;
