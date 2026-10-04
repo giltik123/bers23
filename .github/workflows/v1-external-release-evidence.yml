@@ -5,8 +5,10 @@ on:
     branches: [ "main" ]
     paths:
       - 'scripts/verify-frontend-security-headers.mjs'
+      - 'scripts/serve-production-frontend.mjs'
       - 'scripts/verify-github-main-protection.mjs'
       - 'tests/frontend-security-deployment-contract.test.mjs'
+      - 'tests/production-frontend-server.test.mjs'
       - 'tests/v1-external-release-evidence.test.mjs'
       - 'docs/v1-external-release-evidence.md'
       - 'package.json'
