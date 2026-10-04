@@ -29,6 +29,14 @@
   ],
   "blockers": [
     {
+      "id": "FASHION_REAL_IMAGE_QUALITY",
+      "issue": 230,
+      "releaseGate": "R2",
+      "state": "REAL_IMAGE_QUALITY_EVIDENCE_PENDING",
+      "evidence": "config/v1-release-readiness.json#fashionTryOnQualityValidation",
+      "resolution": "Accept representative real-image deterministic Try-On quality/resource evidence bound to the intended release SHA, including garment/logo/pattern review, observed failure modes, measured latency and measured peak memory."
+    },
+    {
       "id": "FRONTEND_DEPLOYMENT_HEADERS",
       "issue": 233,
       "releaseGate": "R4",
@@ -67,7 +75,7 @@
       "consequence": "HSME remains experimental/non-production until separate real-device graduation evidence exists."
     }
   ],
-  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, and rcCoordinate is one exact accepted main SHA with mandatory release evidence green. HSME physical-mobile validation is owner-deferred post-v1 and does not block RC; pending HSME grants no production/provider/Billing/model/mobile-backend authority.",
+  "selectionLaw": "BERS_V1_RC may be assigned only when blockers is empty, rcSelectable is true, and rcCoordinate is one exact accepted main SHA with mandatory release evidence green. Deterministic Try-On requires accepted real-image quality/resource evidence. HSME physical-mobile validation is owner-deferred post-v1 and does not block RC; pending HSME grants no production/provider/Billing/model/mobile-backend authority.",
   "mainProtectionEvidence": {
     "schemaVersion": 1,
     "kind": "BERS_V1_GITHUB_MAIN_PROTECTION_EVIDENCE",
@@ -173,5 +181,24 @@
       "NO_MODEL_OR_MOBILE_BACKEND_ADMISSION",
       "CORE_POSTGRES_SECURITY_DEPLOYMENT_BACKUP_BROWSER_GATES"
     ]
+  },
+  "fashionTryOnQualityValidation": {
+    "schemaVersion": 1,
+    "kind": "BERS_V1_FASHION_REAL_IMAGE_QUALITY_VALIDATION",
+    "requiredClassification": "QUALITY_VALIDATED",
+    "currentClassification": "QUALITY_EVIDENCE_PENDING",
+    "state": "BLOCKED",
+    "issue": 230,
+    "requirements": [
+      "REPRESENTATIVE_REAL_IMAGE_FIXTURE_SET",
+      "GARMENT_LOGO_PATTERN_PRESERVATION_REVIEW",
+      "OBSERVED_FAILURE_MODES",
+      "MEASURED_LATENCY",
+      "MEASURED_PEAK_MEMORY",
+      "EXACT_CANDIDATE_SHA_BINDING",
+      "IMMUTABLE_REVIEW_ARTIFACT"
+    ],
+    "acceptedEvidence": null,
+    "productionAuthorityGrantedByEvidence": false
   }
 }
