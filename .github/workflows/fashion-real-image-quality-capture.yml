@@ -7,6 +7,8 @@ on:
       - 'config/v1-fashion-real-image-fixtures.json'
       - 'scripts/capture-fashion-real-image-quality.mjs'
       - 'tests/fashion-real-image-quality-capture-contract.test.mjs'
+      - 'tests/fashion-real-image-review-publication.test.mjs'
+      - 'scripts/publish-fashion-real-image-review-evidence.mjs'
       - 'src/platform/creative/deterministic/GarmentMeshWarp.ts'
       - 'src/platform/creative/deterministic/GarmentTextureComposite.ts'
       - '.github/workflows/fashion-real-image-quality-capture.yml'
@@ -15,6 +17,8 @@ on:
       - 'config/v1-fashion-real-image-fixtures.json'
       - 'scripts/capture-fashion-real-image-quality.mjs'
       - 'tests/fashion-real-image-quality-capture-contract.test.mjs'
+      - 'tests/fashion-real-image-review-publication.test.mjs'
+      - 'scripts/publish-fashion-real-image-review-evidence.mjs'
       - 'src/platform/creative/deterministic/GarmentMeshWarp.ts'
       - 'src/platform/creative/deterministic/GarmentTextureComposite.ts'
       - '.github/workflows/fashion-real-image-quality-capture.yml'
@@ -51,7 +55,7 @@ jobs:
         run: npm ci
 
       - name: Prove capture contract
-        run: node --test tests/fashion-real-image-quality-capture-contract.test.mjs
+        run: node --test tests/fashion-real-image-quality-capture-contract.test.mjs tests/fashion-real-image-review-publication.test.mjs
 
       - name: Build real-image capture harness
         run: |
@@ -94,3 +98,89 @@ jobs:
       - name: Check committed diff whitespace
         if: github.event_name == 'pull_request'
         run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
+
+  publish-review-evidence:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: capture
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      CANDIDATE_SHA: ${{ github.sha }}
+      EVIDENCE_BRANCH: release-evidence-fashion-${{ github.sha }}
+      CAPTURE_DIR: .test-cache/fashion-real-image-quality
+      PUBLICATION_DIR: .test-cache/fashion-review-publication
+    steps:
+      - name: Checkout exact accepted main
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Assert exact accepted main
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Download exact-main capture artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bers-v1-fashion-real-image-quality-${{ github.sha }}
+          path: ${{ env.CAPTURE_DIR }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build immutable review publication
+        run: |
+          set -euo pipefail
+          node scripts/publish-fashion-real-image-review-evidence.mjs \
+            --capture "$CAPTURE_DIR" \
+            --fixtures config/v1-fashion-real-image-fixtures.json \
+            --out "$PUBLICATION_DIR" \
+            --candidate "$CANDIDATE_SHA" \
+            --branch "$EVIDENCE_BRANCH"
+          test -s "$PUBLICATION_DIR/release-evidence/v1/fashion/$CANDIDATE_SHA/fixture-manifest.json"
+          test -s "$PUBLICATION_DIR/release-evidence/v1/fashion/$CANDIDATE_SHA/review-draft.json"
+          ! test -e "$PUBLICATION_DIR/release-evidence/v1/fashion/$CANDIDATE_SHA/review.json"
+
+      - name: Publish exact-SHA review evidence branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin "refs/heads/$EVIDENCE_BRANCH" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/heads/$EVIDENCE_BRANCH:refs/remotes/origin/$EVIDENCE_BRANCH"
+            existing="$(git show "origin/$EVIDENCE_BRANCH:release-evidence/v1/fashion/$CANDIDATE_SHA/capture-metrics.json")"
+            CANDIDATE_SHA="$CANDIDATE_SHA" node --input-type=module <<'NODE' <<<"$existing"
+          import fs from 'node:fs';
+          const value=JSON.parse(fs.readFileSync(0,'utf8'));
+          if (value.candidateSha !== process.env.CANDIDATE_SHA) throw new Error('Existing evidence branch candidate SHA mismatch');
+          if (value.productionAuthorityGranted !== false) throw new Error('Existing evidence branch unexpectedly grants authority');
+          NODE
+            echo "Evidence branch already exists and binds the same candidate SHA."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$EVIDENCE_BRANCH"
+          cp -R "$PUBLICATION_DIR/release-evidence" ./release-evidence
+          git add "release-evidence/v1/fashion/$CANDIDATE_SHA"
+          git commit -m "Evidence: publish Fashion review draft for $CANDIDATE_SHA"
+          git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH"
+
+      - name: Summarize review publication
+        run: |
+          {
+            echo "### Fashion exact-main review publication"
+            echo
+            echo "- Candidate SHA: `$CANDIDATE_SHA`"
+            echo "- Evidence branch: `$EVIDENCE_BRANCH`"
+            echo "- Review state: `PENDING_OWNER_REVIEW`"
+            echo "- No `review.json` or production authority was minted."
+          } >> "$GITHUB_STEP_SUMMARY"
