@@ -71,6 +71,47 @@ function frontendDeploymentBlocker() {
   };
 }
 
+function fashionQualityBlocker() {
+  return {
+    id:'FASHION_REAL_IMAGE_QUALITY',
+    issue:230,
+    releaseGate:'R2',
+    state:'REAL_IMAGE_QUALITY_EVIDENCE_PENDING',
+    evidence:'config/v1-release-readiness.json#fashionTryOnQualityValidation',
+  };
+}
+
+function validatedFashionQuality(candidateSha='a'.repeat(40)) {
+  return {
+    schemaVersion:1,
+    kind:'BERS_V1_FASHION_REAL_IMAGE_QUALITY_VALIDATION',
+    requiredClassification:'QUALITY_VALIDATED',
+    currentClassification:'QUALITY_VALIDATED',
+    state:'QUALITY_VALIDATED',
+    issue:230,
+    requirements:[
+      'REPRESENTATIVE_REAL_IMAGE_FIXTURE_SET',
+      'GARMENT_LOGO_PATTERN_PRESERVATION_REVIEW',
+      'OBSERVED_FAILURE_MODES',
+      'MEASURED_LATENCY',
+      'MEASURED_PEAK_MEMORY',
+      'EXACT_CANDIDATE_SHA_BINDING',
+      'IMMUTABLE_REVIEW_ARTIFACT',
+    ],
+    acceptedEvidence:{
+      candidateSha,
+      fixtureSetSha256:'2'.repeat(64),
+      reviewArtifactSha256:'3'.repeat(64),
+      sampleCount:12,
+      measuredLatencyMs:{p50:18.5,p95:31.25},
+      peakMemoryBytes:64*1024*1024,
+      reviewedDimensions:['GARMENT_PRESERVATION','LOGO_PATTERN_PRESERVATION','FAILURE_MODES'],
+      decision:'ACCEPT_FOR_V1_DETERMINISTIC_TRYON',
+    },
+    productionAuthorityGrantedByEvidence:false,
+  };
+}
+
 function mainProtectionBlocker() {
   return {
     id:'REPOSITORY_MAIN_PROTECTION',
@@ -113,7 +154,7 @@ function validatedHsme() {
 function blockedReadinessWithMainProtection() {
   return {
     ...readiness,
-    blockers:[mainProtectionBlocker()],
+    blockers:[fashionQualityBlocker(),mainProtectionBlocker()],
     rcSelectable:false,
     rcCoordinate:null,
     status:'BERS_V1_RC_NOT_SELECTABLE',
@@ -184,6 +225,10 @@ test('optional/deferred work cannot accidentally block RC through this ledger', 
   assert.equal(readiness.hsmeValidation.state,'BLOCKED');
   assert.equal(readiness.hsmeValidation.releaseBlocking,false);
   assert.equal(readiness.hsmeValidation.productionAuthorityGranted,false);
+  assert.equal(readiness.blockers.some(value=>value.id==='FASHION_REAL_IMAGE_QUALITY'),true);
+  assert.equal(readiness.fashionTryOnQualityValidation.currentClassification,'QUALITY_EVIDENCE_PENDING');
+  assert.equal(readiness.fashionTryOnQualityValidation.state,'BLOCKED');
+  assert.equal(readiness.fashionTryOnQualityValidation.acceptedEvidence,null);
 });
 
 test('readiness classifier emits exactly the disposition declared by the ledger', () => {
@@ -194,6 +239,7 @@ test('readiness classifier emits exactly the disposition declared by the ledger'
   const other=expected === 'BERS_V1_RC_NOT_SELECTABLE' ? 'BERS_V1_RC_SELECTED' : 'BERS_V1_RC_NOT_SELECTABLE';
   assert.doesNotMatch(result.stdout,new RegExp(other));
   assert.match(result.stdout,/RND_IMPLEMENTATION_EVIDENCE_PENDING/);
+  assert.match(result.stdout,/QUALITY_EVIDENCE_PENDING/);
 });
 
 test('canonical roadmap records owner deferral of HSME physical-mobile work without granting production authority', () => {
@@ -216,11 +262,11 @@ test('selection law binds RC selection to empty blockers and one exact accepted 
   }
 });
 
-test('readiness state machine permits pending HSME while frontend deployment remains the release blocker', () => {
+test('readiness state machine permits pending HSME while Fashion quality and frontend deployment block RC', () => {
   const result=validateV1ReleaseReadiness({
     readiness:{
       ...readiness,
-      blockers:[frontendDeploymentBlocker()],
+      blockers:[fashionQualityBlocker(),frontendDeploymentBlocker()],
       rcSelectable:false,
       rcCoordinate:null,
       status:'BERS_V1_RC_NOT_SELECTABLE',
@@ -230,9 +276,10 @@ test('readiness state machine permits pending HSME while frontend deployment rem
     stageD,
   });
   assert.equal(result.marker,'BERS_V1_RC_NOT_SELECTABLE');
-  assert.deepEqual(result.payload.blockers.map(value=>value.id),['FRONTEND_DEPLOYMENT_HEADERS']);
+  assert.deepEqual(result.payload.blockers.map(value=>value.id),['FASHION_REAL_IMAGE_QUALITY','FRONTEND_DEPLOYMENT_HEADERS']);
   assert.deepEqual(result.payload.pendingBrowserJourneys,[22]);
   assert.equal(result.payload.hsmeValidationState,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
+  assert.equal(result.payload.fashionTryOnQualityState,'QUALITY_EVIDENCE_PENDING');
 });
 
 test('readiness state machine selects one exact RC after release blockers are removed even while HSME physical validation is owner-deferred', () => {
@@ -252,6 +299,7 @@ test('readiness state machine selects one exact RC after release blockers are re
       status:'BERS_V1_RC_SELECTED',
       mainProtectionEvidence:mainProtectionEvidence(),
       hsmeValidation:readiness.hsmeValidation,
+      fashionTryOnQualityValidation:validatedFashionQuality(sha),
     },
     journeys:selectedJourneys,
     stageD,
@@ -261,6 +309,7 @@ test('readiness state machine selects one exact RC after release blockers are re
   assert.equal(result.payload.provenBrowserJourneys,21);
   assert.deepEqual(result.payload.pendingBrowserJourneys,[]);
   assert.equal(result.payload.hsmeValidationState,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
+  assert.equal(result.payload.fashionTryOnQualityState,'QUALITY_VALIDATED');
 });
 
 test('readiness state machine rejects premature RC selection and frontend blocker drift', () => {
@@ -288,6 +337,38 @@ test('readiness state machine rejects premature RC selection and frontend blocke
       stageD,
     }),
     /journey 22 must be PROVEN/u,
+  );
+});
+
+test('readiness state machine rejects clearing Fashion quality blocker while quality evidence is pending', () => {
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='FASHION_REAL_IMAGE_QUALITY'),
+      },
+      journeys,
+      stageD,
+    }),
+    /Try-On real-image quality must block RC until QUALITY_VALIDATED/u,
+  );
+});
+
+test('readiness state machine rejects malformed accepted Fashion quality evidence', () => {
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='FASHION_REAL_IMAGE_QUALITY'),
+        fashionTryOnQualityValidation:{
+          ...validatedFashionQuality(),
+          acceptedEvidence:{...validatedFashionQuality().acceptedEvidence,peakMemoryBytes:0},
+        },
+      },
+      journeys,
+      stageD,
+    }),
+    /peakMemoryBytes is invalid/u,
   );
 });
 
@@ -327,7 +408,8 @@ test('readiness state machine rejects reintroducing HSME as a release blocker or
   );
 });
 
-test('readiness state machine keeps deployment pending when frontend evidence is the only release blocker and HSME remains pending', () => {
+test('readiness state machine keeps deployment pending when Fashion quality is validated and frontend is the only release blocker', () => {
+  const sha='c'.repeat(40);
   const result=validateV1ReleaseReadiness({
     readiness:{
       ...readiness,
@@ -337,6 +419,7 @@ test('readiness state machine keeps deployment pending when frontend evidence is
       status:'BERS_V1_RC_NOT_SELECTABLE',
       mainProtectionEvidence:mainProtectionEvidence(),
       hsmeValidation:readiness.hsmeValidation,
+      fashionTryOnQualityValidation:validatedFashionQuality(sha),
     },
     journeys:pendingFrontendJourneys(),
     stageD,
@@ -345,6 +428,7 @@ test('readiness state machine keeps deployment pending when frontend evidence is
   assert.deepEqual(result.payload.blockers.map(value=>value.id),['FRONTEND_DEPLOYMENT_HEADERS']);
   assert.deepEqual(result.payload.pendingBrowserJourneys,[22]);
   assert.equal(result.payload.hsmeValidationState,'RND_IMPLEMENTATION_EVIDENCE_PENDING');
+  assert.equal(result.payload.fashionTryOnQualityState,'QUALITY_VALIDATED');
 });
 
 test('RC readiness workflow follows manifest state and keeps diff hygiene PR-only', async () => {
@@ -376,6 +460,7 @@ test('readiness state machine rejects RC selection that is not the reviewed fron
         status:'BERS_V1_RC_SELECTED',
         mainProtectionEvidence:mainProtectionEvidence(),
         hsmeValidation:validatedHsme(),
+        fashionTryOnQualityValidation:validatedFashionQuality(rcSha),
       },
       journeys:selectedJourneys,
       stageD,
