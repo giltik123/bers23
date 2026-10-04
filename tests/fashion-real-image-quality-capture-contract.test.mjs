@@ -37,6 +37,9 @@ test('workflow binds capture to exact checked-out candidate and uploads reviewab
   assert.match(workflow,/github\.event\.pull_request\.head\.sha \|\| github\.sha/u);
   assert.match(workflow,/test "\$\(git rev-parse HEAD\)" = "\$EXPECTED_SHA"/u);
   assert.match(workflow,/capture-fashion-real-image-quality\.mjs/u);
+  assert.match(workflow,/npx esbuild scripts\/capture-fashion-real-image-quality\.mjs/u);
+  assert.match(workflow,/--external:sharp/u);
+  assert.match(workflow,/fashion-real-image-quality-build\/capture\.mjs/u);
   assert.match(workflow,/fashion-real-image-quality-capture-contract\.test\.mjs/u);
   assert.match(workflow,/actions\/upload-artifact@v4/u);
   assert.match(workflow,/machine-evidence\.json/u);
