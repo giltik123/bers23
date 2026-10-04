@@ -14,6 +14,7 @@ import { checkLocalExecutionUploadSchema, migrateLocalExecutionUploadSchema } fr
 import { PostgresImageArtifactStore } from '../artifacts/postgresImageArtifactStore.ts';
 import type { LocalExecutionExecutorBinding, LocalExecutionModelBinding } from '../../../src/platform/creative/canonical/localExecution.ts';
 import type { PixelImage } from '../../../src/platform/creative/pipeline/ControlledLocalEdit.ts';
+import type { ProviderRuntimePort } from '../../../src/platform/creative/workflow-engine/types.ts';
 import { CanonicalDecisionService, CanonicalPlanningService } from '../../../src/platform/creative/canonical/index.ts';
 import { checkAuthSchema, migrateAuthSchema } from '../auth/authSchema.ts';
 import { CanonicalAuthService } from '../auth/canonicalAuthService.ts';
@@ -96,7 +97,13 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     const projects = new PostgresProjectStore(transactions.pool);
     const workflowContinuations = new PostgresWorkflowContinuationStore(transactions.pool, now);
     const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
-    const runtime = createFalWorkflowRuntime({ apiKey: config.falKey, baseUrl: config.falBaseUrl, timeoutMs: config.providerTimeoutMs, artifacts: externalArtifacts, fetcher });
+    const providerEnabled = config.provider === 'FAL';
+    const runtime: ProviderRuntimePort = providerEnabled
+      ? createFalWorkflowRuntime({ apiKey: requiredFalKey(config), baseUrl: config.falBaseUrl, timeoutMs: config.providerTimeoutMs, artifacts: externalArtifacts, fetcher })
+      : Object.freeze({
+          async execute() { throw Object.assign(new Error('Creative provider is disabled'), { code: 'PROVIDER_DISABLED' }); },
+          cancel() { return false; },
+        });
     const hydrator = new CanonicalArtifactHydrator(artifacts, fetcher);
     const decision = new CanonicalDecisionService();
     const planning = new CanonicalPlanningService();
@@ -114,7 +121,7 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     const localUploads = new PostgresLocalExecutionUploadStore(transactions.pool);
     const canonical = {
       runtime,
-      providers: { isAvailable: (providerId: string) => providerId === 'fal', fallback: () => undefined },
+      providers: { isAvailable: (providerId: string) => providerEnabled && providerId === 'fal', fallback: () => undefined },
       decision,
       planning,
       routeSelector: productionExecutionRoute,
@@ -350,7 +357,9 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
     const authSecurityStore = new PostgresAuthSecurityStore(transactions.pool);
     const authRuntime = resolveAuthRuntime(config);
     const email = new ResendEmailSender({ apiKey: authRuntime.resendApiKey, from: authRuntime.emailFrom, fetcher });
-    const google = new GoogleOidcClient({ clientId: authRuntime.googleClientId, clientSecret: authRuntime.googleClientSecret, redirectUri: new URL('/api/core/auth/callback/google', authRuntime.publicOrigin).toString(), fetcher, now });
+    const google = authRuntime.googleClientId && authRuntime.googleClientSecret
+      ? new GoogleOidcClient({ clientId: authRuntime.googleClientId, clientSecret: authRuntime.googleClientSecret, redirectUri: new URL('/api/core/auth/callback/google', authRuntime.publicOrigin).toString(), fetcher, now })
+      : undefined;
     const auth = new CanonicalAuthService({
       store: authStore,
       securityStore: authSecurityStore,
@@ -402,6 +411,11 @@ export async function createProductionCore(config: CoreServerConfig, options: Pr
       close: () => transactions.close(),
     });
   } catch (error) { await transactions.close(); throw error; }
+}
+
+function requiredFalKey(config: CoreServerConfig): string {
+  if (config.provider !== 'FAL' || !config.falKey) throw new Error('FAL provider is enabled without FAL_KEY');
+  return config.falKey;
 }
 
 function resolveStoredImageStorageId(authority: SignedArtifactAuthority, artifactId: string, scope: Parameters<ArtifactAuthority['owns']>[0]): string | undefined {

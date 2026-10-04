@@ -106,13 +106,15 @@ Retired variables such as `BASE44_ASSET_HOST`, `R2_ASSET_HOST`, and `S3_ASSET_HO
 Production Core requires server-side configuration including:
 
 - `DATABASE_URL`;
-- `FAL_KEY`;
 - `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`;
 - `AUTH_CHALLENGE_SECRET`, `AUTH_DEFAULT_TENANT_ID`, `AUTH_PUBLIC_ORIGIN`;
 - `RESEND_API_KEY`, `AUTH_EMAIL_FROM`;
-- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`;
 - `ARTIFACT_SIGNING_SECRET`;
 - exact `ALLOWED_WEB_ORIGINS`.
+
+For the local-only v1 release profile, set `CREATIVE_PROVIDER=NONE`; `FAL_KEY` is then intentionally absent and provider execution fails closed. If `CREATIVE_PROVIDER=FAL`, `FAL_KEY` becomes mandatory.
+
+Google OAuth is optional but atomic: `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` must either both be present or both absent. The browser must expose Google sign-in only when `VITE_GOOGLE_AUTH_ENABLED=true` and the matching server pair is configured.
 
 `TRUSTED_ASSET_HOSTS` is required only when `ALLOW_LEGACY_ASSET_URLS=true`. Trusted-proxy variables are optional and fail closed to direct socket identity by default.
 

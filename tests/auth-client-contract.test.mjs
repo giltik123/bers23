@@ -61,6 +61,18 @@ test('OAuth callback establishes HttpOnly session server-side and AuthContext tr
   assert.match(client, /['"]auth_code['"]/,'auth_code remains only in the return_to denylist');
 });
 
+test('Google auth UI is explicit opt-in and remains hidden by default', async () => {
+  const [login, register] = await Promise.all([
+    readFile('src/pages/Login.jsx','utf8'),
+    readFile('src/pages/Register.jsx','utf8'),
+  ]);
+  for (const source of [login, register]) {
+    assert.match(source, /VITE_GOOGLE_AUTH_ENABLED/);
+    assert.match(source, /GOOGLE_AUTH_ENABLED\s*&&/);
+    assert.match(source, /loginWithProvider\("google"/);
+  }
+});
+
 test('registration OTP is bound to a browser-held verification handle but never receives a bearer', async () => {
   const [client, register] = await Promise.all([readFile('src/api/coreClient.js','utf8'), readFile('src/pages/Register.jsx','utf8')]);
   assert.match(register,/verificationHandle/);

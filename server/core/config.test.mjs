@@ -16,10 +16,35 @@ test('loads server-only config and fails without required values', () => {
   assert.deepEqual(config.allowedWebOrigins,['https://app.example.test']);
   assert.equal(config.trustedProxyHeaderMode,'NONE');
   assert.deepEqual(config.trustedProxyCidrs,[]);
-  for (const name of ['DATABASE_URL','FAL_KEY','JWT_SECRET','AUTH_CHALLENGE_SECRET','AUTH_DEFAULT_TENANT_ID','AUTH_PUBLIC_ORIGIN','RESEND_API_KEY','AUTH_EMAIL_FROM','GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET']) {
+  for (const name of ['DATABASE_URL','JWT_SECRET','AUTH_CHALLENGE_SECRET','AUTH_DEFAULT_TENANT_ID','AUTH_PUBLIC_ORIGIN','RESEND_API_KEY','AUTH_EMAIL_FROM']) {
     const env = { ...valid }; delete env[name]; assert.throws(() => loadCoreServerConfig(env), new RegExp(name));
   }
 });
+test('cloud creative provider is explicit and local-only NONE requires no FAL credential', () => {
+  const disabled = { ...valid, CREATIVE_PROVIDER: 'NONE' };
+  delete disabled.FAL_KEY;
+  const config = loadCoreServerConfig(disabled);
+  assert.equal(config.provider, 'NONE');
+  assert.equal(config.falKey, undefined);
+
+  assert.throws(() => loadCoreServerConfig({ ...valid, CREATIVE_PROVIDER: 'FAL', FAL_KEY: '' }), /FAL_KEY/);
+  assert.throws(() => loadCoreServerConfig({ ...valid, CREATIVE_PROVIDER: 'REVE' }), /CREATIVE_PROVIDER/);
+});
+
+test('Google OAuth is optional but its client id and secret are an atomic pair', () => {
+  const disabled = { ...valid };
+  delete disabled.GOOGLE_OAUTH_CLIENT_ID;
+  delete disabled.GOOGLE_OAUTH_CLIENT_SECRET;
+  const config = loadCoreServerConfig(disabled);
+  assert.equal(config.googleOauthClientId, undefined);
+  assert.equal(config.googleOauthClientSecret, undefined);
+
+  const missingSecret = { ...valid }; delete missingSecret.GOOGLE_OAUTH_CLIENT_SECRET;
+  assert.throws(() => loadCoreServerConfig(missingSecret), /configured together/);
+  const missingId = { ...valid }; delete missingId.GOOGLE_OAUTH_CLIENT_ID;
+  assert.throws(() => loadCoreServerConfig(missingId), /configured together/);
+});
+
 test('production API bearer compatibility requires explicit opt-in',()=>{
   assert.equal(loadCoreServerConfig({...valid,ALLOW_API_BEARER_AUTH:'true'}).allowApiBearerAuth,true);
   assert.throws(()=>loadCoreServerConfig({...valid,ALLOW_API_BEARER_AUTH:'yes'}),/ALLOW_API_BEARER_AUTH/);
