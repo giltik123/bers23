@@ -5,6 +5,7 @@ import { REQUIRED_V1_APPROVING_REVIEWS, REQUIRED_V1_MAIN_CHECKS } from './verify
 
 const EXACT_SHA_RE = /^[0-9a-f]{40}$/u;
 const ALLOWED_BLOCKERS = Object.freeze(new Map([
+  ['FASHION_REAL_IMAGE_QUALITY', Object.freeze({ issue: 230, releaseGate: 'R2' })],
   ['FRONTEND_DEPLOYMENT_HEADERS', Object.freeze({ issue: 233, releaseGate: 'R4' })],
   ['REPOSITORY_MAIN_PROTECTION', Object.freeze({ issue: 355, releaseGate: 'R1' })],
 ]));
@@ -34,6 +35,15 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
     readiness.nonBlockingDeferred,
     hsmeState,
   );
+
+  const fashionState = validateFashionTryOnQuality(readiness.fashionTryOnQualityValidation);
+  const fashionBlocked = blockerIds.includes('FASHION_REAL_IMAGE_QUALITY');
+  if (fashionState === 'QUALITY_VALIDATED' && fashionBlocked) {
+    throw new Error('QUALITY_VALIDATED Try-On cannot remain a release blocker');
+  }
+  if (fashionState !== 'QUALITY_VALIDATED' && !fashionBlocked) {
+    throw new Error('Try-On real-image quality must block RC until QUALITY_VALIDATED');
+  }
 
   const mainProtectionBlocked = blockerIds.includes('REPOSITORY_MAIN_PROTECTION');
   if (mainProtectionBlocked) {
@@ -111,6 +121,7 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
         ),
         stageDDecisions: stageD.entries.length,
         hsmeValidationState: hsmeState,
+        fashionTryOnQualityState: fashionState,
       }),
     });
   }
@@ -135,8 +146,81 @@ export function validateV1ReleaseReadiness({ readiness, journeys, stageD }) {
       pendingBrowserJourneys: Object.freeze([]),
       stageDDecisions: stageD.entries.length,
       hsmeValidationState: hsmeState,
+      fashionTryOnQualityState: fashionState,
     }),
   });
+}
+
+function validateFashionTryOnQuality(value) {
+  requireObject(value, 'fashionTryOnQualityValidation');
+  if (value.schemaVersion !== 1) throw new Error('fashionTryOnQualityValidation schemaVersion is invalid');
+  if (value.kind !== 'BERS_V1_FASHION_REAL_IMAGE_QUALITY_VALIDATION') {
+    throw new Error('fashionTryOnQualityValidation kind mismatch');
+  }
+  if (value.requiredClassification !== 'QUALITY_VALIDATED') {
+    throw new Error('fashionTryOnQualityValidation requiredClassification mismatch');
+  }
+  if (value.issue !== 230) throw new Error('fashionTryOnQualityValidation issue mismatch');
+  if (value.productionAuthorityGrantedByEvidence !== false) {
+    throw new Error('Try-On quality evidence cannot grant new production/provider/Billing authority');
+  }
+  const required=[
+    'REPRESENTATIVE_REAL_IMAGE_FIXTURE_SET',
+    'GARMENT_LOGO_PATTERN_PRESERVATION_REVIEW',
+    'OBSERVED_FAILURE_MODES',
+    'MEASURED_LATENCY',
+    'MEASURED_PEAK_MEMORY',
+    'EXACT_CANDIDATE_SHA_BINDING',
+    'IMMUTABLE_REVIEW_ARTIFACT',
+  ];
+  if (!Array.isArray(value.requirements) ||
+      required.some(item=>!value.requirements.includes(item))) {
+    throw new Error('fashionTryOnQualityValidation requirements incomplete');
+  }
+
+  if (value.currentClassification === 'QUALITY_VALIDATED') {
+    if (value.state !== 'QUALITY_VALIDATED') throw new Error('validated Try-On quality state mismatch');
+    const evidence=value.acceptedEvidence;
+    requireObject(evidence, 'fashionTryOnQualityValidation.acceptedEvidence');
+    if (!EXACT_SHA_RE.test(evidence.candidateSha ?? '')) {
+      throw new Error('Try-On quality evidence candidateSha is invalid');
+    }
+    if (!/^[0-9a-f]{64}$/u.test(evidence.fixtureSetSha256 ?? '')) {
+      throw new Error('Try-On quality fixtureSetSha256 is invalid');
+    }
+    if (!/^[0-9a-f]{64}$/u.test(evidence.reviewArtifactSha256 ?? '')) {
+      throw new Error('Try-On quality reviewArtifactSha256 is invalid');
+    }
+    if (!Number.isInteger(evidence.sampleCount) || evidence.sampleCount < 1) {
+      throw new Error('Try-On quality evidence sampleCount is invalid');
+    }
+    requireObject(evidence.measuredLatencyMs, 'Try-On quality measuredLatencyMs');
+    const p50=Number(evidence.measuredLatencyMs.p50);
+    const p95=Number(evidence.measuredLatencyMs.p95);
+    if (!Number.isFinite(p50) || !Number.isFinite(p95) || p50 < 0 || p95 < p50) {
+      throw new Error('Try-On quality measured latency is invalid');
+    }
+    if (!Number.isSafeInteger(evidence.peakMemoryBytes) || evidence.peakMemoryBytes <= 0) {
+      throw new Error('Try-On quality peakMemoryBytes is invalid');
+    }
+    const dimensions=Array.isArray(evidence.reviewedDimensions) ? evidence.reviewedDimensions : [];
+    for (const item of ['GARMENT_PRESERVATION','LOGO_PATTERN_PRESERVATION','FAILURE_MODES']) {
+      if (!dimensions.includes(item)) throw new Error(`Try-On quality review missing ${item}`);
+    }
+    if (evidence.decision !== 'ACCEPT_FOR_V1_DETERMINISTIC_TRYON') {
+      throw new Error('Try-On quality evidence decision is not accepted for v1');
+    }
+    return 'QUALITY_VALIDATED';
+  }
+
+  if (value.currentClassification !== 'QUALITY_EVIDENCE_PENDING') {
+    throw new Error('Try-On quality pending classification is invalid');
+  }
+  if (value.state !== 'BLOCKED') throw new Error('pending Try-On quality validation must remain BLOCKED');
+  if (value.acceptedEvidence !== null) {
+    throw new Error('pending Try-On quality validation cannot claim accepted evidence');
+  }
+  return 'QUALITY_EVIDENCE_PENDING';
 }
 
 function validateHsmeValidation(value) {
