@@ -7,15 +7,17 @@ The Core backend is a containerized Node service. The production image contains 
 Production Core requires:
 
 - `DATABASE_URL`
-- `FAL_KEY`
 - `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`
 - `AUTH_CHALLENGE_SECRET`, `AUTH_DEFAULT_TENANT_ID`, `AUTH_PUBLIC_ORIGIN`
 - `RESEND_API_KEY`, `AUTH_EMAIL_FROM`
-- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`
 - `ARTIFACT_SIGNING_SECRET`
 - non-empty exact `ALLOWED_WEB_ORIGINS`
 
-`CREATIVE_PROVIDER` defaults to `FAL`; `PORT` defaults to `8080`. Secrets are server-only and must never use a `VITE_` prefix.
+`CREATIVE_PROVIDER` defaults to `FAL`; set it explicitly to `NONE` for the v1 local-only production surface. `FAL_KEY` is required only when `CREATIVE_PROVIDER=FAL`. Provider routes fail closed before runtime when `CREATIVE_PROVIDER=NONE`.
+
+Google OAuth is optional. Configure `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` together or omit both. When omitted, keep the frontend public flag `VITE_GOOGLE_AUTH_ENABLED` unset/false so the Google sign-in UI is not exposed. Email/password registration, OTP verification and password reset still require `RESEND_API_KEY` and `AUTH_EMAIL_FROM`.
+
+`PORT` defaults to `8080`. Secrets are server-only and must never use a `VITE_` prefix.
 
 `ALLOW_LEGACY_ASSET_URLS` defaults to `false`. `TRUSTED_ASSET_HOSTS` is required only when that legacy URL compatibility path is explicitly enabled; canonical requests use signed Artifact references. Do not configure a trusted asset host merely because a storage provider exists.
 
@@ -69,7 +71,7 @@ Use:
 - `GET /health/live` for process liveness;
 - `GET /health/ready` for traffic readiness.
 
-Readiness checks initialized runtime and PostgreSQL schema state but deliberately does not call FAL. A production Core instance does not auto-migrate missing schema; it fails closed instead.
+Readiness checks initialize runtime and PostgreSQL schema state but deliberately do not call FAL. With `CREATIVE_PROVIDER=NONE`, Core starts without a FAL credential and provider execution remains unavailable by policy. A production Core instance does not auto-migrate missing schema; it fails closed instead.
 
 The Vite frontend is deployed separately. Its origin must agree with `AUTH_PUBLIC_ORIGIN`/`ALLOWED_WEB_ORIGINS`, and `VITE_CORE_API_URL` must resolve to the intended Core `/api/core` boundary. Provider credentials remain only in the Core environment. The frontend HTTP security-header contract is documented separately in `SECURITY_CONFIGURATION.md`.
 
