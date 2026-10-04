@@ -207,8 +207,28 @@ function validateFashionTryOnQuality(value) {
     for (const item of ['GARMENT_PRESERVATION','LOGO_PATTERN_PRESERVATION','FAILURE_MODES']) {
       if (!dimensions.includes(item)) throw new Error(`Try-On quality review missing ${item}`);
     }
+    if (evidence.schemaVersion !== 1 || evidence.kind !== 'BERS_V1_FASHION_REAL_IMAGE_QUALITY_EVIDENCE') {
+      throw new Error('Try-On quality accepted evidence kind/schema is invalid');
+    }
+    if (evidence.productionAuthorityGranted !== false) {
+      throw new Error('Try-On quality evidence cannot grant production authority');
+    }
     if (evidence.decision !== 'ACCEPT_FOR_V1_DETERMINISTIC_TRYON') {
       throw new Error('Try-On quality evidence decision is not accepted for v1');
+    }
+    if (typeof evidence.verifiedAt !== 'string' || !Number.isFinite(Date.parse(evidence.verifiedAt))) {
+      throw new Error('Try-On quality evidence verifiedAt is invalid');
+    }
+    if (!/^https:\/\/github\.com\/giltik123\/bers23\/actions\/runs\/\d+$/u.test(evidence.workflowRunUrl ?? '')) {
+      throw new Error('Try-On quality evidence workflowRunUrl is invalid');
+    }
+    if (evidence.artifactName !== `bers-v1-fashion-real-image-quality-${evidence.candidateSha}`) {
+      throw new Error('Try-On quality evidence artifactName does not bind candidateSha');
+    }
+    for (const [label,url] of [['fixtureManifestUrl',evidence.fixtureManifestUrl],['reviewArtifactUrl',evidence.reviewArtifactUrl]]) {
+      if (typeof url !== 'string' || !/^https:\/\//u.test(url)) {
+        throw new Error(`Try-On quality evidence ${label} must be HTTPS`);
+      }
     }
     return 'QUALITY_VALIDATED';
   }

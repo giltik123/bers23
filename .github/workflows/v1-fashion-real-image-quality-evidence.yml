@@ -1,0 +1,114 @@
+name: BERS v1 Fashion real-image quality evidence
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'scripts/verify-v1-fashion-real-image-quality-evidence.mjs'
+      - 'tests/v1-fashion-real-image-quality-evidence.test.mjs'
+      - 'scripts/check-v1-release-readiness.mjs'
+      - 'tests/v1-release-readiness.test.mjs'
+      - 'docs/v1-fashion-real-image-quality-evidence.md'
+      - 'package.json'
+      - '.github/workflows/v1-fashion-real-image-quality-evidence.yml'
+  workflow_dispatch:
+    inputs:
+      fixture_manifest_url:
+        description: HTTPS URL of representative real-image fixture manifest
+        required: true
+        type: string
+      review_artifact_url:
+        description: HTTPS URL of human-reviewed quality/resource JSON
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Assert exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Prove Fashion real-image evidence verifier contract
+        run: node --test tests/v1-fashion-real-image-quality-evidence.test.mjs tests/v1-release-readiness.test.mjs
+      - name: Check committed diff whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
+
+  capture-reviewed-evidence:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Assert exact dispatched SHA
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Verify real-image bytes, review and measured resource evidence
+        env:
+          VERIFIED_SHA: ${{ github.sha }}
+          FIXTURE_MANIFEST_URL: ${{ inputs.fixture_manifest_url }}
+          REVIEW_ARTIFACT_URL: ${{ inputs.review_artifact_url }}
+          EVIDENCE_OUT: release-evidence/v1/fashion-tryon-quality.json
+          WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ARTIFACT_NAME: bers-v1-fashion-real-image-quality-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          npm run release:evidence:fashion
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const evidence=JSON.parse(readFileSync('release-evidence/v1/fashion-tryon-quality.json','utf8'));
+          assert.equal(evidence.schemaVersion,1);
+          assert.equal(evidence.kind,'BERS_V1_FASHION_REAL_IMAGE_QUALITY_EVIDENCE');
+          assert.equal(evidence.candidateSha,process.env.GITHUB_SHA);
+          assert.equal(evidence.productionAuthorityGranted,false);
+          assert.equal(evidence.decision,'ACCEPT_FOR_V1_DETERMINISTIC_TRYON');
+          assert.equal(evidence.artifactName,`bers-v1-fashion-real-image-quality-${process.env.GITHUB_SHA}`);
+          assert.match(evidence.workflowRunUrl,/^https:\/\/github\.com\/giltik123\/bers23\/actions\/runs\/\d+$/u);
+          assert.ok(evidence.sampleCount >= 1);
+          assert.ok(Number.isFinite(evidence.measuredLatencyMs.p50));
+          assert.ok(Number.isFinite(evidence.measuredLatencyMs.p95));
+          assert.ok(Number.isSafeInteger(evidence.peakMemoryBytes) && evidence.peakMemoryBytes > 0);
+          NODE
+      - name: Upload immutable review metadata evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: bers-v1-fashion-real-image-quality-${{ github.sha }}
+          path: |
+            release-evidence/v1/fashion-tryon-quality.json
+            release-evidence/v1/fashion-fixture-manifest.json
+            release-evidence/v1/fashion-review-artifact.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Summarize Fashion release evidence
+        run: |
+          {
+            echo "### BERS v1 Fashion real-image quality evidence"
+            echo
+            echo "- Candidate SHA: `${GITHUB_SHA}`"
+            echo "- Artifact: `bers-v1-fashion-real-image-quality-${GITHUB_SHA}`"
+            echo "- Evidence: representative real-image bytes + review metadata verified"
+            echo "- HSME physical-mobile evidence: not part of this gate"
+          } >> "$GITHUB_STEP_SUMMARY"
