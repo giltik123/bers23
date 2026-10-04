@@ -43,9 +43,21 @@ jobs:
       - name: Prove capture contract
         run: node --test tests/fashion-real-image-quality-capture-contract.test.mjs
 
+      - name: Build real-image capture harness
+        run: |
+          mkdir -p .test-cache/fashion-real-image-quality-build
+          npx esbuild scripts/capture-fashion-real-image-quality.mjs \
+            --bundle \
+            --platform=node \
+            --format=esm \
+            --target=node24 \
+            --outfile=.test-cache/fashion-real-image-quality-build/capture.mjs \
+            --external:sharp \
+            --external:node:*
+
       - name: Capture real-image deterministic Try-On quality and resource evidence
         run: |
-          node --experimental-strip-types scripts/capture-fashion-real-image-quality.mjs \
+          node .test-cache/fashion-real-image-quality-build/capture.mjs \
             --manifest config/v1-fashion-real-image-fixtures.json \
             --out "$OUT_DIR" \
             --candidate "$EXPECTED_SHA"
