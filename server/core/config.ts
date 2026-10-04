@@ -4,12 +4,12 @@ import {
 } from './network/trustedProxyClientIp.ts';
 
 export type CoreServerConfig = Readonly<{
-  nodeEnv: string; port: number; databaseUrl: string; provider: 'NONE' | 'FAL'; falKey?: string;
+  nodeEnv: string; port: number; databaseUrl: string; provider: 'NONE' | 'FAL'; falKey: string | undefined;
   falBaseUrl: string; jwtSecret: string; jwtIssuer: string; jwtAudience: string;
   authChallengeSecret: string; authDefaultTenantId: string; authPublicOrigin: string;
   authSessionAbsoluteTtlMs: number; authSessionIdleTtlMs: number;
   trustedProxyHeaderMode: TrustedProxyHeaderMode; trustedProxyCidrs: readonly string[];
-  resendApiKey: string; authEmailFrom: string; googleOauthClientId?: string; googleOauthClientSecret?: string;
+  resendApiKey: string; authEmailFrom: string; googleOauthClientId: string | undefined; googleOauthClientSecret: string | undefined;
   artifactSigningSecret: string; trustedAssetHosts: readonly string[]; allowLegacyAssetUrls: boolean;
   allowedWebOrigins: readonly string[]; allowApiBearerAuth?: boolean; hardBudgetCredits: number; creditsPerEdit: number;
   bodyLimitBytes: number; maskUploadLimitBytes: number; maskMaxDimension: number; imageUploadLimitBytes: number; imageMaxDimension: number; imageMaxPixels: number; requestTimeoutMs: number; providerTimeoutMs: number; shutdownTimeoutMs: number;
