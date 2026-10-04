@@ -23,7 +23,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Prove frontend security policy and live-header verifier
-        run: node --test tests/frontend-security-deployment-contract.test.mjs tests/auth-client-contract.test.mjs
+        run: node --test tests/frontend-security-deployment-contract.test.mjs tests/production-frontend-server.test.mjs tests/auth-client-contract.test.mjs
       - name: Build production browser bundle
         run: npm run build
       - name: Prove built HTML contains exact meta CSP but no false frame-ancestors claim
@@ -79,5 +79,6 @@ jobs:
           const verifier = await readFile('scripts/verify-frontend-security-headers.mjs', 'utf8');
           assert.match(verifier, /strict-transport-security/u);
           assert.match(verifier, /MIN_PRODUCTION_HSTS_SECONDS\s*=\s*31_536_000/u);
+          assert.match(verifier, /x-bers-deployment-sha/u);
           console.log('Frontend HTTP-header ownership: shared contract + HSTS verifier bound');
           NODE
