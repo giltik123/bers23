@@ -6,13 +6,13 @@ import test from 'node:test';
 import { requiredProductionFrontendHeaders } from '../config/frontendSecurityPolicy.mjs';
 import { createProductionFrontendServer } from '../scripts/serve-production-frontend.mjs';
 
-async function withFrontend(coreApiUrl, run) {
+async function withFrontend(coreApiUrl, run, deploymentSha = 'a'.repeat(40)) {
   const rootDir = await mkdtemp(join(tmpdir(), 'bers-v1-frontend-'));
   await mkdir(join(rootDir, 'assets'), { recursive: true });
   await writeFile(join(rootDir, 'index.html'), '<!doctype html><html><body>BERS v1</body></html>');
   await writeFile(join(rootDir, 'assets', 'app.js'), 'console.log("BERS");');
 
-  const server = createProductionFrontendServer({ rootDir, coreApiUrl });
+  const server = createProductionFrontendServer({ rootDir, coreApiUrl, deploymentSha });
   await new Promise((resolvePromise, rejectPromise) => {
     server.once('error', rejectPromise);
     server.listen(0, '127.0.0.1', resolvePromise);
@@ -37,6 +37,7 @@ test('production frontend server emits the shared exact response security contra
       assert.equal(response.headers.get(name), value);
     }
     assert.equal(response.headers.get('strict-transport-security'), 'max-age=31536000; includeSubDomains');
+    assert.equal(response.headers.get('x-bers-deployment-sha'), 'a'.repeat(40));
   });
 });
 
@@ -52,4 +53,12 @@ test('production frontend server preserves assets and SPA fallback under the sam
     assert.match(fallback.headers.get('content-type') ?? '', /^text\/html/u);
     assert.match(await fallback.text(), /BERS v1/u);
   });
+});
+
+
+test('production frontend server rejects malformed deployment identity instead of emitting ambiguous release evidence', () => {
+  assert.throws(
+    () => createProductionFrontendServer({ deploymentSha: 'not-a-git-sha' }),
+    /RAILWAY_GIT_COMMIT_SHA must be one exact 40-character Git SHA/u,
+  );
 });

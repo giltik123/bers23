@@ -50,6 +50,7 @@ function frontendLiveEvidence(sha) {
     schemaVersion:1,
     kind:'BERS_V1_FRONTEND_SECURITY_EVIDENCE',
     verifiedSha:sha,
+    deployedSha:sha,
     frontendUrl:'https://app.example.test',
     coreApiUrl:'https://api.example.test/api/core',
     htmlSha256:'1'.repeat(64),
@@ -380,6 +381,34 @@ test('readiness state machine rejects RC selection that is not the reviewed fron
       stageD,
     }),
     /selected RC must equal journey 22 verified deployment SHA/u,
+  );
+});
+
+test('readiness state machine rejects frontend evidence whose deployed SHA differs from verified SHA', () => {
+  const verifiedSha='8'.repeat(40);
+  const badJourneys={
+    ...journeys,
+    entries:journeys.entries.map(value=>value.id === 22
+      ? {
+          ...value,
+          disposition:'PROVEN',
+          liveEvidence:{...frontendLiveEvidence(verifiedSha),deployedSha:'9'.repeat(40)},
+        }
+      : value),
+  };
+  assert.throws(
+    () => validateV1ReleaseReadiness({
+      readiness:{
+        ...readiness,
+        blockers:readiness.blockers.filter(value=>value.id!=='FRONTEND_DEPLOYMENT_HEADERS'),
+        rcSelectable:false,
+        rcCoordinate:null,
+        status:'BERS_V1_RC_NOT_SELECTABLE',
+      },
+      journeys:badJourneys,
+      stageD,
+    }),
+    /deployedSha must equal verifiedSha/u,
   );
 });
 

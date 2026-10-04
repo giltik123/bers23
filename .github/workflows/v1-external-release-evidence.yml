@@ -5,8 +5,10 @@ on:
     branches: [ "main" ]
     paths:
       - 'scripts/verify-frontend-security-headers.mjs'
+      - 'scripts/serve-production-frontend.mjs'
       - 'scripts/verify-github-main-protection.mjs'
       - 'tests/frontend-security-deployment-contract.test.mjs'
+      - 'tests/production-frontend-server.test.mjs'
       - 'tests/v1-external-release-evidence.test.mjs'
       - 'docs/v1-external-release-evidence.md'
       - 'package.json'
@@ -115,6 +117,7 @@ jobs:
           assert.match(evidence.frontendUrl, /^https:\/\//u);
           assert.equal(evidence.htmlSha256.length, 64);
           assert.equal(evidence.verifiedSha, process.env.GITHUB_SHA);
+          assert.equal(evidence.deployedSha, process.env.GITHUB_SHA);
           assert.equal(evidence.workflowRunUrl, `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`);
           assert.equal(evidence.artifactName, `bers-v1-frontend-security-${process.env.GITHUB_SHA}`);
           NODE
@@ -136,5 +139,6 @@ jobs:
             echo
             echo "- Candidate SHA: \`${GITHUB_SHA}\`"
             echo "- Frontend: \`${FRONTEND_URL}\`"
+            echo "- Deployed SHA: \`${GITHUB_SHA}\`"
             echo "- Artifact: \`bers-v1-frontend-security-${GITHUB_SHA}\`"
           } >> "$GITHUB_STEP_SUMMARY"

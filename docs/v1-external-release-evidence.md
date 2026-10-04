@@ -16,9 +16,9 @@ The manual run checks out the exact dispatched SHA, verifies that checkout, exec
 - `release-evidence/v1/frontend-security.json`;
 - `release-evidence/v1/frontend-security.log`.
 
-The hosted JSON is self-contained for journey 22 promotion: in addition to the observed deployment facts it records `verifiedSha`, the exact `workflowRunUrl`, and the exact `artifactName`. These three provenance fields are validated as one atomic binding.
+The hosted JSON is self-contained for journey 22 promotion: in addition to the observed deployment facts it records `verifiedSha`, `deployedSha`, the exact `workflowRunUrl`, and the exact `artifactName`. `deployedSha` comes from the live frontend `X-BERS-Deployment-SHA` header, which the Railway production server derives from `RAILWAY_GIT_COMMIT_SHA`; it must equal `verifiedSha`. Workflow provenance alone is never sufficient.
 
-The dispatch requires HTTPS and the verifier rejects credentials, query strings, fragments, redirects, non-HTML roots, and missing/incorrect production response headers.
+The dispatch requires HTTPS and the verifier rejects credentials, query strings, fragments, redirects, non-HTML roots, missing/incorrect production response headers, missing deployment identity, and any live deployment SHA that differs from the dispatched candidate SHA.
 
 The same verifier can also be run locally for diagnostic/header capture:
 
