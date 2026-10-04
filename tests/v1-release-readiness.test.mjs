@@ -99,6 +99,8 @@ function validatedFashionQuality(candidateSha='a'.repeat(40)) {
       'IMMUTABLE_REVIEW_ARTIFACT',
     ],
     acceptedEvidence:{
+      schemaVersion:1,
+      kind:'BERS_V1_FASHION_REAL_IMAGE_QUALITY_EVIDENCE',
       candidateSha,
       fixtureSetSha256:'2'.repeat(64),
       reviewArtifactSha256:'3'.repeat(64),
@@ -107,6 +109,12 @@ function validatedFashionQuality(candidateSha='a'.repeat(40)) {
       peakMemoryBytes:64*1024*1024,
       reviewedDimensions:['GARMENT_PRESERVATION','LOGO_PATTERN_PRESERVATION','FAILURE_MODES'],
       decision:'ACCEPT_FOR_V1_DETERMINISTIC_TRYON',
+      fixtureManifestUrl:'https://evidence.example.test/fixtures.json',
+      reviewArtifactUrl:'https://evidence.example.test/review.json',
+      productionAuthorityGranted:false,
+      verifiedAt:'2026-10-04T00:00:00.000Z',
+      workflowRunUrl:'https://github.com/giltik123/bers23/actions/runs/123456789',
+      artifactName:`bers-v1-fashion-real-image-quality-${candidateSha}`,
     },
     productionAuthorityGrantedByEvidence:false,
   };
