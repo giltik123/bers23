@@ -6,6 +6,7 @@ import { requiredProductionFrontendHeaders } from '../config/frontendSecurityPol
 
 const DEFAULT_PORT = 8080;
 const ONE_YEAR_SECONDS = 31_536_000;
+const EXACT_SHA_RE = /^[0-9a-f]{40}$/u;
 const MIME_TYPES = Object.freeze({
   '.css': 'text/css; charset=utf-8',
   '.gif': 'image/gif',
@@ -29,6 +30,7 @@ const MIME_TYPES = Object.freeze({
 export function createProductionFrontendServer(input = {}) {
   const rootDir = resolve(input.rootDir ?? process.env.FRONTEND_DIST_DIR ?? 'dist');
   const coreApiUrl = input.coreApiUrl ?? process.env.CORE_API_URL ?? process.env.VITE_CORE_API_URL ?? '/api/core';
+  const deploymentSha = normalizeDeploymentSha(input.deploymentSha ?? process.env.RAILWAY_GIT_COMMIT_SHA);
   const requiredHeaders = requiredProductionFrontendHeaders(coreApiUrl);
 
   return createServer((request, response) => {
@@ -62,6 +64,7 @@ export function createProductionFrontendServer(input = {}) {
     response.statusCode = 200;
     for (const [name, value] of Object.entries(requiredHeaders)) response.setHeader(name, value);
     response.setHeader('Strict-Transport-Security', `max-age=${ONE_YEAR_SECONDS}; includeSubDomains`);
+    if (deploymentSha) response.setHeader('X-BERS-Deployment-SHA', deploymentSha);
     response.setHeader('Content-Type', MIME_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream');
 
     if (request.method === 'HEAD') {
@@ -76,6 +79,13 @@ export function createProductionFrontendServer(input = {}) {
       })
       .pipe(response);
   });
+}
+
+function normalizeDeploymentSha(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (!EXACT_SHA_RE.test(normalized)) throw new Error('RAILWAY_GIT_COMMIT_SHA must be one exact 40-character Git SHA when provided');
+  return normalized;
 }
 
 export async function startProductionFrontendServer(input = {}) {
