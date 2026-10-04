@@ -1,0 +1,74 @@
+name: Fashion real-image quality capture
+
+on:
+  pull_request:
+    paths:
+      - 'config/v1-fashion-real-image-fixtures.json'
+      - 'scripts/capture-fashion-real-image-quality.mjs'
+      - 'tests/fashion-real-image-quality-capture-contract.test.mjs'
+      - 'src/platform/creative/deterministic/GarmentMeshWarp.ts'
+      - 'src/platform/creative/deterministic/GarmentTextureComposite.ts'
+      - '.github/workflows/fashion-real-image-quality-capture.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      OUT_DIR: .test-cache/fashion-real-image-quality
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact candidate
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prove capture contract
+        run: node --test tests/fashion-real-image-quality-capture-contract.test.mjs
+
+      - name: Capture real-image deterministic Try-On quality and resource evidence
+        run: |
+          node --experimental-strip-types scripts/capture-fashion-real-image-quality.mjs \
+            --manifest config/v1-fashion-real-image-fixtures.json \
+            --out "$OUT_DIR" \
+            --candidate "$EXPECTED_SHA"
+          test -s "$OUT_DIR/machine-evidence.json"
+          test -s "$OUT_DIR/machine-evidence.sha256"
+          test -d "$OUT_DIR/outputs"
+          test "$(find "$OUT_DIR/outputs" -type f -name '*.png' | wc -l)" -ge 6
+          grep -q '"decision": "PENDING_HUMAN_REVIEW"' "$OUT_DIR/machine-evidence.json"
+          grep -q '"productionAuthorityGrantedByEvidence": false' "$OUT_DIR/machine-evidence.json"
+
+      - name: Upload review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bers-v1-fashion-real-image-quality-${{ env.EXPECTED_SHA }}
+          path: |
+            ${{ env.OUT_DIR }}/machine-evidence.json
+            ${{ env.OUT_DIR }}/machine-evidence.sha256
+            ${{ env.OUT_DIR }}/fixture-set-identity.json
+            ${{ env.OUT_DIR }}/sources
+            ${{ env.OUT_DIR }}/outputs
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Check committed diff whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
