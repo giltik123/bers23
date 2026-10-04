@@ -10,7 +10,7 @@ This document is the prepared release-note package, not a declaration that v1.0 
 - Explicit Preview -> Accept / Discard with durable history, Undo/Redo/Version/Restore and stale-source recovery.
 - Deterministic Editor v1: Crop, Resize, Rotate/Flip, canonical Selection/MASK, Background Isolation, Masked Exposure, Masked White Balance and Masked Levels.
 - Managed Wardrobe, garment multi-view metadata, Collections and canonical ordered Outfits.
-- Deterministic one-garment Try-On through canonical readiness, body anchors, mesh warp, texture composite, FINAL Preview and explicit Project Accept.
+- Deterministic one-garment Try-On software path through canonical readiness, body anchors, mesh warp, texture composite, FINAL Preview and explicit Project Accept; release quality/resource evidence remains pending.
 - Bounded Agent/AEE v1 path with durable canonical run recovery.
 - Bounded durable Automation subset.
 - Job Center canonical reconciliation plus owning cancel/retry controls.
@@ -30,11 +30,12 @@ Repository protection is proven. Historical journey-22 evidence remains evidence
 
 Before a replacement RC can be selected:
 
-1. merge the accepted product surface to `main`;
-2. deploy the frontend at that exact new `main` SHA;
-3. rerun canonical hosted frontend security evidence;
-4. bind journey 22 to the same exact SHA;
-5. select the replacement `BERS_V1_RC`.
+1. accept representative real-image deterministic Try-On quality/resource evidence for #230;
+2. merge the accepted product surface to `main`;
+3. deploy the frontend at that exact new `main` SHA;
+4. rerun canonical hosted frontend security evidence;
+5. bind journey 22 to the same exact SHA;
+6. select the replacement `BERS_V1_RC`.
 
 HSME physical-mobile validation continues after v1 as field/graduation work and cannot grant production authority until separately proven.
 
