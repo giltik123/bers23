@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import sharp from 'sharp';
@@ -175,3 +176,21 @@ test('Fashion real-image verifier rejects private/local evidence URLs', async ()
 function digest(value) {
   return createHash('sha256').update(value).digest('hex');
 }
+
+
+test('Fashion evidence workflow keeps contract CI separate from real external evidence capture', async () => {
+  const [workflow, docs] = await Promise.all([
+    readFile('.github/workflows/v1-fashion-real-image-quality-evidence.yml', 'utf8'),
+    readFile('docs/v1-fashion-real-image-quality-evidence.md', 'utf8'),
+  ]);
+  assert.match(workflow, /workflow_dispatch:/u);
+  assert.match(workflow, /fixture_manifest_url:/u);
+  assert.match(workflow, /review_artifact_url:/u);
+  assert.match(workflow, /github\.event_name == 'workflow_dispatch'/u);
+  assert.match(workflow, /bers-v1-fashion-real-image-quality-\$\{\{ github\.sha \}\}/u);
+  assert.match(workflow, /fashion-tryon-quality\.json/u);
+  assert.doesNotMatch(workflow, /release-evidence\/v1\/.*\.(?:png|jpe?g|webp)/iu);
+  assert.match(docs, /does not require a physical phone/u);
+  assert.match(docs, /Do not use private end-user photos merely to satisfy the release gate/u);
+  assert.match(docs, /does not edit release authority by itself/u);
+});
