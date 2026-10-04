@@ -15,7 +15,7 @@ test('fixture set contains representative real photographs plus logo/pattern gar
   assert.equal(manifest.garments.some(item=>item.reviewFocus.includes('PATTERN_PRESERVATION')),true);
   assert.equal(manifest.garments.some(item=>item.reviewFocus.includes('LOGO_PRESERVATION')),true);
   for(const item of [...manifest.projects,...manifest.garments]){
-    assert.match(item.sourceUrl,/^https:\/\/commons\.wikimedia\.org\/wiki\/Special:Redirect\/file\//u);
+    assert.match(item.sourceUrl,/^https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\//u);
     assert.match(item.licenseUrl,/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/u);
     assert.ok(['CC0-1.0','PUBLIC_DOMAIN'].includes(item.license));
   }
