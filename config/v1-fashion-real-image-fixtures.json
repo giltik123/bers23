@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "kind": "BERS_V1_FASHION_REAL_IMAGE_FIXTURE_SET",
+  "purpose": "Deterministic Try-On real-image quality/resource capture for release gate #230. Capture alone never grants QUALITY_VALIDATED.",
+  "preprocessing": {
+    "project": {
+      "width": 512,
+      "height": 768,
+      "fit": "cover",
+      "colorSpace": "srgb",
+      "channels": "rgba8"
+    },
+    "garment": {
+      "width": 384,
+      "height": 384,
+      "fit": "contain",
+      "background": "transparent",
+      "colorSpace": "srgb",
+      "channels": "rgba8"
+    },
+    "featherRadius": 2,
+    "measuredRepeats": 5
+  },
+  "projects": [
+    {
+      "id": "project-fashion-model-portrait",
+      "sourceKind": "REAL_PHOTOGRAPH",
+      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Fashion_model_portrait.jpg",
+      "licenseUrl": "https://commons.wikimedia.org/wiki/File:Fashion_model_portrait.jpg",
+      "license": "CC0-1.0",
+      "torsoQ16Normalized": [
+        [
+          0.3,
+          0.2
+        ],
+        [
+          0.7,
+          0.2
+        ],
+        [
+          0.73,
+          0.58
+        ],
+        [
+          0.27,
+          0.58
+        ]
+      ]
+    },
+    {
+      "id": "project-ashirt",
+      "sourceKind": "REAL_PHOTOGRAPH",
+      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Ashirt.jpg",
+      "licenseUrl": "https://commons.wikimedia.org/wiki/File:Ashirt.jpg",
+      "license": "PUBLIC_DOMAIN",
+      "torsoQ16Normalized": [
+        [
+          0.24,
+          0.15
+        ],
+        [
+          0.76,
+          0.15
+        ],
+        [
+          0.72,
+          0.67
+        ],
+        [
+          0.28,
+          0.67
+        ]
+      ]
+    },
+    {
+      "id": "project-woman-pink-blue-dress",
+      "sourceKind": "REAL_PHOTOGRAPH",
+      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Woman_pink_and_blue_dress_(crop_full_body).jpg",
+      "licenseUrl": "https://commons.wikimedia.org/wiki/File:Woman_pink_and_blue_dress_(crop_full_body).jpg",
+      "license": "CC0-1.0",
+      "torsoQ16Normalized": [
+        [
+          0.31,
+          0.17
+        ],
+        [
+          0.69,
+          0.17
+        ],
+        [
+          0.72,
+          0.58
+        ],
+        [
+          0.28,
+          0.58
+        ]
+      ]
+    }
+  ],
+  "garments": [
+    {
+      "id": "garment-vintage-aloha",
+      "sourceKind": "REAL_GARMENT_PHOTOGRAPH",
+      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Vintage_aloha_shirt_crop.png",
+      "licenseUrl": "https://commons.wikimedia.org/wiki/File:Vintage_aloha_shirt_crop.png",
+      "license": "PUBLIC_DOMAIN",
+      "reviewFocus": [
+        "GARMENT_PRESERVATION",
+        "PATTERN_PRESERVATION"
+      ]
+    },
+    {
+      "id": "garment-admin-logo-shirt",
+      "sourceKind": "LOGO_PATTERN_REFERENCE",
+      "sourceUrl": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Admin_T-shirt_again.png",
+      "licenseUrl": "https://commons.wikimedia.org/wiki/File:Admin_T-shirt_again.png",
+      "license": "CC0-1.0",
+      "reviewFocus": [
+        "GARMENT_PRESERVATION",
+        "LOGO_PRESERVATION"
+      ]
+    }
+  ]
+}
