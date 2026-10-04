@@ -98,14 +98,13 @@ async function downloadFixture(fixture) {
   throw lastError;
 }
 
-async function decodeProject(bytes, width, height) {
-  const pipeline = sharp(bytes).rotate().resize(width, height, {
-    fit: 'cover',
-    position: 'centre',
+async function decodeProject(bytes, width) {
+  const pipeline = sharp(bytes).rotate().resize({
+    width,
     withoutEnlargement: false,
   }).removeAlpha().ensureAlpha();
   const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true });
-  if (info.width !== width || info.height !== height || info.channels !== 4) throw new Error('Project preprocess geometry mismatch');
+  if (info.width !== width || info.height < 1 || info.channels !== 4) throw new Error('Project preprocess geometry mismatch');
   return { rgba: new Uint8ClampedArray(data), width: info.width, height: info.height };
 }
 
@@ -190,7 +189,7 @@ async function main() {
 
   const projectDecoded = new Map();
   for (const fixture of manifest.projects) {
-    const decoded = await decodeProject(downloaded.get(fixture.id).bytes, manifest.preprocessing.project.width, manifest.preprocessing.project.height);
+    const decoded = await decodeProject(downloaded.get(fixture.id).bytes, manifest.preprocessing.project.width);
     projectDecoded.set(fixture.id, decoded);
     const preview = await pngFromRgba(decoded.rgba, decoded.width, decoded.height);
     await writeFile(path.join(outDir, 'sources', `${fixture.id}.png`), preview);
