@@ -286,6 +286,12 @@ function validateFrontendLiveEvidence(value) {
   if (!EXACT_SHA_RE.test(value.verifiedSha ?? '')) {
     throw new Error('journey 22 live evidence verifiedSha is invalid');
   }
+  if (!EXACT_SHA_RE.test(value.deployedSha ?? '')) {
+    throw new Error('journey 22 live evidence deployedSha is invalid');
+  }
+  if (value.deployedSha !== value.verifiedSha) {
+    throw new Error('journey 22 live evidence deployedSha must equal verifiedSha');
+  }
   if (!/^[0-9a-f]{64}$/u.test(value.htmlSha256 ?? '')) {
     throw new Error('journey 22 live evidence htmlSha256 is invalid');
   }

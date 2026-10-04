@@ -77,6 +77,7 @@ test('hosted frontend evidence is self-contained and binds exact workflow proven
     status:200,
     requiredHeaders:{},
     observedHeaders:{},
+    deployedSha:sha,
     htmlSha256:'b'.repeat(64),
   },{
     verifiedAt:'2026-09-30T12:00:00.000Z',
@@ -85,6 +86,7 @@ test('hosted frontend evidence is self-contained and binds exact workflow proven
     artifactName:`bers-v1-frontend-security-${sha}`,
   });
   assert.equal(evidence.verifiedSha,sha);
+  assert.equal(evidence.deployedSha,sha);
   assert.equal(evidence.workflowRunUrl,'https://github.com/giltik123/bers23/actions/runs/123456789');
   assert.equal(evidence.artifactName,`bers-v1-frontend-security-${sha}`);
   assert.equal(evidence.verifiedAt,'2026-09-30T12:00:00.000Z');
@@ -97,6 +99,7 @@ test('hosted frontend evidence rejects partial or mismatched provenance', () => 
     status:200,
     requiredHeaders:{},
     observedHeaders:{},
+    deployedSha:'d'.repeat(40),
     htmlSha256:'c'.repeat(64),
   };
   assert.throws(
@@ -110,6 +113,14 @@ test('hosted frontend evidence rejects partial or mismatched provenance', () => 
       artifactName:'wrong',
     }),
     /artifactName must bind verifiedSha/u,
+  );
+  assert.throws(
+    () => buildFrontendSecurityEvidence({...base,deployedSha:'e'.repeat(40)},{
+      verifiedSha:'d'.repeat(40),
+      workflowRunUrl:'https://github.com/giltik123/bers23/actions/runs/123',
+      artifactName:`bers-v1-frontend-security-${'d'.repeat(40)}`,
+    }),
+    /deployedSha must equal verifiedSha/u,
   );
 });
 
@@ -307,4 +318,11 @@ test('hosted live evidence workflow requires the captured HTTP status to be a su
   assert.match(workflow, /evidence\.status >= 200/u);
   assert.match(workflow, /evidence\.status < 300/u);
   assert.doesNotMatch(workflow, /assert\.equal\(evidence\.status, undefined\)/u);
+});
+
+
+test('hosted live evidence workflow requires deployed SHA equality, not workflow SHA labeling alone', async () => {
+  const workflow=await readFile('.github/workflows/v1-external-release-evidence.yml','utf8');
+  assert.match(workflow,/evidence\.deployedSha/u);
+  assert.match(workflow,/process\.env\.GITHUB_SHA/u);
 });

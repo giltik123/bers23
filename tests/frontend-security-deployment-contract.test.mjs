@@ -205,3 +205,43 @@ test('live verifier rejects weakened headers, redirects and non-HTML roots', asy
     });
   }
 });
+
+
+test('live verifier requires exact deployed SHA when release provenance is requested', async () => {
+  const expectedSha='a'.repeat(40);
+  const headers={
+    ...goodHeaders(),
+    'Content-Type':'text/html; charset=utf-8',
+    'Strict-Transport-Security':'max-age=31536000; includeSubDomains',
+    'X-BERS-Deployment-SHA':expectedSha,
+  };
+  const accepted=await verifyFrontendSecurityHeaders({
+    frontendUrl:'https://app.example.test/',
+    expectedSha,
+    fetcher:async()=>new Response('<html>BERS</html>',{status:200,headers}),
+  });
+  assert.equal(accepted.deployedSha,expectedSha);
+
+  await assert.rejects(
+    () => verifyFrontendSecurityHeaders({
+      frontendUrl:'https://app.example.test/',
+      expectedSha,
+      fetcher:async()=>new Response('<html>BERS</html>',{
+        status:200,
+        headers:{...headers,'X-BERS-Deployment-SHA':'b'.repeat(40)},
+      }),
+    }),
+    /deployment SHA mismatch/u,
+  );
+
+  const missing={...headers};
+  delete missing['X-BERS-Deployment-SHA'];
+  await assert.rejects(
+    () => verifyFrontendSecurityHeaders({
+      frontendUrl:'https://app.example.test/',
+      expectedSha,
+      fetcher:async()=>new Response('<html>BERS</html>',{status:200,headers:missing}),
+    }),
+    /deployment SHA mismatch/u,
+  );
+});
