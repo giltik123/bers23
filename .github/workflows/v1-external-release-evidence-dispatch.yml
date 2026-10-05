@@ -247,7 +247,7 @@ jobs:
               workflow_id,
               ref,
             });
-            core.notice(\`Dispatched exact-main operational evidence on \${ref} at \${expectedSha}\`);
+            core.notice(`Dispatched exact-main operational evidence on ${ref} at ${expectedSha}`);
 
             const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
             let run;
@@ -279,15 +279,15 @@ jobs:
                 body: [
                   'BERS v1 operational evidence dispatch failed before run resolution.',
                   '',
-                  \`- expectedSha: \\\`\${expectedSha}\\\`\`,
+                  `- expectedSha: \`${expectedSha}\``,
                   '- workflowRunUrl: unresolved',
-                  '- conclusion: \`RUN_RESOLUTION_FAILED\`',
-                ].join('\\n'),
+                  '- conclusion: `RUN_RESOLUTION_FAILED`',
+                ].join('\n'),
               });
-              throw new Error(\`Could not resolve operational evidence run for \${expectedSha}\`);
+              throw new Error(`Could not resolve operational evidence run for ${expectedSha}`);
             }
 
-            const workflowRunUrl = \`https://github.com/\${owner}/\${repo}/actions/runs/\${run.id}\`;
+            const workflowRunUrl = `https://github.com/${owner}/${repo}/actions/runs/${run.id}`;
             const statusComment = await github.rest.issues.createComment({
               owner,
               repo,
@@ -295,11 +295,11 @@ jobs:
               body: [
                 'BERS v1 operational migration/backup evidence run resolved; completion pending.',
                 '',
-                \`- expectedSha: \\\`\${expectedSha}\\\`\`,
-                \`- workflowRunUrl: \\\`\${workflowRunUrl}\\\`\`,
-                \`- runId: \\\`\${run.id}\\\`\`,
-                \`- status: \\\`\${run.status}\\\`\`,
-              ].join('\\n'),
+                `- expectedSha: \`${expectedSha}\``,
+                `- workflowRunUrl: \`${workflowRunUrl}\``,
+                `- runId: \`${run.id}\``,
+                `- status: \`${run.status}\``,
+              ].join('\n'),
             });
             statusCommentId = statusComment.data.id;
 
@@ -318,14 +318,14 @@ jobs:
                 body: [
                   'BERS v1 operational migration/backup evidence did not complete within the bridge timeout.',
                   '',
-                  \`- expectedSha: \\\`\${expectedSha}\\\`\`,
-                  \`- workflowRunUrl: \\\`\${workflowRunUrl}\\\`\`,
-                  \`- runId: \\\`\${run.id}\\\`\`,
-                  \`- status: \\\`\${run.status}\\\`\`,
-                  '- conclusion: \`TIMEOUT\`',
-                ].join('\\n'),
+                  `- expectedSha: \`${expectedSha}\``,
+                  `- workflowRunUrl: \`${workflowRunUrl}\``,
+                  `- runId: \`${run.id}\``,
+                  `- status: \`${run.status}\``,
+                  '- conclusion: `TIMEOUT`',
+                ].join('\n'),
               });
-              throw new Error(\`Operational evidence run \${run.id} did not complete within the bridge timeout\`);
+              throw new Error(`Operational evidence run ${run.id} did not complete within the bridge timeout`);
             }
 
             if (run.conclusion !== 'success' || run.head_sha !== expectedSha || run.event !== 'workflow_dispatch') {
@@ -336,17 +336,17 @@ jobs:
                 body: [
                   'BERS v1 operational migration/backup evidence failed or provenance mismatched.',
                   '',
-                  \`- expectedSha: \\\`\${expectedSha}\\\`\`,
-                  \`- observedSha: \\\`\${run.head_sha}\\\`\`,
-                  \`- workflowRunUrl: \\\`\${workflowRunUrl}\\\`\`,
-                  \`- event: \\\`\${run.event}\\\`\`,
-                  \`- conclusion: \\\`\${run.conclusion}\\\`\`,
-                ].join('\\n'),
+                  `- expectedSha: \`${expectedSha}\``,
+                  `- observedSha: \`${run.head_sha}\``,
+                  `- workflowRunUrl: \`${workflowRunUrl}\``,
+                  `- event: \`${run.event}\``,
+                  `- conclusion: \`${run.conclusion}\``,
+                ].join('\n'),
               });
-              throw new Error(\`Operational evidence run \${run.id} was not successful exact-SHA evidence\`);
+              throw new Error(`Operational evidence run ${run.id} was not successful exact-SHA evidence`);
             }
 
-            const expectedArtifactName = \`\${artifactPrefix}\${expectedSha}\`;
+            const expectedArtifactName = `${artifactPrefix}${expectedSha}`;
             const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
               owner,
               repo,
@@ -366,13 +366,13 @@ jobs:
                 body: [
                   'BERS v1 operational evidence completed but the backup/restore artifact is missing.',
                   '',
-                  \`- expectedSha: \\\`\${expectedSha}\\\`\`,
-                  \`- workflowRunUrl: \\\`\${workflowRunUrl}\\\`\`,
-                  \`- expectedArtifactName: \\\`\${expectedArtifactName}\\\`\`,
-                  '- conclusion: \`ARTIFACT_MISSING\`',
-                ].join('\\n'),
+                  `- expectedSha: \`${expectedSha}\``,
+                  `- workflowRunUrl: \`${workflowRunUrl}\``,
+                  `- expectedArtifactName: \`${expectedArtifactName}\``,
+                  '- conclusion: `ARTIFACT_MISSING`',
+                ].join('\n'),
               });
-              throw new Error(\`Operational evidence run \${run.id} is missing \${expectedArtifactName}\`);
+              throw new Error(`Operational evidence run ${run.id} is missing ${expectedArtifactName}`);
             }
 
             await github.rest.issues.updateComment({
@@ -382,12 +382,12 @@ jobs:
               body: [
                 'BERS v1 operational migration + PostgreSQL backup/restore evidence completed successfully.',
                 '',
-                \`- exactSha: \\\`\${expectedSha}\\\`\`,
-                \`- workflowRunUrl: \\\`\${workflowRunUrl}\\\`\`,
-                \`- artifactName: \\\`\${expectedArtifactName}\\\`\`,
-                \`- artifactId: \\\`\${artifact.id}\\\`\`,
-                \`- conclusion: \\\`\${run.conclusion}\\\`\`,
-              ].join('\\n'),
+                `- exactSha: \`${expectedSha}\``,
+                `- workflowRunUrl: \`${workflowRunUrl}\``,
+                `- artifactName: \`${expectedArtifactName}\``,
+                `- artifactId: \`${artifact.id}\``,
+                `- conclusion: \`${run.conclusion}\``,
+              ].join('\n'),
             });
 
-            core.notice(\`Resolved operational evidence: \${workflowRunUrl} / \${expectedArtifactName}\`);
+            core.notice(`Resolved operational evidence: ${workflowRunUrl} / ${expectedArtifactName}`);
