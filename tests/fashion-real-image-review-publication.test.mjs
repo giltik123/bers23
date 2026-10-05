@@ -208,3 +208,12 @@ test('owner-only Fashion evidence bridge requires exact-main accepted review and
   assert.match(workflow, /bers-v1-fashion-real-image-quality-/u);
   assert.match(workflow, /listWorkflowRunArtifacts/u);
 });
+
+test('Fashion quality capture runs on every accepted main SHA while PR capture stays path-filtered', async () => {
+  const workflow = await readFile('.github/workflows/fashion-real-image-quality-capture.yml', 'utf8');
+  const pushBlock = workflow.match(/  push:\n([\s\S]*?)  pull_request:/u)?.[1] ?? '';
+  assert.match(pushBlock, /branches:\s*\[ "main" \]/u);
+  assert.doesNotMatch(pushBlock, /paths:/u);
+  assert.match(workflow, /  pull_request:\n\s+paths:/u);
+  assert.match(workflow, /publish-review-evidence:\n\s+if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/u);
+});
