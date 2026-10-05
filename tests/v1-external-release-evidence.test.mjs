@@ -326,3 +326,26 @@ test('hosted live evidence workflow requires deployed SHA equality, not workflow
   assert.match(workflow,/evidence\.deployedSha/u);
   assert.match(workflow,/process\.env\.GITHUB_SHA/u);
 });
+
+test('owner-only operational evidence bridge dispatches exact-main migration and backup/restore proof', async () => {
+  const workflow = await readFile('.github/workflows/v1-external-release-evidence-dispatch.yml', 'utf8');
+  const operational = await readFile('.github/workflows/production-core-migration-image.yml', 'utf8');
+
+  assert.match(workflow, /dispatch-operational-evidence:/u);
+  assert.match(workflow, /github\.event\.issue\.number == 365/u);
+  assert.match(workflow, /github\.event\.comment\.user\.login == github\.repository_owner/u);
+  assert.match(workflow, /github\.event\.comment\.author_association == 'OWNER'/u);
+  assert.match(workflow, /github\.event\.comment\.body == '\/bers-v1-dispatch-operational-evidence'/u);
+  assert.match(workflow, /workflow_id = 'production-core-migration-image\.yml'/u);
+  assert.match(workflow, /expectedSha = branch\.data\.commit\.sha/u);
+  assert.match(workflow, /candidate\.head_sha === expectedSha/u);
+  assert.match(workflow, /candidate\.event === 'workflow_dispatch'/u);
+  assert.match(workflow, /bers-v1-postgres-backup-restore-/u);
+  assert.match(workflow, /listWorkflowRunArtifacts/u);
+
+  assert.match(operational, /workflow_dispatch:/u);
+  assert.match(operational, /test-production-postgres-backup-restore\.sh/u);
+  assert.match(operational, /pg_dump/u);
+  assert.match(operational, /pg_restore/u);
+  assert.match(operational, /bers-v1-postgres-backup-restore-\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/u);
+});
