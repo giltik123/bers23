@@ -17,10 +17,11 @@ This override is narrow:
 
 ## Current state
 
-`BERS_V1_RC` remains **not selectable** while Fashion quality acceptance and machine-readable R4 evidence promotion are pending:
+`BERS_V1_RC` remains **not selectable** because one release-blocking item remains:
 
-- `FASHION_REAL_IMAGE_QUALITY` / #230: deterministic Try-On software E2E is accepted, but representative real-image quality/resource evidence is still pending.
-- `FRONTEND_DEPLOYMENT_HEADERS` / #233: the final accepted product SHA must be deployed exactly and journey 22 hosted evidence rerun before RC selection.
+- `FASHION_REAL_IMAGE_QUALITY` / #230: real-image deterministic Try-On outputs and resource evidence are captured, but explicit owner acceptance is pending.
+
+`FRONTEND_DEPLOYMENT_HEADERS` / #233 has been proven for the canonical production code SHA `38a7a92a32b046a53c73a34c4d3d101315c88b1f` by hosted workflow run `37859396991` and its exact-SHA artifact. The Core and Frontend Railway deployments both succeeded on this SHA. Full live registration → OTP email → password-reset delivery and account recovery have not yet been demonstrated with a real recipient; this remains an operational smoke-test item, not a claimed pass.
 
 HSME is tracked under `nonBlockingDeferred` as `HSME_PHYSICAL_MOBILE_VALIDATION` with state `OWNER_DEFERRED_POST_V1_FIELD_VALIDATION`. Its current R&D validation state may remain pending without blocking RC.
 
