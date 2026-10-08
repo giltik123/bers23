@@ -17,7 +17,7 @@ This override is narrow:
 
 ## Current state
 
-`BERS_V1_RC` remains **not selectable** because two non-HSME release gates remain:
+`BERS_V1_RC` remains **not selectable** while Fashion quality acceptance and machine-readable R4 evidence promotion are pending:
 
 - `FASHION_REAL_IMAGE_QUALITY` / #230: deterministic Try-On software E2E is accepted, but representative real-image quality/resource evidence is still pending.
 - `FRONTEND_DEPLOYMENT_HEADERS` / #233: the final accepted product SHA must be deployed exactly and journey 22 hosted evidence rerun before RC selection.
