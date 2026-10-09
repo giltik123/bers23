@@ -82,7 +82,7 @@ test('invalid geometry, wrong color/image lengths and wrong mask dimensions fail
   assert.throws(() => restoreGarmentForegroundOcclusionRgba8(new Uint8Array(3), garment, mask, 2, 2), /Original Project RGBA byte length/);
   assert.throws(() => restoreGarmentForegroundOcclusionRgba8(original, new Uint8Array(3), mask, 2, 2), /composite RGBA byte length/);
   assert.throws(() => restoreGarmentForegroundOcclusionRgba8(original, garment, new Uint8Array(3), 2, 2), /mask R8 byte length/);
-  assert.throws(() => restoreGarmentForegroundOcclusionRgba8(original, garment, mask, 1, 4), /geometry|length/i);
+  assert.throws(() => restoreGarmentForegroundOcclusionRgba8(original, garment, mask, 1, 3), /geometry|length/i);
 });
 
 test('opaque garment region can restore foreground while preserving neighboring pattern pixels', () => {
