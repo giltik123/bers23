@@ -65,7 +65,9 @@ class ExactForkPatchTests(unittest.TestCase):
             (root / p).parent.mkdir(parents=True, exist_ok=True)
         (root / paths[0]).write_text(
             "from fashn_human_parser import CATEGORY_TO_BODY_COVERAGE, FashnHumanParser\n"
-            "        self.hp_model = FashnHumanParser(device=hp_device)\n", encoding="utf-8")
+            '        self.logger.info("Loading FashnHumanParser")\n'
+            "        self.hp_model = FashnHumanParser(device=hp_device)\n"
+            '        self.logger.info("FashnHumanParser loaded")\n', encoding="utf-8")
         (root / paths[1]).write_text(
             "from fashn_human_parser import BODY_COVERAGE_TO_LABELS, IDENTITY_LABELS, LABELS_TO_IDS\n", encoding="utf-8")
         (root / paths[2]).write_text(
