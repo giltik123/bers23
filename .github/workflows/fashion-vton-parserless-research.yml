@@ -6,9 +6,11 @@ on:
       - 'scripts/build_fashion_vton_parserless.py'
       - 'scripts/fashion_vton_parser_policy.py'
       - 'scripts/fashion_vton_weight_preflight.py'
+      - 'scripts/fashion_vton_gpu_smoke.py'
       - 'tests/test_build_fashion_vton_parserless.py'
       - 'tests/test_fashion_vton_parser_policy.py'
       - 'tests/test_fashion_vton_weight_preflight.py'
+      - 'tests/test_fashion_vton_gpu_smoke.py'
       - 'docs/fashion-vton-v15-parserless-research-decision.md'
       - '.github/workflows/fashion-vton-parserless-research.yml'
   workflow_dispatch:
@@ -31,6 +33,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_build_fashion_vton_parserless.py' -v
           python -m unittest discover -s tests -p 'test_fashion_vton_parser_policy.py' -v
           python -m unittest discover -s tests -p 'test_fashion_vton_weight_preflight.py' -v
+          python -m unittest discover -s tests -p 'test_fashion_vton_gpu_smoke.py' -v
       - name: Fetch exact FASHN research upstream (build time only)
         shell: bash
         run: |
