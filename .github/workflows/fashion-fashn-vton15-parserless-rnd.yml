@@ -1,0 +1,63 @@
+name: Fashion FASHN VTON 1.5 parserless R&D source gate
+on:
+  pull_request:
+    paths:
+      - 'scripts/build-fashn-vton15-slim-rnd.py'
+      - 'scripts/verify-fashn-vton15-slim-rnd.py'
+      - '.github/workflows/fashion-fashn-vton15-parserless-rnd.yml'
+      - 'docs/fashion-fashn-vton15-slim-rnd.md'
+  push:
+    branches: [fashion/fashn-vton15-local-rnd-20261009]
+permissions:
+  contents: read
+jobs:
+  pinned-parserless-slice:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout BERS PR head
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout exact FASHN upstream (public, no local modifications)
+        uses: actions/checkout@v4
+        with:
+          repository: fashn-AI/fashn-vton-1.5
+          ref: 7c0f10af3f91ad4048fe9729c470a13ef905d25a
+          path: .test-cache/fashn-upstream
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Generate strictly scoped source from pinned upstream
+        run: |
+          python3 scripts/build-fashn-vton15-slim-rnd.py \
+            --upstream-dir .test-cache/fashn-upstream \
+            --output-dir .test-cache/fashn-parserless-rnd
+      - name: Verify no human parser or weights, clean contract and Python syntax
+        run: |
+          python3 scripts/verify-fashn-vton15-slim-rnd.py \
+            --slice-dir .test-cache/fashn-parserless-rnd
+      - name: Reject mismatched or dirty upstream source
+        run: |
+          printf '\n# deliberate research-gate tamper\n' >> .test-cache/fashn-upstream/src/fashn_vton/pipeline.py
+          if python3 scripts/build-fashn-vton15-slim-rnd.py \
+            --upstream-dir .test-cache/fashn-upstream \
+            --output-dir .test-cache/untrusted-fashn; then
+            echo 'ERROR: Tampered upstream was wrongly accepted' >&2
+            exit 1
+          fi
+          if test -d .test-cache/untrusted-fashn; then
+            echo 'ERROR: Untrusted source produced output' >&2
+            exit 1
+          fi
+      - name: Confirm source gate grants no runtime rights
+        run: |
+          test -f .test-cache/fashn-parserless-rnd/BERS_PROVENANCE.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('.test-cache/fashn-parserless-rnd/BERS_PROVENANCE.json'))
+          assert not p['commercialStackLicenseApproved']
+          assert not p['productionExecutable']
+          assert not p['runtimeAuthorityGranted']
+          assert not p['modelRunProven']
+          PY
