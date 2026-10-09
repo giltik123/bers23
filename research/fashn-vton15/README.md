@@ -1,4 +1,29 @@
-# BERS Fashion AI — local FASHN VTON 1.5 human parser replacement
+# BERS Fashion AI — modular FASHN VTON 1.5 local R&D
+
+## Primary decision: keep only what is needed
+
+The **primary BERS pilot is PARSERLESS FLAT-LAY**, using
+`scripts/build-fashn-vton15-slim-rnd.py` and the independent
+`scripts/verify-fashn-vton15-slim-rnd.py`. It retains the open Apache-2.0
+FASHN pixel-space diffusion core, DWPose path and transforms, but removes
+the Human Parser, associated masking code and automatic model downloads.
+It accepts **only** `segmentation_free=True` and
+`garment_photo_type='flat-lay'`; all other modes fail before inference.
+This path does not require an alternative Human Parser and does not
+misrepresent arbitrary masked/model-worn inputs as equivalent.
+
+The **secondary OPTIONAL model-worn-garment R&D path** is the SCHP-ATR
+candidate below. It is a different isolated experimental patch, not a
+dependency of the primary parserless copy, and is **NOT approved for
+commercial execution**. No automatic fallback from parserless to SCHP
+is allowed. Switching tracks requires explicit model/dataset licensing,
+physical weights digest, GPU quality tests on representative photos,
+and separate approved BERS Core execution authority.
+
+Neither R&D route is deployed, and neither grants F5 production, Billing,
+Project FINAL, owner quality acceptance or release/RC authority.
+
+## Optional parser evaluation
 
 **Status: R&D candidate only. No commercial/production approval, no inference
 weights installed, no real-photograph quality comparison completed.**
