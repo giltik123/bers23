@@ -1,0 +1,27 @@
+name: Fashion foreground occlusion preview safety
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/platform/creative/deterministic/GarmentForegroundOcclusion.js'
+      - 'tests/garment-foreground-occlusion-prototype.test.mjs'
+      - '.github/workflows/fashion-foreground-occlusion-preview.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/platform/creative/deterministic/GarmentForegroundOcclusion.js'
+      - 'tests/garment-foreground-occlusion-prototype.test.mjs'
+      - '.github/workflows/fashion-foreground-occlusion-preview.yml'
+permissions:
+  contents: read
+jobs:
+  preview-mask-safety:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify fail-closed pixel restoration without granting production authority
+        run: node --test tests/garment-foreground-occlusion-prototype.test.mjs
