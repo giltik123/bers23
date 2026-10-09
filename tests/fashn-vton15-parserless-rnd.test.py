@@ -97,7 +97,7 @@ class FashnMasklessContract(unittest.TestCase):
 
     def test_does_not_grant_production_or_download_model_weights(self):
         self.assertIn("NOT FOR PRODUCTION", (ARGS.patched / "README.md").read_text())
-        self.assertIn("no human", (ARGS.patched / "README.md").read_text().lower())
+        self.assertIn("omit human parsing", (ARGS.patched / "README.md").read_text().lower())
         self.assertNotIn("fashn_human_parser", (ARGS.patched / "src/fashn_vton/preprocessing/__init__.py").read_text())
         self.assertFalse((ARGS.patched / "weights").exists())
         with self.assertRaisesRegex(ValueError, "expected exactly one"):
