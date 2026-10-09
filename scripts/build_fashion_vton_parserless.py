@@ -19,6 +19,7 @@ EXPECTED_BLOBS = {
     "src/fashn_vton/preprocessing/__init__.py": "635d4ec524359caa9e33c839ec5c4dee245c92c4",
     "src/fashn_vton/preprocessing/agnostic.py": "09f864fae9d9d31931830a39684b8ae47b19503f",
     "LICENSE": "2a35f0c24ccd9ce4e4031ab1ff835b4e7dd5b904",
+    "src/fashn_vton/utils/checkpoint.py": "7155575d96debb10c9f7725a9d5f277cc2ae80d7",
 }
 
 
@@ -101,7 +102,23 @@ def rewrite_preprocessing(_: str) -> str:
 def rewrite_pyproject(contents: str) -> str:
     contents = replace_one(contents, 'name = "fashn-vton"', 'name = "bers-vton-parserless-research"')
     contents = replace_one(contents, '    "fashn-human-parser>=0.1.1",\n', '')
+    contents = replace_one(contents, '    "huggingface_hub>=0.20.0",\n', '')
     return contents
+
+
+def rewrite_checkpoint(_: str) -> str:
+    """Drop implicit HuggingFace fetch and unsafe pickle loading from runtime."""
+    return (
+        '"""Local safetensors-only checkpoint loading for BERS research."""\n'
+        'from pathlib import Path\n'
+        'from safetensors.torch import load_file\n'
+        '\n'
+        'def load_checkpoint(checkpoint_path: str, device: str = "cpu") -> dict:\n'
+        '    path = Path(checkpoint_path)\n'
+        '    if path.suffix != ".safetensors" or not path.is_file() or path.is_symlink():\n'
+        '        raise ValueError("A local, regular .safetensors checkpoint is required")\n'
+        '    return load_file(str(path), device=device)\n'
+    )
 
 
 def git_blob_sha(data: bytes) -> str:
@@ -146,6 +163,8 @@ def build(source: Path, target: Path) -> Path:
         init.write_text(rewrite_preprocessing(init.read_text(encoding="utf-8")), encoding="utf-8")
         (prep / "agnostic.py").unlink()
         (prep / "masks.py").unlink()
+        ckpt = target / "src" / "fashn_vton" / "utils" / "checkpoint.py"
+        ckpt.write_text(rewrite_checkpoint(ckpt.read_text(encoding="utf-8")), encoding="utf-8")
         (target / "pyproject.toml").write_text(
             rewrite_pyproject((source / "pyproject.toml").read_text(encoding="utf-8")), encoding="utf-8"
         )
@@ -153,7 +172,7 @@ def build(source: Path, target: Path) -> Path:
         (target / "NOTICE.BERS-RESEARCH.txt").write_text(
             "FASHN VTON v1.5, copyright its original contributors, Apache-2.0.\n"
             f"Exact upstream source: {UPSTREAM_COMMIT}\n"
-            "Modifications: removed FASHN Human Parser dependency and masked/preprocessing code; "
+            "Modifications: removed FASHN Human Parser, network checkpoint loading, pickle checkpoint loading; "
             "restrict inference to segmentation-free flat-lay inputs.\n"
             "DWPose/YOLOX and separate weights require their own license and source review.\n"
             "RESEARCH ONLY: no BERS Core admission or redistribution approval.\n",
@@ -161,7 +180,7 @@ def build(source: Path, target: Path) -> Path:
         )
         for file in (target / "src").rglob("*.py"):
             text = file.read_text(encoding="utf-8")
-            if "fashn_human_parser" in text or "FashnHumanParser" in text:
+            if any(marker in text for marker in ("fashn_human_parser", "FashnHumanParser", "hf_hub_download", "weights_only=False")):
                 raise ValueError(f"Parser dependency in emitted package: {file}")
             compile(text, str(file), "exec")
         files = {
