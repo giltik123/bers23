@@ -16,6 +16,7 @@ from build_fashion_vton_parserless import (
     replace_one,
     rewrite_pipeline,
     rewrite_pyproject,
+    rewrite_checkpoint,
 )
 
 
@@ -71,9 +72,16 @@ class ForkTests(unittest.TestCase):
             rewrite_pipeline(PIPELINE.replace("        # Human parsing", "        # hidden drift"))
 
     def test_pyproject_drops_dependency(self):
-        text = rewrite_pyproject('name = "fashn-vton"\ndependencies = [\n    "fashn-human-parser>=0.1.1",\n]\n')
+        text = rewrite_pyproject('name = "fashn-vton"\ndependencies = [\n    "fashn-human-parser>=0.1.1",\n    "huggingface_hub>=0.20.0",\n]\n')
         self.assertNotIn('fashn-human-parser', text)
+        self.assertNotIn('huggingface_hub', text)
         self.assertIn('bers-vton-parserless-research', text)
+
+    def test_no_network_or_pickle_checkpoint_loading(self):
+        code = rewrite_checkpoint('from huggingface_hub import hf_hub_download')
+        self.assertNotIn('hf_hub_download', code)
+        self.assertNotIn('torch.load', code)
+        self.assertIn('safetensors.torch', code)
 
     def test_replace_one_rejects_duplicate_anchor(self):
         with self.assertRaises(ValueError):
@@ -90,7 +98,8 @@ class ForkTests(unittest.TestCase):
                 'src/fashn_vton/preprocessing/agnostic.py': 'import fashn_human_parser\n',
                 'src/fashn_vton/preprocessing/masks.py': 'class Mask: pass\n',
                 'src/fashn_vton/preprocessing/transforms.py': 'class ResizePad: pass\n',
-                'pyproject.toml': 'name = "fashn-vton"\ndependencies = [\n    "fashn-human-parser>=0.1.1",\n]\n',
+                'src/fashn_vton/utils/checkpoint.py': 'from huggingface_hub import hf_hub_download\n',
+                'pyproject.toml': 'name = "fashn-vton"\ndependencies = [\n    "fashn-human-parser>=0.1.1",\n    "huggingface_hub>=0.20.0",\n]\n',
                 'LICENSE': 'Apache-2.0 sample for fixture only\n',
             }
             for name, content in fixtures.items():
@@ -104,6 +113,7 @@ class ForkTests(unittest.TestCase):
                 build(upstream, output)
             self.assertFalse((output / 'src/fashn_vton/preprocessing/agnostic.py').exists())
             self.assertFalse((output / 'src/fashn_vton/preprocessing/masks.py').exists())
+            self.assertNotIn('hf_hub_download', (output / 'src/fashn_vton/utils/checkpoint.py').read_text())
             manifest = json.loads((output / 'SOURCE-MANIFEST.json').read_text())
             self.assertEqual(manifest['upstreamCommit'], UPSTREAM_COMMIT)
             self.assertTrue((output / 'LICENSE').is_file())
