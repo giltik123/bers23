@@ -181,10 +181,36 @@
     {
       "id": 22,
       "name": "frontend response security headers match deployment contract",
-      "disposition": "DEPLOYMENT_TARGET_PENDING",
+      "disposition": "PROVEN",
       "evidence": "tests/frontend-security-deployment-contract.test.mjs",
       "workflow": ".github/workflows/security-frontend-deployment-contract.yml",
-      "verifier": "scripts/verify-frontend-security-headers.mjs"
+      "verifier": "scripts/verify-frontend-security-headers.mjs",
+      "liveEvidence": {
+        "schemaVersion": 1,
+        "kind": "BERS_V1_FRONTEND_SECURITY_EVIDENCE",
+        "verifiedAt": "2026-10-09T01:26:26.856Z",
+        "frontendUrl": "https://bers-v1-frontend-production.up.railway.app/",
+        "coreApiUrl": "https://bers-v1-core-production.up.railway.app/api/core",
+        "status": 200,
+        "requiredHeaders": {
+          "Content-Security-Policy": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https: https://bers-v1-core-production.up.railway.app; font-src 'self' data:; connect-src 'self' https://bers-v1-core-production.up.railway.app; worker-src 'self' blob:; manifest-src 'self'; media-src 'self' blob: data:; frame-ancestors 'none'",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "DENY",
+          "Referrer-Policy": "no-referrer"
+        },
+        "observedHeaders": {
+          "Content-Security-Policy": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https: https://bers-v1-core-production.up.railway.app; font-src 'self' data:; connect-src 'self' https://bers-v1-core-production.up.railway.app; worker-src 'self' blob:; manifest-src 'self'; media-src 'self' blob: data:; frame-ancestors 'none'",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "DENY",
+          "Referrer-Policy": "no-referrer",
+          "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+        },
+        "deployedSha": "85086ff0ce952b0df511e8538682d3153e663c62",
+        "htmlSha256": "aa919047319d2a157d37eca96a3dddccf971d7b1ebbe72b2ce1efbb86e09449f",
+        "verifiedSha": "85086ff0ce952b0df511e8538682d3153e663c62",
+        "workflowRunUrl": "https://github.com/giltik123/bers23/actions/runs/37869753056",
+        "artifactName": "bers-v1-frontend-security-85086ff0ce952b0df511e8538682d3153e663c62"
+      }
     }
   ]
 }
