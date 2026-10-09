@@ -19,6 +19,24 @@ jobs:
           python-version: '3.11'
       - name: Run offline parser remapping and fail-closed fork tests
         run: python -m unittest discover -s research/fashn-vton15 -p 'test_schp_replacement.py' -v
+      - name: Patch exact pinned FASHN upstream source without fetching weights
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fashn-vton-rnd"
+          git -C "$RUNNER_TEMP/fashn-vton-rnd" init
+          git -C "$RUNNER_TEMP/fashn-vton-rnd" remote add origin https://github.com/fashn-AI/fashn-vton-1.5.git
+          git -C "$RUNNER_TEMP/fashn-vton-rnd" fetch --depth=1 origin 7c0f10af3f91ad4048fe9729c470a13ef905d25a
+          git -C "$RUNNER_TEMP/fashn-vton-rnd" checkout --detach FETCH_HEAD
+          python research/fashn-vton15/patch_upstream.py --upstream "$RUNNER_TEMP/fashn-vton-rnd"
+          python -m compileall -q "$RUNNER_TEMP/fashn-vton-rnd/src/fashn_vton"
+          if grep -R -E "fashn_human_parser|FashnHumanParser" --include='*.py' "$RUNNER_TEMP/fashn-vton-rnd/src" "$RUNNER_TEMP/fashn-vton-rnd/scripts"; then
+            echo "Restricted FASHN human parser code reference still present" >&2
+            exit 1
+          fi
+          if grep -F "fashn-human-parser" "$RUNNER_TEMP/fashn-vton-rnd/pyproject.toml"; then
+            echo "Restricted parser dependency still present" >&2
+            exit 1
+          fi
       - name: Verify admission is closed and external weight identity not invented
         run: |
           python - <<'PY'
