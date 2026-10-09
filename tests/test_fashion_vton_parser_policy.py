@@ -66,10 +66,12 @@ class ParserRouteTests(unittest.TestCase):
             {"segmentation_free": "true"},
         ):
             with self.assertRaises(ParserPolicyRejected):
-                plan_parser_route(
-                    category="tops", garment_photo_type="model",
-                    segmentation_free=True, **flags,
-                )
+                kwargs = {
+                    "category": "tops", "garment_photo_type": "model",
+                    "segmentation_free": True,
+                }
+                kwargs.update(flags)
+                plan_parser_route(**kwargs)
 
 
 if __name__ == "__main__":
