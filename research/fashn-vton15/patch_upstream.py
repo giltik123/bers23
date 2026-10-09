@@ -46,6 +46,18 @@ def patch_files(upstream: Path, parser_source: Path = PARSER_SOURCE) -> list[str
         "self.hp_model = BersSchpAtrParser(weights_dir=self.weights_dir, device=hp_device)",
         pipeline.name,
     )
+    sources[pipeline] = replace_once(
+        sources[pipeline],
+        'self.logger.info("Loading FashnHumanParser")',
+        'self.logger.info("Loading BERS SCHP-ATR local parser")',
+        pipeline.name,
+    )
+    sources[pipeline] = replace_once(
+        sources[pipeline],
+        'self.logger.info("FashnHumanParser loaded")',
+        'self.logger.info("BERS SCHP-ATR local parser loaded")',
+        pipeline.name,
+    )
     sources[agnostic] = replace_once(
         sources[agnostic],
         "from fashn_human_parser import BODY_COVERAGE_TO_LABELS, IDENTITY_LABELS, LABELS_TO_IDS",
