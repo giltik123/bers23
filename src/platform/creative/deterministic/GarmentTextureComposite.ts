@@ -258,6 +258,63 @@ export function compositeSourceOverSrgbRgba8(
 }
 
 /**
+ * Experimental, non-admitted deterministic foreground occlusion preview.
+ *
+ * The matte is a separate one-byte-per-pixel coverage map in Project space:
+ *   0 = garment remains in front; 255 = existing Project foreground is fully
+ *   in front (arm / hair); intermediate values give fractional coverage.
+ *
+ * Scale only the already-warped garment alpha. Garment RGB is not modified:
+ * patterns/logos remain the original sampled pixels wherever uncovered.
+ * The existing byte-exact sRGB source-over compositor owns all blend math.
+ *
+ * This is PURE PIXEL MATH, NOT an admitted Fashion Try-On operation. In
+ * particular, a browser/model-supplied matte MUST NOT be given production
+ * authority without independent Core ownership, image-lineage binding,
+ * deterministic verification, and an explicit release/quality review.
+ * The existing F4b compositing path is unchanged until then.
+ */
+export function compositeGarmentWithForegroundOcclusionRgba8(
+  projectRgba: Uint8Array | Uint8ClampedArray,
+  garmentLayerRgba: Uint8Array | Uint8ClampedArray,
+  foregroundCoverage: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+): Uint8ClampedArray {
+  const pixels = assertRgbaImage(projectRgba, width, height, 'Foreground occlusion Project source');
+  assertRgbaImage(garmentLayerRgba, width, height, 'Foreground occlusion garment layer');
+  if (!(foregroundCoverage instanceof Uint8Array) && !(foregroundCoverage instanceof Uint8ClampedArray)) {
+    throw new Error('Foreground occlusion matte must be one-byte Uint8 coverage');
+  }
+  if (foregroundCoverage.byteLength !== pixels) {
+    throw new Error('Foreground occlusion matte length must equal Project pixel count');
+  }
+
+  // Never change the managed garment's source pixels or the caller's input.
+  // A fully occluded pixel has zero garment alpha, while an uncovered pixel
+  // retains its original RGBA bytes exactly.
+  const visibleGarment = new Uint8ClampedArray(garmentLayerRgba);
+  for (let index = 0; index < pixels; index += 1) {
+    const coverage = foregroundCoverage[index];
+    if (coverage === 0) continue;
+    const offset = index * 4 + 3;
+    visibleGarment[offset] = coverage === 255
+      ? 0
+      : roundHalfUpDiv(garmentLayerRgba[offset] * (255 - coverage), 255);
+  }
+  const result = compositeSourceOverSrgbRgba8(projectRgba, visibleGarment, width, height);
+  // Keep the original Project pixel byte-exact when foreground coverage is
+  // complete, including alpha and transparent RGB. No synthesized person.
+  for (let index = 0; index < pixels; index += 1) {
+    if (foregroundCoverage[index] === 255) {
+      const offset = index * 4;
+      for (let channel = 0; channel < 4; channel += 1) result[offset + channel] = projectRgba[offset + channel];
+    }
+  }
+  return result;
+}
+
+/**
  * Pure composed F4b.5a preview/Core pixel law; this function grants no authority.
  *
  * Crucially, texture mapping happens on the exact managed Garment source view
