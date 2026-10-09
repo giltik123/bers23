@@ -104,6 +104,27 @@ These byte lengths are illustrative and do not represent real checkpoints. Once 
 
 We intentionally do **not** claim that installing third-party dependencies is offline or that arbitrary Python dependency code has been audited for all network activity. A fully disconnected runtime needs a pre-audited, pinned Python wheel environment and content-hashed ONNX/safetensors weights; that is a separate acceptance gate.
 
+## Bounded GPU research smoke (implemented; execution not yet measured)
+
+Once a **reviewer-pinned** weights manifest, compatible GPU host and isolated research package exist, the optional GPU smoke runner records actual output hashes, per-run wall latency and peak CUDA allocated bytes:
+
+```bash
+# Install the generated source fork in a disposable pinned Python environment first.
+# Load model weights from a pre-reviewed local folder; no cloud API is invoked.
+python scripts/fashion_vton_gpu_smoke.py \
+  --person /private/research/person.png \
+  --garment /private/research/flat-lay-shirt.png \
+  --weights-dir /private/models/fashn-v15 \
+  --weights-manifest /private/models/approved-research-weights.json \
+  --category tops \
+  --runs 3 \
+  --output /private/research/tryon-run-01
+```
+
+The local output folder contains PNGs and `run-report.json`, including raw input and output SHA-256 identities, GPU name, p50/p95 wall time and allocated CUDA memory. The runner refuses missing/malformed inputs, reused output directories and missing local weight attestations. It forces `flat-lay`, `segmentation_free=True`, `num_timesteps=30`, one output, and a fixed default seed. **It has not run on a GPU in this PR.** No comparable FASHN upstream GPU baseline, quality decision, temperature/energy measurement, model distribution approval, Core ticket, FINAL or production authority is established.
+
+The environment variables `HF_HUB_OFFLINE` and `TRANSFORMERS_OFFLINE` are only defense in depth; a network-isolated container and pinned dependency wheel hashes are still required for hard offline assurance. Review the local photos' use rights; the smoke runner does not upload them.
+
 ## Next development slices
 
 1. Parserless source fork in isolated Fashion Pack; pin Apache-2.0 notices and dependencies.
