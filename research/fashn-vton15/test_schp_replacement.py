@@ -71,7 +71,7 @@ class ExactForkPatchTests(unittest.TestCase):
         (root / paths[2]).write_text(
             '[project]\ndependencies = [\n    "fashn-human-parser>=0.1.1",\n]\n', encoding="utf-8")
         (root / paths[3]).write_text(
-            '# - FashnHumanParser weights (auto-cached by HuggingFace)\n'
+            '    - FashnHumanParser weights (auto-cached by HuggingFace)\n'
             'def download_human_parser() -> None:\n'
             '    from fashn_human_parser import FashnHumanParser\n'
             '    FashnHumanParser(device="cpu")\n'
