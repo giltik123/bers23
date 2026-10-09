@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "kind": "BERS_FASHN_LOCAL_HUMAN_PARSER_REPLACEMENT_RND",
+  "status": "CANDIDATE_NOT_PRODUCTION_ADMITTED",
+  "upstream": {
+    "repo": "fashn-AI/fashn-vton-1.5",
+    "revision": "7c0f10af3f91ad4048fe9729c470a13ef905d25a",
+    "license": "Apache-2.0",
+    "restrictedParserRemoved": "fashn-human-parser>=0.1.1"
+  },
+  "chosen": {
+    "modelId": "pirocheto/schp-atr-18",
+    "modelRevision": "1ddc548f48cc1435a505e565ff5f56dcfe6017e3",
+    "artifact": "onnx/schp-atr-18-int8-static.onnx",
+    "artifactSha256": null,
+    "reportedArtifactBytesApprox": 69100000,
+    "reportedLabels": 18,
+    "reportedAtrMioU": 82.29,
+    "repoDeclaredLicense": "MIT",
+    "dataset": "ATR",
+    "datasetReuseRights": "PENDING_INDEPENDENT_COMERCIAL_LICENSE_AND_PROVENANCE_REVIEW",
+    "commercialApproval": false,
+    "actualOnnxRuntimeTest": "NOT_RUN",
+    "outputQualityVsFashn": "UNPROVEN",
+    "runtimeProvider": "CPU_OR_CUDA_LOCAL_ONLY",
+    "unsupportedFashnClasses": [
+      "hands",
+      "torso",
+      "jewelry"
+    ],
+    "approximateMappings": [
+      "left/right shoe -> feet",
+      "left/right arm -> arms (hands not separately resolved)"
+    ]
+  },
+  "alternatives": [
+    {
+      "model": "fashn-ai/fashn-human-parser",
+      "classes": 18,
+      "fit": "NATIVE",
+      "commercialBlocker": "NVIDIA_SEGFORMER_LICENSE"
+    },
+    {
+      "model": "pirocheto/schp-lip-20",
+      "classes": 20,
+      "fit": "MULTI_CLOTHES_COAT_GLOVE_BUT_NON_NATIVE",
+      "commercialBlocker": "DATASET_MODEL_PROVENANCE_REVIEW"
+    },
+    {
+      "model": "google-mediapipe-selfie-multiclass",
+      "classes": 6,
+      "fit": "COARSE_HAIR_SKIN_CLOTHES_ONLY",
+      "commercialBlocker": "MODEL_LICENSE_AND_RESOLUTION_REVIEW"
+    }
+  ],
+  "releaseAuthorityGranted": false,
+  "modelWeightsDownloaded": false,
+  "integrationKind": "OFFLINE_PINNED_UPSTREAM_PATCH_ONLY",
+  "exactShaArtifactRequiredBeforeTest": true,
+  "notes": "Declared accuracy is ATR-specific; no direct FASHN benchmark comparison. Review trained model and original dataset rights, model/checkpoint SHA, parity and representative quality before promotion."
+}
