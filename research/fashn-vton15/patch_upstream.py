@@ -26,6 +26,9 @@ def patch_files(upstream: Path, parser_source: Path = PARSER_SOURCE) -> list[str
     pyproject = upstream / "pyproject.toml"
     downloader = upstream / "scripts/download_weights.py"
     debug_masks = upstream / "scripts/debug_masks.py"
+    replacement = upstream / "src/fashn_vton/bers_human_parser.py"
+    if replacement.exists():
+        raise ValueError("BersSchpAtrParser already present; patch must be one-shot")
     mandatory = [pipeline, agnostic, pyproject, downloader, debug_masks]
     if not all(p.is_file() and not p.is_symlink() for p in mandatory):
         raise ValueError("Pinned FASHN checkout layout is incomplete or symlink-substituted")
@@ -70,9 +73,6 @@ def patch_files(upstream: Path, parser_source: Path = PARSER_SOURCE) -> list[str
     sources[downloader] = original
     if not parser_source.is_file():
         raise ValueError("Missing BERS SCHP adapter")
-    replacement = upstream / "src/fashn_vton/bers_human_parser.py"
-    if replacement.exists():
-        raise ValueError("BersSchpAtrParser already present; patch must be one-shot")
     # A second script (debug_masks) directly imports the restricted package.
     # Remove it rather than accidentally leave a back-door dependency.
     if "fashn_human_parser" not in sources[debug_masks] and "FashnHumanParser" not in sources[debug_masks]:
