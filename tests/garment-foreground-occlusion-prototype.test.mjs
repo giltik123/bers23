@@ -95,7 +95,7 @@ test('opaque garment region can restore foreground while preserving neighboring 
     240, 70, 40, 255, 250, 80, 50, 255, 200, 90, 60, 255,
   ]);
   const originalMask = Uint8Array.from([0, 255, 0, 255, 0, 0]);
-  const expected = Uint8Array.from([
+  const expected = Uint8ClampedArray.from([
     ...composited.subarray(0, 4), ...original.subarray(4, 8),
     ...composited.subarray(8, 12), ...original.subarray(12, 16),
     ...composited.subarray(16, 20), ...composited.subarray(20, 24),
