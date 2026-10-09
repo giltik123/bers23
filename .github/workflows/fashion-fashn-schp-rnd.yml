@@ -1,0 +1,54 @@
+name: Fashion local FASHN SCHP parser replacement R&D
+on:
+  pull_request:
+    paths:
+      - 'research/fashn-vton15/**'
+      - '.github/workflows/fashion-fashn-schp-rnd.yml'
+  push:
+    branches:
+      - 'fashion/fashn-vton15-local-rnd-20261009'
+permissions:
+  contents: read
+jobs:
+  parser-fork-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run offline parser remapping and fail-closed fork tests
+        run: python -m unittest discover -s research/fashn-vton15 -p 'test_schp_replacement.py' -v
+      - name: Patch exact pinned FASHN upstream source without fetching weights
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fashn-vton-rnd"
+          git -C "$RUNNER_TEMP/fashn-vton-rnd" init
+          git -C "$RUNNER_TEMP/fashn-vton-rnd" remote add origin https://github.com/fashn-AI/fashn-vton-1.5.git
+          git -C "$RUNNER_TEMP/fashn-vton-rnd" fetch --depth=1 origin 7c0f10af3f91ad4048fe9729c470a13ef905d25a
+          git -C "$RUNNER_TEMP/fashn-vton-rnd" checkout --detach FETCH_HEAD
+          python research/fashn-vton15/patch_upstream.py --upstream "$RUNNER_TEMP/fashn-vton-rnd"
+          python -m compileall -q "$RUNNER_TEMP/fashn-vton-rnd/src/fashn_vton"
+          if grep -R -E "fashn_human_parser|FashnHumanParser" --include='*.py' "$RUNNER_TEMP/fashn-vton-rnd/src" "$RUNNER_TEMP/fashn-vton-rnd/scripts"; then
+            echo "Restricted FASHN human parser code reference still present" >&2
+            exit 1
+          fi
+          if grep -F "fashn-human-parser" "$RUNNER_TEMP/fashn-vton-rnd/pyproject.toml"; then
+            echo "Restricted parser dependency still present" >&2
+            exit 1
+          fi
+      - name: Verify admission is closed and external weight identity not invented
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path('research/fashn-vton15/parser-candidate.json').read_text())
+          assert d['status'] == 'CANDIDATE_NOT_PRODUCTION_ADMITTED'
+          assert d['releaseAuthorityGranted'] is False
+          assert d['modelWeightsDownloaded'] is False
+          assert d['chosen']['commercialApproval'] is False
+          assert d['chosen']['artifactSha256'] is None
+          assert d['chosen']['actualOnnxRuntimeTest'] == 'NOT_RUN'
+          assert d['upstream']['revision'] == '7c0f10af3f91ad4048fe9729c470a13ef905d25a'
+          print('R&D licensing/authority guard PASS')
+          PY
