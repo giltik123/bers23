@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from fashion_vton_gpu_smoke import _image_path, _validate, main
+from fashion_vton_gpu_smoke import _image_path, _validate, assert_parserless_package, main
 
 
 class SmokeContractTests(unittest.TestCase):
@@ -59,6 +59,15 @@ class SmokeContractTests(unittest.TestCase):
         self.person.write_bytes(b'')
         with self.assertRaisesRegex(ValueError, 'size'):
             _validate(self.args())
+
+    def test_refuses_installed_stock_fashn_package(self):
+        # A PyPI installation with the upstream name must never run accidentally.
+        fake_init = self.root / 'stock_fashn' / '__init__.py'
+        fake_init.parent.mkdir()
+        fake_init.write_text('import fashn_human_parser\\n')
+        with mock.patch('importlib.util.find_spec', return_value=argparse.Namespace(origin=str(fake_init))):
+            with self.assertRaisesRegex(RuntimeError, 'not the exact generated parserless'):
+                assert_parserless_package()
 
     def test_preflight_before_torch_or_model_import(self):
         with mock.patch('fashion_vton_gpu_smoke.verify_weights', side_effect=ValueError('bad manifest')):
