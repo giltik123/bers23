@@ -87,6 +87,21 @@ The generated package retains `fashn_vton.TryOnPipeline`; the **only admitted re
 
 Unit proof: `python -m unittest discover -s tests -p 'test_build_fashion_vton_parserless.py' -v`. A path-scoped GitHub Actions R&D workflow separately clones the exact upstream SHA and attempts to build/compile it with **no GPU**; its success is not an image-quality/performance acceptance.
 
+The optional CPU-only weight preflight is `scripts/fashion_vton_weight_preflight.py`. Supply **reviewer-pinned** identities for the three paths in this JSON format (values below deliberately omitted; do not invent hashes):
+
+```json
+{
+  "schema": "BERS_FASHION_RESEARCH_WEIGHTS_V1",
+  "files": {
+    "model.safetensors": {"bytes": 123, "sha256": "<actual 64-character lowercase SHA-256>"},
+    "dwpose/yolox_l.onnx": {"bytes": 123, "sha256": "<actual 64-character lowercase SHA-256>"},
+    "dwpose/dw-ll_ucoco_384.onnx": {"bytes": 123, "sha256": "<actual 64-character lowercase SHA-256>"}
+  }
+}
+```
+
+These byte lengths are illustrative and do not represent real checkpoints. Once a reviewed manifest exists, run `python scripts/fashion_vton_weight_preflight.py --weights-dir <local-folder> --manifest <reviewed-file.json>`. This checks local size, SHA-256 and symlink exclusions. **A self-authored manifest is not a trust root or commercial-license approval.** The research validator does not import the VTON model or download weights.
+
 We intentionally do **not** claim that installing third-party dependencies is offline or that arbitrary Python dependency code has been audited for all network activity. A fully disconnected runtime needs a pre-audited, pinned Python wheel environment and content-hashed ONNX/safetensors weights; that is a separate acceptance gate.
 
 ## Next development slices
