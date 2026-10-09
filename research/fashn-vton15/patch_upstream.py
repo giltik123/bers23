@@ -56,7 +56,7 @@ def patch_files(upstream: Path, parser_source: Path = PARSER_SOURCE) -> list[str
     original = sources[downloader]
     begin = original.find("def download_human_parser() -> None:")
     end = original.find("def main()", begin)
-    if begin < 0 or end < begin or original.count("download_human_parser()") != 1:
+    if begin < 0 or end < begin or original.count("download_human_parser()") != 2:
         raise ValueError("download_weights.py: unrecognized parser downloader")
     original = original[:begin] + original[end:]
     original = replace_once(
