@@ -68,6 +68,27 @@ Sources:
 - Security/integrity tests: bad/mismatched mask dimensions or source hash, cross-user garment, stale Project, malformed categories, missing weights/license metadata, local-only failure, cancellation/retry/duplicate execution.
 - New production-capability branch/PR, relevant hosted acceptance on exact final head; no production promotion based on a research-only software test.
 
+## Reproducible source-only prototype (implemented in this draft PR)
+
+The builder is intentionally **build-time only**. It copies the published Apache-2.0 source to an isolated output directory after Git revision and exact blob verification, then removes parser-specific imports, masked-only preprocessing, and the dependency declaration. It also replaces the upstream checkpoint helper: the research package now accepts **only existing local regular .safetensors files**, with no HuggingFace network fallback or pickle-based `torch.load`.
+
+```bash
+# Build host: network is used here only to obtain public sources.
+git clone https://github.com/fashn-AI/fashn-vton-1.5.git upstream-fashn
+git -C upstream-fashn checkout --detach 7c0f10af3f91ad4048fe9729c470a13ef905d25a
+python scripts/build_fashion_vton_parserless.py \
+  --upstream upstream-fashn --output /tmp/bers-vton-parserless
+
+# In a separate research Python environment, install the generated package:
+python -m pip install -e /tmp/bers-vton-parserless
+```
+
+The generated package retains `fashn_vton.TryOnPipeline`; the **only admitted research mode** is `garment_photo_type="flat-lay", segmentation_free=True`. Unsupported clothing/semantic parsing paths raise an error before model inference. Required research weights remain external: `model.safetensors`, `dwpose/yolox_l.onnx`, `dwpose/dw-ll_ucoco_384.onnx`. Do not run the weight-downloading upstream script from production or treat a local file's existence as weight provenance approval.
+
+Unit proof: `python -m unittest discover -s tests -p 'test_build_fashion_vton_parserless.py' -v`. A path-scoped GitHub Actions R&D workflow separately clones the exact upstream SHA and attempts to build/compile it with **no GPU**; its success is not an image-quality/performance acceptance.
+
+We intentionally do **not** claim that installing third-party dependencies is offline or that arbitrary Python dependency code has been audited for all network activity. A fully disconnected runtime needs a pre-audited, pinned Python wheel environment and content-hashed ONNX/safetensors weights; that is a separate acceptance gate.
+
 ## Next development slices
 
 1. Parserless source fork in isolated Fashion Pack; pin Apache-2.0 notices and dependencies.
