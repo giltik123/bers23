@@ -26,6 +26,22 @@ uncontrolled AI synthesis or model-dependent output. This layer is not a
 person/arm segmentation algorithm; no trustworthy matte is yet produced by
 the canonical production pipeline.
 
+## R&D provenance guard now implemented (still non-authorizing)
+
+`server/core/fashion/foregroundOcclusionEvidence.ts` now validates one
+independently **manually reviewed** matte against a caller-supplied expected
+tenant, Project, exact Project-image SHA, Project geometry and garment-layer
+SHA. It verifies the matte's actual SHA-256 bytes and rejects stale image
+versions, cross-tenant/cross-Project substitution, mismatched dimensions,
+unauthorized source classes and mutated masks. Dedicated test:
+`tests/fashion-foreground-occlusion-evidence.test.mjs`.
+
+**Security boundary:** this helper does not authenticate callers, query Core
+ownership, establish whether a human review really occurred, or grant
+candidate submission, preview FINAL, Project Accept or execution authority.
+The supplied `expected` must ultimately come from an independent authorized
+Core resolver; caller-controlled expectations would not establish trust.
+
 ## Required admission and quality work, not completed here
 
 1. Define a **Core-owned** foreground-matte provenance contract bound to the
