@@ -1,0 +1,36 @@
+name: Fashion local FASHN SCHP parser replacement R&D
+on:
+  pull_request:
+    paths:
+      - 'research/fashn-vton15/**'
+      - '.github/workflows/fashion-fashn-schp-rnd.yml'
+  push:
+    branches:
+      - 'fashion/fashn-vton15-local-rnd-20261009'
+permissions:
+  contents: read
+jobs:
+  parser-fork-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run offline parser remapping and fail-closed fork tests
+        run: python -m unittest discover -s research/fashn-vton15 -p 'test_schp_replacement.py' -v
+      - name: Verify admission is closed and external weight identity not invented
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path('research/fashn-vton15/parser-candidate.json').read_text())
+          assert d['status'] == 'CANDIDATE_NOT_PRODUCTION_ADMITTED'
+          assert d['releaseAuthorityGranted'] is False
+          assert d['modelWeightsDownloaded'] is False
+          assert d['chosen']['commercialApproval'] is False
+          assert d['chosen']['artifactSha256'] is None
+          assert d['chosen']['actualOnnxRuntimeTest'] == 'NOT_RUN'
+          assert d['upstream']['revision'] == '7c0f10af3f91ad4048fe9729c470a13ef905d25a'
+          print('R&D licensing/authority guard PASS')
+          PY
