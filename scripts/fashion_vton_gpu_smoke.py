@@ -53,6 +53,22 @@ def _validate(args):
     return person, garment, output
 
 
+def assert_parserless_package():
+    """Refuse an accidental import of the original parser-dependent FASHN wheel."""
+    from importlib.util import find_spec
+    from build_fashion_vton_parserless import UPSTREAM_COMMIT
+    spec = find_spec('fashn_vton')
+    if not spec or not spec.origin:
+        raise RuntimeError('Generated BERS parserless research package is not installed')
+    root = Path(spec.origin).parent
+    identity = root / 'research_identity.py'
+    expected = ('# GENERATED BERS parserless research identity; no production admission.\\n'
+                'KIND = "BERS_FASHION_PARSERLESS_RESEARCH_V1"\\n'
+                f'UPSTREAM_SHA = "{UPSTREAM_COMMIT}"\\n')
+    if identity.is_symlink() or not identity.is_file() or identity.read_text(encoding='utf-8') != expected:
+        raise RuntimeError('Installed fashn_vton is not the exact generated parserless research package')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--person', required=True, help='Local person photo; no uploads')
@@ -74,6 +90,7 @@ def main(argv=None):
     os.environ['HF_HUB_OFFLINE'] = '1'
     os.environ['TRANSFORMERS_OFFLINE'] = '1'
     os.environ['HF_DATASETS_OFFLINE'] = '1'
+    assert_parserless_package()
     import torch
     from PIL import Image
     from fashn_vton import TryOnPipeline
