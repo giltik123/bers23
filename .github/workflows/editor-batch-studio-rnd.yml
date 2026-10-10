@@ -11,6 +11,9 @@ on:
       - '.github/workflows/editor-batch-studio-rnd.yml'
 permissions:
   contents: read
+concurrency:
+  group: bers-editor-batch-rnd-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   batch-source-fidelity:
     runs-on: ubuntu-latest
