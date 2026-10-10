@@ -15,11 +15,14 @@ on:
       - 'server/core/projects/postgresProjectStore.ts'
       - 'server/core/projects/sceneObjectAdmission.ts'
       - 'server/core/scene/falSam3SemanticInstances.ts'
+      - 'server/core/scene/classicalSceneSegmentation.ts'
       - 'tests/auto-scene-masks.test.mjs'
       - 'tests/auto-scene-mask-preview-adapter.test.mjs'
       - 'tests/auto-scene-server-admission.test.mjs'
       - 'tests/fal-sam3-scene-real-pixel-contract.test.mjs'
       - 'tests/scene-project-cas-parameters.test.ts'
+      - 'tests/classical-local-scene-segmentation.test.mjs'
+      - 'tests/local-selfie-multiclass-mask-decoder.test.mjs'
       - '.github/workflows/automatic-scene-masks.yml'
 
 permissions:
@@ -58,6 +61,10 @@ jobs:
             --outfile=.test-cache/scene/project-cas.test.mjs \
             --external:sharp --external:pg --external:node:*
           node --test .test-cache/scene/project-cas.test.mjs
+      - name: Test free no-cloud image segmentation on real PNG pixel fixtures
+        run: node --experimental-strip-types --test tests/classical-local-scene-segmentation.test.mjs
+      - name: Test local MediaPipe multiclass masks and source identity admission
+        run: node --test tests/local-selfie-multiclass-mask-decoder.test.mjs
       - name: Typecheck and build actual Editor and Core
         run: |
           npm run typecheck
