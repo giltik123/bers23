@@ -50,7 +50,7 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
   );
 }
 
-export default function ObjectPanel({ objects, onSelect }) {
+export default function ObjectPanel({ objects, onSelect, onVisibilityChange }) {
   const [open, setOpen] = useState(true);
   const [hidden, setHidden] = useState(new Set());
   const roots = objects.filter((o) => !o.parent_object);
@@ -63,6 +63,7 @@ export default function ObjectPanel({ objects, onSelect }) {
     const next = new Set(hidden);
     next.has(id) ? next.delete(id) : next.add(id);
     setHidden(next);
+    onVisibilityChange?.(new Set(next));
   };
 
   return (
