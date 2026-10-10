@@ -1,0 +1,73 @@
+name: Fashion VTON parserless R&D source proof
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/build_fashion_vton_parserless.py'
+      - 'scripts/fashion_vton_parser_policy.py'
+      - 'scripts/fashion_vton_weight_preflight.py'
+      - 'scripts/fashion_vton_gpu_smoke.py'
+      - 'tests/test_build_fashion_vton_parserless.py'
+      - 'tests/test_fashion_vton_parser_policy.py'
+      - 'tests/test_fashion_vton_weight_preflight.py'
+      - 'tests/test_fashion_vton_gpu_smoke.py'
+      - 'docs/fashion-vton-v15-parserless-research-decision.md'
+      - '.github/workflows/fashion-vton-parserless-research.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-pinned-parserless-fork:
+    name: Pinned source + parserless build (research only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: CPU-only unit tests
+        run: |
+          python -m unittest discover -s tests -p 'test_build_fashion_vton_parserless.py' -v
+          python -m unittest discover -s tests -p 'test_fashion_vton_parser_policy.py' -v
+          python -m unittest discover -s tests -p 'test_fashion_vton_weight_preflight.py' -v
+          python -m unittest discover -s tests -p 'test_fashion_vton_gpu_smoke.py' -v
+      - name: Fetch exact FASHN research upstream (build time only)
+        shell: bash
+        run: |
+          git init "${RUNNER_TEMP}/fashn-vton-upstream"
+          git -C "${RUNNER_TEMP}/fashn-vton-upstream" remote add origin https://github.com/fashn-AI/fashn-vton-1.5.git
+          git -C "${RUNNER_TEMP}/fashn-vton-upstream" fetch --depth=1 origin 7c0f10af3f91ad4048fe9729c470a13ef905d25a
+          git -C "${RUNNER_TEMP}/fashn-vton-upstream" checkout --detach FETCH_HEAD
+      - name: Build offline from immutable upstream checkout
+        run: |
+          python scripts/build_fashion_vton_parserless.py \
+            --upstream "${RUNNER_TEMP}/fashn-vton-upstream" \
+            --output "${RUNNER_TEMP}/bers-fashion-parserless"
+      - name: Assert no Human Parser source or install dependency
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "bers-fashion-parserless"
+          package = root / "src" / "fashn_vton"
+          assert package.is_dir()
+          assert not (package / "preprocessing" / "agnostic.py").exists()
+          assert not (package / "preprocessing" / "masks.py").exists()
+          for path in package.rglob("*.py"):
+              code = path.read_text()
+              assert "fashn_human_parser" not in code, path
+              assert "FashnHumanParser" not in code, path
+              compile(code, str(path), "exec")
+          assert "fashn-human-parser" not in (root / "pyproject.toml").read_text()
+          assert "huggingface_hub" not in (root / "pyproject.toml").read_text()
+          assert "hf_hub_download" not in (package / "utils/checkpoint.py").read_text()
+          manifest = json.loads((root / "SOURCE-MANIFEST.json").read_text())
+          assert manifest["upstreamCommit"] == "7c0f10af3f91ad4048fe9729c470a13ef905d25a"
+          assert (root / "LICENSE").is_file()
+          print("Pinned source build and parserless dependency scan passed; no model inference executed")
+          PY
