@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw, ScanLine, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,7 +30,11 @@ export default function CanonicalTryOnManualRemediationPanel({
   // revision and managed Garment. Never reuse an old editor after any change.
   const selectionKey = manualTryOnSelectionKey(selection);
   const currentSelectionKeyRef = useRef(selectionKey);
-  currentSelectionKeyRef.current = selectionKey;
+  // Commit the displayed identity before async promise callbacks can resume.
+  // Do not mutate mutable refs during React rendering.
+  useLayoutEffect(() => {
+    currentSelectionKeyRef.current = selectionKey;
+  }, [selectionKey]);
   const loadSequenceRef = useRef(0);
   const openedSelectionKeyRef = useRef(null);
   const savedSelectionKeyRef = useRef(null);
