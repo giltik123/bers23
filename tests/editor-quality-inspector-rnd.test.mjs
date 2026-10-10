@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   analyzeEditorPixelQualityRgba8,
-  analyzeEditorTonalClippingRgba8,
+  analyzeEditorNearWhiteAndBlackRgba8,
   requireEditorProtectedPixelsUnchanged,
 } from '../src/platform/creative/deterministic/EditorQualityInspectorRND.ts';
 
@@ -88,7 +88,7 @@ test('tonal inspector counts newly clipped highlights/shadows inside authorized 
     255,255,255,255, 0,0,0,255, 0,0,0,0,
   ]);
   const mask=Uint8Array.from([255,255,255,0,0,255]);
-  const audit=analyzeEditorTonalClippingRgba8(before,after,3,2,mask);
+  const audit=analyzeEditorNearWhiteAndBlackRgba8(before,after,3,2,mask);
   assert.deepEqual(audit,{
     evaluatedPixels:3,
     highlightsBefore:0,highlightsAfter:2,newlyClippedHighlights:2,
@@ -106,11 +106,11 @@ test('tonal inspector ignores existing clipping, protected pixels, and hidden tr
     255,255,255,255, 255,255,255,0,
     0,0,0,255, 255,255,255,0,
   ]);
-  const audit=analyzeEditorTonalClippingRgba8(before,after,2,2,Uint8Array.from([255,255,0,255]));
+  const audit=analyzeEditorNearWhiteAndBlackRgba8(before,after,2,2,Uint8Array.from([255,255,0,255]));
   assert.deepEqual(audit,{
     evaluatedPixels:1,
     highlightsBefore:1,highlightsAfter:1,newlyClippedHighlights:0,
     shadowsBefore:0,shadowsAfter:0,newlyClippedShadows:0,
   });
-  assert.throws(()=>analyzeEditorTonalClippingRgba8(before,after,2,2,Uint8Array.from([255])),/mask/u);
+  assert.throws(()=>analyzeEditorNearWhiteAndBlackRgba8(before,after,2,2,Uint8Array.from([255])),/mask/u);
 });
