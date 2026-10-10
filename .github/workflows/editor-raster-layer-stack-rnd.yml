@@ -4,7 +4,14 @@ on:
     branches: [main]
     paths:
       - 'src/platform/creative/deterministic/EditorRasterLayerStackRND.ts'
+      - 'src/platform/creative/deterministic/EditorQualityInspectorRND.ts'
+      - 'src/platform/creative/deterministic/EditorLayerDocumentRND.ts'
+      - 'src/components/editor/ResultCompare.jsx'
+      - 'src/components/editor/compareGeometryPolicy.js'
       - 'tests/editor-raster-layer-stack-rnd.test.mjs'
+      - 'tests/editor-quality-inspector-rnd.test.mjs'
+      - 'tests/editor-layer-document-rnd.test.mjs'
+      - 'tests/editor-result-compare-inspector.test.mjs'
       - 'docs/bers-v1-quality-first-expansion-20261010.md'
       - '.github/workflows/editor-raster-layer-stack-rnd.yml'
 permissions:
@@ -12,13 +19,33 @@ permissions:
 jobs:
   editor-layer-pixel-contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify tested PR identity
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
-      - name: Prove immutable RGBA composition, protected masks and alpha
-        run: node --experimental-strip-types --test tests/editor-raster-layer-stack-rnd.test.mjs
+          cache: npm
+      - run: npm ci
+      - name: Prove immutable layers, source-bound CAS, protected RGBA and split preview policy
+        run: |
+          node --experimental-strip-types --test \
+            tests/editor-raster-layer-stack-rnd.test.mjs \
+            tests/editor-quality-inspector-rnd.test.mjs \
+            tests/editor-layer-document-rnd.test.mjs \
+            tests/editor-result-compare-inspector.test.mjs
+      - name: Typecheck and production frontend build
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Diff whitespace contract
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA..HEAD"
