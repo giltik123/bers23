@@ -24,10 +24,12 @@ test('local quality lab contains real algorithms, browser-only import, explicit 
     'precisionCloneStampRgba8RND',
     'composeLinearLightLayersRgba8RND',
     'encodeDeterministicRgbaPng',
+    'professionalToneRangeMaskRgba8RND',
+    'paintProfessionalMaskR8RND',
   ])assert.match(lab,new RegExp(module,'u'));
   for(const button of [
     'Soft tone','Lanczos3 resize','Linear light blend','Undo','Redo',
-    'Select Clone source point','Save local PNG',
+    'Select Clone source point','Export visually reviewed PNG',
   ])assert.ok(lab.includes(button),button);
   assert.match(lab,/MAX_HISTORY = 5/u);
   assert.match(lab,/MAX_PIXELS = 2_097_152/u);
@@ -43,4 +45,22 @@ test('local quality lab contains real algorithms, browser-only import, explicit 
   ])assert.equal(lab.includes(forbidden),false,
     `unreviewed local editing network or state side effect: ${forbidden}`);
   assert.match(lab,/No upload, AI, billing, Project modification or Core Accept/u);
+});
+
+test('final photographic acceptance refuses export until naturalness, subject, artifacts and improvement checked',async()=>{
+  const lab=await readFile('src/pages/ProfessionalEditorLabRND.jsx','utf8');
+  for(const criterion of ['looksNatural','preservesSubject','noVisibleArtifacts','betterThanSource']){
+    assert.match(lab,new RegExp(criterion,'u'));
+  }
+  assert.match(lab,/const reviewed = original !== null && current !== null &&/u);
+  assert.match(lab,/Object.values\(qualityReview\)\.every\(value => value === true\)/u);
+  assert.match(lab,/if \(!current \|\| busy \|\| !reviewed\) return/u);
+  assert.match(lab,/disabled=\{disabled \|\| !reviewed\}/u);
+  assert.match(lab,/resetQualityReview\(\)/u);
+  assert.match(lab,/Final result visual review — not pixel\/resolution QA/u);
+  assert.match(lab,/finished photograph is genuinely better than the original/u);
+  assert.match(lab,/qualityReview\[key\]/u);
+  assert.match(lab,/Paint gentle selection/u);
+  assert.match(lab,/Magenta is only a preview overlay/u);
+  assert.match(lab,/toneRegion === 'BRUSH' \? manualMask : undefined/u);
 });
