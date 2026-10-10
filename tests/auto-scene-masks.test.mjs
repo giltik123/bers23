@@ -152,7 +152,7 @@ test('Editor mounts a source-bound status panel, not a legacy detection/syntheti
     readFile('server/core/projects/postgresProjectStore.ts','utf8'),
   ]);
   assert.match(editor,/<AutoSceneMasksPanel/);
-  assert.match(panel,/runner\.start\(project\)/);
+  assert.match(panel,/runner\.start\(project,\{/);
   assert.match(panel,/SCENE_GROUPS\.map/);
   assert.doesNotMatch(panel,/sam3Segment|segmentationService\.start|detectObjects/);
   assert.match(transport,/expectedSourceArtifactId/);
