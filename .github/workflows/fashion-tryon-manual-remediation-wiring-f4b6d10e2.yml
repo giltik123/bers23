@@ -10,12 +10,14 @@ on:
       - 'src/components/editor/outfits/CanonicalTryOnBodyAnchorEditor.jsx'
       - 'src/components/editor/outfits/useCanonicalTryOnEditor.js'
       - 'src/application/fashion/canonicalTryOnManualRemediationPolicy.js'
+      - 'src/application/fashion/manualTryOnSelectionGuard.js'
       - 'src/application/fashion/canonicalTryOnManualContourDraft.js'
       - 'src/application/fashion/canonicalTryOnManualBodyAnchorDraft.js'
       - 'src/application/fashion/createCanonicalTryOnManualPrerequisiteApplication.js'
       - 'src/application/fashion/createCanonicalTryOnEditorHost.js'
       - 'tests/fashion-tryon-manual-remediation-wiring.test.mjs'
       - 'tests/fashion-tryon-manual-remediation-policy.test.mjs'
+      - 'tests/fashion-manual-stale-selection.test.mjs'
       - 'tests/fashion-tryon-manual-contour-draft.test.mjs'
       - 'tests/fashion-tryon-manual-body-anchor-draft.test.mjs'
       - 'tests/fashion-tryon-manual-prerequisite-application.test.mjs'
@@ -50,6 +52,7 @@ jobs:
           node --test \
             tests/fashion-tryon-manual-remediation-wiring.test.mjs \
             tests/fashion-tryon-manual-remediation-policy.test.mjs \
+            tests/fashion-manual-stale-selection.test.mjs \
             tests/fashion-tryon-manual-contour-draft.test.mjs \
             tests/fashion-tryon-manual-body-anchor-draft.test.mjs \
             tests/fashion-tryon-manual-prerequisite-application.test.mjs \
