@@ -35,6 +35,41 @@ test('whole-frame requests may not silently inherit a confirmed selected-object 
   }), /не должна подтверждаться/);
 });
 
+test('real canonical HMAC-signed image and MASK references exceed 256 chars and remain selectable', async () => {
+  const { createHmac } = await import('node:crypto');
+  const id = '11111111-1111-4111-8111-111111111111';
+  // Matches SignedArtifactAuthority sign() envelope shape. The test verifies
+  // frontend length compatibility, not authenticity or scope admission.
+  const signed = (location, role, lifecycle) => {
+    const body = Buffer.from(JSON.stringify({
+      v: 1, location, storageId: id, tenantId: id, userId: id,
+      projectId: id, role, ...(lifecycle ? { lifecycle } : {}),
+    })).toString('base64url');
+    return body + '.' + createHmac('sha256', 'test-secret')
+      .update(body).digest('base64url');
+  };
+  const original = signed('STORED_ORIGINAL_ID', 'ORIGINAL', 'IMMUTABLE');
+  const mask = signed('STORED_MASK', 'MASK');
+  assert.ok(original.length > 256);
+  assert.ok(mask.length > 256);
+  const command = {
+    ...base, projectId: id, expectedProjectId: id,
+    sourceArtifactId: original, expectedSourceArtifactId: original,
+    expectedMaskArtifactId: mask,
+    objects: [{ id: 'object-1', selected: true, mask_artifact_id: mask }],
+  };
+  assert.deepEqual(bindGenerativeScope(command).maskArtifactIds, [mask]);
+  assert.deepEqual(bindGenerativeScope(command).selectedObjectIds, ['object-1']);
+  assert.throws(
+    () => bindGenerativeScope({ ...command, sourceArtifactId: original + 'x' }),
+    /фотография изменилась/,
+  );
+  assert.throws(
+    () => bindGenerativeScope({ ...command, expectedMaskArtifactId: 'x'.repeat(4097) }),
+    /Маска изменилась/,
+  );
+});
+
 test('stale source is rejected even with matching mask', () => {
   assert.throws(() => bindGenerativeScope({ ...base, sourceArtifactId: 'source-2' }), /фотография изменилась/);
 });
