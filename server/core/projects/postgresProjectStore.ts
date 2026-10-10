@@ -184,7 +184,7 @@ export class PostgresProjectStore {
       keys.length!==1 || keys[0]!=='objects' ||
       !precondition.expectedSourceStorageId ||
       !Number.isSafeInteger(precondition.expectedRevision) ||
-      precondition.expectedRevision<1
+      precondition.expectedRevision<0
     )) throw Object.assign(new Error('Auto scene object publication requires exact source and revision'),
       {status:400,code:'invalid_scene_precondition'});
     const values = keys.map(k => k==='objects' ? JSON.stringify(patch[k]) : patch[k]);
