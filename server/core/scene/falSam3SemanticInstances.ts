@@ -86,6 +86,8 @@ export async function runFalSam3Scene(input:Readonly<{
   };
   const perPrompt:SceneInstance[][]=SAM3_SCENE_PROMPTS.map(()=>[]);
   let cursor=0,firstFailure:unknown=null;
+  let retainedAlphaBytes=0;
+  const MAX_SCENE_MASK_BYTES=96_000_000;
   // A 12-prompt serial chain regularly exceeds the 120-second HTTP budget.
   // Run at most three requests at once, preserving stable prompt ordering.
   const worker=async()=>{
@@ -111,6 +113,9 @@ export async function runFalSam3Scene(input:Readonly<{
             continue;
           const binary=await decodeSam3Mask(decodeDataPng(result.masks[j]?.url),input.width,input.height);
           if(!binary)continue;
+          retainedAlphaBytes+=binary.byteLength;
+          if(retainedAlphaBytes>MAX_SCENE_MASK_BYTES)
+            throw fail('SAM3 per-image MASK memory budget exceeded');
           perPrompt[i].push({...entry,confidence:score,alpha:binary,
             modelId:MODEL_ID,modelVersion:MODEL_VERSION});
         }
