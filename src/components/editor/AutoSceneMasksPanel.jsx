@@ -4,6 +4,13 @@ import { SCENE_GROUPS, SCENE_LABELS, sceneSourceKey } from '@/application/scene/
 import { createCanonicalAutoSceneMaskRunner } from '@/application/scene/createCanonicalAutoSceneMaskRunner';
 import { Button } from '@/components/ui/button';
 
+const CLOUD_TARGETS=Object.freeze([
+  ['face','Лицо'],['shirt','Рубашка'],['jacket','Куртка'],
+  ['pants','Брюки'],['dress','Платье'],['shoes','Обувь'],
+  ['eyeglasses','Очки'],['handbag','Сумка'],['hat','Головной убор'],
+  ['background','Фон'],['chair','Стул'],['table','Стол'],
+]);
+
 const MESSAGE = Object.freeze({
   MODEL_UNAVAILABLE: 'Модель автоматического разделения сцены пока не подключена. Маски не создавались.',
   NO_OBJECTS: 'Модель не обнаружила подходящих объектов: пустые маски не создаются.',
@@ -27,9 +34,14 @@ export default function AutoSceneMasksPanel({
   const [state,setState] = useState({
     sourceKey:null,status:'IDLE',message:'',
   });
-  const [requested,setRequested] = useState({sourceKey:null,mode:'CLASSICAL',request:0});
+  const [requested,setRequested] = useState({
+    sourceKey:null,mode:'CLASSICAL',request:0,force:false,promptKey:null,
+  });
+  const [selectedCloudTarget,setSelectedCloudTarget] = useState('face');
   const currentMode=requested.sourceKey===sourceKey?requested.mode:'CLASSICAL';
   const currentRequest=requested.sourceKey===sourceKey?requested.request:0;
+  const currentPromptKey=requested.sourceKey===sourceKey?requested.promptKey:null;
+  const currentForce=requested.sourceKey===sourceKey&&requested.force===true;
   const attemptedRef = useRef(null);
 
   useEffect(() => {
@@ -39,7 +51,7 @@ export default function AutoSceneMasksPanel({
         message:'Анализ сцены начнётся, когда завершится текущее редактирование.' });
       return undefined;
     }
-    const attemptKey=JSON.stringify([sourceKey,currentMode,currentRequest]);
+    const attemptKey=JSON.stringify([sourceKey,currentMode,currentRequest,currentPromptKey]);
     // React re-render / status update must never redispatch a paid model.
     if (attemptedRef.current===attemptKey)return undefined;
     attemptedRef.current=attemptKey;
@@ -47,7 +59,7 @@ export default function AutoSceneMasksPanel({
     setState({ sourceKey, status:'RUNNING',message:currentMode==='CLASSICAL'
       ? 'Выделение цветовых областей без ИИ…'
       : 'Сегментация SAM3 через облачную модель…' });
-    runner.start(project,{mode:currentMode,force:currentRequest>0 && state.sourceKey===sourceKey}).then(result => {
+    runner.start(project,{mode:currentMode,force:currentForce,promptKey:currentPromptKey}).then(result => {
       finished=true;
       if(cancelled)return;
       setState({ sourceKey,status:result.status,message:result.message });
@@ -64,7 +76,7 @@ export default function AutoSceneMasksPanel({
     };
   // Re-run on image identity, explicit retry or when the editor becomes idle.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[sourceKey,currentMode,currentRequest,runner,disabled]);
+  },[sourceKey,currentMode,currentRequest,currentPromptKey,currentForce,runner,disabled]);
 
   const matching = state.sourceKey === sourceKey ? state : {
     status:'RUNNING',message:'Ожидание проверки новой фотографии',
@@ -113,17 +125,34 @@ export default function AutoSceneMasksPanel({
         <Button type="button" variant="outline" size="sm"
           disabled={disabled || running || !sourceKey}
           onClick={()=>setRequested(prev=>({
-            sourceKey,mode:'CLASSICAL',request:prev.request+1,
+            sourceKey,mode:'CLASSICAL',request:prev.request+1,force:true,promptKey:null,
           }))}>
           <RefreshCcw className="h-4 w-4 mr-1"/>Маски без ИИ
         </Button>
+        <label className="text-xs text-muted-foreground flex items-center gap-1">
+          Объект для SAM3
+          <select aria-label="Объект облачной сегментации"
+            value={selectedCloudTarget}
+            onChange={event=>setSelectedCloudTarget(event.target.value)}
+            className="rounded-md border bg-background p-1"
+            disabled={disabled||running}>
+            {CLOUD_TARGETS.map(([key,label])=>
+              <option key={key} value={key}>{label}</option>)}
+          </select>
+        </label>
         <Button type="button" variant="outline" size="sm"
           disabled={disabled || running || !sourceKey}
-          title="Облачный платный анализ только по вашему запросу"
-          onClick={()=>setRequested(prev=>({
-            sourceKey,mode:'SAM3',request:prev.request+1,
-          }))}>
-          SAM3 (облако)
+          title="Один платный API-вызов только для выбранного типа объекта"
+          onClick={()=>{
+            if(!window.confirm('Отправить фото в SAM3 для одного выбранного объекта? Это один облачный API-вызов.'))return;
+            setRequested(prev=>({
+              sourceKey,mode:'SAM3',request:prev.request+1,
+              force:prev.sourceKey===sourceKey&&prev.mode==='SAM3'&&
+                prev.promptKey===selectedCloudTarget,
+              promptKey:selectedCloudTarget,
+            }));
+          }}>
+          SAM3 · 1 запрос
         </Button>
         <Button type="button" variant="outline" size="sm"
           disabled={disabled||!sourceKey||typeof onManualSelect!=='function'}
