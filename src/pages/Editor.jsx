@@ -818,7 +818,10 @@ export default function Editor() {
   // AI-first commands use exactly the same authenticated Core source/MASK
   // and Preview→Accept path as the existing toolbar. A browser text parser
   // cannot select a garment/face or invent a canonical source/mask ticket.
-  const executeAIAdjustment = async ({ operation, parameters }) => {
+  const executeAIAdjustment = async ({
+    operation, parameters, expectedProjectId, expectedSourceArtifactId,
+    expectedSelectedObjectId, expectedMaskArtifactId,
+  }) => {
     if (editorBusy || committing || pendingResult || selection ||
         cropInteractionActive || resizeInteractionActive || driftWarning) {
       throw new Error('Закончите предыдущую операцию до нового AI-запроса.');
@@ -826,8 +829,21 @@ export default function Editor() {
     if (!project?.id || !project?.current_image_artifact_id || !selected?.mask_artifact_id) {
       throw new Error('Сначала подтвердите выбранную область с Core-маской.');
     }
-    const sourceArtifactId = project.current_image_artifact_id;
-    const maskArtifactId = selected.mask_artifact_id;
+    // Same exact Core source/object/MASK consent binding as AI generative edits:
+    // a changed selection may not silently redirect a confirmed tone operation.
+    const adjustedScope = bindGenerativeScope({
+      instruction: operation,
+      mode: 'MASKED',
+      projectId: project.id,
+      expectedProjectId,
+      sourceArtifactId: project.current_image_artifact_id,
+      expectedSourceArtifactId,
+      expectedSelectedObjectId,
+      expectedMaskArtifactId,
+      objects,
+    });
+    const sourceArtifactId = adjustedScope.sourceArtifactId;
+    const maskArtifactId = adjustedScope.maskArtifactIds[0];
     const context = { sourceArtifactId, maskArtifactId, ...parameters, bubbleFailure: true };
     if (operation === 'MASKED_EXPOSURE') return applyMaskedExposure(context);
     if (operation === 'MASKED_WHITE_BALANCE') return applyMaskedWhiteBalance(context);
