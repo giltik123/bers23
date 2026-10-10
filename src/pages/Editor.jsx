@@ -133,6 +133,7 @@ export default function Editor() {
   const [committing, setCommitting] = useState(false);
   const [editTab, setEditTab] = useState('prompt');
   const [voiceWardrobeQuery,setVoiceWardrobeQuery]=useState(null);
+  const [voiceTryOnQuery,setVoiceTryOnQuery]=useState(null);
   const [activeRecipe, setActiveRecipe] = useState(null);
   const [lastAction, setLastAction] = useState(null);
   const pendingResultRef = useRef(null);
@@ -912,6 +913,11 @@ export default function Editor() {
       setEditTab('fashion');
       return;
     }
+    if(kind==='TRYON_SELECT_PROPOSAL'){
+      setVoiceTryOnQuery({query:params.query,hints:params.hints});
+      setEditTab('outfits');
+      return;
+    }
     if(kind==='HISTORY_UNDO'){await undo();return;}
     if(kind==='HISTORY_REDO'){await redo();return;}
     if(kind==='HISTORY_RESTORE'){await restoreOriginal();return;}
@@ -1181,6 +1187,7 @@ export default function Editor() {
                 busy={tryOn.busy}
                 disabled={tryOnBlockedByEditor}
                 onAction={runTryOnAction}
+                voiceQuery={voiceTryOnQuery}
                 onLoadManualGarmentSource={tryOn.loadManualGarmentSource}
                 onSaveManualContour={tryOn.saveManualContour}
                 onSaveManualBodyAnchors={tryOn.saveManualBodyAnchors}
