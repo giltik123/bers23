@@ -69,6 +69,47 @@ test('reject spoofed / arbitrary delivery URLs before any request',async()=>{
     assert.deepEqual(f.state().calls,[]);
   }
 });
+test('split frontend/Core URL is accepted only for exact configured trusted Core origin',async()=>{
+  const resource='/api/core/artifacts/results/signed%2Btoken';
+  let used=null;
+  const coreApiRoot='https://core.bers.test/api/core';
+  const doc={body:{appendChild(){}},createElement:()=>({
+    style:{},click(){},remove(){},
+  })};
+  const opts={
+    imageUrl:'https://core.bers.test'+resource,
+    origin:'https://studio.bers.test',coreApiRoot,
+    documentApi:doc,
+    urlApi:{createObjectURL:()=> 'blob:trusted',revokeObjectURL(){}},
+    scheduleRevoke:()=>{},
+    fetcher:async(url,init)=>{
+      used={url,credentials:init.credentials};
+      return new Response(new Blob([verifiedPng],{type:'image/png'}),{
+        headers:{'content-type':'image/png'},
+      });
+    },
+  };
+  const saved=await downloadCanonicalImage(opts);
+  assert.equal(saved,'BERS-image.png');
+  assert.deepEqual(used,{
+    url:'https://core.bers.test'+resource,credentials:'include',
+  });
+  // A visually similar but foreign host can never receive a signed URL.
+  for(const invalid of [
+    'https://evil.bers.test'+resource,
+    'https://core.bers.test.evil.test'+resource,
+    'https://core.bers.test'+resource+'#fragment',
+    'https://core.bers.test'+resource+'?tracking=yes',
+  ]){
+    used=null;
+    await assert.rejects(
+      ()=>downloadCanonicalImage({...opts,imageUrl:invalid}),
+      /Only a signed Core image/,
+    );
+    assert.equal(used,null);
+  }
+});
+
 test('HTTP errors, HTML responses and empty downloads never click an export link',async()=>{
   for(const input of [{status:404},{mime:'text/html'},{bytes:new Uint8Array(0)}]){
     const f=fixture(input);
