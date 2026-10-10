@@ -83,7 +83,7 @@ function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore, onCapture 
   );
 }
 
-export default function FashionPanel() {
+export default function FashionPanel({ voiceQuery = null }) {
   const wardrobe = useMemo(() => createCanonicalWardrobeViewModel({
     garments: coreClient.fashion.garments,
     wardrobe: coreClient.fashion.wardrobe,
@@ -94,6 +94,22 @@ export default function FashionPanel() {
   const [addOpen, setAddOpen] = useState(false);
   const [captureItem, setCaptureItem] = useState(null);
   const [busyId, setBusyId] = useState('');
+  const visibleItems=useMemo(()=>{
+    if(!voiceQuery?.query)return items;
+    const search=String(voiceQuery.query).toLocaleLowerCase('ru-RU');
+    const hints=voiceQuery.hints;
+    if(search==='избранное'||search==='любимые вещи')return items.filter(item=>item.favorite===true);
+    const requested=[...(hints?.categories||[]),...(hints?.colors||[]),
+      ...(hints?.styles||[])];
+    // This is read-only ranking/filtering of canonical loaded garment rows,
+    // never a guessed garment identity or a mutation of wardrobe authority.
+    return items.filter(item=>{
+      const haystack=[item.name,item.category,item.material,
+        ...(Array.isArray(item.tags)?item.tags:[])].filter(Boolean).join(' ').toLocaleLowerCase('ru-RU');
+      return requested.length?requested.every(term=>haystack.includes(term))
+        :haystack.includes(search);
+    });
+  },[items,voiceQuery]);
 
   const reload = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) {
@@ -205,19 +221,25 @@ export default function FashionPanel() {
         </div>
       )}
 
+      {voiceQuery?.query&&(
+        <div role="status" className="text-xs rounded-md border px-2 py-2">
+          Голосовой поиск: {voiceQuery.query} — найдено {visibleItems.length} из {items.length}.
+          Нет совпадений — уточните запрос, BERS не выбирает вещь наугад.
+        </div>
+      )}
       <CanonicalCollectionsView garments={items} />
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground" role="status">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading canonical wardrobe…
         </div>
-      ) : items.length === 0 ? (
+      ) : visibleItems.length === 0 ? (
         <div className="rounded-xl bg-secondary/40 p-4 text-center text-xs text-muted-foreground">
           No managed garments yet. Add a garment photo to create the first stable wardrobe item.
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <WardrobeCard
               key={item.id}
               item={item}
