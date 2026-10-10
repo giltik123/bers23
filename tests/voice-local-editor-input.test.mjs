@@ -54,7 +54,7 @@ test('spoken destructive and paid actions never create an executable or Project-
 test('transcripts are bounded, untrusted and never accepted as execution tokens',()=>{
   assert.throws(()=>buildVoiceIntentDraft(''),/VOICE_INVALID_TRANSCRIPT/);
   assert.throws(()=>buildVoiceIntentDraft('а'.repeat(1025)),/VOICE_INVALID_TRANSCRIPT/);
-  assert.throws(()=>buildVoiceIntentDraft('turn on','',{engine:'CLOUD'}),/VOICE_UNADMITTED/);
+  assert.throws(()=>buildVoiceIntentDraft('turn on',{engine:'CLOUD'}),/VOICE_UNADMITTED/);
   assert.throws(()=>applyConfirmedVoiceDraft({schemaVersion:1,kind:'PROMPT_CLEAR',engine:'CLOUD',
     privacy:'REMOTE',requiresConfirmation:true,proposedText:''},'original'),/VOICE_DRAFT_NOT_ADMITTED/);
 });
