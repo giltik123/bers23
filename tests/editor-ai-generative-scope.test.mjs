@@ -138,5 +138,7 @@ test('AI Studio generation and retry preserve exact mask and source across UI wi
   assert.match(adjustment, /bindGenerativeScope\(/);
   assert.match(adjustment, /mode: 'MASKED'/);
   assert.match(adjustment, /maskArtifactId = adjustedScope\.maskArtifactIds\[0\]/);
-  assert.match(compare, /scopedGeneration && !scopedReview/);
+  assert.match(compare, /canAcceptReviewedCandidate\(/);
+  assert.match(compare, /reviewComplete: scopedGeneration \? scopedReview : allFashionAccepted/);
+  assert.match(compare, /const reviewImagesReady = loaded\.before === identity && loaded\.after === identity/);
 });
