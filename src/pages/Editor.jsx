@@ -22,6 +22,7 @@ import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
 const AgentPanel = lazy(() => import('@/components/editor/agent/AgentPanel'));
+const AICommandStudio = lazy(() => import('@/components/editor/ai/AICommandStudio'));
 import useBoundedAgentEditor from '@/components/editor/agent/useBoundedAgentEditor';
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
 import ImageCanvas from '@/components/editor/ImageCanvas';
@@ -69,7 +70,7 @@ import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPo
 import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
-const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
+const EDITOR_TABS = [{ id: 'ai', label: 'AI Studio' }, { id: 'prompt', label: 'Legacy prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
 function disposePendingPreview(pending) {
   const url = pending?.result?.preview_url;
@@ -129,7 +130,7 @@ export default function Editor() {
   const [aiError, setAiError] = useState(null);
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
-  const [editTab, setEditTab] = useState('prompt');
+  const [editTab, setEditTab] = useState('ai');
   const [activeRecipe, setActiveRecipe] = useState(null);
   const [lastAction, setLastAction] = useState(null);
   const pendingResultRef = useRef(null);
@@ -779,6 +780,27 @@ export default function Editor() {
     }
   };
 
+  // AI-first commands use exactly the same authenticated Core source/MASK
+  // and Preview→Accept path as the existing toolbar. A browser text parser
+  // cannot select a garment/face or invent a canonical source/mask ticket.
+  const executeAIAdjustment = async ({ operation, parameters }) => {
+    if (editorBusy || committing || pendingResult || selection ||
+        cropInteractionActive || resizeInteractionActive || driftWarning) {
+      throw new Error('Закончите предыдущую операцию до нового AI-запроса.');
+    }
+    if (!project?.id || !project?.current_image_artifact_id || !selected?.mask_artifact_id) {
+      throw new Error('Сначала подтвердите выбранную область с Core-маской.');
+    }
+    const sourceArtifactId = project.current_image_artifact_id;
+    const maskArtifactId = selected.mask_artifact_id;
+    const context = { sourceArtifactId, maskArtifactId, ...parameters };
+    if (operation === 'MASKED_EXPOSURE') return applyMaskedExposure(context);
+    if (operation === 'MASKED_WHITE_BALANCE') return applyMaskedWhiteBalance(context);
+    if (operation === 'MASKED_LEVELS') return applyMaskedLevels(context);
+    if (operation === 'BACKGROUND_ISOLATION') return isolateBackground(context);
+    throw new Error('Эта операция ещё не принята BERS Core.');
+  };
+
   const acceptResult = async () => {
     const pending = pendingResult;
     setCommitting(true);
@@ -1121,7 +1143,22 @@ export default function Editor() {
           )}
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
-          {editTab === 'creative' ? (
+          {editTab === 'ai' ? (
+            <AICommandStudio
+              project={project}
+              selectedObject={selected}
+              instruction={instruction}
+              onInstructionChange={setInstruction}
+              disabled={editorBusy || committing || Boolean(pendingResult)
+                || cropInteractionActive || resizeInteractionActive || Boolean(driftWarning)}
+              selectionActive={Boolean(selection)}
+              pending={Boolean(pendingResult)}
+              onSelectRegion={startSelection}
+              onExecuteAdjustment={executeAIAdjustment}
+              onExecuteGenerative={(text) => applyEdit(false, { instructionOverride: text })}
+              onOpenFashion={() => setEditTab('outfits')}
+            />
+          ) : editTab === 'creative' ? (
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <div className="space-y-3">
