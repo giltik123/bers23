@@ -22,6 +22,7 @@ import {
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 import { assertCanonicalSceneObjectPublication } from '../projects/sceneObjectAdmission.ts';
+import { runFalSam3Scene } from '../scene/falSam3SemanticInstances.ts';
 import { authenticatedOwnerScope, authenticatedProjectScope } from './authenticatedPrincipalScope.ts';
 
 type HttpAuthAuthority = Readonly<{
@@ -173,6 +174,91 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
       }
       const principal = await input.auth.verify(currentAuthorization());
       const auth = authenticatedOwnerScope(principal);
+      // Production model work is explicitly opt-in, server-owned and bounded.
+      const sceneEnabled=process.env.BERS_AUTO_SCENE_SAM3_ENABLED==='true'
+        && input.config.provider==='FAL' && Boolean(input.config.falKey);
+      if(path==='/api/core/scene/capability'&&request.method==='GET'){
+        return send(response,200,{supportsSemanticInstances:sceneEnabled,
+          modelId:sceneEnabled?'fal-ai/sam-3/image':null,
+          cloudProcessing:sceneEnabled,reviewRequired:true});
+      }
+      if(path==='/api/core/scene/analyze'&&request.method==='POST'){
+        assertBrowserMutationAllowed(request,input.config);
+        if(!sceneEnabled)return sendError(response,503,'scene_model_unavailable',
+          'Semantic scene segmentation is not enabled',correlationId,false);
+        const body=await readJson(request,input.config.bodyLimitBytes) as any;
+        const id=typeof body?.projectId==='string'?body.projectId:'';
+        const token=typeof body?.sourceArtifactId==='string'?body.sourceArtifactId:'';
+        if(!id||!token||!Number.isSafeInteger(body.expectedRevision)||
+           body.expectedRevision<0||token.length>4096)
+          return sendError(response,400,'invalid_scene_request','Canonical source and revision are required',correlationId,false);
+        const scope=authenticatedProjectScope(principal,id);
+        const current=await input.projects.get(principal,id);
+        if(!current)return sendError(response,404,'project_not_found','Project not found',correlationId,false);
+        let storageId:string;
+        try{storageId=input.artifacts.external.resolveStoredOriginalId(token,scope).storageId;}
+        catch{
+          try{storageId=input.artifacts.external.resolveStoredFinalId(token,scope).storageId;}
+          catch{return sendError(response,400,'invalid_scene_source','Signed source image is invalid',correlationId,false);}
+        }
+        if(current.current_image_storage_id!==storageId ||
+           Number(current.revision)!==body.expectedRevision)
+          return sendError(response,409,'project_source_conflict','Scene source changed before analysis',correlationId,false);
+        const source=await input.artifacts.images.loadSource(storageId,scope);
+        if(!source||source.width!==Number(current.width)||source.height!==Number(current.height))
+          return sendError(response,409,'project_source_conflict','Scene source is unavailable',correlationId,false);
+        const {instances}=await runFalSam3Scene({
+          imagePng:new Uint8Array(source.bytes),
+          width:source.width,height:source.height,falKey:input.config.falKey!,
+          signal:AbortSignal.timeout(Math.min(input.config.requestTimeoutMs,120_000)),
+        });
+        const latest=await input.projects.get(principal,id);
+        if(!latest||latest.current_image_storage_id!==storageId||
+           Number(latest.revision)!==body.expectedRevision)
+          return sendError(response,409,'project_source_conflict','Scene changed during analysis',correlationId,false);
+        if(!instances.length)return send(response,200,{status:'NO_OBJECTS',objects:[],
+          message:'SAM3 returned no verified scene masks'});
+        const additions=[];
+        for(const instance of instances){
+          const stored=await input.artifacts.masks.persistManual(
+            scope,source.width,source.height,instance.alpha,
+            {sourceImageStorageId:storageId,producerOperation:'LOCAL_SEGMENTATION'},
+          );
+          let x0=source.width,y0=source.height,x1=-1,y1=-1;
+          for(let k=0;k<instance.alpha.length;k++){
+            if(instance.alpha[k]===0)continue;
+            const x=k%source.width,y=Math.floor(k/source.width);
+            if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y;
+          }
+          if(x1<0||y1<0)continue;
+          additions.push({
+            id:randomUUID(),type:'object',label:instance.label,
+            category:instance.category,group:instance.group,
+            confidence:instance.confidence,selected:false,editable:true,
+            parent_object:null,children:[],
+            box:{x:x0/source.width,y:y0/source.height,
+              w:(x1-x0+1)/source.width,h:(y1-y0+1)/source.height},
+            mask_artifact_id:input.artifacts.external.issueStoredMask(stored.storageId,scope),
+            mask_url:null,
+            metadata:{segmentation:'AUTO',modelId:instance.modelId,
+              modelVersion:instance.modelVersion,sourceArtifactId:token,
+              maskState:'CORE_PERSISTED_UNREVIEWED'},
+          });
+        }
+        const prior=Array.isArray(latest.objects)?latest.objects:[];
+        const manual=prior.filter((item:any)=>item?.metadata?.segmentation!=='AUTO');
+        const next=[...manual,...additions];
+        await assertCanonicalSceneObjectPublication({
+          objects:next,sourceArtifactId:token,sourceStorageId:storageId,
+          scope,artifacts:input.artifacts,
+        });
+        const updated=await input.projects.update(principal,id,{objects:next},{
+          expectedSourceStorageId:storageId,expectedRevision:body.expectedRevision,
+        });
+        return send(response,200,{status:'COMPLETED',objects:additions,
+          updatedRevision:Number(updated.revision),
+          message:`SAM3 created ${additions.length} canonical object masks. Review required.`});
+      }
       const projectMatch=path.match(/^\/api\/core\/projects\/([^/]+)$/); const actionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/(accept-final|undo|redo|restore-original|versions)$/); const versionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
       const dto=(row: any) => { const scope=authenticatedProjectScope(principal,row.project_id); const artifactId=(storageId:string)=>storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginal(storageId,scope):input.artifacts.external.issueStoredFinal(storageId,scope); const imageUrl=(storageId:string)=>{const expiresAt=now()+300_000; const token=storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginalDelivery(storageId,scope,expiresAt):input.artifacts.external.issueStoredFinalDelivery(storageId,scope,expiresAt);return `/api/core/artifacts/results/${encodeURIComponent(token)}`}; const originalId=artifactId(row.original_image_storage_id),currentId=artifactId(row.current_image_storage_id),delivery=imageUrl(row.current_image_storage_id),history=(row.history??[]).map((h:any)=>({id:h.history_id,artifact_id:artifactId(h.image_storage_id),image_url:imageUrl(h.image_storage_id),instruction:h.instruction,operation:h.kind,created_at:h.created_at})); const cursor=history.findIndex((h:any)=>h.id===row.history_cursor_id); const versions=(row.versions??[]).map((v:any)=>({id:v.version_id,name:v.name,artifact_id:artifactId(v.image_storage_id),preview_url:imageUrl(v.image_storage_id),created_at:v.created_at})); return {id:row.project_id,name:row.name,original_image_artifact_id:originalId,current_image_artifact_id:currentId,original_image_url:imageUrl(row.original_image_storage_id),current_image_url:delivery,thumbnail_url:delivery,width:row.width,height:row.height,status:row.status,favorite:row.favorite,archived:row.archived,revision:Number(row.revision),objects:row.objects,history,history_index:cursor,versions,created_date:row.created_at,updated_date:row.updated_at}; };
       if(path==='/api/core/projects'&&request.method==='POST'){ const type=mediaType(request); if(!['image/png','image/jpeg','image/webp'].includes(type))return sendError(response,415,'unsupported_media_type','Supported images are PNG, JPEG and WebP',correlationId,false); const bytes=await readBytes(request,input.config.imageUploadLimitBytes); if(!bytes.byteLength)return sendError(response,400,'empty_image','Image body is required',correlationId,false); const name=(url.searchParams.get('name')??'Untitled').trim(); if(!name||name.length>200)return sendError(response,400,'invalid_project_name','Project name is invalid',correlationId,false); const created=await input.projects.create(principal,name,bytes,{maxDimension:input.config.imageMaxDimension,maxPixels:input.config.imageMaxPixels}); return send(response,201,dto(await input.projects.state(principal,created.project_id))); }
