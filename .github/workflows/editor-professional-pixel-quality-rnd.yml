@@ -7,9 +7,11 @@ on:
       - 'src/platform/creative/deterministic/ProfessionalResizeLanczosRND.ts'
       - 'src/platform/creative/deterministic/ProfessionalLinearLayersRND.ts'
       - 'src/platform/creative/deterministic/HighlightProtectedToneRND.ts'
+      - 'src/platform/creative/deterministic/ProfessionalCloneStampRND.ts'
       - 'tests/editor-professional-resize-lanczos-rnd.test.mjs'
       - 'tests/editor-professional-linear-layers-rnd.test.mjs'
       - 'tests/editor-highlight-protected-tone-rnd.test.mjs'
+      - 'tests/editor-professional-clone-stamp-rnd.test.mjs'
       - 'scripts/capture-professional-editor-real-photo-rnd.mjs'
       - 'config/v1-fashion-real-image-fixtures.json'
       - 'src/platform/creative/deterministic/Resize.ts'
@@ -49,6 +51,7 @@ jobs:
             tests/editor-professional-resize-lanczos-rnd.test.mjs \
             tests/editor-professional-linear-layers-rnd.test.mjs \
             tests/editor-highlight-protected-tone-rnd.test.mjs \
+            tests/editor-professional-clone-stamp-rnd.test.mjs \
             --bundle --platform=node --format=esm --target=node24 \
             --outdir=.test-cache/editor-pro-quality --out-extension:.js=.mjs \
             --external:node:*
