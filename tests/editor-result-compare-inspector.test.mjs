@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { canCompareOperationAligned, canComparePixelsAligned } from '../src/components/editor/compareGeometryPolicy.js';
+import { canCompareOperationAligned, canComparePixelsAligned, nativeInspectionCanvasSize } from '../src/components/editor/compareGeometryPolicy.js';
 
 test('precise before/after split requires identical real image dimensions',()=>{
   assert.equal(canComparePixelsAligned({width:512,height:768},{width:512,height:768}),true);
@@ -46,4 +46,19 @@ test('split operation admission excludes same-size flips and unverified AI re-re
   for(const unregistered of ['ORTHOGONAL_TRANSFORM','CROP','RESIZE','SUPER_RESOLUTION','GENERATE','REPLACE_OBJECT','ROTATE_180','',null,undefined]) {
     assert.equal(canCompareOperationAligned(unregistered),false,String(unregistered));
   }
+});
+
+test('zoom is genuine bounded native-pixel inspection, not an arbitrary scaled preview container', async()=>{
+  assert.deepEqual(nativeInspectionCanvasSize({width:1024,height:768},1),{width:1024,height:768});
+  assert.deepEqual(nativeInspectionCanvasSize({width:1024,height:768},2),{width:2048,height:1536});
+  assert.deepEqual(nativeInspectionCanvasSize({width:8192,height:1024},2),{width:16384,height:2048});
+  for(const v of [{width:8192,height:8192},{width:0,height:30},{width:1.2,height:100},null]) {
+    assert.equal(nativeInspectionCanvasSize(v,1),null);
+  }
+  assert.equal(nativeInspectionCanvasSize({width:100,height:200},1.5),null);
+  const component=await readFile('src/components/editor/ResultCompare.jsx','utf8');
+  assert.match(component,/nativeInspectionCanvasSize\(naturalSize, zoom\)/u);
+  assert.match(component,/disabled=\{!naturalSize\}/u);
+  assert.match(component,/style=\{inspectedCanvas\}/u);
+  assert.doesNotMatch(component,/width: `\$\{zoom \* 100\}%`/u);
 });
