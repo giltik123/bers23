@@ -1,0 +1,44 @@
+name: Editor UX clarity and real control wiring
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/SelectionToolbar.jsx'
+      - 'tests/editor-ux-progressive-disclosure.test.mjs'
+      - '.github/workflows/editor-ux-clarity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  editor-ux-clarity:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify exact candidate SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Regression - contextual controls and canonical editor boundaries
+        run: |
+          node --test \
+            tests/editor-ux-progressive-disclosure.test.mjs \
+            tests/editor-canonical-boundary.test.mjs \
+            tests/editor-zero-object-navigation.test.mjs \
+            tests/editor-orthogonal-transform-ui.test.mjs \
+            tests/realesrgan-editor-boundary.test.mjs
+      - name: Build production SPA - catch JSX and bundle regressions
+        run: npm run build
+      - name: Verify whitespace
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}"..HEAD
