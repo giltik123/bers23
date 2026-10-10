@@ -191,7 +191,7 @@ export default function VoiceInputPanel({
               ?' — '+draft.params.mode:''}
             {draft.kind==='WARDROBE_QUERY'&&draft.params?.hints
               ?` — поиск: ${draft.params.query}`:''}
-          </p>
+          </p>}
           {notice&&<p role="status" className="text-xs text-muted-foreground">{notice}</p>}
           {error&&<p role="alert" className="text-xs text-destructive">{error}</p>}
           {missingPack&&(
