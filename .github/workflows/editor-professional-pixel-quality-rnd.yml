@@ -129,6 +129,11 @@ jobs:
           assert.ok(r.records.every(x=>x.exactSourcePixelsUnchanged));
           assert.ok(r.records.every(x=>x.protectedLayerChannelsChanged===0));
           assert.ok(r.records.every(x=>x.protectedToneChannelsChanged===0));
+          assert.ok(r.records.every(x=>x.protectedSoftBlendChannelsChanged===0));
+          assert.ok(r.records.every(x=>x.softMaskCompareKind==='IMAGE_DERIVED_SHADOW_TONE_NOT_AI_INPAINT'));
+          assert.ok(r.records.every(x=>x.softMaskVisualHumanVerdict==='PENDING_INDEPENDENT_PHOTOGRAPHIC_REVIEW'));
+          assert.ok(r.records.every(x=>/^[0-9a-f]{64}$/.test(x.legacySoftMaskPngSha256)));
+          assert.ok(r.records.every(x=>/^[0-9a-f]{64}$/.test(x.professionalSoftMaskPngSha256)));
           assert.ok(r.records.every(x=>x.newHighlightProtectedClippedPixels<=x.previousV1ClippedPixels));
           NODE
       - name: Preserve full source/A-B/ref PNG and sha-bound diagnostics for human review
