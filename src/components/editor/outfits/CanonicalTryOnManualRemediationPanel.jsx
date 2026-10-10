@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, RefreshCw, ScanLine, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +25,23 @@ export default function CanonicalTryOnManualRemediationPanel({
   const [savedState, setSavedState] = useState(null);
   const [error, setError] = useState('');
 
+  // A selected entry is meaningful only with its exact Project image, Outfit
+  // revision and managed Garment. Never reuse an old editor after any change.
+  const selectedGarment = selection?.outfit?.entries?.find(
+    entry => entry?.entryId === selection?.entryId,
+  );
+  const selectionKey = selection ? JSON.stringify([
+    selection.projectId, selection.sourceArtifactId,
+    selection.outfit?.id, selection.outfit?.revision,
+    selection.entryId, selectedGarment?.garmentId,
+    selectedGarment?.garmentCategory,
+  ]) : null;
+  const currentSelectionKeyRef = useRef(selectionKey);
+  currentSelectionKeyRef.current = selectionKey;
+  const loadSequenceRef = useRef(0);
+  const openedSelectionKeyRef = useRef(null);
+  const savedSelectionKeyRef = useRef(null);
+
   const policyInput = useMemo(() => remediationSelection(selection), [selection]);
   const policyState = useMemo(() => {
     if (!policyInput) return Object.freeze({ policy: null, error: '' });
@@ -43,6 +60,9 @@ export default function CanonicalTryOnManualRemediationPanel({
   // erase RECHECK_REQUIRED before the user actually performs that recheck.
   useEffect(() => {
     if (result?.status !== 'READINESS' && result?.status !== 'BLOCKED') return;
+    loadSequenceRef.current += 1;
+    openedSelectionKeyRef.current = null;
+    setLoadingSource(false);
     setSavedState(null);
     setEditorMode(null);
     setOpenedPolicy(null);
@@ -50,11 +70,31 @@ export default function CanonicalTryOnManualRemediationPanel({
     setError('');
   }, [result]);
 
+  useEffect(() => {
+    // Invalidate pending garment downloads, open editors and post-save
+    // acknowledgements when the current source/outfit/garment changes.
+    loadSequenceRef.current += 1;
+    openedSelectionKeyRef.current = null;
+    savedSelectionKeyRef.current = null;
+    setLoadingSource(false);
+    setSavedState(null);
+    setEditorMode(null);
+    setOpenedPolicy(null);
+    setContourSource(null);
+    setError('');
+  }, [selectionKey]);
+
+  useEffect(() => () => { loadSequenceRef.current += 1; }, []);
+
   const livePolicy = policyState.policy;
-  const remediation = savedState || livePolicy;
+  const remediation = savedSelectionKeyRef.current === selectionKey
+    ? savedState || livePolicy : livePolicy;
   if (!selection || (!remediation && !policyState.error)) return null;
 
   const closeEditor = () => {
+    loadSequenceRef.current += 1;
+    openedSelectionKeyRef.current = null;
+    setLoadingSource(false);
     setEditorMode(null);
     setOpenedPolicy(null);
     setContourSource(null);
@@ -62,7 +102,9 @@ export default function CanonicalTryOnManualRemediationPanel({
 
   const markSaved = () => {
     const sourcePolicy = openedPolicy || livePolicy;
-    if (!sourcePolicy?.canOpen) return;
+    if (!sourcePolicy?.canOpen ||
+      openedSelectionKeyRef.current !== currentSelectionKeyRef.current) return;
+    savedSelectionKeyRef.current = currentSelectionKeyRef.current;
     setSavedState(canonicalTryOnManualSaveTransition(sourcePolicy));
     closeEditor();
     setError('');
@@ -76,23 +118,38 @@ export default function CanonicalTryOnManualRemediationPanel({
     }
     // Snapshot the exact policy that authorized this editor before any async
     // source load can cause parent readiness state to change.
+    const requestedSelectionKey = selectionKey;
+    const sequence = ++loadSequenceRef.current;
+    openedSelectionKeyRef.current = requestedSelectionKey;
     setOpenedPolicy(livePolicy);
     setLoadingSource(true);
     setError('');
     try {
       const source = await onLoadContourSource(livePolicy.contourRequest.garmentId);
+      if (sequence !== loadSequenceRef.current ||
+        requestedSelectionKey !== currentSelectionKeyRef.current) return;
+      if (source?.garmentId !== livePolicy.contourRequest.garmentId) {
+        throw new Error('Loaded Garment source no longer matches the selected Outfit entry.');
+      }
       setContourSource(source);
       setEditorMode('CONTOUR');
     } catch (cause) {
+      if (sequence !== loadSequenceRef.current ||
+        requestedSelectionKey !== currentSelectionKeyRef.current) return;
+      openedSelectionKeyRef.current = null;
       setOpenedPolicy(null);
       setError(cause?.message || 'Managed garment source could not be loaded for contour editing.');
     } finally {
-      setLoadingSource(false);
+      if (sequence === loadSequenceRef.current &&
+        requestedSelectionKey === currentSelectionKeyRef.current) {
+        setLoadingSource(false);
+      }
     }
   };
 
   const openBodyAnchors = () => {
     if (busy || disabled || livePolicy?.mode !== 'BODY_ANCHORS' || !livePolicy.canOpen) return;
+    openedSelectionKeyRef.current = selectionKey;
     setOpenedPolicy(livePolicy);
     setError('');
     setEditorMode('BODY_ANCHORS');
@@ -104,7 +161,8 @@ export default function CanonicalTryOnManualRemediationPanel({
     onRecheck();
   };
 
-  const bodySource = openedPolicy?.mode === 'BODY_ANCHORS'
+  const bodySource = openedSelectionKeyRef.current === selectionKey &&
+    openedPolicy?.mode === 'BODY_ANCHORS'
     ? openedPolicy.bodyAnchorSource
     : null;
 
@@ -137,7 +195,8 @@ export default function CanonicalTryOnManualRemediationPanel({
             </Button>
           )}
 
-          {editorMode === 'CONTOUR' && contourSource && (
+          {openedSelectionKeyRef.current === selectionKey &&
+            editorMode === 'CONTOUR' && contourSource && (
             <CanonicalTryOnContourEditor
               source={contourSource}
               onSave={onSaveContour}
@@ -148,7 +207,8 @@ export default function CanonicalTryOnManualRemediationPanel({
             />
           )}
 
-          {editorMode === 'BODY_ANCHORS' && bodySource && (
+          {openedSelectionKeyRef.current === selectionKey &&
+            editorMode === 'BODY_ANCHORS' && bodySource && (
             <CanonicalTryOnBodyAnchorEditor
               source={bodySource}
               onSave={onSaveBodyAnchors}
