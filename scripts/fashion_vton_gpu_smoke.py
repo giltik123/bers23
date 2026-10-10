@@ -62,9 +62,9 @@ def assert_parserless_package():
         raise RuntimeError('Generated BERS parserless research package is not installed')
     root = Path(spec.origin).parent
     identity = root / 'research_identity.py'
-    expected = ('# GENERATED BERS parserless research identity; no production admission.\\n'
-                'KIND = "BERS_FASHION_PARSERLESS_RESEARCH_V1"\\n'
-                f'UPSTREAM_SHA = "{UPSTREAM_COMMIT}"\\n')
+    expected = ('# GENERATED BERS parserless research identity; no production admission.\n'
+                'KIND = "BERS_FASHION_PARSERLESS_RESEARCH_V1"\n'
+                f'UPSTREAM_SHA = "{UPSTREAM_COMMIT}"\n')
     if identity.is_symlink() or not identity.is_file() or identity.read_text(encoding='utf-8') != expected:
         raise RuntimeError('Installed fashn_vton is not the exact generated parserless research package')
 
