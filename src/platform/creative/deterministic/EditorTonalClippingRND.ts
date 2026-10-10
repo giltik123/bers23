@@ -4,6 +4,8 @@
  * An advisory signal, not a perceptual-quality score. sRGB byte thresholds
  * depend on editing intent and output profile; human review remains required.
  * Fully transparent pixels are not counted as visibly clipped.
+ * Bright means ANY sRGB channel at least 250; this diagnoses channel clipping,
+ * not the separate all-three-channels near-white condition.
  */
 export function analyzeEditorTonalClippingRgba8(
   source: Uint8Array | Uint8ClampedArray,
@@ -48,10 +50,12 @@ export function analyzeEditorTonalClippingRgba8(
     visiblePixelCount++;
     const editable=editableMask===undefined || editableMask[pixel]>0;
     if(editable)editableVisiblePixelCount++;
-    const brightBefore=Math.max(source[i],source[i+1],source[i+2])>=250;
-    const brightAfter=Math.max(result[i],result[i+1],result[i+2])>=250;
-    const crushedBefore=Math.max(source[i],source[i+1],source[i+2])<=5;
-    const crushedAfter=Math.max(result[i],result[i+1],result[i+2])<=5;
+    // Source and candidate visibility are independent. Hidden RGB of a
+    // transparent source pixel may NOT suppress an actual newly visible clip.
+    const brightBefore=source[i+3]>0 && Math.max(source[i],source[i+1],source[i+2])>=250;
+    const brightAfter=result[i+3]>0 && Math.max(result[i],result[i+1],result[i+2])>=250;
+    const crushedBefore=source[i+3]>0 && Math.max(source[i],source[i+1],source[i+2])<=5;
+    const crushedAfter=result[i+3]>0 && Math.max(result[i],result[i+1],result[i+2])<=5;
     if(brightBefore)originallyBrightPixelCount++;
     if(brightAfter)resultingBrightPixelCount++;
     if(crushedBefore)originallyCrushedShadowPixelCount++;
