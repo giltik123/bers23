@@ -17,6 +17,8 @@ import { highlightProtectedToneRgba8RND } from '../src/platform/creative/determi
 import { professionalToneRangeMaskRgba8RND } from '../src/platform/creative/deterministic/ProfessionalToneRangeMaskRND.ts';
 import { resizeRgba8 } from '../src/platform/creative/deterministic/Resize.ts';
 import { maskedExposureRgba8 } from '../src/platform/creative/deterministic/MaskedExposure.ts';
+import { createOriginalMask, compositePatch } from '../src/platform/creative/pipeline/ControlledLocalEdit.ts';
+import { compositeMaskedLinearLightRND } from '../src/platform/creative/pipeline/ProfessionalMaskedCompositeRND.js';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const MAX_DOWNLOAD_BYTES = 25_000_000;
@@ -164,6 +166,38 @@ async function main(){
         'Already-well-exposed photo must be an exact no-edit control');
     }
     const finalOutcomeClipping = clipped(finalCandidate,shadowMask);
+    // Real-photograph soft-edge A/B. Both compositors receive the same
+    // existing, image-derived SHADOWS mask and conservatively corrected patch.
+    // This is NOT a provider inpaint or semantic garment/portrait mask.
+    const originalPixelImage={width,height,data:rgba,orientation:1};
+    const candidatePixelImage={width,height,data:finalCandidate,orientation:1};
+    const transform={
+      originalBounds:{x:0,y:0,width,height},
+      providerWidth:width,providerHeight:height,scaleX:1,scaleY:1,
+    };
+    const nonzeroSoftMask=shadowMask.some(value=>value>0);
+    const exactMask=nonzeroSoftMask
+      ? createOriginalMask({
+          artifactId:'real-photo-shadow-tone-rnd',width,height,
+          alpha:shadowMask,source:'USER',
+        }) : null;
+    const oldSoftBlend=exactMask
+      ? compositePatch(originalPixelImage,candidatePixelImage,exactMask,transform).data
+      : new Uint8ClampedArray(rgba);
+    const linearSoftBlend=exactMask
+      ? compositeMaskedLinearLightRND(originalPixelImage,candidatePixelImage,exactMask,transform).data
+      : new Uint8ClampedArray(rgba);
+    let protectedSoftBlendChanged=0;
+    for(let index=0;index<shadowMask.length;index++){
+      if(shadowMask[index]!==0)continue;
+      for(let c=0;c<4;c++){
+        const o=index*4+c;
+        if(oldSoftBlend[o]!==rgba[o]||linearSoftBlend[o]!==rgba[o])
+          protectedSoftBlendChanged++;
+      }
+    }
+    assert.equal(protectedSoftBlendChanged,0,
+      'Both real-photo soft-mask candidates must preserve original RGBA outside selection');
 
     // White translucent studio overlay is a layer blending stress test, NOT a
     // segmentation, garment-fit or semantic photographic retouch algorithm.
@@ -201,6 +235,12 @@ async function main(){
       png(blended,width,height),
     ]);
     const finalCandidatePng = await png(finalCandidate,width,height);
+    const [oldSoftBlendPng,linearSoftBlendPng]=await Promise.all([
+      png(oldSoftBlend,width,height),png(linearSoftBlend,width,height),
+    ]);
+    const softBlendContact=await contact([
+      sourcePng,oldSoftBlendPng,linearSoftBlendPng,
+    ],width,height);
     const [resizeContact,toneContact,finalOutcomeContact]=await Promise.all([
       contact([oldResizePng,newResizePng,referencePng],target.width,target.height),
       contact([sourcePng,oldTonePng,newTonePng,layerPng],width,height),
@@ -218,6 +258,9 @@ async function main(){
       writeFile(path.join(folder,'tone-four-way.png'),toneContact),
       writeFile(path.join(folder,'final-outcome-conservative.png'),finalCandidatePng),
       writeFile(path.join(folder,'final-outcome-source-vs-conservative.png'),finalOutcomeContact),
+      writeFile(path.join(folder,'soft-mask-composite-v1-srgb.png'),oldSoftBlendPng),
+      writeFile(path.join(folder,'soft-mask-composite-v2-linear.png'),linearSoftBlendPng),
+      writeFile(path.join(folder,'soft-mask-composite-source-v1-v2.png'),softBlendContact),
     ]);
     records.push({
       id:fixture.id,license:fixture.license,licenseUrl:fixture.licenseUrl,
@@ -241,6 +284,12 @@ async function main(){
       finalOutcomeCandidatePngSha256:hash(finalCandidatePng),
       finalOutcomeNearClipCount:finalOutcomeClipping.channelClip,
       finalOutcomeHumanVerdict:'PENDING_INDEPENDENT_PHOTOGRAPHIC_REVIEW',
+      softMaskCompareKind:'IMAGE_DERIVED_SHADOW_TONE_NOT_AI_INPAINT',
+      softMaskPixelCoverage:shadowMask.filter(value=>value>0).length,
+      protectedSoftBlendChannelsChanged:protectedSoftBlendChanged,
+      legacySoftMaskPngSha256:hash(oldSoftBlendPng),
+      professionalSoftMaskPngSha256:hash(linearSoftBlendPng),
+      softMaskVisualHumanVerdict:'PENDING_INDEPENDENT_PHOTOGRAPHIC_REVIEW',
     });
     console.log('PRO_EDITOR_REAL_PHOTO',fixture.id,JSON.stringify({
       newClippingBefore:oldClipped,newClippingAfter:newClipped,
