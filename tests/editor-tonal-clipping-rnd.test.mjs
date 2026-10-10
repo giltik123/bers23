@@ -57,3 +57,34 @@ test('clipping audit rejects invalid geometry, byte lengths and masks',()=>{
   assert.throws(()=>analyzeEditorTonalClippingRgba8(src,src,1,1,Uint8Array.from([1,2])),/lengths/u);
   assert.throws(()=>analyzeEditorTonalClippingRgba8(src,new Uint16Array(2),1,1),/lengths/u);
 });
+
+test('newly visible foreground pixels cannot inherit false clipping from hidden source RGB',()=>{
+  const source=Uint8Array.from([
+    255,255,255,0, 0,0,0,255,
+    0,0,0,0, 255,255,255,255,
+  ]);
+  const result=Uint8Array.from([
+    255,20,20,255, 0,0,0,0,
+    0,0,0,255, 255,255,255,0,
+  ]);
+  const report=analyzeEditorTonalClippingRgba8(source,result,2,2);
+  assert.equal(report.visiblePixelCount,4);
+  assert.equal(report.originallyBrightPixelCount,1);
+  assert.equal(report.resultingBrightPixelCount,1);
+  assert.equal(report.newlyBrightEditablePixelCount,1,
+    'hidden source white does not make new red-channel clipping pre-existing');
+  assert.equal(report.originallyCrushedShadowPixelCount,1);
+  assert.equal(report.resultingCrushedShadowPixelCount,1);
+  assert.equal(report.newlyCrushedEditablePixelCount,1);
+});
+
+test('saturated red counts as a channel clip but not a nearly white pixel',async()=>{
+  const { analyzeEditorNearWhiteAndBlackRgba8 } =
+    await import('../src/platform/creative/deterministic/EditorQualityInspectorRND.ts');
+  const before=Uint8Array.from([200,20,20,255]);
+  const after=Uint8Array.from([255,20,20,255]);
+  const channels=analyzeEditorTonalClippingRgba8(before,after,1,1);
+  const nearWhite=analyzeEditorNearWhiteAndBlackRgba8(before,after,1,1);
+  assert.equal(channels.newlyBrightEditablePixelCount,1);
+  assert.equal(nearWhite.newlyClippedHighlights,0);
+});
