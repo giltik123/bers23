@@ -12,7 +12,17 @@ const INTENT_LABELS={
   PROMPT_APPEND:'Добавить текст к промпту (без запуска ИИ)',
   PROMPT_CLEAR:'Очистить промпт (после подтверждения)',
   NAVIGATE_PROMPT:'Открыть поле промпта',
-  ACTION_NEEDS_UI:'Эта команда требует обычных элементов редактора',
+  ACTION_NEEDS_UI:'Команда требует ручного действия в редакторе',
+  NAVIGATE:'Перейти к разделу редактора',
+  HISTORY_UNDO:'Отменить последнее редактирование',
+  HISTORY_REDO:'Повторить отменённое редактирование',
+  HISTORY_RESTORE:'Вернуть оригинал фотографии',
+  TRANSFORM:'Создать предпросмотр поворота/отражения',
+  RESIZE:'Создать предпросмотр изменения размера',
+  WARDROBE_QUERY:'Открыть Fashion с поисковыми подсказками',
+  TRYON_SELECT_PROPOSAL:'Нужно выбрать реальную вещь в примерке',
+  REQUIRES_CANONICAL_CONTEXT:'Нужно подтвердить действие в штатной панели BERS',
+  AMBIGUOUS:'Неоднозначная команда: уточните фразу',
 };
 /**
  * Voice Input Layer VI-1: never calls Core, generation or provider APIs.
@@ -20,20 +30,30 @@ const INTENT_LABELS={
  * only. Nonlocal WebSpeech default is deliberately not used.
  */
 export default function VoiceInputPanel({
-  prompt='',onPromptChange,onFocusPrompt,disabled=false,
+  prompt='',onPromptChange,onFocusPrompt,onVoiceIntent,
+  projectId,sourceArtifactId,disabled=false,
 }){
   const [open,setOpen]=useState(false);
   const [phase,setPhase]=useState('IDLE');
   const [transcript,setTranscript]=useState('');
   const [partial,setPartial]=useState('');
+  const [transcriptSource,setTranscriptSource]=useState(null);
+  const [submitting,setSubmitting]=useState(false);
+  const sourceKey=JSON.stringify([projectId,sourceArtifactId]);
   const [error,setError]=useState('');
   const sessionRef=useRef(null);
   const generationRef=useRef(0);
   useEffect(()=>()=>{generationRef.current++;sessionRef.current?.abort();sessionRef.current=null;},[]);
+  useEffect(()=>{
+    generationRef.current++;
+    sessionRef.current?.abort();sessionRef.current=null;
+    setTranscript('');setPartial('');setTranscriptSource(null);
+    setPhase('IDLE');
+  },[sourceKey]);
   const cancel=()=>{
     generationRef.current++;
     sessionRef.current?.abort();sessionRef.current=null;
-    setPhase('IDLE');setTranscript('');setPartial('');setError('');
+    setPhase('IDLE');setTranscript('');setPartial('');setError('');setTranscriptSource(null);
   };
   useEffect(()=>{
     if(disabled && sessionRef.current){
@@ -47,13 +67,13 @@ export default function VoiceInputPanel({
     if(disabled||phase==='RECORDING'||phase==='PREPARING')return;
     const generation=++generationRef.current;
     sessionRef.current?.abort();sessionRef.current=null;
-    setError('');setTranscript('');setPartial('');setPhase('PREPARING');
+    setError('');setTranscript('');setPartial('');setTranscriptSource(sourceKey);setPhase('PREPARING');
     try{
       const session=await createLocalVoiceSession({
         onPartial:value=>{if(generation===generationRef.current)setPartial(value);},
         onFinal:value=>{
           if(generation!==generationRef.current)return;
-          setTranscript(value);setPartial('');setPhase('REVIEW');
+          setTranscript(value);setPartial('');setPhase('REVIEW');setTranscriptSource(sourceKey);
         },
         onEnd:()=>{
           if(generation!==generationRef.current)return;
@@ -70,7 +90,7 @@ export default function VoiceInputPanel({
         session.abort();return;
       }
       sessionRef.current=session;
-      setPhase('RECORDING');
+      setPhase(current=>current==='PREPARING'?'RECORDING':current);
     }catch(reason){
       if(generation!==generationRef.current)return;
       setError(reason?.message||'Локальный голосовой ввод недоступен.');
@@ -85,15 +105,24 @@ export default function VoiceInputPanel({
   try{if(transcript.trim())draft=buildVoiceIntentDraft(transcript);}catch{
     draft=null;
   }
-  const confirm=()=>{
-    if(disabled||!draft||draft.kind==='ACTION_NEEDS_UI')return;
+  const confirm=async()=>{
+    if(disabled||submitting||!draft||!transcriptSource ||
+      transcriptSource!==sourceKey ||
+      ['ACTION_NEEDS_UI','AMBIGUOUS','TRYON_SELECT_PROPOSAL','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind))return;
+    setSubmitting(true);
     try{
-      const result=applyConfirmedVoiceDraft(draft,prompt);
-      if(result.navigate)onFocusPrompt?.();
-      else onPromptChange?.(result.prompt);
+      if(['PROMPT_REPLACE','PROMPT_APPEND','PROMPT_CLEAR','NAVIGATE_PROMPT'].includes(draft.kind)){
+        const result=applyConfirmedVoiceDraft(draft,prompt);
+        if(result.navigate)onFocusPrompt?.();
+        else onPromptChange?.(result.prompt);
+      }else{
+        if(typeof onVoiceIntent!=='function')throw new Error('Голосовое управление здесь не подключено');
+        await onVoiceIntent(draft,{projectId,sourceArtifactId});
+      }
       setError('');setPhase('IDLE');setTranscript('');setPartial('');
       setOpen(false);
     }catch(reason){setError(reason?.message||'Не удалось подтвердить голосовой ввод');}
+    finally{setSubmitting(false);}
   };
   return (
     <div className="space-y-2" aria-label="Голосовой ввод BERS">
@@ -132,15 +161,23 @@ export default function VoiceInputPanel({
             Распознанная фраза — можно исправить перед подтверждением
           </label>
           <textarea id="bers-voice-transcript" value={transcript} maxLength={MAX_TRANSCRIPT}
-            onChange={event=>setTranscript(event.target.value)} rows={2}
+            onChange={event=>{setTranscript(event.target.value);setTranscriptSource(sourceKey);}} rows={2}
             className="w-full rounded-md border bg-background p-2 text-sm"
             placeholder="Распознанный текст появится здесь" />
           {draft&&<p className="text-xs" role="status">
             {INTENT_LABELS[draft.kind]||'Нужно подтверждение'}
-          </p>}
+            {draft.kind==='AMBIGUOUS'&&draft.ambiguities?.[0]
+              ?' — '+draft.ambiguities[0]:''}
+            {draft.kind==='RESIZE'&&draft.params
+              ?` — ${draft.params.width} × ${draft.params.height}`:''}
+            {draft.kind==='TRANSFORM'&&draft.params
+              ?' — '+draft.params.mode:''}
+            {draft.kind==='WARDROBE_QUERY'&&draft.params?.hints
+              ?` — поиск: ${draft.params.query}`:''}
+          </p>
           {error&&<p role="alert" className="text-xs text-destructive">{error}</p>}
-          {draft&&draft.kind!=='ACTION_NEEDS_UI'&&(
-            <Button type="button" size="sm" disabled={disabled||phase==='RECORDING'||phase==='PREPARING'||phase==='STOPPING'}
+          {draft&&!['ACTION_NEEDS_UI','AMBIGUOUS','TRYON_SELECT_PROPOSAL','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind)&&(
+            <Button type="button" size="sm" disabled={disabled||submitting||phase==='RECORDING'||phase==='PREPARING'||phase==='STOPPING'||transcriptSource!==sourceKey}
               onClick={confirm}>
               <Check className="mr-1 h-4 w-4"/>Подтвердить текст
             </Button>
