@@ -61,3 +61,12 @@ test('layer preflight rejects duplicate IDs, unsupported blend, masks and geomet
   assert.throws(()=>composeEditorRasterLayersRgba8(source,0,1,[]),/geometry/);
   assert.throws(()=>composeEditorRasterLayersRgba8(source,1,2,[]),/exact RGBA8/);
 });
+
+test('large photo with too many layers is rejected before multi-gigabyte allocation',()=>{
+  const tinyLayer=layer('one',[1,2,3,4]);
+  const oversizedLayers=Array.from({length:5},(_,i)=>({...tinyLayer,id:`layer_${i}`}));
+  assert.throws(
+    ()=>composeEditorRasterLayersRgba8(new Uint8Array(0),4096,4096,oversizedLayers),
+    /bounded pixel-layer processing budget/u,
+  );
+});
