@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Eye, EyeOff, User, Car, Trees, Cloud, Shirt, Dog, Box } from 'lucide-react';
+import { SCENE_GROUPS, SCENE_LABELS } from '@/application/scene/autoSceneMaskContract';
 
 const iconFor = (label = '') => {
   const l = label.toLowerCase();
@@ -53,6 +54,10 @@ export default function ObjectPanel({ objects, onSelect }) {
   const [open, setOpen] = useState(true);
   const [hidden, setHidden] = useState(new Set());
   const roots = objects.filter((o) => !o.parent_object);
+  const grouped=SCENE_GROUPS.map(group=>({
+    group,label:SCENE_LABELS[group],objects:roots.filter(obj=>obj.group===group),
+  }));
+  const ungrouped=roots.filter(obj=>!SCENE_GROUPS.includes(obj.group));
 
   const toggleHidden = (id) => {
     const next = new Set(hidden);
@@ -68,9 +73,30 @@ export default function ObjectPanel({ objects, onSelect }) {
       </button>
       {open && (
         <div className="px-1.5 pb-2 max-h-64 overflow-y-auto">
-          {roots.map((o) => (
-            <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden} onToggleHidden={toggleHidden} onSelect={onSelect} />
+          {grouped.filter(section=>section.objects.length>0).map(section=>(
+            <div key={section.group} className="space-y-0.5">
+              <p className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                {section.label} · {section.objects.length}
+              </p>
+              {section.objects.map(o=>(
+                <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden}
+                  onToggleHidden={toggleHidden} onSelect={onSelect}/>
+              ))}
+            </div>
           ))}
+          {ungrouped.length>0 &&(
+            <div className="space-y-0.5">
+              {grouped.some(section=>section.objects.length>0)&&(
+                <p className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                  Ручные и неклассифицированные
+                </p>
+              )}
+              {ungrouped.map(o=>(
+                <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden}
+                  onToggleHidden={toggleHidden} onSelect={onSelect}/>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
