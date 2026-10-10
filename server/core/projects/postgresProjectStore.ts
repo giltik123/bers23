@@ -188,11 +188,11 @@ export class PostgresProjectStore {
     )) throw Object.assign(new Error('Auto scene object publication requires exact source and revision'),
       {status:400,code:'invalid_scene_precondition'});
     const values = keys.map(k => k==='objects' ? JSON.stringify(patch[k]) : patch[k]);
-    const sets = keys.map((k,i) => `${k}=${i+4}${k==='objects'?'::jsonb':''}`);
+    const sets = keys.map((k,i) => `${k}=$${i+4}${k==='objects'?'::jsonb':''}`);
     const params: unknown[] = [id,scope.tenantId,scope.userId,...values];
     let conditional = '';
     if(precondition) {
-      conditional=` AND current_image_storage_id=${params.length+1} AND revision=${params.length+2}`;
+      conditional=` AND current_image_storage_id=$${params.length+1} AND revision=$${params.length+2}`;
       params.push(precondition.expectedSourceStorageId,precondition.expectedRevision);
     }
     const updated=(await this.pool.query(
