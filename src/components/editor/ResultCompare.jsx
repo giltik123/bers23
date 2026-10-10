@@ -13,6 +13,7 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
   const [splitPosition, setSplitPosition] = useState(50);
   const [zoom, setZoom] = useState(1);
   const [geometry, setGeometry] = useState('loading');
+  const [naturalSizes, setNaturalSizes] = useState({ before: null, after: null });
   const afterUrl = result?.preview_url || result?.image_url || '';
   const gestures = useAdaptiveGestures({
     onSwipeLeft: () => setView('after'),
@@ -21,6 +22,7 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
 
   useEffect(() => {
     setGeometry('loading');
+    setNaturalSizes({ before: null, after: null });
     setView('after');
     setZoom(1);
     setSplitPosition(50);
@@ -42,10 +44,12 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
     };
     before.onload = () => {
       beforeSize = { width: before.naturalWidth, height: before.naturalHeight };
+      if (alive) setNaturalSizes((current) => ({ ...current, before: beforeSize }));
       resolve();
     };
     after.onload = () => {
       afterSize = { width: after.naturalWidth, height: after.naturalHeight };
+      if (alive) setNaturalSizes((current) => ({ ...current, after: afterSize }));
       resolve();
     };
     const unavailable = () => { if (alive) setGeometry('unavailable'); };
@@ -66,6 +70,13 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
 
   const splitAllowed = geometry === 'aligned' && canCompareOperationAligned(candidateOperation);
   const mode = view === 'split' && !splitAllowed ? 'after' : view;
+  // At 100%, one decoded source pixel occupies one CSS pixel (200%=2 CSS px).
+  // A fixed-height object-contain container would otherwise pretend to be 100%
+  // while silently reducing detail on tall/large photographs.
+  const naturalSize = mode === 'before' ? naturalSizes.before : naturalSizes.after;
+  const inspectedCanvas = naturalSize
+    ? { width: naturalSize.width * zoom, height: naturalSize.height * zoom }
+    : { width: '100%', height: 340 };
   const executionLabel = result?.provider || 'Local / Core preview';
   const creditLabel = Number.isFinite(result?.credits_used) && result.credits_used > 0
     ? ` · ${result.credits_used} credits` : '';
@@ -91,7 +102,7 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2">
           <label htmlFor="editor-preview-zoom">Inspection zoom</label>
-          <select id="editor-preview-zoom" aria-label="Inspection zoom" value={zoom}
+          <select id="editor-preview-zoom" aria-label="Inspection zoom" value={zoom} disabled={!naturalSize}
             onChange={(event) => setZoom(Number(event.target.value))}
             className="rounded-md border border-border bg-background px-2 py-1">
             <option value={1}>100%</option>
@@ -126,13 +137,13 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
       )}
 
       <div className="overflow-auto rounded-xl bg-muted max-h-[420px]" {...gestures.handlers}>
-        <div className="relative" style={{ width: `${zoom * 100}%`, height: `${zoom * 340}px` }}>
+        <div className="relative" style={inspectedCanvas}>
           {mode === 'split' ? (
             <>
               <img src={afterUrl} alt="Edited image, right side of split" draggable={false}
-                className="absolute inset-0 h-full w-full object-contain" />
+                className="absolute inset-0 h-full w-full object-fill" />
               <img src={beforeUrl} alt="Original image, left side of split" draggable={false}
-                className="absolute inset-0 h-full w-full object-contain"
+                className="absolute inset-0 h-full w-full object-fill"
                 style={{ clipPath: `inset(0 ${100 - splitPosition}% 0 0)` }} />
               <div aria-hidden="true" className="absolute top-0 bottom-0 w-px bg-primary pointer-events-none"
                 style={{ left: `${splitPosition}%` }} />
@@ -140,13 +151,13 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
           ) : (
             <img src={mode === 'before' ? beforeUrl : afterUrl}
               alt={mode === 'before' ? 'Original image' : 'Unaccepted edited image'}
-              draggable={false} className="h-full w-full object-contain" />
+              draggable={false} className="h-full w-full object-fill" />
           )}
         </div>
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        This is a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.
+        Zoom uses actual decoded image dimensions (one CSS pixel per source pixel at 100%). This remains a visual preview, not a pixel-level quality certificate. Accept alone commits to Project history.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={onAccept} disabled={busy} className="flex-1 min-w-[100px]">
