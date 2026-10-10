@@ -26,3 +26,16 @@ export function canCompareOperationAligned(operation) {
     operation === 'BACKGROUND_ISOLATION' ||
     operation === 'FASHION_TRYON';
 }
+
+/**
+ * The inspector only labels 100%/200% after a decoded, bounded natural image
+ * geometry is known. CSS container scaling is not a pixel-accurate zoom law.
+ */
+export function nativeInspectionCanvasSize(natural, zoom) {
+  if (!natural || !Number.isSafeInteger(natural.width) || !Number.isSafeInteger(natural.height) ||
+      natural.width < 1 || natural.height < 1 ||
+      natural.width > 16384 || natural.height > 16384 ||
+      natural.width * natural.height > 16_777_216 ||
+      (zoom !== 1 && zoom !== 2)) return null;
+  return Object.freeze({ width: natural.width * zoom, height: natural.height * zoom });
+}
