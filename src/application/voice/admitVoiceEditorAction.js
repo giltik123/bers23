@@ -1,7 +1,7 @@
 /** Typed Voice Intent -> existing Editor handlers, never a voice-owned engine. */
 export const VOICE_EXECUTABLE_KINDS=Object.freeze([
   'NAVIGATE','HISTORY_UNDO','HISTORY_REDO','HISTORY_RESTORE',
-  'TRANSFORM','RESIZE','WARDROBE_QUERY',
+  'TRANSFORM','RESIZE','WARDROBE_QUERY','TRYON_SELECT_PROPOSAL',
 ]);
 const modes=new Set([
   'FLIP_HORIZONTAL','FLIP_VERTICAL','ROTATE_90_CW','ROTATE_180','ROTATE_270_CW',
@@ -32,7 +32,7 @@ export function admitVoiceEditorAction(draft,context){
     throw new Error('VOICE_UNDO_UNAVAILABLE');
   if(draft.kind==='HISTORY_REDO'&&!context.canRedo)
     throw new Error('VOICE_REDO_UNAVAILABLE');
-  if(draft.kind==='WARDROBE_QUERY' &&
+  if(['WARDROBE_QUERY','TRYON_SELECT_PROPOSAL'].includes(draft.kind) &&
      (typeof args.query!=='string'||!args.query.trim()||
      args.query.length>1024))
     throw new Error('VOICE_QUERY_INVALID');
