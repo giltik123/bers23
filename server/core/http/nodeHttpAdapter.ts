@@ -204,6 +204,19 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         if(current.current_image_storage_id!==storageId ||
            Number(current.revision)!==body.expectedRevision)
           return sendError(response,409,'project_source_conflict','Scene source changed before analysis',correlationId,false);
+        // Reopening the same image must not rebill the provider and duplicate
+        // masks. Every reused MASK still passes Core signature/lineage checks.
+        const retainedAuto=(Array.isArray(current.objects)?current.objects:[])
+          .filter((obj:any)=>obj?.metadata?.segmentation==='AUTO' &&
+            obj?.metadata?.sourceArtifactId===token);
+        if(retainedAuto.length>0 && body.force!==true){
+          await assertCanonicalSceneObjectPublication({
+            objects:current.objects,sourceArtifactId:token,
+            sourceStorageId:storageId,scope,artifacts:input.artifacts,
+          });
+          return send(response,200,{status:'ALREADY_AVAILABLE',
+            objects:retainedAuto,message:'Scene MASKs already exist for this exact image.'});
+        }
         const source=await input.artifacts.images.loadSource(storageId,scope);
         if(!source||source.width!==Number(current.width)||source.height!==Number(current.height))
           return sendError(response,409,'project_source_conflict','Scene source is unavailable',correlationId,false);
