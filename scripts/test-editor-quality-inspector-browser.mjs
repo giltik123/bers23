@@ -29,6 +29,9 @@ try {
   await page.goto(`${origin}/tests/editor-quality-inspector-browser.html`,{waitUntil:'networkidle'});
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('[data-testid="quality-compare-viewport"] img')).length===2 &&
     Array.from(document.querySelectorAll('[data-testid="quality-compare-viewport"] img')).every(x=>x.naturalWidth>0));
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(
+    button => button.textContent?.trim() === 'Split view' && !button.disabled,
+  ));
   assert.equal(await page.getByRole('button',{name:'Split view'}).isEnabled(),true,
     'same-geometry images may be compared in split mode');
   await page.getByRole('button',{name:'Split view'}).click();
