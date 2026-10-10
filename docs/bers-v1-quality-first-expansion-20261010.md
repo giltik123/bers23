@@ -44,6 +44,16 @@ A green kernel unit test cannot advance a tool past `PURE_KERNEL_TESTED`. A visu
 
 `src/platform/creative/deterministic/EditorRasterLayerStackRND.ts` introduces a **research-only** bounded (max 32) normal source-over RGBA8 layer compositor with optional per-pixel R8 mask, 8-bit fixed-point opacity, deterministic alpha/color and untouched input buffers. Tests cover hidden RGB, alpha, mask protection, ordering, visibility, malformed data and geometry. This is not color-managed linear-light rendering and **not** yet an authorized production layer stack.
 
+## Implemented cross-feature slice in PR #988
+
+1. **Pure raster compositor:** `EditorRasterLayerStackRND.ts` (RGBA8 with source-over, exact per-layer R8 matte and 8-bit opacity; strict geometry and resource bounds), no arbitrary blend modes or external provider calls.
+2. **Immutable source-bound editing document:** `EditorLayerDocumentRND.ts` (tenant/Project/source SHA and artifact references, paired mask hashes, at most 32 layers, lock flags, optimistic `expectedRevision` guard, immutable ADD/REMOVE/MOVE/VISIBILITY/OPACITY snapshots). The client-side revision/identity check **is not a Core authorization or saved history**.
+3. **Independent integrity inspector:** `EditorQualityInspectorRND.ts` audits any equal-size RGBA8 frames and reports total changed pixels, changed alpha, exact protected-pixel leakage, RGB error, and changed bounding box. All opaque/transparent RGBA bytes count, including invisible hidden RGB. Image-quality statistics are **not a perceptual score**.
+4. **Actual pending Preview enhancement:** `ResultCompare.jsx` now has keyboard-accessible before/after/split, 100%/200% inspection and adjustable split position. Split is only available when decoded natural dimensions match **and** the Core-reported Editor operation belongs to the source-coordinate-preserving allowlist: masked exposure, masked white balance, masked levels, background isolation or canonical Fashion Try-On. Crop, Resize, Rotate/Flip, unknown AI rerenders and unverified operations cannot silently offer visually misregistered pixel comparison. Existing explicit Editor `onAccept/onDiscard/onRetry` remain untouched; no automatic Project commit.
+5. **Real-image research evidence job:** path-scoped Actions tests all safety primitives and runs three public-license Wikimedia photo composites on exactly the PR head, uploads sources/results/3× difference maps, hashes and a JSON manifest. This job deliberately keeps `visualGrade:PENDING_INDEPENDENT_HUMAN_REVIEW`; it cannot promote Core, the Editor, or any AI model.
+
+Next graduation tasks: image-based visual review and artifact SHA checks; source-bound Core layer execution ticket and immutable layer data migration; browser/PostgreSQL/E2E including refresh/Undo/Redo/Restore; performance and consistent ICC-aware compositing on larger photographs. The R&D compositor uses sRGB byte-space blending, so its visual quality is **not** asserted comparable to color-managed linear-light compositing.
+
 ## Product decision
 
 A later launch date is intentionally **unset**. Keep an actionable quality backlog, reviewed standalone PRs and measured real-photo evidence. Do not choose an RC, enable payment paths, flip experimental production flags or claim feature completeness because this authorization exists.
