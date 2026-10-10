@@ -77,6 +77,9 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
   };
+  const pointerCancel = (event) => {
+    if (pointer.current?.id === event.pointerId) pointer.current = null;
+  };
   const handleKeys = (event) => {
     if (zoom === 1) return;
     const movement = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] }[event.key];
@@ -88,7 +91,7 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
   // Transform applied to both layers identically. Comparison split clips the
   // After layer at viewport coordinates, not independent image positions.
   const transform = { transform: `translate(${pan.x}%, ${pan.y}%) scale(${zoom})`, transformOrigin: 'center', userSelect: 'none' };
-  const clip = mode === 'before' ? 0 : mode === 'after' ? 100 : split;
+  const afterClipLeft = mode === 'before' ? 100 : mode === 'after' ? 0 : split;
   const metadata = [
     typeof result?.provider === 'string' && result.provider.trim() ? result.provider.trim() : null,
     Number.isFinite(result?.credits_used) && result.credits_used >= 0 ? `${result.credits_used} credits` : null,
@@ -132,7 +135,7 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
         role="region" tabIndex={0} aria-label="Before and after image inspection. Drag to pan when zoomed. Use arrow keys to pan."
         className={`relative isolate w-full h-[min(65vw,420px)] min-h-[260px] max-h-[520px] rounded-xl overflow-hidden bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${zoom > 1 ? 'touch-none cursor-grab' : 'touch-pan-y'}`}
         onPointerDown={pointerDown} onPointerMove={pointerMove}
-        onPointerUp={pointerUp} onPointerCancel={pointerUp}
+        onPointerUp={pointerUp} onPointerCancel={pointerCancel}
         onKeyDown={handleKeys}
       >
         {beforeUrl && <img src={beforeUrl} alt="" draggable={false}
@@ -140,7 +143,7 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
           onError={() => { setBeforeSize(null); setImageErrors((s) => ({ ...s, before: true })); }}
           className="absolute inset-0 w-full h-full object-contain pointer-events-none"
           style={transform} />}
-        {afterUrl && <div aria-hidden="true" className="absolute inset-0 pointer-events-none" style={{ clipPath: `inset(0 ${100 - clip}% 0 0)` }}>
+        {afterUrl && <div aria-hidden="true" className="absolute inset-0 pointer-events-none" style={{ clipPath: `inset(0 0 0 ${afterClipLeft}%)` }}>
           <img src={afterUrl} alt="" draggable={false}
             onLoad={(event) => setAfterSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
             onError={() => { setAfterSize(null); setImageErrors((s) => ({ ...s, after: true })); }}
