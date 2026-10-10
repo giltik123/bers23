@@ -57,7 +57,7 @@ test('layer preflight rejects duplicate IDs, unsupported blend, masks and geomet
     [{...foreground,visible:'yes'}],
   ];
   for(const layers of invalid) assert.throws(()=>composeEditorRasterLayersRgba8(source,1,1,layers));
-  assert.throws(()=>composeEditorRasterLayersRgba8(source,1,1,Array.from({length:33},(_,i)=>({...foreground,id:`layer_${i}`})))); 
+  assert.throws(()=>composeEditorRasterLayersRgba8(source,1,1,Array.from({length:33},(_,i)=>({...foreground,id:`layer_${i}`}))));
   assert.throws(()=>composeEditorRasterLayersRgba8(source,0,1,[]),/geometry/);
   assert.throws(()=>composeEditorRasterLayersRgba8(source,1,2,[]),/exact RGBA8/);
 });
