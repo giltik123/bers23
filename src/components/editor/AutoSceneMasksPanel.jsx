@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, ScanSearch, RefreshCcw, AlertCircle } from 'lucide-react';
 import { SCENE_GROUPS, SCENE_LABELS, sceneSourceKey } from '@/application/scene/autoSceneMaskContract';
 import { createCanonicalAutoSceneMaskRunner } from '@/application/scene/createCanonicalAutoSceneMaskRunner';
@@ -28,23 +28,39 @@ export default function AutoSceneMasksPanel({
     sourceKey:null,status:'IDLE',message:'',
   });
   const [runNumber,setRunNumber] = useState(0);
+  const attemptedRef = useRef(null);
 
   useEffect(() => {
     if (!sourceKey || !project) return undefined;
-    let cancelled = false;
+    if (disabled) {
+      setState({ sourceKey,status:'PAUSED',
+        message:'Анализ сцены начнётся, когда завершится текущее редактирование.' });
+      return undefined;
+    }
+    const attemptKey=JSON.stringify([sourceKey,runNumber]);
+    // React re-render / status update must never redispatch a paid model.
+    if (attemptedRef.current===attemptKey)return undefined;
+    attemptedRef.current=attemptKey;
+    let cancelled=false,finished=false;
     setState({ sourceKey, status:'RUNNING',message:'Проверка модели и анализ сцены…' });
     runner.start(project).then(result => {
+      finished=true;
       if(cancelled)return;
       setState({ sourceKey,status:result.status,message:result.message });
       if(result.status==='COMPLETED')onComplete?.();
     }).catch(error => {
+      finished=true;
       if(!cancelled)setState({ sourceKey,status:'FAILED',
         message:error?.message||MESSAGE.FAILED });
     });
-    return () => { cancelled=true; runner.cancel(); };
-  // Re-run on image identity or explicit user request; not on Project revision.
+    return () => {
+      cancelled=true;
+      runner.cancel();
+      if(!finished && attemptedRef.current===attemptKey)attemptedRef.current=null;
+    };
+  // Re-run on image identity, explicit retry or when the editor becomes idle.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[sourceKey,runNumber,runner]);
+  },[sourceKey,runNumber,runner,disabled]);
 
   const matching = state.sourceKey === sourceKey ? state : {
     status:'RUNNING',message:'Ожидание проверки новой фотографии',
