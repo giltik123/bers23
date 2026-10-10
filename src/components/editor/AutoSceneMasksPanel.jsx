@@ -27,7 +27,9 @@ export default function AutoSceneMasksPanel({
   const [state,setState] = useState({
     sourceKey:null,status:'IDLE',message:'',
   });
-  const [runNumber,setRunNumber] = useState(0);
+  const [requested,setRequested] = useState({sourceKey:null,mode:'CLASSICAL',request:0});
+  const currentMode=requested.sourceKey===sourceKey?requested.mode:'CLASSICAL';
+  const currentRequest=requested.sourceKey===sourceKey?requested.request:0;
   const attemptedRef = useRef(null);
 
   useEffect(() => {
@@ -37,13 +39,15 @@ export default function AutoSceneMasksPanel({
         message:'Анализ сцены начнётся, когда завершится текущее редактирование.' });
       return undefined;
     }
-    const attemptKey=JSON.stringify([sourceKey,runNumber]);
+    const attemptKey=JSON.stringify([sourceKey,currentMode,currentRequest]);
     // React re-render / status update must never redispatch a paid model.
     if (attemptedRef.current===attemptKey)return undefined;
     attemptedRef.current=attemptKey;
     let cancelled=false,finished=false;
-    setState({ sourceKey, status:'RUNNING',message:'Проверка модели и анализ сцены…' });
-    runner.start(project,{force:runNumber>0 && state.sourceKey===sourceKey}).then(result => {
+    setState({ sourceKey, status:'RUNNING',message:currentMode==='CLASSICAL'
+      ? 'Выделение цветовых областей без ИИ…'
+      : 'Сегментация SAM3 через облачную модель…' });
+    runner.start(project,{mode:currentMode,force:currentRequest>1 && state.sourceKey===sourceKey}).then(result => {
       finished=true;
       if(cancelled)return;
       setState({ sourceKey,status:result.status,message:result.message });
@@ -60,7 +64,7 @@ export default function AutoSceneMasksPanel({
     };
   // Re-run on image identity, explicit retry or when the editor becomes idle.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[sourceKey,runNumber,runner,disabled]);
+  },[sourceKey,currentMode,currentRequest,runner,disabled]);
 
   const matching = state.sourceKey === sourceKey ? state : {
     status:'RUNNING',message:'Ожидание проверки новой фотографии',
@@ -101,15 +105,25 @@ export default function AutoSceneMasksPanel({
       {matching.status==='MODEL_UNAVAILABLE'&&(
         <p role="note" className="flex gap-1.5 text-xs text-amber-600">
           <AlertCircle className="h-4 w-4 shrink-0"/>
-          Требуется модель, распознающая отдельные объекты и выдающая маску для каждого.
-          Нынешняя сегментация по точке не подменяет этот этап.
+          Классическая сегментация без ИИ распознаёт цветовые области, а не лица или одежду.
+          Для подписанных семантических масок требуется отдельная модель.
         </p>
       )}
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm"
           disabled={disabled || running || !sourceKey}
-          onClick={()=>setRunNumber(n=>n+1)}>
-          <RefreshCcw className="h-4 w-4 mr-1"/>Повторить анализ
+          onClick={()=>setRequested(prev=>({
+            sourceKey,mode:'CLASSICAL',request:prev.request+1,
+          }))}>
+          <RefreshCcw className="h-4 w-4 mr-1"/>Маски без ИИ
+        </Button>
+        <Button type="button" variant="outline" size="sm"
+          disabled={disabled || running || !sourceKey}
+          title="Облачный платный анализ только по вашему запросу"
+          onClick={()=>setRequested(prev=>({
+            sourceKey,mode:'SAM3',request:prev.request+1,
+          }))}>
+          SAM3 (облако)
         </Button>
         <Button type="button" variant="outline" size="sm"
           disabled={disabled||!sourceKey||typeof onManualSelect!=='function'}
