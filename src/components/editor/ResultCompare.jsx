@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, Trash2, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
-import { canCompareOperationAligned, canComparePixelsAligned } from './compareGeometryPolicy';
+import { canCompareOperationAligned, canComparePixelsAligned, nativeInspectionCanvasSize } from './compareGeometryPolicy';
 
 // A read-only inspector for an unaccepted candidate. The Core-owned Accept,
 // Discard, and Retry callbacks remain the ONLY controls changing Project state.
@@ -74,9 +74,8 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
   // A fixed-height object-contain container would otherwise pretend to be 100%
   // while silently reducing detail on tall/large photographs.
   const naturalSize = mode === 'before' ? naturalSizes.before : naturalSizes.after;
-  const inspectedCanvas = naturalSize
-    ? { width: naturalSize.width * zoom, height: naturalSize.height * zoom }
-    : { width: '100%', height: 340 };
+  const inspectedCanvas = nativeInspectionCanvasSize(naturalSize, zoom)
+    || { width: '100%', height: 340 };
   const executionLabel = result?.provider || 'Local / Core preview';
   const creditLabel = Number.isFinite(result?.credits_used) && result.credits_used > 0
     ? ` · ${result.credits_used} credits` : '';
