@@ -66,7 +66,11 @@ export class CreativeWorkflowEngine {
   }
   async #controlledEdit(workflow: CompiledWorkflow, operation: WorkflowOperation, inputs: readonly Artifact[]) {
     const originalArtifact = inputs.find(item => item.metadata?.artifactRole === 'ORIGINAL') ?? inputs.find(item => isPixelImage(item.value));
-    const maskArtifact = inputs.find(item => item.metadata?.artifactRole === 'MASK');
+    const masks = inputs.filter(item => item.metadata?.artifactRole === 'MASK');
+    // Never silently ignore the second MASK: v1 ControlledLocalEdit owns one
+    // authoritative OriginalMask, not union/intersection semantics.
+    if (masks.length !== 1) throw new Error('Controlled local edit requires exactly one MASK; multiple masks need explicit combination');
+    const maskArtifact = masks[0];
     if (!originalArtifact || !isPixelImage(originalArtifact.value) || !maskArtifact) throw new Error('Controlled local edit requires ORIGINAL pixels and MASK');
     const original = originalArtifact.value; const mask = toOriginalMask(maskArtifact, original); const preserveMode = preserveModeOf(operation.input?.preserveMode);
     const result = await executeControlledLocalEdit({ executionId: workflow.id, original, mask, maskArtifactId: maskArtifact.id, instruction: String(operation.input?.instruction ?? workflow.prompt), policy: { preserveMode, haloPixels: numberOr(operation.input?.haloPixels, 0), haloRatio: numberOr(operation.input?.haloRatio, .1), minimumProviderSize: numberOr(operation.input?.minimumProviderSize, 1), boundaryMeanDeltaLimit: typeof operation.input?.boundaryMeanDeltaLimit === 'number' ? operation.input.boundaryMeanDeltaLimit : undefined }, provider: async request => {

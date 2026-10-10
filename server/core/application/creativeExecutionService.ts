@@ -65,6 +65,17 @@ export class CreativeExecutionService {
   readonly #platform: CreativeExecutionPlatform;
   constructor(private readonly dependencies: CreativeExecutionServiceDependencies) { this.#platform = new CreativeExecutionPlatform(dependencies.platform); }
   execute(command: CreativeEditCommand, auth: AuthenticatedScope, correlationId?: string): Promise<ProductionOutcome> {
+    // A partial controlled edit must NEVER fall back to GLOBAL_EDIT, where a
+    // provider might touch pixels outside the user-approved area.
+    const hasMasks = Boolean(command.maskArtifactIds?.length);
+    const hasObjects = Boolean(command.selectedObjectIds?.length);
+    if (hasMasks !== hasObjects) {
+      return Promise.reject(publicError('validation_error', 'A selected object and a Core mask are both required for a controlled edit', 400, false));
+    }
+    if (hasMasks && (command.maskArtifactIds?.length !== 1 || command.selectedObjectIds?.length !== 1)) {
+      return Promise.reject(publicError('validation_error',
+        'Controlled generative edits currently support exactly one selected object and one Core mask', 400, false));
+    }
     const key = `${auth.tenantId}:${auth.userId}:${command.projectId}:${command.clientRequestId}`;
     const fingerprint = this.#resolveFingerprint(command, auth);
     const prior = this.#inflight.get(key);

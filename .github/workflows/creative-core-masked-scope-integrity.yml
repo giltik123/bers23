@@ -1,0 +1,48 @@
+name: Creative Core controlled edit scope integrity
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/application/creativeExecutionService.ts'
+      - 'server/core/composition/createCreativeCore.ts'
+      - 'src/platform/creative/workflow-engine/WorkflowEngine.ts'
+      - 'src/platform/creative/pipeline/ControlledLocalEdit.ts'
+      - 'tests/canonical-product-vertical-slice.test.ts'
+      - 'tests/canonical-controlled-edit.integration.test.ts'
+      - '.github/workflows/creative-core-masked-scope-integrity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  controlled-local-edit-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact PR commit
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Execute Core product service and no-billing malformed-scope contracts
+        run: npm run test:canonical-product-vertical
+      - name: Bundle and execute real canonical controlled-edit HTTP integration
+        run: |
+          mkdir -p .test-cache/creative-masked-scope
+          npx esbuild tests/canonical-controlled-edit.integration.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/creative-masked-scope/integration.test.mjs \
+            --external:sharp --external:pg --external:node:*
+          node --test .test-cache/creative-masked-scope/integration.test.mjs
+      - name: Typecheck server/frontend contracts
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+      - name: No malformed diffs
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"

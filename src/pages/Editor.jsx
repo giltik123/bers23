@@ -4,6 +4,8 @@ import { ArrowLeft, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
+import { bindGenerativeScope } from '@/application/editor/ai-first/bindGenerativeScope';
+import { interpretPhotoCommand } from '@/application/editor/ai-first/interpretPhotoCommand';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createMaskedExposure } from '@/application/createMaskedExposure';
 import { createMaskedWhiteBalance } from '@/application/createMaskedWhiteBalance';
@@ -22,6 +24,7 @@ import GenerationProgress from '@/components/editor/GenerationProgress';
 import ResultCompare from '@/components/editor/ResultCompare';
 const RecipePanel = lazy(() => import('@/components/editor/recipes/RecipePanel'));
 const AgentPanel = lazy(() => import('@/components/editor/agent/AgentPanel'));
+const AICommandStudio = lazy(() => import('@/components/editor/ai/AICommandStudio'));
 import useBoundedAgentEditor from '@/components/editor/agent/useBoundedAgentEditor';
 import { recipeEngine } from '@/lib/recipes/recipeEngine';
 import ImageCanvas from '@/components/editor/ImageCanvas';
@@ -69,7 +72,7 @@ import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPo
 import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
-const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
+const EDITOR_TABS = [{ id: 'ai', label: 'AI Studio' }, { id: 'prompt', label: 'Legacy prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
 
 function disposePendingPreview(pending) {
   const url = pending?.result?.preview_url;
@@ -129,7 +132,7 @@ export default function Editor() {
   const [aiError, setAiError] = useState(null);
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
-  const [editTab, setEditTab] = useState('prompt');
+  const [editTab, setEditTab] = useState('ai');
   const [activeRecipe, setActiveRecipe] = useState(null);
   const [lastAction, setLastAction] = useState(null);
   const pendingResultRef = useRef(null);
@@ -566,6 +569,7 @@ export default function Editor() {
     } catch (e) {
       setAiError(e.message || 'Masked Exposure failed');
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+      if (retryContext?.bubbleFailure) throw e;
     } finally {
       maskedExposureInFlightRef.current = false;
       setApplyingMaskedExposure(false);
@@ -608,6 +612,7 @@ export default function Editor() {
     } catch (e) {
       setAiError(e.message || 'Masked White Balance failed');
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+      if (retryContext?.bubbleFailure) throw e;
     } finally {
       maskedWhiteBalanceInFlightRef.current = false;
       setApplyingMaskedWhiteBalance(false);
@@ -653,6 +658,7 @@ export default function Editor() {
     } catch (e) {
       setAiError(e.message || 'Masked Levels failed');
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+      if (retryContext?.bubbleFailure) throw e;
     } finally {
       maskedLevelsInFlightRef.current = false;
       setApplyingMaskedLevels(false);
@@ -686,6 +692,7 @@ export default function Editor() {
     } catch (e) {
       setAiError(e.message || 'Background isolation failed');
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+      if (retryContext?.bubbleFailure) throw e;
     } finally {
       setIsolatingBackground(false);
     }
@@ -733,12 +740,34 @@ export default function Editor() {
   }, [project, instruction, objects, selected]);
 
   // Single AI edits cross the application boundary; the Core canonical platform is execution authority.
-  const applyEdit = async (bypassCache = false, { skipDriftCheck = false, instructionOverride = null } = {}) => {
+  const applyEdit = async (bypassCache = false, { skipDriftCheck = false, instructionOverride = null, aiScope = null } = {}) => {
     const usedInstruction = instructionOverride || instruction;
-    const usedPlan = instructionOverride
+    // AI Studio may execute only the scope the user explicitly reviewed. Legacy
+    // prompt routes retain their existing Core behavior until independently migrated.
+    if (aiScope && interpretPhotoCommand(usedInstruction).kind !== 'GENERATIVE') {
+      throw new Error('AI Studio разрешает здесь только генеративные команды.');
+    }
+    const guardedScope = aiScope ? bindGenerativeScope({
+      instruction: usedInstruction,
+      mode: aiScope.mode,
+      projectId: project?.id,
+      expectedProjectId: aiScope.expectedProjectId,
+      sourceArtifactId: project?.current_image_artifact_id,
+      expectedSourceArtifactId: aiScope.expectedSourceArtifactId,
+      expectedSelectedObjectId: aiScope.expectedSelectedObjectId,
+      expectedMaskArtifactId: aiScope.expectedMaskArtifactId,
+      objects: project?.objects || [],
+    }) : null;
+    // The legacy keyword planner cannot validate arbitrary Russian generative
+    // requests. Explicitly scoped AI Studio commands instead pass the bounded
+    // generative interpreter + source/mask binding, then Core server admission.
+    const usedPlan = aiScope ? null : instructionOverride
       ? aiPlanner.plan({ project, instruction: usedInstruction, objects, selectedObject: selected })
       : plan;
-    if (!usedPlan || usedPlan.status !== 'ready') return;
+    if (!aiScope && (!usedPlan || usedPlan.status !== 'ready')) {
+      if (instructionOverride) throw new Error('Core Creative Edit: команда пока не проходит проверку маршрута генерации. Уточните объект, маску или сам запрос.');
+      return;
+    }
 
     // Consistency Engine: compare the requested edit against Scene Memory before generating.
     const memory = sceneMemory.getActive();
@@ -746,37 +775,81 @@ export default function Editor() {
       const report = consistencyEngine.assess({ instruction: usedInstruction, memory });
       if (report.exceedsThreshold) {
         setDriftWarning(report);
+        if (instructionOverride) throw new Error('Смена стиля требует дополнительного подтверждения в редакторе.');
         return;
       }
     }
 
     setApplying(true);
     setAiError(null);
-    setLastAction(() => applyEdit);
+    setLastAction(() => () => applyEdit(bypassCache, { skipDriftCheck, instructionOverride, aiScope }));
     try {
       const result = await creativeEditApplicationService.execute({
         projectId: project.id,
         instruction: usedInstruction,
-        selectedObjectIds: objects.filter((object) => object.selected).map((object) => object.id),
-        inputArtifactId: project.current_image_artifact_id,
-        maskArtifactIds: objects.filter((object) => object.selected && object.mask_artifact_id).map((object) => object.mask_artifact_id),
+        selectedObjectIds: guardedScope
+          ? guardedScope.selectedObjectIds
+          : objects.filter((object) => object.selected).map((object) => object.id),
+        inputArtifactId: guardedScope?.sourceArtifactId ?? project.current_image_artifact_id,
+        maskArtifactIds: guardedScope
+          ? guardedScope.maskArtifactIds
+          : objects.filter((object) => object.selected && object.mask_artifact_id).map((object) => object.mask_artifact_id),
         preserveMode: styleLock.isEnabled(project.id) ? 'locked' : 'standard',
         clientRequestId: globalThis.crypto.randomUUID(),
       });
       if (result.status === 'UNKNOWN') throw Object.assign(new Error('Provider result is pending reconciliation'), { code: 'PROVIDER_OUTCOME_PENDING', retryable: false });
       if (result.status !== 'SUCCESS' || !result.imageUrl) throw Object.assign(new Error('Edit failed'), { code: 'provider_failure' });
       const editorResult = { ...result, image_url: result.imageUrl, generation_time_ms: result.timing?.durationMs, credits_used: result.creditsUsed };
-      setPendingResult((current) => { disposePendingPreview(current); return { result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url }; });
+      setPendingResult((current) => { disposePendingPreview(current); return { kind: guardedScope ? 'AI_SCOPED_GENERATION' : null, scope: guardedScope?.scope ?? null, context: guardedScope ? { aiScope } : null, result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url }; });
       recipeEngine.recordOutcome(activeRecipe?.id, { success: true, durationMs: editorResult.generation_time_ms, credits: editorResult.credits_used });
+      return editorResult;
     } catch (e) {
       if (e.code !== 'cancelled') {
         setAiError(e.message || 'Edit failed');
         recipeEngine.recordOutcome(activeRecipe?.id, { success: false, durationMs: 0, credits: 0 });
         workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
       }
+      if (instructionOverride) throw e;
     } finally {
       setApplying(false);
     }
+  };
+
+  // AI-first commands use exactly the same authenticated Core source/MASK
+  // and Preview→Accept path as the existing toolbar. A browser text parser
+  // cannot select a garment/face or invent a canonical source/mask ticket.
+  const executeAIAdjustment = async ({
+    operation, parameters, expectedProjectId, expectedSourceArtifactId,
+    expectedSelectedObjectId, expectedMaskArtifactId,
+  }) => {
+    if (editorBusy || committing || pendingResult || selection ||
+        cropInteractionActive || resizeInteractionActive || driftWarning) {
+      throw new Error('Закончите предыдущую операцию до нового AI-запроса.');
+    }
+    if (!project?.id || !project?.current_image_artifact_id || !selected?.mask_artifact_id) {
+      throw new Error('Сначала подтвердите выбранную область с Core-маской.');
+    }
+    // Same exact Core source/object/MASK consent binding as AI generative edits:
+    // a changed selection may not silently redirect a confirmed tone operation.
+    const adjustedScope = bindGenerativeScope({
+      instruction: operation,
+      mode: 'MASKED',
+      projectId: project.id,
+      expectedProjectId,
+      sourceArtifactId: project.current_image_artifact_id,
+      expectedSourceArtifactId,
+      expectedSelectedObjectId,
+      expectedMaskArtifactId,
+      objects,
+    });
+    const sourceArtifactId = adjustedScope.sourceArtifactId;
+    const maskArtifactId = adjustedScope.maskArtifactIds[0];
+    const context = { sourceArtifactId, maskArtifactId, ...parameters, bubbleFailure: true };
+    if (operation === 'MASKED_EXPOSURE') return applyMaskedExposure(context);
+    if (operation === 'MASKED_WHITE_BALANCE') return applyMaskedWhiteBalance(context);
+    if (operation === 'MASKED_LEVELS') return applyMaskedLevels(context);
+    if (operation === 'BACKGROUND_ISOLATION') return isolateBackground(context);
+    throw new Error('Эта операция ещё не принята BERS Core.');
   };
 
   const acceptResult = async () => {
@@ -842,6 +915,17 @@ export default function Editor() {
     }
     if (pending?.kind === 'BOUNDED_AGENT') {
       void boundedAgent.start(pending.context).catch((cause) => setAiError(cause?.message || 'Bounded Agent retry failed.'));
+      return;
+    }
+    if (pending?.kind === 'AI_SCOPED_GENERATION') {
+      if (!pending?.context?.aiScope) {
+        setAiError('Область исходной AI-команды утрачена. Подтвердите запрос и маску заново.');
+        return;
+      }
+      void applyEdit(true, {
+        instructionOverride: pending.instruction,
+        aiScope: pending.context.aiScope,
+      }).catch((cause) => setAiError(cause?.message || 'Повторная генерация с прежней маской невозможна.'));
       return;
     }
     if (pending?.kind === 'BACKGROUND_ISOLATION') {
@@ -1096,6 +1180,8 @@ export default function Editor() {
         <ResultCompare
           beforeUrl={pendingResult.beforeUrl}
           result={pendingResult.result}
+          kind={pendingResult.kind || null}
+          editScope={pendingResult.scope || null}
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
@@ -1121,7 +1207,22 @@ export default function Editor() {
           )}
           <AdaptiveNavigation items={EDITOR_TABS} active={editTab} onChange={(next) => { if (!tryOnActive && !agentActive) setEditTab(next); }} />
           <Suspense fallback={<div className="py-8 text-center text-sm text-muted-foreground">Loading panel…</div>}>
-          {editTab === 'creative' ? (
+          {editTab === 'ai' ? (
+            <AICommandStudio
+              project={project}
+              selectedObject={selected}
+              instruction={instruction}
+              onInstructionChange={setInstruction}
+              disabled={editorBusy || committing || Boolean(pendingResult)
+                || cropInteractionActive || resizeInteractionActive || Boolean(driftWarning)}
+              selectionActive={Boolean(selection)}
+              pending={Boolean(pendingResult)}
+              onSelectRegion={startSelection}
+              onExecuteAdjustment={executeAIAdjustment}
+              onExecuteGenerative={(command) => applyEdit(false, { instructionOverride: command.instruction, aiScope: command })}
+              onOpenFashion={() => setEditTab('outfits')}
+            />
+          ) : editTab === 'creative' ? (
             <CreativeStudioPanel project={project} objects={objects} disabled={editorBusy} />
           ) : editTab === 'outfits' ? (
             <div className="space-y-3">
