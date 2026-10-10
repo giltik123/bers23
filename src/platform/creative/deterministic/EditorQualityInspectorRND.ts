@@ -114,7 +114,7 @@ export function requireEditorProtectedPixelsUnchanged(summary: EditorPixelQualit
  * nonzero alpha inside a declared edit mask are scored. Neither criterion is
  * a skin-tone detector, histogram correction, gamut proof or quality gate.
  */
-export function analyzeEditorTonalClippingRgba8(
+export function analyzeEditorNearWhiteAndBlackRgba8(
   before: Uint8Array | Uint8ClampedArray,
   after: Uint8Array | Uint8ClampedArray,
   width: number,
