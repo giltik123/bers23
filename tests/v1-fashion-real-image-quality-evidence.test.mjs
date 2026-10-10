@@ -227,3 +227,14 @@ test('Fashion evidence workflow keeps contract CI separate from real external ev
   assert.match(docs, /Do not use private end-user photos merely to satisfy the release gate/u);
   assert.match(docs, /does not edit release authority by itself/u);
 });
+
+test('Fashion owner dispatch bridge checks review output byte identities before triggering evidence workflow', async () => {
+  const source = await readFile('.github/workflows/v1-fashion-real-image-quality-evidence-dispatch.yml', 'utf8');
+  assert.match(source, /sample\.reviewedOutputSha256 !== fixtureSample\.result\.sha256/u);
+  assert.match(source, /reviewedIds\.has\(sample\.id\)/u);
+  assert.match(source, /sampleIds\.has\(sample\.id\)/u);
+  const outputBinding = source.indexOf('sample.reviewedOutputSha256 !== fixtureSample.result.sha256');
+  const dispatch = source.indexOf('github.rest.actions.createWorkflowDispatch');
+  assert.ok(outputBinding > 0 && dispatch > outputBinding, 'review-output hash gate must run before any evidence dispatch');
+});
+
