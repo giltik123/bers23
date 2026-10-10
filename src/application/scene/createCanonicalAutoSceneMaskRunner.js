@@ -34,6 +34,9 @@ export function createCanonicalAutoSceneMaskRunner(provider) {
           return result;
         }catch(error){
           if(ticket!==sequence)return {status:'CANCELLED',objects:[]};
+          if(error?.code==='scene_analysis_in_progress')
+            return {status:'IN_PROGRESS',objects:[],
+              message:'Другая вкладка уже обрабатывает эту фотографию. Повторный платный запрос не отправлен.'};
           if(error?.code==='project_source_conflict' ||
              error?.status===409)
             return {status:'STALE_SOURCE',objects:[],
