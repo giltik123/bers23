@@ -108,7 +108,7 @@ export default function VoiceInputPanel({
   const confirm=async()=>{
     if(disabled||submitting||!draft||!transcriptSource ||
       transcriptSource!==sourceKey ||
-      ['ACTION_NEEDS_UI','AMBIGUOUS','TRYON_SELECT_PROPOSAL','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind))return;
+      ['ACTION_NEEDS_UI','AMBIGUOUS','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind))return;
     setSubmitting(true);
     try{
       if(['PROMPT_REPLACE','PROMPT_APPEND','PROMPT_CLEAR','NAVIGATE_PROMPT'].includes(draft.kind)){
@@ -176,7 +176,7 @@ export default function VoiceInputPanel({
               ?` — поиск: ${draft.params.query}`:''}
           </p>
           {error&&<p role="alert" className="text-xs text-destructive">{error}</p>}
-          {draft&&!['ACTION_NEEDS_UI','AMBIGUOUS','TRYON_SELECT_PROPOSAL','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind)&&(
+          {draft&&!['ACTION_NEEDS_UI','AMBIGUOUS','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind)&&(
             <Button type="button" size="sm" disabled={disabled||submitting||phase==='RECORDING'||phase==='PREPARING'||phase==='STOPPING'||transcriptSource!==sourceKey}
               onClick={confirm}>
               <Check className="mr-1 h-4 w-4"/>Подтвердить текст
