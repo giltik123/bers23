@@ -925,7 +925,7 @@ export default function Editor() {
             onRestore={restoreVersion}
             disabled={editorBusy || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
           />
-          <Button
+          {SUPER_RESOLUTION_PRODUCTION_AVAILABLE && <Button
             variant="ghost"
             size="sm"
             onClick={() => upscaleImage()}
@@ -935,14 +935,12 @@ export default function Editor() {
           >
             {upscaling ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Maximize2 className="w-4 h-4 mr-1.5" />}
             {SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4' : 'Upscale x4 · Candidate'}
-          </Button>
+          </Button>}
           <a href={project.current_image_url} target="_blank" rel="noreferrer" className="p-2 rounded-lg hover:bg-accent transition-colors" aria-label="Download">
             <Download className="w-5 h-5" />
           </a>
         </AdaptiveToolbar>
       </div>
-
-      <AdaptivePanel title="Workspace"><WorkspaceBar projectId={project.id} /></AdaptivePanel>
 
       <ErrorBanner message={aiError} onRetry={lastAction} />
 
@@ -960,8 +958,6 @@ export default function Editor() {
         />
       )}
 
-      <AdaptivePanel title="Job Center"><JobQueuePanel /></AdaptivePanel>
-
       <GenerationProgress />
 
       <SegmentationProgress />
@@ -970,7 +966,7 @@ export default function Editor() {
         imageUrl={project.current_image_url}
         objects={objects}
         selectedId={selected?.id}
-        onSelect={(obj) => selectObject(obj.id)}
+        onSelect={(obj) => selectObject(obj?.id ?? null)}
         busy={editorBusy}
         onUndo={undo}
         onRedo={redo}
@@ -982,6 +978,12 @@ export default function Editor() {
         onCropPointer={cropPointer}
       />
 
+      <section className="space-y-3 rounded-2xl border border-border/60 bg-card/40 p-3" aria-label="Image tools">
+        <div>
+          <h2 className="text-sm font-medium">Edit image</h2>
+          <p className="text-xs text-muted-foreground">Choose a tool, make one change and review the preview before saving.</p>
+        </div>
+        <div className="flex flex-wrap items-start gap-3">
       <CropToolbar
         active={cropInteractionActive}
         draft={cropDraft}
@@ -1010,15 +1012,21 @@ export default function Editor() {
         onCancel={() => { setResizeDraft(null); setResizeAspectLocked(true); }}
       />
 
+        </div>
+        <details className="rounded-lg border border-border/60 p-2">
+          <summary className="cursor-pointer select-none text-sm text-muted-foreground">Rotate or flip</summary>
+          <div className="pt-3">
       <OrthogonalTransformToolbar
         busy={Boolean(orthogonalTransformingMode)}
         activeMode={orthogonalTransformingMode}
         disabled={!project.current_image_artifact_id || editorBusy || committing || Boolean(selection) || Boolean(pendingResult) || cropInteractionActive || resizeInteractionActive}
         onApply={(mode) => applyOrthogonalTransform(mode)}
       />
+          </div>
+        </details>
 
       <SelectionToolbar
-        selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness} onStart={startSelection}
+        selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness} onStart={startSelection} hasSelectedMask={Boolean(selected?.mask_artifact_id)}
         morphologyRadius={selectionMorphologyRadius} onMorphologyRadius={setSelectionMorphologyRadius}
         polygonComposition={polygonComposition} onPolygonComposition={setPolygonComposition}
         onApplyPolygon={() => updateSelection((service) => selection.mode === 'LASSO' ? service.applyLasso(polygonComposition) : service.applyPolygon(polygonComposition))}
@@ -1070,21 +1078,8 @@ export default function Editor() {
         applyingLevels={applyingMaskedLevels}
         onApplyLevels={() => applyMaskedLevels()}
       />
+      </section>
 
-      <PipelineStatusBar width={project.width} height={project.height} />
-
-      <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
-
-      <AdaptivePanel title="Scene Memory"><SceneMemoryPanel project={project} /></AdaptivePanel>
-
-      <EditorStatusBar
-        objectCount={objects.length}
-        selectionCount={objects.filter((o) => o.selected).length}
-        selectionMode="single"
-        maskedCount={objects.filter((o) => o.mask_url).length}
-        segmentationStatus={objects.length ? 'completed' : 'idle'}
-        cacheStatus="empty"
-      />
 
       {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
@@ -1182,6 +1177,25 @@ export default function Editor() {
           </Suspense>
         </>
       )}
+
+      <details className="rounded-2xl border border-border/60 p-3 text-sm" aria-label="Additional editor tools and status">
+        <summary className="cursor-pointer select-none font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">More tools and activity</summary>
+        <div className="mt-3 space-y-4">
+          <AdaptivePanel title="Workspace"><WorkspaceBar projectId={project.id} /></AdaptivePanel>
+          <AdaptivePanel title="Job Center"><JobQueuePanel /></AdaptivePanel>
+          <PipelineStatusBar width={project.width} height={project.height} />
+          <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
+          <AdaptivePanel title="Scene Memory"><SceneMemoryPanel project={project} /></AdaptivePanel>
+          <EditorStatusBar
+            objectCount={objects.length}
+            selectionCount={objects.filter((o) => o.selected).length}
+            selectionMode="single"
+            maskedCount={objects.filter((o) => o.mask_url).length}
+            segmentationStatus={objects.length ? 'completed' : 'idle'}
+            cacheStatus="empty"
+          />
+        </div>
+      </details>
     </AdaptiveLayout>
   );
 }
