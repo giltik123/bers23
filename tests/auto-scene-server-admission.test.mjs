@@ -14,7 +14,7 @@ const object={
     sourceArtifactId:photo,maskState:'CORE_PERSISTED_UNREVIEWED',
   },
 };
-function fixture({storedSource='storage-image',storedWidth=8}={}){
+function fixture({storedSource='storage-image',storedWidth=8,producerOperation='LOCAL_SEGMENTATION'}={}){
   let loads=0;
   return {
     input:{
@@ -28,7 +28,7 @@ function fixture({storedSource='storage-image',storedWidth=8}={}){
         }},
         masks:{load:async()=>{loads++;return{
           storageId:'mask-storage',sourceImageStorageId:storedSource,
-          width:storedWidth,height:6,
+          producerOperation,width:storedWidth,height:6,
         };}},
       },
     },
@@ -67,6 +67,14 @@ test('cross-source or wrong-dimension MASK is rejected by Core after model admis
     await assert.rejects(()=>assertCanonicalSceneObjectPublication(f.input),/exact canonical photo/);
   }
 });
+test('manual MASK cannot be falsely relabeled as an automatically analyzed face',async()=>{
+  const f=fixture({producerOperation:'MANUAL_SELECTION'});
+  await assert.rejects(
+    ()=>assertCanonicalSceneObjectPublication(f.input),
+    /exact canonical photo/,
+  );
+});
+
 test('two semantic labels cannot point to the same canonical MASK',async()=>{
   const f=fixture();
   f.input.objects=[object,{...object,id:'auto-2',label:'Glasses',category:'ACCESSORY',group:'ACCESSORY'}];
