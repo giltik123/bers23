@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { canComparePixelsAligned } from '../src/components/editor/compareGeometryPolicy.js';
+import { canCompareOperationAligned, canComparePixelsAligned } from '../src/components/editor/compareGeometryPolicy.js';
 
 test('precise before/after split requires identical real image dimensions',()=>{
   assert.equal(canComparePixelsAligned({width:512,height:768},{width:512,height:768}),true);
@@ -19,7 +19,8 @@ test('ResultCompare presents accessible split and zoom but changes Project only 
   const component=await readFile('src/components/editor/ResultCompare.jsx','utf8');
   const editor=await readFile('src/pages/Editor.jsx','utf8');
   assert.match(component,/canComparePixelsAligned\(beforeSize, afterSize\)/u);
-  assert.match(component,/geometry !== 'aligned'/u);
+  assert.match(component,/geometry === 'aligned' && canCompareOperationAligned\(candidateOperation\)/u);
+  assert.match(component,/disabled=\{!splitAllowed\}/u);
   assert.match(component,/aria-label="Image comparison mode"/u);
   assert.match(component,/aria-pressed=\{mode === 'split'\}/u);
   assert.match(component,/aria-label="Split boundary"/u);
@@ -32,7 +33,17 @@ test('ResultCompare presents accessible split and zoom but changes Project only 
   for(const forbidden of ['coreClient','fetch(','persistFinal','uploadArtifact','changePlan','chargeCredits','Accept automatically']) {
     assert.equal(component.includes(forbidden),false,`forbidden preview authority: ${forbidden}`);
   }
+  assert.match(editor,/<ResultCompare[\s\S]*candidateOperation=\{pendingResult\.kind\}/u);
   assert.match(editor,/<ResultCompare[\s\S]*onAccept=\{acceptResult\}/u);
   assert.match(editor,/onDiscard=\{discardResult\}/u);
   assert.match(editor,/onRetry=\{retryResult\}/u);
+});
+
+test('split operation admission excludes same-size flips and unverified AI re-render',()=>{
+  for(const supported of ['MASKED_EXPOSURE','MASKED_WHITE_BALANCE','MASKED_LEVELS','BACKGROUND_ISOLATION','FASHION_TRYON']) {
+    assert.equal(canCompareOperationAligned(supported),true,supported);
+  }
+  for(const unregistered of ['ORTHOGONAL_TRANSFORM','CROP','RESIZE','SUPER_RESOLUTION','GENERATE','REPLACE_OBJECT','ROTATE_180','',null,undefined]) {
+    assert.equal(canCompareOperationAligned(unregistered),false,String(unregistered));
+  }
 });
