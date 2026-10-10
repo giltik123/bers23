@@ -3,15 +3,22 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, whiteBalanceTemperatureQ8, onWhiteBalanceTemperatureQ8, whiteBalanceTintQ8, onWhiteBalanceTintQ8, canApplyWhiteBalance = false, applyingWhiteBalance = false, onApplyWhiteBalance, levelsInputBlack, onLevelsInputBlack, levelsInputMidpoint, onLevelsInputMidpoint, levelsInputWhite, onLevelsInputWhite, levelsOutputBlack, onLevelsOutputBlack, levelsOutputWhite, onLevelsOutputWhite, canApplyLevels = false, applyingLevels = false, onApplyLevels, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, whiteBalanceTemperatureQ8, onWhiteBalanceTemperatureQ8, whiteBalanceTintQ8, onWhiteBalanceTintQ8, canApplyWhiteBalance = false, applyingWhiteBalance = false, onApplyWhiteBalance, levelsInputBlack, onLevelsInputBlack, levelsInputMidpoint, onLevelsInputMidpoint, levelsInputWhite, onLevelsInputWhite, levelsOutputBlack, onLevelsOutputBlack, levelsOutputWhite, onLevelsOutputWhite, canApplyLevels = false, applyingLevels = false, onApplyLevels, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, hasSelectedMask = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   const levelsIdentity = levelsInputBlack === 0 && levelsInputMidpoint === 128 && levelsInputWhite === 255 && levelsOutputBlack === 0 && levelsOutputWhite === 255;
   if (!selection) return (
-    <div className="flex flex-wrap gap-2">
-      <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
-      <Button type="button" variant="outline" disabled={startDisabled || !canIsolateBackground || isolatingBackground} onClick={onIsolateBackground}>
+    <section className="space-y-3" aria-label="Image selection and adjustments">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>Smart Select</Button>
+        {hasSelectedMask && <Button type="button" variant="outline" disabled={startDisabled || !canIsolateBackground || isolatingBackground} onClick={onIsolateBackground}>
         {isolatingBackground && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         {isolatingBackground ? 'Removing background…' : 'Remove background'}
-      </Button>
+        </Button>}
+      </div>
+      {hasSelectedMask ? (
+        <details className="rounded-xl border border-border/60 bg-card p-3">
+          <summary className="cursor-pointer select-none text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Adjust selected area <span className="text-xs font-normal text-muted-foreground">· exposure, color, levels</span></summary>
+          <p className="mt-2 text-xs text-muted-foreground">These adjustments affect only your saved mask. Change a value, choose Preview, then Accept or Discard the result.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
       <label className="flex items-center gap-2 rounded-md border px-2 py-1 text-xs">
         Exposure
         <input
@@ -93,7 +100,12 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
         {applyingLevels && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
         {applyingLevels ? 'Applying Levels…' : 'Preview Levels'}
       </Button>
-    </div>
+          </div>
+        </details>
+      ) : (
+        <p className="text-xs text-muted-foreground">To adjust part of the image, use Smart Select, mark an area, then select Done. Advanced sliders appear only when a saved mask exists.</p>
+      )}
+    </section>
   );
   const busy = selection.state === 'DOWNLOADING' || selection.state === 'LOADING' || selection.state === 'SELECTING';
   const editable = selection.state === 'SELECTED' || selection.state === 'REFINING';
@@ -115,6 +127,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
     <section className="rounded-xl border bg-card p-3 space-y-3" aria-label="Selection tools">
       <div className="flex flex-wrap gap-2">
         {modes.map(([id, label]) => <Button key={id} type="button" size="sm" aria-pressed={selection.mode === id} variant={selection.mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => onMode(id)}>{label}</Button>)}
+        {(selection.mode === 'BRUSH_ADD' || selection.mode === 'BRUSH_SUBTRACT') && <>
         <label className="flex items-center gap-2 px-2 text-xs">Brush Size
           <input aria-label="Brush Size" aria-valuetext={`${brushSize} pixels`} type="range" min="2" max="96" value={brushSize} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushSize(Number(event.target.value))} />
           <span aria-hidden="true">{brushSize}px</span>
@@ -123,6 +136,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
           <input aria-label="Brush Hardness" aria-valuetext={`${brushHardness} percent`} type="range" min="0" max="100" value={brushHardness} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushHardness(Number(event.target.value))} />
           <span aria-hidden="true">{brushHardness}%</span>
         </label>
+        </>}
       </div>
       {selection.mode === 'POLYGON' && (
         <div className="flex flex-wrap items-center gap-2" aria-label="Polygon selection controls">
@@ -179,7 +193,9 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
           <Button type="button" size="sm" variant="ghost" aria-label="Clear shape anchors" disabled={busy || selection.shapeVertices.length === 0} onClick={onClearShape}>Clear Shape</Button>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-2">
+      <details className="rounded-lg border border-border/60 p-2">
+        <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">Refine selection edges</summary>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 px-2 text-xs">Edge Radius
           <input aria-label="Selection edge radius" type="range" min="1" max="32" value={morphologyRadius} disabled={busy || !editable} onChange={(event) => onMorphologyRadius(Number(event.target.value))} />
           <span aria-hidden="true">{morphologyRadius}px</span>
@@ -189,6 +205,9 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
         <Button type="button" size="sm" variant="outline" aria-label="Open selection" disabled={busy || !editable} onClick={onOpen}>Open</Button>
         <Button type="button" size="sm" variant="outline" aria-label="Close selection" disabled={busy || !editable} onClick={onClose}>Close</Button>
         <Button type="button" size="sm" variant="outline" aria-label="Feather selection" disabled={busy || !editable} onClick={onFeather}>Feather</Button>
+        </div>
+      </details>
+      <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" variant="outline" aria-label="Undo selection edit" aria-keyshortcuts="Control+Z Meta+Z" disabled={busy || !selection.canUndo} onClick={onUndo}>Undo</Button>
         <Button type="button" size="sm" variant="outline" aria-label="Redo selection edit" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" disabled={busy || !selection.canRedo} onClick={onRedo}>Redo</Button>
         <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onClear}>Clear</Button>
