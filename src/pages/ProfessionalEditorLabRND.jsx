@@ -19,15 +19,27 @@ const snapshot = frame => ({
   width: frame.width, height: frame.height, data: new Uint8ClampedArray(frame.data),
 });
 
-function PreviewCanvas({ frame, title, onPick }) {
+function PreviewCanvas({ frame, title, onPick, onPaintMove, selectionOverlay }) {
   const ref = useRef(null);
   useEffect(() => {
     const canvas = ref.current;
     if (!frame || !canvas) return;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
-    ctx.putImageData(new ImageData(new Uint8ClampedArray(frame.data), frame.width, frame.height), 0, 0);
-  }, [frame]);
+    const visual = new Uint8ClampedArray(frame.data);
+    if (selectionOverlay && selectionOverlay.length === frame.width * frame.height) {
+      // Magenta coverage is only a visual hint. Source and output RGBA stay untouched.
+      for (let p = 0; p < selectionOverlay.length; p++) {
+        const weight = selectionOverlay[p] / 255 * 0.35;
+        if (weight === 0) continue;
+        const o = p * 4;
+        visual[o] = Math.round(visual[o] * (1 - weight) + 255 * weight);
+        visual[o + 1] = Math.round(visual[o + 1] * (1 - weight));
+        visual[o + 2] = Math.round(visual[o + 2] * (1 - weight) + 210 * weight);
+      }
+    }
+    ctx.putImageData(new ImageData(visual, frame.width, frame.height), 0, 0);
+  }, [frame, selectionOverlay]);
   return (
     <section className="min-w-0 space-y-2">
       <h2 className="text-sm font-medium">{title} — {frame ? `${frame.width} × ${frame.height}` : 'No image'}</h2>
@@ -46,6 +58,15 @@ function PreviewCanvas({ frame, title, onPick }) {
               const y = Math.min(frame.height - 1, Math.max(0,
                 Math.floor((event.clientY - rect.top) * frame.height / rect.height)));
               onPick(x, y);
+            } : undefined}
+            onPointerMove={onPaintMove ? event => {
+              if (event.buttons !== 1) return;
+              const rect = event.currentTarget.getBoundingClientRect();
+              const x = Math.min(frame.width - 1, Math.max(0,
+                Math.floor((event.clientX - rect.left) * frame.width / rect.width)));
+              const y = Math.min(frame.height - 1, Math.max(0,
+                Math.floor((event.clientY - rect.top) * frame.height / rect.height)));
+              onPaintMove(x, y);
             } : undefined}
           />
         ) : <div className="h-52 flex items-center justify-center text-sm text-muted-foreground">Choose a local image</div>}
