@@ -751,8 +751,10 @@ export default function Editor() {
       instruction: usedInstruction,
       mode: aiScope.mode,
       projectId: project?.id,
+      expectedProjectId: aiScope.expectedProjectId,
       sourceArtifactId: project?.current_image_artifact_id,
       expectedSourceArtifactId: aiScope.expectedSourceArtifactId,
+      expectedSelectedObjectId: aiScope.expectedSelectedObjectId,
       expectedMaskArtifactId: aiScope.expectedMaskArtifactId,
       objects: project?.objects || [],
     }) : null;
