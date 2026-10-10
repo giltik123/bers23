@@ -98,6 +98,13 @@ export default function ResultCompare({ beforeUrl, result, candidateOperation, o
         </span>
       </div>
 
+      {(naturalSizes.before || naturalSizes.after) && (
+        <p className="text-xs text-muted-foreground" role="status">
+          Source: {naturalSizes.before ? `${naturalSizes.before.width}×${naturalSizes.before.height}` : 'unavailable'}
+          {' → '}
+          Candidate: {naturalSizes.after ? `${naturalSizes.after.width}×${naturalSizes.after.height}` : 'unavailable'} pixels
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2">
           <label htmlFor="editor-preview-zoom">Inspection zoom</label>
