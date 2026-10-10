@@ -1,0 +1,41 @@
+name: Fashion precision ROI quality R&D
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/creative/deterministic/FashionPreciseRegionPreview.ts'
+      - 'tests/fashion-precise-region-preview.test.mjs'
+      - 'docs/fashion-ideogram-45-quality-assessment.md'
+      - '.github/workflows/fashion-precision-roi-quality-rnd.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fashion-pixel-fidelity:
+    name: fashion-precision-roi-rnd
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - name: Run isolated byte fidelity contract
+        run: node --experimental-strip-types --test tests/fashion-precise-region-preview.test.mjs
+      - name: Verify R&D boundary without implied production admission
+        run: |
+          grep -q "RESEARCH_ONLY" src/platform/creative/deterministic/FashionPreciseRegionPreview.ts
+          ! grep -Eq "(ideogram\.ai/|Api-Key|fetch\()" src/platform/creative/deterministic/FashionPreciseRegionPreview.ts
+          test -f docs/fashion-ideogram-45-quality-assessment.md
+      - name: Diff hygiene
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
