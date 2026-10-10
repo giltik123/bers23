@@ -2,9 +2,8 @@ import React from 'react';
 import { Wand2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import VoiceInputPanel from '@/components/editor/VoiceInputPanel';
 
-export default function InstructionBar({ selectedObject, instruction, onInstructionChange, onApply, applying, allowWholeImage = false, onFocusPrompt }) {
+export default function InstructionBar({ selectedObject, instruction, onInstructionChange, onApply, applying, allowWholeImage = false }) {
   const canEdit = Boolean(selectedObject || allowWholeImage);
   const wholeImage = !selectedObject && allowWholeImage;
 
@@ -35,8 +34,6 @@ export default function InstructionBar({ selectedObject, instruction, onInstruct
           <span className="ml-2 hidden sm:inline">Apply</span>
         </Button>
       </div>
-      <VoiceInputPanel prompt={instruction} onPromptChange={onInstructionChange}
-        onFocusPrompt={onFocusPrompt} disabled={!canEdit||applying}/>
     </div>
   );
 }
