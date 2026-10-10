@@ -5,6 +5,10 @@ on:
     paths:
       - 'src/pages/Editor.jsx'
       - 'src/components/editor/SelectionToolbar.jsx'
+      - 'src/components/editor/ObjectPanel.jsx'
+      - 'src/components/editor/ImageCanvas.jsx'
+      - 'scripts/test-release-r3b-browser-e2e.mjs'
+      - 'scripts/test-release-r3c-browser-e2e.mjs'
       - 'tests/editor-ux-progressive-disclosure.test.mjs'
       - '.github/workflows/editor-ux-clarity.yml'
   workflow_dispatch:
