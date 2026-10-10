@@ -12,6 +12,36 @@ export class LocalVoiceUnavailable extends Error {
     super(message);this.name='LocalVoiceUnavailable';this.code=code;
   }
 }
+/**
+ * Optional, USER-INITIATED browser on-device RU language-pack installation.
+ * This is not remote speech inference; however the browser may download model
+ * data from its vendor. Never call from an effect, recognition failure or
+ * passive page load.
+ */
+export async function installLocalRussianVoicePack({
+  SpeechRecognitionCtor=globalThis.SpeechRecognition,locale='ru-RU',
+}={}){
+  if(locale!=='ru-RU'||typeof SpeechRecognitionCtor?.available!=='function'||
+     typeof SpeechRecognitionCtor?.install!=='function')
+    throw new LocalVoiceUnavailable('LOCAL_ASR_INSTALL_UNSUPPORTED',
+      'Этот браузер не умеет устанавливать локальную модель русского языка.');
+  const args={langs:[locale],processLocally:true};
+  const state=await SpeechRecognitionCtor.available(args);
+  if(state==='available')return true;
+  if(state!=='downloadable' && state!=='downloading')
+    throw new LocalVoiceUnavailable('LOCAL_ASR_INSTALL_UNAVAILABLE',
+      'Установка локальной модели сейчас недоступна.');
+  const accepted=await SpeechRecognitionCtor.install(args);
+  if(accepted!==true)
+    throw new LocalVoiceUnavailable('LOCAL_ASR_INSTALL_FAILED',
+      'Браузер не установил языковую модель.');
+  const after=await SpeechRecognitionCtor.available(args);
+  if(after!=='available')
+    throw new LocalVoiceUnavailable('LOCAL_ASR_INSTALL_UNVERIFIED',
+      'Локальная модель установлена не полностью или не прошла проверку.');
+  return true;
+}
+
 export async function createLocalVoiceSession({
   SpeechRecognitionCtor=globalThis.SpeechRecognition,
   onPartial=()=>{},onFinal=()=>{},onEnd=()=>{},onError=()=>{},
