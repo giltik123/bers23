@@ -232,13 +232,16 @@ async function main(){
       name:entry.name,
     })));
     const columns=4,rows=Math.ceil(tiles.length/columns);
+    const sheetLayers=tiles.flatMap((tile,i)=>{
+      if(!/^[a-z0-9_]+$/.test(tile.name))throw new Error('Unsafe comparison panel label');
+      const left=(i%columns)*previewWidth,top=Math.floor(i/columns)*previewHeight;
+      const overlay=Buffer.from(`<svg width="256" height="28" xmlns="http://www.w3.org/2000/svg"><rect width="256" height="28" fill="#101010" fill-opacity=".88"/><text x="10" y="19" font-size="15" fill="#ffffff" font-family="sans-serif">${tile.name}</text></svg>`);
+      return [{input:tile.input,left,top},{input:overlay,left,top}];
+    });
     const sheet=await sharp({
       create:{width:columns*previewWidth,height:rows*previewHeight,channels:4,
         background:{r:24,g:24,b:24,alpha:1}},
-    }).composite(tiles.map((tile,i)=>({
-      input:tile.input,left:(i%columns)*previewWidth,
-      top:Math.floor(i/columns)*previewHeight,
-    }))).png({compressionLevel:9}).toBuffer();
+    }).composite(sheetLayers).png({compressionLevel:9}).toBuffer();
     const samplePath=path.join(outDir,fixture.id);
     await mkdir(samplePath,{recursive:true});
     await Promise.all([
