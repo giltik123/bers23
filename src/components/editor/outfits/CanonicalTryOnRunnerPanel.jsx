@@ -3,6 +3,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
 import { createCanonicalOutfitViewModel } from '@/application/fashion/canonicalOutfitViewModel';
+import { filterCanonicalWardrobeVoice } from '@/application/voice/filterCanonicalWardrobeVoice';
 import CanonicalTryOnProductControls from './CanonicalTryOnProductControls';
 import CanonicalTryOnManualRemediationPanel from './CanonicalTryOnManualRemediationPanel';
 
@@ -68,20 +69,17 @@ export default function CanonicalTryOnRunnerPanel({
   const selectedGarment = selectedEntry ? garmentById.get(selectedEntry.garmentId) : null;
   const voiceMatches=useMemo(()=>{
     if(!voiceQuery?.query)return [];
-    const text=voiceQuery.query.toLocaleLowerCase('ru-RU');
-    const hints=[...(voiceQuery.hints?.categories||[]),...(voiceQuery.hints?.colors||[])];
+    const acceptedIds=new Set(filterCanonicalWardrobeVoice(
+      garments.map(garment=>({...garment,id:garment.garmentId})),voiceQuery,
+    ).map(item=>item.id));
     return outfits.flatMap(outfit=>outfit.entries.flatMap(entry=>{
       const garment=garmentById.get(entry.garmentId);
-      if(entry.referenceReadiness!=='READY'||!garment)return [];
-      const searchable=[garment.name,garment.category,garment.material,
-        ...(Array.isArray(garment.tags)?garment.tags:[])].filter(Boolean)
-        .join(' ').toLocaleLowerCase('ru-RU');
-      if(hints.length ? !hints.every(x=>searchable.includes(x)) :
-        !searchable.includes(text))return [];
+      if(entry.referenceReadiness!=='READY'||!garment ||
+        !acceptedIds.has(entry.garmentId))return [];
       return [{outfitName:outfit.name,garmentName:garment.name,
         outfitId:outfit.id,entryId:entry.entryId}];
     }));
-  },[voiceQuery,outfits,garmentById]);
+  },[voiceQuery,outfits,garmentById,garments]);
   const selectionLocked = busy || loading || hostActive;
   const host = state?.host || IDLE_HOST;
   const result = state?.result || null;
