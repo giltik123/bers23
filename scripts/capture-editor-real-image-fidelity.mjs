@@ -27,7 +27,7 @@ async function downloadRealPhoto(sourceUrl) {
   let error;
   for(let attempt=1;attempt<=3;attempt++){
     try{
-      const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(35_000),headers:{accept:'image/jpeg,image/png,image/webp'}});
+      const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(35_000),headers:{accept:'image/jpeg,image/png,image/webp','user-agent':'BERS-Editor-image-fidelity/1.0 (github.com/giltik123/bers23)'}});
       if(!response.ok) throw new Error(`Fixture HTTP ${response.status}`);
       const declared=Number(response.headers.get('content-length'));
       if(Number.isFinite(declared)&&declared>MAX_SOURCE_BYTES) throw new Error('Fixture exceeds byte cap');
