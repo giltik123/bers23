@@ -21,6 +21,7 @@ import {
 } from './browserSessionCookie.ts';
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
+import { assertCanonicalSceneObjectPublication } from '../projects/sceneObjectAdmission.ts';
 import { authenticatedOwnerScope, authenticatedProjectScope } from './authenticatedPrincipalScope.ts';
 
 type HttpAuthAuthority = Readonly<{
@@ -204,6 +205,10 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
             try { storageId=input.artifacts.external.resolveStoredFinalId(proposal.expectedSourceArtifactId,scope).storageId; }
             catch { return sendError(response,400,'invalid_scene_source','Expected scene source is not a valid Core image',correlationId,false); }
           }
+          await assertCanonicalSceneObjectPublication({
+            objects:proposal.objects,sourceArtifactId:proposal.expectedSourceArtifactId,
+            sourceStorageId:storageId,scope,artifacts:input.artifacts,
+          });
           precondition={expectedSourceStorageId:storageId,expectedRevision:Number(proposal.expectedRevision)};
         }
         const row=await input.projects.update(principal,id,
