@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Check, Trash2, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
-import { canComparePixelsAligned } from './compareGeometryPolicy';
+import { canCompareOperationAligned, canComparePixelsAligned } from './compareGeometryPolicy';
 
 // A read-only inspector for an unaccepted candidate. The Core-owned Accept,
 // Discard, and Retry callbacks remain the ONLY controls changing Project state.
 // Split view is admitted only after both images have identical real geometry;
 // cropping/rotation/failed image delivery must never masquerade as aligned pixels.
-export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, onRetry, busy }) {
+export default function ResultCompare({ beforeUrl, result, candidateOperation, onAccept, onDiscard, onRetry, busy }) {
   const [view, setView] = useState('after');
   const [splitPosition, setSplitPosition] = useState(50);
   const [zoom, setZoom] = useState(1);
@@ -64,7 +64,8 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
     };
   }, [beforeUrl, afterUrl]);
 
-  const mode = view === 'split' && geometry !== 'aligned' ? 'after' : view;
+  const splitAllowed = geometry === 'aligned' && canCompareOperationAligned(candidateOperation);
+  const mode = view === 'split' && !splitAllowed ? 'after' : view;
   const executionLabel = result?.provider || 'Local / Core preview';
   const creditLabel = Number.isFinite(result?.credits_used) && result.credits_used > 0
     ? ` · ${result.credits_used} credits` : '';
@@ -79,7 +80,7 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
             className={`px-3 py-1.5 ${mode === 'before' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>Before</button>
           <button type="button" aria-pressed={mode === 'after'} onClick={() => setView('after')}
             className={`px-3 py-1.5 ${mode === 'after' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>After</button>
-          <button type="button" aria-pressed={mode === 'split'} disabled={geometry !== 'aligned'} onClick={() => setView('split')}
+          <button type="button" aria-pressed={mode === 'split'} disabled={!splitAllowed} onClick={() => setView('split')}
             className={`px-3 py-1.5 disabled:opacity-40 ${mode === 'split' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>Split</button>
         </div>
         <span className="text-[11px] text-muted-foreground">
@@ -108,6 +109,11 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
         )}
       </div>
 
+      {geometry === 'aligned' && !canCompareOperationAligned(candidateOperation) && (
+        <p role="status" className="text-xs text-muted-foreground">
+          This operation may change image registration. Split inspection is disabled; review Before and After separately.
+        </p>
+      )}
       {geometry === 'different' && (
         <p role="status" className="text-xs text-muted-foreground">
           Images have different pixel dimensions. Split comparison is disabled to avoid false alignment.
