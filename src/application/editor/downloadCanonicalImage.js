@@ -1,4 +1,4 @@
-import { canonicalCoreResourcePath, resolveCoreResourceUrl, CONFIGURED_CORE_API_ROOT } from '@/api/coreResourceUrl';
+import { canonicalCoreResourcePath, resolveCoreResourceUrl, CONFIGURED_CORE_API_ROOT } from '../../api/coreResourceUrl.js';
 
 /**
  * Download the actual current canonical Project image, not a preview tab.
