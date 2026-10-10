@@ -55,6 +55,12 @@ A green kernel unit test cannot advance a tool past `PURE_KERNEL_TESTED`. A visu
 
 Next graduation tasks: image-based visual review and artifact SHA checks; source-bound Core layer execution ticket and immutable layer data migration; browser/PostgreSQL/E2E including refresh/Undo/Redo/Restore; performance and consistent ICC-aware compositing on larger photographs. The R&D compositor uses sRGB byte-space blending, so its visual quality is **not** asserted comparable to color-managed linear-light compositing. The existing real-photo Editor QA also shows visually strong portrait exposure/temperature presets can clip highlights or shift skin tones, so production color operators must ship measured histogram/tonal diagnostics and actual visual review rather than automatic strength changes.
 
+## Color-fidelity research — bounded perceptual diagnostics
+
+`EditorColorDifferenceRND.ts` now adds deterministic **CIEDE2000 (ΔE00)** diagnostics, with canonical sRGB-to-D65-Lab conversion, published CIEDE2000 reference-pair tests, zero difference on identical images (including white), masked editable-region filtering and hidden/near-transparent RGB exclusion. It records mean, p95-histogram upper-bound, maximum color difference and a count of positions above ΔE00=10 on no more than 65,536 regularly spaced positions per frame. The exact sampling stride and count are reported; this is **not an exhaustive per-pixel guarantee**, and small isolated defects might be missed.
+
+The existing three-real-photo layer capture now records ΔE2000 alongside protected-pixel byte integrity and the separate tonal clipping analysis. Color difference is **not** a global "improvement" score: legitimate stylization can produce large ΔE; skin, garment print fidelity, gradients, gamut and semantic intent require independent visual review. This diagnostic never mutates accepted Core color algorithms, provider selection or release metadata.
+
 ## Product decision
 
 A later launch date is intentionally **unset**. Keep an actionable quality backlog, reviewed standalone PRs and measured real-photo evidence. Do not choose an RC, enable payment paths, flip experimental production flags or claim feature completeness because this authorization exists.
