@@ -35,6 +35,14 @@ export default function VoiceInputPanel({
     sessionRef.current?.abort();sessionRef.current=null;
     setPhase('IDLE');setTranscript('');setPartial('');setError('');
   };
+  useEffect(()=>{
+    if(disabled && sessionRef.current){
+      generationRef.current++;
+      sessionRef.current.abort();sessionRef.current=null;
+      setPhase('IDLE');setPartial('');
+      setError('Редактор занят: запись остановлена без выполнения команды.');
+    }
+  },[disabled]);
   const start=async()=>{
     if(disabled||phase==='RECORDING'||phase==='PREPARING')return;
     const generation=++generationRef.current;
