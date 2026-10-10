@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
+import { bindGenerativeScope } from '@/application/editor/ai-first/bindGenerativeScope';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createMaskedExposure } from '@/application/createMaskedExposure';
 import { createMaskedWhiteBalance } from '@/application/createMaskedWhiteBalance';
@@ -738,8 +739,19 @@ export default function Editor() {
   }, [project, instruction, objects, selected]);
 
   // Single AI edits cross the application boundary; the Core canonical platform is execution authority.
-  const applyEdit = async (bypassCache = false, { skipDriftCheck = false, instructionOverride = null } = {}) => {
+  const applyEdit = async (bypassCache = false, { skipDriftCheck = false, instructionOverride = null, aiScope = null } = {}) => {
     const usedInstruction = instructionOverride || instruction;
+    // AI Studio may execute only the scope the user explicitly reviewed. Legacy
+    // prompt routes retain their existing Core behavior until independently migrated.
+    const guardedScope = aiScope ? bindGenerativeScope({
+      instruction: usedInstruction,
+      mode: aiScope.mode,
+      projectId: project?.id,
+      sourceArtifactId: project?.current_image_artifact_id,
+      expectedSourceArtifactId: aiScope.expectedSourceArtifactId,
+      expectedMaskArtifactId: aiScope.expectedMaskArtifactId,
+      objects: project?.objects || [],
+    }) : null;
     const usedPlan = instructionOverride
       ? aiPlanner.plan({ project, instruction: usedInstruction, objects, selectedObject: selected })
       : plan;
@@ -761,14 +773,18 @@ export default function Editor() {
 
     setApplying(true);
     setAiError(null);
-    setLastAction(() => applyEdit);
+    setLastAction(() => () => applyEdit(bypassCache, { skipDriftCheck, instructionOverride, aiScope }));
     try {
       const result = await creativeEditApplicationService.execute({
         projectId: project.id,
         instruction: usedInstruction,
-        selectedObjectIds: objects.filter((object) => object.selected).map((object) => object.id),
-        inputArtifactId: project.current_image_artifact_id,
-        maskArtifactIds: objects.filter((object) => object.selected && object.mask_artifact_id).map((object) => object.mask_artifact_id),
+        selectedObjectIds: guardedScope
+          ? guardedScope.selectedObjectIds
+          : objects.filter((object) => object.selected).map((object) => object.id),
+        inputArtifactId: guardedScope?.sourceArtifactId ?? project.current_image_artifact_id,
+        maskArtifactIds: guardedScope
+          ? guardedScope.maskArtifactIds
+          : objects.filter((object) => object.selected && object.mask_artifact_id).map((object) => object.mask_artifact_id),
         preserveMode: styleLock.isEnabled(project.id) ? 'locked' : 'standard',
         clientRequestId: globalThis.crypto.randomUUID(),
       });
@@ -1166,7 +1182,7 @@ export default function Editor() {
               pending={Boolean(pendingResult)}
               onSelectRegion={startSelection}
               onExecuteAdjustment={executeAIAdjustment}
-              onExecuteGenerative={(text) => applyEdit(false, { instructionOverride: text })}
+              onExecuteGenerative={(command) => applyEdit(false, { instructionOverride: command.instruction, aiScope: command })}
               onOpenFashion={() => setEditTab('outfits')}
             />
           ) : editTab === 'creative' ? (
