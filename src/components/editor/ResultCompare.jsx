@@ -39,6 +39,10 @@ export default function ResultCompare({
     executionId: result?.executionId, kind, scope: editScope,
   });
   const needsHumanReview = scopedGeneration || fashion;
+  // A quality checklist is meaningful only after the current pair was
+  // displayed and both images decoded successfully in this candidate.
+  const reviewImagesReady = loaded.before === identity && loaded.after === identity
+    && failed.before !== identity && failed.after !== identity;
   const markLoaded = role => {
     setLoaded(previous => ({ ...previous, [role]: identity }));
     setFailed(previous => ({ ...previous, [role]: null }));
@@ -172,7 +176,7 @@ export default function ResultCompare({
             {' '}Галочка означает только вашу проверку, а не автоматическую оценку качества.
           </p>
           <label className="flex gap-2 items-start text-sm">
-            <input type="checkbox" className="mt-1" disabled={busy}
+            <input type="checkbox" className="mt-1" disabled={busy || !reviewImagesReady}
               checked={scopedReview} onChange={e=>setScopedReview(e.target.checked)}/>
             <span>Я просмотрел итоговое изображение и считаю результат подходящим для принятия.</span>
           </label>
@@ -189,7 +193,7 @@ export default function ResultCompare({
           </p>
           {FASHION_REVIEW.map(([key,label])=>(
             <label key={key} className="flex gap-2 items-start text-sm">
-              <input type="checkbox" className="mt-1" disabled={busy}
+              <input type="checkbox" className="mt-1" disabled={busy || !reviewImagesReady}
                 checked={fashionReview[key]}
                 onChange={event=>setFashionReview(current=>({
                   ...current,[key]:event.target.checked,
