@@ -3,6 +3,8 @@
  * Natural-language voice must not bypass Core, Billing or explicit Accept.
  * All drafts require a visible user confirmation before altering an input.
  */
+import { parseRussianVoiceIntent } from './parseRussianVoiceIntent.js';
+
 const MAX_TRANSCRIPT=1024;
 function safeTranscript(value){
   if(typeof value!=='string')throw new Error('VOICE_INVALID_TRANSCRIPT');
@@ -15,6 +17,18 @@ export function buildVoiceIntentDraft(transcript,{locale='ru-RU',engine='OS_ON_D
   if(locale!=='ru-RU'||engine!=='OS_ON_DEVICE')
     throw new Error('VOICE_UNADMITTED_RECOGNIZER');
   const finalTranscript=safeTranscript(transcript);
+  const parsed=parseRussianVoiceIntent(finalTranscript);
+  if(parsed){
+    return Object.freeze({
+      schemaVersion:1,kind:parsed.kind,locale,engine,
+      privacy:'LOCAL_ONLY',finalTranscript,editable:true,
+      requiresConfirmation:true,confirmation:parsed.confirmation,
+      targetSurface:parsed.targetSurface,
+      params:parsed.params,
+      proposedText:'',ambiguities:parsed.kind==='AMBIGUOUS'
+        ?Object.freeze([parsed.params.reason]):Object.freeze([]),
+    });
+  }
   const lower=finalTranscript.toLocaleLowerCase('ru-RU');
   let kind='PROMPT_REPLACE',text=finalTranscript;
   if(/^(?:открой|покажи)\s+(?:поле\s+)?промпт[.!]?$/u.test(lower)){
@@ -46,7 +60,7 @@ export function applyConfirmedVoiceDraft(draft,existingPrompt=''){
   if(typeof existingPrompt!=='string')
     throw new Error('VOICE_PROMPT_INVALID');
   if(draft.kind==='NAVIGATE_PROMPT')return Object.freeze({navigate:true,prompt:existingPrompt});
-  if(draft.kind==='ACTION_NEEDS_UI')
+  if(!['PROMPT_CLEAR','PROMPT_REPLACE','PROMPT_APPEND','NAVIGATE_PROMPT'].includes(draft.kind))
     throw new Error('VOICE_REQUIRES_EXISTING_EDITOR_CONTROLS');
   const text=draft.proposedText;
   if(typeof text!=='string'||text.length>MAX_TRANSCRIPT)
