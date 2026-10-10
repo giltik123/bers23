@@ -170,3 +170,80 @@ export function verifyPreciseEditPixelIntegrityRgba8(
     changedProtectedPixelCount: 0 as const,
   });
 }
+
+
+/**
+ * Optional inward-only, alpha-correct edit seam for high-resolution local
+ * previews. Coverage is generated from the validated binary matte, never from
+ * untrusted free-form floating point values. Source bytes outside the edit
+ * remain exact; interior candidate pixels beyond radius are copied exactly.
+ *
+ * Manhattan-distance falloff is deterministic, capped at 16 pixels and linear
+ * in the full-frame pixel count. This changes pixels only INSIDE the mask.
+ * It is independent R&D, not an admitted F4/F5 Core pixel operation.
+ */
+export function composePreciseEditFeatheredRgba8(
+  source: Uint8Array | Uint8ClampedArray,
+  candidate: Uint8Array | Uint8ClampedArray,
+  matte: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  radius: number,
+): Uint8ClampedArray {
+  if (!Number.isSafeInteger(radius) || radius < 0 || radius > 16) {
+    throw new Error('Precise edit feather radius must be an integer from 0 to 16');
+  }
+  // This preflights all buffer lengths, geometry and matte bytes.
+  const result = composePreciseEditRgba8(source, candidate, matte, width, height);
+  if (radius === 0) return result;
+  const pixels = width * height;
+  const maxDistance = radius + 1;
+  const distance = new Uint8Array(pixels);
+  for (let pixel = 0; pixel < pixels; pixel += 1) {
+    distance[pixel] = matte[pixel] === 0 ? 0 : maxDistance;
+  }
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = y * width + x;
+      if (distance[i] === 0) continue;
+      let d = distance[i];
+      if (x === 0 || y === 0) d = Math.min(d, 1);
+      if (x > 0) d = Math.min(d, distance[i - 1] + 1);
+      if (y > 0) d = Math.min(d, distance[i - width] + 1);
+      distance[i] = Math.min(d, maxDistance);
+    }
+  }
+  for (let y = height - 1; y >= 0; y -= 1) {
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const i = y * width + x;
+      if (distance[i] === 0) continue;
+      let d = distance[i];
+      if (x === width - 1 || y === height - 1) d = Math.min(d, 1);
+      if (x + 1 < width) d = Math.min(d, distance[i + 1] + 1);
+      if (y + 1 < height) d = Math.min(d, distance[i + width] + 1);
+      distance[i] = Math.min(d, maxDistance);
+    }
+  }
+  for (let pixel = 0; pixel < pixels; pixel += 1) {
+    const d = distance[pixel];
+    if (d === 0 || d > radius) continue;
+    const coverage = Math.floor((255 * (2 * d - 1) + radius) / (2 * radius));
+    const offset = pixel * 4;
+    const srcAlpha = source[offset + 3];
+    const candidateAlpha = candidate[offset + 3];
+    const srcWeight = 255 - coverage;
+    const alphaNumerator = srcAlpha * srcWeight + candidateAlpha * coverage;
+    result[offset + 3] = Math.floor((alphaNumerator + 127) / 255);
+    if (alphaNumerator === 0) {
+      // Both samples are transparent; never expose fabricated hidden RGB.
+      result.set(source.subarray(offset, offset + 3), offset);
+      continue;
+    }
+    for (let channel = 0; channel < 3; channel += 1) {
+      const numerator = source[offset + channel] * srcAlpha * srcWeight +
+        candidate[offset + channel] * candidateAlpha * coverage;
+      result[offset + channel] = Math.floor((numerator + Math.floor(alphaNumerator / 2)) / alphaNumerator);
+    }
+  }
+  return result;
+}
