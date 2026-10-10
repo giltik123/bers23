@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "BERS_V1_FASHION_REAL_IMAGE_CAPTURE_METRICS",
+  "candidateSha": "49d87a59b2f8536d6847a9ff8b2f2881c0a82195",
+  "fixtureSetSha256": "efc62a2706c7a50ab87984b1050af2a12588bf30bee30c6b69f46d10b7229172",
+  "sampleCount": 6,
+  "measuredLatencyMs": {
+    "p50": 53.32210999999961,
+    "p95": 85.02743200000009,
+    "measuredRuns": 30
+  },
+  "peakMemoryBytes": 219955200,
+  "reviewedOutputSha256": {
+    "project-fashion-model-portrait__garment-vintage-aloha": "3e78da0312eb33b6803c00509617a6436aacd7ae2ea43facb337fdf73c81d023",
+    "project-fashion-model-portrait__garment-admin-logo-shirt": "e76c4ebcf00f7857bd8590d6dcfae5be6faf8f3002d0fcae8dcee8b84e9e12e7",
+    "project-ashirt__garment-vintage-aloha": "905d5e137ef26a30a84b0d821ea8c435556c45bdbbec9f26f2b1182ddbed4946",
+    "project-ashirt__garment-admin-logo-shirt": "40929a1dfc3ad58e4a3c0eb9f43df00c7db4743157f607989fc1f810ae2a023e",
+    "project-woman-pink-blue-dress__garment-vintage-aloha": "295a905638d61c61b6b4d88999b653455cc07eb432d60370d03eab28ea9a27b5",
+    "project-woman-pink-blue-dress__garment-admin-logo-shirt": "bb12b379e2197b4304d19cfc5add6a3eec0322334a077d25549c7b96f0a8c222"
+  },
+  "productionAuthorityGranted": false
+}
