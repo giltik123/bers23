@@ -31,7 +31,12 @@ export function buildVoiceIntentDraft(transcript,{locale='ru-RU',engine='OS_ON_D
   }
   const lower=finalTranscript.toLocaleLowerCase('ru-RU');
   let kind='PROMPT_REPLACE',text=finalTranscript;
-  if(/^(?:открой|покажи)\s+(?:поле\s+)?промпт[.!]?$/u.test(lower)){
+  // A spoken correction changes the proposed prompt text, not an already
+  // accepted image or an earlier canonical execution.
+  const correction=finalTranscript.match(/^нет[,，]?\s+я\s+сказал[а]?\s*[:：,]?\s*(.+)$/iu);
+  if(correction&&correction[1]?.trim()){
+    kind='PROMPT_REPLACE';text=correction[1].trim();
+  }else if(/^(?:открой|покажи)\s+(?:поле\s+)?промпт[.!]?$/u.test(lower)){
     kind='NAVIGATE_PROMPT';text='';
   }else if(/^(?:очисти|удали|сотри)\s+(?:поле\s+)?промпт[.!]?$/u.test(lower)){
     kind='PROMPT_CLEAR';text='';
