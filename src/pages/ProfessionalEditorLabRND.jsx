@@ -198,7 +198,24 @@ export default function ProfessionalEditorLabRND() {
     } catch(error){fail(error);}
   };
 
+  const paintMask = (x,y,recordUndo) => {
+    if (!current || busy || !manualMask) return;
+    try {
+      if (recordUndo) setMaskHistory(history =>
+        [...history.slice(-(MAX_HISTORY - 1)),new Uint8Array(manualMask)]);
+      setManualMask(previous => paintProfessionalMaskR8RND(previous,current.width,current.height,{
+        centerX:x,centerY:y,radius:brushRadius,hardnessQ8:brushHardness,
+        opacityQ8:brushOpacity,mode:maskStrokeMode,
+      }));
+      setMessage('Selection brush updated. Magenta is only a preview overlay.');
+    } catch(error){fail(error);}
+  };
+
   const onCanvasPick = (x,y) => {
+    if (toolMode === 'MASK') {
+      paintMask(x,y,true);
+      return;
+    }
     if (!current || busy) return;
     if (cloneMode === 'PICK_SAMPLE') {
       setSamplePoint({ x,y });
@@ -228,6 +245,8 @@ export default function ProfessionalEditorLabRND() {
     setRedoStack(s=>[...s.slice(-(MAX_HISTORY-1)),snapshot(current)]);
     setCurrent(snapshot(previous));
     setSamplePoint(null);
+    setManualMask(new Uint8Array(previous.width * previous.height));
+    setMaskHistory([]);
     resetQualityReview();
     setMessage('Reverted local preview snapshot.');
   };
@@ -238,6 +257,8 @@ export default function ProfessionalEditorLabRND() {
     setUndoStack(s=>[...s.slice(-(MAX_HISTORY-1)),snapshot(current)]);
     setCurrent(snapshot(next));
     setSamplePoint(null);
+    setManualMask(new Uint8Array(next.width * next.height));
+    setMaskHistory([]);
     resetQualityReview();
     setMessage('Restored local preview snapshot.');
   };
@@ -277,6 +298,17 @@ export default function ProfessionalEditorLabRND() {
           onChange={event=>upload(event.target.files?.[0])} className="text-sm" />
       </label>
       <section className="flex flex-wrap items-end gap-3 border rounded-xl p-3" aria-label="Professional local photo editing tools">
+        <label className="flex flex-col text-sm gap-1">Tone region
+          <select aria-label="Tone region" value={toneRegion} disabled={disabled}
+            onChange={e=>setToneRegion(e.target.value)}
+            className="rounded border bg-background px-2 py-1">
+            <option value="ALL">Whole image</option>
+            <option value="SHADOWS">Shadows</option>
+            <option value="MIDTONES">Midtones</option>
+            <option value="HIGHLIGHTS">Highlights</option>
+            <option value="BRUSH">Hand-painted selection only</option>
+          </select>
+        </label>
         <label className="flex flex-col text-sm gap-1">Tone (+/− eighth stops)
           <input type="range" min="-24" max="24" step="1" value={eighthStops}
             onChange={e=>setEighthStops(Number(e.target.value))} disabled={disabled}/>
@@ -297,8 +329,8 @@ export default function ProfessionalEditorLabRND() {
           className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">Undo</button>
         <button type="button" disabled={disabled||redoStack.length===0} onClick={redo}
           className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">Redo</button>
-        <button type="button" disabled={disabled} onClick={exportLocalPng}
-          className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">Save local PNG</button>
+        <button type="button" disabled={disabled || !reviewed} onClick={exportLocalPng}
+          className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">Export visually reviewed PNG</button>
       </section>
       <section className="border rounded-xl p-3 space-y-3" aria-label="Local Clone Stamp brush settings">
         <div className="flex flex-wrap gap-3 items-center">
@@ -319,7 +351,10 @@ export default function ProfessionalEditorLabRND() {
       {message && <p role="status" className="text-sm text-muted-foreground">{message}</p>}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <PreviewCanvas frame={original} title="Original browser-decoded source" />
-        <PreviewCanvas frame={current} title="Current unaccepted local preview" onPick={onCanvasPick} />
+        <PreviewCanvas frame={current} title="Current unaccepted local preview"
+          onPick={onCanvasPick}
+          onPaintMove={toolMode==='MASK'?((x,y)=>paintMask(x,y,false)):undefined}
+          selectionOverlay={toolMode==='MASK'&&showSelectionOverlay?manualMask:null} />
       </div>
     </main>
   );
