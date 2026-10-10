@@ -81,7 +81,11 @@ export async function prepareEditorLosslessPngExportRND(input: Readonly<{
     claimedSourceArtifactSha256:input.sourceArtifactSha256,
     fileName:`${input.baseFileName}.png`,
     mimeType:'image/png',width:image.width,height:image.height,
-    pixelSha256,outputPngSha256,bytes,outputByteLength:bytes.length,
+    pixelSha256,outputPngSha256,
+    // Return a defensive buffer for every consumer read; callers cannot alter
+    // the internally hashed/exported candidate by mutating a previous view.
+    get bytes(): Uint8Array { return new Uint8Array(bytes); },
+    outputByteLength:bytes.length,
     coreAuthorityGranted:false,cloudProviderUsed:false,
     verificationState:'PNG_ENCODED_INDEPENDENT_DECODE_PENDING',
   });
