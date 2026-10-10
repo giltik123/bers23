@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"/><title>BERS Editor Quality Inspector UI Harness</title></head>
+<body>
+  <main id="root"></main>
+  <script type="module">
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+    import ResultCompare from '/src/components/editor/ResultCompare.jsx';
+    import '/src/index.css';
+
+    const params=new URLSearchParams(location.search);
+    const mismatch=params.get('mismatch')==='1';
+    const badImage=params.get('badImage')==='1';
+    const svg=(w,h,color)=>'data:image/svg+xml;charset=utf-8,'+
+      encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+
+        '" height="'+h+'" viewBox="0 0 '+w+' '+h+'"><rect width="'+w+
+        '" height="'+h+'" fill="'+color+'"/></svg>');
+    window.__qualityInspectorActions=[];
+    const beforeUrl=svg(128,96,'#a00');
+    const afterUrl=badImage?'data:image/png;base64,not_a_png':
+      svg(mismatch?64:128,96,'#0a0');
+    createRoot(document.querySelector('#root')).render(
+      React.createElement(ResultCompare,{
+        beforeUrl,
+        result:{image_url:afterUrl,provider:'LOCAL_ONLY',credits_used:0,generation_time_ms:185},
+        onAccept:()=>window.__qualityInspectorActions.push('accept'),
+        onDiscard:()=>window.__qualityInspectorActions.push('discard'),
+        onRetry:()=>window.__qualityInspectorActions.push('retry'),
+        busy:false,
+      })
+    );
+  </script>
+</body>
+</html>
