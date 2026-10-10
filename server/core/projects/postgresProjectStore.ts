@@ -171,6 +171,49 @@ export class PostgresProjectStore {
   }
 
   private async mutate(scope:AuthenticatedScope,id:string,action:(client:any,project:any)=>Promise<void>){const client=await this.pool.connect();try{await client.query('BEGIN');const project=(await client.query(`SELECT * FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL FOR UPDATE`,[id,scope.tenantId,scope.userId])).rows[0];if(!project)throw Object.assign(new Error('Project not found'),{status:404,code:'project_not_found'});await action(client,project);await client.query('COMMIT');return this.state(scope,id);}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}
+  /**
+   * Cross-process paid-model guard. A session-scoped Postgres advisory lock
+   * serializes SAM3 inference for one exact tenant/User/Project/source image.
+   * The connection stays pinned until Core has persisted/committed (or failed).
+   *
+   * Returns null immediately if another process already owns the analysis;
+   * never trigger another billed provider run on that path.
+   */
+  async acquireSceneAnalysisLease(
+    scope: AuthenticatedScope, projectId: string, sourceStorageId: string,
+  ): Promise<null | (() => Promise<void>)> {
+    if(!projectId || !sourceStorageId)throw new Error('Scene lease requires source identity');
+    const client=await this.pool.connect();
+    const key1=`BERS_SCENE:${scope.tenantId}:${scope.userId}:${projectId}`;
+    const key2=sourceStorageId;
+    try{
+      const claim=await client.query(
+        'SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS acquired',
+        [key1,key2],
+      );
+      if(claim.rows[0]?.acquired!==true){
+        client.release();
+        return null;
+      }
+      let released=false;
+      return async()=>{
+        if(released)return;
+        released=true;
+        try{
+          const res=await client.query(
+            'SELECT pg_advisory_unlock(hashtext($1),hashtext($2)) AS unlocked',
+            [key1,key2],
+          );
+          if(res.rows[0]?.unlocked!==true)
+            throw new Error('Scene analysis advisory lock was unexpectedly lost');
+        }finally{client.release();}
+      };
+    }catch(error){
+      client.release();
+      throw error;
+    }
+  }
+
   async update(
     scope: AuthenticatedScope, id: string, patch: Record<string, unknown>,
     precondition?: Readonly<{ expectedSourceStorageId: string; expectedRevision: number }>,
