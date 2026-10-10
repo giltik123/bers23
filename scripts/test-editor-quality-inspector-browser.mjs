@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
 
 const host='127.0.0.1',port=4827;
 const origin=`http://${host}:${port}`;
+const evidenceDir=path.resolve('.test-cache/editor-quality-inspector');
 const vite=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host',host,'--port',String(port),'--strictPort'],{
   env:{...process.env,VITE_CORE_API_URL:'http://127.0.0.1:4828/api/core'},stdio:['ignore','pipe','pipe'],
 });
@@ -22,6 +25,7 @@ try {
     await sleep(350);
   }
   if(!ready)throw new Error(`Editor Quality Inspector Vite harness failed to start: ${logs.slice(-2000)}`);
+  await mkdir(evidenceDir,{recursive:true});
   browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:1000,height:740}});
   const errors=[];
@@ -41,6 +45,7 @@ try {
   assert.equal(await slider.inputValue(),'51','keyboard split control must move a percent step');
   const clip=await page.locator('[data-testid="quality-compare-viewport"] [style*="clip-path"]').getAttribute('style');
   assert.match(clip,/inset\(0(?:px)? 0(?:px)? 0(?:px)? 51%\)/u);
+  await page.locator('[data-testid="result-quality-inspector"]').screenshot({path:path.join(evidenceDir,'split-keyboard.png')});
   await page.getByRole('button',{name:'Zoom in'}).click();
   await page.getByRole('button',{name:'Zoom in'}).click();
   assert.match(await page.getByRole('region',{name:/Before and after image inspection/}).innerText(),/Before[\s\S]*After/u);
@@ -52,6 +57,7 @@ try {
   assert.equal(transforms[0],transforms[1],'zoom + pan must be identical for both image layers');
   assert.match(transforms[0],/scale\(4\)/u);
   assert.notEqual(transforms[0],'translate(0%, 0%) scale(4)','keyboard panning must work');
+  await page.locator('[data-testid="result-quality-inspector"]').screenshot({path:path.join(evidenceDir,'zoom-pan.png')});
   await page.getByRole('button',{name:'Reset image view'}).click();
   assert.match(await viewport.locator('img').first().getAttribute('style'),/scale\(1\)/u);
   assert.deepEqual(await page.evaluate(()=>window.__qualityInspectorActions),[],
@@ -65,6 +71,7 @@ try {
   assert.equal(await page.getByRole('button',{name:'Split view'}).isDisabled(),true,
     'different source and result dimensions must not permit misleading registered split');
   assert.match(await page.getByRole('status').innerText(),/identical image dimensions/u);
+  await page.locator('[data-testid="result-quality-inspector"]').screenshot({path:path.join(evidenceDir,'mismatched-geometry.png')});
   await page.goto(`${origin}/tests/editor-quality-inspector-browser.html?badImage=1`,{waitUntil:'networkidle'});
   await page.getByRole('alert').waitFor({state:'visible'});
   assert.match(await page.getByRole('alert').innerText(),/could not be loaded/u);
