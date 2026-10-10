@@ -15,6 +15,7 @@ export function canonicalDownloadName(projectName, contentType) {
 export async function downloadCanonicalImage({
   imageUrl, projectName, origin, fetcher=fetch,
   documentApi=document, urlApi=URL,
+  scheduleRevoke=callback=>setTimeout(callback,10_000),
 }) {
   if(typeof imageUrl!=='string'||!imageUrl.startsWith('/api/core/artifacts/results/'))
     throw new Error('Only a signed Core image may be downloaded');
@@ -46,6 +47,6 @@ export async function downloadCanonicalImage({
     anchor.remove();
     // Chrome/Firefox need the object URL to remain alive until the file
     // download has been dispatched to the browser's download manager.
-    setTimeout(()=>urlApi.revokeObjectURL(objectUrl),10_000);
+    scheduleRevoke(()=>urlApi.revokeObjectURL(objectUrl));
   }
 }
