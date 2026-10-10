@@ -27,7 +27,8 @@ test('unavailable Upscale candidate does not render as a permanently disabled pr
 
 test('clicking an already-selected object clears selection safely', () => {
   assert.match(editor, /onSelect=\{\(obj\) => selectObject\(obj\?\.id \?\? null\)\}/);
-  assert.match(editor, /onSelect=\{\(obj\) => selectObject\(obj\.id\)\}/);
+  const handlers = editor.match(/onSelect=\{\(obj\) => selectObject\(obj\?\.id \?\? null\)\}/g) ?? [];
+  assert.equal(handlers.length, 2, 'both the image canvas and the object list must support deselection');
 });
 
 test('masked exposure, white balance and levels appear only when a saved mask exists', () => {
@@ -53,4 +54,19 @@ test('brush and edge controls are contextual but retain real edit callbacks', ()
     assert.match(selection, new RegExp('aria-label="' + name + ' selection"[^>]*onClick=\\{on' + name + '\\}'));
   }
   assert.match(selection, /disabled=\{!canDone\} onClick=\{onDone\}/);
+});
+
+
+test('object eye controls update the actual canvas overlays, not just the list styling', async () => {
+  const objectPanel = await readFile('src/components/editor/ObjectPanel.jsx', 'utf8');
+  const canvas = await readFile('src/components/editor/ImageCanvas.jsx', 'utf8');
+  assert.match(editor, /const \[hiddenObjectIds, setHiddenObjectIds\] = useState\(\(\) => new Set\(\)\)/);
+  assert.match(editor, /const toggleHiddenObject = \(id\) => setHiddenObjectIds/);
+  assert.match(editor, /hiddenObjectIds=\{hiddenObjectIds\}/);
+  assert.match(editor, /hidden=\{hiddenObjectIds\} onToggleHidden=\{toggleHiddenObject\}/);
+  assert.match(canvas, /objects\.filter\(\(obj\) => !hiddenObjectIds\.has\(obj\.id\)\)\.map/);
+  assert.match(objectPanel, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onToggleHidden\(obj\.id\); \}\}/);
+  assert.match(objectPanel, /aria-label=\{isHidden \? "Show object overlay" : "Hide object overlay"\}/);
+  assert.match(objectPanel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
+  assert.match(objectPanel, /they do not edit the image/);
 });
