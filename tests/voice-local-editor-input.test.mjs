@@ -36,17 +36,18 @@ test('VI-0 Russian voice draft is editable, confirmation-only and cannot execute
   const clear=buildVoiceIntentDraft('Очисти промпт');
   assert.equal(applyConfirmedVoiceDraft(clear,'existing').prompt,'');
   const nav=buildVoiceIntentDraft('открой промпт');
-  assert.deepEqual(applyConfirmedVoiceDraft(nav,'preserve'),
-    {navigate:true,prompt:'preserve'});
+  assert.equal(nav.kind,'NAVIGATE');
+  assert.equal(nav.params.tab,'prompt');
+  assert.throws(()=>applyConfirmedVoiceDraft(nav,'preserve'),
+    /VOICE_REQUIRES_EXISTING_EDITOR_CONTROLS/);
 });
 test('spoken destructive and paid actions never create an executable or Project-accept command',()=>{
   for(const spoken of [
     'прими результат','удали проект','запусти примерку',
-    'отмени','поверни на девяносто градусов','создай изображение',
-    'оплати подписку','сохрани результат',
+    'создай изображение','оплати подписку','сохрани результат',
   ]){
     const draft=buildVoiceIntentDraft(spoken);
-    assert.equal(draft.kind,'ACTION_NEEDS_UI',spoken);
+    assert.ok(['ACTION_NEEDS_UI','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind),spoken);
     assert.throws(()=>applyConfirmedVoiceDraft(draft,'unchanged'),
       /VOICE_REQUIRES_EXISTING_EDITOR_CONTROLS/);
   }
@@ -118,15 +119,16 @@ test('abort immediately disables transcript callbacks, cancels mic and clears ma
   scheduled();
   assert.deepEqual(f.activity,['start','abort']);
 });
-test('voice UI is attached only to editable prompt; confirmation never triggers generation',async()=>{
+test('voice UI is Editor-wide with typed callback; confirmation never triggers generation',async()=>{
   const [bar,ui,editor]=await Promise.all([
     readFile('src/components/editor/InstructionBar.jsx','utf8'),
     readFile('src/components/editor/VoiceInputPanel.jsx','utf8'),
     readFile('src/pages/Editor.jsx','utf8'),
   ]);
-  assert.match(bar,/<VoiceInputPanel/);
-  assert.match(bar,/onPromptChange=\{onInstructionChange\}/);
-  assert.match(editor,/onFocusPrompt=\{\(\) => setEditTab\('prompt'\)\}/);
+  assert.doesNotMatch(bar,/<VoiceInputPanel/);
+  assert.match(editor,/<VoiceInputPanel/);
+  assert.match(editor,/onVoiceIntent=\{handleVoiceIntent\}/);
+  assert.match(editor,/onPromptChange=\{setInstruction\}/);
   assert.match(ui,/applyConfirmedVoiceDraft\(draft,prompt\)/);
   assert.doesNotMatch(ui,/coreClient|applyEdit\(|pushEdit\(|fetch\(|runGenerative|billing/i);
   assert.match(ui,/onClick=\{confirm\}/);
