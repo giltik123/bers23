@@ -1103,6 +1103,9 @@ export default function Editor() {
           После открытия фотографии BERS проверяет доступность автоматического анализа.
           Пока семантическая модель не подключена, можно выделить область вручную —
           редактор не создаёт фиктивные маски.
+          <span className="block text-[10px]" lang="en">
+            Automatic object detection is not available in this version.
+          </span>
         </p>
       )}
 
