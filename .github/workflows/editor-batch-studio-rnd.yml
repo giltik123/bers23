@@ -5,6 +5,8 @@ on:
     paths:
       - 'src/platform/creative/deterministic/EditorBatchStudioRND.ts'
       - 'tests/editor-batch-studio-rnd.test.mjs'
+      - 'scripts/capture-editor-batch-real-photo-rnd.mjs'
+      - 'config/v1-fashion-real-image-fixtures.json'
       - 'docs/editor-batch-studio-rnd.md'
       - '.github/workflows/editor-batch-studio-rnd.yml'
 permissions:
@@ -42,3 +44,50 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: git diff --check "$BASE_SHA..HEAD"
+
+  batch-real-image-evidence:
+    needs: batch-source-fidelity
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+      QA_DIR: .test-cache/editor-batch-real-photo
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Build independent real-photo Batch Studio quality verifier
+        run: |
+          mkdir -p .test-cache/editor-batch-build
+          npx esbuild scripts/capture-editor-batch-real-photo-rnd.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-batch-build/real-photo.mjs \
+            --external:sharp --external:node:*
+      - name: Verify three photographs against independent canonical kernels
+        run: |
+          node .test-cache/editor-batch-build/real-photo.mjs "$QA_DIR"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const report=JSON.parse(readFileSync(process.env.QA_DIR+'/editor-batch-real-photo-manifest.json','utf8'));
+          assert.equal(report.kind,'BERS_EDITOR_BATCH_REAL_PHOTO_QUALITY_RND');
+          assert.equal(report.candidateSha,process.env.EXPECTED_SHA);
+          assert.equal(report.sampleCount,3);
+          assert.equal(report.totalExecutedOperations,9);
+          assert.equal(report.byteExactVsCanonicalOperations,true);
+          assert.equal(report.productionAuthorityGranted,false);
+          assert.equal(report.humanVisualGrade,'PENDING_INDEPENDENT_REVIEW');
+          assert.ok(report.records.every(r=>r.exactRgbaMatch && r.protectedSourceUnchanged && r.repeatedSourceShaCheckPassed));
+          NODE
+      - name: Upload exact-SHA Batch Studio source, result and reference photographs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bers-editor-batch-real-photo-${{ github.event.pull_request.head.sha }}
+          path: ${{ env.QA_DIR }}
+          if-no-files-found: error
+          retention-days: 30
