@@ -31,6 +31,8 @@ test('sRGB D65 conversion identifies black/white neutral and full primary colors
   const white=srgb8ToLabD65(255,255,255);
   assert.ok(Math.abs(black.L)<0.00001);
   assert.ok(Math.abs(white.L-100)<0.0001);
+  assert.equal(white.L,100,'D65 white must stay inside valid Lab bounds');
+  assert.equal(deltaE2000Lab(white,white),0);
   assert.ok(Math.abs(white.a)<0.01 && Math.abs(white.b)<0.01);
   const red=srgb8ToLabD65(255,0,0);
   const green=srgb8ToLabD65(0,255,0);
