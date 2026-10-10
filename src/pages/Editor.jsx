@@ -134,6 +134,7 @@ export default function Editor() {
   const [editTab, setEditTab] = useState('prompt');
   const [voiceWardrobeQuery,setVoiceWardrobeQuery]=useState(null);
   const [voiceTryOnQuery,setVoiceTryOnQuery]=useState(null);
+  const [voiceAgentProposal,setVoiceAgentProposal]=useState(null);
   const [activeRecipe, setActiveRecipe] = useState(null);
   const [lastAction, setLastAction] = useState(null);
   const pendingResultRef = useRef(null);
@@ -918,6 +919,12 @@ export default function Editor() {
       setEditTab('outfits');
       return;
     }
+    if(kind==='AGENT_PROPOSAL'){
+      setVoiceAgentProposal({sourceArtifactId:project.current_image_artifact_id,
+        ...params,revision:globalThis.crypto.randomUUID()});
+      setEditTab('agent');
+      return;
+    }
     if(kind==='HISTORY_UNDO'){await undo();return;}
     if(kind==='HISTORY_REDO'){await redo();return;}
     if(kind==='HISTORY_RESTORE'){await restoreOriginal();return;}
@@ -1201,6 +1208,7 @@ export default function Editor() {
           ) : editTab === 'agent' ? (
             <AgentPanel
               project={project}
+              voiceProposal={voiceAgentProposal}
               state={boundedAgent.state}
               busy={boundedAgent.busy}
               disabled={agentBlockedByEditor}
