@@ -26,6 +26,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'docs/editor-professional-pixel-engine-rnd.md'
+      - 'docs/editor-final-photographic-outcome-review-20261010.md'
       - '.github/workflows/editor-professional-pixel-quality-rnd.yml'
 
 permissions:
@@ -111,6 +112,11 @@ jobs:
           assert.equal(r.kind,'BERS_EDITOR_PROFESSIONAL_RASTER_REAL_PHOTO_RND');
           assert.equal(r.sampleCount,3);
           assert.equal(r.qualityGrade,'PENDING_INDEPENDENT_PHOTOGRAPHIC_REVIEW');
+          assert.equal(r.oldStrongEllipseExamples,'REJECTED_AS_UNNATURAL_FINAL_OUTPUT');
+          assert.equal(r.finalOutcomeCandidateQuality,'REVIEW_REQUIRED_BEFORE_ANY_GRADUATION');
+          assert.ok(r.records.every(x=>x.finalOutcomeHumanVerdict==='PENDING_INDEPENDENT_PHOTOGRAPHIC_REVIEW'));
+          assert.ok(r.records.every(x=>x.conservativeSelection==='SHADOWS_CONTINUOUS_PERCEPTUAL_LUMINANCE_NO_ELLIPSE'));
+          assert.equal(r.records.find(x=>x.id==='project-fashion-model-portrait').conservativeEighthStops,0);
           assert.equal(r.coreAuthorityGranted,false);
           assert.equal(r.productionToolEnabled,false);
           assert.equal(r.cloudProviderUsed,false);
