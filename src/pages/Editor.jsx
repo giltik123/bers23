@@ -1174,6 +1174,7 @@ export default function Editor() {
                 allowWholeImage={objects.length === 0}
                 instruction={instruction}
                 onInstructionChange={setInstruction}
+                onFocusPrompt={() => setEditTab('prompt')}
                 onApply={() => applyEdit(false)}
                 applying={editorBusy || committing}
               />
