@@ -45,7 +45,7 @@ async function downloadRealPhoto(sourceUrl) {
 async function decodePhoto(bytes) {
   const decoded=await sharp(bytes,{failOn:'error',limitInputPixels:40_000_000})
     .rotate().resize({width:512,withoutEnlargement:false})
-    .removeAlpha().ensureAlpha().raw().toBuffer({resolveWithObject:true});
+    .toColourspace('srgb').removeAlpha().ensureAlpha().raw().toBuffer({resolveWithObject:true});
   assert.equal(decoded.info.width,512);
   assert.equal(decoded.info.channels,4);
   assert.ok(decoded.info.height>=1&&decoded.info.height*512<=MAX_PREVIEW_PIXELS);
@@ -132,6 +132,7 @@ async function main(){
     }
     seen.add(fixture.id);
     const originalBytes=await downloadRealPhoto(fixture.sourceUrl);
+    const originalMeta=await sharp(originalBytes,{failOn:'error',limitInputPixels:40_000_000}).metadata();
     const {width,height,rgba}=await decodePhoto(originalBytes);
     const sourceBytes=Buffer.from(rgba);
     const dimensions={width,height};
@@ -187,10 +188,39 @@ async function main(){
       }else invariant=assertProtectedAndAlpha(rgba,result,selection,item.name);
       const png=await pngFrom(result,item.size.width,item.size.height);
       samples.push({name:item.name,bytes:png});
+      let independentResizeReference;
+      if(item.name==='resize') {
+        // Different reconstruction kernel: a visual benchmark, never the Core oracle.
+        const referenceRaw=await sharp(Buffer.from(rgba),{raw:{width,height,channels:4}})
+          .resize(item.size.width,item.size.height,{kernel:'lanczos3'})
+          .raw().toBuffer();
+        const reference=new Uint8ClampedArray(referenceRaw);
+        const referencePng=await pngFrom(reference,item.size.width,item.size.height);
+        samples.push({name:'resize_lanczos3_reference',bytes:referencePng});
+        let error=0,maximum=0,outlierPixels=0;
+        const pixels=item.size.width*item.size.height;
+        for(let pixel=0;pixel<pixels;pixel++){
+          let outlier=false;
+          for(let channel=0;channel<3;channel++){
+            const delta=Math.abs(result[pixel*4+channel]-reference[pixel*4+channel]);
+            error+=delta;maximum=Math.max(maximum,delta);
+            if(delta>24)outlier=true;
+          }
+          if(outlier)outlierPixels++;
+        }
+        independentResizeReference={
+          method:'LANCZOS3_VISUAL_REFERENCE_ONLY_NOT_PIXEL_ORACLE',
+          outputSha256:sha256(referencePng),
+          meanAbsoluteRgbDifference:error/(pixels*3),
+          maximumAbsoluteRgbDifference:maximum,
+          pixelsWithAnyRgbDifferenceAbove24:outlierPixels,
+        };
+      }
       operationResults.push({
         operation:item.name,outputSha256:sha256(png),
         outputWidth:item.size.width,outputHeight:item.size.height,
         latencyMs,invariant,
+        ...(independentResizeReference?{independentResizeReference}:{}),
       });
     }
 
@@ -220,7 +250,11 @@ async function main(){
       license:fixture.license,licenseUrl:fixture.licenseUrl,
       sourceUrl:fixture.sourceUrl,downloadSha256:sha256(originalBytes),
       decodedRgbaSha256:sha256(sourceBytes),comparisonGridSha256:sha256(sheet),
-      geometry:dimensions,operationResults,
+      geometry:dimensions,
+      originalMedia:{format:originalMeta.format,colourspace:originalMeta.space,
+        hasIccProfile:originalMeta.hasProfile===true,
+        exifOrientation:originalMeta.orientation??null},
+      operationResults,
     });
   }
   const report={
