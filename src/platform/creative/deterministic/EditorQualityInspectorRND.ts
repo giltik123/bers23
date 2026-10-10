@@ -106,3 +106,57 @@ export function requireEditorProtectedPixelsUnchanged(summary: EditorPixelQualit
     throw new Error(`Editor candidate changed ${summary.changedProtectedPixels} protected pixels`);
   }
 }
+
+
+/**
+ * Minimal, independent sRGB tonal clipping diagnostic. Near-white means all
+ * three 8-bit channels >=250; near-black means all <=5. Only pixels with
+ * nonzero alpha inside a declared edit mask are scored. Neither criterion is
+ * a skin-tone detector, histogram correction, gamut proof or quality gate.
+ */
+export function analyzeEditorTonalClippingRgba8(
+  before: Uint8Array | Uint8ClampedArray,
+  after: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  allowedEditMask?: Uint8Array | Uint8ClampedArray,
+): Readonly<{
+  evaluatedPixels: number;
+  highlightsBefore: number;
+  highlightsAfter: number;
+  newlyClippedHighlights: number;
+  shadowsBefore: number;
+  shadowsAfter: number;
+  newlyClippedShadows: number;
+}> {
+  preflight(before,after,width,height,allowedEditMask);
+  let evaluatedPixels=0;
+  let highlightsBefore=0,highlightsAfter=0,newlyClippedHighlights=0;
+  let shadowsBefore=0,shadowsAfter=0,newlyClippedShadows=0;
+  for(let i=0;i<width*height;i++){
+    if(allowedEditMask && allowedEditMask[i]===0)continue;
+    const p=i*4;
+    const visibleBefore=before[p+3]>0;
+    const visibleAfter=after[p+3]>0;
+    if(!visibleBefore && !visibleAfter)continue;
+    evaluatedPixels++;
+    const brightBefore=visibleBefore &&
+      before[p]>=250 && before[p+1]>=250 && before[p+2]>=250;
+    const brightAfter=visibleAfter &&
+      after[p]>=250 && after[p+1]>=250 && after[p+2]>=250;
+    const darkBefore=visibleBefore &&
+      before[p]<=5 && before[p+1]<=5 && before[p+2]<=5;
+    const darkAfter=visibleAfter &&
+      after[p]<=5 && after[p+1]<=5 && after[p+2]<=5;
+    if(brightBefore)highlightsBefore++;
+    if(brightAfter)highlightsAfter++;
+    if(brightAfter&&!brightBefore)newlyClippedHighlights++;
+    if(darkBefore)shadowsBefore++;
+    if(darkAfter)shadowsAfter++;
+    if(darkAfter&&!darkBefore)newlyClippedShadows++;
+  }
+  return Object.freeze({
+    evaluatedPixels,highlightsBefore,highlightsAfter,newlyClippedHighlights,
+    shadowsBefore,shadowsAfter,newlyClippedShadows,
+  });
+}
