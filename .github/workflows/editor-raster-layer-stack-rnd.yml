@@ -1,0 +1,24 @@
+name: Editor non-destructive raster layers R&D
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/platform/creative/deterministic/EditorRasterLayerStackRND.ts'
+      - 'tests/editor-raster-layer-stack-rnd.test.mjs'
+      - 'docs/bers-v1-quality-first-expansion-20261010.md'
+      - '.github/workflows/editor-raster-layer-stack-rnd.yml'
+permissions:
+  contents: read
+jobs:
+  editor-layer-pixel-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Prove immutable RGBA composition, protected masks and alpha
+        run: node --experimental-strip-types --test tests/editor-raster-layer-stack-rnd.test.mjs
