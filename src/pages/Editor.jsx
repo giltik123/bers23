@@ -29,6 +29,8 @@ import CropToolbar from '@/components/editor/CropToolbar';
 import ResizeToolbar from '@/components/editor/ResizeToolbar';
 import OrthogonalTransformToolbar, { ORTHOGONAL_TRANSFORM_LABELS } from '@/components/editor/OrthogonalTransformToolbar';
 import InstructionBar from '@/components/editor/InstructionBar';
+import VoiceInputPanel from '@/components/editor/VoiceInputPanel';
+import { admitVoiceEditorAction } from '@/application/voice/admitVoiceEditorAction';
 import HistoryControls from '@/components/editor/HistoryControls';
 import VersionsPanel from '@/components/editor/VersionsPanel';
 import ErrorBanner from '@/components/editor/ErrorBanner';
@@ -130,6 +132,9 @@ export default function Editor() {
   const [pendingResult, setPendingResult] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [editTab, setEditTab] = useState('prompt');
+  const [voiceWardrobeQuery,setVoiceWardrobeQuery]=useState(null);
+  const [voiceTryOnQuery,setVoiceTryOnQuery]=useState(null);
+  const [voiceAgentProposal,setVoiceAgentProposal]=useState(null);
   const [activeRecipe, setActiveRecipe] = useState(null);
   const [lastAction, setLastAction] = useState(null);
   const pendingResultRef = useRef(null);
@@ -887,6 +892,55 @@ export default function Editor() {
     if (pending?.kind === 'BOUNDED_AGENT') boundedAgent.dismiss();
   };
 
+  const handleVoiceIntent=async(draft,confirmedSource)=>{
+    const admitted=admitVoiceEditorAction(draft,{
+      projectId:project?.id,
+      sourceArtifactId:project?.current_image_artifact_id,
+      confirmedProjectId:confirmedSource?.projectId,
+      confirmedSourceArtifactId:confirmedSource?.sourceArtifactId,
+      busy:editorBusy||committing||cropInteractionActive||resizeInteractionActive||
+        Boolean(driftWarning),
+      selectionActive:Boolean(selection),
+      hasPendingResult:Boolean(pendingResult),
+      canUndo,canRedo,
+    });
+    const {kind,params}=admitted;
+    if(kind==='NAVIGATE'){
+      setEditTab(params.tab);
+      return;
+    }
+    if(kind==='WARDROBE_QUERY'){
+      setVoiceWardrobeQuery({query:params.query,hints:params.hints});
+      setEditTab('fashion');
+      return;
+    }
+    if(kind==='TRYON_SELECT_PROPOSAL'){
+      setVoiceTryOnQuery({query:params.query,hints:params.hints});
+      setEditTab('outfits');
+      return;
+    }
+    if(kind==='AGENT_PROPOSAL'){
+      setVoiceAgentProposal({sourceArtifactId:project.current_image_artifact_id,
+        ...params,revision:globalThis.crypto.randomUUID()});
+      setEditTab('agent');
+      return;
+    }
+    if(kind==='HISTORY_UNDO'){await undo();return;}
+    if(kind==='HISTORY_REDO'){await redo();return;}
+    if(kind==='HISTORY_RESTORE'){await restoreOriginal();return;}
+    if(kind==='TRANSFORM'){
+      await applyOrthogonalTransform(params.mode);
+      return;
+    }
+    if(kind==='RESIZE'){
+      const target=exactResizeTarget(params);
+      if(!target)throw new Error('Размер изображения превышает лимиты Core');
+      await applyResize({sourceArtifactId:project.current_image_artifact_id,target});
+      return;
+    }
+    throw new Error('Эта голосовая команда пока не подключена к BERS');
+  };
+
   const handleRename = async () => {
     const name = window.prompt('Rename project', project.name);
     if (name && name !== project.name) await rename(name);
@@ -1092,6 +1146,15 @@ export default function Editor() {
         <p className="text-[11px] text-muted-foreground text-center">Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.</p>
       )}
 
+      <VoiceInputPanel
+        prompt={instruction} onPromptChange={setInstruction}
+        onFocusPrompt={()=>setEditTab('prompt')}
+        projectId={project.id} sourceArtifactId={project.current_image_artifact_id}
+        onVoiceIntent={handleVoiceIntent}
+        disabled={editorBusy||committing||Boolean(pendingResult)||
+          Boolean(selection)||cropInteractionActive||resizeInteractionActive||
+          Boolean(driftWarning)}
+      />
       {pendingResult ? (
         <ResultCompare
           beforeUrl={pendingResult.beforeUrl}
@@ -1131,6 +1194,7 @@ export default function Editor() {
                 busy={tryOn.busy}
                 disabled={tryOnBlockedByEditor}
                 onAction={runTryOnAction}
+                voiceQuery={voiceTryOnQuery}
                 onLoadManualGarmentSource={tryOn.loadManualGarmentSource}
                 onSaveManualContour={tryOn.saveManualContour}
                 onSaveManualBodyAnchors={tryOn.saveManualBodyAnchors}
@@ -1140,10 +1204,11 @@ export default function Editor() {
               {!tryOn.state.host.active && <OutfitPanel />}
             </div>
           ) : editTab === 'fashion' ? (
-            <FashionPanel />
+            <FashionPanel voiceQuery={voiceWardrobeQuery} />
           ) : editTab === 'agent' ? (
             <AgentPanel
               project={project}
+              voiceProposal={voiceAgentProposal}
               state={boundedAgent.state}
               busy={boundedAgent.busy}
               disabled={agentBlockedByEditor}

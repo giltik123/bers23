@@ -9,6 +9,7 @@ import {
   createCanonicalWardrobeViewModel,
 } from '@/application/fashion/canonicalWardrobeViewModel';
 import { getCategory } from '@/lib/fashion/garmentCategories';
+import { filterCanonicalWardrobeVoice } from '@/application/voice/filterCanonicalWardrobeVoice';
 import AddGarmentDialog from './AddGarmentDialog';
 import CanonicalCollectionsView from './CanonicalCollectionsView';
 import GarmentCaptureDialog from './GarmentCaptureDialog';
@@ -83,7 +84,7 @@ function WardrobeCard({ item, busy, onFavorite, onArchive, onRestore, onCapture 
   );
 }
 
-export default function FashionPanel() {
+export default function FashionPanel({ voiceQuery = null }) {
   const wardrobe = useMemo(() => createCanonicalWardrobeViewModel({
     garments: coreClient.fashion.garments,
     wardrobe: coreClient.fashion.wardrobe,
@@ -94,6 +95,9 @@ export default function FashionPanel() {
   const [addOpen, setAddOpen] = useState(false);
   const [captureItem, setCaptureItem] = useState(null);
   const [busyId, setBusyId] = useState('');
+  const visibleItems=useMemo(
+    ()=>filterCanonicalWardrobeVoice(items,voiceQuery),[items,voiceQuery],
+  );
 
   const reload = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) {
@@ -205,19 +209,27 @@ export default function FashionPanel() {
         </div>
       )}
 
+      {voiceQuery?.query&&(
+        <div role="status" className="text-xs rounded-md border px-2 py-2">
+          Голосовой поиск: {voiceQuery.query} — найдено {visibleItems.length} из {items.length}.
+          Нет совпадений — уточните запрос, BERS не выбирает вещь наугад.
+        </div>
+      )}
       <CanonicalCollectionsView garments={items} />
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground" role="status">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading canonical wardrobe…
         </div>
-      ) : items.length === 0 ? (
+      ) : visibleItems.length === 0 ? (
         <div className="rounded-xl bg-secondary/40 p-4 text-center text-xs text-muted-foreground">
-          No managed garments yet. Add a garment photo to create the first stable wardrobe item.
+          {voiceQuery?.query && items.length>0
+            ? 'По голосовому запросу ничего не найдено. Проверьте категорию или цвет.'
+            : 'No managed garments yet. Add a garment photo to create the first stable wardrobe item.'}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <WardrobeCard
               key={item.id}
               item={item}

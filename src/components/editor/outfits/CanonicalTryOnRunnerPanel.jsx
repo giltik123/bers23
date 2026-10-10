@@ -3,6 +3,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { coreClient } from '@/api/coreClient';
 import { createCanonicalOutfitViewModel } from '@/application/fashion/canonicalOutfitViewModel';
+import { filterCanonicalWardrobeVoice } from '@/application/voice/filterCanonicalWardrobeVoice';
 import CanonicalTryOnProductControls from './CanonicalTryOnProductControls';
 import CanonicalTryOnManualRemediationPanel from './CanonicalTryOnManualRemediationPanel';
 
@@ -15,6 +16,7 @@ const IDLE_HOST = Object.freeze({ active: false, busy: false, disposed: false, h
  */
 export default function CanonicalTryOnRunnerPanel({
   project,
+  voiceQuery = null,
   state = null,
   busy = false,
   disabled = false,
@@ -65,6 +67,19 @@ export default function CanonicalTryOnRunnerPanel({
   const selectedEntry = selectedOutfit?.entries.find((entry) => entry.entryId === effectiveEntryId) || null;
   const garmentById = useMemo(() => new Map(garments.map((garment) => [garment.garmentId, garment])), [garments]);
   const selectedGarment = selectedEntry ? garmentById.get(selectedEntry.garmentId) : null;
+  const voiceMatches=useMemo(()=>{
+    if(!voiceQuery?.query)return [];
+    const acceptedIds=new Set(filterCanonicalWardrobeVoice(
+      garments.map(garment=>({...garment,id:garment.garmentId})),voiceQuery,
+    ).map(item=>item.id));
+    return outfits.flatMap(outfit=>outfit.entries.flatMap(entry=>{
+      const garment=garmentById.get(entry.garmentId);
+      if(entry.referenceReadiness!=='READY'||!garment ||
+        !acceptedIds.has(entry.garmentId))return [];
+      return [{outfitName:outfit.name,garmentName:garment.name,
+        outfitId:outfit.id,entryId:entry.entryId}];
+    }));
+  },[voiceQuery,outfits,garmentById,garments]);
   const selectionLocked = busy || loading || hostActive;
   const host = state?.host || IDLE_HOST;
   const result = state?.result || null;
@@ -160,6 +175,16 @@ export default function CanonicalTryOnRunnerPanel({
         </Button>
       </div>
 
+      {voiceQuery?.query&&(
+        <div role="status" className="rounded-md border p-2 text-xs">
+          Голосовой запрос: {voiceQuery.query}.
+          Найдено готовых записей примерки: {voiceMatches.length}.
+          {voiceMatches.length===1
+            ?` Найдена ${voiceMatches[0].garmentName} в образе ${voiceMatches[0].outfitName}. Подтвердите выбор в списке ниже.`
+            :' Выберите одну подходящую вещь вручную; BERS не угадывает идентификатор.'}
+          Голосовой поиск не запускает примерку.
+        </div>
+      )}
       {!hostActive && (
         <div className="grid grid-cols-2 gap-1.5">
           <select
