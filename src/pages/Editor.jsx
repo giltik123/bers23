@@ -567,6 +567,7 @@ export default function Editor() {
     } catch (e) {
       setAiError(e.message || 'Masked Exposure failed');
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+      if (retryContext?.bubbleFailure) throw e;
     } finally {
       maskedExposureInFlightRef.current = false;
       setApplyingMaskedExposure(false);
@@ -609,6 +610,7 @@ export default function Editor() {
     } catch (e) {
       setAiError(e.message || 'Masked White Balance failed');
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+      if (retryContext?.bubbleFailure) throw e;
     } finally {
       maskedWhiteBalanceInFlightRef.current = false;
       setApplyingMaskedWhiteBalance(false);
@@ -654,6 +656,7 @@ export default function Editor() {
     } catch (e) {
       setAiError(e.message || 'Masked Levels failed');
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+      if (retryContext?.bubbleFailure) throw e;
     } finally {
       maskedLevelsInFlightRef.current = false;
       setApplyingMaskedLevels(false);
@@ -687,6 +690,7 @@ export default function Editor() {
     } catch (e) {
       setAiError(e.message || 'Background isolation failed');
       workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
+      if (retryContext?.bubbleFailure) throw e;
     } finally {
       setIsolatingBackground(false);
     }
@@ -739,7 +743,10 @@ export default function Editor() {
     const usedPlan = instructionOverride
       ? aiPlanner.plan({ project, instruction: usedInstruction, objects, selectedObject: selected })
       : plan;
-    if (!usedPlan || usedPlan.status !== 'ready') return;
+    if (!usedPlan || usedPlan.status !== 'ready') {
+      if (instructionOverride) throw new Error('Core Creative Edit: команда пока не проходит проверку маршрута генерации. Уточните объект, маску или сам запрос.');
+      return;
+    }
 
     // Consistency Engine: compare the requested edit against Scene Memory before generating.
     const memory = sceneMemory.getActive();
@@ -747,6 +754,7 @@ export default function Editor() {
       const report = consistencyEngine.assess({ instruction: usedInstruction, memory });
       if (report.exceedsThreshold) {
         setDriftWarning(report);
+        if (instructionOverride) throw new Error('Смена стиля требует дополнительного подтверждения в редакторе.');
         return;
       }
     }
@@ -769,12 +777,14 @@ export default function Editor() {
       const editorResult = { ...result, image_url: result.imageUrl, generation_time_ms: result.timing?.durationMs, credits_used: result.creditsUsed };
       setPendingResult((current) => { disposePendingPreview(current); return { result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url }; });
       recipeEngine.recordOutcome(activeRecipe?.id, { success: true, durationMs: editorResult.generation_time_ms, credits: editorResult.credits_used });
+      return editorResult;
     } catch (e) {
       if (e.code !== 'cancelled') {
         setAiError(e.message || 'Edit failed');
         recipeEngine.recordOutcome(activeRecipe?.id, { success: false, durationMs: 0, credits: 0 });
         workspaceHistory.recordEdit(workspaceManager.activeId(), { success: false, durationMs: 0 });
       }
+      if (instructionOverride) throw e;
     } finally {
       setApplying(false);
     }
@@ -793,7 +803,7 @@ export default function Editor() {
     }
     const sourceArtifactId = project.current_image_artifact_id;
     const maskArtifactId = selected.mask_artifact_id;
-    const context = { sourceArtifactId, maskArtifactId, ...parameters };
+    const context = { sourceArtifactId, maskArtifactId, ...parameters, bubbleFailure: true };
     if (operation === 'MASKED_EXPOSURE') return applyMaskedExposure(context);
     if (operation === 'MASKED_WHITE_BALANCE') return applyMaskedWhiteBalance(context);
     if (operation === 'MASKED_LEVELS') return applyMaskedLevels(context);
