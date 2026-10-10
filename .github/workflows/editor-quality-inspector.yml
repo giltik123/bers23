@@ -1,0 +1,63 @@
+name: Editor quality inspector acceptance
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/components/editor/ResultCompare.jsx'
+      - 'src/components/editor/qualityInspectorGeometry.js'
+      - 'tests/editor-result-quality-inspector.test.mjs'
+      - 'tests/editor-quality-inspector-browser.html'
+      - 'scripts/test-editor-quality-inspector-browser.mjs'
+      - 'docs/BERS_V1_QUALITY_FIRST_EXPANSION_2026-10-10.md'
+      - '.github/workflows/editor-quality-inspector.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspector-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify immutable PR or main commit
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Assert independent geometry constraints and safe Editor callbacks
+        run: node --test tests/editor-result-quality-inspector.test.mjs
+      - name: Verify production frontend compiles
+        run: npm run build
+      - name: No trailing whitespace or patch corruption
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
+
+  inspector-browser:
+    needs: inspector-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Install real Chromium browser
+        run: npx playwright install --with-deps chromium
+      - name: Exercise real zoom, split, keyboard, mismatch and unchanged Accept flow
+        run: node scripts/test-editor-quality-inspector-browser.mjs
