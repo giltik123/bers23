@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   analyzeEditorPixelQualityRgba8,
+  analyzeEditorTonalClippingRgba8,
   requireEditorProtectedPixelsUnchanged,
 } from '../src/platform/creative/deterministic/EditorQualityInspectorRND.ts';
 
@@ -75,4 +76,41 @@ test('masked non-overlap and bounding rectangle on a non-square canvas',()=>{
   assert.deepEqual(s.changedBoundingRect,{x:2,y:0,width:4,height:4});
   assert.equal(s.changedProtectedPixels,0);
   assert.equal(s.changedAuthorizedPixels,2);
+});
+
+test('tonal inspector counts newly clipped highlights/shadows inside authorized region only',()=>{
+  const before=Uint8Array.from([
+    225,233,244,255, 24,25,27,255, 249,249,249,255,
+    245,244,243,255, 15,16,17,255, 11,8,6,0,
+  ]);
+  const after=Uint8Array.from([
+    255,255,255,255, 0,0,0,255, 251,251,251,255,
+    255,255,255,255, 0,0,0,255, 0,0,0,0,
+  ]);
+  const mask=Uint8Array.from([255,255,255,0,0,255]);
+  const audit=analyzeEditorTonalClippingRgba8(before,after,3,2,mask);
+  assert.deepEqual(audit,{
+    evaluatedPixels:3,
+    highlightsBefore:0,highlightsAfter:2,newlyClippedHighlights:2,
+    shadowsBefore:0,shadowsAfter:1,newlyClippedShadows:1,
+  });
+  assert.equal(Object.isFrozen(audit),true);
+});
+
+test('tonal inspector ignores existing clipping, protected pixels, and hidden transparent RGB',()=>{
+  const before=Uint8Array.from([
+    255,255,255,255, 0,0,0,0,
+    0,0,0,255, 255,255,255,0,
+  ]);
+  const after=Uint8Array.from([
+    255,255,255,255, 255,255,255,0,
+    0,0,0,255, 255,255,255,0,
+  ]);
+  const audit=analyzeEditorTonalClippingRgba8(before,after,2,2,Uint8Array.from([255,255,0,255]));
+  assert.deepEqual(audit,{
+    evaluatedPixels:1,
+    highlightsBefore:1,highlightsAfter:1,newlyClippedHighlights:0,
+    shadowsBefore:0,shadowsAfter:0,newlyClippedShadows:0,
+  });
+  assert.throws(()=>analyzeEditorTonalClippingRgba8(before,after,2,2,Uint8Array.from([255])),/mask/u);
 });
