@@ -47,6 +47,19 @@ export function parseRussianVoiceIntent(transcript){
     return action('HISTORY_REDO',{},'EDITOR');
   if(/^(?:верни оригинал|восстанови оригинал|верни исходное изображение)$/u.test(text))
     return action('HISTORY_RESTORE',{},'EDITOR');
+  const compound=text.match(/^поверни(?: фото| фотографию| изображение)?\s+(вправо|влево)\s+и\s+затем\s+сделай\s+(\d{1,5})\s*(?:на|x|х|×)\s*(\d{1,5})$/u);
+  if(compound){
+    const width=Number(compound[2]),height=Number(compound[3]);
+    if(width<1||height<1||width>16384||height>16384||
+      width*height>24_000_000)
+      return action('AMBIGUOUS',{reason:'Размеры Agent выходят за пределы BERS'});
+    return action('AGENT_PROPOSAL',{
+      mode:compound[1]==='вправо'?'ROTATE_90_CW':'ROTATE_270_CW',
+      width,height,
+    },'AGENT');
+  }
+  if(text==='сделай это через агента'||text==='открой план агента')
+    return action('AGENT_PROPOSAL',{},'AGENT');
   const resize=parseResize(text);
   if(resize)return resize;
   if(/^(?:отрази|отзеркаль)(?: фото| изображение)?(?: по горизонтали| горизонтально)$/u.test(text))
@@ -80,7 +93,7 @@ export function parseRussianVoiceIntent(transcript){
     return action('TRYON_SELECT_PROPOSAL',
       {query,hints:normalizeRussianFashionVoice(query)},'TRY_ON');
   }
-  if(/^(?:запусти примерку|продолжи примерку|восстанови примерку|обнови гардероб|добавь вещь|сделай это через агента|запусти агента)$/u.test(text))
+  if(/^(?:запусти примерку|продолжи примерку|восстанови примерку|обнови гардероб|добавь вещь|запусти агента)$/u.test(text))
     return action('REQUIRES_CANONICAL_CONTEXT',{spoken:transcript},'AGENT');
   if(/^(?:прими|подтверди результат|примен[ий]|оплати|удали проект|сохрани|запусти|создай|отмени все)/u.test(text))
     return action('ACTION_NEEDS_UI',{reason:'Нельзя выполнять эту команду голосом'});
