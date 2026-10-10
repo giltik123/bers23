@@ -79,6 +79,7 @@ test('mismatched exact source SHA, malformed payloads, unknown GPU/cloud operati
   modified[0]=255;
   await assert.rejects(executeEditorBatchPlanRND(valid,modified),/source SHA mismatch/u);
   await assert.rejects(executeEditorBatchPlanRND({...valid,outputWidth:10},pixels),/tampered/u);
+  await assert.rejects(executeEditorBatchPlanRND({...valid,cloudBilling:true},pixels),/unapproved metadata/u);
   await assert.rejects(executeEditorBatchPlanRND(valid,pixels.slice(0,5)),/exact RGBA8/u);
   for(const invalid of [
     base([]),base(Array.from({length:9},()=>({kind:'ORTHOGONAL_TRANSFORM',mode:'ROTATE_90_CW'}))),
@@ -94,6 +95,7 @@ test('mismatched exact source SHA, malformed payloads, unknown GPU/cloud operati
     base([{kind:'RESIZE',target:{width:1.5,height:1}}]),
     base([{kind:'CROP',rect:{x:0,y:0,width:1,height:1}}],{sourceSha256:'wrong'}),
     base([{kind:'CROP',rect:{x:0,y:0,width:1,height:1}}],{sourceArtifactId:'../wrong'}),
+    base([{kind:'CROP',rect:{x:0,y:0,width:1,height:1}}],{provider:'remote'}),
   ])assert.throws(()=>compileEditorBatchPlanRND(invalid));
 });
 
