@@ -33,6 +33,7 @@ export default function AICommandStudio({
   const [parameters,setParameters]=useState(null);
   const [maskConfirmed,setMaskConfirmed]=useState(false);
   const [generativeConfirmed,setGenerativeConfirmed]=useState(false);
+  const [generativeScope,setGenerativeScope]=useState('MASKED');
   const [executionError,setExecutionError]=useState('');
   const [submitting,setSubmitting]=useState(false);
   const maskId=selectedObject?.mask_artifact_id||null;
@@ -42,6 +43,7 @@ export default function AICommandStudio({
     setParameters(plan.parameters?{...plan.parameters}:null);
     setMaskConfirmed(false);
     setGenerativeConfirmed(false);
+    setGenerativeScope('MASKED');
     setExecutionError('');
   },[plan.instruction,plan.operation,project?.current_image_artifact_id,maskId]);
 
@@ -60,9 +62,15 @@ export default function AICommandStudio({
     }finally{setSubmitting(false);}
   };
   const handleGenerate=async()=>{
-    if(!canEdit||plan.kind!=='GENERATIVE'||!generativeConfirmed)return;
+    if(!canEdit||plan.kind!=='GENERATIVE'||!generativeConfirmed||
+       (generativeScope==='MASKED'&&(!maskId||!maskConfirmed)))return;
     setSubmitting(true);setExecutionError('');
-    try{await onExecuteGenerative(plan.instruction);}
+    try{await onExecuteGenerative({
+      instruction:plan.instruction,
+      mode:generativeScope,
+      expectedSourceArtifactId:project.current_image_artifact_id,
+      expectedMaskArtifactId:generativeScope==='MASKED'?maskId:null,
+    });}
     catch(error){setExecutionError(error?.message||'Генерация недоступна для данного проекта.');}
     finally{setSubmitting(false);}
   };
@@ -223,6 +231,45 @@ export default function AICommandStudio({
                 Для этого нужна настоящая модель генерации, разрешённая Core, а не имитация.
                 Существующий Creative Edit может вернуть ошибку, если провайдер не подключён.
               </p>
+              <fieldset className="space-y-2 text-sm">
+                <legend className="font-medium">Какие пиксели можно менять?</legend>
+                <label className="flex items-start gap-2">
+                  <input type="radio" name="bers-ai-generation-scope" value="MASKED"
+                    checked={generativeScope==='MASKED'} disabled={!canEdit}
+                    onChange={()=>{setGenerativeScope('MASKED');setGenerativeConfirmed(false);}} className="mt-1"/>
+                  Только выбранный объект. Нужна сохранённая Core-маска.
+                </label>
+                <label className="flex items-start gap-2">
+                  <input type="radio" name="bers-ai-generation-scope" value="WHOLE_IMAGE"
+                    checked={generativeScope==='WHOLE_IMAGE'}
+                    disabled={!canEdit||plan.target==='USER_SELECTED_OBJECT'||plan.warnings.length>0}
+                    onChange={()=>{setGenerativeScope('WHOLE_IMAGE');setGenerativeConfirmed(false);setMaskConfirmed(false);}}
+                    className="mt-1"/>
+                  Весь кадр — только для общей обработки без требования сохранить отдельные объекты.
+                </label>
+                {generativeScope==='MASKED'&&(
+                  <div className="space-y-2 rounded-lg border p-3">
+                    {maskId?(
+                      <label className="flex items-start gap-2">
+                        <input type="checkbox" checked={maskConfirmed} disabled={!canEdit}
+                          onChange={e=>setMaskConfirmed(e.target.checked)} className="mt-1"/>
+                        Я проверил границы Core-маски: {selectedObject?.label||'выбранный объект'}.
+                      </label>
+                    ):(
+                      <>
+                        <p role="status">Нет выбранной Core-маски. ИИ не определяет точную область автоматически.</p>
+                        <Button type="button" variant="outline" disabled={!canEdit}
+                          onClick={onSelectRegion}><Scan className="w-4 h-4 mr-2"/>Создать / выбрать маску</Button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </fieldset>
+              <p className="text-xs text-muted-foreground">
+                Маска направляется в Core, но генеративную сохранность пикселей вне маски
+                необходимо подтвердить на изображении «до/после»; этот экран не даёт
+                математической гарантии работы провайдера.
+              </p>
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" checked={generativeConfirmed} disabled={!canEdit}
                   onChange={e=>setGenerativeConfirmed(e.target.checked)}
@@ -230,7 +277,8 @@ export default function AICommandStudio({
                 Я подтверждаю запуск существующего Core Creative Edit с указанной текстовой командой.
                 Итог всё равно требует просмотра и принятия.
               </label>
-              <Button type="button" disabled={!canEdit||!generativeConfirmed}
+              <Button type="button" disabled={!canEdit||!generativeConfirmed||
+                (generativeScope==='MASKED'&&(!maskId||!maskConfirmed))}
                 onClick={handleGenerate} className="w-full">
                 <WandSparkles className="w-4 h-4 mr-2"/>Запросить генерацию через Core
               </Button>
