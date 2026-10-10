@@ -99,12 +99,24 @@ test('VI-4 immutable Project/source and busy state are mandatory on every voice 
 });
 test('spoken paid, Agent and Try-On run actions cannot bypass canonical admission',()=>{
   for(const speech of ['прими результат','оплати подписку','удали проект',
-    'запусти примерку','сделай это через агента']){
+    'запусти примерку']){
     const draft=buildVoiceIntentDraft(speech);
     assert.throws(()=>admitVoiceEditorAction(draft,ctx),
       /VOICE_ACTION_NOT_SUPPORTED/,speech);
   }
 });
+test('VI-4 approved bounded Agent plan is only a proposal, not an execution',()=>{
+  const draft=buildVoiceIntentDraft('поверни вправо и затем сделай 1024 на 1024');
+  assert.equal(draft.kind,'AGENT_PROPOSAL');
+  assert.deepEqual(draft.params,{mode:'ROTATE_90_CW',width:1024,height:1024});
+  assert.equal(admitVoiceEditorAction(draft,ctx).kind,'AGENT_PROPOSAL');
+  assert.throws(()=>applyConfirmedVoiceDraft(draft,''),
+    /VOICE_REQUIRES_EXISTING_EDITOR_CONTROLS/);
+  const nav=buildVoiceIntentDraft('сделай это через агента');
+  assert.equal(nav.kind,'AGENT_PROPOSAL');
+  assert.deepEqual(nav.params,{});
+});
+
 test('VI-4 browser Editor wires source-bound voice actions to existing operations only',async()=>{
   const editor=await readFile('src/pages/Editor.jsx','utf8');
   const panel=await readFile('src/components/editor/VoiceInputPanel.jsx','utf8');
