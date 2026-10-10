@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "kind": "BERS_V1_FASHION_REAL_IMAGE_REVIEW_DRAFT",
+  "candidateSha": "207640df2df058e9c6441f20ac9b900f9e982e1d",
+  "representativeSetConfirmed": true,
+  "decision": "PENDING_OWNER_REVIEW",
+  "samples": [
+    {
+      "id": "project-fashion-model-portrait__garment-vintage-aloha",
+      "sourceClass": "REAL_PHOTO",
+      "fixtureRightsRef": "CC0-1.0: https://commons.wikimedia.org/wiki/File:Fashion_model_portrait.jpg; garment PUBLIC_DOMAIN: https://commons.wikimedia.org/wiki/File:Vintage_aloha_shirt_crop.png",
+      "garmentPreservation": "PENDING_OWNER_REVIEW",
+      "logoPatternPreservation": "PENDING_OWNER_REVIEW",
+      "observedFailureModes": [
+        "FLAT_DETERMINISTIC_COMPOSITE_NO_SYNTHETIC_DRAPE",
+        "LIMITED_OCCLUSION_AND_POSE_PERSPECTIVE_FIT"
+      ],
+      "latencyMs": 64.33765900000003,
+      "peakMemoryBytes": 206184448,
+      "reviewedOutputSha256": "3e78da0312eb33b6803c00509617a6436aacd7ae2ea43facb337fdf73c81d023",
+      "reviewFocus": [
+        "GARMENT_PRESERVATION",
+        "PATTERN_PRESERVATION"
+      ]
+    },
+    {
+      "id": "project-fashion-model-portrait__garment-admin-logo-shirt",
+      "sourceClass": "REAL_PHOTO",
+      "fixtureRightsRef": "CC0-1.0: https://commons.wikimedia.org/wiki/File:Fashion_model_portrait.jpg; garment CC0-1.0: https://commons.wikimedia.org/wiki/File:Admin_T-shirt_again.png",
+      "garmentPreservation": "PENDING_OWNER_REVIEW",
+      "logoPatternPreservation": "PENDING_OWNER_REVIEW",
+      "observedFailureModes": [
+        "FLAT_DETERMINISTIC_COMPOSITE_NO_SYNTHETIC_DRAPE",
+        "LIMITED_OCCLUSION_AND_POSE_PERSPECTIVE_FIT"
+      ],
+      "latencyMs": 55.47958300000005,
+      "peakMemoryBytes": 206184448,
+      "reviewedOutputSha256": "e76c4ebcf00f7857bd8590d6dcfae5be6faf8f3002d0fcae8dcee8b84e9e12e7",
+      "reviewFocus": [
+        "GARMENT_PRESERVATION",
+        "LOGO_PRESERVATION"
+      ]
+    },
+    {
+      "id": "project-ashirt__garment-vintage-aloha",
+      "sourceClass": "REAL_PHOTO",
+      "fixtureRightsRef": "PUBLIC_DOMAIN: https://commons.wikimedia.org/wiki/File:Ashirt.jpg; garment PUBLIC_DOMAIN: https://commons.wikimedia.org/wiki/File:Vintage_aloha_shirt_crop.png",
+      "garmentPreservation": "PENDING_OWNER_REVIEW",
+      "logoPatternPreservation": "PENDING_OWNER_REVIEW",
+      "observedFailureModes": [
+        "FLAT_DETERMINISTIC_COMPOSITE_NO_SYNTHETIC_DRAPE",
+        "LIMITED_OCCLUSION_AND_POSE_PERSPECTIVE_FIT"
+      ],
+      "latencyMs": 89.76201899999978,
+      "peakMemoryBytes": 206184448,
+      "reviewedOutputSha256": "905d5e137ef26a30a84b0d821ea8c435556c45bdbbec9f26f2b1182ddbed4946",
+      "reviewFocus": [
+        "GARMENT_PRESERVATION",
+        "PATTERN_PRESERVATION"
+      ]
+    },
+    {
+      "id": "project-ashirt__garment-admin-logo-shirt",
+      "sourceClass": "REAL_PHOTO",
+      "fixtureRightsRef": "PUBLIC_DOMAIN: https://commons.wikimedia.org/wiki/File:Ashirt.jpg; garment CC0-1.0: https://commons.wikimedia.org/wiki/File:Admin_T-shirt_again.png",
+      "garmentPreservation": "PENDING_OWNER_REVIEW",
+      "logoPatternPreservation": "PENDING_OWNER_REVIEW",
+      "observedFailureModes": [
+        "FLAT_DETERMINISTIC_COMPOSITE_NO_SYNTHETIC_DRAPE",
+        "LIMITED_OCCLUSION_AND_POSE_PERSPECTIVE_FIT"
+      ],
+      "latencyMs": 95.4461080000001,
+      "peakMemoryBytes": 206184448,
+      "reviewedOutputSha256": "40929a1dfc3ad58e4a3c0eb9f43df00c7db4743157f607989fc1f810ae2a023e",
+      "reviewFocus": [
+        "GARMENT_PRESERVATION",
+        "LOGO_PRESERVATION"
+      ]
+    },
+    {
+      "id": "project-woman-pink-blue-dress__garment-vintage-aloha",
+      "sourceClass": "REAL_PHOTO",
+      "fixtureRightsRef": "CC0-1.0: https://commons.wikimedia.org/wiki/File:Woman_pink_and_blue_dress_(crop_full_body).jpg; garment PUBLIC_DOMAIN: https://commons.wikimedia.org/wiki/File:Vintage_aloha_shirt_crop.png",
+      "garmentPreservation": "PENDING_OWNER_REVIEW",
+      "logoPatternPreservation": "PENDING_OWNER_REVIEW",
+      "observedFailureModes": [
+        "FLAT_DETERMINISTIC_COMPOSITE_NO_SYNTHETIC_DRAPE",
+        "LIMITED_OCCLUSION_AND_POSE_PERSPECTIVE_FIT"
+      ],
+      "latencyMs": 51.123653000000104,
+      "peakMemoryBytes": 206184448,
+      "reviewedOutputSha256": "295a905638d61c61b6b4d88999b653455cc07eb432d60370d03eab28ea9a27b5",
+      "reviewFocus": [
+        "GARMENT_PRESERVATION",
+        "PATTERN_PRESERVATION"
+      ]
+    },
+    {
+      "id": "project-woman-pink-blue-dress__garment-admin-logo-shirt",
+      "sourceClass": "REAL_PHOTO",
+      "fixtureRightsRef": "CC0-1.0: https://commons.wikimedia.org/wiki/File:Woman_pink_and_blue_dress_(crop_full_body).jpg; garment CC0-1.0: https://commons.wikimedia.org/wiki/File:Admin_T-shirt_again.png",
+      "garmentPreservation": "PENDING_OWNER_REVIEW",
+      "logoPatternPreservation": "PENDING_OWNER_REVIEW",
+      "observedFailureModes": [
+        "FLAT_DETERMINISTIC_COMPOSITE_NO_SYNTHETIC_DRAPE",
+        "LIMITED_OCCLUSION_AND_POSE_PERSPECTIVE_FIT"
+      ],
+      "latencyMs": 50.68910499999993,
+      "peakMemoryBytes": 206184448,
+      "reviewedOutputSha256": "bb12b379e2197b4304d19cfc5add6a3eec0322334a077d25549c7b96f0a8c222",
+      "reviewFocus": [
+        "GARMENT_PRESERVATION",
+        "LOGO_PRESERVATION"
+      ]
+    }
+  ],
+  "productionAuthorityGranted": false,
+  "note": "Promote to review.json only after explicit owner quality acceptance of these exact output SHA-256 values."
+}

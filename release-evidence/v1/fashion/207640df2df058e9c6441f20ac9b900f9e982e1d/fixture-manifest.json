@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "kind": "BERS_V1_FASHION_REAL_IMAGE_FIXTURE_SET",
+  "candidateSha": "207640df2df058e9c6441f20ac9b900f9e982e1d",
+  "representativeSetConfirmed": true,
+  "samples": [
+    {
+      "id": "project-fashion-model-portrait__garment-vintage-aloha",
+      "source": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/c/c2/Fashion_model_portrait.jpg",
+        "sha256": "abe34f40092d0378108aee31a2b9e348a47dde9cb7678691c733f91cfe8085fb"
+      },
+      "garment": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Vintage_aloha_shirt_crop.png",
+        "sha256": "df97a8a00ac776748b7e5f3f1640ce47706212a60e85af73476ba8f5620164c6"
+      },
+      "result": {
+        "url": "https://raw.githubusercontent.com/giltik123/bers23/release-evidence-fashion-207640df2df058e9c6441f20ac9b900f9e982e1d/release-evidence/v1/fashion/207640df2df058e9c6441f20ac9b900f9e982e1d/outputs/project-fashion-model-portrait__garment-vintage-aloha.png",
+        "sha256": "3e78da0312eb33b6803c00509617a6436aacd7ae2ea43facb337fdf73c81d023"
+      }
+    },
+    {
+      "id": "project-fashion-model-portrait__garment-admin-logo-shirt",
+      "source": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/c/c2/Fashion_model_portrait.jpg",
+        "sha256": "abe34f40092d0378108aee31a2b9e348a47dde9cb7678691c733f91cfe8085fb"
+      },
+      "garment": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/4/43/Admin_T-shirt_again.png",
+        "sha256": "3c2140579366606c359d4ae2eb000ad7ee22a93465f076ebf4b54c1aaad0fb7f"
+      },
+      "result": {
+        "url": "https://raw.githubusercontent.com/giltik123/bers23/release-evidence-fashion-207640df2df058e9c6441f20ac9b900f9e982e1d/release-evidence/v1/fashion/207640df2df058e9c6441f20ac9b900f9e982e1d/outputs/project-fashion-model-portrait__garment-admin-logo-shirt.png",
+        "sha256": "e76c4ebcf00f7857bd8590d6dcfae5be6faf8f3002d0fcae8dcee8b84e9e12e7"
+      }
+    },
+    {
+      "id": "project-ashirt__garment-vintage-aloha",
+      "source": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/5/5a/Ashirt.jpg",
+        "sha256": "c1016dde9493949e93b877abcc6599ba5586d1da0bc319f119bfdc25adea6bc5"
+      },
+      "garment": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Vintage_aloha_shirt_crop.png",
+        "sha256": "df97a8a00ac776748b7e5f3f1640ce47706212a60e85af73476ba8f5620164c6"
+      },
+      "result": {
+        "url": "https://raw.githubusercontent.com/giltik123/bers23/release-evidence-fashion-207640df2df058e9c6441f20ac9b900f9e982e1d/release-evidence/v1/fashion/207640df2df058e9c6441f20ac9b900f9e982e1d/outputs/project-ashirt__garment-vintage-aloha.png",
+        "sha256": "905d5e137ef26a30a84b0d821ea8c435556c45bdbbec9f26f2b1182ddbed4946"
+      }
+    },
+    {
+      "id": "project-ashirt__garment-admin-logo-shirt",
+      "source": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/5/5a/Ashirt.jpg",
+        "sha256": "c1016dde9493949e93b877abcc6599ba5586d1da0bc319f119bfdc25adea6bc5"
+      },
+      "garment": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/4/43/Admin_T-shirt_again.png",
+        "sha256": "3c2140579366606c359d4ae2eb000ad7ee22a93465f076ebf4b54c1aaad0fb7f"
+      },
+      "result": {
+        "url": "https://raw.githubusercontent.com/giltik123/bers23/release-evidence-fashion-207640df2df058e9c6441f20ac9b900f9e982e1d/release-evidence/v1/fashion/207640df2df058e9c6441f20ac9b900f9e982e1d/outputs/project-ashirt__garment-admin-logo-shirt.png",
+        "sha256": "40929a1dfc3ad58e4a3c0eb9f43df00c7db4743157f607989fc1f810ae2a023e"
+      }
+    },
+    {
+      "id": "project-woman-pink-blue-dress__garment-vintage-aloha",
+      "source": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/2/2d/Woman_pink_and_blue_dress_%28crop_full_body%29.jpg",
+        "sha256": "1132f5834a5bb89bb283fd70b5292b5d04e37373d0a24a5d862df6caedb22dd3"
+      },
+      "garment": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Vintage_aloha_shirt_crop.png",
+        "sha256": "df97a8a00ac776748b7e5f3f1640ce47706212a60e85af73476ba8f5620164c6"
+      },
+      "result": {
+        "url": "https://raw.githubusercontent.com/giltik123/bers23/release-evidence-fashion-207640df2df058e9c6441f20ac9b900f9e982e1d/release-evidence/v1/fashion/207640df2df058e9c6441f20ac9b900f9e982e1d/outputs/project-woman-pink-blue-dress__garment-vintage-aloha.png",
+        "sha256": "295a905638d61c61b6b4d88999b653455cc07eb432d60370d03eab28ea9a27b5"
+      }
+    },
+    {
+      "id": "project-woman-pink-blue-dress__garment-admin-logo-shirt",
+      "source": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/2/2d/Woman_pink_and_blue_dress_%28crop_full_body%29.jpg",
+        "sha256": "1132f5834a5bb89bb283fd70b5292b5d04e37373d0a24a5d862df6caedb22dd3"
+      },
+      "garment": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/4/43/Admin_T-shirt_again.png",
+        "sha256": "3c2140579366606c359d4ae2eb000ad7ee22a93465f076ebf4b54c1aaad0fb7f"
+      },
+      "result": {
+        "url": "https://raw.githubusercontent.com/giltik123/bers23/release-evidence-fashion-207640df2df058e9c6441f20ac9b900f9e982e1d/release-evidence/v1/fashion/207640df2df058e9c6441f20ac9b900f9e982e1d/outputs/project-woman-pink-blue-dress__garment-admin-logo-shirt.png",
+        "sha256": "bb12b379e2197b4304d19cfc5add6a3eec0322334a077d25549c7b96f0a8c222"
+      }
+    }
+  ]
+}
