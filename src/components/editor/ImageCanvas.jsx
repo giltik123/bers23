@@ -115,7 +115,7 @@ function CropOverlay({ crop }) {
   );
 }
 
-export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer }) {
+export default function ImageCanvas({ imageUrl, objects, selectedId, hiddenObjectIds = new Set(), onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer }) {
   const gestures = useAdaptiveGestures({ onSwipeLeft: onRedo, onSwipeRight: onUndo });
   const renderer = adaptiveRenderer(usePlatformProfile());
   const drawing = useRef(false);
@@ -143,7 +143,7 @@ export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, b
       <PolygonPreview selection={selection} />
       <ShapePreview selection={selection} onHandlePointer={onShapeHandlePointer} />
       <CropOverlay crop={crop} />
-      {!interactive && objects.map((obj) => {
+      {!interactive && objects.filter((obj) => !hiddenObjectIds.has(obj.id)).map((obj) => {
         const selected = obj.id === selectedId;
         return (
           <button
