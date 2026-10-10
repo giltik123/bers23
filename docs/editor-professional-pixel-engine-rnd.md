@@ -16,6 +16,7 @@
 | `ProfessionalResizeLanczosRND.ts` | Separable antialiased Lanczos3 (widened filter support when downsampling), sRGB EOTF/OETF, premultiplied linear-light RGBA, local min/max anti-ringing clamp and no painted edge from hidden transparent RGB | Preserve high-frequency detail while resizing, reduce downsampling aliasing and blue/black fringes at cut-out edges |
 | `ProfessionalLinearLayersRND.ts` | Accurate source-over in linear RGB, unassociated input/output with per-layer alpha, R8 mask, Q8 opacity, immutable bytes and deterministic output | More physically plausible lighting at translucent mask boundaries; white over black at 50% opacity is around sRGB 188, not 128 |
 | `HighlightProtectedToneRND.ts` | Monotone rational soft-shoulder curve on max channel in linear RGB, preserves linear RGB ratios, explicit mask and original alpha, no clipping plateau at positive stops | Brighten midtones without the former indiscriminate 255 channel plateau. Does not recover already-clipped source data |
+| `ProfessionalCloneStampRND.ts` | Actual local pixel-copy retouch tool: separately chosen source/target point, circular 1px-antialiased soft/hard brush, R8 protection matte, linear-light color mixing and exact target alpha/source immutability | Manually repair small photo details by cloning existing texture without a remote model or indiscriminate blur. This is a Clone Stamp, **not** content-aware healing. |
 
 ### Existing rights, fidelity and safety boundaries
 
@@ -25,7 +26,7 @@ Input requirement: Canonical orientation-1 **sRGB** RGBA8, independently source-
 
 The photo-quality sample uses three publicly licensed Wikimedia photos from the already committed fixture config, normalized at 512px width. It records a three-way compare against the accepted bilinear kernel, the new antialiased Lanczos3 and Sharp Lanczos3 as a *diagnostic* (Sharp's gamma policy may differ). It also captures four tone/layer comparisons — source, legacy hard-clipped exposure, new soft-shoulder tone and linear-light white studio layer — with original and output SHA, ICC/EXIF inventory, timing/RSS, and protected-matte pixel checks. Reports must say `PENDING_INDEPENDENT_PHOTOGRAPHIC_REVIEW` and `coreAuthorityGranted:false`.
 
-Numerical tests cover exact no-op/flat pixels, checkerboard anti-aliasing and linear-light energy, opaque/transparent RGBA fringe behavior, anti-ringing minima/maxima, correct gamma-light layer blending, zero-mask preservation, relative hue stability, preserved tonal distinctions, fail-closed bad dimensions/parameters.
+Numerical tests cover exact no-op/flat pixels, checkerboard anti-aliasing and linear-light energy, opaque/transparent RGBA fringe behavior, anti-ringing minima/maxima, correct gamma-light layer blending, zero-mask preservation, relative hue stability, preserved tonal distinctions, fail-closed bad dimensions/parameters, and the Clone Stamp's source-registered RGB transfer, feather and protected alpha semantics.
 
 ## Acceptance before replacing the actual Editor
 
