@@ -23,6 +23,14 @@ The legacy `src/lib/pipeline/exportManager.js` relies on Canvas and `coreClient.
 
 The path-scoped CI `.github/workflows/editor-local-lossless-export-rnd.yml` builds an exact-head proof and runs the PNG decoder assertions. Passing CI means **lossless encoding contract for covered cases**, not full color-managed export acceptance.
 
+## Hosted real-photo PNG regression
+
+The path-scoped workflow now has a second job which takes **three publicly licensed original photographs** from the frozen Fashion fixture list. Each download is restricted to direct Wikimedia HTTPS URLs, capped at 25 MB and decoded to bounded, orientation-correct sRGB RGBA8 first.
+
+For each image the CI performs two independent local PNG exports, verifies deterministic encoded bytes within one runner, checks SHA-256 on canonical RGBA and file bytes, independently decodes PNG using Sharp, and requires every RGBA byte—including alpha and hidden RGB—to match exactly. It records source licensing, original/decoded SHA, dimensions, source format, embedded-profile/EXIF inventory, runtime and peak RSS. It uploads three actual PNGs and a machine-readable manifest named `bers-editor-png-export-real-photo-<exact-PR-head-SHA>`.
+
+**No claim of original-JPEG byte preservation or roundtrip of original camera ICC/EXIF tags**: the explicitly measured input is the canonical decoded sRGB frame after EXIF normalization. A valid PNG export is not proof of print-color accuracy, JPEG/WebP quality or canonical FINAL/tenant authority.
+
 ## Further Core/UX work
 
 1. A **Core-owned source resolver** must independently authorize `tenantId/userId/projectId`, the accepted FINAL Artifact identity and its actual stored source SHA, before serving any export bytes. Never trust a client-supplied claim.
