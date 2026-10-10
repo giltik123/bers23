@@ -11,6 +11,7 @@ on:
       - 'docs/v1-fashion-real-image-quality-evidence.md'
       - 'package.json'
       - '.github/workflows/v1-fashion-real-image-quality-evidence.yml'
+      - '.github/workflows/v1-fashion-real-image-quality-evidence-dispatch.yml'
   workflow_dispatch:
     inputs:
       fixture_manifest_url:
