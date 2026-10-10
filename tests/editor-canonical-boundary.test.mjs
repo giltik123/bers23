@@ -543,8 +543,11 @@ test('zero-object projects expose canonical whole-image Prompt without an unback
   assert.match(editor, /allowWholeImage=\{objects\.length === 0\}/);
   assert.match(editor, /applying=\{editorBusy \|\| committing\}/);
   assert.doesNotMatch(editor, /\) : objects\.length === 0 \? \(/);
-  assert.match(editor, /selectedObjectIds: objects\.filter\(\(object\) => object\.selected\)\.map\(\(object\) => object\.id\)/);
-  assert.match(editor, /maskArtifactIds: objects\.filter\(\(object\) => object\.selected && object\.mask_artifact_id\)\.map\(\(object\) => object\.mask_artifact_id\)/);
+  // A user-approved AI Studio scope is strict; zero-object legacy mode
+  // preserves old whole-image selection semantics when there is no scope.
+  assert.match(editor, /selectedObjectIds: guardedScope\s*\?\s*guardedScope\.selectedObjectIds\s*:\s*objects\.filter\(\(object\) => object\.selected\)\.map\(\(object\) => object\.id\)/);
+  assert.match(editor, /maskArtifactIds: guardedScope\s*\?\s*guardedScope\.maskArtifactIds\s*:\s*objects\.filter\(\(object\) => object\.selected && object\.mask_artifact_id\)\.map\(\(object\) => object\.mask_artifact_id\)/);
+  assert.match(editor, /bindGenerativeScope\(/);
 
   assert.match(bar, /allowWholeImage = false/);
   assert.match(bar, /const canEdit = Boolean\(selectedObject \|\| allowWholeImage\)/);
