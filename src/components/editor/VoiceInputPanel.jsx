@@ -42,9 +42,11 @@ export default function VoiceInputPanel({
   const [submitting,setSubmitting]=useState(false);
   const sourceKey=JSON.stringify([projectId,sourceArtifactId]);
   const [error,setError]=useState('');
+  const [notice,setNotice]=useState('');
   const [missingPack,setMissingPack]=useState(false);
   const [installing,setInstalling]=useState(false);
   const sessionRef=useRef(null);
+  const submittingRef=useRef(false);
   const generationRef=useRef(0);
   useEffect(()=>()=>{generationRef.current++;sessionRef.current?.abort();sessionRef.current=null;},[]);
   useEffect(()=>{
@@ -56,7 +58,7 @@ export default function VoiceInputPanel({
   const cancel=()=>{
     generationRef.current++;
     sessionRef.current?.abort();sessionRef.current=null;
-    setPhase('IDLE');setTranscript('');setPartial('');setError('');setTranscriptSource(null);setMissingPack(false);
+    setPhase('IDLE');setTranscript('');setPartial('');setError('');setNotice('');setTranscriptSource(null);setMissingPack(false);
   };
   useEffect(()=>{
     if(disabled && sessionRef.current){
@@ -70,7 +72,7 @@ export default function VoiceInputPanel({
     if(disabled||phase==='RECORDING'||phase==='PREPARING')return;
     const generation=++generationRef.current;
     sessionRef.current?.abort();sessionRef.current=null;
-    setError('');setMissingPack(false);setTranscript('');setPartial('');setTranscriptSource(sourceKey);setPhase('PREPARING');
+    setError('');setNotice('');setMissingPack(false);setTranscript('');setPartial('');setTranscriptSource(sourceKey);setPhase('PREPARING');
     try{
       const session=await createLocalVoiceSession({
         onPartial:value=>{if(generation===generationRef.current)setPartial(value);},
@@ -103,11 +105,11 @@ export default function VoiceInputPanel({
   };
   const installPack=async()=>{
     if(disabled||installing||!missingPack)return;
-    setInstalling(true);setError('');
+    setInstalling(true);setError('');setNotice('');
     try{
       await installLocalRussianVoicePack();
       setMissingPack(false);setPhase('IDLE');
-      setError('Русская модель установлена. Нажмите «Записать» для начала.');
+      setNotice('Русская модель установлена. Нажмите «Записать» для начала.');
     }catch(reason){setError(reason?.message||'Не удалось установить локальную модель.');}
     finally{setInstalling(false);}
   };
@@ -120,9 +122,10 @@ export default function VoiceInputPanel({
     draft=null;
   }
   const confirm=async()=>{
-    if(disabled||submitting||!draft||!transcriptSource ||
+    if(disabled||submittingRef.current||submitting||!draft||!transcriptSource ||
       transcriptSource!==sourceKey ||
       ['ACTION_NEEDS_UI','AMBIGUOUS','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind))return;
+    submittingRef.current=true;
     setSubmitting(true);
     try{
       if(['PROMPT_REPLACE','PROMPT_APPEND','PROMPT_CLEAR','NAVIGATE_PROMPT'].includes(draft.kind)){
@@ -136,7 +139,7 @@ export default function VoiceInputPanel({
       setError('');setPhase('IDLE');setTranscript('');setPartial('');
       setOpen(false);
     }catch(reason){setError(reason?.message||'Не удалось подтвердить голосовой ввод');}
-    finally{setSubmitting(false);}
+    finally{submittingRef.current=false;setSubmitting(false);}
   };
   return (
     <div className="space-y-2" aria-label="Голосовой ввод BERS">
@@ -189,6 +192,7 @@ export default function VoiceInputPanel({
             {draft.kind==='WARDROBE_QUERY'&&draft.params?.hints
               ?` — поиск: ${draft.params.query}`:''}
           </p>
+          {notice&&<p role="status" className="text-xs text-muted-foreground">{notice}</p>}
           {error&&<p role="alert" className="text-xs text-destructive">{error}</p>}
           {missingPack&&(
             <Button type="button" variant="outline" size="sm"
