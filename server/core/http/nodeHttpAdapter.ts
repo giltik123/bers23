@@ -22,7 +22,7 @@ import {
 import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 import { assertCanonicalSceneObjectPublication } from '../projects/sceneObjectAdmission.ts';
-import { runFalSam3Scene } from '../scene/falSam3SemanticInstances.ts';
+import { runFalSam3Scene, findSam3ScenePrompt } from '../scene/falSam3SemanticInstances.ts';
 import { runClassicalSceneSegmentation } from '../scene/classicalSceneSegmentation.ts';
 import { authenticatedOwnerScope, authenticatedProjectScope } from './authenticatedPrincipalScope.ts';
 
@@ -195,6 +195,11 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
           return sendError(response,503,'scene_model_unavailable',
             'Cloud semantic segmentation is not enabled',correlationId,false);
         const requestedModel=sceneMode==='SAM3'?'fal-ai/sam-3/image':'bers-classical-cv';
+        // One cloud request may refine only ONE explicitly selected class.
+        const chosenPrompt=sceneMode==='SAM3'?findSam3ScenePrompt(body?.promptKey):null;
+        if(sceneMode==='SAM3'&&!chosenPrompt)
+          return sendError(response,400,'invalid_scene_target',
+            'Choose one approved semantic class before cloud analysis',correlationId,false);
         const id=typeof body?.projectId==='string'?body.projectId:'';
         const token=typeof body?.sourceArtifactId==='string'?body.sourceArtifactId:'';
         if(!id||!token||!Number.isSafeInteger(body.expectedRevision)||
@@ -217,7 +222,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         const retainedAuto=(Array.isArray(current.objects)?current.objects:[])
           .filter((obj:any)=>obj?.metadata?.segmentation==='AUTO' &&
             obj?.metadata?.sourceArtifactId===token &&
-            obj?.metadata?.modelId===requestedModel);
+            obj?.metadata?.modelId===requestedModel &&
+            (sceneMode!=='SAM3'||obj?.metadata?.promptKey===chosenPrompt?.prompt));
         if(retainedAuto.length>0 && body.force!==true){
           await assertCanonicalSceneObjectPublication({
             objects:current.objects,sourceArtifactId:token,
@@ -243,7 +249,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
           const already=(Array.isArray(locked.objects)?locked.objects:[])
             .filter((obj:any)=>obj?.metadata?.segmentation==='AUTO' &&
               obj?.metadata?.sourceArtifactId===token &&
-            obj?.metadata?.modelId===requestedModel);
+            obj?.metadata?.modelId===requestedModel &&
+            (sceneMode!=='SAM3'||obj?.metadata?.promptKey===chosenPrompt?.prompt));
           if(already.length>0 && body.force!==true){
             await assertCanonicalSceneObjectPublication({
               objects:locked.objects,sourceArtifactId:token,
@@ -262,6 +269,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
           : await runFalSam3Scene({
               imagePng:new Uint8Array(source.bytes),
               width:source.width,height:source.height,falKey:input.config.falKey!,
+              promptKey:chosenPrompt!.prompt,
               signal:AbortSignal.timeout(Math.min(input.config.requestTimeoutMs,120_000)),
             });
         const latest=await input.projects.get(principal,id);
@@ -294,12 +302,18 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
             mask_url:null,
             metadata:{segmentation:'AUTO',modelId:instance.modelId,
               modelVersion:instance.modelVersion,sourceArtifactId:token,
+              ...(sceneMode==='SAM3'?{promptKey:chosenPrompt!.prompt}:{}),
               maskState:'CORE_PERSISTED_UNREVIEWED'},
           });
         }
         const prior=Array.isArray(latest.objects)?latest.objects:[];
-        const manual=prior.filter((item:any)=>item?.metadata?.segmentation!=='AUTO');
-        const next=[...manual,...additions];
+        // Preserve manual selections, free classical masks and all *other*
+        // SAM3 categories. Re-running FACE only replaces the old FACE masks.
+        const retained=prior.filter((item:any)=>
+          item?.metadata?.segmentation!=='AUTO' ||
+          item?.metadata?.modelId!==requestedModel ||
+          (sceneMode==='SAM3'&&item?.metadata?.promptKey!==chosenPrompt?.prompt));
+        const next=[...retained,...additions];
         await assertCanonicalSceneObjectPublication({
           objects:next,sourceArtifactId:token,sourceStorageId:storageId,
           scope,artifacts:input.artifacts,
