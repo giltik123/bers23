@@ -65,8 +65,8 @@ export default function ResultCompare({
     setFashionReview(EMPTY_REVIEW);
     setScopedReview(false);
     setAcknowledgedIdentity(identity);
-    setLoaded({ before: null, after: null });
-    setFailed({ before: null, after: null });
+    // Loaded/error flags carry the candidate identity. Do not reset them
+    // here: a cached image may fire onLoad before this passive effect runs.
     setSplit(50);
     setView('after');
     setZoom(1);
