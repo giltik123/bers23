@@ -17,16 +17,18 @@ const EMPTY_REVIEW = Object.freeze({ fit: false, occlusion: false, texture: fals
  * visually reviewed should never be described as an accepted Fashion output.
  */
 export default function ResultCompare({
-  beforeUrl, result, kind = null, onAccept, onDiscard, onRetry, busy,
+  beforeUrl, result, kind = null, editScope = null, onAccept, onDiscard, onRetry, busy,
 }) {
   const [view, setView] = useState('after');
   const [split, setSplit] = useState(50);
   const [zoom, setZoom] = useState(1);
   const [fashionReview, setFashionReview] = useState(EMPTY_REVIEW);
+  const [scopedReview, setScopedReview] = useState(false);
   const imageUrl = result?.preview_url || result?.image_url;
   const fashion = kind === 'FASHION_TRYON';
+  const scopedGeneration = kind === 'AI_SCOPED_GENERATION';
   const allFashionAccepted = !fashion || Object.values(fashionReview).every(Boolean);
-  const acceptDisabled = busy || !imageUrl || !allFashionAccepted;
+  const acceptDisabled = busy || !imageUrl || !allFashionAccepted || (scopedGeneration && !scopedReview);
   const gestures = useAdaptiveGestures({
     onSwipeLeft: () => setView('after'),
     onSwipeRight: () => setView('before'),
@@ -34,10 +36,11 @@ export default function ResultCompare({
 
   useEffect(() => {
     setFashionReview(EMPTY_REVIEW);
+    setScopedReview(false);
     setSplit(50);
     setView('after');
     setZoom(1);
-  }, [result?.finalArtifactId, result?.preview_url, beforeUrl]);
+  }, [result?.finalArtifactId, result?.preview_url, beforeUrl, editScope]);
 
   return (
     <section className="border border-border/60 rounded-2xl p-3 space-y-4"
@@ -110,6 +113,23 @@ export default function ResultCompare({
         </p>
       )}
 
+      {scopedGeneration&&(
+        <div className="rounded-xl border border-amber-600/35 p-3 space-y-3"
+          aria-label="Проверка результата генеративного ИИ">
+          <h3 className="font-medium text-sm">ИИ · качество готовой фотографии</h3>
+          <p className="text-xs text-muted-foreground">
+            {editScope==='MASKED'
+              ? 'Проверьте в сравнении, что вне выбранной маски человек, фон, текстуры и мелкие детали не изменились. Если изменения заметны — отклоните результат.'
+              : 'Проверьте весь кадр: нет ли искажений лица, рук, объектов, текста, света и текстур.'}
+            {' '}Галочка означает только вашу проверку, а не автоматическую оценку качества.
+          </p>
+          <label className="flex gap-2 items-start text-sm">
+            <input type="checkbox" className="mt-1" disabled={busy}
+              checked={scopedReview} onChange={e=>setScopedReview(e.target.checked)}/>
+            <span>Я просмотрел итоговое изображение и считаю результат подходящим для принятия.</span>
+          </label>
+        </div>
+      )}
       {fashion&&(
         <div className="rounded-xl border border-amber-600/35 p-3 space-y-3"
           aria-label="Ручная оценка реализма Fashion">
