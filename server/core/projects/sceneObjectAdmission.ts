@@ -63,6 +63,7 @@ export async function assertCanonicalSceneObjectPublication(input: Readonly<{
     catch {throw denied('Scene Object MASK signature or scope is invalid');}
     const stored=await input.artifacts.masks.load(maskClaim.storageId,input.scope);
     if(!stored || stored.sourceImageStorageId!==input.sourceStorageId ||
+       stored.producerOperation!=='LOCAL_SEGMENTATION' ||
        stored.width!==source.width || stored.height!==source.height)
       throw denied('Scene Object MASK is not bound to the exact canonical photo');
     seenMasks.add(obj.mask_artifact_id);
