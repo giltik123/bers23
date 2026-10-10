@@ -1,0 +1,114 @@
+name: Editor professional local pixel quality R&D
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/platform/creative/deterministic/ProfessionalResizeLanczosRND.ts'
+      - 'src/platform/creative/deterministic/ProfessionalLinearLayersRND.ts'
+      - 'src/platform/creative/deterministic/HighlightProtectedToneRND.ts'
+      - 'tests/editor-professional-resize-lanczos-rnd.test.mjs'
+      - 'tests/editor-professional-linear-layers-rnd.test.mjs'
+      - 'tests/editor-highlight-protected-tone-rnd.test.mjs'
+      - 'scripts/capture-professional-editor-real-photo-rnd.mjs'
+      - 'config/v1-fashion-real-image-fixtures.json'
+      - 'src/platform/creative/deterministic/Resize.ts'
+      - 'src/platform/creative/deterministic/MaskedExposure.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'docs/editor-professional-pixel-engine-rnd.md'
+      - '.github/workflows/editor-professional-pixel-quality-rnd.yml'
+
+permissions:
+  contents: read
+concurrency:
+  group: bers-pro-editor-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  professional-kernel-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Exact commit under test
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Bundle independent pure-kernel tests
+        run: |
+          mkdir -p .test-cache/editor-pro-quality
+          npx esbuild \
+            tests/editor-professional-resize-lanczos-rnd.test.mjs \
+            tests/editor-professional-linear-layers-rnd.test.mjs \
+            tests/editor-highlight-protected-tone-rnd.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outdir=.test-cache/editor-pro-quality --out-extension:.js=.mjs \
+            --external:node:*
+      - name: Prove antialiasing, alpha, anti-ringing, source protection and soft highlights
+        run: node --test .test-cache/editor-pro-quality/*.test.mjs
+      - name: Existing TS/browser build contract
+        run: |
+          npm run typecheck
+          npm run build
+      - name: No whitespace errors on PR diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA..HEAD"
+
+  professional-real-photo-comparison:
+    needs: professional-kernel-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+      QA_DIR: .test-cache/editor-pro-real-photo
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Bundle three-photo independent A/B comparison
+        run: |
+          mkdir -p .test-cache/editor-pro-quality
+          npx esbuild scripts/capture-professional-editor-real-photo-rnd.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-pro-quality/capture.mjs \
+            --external:sharp --external:node:*
+      - name: Measure legacy vs professional resize and highlight clipping
+        run: |
+          node .test-cache/editor-pro-quality/capture.mjs "$QA_DIR"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const r=JSON.parse(readFileSync(process.env.QA_DIR+'/professional-raster-quality-manifest.json','utf8'));
+          assert.equal(r.candidateSha,process.env.EXPECTED_SHA);
+          assert.equal(r.kind,'BERS_EDITOR_PROFESSIONAL_RASTER_REAL_PHOTO_RND');
+          assert.equal(r.sampleCount,3);
+          assert.equal(r.qualityGrade,'PENDING_INDEPENDENT_PHOTOGRAPHIC_REVIEW');
+          assert.equal(r.coreAuthorityGranted,false);
+          assert.equal(r.productionToolEnabled,false);
+          assert.equal(r.cloudProviderUsed,false);
+          assert.ok(r.records.every(x=>x.exactSourcePixelsUnchanged));
+          assert.ok(r.records.every(x=>x.protectedLayerChannelsChanged===0));
+          assert.ok(r.records.every(x=>x.protectedToneChannelsChanged===0));
+          assert.ok(r.records.every(x=>x.newHighlightProtectedClippedPixels<=x.previousV1ClippedPixels));
+          NODE
+      - name: Preserve full source/A-B/ref PNG and sha-bound diagnostics for human review
+        uses: actions/upload-artifact@v4
+        with:
+          name: bers-editor-professional-pixel-ab-${{ github.event.pull_request.head.sha }}
+          path: ${{ env.QA_DIR }}
+          if-no-files-found: error
+          retention-days: 45
