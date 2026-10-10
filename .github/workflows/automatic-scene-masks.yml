@@ -1,0 +1,49 @@
+name: Automatic scene masks and canonical lineage
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/scene/**'
+      - 'src/components/editor/AutoSceneMasksPanel.jsx'
+      - 'src/components/editor/CanonicalMaskPreview.jsx'
+      - 'src/components/editor/ObjectPanel.jsx'
+      - 'src/components/editor/ImageCanvas.jsx'
+      - 'src/pages/Editor.jsx'
+      - 'src/api/coreClient.js'
+      - 'server/core/http/nodeHttpAdapter.ts'
+      - 'server/core/http/maskArtifactHttpAdapter.ts'
+      - 'server/core/projects/postgresProjectStore.ts'
+      - 'tests/auto-scene-masks.test.mjs'
+      - 'tests/auto-scene-mask-preview-adapter.test.mjs'
+      - '.github/workflows/automatic-scene-masks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-bound-semantic-mask-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact PR head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Test source-bound five-category scene admission
+        run: node --test tests/auto-scene-masks.test.mjs
+      - name: Test authenticated Core MASK overlay transport
+        run: node --experimental-strip-types --test tests/auto-scene-mask-preview-adapter.test.mjs
+      - name: Typecheck and build actual Editor and Core
+        run: |
+          npm run typecheck
+          npm run server:typecheck
+          npm run build
+      - name: Exact candidate diff hygiene
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
