@@ -10,6 +10,8 @@ on:
       - 'src/components/editor/compareGeometryPolicy.js'
       - 'tests/editor-raster-layer-stack-rnd.test.mjs'
       - 'tests/editor-quality-inspector-rnd.test.mjs'
+      - 'scripts/capture-editor-layer-stack-rnd.mjs'
+      - 'config/v1-fashion-real-image-fixtures.json'
       - 'tests/editor-layer-document-rnd.test.mjs'
       - 'tests/editor-result-compare-inspector.test.mjs'
       - 'docs/bers-v1-quality-first-expansion-20261010.md'
@@ -49,3 +51,52 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: git diff --check "$BASE_SHA..HEAD"
+
+  editor-layer-real-image-review:
+    needs: editor-layer-pixel-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+      REVIEW_DIR: .test-cache/editor-layer-real-image-rnd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Bundle local raster-layer quality capture
+        run: |
+          mkdir -p .test-cache/editor-layer-build
+          npx esbuild scripts/capture-editor-layer-stack-rnd.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-layer-build/capture.mjs \
+            --external:sharp --external:node:*
+      - name: Compare three licensed photographs with masked raster layer
+        run: |
+          node .test-cache/editor-layer-build/capture.mjs "$REVIEW_DIR"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const report=JSON.parse(readFileSync(process.env.REVIEW_DIR+'/layer-photo-review-manifest.json','utf8'));
+          assert.equal(report.candidateSha,process.env.EXPECTED_SHA);
+          assert.equal(report.kind,'BERS_EDITOR_LAYER_REAL_IMAGE_REVIEW_RND');
+          assert.equal(report.count,3);
+          assert.equal(report.visualGrade,'PENDING_INDEPENDENT_HUMAN_REVIEW');
+          assert.equal(report.productionEnabled,false);
+          assert.equal(report.cloudProviderUsed,false);
+          assert.equal(report.reports.length,3);
+          assert.ok(report.reports.every(r=>r.audit.changedProtectedPixels===0));
+          assert.ok(report.reports.every(r=>r.audit.changedAuthorizedPixels>0));
+          assert.ok(report.reports.every(r=>r.audit.protectedPixels>0));
+          NODE
+      - name: Publish unchanged source, output and difference images for human review
+        uses: actions/upload-artifact@v4
+        with:
+          name: bers-editor-layer-real-image-rnd-${{ github.event.pull_request.head.sha }}
+          path: ${{ env.REVIEW_DIR }}
+          if-no-files-found: error
+          retention-days: 30
