@@ -12,3 +12,17 @@ export function canComparePixelsAligned(before, after) {
   return Boolean(valid(before) && valid(after) &&
     before.width === after.width && before.height === after.height);
 }
+
+/**
+ * Natural dimensions alone cannot prove co-registration. Only Editor operations
+ * that preserve source-frame coordinates may opt into split inspection.
+ * Unknown/AI/geometric operations stay in before/after mode even when square
+ * rotations happen to have identical output dimensions.
+ */
+export function canCompareOperationAligned(operation) {
+  return operation === 'MASKED_EXPOSURE' ||
+    operation === 'MASKED_WHITE_BALANCE' ||
+    operation === 'MASKED_LEVELS' ||
+    operation === 'BACKGROUND_ISOLATION' ||
+    operation === 'FASHION_TRYON';
+}
