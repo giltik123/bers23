@@ -1,0 +1,73 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import sharp from 'sharp';
+import { runFalSam3Scene,decodeSam3Mask,SAM3_SCENE_PROMPTS } from '../server/core/scene/falSam3SemanticInstances.ts';
+
+const png=async(width,height,pixels,channels=1)=>
+  sharp(Buffer.from(pixels),{raw:{width,height,channels}}).png().toBuffer();
+const uri=bytes=>'data:image/png;base64,'+bytes.toString('base64');
+
+test('real SAM3 contract makes bounded authenticated prompt calls and decodes distinct alpha pixels',async()=>{
+  const source=await png(4,4,new Uint8Array(4*4*3).fill(127),3);
+  const mask=await png(2,2,[255,0,0,0]);
+  const seen=[];
+  const result=await runFalSam3Scene({
+    imagePng:source,width:4,height:4,falKey:'ci-fake-key',
+    fetcher:async(url,opts)=>{
+      const body=JSON.parse(opts.body);
+      seen.push({url,prompt:body.prompt,authorization:opts.headers.Authorization,
+        include_scores:body.include_scores, sync_mode:body.sync_mode,apply_mask:body.apply_mask});
+      return new Response(JSON.stringify({
+        masks:[{url:uri(mask)}],scores:[0.91],
+      }),{status:200,headers:{'Content-Type':'application/json'}});
+    },
+  });
+  assert.equal(seen.length,SAM3_SCENE_PROMPTS.length);
+  assert.ok(seen.every(x=>x.url==='https://fal.run/fal-ai/sam-3/image'
+    &&x.authorization==='Key ci-fake-key'&&x.include_scores===true
+    &&x.sync_mode===true&&x.apply_mask===false));
+  assert.equal(result.instances.length,SAM3_SCENE_PROMPTS.length);
+  assert.equal(result.instances[0].alpha.length,16);
+  assert.equal(result.instances[0].alpha[0],255);
+  assert.equal(result.instances[0].alpha[1],255);
+  assert.equal(result.instances[0].alpha[2],0);
+  assert.equal(result.instances[0].alpha[8],0);
+  assert.equal(result.instances[0].confidence,0.91);
+  assert.ok(new Set(result.instances.map(x=>x.group)).has('FACE'));
+  assert.ok(new Set(result.instances.map(x=>x.group)).has('CLOTHING'));
+  assert.ok(new Set(result.instances.map(x=>x.group)).has('ACCESSORY'));
+  assert.ok(new Set(result.instances.map(x=>x.group)).has('BACKGROUND'));
+  assert.ok(new Set(result.instances.map(x=>x.group)).has('OTHER_OBJECT'));
+});
+
+test('reject colored provider preview instead of manufacturing a selection',async()=>{
+  const colored=await png(2,1,[255,0,0, 0,0,255],3);
+  await assert.rejects(()=>decodeSam3Mask(colored,2,1),/colored image/);
+});
+
+test('empty, all-selected, unscored, and unknown-provider output is never promoted to masks',async()=>{
+  assert.equal(await decodeSam3Mask(await png(2,2,[0,0,0,0]),2,2),null);
+  assert.equal(await decodeSam3Mask(await png(2,2,[255,255,255,255]),2,2),null);
+  const source=await png(2,2,[110,120,130,140]);
+  const mask=await png(2,2,[255,0,0,0]);
+  const empty=await runFalSam3Scene({
+    imagePng:source,width:2,height:2,falKey:'fake',
+    fetcher:async()=>new Response(JSON.stringify({masks:[{url:uri(mask)}]}),{status:200}),
+  });
+  assert.deepEqual(empty.instances,[]);
+  await assert.rejects(()=>runFalSam3Scene({
+    imagePng:source,width:2,height:2,falKey:'fake',
+    fetcher:async()=>new Response(JSON.stringify({
+      masks:[{url:'https://evil.example/mask.png'}],scores:[.8],
+    }),{status:200}),
+  }),/inlined PNG/);
+});
+
+test('fail closed without server-side credentials or on provider HTTP errors',async()=>{
+  const source=await png(2,2,[0,0,0,255]);
+  await assert.rejects(()=>runFalSam3Scene({imagePng:source,width:2,height:2,falKey:''}),/server-only API key/);
+  await assert.rejects(()=>runFalSam3Scene({
+    imagePng:source,width:2,height:2,falKey:'fake',
+    fetcher:async()=>new Response('upstream unavailable',{status:503}),
+  }),/HTTP 503/);
+});
