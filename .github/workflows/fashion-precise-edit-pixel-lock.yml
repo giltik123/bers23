@@ -6,6 +6,7 @@ on:
       - 'tests/precise-edit-pixel-lock.test.mjs'
       - 'docs/fashion-ideogram45-precise-edit-research.md'
       - 'scripts/compare-fashion-precise-edit-real-images.mjs'
+      - 'tests/precise-edit-real-image-comparison.test.mjs'
       - '.github/workflows/fashion-precise-edit-pixel-lock.yml'
 permissions:
   contents: read
@@ -40,6 +41,8 @@ jobs:
           node-version: '24.x'
           cache: npm
       - run: npm ci
+      - name: Test independent torso leakage detection
+        run: node --experimental-strip-types --test tests/precise-edit-real-image-comparison.test.mjs
       - name: Build trusted deterministic real-photo capture harness
         run: |
           mkdir -p .test-cache/fashion-real-image-build
