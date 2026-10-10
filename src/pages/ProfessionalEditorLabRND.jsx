@@ -334,6 +334,44 @@ export default function ProfessionalEditorLabRND() {
       </section>
       <section className="border rounded-xl p-3 space-y-3" aria-label="Local Clone Stamp brush settings">
         <div className="flex flex-wrap gap-3 items-center">
+          <button type="button" disabled={disabled}
+            onClick={()=>{setToolMode('CLONE');setCloneMode('PICK_SAMPLE');}}
+            aria-pressed={toolMode==='CLONE'}
+            className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">
+            Clone Stamp tool
+          </button>
+          <button type="button" disabled={disabled}
+            onClick={()=>{setToolMode('MASK');setToneRegion('BRUSH');}}
+            aria-pressed={toolMode==='MASK'}
+            className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">
+            Paint gentle selection
+          </button>
+          <select aria-label="Paint selection mode" value={maskStrokeMode} disabled={disabled}
+            onChange={e=>setMaskStrokeMode(e.target.value)}
+            className="border rounded-lg px-2 py-2 text-sm bg-background">
+            <option value="ADD">Add selection</option>
+            <option value="SUBTRACT">Erase selection</option>
+          </select>
+          <button type="button" disabled={disabled || maskHistory.length===0}
+            onClick={() => {
+              setManualMask(new Uint8Array(maskHistory[maskHistory.length-1]));
+              setMaskHistory(history=>history.slice(0,-1));
+            }} className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">
+            Undo selection stroke
+          </button>
+          <button type="button" disabled={disabled} onClick={()=>{
+            if(manualMask) {
+              setMaskHistory(h=>[...h.slice(-(MAX_HISTORY-1)),new Uint8Array(manualMask)]);
+              setManualMask(new Uint8Array(manualMask.length));
+            }
+          }} className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">
+            Clear selection
+          </button>
+          <label className="text-sm inline-flex gap-1 items-center">
+            <input type="checkbox" checked={showSelectionOverlay}
+              onChange={e=>setShowSelectionOverlay(e.target.checked)} />
+            Show mask overlay
+          </label>
           <button type="button" disabled={disabled} onClick={()=>setCloneMode('PICK_SAMPLE')}
             className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">
             Select Clone source point
@@ -346,9 +384,40 @@ export default function ProfessionalEditorLabRND() {
           <label className="text-sm">Opacity <input type="range" min="0" max="255" value={brushOpacity}
             onChange={e=>setBrushOpacity(Number(e.target.value))} disabled={disabled} />{brushOpacity}/255</label>
         </div>
-        <p className="text-xs text-muted-foreground">Select a source point, then click the Current image. Texture is sampled from the unchanged pre-stroke pixels. Undo reverses any stamp. This is manual clone, not healing AI.</p>
+        <p className="text-xs text-muted-foreground">
+          Clone: choose a source point and stamp existing texture. Selection: paint a soft edit area,
+          then use Hand-painted selection only and apply tone. The magenta overlay is never exported.
+          Neither tool guesses where skin or clothing is. This is not AI healing.
+        </p>
       </section>
       {message && <p role="status" className="text-sm text-muted-foreground">{message}</p>}
+      <section className="rounded-xl border p-3 space-y-2"
+        aria-label="Final photograph visual acceptance checklist">
+        <h2 className="font-semibold">Final result visual review — not pixel/resolution QA</h2>
+        <p className="text-sm text-muted-foreground">
+          Compare original and edited photo. Only mark these checks when the actual final result
+          looks convincing. Each new edit resets the review.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          {[
+            ['looksNatural','Light, skin and color look natural'],
+            ['preservesSubject','Face, fabric, print and texture are intact'],
+            ['noVisibleArtifacts','No visible borders, halos, seams or fake patches'],
+            ['betterThanSource','The finished photograph is genuinely better than the original'],
+          ].map(([key,label])=>(
+            <label key={key} className="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" disabled={disabled}
+                checked={qualityReview[key]}
+                onChange={e=>setQualityReview(old=>({...old,[key]:e.target.checked}))}/>
+              {label}
+            </label>
+          ))}
+        </div>
+        <p role="status" className="text-sm">
+          {reviewed ? 'Human-marked outcome reviewed. Export is available.'
+            : 'Final-photo quality not approved. Local PNG export is blocked.'}
+        </p>
+      </section>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <PreviewCanvas frame={original} title="Original browser-decoded source" />
         <PreviewCanvas frame={current} title="Current unaccepted local preview"
