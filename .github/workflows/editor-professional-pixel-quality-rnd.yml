@@ -12,6 +12,9 @@ on:
       - 'tests/editor-professional-linear-layers-rnd.test.mjs'
       - 'tests/editor-highlight-protected-tone-rnd.test.mjs'
       - 'tests/editor-professional-clone-stamp-rnd.test.mjs'
+      - 'tests/editor-professional-lab-dev-gate.test.mjs'
+      - 'src/pages/ProfessionalEditorLabRND.jsx'
+      - 'src/App.jsx'
       - 'scripts/capture-professional-editor-real-photo-rnd.mjs'
       - 'config/v1-fashion-real-image-fixtures.json'
       - 'src/platform/creative/deterministic/Resize.ts'
@@ -57,6 +60,8 @@ jobs:
             --external:node:*
       - name: Prove antialiasing, alpha, anti-ringing, source protection and soft highlights
         run: node --test .test-cache/editor-pro-quality/*.test.mjs
+      - name: Prove the experimental lab is a protected dev-only local route
+        run: node --test tests/editor-professional-lab-dev-gate.test.mjs
       - name: Existing TS/browser build contract
         run: |
           npm run typecheck
