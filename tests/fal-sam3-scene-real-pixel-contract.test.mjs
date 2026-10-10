@@ -33,6 +33,12 @@ test('a selected object produces exactly ONE authorized SAM3 request and true or
   assert.equal(result.instances[0].category,'FACE');
   assert.equal(result.instances[0].promptKey,'face');
   assert.equal(result.instances[0].alpha.length,16);
+  assert.deepEqual([...result.instances[0].alpha],[
+    255,255,0,0,
+    255,255,0,0,
+    0,0,0,0,
+    0,0,0,0,
+  ]);
   assert.equal(result.instances[0].alpha[0],255);
   assert.equal(result.instances[0].alpha[1],255);
   assert.equal(result.instances[0].alpha[2],0);

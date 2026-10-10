@@ -56,7 +56,7 @@ export async function decodeSam3Mask(data:Uint8Array,width:number,height:number)
   if(raw.info.width===width&&raw.info.height===height)return result;
   // Nearest-neighbour only; do not invent feathered edges by RGB scaling.
   const scaled=await sharp(result,{raw:{width:raw.info.width,height:raw.info.height,channels:1}})
-    .resize(width,height,{kernel:'nearest',fit:'fill'}).raw().toBuffer();
+    .resize(width,height,{kernel:'nearest',fit:'fill'}).toColourspace('b-w').raw().toBuffer();
   return new Uint8Array(scaled);
 }
 
