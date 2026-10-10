@@ -87,8 +87,7 @@ export function applyEditorLayerDraftHistoryRND(
 ): EditorLayerDraftHistoryRND {
   assertCurrent(state,expectedRevision,currentSourceSha256);
   const next=changeEditorLayerDocumentRND(state.current,{
-    expectedRevision,currentSourceSha256:undefined as never,
-    sourceSha256:currentSourceSha256,change,
+    expectedRevision,sourceSha256:currentSourceSha256,change,
   });
   return historyState(next,[...state.undo.slice(-63),state.current],[]);
 }
