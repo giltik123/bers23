@@ -969,6 +969,8 @@ export default function Editor() {
 
       <ImageCanvas
         imageUrl={project.current_image_url}
+        projectId={project.id} sourceArtifactId={project.current_image_artifact_id}
+        imageWidth={project.width} imageHeight={project.height}
         objects={objects}
         selectedId={selected?.id}
         onSelect={(obj) => selectObject(obj.id)}
