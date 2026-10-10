@@ -798,7 +798,7 @@ export default function Editor() {
       if (result.status === 'UNKNOWN') throw Object.assign(new Error('Provider result is pending reconciliation'), { code: 'PROVIDER_OUTCOME_PENDING', retryable: false });
       if (result.status !== 'SUCCESS' || !result.imageUrl) throw Object.assign(new Error('Edit failed'), { code: 'provider_failure' });
       const editorResult = { ...result, image_url: result.imageUrl, generation_time_ms: result.timing?.durationMs, credits_used: result.creditsUsed };
-      setPendingResult((current) => { disposePendingPreview(current); return { kind: guardedScope ? 'AI_SCOPED_GENERATION' : null, result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url }; });
+      setPendingResult((current) => { disposePendingPreview(current); return { kind: guardedScope ? 'AI_SCOPED_GENERATION' : null, scope: guardedScope?.scope ?? null, result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url }; });
       recipeEngine.recordOutcome(activeRecipe?.id, { success: true, durationMs: editorResult.generation_time_ms, credits: editorResult.credits_used });
       return editorResult;
     } catch (e) {
@@ -1152,6 +1152,7 @@ export default function Editor() {
           beforeUrl={pendingResult.beforeUrl}
           result={pendingResult.result}
           kind={pendingResult.kind || null}
+          editScope={pendingResult.scope || null}
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
