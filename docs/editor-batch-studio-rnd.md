@@ -22,6 +22,14 @@ All steps run only in memory with zero cloud/paid provider, no automatic FINAL, 
 
 CI is exact PR-head SHA, with build + tests + typecheck. Passing is a **local CPU operation contract**, not human visual proof of skin/ICC and not evidence of production authority.
 
+## Real-photo independent replay campaign
+
+The CI workflow now also downloads exactly the **three existing licensed Fashion source photographs** over allowlisted direct Wikimedia HTTPS URLs. Each original is orientation-normalized and decoded to sRGB RGBA8 with 512px width before the R&D batch executes `CROP (center 80%) → RESIZE (320px wide) → ROTATE_90_CW`.
+
+For each real image the verifier independently executes the three **accepted BERS kernels one at a time**, compares every result RGBA byte against the Batch Studio output, recomputes source/output SHA-256, checks the source buffer was untouched, rejects a one-byte source substitution, and repeats the entire batch to demand identical output bytes and hashes. It emits normalized source, Batch output and independent reference PNGs plus per-photo pixel identities, runtime, EXIF/ICC inventory and runner peak RSS. GitHub artifact name: `bers-editor-batch-real-photo-<exact-PR-SHA>`.
+
+The source files are **real licensed photographs**, but the geometric transforms are deliberately ordinary: this validates R&D replay/integrity and not advanced retouching, skin-tone or AI fashion quality. The manifest remains `humanVisualGrade:PENDING_INDEPENDENT_REVIEW`; no user images, Core Artifacts, production authority or background worker are touched.
+
 ## Graduation plan
 
 1. Core must independently validate the authenticated user, tenant, Project, accepted source FINAL Artifact ID/SHA, current revision and any MASK before issuing a **bounded per-image execution ticket**; never trust browser claims.
