@@ -305,9 +305,9 @@ export const coreClient = Object.freeze({
   },
   scene: {
     capability: () => request('/scene/capability'),
-    analyze: ({projectId,sourceArtifactId,expectedRevision}) => request(
+    analyze: ({projectId,sourceArtifactId,expectedRevision,force=false}) => request(
       '/scene/analyze',
-      json('POST',{projectId,sourceArtifactId,expectedRevision}),
+      json('POST',{projectId,sourceArtifactId,expectedRevision,force}),
     ),
   },
   projects: {
