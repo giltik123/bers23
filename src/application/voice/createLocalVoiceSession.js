@@ -4,6 +4,8 @@
  * Web Speech's default can send audio remotely; NEVER use that default.
  * We deliberately do not select webkitSpeechRecognition or remote fallback.
  */
+import { chooseVoiceRecognitionRoute } from './VoiceCapabilityRouter.js';
+
 export const LOCAL_VOICE_MAX_MS=30_000;
 export class LocalVoiceUnavailable extends Error {
   constructor(code,message){
@@ -34,6 +36,12 @@ export async function createLocalVoiceSession({
     throw new LocalVoiceUnavailable('LOCAL_ASR_CHECK_FAILED',
       'Не удалось проверить локальную языковую модель. Запись не начата.');
   }
+  const route=chooseVoiceRecognitionRoute({
+    locale,privacy:'LOCAL_ONLY',osOnDeviceAvailable:available==='available',
+  });
+  if(route.tier!=='OS_ON_DEVICE' && available==='available')
+    throw new LocalVoiceUnavailable('LOCAL_ASR_ROUTING_FAILED',
+      'Локальный речевой движок не прошёл маршрутизацию безопасности.');
   if(available!=='available'){
     throw new LocalVoiceUnavailable(
       available==='downloadable'||available==='downloading'
