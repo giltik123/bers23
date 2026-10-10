@@ -37,6 +37,7 @@ import { aiPlanner } from '@/lib/planner/aiPlanner';
 import ObjectPanel from '@/components/editor/ObjectPanel';
 import EditorStatusBar from '@/components/editor/EditorStatusBar';
 import SegmentationProgress from '@/components/editor/SegmentationProgress';
+import AutoSceneMasksPanel from '@/components/editor/AutoSceneMasksPanel';
 import PipelineStatusBar from '@/components/editor/PipelineStatusBar';
 import { sceneMemory } from '@/lib/scene/sceneMemory';
 import { styleLock } from '@/lib/scene/styleLock';
@@ -1076,12 +1077,19 @@ export default function Editor() {
       <CreditsBar estimate={!pendingResult && plan?.status === 'ready' ? (plan.credits?.credits ?? 0) : 0} />
 
       <AdaptivePanel title="Scene Memory"><SceneMemoryPanel project={project} /></AdaptivePanel>
+      <AutoSceneMasksPanel
+        project={project}
+        disabled={editorBusy || committing || Boolean(pendingResult) ||
+          Boolean(selection) || cropInteractionActive || resizeInteractionActive}
+        onComplete={reload}
+        onManualSelect={startSelection}
+      />
 
       <EditorStatusBar
         objectCount={objects.length}
         selectionCount={objects.filter((o) => o.selected).length}
         selectionMode="single"
-        maskedCount={objects.filter((o) => o.mask_url).length}
+        maskedCount={objects.filter((o) => o.mask_artifact_id).length}
         segmentationStatus={objects.length ? 'completed' : 'idle'}
         cacheStatus="empty"
       />
@@ -1089,7 +1097,11 @@ export default function Editor() {
       {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
 
       {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
-        <p className="text-[11px] text-muted-foreground text-center">Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.</p>
+        <p className="text-[11px] text-muted-foreground text-center">
+          После открытия фотографии BERS проверяет доступность автоматического анализа.
+          Пока семантическая модель не подключена, можно выделить область вручную —
+          редактор не создаёт фиктивные маски.
+        </p>
       )}
 
       {pendingResult ? (
