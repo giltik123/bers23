@@ -56,7 +56,13 @@ export default function AICommandStudio({
     setSubmitting(true);setExecutionError('');
     try{
       const safe=sanitizePhotoAdjustmentDraft({...plan,parameters});
-      await onExecuteAdjustment(safe);
+      await onExecuteAdjustment({
+        ...safe,
+        expectedProjectId: project.id,
+        expectedSourceArtifactId: project.current_image_artifact_id,
+        expectedSelectedObjectId: selectedObject?.id,
+        expectedMaskArtifactId: maskId,
+      });
     }catch(error){
       setExecutionError(error?.message||'Не удалось применить выбранную коррекцию.');
     }finally{setSubmitting(false);}
