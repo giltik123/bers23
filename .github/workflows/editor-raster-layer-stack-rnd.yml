@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/platform/creative/deterministic/EditorRasterLayerStackRND.ts'
       - 'src/platform/creative/deterministic/EditorQualityInspectorRND.ts'
+      - 'src/platform/creative/deterministic/EditorColorDifferenceRND.ts'
       - 'src/platform/creative/deterministic/EditorTonalClippingRND.ts'
       - 'src/platform/creative/deterministic/EditorLayerDocumentRND.ts'
       - 'src/platform/creative/deterministic/EditorLayerDraftHistoryRND.ts'
@@ -13,6 +14,7 @@ on:
       - 'src/components/editor/compareGeometryPolicy.js'
       - 'tests/editor-raster-layer-stack-rnd.test.mjs'
       - 'tests/editor-quality-inspector-rnd.test.mjs'
+      - 'tests/editor-color-difference-rnd.test.mjs'
       - 'tests/editor-tonal-clipping-rnd.test.mjs'
       - 'scripts/capture-editor-layer-stack-rnd.mjs'
       - 'config/v1-fashion-real-image-fixtures.json'
@@ -46,6 +48,7 @@ jobs:
           node --experimental-strip-types --test \
             tests/editor-raster-layer-stack-rnd.test.mjs \
             tests/editor-quality-inspector-rnd.test.mjs \
+            tests/editor-color-difference-rnd.test.mjs \
             tests/editor-tonal-clipping-rnd.test.mjs \
             tests/editor-layer-document-rnd.test.mjs \
             tests/editor-layer-draft-history-rnd.test.mjs \
