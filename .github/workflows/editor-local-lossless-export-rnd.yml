@@ -1,0 +1,38 @@
+name: Editor local lossless export R&D
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/application/editor/EditorLosslessExportRND.ts'
+      - 'src/platform/creative/deterministic/DeterministicPng.ts'
+      - 'tests/editor-lossless-export-rnd.test.mjs'
+      - 'docs/editor-lossless-export-rnd.md'
+      - '.github/workflows/editor-local-lossless-export-rnd.yml'
+permissions:
+  contents: read
+jobs:
+  no-cloud-lossless-png:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify head commit under test
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Decode independent PNG roundtrip with Sharp, preserve hidden RGB and verify hashes
+        run: node --experimental-strip-types --test tests/editor-lossless-export-rnd.test.mjs
+      - name: Validate browser and Core TypeScript contracts
+        run: npm run typecheck
+      - name: Diff contract
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA..HEAD"
