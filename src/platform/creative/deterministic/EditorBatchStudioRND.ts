@@ -65,6 +65,9 @@ export function compileEditorBatchPlanRND(input: Readonly<{
       typeof input.sourceSha256 !== 'string' || !SHA.test(input.sourceSha256)) {
     throw new Error('Editor Batch Studio requires source Artifact ID and canonical SHA');
   }
+  if(!closedFields(input,['sourceArtifactId','sourceSha256','width','height','steps'])) {
+    throw new Error('Editor Batch Studio unapproved plan metadata');
+  }
   imageGeometry(input.width,input.height);
   if (!Array.isArray(input.steps) || input.steps.length<1 || input.steps.length>MAX_STEPS) {
     throw new Error('Editor Batch Studio requires 1..8 deterministic steps');
@@ -130,6 +133,10 @@ export async function executeEditorBatchPlanRND(
 ): Promise<EditorBatchResultRND> {
   if (!plan || plan.kind !== 'BERS_EDITOR_BATCH_PLAN_RND' ||
       plan.authority !== 'NONE_RESEARCH_ONLY') throw new Error('Editor Batch Studio plan has no valid R&D identity');
+  if (!closedFields(plan,['kind','sourceArtifactId','sourceSha256','inputWidth','inputHeight',
+      'outputWidth','outputHeight','estimatedPixelVisits','steps','authority'])) {
+    throw new Error('Editor Batch Studio plan includes unapproved metadata');
+  }
   // Recompile untrusted runtime plans instead of relying on TypeScript/frozen flags.
   const trusted=compileEditorBatchPlanRND({
     sourceArtifactId:plan.sourceArtifactId,sourceSha256:plan.sourceSha256,
