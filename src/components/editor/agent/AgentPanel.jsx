@@ -17,6 +17,7 @@ export default function AgentPanel({ project, voiceProposal = null, state, busy 
   const [height, setHeight] = useState(project?.height ?? 1);
   const [voiceReview,setVoiceReview]=useState(false);
   const active = Boolean(state?.active);
+  useEffect(()=>{setVoiceReview(false);},[project?.current_image_artifact_id]);
   const view = state?.view;
 
   useEffect(() => {
