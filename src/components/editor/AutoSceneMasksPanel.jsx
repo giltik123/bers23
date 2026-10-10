@@ -47,7 +47,7 @@ export default function AutoSceneMasksPanel({
     setState({ sourceKey, status:'RUNNING',message:currentMode==='CLASSICAL'
       ? 'Выделение цветовых областей без ИИ…'
       : 'Сегментация SAM3 через облачную модель…' });
-    runner.start(project,{mode:currentMode,force:currentRequest>1 && state.sourceKey===sourceKey}).then(result => {
+    runner.start(project,{mode:currentMode,force:currentRequest>0 && state.sourceKey===sourceKey}).then(result => {
       finished=true;
       if(cancelled)return;
       setState({ sourceKey,status:result.status,message:result.message });
