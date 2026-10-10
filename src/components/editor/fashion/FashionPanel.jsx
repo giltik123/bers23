@@ -9,6 +9,7 @@ import {
   createCanonicalWardrobeViewModel,
 } from '@/application/fashion/canonicalWardrobeViewModel';
 import { getCategory } from '@/lib/fashion/garmentCategories';
+import { filterCanonicalWardrobeVoice } from '@/application/voice/filterCanonicalWardrobeVoice';
 import AddGarmentDialog from './AddGarmentDialog';
 import CanonicalCollectionsView from './CanonicalCollectionsView';
 import GarmentCaptureDialog from './GarmentCaptureDialog';
@@ -94,22 +95,9 @@ export default function FashionPanel({ voiceQuery = null }) {
   const [addOpen, setAddOpen] = useState(false);
   const [captureItem, setCaptureItem] = useState(null);
   const [busyId, setBusyId] = useState('');
-  const visibleItems=useMemo(()=>{
-    if(!voiceQuery?.query)return items;
-    const search=String(voiceQuery.query).toLocaleLowerCase('ru-RU');
-    const hints=voiceQuery.hints;
-    if(search==='избранное'||search==='любимые вещи')return items.filter(item=>item.favorite===true);
-    const requested=[...(hints?.categories||[]),...(hints?.colors||[]),
-      ...(hints?.styles||[])];
-    // This is read-only ranking/filtering of canonical loaded garment rows,
-    // never a guessed garment identity or a mutation of wardrobe authority.
-    return items.filter(item=>{
-      const haystack=[item.name,item.category,item.material,
-        ...(Array.isArray(item.tags)?item.tags:[])].filter(Boolean).join(' ').toLocaleLowerCase('ru-RU');
-      return requested.length?requested.every(term=>haystack.includes(term))
-        :haystack.includes(search);
-    });
-  },[items,voiceQuery]);
+  const visibleItems=useMemo(
+    ()=>filterCanonicalWardrobeVoice(items,voiceQuery),[items,voiceQuery],
+  );
 
   const reload = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) {
