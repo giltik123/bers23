@@ -55,6 +55,15 @@ A green kernel unit test cannot advance a tool past `PURE_KERNEL_TESTED`. A visu
 
 Next graduation tasks: image-based visual review and artifact SHA checks; source-bound Core layer execution ticket and immutable layer data migration; browser/PostgreSQL/E2E including refresh/Undo/Redo/Restore; performance and consistent ICC-aware compositing on larger photographs. The R&D compositor uses sRGB byte-space blending, so its visual quality is **not** asserted comparable to color-managed linear-light compositing. The existing real-photo Editor QA also shows visually strong portrait exposure/temperature presets can clip highlights or shift skin tones, so production color operators must ship measured histogram/tonal diagnostics and actual visual review rather than automatic strength changes.
 
+## Two intentionally distinct clipping diagnostics
+
+There are now **two explicitly named** read-only measurements, not one ambiguously defined color quality score:
+
+- `EditorTonalClippingRND.analyzeEditorTonalClippingRgba8` diagnoses **per-channel clipping**: *any* sRGB channel >=250; crushed shadow means all channels <=5. Source and output alpha visibility are checked independently, so transparent hidden RGB cannot conceal newly visible clipping.
+- `EditorQualityInspectorRND.analyzeEditorNearWhiteAndBlackRgba8` diagnoses **neutral near-white**: *all three* sRGB channels >=250. It counts only editable, visible image regions and is intentionally stricter. A saturated bright-red pixel triggers the channel clipping diagnostic but **not** the neutral near-white diagnostic.
+
+These numbers **must not be directly compared, combined, or presented as one percentage**. Neither tool infers intent, skin, garment pattern fidelity or semantic subject masks. They never authorize a Core edit, change v1 color science or decide release readiness.
+
 ## Color-fidelity research — bounded perceptual diagnostics
 
 `EditorColorDifferenceRND.ts` now adds deterministic **CIEDE2000 (ΔE00)** diagnostics, with canonical sRGB-to-D65-Lab conversion, published CIEDE2000 reference-pair tests, zero difference on identical images (including white), masked editable-region filtering and hidden/near-transparent RGB exclusion. It records mean, p95-histogram upper-bound, maximum color difference and a count of positions above ΔE00=10 on no more than 65,536 regularly spaced positions per frame. The exact sampling stride and count are reported; this is **not an exhaustive per-pixel guarantee**, and small isolated defects might be missed.
