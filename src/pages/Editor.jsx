@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { downloadCanonicalImage } from '@/application/editor/downloadCanonicalImage';
 import useProject from '@/hooks/useProject';
+import { projectService } from '@/lib/projectService';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createMaskedExposure } from '@/application/createMaskedExposure';
@@ -894,8 +895,14 @@ export default function Editor() {
     setDownloading(true);
     setAiError(null);
     try{
+      // Core delivery URLs expire after five minutes; refresh the signed
+      // URL without silently exporting a photo changed by another session.
+      const fresh=await projectService.get(project.id);
+      if(!fresh?.current_image_url ||
+         fresh.current_image_artifact_id!==project.current_image_artifact_id)
+        throw new Error('The photo changed in another session. Reload before exporting.');
       await downloadCanonicalImage({
-        imageUrl:project.current_image_url,projectName:project.name,
+        imageUrl:fresh.current_image_url,projectName:fresh.name,
         origin:window.location.origin,
       });
     }catch(error){
