@@ -16,6 +16,7 @@ export type EditorRasterLayer = Readonly<{
 }>;
 
 const MAX_PIXELS = 16_777_216;
+const MAX_PIXEL_LAYER_VISITS = 64_000_000;
 function rgba(bytes: unknown, count: number, label: string): asserts bytes is Uint8Array | Uint8ClampedArray {
   if (!(bytes instanceof Uint8Array || bytes instanceof Uint8ClampedArray) || bytes.byteLength !== count * 4) {
     throw new Error(`${label} must be exact RGBA8 bytes`);
@@ -44,8 +45,12 @@ export function composeEditorRasterLayersRgba8(
       width < 1 || height < 1 || width > 16_384 || height > 16_384 ||
       width * height > MAX_PIXELS) throw new Error('Layer stack image geometry is invalid');
   const count=width * height;
-  rgba(source,count,'Layer stack source');
   if (!Array.isArray(layers) || layers.length > 32) throw new Error('Layer stack exceeds 32-layer admission bound');
+  // Reject excessive image × layer work before touching enormous caller buffers.
+  if (count * layers.length > MAX_PIXEL_LAYER_VISITS) {
+    throw new Error('Layer stack exceeds bounded pixel-layer processing budget');
+  }
+  rgba(source,count,'Layer stack source');
   const ids=new Set<string>();
   for(const layer of layers) {
     if (!layer || typeof layer.id !== 'string' || !/^[a-zA-Z0-9_-]{1,96}$/.test(layer.id) || ids.has(layer.id)) {
