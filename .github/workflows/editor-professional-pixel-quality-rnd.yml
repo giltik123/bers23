@@ -10,12 +10,14 @@ on:
       - 'src/platform/creative/deterministic/ProfessionalCloneStampRND.ts'
       - 'src/platform/creative/deterministic/ProfessionalToneRangeMaskRND.ts'
       - 'src/platform/creative/deterministic/ProfessionalMaskBrushRND.ts'
+      - 'src/platform/creative/pipeline/ProfessionalMaskedCompositeRND.js'
       - 'tests/editor-professional-resize-lanczos-rnd.test.mjs'
       - 'tests/editor-professional-linear-layers-rnd.test.mjs'
       - 'tests/editor-highlight-protected-tone-rnd.test.mjs'
       - 'tests/editor-professional-clone-stamp-rnd.test.mjs'
       - 'tests/editor-professional-tone-range-mask-rnd.test.mjs'
       - 'tests/editor-professional-mask-brush-rnd.test.mjs'
+      - 'tests/editor-professional-alpha-composite-rnd.test.mjs'
       - 'tests/editor-professional-lab-dev-gate.test.mjs'
       - 'src/pages/ProfessionalEditorLabRND.jsx'
       - 'src/App.jsx'
@@ -62,6 +64,7 @@ jobs:
             tests/editor-professional-clone-stamp-rnd.test.mjs \
             tests/editor-professional-tone-range-mask-rnd.test.mjs \
             tests/editor-professional-mask-brush-rnd.test.mjs \
+            tests/editor-professional-alpha-composite-rnd.test.mjs \
             --bundle --platform=node --format=esm --target=node24 \
             --outdir=.test-cache/editor-pro-quality --out-extension:.js=.mjs \
             --external:node:*
