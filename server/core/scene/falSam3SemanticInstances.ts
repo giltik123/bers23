@@ -64,13 +64,22 @@ export async function runFalSam3Scene(input:Readonly<{
   imagePng:Uint8Array; width:number;height:number;falKey:string;
   fetcher?:typeof fetch;signal?:AbortSignal;
 }>){
-  if(!input.falKey||!input.imagePng?.byteLength||input.imagePng.byteLength>8_000_000)
-    throw fail('SAM3 requires a bounded canonical source and a server-only API key');
+  if(!input.falKey||!input.imagePng?.byteLength)
+    throw fail('SAM3 requires a canonical source and a server-only API key');
   if(!Number.isSafeInteger(input.width)||!Number.isSafeInteger(input.height)||
      input.width<1||input.height<1||input.width*input.height>8_000_000)
     throw fail('SAM3 source geometry is unsupported');
   const fetcher=input.fetcher??fetch;
-  const imageUrl='data:image/png;base64,'+Buffer.from(input.imagePng).toString('base64');
+  // Normal production photographs are often much larger than 8 MB PNG.
+  // Downscale ONLY the provider input; reproject the returned MASK to exact
+  // original source coordinates in decodeSam3Mask().
+  const compact=await sharp(Buffer.from(input.imagePng),{
+    failOn:'error',limitInputPixels:8_000_000,
+  }).resize({width:2048,height:2048,fit:'inside',withoutEnlargement:true})
+    .toColourspace('srgb').jpeg({quality:86,mozjpeg:true}).toBuffer();
+  if(compact.byteLength>8_000_000)
+    throw fail('SAM3 provider input remains too large after preprocessing');
+  const imageUrl='data:image/jpeg;base64,'+compact.toString('base64');
   const instances:{
     category:string;group:string;label:string;confidence:number;
     alpha:Uint8Array;modelId:string;modelVersion:string;
