@@ -15,18 +15,23 @@ export function createCanonicalAutoSceneMaskRunner(provider) {
     let sequence=0;
     return Object.freeze({
       cancel:()=>{sequence++;},
-      start:async(source,{force=false}={})=>{
+      start:async(source,{force=false,mode='CLASSICAL'}={})=>{
         const ticket=++sequence;
         try{
           const capability=await coreClient.scene.capability();
           if(ticket!==sequence)return {status:'CANCELLED',objects:[]};
-          if(capability?.supportsSemanticInstances!==true)
+          if(mode==='CLASSICAL' && capability?.supportsClassicalSegmentation!==true)
             return {status:'MODEL_UNAVAILABLE',objects:[],
-              message:'Модель SAM3 не включена на Core; выдуманные маски не создаются.'};
+              message:'Классическая сегментация на Core пока недоступна.'};
+          if(mode==='SAM3' && capability?.supportsSemanticInstances!==true)
+            return {status:'MODEL_UNAVAILABLE',objects:[],
+              message:'SAM3 на сервере не включена. Бесплатная сегментация без ИИ доступна отдельно.'};
+          if(mode!=='CLASSICAL' && mode!=='SAM3')
+            throw new Error('Unknown scene segmentation method');
           const result=await coreClient.scene.analyze({
             projectId:source.id,
             sourceArtifactId:source.current_image_artifact_id,
-            expectedRevision:source.revision,force,
+            expectedRevision:source.revision,force,mode,
           });
           if(ticket!==sequence)return {status:'CANCELLED',objects:[]};
           if(!['COMPLETED','NO_OBJECTS','ALREADY_AVAILABLE'].includes(result?.status))
