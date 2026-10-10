@@ -45,7 +45,7 @@ export default function AICommandStudio({
     setGenerativeConfirmed(false);
     setGenerativeScope('MASKED');
     setExecutionError('');
-  },[plan.instruction,plan.operation,project?.current_image_artifact_id,maskId]);
+  },[plan.instruction,plan.operation,project?.id,project?.current_image_artifact_id,selectedObject?.id,maskId]);
 
   const update=(key,value)=>{
     setParameters(previous=>({...previous,[key]:value}));
@@ -68,7 +68,9 @@ export default function AICommandStudio({
     try{await onExecuteGenerative({
       instruction:plan.instruction,
       mode:generativeScope,
+      expectedProjectId:project.id,
       expectedSourceArtifactId:project.current_image_artifact_id,
+      expectedSelectedObjectId:generativeScope==='MASKED'?selectedObject?.id:null,
       expectedMaskArtifactId:generativeScope==='MASKED'?maskId:null,
     });}
     catch(error){setExecutionError(error?.message||'Генерация недоступна для данного проекта.');}
