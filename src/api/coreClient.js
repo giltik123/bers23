@@ -286,6 +286,21 @@ export const coreClient = Object.freeze({
     submitResult: ({ executionId, projectId, result }) => request(`/composite-continuations/${encodeURIComponent(executionId)}/result`, json('POST', { projectId, result })),
   },
   artifacts: {
+    loadMaskPreview: async ({ projectId, sourceImageArtifactId, maskArtifactId }) => {
+      const path = `/artifacts/masks/${encodeURIComponent(maskArtifactId)}?${new URLSearchParams({ projectId, sourceImageArtifactId })}`;
+      const response = await fetch(`${API_ROOT}${path}`, { credentials:'include',
+        headers:{ Accept:'image/png' } });
+      if (!response.ok) {
+        const data = await response.json().catch(() => undefined);
+        throwResponseError(response,data,path);
+      }
+      if ((response.headers.get('content-type')||'').split(';',1)[0].trim()!=='image/png')
+        throw new Error('Core MASK preview has an unexpected content type');
+      const blob = await response.blob();
+      if (!blob.size || blob.size > 32_000_000)
+        throw new Error('Core MASK preview is empty or too large');
+      return blob;
+    },
     persistMask: ({ projectId, sourceImageArtifactId, parentMaskArtifactId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, sourceImageArtifactId, ...(parentMaskArtifactId && { parentMaskArtifactId }), width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
   },
   projects: {
