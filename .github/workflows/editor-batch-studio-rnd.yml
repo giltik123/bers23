@@ -1,0 +1,44 @@
+name: Editor deterministic Batch Studio R&D
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/platform/creative/deterministic/EditorBatchStudioRND.ts'
+      - 'tests/editor-batch-studio-rnd.test.mjs'
+      - 'docs/editor-batch-studio-rnd.md'
+      - '.github/workflows/editor-batch-studio-rnd.yml'
+permissions:
+  contents: read
+jobs:
+  batch-source-fidelity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact tested commit
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Bundle native deterministic Editor tools for local research tests
+        run: |
+          mkdir -p .test-cache/editor-batch-build
+          npx esbuild tests/editor-batch-studio-rnd.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-batch-build/batch.test.mjs \
+            --external:node:*
+      - name: Prove source hash, operation equivalence, cancellation and fail-closed budgets
+        run: node --test .test-cache/editor-batch-build/batch.test.mjs
+      - name: Verify existing project type contracts
+        run: npm run typecheck
+      - name: Enforce clean diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --check "$BASE_SHA..HEAD"
