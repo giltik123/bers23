@@ -153,6 +153,7 @@ export default function Editor() {
   });
   const [driftWarning, setDriftWarning] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
   const [brushSize, setBrushSize] = useState(24);
   const [brushHardness, setBrushHardness] = useState(75);
   const [selectionMorphologyRadius, setSelectionMorphologyRadius] = useState(2);
@@ -210,6 +211,7 @@ export default function Editor() {
     || Boolean(pendingResult);
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
+  useEffect(() => { setHiddenObjectIds(new Set()); }, [project?.id]);
   useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
   useEffect(() => {
     if (!selection) return undefined;
@@ -887,6 +889,13 @@ export default function Editor() {
     if (pending?.kind === 'BOUNDED_AGENT') boundedAgent.dismiss();
   };
 
+  const toggleHiddenObject = (id) => setHiddenObjectIds((previous) => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+
   const handleRename = async () => {
     const name = window.prompt('Rename project', project.name);
     if (name && name !== project.name) await rename(name);
@@ -966,6 +975,7 @@ export default function Editor() {
         imageUrl={project.current_image_url}
         objects={objects}
         selectedId={selected?.id}
+        hiddenObjectIds={hiddenObjectIds}
         onSelect={(obj) => selectObject(obj?.id ?? null)}
         busy={editorBusy}
         onUndo={undo}
@@ -1079,7 +1089,7 @@ export default function Editor() {
       </section>}
 
 
-      {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
+      {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} /></AdaptivePanel>}
 
       {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
         <p className="text-[11px] text-muted-foreground text-center">Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.</p>
