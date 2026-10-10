@@ -7,6 +7,7 @@ import process from 'node:process';
 import sharp from 'sharp';
 
 import { composeEditorRasterLayersRgba8 } from '../src/platform/creative/deterministic/EditorRasterLayerStackRND.ts';
+import { analyzeEditorTonalClippingRgba8 } from '../src/platform/creative/deterministic/EditorTonalClippingRND.ts';
 import {
   analyzeEditorPixelQualityRgba8,
   requireEditorProtectedPixelsUnchanged,
@@ -82,6 +83,7 @@ async function main(){
     assert.deepEqual(Buffer.from(rgba),sourceBefore,'source pixels mutated');
     assert.deepEqual(Buffer.from(layer.mask),maskBefore,'mask mutated');
     const audit=analyzeEditorPixelQualityRgba8(rgba,output,width,height,layer.mask);
+    const tonalDiagnostics=analyzeEditorTonalClippingRgba8(rgba,output,width,height,layer.mask);
     requireEditorProtectedPixelsUnchanged(audit);
     assert.ok(audit.changedAuthorizedPixels>0,'layer did not produce real image edit');
     assert.ok(audit.protectedPixels>0,'mask must protect real original pixels');
@@ -119,7 +121,7 @@ async function main(){
       resultPngSha256:hash(resultPng),
       comparisonGridSha256:hash(grid),
       layerR8MaskSha256:hash(maskBefore),
-      geometry:{width,height},runtimeMs,audit,
+      geometry:{width,height},runtimeMs,audit,tonalDiagnostics,
       comparisonColumns:['SOURCE','RND_MASKED_SOURCE_OVER','ABSOLUTE_RGB_DIFFERENCE_X3'],
     });
     console.log('LAYER_PHOTO_RND',index+1,fixture.id,JSON.stringify({
