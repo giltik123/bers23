@@ -223,7 +223,9 @@ export default function FashionPanel({ voiceQuery = null }) {
         </div>
       ) : visibleItems.length === 0 ? (
         <div className="rounded-xl bg-secondary/40 p-4 text-center text-xs text-muted-foreground">
-          No managed garments yet. Add a garment photo to create the first stable wardrobe item.
+          {voiceQuery?.query && items.length>0
+            ? 'По голосовому запросу ничего не найдено. Проверьте категорию или цвет.'
+            : 'No managed garments yet. Add a garment photo to create the first stable wardrobe item.'}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
