@@ -43,7 +43,7 @@ export default function AutoSceneMasksPanel({
     attemptedRef.current=attemptKey;
     let cancelled=false,finished=false;
     setState({ sourceKey, status:'RUNNING',message:'Проверка модели и анализ сцены…' });
-    runner.start(project).then(result => {
+    runner.start(project,{force:runNumber>0}).then(result => {
       finished=true;
       if(cancelled)return;
       setState({ sourceKey,status:result.status,message:result.message });
