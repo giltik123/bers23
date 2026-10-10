@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { requiredProductionFrontendHeaders } from '../config/frontendSecurityPolicy.mjs';
+import { createCoreApiProxy } from './production-core-api-proxy.mjs';
 
 const DEFAULT_PORT = 8080;
 const ONE_YEAR_SECONDS = 31_536_000;
@@ -29,7 +30,8 @@ const MIME_TYPES = Object.freeze({
 
 export function createProductionFrontendServer(input = {}) {
   const rootDir = resolve(input.rootDir ?? process.env.FRONTEND_DIST_DIR ?? 'dist');
-  const coreApiUrl = input.coreApiUrl ?? process.env.CORE_API_URL ?? process.env.VITE_CORE_API_URL ?? '/api/core';
+  const coreApiUrl = input.coreApiUrl ?? process.env.VITE_CORE_API_URL ?? '/api/core';
+  const coreProxy = createCoreApiProxy(input.coreUpstreamUrl ?? process.env.CORE_API_URL);
   const deploymentSha = normalizeDeploymentSha(input.deploymentSha ?? process.env.RAILWAY_GIT_COMMIT_SHA);
   const requiredHeaders = requiredProductionFrontendHeaders(coreApiUrl);
 
@@ -40,6 +42,13 @@ export function createProductionFrontendServer(input = {}) {
     } catch {
       response.statusCode = 400;
       response.end('Bad Request');
+      return;
+    }
+
+    // The browser now talks to its own origin, so the __Host- session cookie
+    // remains first-party and Strict. Never serve SPA HTML for a missing API.
+    if (pathname === '/api/core' || pathname.startsWith('/api/core/')) {
+      coreProxy(request, response);
       return;
     }
 

@@ -144,3 +144,44 @@ Before production traffic is admitted, verify at least:
 7. server secrets are absent from the browser bundle and public configuration.
 
 A deployment is not production-approved merely because the application builds locally. Runtime serving topology, database state, HTTP headers, origin policy, and proxy boundary are part of release evidence.
+
+
+## Railway production: first-party Core API gateway
+
+Railway provides a distinct public hostname per service. A browser on the frontend
+hostname must not call the separate Core service hostname directly for cookie-backed
+authentication: the canonical __Host- session uses Secure, HttpOnly and
+SameSite=Strict, which intentionally does not work as a third-party cookie.
+A successful login (HTTP 200) followed by /auth/context (HTTP 401) is the
+symptom of an origin split.
+
+Set the frontend service build-time public browser API location to exactly:
+
+- VITE_CORE_API_URL=/api/core
+
+Set the frontend service runtime private proxy target to the exact HTTPS Core
+endpoint (for the current Railway deployment):
+
+- CORE_API_URL=https://bers-v1-core-production.up.railway.app/api/core
+
+The frontend's Node server streams requests under /api/core to that fixed upstream,
+preserving request bodies, Set-Cookie, X-Bers-CSRF-Token and the browser Origin.
+It strips client-supplied X-Forwarded-* identity and hop-by-hop headers; an
+unconfigured gateway returns HTTP 503 rather than SPA HTML. The browser now
+receives __Host-bers_session on the frontend host and sends it back to that same
+host. Keep the server's Secure, HttpOnly, SameSite=Strict and exact Origin + CSRF
+policy unchanged. Never substitute SameSite=None, wildcard CORS or a JS-stored
+bearer token for the first-party gateway.
+
+Ensure Core AUTH_PUBLIC_ORIGIN and ALLOWED_WEB_ORIGINS match the public frontend
+origin (https://bers-v1-frontend-production.up.railway.app). Deploy only after
+the exact SHA's required status checks and the gateway tests succeed. Rebuild the
+frontend when changing VITE_CORE_API_URL; it is a build-time setting, not just
+a runtime environment variable. Keep the Core service independently configured.
+
+Verify in a real browser on the frontend origin: register/OTP, login, /api/core/auth/context
+returns HTTP 200 after navigation and reload, authenticated API calls retain CSRF,
+and logout makes context return HTTP 401. Check that document CSP still allows
+only the intended connection targets and that the live frontend SHA matches the
+approved release. These acceptance checks are required before claiming the
+production login regression is resolved.
