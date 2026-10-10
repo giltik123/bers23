@@ -12,6 +12,9 @@ on:
       - '.github/workflows/editor-local-lossless-export-rnd.yml'
 permissions:
   contents: read
+concurrency:
+  group: bers-editor-export-rnd-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   no-cloud-lossless-png:
     runs-on: ubuntu-latest
