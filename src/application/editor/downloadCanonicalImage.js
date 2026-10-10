@@ -1,3 +1,5 @@
+import { canonicalCoreResourcePath, resolveCoreResourceUrl, CONFIGURED_CORE_API_ROOT } from '@/api/coreResourceUrl';
+
 /**
  * Download the actual current canonical Project image, not a preview tab.
  * The opaque signed delivery token stays inside the existing Core route.
@@ -13,16 +15,23 @@ export function canonicalDownloadName(projectName, contentType) {
 }
 
 export async function downloadCanonicalImage({
-  imageUrl, projectName, origin, fetcher=fetch,
+  imageUrl, projectName, origin, coreApiRoot=CONFIGURED_CORE_API_ROOT, fetcher=fetch,
   documentApi=document, urlApi=URL,
   scheduleRevoke=callback=>setTimeout(callback,10_000),
 }) {
-  if(typeof imageUrl!=='string'||!imageUrl.startsWith('/api/core/artifacts/results/'))
+  // The current Project URL may be rewritten to the configured Core origin
+  // for split frontend/Core deployments. Only the exact configured origin is
+  // permitted; do not let imageUrl select an arbitrary remote host.
+  const canonicalPath=canonicalCoreResourcePath(imageUrl,coreApiRoot);
+  if(!canonicalPath ||
+     !/^\/api\/core\/artifacts\/results\/[A-Za-z0-9%._~-]+$/.test(canonicalPath))
     throw new Error('Only a signed Core image may be downloaded');
-  const address=new URL(imageUrl,origin);
-  if(address.origin!==new URL(origin).origin ||
-     !/^\/api\/core\/artifacts\/results\/[^/]+$/.test(address.pathname)||
-     address.username||address.password||address.hash)
+  const resolved=resolveCoreResourceUrl(canonicalPath,coreApiRoot);
+  const address=new URL(resolved,origin);
+  const expectedRoot=coreApiRoot.startsWith('http')
+    ?new URL(coreApiRoot).origin:new URL(origin).origin;
+  if(address.origin!==expectedRoot || address.username||address.password ||
+     address.search || address.hash)
     throw new Error('Core image download URL is invalid');
   const response=await fetcher(address.href,{
     method:'GET',credentials:'include',
