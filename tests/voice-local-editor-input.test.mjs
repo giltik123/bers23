@@ -5,7 +5,7 @@ import {
   buildVoiceIntentDraft, applyConfirmedVoiceDraft,
 } from '../src/application/voice/VoiceIntentDraftV1.js';
 import {
-  createLocalVoiceSession, LocalVoiceUnavailable, LOCAL_VOICE_MAX_MS,
+  createLocalVoiceSession,installLocalRussianVoicePack, LocalVoiceUnavailable, LOCAL_VOICE_MAX_MS,
 } from '../src/application/voice/createLocalVoiceSession.js';
 
 function fakeRecognizer(status='available') {
@@ -132,4 +132,50 @@ test('voice UI is Editor-wide with typed callback; confirmation never triggers g
   assert.match(ui,/applyConfirmedVoiceDraft\(draft,prompt\)/);
   assert.doesNotMatch(ui,/coreClient|applyEdit\(|pushEdit\(|fetch\(|runGenerative|billing/i);
   assert.match(ui,/onClick=\{confirm\}/);
+});
+
+test('local model installation only runs after a user action and re-verifies Russian on-device readiness',async()=>{
+  let availableCalls=0,installCalls=0;
+  class Installable {
+    static async available(args){
+      assert.deepEqual(args,{langs:['ru-RU'],processLocally:true});
+      availableCalls++;
+      return installCalls?'available':'downloadable';
+    }
+    static async install(args){
+      assert.deepEqual(args,{langs:['ru-RU'],processLocally:true});
+      installCalls++;
+      return true;
+    }
+  }
+  // Checking and showing a download button does not install or record.
+  await assert.rejects(()=>createLocalVoiceSession({
+    SpeechRecognitionCtor:Installable,
+  }),error=>error.code==='LOCAL_ASR_PACK_MISSING');
+  assert.equal(installCalls,0);
+  assert.equal(await installLocalRussianVoicePack({
+    SpeechRecognitionCtor:Installable,
+  }),true);
+  assert.equal(installCalls,1);
+  assert.equal(availableCalls,3);
+});
+test('denied or unverified local speech installation cannot proceed to recording',async()=>{
+  class Rejected {
+    static async available(){return 'downloadable';}
+    static async install(){return false;}
+  }
+  await assert.rejects(()=>installLocalRussianVoicePack({
+    SpeechRecognitionCtor:Rejected,
+  }),error=>error.code==='LOCAL_ASR_INSTALL_FAILED');
+  class Unverified {
+    static async available(){return 'downloadable';}
+    static async install(){return true;}
+  }
+  await assert.rejects(()=>installLocalRussianVoicePack({
+    SpeechRecognitionCtor:Unverified,
+  }),error=>error.code==='LOCAL_ASR_INSTALL_UNVERIFIED');
+  class NoInstall {static async available(){return 'downloadable';}}
+  await assert.rejects(()=>installLocalRussianVoicePack({
+    SpeechRecognitionCtor:NoInstall,
+  }),error=>error.code==='LOCAL_ASR_INSTALL_UNSUPPORTED');
 });
