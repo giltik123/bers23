@@ -15,6 +15,7 @@ const IDLE_HOST = Object.freeze({ active: false, busy: false, disposed: false, h
  */
 export default function CanonicalTryOnRunnerPanel({
   project,
+  voiceQuery = null,
   state = null,
   busy = false,
   disabled = false,
@@ -65,6 +66,22 @@ export default function CanonicalTryOnRunnerPanel({
   const selectedEntry = selectedOutfit?.entries.find((entry) => entry.entryId === effectiveEntryId) || null;
   const garmentById = useMemo(() => new Map(garments.map((garment) => [garment.garmentId, garment])), [garments]);
   const selectedGarment = selectedEntry ? garmentById.get(selectedEntry.garmentId) : null;
+  const voiceMatches=useMemo(()=>{
+    if(!voiceQuery?.query)return [];
+    const text=voiceQuery.query.toLocaleLowerCase('ru-RU');
+    const hints=[...(voiceQuery.hints?.categories||[]),...(voiceQuery.hints?.colors||[])];
+    return outfits.flatMap(outfit=>outfit.entries.flatMap(entry=>{
+      const garment=garmentById.get(entry.garmentId);
+      if(entry.referenceReadiness!=='READY'||!garment)return [];
+      const searchable=[garment.name,garment.category,garment.material,
+        ...(Array.isArray(garment.tags)?garment.tags:[])].filter(Boolean)
+        .join(' ').toLocaleLowerCase('ru-RU');
+      if(hints.length ? !hints.every(x=>searchable.includes(x)) :
+        !searchable.includes(text))return [];
+      return [{outfitName:outfit.name,garmentName:garment.name,
+        outfitId:outfit.id,entryId:entry.entryId}];
+    }));
+  },[voiceQuery,outfits,garmentById]);
   const selectionLocked = busy || loading || hostActive;
   const host = state?.host || IDLE_HOST;
   const result = state?.result || null;
@@ -160,6 +177,16 @@ export default function CanonicalTryOnRunnerPanel({
         </Button>
       </div>
 
+      {voiceQuery?.query&&(
+        <div role="status" className="rounded-md border p-2 text-xs">
+          Голосовой запрос: {voiceQuery.query}.
+          Найдено готовых записей примерки: {voiceMatches.length}.
+          {voiceMatches.length===1
+            ?` Найдена ${voiceMatches[0].garmentName} в образе ${voiceMatches[0].outfitName}. Подтвердите выбор в списке ниже.`
+            :' Выберите одну подходящую вещь вручную; BERS не угадывает идентификатор.'}
+          Голосовой поиск не запускает примерку.
+        </div>
+      )}
       {!hostActive && (
         <div className="grid grid-cols-2 gap-1.5">
           <select
