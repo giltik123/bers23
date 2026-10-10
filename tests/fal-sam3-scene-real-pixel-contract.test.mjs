@@ -16,7 +16,8 @@ test('real SAM3 contract makes bounded authenticated prompt calls and decodes di
     fetcher:async(url,opts)=>{
       const body=JSON.parse(opts.body);
       seen.push({url,prompt:body.prompt,authorization:opts.headers.Authorization,
-        include_scores:body.include_scores, sync_mode:body.sync_mode,apply_mask:body.apply_mask});
+        include_scores:body.include_scores, sync_mode:body.sync_mode,apply_mask:body.apply_mask,
+        imageUrl:body.image_url});
       return new Response(JSON.stringify({
         masks:[{url:uri(mask)}],scores:[0.91],
       }),{status:200,headers:{'Content-Type':'application/json'}});
@@ -25,7 +26,8 @@ test('real SAM3 contract makes bounded authenticated prompt calls and decodes di
   assert.equal(seen.length,SAM3_SCENE_PROMPTS.length);
   assert.ok(seen.every(x=>x.url==='https://fal.run/fal-ai/sam-3/image'
     &&x.authorization==='Key ci-fake-key'&&x.include_scores===true
-    &&x.sync_mode===true&&x.apply_mask===false));
+    &&x.sync_mode===true&&x.apply_mask===false
+    &&x.imageUrl.startsWith('data:image/jpeg;base64,')));
   assert.equal(result.instances.length,SAM3_SCENE_PROMPTS.length);
   assert.equal(result.instances[0].alpha.length,16);
   assert.equal(result.instances[0].alpha[0],255);
@@ -38,6 +40,28 @@ test('real SAM3 contract makes bounded authenticated prompt calls and decodes di
   assert.ok(new Set(result.instances.map(x=>x.group)).has('ACCESSORY'));
   assert.ok(new Set(result.instances.map(x=>x.group)).has('BACKGROUND'));
   assert.ok(new Set(result.instances.map(x=>x.group)).has('OTHER_OBJECT'));
+});
+
+test('large canonical source is resized ONLY for provider, never for returned Core masks',async()=>{
+  const source=await sharp({
+    create:{width:3000,height:2000,channels:3,background:'#888888'},
+  }).png().toBuffer();
+  const mask=await png(2,2,[255,0,0,0]);
+  let imageDimensions=null;
+  const output=await runFalSam3Scene({
+    imagePng:source,width:3000,height:2000,falKey:'fake',
+    fetcher:async(_url,opts)=>{
+      const body=JSON.parse(opts.body);
+      const sourceImage=Buffer.from(body.image_url.slice('data:image/jpeg;base64,'.length),'base64');
+      const metadata=await sharp(sourceImage).metadata();
+      imageDimensions=[metadata.width,metadata.height];
+      return new Response(JSON.stringify({
+        masks:[{url:uri(mask)}],scores:[.88],
+      }),{status:200});
+    },
+  });
+  assert.ok(imageDimensions[0]<=2048&&imageDimensions[1]<=2048);
+  assert.equal(output.instances[0].alpha.length,3000*2000);
 });
 
 test('reject colored provider preview instead of manufacturing a selection',async()=>{
