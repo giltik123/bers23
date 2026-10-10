@@ -4,6 +4,8 @@ import { highlightProtectedToneRgba8RND } from '@/platform/creative/deterministi
 import { precisionCloneStampRgba8RND } from '@/platform/creative/deterministic/ProfessionalCloneStampRND';
 import { composeLinearLightLayersRgba8RND } from '@/platform/creative/deterministic/ProfessionalLinearLayersRND';
 import { encodeDeterministicRgbaPng } from '@/platform/creative/deterministic/DeterministicPng';
+import { professionalToneRangeMaskRgba8RND } from '@/platform/creative/deterministic/ProfessionalToneRangeMaskRND';
+import { paintProfessionalMaskR8RND } from '@/platform/creative/deterministic/ProfessionalMaskBrushRND';
 
 // Deliberately NOT an authorized Project editor. Developer-only image-quality
 // playground. No network, Core/Artifact history, Final or provider execution.
@@ -66,12 +68,26 @@ export default function ProfessionalEditorLabRND() {
   const [samplePoint, setSamplePoint] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [toolMode, setToolMode] = useState('CLONE');
+  const [toneRegion, setToneRegion] = useState('ALL');
+  const [manualMask, setManualMask] = useState(null);
+  const [maskHistory, setMaskHistory] = useState([]);
+  const [maskStrokeMode, setMaskStrokeMode] = useState('ADD');
+  const [showSelectionOverlay, setShowSelectionOverlay] = useState(true);
+  const blankQuality = () => ({
+    looksNatural:false,preservesSubject:false,noVisibleArtifacts:false,betterThanSource:false,
+  });
+  const [qualityReview, setQualityReview] = useState(blankQuality);
+  const resetQualityReview = () => setQualityReview(blankQuality());
+  const reviewed = original !== null && current !== null &&
+    Object.values(qualityReview).every(value => value === true);
 
   const commit = next => {
     if (!current) return;
     setUndoStack(before => [...before.slice(-(MAX_HISTORY - 1)), snapshot(current)]);
     setRedoStack([]);
     setCurrent(snapshot(next));
+    resetQualityReview();
   };
   const fail = error => setMessage(error instanceof Error ? error.message : String(error));
   const disabled = !current || busy;
@@ -101,6 +117,9 @@ export default function ProfessionalEditorLabRND() {
       setOriginal(snapshot(frame));
       setCurrent(snapshot(frame));
       setUndoStack([]); setRedoStack([]); setSamplePoint(null);
+      setManualMask(new Uint8Array(frame.width * frame.height));
+      setMaskHistory([]);
+      resetQualityReview();
       setResizeWidth(Math.min(4096, bitmap.width));
       setMessage('Loaded only in local browser memory. ICC/EXIF conversion during Canvas decode is not Core-verified.');
     } catch (error) {
@@ -114,7 +133,14 @@ export default function ProfessionalEditorLabRND() {
   const applyTone = () => {
     if (!current || busy) return;
     try {
-      const mask = new Uint8Array(current.width * current.height).fill(255);
+      const mask = professionalToneRangeMaskRgba8RND(
+        current.data,current.width,current.height,
+        toneRegion === 'BRUSH' ? 'ALL' : toneRegion,
+        toneRegion === 'BRUSH' ? manualMask : undefined,
+      ).mask;
+      if (toneRegion === 'BRUSH' && !mask.some(value => value !== 0)) {
+        throw new Error('Paint a soft edit mask before applying selective tone.');
+      }
       const data = highlightProtectedToneRgba8RND(current.data, mask,
         current.width, current.height, { eighthStops });
       commit({ ...current, data });
@@ -132,6 +158,8 @@ export default function ProfessionalEditorLabRND() {
         current.height,{ width,height });
       commit({ width,height,data });
       setSamplePoint(null);
+      setManualMask(new Uint8Array(width * height));
+      setMaskHistory([]);
       setMessage('Antialiased Lanczos3 / linear-light resize applied locally.');
     } catch (error) { fail(error); }
   };
@@ -179,6 +207,7 @@ export default function ProfessionalEditorLabRND() {
     setRedoStack(s=>[...s.slice(-(MAX_HISTORY-1)),snapshot(current)]);
     setCurrent(snapshot(previous));
     setSamplePoint(null);
+    resetQualityReview();
     setMessage('Reverted local preview snapshot.');
   };
   const redo = () => {
@@ -188,10 +217,11 @@ export default function ProfessionalEditorLabRND() {
     setUndoStack(s=>[...s.slice(-(MAX_HISTORY-1)),snapshot(current)]);
     setCurrent(snapshot(next));
     setSamplePoint(null);
+    resetQualityReview();
     setMessage('Restored local preview snapshot.');
   };
   const exportLocalPng = async () => {
-    if (!current || busy) return;
+    if (!current || busy || !reviewed) return;
     setBusy(true);
     let url;
     try {
@@ -204,7 +234,7 @@ export default function ProfessionalEditorLabRND() {
       const a=document.createElement('a');
       a.href=url;a.download='bers-professional-local-preview-rnd.png';
       a.click();
-      setMessage('PNG generated locally; profile and Project source identity are not Core-certified.');
+      setMessage('Human-reviewed PNG generated locally; the review is not a Core certificate.');
     }catch(error){fail(error);}finally{
       if(url)URL.revokeObjectURL(url);
       setBusy(false);
