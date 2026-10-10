@@ -1,0 +1,104 @@
+name: Editor v1 real-image fidelity QA
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/platform/creative/deterministic/Crop.ts'
+      - 'src/platform/creative/deterministic/Resize.ts'
+      - 'src/platform/creative/deterministic/OrthogonalTransform.ts'
+      - 'src/platform/creative/deterministic/MaskedExposure.ts'
+      - 'src/platform/creative/deterministic/MaskedWhiteBalance.ts'
+      - 'src/platform/creative/deterministic/MaskedLevels.ts'
+      - 'src/platform/creative/deterministic/BackgroundIsolation.ts'
+      - 'tests/editor-high-fidelity-kernel-quality.test.ts'
+      - 'scripts/capture-editor-real-image-fidelity.mjs'
+      - 'config/v1-fashion-real-image-fixtures.json'
+      - 'docs/editor-v1-image-quality-audit.md'
+      - '.github/workflows/editor-v1-real-image-quality.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  editor-quality-kernels:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify exact candidate
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Compile independent editor image-quality regression suite
+        run: |
+          mkdir -p .test-cache/editor-quality-build
+          npx esbuild tests/editor-high-fidelity-kernel-quality.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-quality-build/editor-quality.test.mjs \
+            --external:node:*
+      - name: Verify editor lossless transforms, alpha edges, selection masking, invalid inputs
+        run: node --test .test-cache/editor-quality-build/editor-quality.test.mjs
+      - name: Reject diff whitespace drift
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
+
+  real-photo-evidence:
+    needs: editor-quality-kernels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      EDITOR_EVIDENCE_DIR: .test-cache/editor-real-image-quality
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - name: Bundle deterministic Editor kernels, no cloud editing path
+        run: |
+          mkdir -p .test-cache/editor-quality-build
+          npx esbuild scripts/capture-editor-real-image-fidelity.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-quality-build/capture.mjs \
+            --external:sharp --external:node:*
+      - name: Measure seven Editor operations on three licensed photographs
+        run: |
+          node .test-cache/editor-quality-build/capture.mjs \
+            config/v1-fashion-real-image-fixtures.json "$EDITOR_EVIDENCE_DIR"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const report=JSON.parse(readFileSync(process.env.EDITOR_EVIDENCE_DIR+'/editor-image-quality-report.json','utf8'));
+          assert.equal(report.kind,'BERS_EDITOR_REAL_IMAGE_FIDELITY_EVALUATION_RND');
+          assert.equal(report.candidateSha,process.env.EXPECTED_SHA);
+          assert.equal(report.sampleCount,3);
+          assert.equal(report.perImageOperations,7);
+          assert.equal(report.pixelInvariantStatus,'PASS');
+          assert.equal(report.visualReviewStatus,'PENDING_INDEPENDENT_HUMAN_REVIEW');
+          assert.equal(report.releaseGateCleared,false);
+          assert.equal(report.productionAuthorityGrantedByEvidence,false);
+          assert.ok(Number.isSafeInteger(report.peakRssBytes) && report.peakRssBytes>0);
+          assert.ok(report.fixtures.every(x=>x.operationResults.length===7));
+          NODE
+      - name: Upload reproducible Editor photo QA and review grids
+        uses: actions/upload-artifact@v4
+        with:
+          name: bers-editor-real-photo-quality-${{ env.EXPECTED_SHA }}
+          path: ${{ env.EDITOR_EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 45
