@@ -49,6 +49,7 @@ async function fixture() {
       fixtureRightsRef: 'release-fixture-consent-01',
       garmentPreservation: 'PASS',
       logoPatternPreservation: 'PASS',
+      reviewedOutputSha256: digest(result),
       observedFailureModes: ['minor edge aliasing noted and accepted'],
       latencyMs: 25.5,
       peakMemoryBytes: 64 * 1024 * 1024,
@@ -112,6 +113,36 @@ test('Fashion real-image verifier rejects a review bound to another candidate SH
       fetcher: f.fetcher,
     }),
     /review candidateSha does not match exact candidate/u,
+  );
+});
+
+test('Fashion real-image verifier rejects owner review without exact result hash', async () => {
+  const f = await fixture();
+  delete f.review.samples[0].reviewedOutputSha256;
+  f.bodies.set(f.urls.review, Buffer.from(JSON.stringify(f.review)));
+  await assert.rejects(
+    verifyFashionRealImageQualityEvidence({
+      expectedSha: SHA,
+      fixtureManifestUrl: f.urls.fixture,
+      reviewArtifactUrl: f.urls.review,
+      fetcher: f.fetcher,
+    }),
+    /owner-reviewed output SHA-256 does not match/u,
+  );
+});
+
+test('Fashion real-image verifier rejects substituted owner-reviewed result hash', async () => {
+  const f = await fixture();
+  f.review.samples[0].reviewedOutputSha256 = 'f'.repeat(64);
+  f.bodies.set(f.urls.review, Buffer.from(JSON.stringify(f.review)));
+  await assert.rejects(
+    verifyFashionRealImageQualityEvidence({
+      expectedSha: SHA,
+      fixtureManifestUrl: f.urls.fixture,
+      reviewArtifactUrl: f.urls.review,
+      fetcher: f.fetcher,
+    }),
+    /owner-reviewed output SHA-256 does not match/u,
   );
 });
 
