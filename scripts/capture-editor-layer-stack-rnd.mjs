@@ -8,6 +8,7 @@ import sharp from 'sharp';
 
 import { composeEditorRasterLayersRgba8 } from '../src/platform/creative/deterministic/EditorRasterLayerStackRND.ts';
 import { analyzeEditorTonalClippingRgba8 } from '../src/platform/creative/deterministic/EditorTonalClippingRND.ts';
+import { inspectEditorColorDifferenceRgba8 } from '../src/platform/creative/deterministic/EditorColorDifferenceRND.ts';
 import {
   analyzeEditorPixelQualityRgba8,
   requireEditorProtectedPixelsUnchanged,
@@ -84,6 +85,9 @@ async function main(){
     assert.deepEqual(Buffer.from(layer.mask),maskBefore,'mask mutated');
     const audit=analyzeEditorPixelQualityRgba8(rgba,output,width,height,layer.mask);
     const tonalDiagnostics=analyzeEditorTonalClippingRgba8(rgba,output,width,height,layer.mask);
+    const colorDifference=inspectEditorColorDifferenceRgba8(rgba,output,width,height,layer.mask);
+    assert.equal(colorDifference.qualityApproved,false);
+    assert.ok(colorDifference.evaluatedOpaquePositions>0,'Color comparison lacked opaque pixels');
     requireEditorProtectedPixelsUnchanged(audit);
     assert.ok(audit.changedAuthorizedPixels>0,'layer did not produce real image edit');
     assert.ok(audit.protectedPixels>0,'mask must protect real original pixels');
@@ -121,7 +125,7 @@ async function main(){
       resultPngSha256:hash(resultPng),
       comparisonGridSha256:hash(grid),
       layerR8MaskSha256:hash(maskBefore),
-      geometry:{width,height},runtimeMs,audit,tonalDiagnostics,
+      geometry:{width,height},runtimeMs,audit,tonalDiagnostics,colorDifference,
       comparisonColumns:['SOURCE','RND_MASKED_SOURCE_OVER','ABSOLUTE_RGB_DIFFERENCE_X3'],
     });
     console.log('LAYER_PHOTO_RND',index+1,fixture.id,JSON.stringify({
