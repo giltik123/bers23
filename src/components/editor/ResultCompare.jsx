@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, Trash2, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
+import { canComparePixelsAligned } from './compareGeometryPolicy';
 
 // A read-only inspector for an unaccepted candidate. The Core-owned Accept,
 // Discard, and Retry callbacks remain the ONLY controls changing Project state.
@@ -35,7 +36,7 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
     const resolve = () => {
       if (!alive || !beforeSize || !afterSize) return;
       setGeometry(
-        beforeSize.width === afterSize.width && beforeSize.height === afterSize.height
+        canComparePixelsAligned(beforeSize, afterSize)
           ? 'aligned' : 'different',
       );
     };
