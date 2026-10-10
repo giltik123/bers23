@@ -11,10 +11,11 @@ const MODES = Object.freeze([
   ['FLIP_VERTICAL', 'Flip vertical'],
 ]);
 
-export default function AgentPanel({ project, state, busy = false, disabled = false, onStart, onRetry, onCancel }) {
+export default function AgentPanel({ project, voiceProposal = null, state, busy = false, disabled = false, onStart, onRetry, onCancel }) {
   const [mode, setMode] = useState('ROTATE_90_CW');
   const [width, setWidth] = useState(project?.width ?? 1);
   const [height, setHeight] = useState(project?.height ?? 1);
+  const [voiceReview,setVoiceReview]=useState(false);
   const active = Boolean(state?.active);
   const view = state?.view;
 
@@ -24,6 +25,17 @@ export default function AgentPanel({ project, state, busy = false, disabled = fa
     setHeight(project?.height ?? 1);
   }, [project?.current_image_artifact_id, project?.width, project?.height, active]);
 
+  useEffect(()=>{
+    if(!voiceProposal?.revision || active || busy || disabled ||
+      voiceProposal.sourceArtifactId!==project?.current_image_artifact_id)return;
+    if(voiceProposal.mode && MODES.some(([value])=>value===voiceProposal.mode) &&
+      Number.isSafeInteger(voiceProposal.width) &&
+      Number.isSafeInteger(voiceProposal.height)){
+      setMode(voiceProposal.mode);
+      setWidth(voiceProposal.width);setHeight(voiceProposal.height);
+    }
+    setVoiceReview(true);
+  },[voiceProposal?.revision,project?.current_image_artifact_id,active,busy,disabled]);
   const validTarget = useMemo(() => Number.isSafeInteger(width) && Number.isSafeInteger(height)
     && width > 0 && height > 0 && width <= RESIZE_MAX_DIMENSION && height <= RESIZE_MAX_DIMENSION
     && width * height <= RESIZE_MAX_OUTPUT_PIXELS, [width, height]);
@@ -51,6 +63,12 @@ export default function AgentPanel({ project, state, busy = false, disabled = fa
         <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-label="Core-owned workflow" />
       </div>
 
+      {voiceReview&&!active&&(
+        <p role="status" className="text-xs rounded-md border p-2">
+          Голос подготовил параметры. Проверьте их и нажмите штатную кнопку
+          Run bounded workflow, если хотите запустить. Ничего не выполнено автоматически.
+        </p>
+      )}
       <div className="rounded-xl bg-secondary/50 p-3 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">Fixed workflow</p>
         <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Bounded Agent workflow steps">
