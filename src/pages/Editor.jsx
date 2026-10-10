@@ -132,6 +132,7 @@ export default function Editor() {
   const [committing, setCommitting] = useState(false);
   const [editTab, setEditTab] = useState('prompt');
   const [activeRecipe, setActiveRecipe] = useState(null);
+  const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
   const [lastAction, setLastAction] = useState(null);
   const pendingResultRef = useRef(null);
   pendingResultRef.current = pendingResult;
@@ -211,7 +212,7 @@ export default function Editor() {
     || Boolean(pendingResult);
 
   useEffect(() => () => disposePendingPreview(pendingResultRef.current), []);
-  useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); }, [project?.current_image_artifact_id]);
+  useEffect(() => { setCropDraft(null); cropAnchorRef.current = null; setResizeDraft(null); setResizeAspectLocked(true); setHiddenObjectIds(new Set()); }, [project?.current_image_artifact_id]);
   useEffect(() => {
     if (!selection) return undefined;
     const handleSelectionHistoryShortcut = (event) => {
@@ -971,6 +972,7 @@ export default function Editor() {
         imageUrl={project.current_image_url}
         projectId={project.id} sourceArtifactId={project.current_image_artifact_id}
         imageWidth={project.width} imageHeight={project.height}
+        hiddenObjectIds={hiddenObjectIds}
         objects={objects}
         selectedId={selected?.id}
         onSelect={(obj) => selectObject(obj.id)}
@@ -1096,7 +1098,7 @@ export default function Editor() {
         cacheStatus="empty"
       />
 
-      {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
+      {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} onVisibilityChange={setHiddenObjectIds} /></AdaptivePanel>}
 
       {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
         <p className="text-[11px] text-muted-foreground text-center">
