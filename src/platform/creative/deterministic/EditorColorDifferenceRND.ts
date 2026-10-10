@@ -94,7 +94,11 @@ export function srgb8ToLabD65(r: number, g: number, b: number): LabD65 {
   const y = 0.2126729 * red + 0.7151522 * green + 0.0721750 * blue;
   const z = (0.0193339 * red + 0.1191920 * green + 0.9503041 * blue) / 1.08883;
   const fx = labComponent(x), fy = labComponent(y), fz = labComponent(z);
-  return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+  // The published D65 sRGB matrix rounds its Y coefficients to 1.0000001;
+  // without this clamp, pure white exceeds Lab L=100 by ~0.0000039 and is
+  // erroneously rejected by the subsequent standards-based Delta-E verifier.
+  return { L: Math.max(0, Math.min(100, 116 * fy - 16)),
+    a: 500 * (fx - fy), b: 200 * (fy - fz) };
 }
 
 function isRgba(value: unknown, byteLength: number): value is Uint8Array | Uint8ClampedArray {
