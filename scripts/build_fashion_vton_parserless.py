@@ -169,9 +169,9 @@ def build(source: Path, target: Path) -> Path:
             rewrite_pyproject((source / "pyproject.toml").read_text(encoding="utf-8")), encoding="utf-8"
         )
         (target / "src" / "fashn_vton" / "research_identity.py").write_text(
-            '# GENERATED BERS parserless research identity; no production admission.\\n'
-            'KIND = "BERS_FASHION_PARSERLESS_RESEARCH_V1"\\n'
-            f'UPSTREAM_SHA = "{UPSTREAM_COMMIT}"\\n',
+            '# GENERATED BERS parserless research identity; no production admission.\n'
+            'KIND = "BERS_FASHION_PARSERLESS_RESEARCH_V1"\n'
+            f'UPSTREAM_SHA = "{UPSTREAM_COMMIT}"\n',
             encoding="utf-8",
         )
         shutil.copy2(source / "LICENSE", target / "LICENSE")
