@@ -214,6 +214,10 @@ try {
   assert.deepEqual(diagnostics.unexpectedResponses, []);
 
   // R3b: deterministic local Rotate -> Preview -> Accept -> Undo -> Redo.
+  // The streamlined Editor keeps Rotate/Flip behind an explicit disclosure.
+  const rotateToggle = page.getByText('Rotate or flip', { exact: true });
+  const rotateAction = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
+  if (!(await rotateAction.isVisible())) await rotateToggle.click();
   const rotate = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
   await rotate.waitFor({ state: 'visible', timeout: 10_000 });
   assert.equal(await rotate.isEnabled(), true, 'Rotate 90° clockwise must be available for a zero-object whole image');
