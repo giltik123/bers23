@@ -2,7 +2,7 @@ import {
   changeEditorLayerDocumentRND,
   type EditorLayerDocumentRND,
   type EditorLayerDraftChangeRND,
-} from './EditorLayerDocumentRND';
+} from './EditorLayerDocumentRND.ts';
 
 export type EditorLayerDraftHistoryRND = Readonly<{
   kind: 'BERS_EDITOR_LAYER_DRAFT_HISTORY_RND';
