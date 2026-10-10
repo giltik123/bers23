@@ -23,6 +23,7 @@ import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { PostgresProjectStore } from '../projects/postgresProjectStore.ts';
 import { assertCanonicalSceneObjectPublication } from '../projects/sceneObjectAdmission.ts';
 import { runFalSam3Scene } from '../scene/falSam3SemanticInstances.ts';
+import { runClassicalSceneSegmentation } from '../scene/classicalSceneSegmentation.ts';
 import { authenticatedOwnerScope, authenticatedProjectScope } from './authenticatedPrincipalScope.ts';
 
 type HttpAuthAuthority = Readonly<{
@@ -179,14 +180,21 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         && input.config.provider==='FAL' && Boolean(input.config.falKey);
       if(path==='/api/core/scene/capability'&&request.method==='GET'){
         return send(response,200,{supportsSemanticInstances:sceneEnabled,
+          supportsClassicalSegmentation:true,classicalModelId:'bers-classical-cv',
           modelId:sceneEnabled?'fal-ai/sam-3/image':null,
           cloudProcessing:sceneEnabled,reviewRequired:true});
       }
       if(path==='/api/core/scene/analyze'&&request.method==='POST'){
         assertBrowserMutationAllowed(request,input.config);
-        if(!sceneEnabled)return sendError(response,503,'scene_model_unavailable',
-          'Semantic scene segmentation is not enabled',correlationId,false);
         const body=await readJson(request,input.config.bodyLimitBytes) as any;
+        const sceneMode=body?.mode==='SAM3'?'SAM3':
+          body?.mode==='CLASSICAL'||body?.mode===undefined?'CLASSICAL':null;
+        if(!sceneMode)
+          return sendError(response,400,'invalid_scene_mode','Unknown scene method',correlationId,false);
+        if(sceneMode==='SAM3'&&!sceneEnabled)
+          return sendError(response,503,'scene_model_unavailable',
+            'Cloud semantic segmentation is not enabled',correlationId,false);
+        const requestedModel=sceneMode==='SAM3'?'fal-ai/sam-3/image':'bers-classical-cv';
         const id=typeof body?.projectId==='string'?body.projectId:'';
         const token=typeof body?.sourceArtifactId==='string'?body.sourceArtifactId:'';
         if(!id||!token||!Number.isSafeInteger(body.expectedRevision)||
@@ -208,7 +216,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         // masks. Every reused MASK still passes Core signature/lineage checks.
         const retainedAuto=(Array.isArray(current.objects)?current.objects:[])
           .filter((obj:any)=>obj?.metadata?.segmentation==='AUTO' &&
-            obj?.metadata?.sourceArtifactId===token);
+            obj?.metadata?.sourceArtifactId===token &&
+            obj?.metadata?.modelId===requestedModel);
         if(retainedAuto.length>0 && body.force!==true){
           await assertCanonicalSceneObjectPublication({
             objects:current.objects,sourceArtifactId:token,
@@ -233,7 +242,8 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
               'Scene source changed before provider admission',correlationId,false);
           const already=(Array.isArray(locked.objects)?locked.objects:[])
             .filter((obj:any)=>obj?.metadata?.segmentation==='AUTO' &&
-              obj?.metadata?.sourceArtifactId===token);
+              obj?.metadata?.sourceArtifactId===token &&
+            obj?.metadata?.modelId===requestedModel);
           if(already.length>0 && body.force!==true){
             await assertCanonicalSceneObjectPublication({
               objects:locked.objects,sourceArtifactId:token,
@@ -245,17 +255,21 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         const source=await input.artifacts.images.loadSource(storageId,scope);
         if(!source||source.width!==Number(current.width)||source.height!==Number(current.height))
           return sendError(response,409,'project_source_conflict','Scene source is unavailable',correlationId,false);
-        const {instances}=await runFalSam3Scene({
-          imagePng:new Uint8Array(source.bytes),
-          width:source.width,height:source.height,falKey:input.config.falKey!,
-          signal:AbortSignal.timeout(Math.min(input.config.requestTimeoutMs,120_000)),
-        });
+        const {instances}=sceneMode==='CLASSICAL'
+          ? await runClassicalSceneSegmentation({
+              imagePng:new Uint8Array(source.bytes),width:source.width,height:source.height,
+            })
+          : await runFalSam3Scene({
+              imagePng:new Uint8Array(source.bytes),
+              width:source.width,height:source.height,falKey:input.config.falKey!,
+              signal:AbortSignal.timeout(Math.min(input.config.requestTimeoutMs,120_000)),
+            });
         const latest=await input.projects.get(principal,id);
         if(!latest||latest.current_image_storage_id!==storageId||
            Number(latest.revision)!==body.expectedRevision)
           return sendError(response,409,'project_source_conflict','Scene changed during analysis',correlationId,false);
         if(!instances.length)return send(response,200,{status:'NO_OBJECTS',objects:[],
-          message:'SAM3 returned no verified scene masks'});
+          message:sceneMode==='CLASSICAL'?'Классический алгоритм не нашёл цветовых областей.':'SAM3 returned no verified scene masks'});
         const additions=[];
         for(const instance of instances){
           const stored=await input.artifacts.masks.persistManual(
@@ -295,7 +309,7 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         });
         return send(response,200,{status:'COMPLETED',objects:additions,
           updatedRevision:Number(updated.revision),
-          message:`SAM3 created ${additions.length} canonical object masks. Review required.`});
+          message:sceneMode==='CLASSICAL'?`Без ИИ: создано ${additions.length} цветовых масок (без распознавания объектов).`:`SAM3 created ${additions.length} canonical object masks. Review required.`});
         } finally {
           await releaseSceneLease();
         }
