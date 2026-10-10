@@ -90,6 +90,9 @@ function createCreativeHttpCore(dependencies: CreativeCoreDependencies) {
       // silently downgrade the browser request to unrestricted GLOBAL_EDIT.
       if (Boolean(input.selectedObjectIds?.length) !== Boolean(input.maskArtifactIds?.length))
         throw publicError(400, 'Controlled edits require both selected objects and canonical MASK artifacts');
+      if (input.maskArtifactIds?.length &&
+          (input.maskArtifactIds.length !== 1 || input.selectedObjectIds?.length !== 1))
+        throw publicError(400, 'Controlled generative edits currently require exactly one object and one MASK');
       if (!await dependencies.artifacts.projectBelongsTo(input.projectId, identity)) throw publicError(403, 'Project scope denied');
       const scope = { tenantId: identity.tenantId, userId: identity.userId, projectId: input.projectId };
       const resolved = await resolveInputArtifact(input, scope, dependencies); const masks = await Promise.all((input.maskArtifactIds ?? []).map(async artifactId => { const artifact = await dependencies.artifacts.resolveArtifact(artifactId, scope); if (!artifact) throw publicError(403, 'Mask artifact scope denied'); return artifact; }));
