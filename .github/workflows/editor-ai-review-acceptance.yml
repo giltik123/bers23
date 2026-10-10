@@ -1,0 +1,56 @@
+name: Editor AI source-bound preview acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/Editor.jsx'
+      - 'src/components/editor/ai/AICommandStudio.jsx'
+      - 'src/components/editor/ResultCompare.jsx'
+      - 'src/application/editor/ai-first/bindGenerativeScope.js'
+      - 'src/application/editor/ai-first/resultReviewGate.js'
+      - 'src/application/editor/ai-first/interpretPhotoCommand.js'
+      - 'src/application/fashion/manualTryOnSelectionGuard.js'
+      - 'src/components/editor/outfits/CanonicalTryOnManualRemediationPanel.jsx'
+      - 'tests/editor-ai-generative-scope.test.mjs'
+      - 'tests/editor-result-acceptance-identity.test.mjs'
+      - 'tests/fashion-manual-stale-selection.test.mjs'
+      - '.github/workflows/editor-ai-review-acceptance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bers-editor-ai-visual-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-source-and-visual-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact commit under test
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - name: Install canonical graph
+        run: npm ci
+      - name: Reject stale source/mask, stale preview reviews and Fashion garment swaps
+        run: |
+          node --test \
+            tests/editor-ai-generative-scope.test.mjs \
+            tests/editor-result-acceptance-identity.test.mjs \
+            tests/fashion-manual-stale-selection.test.mjs
+      - name: Existing frontend typecheck and bundle
+        run: |
+          npm run typecheck
+          npm run build
+      - name: No whitespace errors
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
