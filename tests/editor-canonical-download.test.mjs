@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import sharp from 'sharp';
 import { readFile } from 'node:fs/promises';
 import { canonicalDownloadName, downloadCanonicalImage } from '../src/application/editor/downloadCanonicalImage.js';
 
 const url='/api/core/artifacts/results/signed%2Btoken';
-function fixture({status=200,mime='image/png',bytes=new Uint8Array([137,80,78,71]),urlValue=url}={}) {
+const verifiedRgba=Buffer.from([227,18,49,255,12,154,71,255,79,56,213,255,181,180,36,255]);
+const verifiedPng=await sharp(verifiedRgba,{raw:{width:2,height:2,channels:4}})
+  .png({compressionLevel:9}).toBuffer();
+function fixture({status=200,mime='image/png',bytes=verifiedPng,urlValue=url}={}) {
   const calls=[];
-  let clicked=false,removed=false,scheduled;
+  let clicked=false,removed=false,scheduled,downloadedBlob;
   const node={
     href:'',download:'',style:{},
     click:()=>{clicked=true;calls.push('download.click');},
@@ -17,7 +21,7 @@ function fixture({status=200,mime='image/png',bytes=new Uint8Array([137,80,78,71
     body:{appendChild:element=>{assert.equal(element,node);calls.push('append');}},
   };
   const urlApi={
-    createObjectURL:blob=>{assert.equal(blob.size,bytes.length);calls.push('blob');return 'blob:generated';},
+    createObjectURL:blob=>{assert.equal(blob.size,bytes.length);downloadedBlob=blob;calls.push('blob');return 'blob:generated';},
     revokeObjectURL:blob=>{assert.equal(blob,'blob:generated');calls.push('revoke');},
   };
   const fetcher=async(request,init)=>{
@@ -29,7 +33,7 @@ function fixture({status=200,mime='image/png',bytes=new Uint8Array([137,80,78,71
   return {
     options:{imageUrl:urlValue,projectName:'Fashion/Photos',origin:'https://bers.test',
       fetcher,documentApi,urlApi,scheduleRevoke:callback=>{scheduled=callback;}},
-    state:()=>({calls,clicked,removed,filename:node.download,href:node.href,scheduled}),
+    state:()=>({calls,clicked,removed,filename:node.download,href:node.href,scheduled,downloadedBlob}),
   };
 }
 test('actual signed image pixels are downloaded to a local file, not opened in a tab',async()=>{
@@ -41,6 +45,9 @@ test('actual signed image pixels are downloaded to a local file, not opened in a
   assert.equal(f.state().removed,true);
   assert.equal(f.state().href,'blob:generated');
   assert.equal(f.state().filename,'Fashion_Photos.png');
+  const pixels=await sharp(Buffer.from(await f.state().downloadedBlob.arrayBuffer()))
+    .ensureAlpha().raw().toBuffer();
+  assert.deepEqual(pixels,verifiedRgba);
   f.state().scheduled();
   assert.equal(f.state().calls.at(-1),'revoke');
 });
