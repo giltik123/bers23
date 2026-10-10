@@ -22,6 +22,7 @@ const INTENT_LABELS={
   WARDROBE_QUERY:'Открыть Fashion с поисковыми подсказками',
   TRYON_SELECT_PROPOSAL:'Нужно выбрать реальную вещь в примерке',
   REQUIRES_CANONICAL_CONTEXT:'Нужно подтвердить действие в штатной панели BERS',
+  AGENT_PROPOSAL:'Подготовить параметры Agent (без запуска)',
   AMBIGUOUS:'Неоднозначная команда: уточните фразу',
 };
 /**
