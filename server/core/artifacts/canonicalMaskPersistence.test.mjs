@@ -41,6 +41,16 @@ test('canonical grayscale PNG persistence hydrates soft alpha byte-exactly and e
   assert.equal(artifacts[1].metadata.sourceImageStorageId, sourceStorageId);
   assert.equal(createHash('sha256').update(artifacts[1].value.alpha).digest('hex'), createHash('sha256').update(alpha).digest('hex'));
   await assert.rejects(() => hydrator.hydrate(scope, otherSourceId, [maskId]), /source lineage/);
+  // Legacy masks with no source lineage must not attach to a different image
+  // simply because the raster dimensions happen to match.
+  const lineageRow = row;
+  row = { ...lineageRow, source_image_storage_id: null };
+  await assert.rejects(
+    () => hydrator.hydrate(scope, sourceId, [maskId]),
+    /source lineage is required for controlled editing/,
+  );
+  row = lineageRow;
+
   assert.equal(await authority.owns(scope, [maskId]), true);
   assert.equal(await authority.owns({ ...scope, userId: 'other' }, [maskId]), false);
   assert.equal(await authority.owns({ ...scope, tenantId: 'other' }, [maskId]), false);
