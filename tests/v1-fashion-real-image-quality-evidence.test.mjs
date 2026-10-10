@@ -49,6 +49,7 @@ async function fixture() {
       fixtureRightsRef: 'release-fixture-consent-01',
       garmentPreservation: 'PASS',
       logoPatternPreservation: 'PASS',
+      reviewedOutputSha256: digest(result),
       observedFailureModes: ['minor edge aliasing noted and accepted'],
       latencyMs: 25.5,
       peakMemoryBytes: 64 * 1024 * 1024,
@@ -115,6 +116,36 @@ test('Fashion real-image verifier rejects a review bound to another candidate SH
   );
 });
 
+test('Fashion real-image verifier rejects owner review without exact result hash', async () => {
+  const f = await fixture();
+  delete f.review.samples[0].reviewedOutputSha256;
+  f.bodies.set(f.urls.review, Buffer.from(JSON.stringify(f.review)));
+  await assert.rejects(
+    verifyFashionRealImageQualityEvidence({
+      expectedSha: SHA,
+      fixtureManifestUrl: f.urls.fixture,
+      reviewArtifactUrl: f.urls.review,
+      fetcher: f.fetcher,
+    }),
+    /owner-reviewed output SHA-256 does not match/u,
+  );
+});
+
+test('Fashion real-image verifier rejects substituted owner-reviewed result hash', async () => {
+  const f = await fixture();
+  f.review.samples[0].reviewedOutputSha256 = 'f'.repeat(64);
+  f.bodies.set(f.urls.review, Buffer.from(JSON.stringify(f.review)));
+  await assert.rejects(
+    verifyFashionRealImageQualityEvidence({
+      expectedSha: SHA,
+      fixtureManifestUrl: f.urls.fixture,
+      reviewArtifactUrl: f.urls.review,
+      fetcher: f.fetcher,
+    }),
+    /owner-reviewed output SHA-256 does not match/u,
+  );
+});
+
 test('Fashion real-image verifier rejects synthetic source classification', async () => {
   const f = await fixture();
   f.review.samples[0].sourceClass = 'SYNTHETIC';
@@ -130,10 +161,12 @@ test('Fashion real-image verifier rejects synthetic source classification', asyn
   );
 });
 
-test('Fashion real-image verifier rejects image digest drift', async () => {
+test('Fashion real-image verifier rejects image digest drift even when review repeats the corrupted hash', async () => {
   const f = await fixture();
   f.manifest.samples[0].result.sha256 = 'f'.repeat(64);
+  f.review.samples[0].reviewedOutputSha256 = 'f'.repeat(64);
   f.bodies.set(f.urls.fixture, Buffer.from(JSON.stringify(f.manifest)));
+  f.bodies.set(f.urls.review, Buffer.from(JSON.stringify(f.review)));
   await assert.rejects(
     verifyFashionRealImageQualityEvidence({
       expectedSha: SHA,
@@ -193,4 +226,14 @@ test('Fashion evidence workflow keeps contract CI separate from real external ev
   assert.match(docs, /does not require a physical phone/u);
   assert.match(docs, /Do not use private end-user photos merely to satisfy the release gate/u);
   assert.match(docs, /does not edit release authority by itself/u);
+});
+
+test('Fashion owner dispatch bridge checks review output byte identities before triggering evidence workflow', async () => {
+  const source = await readFile('.github/workflows/v1-fashion-real-image-quality-evidence-dispatch.yml', 'utf8');
+  assert.match(source, /sample\.reviewedOutputSha256 !== fixtureSample\.result\.sha256/u);
+  assert.match(source, /reviewedIds\.has\(sample\.id\)/u);
+  assert.match(source, /sampleIds\.has\(sample\.id\)/u);
+  const outputBinding = source.indexOf('sample.reviewedOutputSha256 !== fixtureSample.result.sha256');
+  const dispatch = source.indexOf('github.rest.actions.createWorkflowDispatch');
+  assert.ok(outputBinding > 0 && dispatch > outputBinding, 'review-output hash gate must run before any evidence dispatch');
 });
