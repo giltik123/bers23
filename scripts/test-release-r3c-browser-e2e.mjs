@@ -454,6 +454,10 @@ async function runVerifiedRotate(page, expectedWidth, expectedHeight, label) {
       && url?.origin === coreOrigin
       && /^\/api\/core\/local-execution\/orthogonal-transform\/[^/]+\/result$/.test(url.pathname);
   }, { timeout: 20_000 });
+  // The streamlined Editor keeps Rotate/Flip behind an explicit disclosure.
+  const rotateToggle = page.getByText('Rotate or flip', { exact: true });
+  const rotateAction = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
+  if (!(await rotateAction.isVisible())) await rotateToggle.click();
   const rotate = page.getByRole('button', { name: 'Rotate 90° clockwise', exact: true });
   await rotate.waitFor({ state: 'visible', timeout: 10_000 });
   assert.equal(await rotate.isEnabled(), true, `${label}: Rotate must be enabled`);
