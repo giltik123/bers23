@@ -28,8 +28,15 @@ jobs:
           node-version: 24.x
           cache: npm
       - run: npm ci
-      - name: Decode independent PNG roundtrip with Sharp, preserve hidden RGB and verify hashes
-        run: node --experimental-strip-types --test tests/editor-lossless-export-rnd.test.mjs
+      - name: Bundle browser PNG kernel and independent Sharp decoder test
+        run: |
+          mkdir -p .test-cache/editor-export-build
+          npx esbuild tests/editor-lossless-export-rnd.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-export-build/png-export.test.mjs \
+            --external:sharp --external:node:*
+      - name: Prove lossless PNG, exact RGBA and SHA invariants
+        run: node --test .test-cache/editor-export-build/png-export.test.mjs
       - name: Validate browser and Core TypeScript contracts
         run: npm run typecheck
       - name: Diff contract
