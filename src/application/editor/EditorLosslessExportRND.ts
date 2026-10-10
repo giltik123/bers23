@@ -63,10 +63,16 @@ export async function prepareEditorLosslessPngExportRND(input: Readonly<{
       image.format!=='RGBA8' || image.orientation!==1 || image.colorSpace!=='srgb') {
     throw new Error('Editor export requires bounded canonical orientation-1 RGBA8 sRGB image');
   }
-  // Hash exact decoded pixels, rather than trusting a caller-provided digest.
-  const sourcePixels=new Uint8Array(image.data);
+  // Snapshot once before the first await, preventing concurrent caller edits
+  // from making pixel and encoded PNG digests describe different frames.
+  const snapshot: PixelImage = Object.freeze({
+    width:image.width,height:image.height,
+    data:new Uint8ClampedArray(image.data),
+    format:'RGBA8',orientation:1,colorSpace:'srgb',
+  });
+  const sourcePixels=new Uint8Array(snapshot.data);
   const pixelSha256=await sha256(sourcePixels);
-  const bytes=await encodeDeterministicRgbaPng(image);
+  const bytes=await encodeDeterministicRgbaPng(snapshot);
   if(!(bytes instanceof Uint8Array)||bytes.length===0)throw new Error('Editor PNG encoding failed');
   const outputPngSha256=await sha256(bytes);
   return Object.freeze({
