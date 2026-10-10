@@ -15,7 +15,7 @@ export function createCanonicalAutoSceneMaskRunner(provider) {
     let sequence=0;
     return Object.freeze({
       cancel:()=>{sequence++;},
-      start:async(source,{force=false,mode='CLASSICAL'}={})=>{
+      start:async(source,{force=false,mode='CLASSICAL',promptKey=null}={})=>{
         const ticket=++sequence;
         try{
           const capability=await coreClient.scene.capability();
@@ -31,7 +31,7 @@ export function createCanonicalAutoSceneMaskRunner(provider) {
           const result=await coreClient.scene.analyze({
             projectId:source.id,
             sourceArtifactId:source.current_image_artifact_id,
-            expectedRevision:source.revision,force,mode,
+            expectedRevision:source.revision,force,mode,promptKey,
           });
           if(ticket!==sequence)return {status:'CANCELLED',objects:[]};
           if(!['COMPLETED','NO_OBJECTS','ALREADY_AVAILABLE'].includes(result?.status))
