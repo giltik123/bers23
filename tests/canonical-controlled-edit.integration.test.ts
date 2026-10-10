@@ -37,6 +37,29 @@ async function execute(f: ReturnType<typeof fixture>, body: ExecuteInput) {
 }
 const body = (suffix: string, preserveMode: 'STRICT' | 'BALANCED' | 'CREATIVE' = 'STRICT'): ExecuteInput => ({ clientRequestId: `controlled-${suffix}`, projectId: scope.projectId, artifactId: 'original', maskArtifactIds: ['mask'], selectedObjectIds: ['selected-object'], intent: 'replace selected object locally', preserveMode, budget: { credits: 1 } });
 
+test('legacy HTTP Core refuses ambiguous multi-MASK/selection instructions', async () => {
+  for (const selection of [
+    { selectedObjectIds: ['selected-a','selected-b'], maskArtifactIds: ['mask','mask-2'] },
+    { selectedObjectIds: ['selected-a','selected-b'], maskArtifactIds: ['mask'] },
+    { selectedObjectIds: ['selected-a'], maskArtifactIds: ['mask','mask'] },
+  ]) {
+    const f = fixture({
+      original: artifact('original','ORIGINAL',rgba(4,4)),
+      mask: artifact('mask','MASK',maskValue(4,4,{x:1,y:1,width:2,height:2})),
+    });
+    const core = createCreativeCore(f.dependencies);
+    await assert.rejects(
+      () => core.execute(
+        { tenantId:scope.tenantId, userId:scope.userId },
+        { ...body('multi-mask'), ...selection },
+      ),
+      (error: any) => error?.status === 400 && /exactly one object and one MASK/.test(error?.message),
+    );
+    assert.deepEqual(f.billing, []);
+    assert.deepEqual(f.providerRequests, []);
+  }
+});
+
 test('legacy HTTP Core rejects incomplete object/mask pairs before provider and Billing', async () => {
   for (const [selectedObjectIds, maskArtifactIds] of [
     [['entry-selected'], []],
