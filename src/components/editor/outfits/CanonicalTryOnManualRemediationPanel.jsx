@@ -7,6 +7,7 @@ import {
 } from '@/application/fashion/canonicalTryOnManualRemediationPolicy';
 import CanonicalTryOnContourEditor from './CanonicalTryOnContourEditor';
 import CanonicalTryOnBodyAnchorEditor from './CanonicalTryOnBodyAnchorEditor';
+import { manualTryOnSelectionKey, isFreshManualTryOnLoad } from '@/application/fashion/manualTryOnSelectionGuard';
 
 export default function CanonicalTryOnManualRemediationPanel({
   selection,
@@ -27,15 +28,7 @@ export default function CanonicalTryOnManualRemediationPanel({
 
   // A selected entry is meaningful only with its exact Project image, Outfit
   // revision and managed Garment. Never reuse an old editor after any change.
-  const selectedGarment = selection?.outfit?.entries?.find(
-    entry => entry?.entryId === selection?.entryId,
-  );
-  const selectionKey = selection ? JSON.stringify([
-    selection.projectId, selection.sourceArtifactId,
-    selection.outfit?.id, selection.outfit?.revision,
-    selection.entryId, selectedGarment?.garmentId,
-    selectedGarment?.garmentCategory,
-  ]) : null;
+  const selectionKey = manualTryOnSelectionKey(selection);
   const currentSelectionKeyRef = useRef(selectionKey);
   currentSelectionKeyRef.current = selectionKey;
   const loadSequenceRef = useRef(0);
@@ -126,22 +119,22 @@ export default function CanonicalTryOnManualRemediationPanel({
     setError('');
     try {
       const source = await onLoadContourSource(livePolicy.contourRequest.garmentId);
-      if (sequence !== loadSequenceRef.current ||
-        requestedSelectionKey !== currentSelectionKeyRef.current) return;
+      if (!isFreshManualTryOnLoad(sequence, loadSequenceRef.current,
+        requestedSelectionKey, currentSelectionKeyRef.current)) return;
       if (source?.garmentId !== livePolicy.contourRequest.garmentId) {
         throw new Error('Loaded Garment source no longer matches the selected Outfit entry.');
       }
       setContourSource(source);
       setEditorMode('CONTOUR');
     } catch (cause) {
-      if (sequence !== loadSequenceRef.current ||
-        requestedSelectionKey !== currentSelectionKeyRef.current) return;
+      if (!isFreshManualTryOnLoad(sequence, loadSequenceRef.current,
+        requestedSelectionKey, currentSelectionKeyRef.current)) return;
       openedSelectionKeyRef.current = null;
       setOpenedPolicy(null);
       setError(cause?.message || 'Managed garment source could not be loaded for contour editing.');
     } finally {
-      if (sequence === loadSequenceRef.current &&
-        requestedSelectionKey === currentSelectionKeyRef.current) {
+      if (isFreshManualTryOnLoad(sequence, loadSequenceRef.current,
+        requestedSelectionKey, currentSelectionKeyRef.current)) {
         setLoadingSource(false);
       }
     }
