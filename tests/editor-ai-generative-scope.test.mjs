@@ -132,5 +132,11 @@ test('AI Studio generation and retry preserve exact mask and source across UI wi
   assert.match(studio, /expectedProjectId:project\.id/);
   assert.match(studio, /expectedSelectedObjectId:generativeScope==='MASKED'\?selectedObject\?\.id:null/);
   assert.match(studio, /generativeScope==='MASKED'&&\(!maskId\|\|!maskConfirmed\)/);
+  assert.match(studio, /expectedSelectedObjectId: selectedObject\?\.id/);
+  assert.match(studio, /expectedMaskArtifactId: maskId/);
+  const adjustment = editor.slice(editor.indexOf('const executeAIAdjustment ='), editor.indexOf('const acceptResult ='));
+  assert.match(adjustment, /bindGenerativeScope\(/);
+  assert.match(adjustment, /mode: 'MASKED'/);
+  assert.match(adjustment, /maskArtifactId = adjustedScope\.maskArtifactIds\[0\]/);
   assert.match(compare, /scopedGeneration && !scopedReview/);
 });
