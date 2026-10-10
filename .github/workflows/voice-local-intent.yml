@@ -1,0 +1,39 @@
+name: BERS Voice local-only intent acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'src/application/voice/**'
+      - 'src/components/editor/VoiceInputPanel.jsx'
+      - 'src/components/editor/InstructionBar.jsx'
+      - 'src/pages/Editor.jsx'
+      - 'tests/voice-local-editor-input.test.mjs'
+      - '.github/workflows/voice-local-intent.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  local-only-voice:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+      - run: npm ci
+      - name: Voice intents, offline-only microphone and approval boundary
+        run: node --test tests/voice-local-editor-input.test.mjs
+      - name: Verify actual Editor build and server authority boundary
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Diff hygiene
+        run: git diff --check "${{ github.event.pull_request.base.sha }}..HEAD"
