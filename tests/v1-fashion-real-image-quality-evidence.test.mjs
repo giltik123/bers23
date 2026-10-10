@@ -237,4 +237,3 @@ test('Fashion owner dispatch bridge checks review output byte identities before 
   const dispatch = source.indexOf('github.rest.actions.createWorkflowDispatch');
   assert.ok(outputBinding > 0 && dispatch > outputBinding, 'review-output hash gate must run before any evidence dispatch');
 });
-
