@@ -978,13 +978,13 @@ export default function Editor() {
         onCropPointer={cropPointer}
       />
 
-      <section className="space-y-3 rounded-2xl border border-border/60 bg-card/40 p-3" aria-label="Image tools">
+      {!pendingResult && <section className="space-y-3 rounded-2xl border border-border/60 bg-card/40 p-3" aria-label="Image tools">
         <div>
           <h2 className="text-sm font-medium">Edit image</h2>
           <p className="text-xs text-muted-foreground">Choose a tool, make one change and review the preview before saving.</p>
         </div>
-        <div className="flex flex-wrap items-start gap-3">
-      <CropToolbar
+        <div className={cropInteractionActive || resizeInteractionActive ? 'space-y-3' : 'flex flex-wrap items-start gap-3'}>
+        {!selection && !resizeInteractionActive && <CropToolbar
         active={cropInteractionActive}
         draft={cropDraft}
         valid={Boolean(cropRect)}
@@ -995,9 +995,8 @@ export default function Editor() {
         onChange={setCropDraft}
         onApply={() => applyCrop()}
         onCancel={() => { cropAnchorRef.current = null; setCropDraft(null); }}
-      />
-
-      <ResizeToolbar
+      />}
+      {!selection && !cropInteractionActive && <ResizeToolbar
         active={resizeInteractionActive}
         draft={resizeDraft}
         valid={Boolean(resizeTarget)}
@@ -1010,10 +1009,9 @@ export default function Editor() {
         onFieldChange={updateResizeField}
         onApply={() => applyResize()}
         onCancel={() => { setResizeDraft(null); setResizeAspectLocked(true); }}
-      />
-
+      />}
         </div>
-        <details className="rounded-lg border border-border/60 p-2">
+        {!selection && !cropInteractionActive && !resizeInteractionActive && <details className="rounded-lg border border-border/60 p-2">
           <summary className="cursor-pointer select-none text-sm text-muted-foreground">Rotate or flip</summary>
           <div className="pt-3">
       <OrthogonalTransformToolbar
@@ -1023,9 +1021,9 @@ export default function Editor() {
         onApply={(mode) => applyOrthogonalTransform(mode)}
       />
           </div>
-        </details>
+        </details>}
 
-      <SelectionToolbar
+        {!cropInteractionActive && !resizeInteractionActive && <SelectionToolbar
         selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness} onStart={startSelection} hasSelectedMask={Boolean(selected?.mask_artifact_id)}
         morphologyRadius={selectionMorphologyRadius} onMorphologyRadius={setSelectionMorphologyRadius}
         polygonComposition={polygonComposition} onPolygonComposition={setPolygonComposition}
@@ -1077,8 +1075,8 @@ export default function Editor() {
           && !pendingResult && !tryOnActive && !agentActive && !applying && !committing && !isolatingBackground && !upscaling && !cropping && !resizing && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive}
         applyingLevels={applyingMaskedLevels}
         onApplyLevels={() => applyMaskedLevels()}
-      />
-      </section>
+      />}
+      </section>}
 
 
       {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj.id)} /></AdaptivePanel>}
