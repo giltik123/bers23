@@ -56,3 +56,27 @@ test('unknown scope, malformed artifact IDs and missing instructions fail', () =
   assert.throws(() => bindGenerativeScope({...base, instruction:''}), /отсутствует/);
   assert.throws(() => bindGenerativeScope({...base, expectedMaskArtifactId:'bad-mask'}), /Маска изменилась/);
 });
+
+test('whole-image requests cannot drop Russian non-change constraints', () => {
+  assert.throws(() => bindGenerativeScope({
+    ...base, mode: 'WHOLE_IMAGE', expectedMaskArtifactId: null,
+    instruction: 'Сгенерируй портрет, не меняя лицо',
+  }), /Выберите маску/);
+});
+
+test('AI Studio generation and retry preserve exact mask and source across UI wiring', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const [editor, studio, compare] = await Promise.all([
+    readFile('src/pages/Editor.jsx', 'utf8'),
+    readFile('src/components/editor/ai/AICommandStudio.jsx', 'utf8'),
+    readFile('src/components/editor/ResultCompare.jsx', 'utf8'),
+  ]);
+  assert.match(editor, /bindGenerativeScope\(/);
+  assert.match(editor, /inputArtifactId: guardedScope\?\.sourceArtifactId/);
+  assert.match(editor, /maskArtifactIds: guardedScope\s*\? guardedScope\.maskArtifactIds/);
+  assert.match(editor, /aiScope: pending\.context\.aiScope/);
+  assert.match(editor, /instructionOverride: pending\.instruction/);
+  assert.match(studio, /expectedSourceArtifactId:project\.current_image_artifact_id/);
+  assert.match(studio, /generativeScope==='MASKED'&&\(!maskId\|\|!maskConfirmed\)/);
+  assert.match(compare, /scopedGeneration && !scopedReview/);
+});
