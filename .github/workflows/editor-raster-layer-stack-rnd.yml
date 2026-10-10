@@ -7,6 +7,7 @@ on:
       - 'src/platform/creative/deterministic/EditorQualityInspectorRND.ts'
       - 'src/platform/creative/deterministic/EditorTonalClippingRND.ts'
       - 'src/platform/creative/deterministic/EditorLayerDocumentRND.ts'
+      - 'src/platform/creative/deterministic/EditorLayerDraftHistoryRND.ts'
       - 'src/components/editor/ResultCompare.jsx'
       - 'src/pages/Editor.jsx'
       - 'src/components/editor/compareGeometryPolicy.js'
@@ -16,6 +17,7 @@ on:
       - 'scripts/capture-editor-layer-stack-rnd.mjs'
       - 'config/v1-fashion-real-image-fixtures.json'
       - 'tests/editor-layer-document-rnd.test.mjs'
+      - 'tests/editor-layer-draft-history-rnd.test.mjs'
       - 'tests/editor-result-compare-inspector.test.mjs'
       - 'docs/bers-v1-quality-first-expansion-20261010.md'
       - '.github/workflows/editor-raster-layer-stack-rnd.yml'
@@ -46,6 +48,7 @@ jobs:
             tests/editor-quality-inspector-rnd.test.mjs \
             tests/editor-tonal-clipping-rnd.test.mjs \
             tests/editor-layer-document-rnd.test.mjs \
+            tests/editor-layer-draft-history-rnd.test.mjs \
             tests/editor-result-compare-inspector.test.mjs
       - name: Typecheck and production frontend build
         run: |
