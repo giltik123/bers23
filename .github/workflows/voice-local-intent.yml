@@ -4,10 +4,13 @@ on:
   pull_request:
     paths:
       - 'src/application/voice/**'
+      - 'src/components/editor/fashion/FashionPanel.jsx'
+      - 'src/components/editor/outfits/CanonicalTryOnRunnerPanel.jsx'
       - 'src/components/editor/VoiceInputPanel.jsx'
       - 'src/components/editor/InstructionBar.jsx'
       - 'src/pages/Editor.jsx'
       - 'tests/voice-local-editor-input.test.mjs'
+      - 'tests/voice-ru-intents.test.mjs'
       - '.github/workflows/voice-local-intent.yml'
 
 permissions:
@@ -30,7 +33,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Voice intents, offline-only microphone and approval boundary
-        run: node --test tests/voice-local-editor-input.test.mjs
+        run: node --test tests/voice-local-editor-input.test.mjs tests/voice-ru-intents.test.mjs
       - name: Verify actual Editor build and server authority boundary
         run: |
           npm run typecheck
