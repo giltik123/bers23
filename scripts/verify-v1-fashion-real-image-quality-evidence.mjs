@@ -47,6 +47,10 @@ export async function verifyFashionRealImageQualityEvidence(input) {
     if (typeof reviewSample.fixtureRightsRef !== 'string' || !reviewSample.fixtureRightsRef.trim()) {
       throw new Error(`Fashion quality sample ${fixtureSample.id} requires fixtureRightsRef`);
     }
+    if (!SHA256_RE.test(reviewSample.reviewedOutputSha256 ?? '') ||
+        reviewSample.reviewedOutputSha256 !== fixtureSample.result.sha256) {
+      throw new Error(`Fashion quality sample ${fixtureSample.id} owner-reviewed output SHA-256 does not match the exact fixture result`);
+    }
     if (reviewSample.garmentPreservation !== 'PASS') {
       throw new Error(`Fashion quality sample ${fixtureSample.id} failed garment preservation review`);
     }
