@@ -13,8 +13,10 @@ on:
       - 'server/core/http/nodeHttpAdapter.ts'
       - 'server/core/http/maskArtifactHttpAdapter.ts'
       - 'server/core/projects/postgresProjectStore.ts'
+      - 'server/core/projects/sceneObjectAdmission.ts'
       - 'tests/auto-scene-masks.test.mjs'
       - 'tests/auto-scene-mask-preview-adapter.test.mjs'
+      - 'tests/auto-scene-server-admission.test.mjs'
       - '.github/workflows/automatic-scene-masks.yml'
 
 permissions:
@@ -38,8 +40,11 @@ jobs:
       - run: npm ci
       - name: Test source-bound five-category scene admission
         run: node --test tests/auto-scene-masks.test.mjs
-      - name: Test authenticated Core MASK overlay transport
-        run: node --experimental-strip-types --test tests/auto-scene-mask-preview-adapter.test.mjs
+      - name: Test authenticated Core MASK overlay transport and source-bound Object admission
+        run: |
+          node --experimental-strip-types --test \
+            tests/auto-scene-mask-preview-adapter.test.mjs \
+            tests/auto-scene-server-admission.test.mjs
       - name: Typecheck and build actual Editor and Core
         run: |
           npm run typecheck
