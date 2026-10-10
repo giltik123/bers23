@@ -28,6 +28,20 @@ The photo-quality sample uses three publicly licensed Wikimedia photos from the 
 
 Numerical tests cover exact no-op/flat pixels, checkerboard anti-aliasing and linear-light energy, opaque/transparent RGBA fringe behavior, anti-ringing minima/maxima, correct gamma-light layer blending, zero-mask preservation, relative hue stability, preserved tonal distinctions, fail-closed bad dimensions/parameters, and the Clone Stamp's source-registered RGB transfer, feather and protected alpha semantics.
 
+## Actual browser interaction: isolated local Quality Lab
+
+The branch also provides `src/pages/ProfessionalEditorLabRND.jsx` as a **functional manual testing interface**, not a deployed production Editor route. It supports local photo file import (PNG/JPEG/WebP, max 20MB/2MP), original-versus-current image viewing, exposure tone slider, Lanczos3 resize by width, linear-light studio fill, pointer-based manual Clone Stamp with source and target, brush radius/hardness/opacity, five reversible local Undo/Redo snapshots, and explicit local PNG export through the existing deterministic encoder. The browser never uploads the image, invokes a provider, bills credits or commits a Project FINAL.
+
+It is deliberately available **only in a local Vite development build and only with an explicit flag**:
+
+```bash
+VITE_BERS_EDITOR_PRO_LAB=true npm run dev
+```
+
+After authenticating in the local development environment, visit `/editor-pro-lab`. Without this development flag, the route is not installed; production bundles are guarded by `import.meta.env.DEV` as well. A path-scoped test asserts the route is inside the authenticated AppLayout, that local algorithms and Undo/Redo exist, and that no Core/upload/agent/billing calls occur. No enablement is added to `main` or to release configuration through this draft.
+
+**Not yet professional production:** Canvas's browser-side image decoding may convert ICC/EXIF/hidden transparent RGB, output pixel previews are browser-managed, editing is synchronous (a 2MP job can block the UI), there is no content-aware Heal, no true stored layer document and no Core source/tenant/project authorization. The lab is for first-hand visual inspection of better local processing; **never replace canonical stored FINAL pixels from its preview**. Future worker/ICC/16-bit, advanced brush and Core-v2 execution must be measured and admitted separately.
+
 ## Acceptance before replacing the actual Editor
 
 1. **Photographic A/B acceptance**, with human review at 100% and 200% on skin, hair, high-contrast text/logos, scenery, white dresses, cutout edges and gradients. Capture destructive aliasing and undershoot/ringing, not just averages. Use actual photo output, not artwork or stock mockups.
