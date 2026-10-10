@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
 import { bindGenerativeScope } from '@/application/editor/ai-first/bindGenerativeScope';
+import { interpretPhotoCommand } from '@/application/editor/ai-first/interpretPhotoCommand';
 import { createBackgroundIsolation } from '@/application/createBackgroundIsolation';
 import { createMaskedExposure } from '@/application/createMaskedExposure';
 import { createMaskedWhiteBalance } from '@/application/createMaskedWhiteBalance';
@@ -743,6 +744,9 @@ export default function Editor() {
     const usedInstruction = instructionOverride || instruction;
     // AI Studio may execute only the scope the user explicitly reviewed. Legacy
     // prompt routes retain their existing Core behavior until independently migrated.
+    if (aiScope && interpretPhotoCommand(usedInstruction).kind !== 'GENERATIVE') {
+      throw new Error('AI Studio разрешает здесь только генеративные команды.');
+    }
     const guardedScope = aiScope ? bindGenerativeScope({
       instruction: usedInstruction,
       mode: aiScope.mode,
@@ -752,10 +756,13 @@ export default function Editor() {
       expectedMaskArtifactId: aiScope.expectedMaskArtifactId,
       objects: project?.objects || [],
     }) : null;
-    const usedPlan = instructionOverride
+    // The legacy keyword planner cannot validate arbitrary Russian generative
+    // requests. Explicitly scoped AI Studio commands instead pass the bounded
+    // generative interpreter + source/mask binding, then Core server admission.
+    const usedPlan = aiScope ? null : instructionOverride
       ? aiPlanner.plan({ project, instruction: usedInstruction, objects, selectedObject: selected })
       : plan;
-    if (!usedPlan || usedPlan.status !== 'ready') {
+    if (!aiScope && (!usedPlan || usedPlan.status !== 'ready')) {
       if (instructionOverride) throw new Error('Core Creative Edit: команда пока не проходит проверку маршрута генерации. Уточните объект, маску или сам запрос.');
       return;
     }
@@ -791,7 +798,7 @@ export default function Editor() {
       if (result.status === 'UNKNOWN') throw Object.assign(new Error('Provider result is pending reconciliation'), { code: 'PROVIDER_OUTCOME_PENDING', retryable: false });
       if (result.status !== 'SUCCESS' || !result.imageUrl) throw Object.assign(new Error('Edit failed'), { code: 'provider_failure' });
       const editorResult = { ...result, image_url: result.imageUrl, generation_time_ms: result.timing?.durationMs, credits_used: result.creditsUsed };
-      setPendingResult((current) => { disposePendingPreview(current); return { result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url }; });
+      setPendingResult((current) => { disposePendingPreview(current); return { kind: guardedScope ? 'AI_SCOPED_GENERATION' : null, result: editorResult, instruction: usedInstruction, beforeUrl: project.current_image_url }; });
       recipeEngine.recordOutcome(activeRecipe?.id, { success: true, durationMs: editorResult.generation_time_ms, credits: editorResult.credits_used });
       return editorResult;
     } catch (e) {
