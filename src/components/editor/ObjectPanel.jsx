@@ -24,7 +24,7 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
           obj.selected ? 'bg-primary/10 text-primary' : 'hover:bg-accent'
         } ${isHidden ? 'opacity-40' : ''}`}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
-        onClick={() => onSelect(obj)}
+        onClick={() => onSelect(obj.selected ? null : obj)}
       >
         {children.length > 0 ? (
           <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }} className="shrink-0">
@@ -38,7 +38,7 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
         {obj.confidence != null && (
           <span className="text-[10px] text-muted-foreground tabular-nums">{Math.round(obj.confidence * 100)}%</span>
         )}
-        <button onClick={(e) => { e.stopPropagation(); onToggleHidden(obj.id); }} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="Toggle visibility">
+        <button onClick={(e) => { e.stopPropagation(); onToggleHidden(obj.id); }} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label={isHidden ? "Show object overlay" : "Hide object overlay"} title={isHidden ? "Show selection frame on image" : "Hide selection frame on image"}>
           {isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
         </button>
       </div>
@@ -49,16 +49,11 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
   );
 }
 
-export default function ObjectPanel({ objects, onSelect }) {
+export default function ObjectPanel({ objects, onSelect, hidden, onToggleHidden }) {
   const [open, setOpen] = useState(true);
-  const [hidden, setHidden] = useState(new Set());
   const roots = objects.filter((o) => !o.parent_object);
 
-  const toggleHidden = (id) => {
-    const next = new Set(hidden);
-    next.has(id) ? next.delete(id) : next.add(id);
-    setHidden(next);
-  };
+  const toggleHidden = (id) => onToggleHidden(id);
 
   return (
     <div className="rounded-2xl border border-border/60 bg-card">
@@ -68,6 +63,7 @@ export default function ObjectPanel({ objects, onSelect }) {
       </button>
       {open && (
         <div className="px-1.5 pb-2 max-h-64 overflow-y-auto">
+          <p className="px-2 pb-2 text-[11px] text-muted-foreground">Eye icons show or hide object outlines on the canvas; they do not edit the image.</p>
           {roots.map((o) => (
             <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden} onToggleHidden={toggleHidden} onSelect={onSelect} />
           ))}
