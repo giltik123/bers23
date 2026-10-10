@@ -64,6 +64,7 @@ The review artifact must be available through a direct public HTTPS URL:
       "fixtureRightsRef": "<consent/license/source record>",
       "garmentPreservation": "PASS",
       "logoPatternPreservation": "PASS",
+      "reviewedOutputSha256": "<exact fixture.samples[0].result.sha256>",
       "observedFailureModes": [
         "<reviewed limitation, or an empty array if none were observed>"
       ],
@@ -76,7 +77,7 @@ The review artifact must be available through a direct public HTTPS URL:
 
 `logoPatternPreservation` may be `NOT_APPLICABLE` when the garment genuinely contains no logo/pattern to review. A failed garment or logo/pattern preservation review cannot produce accepted v1 evidence.
 
-Latency and peak memory must come from the actual reviewed execution, not estimates.
+Latency and peak memory must come from the actual reviewed execution, not estimates. Each `reviewedOutputSha256` must be the exact 64-character lowercase SHA-256 of that sample's `result` bytes in the fixture manifest. Missing or mismatched review hashes fail closed: the reviewer cannot attest to one output while the release verifier checks another. The published `review-draft.json` already contains these output identities; the owner must personally inspect the images and record a decision rather than mechanically converting every `PENDING_OWNER_REVIEW` to `PASS`.
 
 ## Running the evidence workflow
 
