@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Check, Trash2, RotateCcw, Loader2, ScanEye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
+import {
+  reviewCandidateIdentity, canAcceptReviewedCandidate,
+} from '@/application/editor/ai-first/resultReviewGate';
 
 const FASHION_REVIEW = Object.freeze([
   ['fit', 'Одежда сидит по телу, плечам и талии естественно'],
@@ -24,11 +27,35 @@ export default function ResultCompare({
   const [zoom, setZoom] = useState(1);
   const [fashionReview, setFashionReview] = useState(EMPTY_REVIEW);
   const [scopedReview, setScopedReview] = useState(false);
+  const [acknowledgedIdentity, setAcknowledgedIdentity] = useState(null);
+  const [loaded, setLoaded] = useState({ before: null, after: null });
+  const [failed, setFailed] = useState({ before: null, after: null });
   const imageUrl = result?.preview_url || result?.image_url;
   const fashion = kind === 'FASHION_TRYON';
   const scopedGeneration = kind === 'AI_SCOPED_GENERATION';
   const allFashionAccepted = !fashion || Object.values(fashionReview).every(Boolean);
-  const acceptDisabled = busy || !imageUrl || !allFashionAccepted || (scopedGeneration && !scopedReview);
+  const identity = reviewCandidateIdentity({
+    beforeUrl, afterUrl: imageUrl, finalArtifactId: result?.finalArtifactId,
+    executionId: result?.executionId, kind, scope: editScope,
+  });
+  const needsHumanReview = scopedGeneration || fashion;
+  const markLoaded = role => {
+    setLoaded(previous => ({ ...previous, [role]: identity }));
+    setFailed(previous => ({ ...previous, [role]: null }));
+  };
+  const markFailed = role => {
+    setFailed(previous => ({ ...previous, [role]: identity }));
+    setLoaded(previous => ({ ...previous, [role]: null }));
+  };
+  const acceptDisabled = !imageUrl || !canAcceptReviewedCandidate({
+    identity, acknowledgedIdentity,
+    afterLoadedIdentity: loaded.after, beforeLoadedIdentity: loaded.before,
+    afterErrorIdentity: failed.after, beforeErrorIdentity: failed.before,
+    requiresBefore: scopedGeneration || fashion,
+    requiresReview: needsHumanReview,
+    reviewComplete: scopedGeneration ? scopedReview : allFashionAccepted,
+    busy,
+  });
   const gestures = useAdaptiveGestures({
     onSwipeLeft: () => setView('after'),
     onSwipeRight: () => setView('before'),
@@ -37,10 +64,13 @@ export default function ResultCompare({
   useEffect(() => {
     setFashionReview(EMPTY_REVIEW);
     setScopedReview(false);
+    setAcknowledgedIdentity(identity);
+    setLoaded({ before: null, after: null });
+    setFailed({ before: null, after: null });
     setSplit(50);
     setView('after');
     setZoom(1);
-  }, [result?.finalArtifactId, result?.preview_url, beforeUrl, editScope]);
+  }, [identity]);
 
   return (
     <section className="border border-border/60 rounded-2xl p-3 space-y-4"
@@ -89,15 +119,19 @@ export default function ResultCompare({
         <div className="relative" style={{width:zoom===2?'200%':'100%'}}>
           {view==='before' ? (
             <img src={beforeUrl} alt="Исходная фотография до обработки"
+              onLoad={()=>markLoaded('before')} onError={()=>markFailed('before')}
               className="block w-full h-auto max-h-[620px] object-contain"/>
           ) : view==='after' ? (
             <img src={imageUrl} alt="Результат обработки до принятия"
+              onLoad={()=>markLoaded('after')} onError={()=>markFailed('after')}
               className="block w-full h-auto max-h-[620px] object-contain"/>
           ) : (
             <div className="relative">
               <img src={beforeUrl} alt="Исходная фотография; сравните с результатом"
+                onLoad={()=>markLoaded('before')} onError={()=>markFailed('before')}
                 className="block w-full h-auto max-h-[620px] object-contain"/>
               <img src={imageUrl} alt="Результат обработки справа от границы сравнения"
+                onLoad={()=>markLoaded('after')} onError={()=>markFailed('after')}
                 className="absolute inset-0 w-full h-full object-contain"
                 style={{clipPath:`inset(0 0 0 ${split}%)`}}/>
               <div className="absolute inset-y-0 border-l-2 border-white pointer-events-none shadow-lg"
@@ -113,6 +147,20 @@ export default function ResultCompare({
         </p>
       )}
 
+      {(failed.before === identity || failed.after === identity)&&(
+        <p role="alert" className="text-xs text-destructive">
+          Не удалось загрузить исходник или результат. Принятие заблокировано:
+          отклоните обработку либо повторите её.
+        </p>
+      )}
+      {needsHumanReview && (
+        loaded.before !== identity || loaded.after !== identity
+      ) && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Для принятия откройте «До» и «После» либо «Сравнить границу».
+          Подтверждение доступно только после загрузки обоих изображений.
+        </p>
+      )}
       {scopedGeneration&&(
         <div className="rounded-xl border border-amber-600/35 p-3 space-y-3"
           aria-label="Проверка результата генеративного ИИ">
