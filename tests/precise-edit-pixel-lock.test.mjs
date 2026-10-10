@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { composePreciseEditRgba8, composePreciseEditPatchRgba8 } from '../src/platform/creative/deterministic/PreciseEditPixelLock.ts';
+import { composePreciseEditRgba8, composePreciseEditPatchRgba8, verifyPreciseEditPixelIntegrityRgba8 } from '../src/platform/creative/deterministic/PreciseEditPixelLock.ts';
 
 test('precise edit never drifts even one unmasked source byte', () => {
   const source = new Uint8ClampedArray([11,22,33,44, 55,66,77,88, 99,10,20,30]);
@@ -103,4 +103,49 @@ test('empty ROI matte produces exact original including transparent hidden RGB b
   const patch=Uint8Array.from([1,1,1,1, 2,2,2,2, 3,3,3,3, 4,4,4,4]);
   const actual=composePreciseEditPatchRgba8(source,2,2,patch,Uint8Array.from([0,0,0,0]),{left:0,top:0,width:2,height:2});
   assert.deepEqual([...actual],[...source]);
+});
+
+
+test('independent QA invariant proves zero changed pixels outside the reviewed matte', () => {
+  const source=Uint8Array.from([10,20,30,40, 50,60,70,80, 90,100,110,120, 130,140,150,160]);
+  const generated=Uint8Array.from([200,201,202,203, 210,211,212,213, 220,221,222,223, 230,231,232,233]);
+  const mask=Uint8Array.from([0,255,0,255]);
+  const output=composePreciseEditRgba8(source,generated,mask,2,2);
+  const audit=verifyPreciseEditPixelIntegrityRgba8(source,output,mask,2,2);
+  assert.deepEqual(audit,{
+    allowedPixelCount:2, changedAllowedPixelCount:2,
+    protectedPixelCount:2, changedProtectedPixelCount:0,
+  });
+  assert.equal(Object.isFrozen(audit),true);
+});
+
+test('independent QA rejects even one changed RGB or alpha byte outside edit area', () => {
+  const source=Uint8Array.from([20,30,40,0, 10,20,30,255]);
+  const mask=Uint8Array.from([0,255]);
+  const result=Uint8Array.from(source);
+  result[4]=44;
+  assert.deepEqual(verifyPreciseEditPixelIntegrityRgba8(source,result,mask,2,1),{
+    allowedPixelCount:1, changedAllowedPixelCount:1,
+    protectedPixelCount:1, changedProtectedPixelCount:0,
+  });
+  for (const byteIndex of [0,1,2,3]) {
+    const tampered=Uint8Array.from(result);
+    tampered[byteIndex]^=255;
+    assert.throws(
+      ()=>verifyPreciseEditPixelIntegrityRgba8(source,tampered,mask,2,1),
+      /leaked outside authorized matte at pixel 0/u,
+    );
+  }
+});
+
+test('independent QA handles all-zero edit mask and rejects forged dimensions/mattes', () => {
+  const source=Uint8Array.from([1,2,3,4,5,6,7,8]);
+  assert.deepEqual(verifyPreciseEditPixelIntegrityRgba8(source,source,Uint8Array.from([0,0]),2,1),{
+    allowedPixelCount:0, changedAllowedPixelCount:0,
+    protectedPixelCount:2, changedProtectedPixelCount:0,
+  });
+  assert.throws(()=>verifyPreciseEditPixelIntegrityRgba8(source,source,Uint8Array.from([0,1]),2,1),/binary/u);
+  assert.throws(()=>verifyPreciseEditPixelIntegrityRgba8(source,source,Uint8Array.from([0]),2,1),/lengths/u);
+  assert.throws(()=>verifyPreciseEditPixelIntegrityRgba8(source,source,Uint8Array.from([0,0]),2,2),/lengths/u);
+  assert.throws(()=>verifyPreciseEditPixelIntegrityRgba8(source,source,Uint8Array.from([0,0]),2.1,1),/geometry/u);
 });
