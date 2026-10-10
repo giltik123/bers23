@@ -64,6 +64,31 @@ test('large canonical source is resized ONLY for provider, never for returned Co
   assert.equal(output.instances[0].alpha.length,3000*2000);
 });
 
+
+test('provider fan-out is capped at three and results retain deterministic prompt order',async()=>{
+  const source=await png(3,3,new Uint8Array(27).fill(123),3);
+  const mask=await png(3,3,[255,0,0,0,0,0,0,0,0]);
+  let active=0,peak=0;
+  const result=await runFalSam3Scene({
+    imagePng:source,width:3,height:3,falKey:'test-key',
+    fetcher:async(_url,opts)=>{
+      const {prompt}=JSON.parse(opts.body);
+      active++;peak=Math.max(peak,active);
+      await new Promise(resolve=>setTimeout(resolve,
+        (SAM3_SCENE_PROMPTS.findIndex(x=>x.prompt===prompt)%3)*2+1));
+      active--;
+      return new Response(JSON.stringify({
+        masks:[{url:uri(mask)}],metadata:[{score:.9}],
+      }),{status:200});
+    },
+  });
+  assert.equal(active,0);
+  assert.equal(peak,3);
+  assert.equal(result.instances.length,SAM3_SCENE_PROMPTS.length);
+  assert.deepEqual(result.instances.map(x=>x.category),
+    SAM3_SCENE_PROMPTS.map(x=>x.category));
+});
+
 test('reject colored provider preview instead of manufacturing a selection',async()=>{
   const colored=await png(2,1,[255,0,0, 0,0,255],3);
   await assert.rejects(()=>decodeSam3Mask(colored,2,1),/colored image/);
