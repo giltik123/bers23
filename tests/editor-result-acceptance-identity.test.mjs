@@ -54,5 +54,10 @@ test('ResultCompare image events and candidate identity drive acceptance instead
   assert.match(source,/onError=\{\(\)=>markFailed\('after'\)\}/);
   assert.match(source,/onLoad=\{\(\)=>markLoaded\('before'\)\}/);
   assert.match(source,/acknowledgedIdentity === identity|acknowledgedIdentity:/);
-  assert.match(source,/requiresBefore: scopedGeneration \|\| fashion/);
+  assert.match(source,/requiresBefore: scopedGeneration \\|\\| fashion/);
+  assert.match(source,/const reviewImagesReady = loaded\.before === identity && loaded\.after === identity/);
+  assert.match(source,/checked=\{scopedReview\}/);
+  assert.match(source,/checked=\{fashionReview\[key\]\}/);
+  assert.equal((source.match(/disabled=\{busy \\|\\| !reviewImagesReady\}/g) || []).length, 2);
+
 });
