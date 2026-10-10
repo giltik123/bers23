@@ -22,6 +22,7 @@ export const SCENE_LABELS = Object.freeze({
 });
 const MAX_INSTANCES=64;
 const MAX_PIXELS=24_000_000;
+const MAX_TOTAL_MASK_BYTES=96_000_000;
 const MAX_REF=4096;
 const MAX_ID=256;
 
@@ -69,7 +70,8 @@ export function validateSceneCandidates(payload, source) {
   if(!Array.isArray(payload.instances) || payload.instances.length>MAX_INSTANCES)
     throw new Error('Scene model must return a bounded list of instances');
   const accepted=[];
-  const labels=new Set();
+  const groups=new Set();
+  let totalMaskBytes=0;
   for(const candidate of payload.instances) {
     if(!candidate || typeof candidate!=='object' ||
        !Object.hasOwn(SCENE_CATEGORIES,candidate.category) ||
@@ -79,10 +81,13 @@ export function validateSceneCandidates(payload, source) {
        !Number.isFinite(candidate.confidence) ||
        candidate.confidence<0||candidate.confidence>1)
       throw new Error('Scene instance has invalid category, confidence or alpha raster');
+    totalMaskBytes+=candidate.alpha.byteLength;
+    if(totalMaskBytes>MAX_TOTAL_MASK_BYTES)
+      throw new Error('Scene candidate masks exceed the aggregate memory budget');
     const {box,coverage}=boundsFromMask(candidate.alpha,width,height);
     // Duplicate semantic object keys may represent multiple actual instances.
     // Distinguish instances at persistence via generated Object IDs.
-    labels.add(candidate.category);
+    groups.add(SCENE_CATEGORIES[candidate.category]);
     accepted.push(Object.freeze({
       category:candidate.category,
       group:SCENE_CATEGORIES[candidate.category],
@@ -95,7 +100,7 @@ export function validateSceneCandidates(payload, source) {
   }
   return Object.freeze({
     projectId:source.id,sourceArtifactId:source.current_image_artifact_id,
-    width,height,instances:Object.freeze(accepted),discoveredGroups:Object.freeze([...labels]),
+    width,height,instances:Object.freeze(accepted),discoveredGroups:Object.freeze([...groups]),
   });
 }
 
