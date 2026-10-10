@@ -72,6 +72,10 @@ export class CreativeExecutionService {
     if (hasMasks !== hasObjects) {
       return Promise.reject(publicError('validation_error', 'A selected object and a Core mask are both required for a controlled edit', 400, false));
     }
+    if (hasMasks && (command.maskArtifactIds?.length !== 1 || command.selectedObjectIds?.length !== 1)) {
+      return Promise.reject(publicError('validation_error',
+        'Controlled generative edits currently support exactly one selected object and one Core mask', 400, false));
+    }
     const key = `${auth.tenantId}:${auth.userId}:${command.projectId}:${command.clientRequestId}`;
     const fingerprint = this.#resolveFingerprint(command, auth);
     const prior = this.#inflight.get(key);
