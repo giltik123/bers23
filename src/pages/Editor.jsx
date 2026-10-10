@@ -1128,6 +1128,7 @@ export default function Editor() {
         <ResultCompare
           beforeUrl={pendingResult.beforeUrl}
           result={pendingResult.result}
+          kind={pendingResult.kind || null}
           onAccept={acceptResult}
           onDiscard={discardResult}
           onRetry={retryResult}
