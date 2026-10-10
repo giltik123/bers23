@@ -2,7 +2,7 @@ import type { ArtifactAuthority } from '../artifacts/artifactAuthority.ts';
 import type { AuthenticatedScope } from '../application/creativeExecutionService.ts';
 
 const GROUP_BY_CATEGORY: Readonly<Record<string,string>>=Object.freeze({
-  FACE:'FACE',CLOTHING_UPPER:'CLOTHING',CLOTHING_LOWER:'CLOTHING',
+  FACE:'FACE',CLOTHING_GENERIC:'CLOTHING',CLOTHING_UPPER:'CLOTHING',CLOTHING_LOWER:'CLOTHING',
   OUTERWEAR:'CLOTHING',FOOTWEAR:'CLOTHING',DRESS:'CLOTHING',
   ACCESSORY:'ACCESSORY',BACKGROUND:'BACKGROUND',OTHER_OBJECT:'OTHER_OBJECT',
 });
