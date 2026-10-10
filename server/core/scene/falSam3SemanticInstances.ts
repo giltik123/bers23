@@ -39,7 +39,7 @@ export async function decodeSam3Mask(data:Uint8Array,width:number,height:number)
     throw fail('SAM3 MASK must be a valid bounded PNG');
   // SAM3 masks are monochrome. Reject colored previews rather than passing
   // their red channel as a fake binary selection.
-  const raw=await image.ensureAlpha().raw().toBuffer({resolveWithObject:true});
+  const raw=await image.toColourspace('srgb').ensureAlpha().raw().toBuffer({resolveWithObject:true});
   const channels=raw.info.channels;
   if(channels!==4)throw fail('SAM3 MASK pixel layout is not RGBA');
   const result=new Uint8Array(raw.info.width*raw.info.height);
