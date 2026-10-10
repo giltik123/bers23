@@ -60,19 +60,31 @@ export async function decodeSam3Mask(data:Uint8Array,width:number,height:number)
   return new Uint8Array(scaled);
 }
 
+/**
+ * Exactly ONE fal request for ONE deliberately selected semantic target.
+ * The fal SAM3 API has one text `prompt` string per call (not an array of
+ * unrelated label prompts). Multiple masks returned by that one call may
+ * represent separate instances of the requested concept.
+ */
+export function findSam3ScenePrompt(key:unknown){
+  return typeof key==='string'
+    ? SAM3_SCENE_PROMPTS.find(entry=>entry.prompt===key) ?? null
+    : null;
+}
 export async function runFalSam3Scene(input:Readonly<{
   imagePng:Uint8Array; width:number;height:number;falKey:string;
-  fetcher?:typeof fetch;signal?:AbortSignal;
+  promptKey:string; fetcher?:typeof fetch;signal?:AbortSignal;
 }>){
+  const entry=findSam3ScenePrompt(input.promptKey);
+  if(!entry)throw fail('SAM3 requires a single approved semantic target');
   if(!input.falKey||!input.imagePng?.byteLength)
     throw fail('SAM3 requires a canonical source and a server-only API key');
   if(!Number.isSafeInteger(input.width)||!Number.isSafeInteger(input.height)||
      input.width<1||input.height<1||input.width*input.height>8_000_000)
     throw fail('SAM3 source geometry is unsupported');
-  const fetcher=input.fetcher??fetch;
-  // Normal production photographs are often much larger than 8 MB PNG.
-  // Downscale ONLY the provider input; reproject the returned MASK to exact
-  // original source coordinates in decodeSam3Mask().
+  if(input.signal?.aborted)throw fail('Scene request cancelled');
+  // Downscale the provider JPEG only. All persisted MASKs are upscaled to the
+  // exact immutable canonical photo geometry, independent of model resolution.
   const compact=await sharp(Buffer.from(input.imagePng),{
     failOn:'error',limitInputPixels:8_000_000,
   }).resize({width:2048,height:2048,fit:'inside',withoutEnlargement:true})
@@ -80,53 +92,35 @@ export async function runFalSam3Scene(input:Readonly<{
   if(compact.byteLength>8_000_000)
     throw fail('SAM3 provider input remains too large after preprocessing');
   const imageUrl='data:image/jpeg;base64,'+compact.toString('base64');
-  type SceneInstance={
-    category:string;group:string;label:string;confidence:number;
-    alpha:Uint8Array;modelId:string;modelVersion:string;
-  };
-  const perPrompt:SceneInstance[][]=SAM3_SCENE_PROMPTS.map(()=>[]);
-  let cursor=0,firstFailure:unknown=null;
-  let retainedAlphaBytes=0;
-  const MAX_SCENE_MASK_BYTES=96_000_000;
-  // A 12-prompt serial chain regularly exceeds the 120-second HTTP budget.
-  // Run at most three requests at once, preserving stable prompt ordering.
-  const worker=async()=>{
-    while(cursor<SAM3_SCENE_PROMPTS.length && !firstFailure){
-      const i=cursor++;
-      const entry=SAM3_SCENE_PROMPTS[i];
-      try{
-        if(input.signal?.aborted)throw fail('Scene request cancelled');
-        const response=await fetcher('https://fal.run/fal-ai/sam-3/image',{
-          method:'POST',signal:input.signal,
-          headers:{Authorization:`Key ${input.falKey}`,'Content-Type':'application/json'},
-          body:JSON.stringify({image_url:imageUrl,prompt:entry.prompt,
-            apply_mask:false,return_multiple_masks:true,max_masks:3,
-            include_scores:true,sync_mode:true,output_format:'png'}),
-        });
-        if(!response.ok)throw fail(`SAM3 unavailable for category ${entry.category}: HTTP ${response.status}`);
-        const result=await response.json() as any;
-        if(!Array.isArray(result?.masks)||result.masks.length>3)
-          throw fail('SAM3 semantic-mask response is missing or unbounded');
-        for(let j=0;j<result.masks.length;j++){
-          const score=result.metadata?.[j]?.score??result.scores?.[j];
-          if(typeof score!=='number'||!Number.isFinite(score)||score<0||score>1)
-            continue;
-          const binary=await decodeSam3Mask(decodeDataPng(result.masks[j]?.url),input.width,input.height);
-          if(!binary)continue;
-          retainedAlphaBytes+=binary.byteLength;
-          if(retainedAlphaBytes>MAX_SCENE_MASK_BYTES)
-            throw fail('SAM3 per-image MASK memory budget exceeded');
-          perPrompt[i].push({...entry,confidence:score,alpha:binary,
-            modelId:MODEL_ID,modelVersion:MODEL_VERSION});
-        }
-      }catch(error){
-        firstFailure=error;
-        return;
-      }
-    }
-  };
-  await Promise.all([worker(),worker(),worker()]);
-  if(firstFailure)throw firstFailure;
-  const instances=perPrompt.flat();
-  return Object.freeze({modelId:MODEL_ID,modelVersion:MODEL_VERSION,instances});
+  const response=await (input.fetcher??fetch)('https://fal.run/fal-ai/sam-3/image',{
+    method:'POST',signal:input.signal,
+    headers:{Authorization:`Key ${input.falKey}`,'Content-Type':'application/json'},
+    body:JSON.stringify({image_url:imageUrl,prompt:entry.prompt,
+      apply_mask:false,return_multiple_masks:true,max_masks:3,
+      include_scores:true,sync_mode:true,output_format:'png'}),
+  });
+  if(!response.ok)
+    throw fail(`SAM3 unavailable for selected category ${entry.category}: HTTP ${response.status}`);
+  const data=await response.json() as any;
+  if(!Array.isArray(data?.masks)||data.masks.length>3)
+    throw fail('SAM3 semantic mask response is missing or unbounded');
+  const instances:{
+    category:string;group:string;label:string;promptKey:string;
+    confidence:number;alpha:Uint8Array;modelId:string;modelVersion:string;
+  }[]=[];
+  for(let i=0;i<data.masks.length;i++){
+    const score=data.metadata?.[i]?.score??data.scores?.[i];
+    if(typeof score!=='number'||!Number.isFinite(score)||score<0||score>1)
+      continue;
+    const alpha=await decodeSam3Mask(
+      decodeDataPng(data.masks[i]?.url),input.width,input.height,
+    );
+    if(!alpha)continue;
+    instances.push({...entry,promptKey:entry.prompt,confidence:score,
+      alpha,modelId:MODEL_ID,modelVersion:MODEL_VERSION});
+  }
+  return Object.freeze({
+    modelId:MODEL_ID,modelVersion:MODEL_VERSION,
+    instances:Object.freeze(instances),providerCalls:1 as const,
+  });
 }
