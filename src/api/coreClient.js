@@ -303,6 +303,13 @@ export const coreClient = Object.freeze({
     },
     persistMask: ({ projectId, sourceImageArtifactId, parentMaskArtifactId, width, height, alpha }) => request(`/artifacts/masks?${new URLSearchParams({ projectId, sourceImageArtifactId, ...(parentMaskArtifactId && { parentMaskArtifactId }), width: String(width), height: String(height) })}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: alpha }),
   },
+  scene: {
+    capability: () => request('/scene/capability'),
+    analyze: ({projectId,sourceArtifactId,expectedRevision}) => request(
+      '/scene/analyze',
+      json('POST',{projectId,sourceArtifactId,expectedRevision}),
+    ),
+  },
   projects: {
     list: () => request('/projects'), get: (id) => request(`/projects/${encodeURIComponent(id)}`),
     createFromFile: ({ file, name }) => request(`/projects?${new URLSearchParams({ name: name || file.name.replace(/\.[^.]+$/, '') })}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file }),
