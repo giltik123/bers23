@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
+import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 
 import {
@@ -26,7 +27,7 @@ async function decodePng(bytes, expectedWidth, expectedHeight = null) {
   return { data: new Uint8Array(data), width: info.width, height: info.height };
 }
 
-function torsoBounds(corners, width, height) {
+export function torsoBounds(corners, width, height) {
   if (!Array.isArray(corners) || corners.length !== 4 ||
       !corners.every(pair => Array.isArray(pair) && pair.length === 2 &&
         pair.every(value => Number.isFinite(value) && value >= 0 && value <= 1))) {
@@ -41,7 +42,7 @@ function torsoBounds(corners, width, height) {
   };
 }
 
-function maskAndCheckTorso(source, baseline, width, height, bounds) {
+export function maskAndCheckTorso(source, baseline, width, height, bounds) {
   const mask = new Uint8Array(width*height);
   let baselineChanged = 0;
   let outsideTorso = 0;
@@ -156,4 +157,6 @@ async function main() {
     reviewStatus:manifest.reviewStatus,
   }));
 }
-main().catch(error=>{console.error(error);process.exitCode=1;});
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch(error => { console.error(error); process.exitCode = 1; });
+}
