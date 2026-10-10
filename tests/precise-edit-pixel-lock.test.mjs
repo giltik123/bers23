@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { composePreciseEditRgba8, composePreciseEditPatchRgba8, verifyPreciseEditPixelIntegrityRgba8 } from '../src/platform/creative/deterministic/PreciseEditPixelLock.ts';
+import { composePreciseEditRgba8, composePreciseEditPatchRgba8, composePreciseEditFeatheredRgba8, verifyPreciseEditPixelIntegrityRgba8 } from '../src/platform/creative/deterministic/PreciseEditPixelLock.ts';
 
 test('precise edit never drifts even one unmasked source byte', () => {
   const source = new Uint8ClampedArray([11,22,33,44, 55,66,77,88, 99,10,20,30]);
@@ -148,4 +148,49 @@ test('independent QA handles all-zero edit mask and rejects forged dimensions/ma
   assert.throws(()=>verifyPreciseEditPixelIntegrityRgba8(source,source,Uint8Array.from([0]),2,1),/lengths/u);
   assert.throws(()=>verifyPreciseEditPixelIntegrityRgba8(source,source,Uint8Array.from([0,0]),2,2),/lengths/u);
   assert.throws(()=>verifyPreciseEditPixelIntegrityRgba8(source,source,Uint8Array.from([0,0]),2.1,1),/geometry/u);
+});
+
+
+test('inward seam feather eliminates a hard opaque edge while outside remains byte exact', () => {
+  const source=new Uint8Array(5*5*4);
+  const candidate=new Uint8Array(5*5*4);
+  const mask=new Uint8Array(5*5);
+  for(let i=0;i<25;i+=1) {
+    source.set([0,0,0,255],i*4);
+    candidate.set([200,200,200,255],i*4);
+  }
+  for(let y=1;y<=3;y+=1) for(let x=1;x<=3;x+=1) mask[y*5+x]=255;
+  const output=composePreciseEditFeatheredRgba8(source,candidate,mask,5,5,1);
+  const rgba=(x,y)=>[...output.slice((y*5+x)*4,(y*5+x)*4+4)];
+  assert.deepEqual(rgba(0,0),[0,0,0,255]);
+  assert.deepEqual(rgba(1,1),[100,100,100,255]);
+  assert.deepEqual(rgba(2,2),[200,200,200,255]);
+  assert.deepEqual(rgba(3,2),[100,100,100,255]);
+  assert.deepEqual(verifyPreciseEditPixelIntegrityRgba8(source,output,mask,5,5),{
+    allowedPixelCount:9, changedAllowedPixelCount:9,
+    protectedPixelCount:16, changedProtectedPixelCount:0,
+  });
+});
+
+test('feather blends premultiplied color so a transparent candidate cannot leave bright RGB ghosting', () => {
+  const source=Uint8Array.from([8,16,24,255]);
+  const transparent=Uint8Array.from([250,240,230,0]);
+  const result=composePreciseEditFeatheredRgba8(source,transparent,Uint8Array.from([255]),1,1,1);
+  assert.deepEqual([...result],[8,16,24,127]);
+  assert.deepEqual([...composePreciseEditFeatheredRgba8(source,transparent,Uint8Array.from([255]),1,1,0)],[250,240,230,0]);
+});
+
+test('feather radius is preflight-bounded and all untouched pixels stay immutable', () => {
+  const source=Uint8Array.from([9,8,7,6,5,4,3,2]);
+  const candidate=Uint8Array.from([1,2,3,4,6,7,8,9]);
+  const matte=Uint8Array.from([0,255]);
+  for(const radius of [-1,17,1.5,Number.NaN]) {
+    assert.throws(()=>composePreciseEditFeatheredRgba8(source,candidate,matte,2,1,radius),/radius/u);
+  }
+  assert.throws(()=>composePreciseEditFeatheredRgba8(source,candidate,Uint8Array.from([0,128]),2,1,1),/binary/u);
+  const result=composePreciseEditFeatheredRgba8(source,candidate,matte,2,1,16);
+  assert.deepEqual([...result.slice(0,4)],[9,8,7,6]);
+  assert.deepEqual([...source],[9,8,7,6,5,4,3,2]);
+  assert.deepEqual([...candidate],[1,2,3,4,6,7,8,9]);
+  assert.equal(verifyPreciseEditPixelIntegrityRgba8(source,result,matte,2,1).changedProtectedPixelCount,0);
 });
