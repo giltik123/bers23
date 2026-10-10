@@ -15,7 +15,7 @@ export function createCanonicalAutoSceneMaskRunner(provider) {
     let sequence=0;
     return Object.freeze({
       cancel:()=>{sequence++;},
-      start:async(source)=>{
+      start:async(source,{force=false}={})=>{
         const ticket=++sequence;
         try{
           const capability=await coreClient.scene.capability();
@@ -26,10 +26,10 @@ export function createCanonicalAutoSceneMaskRunner(provider) {
           const result=await coreClient.scene.analyze({
             projectId:source.id,
             sourceArtifactId:source.current_image_artifact_id,
-            expectedRevision:source.revision,
+            expectedRevision:source.revision,force,
           });
           if(ticket!==sequence)return {status:'CANCELLED',objects:[]};
-          if(!['COMPLETED','NO_OBJECTS'].includes(result?.status))
+          if(!['COMPLETED','NO_OBJECTS','ALREADY_AVAILABLE'].includes(result?.status))
             throw new Error('Scene Core response is not an admitted result');
           return result;
         }catch(error){
