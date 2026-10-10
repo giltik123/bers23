@@ -80,32 +80,48 @@ export async function runFalSam3Scene(input:Readonly<{
   if(compact.byteLength>8_000_000)
     throw fail('SAM3 provider input remains too large after preprocessing');
   const imageUrl='data:image/jpeg;base64,'+compact.toString('base64');
-  const instances:{
+  type SceneInstance={
     category:string;group:string;label:string;confidence:number;
     alpha:Uint8Array;modelId:string;modelVersion:string;
-  }[]=[];
-  for(const entry of SAM3_SCENE_PROMPTS){
-    if(input.signal?.aborted)throw fail('Scene request cancelled');
-    const response=await fetcher('https://fal.run/fal-ai/sam-3/image',{
-      method:'POST',signal:input.signal,
-      headers:{Authorization:`Key ${input.falKey}`,'Content-Type':'application/json'},
-      body:JSON.stringify({image_url:imageUrl,prompt:entry.prompt,
-        apply_mask:false,return_multiple_masks:true,max_masks:3,
-        include_scores:true,sync_mode:true,output_format:'png'}),
-    });
-    if(!response.ok)throw fail(`SAM3 unavailable for category ${entry.category}: HTTP ${response.status}`);
-    const result=await response.json() as any;
-    if(!Array.isArray(result?.masks)||result.masks.length>3)
-      throw fail('SAM3 semantic-mask response is missing or unbounded');
-    for(let j=0;j<result.masks.length;j++){
-      const score=result.metadata?.[j]?.score??result.scores?.[j];
-      if(typeof score!=='number'||!Number.isFinite(score)||score<0||score>1)
-        continue;
-      const binary=await decodeSam3Mask(decodeDataPng(result.masks[j]?.url),input.width,input.height);
-      if(!binary)continue;
-      instances.push({...entry,confidence:score,alpha:binary,
-        modelId:MODEL_ID,modelVersion:MODEL_VERSION});
+  };
+  const perPrompt:SceneInstance[][]=SAM3_SCENE_PROMPTS.map(()=>[]);
+  let cursor=0,firstFailure:unknown=null;
+  // A 12-prompt serial chain regularly exceeds the 120-second HTTP budget.
+  // Run at most three requests at once, preserving stable prompt ordering.
+  const worker=async()=>{
+    while(cursor<SAM3_SCENE_PROMPTS.length && !firstFailure){
+      const i=cursor++;
+      const entry=SAM3_SCENE_PROMPTS[i];
+      try{
+        if(input.signal?.aborted)throw fail('Scene request cancelled');
+        const response=await fetcher('https://fal.run/fal-ai/sam-3/image',{
+          method:'POST',signal:input.signal,
+          headers:{Authorization:`Key ${input.falKey}`,'Content-Type':'application/json'},
+          body:JSON.stringify({image_url:imageUrl,prompt:entry.prompt,
+            apply_mask:false,return_multiple_masks:true,max_masks:3,
+            include_scores:true,sync_mode:true,output_format:'png'}),
+        });
+        if(!response.ok)throw fail(`SAM3 unavailable for category ${entry.category}: HTTP ${response.status}`);
+        const result=await response.json() as any;
+        if(!Array.isArray(result?.masks)||result.masks.length>3)
+          throw fail('SAM3 semantic-mask response is missing or unbounded');
+        for(let j=0;j<result.masks.length;j++){
+          const score=result.metadata?.[j]?.score??result.scores?.[j];
+          if(typeof score!=='number'||!Number.isFinite(score)||score<0||score>1)
+            continue;
+          const binary=await decodeSam3Mask(decodeDataPng(result.masks[j]?.url),input.width,input.height);
+          if(!binary)continue;
+          perPrompt[i].push({...entry,confidence:score,alpha:binary,
+            modelId:MODEL_ID,modelVersion:MODEL_VERSION});
+        }
+      }catch(error){
+        firstFailure=error;
+        return;
+      }
     }
-  }
+  };
+  await Promise.all([worker(),worker(),worker()]);
+  if(firstFailure)throw firstFailure;
+  const instances=perPrompt.flat();
   return Object.freeze({modelId:MODEL_ID,modelVersion:MODEL_VERSION,instances});
 }
