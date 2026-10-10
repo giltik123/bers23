@@ -217,6 +217,31 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
           return send(response,200,{status:'ALREADY_AVAILABLE',
             objects:retainedAuto,message:'Scene MASKs already exist for this exact image.'});
         }
+        const releaseSceneLease=await input.projects.acquireSceneAnalysisLease(
+          principal,id,storageId,
+        );
+        if(!releaseSceneLease)
+          return sendError(response,409,'scene_analysis_in_progress',
+            'An image analysis is already running for this photo',correlationId,false);
+        try{
+          // Recheck after acquiring the cross-process lock. Another server may
+          // have published this image while this request waited for admission.
+          const locked=await input.projects.get(principal,id);
+          if(!locked || locked.current_image_storage_id!==storageId ||
+             Number(locked.revision)!==body.expectedRevision)
+            return sendError(response,409,'project_source_conflict',
+              'Scene source changed before provider admission',correlationId,false);
+          const already=(Array.isArray(locked.objects)?locked.objects:[])
+            .filter((obj:any)=>obj?.metadata?.segmentation==='AUTO' &&
+              obj?.metadata?.sourceArtifactId===token);
+          if(already.length>0 && body.force!==true){
+            await assertCanonicalSceneObjectPublication({
+              objects:locked.objects,sourceArtifactId:token,
+              sourceStorageId:storageId,scope,artifacts:input.artifacts,
+            });
+            return send(response,200,{status:'ALREADY_AVAILABLE',
+              objects:already,message:'Scene MASKs already exist for this exact image.'});
+          }
         const source=await input.artifacts.images.loadSource(storageId,scope);
         if(!source||source.width!==Number(current.width)||source.height!==Number(current.height))
           return sendError(response,409,'project_source_conflict','Scene source is unavailable',correlationId,false);
@@ -271,6 +296,9 @@ export function createNodeHttpAdapter(input: Readonly<{ core: CreativeApplicatio
         return send(response,200,{status:'COMPLETED',objects:additions,
           updatedRevision:Number(updated.revision),
           message:`SAM3 created ${additions.length} canonical object masks. Review required.`});
+        } finally {
+          await releaseSceneLease();
+        }
       }
       const projectMatch=path.match(/^\/api\/core\/projects\/([^/]+)$/); const actionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/(accept-final|undo|redo|restore-original|versions)$/); const versionMatch=path.match(/^\/api\/core\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
       const dto=(row: any) => { const scope=authenticatedProjectScope(principal,row.project_id); const artifactId=(storageId:string)=>storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginal(storageId,scope):input.artifacts.external.issueStoredFinal(storageId,scope); const imageUrl=(storageId:string)=>{const expiresAt=now()+300_000; const token=storageId===row.original_image_storage_id?input.artifacts.external.issueStoredOriginalDelivery(storageId,scope,expiresAt):input.artifacts.external.issueStoredFinalDelivery(storageId,scope,expiresAt);return `/api/core/artifacts/results/${encodeURIComponent(token)}`}; const originalId=artifactId(row.original_image_storage_id),currentId=artifactId(row.current_image_storage_id),delivery=imageUrl(row.current_image_storage_id),history=(row.history??[]).map((h:any)=>({id:h.history_id,artifact_id:artifactId(h.image_storage_id),image_url:imageUrl(h.image_storage_id),instruction:h.instruction,operation:h.kind,created_at:h.created_at})); const cursor=history.findIndex((h:any)=>h.id===row.history_cursor_id); const versions=(row.versions??[]).map((v:any)=>({id:v.version_id,name:v.name,artifact_id:artifactId(v.image_storage_id),preview_url:imageUrl(v.image_storage_id),created_at:v.created_at})); return {id:row.project_id,name:row.name,original_image_artifact_id:originalId,current_image_artifact_id:currentId,original_image_url:imageUrl(row.original_image_storage_id),current_image_url:delivery,thumbnail_url:delivery,width:row.width,height:row.height,status:row.status,favorite:row.favorite,archived:row.archived,revision:Number(row.revision),objects:row.objects,history,history_index:cursor,versions,created_date:row.created_at,updated_date:row.updated_at}; };
