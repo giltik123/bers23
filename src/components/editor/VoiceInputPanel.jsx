@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import {
   buildVoiceIntentDraft,applyConfirmedVoiceDraft,
 } from '@/application/voice/VoiceIntentDraftV1';
-import { createLocalVoiceSession } from '@/application/voice/createLocalVoiceSession';
+import { createLocalVoiceSession, installLocalRussianVoicePack } from '@/application/voice/createLocalVoiceSession';
 
 const MAX_TRANSCRIPT=1024;
 const INTENT_LABELS={
@@ -41,6 +41,8 @@ export default function VoiceInputPanel({
   const [submitting,setSubmitting]=useState(false);
   const sourceKey=JSON.stringify([projectId,sourceArtifactId]);
   const [error,setError]=useState('');
+  const [missingPack,setMissingPack]=useState(false);
+  const [installing,setInstalling]=useState(false);
   const sessionRef=useRef(null);
   const generationRef=useRef(0);
   useEffect(()=>()=>{generationRef.current++;sessionRef.current?.abort();sessionRef.current=null;},[]);
@@ -53,7 +55,7 @@ export default function VoiceInputPanel({
   const cancel=()=>{
     generationRef.current++;
     sessionRef.current?.abort();sessionRef.current=null;
-    setPhase('IDLE');setTranscript('');setPartial('');setError('');setTranscriptSource(null);
+    setPhase('IDLE');setTranscript('');setPartial('');setError('');setTranscriptSource(null);setMissingPack(false);
   };
   useEffect(()=>{
     if(disabled && sessionRef.current){
@@ -67,7 +69,7 @@ export default function VoiceInputPanel({
     if(disabled||phase==='RECORDING'||phase==='PREPARING')return;
     const generation=++generationRef.current;
     sessionRef.current?.abort();sessionRef.current=null;
-    setError('');setTranscript('');setPartial('');setTranscriptSource(sourceKey);setPhase('PREPARING');
+    setError('');setMissingPack(false);setTranscript('');setPartial('');setTranscriptSource(sourceKey);setPhase('PREPARING');
     try{
       const session=await createLocalVoiceSession({
         onPartial:value=>{if(generation===generationRef.current)setPartial(value);},
@@ -94,8 +96,19 @@ export default function VoiceInputPanel({
     }catch(reason){
       if(generation!==generationRef.current)return;
       setError(reason?.message||'Локальный голосовой ввод недоступен.');
+      setMissingPack(reason?.code==='LOCAL_ASR_PACK_MISSING');
       setPhase('ERROR');
     }
+  };
+  const installPack=async()=>{
+    if(disabled||installing||!missingPack)return;
+    setInstalling(true);setError('');
+    try{
+      await installLocalRussianVoicePack();
+      setMissingPack(false);setPhase('IDLE');
+      setError('Русская модель установлена. Нажмите «Записать» для начала.');
+    }catch(reason){setError(reason?.message||'Не удалось установить локальную модель.');}
+    finally{setInstalling(false);}
   };
   const stop=()=>{
     sessionRef.current?.stop();
@@ -176,6 +189,12 @@ export default function VoiceInputPanel({
               ?` — поиск: ${draft.params.query}`:''}
           </p>
           {error&&<p role="alert" className="text-xs text-destructive">{error}</p>}
+          {missingPack&&(
+            <Button type="button" variant="outline" size="sm"
+              disabled={disabled||installing} onClick={installPack}>
+              {installing?'Установка…':'Скачать модель русского языка на устройство'}
+            </Button>
+          )}
           {draft&&!['ACTION_NEEDS_UI','AMBIGUOUS','REQUIRES_CANONICAL_CONTEXT'].includes(draft.kind)&&(
             <Button type="button" size="sm" disabled={disabled||submitting||phase==='RECORDING'||phase==='PREPARING'||phase==='STOPPING'||transcriptSource!==sourceKey}
               onClick={confirm}>
