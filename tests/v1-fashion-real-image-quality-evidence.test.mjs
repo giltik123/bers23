@@ -161,10 +161,12 @@ test('Fashion real-image verifier rejects synthetic source classification', asyn
   );
 });
 
-test('Fashion real-image verifier rejects image digest drift', async () => {
+test('Fashion real-image verifier rejects image digest drift even when review repeats the corrupted hash', async () => {
   const f = await fixture();
   f.manifest.samples[0].result.sha256 = 'f'.repeat(64);
+  f.review.samples[0].reviewedOutputSha256 = 'f'.repeat(64);
   f.bodies.set(f.urls.fixture, Buffer.from(JSON.stringify(f.manifest)));
+  f.bodies.set(f.urls.review, Buffer.from(JSON.stringify(f.review)));
   await assert.rejects(
     verifyFashionRealImageQualityEvidence({
       expectedSha: SHA,
