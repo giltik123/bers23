@@ -26,7 +26,7 @@ export function buildVoiceIntentDraft(transcript,{locale='ru-RU',engine='OS_ON_D
     const append=finalTranscript.match(/^(?:добавь\s+в\s+промпт|добавь)\s*[:：]?\s*(.+)$/iu);
     if(replace){kind='PROMPT_REPLACE';text=replace[1].trim();}
     else if(append){kind='PROMPT_APPEND';text=append[1].trim();}
-    else if(/^(?:прими|подтверди|примен[ий]|оплати|запусти|создай|удали\s+проект|отмени|повтори|поверни|обрежь|примерь|отрази|сохрани)\b/iu.test(lower)){
+    else if(/^(?:прими|подтверди|примен[ий]|оплати|запусти|создай|удали\s+проект|отмени|повтори|поверни|обрежь|примерь|отрази|сохрани)(?=\s|$|[.!?,])/iu.test(lower)){
       // Mutating/navigation/expensive speech is a proposed unsupported
       // action at VI-1: do NOT reinterpret as an executable instruction.
       kind='ACTION_NEEDS_UI';text=finalTranscript;
