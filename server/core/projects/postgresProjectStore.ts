@@ -171,7 +171,81 @@ export class PostgresProjectStore {
   }
 
   private async mutate(scope:AuthenticatedScope,id:string,action:(client:any,project:any)=>Promise<void>){const client=await this.pool.connect();try{await client.query('BEGIN');const project=(await client.query(`SELECT * FROM canonical_projects WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL FOR UPDATE`,[id,scope.tenantId,scope.userId])).rows[0];if(!project)throw Object.assign(new Error('Project not found'),{status:404,code:'project_not_found'});await action(client,project);await client.query('COMMIT');return this.state(scope,id);}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}
-  async update(scope: AuthenticatedScope, id: string, patch: Record<string, unknown>) { const allowed = ['name','favorite','archived','objects']; const keys = Object.keys(patch); if (!keys.length || keys.some(k => !allowed.includes(k))) throw Object.assign(new Error('Project patch contains unsupported fields'), { status: 400, code: 'invalid_project_patch' }); const values = keys.map(k => k === 'objects' ? JSON.stringify(patch[k]) : patch[k]); const sets = keys.map((k,i) => `${k}=$${i+4}${k === 'objects' ? '::jsonb' : ''}`); return (await this.pool.query(`UPDATE canonical_projects SET ${sets.join(',')},revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL RETURNING *`, [id,scope.tenantId,scope.userId,...values])).rows[0]; }
+  /**
+   * Cross-process paid-model guard. A session-scoped Postgres advisory lock
+   * serializes SAM3 inference for one exact tenant/User/Project/source image.
+   * The connection stays pinned until Core has persisted/committed (or failed).
+   *
+   * Returns null immediately if another process already owns the analysis;
+   * never trigger another billed provider run on that path.
+   */
+  async acquireSceneAnalysisLease(
+    scope: AuthenticatedScope, projectId: string, sourceStorageId: string,
+  ): Promise<null | (() => Promise<void>)> {
+    if(!projectId || !sourceStorageId)throw new Error('Scene lease requires source identity');
+    const client=await this.pool.connect();
+    const key1=`BERS_SCENE:${scope.tenantId}:${scope.userId}:${projectId}`;
+    const key2=sourceStorageId;
+    try{
+      const claim=await client.query(
+        'SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS acquired',
+        [key1,key2],
+      );
+      if(claim.rows[0]?.acquired!==true){
+        client.release();
+        return null;
+      }
+      let released=false;
+      return async()=>{
+        if(released)return;
+        released=true;
+        try{
+          const res=await client.query(
+            'SELECT pg_advisory_unlock(hashtext($1),hashtext($2)) AS unlocked',
+            [key1,key2],
+          );
+          if(res.rows[0]?.unlocked!==true)
+            throw new Error('Scene analysis advisory lock was unexpectedly lost');
+        }finally{client.release();}
+      };
+    }catch(error){
+      client.release();
+      throw error;
+    }
+  }
+
+  async update(
+    scope: AuthenticatedScope, id: string, patch: Record<string, unknown>,
+    precondition?: Readonly<{ expectedSourceStorageId: string; expectedRevision: number }>,
+  ) {
+    const allowed = ['name','favorite','archived','objects'];
+    const keys = Object.keys(patch);
+    if (!keys.length || keys.some(k => !allowed.includes(k)))
+      throw Object.assign(new Error('Project patch contains unsupported fields'),
+        { status: 400, code: 'invalid_project_patch' });
+    if(precondition && (
+      keys.length!==1 || keys[0]!=='objects' ||
+      !precondition.expectedSourceStorageId ||
+      !Number.isSafeInteger(precondition.expectedRevision) ||
+      precondition.expectedRevision<0
+    )) throw Object.assign(new Error('Auto scene object publication requires exact source and revision'),
+      {status:400,code:'invalid_scene_precondition'});
+    const values = keys.map(k => k==='objects' ? JSON.stringify(patch[k]) : patch[k]);
+    const sets = keys.map((k,i) => `${k}=$${i+4}${k==='objects'?'::jsonb':''}`);
+    const params: unknown[] = [id,scope.tenantId,scope.userId,...values];
+    let conditional = '';
+    if(precondition) {
+      conditional=` AND current_image_storage_id=$${params.length+1} AND revision=$${params.length+2}`;
+      params.push(precondition.expectedSourceStorageId,precondition.expectedRevision);
+    }
+    const updated=(await this.pool.query(
+      `UPDATE canonical_projects SET ${sets.join(',')},revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL${conditional} RETURNING *`,params,
+    )).rows[0];
+    if(!updated && precondition) throw Object.assign(
+      new Error('Project image or revision changed before scene masks could be published'),
+      {status:409,code:'project_source_conflict'});
+    return updated;
+  }
   async delete(scope: AuthenticatedScope, id: string) { const client=await this.pool.connect(); try { await client.query('BEGIN'); const row=(await client.query(`UPDATE canonical_projects SET deleted_at=CURRENT_TIMESTAMP,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE project_id=$1 AND tenant_id=$2 AND user_id=$3 AND deleted_at IS NULL RETURNING project_id`,[id,scope.tenantId,scope.userId])).rows[0]; if (row) await client.query(`UPDATE canonical_image_artifacts SET deleted_at=CURRENT_TIMESTAMP WHERE tenant_id=$1 AND user_id=$2 AND project_id=$3`,[scope.tenantId,scope.userId,id]); await client.query('COMMIT'); return Boolean(row); } catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();} }
 }
 

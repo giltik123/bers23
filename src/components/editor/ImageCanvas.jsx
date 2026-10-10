@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { performanceMonitor } from '@/lib/performance/performanceMonitor';
+import CanonicalMaskPreview from '@/components/editor/CanonicalMaskPreview';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
 import { usePlatformProfile } from '@/lib/platform/PlatformManager';
 import { adaptiveRenderer } from '@/lib/platform/AdaptiveRenderer';
@@ -115,11 +116,13 @@ function CropOverlay({ crop }) {
   );
 }
 
-export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer }) {
+export default function ImageCanvas({ imageUrl, projectId, sourceArtifactId, imageWidth, imageHeight, objects, selectedId, hiddenObjectIds, onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer }) {
   const gestures = useAdaptiveGestures({ onSwipeLeft: onRedo, onSwipeRight: onUndo });
   const renderer = adaptiveRenderer(usePlatformProfile());
   const drawing = useRef(false);
   const interactive = Boolean(selection || cropSource);
+  const hidden=hiddenObjectIds instanceof Set ? hiddenObjectIds : new Set();
+  const selectedMaskId=objects.find(obj=>obj.id===selectedId && !hidden.has(obj.id))?.mask_artifact_id;
   const pointer = (phase) => (event) => {
     if (!interactive) return;
     event.preventDefault(); event.stopPropagation();
@@ -139,11 +142,20 @@ export default function ImageCanvas({ imageUrl, objects, selectedId, onSelect, b
     <div className={`relative rounded-2xl overflow-hidden bg-muted select-none ${interactive ? 'touch-none' : ''}`} {...(!interactive ? gestures.handlers : {})} onPointerDown={pointer('down')} onPointerMove={pointer('move')} onPointerUp={pointer('up')} onPointerCancel={pointer('cancel')}>
       <div className="relative" style={gestures.style}>
       <img src={imageUrl} alt="Project" decoding={renderer.decoding} fetchPriority="high" style={{ imageRendering: renderer.imageRendering }} onLoad={(event) => { if (event.currentTarget.naturalWidth * event.currentTarget.naturalHeight > 2000000) performanceMonitor.markLargeDecode(); }} className="w-full h-auto block" draggable={false} />
+      {!interactive && selectedMaskId && projectId && sourceArtifactId && (
+        <CanonicalMaskPreview
+          key={`${sourceArtifactId}:${selectedMaskId}`}
+          projectId={projectId} sourceArtifactId={sourceArtifactId}
+          maskArtifactId={selectedMaskId} width={imageWidth} height={imageHeight}
+        />
+      )}
       <SelectionOverlay selection={selection} />
       <PolygonPreview selection={selection} />
       <ShapePreview selection={selection} onHandlePointer={onShapeHandlePointer} />
       <CropOverlay crop={crop} />
-      {!interactive && objects.map((obj) => {
+      {!interactive && objects.filter(obj=>!hidden.has(obj.id) && obj?.box &&
+        [obj.box.x,obj.box.y,obj.box.w,obj.box.h].every(Number.isFinite) &&
+        obj.box.w>0 && obj.box.h>0).map((obj) => {
         const selected = obj.id === selectedId;
         return (
           <button
