@@ -4,7 +4,7 @@
  * authorization, artifact lineage and enforcing changes outside a mask.
  */
 const ID_LIMIT = 256;
-const PROTECTED_TARGET = /(?:не\s+(?:меняй|трогай|изменяй)|сохрани\s+(?:лицо|фон|кожу|волосы|человек|позу)|don't\s+(?:change|touch|alter)|preserve\s+(?:face|skin|hair|person|identity|background)|(?:замени|убери|удали|дорисуй|поменяй)\s+(?:небо|фон|объект|одежду|платье|человека|волосы)|change\s+(?:the\s+)?(?:background|hair|clothes)|remove\s+(?:the\s+)?(?:person|object))/iu;
+const PROTECTED_TARGET = /(?:не\s+(?:меняй|меняя|трогай|трогая|изменяй|изменяя)|сохрани\s+(?:лицо|фон|кожу|волосы|человек|позу)|don't\s+(?:change|touch|alter)|preserve\s+(?:face|skin|hair|person|identity|background)|(?:замени|убери|удали|дорисуй|поменяй)\s+(?:небо|фон|объект|одежду|платье|человека|волосы)|change\s+(?:the\s+)?(?:background|hair|clothes)|remove\s+(?:the\s+)?(?:person|object))/iu;
 
 function validId(value) {
   return typeof value === 'string' && value.trim() === value
