@@ -14,6 +14,7 @@ import sharp from 'sharp';
 import { resizeProfessionalLanczos3Rgba8RND } from '../src/platform/creative/deterministic/ProfessionalResizeLanczosRND.ts';
 import { composeLinearLightLayersRgba8RND } from '../src/platform/creative/deterministic/ProfessionalLinearLayersRND.ts';
 import { highlightProtectedToneRgba8RND } from '../src/platform/creative/deterministic/HighlightProtectedToneRND.ts';
+import { professionalToneRangeMaskRgba8RND } from '../src/platform/creative/deterministic/ProfessionalToneRangeMaskRND.ts';
 import { resizeRgba8 } from '../src/platform/creative/deterministic/Resize.ts';
 import { maskedExposureRgba8 } from '../src/platform/creative/deterministic/MaskedExposure.ts';
 
@@ -144,6 +145,26 @@ async function main(){
     const newClipped=Math.max(0,toneNew.channelClip-toneBefore.channelClip);
     const oldClipped=Math.max(0,toneOld.channelClip-toneBefore.channelClip);
 
+    // Outcome-oriented A/B, not another extreme ellipse demonstration.
+    // A well-exposed portrait should remain unchanged; the other two images
+    // get conservative SHADOWS-only lifts with broad luminance transitions.
+    // The exact final photos still require human visual ACCEPT/REJECT.
+    const conservativeEighthStops = fixture.id === 'project-fashion-model-portrait'
+      ? 0 : fixture.id === 'project-ashirt' ? 4 : 2;
+    const shadowMask = professionalToneRangeMaskRgba8RND(
+      rgba,width,height,'SHADOWS',
+    ).mask;
+    const finalCandidate = conservativeEighthStops === 0
+      ? new Uint8ClampedArray(rgba)
+      : highlightProtectedToneRgba8RND(rgba,shadowMask,width,height,{
+        eighthStops:conservativeEighthStops,
+      });
+    if (conservativeEighthStops === 0) {
+      assert.deepEqual(Buffer.from(finalCandidate),before,
+        'Already-well-exposed photo must be an exact no-edit control');
+    }
+    const finalOutcomeClipping = clipped(finalCandidate,shadowMask);
+
     // White translucent studio overlay is a layer blending stress test, NOT a
     // segmentation, garment-fit or semantic photographic retouch algorithm.
     const layerPixels=new Uint8Array(rgba.length);
@@ -179,9 +200,11 @@ async function main(){
       png(reference,target.width,target.height),png(brightOld,width,height),png(brightNew,width,height),
       png(blended,width,height),
     ]);
-    const [resizeContact,toneContact]=await Promise.all([
+    const finalCandidatePng = await png(finalCandidate,width,height);
+    const [resizeContact,toneContact,finalOutcomeContact]=await Promise.all([
       contact([oldResizePng,newResizePng,referencePng],target.width,target.height),
       contact([sourcePng,oldTonePng,newTonePng,layerPng],width,height),
+      contact([sourcePng,finalCandidatePng],width,height),
     ]);
     await Promise.all([
       writeFile(path.join(folder,'source.png'),sourcePng),
@@ -193,6 +216,8 @@ async function main(){
       writeFile(path.join(folder,'tone-highlight-protected.png'),newTonePng),
       writeFile(path.join(folder,'layer-linear-light.png'),layerPng),
       writeFile(path.join(folder,'tone-four-way.png'),toneContact),
+      writeFile(path.join(folder,'final-outcome-conservative.png'),finalCandidatePng),
+      writeFile(path.join(folder,'final-outcome-source-vs-conservative.png'),finalOutcomeContact),
     ]);
     records.push({
       id:fixture.id,license:fixture.license,licenseUrl:fixture.licenseUrl,
@@ -211,6 +236,11 @@ async function main(){
       highlightProtectedToneElapsedMs:toneElapsedMs,linearLayerElapsedMs:layerElapsedMs,
       sourcePngSha256:hash(sourcePng),professionalResizePngSha256:hash(newResizePng),
       protectedTonePngSha256:hash(newTonePng),linearLightPngSha256:hash(layerPng),
+      conservativeEighthStops,
+      conservativeSelection:'SHADOWS_CONTINUOUS_PERCEPTUAL_LUMINANCE_NO_ELLIPSE',
+      finalOutcomeCandidatePngSha256:hash(finalCandidatePng),
+      finalOutcomeNearClipCount:finalOutcomeClipping.channelClip,
+      finalOutcomeHumanVerdict:'PENDING_INDEPENDENT_PHOTOGRAPHIC_REVIEW',
     });
     console.log('PRO_EDITOR_REAL_PHOTO',fixture.id,JSON.stringify({
       newClippingBefore:oldClipped,newClippingAfter:newClipped,
@@ -221,6 +251,8 @@ async function main(){
     kind:'BERS_EDITOR_PROFESSIONAL_RASTER_REAL_PHOTO_RND',
     schemaVersion:1,candidateSha,sampleCount:records.length,
     qualityGrade:'PENDING_INDEPENDENT_PHOTOGRAPHIC_REVIEW',
+    oldStrongEllipseExamples:'REJECTED_AS_UNNATURAL_FINAL_OUTPUT',
+    finalOutcomeCandidateQuality:'REVIEW_REQUIRED_BEFORE_ANY_GRADUATION',
     coreAuthorityGranted:false,productionToolEnabled:false,
     originalResolutionPreservedInCapture:false, // deliberate 512px normalization
     cloudProviderUsed:false,peakRssBytes:process.resourceUsage().maxRSS*1024,
