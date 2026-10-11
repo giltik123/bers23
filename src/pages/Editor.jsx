@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useState, useMemo, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Loader2, Download, Pencil, Maximize2 } from 'lucide-react';
+import { ArrowLeft, Loader2, ExternalLink, Pencil, Maximize2, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useProject from '@/hooks/useProject';
 import { creativeEditApplicationService } from '@/application/creative/CreativeEditApplicationService';
@@ -69,7 +69,14 @@ import { CoreMaskArtifactPort } from '@/application/selection/CoreMaskArtifactPo
 import { finalizeAcceptedResult } from '@/application/editor/finalizeAcceptedResult';
 import { isFinalSourceConflict, recoverFinalSourceConflict } from '@/application/editor/recoverFinalSourceConflict';
 
-const EDITOR_TABS = [{ id: 'prompt', label: 'Prompt' }, { id: 'creative', label: 'Creative Studio' }, { id: 'recipes', label: 'Recipes' }, { id: 'agent', label: 'AI Agent' }, { id: 'fashion', label: 'Fashion' }, { id: 'outfits', label: 'Outfits' }];
+const EDITOR_TABS = [
+  { id: 'prompt', label: 'Prompt', description: 'Describe what you want to change, preview the result, then decide whether to save it.' },
+  { id: 'creative', label: 'Creative Studio', description: 'Explore visual ideas and mood boards. This section plans ideas; it does not edit your photo.' },
+  { id: 'recipes', label: 'Recipes', description: 'Choose a ready-made editing recipe and adapt it to your image.' },
+  { id: 'agent', label: 'AI Agent', description: 'Build a controlled sequence of editing steps and review the result.' },
+  { id: 'fashion', label: 'Fashion', description: 'Organize garments and wardrobe assets.' },
+  { id: 'outfits', label: 'Outfits', description: 'Arrange outfits and explore available try-on operations.' },
+];
 
 function disposePendingPreview(pending) {
   const url = pending?.result?.preview_url;
@@ -914,16 +921,23 @@ export default function Editor() {
   }
 
   return (
-    <AdaptiveLayout className="max-w-3xl">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 min-w-0">
-          <Link to="/" className="p-2 -ml-2 rounded-lg hover:bg-accent transition-colors"><ArrowLeft className="w-5 h-5" /></Link>
-          <h1 className="font-medium truncate">{project.name}</h1>
-          <button onClick={handleRename} className="p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground" aria-label="Rename project">
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
+    <AdaptiveLayout className="max-w-6xl">
+      <header className="space-y-4 rounded-3xl border border-border/70 bg-card p-4 shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <Link to="/" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-primary">
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> All projects
+            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="max-w-full truncate text-2xl font-semibold tracking-tight">{project.name}</h1>
+              <button type="button" onClick={handleRename} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground" aria-label="Rename project">
+                <Pencil className="h-4 w-4" aria-hidden="true" /> Rename
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">Photo editor · changes are saved only after you accept a preview</p>
+          </div>
         </div>
-        <AdaptiveToolbar>
+        <AdaptiveToolbar className="border-t border-border/70 pt-3">
           <HistoryControls
             canUndo={canUndo} canRedo={canRedo} disabled={editorBusy || cropInteractionActive || resizeInteractionActive || Boolean(pendingResult)}
             onUndo={undo} onRedo={redo} onRestore={restoreOriginal}
@@ -945,11 +959,11 @@ export default function Editor() {
             {upscaling ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Maximize2 className="w-4 h-4 mr-1.5" />}
             {SUPER_RESOLUTION_PRODUCTION_AVAILABLE ? 'Upscale x4' : 'Upscale x4 · Candidate'}
           </Button>}
-          <a href={project.current_image_url} target="_blank" rel="noreferrer" className="p-2 rounded-lg hover:bg-accent transition-colors" aria-label="Download">
-            <Download className="w-5 h-5" />
+          <a href={project.current_image_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm font-medium text-foreground hover:bg-accent" aria-label="View full-size image in a new tab">
+            <ExternalLink className="h-4 w-4" aria-hidden="true" /> View image
           </a>
         </AdaptiveToolbar>
-      </div>
+      </header>
 
       <ErrorBanner message={aiError} onRetry={lastAction} />
 
@@ -971,6 +985,15 @@ export default function Editor() {
 
       <SegmentationProgress />
 
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(19rem,23rem)]">
+        <section className="min-w-0 space-y-3 rounded-3xl border border-border/70 bg-card p-3 shadow-sm sm:p-4" aria-label="Image canvas">
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-semibold"><ImageIcon className="h-4 w-4 text-primary" aria-hidden="true" /> Your image</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Select an object on the photo, or use a tool to edit the whole image.</p>
+            </div>
+            {project.width && project.height && <span className="shrink-0 rounded-lg bg-muted px-2 py-1 text-xs tabular-nums text-muted-foreground">{project.width} × {project.height}px</span>}
+          </div>
       <ImageCanvas
         imageUrl={project.current_image_url}
         objects={objects}
@@ -987,11 +1010,13 @@ export default function Editor() {
         cropSource={cropInteractionActive ? { sourceWidth: project.width, sourceHeight: project.height } : null}
         onCropPointer={cropPointer}
       />
-
+        </section>
+        <aside className="min-w-0 space-y-3 xl:sticky xl:top-24" aria-label="Editing controls">
       {!pendingResult && <section className="space-y-3 rounded-2xl border border-border/60 bg-card/40 p-3" aria-label="Image tools">
         <div>
-          <h2 className="text-sm font-medium">Edit image</h2>
-          <p className="text-xs text-muted-foreground">Choose a tool, make one change and review the preview before saving.</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Tools</p>
+          <h2 className="mt-1 text-lg font-semibold">Choose an edit</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">Crop, resize or select a part of the image. Each edit can be previewed before saving.</p>
         </div>
         <div className={cropInteractionActive || resizeInteractionActive ? 'space-y-3' : 'flex flex-wrap items-start gap-3'}>
         {!selection && !resizeInteractionActive && <CropToolbar
@@ -1087,7 +1112,8 @@ export default function Editor() {
         onApplyLevels={() => applyMaskedLevels()}
       />}
       </section>}
-
+        </aside>
+      </div>
 
       {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} /></AdaptivePanel>}
 
