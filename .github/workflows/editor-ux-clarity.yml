@@ -4,12 +4,29 @@ on:
     branches: ["main"]
     paths:
       - 'src/pages/Editor.jsx'
+      - 'src/pages/Projects.jsx'
+      - 'src/components/AppLayout.jsx'
+      - 'src/components/ThemeToggle.jsx'
+      - 'src/components/NotificationCenter.jsx'
+      - 'src/components/AuthLayout.jsx'
+      - 'src/components/projects/ProjectCard.jsx'
+      - 'src/components/projects/ProjectToolbar.jsx'
+      - 'src/components/projects/ProjectActionsMenu.jsx'
+      - 'src/components/editor/HistoryControls.jsx'
+      - 'src/components/editor/VersionsPanel.jsx'
+      - 'src/components/editor/InstructionBar.jsx'
+      - 'src/components/editor/ResultCompare.jsx'
+      - 'src/components/adaptive/AdaptiveLayout.jsx'
+      - 'src/components/adaptive/AdaptiveToolbar.jsx'
+      - 'src/components/adaptive/AdaptiveNavigation.jsx'
+      - 'src/index.css'
       - 'src/components/editor/SelectionToolbar.jsx'
       - 'src/components/editor/ObjectPanel.jsx'
       - 'src/components/editor/ImageCanvas.jsx'
       - 'scripts/test-release-r3b-browser-e2e.mjs'
       - 'scripts/test-release-r3c-browser-e2e.mjs'
       - 'tests/editor-ux-progressive-disclosure.test.mjs'
+      - 'tests/bers-ux-system-redesign.test.mjs'
       - '.github/workflows/editor-ux-clarity.yml'
   workflow_dispatch:
 
@@ -37,6 +54,7 @@ jobs:
         run: |
           node --test \
             tests/editor-ux-progressive-disclosure.test.mjs \
+            tests/bers-ux-system-redesign.test.mjs \
             tests/editor-canonical-boundary.test.mjs \
             tests/editor-zero-object-navigation.test.mjs \
             tests/editor-orthogonal-transform-ui.test.mjs \
