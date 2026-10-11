@@ -10,8 +10,8 @@ export default function VersionsPanel({ versions = [], onCreate, onRestore, disa
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button disabled={disabled} className="p-2 rounded-lg hover:bg-accent transition-colors disabled:opacity-50" aria-label="Versions">
-          <GitBranch className="w-5 h-5" />
+        <button disabled={disabled} className="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50" aria-label="Versions">
+          <GitBranch className="h-4 w-4" aria-hidden="true" /> Versions
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
