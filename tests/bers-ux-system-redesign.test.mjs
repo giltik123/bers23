@@ -12,7 +12,7 @@ test('BERS navigation names every destination and shows the current section', as
   assert.match(app, /function NavLink\(\{ path, label, icon: Icon, active/);
   assert.match(app, /aria-current=\{active \? 'page' : undefined\}/);
   assert.match(app, /<nav className="hidden items-center gap-1 lg:flex" aria-label="Main navigation">/);
-  assert.match(app, /aria-label="Open navigation menu"/);
+  assert.match(app, /aria-label=\{menuOpen \? 'Close navigation menu' : 'Open navigation menu'\}/);
   assert.match(app, /aria-expanded=\{menuOpen\}/);
   assert.match(app, /aria-label="Mobile navigation"/);
   assert.match(app, /onNavigate=\{\(\) => setMenuOpen\(false\)\}/);
