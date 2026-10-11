@@ -62,12 +62,12 @@ export default function AppLayout() {
     { path: '/subscription', label: t('billing.subscription'), icon: CreditCard },
     { path: '/settings', label: t('settings.title'), icon: Settings2 },
   ];
-  const isActive = (path) => location.pathname === path;
+  const isActive = (path) => path === '/' ? (location.pathname === '/' || location.pathname === '/editor') : location.pathname === path;
 
   return (
     <div data-platform={platform.formFactor} className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b border-border/70 bg-card/95 shadow-sm backdrop-blur-xl">
-        <div className="mx-auto flex h-18 min-h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link to="/" className="flex shrink-0 items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label="BERS — Projects">
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm" aria-hidden="true">
               <Sparkles className="h-5 w-5" />
