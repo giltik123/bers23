@@ -32,6 +32,8 @@ test('top utility actions have visible labels, correct semantics and outside-cli
   assert.match(theme, /aria-label=\{dark \? "Switch to light appearance" : "Switch to dark appearance"\}/);
   assert.match(theme, /showLabel && <span>Appearance<\/span>/);
   assert.match(theme, /document\.documentElement\.classList\.toggle\('dark', dark\)/);
+  assert.match(theme, /window\.addEventListener\('bers-theme-change', synchronize\)/);
+  assert.match(theme, /window\.dispatchEvent\(new CustomEvent\('bers-theme-change'/);
 });
 
 test('Editor uses a spacious canvas-led workspace and explanatory editing modes', async () => {
@@ -90,6 +92,7 @@ test('Projects and login use the same design and do not hide key actions behind 
   assert.match(projects, /01<\/strong> Upload photo/);
   assert.match(projects, /03<\/strong> Preview & save/);
   assert.match(cards, /Open editor/);
+  assert.match(cards, /aria-label=\{project\.favorite \? "Remove from favorites" : "Add to favorites"\}/);
   assert.match(cards, /Remove from favorites/);
   assert.doesNotMatch(cards, /opacity-0 group-hover:opacity-100/);
   assert.match(actions, /aria-label="Project options"/);
@@ -98,4 +101,16 @@ test('Projects and login use the same design and do not hide key actions behind 
   assert.match(css, /--primary: 178 66% 27%/);
   assert.match(css, /--ring: 178 66% 27%/);
   assert.match(css, /color-scheme: dark/);
+});
+
+
+test('object list actions are independent keyboard-reachable buttons, not clickable nonsemantic rows', async () => {
+  const panel = await read('src/components/editor/ObjectPanel.jsx');
+  assert.match(panel, /role="group"/);
+  assert.match(panel, /aria-label=\{obj\.selected \? 'Deselect ' \+ obj\.label : 'Select ' \+ obj\.label\}/);
+  assert.match(panel, /aria-pressed=\{Boolean\(obj\.selected\)\}/);
+  assert.match(panel, /aria-label=\{isHidden \? "Show object overlay" : "Hide object overlay"\}/);
+  assert.match(panel, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onToggleHidden\(obj\.id\); \}\}/);
+  assert.match(panel, /onClick=\{\(\) => onSelect\(obj\.selected \? null : obj\)\}/);
+  assert.doesNotMatch(panel, /className=\{\x60flex items-center gap-2 px-2 py-1\.5 rounded-lg cursor-pointer/);
 });
