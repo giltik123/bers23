@@ -274,6 +274,7 @@ try {
   const jobPage = await browserContext.newPage();
   attachDiagnostics(jobPage);
   await jobPage.goto(`${frontendOrigin}/editor?id=${encodeURIComponent(projectId)}`, { waitUntil: 'domcontentloaded' });
+  await jobPage.getByText('More tools and activity', { exact: true }).click();
   const serverExecutions = jobPage.locator('[data-job-center-canonical-executions]');
   await serverExecutions.waitFor({ state: 'visible', timeout: 20_000 });
   await assertJobCenterTopology(serverExecutions, topology);
