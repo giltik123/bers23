@@ -9,7 +9,7 @@ export default function InstructionBar({ selectedObject, instruction, onInstruct
   const hint = selectedObject
     ? 'Selected object: ' + selectedObject.label + '. This instruction will target that object.'
     : wholeImage
-      ? 'No object selected — the instruction will apply to the entire image.'
+      ? 'Editing the whole image — no object selected. This instruction will apply to the entire image.'
       : 'Select an object on the image to use this tool.';
 
   return (
