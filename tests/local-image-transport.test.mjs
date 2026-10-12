@@ -51,6 +51,19 @@ test('known too-large Content-Length is rejected before reading or allocating an
   assert.equal(source.stats().index, 0);
 });
 
+test('an oversized Content-Length cancels the unread network response body', async () => {
+  let cancelled = 0;
+  const source = {
+    headers: { get() { return '5000'; } },
+    body: {
+      async cancel() { cancelled++; },
+      getReader() { throw new Error('reader must not open'); },
+    },
+  };
+  await assert.rejects(() => readBoundedLocalImageResponse(source, 'image/png', 100), /exceeds/);
+  assert.equal(cancelled, 1);
+});
+
 test('empty, corrupt and failed streams are rejected, cancelled and locks released', async () => {
   for (const chunks of [[], [new ArrayBuffer(4)], [new Error('connection reset')]]) {
     const source = response(chunks);
