@@ -188,6 +188,22 @@ try {
     return canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data[0] === 94;
   }, null, { timeout: 10_000 });
 
+  // Independent Red-channel tone curve must alter only red (not green/blue).
+  await localLab.getByRole('combobox', { name: 'Tone curve channel' }).selectOption('red');
+  await curveMidpoint.fill('200');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const rgba = canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data;
+    return rgba && rgba[0] > 94 && rgba[1] === 146 && rgba[2] === 198 && rgba[3] === 255;
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Reset tone curve' }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const rgba = canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data;
+    return rgba && rgba[0] === 94 && rgba[1] === 146 && rgba[2] === 198 && rgba[3] === 255;
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('combobox', { name: 'Tone curve channel' }).selectOption('rgb');
+
   await localLab.getByText('Selective HSL', { exact: true }).click();
   await localLab.getByRole('combobox', { name: 'Selective HSL color range' }).selectOption('blue');
   const selectiveSaturation = localLab.getByRole('slider', { name: 'Selective Saturation' });
