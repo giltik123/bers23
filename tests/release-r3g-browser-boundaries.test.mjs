@@ -16,7 +16,7 @@ test('R3g drives visible zero-object navigation into canonical Fashion and Outfi
   ]);
 
   assert.match(editor, /<AdaptiveNavigation items=\{EDITOR_TABS\} active=\{editTab\}/);
-  assert.match(editor, /editTab === 'fashion'[\s\S]*<FashionPanel \/>/);
+  assert.match(editor, /editTab === 'fashion'[\s\S]*<FashionPanel voiceQuery=\{voiceWardrobeQuery\} \/>/);
   assert.match(editor, /editTab === 'outfits'[\s\S]*<CanonicalTryOnRunnerPanel[\s\S]*!tryOn\.state\.host\.active && <OutfitPanel \/>/);
   assert.match(navigation, /<button key=\{item\.id\} onClick=\{\(\) => onChange\(item\.id\)\}/);
   assert.match(fashion, /aria-label="Canonical fashion wardrobe"/);
