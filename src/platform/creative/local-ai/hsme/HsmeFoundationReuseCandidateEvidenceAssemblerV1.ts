@@ -166,7 +166,7 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
     blockers.push('ASSEMBLY_SOURCE_DIGEST_INVALID');
   }
 
-  let campaign;
+  let campaign:ReturnType<typeof normalizeHsmeFoundationBenchmarkCampaignV1>;
   try{
     campaign=normalizeHsmeFoundationBenchmarkCampaignV1(rawCampaign);
   }catch{
@@ -707,7 +707,7 @@ async function evidenceSetDigest(
       schemaVersion:HSME_FOUNDATION_REUSE_CANDIDATE_EVIDENCE_ASSEMBLY_V1_SCHEMA,
       candidateId,
       requiredCapabilities,
-      campaignId:campaign.campaignId,
+      campaignId,
       campaignSha256,
       sourceDecisionSha256,
       sourceCandidateSha256,
