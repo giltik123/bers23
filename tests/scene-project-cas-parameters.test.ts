@@ -49,7 +49,7 @@ test('scene CAS rejects missing source and fails closed on stale version',async(
 test('PostgreSQL advisory lock prevents a second paid scene analysis for the same source',async()=>{
   let locked=false,releaseCalls=0,locks=0,unlocks=0;
   const query=async(sql:string,params:unknown[])=>{
-    assert.match(sql,/pg_.*advisory_lock/);
+    assert.match(sql,/pg_(?:try_advisory_lock|advisory_unlock)/);
     assert.equal(params[1],'image-storage');
     if(sql.includes('pg_try_advisory_lock')){
       locks++;
