@@ -273,6 +273,43 @@ try {
   assert.equal(providerCalls, 0, 'precision local tools must never contact an AI provider');
   assert.deepEqual(diagnostics.localExecutionRequests, [], 'precision local tools must never issue Core execution tickets');
 
+  // Browser annotation acceptance: this must draw genuinely new RGBA on a
+  // separate overlay canvas, then flatten those vectors into an actual PNG.
+  await localLab.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  await localLab.getByRole('button', { name: 'Add centered rectangle' }).click();
+  await localLab.getByRole('button', { name: 'Delete annotation 1' }).waitFor({ state: 'visible' });
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas[data-local-annotation-surface="true"]');
+    if (!canvas || canvas.width !== 12 || canvas.height !== 8) return false;
+    const rgba = canvas.getContext('2d')?.getImageData(0, 0, 12, 8).data;
+    if (!rgba) return false;
+    for (let i = 0; i < rgba.length; i += 4) if (rgba[i + 3] > 0) return true;
+    return false;
+  }, null, { timeout: 10_000 });
+  const annotatedDownloadPromise = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const annotatedDownload = await annotatedDownloadPromise;
+  const annotationBytes = await fs.readFile(await annotatedDownload.path());
+  const annotationPixels = await sharp(annotationBytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  let modifiedAnnotationPixels = 0;
+  for (let offset = 0; offset < annotationPixels.data.length; offset += 4) {
+    const current = annotationPixels.data.subarray(offset, offset + 4);
+    const previous = stampResult.data.subarray(offset, offset + 4);
+    if (!current.every((value, channel) => value === previous[channel])) modifiedAnnotationPixels++;
+    assert.equal(current[3], previous[3], 'annotation must preserve original fully opaque RGBA alpha');
+  }
+  assert(modifiedAnnotationPixels > 0, 'rectangle must change real exported PNG pixels, not just UI controls');
+  await localLab.getByRole('button', { name: 'Delete annotation 1' }).click();
+  assert.equal(await localLab.getByRole('button', { name: 'Delete annotation 1' }).count(), 0, 'individual annotation deletion must take effect');
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  await localLab.getByRole('button', { name: 'Delete annotation 1' }).waitFor({ state: 'visible' });
+  await localLab.getByRole('button', { name: 'Text', exact: true }).click();
+  await localLab.getByRole('textbox', { name: 'Annotation text' }).fill('Retouch this area');
+  await localLab.getByRole('button', { name: 'Add centered text' }).click();
+  await localLab.getByRole('button', { name: 'Delete annotation 2' }).waitFor({ state: 'visible' });
+  assert.deepEqual(await readProjectState(projectId), initial, 'local annotations must never mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'annotation drawing must never invoke an AI provider');
+
   await page.getByRole('button', { name: 'Prompt', exact: true }).click();
 
   // Start Selection without invoking Smart Select, switch immediately to deterministic manual Add,
