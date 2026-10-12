@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, RectangleHorizontal, Circle, Type, MousePointer2, Trash2, Plus } from 'lucide-react';
+import { ArrowUpRight, RectangleHorizontal, Circle, Type, MousePointer2, Trash2, Plus, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   LOCAL_ANNOTATION_TOOLS, LOCAL_ANNOTATION_COLORS,
@@ -12,6 +12,7 @@ const ICONS = Object.freeze({
   rectangle: RectangleHorizontal,
   ellipse: Circle,
   text: Type,
+  redact: ShieldAlert,
 });
 
 export default function LocalAnnotationControls({
@@ -25,7 +26,7 @@ export default function LocalAnnotationControls({
       <header>
         <h3 className="text-lg font-semibold">Text & shapes</h3>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Draw arrows and outlines or place a short label on your photo. Items stay separate until export, so you can remove them individually or use Undo.
+          Add arrows, shapes, labels and opaque covers. Everything remains locally editable until PNG export, with Undo and individual removal.
         </p>
       </header>
       <div role="group" aria-label="Annotation drawing tools" className="flex flex-wrap gap-2">
@@ -47,7 +48,14 @@ export default function LocalAnnotationControls({
           );
         })}
       </div>
-      {mode !== 'off' && (
+      {mode === 'redact' && (
+        <p role="note" className="rounded-xl border border-border/70 bg-muted p-3 text-xs leading-5">
+          Solid black covers replace the covered pixels in the exported PNG, not in your original photo.
+          Color and opacity are locked at black and 100%. Inspect the exported PNG before sharing;
+          the original project, previous downloads and browser drafts remain unchanged.
+        </p>
+      )}
+      {mode !== 'off' && mode !== 'redact' && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block space-y-1 text-sm">
           <span className="font-medium">Color</span>
@@ -94,7 +102,8 @@ export default function LocalAnnotationControls({
         <p role="status" className="text-xs leading-5 text-muted-foreground">
           {mode === 'off' ? 'Inspect the image without drawing.' :
             mode === 'text' ? 'Click or tap the image to place your label.' :
-              'Drag over the image to draw. Release to add the shape.'}
+              mode === 'redact' ? 'Drag a rectangle to cover private information with solid black pixels.' :
+                'Drag over the image to draw. Release to add the shape.'}
           {' '}{annotations.length}/{MAX_LOCAL_ANNOTATIONS} annotations.
         </p>
         {mode !== 'off' && <Button
@@ -139,7 +148,9 @@ export default function LocalAnnotationControls({
                 <Button type="button" size="sm" variant="outline" aria-label="Move annotation down" onClick={() => onMove(0, .01)}>↓</Button>
                 <Button type="button" size="sm" variant="outline" aria-label="Move annotation right" onClick={() => onMove(.01, 0)}>→</Button>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              {selected.type === 'redact' ? (
+                <p className="text-xs leading-5 text-muted-foreground">Solid black styling cannot be made transparent. You can move this cover or delete it before export.</p>
+              ) : <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block space-y-1 text-xs">
                   <span>Selected color</span>
                   <select aria-label="Selected annotation color" value={selected.color} onChange={event => onEdit({ color: event.target.value })} className="min-h-10 w-full rounded-lg border border-input bg-card px-2">
@@ -168,7 +179,7 @@ export default function LocalAnnotationControls({
                     </label>
                   </>
                 )}
-              </div>
+              </div>}
             </section>
           )}
         </div>
