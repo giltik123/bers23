@@ -345,7 +345,7 @@ test('Crop, Resize and Selection interactions are mutually exclusive and reset o
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const selectionToolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8');
   assert.match(editor, /setCropDraft\(null\); cropAnchorRef\.current = null; setResizeDraft\(null\); setResizeAspectLocked\(true\); \}, \[project\?\.current_image_artifact_id\]\)/);
-  assert.match(editor, /startDisabled=\{cropInteractionActive \|\| resizeInteractionActive \|\| editorBusy \|\| Boolean\(pendingResult\)\}/);
+  assert.match(editor, /startDisabled=\{cropInteractionActive \|\| resizeInteractionActive \|\| editorBusy \|\| Boolean\(pendingResult\) \|\| !project\.current_image_artifact_id\}/);
   assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| resizeInteractionActive \|\| !project\?\.current_image_artifact_id\) return/);
   assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| cropInteractionActive \|\| !project\?\.current_image_artifact_id\) return/);
   assert.match(editor, /busy=\{editorBusy \|\| Boolean\(selection\) \|\| Boolean\(pendingResult\) \|\| resizeInteractionActive\}/);
@@ -551,7 +551,7 @@ test('zero-object projects expose canonical whole-image Prompt without an unback
   assert.match(bar, /const wholeImage = !selectedObject && allowWholeImage/);
   assert.match(bar, /disabled=\{!canEdit \|\| applying\}/);
   assert.match(bar, /disabled=\{!canEdit \|\| !instruction\.trim\(\) \|\| applying\}/);
-  assert.match(bar, /e\.key === 'Enter' && canEdit && !applying && instruction\.trim\(\) && onApply\(\)/);
+  assert.match(bar, /event\.key === 'Enter' && canEdit && !applying && instruction\.trim\(\) && onApply\(\)/);
   assert.match(bar, /Editing the whole image/);
 
   assert.match(resolver, /if \(intent\?\.scope === 'whole_image'\)/);
