@@ -43,7 +43,7 @@ Audit every product mode with actual user journeys, translate the newly introduc
 
 ## Select & Mask — extended editor controls (first phase)
 
-**Create a mask:** open **Smart Select** then choose **Smart**, **Add**, **Remove**, **Polygon**, **Lasso**, **Rectangle** or **Ellipse**. Manual brushes do not need Smart Select inference. Use the live selection overlay to see exact alpha coverage. Brush controls include **Size (2–96 px), Hardness (0–100%) and Opacity (0–100%)**. Brush opacity is applied to a whole pointer stroke and changes actual ORIGINAL-resolution alpha. Subsequent strokes can build up coverage; Undo/Redo restores authoritative bytes.
+**Create a mask:** open **Smart Select** then choose **Smart**, **Add**, **Remove**, **Polygon**, **Lasso**, **Rectangle** or **Ellipse**. Manual brushes do not need Smart Select inference. Use the live selection overlay to see exact alpha coverage. Brush controls include **Radius (2–96 display px), Hardness (0–100%) and Opacity (0–100%)**. A noninteractive ring on the image shows the actual brush footprint; its diameter is twice the radius. Brush opacity is applied to a whole pointer stroke and changes actual ORIGINAL-resolution alpha. Subsequent strokes can build up coverage; Undo/Redo restores authoritative bytes.
 
 **Inspect the mask:** adjust view-only **Show overlay**, **Overlay color (teal/magenta/amber)** and **Overlay opacity (0–100%)**. These controls change only a canvas visualization, never canonical MASK alpha or final image pixels. The mask coverage indicator and empty/tiny/full-selection warnings reflect the live mask.
 
