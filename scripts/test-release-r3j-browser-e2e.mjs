@@ -453,7 +453,7 @@ try {
   assert.equal(previewBody.artifactId, resultBBody.artifactId);
   assert.deepEqual(executionTryOnRequests(), executionBeforeRecover, 'read-only Recover must not repeat prepare/continue/pixel execution/result');
 
-  const recoveredAfter = await waitImage(page, 'after', 120, 160, 20_000);
+  const recoveredAfter = await waitImage(page, 'Результат обработки до принятия', 120, 160, 20_000);
   const recoveredSrc = new URL(await recoveredAfter.evaluate(element => element.src));
   assert.equal(recoveredSrc.origin, coreOrigin, 'recovered Try-On preview must render from Core in split-origin release composition');
   assert.match(recoveredSrc.pathname, /^\/api\/core\/artifacts\/results\/[^/]+$/);
@@ -462,7 +462,7 @@ try {
   // Scenario C: explicit ResultCompare Retry must mint a third identity and perform a fresh canonical run.
   const prepareCWait = waitForCoreResponse(page, 'POST', pathname => pathname === '/api/core/fashion/try-on/prepare');
   const resultCWait = waitForCoreResponse(page, 'POST', pathname => pathname === '/api/core/fashion/try-on/result', 30_000);
-  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await page.getByRole('button', { name: 'Изменить / повторить', exact: true }).click();
   const prepareC = await prepareCWait;
   const intentC = JSON.parse(prepareC.request().postData() ?? '{}');
   const clientRequestC = intentC.clientRequestId;
@@ -474,7 +474,7 @@ try {
   const resultCBody = await resultC.json();
   assert.equal(resultCBody.status, 'FINAL_READY');
 
-  const cAfter = await waitImage(page, 'after', 120, 160, 20_000);
+  const cAfter = await waitImage(page, 'Результат обработки до принятия', 120, 160, 20_000);
   const cAfterSrc = await cAfter.evaluate(element => element.src);
   assert.match(cAfterSrc, /^blob:/, 'fresh local deterministic Retry preview must remain Editor-owned blob data');
   const cWarp = await readPhaseTicket(clientRequestC, 'garment-warp');
@@ -493,7 +493,7 @@ try {
 
   // Scenario D: existing Editor ResultCompare -> Accept is the sole Project mutation boundary.
   const acceptWait = waitForCoreResponse(page, 'POST', pathname => pathname === `/api/core/projects/${projectId}/accept-final`);
-  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).click();
   const acceptResponse = await acceptWait;
   assert.equal(acceptResponse.status(), 200);
   assert.deepEqual(JSON.parse(acceptResponse.request().postData() ?? '{}'), {
