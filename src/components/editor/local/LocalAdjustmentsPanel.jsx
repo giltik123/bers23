@@ -632,6 +632,14 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     ? Array.from(histogram, (count, index) => index + ',' + (72 - count / maxBin * 68)).join(' ')
     : '';
 
+  const selectedCanvasAnnotation = selectedAnnotationIndex === null ? null : annotations[selectedAnnotationIndex];
+  const selectedCanvasBounds = selectedCanvasAnnotation ? {
+    left: Math.min(selectedCanvasAnnotation.from.x, selectedCanvasAnnotation.to.x) * 100 + '%',
+    top: Math.min(selectedCanvasAnnotation.from.y, selectedCanvasAnnotation.to.y) * 100 + '%',
+    width: Math.max(3, Math.abs(selectedCanvasAnnotation.to.x - selectedCanvasAnnotation.from.x) * 100) + '%',
+    height: Math.max(3, Math.abs(selectedCanvasAnnotation.to.y - selectedCanvasAnnotation.from.y) * 100) + '%',
+  } : null;
+
   return (
     <section
       className="space-y-5 rounded-3xl border border-border/70 bg-card p-4 shadow-sm sm:p-6"
@@ -725,6 +733,14 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
                   }
                 }}
               />
+              {!showOriginal && selectedCanvasBounds && (
+                <div
+                  data-local-annotation-selection="true"
+                  className="pointer-events-none absolute z-10 rounded-sm border-2 border-dashed border-amber-400 shadow-[0_0_0_1px_rgba(15,23,42,0.7)]"
+                  style={selectedCanvasBounds}
+                  aria-hidden="true"
+                />
+              )}
               {cloneMode !== 'off' && cloneCursor && (
                 <div
                   data-local-clone-cursor="true"
