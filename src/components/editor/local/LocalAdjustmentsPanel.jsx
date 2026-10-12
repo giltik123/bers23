@@ -1,5 +1,6 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Download, ImagePlus, Loader2, RotateCcw, ShieldCheck, Undo2, Redo2 } from 'lucide-react';
+import AdvancedLocalControls from '@/components/editor/local/AdvancedLocalControls';
 import { Button } from '@/components/ui/button';
 import { canonicalCoreResourcePath, CONFIGURED_CORE_API_ROOT, resolveCoreResourceUrl } from '@/api/coreResourceUrl';
 import {
@@ -7,6 +8,10 @@ import {
   LOCAL_EFFECTS, LOCAL_PRESETS, MAX_LOCAL_PIXELS, normalizeLocalSettings,
   presetLocalSettings, isNeutralLocalSettings,
 } from '@/lib/local-editor/localAdjustments';
+import {
+  applyAdvancedLocalAdjustments, normalizeAdvancedSettings,
+  isNeutralAdvancedSettings, LOCAL_ADVANCED_DEFAULTS,
+} from '@/lib/local-editor/localAdvanced';
 
 const MAX_INPUT_BYTES = 32 * 1024 * 1024;
 const MAX_PREVIEW_EDGE = 1100;
@@ -17,8 +22,14 @@ function historyReducer(state, action) {
   if (action.type === 'redo') return { ...state, index: Math.min(state.entries.length - 1, state.index + 1) };
   if (action.type === 'reset') return { entries: [LOCAL_DEFAULTS], index: 0 };
   const last = state.entries[state.index];
-  const next = action.type === 'preset' ? presetLocalSettings(action.id) : normalizeLocalSettings({ ...last, [action.key]: action.value });
-  if (Object.keys(LOCAL_DEFAULTS).every(key => next[key] === last[key])) return state;
+  const { __advanced: lastAdvanced = LOCAL_ADVANCED_DEFAULTS, ...lastBase } = last;
+  const next = action.type === 'preset'
+    ? { ...presetLocalSettings(action.id), __advanced: lastAdvanced }
+    : action.type === 'advanced'
+      ? { ...lastBase, __advanced: normalizeAdvancedSettings(action.value) }
+      : { ...normalizeLocalSettings({ ...lastBase, [action.key]: action.value }), __advanced: lastAdvanced };
+  if (Object.keys(LOCAL_DEFAULTS).every(key => next[key] === last[key])
+      && JSON.stringify(next.__advanced) === JSON.stringify(lastAdvanced)) return state;
   const entries = [...state.entries.slice(0, state.index + 1), next].slice(-40);
   return { entries, index: entries.length - 1 };
 }
@@ -75,7 +86,16 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const [histogram, setHistogram] = useState(null);
   const [openCategories, setOpenCategories] = useState({ Light: true, Color: false, Effects: false });
   const [history, dispatch] = useReducer(historyReducer, { entries: [LOCAL_DEFAULTS], index: 0 });
-  const settings = history.entries[history.index];
+  const { __advanced: advanced = LOCAL_ADVANCED_DEFAULTS, ...settings } = history.entries[history.index];
+  const [hueBand, setHueBand] = useState('red');
+  const [cloneMode, setCloneMode] = useState('off');
+  const [cloneSource, setCloneSource] = useState(null);
+  const [cloneRadius, setCloneRadius] = useState(5);
+  const [cloneHardness, setCloneHardness] = useState(85);
+  const [cloneOpacity, setCloneOpacity] = useState(100);
+  const [cloneCursor, setCloneCursor] = useState(null);
+  const cloneDrawing = useRef(null);
+  const updateAdvanced = (value) => dispatch({ type: 'advanced', value });
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -91,6 +111,10 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     image.current = raster;
     dispatch({ type: 'reset' });
     setShowOriginal(false);
+    setCloneMode('off');
+    setCloneSource(null);
+    cloneDrawing.current = null;
+    setCloneCursor(null);
     setDetails({ name, width: raster.width, height: raster.height });
     setError('');
   };
@@ -141,7 +165,10 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
         if (!source || !canvas) return;
         const pixels = showOriginal
           ? new Uint8ClampedArray(source.preview)
-          : applyLocalAdjustments(source.preview, source.previewWidth, source.previewHeight, settings);
+          : applyAdvancedLocalAdjustments(
+            applyLocalAdjustments(source.preview, source.previewWidth, source.previewHeight, settings),
+            source.previewWidth, source.previewHeight, advanced,
+          );
         canvas.width = source.previewWidth;
         canvas.height = source.previewHeight;
         const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -151,7 +178,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       } catch (cause) { setError(cause?.message || 'Local preview failed.'); }
     });
     return () => cancelAnimationFrame(frame);
-  }, [details, settings, showOriginal]);
+  }, [details, settings, advanced, showOriginal]);
 
   const download = async () => {
     if (!image.current || exporting) return;
@@ -159,7 +186,10 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     setError('');
     try {
       const source = image.current;
-      const pixels = applyLocalAdjustments(source.full, source.width, source.height, settings);
+      const pixels = applyAdvancedLocalAdjustments(
+        applyLocalAdjustments(source.full, source.width, source.height, settings),
+        source.width, source.height, advanced,
+      );
       const canvas = document.createElement('canvas');
       canvas.width = source.width; canvas.height = source.height;
       const ctx = canvas.getContext('2d');
@@ -181,6 +211,69 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   };
 
   const update = (key, value) => dispatch({ type: 'change', key, value });
+
+  // Canvas pointer positions are normalized to the actual displayed preview,
+  // so a clone path can be applied at original full resolution on export.
+  const clonePoint = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+    };
+  };
+  const cloneMove = (event) => {
+    if (cloneMode === 'off') return;
+    const point = clonePoint(event);
+    if (!point) return;
+    const wrapper = event.currentTarget.parentElement.getBoundingClientRect();
+    const imageRect = event.currentTarget.getBoundingClientRect();
+    setCloneCursor({
+      x: event.clientX - wrapper.left, y: event.clientY - wrapper.top,
+      radius: Math.min(imageRect.width, imageRect.height) * cloneRadius / 100,
+    });
+    const draft = cloneDrawing.current;
+    if (cloneMode !== 'paint' || !draft || draft.pointerId !== event.pointerId) return;
+    const previous = draft.points[draft.points.length - 1];
+    const distance = Math.hypot(point.x - previous.x, point.y - previous.y);
+    if (draft.points.length < 512 && distance >= .001) draft.points.push(point);
+  };
+  const cloneDown = (event) => {
+    if (cloneMode === 'off' || !image.current || exporting || loading) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const point = clonePoint(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (cloneMode === 'pick') {
+      setCloneSource(point);
+      setCloneMode('paint');
+      setError('');
+      return;
+    }
+    if (!cloneSource || advanced.cloneStrokes.length >= 32) return;
+    cloneDrawing.current = { pointerId: event.pointerId, points: [point] };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const cloneUp = (event) => {
+    const draft = cloneDrawing.current;
+    if (!draft || draft.pointerId !== event.pointerId) return;
+    cloneDrawing.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (event.type === 'pointercancel') return;
+    const point = clonePoint(event);
+    if (point && draft.points.length < 512) draft.points.push(point);
+    const stroke = {
+      source: cloneSource, points: draft.points,
+      radius: cloneRadius / 100, hardness: cloneHardness / 100, opacity: cloneOpacity / 100,
+    };
+    try {
+      updateAdvanced({ ...advanced, cloneStrokes: [...advanced.cloneStrokes, stroke] });
+      setError('');
+    } catch (cause) {
+      setError(cause?.message || 'Clone stroke could not be applied.');
+    }
+  };
   const maxBin = histogram ? Math.max(1, ...histogram) : 1;
   const histogramPath = histogram
     ? Array.from(histogram, (count, index) => index + ',' + (72 - count / maxBin * 68)).join(' ')
@@ -223,7 +316,31 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
           </div>
 
           <div className="rounded-2xl border border-border/70 bg-muted p-2">
-            <canvas ref={canvasRef} role="img" aria-label={showOriginal ? 'Original local photo' : 'Locally edited photo preview'} className="mx-auto block max-h-[65vh] max-w-full rounded-xl object-contain" />
+            <div className="relative">
+              <canvas
+                ref={canvasRef}
+                role="img"
+                aria-label={showOriginal ? 'Original local photo' : 'Locally edited photo preview'}
+                className={'mx-auto block max-h-[65vh] max-w-full rounded-xl object-contain ' + (cloneMode !== 'off' ? 'touch-none cursor-crosshair' : '')}
+                onPointerDown={cloneDown}
+                onPointerMove={cloneMove}
+                onPointerUp={cloneUp}
+                onPointerCancel={cloneUp}
+                onPointerLeave={() => setCloneCursor(null)}
+              />
+              {cloneMode !== 'off' && cloneCursor && (
+                <div
+                  data-local-clone-cursor="true"
+                  className="pointer-events-none absolute rounded-full border-2 border-primary shadow-[0_0_0_1px_rgba(255,255,255,0.8)]"
+                  style={{
+                    left: cloneCursor.x, top: cloneCursor.y,
+                    width: cloneCursor.radius * 2, height: cloneCursor.radius * 2,
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                  aria-hidden="true"
+                />
+              )}
+            </div>
             <p className="mt-2 text-center text-xs text-muted-foreground">Fast preview max 1100 px. Export uses the original full-resolution pixels.</p>
           </div>
           {histogram && (
@@ -241,7 +358,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
           <div className="flex flex-wrap gap-2" role="group" aria-label="Local editing history">
             <Button type="button" variant="outline" disabled={!history.index} onClick={() => dispatch({ type: 'undo' })}><Undo2 className="h-4 w-4" aria-hidden="true" /> Undo</Button>
             <Button type="button" variant="outline" disabled={history.index === history.entries.length - 1} onClick={() => dispatch({ type: 'redo' })}><Redo2 className="h-4 w-4" aria-hidden="true" /> Redo</Button>
-            <Button type="button" variant="outline" disabled={isNeutralLocalSettings(settings)} onClick={() => dispatch({ type: 'reset' })}><RotateCcw className="h-4 w-4" aria-hidden="true" /> Reset all</Button>
+            <Button type="button" variant="outline" disabled={isNeutralLocalSettings(settings) && isNeutralAdvancedSettings(advanced)} onClick={() => dispatch({ type: 'reset' })}><RotateCcw className="h-4 w-4" aria-hidden="true" /> Reset all</Button>
           </div>
 
           <div className="grid items-start gap-4 lg:grid-cols-3">
@@ -277,6 +394,22 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
               </details>
             ))}
           </div>
+
+          <AdvancedLocalControls
+            advanced={advanced}
+            onAdvancedChange={updateAdvanced}
+            hueBand={hueBand}
+            onHueBandChange={setHueBand}
+            cloneMode={cloneMode}
+            onCloneMode={setCloneMode}
+            cloneSource={cloneSource}
+            cloneRadius={cloneRadius}
+            onCloneRadius={setCloneRadius}
+            cloneHardness={cloneHardness}
+            onCloneHardness={setCloneHardness}
+            cloneOpacity={cloneOpacity}
+            onCloneOpacity={setCloneOpacity}
+          />
 
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
             <p className="max-w-lg text-xs leading-5 text-muted-foreground">Browser-only editing. Downloaded PNG does not enter Core history; import it as a new project if desired.</p>
