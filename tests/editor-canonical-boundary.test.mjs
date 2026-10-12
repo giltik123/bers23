@@ -344,7 +344,7 @@ test('Editor Resize UI keeps exact integer bounds and explicit deterministic asp
 test('Crop, Resize and Selection interactions are mutually exclusive and reset on canonical image change', async () => {
   const editor = await readFile('src/pages/Editor.jsx', 'utf8');
   const selectionToolbar = await readFile('src/components/editor/SelectionToolbar.jsx', 'utf8');
-  assert.match(editor, /setCropDraft\(null\); cropAnchorRef\.current = null; setResizeDraft\(null\); setResizeAspectLocked\(true\); \}, \[project\?\.current_image_artifact_id\]\)/);
+  assert.match(editor, /setCropDraft\(null\); cropAnchorRef\.current = null; setResizeDraft\(null\); setResizeAspectLocked\(true\); setHiddenObjectIds\(new Set\(\)\); \}, \[project\?\.current_image_artifact_id\]\)/);
   assert.match(editor, /startDisabled=\{cropInteractionActive \|\| resizeInteractionActive \|\| editorBusy \|\| Boolean\(pendingResult\)\}/);
   assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| resizeInteractionActive \|\| !project\?\.current_image_artifact_id\) return/);
   assert.match(editor, /if \(selection \|\| pendingResult \|\| editorBusy \|\| cropInteractionActive \|\| !project\?\.current_image_artifact_id\) return/);
