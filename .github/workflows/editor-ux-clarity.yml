@@ -6,6 +6,8 @@ on:
       - 'src/pages/Editor.jsx'
       - 'src/components/editor/local/LocalAdjustmentsPanel.jsx'
       - 'src/lib/local-editor/localAdjustments.js'
+      - 'src/components/editor/local/LocalAdjustmentsPanel.jsx'
+      - 'src/lib/local-editor/localAdjustments.js'
       - 'tests/local-adjustments.test.mjs'
       - 'src/application/selection/contracts.ts'
       - 'src/application/selection/SelectionApplicationService.ts'
@@ -34,6 +36,8 @@ on:
       - 'tests/editor-ux-progressive-disclosure.test.mjs'
       - 'tests/bers-ux-system-redesign.test.mjs'
       - 'tests/mask-photoshop-controls.test.mjs'
+      - 'tests/local-adjustments.test.mjs'
+      - 'tests/local-adjustments-editor-wiring.test.mjs'
       - 'tests/selection-brush-opacity.test.ts'
       - '.github/workflows/editor-ux-clarity.yml'
   workflow_dispatch:
@@ -65,10 +69,14 @@ jobs:
             tests/bers-ux-system-redesign.test.mjs \
             tests/mask-photoshop-controls.test.mjs \
             tests/local-adjustments.test.mjs \
+            tests/local-adjustments-editor-wiring.test.mjs \
+            tests/local-adjustments.test.mjs \
             tests/editor-canonical-boundary.test.mjs \
             tests/editor-zero-object-navigation.test.mjs \
             tests/editor-orthogonal-transform-ui.test.mjs \
             tests/realesrgan-editor-boundary.test.mjs
+      - name: Deterministic local photo and export authority regression
+        run: node --test tests/local-adjustments.test.mjs tests/local-adjustments-editor-wiring.test.mjs
       - name: Real canonical alpha brush opacity regression
         run: |
           mkdir -p .test-cache/editor-mask
