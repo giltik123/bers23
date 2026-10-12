@@ -117,3 +117,14 @@ The [GIMP Heal manual](https://docs.gimp.org/en_GB/gimp-tool-heal.html) and [GIM
 - Exact PR-head \`.github/workflows/editor-ux-clarity.yml\` runs pure pixel/vector/wiring suites plus production build; R3 browser release E2E changes are included in the workflow path filters. GitHub actions still need to **actually finish** before any merge/deploy claim.
 
 **Release rule:** keep Draft, do not merge/deploy unless all seven protected checks, real Chrome+Postgres workflows and relevant security checks succeed at a single unchanged head SHA. The known LaMa ONNX reproducibility drift is not resolved here.
+
+
+## Phase 4 — editable vector annotations (2026-10-12)
+
+Users can now select a previously placed text, arrow, rectangle or ellipse from the annotation list, change its color and opacity, adjust outline thickness, and edit the text and font size of a text annotation. A contextual property panel shows the selected item; each change uses the shared bounded Undo/Redo history.
+
+Directional controls move a selected annotation by 1% of canvas width/height per click. The new pure geometry operation translates both endpoints together, clamps the entire shape inside the normalized photo rectangle and normalizes floating precision; reversed arrows keep their direction. A separate property-edit operation reuses strict annotation validation for colors, transparency and text. Deletion automatically adjusts or clears the current selection.
+
+Live preview and full-resolution PNG export use the same normalized vector recipe. No original pixel, Core project history, mask artifact or AI endpoint is changed.
+
+Added tests/local-annotation-editing.test.mjs for pixel-independent geometry and malformed input, tests/local-annotation-editing-wiring.test.mjs for true UI callback wiring and history, and a real Chrome/PostgreSQL release journey for editing a placed text annotation, nudging it, and checking Undo. The browser and protected CI must still finish on the exact PR head SHA before merging. Direct drag-to-reposition and resize handles remain separate future work.
