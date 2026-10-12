@@ -66,25 +66,28 @@ function Adjustment({ definition, value, setValue }) {
 }
 
 export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
-  const image = useRef(null), imageInput = useRef(null), canvasRef = useRef(null), abortRef = useRef(null), exportUrls = useRef(new Set());
+  const image = useRef(null), imageInput = useRef(null), canvasRef = useRef(null), abortRef = useRef(null), exportUrls = useRef(new Set()), loadGeneration = useRef(0);
   const [details, setDetails] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [histogram, setHistogram] = useState(null);
+  const [openCategories, setOpenCategories] = useState({ Light: true, Color: false, Effects: false });
   const [history, dispatch] = useReducer(historyReducer, { entries: [LOCAL_DEFAULTS], index: 0 });
   const settings = history.entries[history.index];
 
   useEffect(() => () => {
     abortRef.current?.abort();
+    loadGeneration.current++;
     image.current = null;
     for (const url of exportUrls.current) URL.revokeObjectURL(url);
     exportUrls.current.clear();
   }, []);
 
-  const useImage = async (blob, name) => {
+  const useImage = async (blob, name, generation) => {
     const raster = await decodeLocalImage(blob);
+    if (generation !== loadGeneration.current) return;
     image.current = raster;
     dispatch({ type: 'reset' });
     setShowOriginal(false);
@@ -96,6 +99,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     if (loading) return;
     const resourcePath = canonicalCoreResourcePath(imageUrl);
     if (!resourcePath) { setError('This image is not a verified Core resource. Open a local file instead.'); return; }
+    const generation = ++loadGeneration.current;
     const controller = new AbortController();
     abortRef.current?.abort();
     abortRef.current = controller;
@@ -108,7 +112,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       if (!SUPPORTED_TYPES.has(mime)) throw new Error('Core returned an unsupported image format.');
       if (Number(response.headers.get('content-length') || 0) > MAX_INPUT_BYTES) throw new Error('Core image exceeds 32 MB.');
       const blob = await response.blob();
-      if (!controller.signal.aborted) await useImage(new Blob([blob], { type: mime }), projectName || 'project');
+      if (!controller.signal.aborted) await useImage(new Blob([blob], { type: mime }), projectName || 'project', generation);
     } catch (cause) {
       if (!controller.signal.aborted) setError(cause?.message || 'Could not load project photo.');
     } finally {
@@ -121,9 +125,10 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     event.target.value = '';
     if (!file) return;
     abortRef.current?.abort();
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError('');
-    try { await useImage(file, file.name); }
+    try { await useImage(file, file.name, generation); }
     catch (cause) { setError(cause?.message || 'Local photo could not be decoded.'); }
     finally { setLoading(false); }
   };
@@ -240,8 +245,11 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
           </div>
 
           <div className="grid items-start gap-4 lg:grid-cols-3">
-            {['Light', 'Color', 'Effects'].map((category, index) => (
-              <details key={category} open={index === 0 ? true : undefined} className="min-w-0 rounded-2xl border border-border/70 bg-muted/20 p-3">
+            {['Light', 'Color', 'Effects'].map(category => (
+              <details key={category} open={openCategories[category]} onToggle={event => {
+                const next = event.currentTarget.open;
+                setOpenCategories(current => current[category] === next ? current : { ...current, [category]: next });
+              }} className="min-w-0 rounded-2xl border border-border/70 bg-muted/20 p-3">
                 <summary className="cursor-pointer text-base font-semibold">{category}</summary>
                 <div className="mt-3 space-y-3">
                   {category === 'Effects' && (
