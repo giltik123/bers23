@@ -189,6 +189,7 @@ export default function Editor() {
   const [resizing, setResizing] = useState(false);
   const [orthogonalTransformingMode, setOrthogonalTransformingMode] = useState(null);
   const selectionServiceRef = useRef(null);
+  const finishingMaskRef = useRef(false);
   const strokeRef = useRef([]);
   const cropAnchorRef = useRef(null);
   const maskedExposureInFlightRef = useRef(false);
@@ -295,7 +296,16 @@ export default function Editor() {
     selectionServiceRef.current = service;
     setSelection(service.start({ imageArtifactId, width: project.width, height: project.height }));
   };
-  const updateSelection = (action) => { const value = action(selectionServiceRef.current); if (value) setSelection(value); };
+  const updateSelection = (action) => {
+    const service = selectionServiceRef.current;
+    if (!service) return;
+    try {
+      const value = action(service);
+      if (value) { setSelection(value); setAiError(null); }
+    } catch (cause) {
+      setAiError(cause?.message || 'Mask refinement could not be applied. Your selection has not been saved.');
+    }
+  };
   const selectionShapeHandlePointer = (handle, phase, point, view) => {
     const service = selectionServiceRef.current;
     if (!service || (selection?.mode !== 'RECTANGLE' && selection?.mode !== 'ELLIPSE')) return;
@@ -339,10 +349,22 @@ export default function Editor() {
     } else if (phase === 'cancel') strokeRef.current = [];
   };
   const finishSelection = async () => {
-    const artifact = await selectionServiceRef.current.done();
-    const object = { id: `selection-${artifact.id}`, label: 'Smart selection', selected: true, mask_artifact_id: artifact.id, box: { x: 0, y: 0, w: 1, h: 1 } };
-    await saveObjects([...(objects || []).map((item) => ({ ...item, selected: false })), object]);
-    selectionServiceRef.current.cancel(); selectionServiceRef.current = null; setSelection(null);
+    const service = selectionServiceRef.current;
+    if (!service || finishingMaskRef.current) return;
+    finishingMaskRef.current = true;
+    setAiError(null);
+    try {
+      const artifact = await service.done();
+      const object = { id: `selection-${artifact.id}`, label: 'Smart selection', selected: true, mask_artifact_id: artifact.id, box: { x: 0, y: 0, w: 1, h: 1 } };
+      await saveObjects([...(objects || []).map((item) => ({ ...item, selected: false })), object]);
+      if (selectionServiceRef.current === service) {
+        service.cancel(); selectionServiceRef.current = null; setSelection(null);
+      }
+    } catch (cause) {
+      setAiError(cause?.message || 'Could not save the mask. Your selection remains available for retry.');
+    } finally {
+      finishingMaskRef.current = false;
+    }
   };
 
   const startCrop = () => {
@@ -1079,7 +1101,7 @@ export default function Editor() {
         onApplyShape={() => updateSelection((service) => service.applyShape(polygonComposition))}
         onClearShape={() => updateSelection((service) => service.clearShape())}
         onNudgeShape={(deltaX, deltaY) => updateSelection((service) => service.nudgeShape(deltaX, deltaY))}
-        startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult)}
+        startDisabled={cropInteractionActive || resizeInteractionActive || editorBusy || Boolean(pendingResult) || !project.current_image_artifact_id}
         onMode={(mode) => updateSelection((service) => service.setMode(mode))}
         onUndo={() => updateSelection((service) => service.undo())}
         onRedo={() => updateSelection((service) => service.redo())}
