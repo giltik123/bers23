@@ -13,6 +13,7 @@ import {
 } from '@/lib/local-editor/localRecipe';
 import {
   normalizeLocalAnnotations, centeredLocalAnnotation, renderLocalAnnotations, MAX_LOCAL_ANNOTATIONS,
+  LOCAL_REDACTION_COLOR, applyLocalOpaqueCovers,
   moveLocalAnnotation, editLocalAnnotation,
 } from '@/lib/local-editor/localAnnotations';
 import { Button } from '@/components/ui/button';
@@ -331,7 +332,8 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       canvas.width = source.width; canvas.height = source.height;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('PNG encoder canvas is unavailable.');
-      ctx.putImageData(new ImageData(pixels, source.width, source.height), 0, 0);
+      const exportPixels = applyLocalOpaqueCovers(pixels, source.width, source.height, annotations);
+      ctx.putImageData(new ImageData(exportPixels, source.width, source.height), 0, 0);
       // The same original-resolution normalized vector recipe used by preview
       // is flattened only on the explicitly downloaded PNG.
       renderLocalAnnotations(ctx, source.width, source.height, annotations);
@@ -474,9 +476,9 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
 
   const newAnnotation = (type, from, to = from) => normalizeLocalAnnotations([{
     type, from, to,
-    color: annotationOptions.color,
-    thickness: annotationOptions.thickness,
-    opacity: annotationOptions.opacity,
+    color: type === 'redact' ? LOCAL_REDACTION_COLOR : annotationOptions.color,
+    thickness: type === 'redact' ? 1 : annotationOptions.thickness,
+    opacity: type === 'redact' ? 1 : annotationOptions.opacity,
     ...(type === 'text' ? { text: annotationOptions.text, fontSize: annotationOptions.fontSize } : {}),
   }])[0];
   const commitAnnotation = annotation => {
@@ -533,7 +535,12 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     catch (cause) { setError(cause?.message || 'Drag to draw an annotation.'); }
   };
   const addCenteredAnnotation = () => {
-    try { commitAnnotation(centeredLocalAnnotation(annotationMode, annotationOptions)); }
+    try {
+      commitAnnotation(centeredLocalAnnotation(annotationMode,
+        annotationMode === 'redact'
+          ? { ...annotationOptions, color: LOCAL_REDACTION_COLOR, thickness: 1, opacity: 1 }
+          : annotationOptions));
+    }
     catch (cause) { setError(cause?.message || 'Could not place centered annotation.'); }
   };
   const setDrawingMode = mode => {
