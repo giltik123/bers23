@@ -42,7 +42,7 @@ test('annotations render on transparent overlay canvas and the SAME recipe flatt
   assert.match(parent, /canvas\.width = source\.previewWidth/);
   assert.match(parent, /renderLocalAnnotations\(context, source\.previewWidth, source\.previewHeight, annotations\)/);
   assert.match(parent, /renderLocalAnnotations\(ctx, source\.width, source\.height, annotations\)/);
-  assert.match(parent, /const exportPixels = applyLocalOpaqueCovers\(pixels, source\.width, source\.height, annotations\)/);
+  assert.match(parent, /const exportPixels = annotations\.some\(item => item\.type === 'redact'\)/);
   assert.match(parent, /ctx\.putImageData\(new ImageData\(exportPixels, source\.width, source\.height\), 0, 0\)/);
   assert.match(parent, /canvas\.toBlob\(output => output \? resolve\(output\)/);
   assert.match(parent, /if \(showOriginal\) return/);
