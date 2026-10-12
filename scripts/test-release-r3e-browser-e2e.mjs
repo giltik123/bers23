@@ -233,13 +233,13 @@ try {
   const isolationDiscardBefore = selectedState;
   const firstIsolationRequests = diagnostics.localExecutionRequests.length;
   await runBackgroundIsolation(page);
-  await waitImage(page, 'after', 12, 8);
+  await waitImage(page, 'Результат обработки до принятия', 12, 8);
   assert.equal(diagnostics.localExecutionRequests.length, firstIsolationRequests + 4, 'Background Isolation must use exactly prepare/input/upload/result semantic requests');
   assert.deepEqual(await readProjectState(projectId), isolationDiscardBefore, 'Background Isolation Preview must not mutate Project before explicit Accept');
   const firstTicket = await readLatestBackgroundIsolationTicket(projectId);
   assertExactMaskTicketBinding(firstTicket, maskBody.artifactId);
-  await page.getByRole('button', { name: 'Discard', exact: true }).click();
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 15_000 });
+  await page.getByRole('button', { name: 'Отклонить', exact: true }).click();
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'detached', timeout: 15_000 });
   await waitImage(page, 'Project', 12, 8);
   assert.deepEqual(await readProjectState(projectId), isolationDiscardBefore, 'Background Isolation Discard must be non-mutating');
 
@@ -247,7 +247,7 @@ try {
   const sourceStorageId = isolationDiscardBefore.project.current_image_storage_id;
   const secondIsolationRequests = diagnostics.localExecutionRequests.length;
   await runBackgroundIsolation(page);
-  await waitImage(page, 'after', 12, 8);
+  await waitImage(page, 'Результат обработки до принятия', 12, 8);
   assert.equal(diagnostics.localExecutionRequests.length, secondIsolationRequests + 4);
   assert.equal((await readMasks(projectId)).length, 1, 'repeated Background Isolation must reuse the exact canonical MASK rather than minting another');
   const secondTicket = await readLatestBackgroundIsolationTicket(projectId);
@@ -255,10 +255,10 @@ try {
   assertExactMaskTicketBinding(secondTicket, maskBody.artifactId);
   const sourceProjectImageSrc = await projectImage.evaluate(element => element.src);
   const acceptResponsePromise = waitForProjectMutationResponse(page, projectId, 'accept-final');
-  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).click();
   const acceptResponse = await acceptResponsePromise;
   assert.equal(acceptResponse.ok(), true, 'Background Isolation Accept must succeed through canonical Core Project mutation');
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
   await waitImageChanged(page, 'Project', sourceProjectImageSrc, 12, 8);
 
   const accepted = await readProjectState(projectId);
@@ -345,7 +345,7 @@ async function runBackgroundIsolation(page) {
   const button = page.getByRole('button', { name: 'Remove background', exact: true });
   await waitForEnabled(button, 'Remove background');
   await button.click();
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
 }
 
 function attachDiagnostics(page) {
