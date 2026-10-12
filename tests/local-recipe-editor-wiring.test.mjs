@@ -37,8 +37,9 @@ test('recipe serializes real corrected tone, channel masks, clone stamps and ind
   assert.match(recipe, /normalizeLocalSettings\(settings\)/);
   assert.match(recipe, /normalizeAdvancedSettings\(advanced\)/);
   assert.match(recipe, /normalizeLocalAnnotations\(annotations\)/);
-  assert.match(editor, /createLocalRecipe\(\s*\{ width: source\.width, height: source\.height, sha256 \},\s*settings, advanced, annotations/);
-  assert.match(editor, /parseLocalRecipe\(raw, \{ width: source\.width, height: source\.height, sha256 \}\)/);
+  assert.match(editor, /const original = await originalIdentity\(source, generation\)/);
+  assert.match(editor, /createLocalRecipe\(original, settings, advanced, annotations\)/);
+  assert.match(editor, /parseLocalRecipe\(raw, original\)/);
   assert.match(editor, /dispatch\(\{ type: 'restore-recipe', value: validated\.edits \}\)/);
 });
 
