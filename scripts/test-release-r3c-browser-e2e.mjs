@@ -163,8 +163,8 @@ try {
 
   // Establish the already-accepted R3b starting point: one verified local Rotate FINAL is explicitly accepted.
   const baselinePreview = await runVerifiedRotate(page, 8, 12, 'R3c baseline accepted rotate');
-  await page.getByRole('button', { name: 'Accept', exact: true }).click();
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).click();
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
   const baselineAcceptedImage = await loadedImageEvidence(page, 'Project', 8, 12, 20_000);
   assertSignedCoreImage(baselineAcceptedImage, [8, 12], 'R3c baseline accepted Project image');
   const baselineState = await readProjectState(projectId);
@@ -181,11 +181,11 @@ try {
   const discardLocalBefore = diagnostics.localExecutionRequests.length;
   const discardPreview = await runVerifiedRotate(page, 12, 8, 'R3c discard preview');
   assert.equal(diagnostics.localExecutionRequests.length, discardLocalBefore + 4, 'one Rotate preview must use exactly four local-execution transport requests');
-  const discard = page.getByRole('button', { name: 'Discard', exact: true });
+  const discard = page.getByRole('button', { name: 'Отклонить', exact: true });
   await discard.waitFor({ state: 'visible', timeout: 10_000 });
   await discard.click();
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 10_000 });
-  await page.getByRole('button', { name: 'Discard', exact: true }).waitFor({ state: 'detached', timeout: 10_000 });
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'detached', timeout: 10_000 });
+  await page.getByRole('button', { name: 'Отклонить', exact: true }).waitFor({ state: 'detached', timeout: 10_000 });
   assert.equal(await page.getByRole('img', { name: 'after', exact: true }).count(), 0, 'Discard must remove the pending preview from the Editor');
   const discardImage = await loadedImageEvidence(page, 'Project', 8, 12, 20_000);
   assertSignedCoreImage(discardImage, [8, 12], 'Project image after Discard');
@@ -227,8 +227,8 @@ try {
 
   // Advance away from the saved version with another real accepted Rotate.
   const advancePreview = await runVerifiedRotate(page, 12, 8, 'R3c advance-after-version preview');
-  await page.getByRole('button', { name: 'Accept', exact: true }).click();
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).click();
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
   const advancedImage = await loadedImageEvidence(page, 'Project', 12, 8, 20_000);
   assertSignedCoreImage(advancedImage, [12, 8], 'Project image after advancing beyond saved version');
   const advancedState = await readProjectState(projectId);
@@ -312,7 +312,7 @@ try {
   assert.equal(tabBState.history.length, 4, 'tab B history navigation must preserve redo/restore history');
 
   // Tab A still holds the verified FINAL bound to baselineStorageId. Accept must fail closed with 409.
-  const staleAccept = page.getByRole('button', { name: 'Accept', exact: true });
+  const staleAccept = page.getByRole('button', { name: 'Принять в историю', exact: true });
   await staleAccept.waitFor({ state: 'visible', timeout: 10_000 });
   const historyBeforeRejectedAccept = await readProjectState(projectId);
   const localCallsBeforeRejectedAccept = diagnostics.localExecutionRequests.length;
@@ -331,9 +331,9 @@ try {
   expectingFinalSourceConflict = false;
 
   await page.getByText(conflictMessage, { exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
-  assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).count(), 0, 'stale recovery must disarm Retry');
-  assert.equal(await page.getByRole('button', { name: 'Discard', exact: true }).count(), 0, 'stale recovery must clear the pending result');
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
+  assert.equal(await page.getByRole('button', { name: 'Изменить / повторить', exact: true }).count(), 0, 'stale recovery must disarm Retry');
+  assert.equal(await page.getByRole('button', { name: 'Отклонить', exact: true }).count(), 0, 'stale recovery must clear the pending result');
   assert.equal(await page.getByRole('img', { name: 'after', exact: true }).count(), 0, 'stale preview must be removed after conflict recovery');
   const recoveredImage = await loadedImageEvidence(page, 'Project', 12, 8, 20_000);
   assertSignedCoreImage(recoveredImage, [12, 8], 'tab A canonical Project after stale FINAL recovery');
@@ -464,9 +464,9 @@ async function runVerifiedRotate(page, expectedWidth, expectedHeight, label) {
   assert.equal(coreResult.status, 'SUCCESS', `${label}: Core result must be SUCCESS`);
   assert.equal(coreResult.verification?.valid, true, `${label}: Core verification must be valid`);
   assert.equal(typeof coreResult.artifactId === 'string' && coreResult.artifactId.length > 0, true, `${label}: canonical FINAL artifact identity is required`);
-  const accept = page.getByRole('button', { name: 'Accept', exact: true });
+  const accept = page.getByRole('button', { name: 'Принять в историю', exact: true });
   await accept.waitFor({ state: 'visible', timeout: 20_000 });
-  const previewImage = await loadedImageEvidence(page, 'after', expectedWidth, expectedHeight, 20_000);
+  const previewImage = await loadedImageEvidence(page, 'Результат обработки до принятия', expectedWidth, expectedHeight, 20_000);
   assertLocalVerifiedPreview(previewImage, [expectedWidth, expectedHeight], label);
   const calls = diagnostics.localExecutionRequests.slice(localStart);
   assert.equal(calls.length, 4, `${label}: deterministic Rotate must perform exactly prepare/inputs/image-upload/result`);
