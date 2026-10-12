@@ -172,42 +172,66 @@ function transformHsl(output, width, height, hslSettings) {
   }
 }
 
+export const MAX_LOCAL_CLONE_PIXEL_VISITS = 25_000_000;
+
+function segmentBounds(stroke, width, height, index) {
+  const radius = stroke.radius * Math.min(width, height);
+  const current = stroke.points[index];
+  const previous = stroke.points[Math.max(0, index - 1)];
+  const ax = previous.x * (width - 1), ay = previous.y * (height - 1);
+  const bx = current.x * (width - 1), by = current.y * (height - 1);
+  return {
+    ax, ay, bx, by, radius,
+    left: Math.max(0, Math.floor(Math.min(ax, bx) - radius)),
+    right: Math.min(width - 1, Math.ceil(Math.max(ax, bx) + radius)),
+    top: Math.max(0, Math.floor(Math.min(ay, by) - radius)),
+    bottom: Math.min(height - 1, Math.ceil(Math.max(ay, by) + radius)),
+  };
+}
+
 function transformClone(output, width, height, strokes) {
   if (!strokes.length) return;
-  const scale = Math.min(width, height);
+
+  // Bound raster work before editing a single byte. In particular, pointer
+  // paths with 512 identical samples and a large brush cannot hang a device.
+  let visits = 0;
+  for (const stroke of strokes) for (let index = 0; index < stroke.points.length; index++) {
+    const box = segmentBounds(stroke, width, height, index);
+    visits += (box.right - box.left + 1) * (box.bottom - box.top + 1);
+    if (visits > MAX_LOCAL_CLONE_PIXEL_VISITS) {
+      throw new Error('Manual clone stamp exceeds the local 25-million-pixel work budget. Use a smaller brush or fewer strokes.');
+    }
+  }
+
   for (const stroke of strokes) {
-    // One snapshot per stroke prevents self-feeding; previous strokes are
-    // intentionally visible to later strokes as in a layerless clone brush.
+    // A frozen source per stroke avoids source-to-destination feedback. The
+    // next stroke may intentionally sample the previous stroke's result.
     const source = new Uint8ClampedArray(output);
     const envelope = new Uint8Array(width * height);
-    const radius = stroke.radius * scale;
     const first = stroke.points[0];
     const baseX = stroke.source.x * (width - 1) - first.x * (width - 1);
     const baseY = stroke.source.y * (height - 1) - first.y * (height - 1);
-    const samples = [];
-    for (let i = 0; i < stroke.points.length; i++) {
-      const next = stroke.points[i];
-      const previous = stroke.points[Math.max(0, i - 1)];
-      const ax = previous.x * (width - 1), ay = previous.y * (height - 1);
-      const bx = next.x * (width - 1), by = next.y * (height - 1);
-      const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / Math.max(.5, radius / 2)));
-      for (let j = 0; j <= steps; j++) {
-        const t = j / steps;
-        samples.push([ax * (1 - t) + bx * t, ay * (1 - t) + by * t]);
+
+    for (let index = 0; index < stroke.points.length; index++) {
+      const box = segmentBounds(stroke, width, height, index);
+      const dx = box.bx - box.ax, dy = box.by - box.ay;
+      const segmentLengthSq = dx * dx + dy * dy;
+
+      // Closest point on the continuous stroke segment, not repeated stamped
+      // dots. This avoids gaps and unnecessary oversampling at any image size.
+      for (let y = box.top; y <= box.bottom; y++) for (let x = box.left; x <= box.right; x++) {
+        const t = segmentLengthSq > 0
+          ? clamp(((x - box.ax) * dx + (y - box.ay) * dy) / segmentLengthSq, 0, 1)
+          : 0;
+        const distance = Math.hypot(x - (box.ax + t * dx), y - (box.ay + t * dy));
+        if (distance > box.radius) continue;
+        const coverage = distance <= box.radius * stroke.hardness ? 255
+          : Math.round(255 * (box.radius - distance) / Math.max(.001, box.radius * (1 - stroke.hardness)));
+        const pixel = y * width + x;
+        if (coverage > envelope[pixel]) envelope[pixel] = coverage;
       }
     }
-    for (const [cx, cy] of samples) {
-      const left = Math.max(0, Math.floor(cx - radius)), right = Math.min(width - 1, Math.ceil(cx + radius));
-      const top = Math.max(0, Math.floor(cy - radius)), bottom = Math.min(height - 1, Math.ceil(cy + radius));
-      for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
-        const distance = Math.hypot(x - cx, y - cy);
-        if (distance > radius) continue;
-        const coverage = distance <= radius * stroke.hardness ? 255
-          : Math.round(255 * (radius - distance) / Math.max(.001, radius * (1 - stroke.hardness)));
-        const index = y * width + x;
-        if (coverage > envelope[index]) envelope[index] = coverage;
-      }
-    }
+
     for (let pixel = 0; pixel < envelope.length; pixel++) {
       const coverage = envelope[pixel];
       if (!coverage) continue;
