@@ -7,7 +7,7 @@ import {
 } from '../src/lib/local-editor/localRecipe.js';
 import { LOCAL_DEFAULTS } from '../src/lib/local-editor/localAdjustments.js';
 import { LOCAL_ADVANCED_DEFAULTS, LOCAL_CURVE_DEFAULT } from '../src/lib/local-editor/localAdvanced.js';
-import { centeredLocalAnnotation } from '../src/lib/local-editor/localAnnotations.js';
+import { centeredLocalAnnotation, applyLocalOpaqueCovers } from '../src/lib/local-editor/localAnnotations.js';
 
 const pixels = new Uint8ClampedArray([44, 96, 148, 255, 100, 10, 200, 128]);
 const image = { width: 2, height: 1, sha256: createHash('sha256').update(pixels).digest('hex') };
@@ -93,4 +93,22 @@ test('recipe parsing returns fresh immutable state with no effect on input objec
   assert.ok(Object.isFrozen(imported.edits.advanced));
   assert.ok(Object.isFrozen(imported.edits.annotations));
   assert.equal(imported.edits.annotations[0].text, 'Review this area');
+});
+
+
+test('portable recipe restores an opaque privacy cover without exposing any original RGBA bytes', () => {
+  const cover = centeredLocalAnnotation('redact', {
+    color: '#ffffff', opacity: .4, thickness: 4,
+  });
+  const exported = JSON.stringify(createLocalRecipe(image, LOCAL_DEFAULTS, LOCAL_ADVANCED_DEFAULTS, [cover]));
+  const reloaded = parseLocalRecipe(exported, image);
+  assert.equal(reloaded.edits.annotations.length, 1);
+  assert.equal(reloaded.edits.annotations[0].type, 'redact');
+  assert.equal(reloaded.edits.annotations[0].color, '#000000');
+  assert.equal(reloaded.edits.annotations[0].opacity, 1);
+  assert.equal(reloaded.edits.annotations[0].thickness, 1);
+  const censored = applyLocalOpaqueCovers(pixels, 2, 1, reloaded.edits.annotations);
+  assert.deepEqual([...censored], [0, 0, 0, 255, 0, 0, 0, 255]);
+  assert.deepEqual([...pixels], [44, 96, 148, 255, 100, 10, 200, 128]);
+  assert.ok(!exported.includes('data:image') && !exported.includes('access_token'));
 });
