@@ -194,7 +194,7 @@ try {
     const canvas = document.querySelector('section[aria-label="Image canvas"] canvas');
     if (!(canvas instanceof HTMLCanvasElement) || canvas.width !== 12 || canvas.height !== 8) return false;
     return canvas.getContext('2d').getImageData(6, 4, 1, 1).data[3] > 0;
-  }, { timeout: 10_000 });
+  }, null, { timeout: 10_000 });
   const overlayColor = await page.locator('section[aria-label="Image canvas"] canvas').evaluate((element) => {
     const rgba = element.getContext('2d').getImageData(6, 4, 1, 1).data;
     return [...rgba];
@@ -248,6 +248,7 @@ try {
   assert(selectedPixels > 0, 'manual Add must persist a non-empty MASK');
   assert(selectedPixels < 12 * 8, 'manual Add fixture must remain a bounded partial MASK');
   assert(maskAlpha[4 * 12 + 6] > 0, 'center touch must map through the real pointer/view transform into the center of the ORIGINAL-coordinate MASK');
+  assert.equal(maskAlpha[4 * 12 + 6], 255, 'display-only magenta and 80% overlay must not attenuate the opaque canonical MASK byte');
 
   const selectedState = await readProjectState(projectId);
   assert.equal(selectedState.project.current_image_storage_id, initial.project.current_image_storage_id);
