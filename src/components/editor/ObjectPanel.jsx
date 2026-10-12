@@ -88,7 +88,7 @@ export default function ObjectPanel({ objects, onSelect, hidden, onToggleHidden 
       </button>
       {open && (
         <div className="px-1.5 pb-2 max-h-64 overflow-y-auto">
-          <p className="px-2 pb-2 text-xs leading-5 text-muted-foreground">{maskCount} saved {maskCount === 1 ? 'mask' : 'masks'}. Select one to adjust exposure, white balance or levels in the tool panel. Eye icons only show or hide on-canvas guides; they never edit image pixels.</p>
+          <p className="px-2 pb-2 text-xs leading-5 text-muted-foreground">{maskCount} saved {maskCount === 1 ? 'mask' : 'masks'}. Select one to adjust exposure, white balance or levels in the tool panel. Eye icons only show or hide on-canvas guides; they do not edit the image.</p>
           {roots.map((o) => (
             <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden} onToggleHidden={toggleHidden} onSelect={onSelect} />
           ))}
