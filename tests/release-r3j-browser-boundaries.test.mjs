@@ -100,7 +100,7 @@ test('R3j UNCERTAIN exposes explicit reconciliation without automatic retry', as
   assert.match(session, /inFlight = null;\s*phase = 'IDLE';\s*return beginFresh\(\)/s);
   assert.match(harness, /name: 'Abandon'/);
   assert.match(harness, /name: 'Recover'/);
-  assert.match(harness, /name: 'Retry'/);
+  assert.match(harness, /name: 'Изменить \/ повторить'/);
   assert.match(harness, /assert\.notEqual\(clientRequestC, clientRequestA\)/);
   assert.match(harness, /assert\.notEqual\(clientRequestC, clientRequestB\)/);
 });
