@@ -199,7 +199,7 @@ try {
   assert.equal(Number(definition.target_width), target.width);
   assert.equal(Number(definition.target_height), target.height);
 
-  await page.getByLabel('Project').selectOption(projectId);
+  await page.getByRole('combobox', { name: /^Project/ }).selectOption(projectId);
   await page.evaluate(() => { window.__c3cDropNextStart = true; });
   await page.getByRole('button', { name: 'Run' }).click();
   await page.getByRole('alert').filter({ hasText: 'C3c injected start response ambiguity' }).waitFor({ state: 'visible', timeout: 15_000 });
@@ -242,7 +242,7 @@ try {
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: 'Automation Studio' }).waitFor({ state: 'visible', timeout: 15_000 });
-  await page.getByLabel('Project').selectOption(projectId);
+  await page.getByRole('combobox', { name: /^Project/ }).selectOption(projectId);
   const resume = page.getByRole('button', { name: 'Resume latest' });
   await assertEventually(async () => !(await resume.isDisabled()), 'Resume latest must recover persisted invocation pointer');
   await resume.click();
