@@ -46,9 +46,9 @@ jobs:
           mkdir -p .test-cache/hsme-2b1-2-acquisition-proof
           npx esbuild tests/creative-hsme-teacher-acquisition-proof-v1.test.mjs \
             --bundle --platform=node --format=esm --target=node24 \
-            --outfile=.test-cache/hsme-2b1-2-acquisition-proof/proof.test.mjs \
+            --outfile=tests/hsme-teacher-acquisition-proof.bundled.test.mjs \
             --external:node:*
-          node --test .test-cache/hsme-2b1-2-acquisition-proof/proof.test.mjs
+          node --test tests/hsme-teacher-acquisition-proof.bundled.test.mjs
 
       - name: Acquisition proof cannot become rights quality admission or training authority
         run: |
