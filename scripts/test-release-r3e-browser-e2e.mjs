@@ -320,6 +320,21 @@ try {
   await localLab.getByRole('textbox', { name: 'Annotation text' }).fill('Retouch this area');
   await localLab.getByRole('button', { name: 'Add centered text' }).click();
   await localLab.getByRole('button', { name: 'Delete annotation 3' }).waitFor({ state: 'visible' });
+
+  // Existing vector annotations must be editable after placement. Verify
+  // actual stored text/color and shared Undo rather than simply moving sliders.
+  await localLab.getByRole('button', { name: 'Select annotation 3' }).click();
+  const selectedProperties = localLab.getByRole('region', { name: 'Selected annotation properties' });
+  await selectedProperties.getByRole('textbox', { name: 'Selected annotation text' }).fill('Final review');
+  await selectedProperties.getByRole('combobox', { name: 'Selected annotation color' }).selectOption('#0f766e');
+  await selectedProperties.getByRole('button', { name: 'Move annotation right' }).click();
+  await localLab.getByText('3. text: Final review').waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await selectedProperties.getByRole('combobox', { name: 'Selected annotation color' }).inputValue(), '#0f766e');
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  await localLab.getByText('3. text: Final review').waitFor({ state: 'visible' });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await selectedProperties.getByRole('combobox', { name: 'Selected annotation color' }).inputValue(), '#ef4444', 'Undo must restore vector annotation color without altering source pixels');
+
   assert.deepEqual(await readProjectState(projectId), initial, 'local annotations must never mutate canonical Core Project');
   assert.equal(providerCalls, 0, 'annotation drawing must never invoke an AI provider');
 
