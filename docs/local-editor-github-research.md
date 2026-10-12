@@ -128,3 +128,28 @@ Directional controls move a selected annotation by 1% of canvas width/height per
 Live preview and full-resolution PNG export use the same normalized vector recipe. No original pixel, Core project history, mask artifact or AI endpoint is changed.
 
 Added tests/local-annotation-editing.test.mjs for pixel-independent geometry and malformed input, tests/local-annotation-editing-wiring.test.mjs for true UI callback wiring and history, and a real Chrome/PostgreSQL release journey for editing a placed text annotation, nudging it, and checking Undo. The browser and protected CI must still finish on the exact PR head SHA before merging. Direct drag-to-reposition and resize handles remain separate future work.
+
+
+## Phase 5 — portable local edit recipe, exact-source restore (2026-10-12)
+
+**Usability problem:** Users could adjust the source image, apply masked local curves, clone or color-match a defect and draw annotations, but could only download a **flattened PNG**. The next visit had no way to resume editing independent layers, and each new attempt required recreating all slider values and annotation objects.
+
+**Implemented:** Explicit **Save edit recipe** and **Restore edit recipe** buttons in \`src/components/editor/local/LocalRecipeControls.jsx\`, backed by \`src/lib/local-editor/localRecipe.js\`.
+
+- \`.bers-edit.json\` format with strict \`format: "bers.local-photo-recipe"\`, \`version: 1\`, source \`width\`, \`height\`, \`sha256\`, and \`edits: { settings, advanced, annotations }\`.
+- Fingerprint is browser Web Crypto **SHA-256 of the entire original decoded RGBA8 pixel buffer**, not of a downscaled preview, destination file name or opaque upload token. Image dimensions are checked too. On mismatch, import fails with a descriptive instruction to open the exact original picture. The digest is an accidental-mismatch guard, not authentication, content authenticity or an archival guarantee.
+- Recipe includes all 23 base light/color/effect settings, 5-point master/RGB curves, eight selective HSL bands, gradient masks, bounded exact/color-matched manually painted strokes and vector objects with positions, labels and style. **No image pixels, network addresses, cookies, access tokens, or Core IDs** are serialized.
+- JSON payload limited to **2 MB**, validated against the same fail-closed per-control/per-brush/per-object validators; unknown keys, unsupported versions, malformed JSON, nonfinite values and mismatched photo hashes are rejected. A stale file decode/import is dropped if the image changed meanwhile.
+- Import enters the same **40-step undo history as a single action**. A user can Undo to the current manual session or Redo to reapply the recipe. All editing remains browser-local, with no Core write or AI provider use.
+- Files can be moved between browsers/sessions by the user. There is **no silent localStorage retention** or cloud backup. The user must keep the exact original photo and the small JSON file together. Downloaded PNG remains flattened.
+- Tested by \`tests/local-recipe.test.mjs\`, \`tests/local-recipe-editor-wiring.test.mjs\` and a Chrome/Postgres R3e scenario that exports actual JSON, reads its bytes, restores brightness, asserts pixel-level preview and Undo/Redo, rejects an intentionally altered source hash, and confirms Core Project/provider counts unchanged.
+
+### CI finding (exact PR-head workflow reviewed 2026-10-12)
+
+GitHub Actions for an earlier head of PR #1003 completed with **71 successes and 24 failures**. The failed tests were largely a small number of repeated blockers (not 24 unrelated regressions):
+1. **ESLint** misclassified a component-local async helper named \`useImage\` as a React Hook called outside a custom Hook. Renamed the helper \`activateLocalImage\` while preserving its decode/load behavior.
+2. Legacy Editor source assertions were keyed to an exact JSX prop string and \`e\` event parameter. Current production Editor adds \`!project.current_image_artifact_id\` to the Selection-start admission guard (stronger authorization precondition) and spells the keyboard handler argument \`event\`. Updated the assertions to require these actual stronger/equivalent guards; no runtime security code weakened.
+3. The R3e manual-mask contract still demanded \`selectionServiceRef.current.done()\` even though code now takes a stable service ref and guards against reentrant Done. Updated the contract to require \`const service = selectionServiceRef.current\`, \`!service || finishingMaskRef.current\` guard and \`await service.done()\`.
+4. The R3e touch-only test previously globally banned \`page.mouse\` across every step of the whole browser harness. A new unrelated browser-local **arrow annotation test** legitimately uses mouse drag, so the manual-mask test now scopes the no-mouse assertion to the **Selection section**. Touch-only project Selection remains enforced; it is not silently weakened.
+
+All of these changes must still pass at the **new exact head SHA** along with the remaining protected acceptance jobs and real Chrome/Postgres/browser/device release checks. The longstanding independent LaMa ONNX byte reproducibility issue remains unresolved. **No merge, production deploy or protection bypass.**
