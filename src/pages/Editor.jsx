@@ -163,6 +163,10 @@ export default function Editor() {
   const [hiddenObjectIds, setHiddenObjectIds] = useState(() => new Set());
   const [brushSize, setBrushSize] = useState(24);
   const [brushHardness, setBrushHardness] = useState(75);
+  const [brushOpacity, setBrushOpacity] = useState(100);
+  const [maskOverlayVisible, setMaskOverlayVisible] = useState(true);
+  const [maskOverlayColor, setMaskOverlayColor] = useState('teal');
+  const [maskOverlayOpacity, setMaskOverlayOpacity] = useState(45);
   const [selectionMorphologyRadius, setSelectionMorphologyRadius] = useState(2);
   const [polygonComposition, setPolygonComposition] = useState('REPLACE');
   const [isolatingBackground, setIsolatingBackground] = useState(false);
@@ -330,7 +334,7 @@ export default function Editor() {
     else if (phase === 'move') strokeRef.current.push(point);
     else if (phase === 'up' && strokeRef.current.length) {
       strokeRef.current.push(point);
-      setSelection(service.brush({ points: strokeRef.current, radius: brushSize, hardness: brushHardness / 100, view }));
+      setSelection(service.brush({ points: strokeRef.current, radius: brushSize, hardness: brushHardness / 100, opacity: brushOpacity / 100, view }));
       strokeRef.current = [];
     } else if (phase === 'cancel') strokeRef.current = [];
   };
@@ -1005,6 +1009,9 @@ export default function Editor() {
         onRedo={redo}
         selection={selection}
         onSelectionPointer={selectionPointer}
+        maskOverlayVisible={maskOverlayVisible}
+        maskOverlayColor={maskOverlayColor}
+        maskOverlayOpacity={maskOverlayOpacity}
         onShapeHandlePointer={selectionShapeHandlePointer}
         crop={cropRect ? { ...cropRect, sourceWidth: project.width, sourceHeight: project.height } : null}
         cropSource={cropInteractionActive ? { sourceWidth: project.width, sourceHeight: project.height } : null}
@@ -1059,7 +1066,12 @@ export default function Editor() {
         </details>}
 
         {!cropInteractionActive && !resizeInteractionActive && <SelectionToolbar
-        selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness} onStart={startSelection} hasSelectedMask={Boolean(selected?.mask_artifact_id)}
+        selection={selection} brushSize={brushSize} onBrushSize={setBrushSize} brushHardness={brushHardness} onBrushHardness={setBrushHardness}
+        brushOpacity={brushOpacity} onBrushOpacity={setBrushOpacity}
+        maskOverlayVisible={maskOverlayVisible} onMaskOverlayVisible={setMaskOverlayVisible}
+        maskOverlayColor={maskOverlayColor} onMaskOverlayColor={setMaskOverlayColor}
+        maskOverlayOpacity={maskOverlayOpacity} onMaskOverlayOpacity={setMaskOverlayOpacity}
+        onStart={startSelection} hasSelectedMask={Boolean(selected?.mask_artifact_id)}
         morphologyRadius={selectionMorphologyRadius} onMorphologyRadius={setSelectionMorphologyRadius}
         polygonComposition={polygonComposition} onPolygonComposition={setPolygonComposition}
         onApplyPolygon={() => updateSelection((service) => selection.mode === 'LASSO' ? service.applyLasso(polygonComposition) : service.applyPolygon(polygonComposition))}
