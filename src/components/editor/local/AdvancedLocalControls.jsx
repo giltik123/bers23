@@ -2,7 +2,7 @@ import React from 'react';
 import { Brush, Crosshair, MousePointer2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
-  LOCAL_CURVE_DEFAULT, LOCAL_HUE_BANDS, LOCAL_HSL_DEFAULT,
+  LOCAL_CURVE_DEFAULT, LOCAL_CURVE_CHANNELS, LOCAL_HUE_BANDS, LOCAL_HSL_DEFAULT,
   LOCAL_GRADIENT_MODES, LOCAL_GRADIENT_DEFAULT,
 } from '@/lib/local-editor/localAdvanced';
 
@@ -24,9 +24,14 @@ export default function AdvancedLocalControls({
   cloneMode, onCloneMode, cloneSource, cloneRadius, onCloneRadius,
   cloneHardness, onCloneHardness, cloneOpacity, onCloneOpacity,
 }) {
-  const editCurve = (key, value) => onAdvancedChange({
-    ...advanced, curve: { ...advanced.curve, [key]: value },
-  });
+  const [curveChannel, setCurveChannel] = React.useState('rgb');
+  const visibleCurve = curveChannel === 'rgb' ? advanced.curve : advanced.channelCurves[curveChannel];
+  const editCurve = (key, value) => onAdvancedChange(curveChannel === 'rgb'
+    ? { ...advanced, curve: { ...advanced.curve, [key]: value } }
+    : { ...advanced, channelCurves: {
+      ...advanced.channelCurves,
+      [curveChannel]: { ...advanced.channelCurves[curveChannel], [key]: value },
+    } });
   const editHsl = (key, value) => onAdvancedChange({
     ...advanced,
     hsl: {
@@ -34,7 +39,9 @@ export default function AdvancedLocalControls({
       [hueBand]: { ...advanced.hsl[hueBand], [key]: value },
     },
   });
-  const resetCurve = () => onAdvancedChange({ ...advanced, curve: LOCAL_CURVE_DEFAULT });
+  const resetCurve = () => onAdvancedChange(curveChannel === 'rgb'
+    ? { ...advanced, curve: LOCAL_CURVE_DEFAULT }
+    : { ...advanced, channelCurves: { ...advanced.channelCurves, [curveChannel]: LOCAL_CURVE_DEFAULT } });
   const resetBand = () => onAdvancedChange({
     ...advanced, hsl: { ...advanced.hsl, [hueBand]: LOCAL_HSL_DEFAULT },
   });
@@ -51,17 +58,23 @@ export default function AdvancedLocalControls({
         <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
           <summary className="cursor-pointer text-base font-semibold">Tone curve</summary>
           <div className="mt-3 space-y-3">
-            <p className="text-xs leading-5 text-muted-foreground">Five exact output points, from black to white. Move a point to remap the image tones. No hidden auto curve.</p>
+            <p className="text-xs leading-5 text-muted-foreground">Five exact output points from black to white. Choose overall RGB or edit each color channel independently. The master curve is applied first.</p>
+            <label className="block space-y-1 text-sm">
+              <span className="font-medium">Curve channel</span>
+              <select aria-label="Tone curve channel" value={curveChannel} onChange={event => setCurveChannel(event.target.value)} className="min-h-11 w-full rounded-xl border border-input bg-background px-3">
+                {LOCAL_CURVE_CHANNELS.map(channel => <option key={channel} value={channel}>{channel === 'rgb' ? 'RGB · all' : channel[0].toUpperCase() + channel.slice(1)}</option>)}
+              </select>
+            </label>
             <svg viewBox="0 0 256 256" className="aspect-square w-full rounded-xl border border-border bg-background" role="img" aria-label="Live five-point tone curve">
               <path d="M0 0V256H256" fill="none" stroke="currentColor" strokeOpacity=".25" strokeWidth="1" />
               <path d="M0 256L255 1" fill="none" stroke="currentColor" strokeOpacity=".25" strokeDasharray="6 6" />
-              <polyline points={CURVE_POINTS.map(item => item.x + ',' + (255 - advanced.curve[item.key])).join(' ')} fill="none" stroke="currentColor" strokeWidth="3" className="text-primary" />
-              {CURVE_POINTS.map(item => <circle key={item.key} cx={item.x} cy={255 - advanced.curve[item.key]} r="4" fill="currentColor" className="text-primary" />)}
+              <polyline points={CURVE_POINTS.map(item => item.x + ',' + (255 - visibleCurve[item.key])).join(' ')} fill="none" stroke="currentColor" strokeWidth="3" className="text-primary" />
+              {CURVE_POINTS.map(item => <circle key={item.key} cx={item.x} cy={255 - visibleCurve[item.key]} r="4" fill="currentColor" className="text-primary" />)}
             </svg>
             {CURVE_POINTS.map(point => (
               <label className="block space-y-1 text-xs" key={point.key}>
-                <span className="flex justify-between"><span>{point.label}</span><output className="tabular-nums">{advanced.curve[point.key]}</output></span>
-                <input aria-label={'Curve ' + point.label} type="range" min="0" max="255" step="1" value={advanced.curve[point.key]} onChange={event => editCurve(point.key, Number(event.target.value))} className="w-full accent-primary" />
+                <span className="flex justify-between"><span>{point.label}</span><output className="tabular-nums">{visibleCurve[point.key]}</output></span>
+                <input aria-label={'Curve ' + point.label} type="range" min="0" max="255" step="1" value={visibleCurve[point.key]} onChange={event => editCurve(point.key, Number(event.target.value))} className="w-full accent-primary" />
               </label>
             ))}
             <Button type="button" variant="outline" size="sm" className="w-full" onClick={resetCurve}><RotateCcw className="h-4 w-4" aria-hidden="true" /> Reset tone curve</Button>
