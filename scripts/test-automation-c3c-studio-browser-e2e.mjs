@@ -281,6 +281,7 @@ try {
 
   const executionRequestsBeforeReload = diagnostics.executionRunRequests.length;
   await jobPage.reload({ waitUntil: 'domcontentloaded' });
+  await jobPage.getByText('More tools and activity', { exact: true }).click();
   const reloadedExecutions = jobPage.locator('[data-job-center-canonical-executions]');
   await reloadedExecutions.waitFor({ state: 'visible', timeout: 20_000 });
   await assertJobCenterTopology(reloadedExecutions, topology);
