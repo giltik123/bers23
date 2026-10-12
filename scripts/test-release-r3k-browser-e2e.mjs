@@ -275,6 +275,7 @@ try {
     ['WORKFLOW_STEP', 'SUCCEEDED'],
   ].sort());
 
+  await page.getByText('More tools and activity', { exact: true }).click();
   const serverExecutions = page.locator('[data-job-center-canonical-executions]');
   await serverExecutions.waitFor({ state: 'visible', timeout: 15_000 });
   await serverExecutions.getByRole('button', { name: 'Refresh', exact: true }).click();
