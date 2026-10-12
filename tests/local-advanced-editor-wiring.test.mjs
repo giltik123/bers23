@@ -100,3 +100,25 @@ test('Chrome browser test includes real advanced control acceptance, not fake sl
   assert.match(browserE2e, /getImageData\(7, 4, 1, 1\)/);
   assert.match(browserE2e, /local clone editing must not mutate canonical Core Project/);
 });
+
+
+test('gradient mask is a real local pixel blend with bounded inputs and transparent Core separation', () => {
+  assert.match(controls, /Local gradient mask/);
+  assert.match(controls, /aria-label="Local gradient mask direction"/);
+  assert.match(controls, /LOCAL_GRADIENT_MODES\.map\(mode =>/);
+  assert.match(controls, /aria-label="Gradient start"/);
+  assert.match(controls, /aria-label="Gradient end"/);
+  assert.match(controls, /advanced\.gradient\.end - 1/);
+  assert.match(controls, /advanced\.gradient\.start \+ 1/);
+  assert.match(controls, /Clear gradient mask/);
+  assert.match(engine, /blendGradient\(original, output, width, height, advanced\.gradient\)/);
+  assert.match(engine, /case 'radial': position = 1 - Math\.hypot/);
+  assert.match(engine, /source\[offset \+ channel\] \* \(1 - weight\) \+ output\[offset \+ channel\] \* weight/);
+  assert.match(parent, /source\.previewWidth, source\.previewHeight, advanced, source\.preview/);
+  assert.match(parent, /source\.width, source\.height, advanced, source\.full/);
+  assert.match(browserE2e, /getByText\('Local gradient mask', \{ exact: true \}\)\.click\(\)/);
+  assert.match(browserE2e, /getByRole\('combobox', \{ name: 'Local gradient mask direction' \}\)\.selectOption\('left-right'\)/);
+  assert.match(browserE2e, /getImageData\(0, 4, 1, 1\)\.data\[0\] === 44/);
+  assert.match(browserE2e, /getImageData\(11, 4, 1, 1\)\.data\[0\] === 94/);
+  assert.match(browserE2e, /getByRole\('button', \{ name: 'Clear gradient mask' \}\)\.click\(\)/);
+});
