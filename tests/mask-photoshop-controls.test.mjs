@@ -19,7 +19,9 @@ test('Photoshop-inspired Select & Mask keeps actual seven selection modes, mask 
   }
   assert.match(toolbar, /Mask coverage:/);
   assert.match(toolbar, /onClick=\{onDone\}/);
-  assert.match(editor, /const artifact = await selectionServiceRef\.current\.done\(\)/);
+  assert.match(editor, /const service = selectionServiceRef\.current/);
+  assert.match(editor, /const artifact = await service\.done\(\)/);
+  assert.match(editor, /if \(!service \|\| finishingMaskRef\.current\) return/);
   assert.match(editor, /await saveObjects\(/);
   assert.match(service, /this\.artifacts\.persist\(mask,metadata\)/);
   assert.match(editor, /onUndo=\{\(\) => updateSelection\(\(service\) => service\.undo\(\)\)\}/);
@@ -112,7 +114,9 @@ test('saved mask entries live alongside adjustment controls and have honest visi
 
 test('real browser R3e exercises color and opacity of rendered overlay while Core keeps exact mask authority', async () => {
   const harness = await readFile('scripts/test-release-r3e-browser-e2e.mjs', 'utf8');
-  assert.match(harness, /getByLabel\('Brush Opacity'\)\.fill/);
+  assert.match(harness, /const brushOpacity = page\.getByLabel\('Brush Opacity'\)/);
+  assert.match(harness, /await brushOpacity\.fill\('50'\)/);
+  assert.match(harness, /await brushOpacity\.fill\('100'\)/);
   assert.match(harness, /brushOpacity\.fill\('50'\)/);
   assert.match(harness, /getByRole\('button', \{ name: 'Magenta overlay' \}\)\.click\(\)/);
   assert.match(harness, /getByLabel\('Show mask overlay'\)\.uncheck\(\)/);
