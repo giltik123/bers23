@@ -192,10 +192,11 @@ export function moveLocalAnnotation(item, dx, dy) {
   const highY = Math.max(original.from.y, original.to.y);
   const deltaX = Math.max(-lowX, Math.min(1 - highX, dx));
   const deltaY = Math.max(-lowY, Math.min(1 - highY, dy));
+  const bounded = value => Math.round(Math.max(0, Math.min(1, value)) * 1e9) / 1e9;
   return normalizeLocalAnnotations([{
     ...original,
-    from: { x: original.from.x + deltaX, y: original.from.y + deltaY },
-    to: { x: original.to.x + deltaX, y: original.to.y + deltaY },
+    from: { x: bounded(original.from.x + deltaX), y: bounded(original.from.y + deltaY) },
+    to: { x: bounded(original.to.x + deltaX), y: bounded(original.to.y + deltaY) },
   }])[0];
 }
 
