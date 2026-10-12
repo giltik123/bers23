@@ -1,0 +1,73 @@
+name: HSME-4.2 deterministic residency schedule
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdaptiveResidencyExperimentPlanV1.ts'
+      - 'server/core/training/HsmeDeterministicResidencyScheduleV1.ts'
+      - 'server/core/training/HsmeDeterministicResidencyScheduleV1.test.mjs'
+      - '.github/workflows/hsme-4-2-deterministic-residency-schedule.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-schedule:
+    name: deterministic known-next-stage residency schedule
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck server
+        run: npm run server:typecheck
+      - name: Run deterministic schedule regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-4-2
+          npx esbuild server/core/training/HsmeDeterministicResidencyScheduleV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-4-2/deterministic-residency.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-4-2/deterministic-residency.test.mjs
+      - name: Prove exact content-addressed asset schedule
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDeterministicResidencyScheduleV1.ts
+          grep -F 'denseContentSha256' "$SRC"
+          grep -F 'routerContentSha256' "$SRC"
+          grep -F 'expertAssets' "$SRC"
+          grep -F 'DETERMINISTIC_RESIDENCY_EXPERT_BYTES_MISMATCH' "$SRC"
+          grep -F 'DETERMINISTIC_RESIDENCY_EXPERT_ROSTER_MISMATCH' "$SRC"
+      - name: Prove prefetch and physical budget boundaries
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDeterministicResidencyScheduleV1.ts
+          grep -F 'DETERMINISTIC_RESIDENCY_PREFETCH_CAP_EXCEEDED' "$SRC"
+          grep -F 'DETERMINISTIC_RESIDENCY_STAGE_BUDGET_EXCEEDED' "$SRC"
+          grep -F 'DETERMINISTIC_RESIDENCY_ACTIVE_EXPERT_LIMIT_EXCEEDED' "$SRC"
+          grep -F 'DETERMINISTIC_RESIDENCY_REQUIRED_ASSET_EVICTION' "$SRC"
+          grep -F 'predictionAllowed:false' "$SRC"
+      - name: Prove no movement inference network or provider authority
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeDeterministicResidencyScheduleV1.ts
+          grep -F 'DETERMINISTIC_RESIDENCY_SCHEDULE_READY_NOT_EXECUTED' "$SRC"
+          grep -F 'movementExecutionAllowed:false' "$SRC"
+          grep -F 'inferenceExecutionAllowed:false' "$SRC"
+          grep -F 'networkFetchAllowed:false' "$SRC"
+          grep -F 'providerAuthorityGranted:false' "$SRC"
+          grep -F 'billingAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|spawn\(|exec\(|execFile\(|fork\(|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
