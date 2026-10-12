@@ -122,6 +122,19 @@ test('opaque cover normalization rejects invalid RGBA raster and budget violatio
   assert.throws(() => applyLocalOpaqueCovers(original, 2, 2, [redaction(), {}]), /Invalid/);
 });
 
+test('dozens of huge overlapping privacy covers fail before allocating output or mutating original bytes', () => {
+  const width = 1200, height = 1200;
+  const source = new Uint8ClampedArray(width * height * 4);
+  source.set([15, 32, 75, 61], 0);
+  const covers = Array.from({ length: 36 }, () => redaction({ x: 0, y: 0 }, { x: 1, y: 1 }));
+  assert.throws(
+    () => applyLocalOpaqueCovers(source, width, height, covers),
+    /Solid covers exceed the local pixel-work limit/,
+  );
+  assert.deepEqual([...source.slice(0, 4)], [15, 32, 75, 61]);
+  assert.equal(source.length, width * height * 4);
+});
+
 test('cover rendering does not depend on sampled image pixels and restores context on failure', () => {
   const ctx = drawingContext();
   ctx.fillRect = () => { throw new Error('blocked canvas'); };
