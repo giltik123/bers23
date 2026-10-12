@@ -112,7 +112,7 @@ export default function LocalAnnotationControls({
           onClick={onAddCentered}
           className="min-h-11 rounded-xl"
         >
-          <Plus className="h-4 w-4" aria-hidden="true" /> Add centered {mode}
+          <Plus className="h-4 w-4" aria-hidden="true" /> Add centered {mode === 'redact' ? 'solid cover' : mode}
         </Button>}
       </div>
       {!!annotations.length && (
@@ -130,7 +130,7 @@ export default function LocalAnnotationControls({
                   onClick={() => onSelect(selectedIndex === index ? null : index)}
                   className={'min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ' + (selectedIndex === index ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-accent')}
                 >
-                  {index + 1}. {annotation.type}{annotation.type === 'text' ? ': ' + annotation.text : ''}
+                  {index + 1}. {annotation.type === 'redact' ? 'solid cover' : annotation.type}{annotation.type === 'text' ? ': ' + annotation.text : ''}
                 </button>
                 <Button type="button" size="sm" variant="ghost" aria-label={'Delete annotation ' + (index + 1)} onClick={() => onDelete(index)}>
                   <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete
@@ -140,7 +140,7 @@ export default function LocalAnnotationControls({
           </ol>
           {selected && (
             <section aria-label="Selected annotation properties" className="space-y-3 rounded-xl border border-primary/20 bg-background p-3">
-              <h5 className="text-sm font-semibold">Edit selected {selected.type}</h5>
+              <h5 className="text-sm font-semibold">Edit selected {selected.type === 'redact' ? 'solid cover' : selected.type}</h5>
               <p className="text-xs text-muted-foreground">Changes stay editable until export. Use arrow buttons for precise movement; each step can be undone.</p>
               <div className="grid grid-cols-4 gap-2" role="group" aria-label="Move selected annotation">
                 <Button type="button" size="sm" variant="outline" aria-label="Move annotation left" onClick={() => onMove(-.01, 0)}>←</Button>
