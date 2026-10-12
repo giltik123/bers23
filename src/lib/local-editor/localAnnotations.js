@@ -174,3 +174,39 @@ export function centeredLocalAnnotation(type, options) {
   }
   return normalizeLocalAnnotations([base])[0];
 }
+
+
+/**
+ * Edit vector objects without rasterizing them. Shifts both end-points by the
+ * same bounded offset; movement is clamped against the entire object's
+ * bounding box, retaining size and shape instead of squeezing at the edges.
+ */
+export function moveLocalAnnotation(item, dx, dy) {
+  const original = normalizeLocalAnnotations([item])[0];
+  if (!finite(dx) || !finite(dy) || Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+    throw new Error('Invalid local annotation movement');
+  }
+  const lowX = Math.min(original.from.x, original.to.x);
+  const highX = Math.max(original.from.x, original.to.x);
+  const lowY = Math.min(original.from.y, original.to.y);
+  const highY = Math.max(original.from.y, original.to.y);
+  const deltaX = Math.max(-lowX, Math.min(1 - highX, dx));
+  const deltaY = Math.max(-lowY, Math.min(1 - highY, dy));
+  return normalizeLocalAnnotations([{
+    ...original,
+    from: { x: original.from.x + deltaX, y: original.from.y + deltaY },
+    to: { x: original.to.x + deltaX, y: original.to.y + deltaY },
+  }])[0];
+}
+
+export function editLocalAnnotation(item, patch = {}) {
+  const original = normalizeLocalAnnotations([item])[0];
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)
+      || Object.keys(patch).some(key => !['color', 'thickness', 'opacity', 'text', 'fontSize'].includes(key))) {
+    throw new Error('Invalid local annotation edit');
+  }
+  if (original.type !== 'text' && ('text' in patch || 'fontSize' in patch)) {
+    throw new Error('Text properties require a text annotation');
+  }
+  return normalizeLocalAnnotations([{ ...original, ...patch }])[0];
+}
