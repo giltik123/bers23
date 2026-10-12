@@ -75,3 +75,12 @@ The next three core capabilities are now implemented as original deterministic C
 \`tests/local-advanced-editor-wiring.test.mjs\` verifies the actual sliders, working Select/Reset callbacks, a **shared Undo/Redo** for the base and precision settings, normalized user pointer events and exact preview/export calls. The existing R3e Chrome/Postgres acceptance was extended to check a rendered curve change, selective HSL correction, real source-selected clone stamp and downloaded PNG pixels, directional gradient original-to-adjusted pixels, and unchanged Core Project / provider-call counts.
 
 **Not delivered:** Photoshop adjustment layers, PSD, color-managed 16/32-bit ICC, healing/inpainting, persisted revision of an authenticated Core MASK. Avoid making those claims, altering production or bypassing the seven required checks. No screenshots or device-level performance evidence should be claimed until the browser jobs complete on the exact head SHA.
+
+
+## Phase 3 — independent RGB channel curves (2026-10-12)
+
+Local precision adjustments now support four selectable tone-curve targets: **RGB/master, Red, Green and Blue**. Every target has five integer output stops (0,64,128,192,255 input), its own live SVG curve, five sliders and an isolated Reset. The shared master LUT executes first; only then do per-channel LUTs run on the resulting channel value. Identical default LUTs preserve exact source bytes. Alpha and completely transparent RGB are never modified.
+
+This is original browser-only CPU image processing, not an ICC-managed curve adjustment layer or Photoshop PSD compatibility. It works with the existing light/color controls, eight hue bands, local gradient mask, manual clone brush, combined undo history, before/after, and full-resolution PNG export. No Core write or AI call is involved.
+
+Regression tests exercise red-only changes without green/blue drift, master+independent channel ordering, null/malformed configuration rejection, alpha preservation, and targeted per-channel reset. The real Chrome/Postgres R3e acceptance was extended to change the Red-channel midpoint, inspect rendered RGBA values, reset only the active curve and verify return to previous pixels. Pending CI is not a pass, and production is unchanged.
