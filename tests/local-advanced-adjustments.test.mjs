@@ -292,3 +292,66 @@ test('channel curves are independently validated and reset is neutral', () => {
   }
   assert.deepEqual([...source], [130, 60, 200, 255]);
 });
+
+
+test('color-matched manual repair copies texture with bounded neighborhood tone correction', () => {
+  const width = 11, height = 7;
+  const src = pixels(...Array.from({ length: width * height }, (_, index) => {
+    const x = index % width;
+    const tone = x < 5 ? 70 : 130;
+    return [tone, tone, tone, 255];
+  }).flat());
+  const defect = (3 * width + 8) * 4;
+  src[defect] = 0; src[defect + 1] = 0; src[defect + 2] = 0;
+  const stroke = {
+    source: { x: 2 / 10, y: 3 / 6 },
+    points: [{ x: 8 / 10, y: 3 / 6 }],
+    radius: .1, hardness: 1, opacity: 1,
+  };
+  const exact = applyAdvancedLocalAdjustments(src, width, height, { cloneStrokes: [stroke] });
+  const match = applyAdvancedLocalAdjustments(src, width, height, {
+    cloneStrokes: [{ ...stroke, blendMode: 'color-match' }],
+  });
+  assert.deepEqual([...exact.slice(defect, defect + 4)], [70, 70, 70, 255]);
+  assert.deepEqual([...match.slice(defect, defect + 4)], [130, 130, 130, 255]);
+  assert.equal(src[defect], 0, 'original blemish must be untouched');
+});
+
+test('tone repair is bounded to 96 channel steps and transparent sampling gracefully falls back', () => {
+  const width = 11, height = 7;
+  const image = pixels(...Array.from({ length: width * height }, (_, index) => {
+    const x = index % width;
+    const tone = x < 5 ? 10 : 240;
+    return [tone, tone, tone, 255];
+  }).flat());
+  const defect = (3 * width + 8) * 4;
+  image.set([0, 0, 0, 255], defect);
+  const retouch = {
+    source: { x: .2, y: .5 }, points: [{ x: .8, y: .5 }],
+    radius: .1, hardness: 1, opacity: 1, blendMode: 'color-match',
+  };
+  const maxShift = applyAdvancedLocalAdjustments(image, width, height, { cloneStrokes: [retouch] });
+  assert.deepEqual([...maxShift.slice(defect, defect + 4)], [106, 106, 106, 255], 'shifts above 96 must be capped');
+  for (let x = 0; x < 5; x++) for (let y = 0; y < height; y++) {
+    image[(y * width + x) * 4 + 3] = 0;
+  }
+  const noSamples = applyAdvancedLocalAdjustments(image, width, height, { cloneStrokes: [retouch] });
+  assert.deepEqual([...noSamples.slice(defect, defect + 4)], [0, 0, 0, 255], 'transparent source must never paint');
+});
+
+test('repair remains per-stroke, rejects malformed mode and preserves the original alpha', () => {
+  const src = pixels(180, 20, 20, 117, 10, 10, 10, 117);
+  const stroke = clone({ x: 0, y: 0 }, [{ x: 1, y: 0 }], { opacity: .5 });
+  const exact = applyAdvancedLocalAdjustments(src, 2, 1, { cloneStrokes: [stroke] });
+  const match = applyAdvancedLocalAdjustments(src, 2, 1, {
+    cloneStrokes: [{ ...stroke, blendMode: 'color-match' }],
+  });
+  assert.equal(exact[7], 117);
+  assert.equal(match[7], 117);
+  assert.deepEqual([...src], [180, 20, 20, 117, 10, 10, 10, 117]);
+  for (const blendMode of ['ai', 'inpaint', null, 5]) {
+    assert.throws(() => applyAdvancedLocalAdjustments(src, 2, 1, {
+      cloneStrokes: [{ ...stroke, blendMode }],
+    }), /Invalid/);
+  }
+});
