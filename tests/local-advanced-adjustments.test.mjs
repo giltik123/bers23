@@ -184,3 +184,69 @@ test('expensive repeated clone paths fail closed before consuming huge CPU budge
   );
   assert.ok(blank.every(byte => byte === 0), 'refusing expensive work must never modify the original');
 });
+
+
+test('local left-to-right gradient masks global brightness using ORIGINAL pixel values', () => {
+  const original = pixels(20, 20, 20, 255, 20, 20, 20, 255, 20, 20, 20, 255);
+  const globallyBright = applyLocalAdjustments(original, 3, 1, { brightness: 40 });
+  const masked = applyAdvancedLocalAdjustments(globallyBright, 3, 1, {
+    gradient: { mode: 'left-right', start: 0, end: 100 },
+  }, original);
+  assert.deepEqual([...masked], [20, 20, 20, 255, 45, 45, 45, 255, 70, 70, 70, 255]);
+  assert.deepEqual([...original], [20, 20, 20, 255, 20, 20, 20, 255, 20, 20, 20, 255]);
+  assert.deepEqual([...globallyBright], [70, 70, 70, 255, 70, 70, 70, 255, 70, 70, 70, 255]);
+});
+
+test('top-bottom and radial gradients affect only intended pixels and preserve alpha', () => {
+  const source = pixels(...Array.from({ length: 9 }, () => [100, 80, 60, 96]).flat());
+  const bright = applyLocalAdjustments(source, 3, 3, { brightness: 40 });
+  const vertical = applyAdvancedLocalAdjustments(bright, 3, 3, {
+    gradient: { mode: 'top-bottom', start: 0, end: 100 },
+  }, source);
+  assert.equal(vertical[0], 100);
+  assert.equal(vertical[(2 * 3 + 0) * 4], 150);
+  const radial = applyAdvancedLocalAdjustments(bright, 3, 3, {
+    gradient: { mode: 'radial', start: 0, end: 100 },
+  }, source);
+  assert.equal(radial[0], 100, 'corner is original');
+  assert.equal(radial[4 * 4], 150, 'center is fully corrected');
+  for (let i = 3; i < radial.length; i += 4) assert.equal(radial[i], 96);
+});
+
+test('gradient feather start/end can create a sharp but bounded transition', () => {
+  const source = pixels(...Array.from({ length: 5 }, () => [30, 30, 30, 255]).flat());
+  const edited = applyLocalAdjustments(source, 5, 1, { brightness: 40 });
+  const result = applyAdvancedLocalAdjustments(edited, 5, 1, {
+    gradient: { mode: 'left-right', start: 45, end: 55 },
+  }, source);
+  assert.equal(result[0], 30);
+  assert.equal(result[4], 30);
+  assert.equal(result[8], 55);
+  assert.equal(result[12], 80);
+  assert.equal(result[16], 80);
+});
+
+test('gradient off is identity and invalid positions/directions fail closed', () => {
+  assert.equal(isNeutralAdvancedSettings({ gradient: { mode: 'off', start: 0, end: 100 } }), true);
+  assert.equal(isNeutralAdvancedSettings({ gradient: { mode: 'radial', start: 0, end: 100 } }), false);
+  const source = pixels(20, 30, 40, 255);
+  for (const gradient of [
+    { mode: 'diagonal', start: 0, end: 100 },
+    { mode: 'left-right', start: -1, end: 100 },
+    { mode: 'left-right', start: 10, end: 10 },
+    { mode: 'left-right', start: 50, end: 40 },
+    { mode: 'left-right', start: .5, end: 70 },
+    { mode: 'left-right', start: 0, end: 101 },
+  ]) assert.throws(() => applyAdvancedLocalAdjustments(source, 1, 1, { gradient }), /Invalid/);
+  assert.deepEqual([...source], [20, 30, 40, 255]);
+});
+
+test('manual clone remains intentionally independent from the gradient adjustment mask', () => {
+  const original = pixels(255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255);
+  const bright = applyLocalAdjustments(original, 3, 1, { brightness: 20 });
+  const result = applyAdvancedLocalAdjustments(bright, 3, 1, {
+    gradient: { mode: 'right-left', start: 0, end: 100 },
+    cloneStrokes: [clone({ x: 0, y: 0 }, [{ x: 1, y: 0 }])],
+  }, original);
+  assert.deepEqual([...result.slice(8, 12)], [255, 0, 0, 255], 'clone stroke applies even where gradient correction weight is zero');
+});
