@@ -39,3 +39,25 @@ The production interface had icon-only primary navigation, an overlong Editor, c
 
 ## Further design work
 Audit every product mode with actual user journeys, translate the newly introduced product copy into supported languages, evaluate the responsive visual hierarchy against screenshots on phones and desktops, and improve export/download once its real execution path is verified. Keep incomplete features clearly described or in draft rather than disguising them as working buttons.
+
+
+## Select & Mask — extended editor controls (first phase)
+
+**Create a mask:** open **Smart Select** then choose **Smart**, **Add**, **Remove**, **Polygon**, **Lasso**, **Rectangle** or **Ellipse**. Manual brushes do not need Smart Select inference. Use the live selection overlay to see exact alpha coverage. Brush controls include **Size (2–96 px), Hardness (0–100%) and Opacity (0–100%)**. Brush opacity is applied to a whole pointer stroke and changes actual ORIGINAL-resolution alpha. Subsequent strokes can build up coverage; Undo/Redo restores authoritative bytes.
+
+**Inspect the mask:** adjust view-only **Show overlay**, **Overlay color (teal/magenta/amber)** and **Overlay opacity (0–100%)**. These controls change only a canvas visualization, never canonical MASK alpha or final image pixels. The mask coverage indicator and empty/tiny/full-selection warnings reflect the live mask.
+
+**Refine mask edges:** use bounded **Edge Radius (1–32 px)** with **Grow, Shrink, Open, Close, Feather**, plus Invert, Clear, selection Undo/Redo. Polygon, Lasso, Rectangle and Ellipse expose Replace/Add/Subtract/Intersect composition where supported by the selection authority. The service performs the transformations; no browser-only masking shortcut fabricates persistent artifacts.
+
+**Save and adjust:** choose **Done** to persist an authenticated canonical MASK through Core. The **Masks & objects** list labels saved MASK entries and allows users to select a mask and hide/show its canvas outline (view-only). When a mask is selected, the contextual adjustment panel offers:
+- **Exposure:** 65 exact eighth-stop values from −4 to +4 EV, with Reset and Preview.
+- **White balance:** Temperature −128…+128 Q8 and Tint −64…+64 Q8, both as real sliders, with Reset and Preview.
+- **Levels:** five exact integer controls (input black/midpoint/white, output black/white), each with a slider and number input, Reset and Preview.
+
+These adjustments submit to existing Core-authorized local execution and only alter the Project when the user accepts the resulting preview; Discard leaves it unchanged. Every release gate, nonce, canonical mask ID and original image lineage check remains intact.
+
+### Current boundaries — not a complete Photoshop clone
+
+This phase does **not** implement Photoshop layers, PSD files, imported channel masks, adjustment-layer blending modes or non-destructive editing of an **already-persisted** mask. Existing saved masks can be selected for subsequent Core-backed adjustments; they cannot yet be downloaded and re-opened for brush modification because the canonical mask API currently provides authenticated persistence but no approved authenticated read/download endpoint. The UI must not imply that it supports those absent authorities.
+
+Acceptance includes TypeScript real-alpha brush opacity tests, exact-head UI wiring tests, real Chrome/PostgreSQL mask creation, live canvas RGBA overlay-color/opacity verification, and all required main and security checks before any deployment.
