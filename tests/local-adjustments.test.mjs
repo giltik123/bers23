@@ -187,3 +187,27 @@ test('film grain is deterministic across frames, varies by coordinate and does n
   assert.throws(() => run(source, 4, 4, { grain: 101 }), /Invalid local adjustment/);
   assert.notDeepEqual([...run(source, 4, 4, presetLocalSettings('analog'))], original);
 });
+
+
+test('all 23 numeric local controls produce a visible pixel change on a real fixture', () => {
+  const source = new Uint8ClampedArray(8 * 8 * 4);
+  for (let i = 0; i < 64; i++) {
+    source[4 * i] = (i * 37 + 20) % 256;
+    source[4 * i + 1] = (i * 73 + 30) % 256;
+    source[4 * i + 2] = (i * 109 + 40) % 256;
+    source[4 * i + 3] = 255;
+  }
+  const identity = run(source, 8, 8);
+  for (const control of LOCAL_CONTROLS) {
+    const value = control.key === 'thresholdCutoff' ? 185
+      : control.key === 'gamma' ? 1.5
+        : control.key === 'posterize' ? 4
+          : control.key === 'pixelate' ? 3
+            : control.key === 'exposure' ? 1
+              : control.key === 'hue' ? 90 : Math.min(control.max, Math.max(control.min, 20));
+    const options = control.key === 'thresholdCutoff' ? { effect: 'threshold', thresholdCutoff: value } : { [control.key]: value };
+    const output = run(source, 8, 8, options);
+    assert.ok(output.some((pixel, index) => index % 4 !== 3 && pixel !== identity[index]), control.key + ' must change visible pixels, not just a slider');
+    for (let i = 3; i < output.length; i += 4) assert.equal(output[i], source[i], 'alpha must be unchanged by ' + control.key);
+  }
+});
