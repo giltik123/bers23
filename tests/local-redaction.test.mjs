@@ -70,7 +70,7 @@ test('overlapping opaque covers cannot reveal covered pixel information', () => 
   ]);
   assert.deepEqual([...after.slice((2 * 5 + 2) * 4, (2 * 5 + 2) * 4 + 4)], [0, 0, 0, 255]);
   assert.deepEqual([...after.slice((4 * 5 + 4) * 4, (4 * 5 + 4) * 4 + 4)], [0, 0, 0, 255]);
-  assert.deepEqual([...after.slice(0, 4)], [181, 113, 46, 127]);
+  assert.deepEqual([...after.slice((4 * 5 + 0) * 4, (4 * 5 + 0) * 4 + 4)], [181, 113, 46, 127]);
 });
 
 test('render always draws opaque covers LAST regardless of annotation insertion order', () => {
