@@ -199,6 +199,25 @@ try {
   }, null, { timeout: 10_000 });
   await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
 
+  // Local gradients must blend the original unadjusted pixels (left side)
+  // with the corrected pixels (right side), and Reset must fully undo the mask.
+  await localLab.getByText('Local gradient mask', { exact: true }).click();
+  await localLab.getByRole('combobox', { name: 'Local gradient mask direction' }).selectOption('left-right');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    if (!canvas) return false;
+    const context = canvas.getContext('2d');
+    return context.getImageData(0, 4, 1, 1).data[0] === 44
+      && context.getImageData(11, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('slider', { name: 'Gradient start' }).fill('20');
+  await localLab.getByRole('slider', { name: 'Gradient end' }).fill('80');
+  await localLab.getByRole('button', { name: 'Clear gradient mask' }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(0, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+
   // A nonuniform image proves the manual clone tool copies actual user-chosen
   // source pixels. The same exact output must arrive in the downloaded PNG.
   const stampRgba = Buffer.alloc(12 * 8 * 4);
