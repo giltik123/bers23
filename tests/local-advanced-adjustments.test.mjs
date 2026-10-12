@@ -248,5 +248,5 @@ test('manual clone remains intentionally independent from the gradient adjustmen
     gradient: { mode: 'right-left', start: 0, end: 100 },
     cloneStrokes: [clone({ x: 0, y: 0 }, [{ x: 1, y: 0 }])],
   }, original);
-  assert.deepEqual([...result.slice(8, 12)], [255, 0, 0, 255], 'clone stroke applies even where gradient correction weight is zero');
+  assert.deepEqual([...result.slice(8, 12)], [255, 25, 25, 255], 'clone stroke copies already-adjusted source pixels even where the target gradient weight is zero');
 });
