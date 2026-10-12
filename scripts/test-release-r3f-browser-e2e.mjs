@@ -180,11 +180,11 @@ try {
   assert.equal(inputResponse.ok(), true, 'canonical Crop input delivery must succeed before the browser-local capability failure');
 
   await page.getByText(localCapabilityError, { exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
-  await page.getByRole('button', { name: 'Retry', exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByRole('button', { name: 'Изменить / повторить', exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
   await waitForEnabled(apply, 'Apply crop after local failure');
 
-  assert.equal(await page.getByRole('button', { name: 'Accept', exact: true }).count(), 0, 'local failure must not manufacture an Acceptable Preview');
-  assert.equal(await page.getByRole('img', { name: 'after', exact: true }).count(), 0, 'local failure must not manufacture a Preview image');
+  assert.equal(await page.getByRole('button', { name: 'Принять в историю', exact: true }).count(), 0, 'local failure must not manufacture an Acceptable Preview');
+  assert.equal(await page.getByRole('img', { name: 'Результат обработки до принятия', exact: true }).count(), 0, 'local failure must not manufacture a Preview image');
   assert.equal(await projectImage.evaluate(element => element.src), initialProjectImageSrc, 'local failure must keep the Project image source unchanged');
 
   const failed = await readProjectState(projectId);
