@@ -1,6 +1,7 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Download, ImagePlus, Loader2, RotateCcw, ShieldCheck, Undo2, Redo2 } from 'lucide-react';
 import AdvancedLocalControls from '@/components/editor/local/AdvancedLocalControls';
+import { commitGroupedLocalHistory } from '@/lib/local-editor/localHistory';
 import LocalAnnotationControls from '@/components/editor/local/LocalAnnotationControls';
 import LocalRecipeControls from '@/components/editor/local/LocalRecipeControls';
 import {
@@ -31,8 +32,8 @@ const MAX_PREVIEW_EDGE = 1100;
 const SUPPORTED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 function historyReducer(state, action) {
-  if (action.type === 'undo') return { ...state, index: Math.max(0, state.index - 1) };
-  if (action.type === 'redo') return { ...state, index: Math.min(state.entries.length - 1, state.index + 1) };
+  if (action.type === 'undo') return { ...state, index: Math.max(0, state.index - 1), activeGroup: null };
+  if (action.type === 'redo') return { ...state, index: Math.min(state.entries.length - 1, state.index + 1), activeGroup: null };
   if (action.type === 'reset') return { entries: [LOCAL_DEFAULTS], index: 0 };
   const last = state.entries[state.index];
   const { __advanced: lastAdvanced = LOCAL_ADVANCED_DEFAULTS, __annotations: lastAnnotations = [], ...lastBase } = last;
@@ -53,7 +54,7 @@ function historyReducer(state, action) {
       && JSON.stringify(next.__advanced) === JSON.stringify(lastAdvanced)
       && JSON.stringify(next.__annotations) === JSON.stringify(lastAnnotations)) return state;
   const entries = [...state.entries.slice(0, state.index + 1), next].slice(-40);
-  return { entries, index: entries.length - 1 };
+  return commitGroupedLocalHistory(state, action, next, entries);
 }
 
 function safeFilename(name) {
@@ -114,6 +115,31 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const [histogram, setHistogram] = useState(null);
   const [openCategories, setOpenCategories] = useState({ Light: true, Color: false, Effects: false });
   const [history, dispatch] = useReducer(historyReducer, { entries: [LOCAL_DEFAULTS], index: 0 });
+  const gestureRef = useRef(null);
+  const gestureSequenceRef = useRef(0);
+  const beginHistoryGesture = event => {
+    const element = event.target;
+    if (!(element instanceof HTMLInputElement) || element.type !== 'range') return;
+    if (gestureRef.current?.element === element) return;
+    gestureRef.current = { element, id: 'gesture-' + (++gestureSequenceRef.current) };
+  };
+  const beginTextHistoryGesture = event => {
+    const element = event.target;
+    if (!(element instanceof HTMLInputElement) || element.type !== 'text') return;
+    if (gestureRef.current?.element === element) return;
+    gestureRef.current = { element, id: 'gesture-' + (++gestureSequenceRef.current) };
+  };
+  const beginKeyboardHistoryGesture = event => {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
+      beginHistoryGesture(event);
+    }
+  };
+  const endHistoryGesture = event => {
+    if (gestureRef.current?.element === event.target) gestureRef.current = null;
+  };
+  const endPointerHistoryGesture = event => {
+    if (event.target instanceof HTMLInputElement && event.target.type === 'range') endHistoryGesture(event);
+  };
   const currentEntry = history.entries[history.index];
   const advanced = currentEntry.__advanced || LOCAL_ADVANCED_DEFAULTS;
   const annotations = currentEntry.__annotations || [];
@@ -139,8 +165,8 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   });
   const [annotationDraft, setAnnotationDraft] = useState(null);
   const annotationDrawing = useRef(null);
-  const updateAdvanced = (value) => dispatch({ type: 'advanced', value });
-  const updateAnnotations = (value) => dispatch({ type: 'annotations', value });
+  const updateAdvanced = (value) => dispatch({ type: 'advanced', value, groupId: gestureRef.current?.id });
+  const updateAnnotations = (value) => dispatch({ type: 'annotations', value, groupId: gestureRef.current?.id });
   const editSelectedAnnotation = patch => {
     if (selectedAnnotationIndex === null || !annotations[selectedAnnotationIndex]) return;
     try {
@@ -421,7 +447,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     } catch (cause) { setError(cause?.message || 'Unable to delete browser draft.'); }
   };
 
-  const update = (key, value) => dispatch({ type: 'change', key, value });
+  const update = (key, value) => dispatch({ type: 'change', key, value, groupId: gestureRef.current?.id });
 
   const newAnnotation = (type, from, to = from) => normalizeLocalAnnotations([{
     type, from, to,
@@ -572,7 +598,17 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     : '';
 
   return (
-    <section className="space-y-5 rounded-3xl border border-border/70 bg-card p-4 shadow-sm sm:p-6" aria-label="Local photo adjustments">
+    <section
+      className="space-y-5 rounded-3xl border border-border/70 bg-card p-4 shadow-sm sm:p-6"
+      aria-label="Local photo adjustments"
+      onPointerDownCapture={beginHistoryGesture}
+      onPointerUpCapture={endPointerHistoryGesture}
+      onPointerCancelCapture={endPointerHistoryGesture}
+      onKeyDownCapture={beginKeyboardHistoryGesture}
+      onKeyUpCapture={endHistoryGesture}
+      onFocusCapture={beginTextHistoryGesture}
+      onBlurCapture={endHistoryGesture}
+    >
       <header className="space-y-2">
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary"><ShieldCheck className="h-5 w-5" aria-hidden="true" /> 100% local · No AI · No credits</p>
         <h2 className="text-2xl font-semibold">Local photo lab</h2>
