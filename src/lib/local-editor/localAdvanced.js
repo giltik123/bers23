@@ -195,15 +195,30 @@ function transformClone(output, width, height, strokes) {
   // Bound raster work before editing a single byte. In particular, pointer
   // paths with 512 identical samples and a large brush cannot hang a device.
   let visits = 0;
-  for (const stroke of strokes) for (let index = 0; index < stroke.points.length; index++) {
-    const box = segmentBounds(stroke, width, height, index);
-    visits += (box.right - box.left + 1) * (box.bottom - box.top + 1);
+  const strokeRegions = [];
+  for (const stroke of strokes) {
+    const region = { left: width - 1, right: 0, top: height - 1, bottom: 0 };
+    for (let index = 0; index < stroke.points.length; index++) {
+      const box = segmentBounds(stroke, width, height, index);
+      region.left = Math.min(region.left, box.left);
+      region.right = Math.max(region.right, box.right);
+      region.top = Math.min(region.top, box.top);
+      region.bottom = Math.max(region.bottom, box.bottom);
+      visits += (box.right - box.left + 1) * (box.bottom - box.top + 1);
+      if (visits > MAX_LOCAL_CLONE_PIXEL_VISITS) {
+        throw new Error('Manual clone stamp exceeds the local 25-million-pixel work budget. Use a smaller brush or fewer strokes.');
+      }
+    }
+    // Final application scans only the stroke's bounded region, not the entire
+    // potentially 12MP output raster once per tiny stamp.
+    visits += (region.right - region.left + 1) * (region.bottom - region.top + 1);
     if (visits > MAX_LOCAL_CLONE_PIXEL_VISITS) {
       throw new Error('Manual clone stamp exceeds the local 25-million-pixel work budget. Use a smaller brush or fewer strokes.');
     }
+    strokeRegions.push(region);
   }
 
-  for (const stroke of strokes) {
+  for (const [strokeIndex, stroke] of strokes.entries()) {
     // A frozen source per stroke avoids source-to-destination feedback. The
     // next stroke may intentionally sample the previous stroke's result.
     const source = new Uint8ClampedArray(output);
@@ -232,12 +247,13 @@ function transformClone(output, width, height, strokes) {
       }
     }
 
-    for (let pixel = 0; pixel < envelope.length; pixel++) {
+    const region = strokeRegions[strokeIndex];
+    for (let y = region.top; y <= region.bottom; y++) for (let x = region.left; x <= region.right; x++) {
+      const pixel = y * width + x;
       const coverage = envelope[pixel];
       if (!coverage) continue;
       const target = pixel * 4;
       if (!output[target + 3]) continue;
-      const x = pixel % width, y = Math.floor(pixel / width);
       const sx = Math.round(x + baseX), sy = Math.round(y + baseY);
       if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
       const from = (sy * width + sx) * 4;
