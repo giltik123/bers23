@@ -1018,7 +1018,7 @@ export default function Editor() {
         onCropPointer={cropPointer}
       />
         </section>
-        <aside className="min-w-0 space-y-3 xl:sticky xl:top-24" aria-label="Editing controls">
+        <aside className="min-w-0 space-y-3 xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:overscroll-contain xl:pr-2" aria-label="Editing controls">
       {!pendingResult && <section className="space-y-3 rounded-2xl border border-border/60 bg-card/40 p-3" aria-label="Image tools">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Tools</p>
