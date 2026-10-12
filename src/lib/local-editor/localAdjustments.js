@@ -12,11 +12,16 @@ export const LOCAL_CONTROLS = Object.freeze([
   { key: 'highlights', label: 'Highlights', min: -100, max: 100, step: 1, category: 'Light' },
   { key: 'shadows', label: 'Shadows', min: -100, max: 100, step: 1, category: 'Light' },
   { key: 'gamma', label: 'Gamma', min: .5, max: 2, step: .05, category: 'Light' },
+  { key: 'whites', label: 'Whites', min: -100, max: 100, step: 1, category: 'Light' },
+  { key: 'blacks', label: 'Blacks', min: -100, max: 100, step: 1, category: 'Light' },
   { key: 'saturation', label: 'Saturation', min: -100, max: 100, step: 1, category: 'Color' },
   { key: 'vibrance', label: 'Vibrance', min: -100, max: 100, step: 1, category: 'Color' },
   { key: 'warmth', label: 'Temperature', min: -100, max: 100, step: 1, category: 'Color' },
   { key: 'tint', label: 'Tint', min: -100, max: 100, step: 1, category: 'Color' },
   { key: 'hue', label: 'Hue shift', min: -180, max: 180, step: 1, category: 'Color' },
+  { key: 'red', label: 'Red channel', min: -100, max: 100, step: 1, category: 'Color' },
+  { key: 'green', label: 'Green channel', min: -100, max: 100, step: 1, category: 'Color' },
+  { key: 'blue', label: 'Blue channel', min: -100, max: 100, step: 1, category: 'Color' },
   { key: 'vignette', label: 'Vignette', min: 0, max: 100, step: 1, category: 'Effects' },
   { key: 'soften', label: 'Soften', min: 0, max: 100, step: 1, category: 'Effects' },
   { key: 'sharpen', label: 'Sharpen', min: 0, max: 100, step: 1, category: 'Effects' },
@@ -26,8 +31,8 @@ export const LOCAL_CONTROLS = Object.freeze([
 ]);
 
 export const LOCAL_DEFAULTS = Object.freeze({
-  exposure: 0, brightness: 0, contrast: 0, highlights: 0, shadows: 0, gamma: 1,
-  saturation: 0, vibrance: 0, warmth: 0, tint: 0, hue: 0,
+  exposure: 0, brightness: 0, contrast: 0, highlights: 0, shadows: 0, gamma: 1, whites: 0, blacks: 0,
+  saturation: 0, vibrance: 0, warmth: 0, tint: 0, hue: 0, red: 0, green: 0, blue: 0,
   vignette: 0, soften: 0, sharpen: 0, pixelate: 0, posterize: 0,
   thresholdCutoff: 128, effect: 'none',
 });
@@ -47,6 +52,8 @@ export const LOCAL_PRESETS = Object.freeze([
   { id: 'warm', label: 'Warm light', settings: { warmth: 24, highlights: -16, vibrance: 10 } },
   { id: 'mono', label: 'Monochrome', settings: { effect: 'monochrome', contrast: 20 } },
   { id: 'film', label: 'Vintage film', settings: { effect: 'sepia', contrast: -9, vignette: 40 } },
+  { id: 'matte', label: 'Matte blacks', settings: { blacks: 28, highlights: -16, saturation: -12 } },
+  { id: 'cinematic', label: 'Cinematic cool', settings: { blue: 13, red: -7, shadows: 12, whites: -10, contrast: 10 } },
 ]);
 
 const definitions = new Map(LOCAL_CONTROLS.map(control => [control.key, control]));
@@ -184,6 +191,14 @@ export function applyLocalAdjustments(source, width, height, input = {}) {
       const delta = 70 * (s.shadows / 100) * (1 - luminance) ** 2 + 70 * (s.highlights / 100) * luminance ** 2;
       r += delta; g += delta; b += delta;
     }
+    if (s.blacks || s.whites) {
+      // Shadows/whites have smooth local weights so middle tones remain largely unchanged.
+      const luminance = clamp((.2126 * r + .7152 * g + .0722 * b) / 255, 0, 1);
+      const shadows = (1 - luminance) ** 3;
+      const lights = luminance ** 3;
+      const delta = 1.15 * (s.blacks * shadows + s.whites * lights);
+      r += delta; g += delta; b += delta;
+    }
     if (s.gamma !== 1) {
       r = 255 * (clamp(r) / 255) ** gammaInv;
       g = 255 * (clamp(g) / 255) ** gammaInv;
@@ -199,6 +214,11 @@ export function applyLocalAdjustments(source, width, height, input = {}) {
       b = luma + (b - luma) * adjustment;
     }
     if (s.hue) [r, g, b] = hueRotate(clamp(r), clamp(g), clamp(b), s.hue);
+    // Channel balance is applied after global hue/tint and before effects.
+    // Neutral = exact identity; source alpha and transparency are preserved.
+    r += s.red * 1.25;
+    g += s.green * 1.25;
+    b += s.blue * 1.25;
     if (s.effect === 'monochrome' || s.effect === 'threshold') {
       const luma = .2126 * r + .7152 * g + .0722 * b;
       const value = s.effect === 'threshold' ? (luma >= s.thresholdCutoff ? 255 : 0) : luma;
