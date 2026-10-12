@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -187,6 +188,8 @@ try {
   assert.equal(recipeRecord.source.width, 12);
   assert.equal(recipeRecord.source.height, 8);
   assert.match(recipeRecord.source.sha256, /^[0-9a-f]{64}$/);
+  const originalRgbaBytes = await sharp(sourcePng).ensureAlpha().raw().toBuffer();
+  assert.equal(recipeRecord.source.sha256, createHash('sha256').update(originalRgbaBytes).digest('hex'), 'recipe SHA-256 must hash the entire original RGBA8, not a downscaled preview');
   assert.equal(recipeRecord.edits.settings.brightness, 40);
   assert.equal(Object.hasOwn(recipeRecord, 'pixels'), false, 'edit recipe must never bundle source image bytes');
 
@@ -214,6 +217,10 @@ try {
   });
   await localLab.getByRole('alert').getByText(/different original image/).waitFor({ state: 'visible' });
   assert.equal(await brightness.inputValue(), '40', 'invalid recipe import must never mutate settings');
+  await localLab.locator('input[aria-label="Choose BERS local recipe JSON"]').setInputFiles({
+    name: 'approved-original.bers-edit.json', mimeType: 'application/json', buffer: recipeBytes,
+  });
+  await localLab.getByText(/Edit recipe restored for this exact photo/).waitFor({ state: 'visible' });
   assert.deepEqual(await readProjectState(projectId), initial, 'portable edit recipe must not mutate canonical Core Project');
   assert.equal(providerCalls, 0, 'portable edit recipe must never call an AI provider');
 
