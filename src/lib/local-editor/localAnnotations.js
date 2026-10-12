@@ -24,6 +24,7 @@ export const LOCAL_ANNOTATION_COLORS = Object.freeze([
 export const MAX_LOCAL_ANNOTATIONS = 50;
 export const MAX_LOCAL_ANNOTATION_TEXT = 120;
 export const LOCAL_REDACTION_COLOR = '#000000';
+export const MAX_LOCAL_REDACTION_PIXEL_VISITS = 50_000_000;
 const TOOLS = new Set(LOCAL_ANNOTATION_TOOLS.map(tool => tool.id));
 const COLORS = new Set([...LOCAL_ANNOTATION_COLORS.map(color => color.value), LOCAL_REDACTION_COLOR]);
 const DIMENSIONS_LIMIT = 12_000_000;
@@ -258,12 +259,22 @@ export function applyLocalOpaqueCovers(pixels, width, height, input = []) {
     throw new Error('Opaque cover needs a full-resolution RGBA8 pixel buffer');
   }
   const items = normalizeLocalAnnotations(input).filter(item => item.type === 'redact');
-  const output = new Uint8ClampedArray(pixels);
-  for (const item of items) {
+  // Refuse adversarial 50× full-image boxes before any costly painting.
+  // The original input remains unchanged on every failure.
+  let plannedVisits = 0;
+  const regions = items.map(item => {
     const left = Math.max(0, Math.floor(Math.min(item.from.x, item.to.x) * width));
     const top = Math.max(0, Math.floor(Math.min(item.from.y, item.to.y) * height));
     const right = Math.min(width, Math.ceil(Math.max(item.from.x, item.to.x) * width));
     const bottom = Math.min(height, Math.ceil(Math.max(item.from.y, item.to.y) * height));
+    plannedVisits += (right - left) * (bottom - top);
+    if (plannedVisits > MAX_LOCAL_REDACTION_PIXEL_VISITS) {
+      throw new Error('Solid covers exceed the local pixel-work limit. Remove overlapping covers or use smaller areas.');
+    }
+    return { left, top, right, bottom };
+  });
+  const output = new Uint8ClampedArray(pixels);
+  for (const { left, top, right, bottom } of regions) {
     for (let y = top; y < bottom; y++) {
       for (let x = left; x < right; x++) {
         const i = (y * width + x) * 4;
