@@ -1,7 +1,7 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Download, ImagePlus, Loader2, RotateCcw, ShieldCheck, Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { canonicalCoreResourcePath } from '@/api/coreResourceUrl';
+import { canonicalCoreResourcePath, CONFIGURED_CORE_API_ROOT, resolveCoreResourceUrl } from '@/api/coreResourceUrl';
 import {
   applyLocalAdjustments, localLuminanceHistogram, LOCAL_CONTROLS, LOCAL_DEFAULTS,
   LOCAL_EFFECTS, LOCAL_PRESETS, MAX_LOCAL_PIXELS, normalizeLocalSettings,
@@ -102,7 +102,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(resourcePath, { credentials: 'include', cache: 'no-store', signal: controller.signal });
+      const response = await fetch(resolveCoreResourceUrl(resourcePath, CONFIGURED_CORE_API_ROOT), { credentials: 'include', cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error('Core image unavailable (HTTP ' + response.status + ').');
       const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       if (!SUPPORTED_TYPES.has(mime)) throw new Error('Core returned an unsupported image format.');
