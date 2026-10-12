@@ -28,8 +28,8 @@ test('R3d drives production Crop and Resize controls through explicit Preview Ac
     "getByRole('button', { name: 'Apply crop' })",
     "getByRole('button', { name: 'Start resize' })",
     "getByRole('button', { name: 'Apply resize' })",
-    "getByRole('button', { name: 'Accept', exact: true })",
-    "getByRole('button', { name: 'Discard', exact: true })",
+    "getByRole('button', { name: 'Принять в историю', exact: true })",
+    "getByRole('button', { name: 'Отклонить', exact: true })",
     "waitEnabledButton(page, 'Undo')",
     "waitEnabledButton(page, 'Redo')",
   ]) assert.equal(harness.includes(text), true, `R3d harness must drive ${text}`);
