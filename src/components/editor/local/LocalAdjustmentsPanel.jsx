@@ -86,7 +86,14 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const [histogram, setHistogram] = useState(null);
   const [openCategories, setOpenCategories] = useState({ Light: true, Color: false, Effects: false });
   const [history, dispatch] = useReducer(historyReducer, { entries: [LOCAL_DEFAULTS], index: 0 });
-  const { __advanced: advanced = LOCAL_ADVANCED_DEFAULTS, ...settings } = history.entries[history.index];
+  const currentEntry = history.entries[history.index];
+  const advanced = currentEntry.__advanced || LOCAL_ADVANCED_DEFAULTS;
+  // Memoize the base settings: histogram changes must not trigger a new
+  // raster effect, otherwise the preview could render indefinitely.
+  const settings = React.useMemo(() => {
+    const { __advanced, ...base } = currentEntry;
+    return base;
+  }, [currentEntry]);
   const [hueBand, setHueBand] = useState('red');
   const [cloneMode, setCloneMode] = useState('off');
   const [cloneSource, setCloneSource] = useState(null);
@@ -246,12 +253,14 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     event.preventDefault();
     event.stopPropagation();
     if (cloneMode === 'pick') {
+      setShowOriginal(false);
       setCloneSource(point);
       setCloneMode('paint');
       setError('');
       return;
     }
     if (!cloneSource || advanced.cloneStrokes.length >= 32) return;
+    setShowOriginal(false);
     cloneDrawing.current = { pointerId: event.pointerId, points: [point] };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
