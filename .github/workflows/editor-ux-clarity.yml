@@ -4,8 +4,10 @@ on:
     branches: ["main"]
     paths:
       - 'src/pages/Editor.jsx'
-      - 'src/components/editor/local/LocalAdjustmentsPanel.jsx'
-      - 'src/lib/local-editor/localAdjustments.js'
+      - 'src/components/editor/local/AdvancedLocalControls.jsx'
+      - 'src/lib/local-editor/localAdvanced.js'
+      - 'tests/local-advanced-adjustments.test.mjs'
+      - 'tests/local-advanced-editor-wiring.test.mjs'
       - 'src/components/editor/local/LocalAdjustmentsPanel.jsx'
       - 'src/lib/local-editor/localAdjustments.js'
       - 'tests/local-adjustments.test.mjs'
@@ -36,7 +38,6 @@ on:
       - 'tests/editor-ux-progressive-disclosure.test.mjs'
       - 'tests/bers-ux-system-redesign.test.mjs'
       - 'tests/mask-photoshop-controls.test.mjs'
-      - 'tests/local-adjustments.test.mjs'
       - 'tests/local-adjustments-editor-wiring.test.mjs'
       - 'tests/selection-brush-opacity.test.ts'
       - '.github/workflows/editor-ux-clarity.yml'
@@ -70,6 +71,8 @@ jobs:
             tests/mask-photoshop-controls.test.mjs \
             tests/local-adjustments.test.mjs \
             tests/local-adjustments-editor-wiring.test.mjs \
+            tests/local-advanced-adjustments.test.mjs \
+            tests/local-advanced-editor-wiring.test.mjs \
             tests/local-adjustments.test.mjs \
             tests/editor-canonical-boundary.test.mjs \
             tests/editor-zero-object-navigation.test.mjs \
