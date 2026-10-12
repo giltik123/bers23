@@ -78,6 +78,8 @@ jobs:
             tests/local-advanced-adjustments.test.mjs \
             tests/local-advanced-editor-wiring.test.mjs \
             tests/local-annotations.test.mjs \
+            tests/local-annotation-editing.test.mjs \
+            tests/local-annotation-editing-wiring.test.mjs \
             tests/local-annotations-editor-wiring.test.mjs \
             tests/editor-canonical-boundary.test.mjs \
             tests/editor-zero-object-navigation.test.mjs \
