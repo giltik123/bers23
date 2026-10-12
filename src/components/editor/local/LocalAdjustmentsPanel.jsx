@@ -152,7 +152,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     exportUrls.current.clear();
   }, []);
 
-  const useImage = async (blob, name, generation) => {
+  const activateLocalImage = async (blob, name, generation) => {
     const raster = await decodeLocalImage(blob);
     if (generation !== loadGeneration.current) return;
     image.current = raster;
@@ -187,7 +187,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       if (!SUPPORTED_TYPES.has(mime)) throw new Error('Core returned an unsupported image format.');
       if (Number(response.headers.get('content-length') || 0) > MAX_INPUT_BYTES) throw new Error('Core image exceeds 32 MB.');
       const blob = await response.blob();
-      if (!controller.signal.aborted) await useImage(new Blob([blob], { type: mime }), projectName || 'project', generation);
+      if (!controller.signal.aborted) await activateLocalImage(new Blob([blob], { type: mime }), projectName || 'project', generation);
     } catch (cause) {
       if (!controller.signal.aborted) setError(cause?.message || 'Could not load project photo.');
     } finally {
@@ -203,7 +203,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     const generation = ++loadGeneration.current;
     setLoading(true);
     setError('');
-    try { await useImage(file, file.name, generation); }
+    try { await activateLocalImage(file, file.name, generation); }
     catch (cause) { setError(cause?.message || 'Local photo could not be decoded.'); }
     finally { setLoading(false); }
   };
