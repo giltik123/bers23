@@ -154,6 +154,22 @@ try {
   const localLab = page.getByRole('region', { name: 'Local photo adjustments' });
   await localLab.getByRole('heading', { name: 'Local photo lab' }).waitFor({ state: 'visible', timeout: 10_000 });
   const brightness = localLab.getByRole('slider', { name: 'Local Brightness' });
+  // A REAL Chrome slider drag fires many input updates. One user gesture must
+  // create exactly one Undo entry, not consume the entire 40-step local history.
+  const sliderRect = await brightness.boundingBox();
+  assert(sliderRect && sliderRect.width > 20, 'brightness slider must have a real pointer target');
+  await page.mouse.move(sliderRect.x + sliderRect.width * .50, sliderRect.y + sliderRect.height / 2);
+  await page.mouse.down();
+  for (const fraction of [.57, .64, .71, .78, .85]) {
+    await page.mouse.move(sliderRect.x + sliderRect.width * fraction, sliderRect.y + sliderRect.height / 2, { steps: 3 });
+  }
+  await page.mouse.up();
+  const draggedBrightness = await brightness.inputValue();
+  assert.notEqual(draggedBrightness, '0', 'real pointer drag must modify the brightness');
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await brightness.inputValue(), '0', 'one Undo must restore pre-drag brightness after many pointer samples');
+  await localLab.getByRole('button', { name: 'Redo', exact: true }).click();
+  assert.equal(await brightness.inputValue(), draggedBrightness, 'Redo must restore the entire one-gesture brightness adjustment');
   await brightness.fill('40');
   assert.equal(await brightness.inputValue(), '40', 'local brightness slider must drive real pixel settings');
   await page.waitForFunction(() => {
