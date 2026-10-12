@@ -35,9 +35,11 @@ test('brush opacity slider actually modifies ORIGINAL-resolution mask bytes befo
   assert.match(editor, /opacity: brushOpacity \/ 100, view \}\)\)/);
   assert.match(editor, /brushOpacity=\{brushOpacity\} onBrushOpacity=\{setBrushOpacity\}/);
   assert.match(contracts, /opacity\?: number/);
-  assert.match(service, /Number\.isFinite\(stroke\.opacity \?\? 1\)/);
+  assert.match(service, /Number\.isFinite\(opacity\)/);
   assert.match(service, /Math\.round\(strength\*opacity\)/);
-  assert.match(service, /stroke\.opacity \?\? 1/);
+  assert.match(service, /const opacity=stroke\.opacity \?\? 1/);
+  assert.match(service, /const coverage=new Uint8Array\(alpha\.length\)/);
+  assert.match(service, /if \(opacity===1\)/);
   assert.doesNotMatch(service, /brush\(stroke:[^\n]*fetch\(/);
 });
 
