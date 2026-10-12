@@ -95,6 +95,10 @@ test('real browser E2E verifies colored annotation RGBA, PNG bytes, delete/undo 
   assert.match(releaseE2e, /annotation must preserve original fully opaque RGBA alpha/);
   assert.match(releaseE2e, /getByRole\('button', \{ name: 'Delete annotation 1' \}\)\.click\(\)/);
   assert.match(releaseE2e, /getByRole\('button', \{ name: 'Undo', exact: true \}\)\.click\(\)/);
+  assert.match(releaseE2e, /page\.mouse\.move\(drawRect\.x/);
+  assert.match(releaseE2e, /page\.mouse\.down\(\)/);
+  assert.match(releaseE2e, /page\.mouse\.up\(\)/);
+  assert.match(releaseE2e, /getByRole\('button', \{ name: 'Delete annotation 3' \}\)/);
   assert.match(releaseE2e, /getByRole\('textbox', \{ name: 'Annotation text' \}\)\.fill\('Retouch this area'\)/);
   assert.match(releaseE2e, /local annotations must never mutate canonical Core Project/);
 });
