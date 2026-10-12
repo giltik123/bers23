@@ -47,7 +47,8 @@ export default function LocalAnnotationControls({
           );
         })}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {mode !== 'off' && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block space-y-1 text-sm">
           <span className="font-medium">Color</span>
           <select
@@ -71,7 +72,8 @@ export default function LocalAnnotationControls({
           <span className="flex justify-between font-medium"><span>Font size</span><output>{options.fontSize}%</output></span>
           <input aria-label="Annotation font size" className="w-full accent-primary" type="range" min="1" max="16" step="1" value={options.fontSize} onChange={event => onOptionsChange({ ...options, fontSize: Number(event.target.value) })} />
         </label>
-      </div>
+        </div>
+      )}
 
       {mode === 'text' && (
         <label className="block space-y-2 text-sm">
@@ -95,14 +97,14 @@ export default function LocalAnnotationControls({
               'Drag over the image to draw. Release to add the shape.'}
           {' '}{annotations.length}/{MAX_LOCAL_ANNOTATIONS} annotations.
         </p>
-        <Button
+        {mode !== 'off' && <Button
           type="button" variant="outline"
-          disabled={mode === 'off' || annotations.length >= MAX_LOCAL_ANNOTATIONS || (mode === 'text' && !options.text.trim())}
+          disabled={annotations.length >= MAX_LOCAL_ANNOTATIONS || (mode === 'text' && !options.text.trim())}
           onClick={onAddCentered}
           className="min-h-11 rounded-xl"
         >
-          <Plus className="h-4 w-4" aria-hidden="true" /> Add centered {mode === 'off' ? 'shape' : mode}
-        </Button>
+          <Plus className="h-4 w-4" aria-hidden="true" /> Add centered {mode}
+        </Button>}
       </div>
       {!!annotations.length && (
         <div className="space-y-2 border-t border-border/70 pt-4">
