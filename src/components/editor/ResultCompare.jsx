@@ -138,13 +138,13 @@ export default function ResultCompare({ beforeUrl, result, onAccept, onDiscard, 
         onPointerUp={pointerUp} onPointerCancel={pointerCancel}
         onKeyDown={handleKeys}
       >
-        {beforeUrl && <img src={beforeUrl} alt="" draggable={false}
+        {beforeUrl && <img src={beforeUrl} alt="before" draggable={false}
           onLoad={(event) => setBeforeSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
           onError={() => { setBeforeSize(null); setImageErrors((s) => ({ ...s, before: true })); }}
           className="absolute inset-0 w-full h-full object-contain pointer-events-none"
           style={transform} />}
-        {afterUrl && <div aria-hidden="true" className="absolute inset-0 pointer-events-none" style={{ clipPath: `inset(0 0 0 ${afterClipLeft}%)` }}>
-          <img src={afterUrl} alt="" draggable={false}
+        {afterUrl && <div className="absolute inset-0 pointer-events-none" style={{ clipPath: `inset(0 0 0 ${afterClipLeft}%)` }}>
+          <img src={afterUrl} alt="after" draggable={false}
             onLoad={(event) => setAfterSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
             onError={() => { setAfterSize(null); setImageErrors((s) => ({ ...s, after: true })); }}
             className="absolute inset-0 w-full h-full object-contain" style={transform} />
