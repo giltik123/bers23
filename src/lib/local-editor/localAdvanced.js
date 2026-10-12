@@ -116,7 +116,7 @@ export function normalizeAdvancedSettings(input = {}) {
     if (typeof stroke.radius !== 'number' || !Number.isFinite(stroke.radius) || stroke.radius <= 0 || stroke.radius > .1
         || typeof stroke.hardness !== 'number' || !Number.isFinite(stroke.hardness) || stroke.hardness < 0 || stroke.hardness > 1
         || typeof stroke.opacity !== 'number' || !Number.isFinite(stroke.opacity) || stroke.opacity <= 0 || stroke.opacity > 1
-        || !['clone', 'color-match'].includes(stroke.blendMode ?? 'clone')) {
+        || (stroke.blendMode !== undefined && !['clone', 'color-match'].includes(stroke.blendMode))) {
       throw new Error('Invalid clone stamp brush settings');
     }
     return Object.freeze({
