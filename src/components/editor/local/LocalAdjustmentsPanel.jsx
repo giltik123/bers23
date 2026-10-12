@@ -4,6 +4,7 @@ import AdvancedLocalControls from '@/components/editor/local/AdvancedLocalContro
 import LocalAnnotationControls from '@/components/editor/local/LocalAnnotationControls';
 import {
   normalizeLocalAnnotations, centeredLocalAnnotation, renderLocalAnnotations, MAX_LOCAL_ANNOTATIONS,
+  moveLocalAnnotation, editLocalAnnotation,
 } from '@/lib/local-editor/localAnnotations';
 import { Button } from '@/components/ui/button';
 import { canonicalCoreResourcePath, CONFIGURED_CORE_API_ROOT, resolveCoreResourceUrl } from '@/api/coreResourceUrl';
@@ -112,6 +113,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const [cloneCursor, setCloneCursor] = useState(null);
   const cloneDrawing = useRef(null);
   const [annotationMode, setAnnotationMode] = useState('off');
+  const [selectedAnnotationIndex, setSelectedAnnotationIndex] = useState(null);
   const [annotationOptions, setAnnotationOptions] = useState({
     color: '#ef4444', thickness: 1, opacity: 1, text: '', fontSize: 7,
   });
@@ -119,6 +121,28 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const annotationDrawing = useRef(null);
   const updateAdvanced = (value) => dispatch({ type: 'advanced', value });
   const updateAnnotations = (value) => dispatch({ type: 'annotations', value });
+  const editSelectedAnnotation = patch => {
+    if (selectedAnnotationIndex === null || !annotations[selectedAnnotationIndex]) return;
+    try {
+      const next = annotations.map((item, index) =>
+        index === selectedAnnotationIndex ? editLocalAnnotation(item, patch) : item);
+      updateAnnotations(next);
+      setError('');
+    } catch (cause) { setError(cause?.message || 'Could not update annotation.'); }
+  };
+  const moveSelectedAnnotation = (dx, dy) => {
+    if (selectedAnnotationIndex === null || !annotations[selectedAnnotationIndex]) return;
+    try {
+      updateAnnotations(annotations.map((item, index) =>
+        index === selectedAnnotationIndex ? moveLocalAnnotation(item, dx, dy) : item));
+      setError('');
+    } catch (cause) { setError(cause?.message || 'Could not move annotation.'); }
+  };
+  const deleteAnnotation = index => {
+    updateAnnotations(annotations.filter((_, i) => i !== index));
+    setSelectedAnnotationIndex(current =>
+      current === null ? null : current === index ? null : current > index ? current - 1 : current);
+  };
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -139,6 +163,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     cloneDrawing.current = null;
     setCloneCursor(null);
     setAnnotationMode('off');
+    setSelectedAnnotationIndex(null);
     annotationDrawing.current = null;
     setAnnotationDraft(null);
     setDetails({ name, width: raster.width, height: raster.height });
@@ -268,6 +293,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     try {
       if (annotations.length >= MAX_LOCAL_ANNOTATIONS) throw new Error('50 annotation limit reached. Delete an item or undo first.');
       updateAnnotations([...annotations, annotation]);
+      setSelectedAnnotationIndex(annotations.length);
       setError('');
     } catch (cause) { setError(cause?.message || 'Annotation could not be placed.'); }
   };
@@ -447,8 +473,12 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
             options={annotationOptions}
             onOptionsChange={setAnnotationOptions}
             onAddCentered={addCenteredAnnotation}
-            onDelete={index => updateAnnotations(annotations.filter((_, i) => i !== index))}
-            onClear={() => updateAnnotations([])}
+            onDelete={deleteAnnotation}
+            onClear={() => { updateAnnotations([]); setSelectedAnnotationIndex(null); }}
+            selectedIndex={selectedAnnotationIndex}
+            onSelect={setSelectedAnnotationIndex}
+            onMove={moveSelectedAnnotation}
+            onEdit={editSelectedAnnotation}
           />
 
 
