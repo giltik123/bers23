@@ -224,6 +224,37 @@ try {
   assert.deepEqual(await readProjectState(projectId), initial, 'portable edit recipe must not mutate canonical Core Project');
   assert.equal(providerCalls, 0, 'portable edit recipe must never call an AI provider');
 
+  // A browser draft is EXPLICIT and reversible. It must survive a full
+  // page reload while never storing photo bytes or touching Core authority.
+  await localLab.getByText('Save on this device', { exact: true }).click();
+  await localLab.getByRole('button', { name: 'Save browser draft' }).click();
+  await localLab.getByText(/Saved on this device only/).waitFor({ state: 'visible', timeout: 10_000 });
+  const deviceDraft = await page.evaluate(() => localStorage.getItem('bers.local-photo-edit.explicit-draft.v1'));
+  assert(deviceDraft && deviceDraft.length < 2 * 1024 * 1024, 'explicit saved browser draft should fit the bounded JSON recipe');
+  assert.equal(JSON.parse(deviceDraft).source.sha256, recipeRecord.source.sha256, 'saved browser draft must bind the exact original source');
+  assert.equal(JSON.parse(deviceDraft).edits.settings.brightness, 40);
+  assert.equal(JSON.parse(deviceDraft).pixels, undefined, 'browser storage must not persist decoded image bytes');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Local tools', exact: true }).click();
+  await page.locator('input[aria-label="Choose a local photo without uploading it"]').setInputFiles({
+    name: 'release-r3e-local.png', mimeType: 'image/png', buffer: sourcePng,
+  });
+  await localLab.getByText('release-r3e-local.png', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await localLab.getByText('Save on this device', { exact: true }).click();
+  await localLab.getByRole('button', { name: 'Restore browser draft' }).click();
+  await page.waitForFunction(() =>
+    document.querySelector('input[aria-label="Local Brightness"]')?.value === '40', null, { timeout: 10_000 });
+  await localLab.getByText(/Browser draft restored for this exact original/).waitFor({ state: 'visible' });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await localLab.getByRole('slider', { name: 'Local Brightness' }).inputValue(), '0', 'Undo must revert restored browser draft');
+  await localLab.getByRole('button', { name: 'Redo', exact: true }).click();
+  assert.equal(await localLab.getByRole('slider', { name: 'Local Brightness' }).inputValue(), '40', 'Redo must reapply restored browser draft');
+  await localLab.getByRole('button', { name: 'Delete browser draft' }).click();
+  assert.equal(await page.evaluate(() => localStorage.getItem('bers.local-photo-edit.explicit-draft.v1')), null, 'deletion must remove only the browser draft');
+  assert.equal(await localLab.getByRole('button', { name: 'Restore browser draft' }).isDisabled(), true);
+  assert.deepEqual(await readProjectState(projectId), initial, 'saved browser drafts must not mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'browser draft save/reload/restore must never invoke an AI provider');
+
   // New precision controls must modify the rendered pixels, support unified
   // Undo, and not mutate the protected Core Project.
   await localLab.getByText('Tone curve', { exact: true }).click();
