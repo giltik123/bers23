@@ -438,6 +438,18 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
             </div>
           </div>
 
+          <LocalAnnotationControls
+            mode={annotationMode}
+            onMode={setDrawingMode}
+            annotations={annotations}
+            options={annotationOptions}
+            onOptionsChange={setAnnotationOptions}
+            onAddCentered={addCenteredAnnotation}
+            onDelete={index => updateAnnotations(annotations.filter((_, i) => i !== index))}
+            onClear={() => updateAnnotations([])}
+          />
+
+
           <div className="rounded-2xl border border-border/70 bg-muted p-2">
             <div className="relative mx-auto w-fit max-w-full">
               <canvas
@@ -550,17 +562,6 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
             onCloneHardness={setCloneHardness}
             cloneOpacity={cloneOpacity}
             onCloneOpacity={setCloneOpacity}
-          />
-
-          <LocalAnnotationControls
-            mode={annotationMode}
-            onMode={setDrawingMode}
-            annotations={annotations}
-            options={annotationOptions}
-            onOptionsChange={setAnnotationOptions}
-            onAddCentered={addCenteredAnnotation}
-            onDelete={index => updateAnnotations(annotations.filter((_, i) => i !== index))}
-            onClear={() => updateAnnotations([])}
           />
 
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
