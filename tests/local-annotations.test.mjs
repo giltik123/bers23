@@ -21,7 +21,7 @@ function fakeCanvas() {
 const events = (ctx, name) => ctx.events.filter(entry => entry.name === name);
 
 test('all shape and text tools have explicit labels and safe color choices', () => {
-  assert.deepEqual(LOCAL_ANNOTATION_TOOLS.map(tool => tool.id), ['off', 'arrow', 'rectangle', 'ellipse', 'text']);
+  assert.deepEqual(LOCAL_ANNOTATION_TOOLS.map(tool => tool.id), ['off', 'arrow', 'rectangle', 'ellipse', 'text', 'redact']);
   assert.ok(LOCAL_ANNOTATION_COLORS.length >= 5);
   assert.equal(MAX_LOCAL_ANNOTATIONS, 50);
   assert.equal(MAX_LOCAL_ANNOTATION_TEXT, 120);
