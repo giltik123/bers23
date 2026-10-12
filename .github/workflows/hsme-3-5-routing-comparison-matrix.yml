@@ -1,0 +1,108 @@
+name: HSME-3.5 routing comparison matrix
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExperimentPlanV1.ts'
+      - 'server/core/training/HsmeAdapterMoePrototypeRosterV1.ts'
+      - 'server/core/training/HsmeAdapterMoeRoutingComparisonMatrixV1.ts'
+      - 'server/core/training/HsmeAdapterMoeRoutingComparisonMatrixV1.test.mjs'
+      - '.github/workflows/hsme-3-5-routing-comparison-matrix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  routing-matrix:
+    name: same-fixture dense Top-1 Top-2 routing matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run routing-matrix regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-5
+          npx esbuild server/core/training/HsmeAdapterMoeRoutingComparisonMatrixV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-5/routing-matrix.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-5/routing-matrix.test.mjs
+
+      - name: Prove same-fixture same-seed same-runtime law
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeRoutingComparisonMatrixV1.ts
+          grep -F 'sameInputsAcrossVariants:true' "$SRC"
+          grep -F 'sameSeedsAcrossVariants:true' "$SRC"
+          grep -F 'sameRuntimeRepresentationAcrossVariants:true' "$SRC"
+          grep -F 'noSilentCloudFallback:true' "$SRC"
+          grep -F 'deterministicSeedScheduleSha256' "$SRC"
+          grep -F 'runtimeRepresentationSha256' "$SRC"
+          grep -F 'evaluationContractSha256' "$SRC"
+
+      - name: Prove mandatory quality resource and bytes-moved vectors
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeRoutingComparisonMatrixV1.ts
+          grep -F 'qualityDimensions' "$SRC"
+          grep -F 'hardPreservationFailures' "$SRC"
+          grep -F 'criticalFailureCount' "$SRC"
+          grep -F 'packageBytes' "$SRC"
+          grep -F 'residentBytes' "$SRC"
+          grep -F 'activeWeightsBytes' "$SRC"
+          grep -F 'peakMemoryBytes' "$SRC"
+          grep -F 'flashBytesMoved' "$SRC"
+          grep -F 'ramBytesMoved' "$SRC"
+          grep -F 'acceleratorBytesMoved' "$SRC"
+          grep -F 'coldLatencyMs' "$SRC"
+          grep -F 'warmLatencyMs' "$SRC"
+          grep -F 'endToEndLatencyMs' "$SRC"
+          grep -F 'expertActivationCount' "$SRC"
+          grep -F 'routerReplayIdentitySha256' "$SRC"
+
+      - name: Prove matrix cannot select or promote
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeRoutingComparisonMatrixV1.ts
+          grep -F 'ADAPTER_MOE_ROUTING_MATRIX_READY_NOT_DISPOSED' "$SRC"
+          grep -F 'selectionAllowed:false' "$SRC"
+          grep -F 'winnerSelectionAllowed:false' "$SRC"
+          grep -F 'prototypeAssemblyAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE 'weighted|aggregateScore|fastest|bestVariant' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove binding and activation-bound regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoeRoutingComparisonMatrixV1.test.mjs
+          grep -F 'same fixture seed runtime and evaluation identities are mandatory' "$TEST"
+          grep -F 'dense and sparse source identities bind exact baseline and prototype hashes' "$TEST"
+          grep -F 'missing or duplicate mandatory variant fails closed' "$TEST"
+          grep -F 'quality and hard-preservation dimensions cannot drift post-hoc' "$TEST"
+          grep -F 'Top-1 and Top-2 activation counts are bounded by frozen case count' "$TEST"
+          grep -F 'measurement trusted origin is required for every row' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
