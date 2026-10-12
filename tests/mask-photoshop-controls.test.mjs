@@ -121,3 +121,14 @@ test('real browser R3e exercises color and opacity of rendered overlay while Cor
   assert.match(harness, /overlayColor\[3\], 204/);
   assert.match(harness, /Done must persist MASK through canonical Core endpoint/);
 });
+
+
+test('brush cursor reports the actual radius as a noninteractive image overlay', () => {
+  assert.match(editor, /brushSize=\{brushSize\}/);
+  assert.match(canvas, /const brushActive = Boolean\(selection && \(selection\.mode === 'BRUSH_ADD' \|\| selection\.mode === 'BRUSH_SUBTRACT'\)\)/);
+  assert.match(canvas, /data-mask-brush-cursor="true"/);
+  assert.match(canvas, /width: brushSize \* 2/);
+  assert.match(canvas, /height: brushSize \* 2/);
+  assert.match(canvas, /pointer-events-none absolute/);
+  assert.match(toolbar, />Brush radius/);
+});
