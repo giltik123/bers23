@@ -373,8 +373,8 @@ export async function assembleHsmeFoundationReuseCandidateEvidenceV1(
   if(rejectionRows.length>0){
     blockers.push('ASSEMBLY_PARTIAL_QUALITY_REJECTION_INSUFFICIENT');
   }
-  const qualByCapability=new Map(
-    qualificationRows.map(row=>[row.capability,row] as const),
+  const qualByCapability=new Set<string>(
+    qualificationRows.map(row=>row.capability),
   );
   for(const capability of requiredCapabilities){
     if(!qualByCapability.has(capability)){
