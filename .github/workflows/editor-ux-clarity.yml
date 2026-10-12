@@ -27,6 +27,7 @@ on:
       - 'src/components/editor/ImageCanvas.jsx'
       - 'scripts/test-release-r3b-browser-e2e.mjs'
       - 'scripts/test-release-r3c-browser-e2e.mjs'
+      - 'scripts/test-release-r3e-browser-e2e.mjs'
       - 'tests/editor-ux-progressive-disclosure.test.mjs'
       - 'tests/bers-ux-system-redesign.test.mjs'
       - 'tests/mask-photoshop-controls.test.mjs'
