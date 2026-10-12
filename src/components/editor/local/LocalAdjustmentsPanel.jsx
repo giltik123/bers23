@@ -332,7 +332,11 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       canvas.width = source.width; canvas.height = source.height;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('PNG encoder canvas is unavailable.');
-      const exportPixels = applyLocalOpaqueCovers(pixels, source.width, source.height, annotations);
+      // Common case: do not copy an extra full-resolution RGBA buffer when
+      // there are no privacy covers. A cover adds its explicit overwrite step.
+      const exportPixels = annotations.some(item => item.type === 'redact')
+        ? applyLocalOpaqueCovers(pixels, source.width, source.height, annotations)
+        : pixels;
       ctx.putImageData(new ImageData(exportPixels, source.width, source.height), 0, 0);
       // The same original-resolution normalized vector recipe used by preview
       // is flattened only on the explicitly downloaded PNG.
