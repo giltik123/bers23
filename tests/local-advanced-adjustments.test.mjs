@@ -250,3 +250,45 @@ test('manual clone remains intentionally independent from the gradient adjustmen
   }, original);
   assert.deepEqual([...result.slice(8, 12)], [255, 25, 25, 255], 'clone stroke copies already-adjusted source pixels even where the target gradient weight is zero');
 });
+
+
+test('RGB channel curves selectively transform just the chosen channel and preserve alpha', () => {
+  const sample = pixels(128, 128, 128, 73, 128, 128, 128, 0);
+  const result = applyAdvancedLocalAdjustments(sample, 2, 1, {
+    channelCurves: { red: { ...LOCAL_CURVE_DEFAULT, midtones: 200 } },
+  });
+  assert.deepEqual([...result.slice(0, 4)], [200, 128, 128, 73]);
+  assert.deepEqual([...result.slice(4, 8)], [128, 128, 128, 0]);
+  assert.deepEqual([...sample.slice(0, 4)], [128, 128, 128, 73]);
+});
+
+test('master RGB curve runs before per-channel LUTs and separate channels compose', () => {
+  const sample = pixels(128, 128, 128, 255);
+  const result = applyAdvancedLocalAdjustments(sample, 1, 1, {
+    curve: { ...LOCAL_CURVE_DEFAULT, midtones: 64 },
+    channelCurves: {
+      red: { ...LOCAL_CURVE_DEFAULT, shadows: 200 },
+      green: { ...LOCAL_CURVE_DEFAULT, shadows: 100 },
+      blue: { ...LOCAL_CURVE_DEFAULT, shadows: 20 },
+    },
+  });
+  assert.deepEqual([...result], [200, 100, 20, 255]);
+});
+
+test('channel curves are independently validated and reset is neutral', () => {
+  assert.equal(isNeutralAdvancedSettings({ channelCurves: { red: LOCAL_CURVE_DEFAULT } }), true);
+  assert.equal(isNeutralAdvancedSettings({ channelCurves: { blue: { ...LOCAL_CURVE_DEFAULT, midtones: 90 } } }), false);
+  const source = pixels(130, 60, 200, 255);
+  for (const channelCurves of [
+    { red: { ...LOCAL_CURVE_DEFAULT, midtones: NaN } },
+    { red: { ...LOCAL_CURVE_DEFAULT, midtones: 256 } },
+    { red: { ...LOCAL_CURVE_DEFAULT, shadows: -1 } },
+    { red: { ...LOCAL_CURVE_DEFAULT, extra: 2 } },
+    { cyan: LOCAL_CURVE_DEFAULT },
+    { blue: null },
+    [],
+  ]) {
+    assert.throws(() => applyAdvancedLocalAdjustments(source, 1, 1, { channelCurves }), /Invalid/);
+  }
+  assert.deepEqual([...source], [130, 60, 200, 255]);
+});
