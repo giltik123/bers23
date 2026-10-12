@@ -150,6 +150,20 @@ try {
   await page.getByRole('region', { name: 'Selection tools' }).waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await page.getByLabel('Brush Size').fill('96');
+  // The Photoshop-inspired opacity control must be keyboard/touch-actionable;
+  // reset it to fully opaque before the existing canonical byte-exact baseline.
+  const brushOpacity = page.getByLabel('Brush Opacity');
+  await brushOpacity.fill('50');
+  assert.equal(await brushOpacity.inputValue(), '50', 'real browser brush-opacity slider must accept intermediate values');
+  await brushOpacity.fill('100');
+
+  // Display-only mask overlay controls must not touch Core or modify canonical alpha.
+  await page.getByLabel('Mask overlay opacity').fill('80');
+  await page.getByRole('button', { name: 'Magenta overlay' }).click();
+  await page.getByLabel('Show mask overlay').uncheck();
+  assert.equal(await page.locator('section[aria-label="Image canvas"] canvas').count(), 0, 'hiding the overlay must remove the visualization');
+  await page.getByLabel('Show mask overlay').check();
+
 
   const projectImage = page.getByRole('img', { name: 'Project', exact: true });
   await projectImage.scrollIntoViewIfNeeded();
@@ -173,6 +187,20 @@ try {
   assert.equal(observedPointer?.pointerType, 'touch', 'release-floor Selection input must exercise the real touch PointerEvent path');
   assert(Math.abs(observedPointer.clientX - touchX) <= 1, 'touch pointer X must stay on the requested Project-image coordinate');
   assert(Math.abs(observedPointer.clientY - touchY) <= 1, 'touch pointer Y must stay on the requested Project-image coordinate');
+
+  // Read actual rendered RGBA pixel data to prove that the chosen overlay color
+  // and opacity reach the canvas, rather than merely updating inert slider state.
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Image canvas"] canvas');
+    if (!(canvas instanceof HTMLCanvasElement) || canvas.width !== 12 || canvas.height !== 8) return false;
+    return canvas.getContext('2d').getImageData(6, 4, 1, 1).data[3] > 0;
+  }, { timeout: 10_000 });
+  const overlayColor = await page.locator('section[aria-label="Image canvas"] canvas').evaluate((element) => {
+    const rgba = element.getContext('2d').getImageData(6, 4, 1, 1).data;
+    return [...rgba];
+  });
+  assert.deepEqual(overlayColor.slice(0, 3), [217, 70, 239], 'mask visualization must be magenta after changing the color');
+  assert.equal(overlayColor[3], 204, '80% overlay transparency must produce a real RGBA alpha value');
 
   const done = page.getByRole('button', { name: 'Done', exact: true });
   await waitForEnabled(done, 'Done');
