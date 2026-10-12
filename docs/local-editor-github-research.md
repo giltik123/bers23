@@ -153,3 +153,21 @@ GitHub Actions for an earlier head of PR #1003 completed with **71 successes and
 4. The R3e touch-only test previously globally banned \`page.mouse\` across every step of the whole browser harness. A new unrelated browser-local **arrow annotation test** legitimately uses mouse drag, so the manual-mask test now scopes the no-mouse assertion to the **Selection section**. Touch-only project Selection remains enforced; it is not silently weakened.
 
 All of these changes must still pass at the **new exact head SHA** along with the remaining protected acceptance jobs and real Chrome/Postgres/browser/device release checks. The longstanding independent LaMa ONNX byte reproducibility issue remains unresolved. **No merge, production deploy or protection bypass.**
+
+
+## Phase 6 — opt-in browser draft storage (2026-10-12)
+
+A small portable \`.bers-edit.json\` already allows cross-device editing. For people who want to resume the **same photo in the same browser without manually finding a JSON file**, the Local Photo Lab now also has a collapsed **Save on this device** section with three real operations: **Save browser draft**, **Restore browser draft**, **Delete browser draft**.
+
+**Privacy defaults and limits:**
+- **Nothing is saved automatically.** Saving requires an explicit click. The section is collapsed by default to avoid turning the editor into a long toolbar; existing explicit Download JSON and Restore JSON continue working.
+- The one-slot \`localStorage\` value is a **versioned, bounded recipe** (currently at most 2 MB). Only local light/color/effect sliders, curves, gradient, sampled retouch points, vector positions, labels and styles are serialized. No original image pixels, photographs, user/session tokens, origin URLs, Core artifact IDs or billing history are written. **Annotation text and edit choices are stored unencrypted in this browser**, so use only on a private device.
+- Saving a newer browser draft **overwrites** the previous one. The UI states this beforehand. The user can explicitly delete it, which removes **only** the single \`bers.local-photo-edit.explicit-draft.v1\` key; other browser/account data is untouched. Clearing site data and private browsing can discard it.
+- Restoring requires the identical ORIGINAL RGBA8 **SHA-256 fingerprint and pixel dimensions**. A mismatch, wrong recipe version, malformed JSON, unexpected fields, unavailable browser storage or storage quota failure leaves current edits unchanged and produces a useful error. The browser-draft restore creates **one undoable history entry** and uses precisely the same preview/export as a downloaded JSON recipe.
+- SHA-256 is computed using the standard browser **Web Crypto** API (HTTPS or trusted local context), cached only in memory while this photo is open; no network or additional service is needed. See [MDN SubtleCrypto.digest](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest).
+- The saved recipe does not turn into a Core project or PSD. It is a user-managed local snapshot, not autosync or a guarantee against browser storage eviction. **For long-term or cross-device backup, download the portable JSON alongside the original image.**
+- Blob/object URL downloads explicitly revoke their temporary resources according to [MDN blob URL guidance](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob).
+
+**Verification added:** \`tests/local-device-draft.test.mjs\` checks a single-slot roundtrip, strict source binding, forged/invalid documents, localStorage quota/private-mode refusal and scoped deletion. \`tests/local-device-draft-editor-wiring.test.mjs\` verifies the disclosure, explicit controls, no hidden autosave, exact-source guard and Core boundary. R3e real Chrome/PostgreSQL acceptance now saves a browser draft, verifies it contains no pixels, **reloads the page**, reopens the original photo, restores brightness with Undo/Redo, deletes the stored copy and confirms Core state and AI-provider calls have not changed. GitHub Actions must finish all required checks on one exact PR head before approval or deployment.
+
+**Release constraint:** Still Draft. The historical LaMa ONNX reproducibility drift is unrelated and remains unresolved; don't weaken security, acceptance or model reproducibility gates to release these UI features.
