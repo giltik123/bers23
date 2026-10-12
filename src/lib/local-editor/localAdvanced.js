@@ -19,6 +19,12 @@ const CURVE_X = Object.freeze([0, 64, 128, 192, 255]);
 export const LOCAL_CURVE_DEFAULT = Object.freeze({
   black: 0, shadows: 64, midtones: 128, highlights: 192, white: 255,
 });
+export const LOCAL_CURVE_CHANNELS = Object.freeze(['rgb', 'red', 'green', 'blue']);
+export const LOCAL_CHANNEL_CURVE_DEFAULTS = Object.freeze({
+  red: LOCAL_CURVE_DEFAULT,
+  green: LOCAL_CURVE_DEFAULT,
+  blue: LOCAL_CURVE_DEFAULT,
+});
 export const LOCAL_HSL_DEFAULT = Object.freeze({ hue: 0, saturation: 0, lightness: 0 });
 export const LOCAL_GRADIENT_MODES = Object.freeze([
   { id: 'off', label: 'Off · entire image' },
@@ -31,6 +37,7 @@ export const LOCAL_GRADIENT_MODES = Object.freeze([
 export const LOCAL_GRADIENT_DEFAULT = Object.freeze({ mode: 'off', start: 0, end: 100 });
 export const LOCAL_ADVANCED_DEFAULTS = Object.freeze({
   curve: LOCAL_CURVE_DEFAULT,
+  channelCurves: LOCAL_CHANNEL_CURVE_DEFAULTS,
   hsl: Object.freeze(Object.fromEntries(LOCAL_HUE_BANDS.map(band => [band.id, LOCAL_HSL_DEFAULT]))),
   cloneStrokes: Object.freeze([]),
   gradient: LOCAL_GRADIENT_DEFAULT,
@@ -60,13 +67,28 @@ function point(value, label) {
 
 export function normalizeAdvancedSettings(input = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid advanced local settings');
-  for (const key of Object.keys(input)) if (!['curve', 'hsl', 'cloneStrokes', 'gradient'].includes(key)) throw new Error('Unsupported advanced setting: ' + key);
+  for (const key of Object.keys(input)) if (!['curve', 'channelCurves', 'hsl', 'cloneStrokes', 'gradient'].includes(key)) throw new Error('Unsupported advanced setting: ' + key);
   const curveInput = input.curve ?? LOCAL_CURVE_DEFAULT;
   if (!curveInput || typeof curveInput !== 'object' || Array.isArray(curveInput)
       || Object.keys(curveInput).some(key => !CURVE_KEYS.includes(key))) throw new Error('Invalid tone curve');
   const curve = Object.freeze(Object.fromEntries(CURVE_KEYS.map((key, index) => [
     key, checkedInt(curveInput[key], 0, 255, 'tone curve point ' + index),
   ])));
+  const channelInput = input.channelCurves ?? LOCAL_CHANNEL_CURVE_DEFAULTS;
+  if (!channelInput || typeof channelInput !== 'object' || Array.isArray(channelInput)
+      || Object.keys(channelInput).some(key => !['red', 'green', 'blue'].includes(key))) {
+    throw new Error('Invalid RGB channel curves');
+  }
+  const channelCurves = Object.freeze(Object.fromEntries(['red', 'green', 'blue'].map(channel => {
+    const candidate = channelInput[channel] ?? LOCAL_CURVE_DEFAULT;
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)
+        || Object.keys(candidate).some(key => !CURVE_KEYS.includes(key))) {
+      throw new Error('Invalid RGB ' + channel + ' tone curve');
+    }
+    return [channel, Object.freeze(Object.fromEntries(CURVE_KEYS.map((key, index) =>
+      [key, checkedInt(candidate[key], 0, 255, channel + ' tone curve point ' + index)]
+    )))];
+  })));
   const hslInput = input.hsl ?? LOCAL_ADVANCED_DEFAULTS.hsl;
   if (!hslInput || typeof hslInput !== 'object' || Array.isArray(hslInput)
       || Object.keys(hslInput).some(key => !HUE_BAND.has(key))) throw new Error('Invalid selective HSL bands');
@@ -115,12 +137,14 @@ export function normalizeAdvancedSettings(input = {}) {
     end: checkedInt(gradientInput.end, 1, 100, 'gradient end'),
   });
   if (gradient.start >= gradient.end) throw new Error('Invalid gradient feather interval');
-  return Object.freeze({ curve, hsl, cloneStrokes, gradient });
+  return Object.freeze({ curve, channelCurves, hsl, cloneStrokes, gradient });
 }
 
 export function isNeutralAdvancedSettings(input = {}) {
   const settings = normalizeAdvancedSettings(input);
   return CURVE_KEYS.every(key => settings.curve[key] === LOCAL_CURVE_DEFAULT[key])
+    && ['red', 'green', 'blue'].every(channel =>
+      CURVE_KEYS.every(key => settings.channelCurves[channel][key] === LOCAL_CURVE_DEFAULT[key]))
     && LOCAL_HUE_BANDS.every(band => ['hue', 'saturation', 'lightness'].every(key => settings.hsl[band.id][key] === 0))
     && settings.cloneStrokes.length === 0 && settings.gradient.mode === 'off';
 }
@@ -325,12 +349,19 @@ export function applyAdvancedLocalAdjustments(source, width, height, input = {},
   const output = new Uint8ClampedArray(source);
   if (isNeutralAdvancedSettings(advanced)) return output;
   const lut = curveLut(advanced.curve);
-  if (CURVE_KEYS.some(key => advanced.curve[key] !== LOCAL_CURVE_DEFAULT[key])) {
+  const channelLuts = ['red', 'green', 'blue'].map(channel =>
+    CURVE_KEYS.some(key => advanced.channelCurves[channel][key] !== LOCAL_CURVE_DEFAULT[key])
+      ? curveLut(advanced.channelCurves[channel])
+      : null
+  );
+  const hasMaster = CURVE_KEYS.some(key => advanced.curve[key] !== LOCAL_CURVE_DEFAULT[key]);
+  if (hasMaster || channelLuts.some(Boolean)) {
     for (let i = 0; i < output.length; i += 4) {
       if (!output[i + 3]) continue;
-      output[i] = lut[output[i]];
-      output[i + 1] = lut[output[i + 1]];
-      output[i + 2] = lut[output[i + 2]];
+      for (let channel = 0; channel < 3; channel++) {
+        const masterValue = hasMaster ? lut[output[i + channel]] : output[i + channel];
+        output[i + channel] = channelLuts[channel] ? channelLuts[channel][masterValue] : masterValue;
+      }
     }
   }
   transformHsl(output, width, height, advanced.hsl);
