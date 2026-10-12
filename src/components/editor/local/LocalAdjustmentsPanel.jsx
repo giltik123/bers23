@@ -2,6 +2,10 @@ import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Download, ImagePlus, Loader2, RotateCcw, ShieldCheck, Undo2, Redo2 } from 'lucide-react';
 import AdvancedLocalControls from '@/components/editor/local/AdvancedLocalControls';
 import LocalAnnotationControls from '@/components/editor/local/LocalAnnotationControls';
+import LocalRecipeControls from '@/components/editor/local/LocalRecipeControls';
+import {
+  createLocalRecipe, parseLocalRecipe, fingerprintOriginalRgba, MAX_LOCAL_RECIPE_BYTES,
+} from '@/lib/local-editor/localRecipe';
 import {
   normalizeLocalAnnotations, centeredLocalAnnotation, renderLocalAnnotations, MAX_LOCAL_ANNOTATIONS,
   moveLocalAnnotation, editLocalAnnotation,
@@ -34,7 +38,13 @@ function historyReducer(state, action) {
       ? { ...lastBase, __advanced: normalizeAdvancedSettings(action.value), __annotations: lastAnnotations }
       : action.type === 'annotations'
         ? { ...lastBase, __advanced: lastAdvanced, __annotations: normalizeLocalAnnotations(action.value) }
-        : { ...normalizeLocalSettings({ ...lastBase, [action.key]: action.value }), __advanced: lastAdvanced, __annotations: lastAnnotations };
+        : action.type === 'restore-recipe'
+          ? {
+            ...normalizeLocalSettings(action.value.settings),
+            __advanced: normalizeAdvancedSettings(action.value.advanced),
+            __annotations: normalizeLocalAnnotations(action.value.annotations),
+          }
+          : { ...normalizeLocalSettings({ ...lastBase, [action.key]: action.value }), __advanced: lastAdvanced, __annotations: lastAnnotations };
   if (Object.keys(LOCAL_DEFAULTS).every(key => next[key] === last[key])
       && JSON.stringify(next.__advanced) === JSON.stringify(lastAdvanced)
       && JSON.stringify(next.__annotations) === JSON.stringify(lastAnnotations)) return state;
@@ -85,11 +95,14 @@ function Adjustment({ definition, value, setValue }) {
 }
 
 export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
-  const image = useRef(null), imageInput = useRef(null), canvasRef = useRef(null), annotationCanvasRef = useRef(null), abortRef = useRef(null), exportUrls = useRef(new Set()), loadGeneration = useRef(0);
+  const image = useRef(null), imageInput = useRef(null), recipeInput = useRef(null), canvasRef = useRef(null), annotationCanvasRef = useRef(null), abortRef = useRef(null), exportUrls = useRef(new Set()), loadGeneration = useRef(0);
   const [details, setDetails] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [savingRecipe, setSavingRecipe] = useState(false);
+  const [restoringRecipe, setRestoringRecipe] = useState(false);
+  const [recipeNotice, setRecipeNotice] = useState('');
   const [showOriginal, setShowOriginal] = useState(false);
   const [histogram, setHistogram] = useState(null);
   const [openCategories, setOpenCategories] = useState({ Light: true, Color: false, Effects: false });
@@ -166,6 +179,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     setSelectedAnnotationIndex(null);
     annotationDrawing.current = null;
     setAnnotationDraft(null);
+    setRecipeNotice('');
     setDetails({ name, width: raster.width, height: raster.height });
     setError('');
   };
@@ -278,6 +292,72 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       window.setTimeout(() => { URL.revokeObjectURL(url); exportUrls.current.delete(url); }, 30_000);
     } catch (cause) { setError(cause?.message || 'Unable to export PNG.'); }
     finally { setExporting(false); }
+  };
+
+  const saveEditRecipe = async () => {
+    if (!image.current || savingRecipe || restoringRecipe || loading || exporting) return;
+    const source = image.current;
+    const generation = loadGeneration.current;
+    setSavingRecipe(true);
+    setRecipeNotice('');
+    setError('');
+    try {
+      const sha256 = await fingerprintOriginalRgba(source.full, source.width, source.height);
+      if (generation !== loadGeneration.current || image.current !== source) {
+        throw new Error('Photo changed while saving the edit recipe. Please try again.');
+      }
+      const recipe = createLocalRecipe(
+        { width: source.width, height: source.height, sha256 },
+        settings, advanced, annotations,
+      );
+      const json = JSON.stringify(recipe, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      if (blob.size > MAX_LOCAL_RECIPE_BYTES) throw new Error('Local recipe exceeds 2 MB. Reduce clone strokes or annotations.');
+      const url = URL.createObjectURL(blob);
+      exportUrls.current.add(url);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = safeFilename(details?.name || projectName) + '.bers-edit.json';
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => { URL.revokeObjectURL(url); exportUrls.current.delete(url); }, 30_000);
+      setRecipeNotice('Edit recipe saved as JSON. Keep the original photo to restore it later.');
+    } catch (cause) { setError(cause?.message || 'Unable to save local recipe.'); }
+    finally { setSavingRecipe(false); }
+  };
+
+  const restoreEditRecipe = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const source = image.current;
+    const generation = loadGeneration.current;
+    if (!source || loading || exporting || savingRecipe || restoringRecipe) {
+      setError('Open the original photo first, then restore its recipe.');
+      return;
+    }
+    setRestoringRecipe(true);
+    setRecipeNotice('');
+    setError('');
+    try {
+      if (!file.name.toLowerCase().endsWith('.json') || !file.size || file.size > MAX_LOCAL_RECIPE_BYTES) {
+        throw new Error('Choose a local JSON edit recipe of at most 2 MB.');
+      }
+      const raw = await file.text();
+      const sha256 = await fingerprintOriginalRgba(source.full, source.width, source.height);
+      if (generation !== loadGeneration.current || image.current !== source) {
+        throw new Error('Photo changed while loading the recipe. Reopen its exact original photo.');
+      }
+      const validated = parseLocalRecipe(raw, { width: source.width, height: source.height, sha256 });
+      dispatch({ type: 'restore-recipe', value: validated.edits });
+      setSelectedAnnotationIndex(null);
+      setAnnotationMode('off');
+      setCloneMode('off');
+      setShowOriginal(false);
+      setRecipeNotice('Edit recipe restored for this exact photo. Undo reverts the entire import.');
+    } catch (cause) { setError(cause?.message || 'Unable to restore local edit recipe.'); }
+    finally { setRestoringRecipe(false); }
   };
 
   const update = (key, value) => dispatch({ type: 'change', key, value });
@@ -596,6 +676,15 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
             onCloneOpacity={setCloneOpacity}
             cloneBlendMode={cloneBlendMode}
             onCloneBlendMode={setCloneBlendMode}
+          />
+
+          <LocalRecipeControls
+            saving={savingRecipe}
+            restoring={restoringRecipe}
+            onSave={saveEditRecipe}
+            onChooseFile={restoreEditRecipe}
+            fileInputRef={recipeInput}
+            notice={recipeNotice}
           />
 
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
