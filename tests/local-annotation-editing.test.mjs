@@ -15,8 +15,8 @@ test('nudge translates complete rectangle while retaining width, height and sour
   const moved = moveLocalAnnotation(rectangle, .01, -.01);
   assert.deepEqual(moved.from, { x: .21, y: .29 });
   assert.deepEqual(moved.to, { x: .51, y: .64 });
-  assert.equal(moved.to.x - moved.from.x, rectangle.to.x - rectangle.from.x);
-  assert.equal(moved.to.y - moved.from.y, rectangle.to.y - rectangle.from.y);
+  assert.ok(Math.abs((moved.to.x - moved.from.x) - (rectangle.to.x - rectangle.from.x)) < 1e-8);
+  assert.ok(Math.abs((moved.to.y - moved.from.y) - (rectangle.to.y - rectangle.from.y)) < 1e-8);
   assert.deepEqual(rectangle.from, { x: .2, y: .3 });
   assert.equal(Object.isFrozen(moved), true);
 });
@@ -36,8 +36,8 @@ test('reversed arrow endpoints retain direction, shape and bounds through moveme
   const updated = moveLocalAnnotation(arrow, .5, .5);
   assert.ok(updated.from.x > updated.to.x);
   assert.ok(updated.from.y > updated.to.y);
-  assert.equal(updated.from.x - updated.to.x, arrow.from.x - arrow.to.x);
-  assert.equal(updated.from.y - updated.to.y, arrow.from.y - arrow.to.y);
+  assert.ok(Math.abs((updated.from.x - updated.to.x) - (arrow.from.x - arrow.to.x)) < 1e-8);
+  assert.ok(Math.abs((updated.from.y - updated.to.y) - (arrow.from.y - arrow.to.y)) < 1e-8);
   assert.ok(updated.from.x <= 1 && updated.from.y <= 1);
 });
 
