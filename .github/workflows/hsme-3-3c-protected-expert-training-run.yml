@@ -1,0 +1,99 @@
+name: HSME-3.3c protected expert training run
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertSealedWorkspaceV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertProtectedTrainingRunV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertProtectedTrainingRunV1.test.mjs'
+      - '.github/workflows/hsme-3-3c-protected-expert-training-run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protected-expert-run:
+    name: protected compact expert training receipt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run protected expert-training regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-3c
+          npx esbuild server/core/training/HsmeAdapterMoeExpertProtectedTrainingRunV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-3c/protected-expert-run.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-3c/protected-expert-run.test.mjs
+
+      - name: Prove exact preflight workspace and host origins
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertProtectedTrainingRunV1.ts
+          grep -F 'hsmeAdapterMoeExpertTrainingPreflightV1Digest(' "$SRC"
+          grep -F 'verifyTrainingPreflight(' "$SRC"
+          grep -F 'hsmeAdapterMoeExpertWorkspaceFreezeReceiptV1Digest(' "$SRC"
+          grep -F 'verifyWorkspaceFreezeReceipt(' "$SRC"
+          grep -F 'coreHsmeAdapterMoeExpertTrainingResultV1Digest(' "$SRC"
+          grep -F 'verifyExpertTrainingResult(result,hostResultSha256)' "$SRC"
+
+      - name: Prove bounded fixed execution request
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertProtectedTrainingRunV1.ts
+          grep -F "outputPolicy:'STAGED_EXPERT_DELTA_ONLY'" "$SRC"
+          grep -F "networkPolicy:'SEALED_INPUTS_ONLY'" "$SRC"
+          grep -F "cacheModelInputPolicy:'READ_ONLY_CONTENT_ADDRESSED_SEALED_INPUTS'" "$SRC"
+          grep -F 'consumedTrainingExamples<=ceilings.maxTrainingExamples' "$SRC"
+          grep -F 'consumedGpuSeconds<=ceilings.maxGpuSeconds' "$SRC"
+          grep -F 'consumedTrainingCostMicrousd<=ceilings.maxTrainingCostMicrousd' "$SRC"
+          grep -F 'artifactBytes<=preflight.resourceCeilings.maxStagedArtifactBytes' "$SRC"
+          grep -F 'trainableParameters<=preflight.resourceCeilings.maxTrainableParameters' "$SRC"
+          ! grep -nE 'argv:|command:|providerId|accountId|billingAuthorizationRef|backend:' "$SRC"
+
+      - name: Prove staged delta is not admission or promotion
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertProtectedTrainingRunV1.ts
+          grep -F 'EXPERT_TRAINING_RUN_COMPLETED_DELTA_STAGED_NOT_PACKED' "$SRC"
+          grep -F 'expertPackAdmissionAllowed:false' "$SRC"
+          grep -F 'prototypeAssemblyAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove failure resource and origin regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoeExpertProtectedTrainingRunV1.test.mjs
+          grep -F 'resource and compact-artifact ceilings fail closed' "$TEST"
+          grep -F 'failed-to-start is a failed run with no staged delta' "$TEST"
+          grep -F 'nonzero exit cannot stage an expert delta' "$TEST"
+          grep -F 'successful process without staged delta is failed not promoted' "$TEST"
+          grep -F 'preflight workspace and host-result origins are independently required' "$TEST"
+          grep -F 'host digest and canonical adapter kind drift fail closed' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
