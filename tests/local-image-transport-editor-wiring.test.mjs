@@ -44,5 +44,5 @@ test('exact-head UX CI includes streamed image regression and all image authorit
   assert.match(workflow, /tests\/local-image-transport\.test\.mjs/);
   assert.match(workflow, /tests\/local-image-transport-editor-wiring\.test\.mjs/);
   assert.match(workflow, /Verify exact candidate SHA/);
-  assert.match(e2e, /downloaded full-resolution local PNG/);
+  assert.match(e2e, /full resolution local PNG must contain actual brightness-adjusted pixels/);
 });
