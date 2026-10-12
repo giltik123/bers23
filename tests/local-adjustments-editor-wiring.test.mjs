@@ -56,7 +56,7 @@ test('before/after and histogram are computed from transformed RGBA, not decorat
   assert.match(local, /setHistogram\(localLuminanceHistogram\(pixels, canvas\.width, canvas\.height\)\)/);
   assert.match(local, /aria-pressed=\{showOriginal\}/);
   assert.match(local, /aria-pressed=\{!showOriginal\}/);
-  assert.match(local, /role="img" aria-label=\{showOriginal \? 'Original local photo' : 'Locally edited photo preview'\}/);
+  assert.match(local, /role="img"\s+aria-label=\{showOriginal \? 'Original local photo' : 'Locally edited photo preview'\}/);
   assert.match(engine, /export function localLuminanceHistogram/);
 });
 
