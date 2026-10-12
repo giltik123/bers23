@@ -95,3 +95,29 @@ test('mask feather and grow/shrink/open/close preserve service authority and bou
   }
   assert.match(service, /MAX_SELECTION_MORPHOLOGY_RADIUS = 32/);
 });
+
+
+test('saved mask entries live alongside adjustment controls and have honest visibility semantics', async () => {
+  const objectPanel = await readFile('src/components/editor/ObjectPanel.jsx', 'utf8');
+  assert.match(objectPanel, /const isMask = Boolean\(obj\.mask_artifact_id\)/);
+  assert.match(objectPanel, /isMask && <span className=/);
+  assert.match(objectPanel, /Saved masks and objects/);
+  assert.match(objectPanel, /Select one to adjust exposure, white balance or levels/);
+  const list = editor.indexOf('<ObjectPanel objects={objects}');
+  const sidebar = editor.indexOf('aria-label="Editing controls"');
+  const sidebarClose = editor.indexOf('</aside>', sidebar);
+  assert.ok(list > sidebar && list < sidebarClose, 'saved MASK list must stay inside contextual editing sidebar');
+  assert.match(objectPanel, /they do not edit the image/);
+});
+
+test('real browser R3e exercises color and opacity of rendered overlay while Core keeps exact mask authority', async () => {
+  const harness = await readFile('scripts/test-release-r3e-browser-e2e.mjs', 'utf8');
+  assert.match(harness, /getByLabel\('Brush Opacity'\)\.fill/);
+  assert.match(harness, /brushOpacity\.fill\('50'\)/);
+  assert.match(harness, /getByRole\('button', \{ name: 'Magenta overlay' \}\)\.click\(\)/);
+  assert.match(harness, /getByLabel\('Show mask overlay'\)\.uncheck\(\)/);
+  assert.match(harness, /getImageData\(6, 4, 1, 1\)/);
+  assert.match(harness, /overlayColor\.slice\(0, 3\), \[217, 70, 239\]/);
+  assert.match(harness, /overlayColor\[3\], 204/);
+  assert.match(harness, /Done must persist MASK through canonical Core endpoint/);
+});
