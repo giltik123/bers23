@@ -17,7 +17,9 @@ const ICONS = Object.freeze({
 export default function LocalAnnotationControls({
   mode, onMode, annotations, onAddCentered, onDelete, onClear,
   options, onOptionsChange,
+  selectedIndex = null, onSelect = () => {}, onMove = () => {}, onEdit = () => {},
 }) {
+  const selected = Number.isInteger(selectedIndex) ? annotations[selectedIndex] : null;
   return (
     <section aria-label="Local photo annotations" className="space-y-4 rounded-2xl border border-border/70 bg-card p-4">
       <header>
@@ -111,13 +113,62 @@ export default function LocalAnnotationControls({
           <ol className="space-y-2" aria-label="Annotation list">
             {annotations.map((annotation, index) => (
               <li key={index} className="flex min-w-0 items-center justify-between gap-2 rounded-xl bg-muted px-3 py-2 text-sm">
-                <span className="min-w-0 truncate">{index + 1}. {annotation.type}{annotation.type === 'text' ? ': ' + annotation.text : ''}</span>
+                <button type="button"
+                  aria-label={'Select annotation ' + (index + 1)}
+                  aria-pressed={selectedIndex === index}
+                  onClick={() => onSelect(selectedIndex === index ? null : index)}
+                  className={'min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ' + (selectedIndex === index ? 'bg-primary/10 text-primary font-semibold' : 'hover:bg-accent')}
+                >
+                  {index + 1}. {annotation.type}{annotation.type === 'text' ? ': ' + annotation.text : ''}
+                </button>
                 <Button type="button" size="sm" variant="ghost" aria-label={'Delete annotation ' + (index + 1)} onClick={() => onDelete(index)}>
                   <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete
                 </Button>
               </li>
             ))}
           </ol>
+          {selected && (
+            <section aria-label="Selected annotation properties" className="space-y-3 rounded-xl border border-primary/20 bg-background p-3">
+              <h5 className="text-sm font-semibold">Edit selected {selected.type}</h5>
+              <p className="text-xs text-muted-foreground">Changes stay editable until export. Use arrow buttons for precise movement; each step can be undone.</p>
+              <div className="grid grid-cols-4 gap-2" role="group" aria-label="Move selected annotation">
+                <Button type="button" size="sm" variant="outline" aria-label="Move annotation left" onClick={() => onMove(-.01, 0)}>←</Button>
+                <Button type="button" size="sm" variant="outline" aria-label="Move annotation up" onClick={() => onMove(0, -.01)}>↑</Button>
+                <Button type="button" size="sm" variant="outline" aria-label="Move annotation down" onClick={() => onMove(0, .01)}>↓</Button>
+                <Button type="button" size="sm" variant="outline" aria-label="Move annotation right" onClick={() => onMove(.01, 0)}>→</Button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block space-y-1 text-xs">
+                  <span>Selected color</span>
+                  <select aria-label="Selected annotation color" value={selected.color} onChange={event => onEdit({ color: event.target.value })} className="min-h-10 w-full rounded-lg border border-input bg-card px-2">
+                    {LOCAL_ANNOTATION_COLORS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </label>
+                <label className="block space-y-1 text-xs">
+                  <span>Selected opacity · {Math.round(selected.opacity * 100)}%</span>
+                  <input type="range" aria-label="Selected annotation opacity" min="1" max="100" step="1" value={Math.round(selected.opacity * 100)} onChange={event => onEdit({ opacity: Number(event.target.value) / 100 })} className="w-full accent-primary" />
+                </label>
+                {selected.type !== 'text' && (
+                  <label className="block space-y-1 text-xs">
+                    <span>Selected stroke thickness · {selected.thickness}%</span>
+                    <input type="range" aria-label="Selected annotation thickness" min=".1" max="5" step=".1" value={selected.thickness} onChange={event => onEdit({ thickness: Number(event.target.value) })} className="w-full accent-primary" />
+                  </label>
+                )}
+                {selected.type === 'text' && (
+                  <>
+                    <label className="block space-y-1 text-xs sm:col-span-2">
+                      <span>Edit label</span>
+                      <input type="text" aria-label="Selected annotation text" maxLength={MAX_LOCAL_ANNOTATION_TEXT} value={selected.text} onChange={event => onEdit({ text: event.target.value })} className="min-h-11 w-full rounded-lg border border-input bg-card px-3" />
+                    </label>
+                    <label className="block space-y-1 text-xs">
+                      <span>Label size · {selected.fontSize}%</span>
+                      <input type="range" aria-label="Selected annotation font size" min="1" max="16" step="1" value={selected.fontSize} onChange={event => onEdit({ fontSize: Number(event.target.value) })} className="w-full accent-primary" />
+                    </label>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       )}
       <p className="text-xs leading-5 text-muted-foreground">
