@@ -20,6 +20,8 @@ export async function readBoundedLocalImageResponse(response, mime, limit = MAX_
   }
   const advertised = response.headers?.get?.('content-length');
   if (advertised != null && /^[0-9]+$/.test(advertised) && Number(advertised) > limit) {
+    // An early header rejection must close the unread response body too.
+    try { await response.body.cancel?.(); } catch { /* already cancelled */ }
     throw new Error('Core image exceeds the local 32 MB input limit');
   }
 
