@@ -26,7 +26,7 @@ test('R3 browser harness cumulatively proves baseline plus deterministic Rotate 
   assert.match(harness, /acceptedState\.history\.length,\s*2/);
   assert.match(harness, /undoState\.project\.current_image_storage_id,\s*initialState\.project\.original_image_storage_id/);
   assert.match(harness, /redoState\.project\.current_image_storage_id,\s*acceptedStorageId/);
-  assert.match(harness, /loadedImageEvidence\(page,\s*'after',\s*8,\s*12/);
+  assert.match(harness, /loadedImageEvidence\(page,\s*'Результат обработки до принятия',\s*8,\s*12/);
   assert.match(harness, /loadedImageEvidence\(page,\s*'Project',\s*12,\s*8/);
   assert.match(harness, /loadedImageEvidence\(page,\s*'Project',\s*8,\s*12/);
   assert.match(harness, /resultResponse\.status\(\),\s*200/);
