@@ -68,3 +68,17 @@ test('Chrome release journey edits saved text and color, nudges item and proves 
   assert.match(release, /getByRole\('button', \{ name: 'Move annotation right' \}\)\.click\(\)/);
   assert.match(release, /Undo must restore vector annotation color without altering source pixels/);
 });
+
+
+test('selected vector bounds are highlighted on-canvas without changing flattened PNG pixels', () => {
+  assert.match(panel, /const selectedCanvasAnnotation = selectedAnnotationIndex === null \? null : annotations\[selectedAnnotationIndex\]/);
+  assert.match(panel, /Math\.min\(selectedCanvasAnnotation\.from\.x, selectedCanvasAnnotation\.to\.x\)/);
+  assert.match(panel, /Math\.max\(3, Math\.abs\(selectedCanvasAnnotation\.to\.x - selectedCanvasAnnotation\.from\.x\) \* 100\)/);
+  assert.match(panel, /!showOriginal && selectedCanvasBounds/);
+  assert.match(panel, /data-local-annotation-selection="true"/);
+  assert.match(panel, /pointer-events-none absolute z-10/);
+  assert.match(panel, /aria-hidden="true"/);
+  assert.match(panel, /renderLocalAnnotations\(ctx, source\.width, source\.height, annotations\)/);
+  assert.match(release, /const selectionGuide = localLab\.locator\('\[data-local-annotation-selection="true"\]'\)/);
+  assert.match(release, /editing selection guide must never intercept drawing gestures/);
+});
