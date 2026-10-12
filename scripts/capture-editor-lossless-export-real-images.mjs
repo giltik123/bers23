@@ -17,16 +17,29 @@ async function download(urlString) {
       url.search || url.hash) {
     throw new Error('Only direct fixed Wikimedia fixture photographs are authorized');
   }
-  const response=await fetch(url,{
-    redirect:'error',signal:AbortSignal.timeout(35000),
-    headers:{accept:'image/jpeg,image/png,image/webp','user-agent':'BERS-Editor-Lossless-QA/1.0 (github.com/giltik123/bers23)'},
-  });
-  if (!response.ok) throw new Error(`Real-photo source returned HTTP ${response.status}`);
-  const announced=Number(response.headers.get('content-length'));
-  if (Number.isFinite(announced)&&announced>25_000_000)throw new Error('Real-photo source content exceeds 25MB');
-  const payload=Buffer.from(await response.arrayBuffer());
-  if (!payload.length||payload.length>25_000_000)throw new Error('Real-photo source empty or too large');
-  return payload;
+  for(let attempt=0;attempt<3;attempt++){
+    const response=await fetch(url,{
+      redirect:'error',signal:AbortSignal.timeout(35000),
+      headers:{accept:'image/jpeg,image/png,image/webp','user-agent':'BERS-Editor-Lossless-QA/1.0 (github.com/giltik123/bers23)'},
+    });
+    if ((response.status===429||response.status===503)&&attempt<2){
+      const header=response.headers.get('retry-after');
+      const seconds=header===null?NaN:Number(header);
+      // Honor short server retry windows; fail closed rather than ignore a long throttle.
+      if(Number.isFinite(seconds)&&seconds>12)throw new Error(`Real-photo source rate-limited for ${seconds}s; retry later`);
+      const delayMs=Number.isFinite(seconds)&&seconds>=0?seconds*1000:(attempt+1)*4000;
+      await response.body?.cancel();
+      await new Promise(resolve=>setTimeout(resolve,delayMs));
+      continue;
+    }
+    if (!response.ok) throw new Error(`Real-photo source returned HTTP ${response.status}`);
+    const announced=Number(response.headers.get('content-length'));
+    if (Number.isFinite(announced)&&announced>25_000_000)throw new Error('Real-photo source content exceeds 25MB');
+    const payload=Buffer.from(await response.arrayBuffer());
+    if (!payload.length||payload.length>25_000_000)throw new Error('Real-photo source empty or too large');
+    return payload;
+  }
+  throw new Error('Real-photo source exhausted bounded retry budget');
 }
 async function decodeCanonical(bytes) {
   const original=sharp(bytes,{failOn:'error',limitInputPixels:40_000_000});
