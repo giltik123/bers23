@@ -1,0 +1,183 @@
+{
+  "schemaVersion": "BERS_HSME_TEACHER_ACQUISITION_PIN_REQUEST_SET_V1",
+  "requestSetId": "hsme-2b1-2-quality-first-teacher-shortlist-v1",
+  "requests": [
+    {
+      "teacherCandidateId": "qwen-image-2512-quality-teacher",
+      "source": {
+        "provider": "HUGGING_FACE",
+        "sourceRoot": "Qwen/Qwen-Image-2512",
+        "immutableRevision": "25468b98e3276ca6700de15c6628e51b7de54a26"
+      },
+      "requestedCapabilities": [
+        "TEXT_TO_IMAGE"
+      ],
+      "componentRoots": [
+        {
+          "componentId": "model-index",
+          "relativePath": "model_index.json",
+          "kind": "FILE",
+          "role": "MODEL_CONFIG"
+        },
+        {
+          "componentId": "scheduler",
+          "relativePath": "scheduler",
+          "kind": "DIRECTORY",
+          "role": "SCHEDULER_ASSET"
+        },
+        {
+          "componentId": "text-encoder",
+          "relativePath": "text_encoder",
+          "kind": "DIRECTORY",
+          "role": "TEXT_ENCODER"
+        },
+        {
+          "componentId": "tokenizer",
+          "relativePath": "tokenizer",
+          "kind": "DIRECTORY",
+          "role": "TOKENIZER_ASSET"
+        },
+        {
+          "componentId": "transformer",
+          "relativePath": "transformer",
+          "kind": "DIRECTORY",
+          "role": "DENOISER"
+        },
+        {
+          "componentId": "vae",
+          "relativePath": "vae",
+          "kind": "DIRECTORY",
+          "role": "VAE"
+        }
+      ],
+      "publicMetadataLicenseId": "Apache-2.0",
+      "rightsConclusion": "REVIEW_REQUIRED",
+      "distillationOutputUse": "REVIEW_REQUIRED",
+      "qualityGateStatus": "UNMEASURED",
+      "teacherAdmissionAllowed": false,
+      "trainingStartAllowed": false
+    },
+    {
+      "teacherCandidateId": "qwen-image-edit-2511-quality-teacher",
+      "source": {
+        "provider": "HUGGING_FACE",
+        "sourceRoot": "Qwen/Qwen-Image-Edit-2511",
+        "immutableRevision": "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9"
+      },
+      "requestedCapabilities": [
+        "IMAGE_EDITING",
+        "MULTI_REFERENCE_EDITING"
+      ],
+      "componentRoots": [
+        {
+          "componentId": "model-index",
+          "relativePath": "model_index.json",
+          "kind": "FILE",
+          "role": "MODEL_CONFIG"
+        },
+        {
+          "componentId": "processor",
+          "relativePath": "processor",
+          "kind": "DIRECTORY",
+          "role": "PROCESSOR_ASSET"
+        },
+        {
+          "componentId": "scheduler",
+          "relativePath": "scheduler",
+          "kind": "DIRECTORY",
+          "role": "SCHEDULER_ASSET"
+        },
+        {
+          "componentId": "text-encoder",
+          "relativePath": "text_encoder",
+          "kind": "DIRECTORY",
+          "role": "TEXT_ENCODER"
+        },
+        {
+          "componentId": "tokenizer",
+          "relativePath": "tokenizer",
+          "kind": "DIRECTORY",
+          "role": "TOKENIZER_ASSET"
+        },
+        {
+          "componentId": "transformer",
+          "relativePath": "transformer",
+          "kind": "DIRECTORY",
+          "role": "DENOISER"
+        },
+        {
+          "componentId": "vae",
+          "relativePath": "vae",
+          "kind": "DIRECTORY",
+          "role": "VAE"
+        }
+      ],
+      "publicMetadataLicenseId": "Apache-2.0",
+      "rightsConclusion": "REVIEW_REQUIRED",
+      "distillationOutputUse": "REVIEW_REQUIRED",
+      "qualityGateStatus": "UNMEASURED",
+      "teacherAdmissionAllowed": false,
+      "trainingStartAllowed": false
+    },
+    {
+      "teacherCandidateId": "flux2-klein-4b-comparator-teacher",
+      "source": {
+        "provider": "HUGGING_FACE",
+        "sourceRoot": "black-forest-labs/FLUX.2-klein-4B",
+        "immutableRevision": "e7b7dc27f91deacad38e78976d1f2b499d76a294"
+      },
+      "requestedCapabilities": [
+        "IMAGE_EDITING",
+        "TEXT_TO_IMAGE"
+      ],
+      "componentRoots": [
+        {
+          "componentId": "model-index",
+          "relativePath": "model_index.json",
+          "kind": "FILE",
+          "role": "MODEL_CONFIG"
+        },
+        {
+          "componentId": "scheduler",
+          "relativePath": "scheduler",
+          "kind": "DIRECTORY",
+          "role": "SCHEDULER_ASSET"
+        },
+        {
+          "componentId": "text-encoder",
+          "relativePath": "text_encoder",
+          "kind": "DIRECTORY",
+          "role": "TEXT_ENCODER"
+        },
+        {
+          "componentId": "tokenizer",
+          "relativePath": "tokenizer",
+          "kind": "DIRECTORY",
+          "role": "TOKENIZER_ASSET"
+        },
+        {
+          "componentId": "transformer",
+          "relativePath": "transformer",
+          "kind": "DIRECTORY",
+          "role": "DENOISER"
+        },
+        {
+          "componentId": "vae",
+          "relativePath": "vae",
+          "kind": "DIRECTORY",
+          "role": "VAE"
+        }
+      ],
+      "publicMetadataLicenseId": "Apache-2.0",
+      "rightsConclusion": "REVIEW_REQUIRED",
+      "distillationOutputUse": "REVIEW_REQUIRED",
+      "qualityGateStatus": "UNMEASURED",
+      "teacherAdmissionAllowed": false,
+      "trainingStartAllowed": false
+    }
+  ],
+  "qualityPolicy": "QUALITY_FLOOR_BEFORE_EFFICIENCY",
+  "teacherAdmissionAllowed": false,
+  "trainingStartAllowed": false,
+  "productionAuthorityGranted": false
+}

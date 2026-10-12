@@ -222,6 +222,10 @@ export function normalizeHsmeFoundationReuseDecisionV1(raw: unknown): HsmeFounda
  * This is intentionally a proof function, not a status accessor. Any caller,
  * including plain JavaScript, must pass the complete canonical decision gate.
  */
+export function normalizeHsmeFoundationReuseCandidateV1(raw: unknown): HsmeFoundationReuseCandidateV1 {
+  return normalizeCandidate(raw, 'candidate');
+}
+
 export function mayEscalateToFullHsmeStudentDistillationV1(raw: unknown): boolean {
   return normalizeHsmeFoundationReuseDecisionV1(raw).decisionStatus === 'REUSE_PATH_INSUFFICIENT';
 }
