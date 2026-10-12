@@ -23,6 +23,7 @@ export default function AdvancedLocalControls({
   advanced, onAdvancedChange, hueBand, onHueBandChange,
   cloneMode, onCloneMode, cloneSource, cloneRadius, onCloneRadius,
   cloneHardness, onCloneHardness, cloneOpacity, onCloneOpacity,
+  cloneBlendMode, onCloneBlendMode,
 }) {
   const [curveChannel, setCurveChannel] = React.useState('rgb');
   const visibleCurve = curveChannel === 'rgb' ? advanced.curve : advanced.channelCurves[curveChannel];
@@ -134,7 +135,17 @@ export default function AdvancedLocalControls({
         <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
           <summary className="cursor-pointer text-base font-semibold">Manual clone stamp</summary>
           <div className="mt-3 space-y-3">
-            <p className="text-xs leading-5 text-muted-foreground">Copy real pixels from one part of your photo to another — no generative fill. Choose a source, then paint on the image. Release to apply each stroke.</p>
+            <p className="text-xs leading-5 text-muted-foreground">Sample a real part of your photo, then paint somewhere else. Choose exact copying or a bounded match to neighboring colors. No AI or generative fill.</p>
+            <label className="block space-y-1 text-sm">
+              <span className="font-medium">Retouch method</span>
+              <select aria-label="Local retouch method" value={cloneBlendMode} onChange={event => onCloneBlendMode(event.target.value)} className="min-h-11 w-full rounded-xl border border-input bg-background px-3">
+                <option value="clone">Clone · exact pixels</option>
+                <option value="color-match">Color-matched repair · nearby tones</option>
+              </select>
+            </label>
+            {cloneBlendMode === 'color-match' && (
+              <p className="text-xs leading-5 text-muted-foreground">This simple tonal repair samples the surroundings of the source and target. It works best for small blemishes on continuous backgrounds; it is not Photoshop's full healing algorithm.</p>
+            )}
             <div className="flex flex-wrap gap-2" role="group" aria-label="Clone stamp mode">
               <Button type="button" variant={cloneMode === 'pick' ? 'default' : 'outline'} size="sm" onClick={() => onCloneMode('pick')}><Crosshair className="h-4 w-4" aria-hidden="true" /> Pick source</Button>
               <Button type="button" variant={cloneMode === 'paint' ? 'default' : 'outline'} size="sm" disabled={!cloneSource || advanced.cloneStrokes.length >= 32} onClick={() => onCloneMode('paint')}><Brush className="h-4 w-4" aria-hidden="true" /> Paint</Button>
