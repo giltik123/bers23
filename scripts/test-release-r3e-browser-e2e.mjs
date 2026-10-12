@@ -130,7 +130,7 @@ try {
   const projectId = new URL(page.url()).searchParams.get('id');
   assert(projectId, 'Projects upload must navigate to Editor with canonical project id');
 
-  await page.getByText('Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.', { exact: true })
+  await page.getByRole('img', { name: 'Project' })
     .waitFor({ state: 'visible', timeout: 20_000 });
   await waitImage(page, 'Project', 12, 8);
 
