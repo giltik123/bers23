@@ -3,6 +3,7 @@ import { Brush, Crosshair, MousePointer2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   LOCAL_CURVE_DEFAULT, LOCAL_HUE_BANDS, LOCAL_HSL_DEFAULT,
+  LOCAL_GRADIENT_MODES, LOCAL_GRADIENT_DEFAULT,
 } from '@/lib/local-editor/localAdvanced';
 
 const CURVE_POINTS = Object.freeze([
@@ -46,7 +47,7 @@ export default function AdvancedLocalControls({
           Real tone curves, color ranges and a manually sampled clone brush. Every change stays in your local undo history.
         </p>
       </div>
-      <div className="grid items-start gap-4 lg:grid-cols-3">
+      <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
           <summary className="cursor-pointer text-base font-semibold">Tone curve</summary>
           <div className="mt-3 space-y-3">
@@ -84,6 +85,36 @@ export default function AdvancedLocalControls({
               </label>
             ))}
             <Button type="button" variant="outline" size="sm" className="w-full" onClick={resetBand}><RotateCcw className="h-4 w-4" aria-hidden="true" /> Reset this color</Button>
+          </div>
+        </details>
+
+        <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+          <summary className="cursor-pointer text-base font-semibold">Local gradient mask</summary>
+          <div className="mt-3 space-y-3">
+            <p className="text-xs leading-5 text-muted-foreground">
+              Blend all light and color corrections with the original photo across a directional or radial gradient. This is local-only and never edits a saved Core mask. Clone strokes remain independent.
+            </p>
+            <label className="block space-y-1 text-sm">
+              <span className="font-medium">Direction</span>
+              <select aria-label="Local gradient mask direction" value={advanced.gradient.mode} onChange={event => onAdvancedChange({ ...advanced, gradient: { ...advanced.gradient, mode: event.target.value } })} className="min-h-11 w-full rounded-xl border border-input bg-background px-3">
+                {LOCAL_GRADIENT_MODES.map(mode => <option value={mode.id} key={mode.id}>{mode.label}</option>)}
+              </select>
+            </label>
+            {advanced.gradient.mode !== 'off' && (
+              <>
+                <p className="text-xs text-muted-foreground">Unedited area → feathered transition → fully corrected area.</p>
+                <label className="block space-y-1 text-xs">
+                  <span className="flex justify-between"><span>Start transition</span><output>{advanced.gradient.start}%</output></span>
+                  <input aria-label="Gradient start" type="range" min="0" max={advanced.gradient.end - 1} step="1" value={advanced.gradient.start} onChange={event => onAdvancedChange({ ...advanced, gradient: { ...advanced.gradient, start: Number(event.target.value) } })} className="w-full accent-primary" />
+                </label>
+                <label className="block space-y-1 text-xs">
+                  <span className="flex justify-between"><span>End transition</span><output>{advanced.gradient.end}%</output></span>
+                  <input aria-label="Gradient end" type="range" min={advanced.gradient.start + 1} max="100" step="1" value={advanced.gradient.end} onChange={event => onAdvancedChange({ ...advanced, gradient: { ...advanced.gradient, end: Number(event.target.value) } })} className="w-full accent-primary" />
+                </label>
+                <p role="status" className="rounded-lg bg-accent p-2 text-xs text-accent-foreground">Gradient mask active. Adjust any light, color, effect or tone-curve control to see it affect only part of the photo.</p>
+              </>
+            )}
+            <Button type="button" variant="outline" size="sm" className="w-full" disabled={advanced.gradient.mode === 'off'} onClick={() => onAdvancedChange({ ...advanced, gradient: LOCAL_GRADIENT_DEFAULT })}>Clear gradient mask</Button>
           </div>
         </details>
 
