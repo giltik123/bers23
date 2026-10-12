@@ -3,13 +3,29 @@ import { Loader2, Brush } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const modes = [['SMART_SELECT', 'Smart'], ['BRUSH_ADD', 'Add'], ['BRUSH_SUBTRACT', 'Remove'], ['POLYGON', 'Polygon'], ['LASSO', 'Lasso'], ['RECTANGLE', 'Rectangle'], ['ELLIPSE', 'Ellipse']];
-export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, whiteBalanceTemperatureQ8, onWhiteBalanceTemperatureQ8, whiteBalanceTintQ8, onWhiteBalanceTintQ8, canApplyWhiteBalance = false, applyingWhiteBalance = false, onApplyWhiteBalance, levelsInputBlack, onLevelsInputBlack, levelsInputMidpoint, onLevelsInputMidpoint, levelsInputWhite, onLevelsInputWhite, levelsOutputBlack, onLevelsOutputBlack, levelsOutputWhite, onLevelsOutputWhite, canApplyLevels = false, applyingLevels = false, onApplyLevels, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, hasSelectedMask = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
+const modeHints = Object.freeze({
+  SMART_SELECT: 'Tap a subject to create a local AI mask.',
+  BRUSH_ADD: 'Paint on the image to add pixels to the mask.',
+  BRUSH_SUBTRACT: 'Paint on the image to remove pixels from the mask.',
+  POLYGON: 'Click points around an area, then apply the polygon.',
+  LASSO: 'Draw a freehand boundary, then apply the lasso.',
+  RECTANGLE: 'Drag out a rectangle on the image.',
+  ELLIPSE: 'Drag out an ellipse on the image.',
+});
+const overlayChoices = Object.freeze([
+  { id: 'teal', label: 'Teal overlay', className: 'bg-emerald-500' },
+  { id: 'magenta', label: 'Magenta overlay', className: 'bg-fuchsia-500' },
+  { id: 'amber', label: 'Amber overlay', className: 'bg-amber-500' },
+]);
+export default function SelectionToolbar({ selection, brushSize, onBrushSize, brushHardness, onBrushHardness, brushOpacity = 100, onBrushOpacity = () => {},
+  maskOverlayVisible = true, onMaskOverlayVisible = () => {}, maskOverlayColor = 'teal', onMaskOverlayColor = () => {},
+  maskOverlayOpacity = 45, onMaskOverlayOpacity = () => {}, morphologyRadius, onMorphologyRadius, onGrow, onShrink, onOpen, onClose, onFeather, polygonComposition, onPolygonComposition, onApplyPolygon, onClearPolygon, onApplyShape, onClearShape, onNudgeShape, exposureEighthStops, onExposureEighthStops, canApplyExposure = false, applyingExposure = false, onApplyExposure, whiteBalanceTemperatureQ8, onWhiteBalanceTemperatureQ8, whiteBalanceTintQ8, onWhiteBalanceTintQ8, canApplyWhiteBalance = false, applyingWhiteBalance = false, onApplyWhiteBalance, levelsInputBlack, onLevelsInputBlack, levelsInputMidpoint, onLevelsInputMidpoint, levelsInputWhite, onLevelsInputWhite, levelsOutputBlack, onLevelsOutputBlack, levelsOutputWhite, onLevelsOutputWhite, canApplyLevels = false, applyingLevels = false, onApplyLevels, onMode, onUndo, onRedo, onClear, onInvert, onCancel, onDone, onStart, startDisabled = false, hasSelectedMask = false, canIsolateBackground = false, isolatingBackground = false, onIsolateBackground }) {
   const levelsIdentity = levelsInputBlack === 0 && levelsInputMidpoint === 128 && levelsInputWhite === 255 && levelsOutputBlack === 0 && levelsOutputWhite === 255;
   if (!selection) return (
     <section className="space-y-4" aria-label="Image selection and adjustments">
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" disabled={startDisabled} onClick={onStart}>
-          <Brush className="h-4 w-4" aria-hidden="true" /> Create mask
+          <Brush className="h-4 w-4" aria-hidden="true" /> Smart Select
         </Button>
         {hasSelectedMask && (
           <Button type="button" variant="outline" disabled={startDisabled || !canIsolateBackground || isolatingBackground} onClick={onIsolateBackground}>
@@ -174,8 +190,12 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
   };
   return (
     <section className="rounded-xl border bg-card p-3 space-y-3" aria-label="Selection tools">
+      <header className="space-y-1">
+        <h3 className="text-base font-semibold">Select &amp; Mask</h3>
+        <p className="text-xs leading-5 text-muted-foreground">Paint, draw a shape, or tap Smart. Add and Remove refine the same mask without changing your image.</p>
+      </header>
       <div className="flex flex-wrap gap-2">
-        {modes.map(([id, label]) => <Button key={id} type="button" size="sm" aria-pressed={selection.mode === id} variant={selection.mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => onMode(id)}>{label}</Button>)}
+        {modes.map(([id, label]) => <Button key={id} type="button" size="sm" aria-pressed={selection.mode === id} title={modeHints[id]} variant={selection.mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => onMode(id)}>{label}</Button>)}
         {(selection.mode === 'BRUSH_ADD' || selection.mode === 'BRUSH_SUBTRACT') && <>
         <label className="flex items-center gap-2 px-2 text-xs">Brush Size
           <input aria-label="Brush Size" aria-valuetext={`${brushSize} pixels`} type="range" min="2" max="96" value={brushSize} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushSize(Number(event.target.value))} />
@@ -185,7 +205,35 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
           <input aria-label="Brush Hardness" aria-valuetext={`${brushHardness} percent`} type="range" min="0" max="100" value={brushHardness} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushHardness(Number(event.target.value))} />
           <span aria-hidden="true">{brushHardness}%</span>
         </label>
+        <label className="flex items-center gap-2 px-2 text-xs">Opacity
+          <input aria-label="Brush Opacity" aria-valuetext={`${brushOpacity} percent`} type="range" min="0" max="100" step="1" value={brushOpacity} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushOpacity(Number(event.target.value))} />
+          <span aria-hidden="true">{brushOpacity}%</span>
+        </label>
         </>}
+      </div>
+      <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground" role="status">{modeHints[selection.mode]} {selection.quality ? `Mask coverage: ${(selection.quality.coverage * 100).toFixed(1)}%.` : 'No mask area committed yet.'}</p>
+
+      <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3" aria-label="Mask overlay controls">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-sm font-semibold">Mask overlay</h4>
+          <label className="flex cursor-pointer items-center gap-2 text-xs">
+            <input type="checkbox" aria-label="Show mask overlay" checked={maskOverlayVisible} onChange={(event) => onMaskOverlayVisible(event.target.checked)} className="h-4 w-4 accent-primary" />
+            Show
+          </label>
+        </div>
+        <label className="block space-y-1 text-xs">
+          <span className="flex justify-between text-muted-foreground"><span>Overlay opacity · view only</span><strong className="tabular-nums">{maskOverlayOpacity}%</strong></span>
+          <input type="range" aria-label="Mask overlay opacity" min="0" max="100" step="1" value={maskOverlayOpacity} onChange={(event) => onMaskOverlayOpacity(Number(event.target.value))} disabled={!maskOverlayVisible} className="w-full accent-primary" />
+        </label>
+        <div className="flex items-center gap-2" role="group" aria-label="Mask overlay color">
+          <span className="mr-1 text-xs text-muted-foreground">Color</span>
+          {overlayChoices.map((choice) => (
+            <button key={choice.id} type="button" aria-label={choice.label} aria-pressed={maskOverlayColor === choice.id} disabled={!maskOverlayVisible} onClick={() => onMaskOverlayColor(choice.id)} className={`flex h-9 w-9 items-center justify-center rounded-xl border-2 transition-transform disabled:opacity-50 ${maskOverlayColor === choice.id ? 'border-primary scale-105' : 'border-border'}`}>
+              <span className={`h-5 w-5 rounded-full ${choice.className}`} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] leading-4 text-muted-foreground">Only the display color changes. Saved mask alpha and editing strength stay untouched.</p>
       </div>
       {selection.mode === 'POLYGON' && (
         <div className="flex flex-wrap items-center gap-2" aria-label="Polygon selection controls">
@@ -263,7 +311,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
         <Button type="button" size="sm" variant="outline" aria-label="Invert selection" disabled={!editable} onClick={onInvert}>Invert</Button>
         <span className="flex-1" />
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button type="button" size="sm" disabled={!canDone} onClick={onDone}>Done</Button>
+        <Button type="button" size="sm" disabled={!canDone} onClick={onDone} title="Save the selected pixels as a canonical mask, then return to photo editing">Done</Button>
       </div>
       {selection.state === 'SELECTING' && <p className="text-xs text-muted-foreground" role="status">Preparing Smart Selection…</p>}
       {selection.warning && <p className="text-xs text-amber-600" role="status">{selection.warning}</p>}
