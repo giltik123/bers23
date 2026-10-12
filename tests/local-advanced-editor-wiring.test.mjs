@@ -42,7 +42,7 @@ test('advanced edits share one bounded undo history with base adjustments and pr
   assert.match(parent, /action\.type === 'advanced'/);
   assert.match(parent, /normalizeAdvancedSettings\(action\.value\)/);
   assert.match(parent, /React\.useMemo\(\(\) => \{/);
-  assert.match(parent, /const \{ __advanced, \.\.\.base \} = currentEntry/);
+  assert.match(parent, /const \{ __advanced, __annotations, \.\.\.base \} = currentEntry/);
   assert.match(parent, /const advanced = currentEntry\.__advanced \|\| LOCAL_ADVANCED_DEFAULTS/);
   assert.match(parent, /isNeutralLocalSettings\(settings\) && isNeutralAdvancedSettings\(advanced\)/);
   assert.match(parent, /<AdvancedLocalControls/);
