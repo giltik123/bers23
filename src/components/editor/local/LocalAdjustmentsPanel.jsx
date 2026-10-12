@@ -108,6 +108,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const [cloneRadius, setCloneRadius] = useState(5);
   const [cloneHardness, setCloneHardness] = useState(85);
   const [cloneOpacity, setCloneOpacity] = useState(100);
+  const [cloneBlendMode, setCloneBlendMode] = useState('clone');
   const [cloneCursor, setCloneCursor] = useState(null);
   const cloneDrawing = useRef(null);
   const [annotationMode, setAnnotationMode] = useState('off');
@@ -389,6 +390,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     const stroke = {
       source: cloneSource, points: draft.points,
       radius: cloneRadius / 100, hardness: cloneHardness / 100, opacity: cloneOpacity / 100,
+      blendMode: cloneBlendMode,
     };
     try {
       updateAdvanced({ ...advanced, cloneStrokes: [...advanced.cloneStrokes, stroke] });
@@ -562,6 +564,8 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
             onCloneHardness={setCloneHardness}
             cloneOpacity={cloneOpacity}
             onCloneOpacity={setCloneOpacity}
+            cloneBlendMode={cloneBlendMode}
+            onCloneBlendMode={setCloneBlendMode}
           />
 
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
