@@ -134,6 +134,23 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       beginHistoryGesture(event);
     }
   };
+  const handleLocalHistoryKeyDown = event => {
+    beginKeyboardHistoryGesture(event);
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const target = event.target;
+    // Native undo for typing in labels, filenames and form fields must win.
+    if (target instanceof HTMLTextAreaElement || target?.isContentEditable
+        || (target instanceof HTMLInputElement && target.type !== 'range')) return;
+    const key = event.key.toLowerCase();
+    const undo = key === 'z' && !event.shiftKey;
+    const redo = (key === 'z' && event.shiftKey) || key === 'y';
+    if ((undo && history.index > 0) || (redo && history.index < history.entries.length - 1)) {
+      event.preventDefault();
+      event.stopPropagation();
+      gestureRef.current = null;
+      dispatch({ type: undo ? 'undo' : 'redo' });
+    }
+  };
   const endHistoryGesture = event => {
     if (gestureRef.current?.element === event.target) gestureRef.current = null;
   };
@@ -610,7 +627,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       onPointerDownCapture={beginHistoryGesture}
       onPointerUpCapture={endPointerHistoryGesture}
       onPointerCancelCapture={endPointerHistoryGesture}
-      onKeyDownCapture={beginKeyboardHistoryGesture}
+      onKeyDownCapture={handleLocalHistoryKeyDown}
       onKeyUpCapture={endKeyboardHistoryGesture}
       onFocusCapture={beginTextHistoryGesture}
       onBlurCapture={endHistoryGesture}
@@ -727,7 +744,9 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
             <Button type="button" variant="outline" disabled={!history.index} onClick={() => dispatch({ type: 'undo' })}><Undo2 className="h-4 w-4" aria-hidden="true" /> Undo</Button>
             <Button type="button" variant="outline" disabled={history.index === history.entries.length - 1} onClick={() => dispatch({ type: 'redo' })}><Redo2 className="h-4 w-4" aria-hidden="true" /> Redo</Button>
             <Button type="button" variant="outline" disabled={isNeutralLocalSettings(settings) && isNeutralAdvancedSettings(advanced) && annotations.length === 0} onClick={() => dispatch({ type: 'reset' })}><RotateCcw className="h-4 w-4" aria-hidden="true" /> Reset all</Button>
+            <output aria-label="Local undo history position" className="self-center text-xs tabular-nums text-muted-foreground">Edit {history.index} of {history.entries.length - 1}</output>
           </div>
+          <p className="text-xs text-muted-foreground">One slider drag or continuous text edit = one Undo step. Shortcuts: Ctrl/⌘+Z to undo, Ctrl/⌘+Shift+Z to redo (or Ctrl+Y). Text fields retain their native typing shortcuts.</p>
 
           <div className="grid items-start gap-4 lg:grid-cols-3">
             {['Light', 'Color', 'Effects'].map(category => (
