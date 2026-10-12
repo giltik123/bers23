@@ -20,10 +20,20 @@ export const LOCAL_CURVE_DEFAULT = Object.freeze({
   black: 0, shadows: 64, midtones: 128, highlights: 192, white: 255,
 });
 export const LOCAL_HSL_DEFAULT = Object.freeze({ hue: 0, saturation: 0, lightness: 0 });
+export const LOCAL_GRADIENT_MODES = Object.freeze([
+  { id: 'off', label: 'Off · entire image' },
+  { id: 'left-right', label: 'Left to right' },
+  { id: 'right-left', label: 'Right to left' },
+  { id: 'top-bottom', label: 'Top to bottom' },
+  { id: 'bottom-top', label: 'Bottom to top' },
+  { id: 'radial', label: 'Radial · center' },
+]);
+export const LOCAL_GRADIENT_DEFAULT = Object.freeze({ mode: 'off', start: 0, end: 100 });
 export const LOCAL_ADVANCED_DEFAULTS = Object.freeze({
   curve: LOCAL_CURVE_DEFAULT,
   hsl: Object.freeze(Object.fromEntries(LOCAL_HUE_BANDS.map(band => [band.id, LOCAL_HSL_DEFAULT]))),
   cloneStrokes: Object.freeze([]),
+  gradient: LOCAL_GRADIENT_DEFAULT,
 });
 const clamp = (x, low, high) => Math.min(high, Math.max(low, x));
 const byte = x => Math.round(clamp(x, 0, 255));
@@ -50,7 +60,7 @@ function point(value, label) {
 
 export function normalizeAdvancedSettings(input = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid advanced local settings');
-  for (const key of Object.keys(input)) if (!['curve', 'hsl', 'cloneStrokes'].includes(key)) throw new Error('Unsupported advanced setting: ' + key);
+  for (const key of Object.keys(input)) if (!['curve', 'hsl', 'cloneStrokes', 'gradient'].includes(key)) throw new Error('Unsupported advanced setting: ' + key);
   const curveInput = input.curve ?? LOCAL_CURVE_DEFAULT;
   if (!curveInput || typeof curveInput !== 'object' || Array.isArray(curveInput)
       || Object.keys(curveInput).some(key => !CURVE_KEYS.includes(key))) throw new Error('Invalid tone curve');
@@ -93,14 +103,26 @@ export function normalizeAdvancedSettings(input = {}) {
       opacity: stroke.opacity,
     });
   }));
-  return Object.freeze({ curve, hsl, cloneStrokes });
+  const gradientInput = input.gradient ?? LOCAL_GRADIENT_DEFAULT;
+  if (!gradientInput || typeof gradientInput !== 'object' || Array.isArray(gradientInput)
+      || Object.keys(gradientInput).some(key => !['mode', 'start', 'end'].includes(key))
+      || !LOCAL_GRADIENT_MODES.some(item => item.id === gradientInput.mode)) {
+    throw new Error('Invalid local gradient mask');
+  }
+  const gradient = Object.freeze({
+    mode: gradientInput.mode,
+    start: checkedInt(gradientInput.start, 0, 99, 'gradient start'),
+    end: checkedInt(gradientInput.end, 1, 100, 'gradient end'),
+  });
+  if (gradient.start >= gradient.end) throw new Error('Invalid gradient feather interval');
+  return Object.freeze({ curve, hsl, cloneStrokes, gradient });
 }
 
 export function isNeutralAdvancedSettings(input = {}) {
   const settings = normalizeAdvancedSettings(input);
   return CURVE_KEYS.every(key => settings.curve[key] === LOCAL_CURVE_DEFAULT[key])
     && LOCAL_HUE_BANDS.every(band => ['hue', 'saturation', 'lightness'].every(key => settings.hsl[band.id][key] === 0))
-    && settings.cloneStrokes.length === 0;
+    && settings.cloneStrokes.length === 0 && settings.gradient.mode === 'off';
 }
 
 export function curveLut(curveInput = LOCAL_CURVE_DEFAULT) {
@@ -267,8 +289,38 @@ function transformClone(output, width, height, strokes) {
   }
 }
 
-export function applyAdvancedLocalAdjustments(source, width, height, input = {}) {
+
+function gradientCoverage(x, y, width, height, gradient) {
+  const u = width > 1 ? x / (width - 1) : .5;
+  const v = height > 1 ? y / (height - 1) : .5;
+  let position;
+  switch (gradient.mode) {
+    case 'left-right': position = u; break;
+    case 'right-left': position = 1 - u; break;
+    case 'top-bottom': position = v; break;
+    case 'bottom-top': position = 1 - v; break;
+    case 'radial': position = 1 - Math.hypot(u - .5, v - .5) / Math.SQRT1_2; break;
+    default: return 1;
+  }
+  return clamp((position * 100 - gradient.start) / (gradient.end - gradient.start), 0, 1);
+}
+
+function blendGradient(source, output, width, height, gradient) {
+  if (gradient.mode === 'off') return;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const offset = (y * width + x) * 4;
+    if (!source[offset + 3]) continue;
+    const weight = gradientCoverage(x, y, width, height, gradient);
+    if (weight === 1) continue;
+    for (let channel = 0; channel < 3; channel++) {
+      output[offset + channel] = byte(source[offset + channel] * (1 - weight) + output[offset + channel] * weight);
+    }
+  }
+}
+
+export function applyAdvancedLocalAdjustments(source, width, height, input = {}, original = source) {
   assertImage(source, width, height);
+  assertImage(original, width, height);
   const advanced = normalizeAdvancedSettings(input);
   const output = new Uint8ClampedArray(source);
   if (isNeutralAdvancedSettings(advanced)) return output;
@@ -282,6 +334,10 @@ export function applyAdvancedLocalAdjustments(source, width, height, input = {})
     }
   }
   transformHsl(output, width, height, advanced.hsl);
+  // Feather a user-controlled local gradient over ALL tonal/color adjustments,
+  // including the existing base light sliders (original is passed by the UI).
+  // Sampled clone strokes run afterward and intentionally are not gradient-masked.
+  blendGradient(original, output, width, height, advanced.gradient);
   transformClone(output, width, height, advanced.cloneStrokes);
   return output;
 }
