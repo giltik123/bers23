@@ -116,7 +116,7 @@ test('rejects unsupported settings, NaN, Infinity, fractional invalid steps and 
   }
   assert.throws(() => normalizeLocalSettings({ thresholdCutoff: 300 }), /Invalid/);
   assert.throws(() => presetLocalSettings('missing'), /Unknown/);
-  assert.deepEqual(LOCAL_EFFECTS.map(effect => effect.value), ['none', 'monochrome', 'sepia', 'invert', 'threshold']);
+  assert.deepEqual(LOCAL_EFFECTS.map(effect => effect.value), ['none', 'monochrome', 'sepia', 'invert', 'threshold', 'solarize']);
 });
 
 test('luminance histogram counts only visible source pixels', () => {
@@ -160,4 +160,30 @@ test('matte and cinematic presets are real channel- and range-bound transformati
   }
   assert.ok(LOCAL_CONTROLS.some(c => c.key === 'red' && c.category === 'Color'));
   assert.ok(LOCAL_CONTROLS.some(c => c.key === 'whites' && c.category === 'Light'));
+});
+
+
+test('solarize is a real per-channel pixel transform with preserved alpha', () => {
+  const source = rgba(50, 160, 220, 137);
+  assert.deepEqual([...run(source, 1, 1, { effect: 'solarize' })], [50, 95, 35, 137]);
+  assert.deepEqual([...source], [50, 160, 220, 137]);
+});
+
+test('film grain is deterministic across frames, varies by coordinate and does not touch source or alpha', () => {
+  const source = rgba(...Array.from({ length: 16 }, () => [128, 128, 128, 170]).flat());
+  const original = [...source];
+  const a = run(source, 4, 4, { grain: 60 });
+  const b = run(source, 4, 4, { grain: 60 });
+  assert.deepEqual(a, b, 'grain must never flicker or depend on randomness');
+  assert.notDeepEqual([...a], original, 'grain must actually modify pixels');
+  assert.ok(new Set(Array.from({ length: 16 }, (_, i) => a[i * 4])).size > 2, 'different pixels must receive different grain');
+  for (let i = 0; i < a.length; i += 4) {
+    assert.equal(a[i + 3], 170);
+    assert.equal(a[i], a[i + 1]);
+    assert.equal(a[i + 1], a[i + 2]);
+  }
+  assert.deepEqual([...source], original);
+  assert.deepEqual([...run(source, 4, 4, { grain: 0 })], original);
+  assert.throws(() => run(source, 4, 4, { grain: 101 }), /Invalid local adjustment/);
+  assert.notDeepEqual([...run(source, 4, 4, presetLocalSettings('analog'))], original);
 });
