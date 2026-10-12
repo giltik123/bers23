@@ -109,7 +109,7 @@ test('rejects unsupported settings, NaN, Infinity, fractional invalid steps and 
   for (const input of [
     { unknown: 3 }, { effect: 'script' }, { exposure: 3 },
     { brightness: NaN }, { saturation: Infinity }, { gamma: 0 },
-    { warmth: -999 }, { exposure: .125 }, { posterize: 1.2 }, null,
+    { warmth: -999 }, { exposure: .125 }, { posterize: 1.2 }, { posterize: 1 }, { pixelate: 1 }, null,
   ]) assert.throws(() => run(source, 1, 1, input), /Unsupported|Invalid|must be an object/);
   for (const [w, h] of [[0, 1], [1, 0], [2, 2], [MAX_LOCAL_PIXELS + 1, 1], [Infinity, 1]]) {
     assert.throws(() => run(source, w, h), /RGBA8|12 megapixels/);
