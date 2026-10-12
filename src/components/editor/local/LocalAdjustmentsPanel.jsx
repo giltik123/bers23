@@ -4,6 +4,10 @@ import AdvancedLocalControls from '@/components/editor/local/AdvancedLocalContro
 import LocalAnnotationControls from '@/components/editor/local/LocalAnnotationControls';
 import LocalRecipeControls from '@/components/editor/local/LocalRecipeControls';
 import {
+  saveLocalDeviceDraft, restoreLocalDeviceDraft,
+  clearLocalDeviceDraft, hasLocalDeviceDraft,
+} from '@/lib/local-editor/localDraftStorage';
+import {
   createLocalRecipe, parseLocalRecipe, fingerprintOriginalRgba, MAX_LOCAL_RECIPE_BYTES,
 } from '@/lib/local-editor/localRecipe';
 import {
@@ -103,6 +107,9 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const [savingRecipe, setSavingRecipe] = useState(false);
   const [restoringRecipe, setRestoringRecipe] = useState(false);
   const [recipeNotice, setRecipeNotice] = useState('');
+  const [hasDeviceDraft, setHasDeviceDraft] = useState(false);
+  const [savingDevice, setSavingDevice] = useState(false);
+  const [restoringDevice, setRestoringDevice] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [histogram, setHistogram] = useState(null);
   const [openCategories, setOpenCategories] = useState({ Light: true, Color: false, Effects: false });
@@ -294,6 +301,23 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     finally { setExporting(false); }
   };
 
+  useEffect(() => {
+    if (!details) { setHasDeviceDraft(false); return; }
+    try { setHasDeviceDraft(hasLocalDeviceDraft(window.localStorage)); }
+    catch { setHasDeviceDraft(false); }
+  }, [details]);
+
+  // Cache the exact ORIGINAL RGBA hash after the first explicit save/restore;
+  // never send source pixels, Core identifiers or tokens to browser storage.
+  const originalIdentity = async (source, generation) => {
+    const hash = source.sha256 || await fingerprintOriginalRgba(source.full, source.width, source.height);
+    if (generation !== loadGeneration.current || image.current !== source) {
+      throw new Error('The photo changed while preparing the edit draft. Reopen the original photo.');
+    }
+    source.sha256 = hash;
+    return { width: source.width, height: source.height, sha256: hash };
+  };
+
   const saveEditRecipe = async () => {
     if (!image.current || savingRecipe || restoringRecipe || loading || exporting) return;
     const source = image.current;
@@ -302,14 +326,8 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     setRecipeNotice('');
     setError('');
     try {
-      const sha256 = await fingerprintOriginalRgba(source.full, source.width, source.height);
-      if (generation !== loadGeneration.current || image.current !== source) {
-        throw new Error('Photo changed while saving the edit recipe. Please try again.');
-      }
-      const recipe = createLocalRecipe(
-        { width: source.width, height: source.height, sha256 },
-        settings, advanced, annotations,
-      );
+      const original = await originalIdentity(source, generation);
+      const recipe = createLocalRecipe(original, settings, advanced, annotations);
       const json = JSON.stringify(recipe, null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       if (blob.size > MAX_LOCAL_RECIPE_BYTES) throw new Error('Local recipe exceeds 2 MB. Reduce clone strokes or annotations.');
@@ -345,11 +363,8 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
         throw new Error('Choose a local JSON edit recipe of at most 2 MB.');
       }
       const raw = await file.text();
-      const sha256 = await fingerprintOriginalRgba(source.full, source.width, source.height);
-      if (generation !== loadGeneration.current || image.current !== source) {
-        throw new Error('Photo changed while loading the recipe. Reopen its exact original photo.');
-      }
-      const validated = parseLocalRecipe(raw, { width: source.width, height: source.height, sha256 });
+      const original = await originalIdentity(source, generation);
+      const validated = parseLocalRecipe(raw, original);
       dispatch({ type: 'restore-recipe', value: validated.edits });
       setSelectedAnnotationIndex(null);
       setAnnotationMode('off');
@@ -358,6 +373,52 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       setRecipeNotice('Edit recipe restored for this exact photo. Undo reverts the entire import.');
     } catch (cause) { setError(cause?.message || 'Unable to restore local edit recipe.'); }
     finally { setRestoringRecipe(false); }
+  };
+
+  const saveDeviceDraft = async () => {
+    const source = image.current;
+    if (!source || loading || exporting || savingRecipe || restoringRecipe || savingDevice || restoringDevice) return;
+    const generation = loadGeneration.current;
+    setSavingDevice(true);
+    setRecipeNotice('');
+    setError('');
+    try {
+      const original = await originalIdentity(source, generation);
+      const recipe = createLocalRecipe(original, settings, advanced, annotations);
+      saveLocalDeviceDraft(window.localStorage, recipe);
+      setHasDeviceDraft(true);
+      setRecipeNotice('Saved on this device only. A later browser-draft save will replace this copy.');
+    } catch (cause) { setError(cause?.message || 'Unable to save browser draft.'); }
+    finally { setSavingDevice(false); }
+  };
+
+  const restoreDeviceDraft = async () => {
+    const source = image.current;
+    if (!source || loading || exporting || savingRecipe || restoringRecipe || savingDevice || restoringDevice) return;
+    const generation = loadGeneration.current;
+    setRestoringDevice(true);
+    setRecipeNotice('');
+    setError('');
+    try {
+      const original = await originalIdentity(source, generation);
+      const validated = restoreLocalDeviceDraft(window.localStorage, original);
+      dispatch({ type: 'restore-recipe', value: validated.edits });
+      setSelectedAnnotationIndex(null);
+      setAnnotationMode('off');
+      setCloneMode('off');
+      setShowOriginal(false);
+      setRecipeNotice('Browser draft restored for this exact original. Undo reverses the entire restore.');
+    } catch (cause) { setError(cause?.message || 'Unable to restore browser draft.'); }
+    finally { setRestoringDevice(false); }
+  };
+
+  const deleteDeviceDraft = () => {
+    try {
+      clearLocalDeviceDraft(window.localStorage);
+      setHasDeviceDraft(false);
+      setRecipeNotice('Browser draft deleted. Current edits are unchanged.');
+      setError('');
+    } catch (cause) { setError(cause?.message || 'Unable to delete browser draft.'); }
   };
 
   const update = (key, value) => dispatch({ type: 'change', key, value });
@@ -685,6 +746,12 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
             onChooseFile={restoreEditRecipe}
             fileInputRef={recipeInput}
             notice={recipeNotice}
+            hasDeviceDraft={hasDeviceDraft}
+            savingDevice={savingDevice}
+            restoringDevice={restoringDevice}
+            onSaveDevice={saveDeviceDraft}
+            onRestoreDevice={restoreDeviceDraft}
+            onClearDevice={deleteDeviceDraft}
           />
 
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
