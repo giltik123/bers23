@@ -42,7 +42,8 @@ test('annotations render on transparent overlay canvas and the SAME recipe flatt
   assert.match(parent, /canvas\.width = source\.previewWidth/);
   assert.match(parent, /renderLocalAnnotations\(context, source\.previewWidth, source\.previewHeight, annotations\)/);
   assert.match(parent, /renderLocalAnnotations\(ctx, source\.width, source\.height, annotations\)/);
-  assert.match(parent, /ctx\.putImageData\(new ImageData\(pixels, source\.width, source\.height\), 0, 0\)/);
+  assert.match(parent, /const exportPixels = applyLocalOpaqueCovers\(pixels, source\.width, source\.height, annotations\)/);
+  assert.match(parent, /ctx\.putImageData\(new ImageData\(exportPixels, source\.width, source\.height\), 0, 0\)/);
   assert.match(parent, /canvas\.toBlob\(output => output \? resolve\(output\)/);
   assert.match(parent, /if \(showOriginal\) return/);
   assert.match(geometry, /ctx\.fillText\(item\.text, x1, y1, width - x1\)/);
@@ -62,7 +63,9 @@ test('mouse/touch annotation placement commits bounded normalized objects, not p
   assert.match(parent, /event\.currentTarget\.setPointerCapture\(event\.pointerId\)/);
   assert.match(parent, /updateAnnotations\(\[\.\.\.annotations, annotation\]\)/);
   assert.match(parent, /annotations\.length >= MAX_LOCAL_ANNOTATIONS/);
-  assert.match(parent, /centeredLocalAnnotation\(annotationMode, annotationOptions\)/);
+  assert.match(parent, /centeredLocalAnnotation\(annotationMode,/);
+  assert.match(parent, /annotationMode === 'redact'/);
+  assert.match(parent, /color: LOCAL_REDACTION_COLOR, thickness: 1, opacity: 1/);
   assert.match(parent, /onKeyDown=\{event => \{/);
   assert.match(parent, /event\.key === 'Enter' \|\| event\.key === ' '/);
   assert.match(parent, /addCenteredAnnotation\(\)/);
