@@ -10,6 +10,7 @@ export const LOCAL_ANNOTATION_TOOLS = Object.freeze([
   { id: 'rectangle', label: 'Rectangle' },
   { id: 'ellipse', label: 'Ellipse' },
   { id: 'text', label: 'Text' },
+  { id: 'redact', label: 'Solid cover' },
 ]);
 
 export const LOCAL_ANNOTATION_COLORS = Object.freeze([
@@ -22,8 +23,9 @@ export const LOCAL_ANNOTATION_COLORS = Object.freeze([
 
 export const MAX_LOCAL_ANNOTATIONS = 50;
 export const MAX_LOCAL_ANNOTATION_TEXT = 120;
+export const LOCAL_REDACTION_COLOR = '#000000';
 const TOOLS = new Set(LOCAL_ANNOTATION_TOOLS.map(tool => tool.id));
-const COLORS = new Set(LOCAL_ANNOTATION_COLORS.map(color => color.value));
+const COLORS = new Set([...LOCAL_ANNOTATION_COLORS.map(color => color.value), LOCAL_REDACTION_COLOR]);
 const DIMENSIONS_LIMIT = 12_000_000;
 
 const finite = value => typeof value === 'number' && Number.isFinite(value);
@@ -61,6 +63,9 @@ export function normalizeLocalAnnotations(input = []) {
     if (!COLORS.has(color)) throw new Error('Invalid local annotation color');
     const thickness = dimension(item.thickness, .1, 5, 'thickness');
     const opacity = dimension(item.opacity, .01, 1, 'opacity');
+    if (item.type === 'redact' && (color !== LOCAL_REDACTION_COLOR || opacity !== 1 || thickness !== 1)) {
+      throw new Error('Invalid solid cover: this tool always uses opaque black with locked styling');
+    }
     if (item.type !== 'text' && Math.hypot(to.x - from.x, to.y - from.y) < .005) {
       throw new Error('Local annotation shape must have a visible span');
     }
@@ -103,6 +108,21 @@ function renderOne(ctx, width, height, item) {
     ctx.lineWidth = strokeWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+
+    if (item.type === 'redact') {
+      // Integer-aligned, outward-rounded opaque black pixels: do not use blur,
+      // pixelation, antialiasing or alpha blending for redaction. Always cover
+      // the image regardless of the opacity of prior vector annotations.
+      const left = Math.max(0, Math.floor(Math.min(x1, x2)));
+      const top = Math.max(0, Math.floor(Math.min(y1, y2)));
+      const right = Math.min(width, Math.ceil(Math.max(x1, x2)));
+      const bottom = Math.min(height, Math.ceil(Math.max(y1, y2)));
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = LOCAL_REDACTION_COLOR;
+      ctx.fillRect(left, top, right - left, bottom - top);
+      return;
+    }
 
     if (item.type === 'text') {
       const size = Math.max(1, shortSide * item.fontSize / 100);
@@ -151,7 +171,10 @@ export function renderLocalAnnotations(ctx, width, height, input = []) {
     throw new Error('Local annotation canvas context unavailable');
   }
   const items = normalizeLocalAnnotations(input);
-  for (const item of items) renderOne(ctx, width, height, item);
+  // Redactions always render LAST, even if users add arrows or labels later.
+  // Later annotations must not visually expose or recolor the covered pixels.
+  for (const item of items) if (item.type !== 'redact') renderOne(ctx, width, height, item);
+  for (const item of items) if (item.type === 'redact') renderOne(ctx, width, height, item);
   return items.length;
 }
 
@@ -166,6 +189,11 @@ export function centeredLocalAnnotation(type, options) {
     color: options.color, thickness: options.thickness, opacity: options.opacity,
   };
   if (type === 'arrow') { base.from = { x: .22, y: .50 }; base.to = { x: .78, y: .50 }; }
+  if (type === 'redact') {
+    base.color = LOCAL_REDACTION_COLOR;
+    base.opacity = 1;
+    base.thickness = 1;
+  }
   if (type === 'text') {
     base.from = { x: .26, y: .44 };
     base.to = base.from;
@@ -209,5 +237,42 @@ export function editLocalAnnotation(item, patch = {}) {
   if (original.type !== 'text' && ('text' in patch || 'fontSize' in patch)) {
     throw new Error('Text properties require a text annotation');
   }
+  if (original.type === 'redact' && Object.keys(patch).length !== 0) {
+    throw new Error('Solid cover styles are locked; move the box or delete it instead');
+  }
   return normalizeLocalAnnotations([{ ...original, ...patch }])[0];
+}
+
+
+/**
+ * Byte-exact defense in depth for local PNG exports. Replaces original RGBA
+ * inside each user-selected cover with [0,0,0,255], including originally
+ * transparent pixels, so alpha adjustment cannot reveal the covered pixels.
+ * This does NOT erase the input photo, saved browser drafts, earlier exports
+ * or other files. The user must inspect the resulting PNG before sharing.
+ */
+export function applyLocalOpaqueCovers(pixels, width, height, input = []) {
+  assertSize(width, height);
+  if (!(pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray)
+      || pixels.length !== width * height * 4) {
+    throw new Error('Opaque cover needs a full-resolution RGBA8 pixel buffer');
+  }
+  const items = normalizeLocalAnnotations(input).filter(item => item.type === 'redact');
+  const output = new Uint8ClampedArray(pixels);
+  for (const item of items) {
+    const left = Math.max(0, Math.floor(Math.min(item.from.x, item.to.x) * width));
+    const top = Math.max(0, Math.floor(Math.min(item.from.y, item.to.y) * height));
+    const right = Math.min(width, Math.ceil(Math.max(item.from.x, item.to.x) * width));
+    const bottom = Math.min(height, Math.ceil(Math.max(item.from.y, item.to.y) * height));
+    for (let y = top; y < bottom; y++) {
+      for (let x = left; x < right; x++) {
+        const i = (y * width + x) * 4;
+        output[i] = 0;
+        output[i + 1] = 0;
+        output[i + 2] = 0;
+        output[i + 3] = 255;
+      }
+    }
+  }
+  return output;
 }
