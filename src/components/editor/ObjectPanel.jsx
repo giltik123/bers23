@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Eye, EyeOff, User, Car, Trees, Cloud, Shirt, Dog, Box } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, EyeOff, User, Car, Trees, Cloud, Shirt, Dog, Box, Layers2 } from 'lucide-react';
 
 const iconFor = (label = '') => {
   const l = label.toLowerCase();
@@ -15,7 +15,8 @@ const iconFor = (label = '') => {
 function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
   const [expanded, setExpanded] = useState(true);
   const children = objects.filter((o) => o.parent_object === obj.id);
-  const Icon = iconFor(obj.label);
+  const isMask = Boolean(obj.mask_artifact_id);
+  const Icon = isMask ? Layers2 : iconFor(obj.label);
   const isHidden = hidden.has(obj.id);
   return (
     <>
@@ -51,6 +52,7 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
         >
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="flex-1 truncate">{obj.label}</span>
+          {isMask && <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary" title="Saved canonical alpha mask">Mask</span>}
           {obj.confidence != null && <span className="text-xs tabular-nums text-muted-foreground">{Math.round(obj.confidence * 100)}%</span>}
         </button>
         <button
@@ -74,23 +76,24 @@ function ObjectRow({ obj, objects, depth, hidden, onToggleHidden, onSelect }) {
 export default function ObjectPanel({ objects, onSelect, hidden, onToggleHidden }) {
   const [open, setOpen] = useState(true);
   const roots = objects.filter((o) => !o.parent_object);
+  const maskCount = objects.filter((object) => Boolean(object.mask_artifact_id)).length;
 
   const toggleHidden = (id) => onToggleHidden(id);
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card">
+    <section className="rounded-2xl border border-border/70 bg-card" aria-label="Saved masks and objects">
       <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex min-h-11 w-full items-center justify-between px-4 py-2.5 text-sm font-semibold">
-        <span>Objects ({objects.length})</span>
+        <span>Masks &amp; objects ({objects.length})</span>
         {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
       {open && (
         <div className="px-1.5 pb-2 max-h-64 overflow-y-auto">
-          <p className="px-2 pb-2 text-[11px] text-muted-foreground">Eye icons show or hide object outlines on the canvas; they do not edit the image.</p>
+          <p className="px-2 pb-2 text-xs leading-5 text-muted-foreground">{maskCount} saved {maskCount === 1 ? 'mask' : 'masks'}. Select one to adjust exposure, white balance or levels in the tool panel. Eye icons only show or hide on-canvas guides; they never edit image pixels.</p>
           {roots.map((o) => (
             <ObjectRow key={o.id} obj={o} objects={objects} depth={0} hidden={hidden} onToggleHidden={toggleHidden} onSelect={onSelect} />
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
