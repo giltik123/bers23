@@ -25,6 +25,7 @@ on:
       - 'src/lib/local-editor/localAdjustments.js'
       - 'src/lib/local-editor/localHistory.js'
       - 'tests/local-history.test.mjs'
+      - 'tests/local-history-editor-wiring.test.mjs'
       - 'tests/local-adjustments.test.mjs'
       - 'src/application/selection/contracts.ts'
       - 'src/application/selection/SelectionApplicationService.ts'
@@ -86,6 +87,7 @@ jobs:
             tests/mask-photoshop-controls.test.mjs \
             tests/local-adjustments.test.mjs \
             tests/local-history.test.mjs \
+            tests/local-history-editor-wiring.test.mjs \
             tests/local-adjustments-editor-wiring.test.mjs \
             tests/local-advanced-adjustments.test.mjs \
             tests/local-advanced-editor-wiring.test.mjs \
@@ -102,7 +104,7 @@ jobs:
             tests/editor-orthogonal-transform-ui.test.mjs \
             tests/realesrgan-editor-boundary.test.mjs
       - name: Deterministic local photo and export authority regression
-        run: node --test tests/local-adjustments.test.mjs tests/local-history.test.mjs tests/local-adjustments-editor-wiring.test.mjs
+        run: node --test tests/local-adjustments.test.mjs tests/local-history.test.mjs tests/local-history-editor-wiring.test.mjs tests/local-adjustments-editor-wiring.test.mjs
       - name: Real canonical alpha brush opacity regression
         run: |
           mkdir -p .test-cache/editor-mask
