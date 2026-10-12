@@ -4,6 +4,9 @@ on:
     branches: ["main"]
     paths:
       - 'src/pages/Editor.jsx'
+      - 'src/components/editor/local/LocalAdjustmentsPanel.jsx'
+      - 'src/lib/local-editor/localAdjustments.js'
+      - 'tests/local-adjustments.test.mjs'
       - 'src/application/selection/contracts.ts'
       - 'src/application/selection/SelectionApplicationService.ts'
       - 'src/pages/Projects.jsx'
@@ -61,6 +64,7 @@ jobs:
             tests/editor-ux-progressive-disclosure.test.mjs \
             tests/bers-ux-system-redesign.test.mjs \
             tests/mask-photoshop-controls.test.mjs \
+            tests/local-adjustments.test.mjs \
             tests/editor-canonical-boundary.test.mjs \
             tests/editor-zero-object-navigation.test.mjs \
             tests/editor-orthogonal-transform-ui.test.mjs \
