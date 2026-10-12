@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { performanceMonitor } from '@/lib/performance/performanceMonitor';
 import { useAdaptiveGestures } from '@/components/adaptive/AdaptiveGestures';
 import { usePlatformProfile } from '@/lib/platform/PlatformManager';
@@ -123,17 +123,24 @@ function CropOverlay({ crop }) {
   );
 }
 
-export default function ImageCanvas({ imageUrl, objects, selectedId, hiddenObjectIds = new Set(), onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer, maskOverlayVisible = true, maskOverlayColor = 'teal', maskOverlayOpacity = 45 }) {
+export default function ImageCanvas({ imageUrl, objects, selectedId, hiddenObjectIds = new Set(), onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer, maskOverlayVisible = true, maskOverlayColor = 'teal', maskOverlayOpacity = 45, brushSize = 24 }) {
   const gestures = useAdaptiveGestures({ onSwipeLeft: onRedo, onSwipeRight: onUndo });
   const renderer = adaptiveRenderer(usePlatformProfile());
   const drawing = useRef(false);
+  const [brushCursor, setBrushCursor] = useState(null);
   const interactive = Boolean(selection || cropSource);
+  const brushActive = Boolean(selection && (selection.mode === 'BRUSH_ADD' || selection.mode === 'BRUSH_SUBTRACT'));
   const pointer = (phase) => (event) => {
     if (!interactive) return;
     event.preventDefault(); event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (brushActive && (phase === 'down' || phase === 'move')) {
+      setBrushCursor({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+    } else if (!brushActive) {
+      setBrushCursor(null);
+    }
     if (phase === 'down') { drawing.current = true; event.currentTarget.setPointerCapture(event.pointerId); }
     if (phase === 'move' && !drawing.current) return;
-    const rect = event.currentTarget.getBoundingClientRect();
     if (cropSource && onCropPointer) {
       const x = Math.max(0, Math.min(cropSource.sourceWidth - 1, Math.floor((event.clientX - rect.left) / rect.width * cropSource.sourceWidth)));
       const y = Math.max(0, Math.min(cropSource.sourceHeight - 1, Math.floor((event.clientY - rect.top) / rect.height * cropSource.sourceHeight)));
@@ -144,10 +151,24 @@ export default function ImageCanvas({ imageUrl, objects, selectedId, hiddenObjec
     if (phase === 'up' || phase === 'cancel') drawing.current = false;
   };
   return (
-    <div className={`relative rounded-2xl overflow-hidden bg-muted select-none ${interactive ? 'touch-none' : ''}`} {...(!interactive ? gestures.handlers : {})} onPointerDown={pointer('down')} onPointerMove={pointer('move')} onPointerUp={pointer('up')} onPointerCancel={pointer('cancel')}>
+    <div className={`relative rounded-2xl overflow-hidden bg-muted select-none ${interactive ? 'touch-none' : ''}`} {...(!interactive ? gestures.handlers : {})} onPointerDown={pointer('down')} onPointerMove={pointer('move')} onPointerUp={pointer('up')} onPointerCancel={pointer('cancel')} onPointerLeave={() => setBrushCursor(null)}>
       <div className="relative" style={gestures.style}>
       <img src={imageUrl} alt="Project" decoding={renderer.decoding} fetchPriority="high" style={{ imageRendering: renderer.imageRendering }} onLoad={(event) => { if (event.currentTarget.naturalWidth * event.currentTarget.naturalHeight > 2000000) performanceMonitor.markLargeDecode(); }} className="w-full h-auto block" draggable={false} />
       {maskOverlayVisible && <SelectionOverlay selection={selection} overlayColor={maskOverlayColor} overlayOpacity={maskOverlayOpacity} />}
+      {brushActive && brushCursor && (
+        <div
+          data-mask-brush-cursor="true"
+          className="pointer-events-none absolute z-10 rounded-full border border-primary bg-primary/10 shadow-[0_0_0_1px_rgba(255,255,255,0.75)]"
+          style={{
+            left: brushCursor.x,
+            top: brushCursor.y,
+            width: brushSize * 2,
+            height: brushSize * 2,
+            transform: 'translate(-50%, -50%)',
+          }}
+          aria-hidden="true"
+        />
+      )}
       <PolygonPreview selection={selection} />
       <ShapePreview selection={selection} onHandlePointer={onShapeHandlePointer} />
       <CropOverlay crop={crop} />
