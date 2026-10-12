@@ -42,6 +42,16 @@ test('partial brush opacity produces real bounded alpha that survives undo, redo
   assert.equal(persisted[0].metadata.coordinateSpace, 'ORIGINAL');
 });
 
+test('many pointer samples in one stroke respect the opacity ceiling, but a new stroke can build up coverage', () => {
+  const { service, point, view } = harness();
+  const first = service.brush({ points: [point, point, point, point], radius: 2, hardness: 1, opacity: .5, view });
+  assert.equal(first.alpha[8 * 16 + 8], 128, 'opacity is applied once per stroke, not once per pointer sample');
+  const second = service.brush({ points: [point], radius: 2, hardness: 1, opacity: .5, view });
+  assert.equal(second.alpha[8 * 16 + 8], 192, 'subsequent strokes can progressively build alpha');
+  assert.equal(service.undo().alpha[8 * 16 + 8], 128);
+  assert.equal(service.redo().alpha[8 * 16 + 8], 192);
+});
+
 test('subtract brush respects opacity and never underflows mask alpha', () => {
   const { service, point, view } = harness();
   service.brush({ points: [point], radius: 2, hardness: 1, view });
