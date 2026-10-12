@@ -80,8 +80,9 @@ test('annotation and clone stamp pointer tools are mutually exclusive', () => {
 });
 
 test('individual delete and clear actions are Core-independent, and the PNG is explicitly flattened', () => {
-  assert.match(parent, /onDelete=\{index => updateAnnotations\(annotations\.filter\(\(_, i\) => i !== index\)\)\}/);
-  assert.match(parent, /onClear=\{\(\) => updateAnnotations\(\[\]\)\}/);
+  assert.match(parent, /onDelete=\{deleteAnnotation\}/);
+  assert.match(parent, /updateAnnotations\(annotations\.filter\(\(_, i\) => i !== index\)\)/);
+  assert.match(parent, /onClear=\{\(\) => \{ updateAnnotations\(\[\]\); setSelectedAnnotationIndex\(null\); \}\}/);
   assert.match(parent, /Local edits do not mutate the BERS project or its Core history/);
   assert.match(controls, /flattened/);
   assert.match(parent, /anchor\.download = safeFilename/);
