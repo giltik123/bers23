@@ -172,6 +172,72 @@ try {
   assert.deepEqual(await readProjectState(projectId), initial, 'local PNG editing must never mutate canonical Core Project');
   assert.equal(providerCalls, 0, 'local image editing must never call AI providers');
   assert.deepEqual(diagnostics.localExecutionRequests, [], 'local PNG editing must not manufacture Core execution tickets');
+
+  // New precision controls must modify the rendered pixels, support unified
+  // Undo, and not mutate the protected Core Project.
+  await localLab.getByText('Tone curve', { exact: true }).click();
+  const curveMidpoint = localLab.getByRole('slider', { name: 'Curve Midtones' });
+  await curveMidpoint.fill('200');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data[0] > 94;
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+
+  await localLab.getByText('Selective HSL', { exact: true }).click();
+  await localLab.getByRole('combobox', { name: 'Selective HSL color range' }).selectOption('blue');
+  const selectiveSaturation = localLab.getByRole('slider', { name: 'Selective Saturation' });
+  await selectiveSaturation.fill('-90');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const sample = canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data;
+    return sample && (sample[0] !== 94 || sample[1] !== 146 || sample[2] !== 198);
+  }, null, { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+
+  // A nonuniform image proves the manual clone tool copies actual user-chosen
+  // source pixels. The same exact output must arrive in the downloaded PNG.
+  const stampRgba = Buffer.alloc(12 * 8 * 4);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 12; x++) {
+    const i = (y * 12 + x) * 4;
+    stampRgba[i] = x < 4 ? 255 : 0;
+    stampRgba[i + 1] = 0;
+    stampRgba[i + 2] = x < 4 ? 0 : 255;
+    stampRgba[i + 3] = 255;
+  }
+  const stampPng = await sharp(stampRgba, { raw: { width: 12, height: 8, channels: 4 } }).png().toBuffer();
+  await page.locator('input[aria-label="Choose a local photo without uploading it"]').setInputFiles({
+    name: 'r3e-stamp.png', mimeType: 'image/png', buffer: stampPng,
+  });
+  await localLab.getByText('r3e-stamp.png', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await localLab.getByText('Manual clone stamp', { exact: true }).click();
+  await localLab.getByRole('button', { name: 'Pick source' }).click();
+  const stampCanvas = localLab.getByRole('img', { name: 'Locally edited photo preview' });
+  await stampCanvas.scrollIntoViewIfNeeded();
+  const stampRect = await stampCanvas.boundingBox();
+  assert(stampRect && stampRect.width > 4 && stampRect.height > 4, 'stamp preview must offer a real pointer surface');
+  await stampCanvas.click({ position: { x: stampRect.width * 2.5 / 12, y: stampRect.height * 4.5 / 8 } });
+  await localLab.getByText(/Source selected/).waitFor({ state: 'visible', timeout: 10_000 });
+  await stampCanvas.click({ position: { x: stampRect.width * 7.5 / 12, y: stampRect.height * 4.5 / 8 } });
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const sample = canvas?.getContext('2d')?.getImageData(7, 4, 1, 1).data;
+    return sample && sample[0] === 255 && sample[1] === 0 && sample[2] === 0 && sample[3] === 255;
+  }, null, { timeout: 10_000 });
+  const stampDownloadPending = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const stampDownload = await stampDownloadPending;
+  const stampBytes = await fs.readFile(await stampDownload.path());
+  const stampResult = await sharp(stampBytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([...stampResult.data.subarray((4 * 12 + 7) * 4, (4 * 12 + 7) * 4 + 4)], [255, 0, 0, 255], 'manual clone stroke must survive exact full-resolution local PNG export');
+  assert.deepEqual(await readProjectState(projectId), initial, 'local clone editing must not mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'precision local tools must never contact an AI provider');
+  assert.deepEqual(diagnostics.localExecutionRequests, [], 'precision local tools must never issue Core execution tickets');
+
   await page.getByRole('button', { name: 'Prompt', exact: true }).click();
 
   // Start Selection without invoking Smart Select, switch immediately to deterministic manual Add,
