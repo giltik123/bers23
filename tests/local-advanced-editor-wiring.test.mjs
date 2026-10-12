@@ -17,7 +17,9 @@ test('advanced controls are visible with real onChange handlers, outputs and res
   assert.match(controls, /Manual clone stamp/);
   assert.match(controls, /aria-label=\{'Curve ' \+ point\.label\} type="range"/);
   assert.match(controls, /onChange=\{event => editCurve\(point\.key, Number\(event\.target\.value\)\)\}/);
-  assert.match(controls, /onAdvancedChange\(\{\s*\.\.\.advanced, curve:/);
+  assert.match(controls, /const editCurve = \(key, value\) => onAdvancedChange\(curveChannel === 'rgb'/);
+  assert.match(controls, /\? \{ \.\.\.advanced, curve: \{ \.\.\.advanced\.curve, \[key\]: value \} \}/);
+  assert.match(controls, /channelCurves: \{/);
   assert.match(controls, /aria-label="Selective HSL color range"/);
   assert.match(controls, /onChange=\{event => editHsl\(control\.key, Number\(event\.target\.value\)\)\}/);
   assert.match(controls, /Reset tone curve/);
@@ -121,4 +123,18 @@ test('gradient mask is a real local pixel blend with bounded inputs and transpar
   assert.match(browserE2e, /getImageData\(0, 4, 1, 1\)\.data\[0\] === 44/);
   assert.match(browserE2e, /getImageData\(11, 4, 1, 1\)\.data\[0\] === 94/);
   assert.match(browserE2e, /getByRole\('button', \{ name: 'Clear gradient mask' \}\)\.click\(\)/);
+});
+
+
+test('independent RGB tone curves have real channel selector, matching graph, per-channel reset and Chrome pixel acceptance', () => {
+  assert.match(controls, /aria-label="Tone curve channel"/);
+  assert.match(controls, /LOCAL_CURVE_CHANNELS\.map\(channel =>/);
+  assert.match(controls, /const visibleCurve = curveChannel === 'rgb' \? advanced\.curve : advanced\.channelCurves\[curveChannel\]/);
+  assert.match(controls, /advanced\.channelCurves\[curveChannel\], \[key\]: value/);
+  assert.match(controls, /channelCurves: \{ \.\.\.advanced\.channelCurves, \[curveChannel\]: LOCAL_CURVE_DEFAULT \}/);
+  assert.match(engine, /export const LOCAL_CURVE_CHANNELS = Object\.freeze\(\['rgb', 'red', 'green', 'blue'\]\)/);
+  assert.match(engine, /channelLuts = \['red', 'green', 'blue'\]\.map/);
+  assert.match(engine, /output\[i \+ channel\] = channelLuts\[channel\] \? channelLuts\[channel\]\[masterValue\] : masterValue/);
+  assert.match(browserE2e, /getByRole\('combobox', \{ name: 'Tone curve channel' \}\)\.selectOption\('red'\)/);
+  assert.match(browserE2e, /getImageData\(6, 4, 1, 1\)/);
 });
