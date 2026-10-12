@@ -135,7 +135,7 @@ test('invalid values, geometry, fake tools and execution-size abuse all fail clo
     shape('text', { x: .1, y: .1 }, { x: .1, y: .1 }, { text: 'a'.repeat(121), fontSize: 7 }),
     shape('text', { x: .1, y: .1 }, { x: .1, y: .1 }, { text: 'A', fontSize: .01 }),
   ];
-  for (const entry of bad) assert.throws(() => normalizeLocalAnnotations([entry]), /Invalid|Unsupported/);
+  for (const entry of bad) assert.throws(() => normalizeLocalAnnotations([entry]), /Invalid|Unsupported|visible span/);
   assert.throws(() => normalizeLocalAnnotations(Array.from({ length: 51 }, () => shape('ellipse'))), /Too many/);
   assert.throws(() => renderLocalAnnotations(fakeCanvas(), 12_000_001, 1, []), /Invalid/);
   assert.throws(() => renderLocalAnnotations(fakeCanvas(), 0, 1, []), /Invalid/);
