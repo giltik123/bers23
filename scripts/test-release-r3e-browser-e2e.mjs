@@ -303,10 +303,23 @@ try {
   assert.equal(await localLab.getByRole('button', { name: 'Delete annotation 1' }).count(), 0, 'individual annotation deletion must take effect');
   await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
   await localLab.getByRole('button', { name: 'Delete annotation 1' }).waitFor({ state: 'visible' });
+  // Drag actual arrow geometry over the interactive overlay; no center-button
+  // shortcut. Pointer coordinates are normalized and must reach the saved list.
+  await localLab.getByRole('button', { name: 'Arrow', exact: true }).click();
+  const drawSurface = localLab.locator('canvas[data-local-annotation-surface="true"]');
+  await drawSurface.scrollIntoViewIfNeeded();
+  const drawRect = await drawSurface.boundingBox();
+  assert(drawRect && drawRect.width > 8 && drawRect.height > 5, 'annotation canvas must accept pointer geometry');
+  await page.mouse.move(drawRect.x + drawRect.width * .2, drawRect.y + drawRect.height * .3);
+  await page.mouse.down();
+  await page.mouse.move(drawRect.x + drawRect.width * .85, drawRect.y + drawRect.height * .7, { steps: 7 });
+  await page.mouse.up();
+  await localLab.getByRole('button', { name: 'Delete annotation 2' }).waitFor({ state: 'visible', timeout: 10_000 });
+
   await localLab.getByRole('button', { name: 'Text', exact: true }).click();
   await localLab.getByRole('textbox', { name: 'Annotation text' }).fill('Retouch this area');
   await localLab.getByRole('button', { name: 'Add centered text' }).click();
-  await localLab.getByRole('button', { name: 'Delete annotation 2' }).waitFor({ state: 'visible' });
+  await localLab.getByRole('button', { name: 'Delete annotation 3' }).waitFor({ state: 'visible' });
   assert.deepEqual(await readProjectState(projectId), initial, 'local annotations must never mutate canonical Core Project');
   assert.equal(providerCalls, 0, 'annotation drawing must never invoke an AI provider');
 
