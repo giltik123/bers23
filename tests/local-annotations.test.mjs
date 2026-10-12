@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   LOCAL_ANNOTATION_TOOLS, LOCAL_ANNOTATION_COLORS, MAX_LOCAL_ANNOTATIONS,
   MAX_LOCAL_ANNOTATION_TEXT, normalizeLocalAnnotations,
-  renderLocalAnnotations, centeredLocalAnnotation,
+  renderLocalAnnotations, centeredLocalAnnotation, moveLocalAnnotation, editLocalAnnotation,
 } from '../src/lib/local-editor/localAnnotations.js';
 
 const options = { color: '#ef4444', thickness: 1, opacity: 1, fontSize: 7, text: 'Edited photo' };
@@ -148,4 +148,45 @@ test('restores canvas state even if a draw method throws', () => {
   ctx.stroke = () => { throw new Error('Fake canvas failure'); };
   assert.throws(() => renderLocalAnnotations(ctx, 100, 100, [shape('rectangle')]), /Fake canvas failure/);
   assert.equal(events(ctx, 'restore').length, 1);
+});
+
+
+test('moving an annotation preserves size, direction and geometry while clamping at image edges', () => {
+  const original = shape('arrow', { x: .2, y: .3 }, { x: .7, y: .6 });
+  const moved = moveLocalAnnotation(original, .1, -.1);
+  assert.deepEqual(moved.from, { x: .3, y: .2 });
+  assert.deepEqual(moved.to, { x: .8, y: .5 });
+  assert.deepEqual(original.from, { x: .2, y: .3 }, 'input must remain unchanged');
+  const edge = moveLocalAnnotation(original, 1, 1);
+  assert.deepEqual(edge.from, { x: .5, y: .7 });
+  assert.deepEqual(edge.to, { x: 1, y: 1 });
+  const unchanged = moveLocalAnnotation(original, 0, 0);
+  assert.deepEqual(unchanged, normalizeLocalAnnotations([original])[0]);
+});
+
+test('selected text and shape annotations retain their editable type and other properties', () => {
+  const label = shape('text', { x: .25, y: .3 }, { x: .25, y: .3 }, { text: 'Before', fontSize: 5 });
+  const updated = editLocalAnnotation(label, { text: 'After', color: '#0f766e', fontSize: 10 });
+  assert.equal(updated.text, 'After');
+  assert.equal(updated.color, '#0f766e');
+  assert.equal(updated.fontSize, 10);
+  assert.deepEqual(updated.from, label.from);
+  const outline = editLocalAnnotation(shape('rectangle'), { opacity: .4, thickness: 2, color: '#ffffff' });
+  assert.equal(outline.opacity, .4);
+  assert.equal(outline.thickness, 2);
+  assert.equal(outline.color, '#ffffff');
+  assert.equal(outline.type, 'rectangle');
+});
+
+test('editing/movement enforce bounded immutable data and reject extra dangerous properties', () => {
+  const rect = shape('rectangle');
+  for (const move of [[NaN, 0], [0, Infinity], [1.1, 0], [0, -1.01]]) {
+    assert.throws(() => moveLocalAnnotation(rect, ...move), /Invalid/);
+  }
+  for (const patch of [
+    { innerHTML: '<script/>' }, { type: 'text' }, { fontSize: 12 }, { text: 'oops' },
+    { color: 'url(evil)' }, { opacity: 0 }, { opacity: NaN }, { thickness: -2 },
+    null, ['wrong'],
+  ]) assert.throws(() => editLocalAnnotation(rect, patch), /Invalid|Unsupported|Text properties/);
+  assert.deepEqual(rect.from, { x: .1, y: .2 });
 });
