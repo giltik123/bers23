@@ -140,6 +140,12 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const endPointerHistoryGesture = event => {
     if (event.target instanceof HTMLInputElement && event.target.type === 'range') endHistoryGesture(event);
   };
+  const endKeyboardHistoryGesture = event => {
+    if (event.target instanceof HTMLInputElement && event.target.type === 'range'
+        && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
+      endHistoryGesture(event);
+    }
+  };
   const currentEntry = history.entries[history.index];
   const advanced = currentEntry.__advanced || LOCAL_ADVANCED_DEFAULTS;
   const annotations = currentEntry.__annotations || [];
@@ -605,7 +611,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       onPointerUpCapture={endPointerHistoryGesture}
       onPointerCancelCapture={endPointerHistoryGesture}
       onKeyDownCapture={beginKeyboardHistoryGesture}
-      onKeyUpCapture={endHistoryGesture}
+      onKeyUpCapture={endKeyboardHistoryGesture}
       onFocusCapture={beginTextHistoryGesture}
       onBlurCapture={endHistoryGesture}
     >
