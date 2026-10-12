@@ -166,10 +166,11 @@ try {
   await page.mouse.up();
   const draggedBrightness = await brightness.inputValue();
   assert.notEqual(draggedBrightness, '0', 'real pointer drag must modify the brightness');
-  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
-  assert.equal(await brightness.inputValue(), '0', 'one Undo must restore pre-drag brightness after many pointer samples');
-  await localLab.getByRole('button', { name: 'Redo', exact: true }).click();
-  assert.equal(await brightness.inputValue(), draggedBrightness, 'Redo must restore the entire one-gesture brightness adjustment');
+  assert.match(await localLab.getByLabel('Local undo history position').innerText(), /Edit 1 of 1/, 'one drag must create only one history entry');
+  await page.keyboard.press('Control+z');
+  assert.equal(await brightness.inputValue(), '0', 'one Ctrl+Z must restore pre-drag brightness after many pointer samples');
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await brightness.inputValue(), draggedBrightness, 'Ctrl+Shift+Z must redo the whole slider gesture');
   await brightness.fill('40');
   assert.equal(await brightness.inputValue(), '40', 'local brightness slider must drive real pixel settings');
   await page.waitForFunction(() => {
