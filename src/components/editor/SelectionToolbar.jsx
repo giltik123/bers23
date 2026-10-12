@@ -37,8 +37,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
 
       {hasSelectedMask ? (
         <details className="rounded-2xl border border-border/70 bg-card p-3" open>
-          <summary className="cursor-pointer select-none text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-            Adjust selected area <span className="font-normal text-muted-foreground">· exposure, color, levels</span>
+          <summary className="cursor-pointer select-none text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Adjust selected area <span className="font-normal text-muted-foreground">· exposure, color, levels</span>
           </summary>
           <p className="mt-3 text-xs leading-5 text-muted-foreground">
             These adjustments affect only your saved mask. Change a value, choose Preview, then Accept or Discard the result.
