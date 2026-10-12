@@ -1124,10 +1124,15 @@ export default function Editor() {
         onApplyLevels={() => applyMaskedLevels()}
       />}
       </section>}
+        {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && (
+          <AdaptivePanel title="Masks & objects">
+            <ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} />
+          </AdaptivePanel>
+        )}
         </aside>
       </div>
 
-      {objects.length > 0 && !orthogonalTransformingMode && !cropInteractionActive && !resizeInteractionActive && !pendingResult && <AdaptivePanel title="Objects"><ObjectPanel objects={objects} onSelect={(obj) => selectObject(obj?.id ?? null)} hidden={hiddenObjectIds} onToggleHidden={toggleHiddenObject} /></AdaptivePanel>}
+
 
       {objects.length === 0 && !pendingResult && !cropInteractionActive && !resizeInteractionActive && (
         <p className="text-[11px] text-muted-foreground text-center">Edit the whole image or use the selection tool to mark a region. Automatic object detection is not available in this version.</p>
