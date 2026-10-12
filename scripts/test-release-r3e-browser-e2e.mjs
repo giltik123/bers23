@@ -173,6 +173,50 @@ try {
   assert.equal(providerCalls, 0, 'local image editing must never call AI providers');
   assert.deepEqual(diagnostics.localExecutionRequests, [], 'local PNG editing must not manufacture Core execution tickets');
 
+  // User-owned recipe: save original-bound reversible settings and vectors as
+  // JSON (never an image/upload), modify photo, restore exactly, then Undo
+  // the entire import as a single history step.
+  const recipeDownloadPending = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Save edit recipe' }).click();
+  const recipeDownload = await recipeDownloadPending;
+  assert.match(recipeDownload.suggestedFilename(), /\.bers-edit\.json$/);
+  const recipeBytes = await fs.readFile(await recipeDownload.path());
+  const recipeRecord = JSON.parse(recipeBytes.toString('utf8'));
+  assert.equal(recipeRecord.format, 'bers.local-photo-recipe');
+  assert.equal(recipeRecord.version, 1);
+  assert.equal(recipeRecord.source.width, 12);
+  assert.equal(recipeRecord.source.height, 8);
+  assert.match(recipeRecord.source.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(recipeRecord.edits.settings.brightness, 40);
+  assert.equal(Object.hasOwn(recipeRecord, 'pixels'), false, 'edit recipe must never bundle source image bytes');
+
+  await brightness.fill('10');
+  assert.equal(await brightness.inputValue(), '10');
+  await localLab.locator('input[aria-label="Choose BERS local recipe JSON"]').setInputFiles({
+    name: 'approved-original.bers-edit.json', mimeType: 'application/json', buffer: recipeBytes,
+  });
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[aria-label="Local Brightness"]');
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return input?.value === '40'
+      && canvas?.getContext('2d')?.getImageData(6, 4, 1, 1).data[0] === 94;
+  }, null, { timeout: 10_000 });
+  await localLab.getByText(/Edit recipe restored for this exact photo/).waitFor({ state: 'visible' });
+  await localLab.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await brightness.inputValue(), '10', 'Undo must reverse entire recipe import');
+  await localLab.getByRole('button', { name: 'Redo', exact: true }).click();
+  assert.equal(await brightness.inputValue(), '40', 'Redo must restore imported recipe state');
+  await localLab.locator('input[aria-label="Choose BERS local recipe JSON"]').setInputFiles({
+    name: 'wrong-photo.bers-edit.json', mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({
+      ...recipeRecord, source: { ...recipeRecord.source, sha256: 'a'.repeat(64) },
+    })),
+  });
+  await localLab.getByRole('alert').getByText(/different original image/).waitFor({ state: 'visible' });
+  assert.equal(await brightness.inputValue(), '40', 'invalid recipe import must never mutate settings');
+  assert.deepEqual(await readProjectState(projectId), initial, 'portable edit recipe must not mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'portable edit recipe must never call an AI provider');
+
   // New precision controls must modify the rendered pixels, support unified
   // Undo, and not mutate the protected Core Project.
   await localLab.getByText('Tone curve', { exact: true }).click();
