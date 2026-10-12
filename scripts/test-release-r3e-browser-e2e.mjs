@@ -423,6 +423,9 @@ try {
   // Existing vector annotations must be editable after placement. Verify
   // actual stored text/color and shared Undo rather than simply moving sliders.
   await localLab.getByRole('button', { name: 'Select annotation 1' }).click();
+  const selectionGuide = localLab.locator('[data-local-annotation-selection="true"]');
+  await selectionGuide.waitFor({ state: 'visible', timeout: 10_000 });
+  assert.equal(await selectionGuide.evaluate(element => getComputedStyle(element).pointerEvents), 'none', 'editing selection guide must never intercept drawing gestures');
   await localLab.getByRole('button', { name: 'Select annotation 3' }).click();
   const selectedProperties = localLab.getByRole('region', { name: 'Selected annotation properties' });
   await selectedProperties.getByRole('textbox', { name: 'Selected annotation text' }).fill('Final review');
