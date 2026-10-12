@@ -23,6 +23,7 @@ export const LOCAL_CONTROLS = Object.freeze([
   { key: 'green', label: 'Green channel', min: -100, max: 100, step: 1, category: 'Color' },
   { key: 'blue', label: 'Blue channel', min: -100, max: 100, step: 1, category: 'Color' },
   { key: 'vignette', label: 'Vignette', min: 0, max: 100, step: 1, category: 'Effects' },
+  { key: 'grain', label: 'Film grain', min: 0, max: 100, step: 1, category: 'Effects' },
   { key: 'soften', label: 'Soften', min: 0, max: 100, step: 1, category: 'Effects' },
   { key: 'sharpen', label: 'Sharpen', min: 0, max: 100, step: 1, category: 'Effects' },
   { key: 'pixelate', label: 'Pixelate block (px)', min: 0, max: 24, step: 1, category: 'Effects' },
@@ -33,7 +34,7 @@ export const LOCAL_CONTROLS = Object.freeze([
 export const LOCAL_DEFAULTS = Object.freeze({
   exposure: 0, brightness: 0, contrast: 0, highlights: 0, shadows: 0, gamma: 1, whites: 0, blacks: 0,
   saturation: 0, vibrance: 0, warmth: 0, tint: 0, hue: 0, red: 0, green: 0, blue: 0,
-  vignette: 0, soften: 0, sharpen: 0, pixelate: 0, posterize: 0,
+  vignette: 0, grain: 0, soften: 0, sharpen: 0, pixelate: 0, posterize: 0,
   thresholdCutoff: 128, effect: 'none',
 });
 
@@ -43,6 +44,7 @@ export const LOCAL_EFFECTS = Object.freeze([
   { value: 'sepia', label: 'Sepia' },
   { value: 'invert', label: 'Invert colors' },
   { value: 'threshold', label: 'Two-tone threshold' },
+  { value: 'solarize', label: 'Solarize' },
 ]);
 
 export const LOCAL_PRESETS = Object.freeze([
@@ -54,6 +56,7 @@ export const LOCAL_PRESETS = Object.freeze([
   { id: 'film', label: 'Vintage film', settings: { effect: 'sepia', contrast: -9, vignette: 40 } },
   { id: 'matte', label: 'Matte blacks', settings: { blacks: 28, highlights: -16, saturation: -12 } },
   { id: 'cinematic', label: 'Cinematic cool', settings: { blue: 13, red: -7, shadows: 12, whites: -10, contrast: 10 } },
+  { id: 'analog', label: 'Analog grain', settings: { grain: 27, warmth: 9, contrast: -6 } },
 ]);
 
 const definitions = new Map(LOCAL_CONTROLS.map(control => [control.key, control]));
@@ -230,6 +233,10 @@ export function applyLocalAdjustments(source, width, height, input = {}) {
       r = rr; g = gg; b = bb;
     } else if (s.effect === 'invert') {
       r = 255 - r; g = 255 - g; b = 255 - b;
+    } else if (s.effect === 'solarize') {
+      r = r > 128 ? 255 - r : r;
+      g = g > 128 ? 255 - g : g;
+      b = b > 128 ? 255 - b : b;
     }
     if (s.posterize > 1) {
       const steps = s.posterize - 1;
@@ -241,6 +248,14 @@ export function applyLocalAdjustments(source, width, height, input = {}) {
       const distance = Math.hypot((x - cx) / cx, (y - cy) / cy) / Math.SQRT2;
       const darken = 1 - s.vignette / 100 * Math.max(0, (distance - .2) / .8) ** 1.7;
       r *= darken; g *= darken; b *= darken;
+    }
+    if (s.grain) {
+      // Coordinate-hashed, stable across preview renders and export. No Math.random()
+      // and no writes to source pixels. Luma grain preserves the underlying hue.
+      const hash = ((Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263)) >>> 0);
+      const scrambled = Math.imul(hash ^ (hash >>> 13), 1274126177) >>> 0;
+      const delta = ((scrambled / 4294967295) * 2 - 1) * s.grain * .6;
+      r += delta; g += delta; b += delta;
     }
     output[i] = byte(r); output[i + 1] = byte(g); output[i + 2] = byte(b);
   }
