@@ -40,7 +40,7 @@ async function sha256(bytes: Uint8Array): Promise<string> {
 
 /**
  * Prepares a preview file for *explicit* user download; does not invoke
- * canvas / browser color conversion or the legacy Core.UploadFile endpoint.
+ * canvas / browser color conversion or any Core-owned upload endpoint.
  */
 export async function prepareEditorLosslessPngExportRND(input: Readonly<{
   sourceArtifactId: string;
