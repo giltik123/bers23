@@ -58,7 +58,7 @@ test('R3c stale recovery remains fail closed with no Retry rerun provider cloud 
   assert.match(harness, /diagnostics\.financialRequests,\s*\[\]/);
   assert.match(harness, /diagnostics\.externalBrowserRequests,\s*\[\]/);
   assert.match(harness, /diagnostics\.legacyRequests,\s*\[\]/);
-  assert.match(harness, /getByRole\('button', \{ name: 'Retry'/);
+  assert.match(harness, /getByRole\('button', \{ name: 'Изменить \/ повторить'/);
   assert.match(harness, /R3_PROVIDER_BOUNDARY_MUST_NOT_BE_CALLED/);
   assert.match(recovery, /disarmRetry\(\);/);
   assert.match(recovery, /await reloadCanonicalProject\(\)/);
