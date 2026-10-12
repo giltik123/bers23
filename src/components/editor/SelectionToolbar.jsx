@@ -196,7 +196,7 @@ export default function SelectionToolbar({ selection, brushSize, onBrushSize, br
       <div className="flex flex-wrap gap-2">
         {modes.map(([id, label]) => <Button key={id} type="button" size="sm" aria-pressed={selection.mode === id} title={modeHints[id]} variant={selection.mode === id ? 'default' : 'outline'} disabled={busy} onClick={() => onMode(id)}>{label}</Button>)}
         {(selection.mode === 'BRUSH_ADD' || selection.mode === 'BRUSH_SUBTRACT') && <>
-        <label className="flex items-center gap-2 px-2 text-xs">Brush Size
+        <label className="flex items-center gap-2 px-2 text-xs">Brush radius
           <input aria-label="Brush Size" aria-valuetext={`${brushSize} pixels`} type="range" min="2" max="96" value={brushSize} disabled={busy || (selection.mode !== 'BRUSH_ADD' && selection.mode !== 'BRUSH_SUBTRACT')} onChange={(event) => onBrushSize(Number(event.target.value))} />
           <span aria-hidden="true">{brushSize}px</span>
         </label>
