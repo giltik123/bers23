@@ -310,6 +310,45 @@ try {
   assert.deepEqual(await readProjectState(projectId), initial, 'local annotations must never mutate canonical Core Project');
   assert.equal(providerCalls, 0, 'annotation drawing must never invoke an AI provider');
 
+  // Manual color-matched repair samples a clean source and target surroundings,
+  // then repairs an isolated dark blemish without any network or AI execution.
+  const repairRgba = Buffer.alloc(11 * 7 * 4);
+  for (let y = 0; y < 7; y++) for (let x = 0; x < 11; x++) {
+    const i = (y * 11 + x) * 4;
+    const tone = (x === 8 && y === 3) ? 0 : (x < 5 ? 70 : 130);
+    repairRgba[i] = tone;
+    repairRgba[i + 1] = tone;
+    repairRgba[i + 2] = tone;
+    repairRgba[i + 3] = 255;
+  }
+  const repairPng = await sharp(repairRgba, { raw: { width: 11, height: 7, channels: 4 } }).png().toBuffer();
+  await page.locator('input[aria-label="Choose a local photo without uploading it"]').setInputFiles({
+    name: 'r3e-repair.png', mimeType: 'image/png', buffer: repairPng,
+  });
+  await localLab.getByText('r3e-repair.png', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await localLab.getByRole('combobox', { name: 'Local retouch method' }).selectOption('color-match');
+  await localLab.getByRole('button', { name: 'Pick source' }).click();
+  const repairCanvas = localLab.getByRole('img', { name: 'Locally edited photo preview' });
+  await repairCanvas.scrollIntoViewIfNeeded();
+  const repairBox = await repairCanvas.boundingBox();
+  assert(repairBox && repairBox.width > 4, 'repair canvas must be an actual interactive image');
+  await repairCanvas.click({ position: { x: repairBox.width * 2.5 / 11, y: repairBox.height * 3.5 / 7 } });
+  await repairCanvas.click({ position: { x: repairBox.width * 8.5 / 11, y: repairBox.height * 3.5 / 7 } });
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    const color = canvas?.getContext('2d')?.getImageData(8, 3, 1, 1).data;
+    return color && color[0] === 130 && color[1] === 130 && color[2] === 130 && color[3] === 255;
+  }, null, { timeout: 10_000 });
+  const repairDownloadPending = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const repairDownload = await repairDownloadPending;
+  const repairBytes = await fs.readFile(await repairDownload.path());
+  const repairPixels = await sharp(repairBytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([...repairPixels.data.subarray((3 * 11 + 8) * 4, (3 * 11 + 8) * 4 + 4)], [130, 130, 130, 255], 'color-matched repair must transfer actual neighboring tone into full-resolution PNG');
+  assert.deepEqual(await readProjectState(projectId), initial, 'manual tonal retouch must not mutate Core Project');
+  assert.equal(providerCalls, 0, 'manual tonal retouch must never invoke AI providers');
+  assert.deepEqual(diagnostics.localExecutionRequests, [], 'manual tonal retouch must never create Core execution tickets');
+
   await page.getByRole('button', { name: 'Prompt', exact: true }).click();
 
   // Start Selection without invoking Smart Select, switch immediately to deterministic manual Add,
