@@ -1,0 +1,98 @@
+name: HSME-3.3d real expert evidence and canonical manifest
+
+on:
+  pull_request:
+    paths:
+      - 'server/core/training/HsmeAdapterMoeExpertPackSetV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertTrainingPreflightV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertProtectedTrainingRunV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertRealRunEvidenceV1.ts'
+      - 'server/core/training/HsmeAdapterMoeExpertRealRunEvidenceV1.test.mjs'
+      - '.github/workflows/hsme-3-3d-real-expert-evidence-manifest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-evidence:
+    name: real protected expert evidence to canonical manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck server
+        run: npm run server:typecheck
+
+      - name: Run real-expert evidence regressions
+        run: |
+          set -euo pipefail
+          mkdir -p .test-cache/hsme-3-3d
+          npx esbuild server/core/training/HsmeAdapterMoeExpertRealRunEvidenceV1.test.mjs \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/hsme-3-3d/real-expert-evidence.test.mjs \
+            --external:node:*
+          node --test .test-cache/hsme-3-3d/real-expert-evidence.test.mjs
+
+      - name: Prove exact preflight receipt and real-origin gates
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertRealRunEvidenceV1.ts
+          grep -F 'hsmeAdapterMoeExpertTrainingPreflightV1Digest(' "$SRC"
+          grep -F 'verifyTrainingPreflight(' "$SRC"
+          grep -F 'hsmeAdapterMoeExpertTrainingRunReceiptV1Digest(' "$SRC"
+          grep -F 'verifyTrainingRunReceipt(' "$SRC"
+          grep -F 'verifyRealProtectedRun(receipt,binding)' "$SRC"
+          grep -F 'REAL_EXPERT_PROTECTED_ORIGIN_UNVERIFIED' "$SRC"
+
+      - name: Prove canonical manifest is derived through HSME-3.2
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertRealRunEvidenceV1.ts
+          grep -F 'normalizeHsmeAdapterMoeExpertDeltaManifestV1({' "$SRC"
+          grep -F 'hsmeAdapterMoeExpertDeltaManifestV1Digest(' "$SRC"
+          grep -F 'trainingReceiptSha256:trainingRunReceiptSha256' "$SRC"
+          grep -F 'requiresSharedBaseline:true' "$SRC"
+          grep -F 'containsFullBackboneWeights:false' "$SRC"
+          grep -F 'standaloneExecutionAllowed:false' "$SRC"
+          grep -F 'trainingExecutionAllowed:false' "$SRC"
+
+      - name: Prove evidence remains non-admitting and non-promoting
+        run: |
+          set -euo pipefail
+          SRC=server/core/training/HsmeAdapterMoeExpertRealRunEvidenceV1.ts
+          grep -F 'ADAPTER_MOE_EXPERT_REAL_RUN_READY_NOT_PACKED' "$SRC"
+          grep -F 'expertPackAdmissionAllowed:false' "$SRC"
+          grep -F 'prototypeAssemblyAllowed:false' "$SRC"
+          grep -F 'modelInstallAllowed:false' "$SRC"
+          grep -F 'modelFleetPromotionAllowed:false' "$SRC"
+          grep -F 'productionAuthorityGranted:false' "$SRC"
+          ! grep -nE "from ['\"]node:(fs|fs/promises|child_process)|writeFile|appendFile|rename\(|copyFile|unlink\(|rm\(|mkdir\(|createWriteStream|spawn\(|exec\(|execFile\(|fork\(|subprocess|shell:true|ModelFleet(Service|Client)|reserveCredits|spendCredits|fetch\(|https?://" "$SRC"
+
+      - name: Prove synthetic-blocked and attestation drift regressions
+        run: |
+          set -euo pipefail
+          TEST=server/core/training/HsmeAdapterMoeExpertRealRunEvidenceV1.test.mjs
+          grep -F 'synthetic-shaped completed receipt stays BLOCKED' "$TEST"
+          grep -F 'preflight and run-receipt exact origins are independently mandatory' "$TEST"
+          grep -F 'artifact attestation exact origin is mandatory' "$TEST"
+          grep -F 'artifact or license drift cannot alter the derived canonical manifest' "$TEST"
+          grep -F 'attestation digest drift and unknown authority widening fail closed' "$TEST"
+          grep -F 'run receipt cross-binding drift is invalid before real origin admission' "$TEST"
+
+      - name: Diff hygiene
+        run: git diff --check "$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})"..HEAD
