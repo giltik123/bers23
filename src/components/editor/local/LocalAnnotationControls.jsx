@@ -23,7 +23,7 @@ export default function LocalAnnotationControls({
       <header>
         <h3 className="text-lg font-semibold">Text & shapes</h3>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Draw arrows and outlines or place a short label on your photo. Every item stays editable in local history until it is flattened into a downloaded PNG.
+          Draw arrows and outlines or place a short label on your photo. Items stay separate until export, so you can remove them individually or use Undo.
         </p>
       </header>
       <div role="group" aria-label="Annotation drawing tools" className="flex flex-wrap gap-2">
