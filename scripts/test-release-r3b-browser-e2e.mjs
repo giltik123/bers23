@@ -235,9 +235,9 @@ try {
   assert.equal(typeof coreResult.artifactId === 'string' && coreResult.artifactId.length > 0, true, 'Core-verified deterministic result must expose canonical FINAL artifact identity');
   diagnostics.deterministicEdit.coreResult = Object.freeze({ status: coreResult.status, verificationValid: coreResult.verification?.valid, artifactIdPresent: true });
 
-  const accept = page.getByRole('button', { name: 'Accept', exact: true });
+  const accept = page.getByRole('button', { name: 'Принять в историю', exact: true });
   await accept.waitFor({ state: 'visible', timeout: 20_000 });
-  const previewImage = await loadedImageEvidence(page, 'after', 8, 12, 20_000);
+  const previewImage = await loadedImageEvidence(page, 'Результат обработки до принятия', 8, 12, 20_000);
   diagnostics.deterministicEdit.previewImage = previewImage;
   assertLocalVerifiedPreview(previewImage, [8, 12], 'orthogonal-transform preview');
 
@@ -333,9 +333,9 @@ try {
   assert.equal(r3qCoreResult.status, 'SUCCESS');
   assert.equal(r3qCoreResult.verification?.valid, true);
 
-  const r3qAccept = page.getByRole('button', { name: 'Accept', exact: true });
+  const r3qAccept = page.getByRole('button', { name: 'Принять в историю', exact: true });
   await r3qAccept.waitFor({ state: 'visible', timeout: 20_000 });
-  const r3qPreviewImage = await loadedImageEvidence(page, 'after', 12, 8, 20_000);
+  const r3qPreviewImage = await loadedImageEvidence(page, 'Результат обработки до принятия', 12, 8, 20_000);
   assertLocalVerifiedPreview(r3qPreviewImage, [12, 8], 'R3q side-effect-fault Preview');
   assert.deepEqual(await readProjectState(projectId), redoState, 'R3q Preview must remain non-mutating before Accept');
 
@@ -392,7 +392,7 @@ try {
     1,
     `R3q must observe exactly one best-effort side-effect error: ${JSON.stringify(r3qConsole)}`,
   );
-  assert.equal(await page.getByRole('button', { name: 'Accept', exact: true }).count(), 0, 'accepted candidate must not remain pending after side-effect failure');
+  assert.equal(await page.getByRole('button', { name: 'Принять в историю', exact: true }).count(), 0, 'accepted candidate must not remain pending after side-effect failure');
 
   console.log('R3Q_ACCEPT_SIDE_EFFECT_ISOLATION_ACCEPTED', JSON.stringify({
     projectId,
