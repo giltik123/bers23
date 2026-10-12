@@ -84,3 +84,36 @@ Local precision adjustments now support four selectable tone-curve targets: **RG
 This is original browser-only CPU image processing, not an ICC-managed curve adjustment layer or Photoshop PSD compatibility. It works with the existing light/color controls, eight hue bands, local gradient mask, manual clone brush, combined undo history, before/after, and full-resolution PNG export. No Core write or AI call is involved.
 
 Regression tests exercise red-only changes without green/blue drift, master+independent channel ordering, null/malformed configuration rejection, alpha preservation, and targeted per-channel reset. The real Chrome/Postgres R3e acceptance was extended to change the Red-channel midpoint, inspect rendered RGBA values, reset only the active curve and verify return to previous pixels. Pending CI is not a pass, and production is unchanged.
+
+
+## Phase 4 — annotations and manual tonal repair (2026-10-12)
+
+### Why these additions
+
+After 23 photographic sliders, selective HSL, curves, gradients and an exact-pixel clone stamp, BERS needed **task-oriented** local editing, not another intimidating group of sliders:
+
+- Explain an edit to someone: add a short label, arrow, rectangle or ellipse.
+- Revise a label's color, text or position without deleting the photo or reopening a server-side Project.
+- Remove a small blemish on a flat background without AI: manually sample a clean region and optionally match its surrounding tone before copying texture.
+
+The design borrows the **separate vector overlays and flatten-only-on-export** pattern described in [bensitu/image-editor](https://github.com/bensitu/image-editor) and the selection/movement accessibility conventions found in [tldraw](https://github.com/tldraw/tldraw), but does **not** add either as a dependency. It uses only standard browser Canvas APIs and an original normalized geometry/validation module. Source code from third-party projects was not copied.
+
+The [GIMP Heal manual](https://docs.gimp.org/en_GB/gimp-tool-heal.html) and [GIMP developer healing algorithm notes](https://developer.gimp.org/core/algorithm/healing/) distinguish literal clone-stamping from true healing, which considers neighboring tones. Our optional **Color-matched repair** uses a **simpler 16-point ring sampler** around manually chosen source/target and a strict ±96 per-channel correction. It is **not** Poisson editing, patch synthesis or an AI restoration algorithm. It is intended for small defects on smooth areas; complex textures may require the ordinary exact clone or more careful manual work.
+
+### Implemented local tools
+
+**Text & shapes:** a separate \`src/lib/local-editor/localAnnotations.js\` module validates normalized geometry and renders arrows, outlined rectangles/ellipses and canvas text in a client-side overlay. The same renderer flattens objects onto a full-resolution PNG only after a user clicks **Download edited PNG**. It keeps the original RGBA pixels, project authorization and masks unchanged before export. The interface provides palette, line width, opacity, font size, short text field, mouse/touch drag, keyboard-centered insertion, list selection, per-item deletion and changes to existing annotation positions/properties. Every commit is part of the shared bounded 40-step local Undo/Redo. For performance and safety, at most 50 annotations with at most 120 printable characters of text each; coordinates, palette and dimensions are fail-closed.
+
+**Manual color-matched repair:** the same bounded clone-stroke geometry and 25M pixel-visit budget now also supports \`blendMode: 'color-match'\`. For each user-drawn stroke, a fixed 16-point source/target neighborhood estimate provides a capped RGB offset before alpha-weighted compositing from a frozen sampled image. This still requires a user-picked source, never unmasks transparent target pixels, has no AI provider call and offers an honest **Clone exact / Color-matched repair** choice.
+
+**Truthful limitations:** PNG export is flattened; it does not create editable PSD layers or a Core-owned FINAL. Annotations can be revised only while the local editing session remains open. Local color matching is not professional Heal or content-aware fill, and results on high-contrast edges may look imperfect. Larger edits still require approval for canonical persistence.
+
+### Added acceptance gates
+
+- \`tests/local-annotations.test.mjs\`: vector geometry in both directions, exact SVG/canvas coordinate mapping, alpha/style/text validation, malicious text rendered as inert Canvas glyphs, source immutability, keyboard-centered placement, normalized movement/style editing and hard bounds.
+- \`tests/local-annotations-editor-wiring.test.mjs\`: real pointer controls, touch mode, separate transparent overlay and final PNG flattening, shared Undo/Redo, edit/delete hooks and unchanged Core authority.
+- Existing \`tests/local-advanced-adjustments.test.mjs\`: side-by-side 8-bit pixel fixtures prove exact clone versus tone-matched repair, alpha preservation, shift bounds and malformed mode rejection.
+- Real Chrome/Postgres R3e acceptance now covers a rectangle that **changes downloaded PNG RGBA**, pointer-drawn arrow, text, per-item deletion and Undo, existing vector style/text movement, plus a sampled grey-tone blemish restored to precise [130,130,130,255] in both canvas and PNG, with no Core Project write or provider invocation.
+- Exact PR-head \`.github/workflows/editor-ux-clarity.yml\` runs pure pixel/vector/wiring suites plus production build; R3 browser release E2E changes are included in the workflow path filters. GitHub actions still need to **actually finish** before any merge/deploy claim.
+
+**Release rule:** keep Draft, do not merge/deploy unless all seven protected checks, real Chrome+Postgres workflows and relevant security checks succeed at a single unchanged head SHA. The known LaMa ONNX reproducibility drift is not resolved here.
