@@ -80,7 +80,8 @@ export function normalizeAdvancedSettings(input = {}) {
     throw new Error('Invalid RGB channel curves');
   }
   const channelCurves = Object.freeze(Object.fromEntries(['red', 'green', 'blue'].map(channel => {
-    const candidate = channelInput[channel] ?? LOCAL_CURVE_DEFAULT;
+    const candidate = Object.prototype.hasOwnProperty.call(channelInput, channel)
+      ? channelInput[channel] : LOCAL_CURVE_DEFAULT;
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)
         || Object.keys(candidate).some(key => !CURVE_KEYS.includes(key))) {
       throw new Error('Invalid RGB ' + channel + ' tone curve');
