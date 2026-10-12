@@ -1,6 +1,10 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { Download, ImagePlus, Loader2, RotateCcw, ShieldCheck, Undo2, Redo2 } from 'lucide-react';
 import AdvancedLocalControls from '@/components/editor/local/AdvancedLocalControls';
+import LocalAnnotationControls from '@/components/editor/local/LocalAnnotationControls';
+import {
+  normalizeLocalAnnotations, centeredLocalAnnotation, renderLocalAnnotations, MAX_LOCAL_ANNOTATIONS,
+} from '@/lib/local-editor/localAnnotations';
 import { Button } from '@/components/ui/button';
 import { canonicalCoreResourcePath, CONFIGURED_CORE_API_ROOT, resolveCoreResourceUrl } from '@/api/coreResourceUrl';
 import {
@@ -22,14 +26,17 @@ function historyReducer(state, action) {
   if (action.type === 'redo') return { ...state, index: Math.min(state.entries.length - 1, state.index + 1) };
   if (action.type === 'reset') return { entries: [LOCAL_DEFAULTS], index: 0 };
   const last = state.entries[state.index];
-  const { __advanced: lastAdvanced = LOCAL_ADVANCED_DEFAULTS, ...lastBase } = last;
+  const { __advanced: lastAdvanced = LOCAL_ADVANCED_DEFAULTS, __annotations: lastAnnotations = [], ...lastBase } = last;
   const next = action.type === 'preset'
-    ? { ...presetLocalSettings(action.id), __advanced: lastAdvanced }
+    ? { ...presetLocalSettings(action.id), __advanced: lastAdvanced, __annotations: lastAnnotations }
     : action.type === 'advanced'
-      ? { ...lastBase, __advanced: normalizeAdvancedSettings(action.value) }
-      : { ...normalizeLocalSettings({ ...lastBase, [action.key]: action.value }), __advanced: lastAdvanced };
+      ? { ...lastBase, __advanced: normalizeAdvancedSettings(action.value), __annotations: lastAnnotations }
+      : action.type === 'annotations'
+        ? { ...lastBase, __advanced: lastAdvanced, __annotations: normalizeLocalAnnotations(action.value) }
+        : { ...normalizeLocalSettings({ ...lastBase, [action.key]: action.value }), __advanced: lastAdvanced, __annotations: lastAnnotations };
   if (Object.keys(LOCAL_DEFAULTS).every(key => next[key] === last[key])
-      && JSON.stringify(next.__advanced) === JSON.stringify(lastAdvanced)) return state;
+      && JSON.stringify(next.__advanced) === JSON.stringify(lastAdvanced)
+      && JSON.stringify(next.__annotations) === JSON.stringify(lastAnnotations)) return state;
   const entries = [...state.entries.slice(0, state.index + 1), next].slice(-40);
   return { entries, index: entries.length - 1 };
 }
@@ -77,7 +84,7 @@ function Adjustment({ definition, value, setValue }) {
 }
 
 export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
-  const image = useRef(null), imageInput = useRef(null), canvasRef = useRef(null), abortRef = useRef(null), exportUrls = useRef(new Set()), loadGeneration = useRef(0);
+  const image = useRef(null), imageInput = useRef(null), canvasRef = useRef(null), annotationCanvasRef = useRef(null), abortRef = useRef(null), exportUrls = useRef(new Set()), loadGeneration = useRef(0);
   const [details, setDetails] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -88,10 +95,11 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const [history, dispatch] = useReducer(historyReducer, { entries: [LOCAL_DEFAULTS], index: 0 });
   const currentEntry = history.entries[history.index];
   const advanced = currentEntry.__advanced || LOCAL_ADVANCED_DEFAULTS;
+  const annotations = currentEntry.__annotations || [];
   // Memoize the base settings: histogram changes must not trigger a new
   // raster effect, otherwise the preview could render indefinitely.
   const settings = React.useMemo(() => {
-    const { __advanced, ...base } = currentEntry;
+    const { __advanced, __annotations, ...base } = currentEntry;
     return base;
   }, [currentEntry]);
   const [hueBand, setHueBand] = useState('red');
@@ -102,7 +110,14 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   const [cloneOpacity, setCloneOpacity] = useState(100);
   const [cloneCursor, setCloneCursor] = useState(null);
   const cloneDrawing = useRef(null);
+  const [annotationMode, setAnnotationMode] = useState('off');
+  const [annotationOptions, setAnnotationOptions] = useState({
+    color: '#ef4444', thickness: 1, opacity: 1, text: '', fontSize: 7,
+  });
+  const [annotationDraft, setAnnotationDraft] = useState(null);
+  const annotationDrawing = useRef(null);
   const updateAdvanced = (value) => dispatch({ type: 'advanced', value });
+  const updateAnnotations = (value) => dispatch({ type: 'annotations', value });
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -122,6 +137,9 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     setCloneSource(null);
     cloneDrawing.current = null;
     setCloneCursor(null);
+    setAnnotationMode('off');
+    annotationDrawing.current = null;
+    setAnnotationDraft(null);
     setDetails({ name, width: raster.width, height: raster.height });
     setError('');
   };
@@ -187,6 +205,22 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
     return () => cancelAnimationFrame(frame);
   }, [details, settings, advanced, showOriginal]);
 
+  useEffect(() => {
+    const source = image.current, canvas = annotationCanvasRef.current;
+    if (!source || !canvas || !details) return;
+    canvas.width = source.previewWidth;
+    canvas.height = source.previewHeight;
+    if (showOriginal) return;
+    const context = canvas.getContext('2d');
+    if (!context) { setError('Annotation overlay canvas is unavailable.'); return; }
+    try {
+      renderLocalAnnotations(context, source.previewWidth, source.previewHeight, annotations);
+      if (annotationDraft) renderLocalAnnotations(context, source.previewWidth, source.previewHeight, [annotationDraft]);
+    } catch (cause) {
+      setError(cause?.message || 'Could not render annotations.');
+    }
+  }, [details, annotations, annotationDraft, showOriginal]);
+
   const download = async () => {
     if (!image.current || exporting) return;
     setExporting(true);
@@ -202,6 +236,9 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('PNG encoder canvas is unavailable.');
       ctx.putImageData(new ImageData(pixels, source.width, source.height), 0, 0);
+      // The same original-resolution normalized vector recipe used by preview
+      // is flattened only on the explicitly downloaded PNG.
+      renderLocalAnnotations(ctx, source.width, source.height, annotations);
       const blob = await new Promise((resolve, reject) => canvas.toBlob(output => output ? resolve(output) : reject(new Error('PNG export failed.')), 'image/png'));
       if (blob.type !== 'image/png' || !blob.size) throw new Error('Browser did not produce a valid PNG.');
       const url = URL.createObjectURL(blob);
@@ -218,6 +255,83 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
   };
 
   const update = (key, value) => dispatch({ type: 'change', key, value });
+
+  const newAnnotation = (type, from, to = from) => normalizeLocalAnnotations([{
+    type, from, to,
+    color: annotationOptions.color,
+    thickness: annotationOptions.thickness,
+    opacity: annotationOptions.opacity,
+    ...(type === 'text' ? { text: annotationOptions.text, fontSize: annotationOptions.fontSize } : {}),
+  }])[0];
+  const commitAnnotation = annotation => {
+    try {
+      if (annotations.length >= MAX_LOCAL_ANNOTATIONS) throw new Error('50 annotation limit reached. Delete an item or undo first.');
+      updateAnnotations([...annotations, annotation]);
+      setError('');
+    } catch (cause) { setError(cause?.message || 'Annotation could not be placed.'); }
+  };
+  const annotationPoint = event => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return {
+      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+    };
+  };
+  const annotationDown = event => {
+    if (annotationMode === 'off' || !image.current || exporting || loading || annotations.length >= MAX_LOCAL_ANNOTATIONS) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const position = annotationPoint(event);
+    if (!position) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setShowOriginal(false);
+    if (annotationMode === 'text') {
+      try { commitAnnotation(newAnnotation('text', position)); }
+      catch (cause) { setError(cause?.message || 'Enter a short label before placing text.'); }
+      return;
+    }
+    annotationDrawing.current = { pointerId: event.pointerId, from: position };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const annotationMove = event => {
+    const draft = annotationDrawing.current;
+    if (!draft || draft.pointerId !== event.pointerId) return;
+    const point = annotationPoint(event);
+    if (!point) return;
+    if (Math.hypot(point.x - draft.from.x, point.y - draft.from.y) < .005) return;
+    try { setAnnotationDraft(newAnnotation(annotationMode, draft.from, point)); }
+    catch { setAnnotationDraft(null); }
+  };
+  const annotationUp = event => {
+    const draft = annotationDrawing.current;
+    if (!draft || draft.pointerId !== event.pointerId) return;
+    annotationDrawing.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setAnnotationDraft(null);
+    if (event.type === 'pointercancel') return;
+    const end = annotationPoint(event);
+    if (!end) return;
+    try { commitAnnotation(newAnnotation(annotationMode, draft.from, end)); }
+    catch (cause) { setError(cause?.message || 'Drag to draw an annotation.'); }
+  };
+  const addCenteredAnnotation = () => {
+    try { commitAnnotation(centeredLocalAnnotation(annotationMode, annotationOptions)); }
+    catch (cause) { setError(cause?.message || 'Could not place centered annotation.'); }
+  };
+  const setDrawingMode = mode => {
+    cloneDrawing.current = null;
+    annotationDrawing.current = null;
+    setAnnotationDraft(null);
+    setCloneMode('off');
+    setAnnotationMode(mode);
+  };
+  const setStampMode = mode => {
+    annotationDrawing.current = null;
+    setAnnotationDraft(null);
+    setAnnotationMode('off');
+    setCloneMode(mode);
+  };
 
   // Canvas pointer positions are normalized to the actual displayed preview,
   // so a clone path can be applied at original full resolution on export.
@@ -325,17 +439,35 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
           </div>
 
           <div className="rounded-2xl border border-border/70 bg-muted p-2">
-            <div className="relative">
+            <div className="relative mx-auto w-fit max-w-full">
               <canvas
                 ref={canvasRef}
                 role="img"
                 aria-label={showOriginal ? 'Original local photo' : 'Locally edited photo preview'}
-                className={'mx-auto block max-h-[65vh] max-w-full rounded-xl object-contain ' + (cloneMode !== 'off' ? 'touch-none cursor-crosshair' : '')}
+                className={'block max-h-[65vh] max-w-full rounded-xl object-contain ' + (cloneMode !== 'off' ? 'touch-none cursor-crosshair' : '')}
                 onPointerDown={cloneDown}
                 onPointerMove={cloneMove}
                 onPointerUp={cloneUp}
                 onPointerCancel={cloneUp}
                 onPointerLeave={() => setCloneCursor(null)}
+              />
+              <canvas
+                ref={annotationCanvasRef}
+                data-local-annotation-surface="true"
+                role={annotationMode !== 'off' ? 'button' : 'presentation'}
+                aria-label={annotationMode !== 'off' ? 'Draw ' + annotationMode + ' annotation on photo' : undefined}
+                tabIndex={annotationMode !== 'off' ? 0 : -1}
+                className={'absolute inset-0 h-full w-full rounded-xl ' + (annotationMode !== 'off' ? 'touch-none cursor-crosshair' : 'pointer-events-none')}
+                onPointerDown={annotationDown}
+                onPointerMove={annotationMove}
+                onPointerUp={annotationUp}
+                onPointerCancel={annotationUp}
+                onKeyDown={event => {
+                  if (annotationMode !== 'off' && (event.key === 'Enter' || event.key === ' ')) {
+                    event.preventDefault();
+                    addCenteredAnnotation();
+                  }
+                }}
               />
               {cloneMode !== 'off' && cloneCursor && (
                 <div
@@ -367,7 +499,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
           <div className="flex flex-wrap gap-2" role="group" aria-label="Local editing history">
             <Button type="button" variant="outline" disabled={!history.index} onClick={() => dispatch({ type: 'undo' })}><Undo2 className="h-4 w-4" aria-hidden="true" /> Undo</Button>
             <Button type="button" variant="outline" disabled={history.index === history.entries.length - 1} onClick={() => dispatch({ type: 'redo' })}><Redo2 className="h-4 w-4" aria-hidden="true" /> Redo</Button>
-            <Button type="button" variant="outline" disabled={isNeutralLocalSettings(settings) && isNeutralAdvancedSettings(advanced)} onClick={() => dispatch({ type: 'reset' })}><RotateCcw className="h-4 w-4" aria-hidden="true" /> Reset all</Button>
+            <Button type="button" variant="outline" disabled={isNeutralLocalSettings(settings) && isNeutralAdvancedSettings(advanced) && annotations.length === 0} onClick={() => dispatch({ type: 'reset' })}><RotateCcw className="h-4 w-4" aria-hidden="true" /> Reset all</Button>
           </div>
 
           <div className="grid items-start gap-4 lg:grid-cols-3">
@@ -410,7 +542,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
             hueBand={hueBand}
             onHueBandChange={setHueBand}
             cloneMode={cloneMode}
-            onCloneMode={setCloneMode}
+            onCloneMode={setStampMode}
             cloneSource={cloneSource}
             cloneRadius={cloneRadius}
             onCloneRadius={setCloneRadius}
@@ -418,6 +550,17 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
             onCloneHardness={setCloneHardness}
             cloneOpacity={cloneOpacity}
             onCloneOpacity={setCloneOpacity}
+          />
+
+          <LocalAnnotationControls
+            mode={annotationMode}
+            onMode={setDrawingMode}
+            annotations={annotations}
+            options={annotationOptions}
+            onOptionsChange={setAnnotationOptions}
+            onAddCentered={addCenteredAnnotation}
+            onDelete={index => updateAnnotations(annotations.filter((_, i) => i !== index))}
+            onClear={() => updateAnnotations([])}
           />
 
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
