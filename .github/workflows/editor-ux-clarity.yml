@@ -11,6 +11,10 @@ on:
       - 'src/components/editor/local/LocalAdjustmentsPanel.jsx'
       - 'src/components/editor/local/LocalAnnotationControls.jsx'
       - 'src/lib/local-editor/localAnnotations.js'
+      - 'src/lib/local-editor/localRecipe.js'
+      - 'src/components/editor/local/LocalRecipeControls.jsx'
+      - 'tests/local-recipe.test.mjs'
+      - 'tests/local-recipe-editor-wiring.test.mjs'
       - 'tests/local-annotations.test.mjs'
       - 'tests/local-annotations-editor-wiring.test.mjs'
       - 'tests/local-annotation-editing.test.mjs'
@@ -83,6 +87,8 @@ jobs:
             tests/local-annotation-editing.test.mjs \
             tests/local-annotation-editing-wiring.test.mjs \
             tests/local-annotations-editor-wiring.test.mjs \
+            tests/local-recipe.test.mjs \
+            tests/local-recipe-editor-wiring.test.mjs \
             tests/editor-canonical-boundary.test.mjs \
             tests/editor-zero-object-navigation.test.mjs \
             tests/editor-orthogonal-transform-ui.test.mjs \
