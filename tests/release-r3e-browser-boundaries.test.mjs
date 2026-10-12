@@ -70,7 +70,7 @@ test('R3e consumes the exact selected canonical MASK through production Backgrou
 
   for (const text of [
     "getByRole('button', { name: 'Remove background', exact: true })",
-    "getByRole('button', { name: 'Discard', exact: true })",
+    "getByRole('button', { name: 'Отклонить', exact: true })",
     "getByRole('button', { name: 'Accept', exact: true })",
     "waitEnabledButton(page, 'Undo')",
     "waitEnabledButton(page, 'Redo')",
