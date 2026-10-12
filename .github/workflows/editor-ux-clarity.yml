@@ -11,6 +11,9 @@ on:
       - 'src/components/editor/local/LocalAdjustmentsPanel.jsx'
       - 'src/components/editor/local/LocalAnnotationControls.jsx'
       - 'src/lib/local-editor/localAnnotations.js'
+      - 'src/lib/local-editor/localImageTransport.js'
+      - 'tests/local-image-transport.test.mjs'
+      - 'tests/local-image-transport-editor-wiring.test.mjs'
       - 'tests/local-redaction.test.mjs'
       - 'tests/local-redaction-editor-wiring.test.mjs'
       - 'src/lib/local-editor/localRecipe.js'
@@ -96,6 +99,8 @@ jobs:
             tests/local-annotations.test.mjs \
             tests/local-redaction.test.mjs \
             tests/local-redaction-editor-wiring.test.mjs \
+            tests/local-image-transport.test.mjs \
+            tests/local-image-transport-editor-wiring.test.mjs \
             tests/local-annotation-editing.test.mjs \
             tests/local-annotation-editing-wiring.test.mjs \
             tests/local-annotations-editor-wiring.test.mjs \
