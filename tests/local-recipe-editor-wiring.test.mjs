@@ -12,8 +12,10 @@ const [editor, controls, recipe, releaseE2e, workflow] = await Promise.all([
 
 test('save/restore buttons are labeled, keyboard-accessible, and refuse a missing original photo', () => {
   assert.match(controls, /aria-label="Save and restore local editing session"/);
-  assert.match(controls, />Save edit recipe<\/Button>/);
-  assert.match(controls, />Restore edit recipe<\/Button>/);
+  assert.match(controls, /onClick=\{onSave\}/);
+  assert.match(controls, /'Save edit recipe'/);
+  assert.match(controls, /fileInputRef\.current\?\.click\(\)/);
+  assert.match(controls, /'Restore edit recipe'/);
   assert.match(controls, /ref=\{fileInputRef\} onChange=\{onChooseFile\}/);
   assert.match(controls, /aria-label="Choose BERS local recipe JSON"/);
   assert.match(controls, /accept="\.json,application\/json"/);
