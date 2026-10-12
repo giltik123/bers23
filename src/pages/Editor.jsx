@@ -1034,6 +1034,7 @@ export default function Editor() {
         maskOverlayVisible={maskOverlayVisible}
         maskOverlayColor={maskOverlayColor}
         maskOverlayOpacity={maskOverlayOpacity}
+        brushSize={brushSize}
         onShapeHandlePointer={selectionShapeHandlePointer}
         crop={cropRect ? { ...cropRect, sourceWidth: project.width, sourceHeight: project.height } : null}
         cropSource={cropInteractionActive ? { sourceWidth: project.width, sourceHeight: project.height } : null}
