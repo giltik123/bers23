@@ -79,7 +79,8 @@ test('clone stamp uses real normalized pointer events, sample source, opacity an
   assert.match(controls, /advanced\.cloneStrokes\.length >= 32/);
   assert.match(engine, /const envelope = new Uint8Array\(width \* height\)/);
   assert.match(engine, /const source = new Uint8ClampedArray\(output\)/);
-  assert.match(engine, /output\[target \+ channel\] = byte\(output\[target \+ channel\] \* \(1 - strength\) \+ source\[from \+ channel\] \* strength\)/);
+  assert.match(engine, /const sampled = byte\(source\[from \+ channel\] \+ toneShift\[channel\]\)/);
+  assert.match(engine, /output\[target \+ channel\] = byte\(output\[target \+ channel\] \* \(1 - strength\) \+ sampled \* strength\)/);
 });
 
 test('existing source-bound URL verification, alpha safeguards and mask authority remain', () => {
@@ -137,4 +138,23 @@ test('independent RGB tone curves have real channel selector, matching graph, pe
   assert.match(engine, /output\[i \+ channel\] = channelLuts\[channel\] \? channelLuts\[channel\]\[masterValue\] : masterValue/);
   assert.match(browserE2e, /getByRole\('combobox', \{ name: 'Tone curve channel' \}\)\.selectOption\('red'\)/);
   assert.match(browserE2e, /getImageData\(6, 4, 1, 1\)/);
+});
+
+
+test('manual clone can select honest color-matched repair with real pixel transfer and bounded tone estimates', () => {
+  assert.match(controls, /aria-label="Local retouch method"/);
+  assert.match(controls, /<option value="clone">Clone · exact pixels<\/option>/);
+  assert.match(controls, /<option value="color-match">Color-matched repair · nearby tones<\/option>/);
+  assert.match(controls, /not Photoshop's full healing algorithm/);
+  assert.match(parent, /cloneBlendMode, setCloneBlendMode\] = useState\('clone'\)/);
+  assert.match(parent, /blendMode: cloneBlendMode/);
+  assert.match(parent, /cloneBlendMode=\{cloneBlendMode\}/);
+  assert.match(parent, /onCloneBlendMode=\{setCloneBlendMode\}/);
+  assert.match(engine, /function localToneOffset\(snapshot, width, height, stroke\)/);
+  assert.match(engine, /if \(samples < 3\) return \[0, 0, 0\]/);
+  assert.match(engine, /clamp\(Math\.round\(value \/ samples\), -96, 96\)/);
+  assert.match(browserE2e, /selectOption\('color-match'\)/);
+  assert.match(browserE2e, /getImageData\(8, 3, 1, 1\)/);
+  assert.match(browserE2e, /color-matched repair must transfer actual neighboring tone into full-resolution PNG/);
+  assert.match(browserE2e, /manual tonal retouch must not mutate Core Project/);
 });
