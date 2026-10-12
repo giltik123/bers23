@@ -171,3 +171,28 @@ A small portable \`.bers-edit.json\` already allows cross-device editing. For pe
 **Verification added:** \`tests/local-device-draft.test.mjs\` checks a single-slot roundtrip, strict source binding, forged/invalid documents, localStorage quota/private-mode refusal and scoped deletion. \`tests/local-device-draft-editor-wiring.test.mjs\` verifies the disclosure, explicit controls, no hidden autosave, exact-source guard and Core boundary. R3e real Chrome/PostgreSQL acceptance now saves a browser draft, verifies it contains no pixels, **reloads the page**, reopens the original photo, restores brightness with Undo/Redo, deletes the stored copy and confirms Core state and AI-provider calls have not changed. GitHub Actions must finish all required checks on one exact PR head before approval or deployment.
 
 **Release constraint:** Still Draft. The historical LaMa ONNX reproducibility drift is unrelated and remains unresolved; don't weaken security, acceptance or model reproducibility gates to release these UI features.
+
+
+## Phase 5 — ergonomic Undo and release regression triage (2026-10-12)
+
+### Make real editing gestures reversible, not just individual input events
+
+A photographic slider can emit dozens of browser \`input\` events in a single drag. Previously every event was its own Undo entry and a long drag could exhaust the 40-entry history. \`src/lib/local-editor/localHistory.js\` now coalesces the **first input into one new snapshot**, then replaces that snapshot for successive samples of the **same physical gesture**. Ending the gesture clears the group; moving a slider back to its original setting discards the no-op entry. A new gesture on the same slider, an imported recipe, selected annotation edits and presets remain distinct. Undo after branching truncates stale Redo entries, and history remains bounded to 40 snapshots.
+
+The Local Photo Lab captures browser pointer-down/up/cancel on range inputs, held keyboard-arrow sequences and focus/blur for existing annotation text inputs. The actual per-event reducer passes a unique gesture ID, so independent controls and gestures cannot silently overwrite one another. This also handles the Redo path after a cancelled or branched edit. An on-screen **Edit N of M** indicator makes the history visible.
+
+Accessible editing shortcuts now include **Ctrl/Cmd+Z**, **Ctrl/Cmd+Shift+Z**, and **Ctrl+Y**. For text-input and textarea editing the browser's **native typing undo remains in control** rather than being intercepted by the photo editor.
+
+\`tests/local-history.test.mjs\` covers 100-sample drags, distinct gestures, keyboard repeats, no-op cancellation, Undo branching, Redo truncation, history caps and invalid state. \`tests/local-history-editor-wiring.test.mjs\` checks the React capture handlers, shortcut specificity and real browser acceptance. The R3e Chrome/Postgres test now physically drags the Brightness slider across several points, proves **one Undo** restores the pre-drag value and Redo restores the final value, then continues its actual PNG/Core authority checks.
+
+### CI diagnosis: release evidence, not optimism
+
+On GitHub head \`fd791569\`, 18 workflows failed. The first actionable logs showed:
+- 15 canonical Editor-related jobs were blocked by a previous UI copy change: the expected truthful whole-image context \`Editing the whole image\` was absent. Restored the wording in the visible \`InstructionBar\`, without undoing the accessible redesign.
+- One R3g contract asserted the old one-line JSX layout of the mode button. Updated it to verify the **actual key, onClick, button type and aria-pressed behavior** independent of JSX whitespace.
+- One real Chrome Automation Studio journey matched both \`Projects\` and \`Your projects\` headings. Scoped the locator to \`exact: true\` so it targets the page h1 and preserves the useful subheading.
+- The LaMa ONNX byte-reproducibility failure is a **separate existing model drift issue**; it is not solved, muted or waived.
+
+These fixes and the new history behavior are on a **new exact SHA**. They are not considered successful until new GitHub Actions checks actually complete. A direct source-contract execution of the revised R3g suite passes its four cases; 8 history reducer unit cases and 5 UI wiring cases also pass. Full production build, Chrome/Postgres release E2E and 7 protected status checks remain authoritative.
+
+No Core, billing, login, CSRF, source-artifact lineage or Railway production changes in this phase.
