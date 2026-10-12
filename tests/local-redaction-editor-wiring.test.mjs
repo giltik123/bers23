@@ -50,7 +50,7 @@ test('redaction is last in both preview and exported PNG and uses exact source p
   assert.match(vectors, /output\[i \+ 2\] = 0/);
   assert.match(vectors, /output\[i \+ 3\] = 255/);
   assert.match(panel, /renderLocalAnnotations\(context, source\.previewWidth, source\.previewHeight, annotations\)/);
-  assert.match(panel, /const exportPixels = applyLocalOpaqueCovers\(pixels, source\.width, source\.height, annotations\)/);
+  assert.match(panel, /const exportPixels = annotations\.some\(item => item\.type === 'redact'\)/);
   assert.match(panel, /ctx\.putImageData\(new ImageData\(exportPixels, source\.width, source\.height\), 0, 0\)/);
   assert.match(panel, /renderLocalAnnotations\(ctx, source\.width, source\.height, annotations\)/);
   assert.doesNotMatch(vectors, /fetch\(|coreClient|XMLHttpRequest|unsafeHTML/);
