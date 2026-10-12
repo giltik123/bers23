@@ -4,6 +4,8 @@ on:
     branches: ["main"]
     paths:
       - 'src/pages/Editor.jsx'
+      - 'src/application/selection/contracts.ts'
+      - 'src/application/selection/SelectionApplicationService.ts'
       - 'src/pages/Projects.jsx'
       - 'src/components/AppLayout.jsx'
       - 'src/components/ThemeToggle.jsx'
@@ -27,6 +29,8 @@ on:
       - 'scripts/test-release-r3c-browser-e2e.mjs'
       - 'tests/editor-ux-progressive-disclosure.test.mjs'
       - 'tests/bers-ux-system-redesign.test.mjs'
+      - 'tests/mask-photoshop-controls.test.mjs'
+      - 'tests/selection-brush-opacity.test.ts'
       - '.github/workflows/editor-ux-clarity.yml'
   workflow_dispatch:
 
@@ -55,10 +59,21 @@ jobs:
           node --test \
             tests/editor-ux-progressive-disclosure.test.mjs \
             tests/bers-ux-system-redesign.test.mjs \
+            tests/mask-photoshop-controls.test.mjs \
             tests/editor-canonical-boundary.test.mjs \
             tests/editor-zero-object-navigation.test.mjs \
             tests/editor-orthogonal-transform-ui.test.mjs \
             tests/realesrgan-editor-boundary.test.mjs
+      - name: Real canonical alpha brush opacity regression
+        run: |
+          mkdir -p .test-cache/editor-mask
+          npx esbuild tests/selection-brush-opacity.test.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --outfile=.test-cache/editor-mask/selection-brush-opacity.test.mjs \
+            --external:node:*
+          node --test .test-cache/editor-mask/selection-brush-opacity.test.mjs
+      - name: Typecheck mask service and frontend integration
+        run: npm run typecheck
       - name: Build production SPA - catch JSX and bundle regressions
         run: npm run build
       - name: Verify whitespace
