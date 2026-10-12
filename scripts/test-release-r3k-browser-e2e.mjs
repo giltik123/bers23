@@ -245,8 +245,8 @@ try {
   // Reload after losing the committed Orthogonal result response. The hook must resume
   // the same workflow, execute only the Core-issued Resize action and reach SUCCESS.
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'visible', timeout: 25_000 });
-  await waitImage(page, 'after', target.width, target.height);
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'visible', timeout: 25_000 });
+  await waitImage(page, 'Результат обработки до принятия', target.width, target.height);
   assert.deepEqual(await readProjectState(projectId), baseline, 'recovered terminal Preview must still be non-mutating');
 
   const firstTerminalResponses = await page.evaluate(() => window.__r3kAgentResponses.filter(item => item.state === 'SUCCESS'));
@@ -292,8 +292,8 @@ try {
   const localBeforeTerminalReload = diagnostics.localExecutionRequests.length;
   const resultPostsBeforeTerminalReload = diagnostics.agentRequests.filter(entry => entry.method === 'POST' && /\/result$/.test(entry.path)).length;
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
-  const recoveredImage = await waitImage(page, 'after', target.width, target.height);
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'visible', timeout: 20_000 });
+  const recoveredImage = await waitImage(page, 'Результат обработки до принятия', target.width, target.height);
   const recoveredImageSrc = await recoveredImage.evaluate(element => element.src);
   const recoveredImageUrl = new URL(recoveredImageSrc);
   assert.equal(recoveredImageUrl.origin, coreOrigin, 'recovered terminal Preview must be delivered by Core');
@@ -313,13 +313,13 @@ try {
   assert.ok(recoveredTerminal.terminalImageUrl.startsWith('/api/core/artifacts/results/'));
 
   const acceptWait = waitForCoreResponse(page, 'POST', pathname => pathname === `/api/core/projects/${projectId}/accept-final`);
-  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).click();
   const acceptResponse = await acceptWait;
   assert.equal(acceptResponse.status(), 200);
   const acceptIntent = JSON.parse(acceptResponse.request().postData() ?? '{}');
   assert.equal(acceptIntent.finalArtifactId, terminal.terminalArtifactId, 'Editor Accept must submit the durable Agent terminal Artifact id');
   assert.match(acceptIntent.instruction, /^Bounded Agent · ROTATE_90_CW → Resize 6×5$/);
-  await page.getByRole('button', { name: 'Accept', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
+  await page.getByRole('button', { name: 'Принять в историю', exact: true }).waitFor({ state: 'detached', timeout: 20_000 });
   await waitImage(page, 'Project', target.width, target.height);
 
   const accepted = await readProjectState(projectId);
