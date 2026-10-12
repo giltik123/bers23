@@ -143,6 +143,37 @@ try {
   assert.deepEqual(initial.objects, []);
   assert.equal((await readMasks(projectId)).length, 0);
 
+  // Local-only browser workspace: real uploaded-in-memory PNG, real pixel
+  // processing and a real downloadable file. The canonical Core Project must
+  // remain byte-for-byte unchanged; no AI provider or local execution ticket.
+  await page.getByRole('button', { name: 'Local tools', exact: true }).click();
+  await page.locator('input[aria-label="Choose a local photo without uploading it"]').setInputFiles({
+    name: 'release-r3e-local.png', mimeType: 'image/png', buffer: sourcePng,
+  });
+  const localLab = page.getByRole('region', { name: 'Local photo adjustments' });
+  await localLab.getByRole('heading', { name: 'Local photo lab' }).waitFor({ state: 'visible', timeout: 10_000 });
+  const brightness = localLab.getByRole('slider', { name: 'Local Brightness' });
+  await brightness.fill('40');
+  assert.equal(await brightness.inputValue(), '40', 'local brightness slider must drive real pixel settings');
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('section[aria-label="Local photo adjustments"] canvas');
+    return canvas instanceof HTMLCanvasElement && canvas.width === 12 && canvas.height === 8
+      && canvas.getContext('2d').getImageData(6, 4, 1, 1).data[0] > 44;
+  }, null, { timeout: 10_000 });
+  const localDownloadPromise = page.waitForEvent('download', { timeout: 10_000 });
+  await localLab.getByRole('button', { name: 'Download edited PNG' }).click();
+  const localDownload = await localDownloadPromise;
+  assert.match(localDownload.suggestedFilename(), /-local-edit\.png$/);
+  const localPng = await fs.readFile(await localDownload.path());
+  const localPixels = await sharp(localPng).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.equal(localPixels.info.width, 12);
+  assert.equal(localPixels.info.height, 8);
+  assert.deepEqual([...localPixels.data.subarray(0, 4)], [94, 146, 198, 255], 'full resolution local PNG must contain actual brightness-adjusted pixels');
+  assert.deepEqual(await readProjectState(projectId), initial, 'local PNG editing must never mutate canonical Core Project');
+  assert.equal(providerCalls, 0, 'local image editing must never call AI providers');
+  assert.deepEqual(diagnostics.localExecutionRequests, [], 'local PNG editing must not manufacture Core execution tickets');
+  await page.getByRole('button', { name: 'Prompt', exact: true }).click();
+
   // Start Selection without invoking Smart Select, switch immediately to deterministic manual Add,
   // and use Playwright's locator pointer action against the real Project image. A single brush dot
   // is sufficient for the release-floor MASK while preserving normal actionability and pointer events.
