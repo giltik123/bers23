@@ -172,3 +172,15 @@ test('rejects invalid raster geometry, buffer aliasing and excessive pixel budge
   assert.throws(() => applyAdvancedLocalAdjustments(pixels(10, 20, 30, 255), 12_000_001, 1), /bounded original RGBA/);
   assert.throws(() => applyAdvancedLocalAdjustments(pixels(10, 20, 30, 255), Infinity, 1), /bounded original RGBA/);
 });
+
+
+test('expensive repeated clone paths fail closed before consuming huge CPU budgets', () => {
+  const blank = new Uint8ClampedArray(512 * 512 * 4);
+  const dense = clone({ x: .1, y: .1 }, new Array(512).fill({ x: .5, y: .5 }), { radius: .1 });
+  const expensive = { cloneStrokes: [dense, dense, dense, dense, dense] };
+  assert.throws(
+    () => applyAdvancedLocalAdjustments(blank, 512, 512, expensive),
+    /25-million-pixel work budget/,
+  );
+  assert.ok(blank.every(byte => byte === 0), 'refusing expensive work must never modify the original');
+});
