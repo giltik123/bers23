@@ -6,7 +6,13 @@ import { adaptiveRenderer } from '@/lib/platform/AdaptiveRenderer';
 
 // Renders the current image with tappable detected-object overlays.
 // Boxes are normalized (0–1) so they scale with any screen size.
-function SelectionOverlay({ selection }) {
+// Only display pixels are tinted. Canonical alpha bytes never change with visualization settings.
+const MASK_OVERLAY_COLORS = Object.freeze({
+  teal: [16, 185, 129],
+  magenta: [217, 70, 239],
+  amber: [245, 158, 11],
+});
+function SelectionOverlay({ selection, overlayColor = 'teal', overlayOpacity = 45 }) {
   const ref = useRef(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -14,13 +20,15 @@ function SelectionOverlay({ selection }) {
     const scale = Math.min(1, 1024 / Math.max(selection.width, selection.height));
     canvas.width = Math.max(1, Math.round(selection.width * scale)); canvas.height = Math.max(1, Math.round(selection.height * scale));
     const context = canvas.getContext('2d'), pixels = context.createImageData(canvas.width, canvas.height);
+    const [red, green, blue] = MASK_OVERLAY_COLORS[overlayColor] || MASK_OVERLAY_COLORS.teal;
+    const opacity = Math.max(0, Math.min(100, Number(overlayOpacity) || 0)) / 100;
     for (let y = 0; y < canvas.height; y += 1) for (let x = 0; x < canvas.width; x += 1) {
       const source = Math.min(selection.height - 1, Math.floor(y / scale)) * selection.width + Math.min(selection.width - 1, Math.floor(x / scale));
       const target = (y * canvas.width + x) * 4, alpha = selection.alpha[source];
-      pixels.data[target] = 16; pixels.data[target + 1] = 185; pixels.data[target + 2] = 129; pixels.data[target + 3] = Math.round(alpha * .45);
+      pixels.data[target] = red; pixels.data[target + 1] = green; pixels.data[target + 2] = blue; pixels.data[target + 3] = Math.round(alpha * opacity);
     }
     context.putImageData(pixels, 0, 0);
-  }, [selection]);
+  }, [selection, overlayColor, overlayOpacity]);
   return <canvas ref={ref} className="absolute inset-0 size-full pointer-events-none" aria-hidden="true" />;
 }
 
@@ -115,7 +123,7 @@ function CropOverlay({ crop }) {
   );
 }
 
-export default function ImageCanvas({ imageUrl, objects, selectedId, hiddenObjectIds = new Set(), onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer }) {
+export default function ImageCanvas({ imageUrl, objects, selectedId, hiddenObjectIds = new Set(), onSelect, busy, onUndo, onRedo, selection, onSelectionPointer, onShapeHandlePointer, crop, cropSource, onCropPointer, maskOverlayVisible = true, maskOverlayColor = 'teal', maskOverlayOpacity = 45 }) {
   const gestures = useAdaptiveGestures({ onSwipeLeft: onRedo, onSwipeRight: onUndo });
   const renderer = adaptiveRenderer(usePlatformProfile());
   const drawing = useRef(false);
@@ -139,7 +147,7 @@ export default function ImageCanvas({ imageUrl, objects, selectedId, hiddenObjec
     <div className={`relative rounded-2xl overflow-hidden bg-muted select-none ${interactive ? 'touch-none' : ''}`} {...(!interactive ? gestures.handlers : {})} onPointerDown={pointer('down')} onPointerMove={pointer('move')} onPointerUp={pointer('up')} onPointerCancel={pointer('cancel')}>
       <div className="relative" style={gestures.style}>
       <img src={imageUrl} alt="Project" decoding={renderer.decoding} fetchPriority="high" style={{ imageRendering: renderer.imageRendering }} onLoad={(event) => { if (event.currentTarget.naturalWidth * event.currentTarget.naturalHeight > 2000000) performanceMonitor.markLargeDecode(); }} className="w-full h-auto block" draggable={false} />
-      <SelectionOverlay selection={selection} />
+      {maskOverlayVisible && <SelectionOverlay selection={selection} overlayColor={maskOverlayColor} overlayOpacity={maskOverlayOpacity} />}
       <PolygonPreview selection={selection} />
       <ShapePreview selection={selection} onHandlePointer={onShapeHandlePointer} />
       <CropOverlay crop={crop} />
