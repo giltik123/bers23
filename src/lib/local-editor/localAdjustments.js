@@ -63,7 +63,7 @@ export function normalizeLocalSettings(input = {}) {
   if (!effects.has(settings.effect)) throw new Error('Unsupported local color effect');
   for (const { key, min, max, step } of LOCAL_CONTROLS) {
     const value = settings[key];
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) throw new Error('Invalid local adjustment: ' + key);
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || ((key === 'posterize' || key === 'pixelate') && value === 1)) throw new Error('Invalid local adjustment: ' + key);
     if (Math.abs((value - min) / step - Math.round((value - min) / step)) > 1e-6) throw new Error('Invalid local adjustment step: ' + key);
   }
   return Object.freeze(settings);
