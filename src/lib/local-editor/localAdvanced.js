@@ -109,13 +109,14 @@ export function normalizeAdvancedSettings(input = {}) {
   if (!Array.isArray(strokesInput) || strokesInput.length > 32) throw new Error('Too many manual retouch strokes');
   const cloneStrokes = Object.freeze(strokesInput.map(stroke => {
     if (!stroke || typeof stroke !== 'object' || Array.isArray(stroke)
-        || Object.keys(stroke).some(key => !['source', 'points', 'radius', 'hardness', 'opacity'].includes(key))
+        || Object.keys(stroke).some(key => !['source', 'points', 'radius', 'hardness', 'opacity', 'blendMode'].includes(key))
         || !Array.isArray(stroke.points) || !stroke.points.length || stroke.points.length > 512) {
       throw new Error('Invalid clone stamp stroke');
     }
     if (typeof stroke.radius !== 'number' || !Number.isFinite(stroke.radius) || stroke.radius <= 0 || stroke.radius > .1
         || typeof stroke.hardness !== 'number' || !Number.isFinite(stroke.hardness) || stroke.hardness < 0 || stroke.hardness > 1
-        || typeof stroke.opacity !== 'number' || !Number.isFinite(stroke.opacity) || stroke.opacity <= 0 || stroke.opacity > 1) {
+        || typeof stroke.opacity !== 'number' || !Number.isFinite(stroke.opacity) || stroke.opacity <= 0 || stroke.opacity > 1
+        || !['clone', 'color-match'].includes(stroke.blendMode ?? 'clone')) {
       throw new Error('Invalid clone stamp brush settings');
     }
     return Object.freeze({
@@ -124,6 +125,7 @@ export function normalizeAdvancedSettings(input = {}) {
       radius: stroke.radius,
       hardness: stroke.hardness,
       opacity: stroke.opacity,
+      blendMode: stroke.blendMode ?? 'clone',
     });
   }));
   const gradientInput = input.gradient ?? LOCAL_GRADIENT_DEFAULT;
@@ -236,6 +238,38 @@ function segmentBounds(stroke, width, height, index) {
   };
 }
 
+// Lightweight, non-AI tonal adaptation. Sample an 8-point ring outside the
+// actual stamp radius at both source and destination. Clamp per-channel
+// correction to prevent uncontrolled shifts. This is NOT the Poisson/PDE
+// healing algorithm used by specialist editors, and should not be labeled so.
+function localToneOffset(snapshot, width, height, stroke) {
+  if (stroke.blendMode !== 'color-match') return [0, 0, 0];
+  const radius = Math.max(1.5, stroke.radius * Math.min(width, height) * 1.7);
+  const centers = [
+    [stroke.source.x * (width - 1), stroke.source.y * (height - 1)],
+    [stroke.points[0].x * (width - 1), stroke.points[0].y * (height - 1)],
+  ];
+  const shifts = [0, 0, 0];
+  let samples = 0;
+  for (let sample = 0; sample < 16; sample++) {
+    const angle = sample * Math.PI / 8;
+    const positions = centers.map(([cx, cy]) => [
+      Math.round(cx + Math.cos(angle) * radius),
+      Math.round(cy + Math.sin(angle) * radius),
+    ]);
+    if (positions.some(([x, y]) => x < 0 || y < 0 || x >= width || y >= height)) continue;
+    const from = (positions[0][1] * width + positions[0][0]) * 4;
+    const dest = (positions[1][1] * width + positions[1][0]) * 4;
+    if (snapshot[from + 3] < 240 || snapshot[dest + 3] < 240) continue;
+    for (let channel = 0; channel < 3; channel++) {
+      shifts[channel] += snapshot[dest + channel] - snapshot[from + channel];
+    }
+    samples++;
+  }
+  if (samples < 3) return [0, 0, 0];
+  return shifts.map(value => clamp(Math.round(value / samples), -96, 96));
+}
+
 function transformClone(output, width, height, strokes) {
   if (!strokes.length) return;
 
@@ -269,6 +303,7 @@ function transformClone(output, width, height, strokes) {
     // A frozen source per stroke avoids source-to-destination feedback. The
     // next stroke may intentionally sample the previous stroke's result.
     const source = new Uint8ClampedArray(output);
+    const toneShift = localToneOffset(source, width, height, stroke);
     const envelope = new Uint8Array(width * height);
     const first = stroke.points[0];
     const baseX = stroke.source.x * (width - 1) - first.x * (width - 1);
@@ -307,7 +342,8 @@ function transformClone(output, width, height, strokes) {
       const strength = coverage / 255 * stroke.opacity * source[from + 3] / 255;
       if (!strength) continue;
       for (let channel = 0; channel < 3; channel++) {
-        output[target + channel] = byte(output[target + channel] * (1 - strength) + source[from + channel] * strength);
+        const sampled = byte(source[from + channel] + toneShift[channel]);
+        output[target + channel] = byte(output[target + channel] * (1 - strength) + sampled * strength);
       }
       // Deliberately never replace alpha or unmask transparent target pixels.
     }
