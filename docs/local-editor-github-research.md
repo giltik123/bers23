@@ -196,3 +196,40 @@ On GitHub head \`fd791569\`, 18 workflows failed. The first actionable logs show
 These fixes and the new history behavior are on a **new exact SHA**. They are not considered successful until new GitHub Actions checks actually complete. A direct source-contract execution of the revised R3g suite passes its four cases; 8 history reducer unit cases and 5 UI wiring cases also pass. Full production build, Chrome/Postgres release E2E and 7 protected status checks remain authoritative.
 
 No Core, billing, login, CSRF, source-artifact lineage or Railway production changes in this phase.
+
+
+## Phase 5 — opaque privacy covers, bounded photo downloads, and export correctness (2026-10-12)
+
+At this point BERS already had 23 numeric adjustments, independent RGB curves, eight-band HSL, gradient masks, two manual cloning modes, vector annotations, grouped Undo/Redo, portable image-bound recipe JSON and explicit one-slot device draft save/restore. Those features must not be reimplemented or marketed as new here.
+
+### Solid black cover for sensitive visual content
+
+A task-oriented **Solid cover** option joins the annotations toolbar. Users draw a rectangle or insert one centrally, then adjust its position, delete it or use Undo/Redo. A cover always has pure black \`#000000\`, alpha **255**, and fixed thickness: unlike an ordinary annotation it cannot be made translucent, colorized or feathered. The option's UI explains that it covers **only the exported PNG**, not the original photo, previous downloads, other image files or Core project history.
+
+Correctness is enforced twice using original (normalized) vector coordinates:
+
+1. \`applyLocalOpaqueCovers\` overwrites **actual full-resolution RGBA8** pixels inside outward-rounded integer bounds to \`[0,0,0,255]\` before PNG encoding. The original pixel buffer remains immutable. Transparent input pixels within the box become opaque black.
+2. \`renderLocalAnnotations\` paints covers with \`globalAlpha=1\`, \`source-over\` and \`fillRect\` **after all other vector annotations**, regardless of insertion order. Thus an arrow or label added later cannot render on top of a privacy cover. No blur/pixelation is used, as those are not an adequate substitute for opaque covering.
+
+When no covers exist, the renderer exports the pre-existing edited buffer directly, with no extra 48 MB RGBA copy at the maximum image size.
+
+The exact browser release acceptance draws a cover, adds another colored rectangle *after* it, confirms black alpha 255 in the overlay and downloaded PNG, compares unaffected outside pixels and verifies Core Project and AI-provider counters unchanged.
+
+**Safety boundary:** The resulting PNG's covered pixels are replaced, but this is not a promise that the original image, photo metadata retained in other copies, cached thumbnails, cloud-stored versions, or a downloaded recipe are deleted. The user must verify the exported file before sharing and handle any other existing copies separately.
+
+### Bounded authenticated Core image transport
+
+The previous local photo loader checked \`Content-Length\` but then called \`response.blob()\`, which could buffer an arbitrarily large body if the server omitted/misreported the header. The new \`src/lib/local-editor/localImageTransport.js\` reads the response **stream incrementally**, checks the decoded byte total against the **32 MiB limit** before constructing the Blob, cancels early on oversize/corruption, rejects unsupported MIME types and refuses a browser without safe streaming. The Editor still requires a Core-canonical resource URL and an authenticated \`GET\`, and all raster geometry remains bounded at 12 megapixels.
+
+Pure transport tests simulate missing and malicious headers, mixed chunks, premature stream failures, cancel/release semantics, disabled streaming and invalid limits. The exact-head CI runs them plus connection tests. The loader does not perform remote processing of user-chosen local files.
+
+### Relevant browser standards
+
+- [MDN: Canvas globalAlpha](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/globalAlpha) specifies why translucent marks do not adequately hide underlying pixels.
+- [MDN: Canvas globalCompositeOperation](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/globalCompositeOperation) defines source-over painting.
+- [MDN: Canvas ImageData](https://developer.mozilla.org/en-US/docs/Web/API/ImageData) describes explicit RGBA pixel buffers used for exact local-byte verification.
+- [MDN: ReadableStream default reader](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream/getReader) supports bounded incremental response reads.
+
+### Release condition
+
+These changes stay in **Draft PR #1003**. Pure source/unit tests can establish geometry and pixel arithmetic, but a reliable release also requires passing GitHub workflows for production compilation, security and the **real Chrome + PostgreSQL** R3 browser scenarios at the same final SHA. Queued/pending runs are not passing results. Railway production and Core authentication/CSRF/credit gates were not changed.
