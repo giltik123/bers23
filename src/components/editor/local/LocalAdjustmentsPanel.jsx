@@ -174,7 +174,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
           ? new Uint8ClampedArray(source.preview)
           : applyAdvancedLocalAdjustments(
             applyLocalAdjustments(source.preview, source.previewWidth, source.previewHeight, settings),
-            source.previewWidth, source.previewHeight, advanced,
+            source.previewWidth, source.previewHeight, advanced, source.preview,
           );
         canvas.width = source.previewWidth;
         canvas.height = source.previewHeight;
@@ -195,7 +195,7 @@ export default function LocalAdjustmentsPanel({ imageUrl, projectName }) {
       const source = image.current;
       const pixels = applyAdvancedLocalAdjustments(
         applyLocalAdjustments(source.full, source.width, source.height, settings),
-        source.width, source.height, advanced,
+        source.width, source.height, advanced, source.full,
       );
       const canvas = document.createElement('canvas');
       canvas.width = source.width; canvas.height = source.height;
