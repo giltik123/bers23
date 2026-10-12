@@ -36,7 +36,7 @@ test('R3k proves bounded Agent durable recovery through the real release stack o
     'terminalImageUrl',
     '/api/core/artifacts/results/',
     'sessionStorage.getItem',
-    "name: 'Accept'",
+    "name: 'Принять в историю'",
     'ACCEPTED_FINAL',
     'R3K_BROWSER_BOUNDED_AGENT_RECOVERY_ACCEPTED',
   ]) assert.equal(harness.includes(required), true, `materialized R3k harness must contain ${required}`);
